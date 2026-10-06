@@ -82,6 +82,8 @@ mod reasoning_boundary;
 mod replay_formats;
 #[path = "semantic/replay_ownership.rs"]
 mod replay_ownership;
+#[path = "semantic/request_edits.rs"]
+mod request_edits;
 #[path = "semantic/response.rs"]
 mod response;
 #[path = "semantic/response_requirements.rs"]

@@ -546,7 +546,10 @@ fn target_failure_is_local_and_unsupported_domains_cannot_reach_encoding() {
         );
     }
     assert_eq!(request_wire(&d, Profile::Chat), wire);
-    let ir = d.semantic.with_output(OutputConstraint::JsonObject);
+    let ir = d
+        .semantic
+        .with_output(OutputConstraint::JsonObject)
+        .unwrap();
     // Structured output now maps to Chat; the target capability gate still refuses it.
     assert!(lower_request(&ir, &d.fidelity, Profile::Chat, Contract::full()).is_ok());
     assert!(matches!(

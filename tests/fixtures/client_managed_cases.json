@@ -1,0 +1,69 @@
+{
+  "contract": "docs/implementation-plans/client-managed-ir.md@v0.2",
+  "cases": [
+    {
+      "case_key": "validated_output",
+      "ids": ["A01"],
+      "slice": "S0",
+      "sample_kind": "abstract_contract",
+      "evidence": "interaction-contract.md#client-managed-context; native schema not applicable",
+      "owner": "src/semantic/task/generation/request.rs",
+      "target": "semantic",
+      "symbols": ["request_edits::output_edit_must_not_return_an_invalid_request", "request_edits::legal_edits_preserve_presence_and_other_fields"],
+      "input": "Valid request; replace output with malformed Schema or JsonObject",
+      "expected": "InvalidSchema at validated edit; valid edit preserves unrelated fields and presence",
+      "transform": "Replace output, leaving immutable source intact",
+      "budget": "Same constructor limits",
+      "forbidden_effects": "No I/O or schema weakening",
+      "scope": "required"
+    },
+    {
+      "case_key": "validated_reasoning",
+      "ids": ["A01"],
+      "slice": "S0",
+      "sample_kind": "abstract_contract",
+      "evidence": "interaction-contract.md#client-managed-context; native schema not applicable",
+      "owner": "src/semantic/task/generation/request.rs",
+      "target": "semantic",
+      "symbols": ["request_edits::reasoning_edit_must_not_return_an_invalid_request", "request_edits::legal_edits_preserve_presence_and_other_fields"],
+      "input": "Valid request; absent reasoning with a hidden effort, or explicitly present reasoning",
+      "expected": "InvalidControl at validated edit; legal presence and encrypted-output intent preserved",
+      "transform": "Replace reasoning",
+      "budget": "Same constructor limits",
+      "forbidden_effects": "No inference of generated reasoning or execution permission",
+      "scope": "required"
+    },
+    {
+      "case_key": "validated_combined_budget",
+      "ids": ["A01", "A02"],
+      "slice": "S0",
+      "sample_kind": "abstract_contract",
+      "evidence": "interaction-contract.md#client-managed-context; native schema not applicable",
+      "owner": "src/semantic/task/generation/request.rs",
+      "target": "semantic",
+      "symbols": ["request_edits::output_edit_checks_combined_history_and_settings_budget"],
+      "input": "Independently valid history and Schema settings; combined size at B-1/B/B+1",
+      "expected": "B-1 and B accepted; B+1 returns Limit at validated edit",
+      "transform": "Add Schema setting",
+      "budget": "MAX_TOTAL_BYTES, each text part <= MAX_TEXT_BYTES",
+      "forbidden_effects": "No increased limits or automatic truncation",
+      "scope": "required"
+    },
+    {
+      "case_key": "admission_layers",
+      "ids": ["A02"],
+      "slice": "S0",
+      "sample_kind": "abstract_contract",
+      "evidence": "protocol-and-lowering.md#能力与固定目标; native schema not applicable",
+      "owner": "src/semantic/task/generation/contract.rs; src/lowering/generation.rs",
+      "target": "semantic",
+      "symbols": ["contract_ownership::semantic_contract_checks_final_request_without_a_representation_contract", "tools::target_failure_is_local_and_unsupported_domains_cannot_reach_encoding"],
+      "input": "Valid image or tool request; independently vary semantic and target contracts",
+      "expected": "Structural validity does not grant semantic admission; one target rejection does not mutate another projection",
+      "transform": "Change trusted contract, not request semantics",
+      "budget": "Existing synthetic request limits",
+      "forbidden_effects": "No catalog-dependent codec oracle or product activation",
+      "scope": "required; instance activation remains a separate gate"
+    }
+  ]
+}

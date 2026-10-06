@@ -110,7 +110,7 @@ fn schema_keywords_are_checked_before_ir_or_reported_settings_admission() {
             schema: bad.clone(),
             strict: Some(false),
         });
-        assert!(lower_request(&r, &d.fidelity, Profile::Responses, Contract::full()).is_err());
+        assert_eq!(r.unwrap_err(), GenerationError::InvalidSchema);
         let mut response = wire::response(2);
         response["text"]["format"]["schema"] = bad;
         response["text"]["format"]["strict"] = json!(false);

@@ -313,14 +313,16 @@ impl GenerationRequest {
         let parallel = self.parallel_tool_calls();
         self.with_tool_settings(Some(tools), Some(choice), parallel)
     }
-    pub fn with_output(mut self, output: OutputConstraint) -> Self {
+    pub fn with_output(mut self, output: OutputConstraint) -> Result<Self, GenerationError> {
         self.settings.text.presence = true;
         self.settings.text.format = Presence::Value(output);
-        self
+        self.validate()?;
+        Ok(self)
     }
-    pub fn with_reasoning(mut self, reasoning: ReasoningRequest) -> Self {
+    pub fn with_reasoning(mut self, reasoning: ReasoningRequest) -> Result<Self, GenerationError> {
         self.settings.reasoning = reasoning;
-        self
+        self.validate()?;
+        Ok(self)
     }
     pub fn with_items(mut self, items: Vec<(ItemId, Item)>) -> Result<Self, GenerationError> {
         self.items = items;
