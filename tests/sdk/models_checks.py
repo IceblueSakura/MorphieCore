@@ -7,14 +7,14 @@ def check_models(client: openai.OpenAI) -> int:
     """Check standard list/retrieve, non-pagination, auth and deletion failure."""
     expected = [
         {"id": "cross-model", "object": "model", "created": 7, "owned_by": "Synthetic Developer"},
-        {"id": "gpt-image-2.5-flare", "object": "model", "created": 1788825600, "owned_by": "OpenAI"},
+        {"id": "native-speech", "object": "model", "created": 12, "owned_by": "Synthetic Native"},
+        {"id": "native-transcription", "object": "model", "created": 13, "owned_by": "Synthetic Native"},
         {"id": "no-files-model", "object": "model", "created": 7, "owned_by": "Synthetic Developer"},
         {"id": "public-image", "object": "model", "created": 8, "owned_by": "Synthetic Image Developer"},
         {"id": "public-model", "object": "model", "created": 7, "owned_by": "Synthetic Developer"},
         {"id": "public-speech", "object": "model", "created": 9, "owned_by": "Synthetic Speech Developer"},
-        {"id": "qwen-audio-3.0-asr-flash", "object": "model", "created": 1785369600, "owned_by": "Alibaba"},
-        {"id": "qwen-audio-3.0-tts-flash", "object": "model", "created": 1784592000, "owned_by": "Alibaba"},
-        {"id": "qwen-audio-3.0-tts-plus", "object": "model", "created": 1784592000, "owned_by": "Alibaba"},
+        {"id": "router-image", "object": "model", "created": 10, "owned_by": "Synthetic Router"},
+        {"id": "router-speech", "object": "model", "created": 11, "owned_by": "Synthetic Router"},
     ]
     page = client.models.list()
     requests = 1
@@ -22,7 +22,7 @@ def check_models(client: openai.OpenAI) -> int:
     check(not page.has_next_page())
     check([model.to_dict() for model in page] == expected)
     # One punctuated label exercises retrieval; the list above checks every task's metadata.
-    model = next(model for model in expected if model["id"] == "qwen-audio-3.0-asr-flash")
+    model = next(model for model in expected if model["id"] == "native-transcription")
     requests += 1
     check(client.models.retrieve(model["id"]).to_dict() == model)
     for method, name, status, code in [

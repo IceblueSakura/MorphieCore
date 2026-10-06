@@ -11,7 +11,7 @@ mod wire;
 #[test]
 fn siwc_public_admission_does_not_invent_an_unsupported_output_token_limit() {
     let mut gateway = tests::gateway(Limits::default());
-    let original = gateway.state.entries[&(family(Profile::Chat), "deepseek-flash".into())].clone();
+    let original = gateway.state.entries[&(family(Profile::Chat), "fixture-model".into())].clone();
     let mut public = original.public.clone();
     public.contract.max_output_tokens = false;
     let entry = Arc::new(BoundEntry {
@@ -24,11 +24,11 @@ fn siwc_public_admission_does_not_invent_an_unsupported_output_token_limit() {
     Arc::get_mut(&mut gateway.state)
         .unwrap()
         .entries
-        .insert((family(Profile::Responses), "deepseek-flash".into()), entry);
+        .insert((family(Profile::Responses), "fixture-model".into()), entry);
     let (_, request) = admission::prepare(
         &gateway.state,
         Profile::Responses,
-        br#"{"model":"deepseek-flash","input":"hello"}"#,
+        br#"{"model":"fixture-model","input":"hello"}"#,
     )
     .unwrap();
     assert_eq!(request.task.semantic.controls().max_output_tokens, None);
@@ -36,7 +36,7 @@ fn siwc_public_admission_does_not_invent_an_unsupported_output_token_limit() {
         admission::prepare(
             &gateway.state,
             Profile::Responses,
-            br#"{"model":"deepseek-flash","input":"hello","max_output_tokens":8}"#
+            br#"{"model":"fixture-model","input":"hello","max_output_tokens":8}"#
         )
         .is_err()
     );
@@ -78,7 +78,7 @@ async fn consume(
 ) -> Option<Vec<u8>> {
     use futures_util::StreamExt;
     let gate = tests::gateway(Limits::default());
-    let original = gate.state.entries[&(family(Profile::Chat), "deepseek-flash".into())].clone();
+    let original = gate.state.entries[&(family(Profile::Chat), "fixture-model".into())].clone();
     let base = &original.candidates[0];
     let adapter = Adapter::new(Profile::Responses, dialect, None);
     let mut endpoint = base.endpoint.clone();
@@ -102,7 +102,7 @@ async fn consume(
         policy: original.policy.clone(),
         candidates: vec![candidate.clone()],
     });
-    let request = entry.client.decode_request(json!({"model":"deepseek-flash","input":"hello","stream":stream,"stream_options":if stream {json!({"include_obfuscation":false})} else {serde_json::Value::Null}}).to_string().as_bytes()).unwrap();
+    let request = entry.client.decode_request(json!({"model":"fixture-model","input":"hello","stream":stream,"stream_options":if stream {json!({"include_obfuscation":false})} else {serde_json::Value::Null}}).to_string().as_bytes()).unwrap();
     let mut builder = axum::http::Response::builder().status(200);
     for media in media {
         builder = builder.header(

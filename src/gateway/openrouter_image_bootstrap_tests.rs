@@ -12,7 +12,7 @@ fn openrouter_images_need_explicit_model_selection_and_a_single_nonfallback_sour
             Secret::new("synthetic-openrouter-key".into()).unwrap(),
         )
         .unwrap();
-    let status = manager
+    let mut status = manager
         .set_pool(
             "openrouter",
             "openrouter-api-key",
@@ -46,18 +46,33 @@ fn openrouter_images_need_explicit_model_selection_and_a_single_nonfallback_sour
     assert!(!boot.gateway.state.entries.is_empty());
     manager.write_gateway_config_for_test(&serde_json::json!({"client_key":"synthetic-gateway-key-at-least-32-bytes","models":["gpt-image-2.5-flare"]}));
     manager
-        .set_pool(
+        .add_api_key(
             "openrouter",
-            "openrouter-api-key",
-            status.revision,
-            CredentialPool {
-                members: vec![CredentialRef::ApiKey {
-                    alias: "one".into(),
-                }],
-                fallback: true,
-                max_attempts: 1,
-            },
+            "two",
+            Secret::new("synthetic-second-key".into()).unwrap(),
         )
         .unwrap();
-    assert!(Bootstrap::from_directory(dir.path()).is_err());
+    for (aliases, fallback) in [(&["one", "two"][..], false), (&["one"][..], true)] {
+        status = manager
+            .set_pool(
+                "openrouter",
+                "openrouter-api-key",
+                status.revision,
+                CredentialPool {
+                    members: aliases
+                        .iter()
+                        .map(|alias| CredentialRef::ApiKey {
+                            alias: (*alias).into(),
+                        })
+                        .collect(),
+                    fallback,
+                    max_attempts: 1,
+                },
+            )
+            .unwrap();
+        assert!(matches!(
+            Bootstrap::from_directory(dir.path()),
+            Err(StartupError::Credentials)
+        ));
+    }
 }

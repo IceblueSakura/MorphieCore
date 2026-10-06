@@ -8,8 +8,8 @@ from sdk_support import check
 
 def check_native_audio(client: openai.OpenAI) -> int:
     """Preserve binary/text results and reject unadmitted controls before dispatch."""
-    speech = dict(model="qwen-audio-3.0-tts-plus", input="synthetic plan speech",
-                  voice="longanlingxin")
+    speech = dict(model="native-speech", input="synthetic plan speech",
+                  voice="native-voice")
     eager = client.audio.speech.create(**speech)
     try:
         check(eager.read() == b"native-audio")
@@ -38,7 +38,7 @@ def check_native_audio(client: openai.OpenAI) -> int:
         audio.setsampwidth(2)
         audio.setframerate(24000)
         audio.writeframes(b"\x00\x00\x01\x00")
-    params = dict(model="qwen-audio-3.0-asr-flash", language="en",
+    params = dict(model="native-transcription", language="en",
                   file=("clip.wav", buffer.getvalue(), "audio/wav"))
     result = client.audio.transcriptions.create(**params)
     check(result.to_dict() == {"text": "Hi.", "usage": {"type": "duration", "seconds": 1}})

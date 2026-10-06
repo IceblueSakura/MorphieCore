@@ -17,6 +17,8 @@ use morphiecore::{
 use std::{collections::BTreeMap, sync::Arc};
 #[path = "image_generation.rs"]
 mod image_support;
+#[path = "media_bindings.rs"]
+mod media;
 #[allow(dead_code)]
 #[path = "speech.rs"]
 mod speech_support;
@@ -107,25 +109,10 @@ pub fn gateway(origin: &str, limits: Limits) -> Gateway {
         contract: GenerationSemanticContract::full(),
     };
     let (image_provider, image_route) = image_support::binding(origin);
-    let router_binding = &morphiecore::topology::catalog::IMAGE_BINDINGS[0];
-    let mut router_provider = router_binding.provider();
-    router_provider.origin = TrustedOrigin::parse(origin).unwrap();
-    let mut router_route = router_binding.route();
-    router_route.endpoint.target.origin = router_provider.origin.clone();
-    let speech_binding = &morphiecore::topology::catalog::SPEECH_BINDINGS[0];
-    let mut router_speech = speech_binding.route();
-    router_speech.endpoint.target.origin = router_provider.origin.clone();
-    let native_speech_binding = morphiecore::topology::catalog::SPEECH_BINDINGS
-        .iter()
-        .find(|b| b.model == "qwen-audio-3.0-tts-plus")
-        .unwrap();
-    let asr_binding = &morphiecore::topology::catalog::TRANSCRIPTION_BINDINGS[0];
-    let mut native_provider = native_speech_binding.provider();
-    native_provider.origin = TrustedOrigin::parse(origin).unwrap();
-    let mut native_speech = native_speech_binding.route();
-    native_speech.endpoint.target.origin = native_provider.origin.clone();
-    let mut asr = asr_binding.route();
-    asr.endpoint.target.origin = native_provider.origin.clone();
+    let (router_provider, router_image_operation, router_route) = media::router_images(origin);
+    let (_, router_speech_operation, router_speech) = media::router_speech(origin);
+    let (native_provider, native_speech_operation, native_speech) = media::native_speech(origin);
+    let (asr_operation, asr) = media::native_transcription(origin);
     let topology = compile(
         vec![
             provider,
@@ -140,15 +127,15 @@ pub fn gateway(origin: &str, limits: Limits) -> Gateway {
     )
     .unwrap()
     .with_images(
-        vec![image_provider, router_binding.operation()],
+        vec![image_provider, router_image_operation],
         vec![image_route, router_route],
     )
     .unwrap()
     .with_speech(
         vec![
             speech_support::binding(origin).0,
-            speech_binding.operation(),
-            native_speech_binding.operation(),
+            router_speech_operation,
+            native_speech_operation,
         ],
         vec![
             speech_support::binding(origin).1,
@@ -157,7 +144,7 @@ pub fn gateway(origin: &str, limits: Limits) -> Gateway {
         ],
     )
     .unwrap()
-    .with_transcriptions(vec![asr_binding.operation()], vec![asr])
+    .with_transcriptions(vec![asr_operation], vec![asr])
     .unwrap()
     .with_model_metadata([
         (
@@ -169,24 +156,24 @@ pub fn gateway(origin: &str, limits: Limits) -> Gateway {
             morphiecore::topology::ModelMetadata::new(8, "Synthetic Image Developer").unwrap(),
         ),
         (
-            ModelId::new(router_binding.model).unwrap(),
-            router_binding.metadata(),
+            ModelId::new("router-image").unwrap(),
+            morphiecore::topology::ModelMetadata::new(10, "Synthetic Router").unwrap(),
         ),
         (
             ModelId::new("canonical-speech").unwrap(),
             morphiecore::topology::ModelMetadata::new(9, "Synthetic Speech Developer").unwrap(),
         ),
         (
-            ModelId::new(speech_binding.model).unwrap(),
-            speech_binding.metadata(),
+            ModelId::new("router-speech").unwrap(),
+            morphiecore::topology::ModelMetadata::new(11, "Synthetic Router").unwrap(),
         ),
         (
-            ModelId::new(native_speech_binding.model).unwrap(),
-            native_speech_binding.metadata(),
+            ModelId::new("native-speech").unwrap(),
+            morphiecore::topology::ModelMetadata::new(12, "Synthetic Native").unwrap(),
         ),
         (
-            ModelId::new(asr_binding.model).unwrap(),
-            asr_binding.metadata(),
+            ModelId::new("native-transcription").unwrap(),
+            morphiecore::topology::ModelMetadata::new(13, "Synthetic Native").unwrap(),
         ),
     ])
     .unwrap();
@@ -224,7 +211,7 @@ pub fn gateway(origin: &str, limits: Limits) -> Gateway {
             Arc::new(SecretMaterial::new("synthetic-upstream-credential-0001").unwrap()),
         ),
         (
-            CredentialBindingId::new("openrouter-api-key").unwrap(),
+            CredentialBindingId::new("router-key").unwrap(),
             Arc::new(SecretMaterial::new("synthetic-router-credential-0001").unwrap()),
         ),
         (
@@ -232,7 +219,7 @@ pub fn gateway(origin: &str, limits: Limits) -> Gateway {
             Arc::new(SecretMaterial::new("synthetic-speech-credential-0001").unwrap()),
         ),
         (
-            CredentialBindingId::new("aliyun-tokenplan-cn-api-key").unwrap(),
+            CredentialBindingId::new("native-key").unwrap(),
             Arc::new(SecretMaterial::new("synthetic-tokenplan-credential-0001").unwrap()),
         ),
     ]);
@@ -244,7 +231,7 @@ pub fn gateway(origin: &str, limits: Limits) -> Gateway {
                 model: "public-image".into(),
             },
             morphiecore::gateway::ImageEntry {
-                model: router_binding.model.into(),
+                model: "router-image".into(),
             },
         ],
         vec![
@@ -252,14 +239,14 @@ pub fn gateway(origin: &str, limits: Limits) -> Gateway {
                 model: "public-speech".into(),
             },
             morphiecore::gateway::SpeechEntry {
-                model: speech_binding.model.into(),
+                model: "router-speech".into(),
             },
             morphiecore::gateway::SpeechEntry {
-                model: native_speech_binding.model.into(),
+                model: "native-speech".into(),
             },
         ],
         vec![morphiecore::gateway::TranscriptionEntry {
-            model: asr_binding.model.into(),
+            model: "native-transcription".into(),
         }],
         credentials,
         SecretMaterial::new(CLIENT_KEY).unwrap(),

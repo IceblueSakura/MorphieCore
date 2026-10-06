@@ -12,8 +12,8 @@ pub fn speech(headers: &HeaderMap, request: &Value, fail: bool) -> Response {
     assert!(!headers.contains_key("x-never-forward"));
     assert_eq!(
         *request,
-        json!({"model":"qwen-audio-3.0-tts-plus",
-        "input":{"text":"synthetic plan speech","voice":"longanlingxin","format":"mp3"}})
+        json!({"model":"private-native-speech",
+        "input":{"text":"synthetic plan speech","voice":"native-voice","format":"mp3"}})
     );
     let mut wire = Vec::new();
     for (kind, data) in [
@@ -49,7 +49,7 @@ pub fn transcription(headers: &HeaderMap, request: &Value, fail: bool) -> Respon
     assert!(!headers.contains_key("x-never-forward"));
     assert_eq!(
         *request,
-        json!({"model":"qwen-audio-3.0-asr-flash","input":{"messages":[{"role":"user","content":[
+        json!({"model":"private-native-asr","input":{"messages":[{"role":"user","content":[
         {"type":"input_audio","input_audio":{"data":"data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAwF0AAIC7AAACABAAZGF0YQQAAAAAAAEA"}}
     ]}]},"parameters":{"format":"wav","language_hints":["en"]}})
     );

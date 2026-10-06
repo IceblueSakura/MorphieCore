@@ -3,6 +3,9 @@
 #[path = "credential/api_keys.rs"]
 mod api_keys;
 #[cfg(unix)]
+#[path = "../examples/support/child_process.rs"]
+mod child_process;
+#[cfg(unix)]
 #[path = "support/filesystem.rs"]
 mod test_files;
 #[cfg(unix)]
@@ -35,10 +38,9 @@ mod unix {
         if let Some(cwd) = cwd {
             command.current_dir(cwd);
         }
-        timeout(Duration::from_secs(10), command.output())
+        crate::child_process::run(&mut command, b"", Duration::from_secs(10), 64 << 10)
             .await
             .expect("bounded CLI operation")
-            .unwrap()
     }
     fn save(root: &Path, profile: &str, alias: &str, value: &Value) {
         let path = root.join(format!("{profile}.json"));

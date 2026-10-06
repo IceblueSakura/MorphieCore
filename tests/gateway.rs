@@ -3,6 +3,10 @@
 #[allow(dead_code)]
 #[path = "support/chat_profile.rs"]
 mod chat_wire;
+#[path = "support/child_line.rs"]
+mod child_line;
+#[path = "../examples/support/child_process.rs"]
+mod child_process;
 #[path = "support/tokenplan_audio.rs"]
 mod native_audio;
 #[allow(dead_code)]
@@ -43,10 +47,9 @@ async fn renamed_binaries_report_current_cli_names_without_loading_credentials()
     ] {
         let mut command = tokio::process::Command::new(binary);
         command.arg("--help").env_clear().kill_on_drop(true);
-        let output = tokio::time::timeout(Duration::from_secs(5), command.output())
+        let output = child_process::run(&mut command, b"", Duration::from_secs(5), 64 << 10)
             .await
-            .expect("bounded CLI help")
-            .unwrap();
+            .expect("bounded CLI help");
         assert!(output.status.success());
         assert!(output.stderr.is_empty());
         let help = String::from_utf8(output.stdout).unwrap();
@@ -394,7 +397,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         axum::Json(request): axum::Json<Value>,
     ) -> Response {
         state.0.lock().unwrap().push(request.clone());
-        if request["model"] == "qwen-audio-3.0-tts-plus" {
+        if request["model"] == "private-native-speech" {
             native_audio::speech(&headers, &request, false)
         } else {
             native_audio::transcription(&headers, &request, false)
@@ -405,14 +408,14 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         headers: HeaderMap,
         axum::Json(request): axum::Json<Value>,
     ) -> Response {
-        if request["model"] == "qwen/qwen-audio-3.0-tts-flash" {
+        if request["model"] == "private-router-speech" {
             assert_eq!(
                 headers["authorization"],
                 "Bearer synthetic-router-credential-0001"
             );
             assert_eq!(
                 request,
-                json!({"model":"qwen/qwen-audio-3.0-tts-flash","input":"router speech","voice":"loongjohn","response_format":"mp3"})
+                json!({"model":"private-router-speech","input":"router speech","voice":"router-voice","response_format":"mp3"})
             );
             assert!(!headers.contains_key("x-never-forward"));
             state.0.lock().unwrap().push(request);
@@ -982,7 +985,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
             400,
         ),
         (
-            json!({"model":"gpt-image-2.5-flare","prompt":"x","size":"1024x1024"}),
+            json!({"model":"router-image","prompt":"x","size":"1024x1024"}),
             400,
         ),
         (
@@ -1020,7 +1023,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         .post(format!("{url}/v1/images/generations"))
         .bearer_auth(support::CLIENT_KEY)
         .header("x-never-forward", "synthetic-private")
-        .json(&json!({"model":"gpt-image-2.5-flare","prompt":"blue square"}))
+        .json(&json!({"model":"router-image","prompt":"blue square"}))
         .send()
         .await
         .unwrap();
@@ -1040,7 +1043,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         let response = client
             .post(format!("{url}/v1/images/generations"))
             .bearer_auth(support::CLIENT_KEY)
-            .json(&json!({"model":"gpt-image-2.5-flare","prompt":prompt,"n":2}))
+            .json(&json!({"model":"router-image","prompt":prompt,"n":2}))
             .send()
             .await
             .unwrap();
@@ -1064,14 +1067,14 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
     let rejected = client
         .post(format!("{url}/v1/images/generations"))
         .bearer_auth(support::CLIENT_KEY)
-        .json(&json!({"model":"gpt-image-2.5-flare","prompt":"blue square","output_format":"png"}))
+        .json(&json!({"model":"router-image","prompt":"blue square","output_format":"png"}))
         .send()
         .await
         .unwrap();
     assert_eq!(rejected.status(), 400);
     assert_eq!(observed.0.lock().unwrap().len(), before);
     let response=client.post(format!("{url}/v1/images/generations")).bearer_auth(support::CLIENT_KEY)
-        .json(&json!({"model":"gpt-image-2.5-flare","prompt":"controlled-flare","quality":"high","background":"transparent","moderation":"low","user":"synthetic-user-control"})).send().await.unwrap();
+        .json(&json!({"model":"router-image","prompt":"controlled-flare","quality":"high","background":"transparent","moderation":"low","user":"synthetic-user-control"})).send().await.unwrap();
     assert_eq!(response.status(), 200);
     assert_eq!(
         response.json::<Value>().await.unwrap(),
@@ -1132,29 +1135,18 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         assert_eq!(response.bytes().await.unwrap().as_ref(), b"synthetic-audio");
     }
     let before = observed.0.lock().unwrap().len();
+    // Full control matrices live in codec/admission tests; keep distinct ingress failures.
     for (payload, status) in [
         (
             json!({"model":"public-speech","input":"hello","voice":"alloy","stream_format":"sse"}),
             400,
         ),
         (
-            json!({"model":"qwen-audio-3.0-tts-flash","input":"hello","voice":"loongjohn","speed":1}),
-            400,
-        ),
-        (
-            json!({"model":"qwen-audio-3.0-tts-flash","input":"hello","voice":"loongjohn","instructions":""}),
-            400,
-        ),
-        (
-            json!({"model":"qwen-audio-3.0-tts-flash","input":"hello","voice":"loongjohn","response_format":"wav"}),
+            json!({"model":"router-speech","input":"hello","voice":"router-voice","speed":1}),
             400,
         ),
         (
             json!({"model":"public-speech","input":"hello","voice":"unbound"}),
-            400,
-        ),
-        (
-            json!({"model":"public-speech","input":"hello","voice":"alloy","response_format":"flac"}),
             400,
         ),
         (
@@ -1192,7 +1184,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
     );
     for explicit in [false, true] {
         let mut payload =
-            json!({"model":"qwen-audio-3.0-tts-flash","input":"router speech","voice":"loongjohn"});
+            json!({"model":"router-speech","input":"router speech","voice":"router-voice"});
         if explicit {
             payload["response_format"] = json!("mp3");
             payload["stream_format"] = json!("audio");
@@ -1214,7 +1206,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
     }
     let response=client.post(format!("{url}/v1/audio/speech")).bearer_auth(support::CLIENT_KEY)
         .header("x-never-forward","private-input")
-        .json(&json!({"model":"qwen-audio-3.0-tts-plus","input":"synthetic plan speech","voice":"longanlingxin"}))
+        .json(&json!({"model":"native-speech","input":"synthetic plan speech","voice":"native-voice"}))
         .send().await.unwrap();
     assert_eq!(response.status(), 200);
     assert_eq!(
@@ -1222,7 +1214,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         "application/octet-stream"
     );
     assert_eq!(response.bytes().await.unwrap().as_ref(), b"native-audio");
-    let mut upload=b"--fixture\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nqwen-audio-3.0-asr-flash\r\n--fixture\r\nContent-Disposition: form-data; name=\"language\"\r\n\r\nen\r\n--fixture\r\nContent-Disposition: form-data; name=\"file\"; filename=\"clip.wav\"\r\nContent-Type: audio/wav\r\n\r\n".to_vec();
+    let mut upload=b"--fixture\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nnative-transcription\r\n--fixture\r\nContent-Disposition: form-data; name=\"language\"\r\n\r\nen\r\n--fixture\r\nContent-Disposition: form-data; name=\"file\"; filename=\"clip.wav\"\r\nContent-Type: audio/wav\r\n\r\n".to_vec();
     upload.extend_from_slice(native_audio::WAV);
     upload.extend_from_slice(b"\r\n--fixture--\r\n");
     let before = observed.0.lock().unwrap().len();
@@ -1272,7 +1264,6 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
 async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
     use morphiecore::credential::{CredentialPool, CredentialRef, Secret};
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use tokio::io::AsyncBufReadExt;
     // A rejecting loopback proxy makes even an accidental upstream dispatch offline.
     let trap = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let proxy = format!("http://{}", trap.local_addr().unwrap());
@@ -1380,17 +1371,19 @@ async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
         .spawn()
         .unwrap();
     let mut output = tokio::io::BufReader::new(process.stdout.take().unwrap());
-    let mut ready = String::new();
-    tokio::time::timeout(Duration::from_secs(3), output.read_line(&mut ready))
-        .await
-        .unwrap()
-        .unwrap();
+    let ready = match child_line::read_line(&mut output, Duration::from_secs(3), 127).await {
+        Ok(line) => line,
+        Err(error) => {
+            let _ = process.kill().await;
+            let _ = process.wait().await;
+            panic!("{error}");
+        }
+    };
     let origin = ready
         .trim()
         .strip_prefix("MorphieCore listening on ")
         .expect("bounded readiness line");
     assert!(origin.starts_with("http://127.0.0.1:"));
-    assert!(ready.len() < 128);
     let client = reqwest::Client::builder()
         .no_proxy()
         .timeout(Duration::from_secs(2))
@@ -1430,29 +1423,6 @@ async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
     assert!(models["data"].as_array().unwrap().contains(&json!({
         "id":"qwen-audio-3.0-tts-flash","object":"model","created":1784592000,"owned_by":"Alibaba"
     })));
-    for controls in [
-        json!({"speed":1}),
-        json!({"instructions":""}),
-        json!({"response_format":"pcm"}),
-    ] {
-        let mut request =
-            json!({"model":"qwen-audio-3.0-tts-flash","input":"fixture","voice":"loongjohn"});
-        request
-            .as_object_mut()
-            .unwrap()
-            .extend(controls.as_object().unwrap().clone());
-        assert_eq!(
-            client
-                .post(format!("{origin}/v1/audio/speech"))
-                .bearer_auth(support::CLIENT_KEY)
-                .json(&request)
-                .send()
-                .await
-                .unwrap()
-                .status(),
-            400
-        );
-    }
     // No admitted request is issued: the synthetic key must never reach a Provider.
     assert_eq!(calls.load(Ordering::SeqCst), 0);
     process.kill().await.unwrap();

@@ -38,7 +38,7 @@ def check_speech(client: openai.OpenAI) -> int:
             check(error.status_code == 400)
         else:
             check(False, "unadmitted Speech branches must fail before dispatch")
-    router = dict(model="qwen-audio-3.0-tts-flash", input="synthetic router speech", voice="loongjohn")
+    router = dict(model="router-speech", input="synthetic router speech", voice="router-voice")
     eager = client.audio.speech.create(**router)
     try:
         check(eager.read() == b"synthetic-router-audio")
@@ -55,13 +55,11 @@ def check_speech(client: openai.OpenAI) -> int:
         check(error.status_code == 502)
     else:
         check(False, "PCM cannot satisfy an MP3 request")
-    for controls in (
-        {"speed": 1}, {"instructions": ""}, {"extra_body": {"provider": {}}},
-    ):
-        try:
-            client.audio.speech.create(**{**router, **controls})
-        except openai.APIStatusError as error:
-            check(error.status_code == 400)
-        else:
-            check(False, "OpenRouter target admission must precede I/O")
-    return 11
+    # The SDK's extra_body carrier is distinct from typed control validation.
+    try:
+        client.audio.speech.create(**router, extra_body={"provider": {}})
+    except openai.APIStatusError as error:
+        check(error.status_code == 400)
+    else:
+        check(False, "a client extension must not select upstream routing")
+    return 9

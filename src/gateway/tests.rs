@@ -9,17 +9,20 @@ use axum::{
 };
 use std::time::Duration;
 use tower::ServiceExt;
+#[path = "test_topology.rs"]
+mod fixture;
+pub(super) use fixture::topology;
 pub(super) const KEY: &str = "synthetic-gateway-client-token-0001";
 pub(super) fn gateway(limits: Limits) -> Gateway {
     Gateway::new(
-        crate::topology::catalog::default_topology().unwrap(),
+        topology(),
         vec![Entry {
-            model: "deepseek-flash".into(),
+            model: "fixture-model".into(),
             protocol: Profile::Chat,
-            endpoint: EndpointId::new("deepseek-chat").unwrap(),
+            endpoint: EndpointId::new("fixture-chat").unwrap(),
         }],
         BTreeMap::from([(
-            CredentialBindingId::new("deepseek-api-key").unwrap(),
+            CredentialBindingId::new("fixture-key").unwrap(),
             Arc::new(SecretMaterial::new("synthetic-upstream-credential-0001").unwrap()),
         )]),
         SecretMaterial::new(KEY).unwrap(),
@@ -30,19 +33,19 @@ pub(super) fn gateway(limits: Limits) -> Gateway {
 }
 #[tokio::test]
 async fn activated_members_keep_route_order_and_never_share_an_opaque_issuer_scope() {
-    let entries = ["deepseek-chat", "deepseek-responses"]
+    let entries = ["fixture-chat", "fixture-responses"]
         .into_iter()
         .map(|id| Entry {
-            model: "deepseek-flash".into(),
+            model: "fixture-model".into(),
             protocol: Profile::Responses,
             endpoint: EndpointId::new(id).unwrap(),
         })
         .collect();
     let gate = Gateway::new(
-        crate::topology::catalog::default_topology().unwrap(),
+        topology(),
         entries,
         BTreeMap::from([(
-            CredentialBindingId::new("deepseek-api-key").unwrap(),
+            CredentialBindingId::new("fixture-key").unwrap(),
             Arc::new(SecretMaterial::new("synthetic-upstream-credential-0001").unwrap()),
         )]),
         SecretMaterial::new(KEY).unwrap(),
@@ -50,11 +53,11 @@ async fn activated_members_keep_route_order_and_never_share_an_opaque_issuer_sco
         None,
     )
     .unwrap();
-    let entry = &gate.state.entries[&(family(Profile::Responses), "deepseek-flash".into())];
+    let entry = &gate.state.entries[&(family(Profile::Responses), "fixture-model".into())];
     assert!(entry.client.adaptation.scope.is_none());
     let request = entry
         .client
-        .decode_request(br#"{"model":"deepseek-flash","input":"x"}"#)
+        .decode_request(br#"{"model":"fixture-model","input":"x"}"#)
         .unwrap();
     assert_eq!(
         entry
@@ -63,12 +66,12 @@ async fn activated_members_keep_route_order_and_never_share_an_opaque_issuer_sco
             .iter()
             .map(|c| c.endpoint.id.as_str())
             .collect::<Vec<_>>(),
-        vec!["deepseek-responses", "deepseek-chat"]
+        vec!["fixture-responses", "fixture-chat"]
     );
     let opaque = entry
         .client
         .decode_request(
-            br#"{"model":"deepseek-flash","input":"x","include":["reasoning.encrypted_content"]}"#,
+            br#"{"model":"fixture-model","input":"x","include":["reasoning.encrypted_content"]}"#,
         )
         .unwrap();
     assert!(entry.eligible(&opaque).is_err());
@@ -78,14 +81,14 @@ async fn activated_members_keep_route_order_and_never_share_an_opaque_issuer_sco
 async fn model_request_limits_do_not_suppress_client_reported_facts() {
     use serde_json::json;
     let gate = Gateway::new(
-        crate::topology::catalog::default_topology().unwrap(),
+        topology(),
         vec![Entry {
-            model: "gpt-6-luna".into(),
+            model: "limited-model".into(),
             protocol: Profile::Responses,
-            endpoint: EndpointId::new("openrouter-responses").unwrap(),
+            endpoint: EndpointId::new("limited-responses").unwrap(),
         }],
         BTreeMap::from([(
-            CredentialBindingId::new("openrouter-api-key").unwrap(),
+            CredentialBindingId::new("fixture-key").unwrap(),
             Arc::new(SecretMaterial::new("synthetic-upstream-credential-0001").unwrap()),
         )]),
         SecretMaterial::new(KEY).unwrap(),
@@ -93,12 +96,12 @@ async fn model_request_limits_do_not_suppress_client_reported_facts() {
         None,
     )
     .unwrap();
-    let entry = &gate.state.entries[&(family(Profile::Responses), "gpt-6-luna".into())];
+    let entry = &gate.state.entries[&(family(Profile::Responses), "limited-model".into())];
     let request = entry
         .client
         .decode_request(
             &serde_json::to_vec(&json!({
-                "model":"gpt-6-luna","input":"synthetic","temperature":0.5
+                "model":"limited-model","input":"synthetic","temperature":0.5
             }))
             .unwrap(),
         )
@@ -214,11 +217,11 @@ async fn identity_budget_and_scope_are_owned_by_trusted_ingress() {
     let (_, request) = admission::prepare(
         &gate.state,
         Profile::Chat,
-        br#"{"model":"deepseek-flash","messages":[{"role":"user","content":"hello"}]}"#,
+        br#"{"model":"fixture-model","messages":[{"role":"user","content":"hello"}]}"#,
     )
     .unwrap();
     assert_eq!(request.task.semantic.controls().max_output_tokens, Some(32));
-    for wire in [br#"{"model":"deepseek-flash","model":"missing","messages":[]}"#.as_slice(),br#"{"model":"deepseek-flash","messages":[{"role":"user","content":"hello"}],"max_completion_tokens":65}"#,br#"{"model":"deepseek-flash","messages":[{"role":"user","content":"hello"}],"upstream_url":"https://untrusted.invalid"}"#] {assert_eq!(admission::prepare(&gate.state,Profile::Chat,wire).err().unwrap().status,400);}
+    for wire in [br#"{"model":"fixture-model","model":"missing","messages":[]}"#.as_slice(),br#"{"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"max_completion_tokens":65}"#,br#"{"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"upstream_url":"https://untrusted.invalid"}"#] {assert_eq!(admission::prepare(&gate.state,Profile::Chat,wire).err().unwrap().status,400);}
     // Public identity resolves before task contents, not by guessing a Provider.
     assert_eq!(
         admission::prepare(
@@ -254,17 +257,17 @@ async fn identity_budget_and_scope_are_owned_by_trusted_ingress() {
 fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
     // Activate one Chat target for both client wire families without I/O.
     let gate = Gateway::new(
-        crate::topology::catalog::default_topology().unwrap(),
+        topology(),
         [Profile::Chat, Profile::Responses]
             .into_iter()
             .map(|protocol| Entry {
-                model: "deepseek-flash".into(),
+                model: "fixture-model".into(),
                 protocol,
-                endpoint: EndpointId::new("deepseek-chat").unwrap(),
+                endpoint: EndpointId::new("fixture-chat").unwrap(),
             })
             .collect(),
         BTreeMap::from([(
-            CredentialBindingId::new("deepseek-api-key").unwrap(),
+            CredentialBindingId::new("fixture-key").unwrap(),
             Arc::new(SecretMaterial::new("synthetic-upstream-credential-0001").unwrap()),
         )]),
         SecretMaterial::new(KEY).unwrap(),
@@ -274,9 +277,9 @@ fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
     .unwrap();
     for profile in [Profile::Chat, Profile::Responses] {
         let original = if profile == Profile::Chat {
-            serde_json::json!({"model":"deepseek-flash","messages":[{"role":"user","content":"hi"}]})
+            serde_json::json!({"model":"fixture-model","messages":[{"role":"user","content":"hi"}]})
         } else {
-            serde_json::json!({"model":"deepseek-flash","input":"hi"})
+            serde_json::json!({"model":"fixture-model","input":"hi"})
         };
         assert!(
             admission::prepare(
@@ -287,9 +290,9 @@ fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
             .is_ok()
         );
         for provider in [
-            serde_json::json!("deepseek"),
-            serde_json::json!("aliyun-tokenplan-cn"),
-            serde_json::json!({"order":["deepseek"]}),
+            serde_json::json!("fixture"),
+            serde_json::json!("other"),
+            serde_json::json!({"order":["fixture"]}),
             serde_json::Value::Null,
         ] {
             let mut wire = original.clone();
@@ -303,7 +306,7 @@ fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
             );
         }
         let mut wire = original;
-        wire["model"] = serde_json::json!("deepseek/deepseek-flash");
+        wire["model"] = serde_json::json!("fixture/fixture-model");
         assert_eq!(
             admission::prepare(&gate.state, profile, &serde_json::to_vec(&wire).unwrap())
                 .err()
@@ -361,13 +364,13 @@ async fn concurrency_and_collection_timeout_fail_before_upstream() {
 }
 #[test]
 fn entries_cannot_escape_compiled_route_or_credential_ownership() {
-    let topo = crate::topology::catalog::default_topology().unwrap();
+    let topo = topology();
     let result = Gateway::new(
         topo,
         vec![Entry {
-            model: "deepseek-flash".into(),
+            model: "fixture-model".into(),
             protocol: Profile::Chat,
-            endpoint: EndpointId::new("xiaomi-chat").unwrap(),
+            endpoint: EndpointId::new("limited-responses").unwrap(),
         }],
         BTreeMap::new(),
         SecretMaterial::new(KEY).unwrap(),
@@ -387,14 +390,14 @@ fn entries_cannot_escape_compiled_route_or_credential_ownership() {
         .scope
         .clone();
     let other = Gateway::new(
-        crate::topology::catalog::default_topology().unwrap(),
+        topology(),
         vec![Entry {
-            model: "deepseek-flash".into(),
+            model: "fixture-model".into(),
             protocol: Profile::Chat,
-            endpoint: EndpointId::new("deepseek-chat").unwrap(),
+            endpoint: EndpointId::new("fixture-chat").unwrap(),
         }],
         BTreeMap::from([(
-            CredentialBindingId::new("deepseek-api-key").unwrap(),
+            CredentialBindingId::new("fixture-key").unwrap(),
             Arc::new(SecretMaterial::new("different-synthetic-upstream-key").unwrap()),
         )]),
         SecretMaterial::new(KEY).unwrap(),

@@ -30,15 +30,15 @@ async fn request(gate: &Gateway, method: &str, path: &str) -> (StatusCode, Value
 #[tokio::test]
 async fn models_list_and_retrieve_use_the_same_standard_public_object() {
     let gate = tests::gateway(Limits::default());
-    // Official release date, not OpenRouter's distinct directory timestamp.
+    // Independent publication facts, unrelated to product catalog metadata.
     let expected = json!({
-        "id":"deepseek-flash", "object":"model",
-        "created":1788998400_u64, "owned_by":"DeepSeek"
+        "id":"fixture-model", "object":"model",
+        "created":7, "owned_by":"Synthetic Developer"
     });
     let (status, list) = request(&gate, "GET", "/v1/models").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(list, json!({"object":"list","data":[expected.clone()]}));
-    let (status, model) = request(&gate, "GET", "/v1/models/deepseek-flash").await;
+    let (status, model) = request(&gate, "GET", "/v1/models/fixture-model").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(model, expected);
 }
@@ -46,28 +46,22 @@ async fn models_list_and_retrieve_use_the_same_standard_public_object() {
 #[tokio::test]
 async fn activated_protocols_are_deduplicated_and_images_share_the_directory() {
     let gate = Gateway::new_with_images(
-        crate::topology::catalog::default_topology().unwrap(),
+        tests::topology(),
         [Profile::Responses, Profile::Chat]
             .into_iter()
             .map(|protocol| Entry {
-                model: "deepseek-flash".into(),
+                model: "fixture-model".into(),
                 protocol,
-                endpoint: crate::topology::EndpointId::new("deepseek-chat").unwrap(),
+                endpoint: crate::topology::EndpointId::new("fixture-chat").unwrap(),
             })
             .collect(),
         vec![ImageEntry {
-            model: "gpt-image-2.5-flare".into(),
+            model: "fixture-image".into(),
         }],
-        BTreeMap::from([
-            (
-                crate::provider::CredentialBindingId::new("deepseek-api-key").unwrap(),
-                Arc::new(SecretMaterial::new("synthetic-deepseek-credential").unwrap()),
-            ),
-            (
-                crate::provider::CredentialBindingId::new("openrouter-api-key").unwrap(),
-                Arc::new(SecretMaterial::new("synthetic-router-credential").unwrap()),
-            ),
-        ]),
+        BTreeMap::from([(
+            crate::provider::CredentialBindingId::new("fixture-key").unwrap(),
+            Arc::new(SecretMaterial::new("synthetic-upstream-credential").unwrap()),
+        )]),
         SecretMaterial::new(tests::KEY).unwrap(),
         Limits::default(),
         None,
@@ -78,22 +72,27 @@ async fn activated_protocols_are_deduplicated_and_images_share_the_directory() {
     assert_eq!(
         list,
         json!({"object":"list","data":[
-            {"id":"deepseek-flash","object":"model","created":1788998400_u64,"owned_by":"DeepSeek"},
-            {"id":"gpt-image-2.5-flare","object":"model","created":1788825600_u64,"owned_by":"OpenAI"}
+            {"id":"fixture-image","object":"model","created":8,"owned_by":"Synthetic Image Developer"},
+            {"id":"fixture-model","object":"model","created":7,"owned_by":"Synthetic Developer"}
         ]})
     );
-    let (status, image) = request(&gate, "GET", "/v1/models/gpt-image-2.5-flare").await;
+    let (status, image) = request(&gate, "GET", "/v1/models/fixture-image").await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(image, list["data"][1]);
+    assert_eq!(image, list["data"][0]);
     for method in ["GET", "DELETE"] {
-        for label in ["unknown", "gpt-6-luna", "OpenAI", "openai%2Fgpt-6-luna"] {
+        for label in [
+            "unknown",
+            "limited-model",
+            "fixture",
+            "fixture%2Flimited-model",
+        ] {
             let (status, error) = request(&gate, method, &format!("/v1/models/{label}")).await;
             assert_eq!(status, StatusCode::NOT_FOUND);
             assert_eq!(error["error"]["code"], "model_not_found");
             assert!(!error.to_string().contains(label));
         }
     }
-    let (status, error) = request(&gate, "DELETE", "/v1/models/deepseek-flash").await;
+    let (status, error) = request(&gate, "DELETE", "/v1/models/fixture-model").await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(error["error"]["code"], "model_deletion_forbidden");
     assert_eq!(request(&gate, "GET", "/v1/models").await.1, list);
@@ -104,8 +103,8 @@ async fn discovery_authentication_and_path_failures_never_poll_or_reflect_input(
     let gate = tests::gateway(Limits::default());
     for (method, path) in [
         ("GET", "/v1/models"),
-        ("GET", "/v1/models/deepseek-flash"),
-        ("DELETE", "/v1/models/deepseek-flash"),
+        ("GET", "/v1/models/fixture-model"),
+        ("DELETE", "/v1/models/fixture-model"),
         ("POST", "/v1/models"),
     ] {
         for auth in [0, 1, 2, 3] {
@@ -162,8 +161,8 @@ async fn discovery_obeys_methods_and_shutdown_without_mutating_the_directory() {
     for (method, path) in [
         ("POST", "/v1/models"),
         ("DELETE", "/v1/models"),
-        ("PUT", "/v1/models/deepseek-flash"),
-        ("POST", "/v1/models/deepseek-flash"),
+        ("PUT", "/v1/models/fixture-model"),
+        ("POST", "/v1/models/fixture-model"),
     ] {
         assert_eq!(
             request(&gate, method, path).await.0,
@@ -193,8 +192,8 @@ async fn discovery_obeys_methods_and_shutdown_without_mutating_the_directory() {
     gate.shutdown();
     for (method, path) in [
         ("GET", "/v1/models"),
-        ("GET", "/v1/models/deepseek-flash"),
-        ("DELETE", "/v1/models/deepseek-flash"),
+        ("GET", "/v1/models/fixture-model"),
+        ("DELETE", "/v1/models/fixture-model"),
     ] {
         let (status, error) = request(&gate, method, path).await;
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);

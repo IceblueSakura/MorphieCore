@@ -15,6 +15,7 @@ fn tokenplan_audio_requires_explicit_selection_and_nonfallback_single_source() {
             true,
         ),
         (Some(vec!["qwen-audio-3.0-asr-flash"]), 2, false, false),
+        (Some(vec!["qwen-audio-3.0-asr-flash"]), 1, true, false),
         (Some(vec!["qwen-audio-3.0-tts-plus"]), 1, true, false),
     ] {
         let directory = crate::credential::test_support::private_directory();
@@ -51,6 +52,10 @@ fn tokenplan_audio_requires_explicit_selection_and_nonfallback_single_source() {
             .unwrap();
         let result = Bootstrap::from_directory(directory.path());
         assert_eq!(result.is_ok(), accepted, "selection {models:?}");
+        if !accepted {
+            assert!(matches!(result, Err(StartupError::Credentials)));
+            continue;
+        }
         if let Ok(boot) = result {
             let value: serde_json::Value =
                 serde_json::from_slice(&boot.gateway.state.models.list).unwrap();

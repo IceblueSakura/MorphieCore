@@ -247,7 +247,7 @@ async fn sdk_uses_gateway_for_both_protocols_and_deliveries() {
         headers: HeaderMap,
         axum::Json(request): axum::Json<Value>,
     ) -> Response {
-        let speech = request["model"] == "qwen-audio-3.0-tts-plus";
+        let speech = request["model"] == "private-native-speech";
         let index = if speech { &state.4 } else { &state.5 }
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         assert!(index < 3);
@@ -262,14 +262,14 @@ async fn sdk_uses_gateway_for_both_protocols_and_deliveries() {
         headers: HeaderMap,
         axum::Json(request): axum::Json<Value>,
     ) -> Response {
-        if request["model"] == "qwen/qwen-audio-3.0-tts-flash" {
+        if request["model"] == "private-router-speech" {
             assert_eq!(
                 headers["authorization"],
                 "Bearer synthetic-router-credential-0001"
             );
             assert_eq!(
                 request,
-                json!({"model":"qwen/qwen-audio-3.0-tts-flash","input":"synthetic router speech","voice":"loongjohn","response_format":"mp3"})
+                json!({"model":"private-router-speech","input":"synthetic router speech","voice":"router-voice","response_format":"mp3"})
             );
             let index = state.3.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             assert!(index < 3);
@@ -385,10 +385,10 @@ async fn sdk_uses_gateway_for_both_protocols_and_deliveries() {
         String::from_utf8_lossy(&output.stderr)
     );
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["requests"], 52);
+    assert_eq!(report["requests"], 50);
     assert_eq!(report["model_requests"], 7);
     assert_eq!(report["native_audio_requests"], 10);
-    assert_eq!(report["speech_requests"], 11);
+    assert_eq!(report["speech_requests"], 9);
     assert_eq!(observed.1.load(std::sync::atomic::Ordering::SeqCst), 3);
     assert_eq!(observed.2.load(std::sync::atomic::Ordering::SeqCst), 3);
     assert_eq!(observed.3.load(std::sync::atomic::Ordering::SeqCst), 3);
