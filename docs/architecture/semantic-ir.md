@@ -7,7 +7,7 @@ MorphieCore 的核心是**独立、可复用的模型交互语义体系**：承�
 ## 1. 语义权威与消费者
 
 - **Semantic Model** 定义内容、操作、identity、关系、合法状态与变化的含义；**IR** 是其 typed 值、请求、结果及适用事件的实现。
-- OpenAI Responses 是主要参考，不是 IR 的字段模板或表达力上限。Google/Anthropic 可补充检验概念，但不决定当前主线；不采用协议最小交集、机械字段并集或 raw SDK DTO。
+- OpenAI Responses 是主要客户端接口与参考，不是 IR 的字段模板或表达力上限。Responses、Google Interactions 与 Anthropic Messages 共同检验请求型 Generation 的概念、关系和状态；不采用协议最小交集、机械字段并集或 raw SDK DTO。设计参照不等于新增原生 codec 或产品准入，实施范围归[ClientManaged IR 计划](../implementation-plans/client-managed-ir.md)。
 - 每个概念只有一个 owner。Typed 能力域与 scoped 值属于同一权威；它们不自动成为自定义 HTTP 字段。Fidelity 仅保存有界表示/来源/依赖记录，不保留竞争的语义正文。
 - Gateway 与未来 Agent 都经过 validation、requirements、目标投影与执行边界。Agent 可通过类型化库接口使用语义能力，不必先编码 Responses 再解码回来；这不是新增公开私有 API，也不绕过准入。
 - Agent 的规划、记忆选择、工具执行、预算调度与循环策略属于 Agent runtime。IR 表达交互和执行报告，不成为任意可执行 DAG 或通用工作流引擎。
@@ -83,7 +83,7 @@ Presence 逐字段定义：Absent、Null、空值、false、显式 default 不�
 ## 7. 控制、计量与缓存
 
 - Schema 值/方言/引用、adherence 意图和目标 strict/配额分开；结构有效不等于生成结果遵循 Schema。不得删 required 或暗改约束迁就目标。当前准入归 [Schema profile](schema-profile.md)。
-- Reasoning mode、effort、数值预算、显示/summary、实际可读内容与 opaque replay 分开。不承载“显式开启但不指定强度”的独立开关；effort 缺省保留模型默认行为，不解释为显式开启或关闭。不支持 effort 档位的目标后续通过定稿映射或专用 adapter 适配，不静默折叠控制。隐藏摘要不证明未推理，也不解除回放依赖；详细交互规则归[交互合同](interaction-contract.md)。
+- Reasoning mode、effort、数值预算、显示/summary、实际可读内容与 opaque replay 分开。Mode 表达有证据的运行方式，不新增含义不明的全局 `enabled`；effort 缺省保留模型默认行为，不解释为显式开启或关闭。Mode 与 effort/预算可以具有明确的组合规则，不能用单一互斥枚举排除合法组合。硬上限与偏好分开；目标不支持时按定稿规则映射或拒绝，不静默折叠控制。隐藏摘要不证明未推理，也不解除回放依赖；详细交互规则归[交互合同](interaction-contract.md)。
 - Usage 的 scope、basis、单位、重叠/互斥关系、最终性和缺省须明确。未知不补零，累计快照不相加，命名派生 view 借用唯一报告，不另存可修改 total；降级后的缺省也不得冒充上游未报告。
 - Provider 原生缓存意图与命中事实分开；前缀策略、亲和 hint、远端资源引用不互为别名。证明只检验已声明依赖，不证明 wire 字节相等、Provider 命中或收益。Gateway 不因表示 cache 就拥有回答缓存、跨请求粘性路由或 Agent 记忆。
 

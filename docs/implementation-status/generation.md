@@ -8,6 +8,8 @@
 
 文件仅维持既有 Responses user inline/URL 基础输入及必要正确性、安全维护。Issuer-bound 文件 ID、工具文件结果、生成文件产物、更多文件格式/目标、Chat 文件投影及文件管理 API 等扩展继续暂停，恢复评估按[计划的有限首批范围与重评节点](../implementation-plans/next-goal.md#推进顺序与退出条件)执行，不等待所有模态完成，也不自动恢复实施。下列缺口继续保留，不表示下一片实施优先级，也不作为其他模态的前置；延期不放宽现行拒绝或授权边界。
 
+上述延期限定产品承载与资源操作，不阻止[ClientManaged IR 计划](../implementation-plans/client-managed-ir.md)按明确反例完善资源 identity、用途、locator 和引用坐标的纯语义合同；设计变化仍不激活 file ID、工具文件回传或文件服务。
+
 ## 语义与表示缺口
 
 - **Text/Image/File 承载**：[Resource](../../src/semantic/task/generation/resource.rs) 的来源与类型化描述尚未闭合一般产物 identity、issuer-bound 引用及生命周期。标准 user inline 与 URL 文件分别以 [inline profile](../architecture/responses-text-profile.md#user-inline-file-input)和 [URL profile](../architecture/responses-text-profile.md#user-file-url-input)为界；issuer-bound 文件 ID、工具文件结果、资源操作及更多目标的文件载体仍缺主链。按[当前主线](../implementation-plans/next-goal.md)分别选片，不从共享 source 或文件输入推定所有用途已准入，不以 adapter 或私有字段补偿必要承载不足。
@@ -15,6 +17,7 @@
 - **标准客户端目标**：尚未完成整个标准 union 的逐分支准入与消费者验收；[HTTP 配置](../../src/gateway/config.rs)选择 Standard Responses 不消除这些缺口，也不为无标准载体的报告添加位置。[Chat 有损投影](../architecture/protocol-and-lowering.md#semantic-loss)的具体白名单、观察和静态/事件实现尚需选片；标准缺少载体时不伪造字段。现行边界归 [Responses profile](../architecture/responses-text-profile.md#control-message-and-annotation-admission-details)。
 
 - **交互与依赖主链**：跨 response 的逻辑 turn/continuation、跨协议 typed group 与非 reasoning attachment 的 replay 尚无完整主链。[消息组视图](../../src/semantic/task/generation/group.rs)、[pending-call 视图](../../src/semantic/task/generation/continuation.rs)、[本地 response 关联](../../src/semantic/task/generation/turn.rs)和[进程内依赖证明](../../src/semantic/task/generation/dependency.rs)以及[reported progress](../../src/semantic/task/generation/progress.rs)/[格式绑定值](../../src/semantic/task/generation/replay.rs)只是有界库级能力，不补足真实上游 turn 映射、全链身份、opaque/目标/执行权限的整体判据，或部分结果 history 的执行准入。结果关联齐备与 `Unreported` 都不能证明 turn 已结束或下一请求已就绪；具体边界见[continuation profile](../architecture/responses-text-profile.md#response-outcome-and-continuation)。
+- **ClientManaged 与 Provider 工具观察**：[分层观察合同](../architecture/interaction-contract.md#provider-tool-observations)尚需落实到 request/response validation、工具责任、scoped alias、跨响应结果和规范事件。现有 response validator 拒绝普通 ToolResult，pending view 尚不区分客户端与 Provider 责任；不能仅放宽这一拒绝就声称闭合。调用者选中历史与配置修订的纯投影也不等于已有 session manager；ServerManaged 与 Agent 恢复不由这些缺口自动恢复实施。
 - **Replay 闭合后权威**：已闭合 item 的迟到 opaque 与回放权威尚未定稿，具体问题、实施边界和恢复所需证据集中在[待决状态](open-questions.md#reasoning-opaque-的闭合后权威)。当前接受/拒绝归 [Responses profile](../architecture/responses-text-profile.md#reasoning-replay-authority)；不因这个缺口预建更新事件或回放服务。
 - **分组与客户端 replay**：[客户端边界](../architecture/client-generation-profile.md)没有 message-call membership、其他格式 replay、跨响应身份或 authenticated dependency proof 的私有位置。标准 Responses 无载体的关系仍拒绝；不得以邻接恢复关系或以删除 carrier 推定可丢失必要依赖。
 - **限定工具选择**：共享 namespace definitions、调用和结果关联不证明标准具名 `tool_choice` 有限定引用载体。当前固定类型缺少该位置；按 [namespace 合同](../architecture/responses-text-profile.md#tool-namespaces)保留 typed 引用并拒绝投影，等待明确标准载体，不以扩展字段、名称拼接或选择其他同名工具替代。

@@ -2,9 +2,11 @@
 
 ## 当前范围
 
-**当前没有待实施的已定稿行为切片。** 请求型音频按[后续计划](next-goal.md)与具体消费反例选片，不重复建设基础 task、标准入口或已有原生映射。真实验收须先定目标、请求矩阵、预算与脱敏范围；代码接入不授予账户使用、私有 activation、部署或付费调用权限。
+**当前方向是[三协议约束下的 ClientManaged Generation IR 完善](client-managed-ir.md)。当前没有启动中的代码行为切片。** 后续子片按实际依赖进入；计划定稿不代表全部结构已实现。
 
-多模态继续优先推进请求型音频；标准文本/function、类型化交互与模型发现保留为回归边界。文件扩展重评后继续延期，SIWC 实例准入暂缓。低延迟交付、下游 SSE 或转录扩展独立选片，不自动恢复 Realtime、声音资源服务或通用媒体框架。
+范围、依赖和测试归属统一归该计划，不在本页维护第二份清单。三协议是语义设计依据；Google/Anthropic 原生实现、ServerManaged 和 Agent 执行/恢复延期。现有标准文本/function、模型发现、图片与请求型音频保留为回归边界；音频扩展按[后续计划](next-goal.md)独立选片。
+
+文件产品扩展与 SIWC 实例准入仍按既有恢复条件处理；资源用途、locator 与引用的纯 IR 完善不等于开启文件服务。低延迟交付、下游 SSE 或转录扩展不自动恢复 Realtime、声音资源服务或通用媒体框架。
 
 现有能力维护仍遵守以下合同：
 
@@ -13,7 +15,7 @@
 - **基础文件输入**：仅维持 Responses user [inline](../architecture/responses-text-profile.md#user-inline-file-input) / [URL](../architecture/responses-text-profile.md#user-file-url-input) 输入及必要正确性、安全维护；不从 PDF carrier 推定所有格式、来源或工具文件均准入，也不新增 `/v1/files` 或 file_id 服务。
 - **客户端与迁移**：遵守[客户端合同](../architecture/client-generation-profile.md)，不恢复独立 `_openbridge` 或隐式兼容入口；允许破坏性重写不免除 IR 结构缺口报告，也不提前应用未定稿 Chat 损失规则。
 
-文件与必要 opaque 回传的验证分别覆盖“实际报告且回传”和“未报告”；后者即便内容正确也不证明 opaque 路径。显式 reasoning 控制不充当已生成 reasoning 的事实，有限场景通过不等于一般可靠性。新付费测试仍需明确场景，不复用旧矩阵授权扩大控制或模型范围。
+文件与必要 opaque 回传的验证分别覆盖“实际报告且回传”和“未报告”；后者即便内容正确也不证明 opaque 路径。显式 reasoning 控制不充当已生成 reasoning 的事实，有限场景通过不等于一般可靠性。真实验证授权归 [AGENTS.md](../../AGENTS.md#standing-authorization-for-live-provider-verification)，每次仍明确任务场景、有限矩阵与执行限制；计划不改变私有 activation、部署、凭据或真实工具副作用的授权边界。
 
 ## 待决问题与实施边界
 

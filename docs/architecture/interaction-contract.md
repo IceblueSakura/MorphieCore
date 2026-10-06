@@ -10,6 +10,28 @@ Generation request 拥有有序 history、指令和生成意图；response 拥�
 
 完整字符串不证明 JSON 有效，JSON 有效不证明符合参数 Schema，符合 Schema 不授予工具执行权限。Custom/grammar input 不强行按 JSON 解释。Partial builder 完成须验证，不能用初始空对象、缺字段默认或终态 snapshot 修补截断内容。
 
+<a id="client-managed-context"></a>
+## ClientManaged 上下文与配置
+
+客户端拥有历史并明确选择本次使用的记录；核心从选中历史、新输入/结果和显式配置快照构造请求，不读取 session 文件、选择分支或维护第二套 AgentHistory。初次请求是空历史加新输入，不要求独立 Fresh 状态机。ServerManaged 的实施与恢复条件归[计划](../implementation-plans/next-goal.md#延期目标与恢复条件)，不以空壳变体预建。
+
+```text
+调用者选中的 typed 历史 / 已接受观察 + 配置快照 + 显式编辑或追加
+  → 纯上下文构造 → 关联解析、依赖重验、预算检查
+  → 最终 GenerationRequest + 变换诊断 / 未满足要求
+  → 目标投影 → 现有执行边界
+```
+
+已接受观察与派生请求是不同语义对象。原观察不可被投影原地改写，最终请求只拥有一份当前 typed 值；来源、索引和变换报告不保存可以覆盖它的第二正文。纯库直接构造请求不必建立 session tree。Gateway 不因调用此能力而持有跨请求会话状态。
+
+- 每次请求显式提供本次所需的历史、指令、工具与控制；不依赖 `previous_*_id`、conversation 或连接级增量历史。无状态历史、response storage、原生 cache 和 opaque replay 是不同机制，不以其中一个开关推导其他机制或 ZDR 保证。
+- 配置与工具定义有可引用的修订。历史调用保留原定义关联；当前同名定义不重新解释旧参数。只有触及已声明依赖的变化才使该依赖失效，不以全历史/全配置变化一律拒绝。
+- 历史指令保留 authority、scope 与 phase。不能将所有中途变更无条件折叠为当前顶层指令；目标没有必要载体时按投影合同处理。原生 ConfigurationUpdate 等观察不自动修改受信请求配置。
+- 显式选择、插入、删除、替换和重排返回新值并重验依赖；所有承诺返回合法请求的修改方法遵守与构造器相同的验证保证。调用者已验证过原值不免除修改后的校验。
+- 外部提供的摘要是有来源的派生内容，不是被替换的上游观察，不继承其 opaque、计量或 instruction authority。裁剪不能孤立工具结果或破坏必要 replay；缺失返回诊断，不补造 `No result provided` 或自动调用模型修复。
+
+Pi 的[上下文投影参考](../references/pi-provider-abstraction.md#client-managed-projection)提供历史与请求视图分离的方法，不决定本项目的 role、损失或信任规则。自动摘要、裁剪策略、分支存储、工具执行与续轮调度仍属于调用方。
+
 ## Response outcome and continuation
 
 以下事实分别表达，并验证合法组合：
@@ -28,10 +50,29 @@ Generation request 拥有有序 history、指令和生成意图；response 拥�
 
 Continuation 是要求/依赖而不是动作命令。当前 [pending view](../../src/semantic/task/generation/continuation.rs)与[本地后继检查](../../src/semantic/task/generation/turn.rs)只提供有界事实，不替代真实 upstream turn identity、跨请求完整性或执行授权。
 
+<a id="provider-tool-observations"></a>
+## Provider 工具观察与分层验证
+
+Requester、执行责任、执行进度、结果正文与产物生命周期分别表达。执行责任来自受信定义/profile 和观察来源，不由模型参数自称；provider-executed 调用不能进入客户端结果要求或被重建为客户端待执行任务。调用被报告不证明已经执行，未报告结果不补成功或失败。已报告的取消/结果未知可以独立于正文存在，不强迫制造空 payload。
+
+同一响应可以同时报告客户端调用 C 与 Provider 调用 S，只有 C 等待客户端结果；后续响应可以只报告 S 的结果。该结果在所选 ClientManaged 历史中解析到 S，不在新响应内伪造一次调用，也不要求 ServerManaged。需要保持相同工具配置的暂停续轮显式依赖其修订；Provider continuation 是后继请求要求，不是本地工具执行命令。
+
+原生表示不一定有分离的 call/result block：某些工具将 action/status/result 放在同一 item，另一些把答案与引用放在独立 message。只提取实际报告的事实；不能按邻接、名称或“工具已完成”补造独立结果及因果边。结果正文、来源证据和对答案的引用各有 owner。
+
+验证保证分层，而不是放宽原有严格入口：
+
+1. **局部观察合法性**：验证值、presence、局部 identity、生命周期和预算；允许明确未解析的外部调用引用，不抹掉已收到的合法观察。
+2. **关联解析**：使用调用者提供的历史与协议引用域，返回唯一解析、缺失或歧义；未知 native ID 不伪造为已解析内部引用。
+3. **最终请求/history 合法性**：检查选中记录、配置和必要依赖；未解析观察不能自动成为合法回放或执行就绪证明。
+4. **目标可表示性与实例准入**：由既有 profile/lowering 与受信产品边界分别检查；核心表达力不自动激活 HTTP 分支。
+
+同一调用的新报告可以作为后继响应中的新观察追加，不重开前一个已终止 reducer，也不擦除旧事实。静态与事件应能产生同一观察；final snapshot 不能补造缺失结果。现有工具、结果和事件源码仍有[实施缺口](../implementation-status/generation.md)，本合同不声明新分支已经接线。
+
 ## 身份、分组与依赖
 
-- Local item/part/call reference、wire ID、call ID、stream index、response/turn/resource identity 各有范围。未知上游身份不合成成 reported fact。
-- Message ownership、operation association 与共同 replay group 是不同关系；membership 只有一个权威位置，views 派生，不从相邻、role 或名称推断。
+- Local item/part/call reference、wire ID、call ID、stream index、response/turn/resource identity 各有范围。Native alias 包含来源、声明作用域和 ID kind；结果的引用域由协议决定，不能直接使用结果所在 response 的 scope。不同域同值 ID 可以共存；同引用域冲突或多个可匹配祖先须诊断，不选择最近一个。未知上游身份不合成成 reported fact；纯构造所需本地 scope/ID 分配由调用者明确提供，不在 decoder 隐式随机生成。
+- 重排保持 surviving identity；编辑产生新修订。修改已观察调用的参数形成新的调用提案/identity，并保留派生来源，旧结果不能移挂。原观察可保留，但不覆盖当前派生值；本地修订不充当持久化编码或 issuer 认证。
+- Message ownership、operation association 与共同 replay group 是不同关系。异构组可以包含文本、reasoning、call/result；不同关系可重叠。每类关系只有一个可写 owner，成员引用不复制正文，反向索引派生；声明顺序须与该关系合同一致，目标要求的连续性由目标另验，不从相邻、role 或名称推断。不能同时独立写 group membership 与调用的反向 message owner，或结果引用与第二张 ResultOf 表。
 - 插入、重排、删除、替换及设置变化须维护 owner，并重验内容、成员/顺序、选定 prefix、工具/Schema、有效设置和资源依赖。能力合同选择依赖范围，业务 JSON 不提供任意 selector 或降低证明范围。
 - 悬空关系须修复或拒绝，不能将旧 metadata 附到同坐标的新 owner。跨协议丢失关系只可能由明确的[有损合同](protocol-and-lowering.md#semantic-loss)处理，且必须保护实际续轮依赖；现行 profile 的拒绝不因设计许可自动解除。
 
@@ -70,7 +111,11 @@ Replay attachment 拥有明确格式、唯一值、owner、partial/final、可�
 
 Usage report 声明 scope、basis、unit 和计数关系。Operation、item、session 的报告不混加；delta、cumulative snapshot 与 final 不混同。累计值更新而非重复求和，缺失不补零，同一事实只有一个权威；精确派生需要命名公式及完整前提。事件不能撤回已发布报告或把未知补成计费事实。
 
+原生同名 input 可能表示总输入或未缓存输入，必须声明它与 cache read/write 的关系，不能无条件套子集公式。采用 typed 计数关系和具名归一化 view；原生已报告值保持权威，缺失必要分项时派生值未知。编辑正文或上下文不改写原操作的 usage，也不将其冒充编辑后内容的计量。
+
 Schema 结构/方言/引用、adherence 意图与目标 strict/配额分开。Reasoning mode、effort、预算、显示意图与 replay 分开。请求设置不是响应事实，不能回显补齐；共享时间/identity 不受某个 wire 的必填形式反向限制。
+
+有证据的 mode 与 effort/预算按组合规则验证，例如 adaptive 与 effort 不因示意枚举而被强制互斥。硬上限遇到只有偏好式 effort 的目标不能宣称约束已满足。外部 Schema 引用只使用明确提供的解析内容，不联网；Schema 引用图与输入 JSON nesting 分别预算。
 
 引用同时依赖输出 claim 和源资源坐标，单位必须明确；不能近似转换落在 UTF-8 中间的 offset。源编辑使引用重验，wire 索引由最终顺序投影。Configuration update 与 compaction 有作用范围/替代关系，不是普通摘要或可执行设置 patch；当前实现不得因有 union 分支而扩大执行能力。
 
@@ -85,5 +130,7 @@ Schema 结构/方言/引用、adherence 意图与目标 strict/配额分开。Re
 ## 来源
 
 主要标准由 [OpenAI 固定基线](../references/upstream-sync.md)定位。补充概念参照：[Google Interactions v1](https://ai.google.dev/api/interactions-api-v1)、[thinking](https://ai.google.dev/gemini-api/docs/thinking)、[streaming](https://ai.google.dev/gemini-api/docs/interactions/streaming)、[stateless 示例](https://ai.google.dev/gemini-api/docs/quickstart.md.txt)，以及 [Anthropic Messages](https://platform.claude.com/docs/en/api/messages)。参考不证明原生接入，也不预定其实现优先级。
+
+ClientManaged 与 Provider 工具的相关出处：[Responses 手动历史](https://developers.openai.com/api/docs/guides/conversation-state)、[Responses web search 输出与引用](https://developers.openai.com/api/docs/guides/tools-web-search)、[Interactions 历史与存储边界](https://ai.google.dev/gemini-api/docs/interactions-overview)、[Messages server tools 与混合调用](https://platform.claude.com/docs/en/agents-and-tools/tool-use/server-tools)。这些来源用于界定语义反例，不承诺三套原生实现已存在。
 
 采用具体协议前固定 API/schema/SDK/profile，解决 required/optional 与事件合同差异，不拼接动态示例。Google 文档为 CC-BY-4.0、示例为 Apache-2.0；保留来源，不复制真实会话或 SDK 实现。账号管理、实时会话、工具执行和真实请求不由这些参考授权。

@@ -4,7 +4,7 @@
 
 ## 1. 来源、版本与阅读边界
 
-- 固定上游：`earendil-works/pi` 的 `v1.0.2`，提交 [`cd32f7725fdbddbaecdff5b1e68491563394e0ca`][pi-revision]，采用 [MIT License][pi-license]。
+- Provider 抽象的固定上游：`earendil-works/pi` 的 `v1.0.2`，提交 [`cd32f7725fdbddbaecdff5b1e68491563394e0ca`][pi-revision]，采用 [MIT License][pi-license]。[§6.3](#client-managed-projection)另以 `v1.0.4` 固定 ClientManaged 投影参考，不隐式升级本页其他章节或专项来源。
 - 对象：`@earendil-works/pi-ai`、`@earendil-works/pi-agent-core` 和 `@earendil-works/pi-coding-agent` 的模型接入边界。实现依据为该版发布包的 JavaScript、TypeScript declarations 与随包文档；下方链接固定到对应源码提交，不跟随 `main`。
 - 核心入口：[pi-ai README][ai-readme]、[Provider / Models][ai-models]、[共享类型][ai-types]、[自定义 Provider][custom-provider-doc]、[Coding Agent ModelRuntime][model-runtime]。
 - 现有 [扩展与上下文](extensions-and-context.md)的 pi `0.99.2` 投影和 [SIWC 登录](siwc-login.md)的专项来源保持原用途。本页不隐式升级它们，也不替代官方 API、认证条款或具体模型准入证据。
@@ -116,6 +116,23 @@ Model 是普通可序列化数据，没有 stream 方法或 SDK client。公共�
 目标能接受中途 system message 时，适配层可保留变化位置；否则 `collapseSystemMessages()` 将当前提示与工具折叠为开头的 baseline，并去掉后续 system message。不同协议还有各自的工具变化 carrier，须查具体 implementation 和 compat，不能从 transcript 能表达推定目标能原样编码。
 
 这个设计让 Agent 记录提示与工具变化而不必改写全部历史。但折叠后的有效前缀可能变化，不能由相同 session/cache key 推定缓存仍命中。
+
+<a id="client-managed-projection"></a>
+### 6.3 ClientManaged 上下文投影参考
+
+本节单独固定 Pi `v1.0.4`，提交 [`7c10bd4337495ee613f2224843ecdf349b80d1df`][pi-context-revision]，采用 [MIT License][pi-context-license]；依据该版源码、发布包与 [session format][pi-context-format]。它是实现方法参考，不是 MorphieCore 的 session 存储格式或行为完成声明。
+
+| Pi owner | 固定实现中的机制 | 本项目采用边界 |
+|---|---|---|
+| [SessionManager][pi-context-session] | `buildContextEntries()` 选择 active branch 与 compaction 范围；`buildSessionProjection()` 应用 context edits 并保留 source entry | 借鉴原始历史与模型上下文的分离；调用者提供选中历史，不引入 JSONL/session tree 服务 |
+| [AgentSession][pi-context-agent-session] | 请求前从 canonical projection 重建上下文，不把可变 agent state 当持久历史权威 | 每次从最终 typed 值与显式配置构造请求；不移植 Agent 调度 |
+| [Agent loop][pi-context-loop] | `transformContext` 先于 `convertToLlm`；工具实现与 transcript 声明分开 | 内容变换与协议表示分层；工具声明不授予执行权 |
+| [Transcript helpers][pi-context-transcript] | 重放 system/tool 变化得到有效 prompt 和工具集合 | 配置修订明确；不能无条件折叠历史 authority、scope 或 phase |
+| [Compaction][pi-context-compaction] | 摘要与 retained range 构成后续上下文，原 entries 仍保存；切分避免孤立工具结果 | 核心只接受外部显式变换与摘要，重验关联/replay；不生成摘要、不实施自动裁剪或恢复 |
+
+`context_edit` 的 content-only replacement 不是本项目的通用编辑合同：MorphieCore 必须重验 identity、参数、关联、引用与 replay，不能不加检查地继承旧 metadata。[跨模型转换][pi-context-transform]还会将 thinking 转文本、用占位文本替换图片、删除不兼容签名，以及为缺失结果合成 `No result provided`。这些都不是本项目默认允许的无损变换，尤其不能将合成结果当作真实执行报告。
+
+本项目采用的语义约束只归[ClientManaged 合同](../architecture/interaction-contract.md#client-managed-context)；Pi 的持久化、自动重试、OAuth refresh、ServerManaged/连接级续接及工具执行不随参考进入实施范围。
 
 ## 7. 输出：统一消息、事件和终态
 
@@ -371,3 +388,12 @@ cache/session/turn 与登录细节分别归[扩展与上下文](extensions-and-c
 [message-doc]: https://github.com/earendil-works/pi/blob/cd32f7725fdbddbaecdff5b1e68491563394e0ca/packages/coding-agent/docs/message-types.md
 [extension-doc]: https://github.com/earendil-works/pi/blob/cd32f7725fdbddbaecdff5b1e68491563394e0ca/packages/coding-agent/docs/extensions.md
 [virtual-doc]: https://github.com/earendil-works/pi/blob/cd32f7725fdbddbaecdff5b1e68491563394e0ca/packages/coding-agent/docs/virtual-models.md
+[pi-context-revision]: https://github.com/earendil-works/pi/tree/7c10bd4337495ee613f2224843ecdf349b80d1df
+[pi-context-license]: https://github.com/earendil-works/pi/blob/7c10bd4337495ee613f2224843ecdf349b80d1df/LICENSE
+[pi-context-format]: https://github.com/earendil-works/pi/blob/7c10bd4337495ee613f2224843ecdf349b80d1df/packages/coding-agent/docs/session-format.md
+[pi-context-session]: https://github.com/earendil-works/pi/blob/7c10bd4337495ee613f2224843ecdf349b80d1df/packages/coding-agent/src/core/session-manager.ts
+[pi-context-agent-session]: https://github.com/earendil-works/pi/blob/7c10bd4337495ee613f2224843ecdf349b80d1df/packages/coding-agent/src/core/agent-session.ts
+[pi-context-loop]: https://github.com/earendil-works/pi/blob/7c10bd4337495ee613f2224843ecdf349b80d1df/packages/agent/src/agent-loop.ts
+[pi-context-transcript]: https://github.com/earendil-works/pi/blob/7c10bd4337495ee613f2224843ecdf349b80d1df/packages/ai/src/utils/transcript.ts
+[pi-context-compaction]: https://github.com/earendil-works/pi/blob/7c10bd4337495ee613f2224843ecdf349b80d1df/packages/coding-agent/src/core/compaction/compaction.ts
+[pi-context-transform]: https://github.com/earendil-works/pi/blob/7c10bd4337495ee613f2224843ecdf349b80d1df/packages/ai/src/api/transform-messages.ts
