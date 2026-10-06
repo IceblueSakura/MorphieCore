@@ -14,6 +14,8 @@ mod billing_modal_usage;
 mod cache_prefix;
 #[path = "semantic/cache_projection.rs"]
 mod cache_projection;
+#[path = "semantic/call_revisions.rs"]
+mod call_revisions;
 #[path = "semantic/chat_logprobs.rs"]
 mod chat_logprobs;
 #[path = "semantic/chat_media.rs"]
@@ -80,6 +82,8 @@ mod reasoning;
 mod reasoning_boundary;
 #[path = "semantic/replay_formats.rs"]
 mod replay_formats;
+#[path = "semantic/replay_groups.rs"]
+mod replay_groups;
 #[path = "semantic/replay_ownership.rs"]
 mod replay_ownership;
 #[path = "semantic/request_edits.rs"]

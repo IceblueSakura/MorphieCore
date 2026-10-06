@@ -82,14 +82,20 @@ fn edits_recompute_argument_and_execution_requirements_without_restoring_values(
         Some(ToolExecution::Succeeded),
     );
     let mut items = request.items().to_vec();
+    items[0].0 = ItemId::new(3);
+    items[1].0 = ItemId::new(4);
     let Item::ToolCall(call) = &mut items[0].1 else {
         panic!("call")
     };
     call.arguments = "not valid JSON".into();
+    call.call_id = text("edited");
     let Item::ToolResult(result) = &mut items[1].1 else {
         panic!("result")
     };
+    // Independently supplied synthetic result, not a migrated success report.
+    result.call_id = text("edited");
     result.execution = None;
+    result.status = None;
     result.output = "replacement".into();
     let changed = request.with_items(items).unwrap();
     let q = GenerationRequirements::derive(&changed);

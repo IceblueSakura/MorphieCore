@@ -239,6 +239,8 @@ impl GenerationSettings {
 pub struct GenerationRequest {
     items: Vec<(ItemId, Item)>,
     settings: GenerationSettings,
+    replay_groups: Vec<ReplayGroup>,
+    call_derivations: std::collections::BTreeMap<ItemId, ItemId>,
 }
 impl GenerationRequest {
     pub fn new(
@@ -257,7 +259,12 @@ impl GenerationRequest {
         items: Vec<(ItemId, Item)>,
         settings: GenerationSettings,
     ) -> Result<Self, GenerationError> {
-        let r = Self { items, settings };
+        let r = Self {
+            items,
+            settings,
+            replay_groups: vec![],
+            call_derivations: Default::default(),
+        };
         r.validate()?;
         Ok(r)
     }
@@ -268,7 +275,26 @@ impl GenerationRequest {
         } else {
             super::validate::items(&self.items, false)?
         };
-        if items.saturating_add(settings) > MAX_TOTAL_BYTES {
+        let groups = super::group::validate_replay_groups(&self.items, &self.replay_groups)?;
+        if self.call_derivations.len() > MAX_ITEMS {
+            return Err(GenerationError::Limit);
+        }
+        if self.call_derivations.iter().any(|(owner, source)| {
+            owner == source
+                || !self
+                    .items
+                    .iter()
+                    .any(|(id, item)| id == owner && item.is_call())
+        }) {
+            return Err(GenerationError::InvalidDependency);
+        }
+        let derivations = self.call_derivations.len() * std::mem::size_of::<(ItemId, ItemId)>();
+        if items
+            .saturating_add(settings)
+            .saturating_add(groups)
+            .saturating_add(derivations)
+            > MAX_TOTAL_BYTES
+        {
             return Err(GenerationError::Limit);
         }
         Ok(())
@@ -278,6 +304,46 @@ impl GenerationRequest {
     }
     pub fn settings(&self) -> &GenerationSettings {
         &self.settings
+    }
+    pub fn replay_groups(&self) -> &[ReplayGroup] {
+        &self.replay_groups
+    }
+    pub fn with_replay_groups(mut self, groups: Vec<ReplayGroup>) -> Result<Self, GenerationError> {
+        self.replay_groups = groups;
+        self.validate()?;
+        Ok(self)
+    }
+    /// Caller-declared derivation, not an issuer attestation or an execution proof.
+    pub fn call_derivations(&self) -> &std::collections::BTreeMap<ItemId, ItemId> {
+        &self.call_derivations
+    }
+    pub fn revise_call(
+        self,
+        source: ItemId,
+        replacement: (ItemId, Item),
+    ) -> Result<Self, GenerationError> {
+        if source == replacement.0
+            || !replacement.1.is_call()
+            || self.items.iter().any(|(owner, _)| *owner == replacement.0)
+            || self
+                .call_derivations
+                .values()
+                .any(|owner| *owner == replacement.0)
+        {
+            return Err(GenerationError::InvalidDependency);
+        }
+        let index = self
+            .items
+            .iter()
+            .position(|(id, item)| *id == source && item.is_call())
+            .ok_or(GenerationError::InvalidDependency)?;
+        let next = replacement.0;
+        let mut items = self.items.clone();
+        items[index] = replacement;
+        let mut edited = self.with_items(items)?;
+        edited.call_derivations.insert(next, source);
+        edited.validate()?;
+        Ok(edited)
     }
     pub fn controls(&self) -> &GenerationControls {
         &self.settings.controls
@@ -343,8 +409,14 @@ impl GenerationRequest {
         Ok(self)
     }
     pub fn with_items(mut self, items: Vec<(ItemId, Item)>) -> Result<Self, GenerationError> {
-        self.items = items;
+        if items.len() > MAX_ITEMS {
+            return Err(GenerationError::Limit);
+        }
+        self.call_derivations
+            .retain(|owner, _| items.iter().any(|(id, _)| id == owner));
+        let source = std::mem::replace(&mut self.items, items);
         self.validate()?;
+        super::identity::check_call_edits(&source, &self.items)?;
         Ok(self)
     }
     pub fn retain_items(
@@ -382,6 +454,8 @@ pub enum GenerationError {
     InvalidToolResult,
     #[error("tool calls must remain contiguous with their assistant owner")]
     InvalidMessageGroup,
+    #[error("invalid replay group identity, member reference or order")]
+    InvalidReplayGroup,
     #[error("invalid tool definition")]
     InvalidToolDefinition,
     #[error("invalid or unsupported schema")]

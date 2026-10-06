@@ -525,6 +525,12 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         return Err(CodecError::ProfileMismatch);
     }
     target.semantic.validate()?;
+    if !target.semantic.replay_groups().is_empty() || !target.semantic.call_derivations().is_empty()
+    {
+        return Err(CodecError::Unsupported(
+            "interaction relation carrier".into(),
+        ));
+    }
     check_item_carriers(target.semantic.items())?;
     target
         .fidelity

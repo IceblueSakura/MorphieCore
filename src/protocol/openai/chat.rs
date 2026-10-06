@@ -399,6 +399,12 @@ pub(super) fn decode_message(
     Ok(())
 }
 pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, CodecError> {
+    if !target.semantic.replay_groups().is_empty() || !target.semantic.call_derivations().is_empty()
+    {
+        return Err(CodecError::Unsupported(
+            "interaction relation carrier".into(),
+        ));
+    }
     if target.profile != Profile::Chat {
         return Err(CodecError::ProfileMismatch);
     }

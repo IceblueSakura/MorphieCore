@@ -289,6 +289,9 @@ pub(super) fn tool_call(
     })
 }
 pub(super) fn check_response_carriers(response: &GenerationResponse) -> Result<(), CodecError> {
+    if !response.replay_groups().is_empty() {
+        return Err(CodecError::Unsupported("replay group carrier".into()));
+    }
     if response.usage_reports().len() > 1
         || response.usage_reports().iter().any(|usage| {
             usage.scope != UsageScope::Operation

@@ -69,6 +69,7 @@ impl TerminalDetails {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GenerationResponse {
     items: Vec<(ItemId, Item)>,
+    replay_groups: Vec<super::ReplayGroup>,
     outcome: Outcome,
     progress: super::InteractionProgress,
     usage: Vec<Usage>,
@@ -88,6 +89,7 @@ impl GenerationResponse {
         }
         Ok(Self {
             items,
+            replay_groups: vec![],
             outcome,
             progress: super::InteractionProgress::Unreported,
             usage: vec![],
@@ -134,6 +136,10 @@ impl GenerationResponse {
         if bytes
             .saturating_add(details.bytes())
             .saturating_add(self.usage.len() * std::mem::size_of::<Usage>())
+            .saturating_add(super::group::validate_replay_groups(
+                &self.items,
+                &self.replay_groups,
+            )?)
             > super::MAX_TOTAL_BYTES
         {
             return Err(GenerationError::Limit);
@@ -143,6 +149,18 @@ impl GenerationResponse {
     }
     pub fn items(&self) -> &[(ItemId, Item)] {
         &self.items
+    }
+    pub fn replay_groups(&self) -> &[super::ReplayGroup] {
+        &self.replay_groups
+    }
+    pub fn with_replay_groups(
+        mut self,
+        groups: Vec<super::ReplayGroup>,
+    ) -> Result<Self, GenerationError> {
+        super::group::validate_replay_groups(&self.items, &groups)?;
+        self.replay_groups = groups;
+        let details = self.details.clone();
+        self.with_details(details)
     }
     pub const fn outcome(&self) -> Outcome {
         self.outcome
@@ -158,9 +176,14 @@ impl GenerationResponse {
     }
     /// Editing content never changes response outcome or discards terminal details.
     pub fn with_items(self, items: Vec<(ItemId, Item)>) -> Result<Self, GenerationError> {
+        if items.len() > super::MAX_ITEMS {
+            return Err(GenerationError::Limit);
+        }
         let mut response = Self::new(items, self.outcome)?
+            .with_replay_groups(self.replay_groups)?
             .with_progress(self.progress)?
             .with_details(self.details)?;
+        super::identity::check_call_edits(&self.items, response.items())?;
         response = response.with_usage_reports(self.usage)?;
         Ok(response)
     }

@@ -6,6 +6,7 @@ use std::{collections::BTreeSet, fmt::Write};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HistoryDependency {
     MessageGroup(ItemId),
+    ReplayGroup(GroupId),
     PrefixThrough(ItemId),
     /// A source-declared ordered selection, not inferred group membership.
     Owners(Vec<ItemId>),
@@ -106,6 +107,12 @@ fn dependency(
             .items()
             .iter()
             .collect(),
+        HistoryDependency::ReplayGroup(owner) => request
+            .replay_group_views()
+            .find(|group| group.declaration().id() == *owner)
+            .ok_or(GenerationError::InvalidDependency)?
+            .items()
+            .collect(),
         HistoryDependency::PrefixThrough(owner) => {
             let end = request
                 .items()
@@ -143,6 +150,18 @@ fn dependency(
         remaining: MAX_TOTAL_BYTES * 8,
     };
     write!(writer, "{scope:?}:{settings:?}:{items:?}").map_err(|_| GenerationError::Limit)?;
+    if let HistoryDependency::ReplayGroup(owner) = scope {
+        let group = request
+            .replay_groups()
+            .iter()
+            .find(|group| group.id() == *owner)
+            .ok_or(GenerationError::InvalidDependency)?;
+        write!(writer, "{group:?}").map_err(|_| GenerationError::Limit)?;
+    }
+    for (owner, _) in &items {
+        write!(writer, "{:?}", request.call_derivations().get(owner))
+            .map_err(|_| GenerationError::Limit)?;
+    }
     let s = request.settings();
     for field in [
         SettingsField::Instructions,

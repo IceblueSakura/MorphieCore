@@ -317,9 +317,15 @@ fn replacement_insertion_and_reordering_drive_both_encoders() {
     // groups are checked separately by the grouping transformation regressions.
     let mut d = responses::decode_generation(&expected_responses_history()).unwrap();
     let mut items = d.semantic.items().to_vec();
+    items[2].0 = ItemId::new(101);
     if let Item::ToolCall(c) = &mut items[2].1 {
         c.arguments = "{\"city\":\"Tokyo\"}".into();
+        c.call_id = text("call_a_edited");
     }
+    // A new invocation cannot inherit the old result. This explicit history
+    // selection preserves the original observation in the immutable source.
+    items
+        .retain(|(_, item)| !matches!(item, Item::ToolResult(r) if r.call_id.as_str() == "call_a"));
     items.swap(2, 3);
     items.insert(
         4,
@@ -349,6 +355,7 @@ fn replacement_insertion_and_reordering_drive_both_encoders() {
     let c = request_wire(&d, Profile::Chat);
     let r = request_wire(&d, Profile::Responses);
     assert_eq!(c["messages"][2]["tool_calls"][0]["id"], "call_b");
+    assert_eq!(c["messages"][2]["tool_calls"][1]["id"], "call_a_edited");
     assert_eq!(
         c["messages"][2]["tool_calls"][1]["function"]["arguments"],
         "{\"city\":\"Tokyo\"}"
@@ -357,6 +364,7 @@ fn replacement_insertion_and_reordering_drive_both_encoders() {
     assert_eq!(r["input"][2]["call_id"], "call_b");
     assert_eq!(r["input"][3]["arguments"], "{\"city\":\"Tokyo\"}");
     assert_eq!(r["input"][4]["call_id"], "call_c");
+    assert!(!r.to_string().contains("sunny"));
 }
 #[test]
 fn deletion_cannot_be_undone_by_stale_fidelity_and_requirements_follow_final_ir() {

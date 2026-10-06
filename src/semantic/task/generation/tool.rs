@@ -163,6 +163,14 @@ pub enum ToolArguments {
     StructuredPartial(String),
 }
 impl ToolArguments {
+    pub(crate) fn same_authority(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Raw(a), Self::Raw(b))
+            | (Self::StructuredPartial(a), Self::StructuredPartial(b)) => a == b,
+            (Self::Structured(a), Self::Structured(b)) => ordered_json_equal(a.value(), b.value()),
+            _ => false,
+        }
+    }
     pub fn as_raw(&self) -> Option<&str> {
         match self {
             Self::Raw(value) => Some(value),
@@ -188,6 +196,23 @@ impl ToolArguments {
 impl From<String> for ToolArguments {
     fn from(value: String) -> Self {
         Self::Raw(value)
+    }
+}
+// Both trees passed the structured-value depth/node budget. Object order is
+// authority here even though serde_json::Value equality ignores it.
+fn ordered_json_equal(left: &serde_json::Value, right: &serde_json::Value) -> bool {
+    use serde_json::Value;
+    match (left, right) {
+        (Value::Object(a), Value::Object(b)) => {
+            a.len() == b.len()
+                && a.iter()
+                    .zip(b)
+                    .all(|((ak, av), (bk, bv))| ak == bk && ordered_json_equal(av, bv))
+        }
+        (Value::Array(a), Value::Array(b)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| ordered_json_equal(a, b))
+        }
+        _ => left == right,
     }
 }
 impl From<&str> for ToolArguments {

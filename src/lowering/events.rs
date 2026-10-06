@@ -18,6 +18,7 @@ pub fn check_event(
         return Err(RepresentationError::ReplayPhase);
     }
     match event {
+        StreamEvent::ReplayGroup(_) => return Err(RepresentationError::UnmigratedSemantic),
         StreamEvent::Terminal {
             terminal: StreamTerminal::Cancelled,
             ..

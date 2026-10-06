@@ -67,6 +67,9 @@ pub fn lower_request<'a>(
     c: GenerationRepresentationContract,
 ) -> Result<RequestRepresentation<'a>, RepresentationError> {
     let q = check(r, c.clone())?;
+    if !r.replay_groups().is_empty() || !r.call_derivations().is_empty() {
+        return Err(RepresentationError::UnmigratedSemantic);
+    }
     check_tool_selection(r.tool_choice())?;
     if profile != Profile::Chat
         && (!r.settings().audio.is_absent() || !r.settings().output_modalities.is_absent())
@@ -295,6 +298,9 @@ pub fn lower_response<'a>(
     profile: Profile,
     c: GenerationRepresentationContract,
 ) -> Result<ResponseRepresentation<'a>, RepresentationError> {
+    if !r.replay_groups().is_empty() {
+        return Err(RepresentationError::UnmigratedSemantic);
+    }
     if let Some(settings) = &metadata.context.settings {
         check_tool_selection(settings.tool_choice.as_ref())?;
     }

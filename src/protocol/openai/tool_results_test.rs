@@ -20,9 +20,11 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
     )
     .unwrap();
     let mut items = base.items().to_vec();
+    items[0].0 = ItemId::new(99);
     let Item::ToolCall(call) = &mut items[0].1 else {
         unreachable!()
     };
+    call.call_id = text("structured-proposal");
     call.arguments =
         ToolArguments::Structured(StructuredValue::new(serde_json::json!({"n":1})).unwrap());
     let structured = base.clone().with_items(items).unwrap();
@@ -48,6 +50,12 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
         Outcome::Completed,
     )
     .unwrap();
+    let grouped = GenerationResponse::new(progress.items().to_vec(), Outcome::Completed)
+        .unwrap()
+        .with_replay_groups(vec![
+            ReplayGroup::new(GroupId::new(LocalScope::ROOT, 1), vec![ItemId::new(1)]).unwrap(),
+        ])
+        .unwrap();
     let fidelity = crate::protocol::fidelity::FidelityRecords::default();
     let metadata = ResponseMetadata {
         id: "r".into(),
@@ -56,7 +64,7 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
         context: Default::default(),
         instruction_fidelity: Default::default(),
     };
-    for semantic in [&structured, &progress, &scoped, &replay] {
+    for semantic in [&structured, &progress, &scoped, &replay, &grouped] {
         for profile in [Profile::Chat, Profile::Responses] {
             let forged = ResponseRepresentation {
                 semantic,

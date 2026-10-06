@@ -4,19 +4,6 @@
 
 基础语义归[交互合同](../architecture/interaction-contract.md#typed-replay-与信任)，实现缺口概览归 [Generation 状态](generation.md)，推进方向归 [next-goal](../implementation-plans/next-goal.md)。本页不复制完整缺口清单或 Provider 能力矩阵。
 
-## 同类 replay 组的 membership 基数
-
-**需要在 S1.1 关系 owner 重写前定稿。** [身份与关系合同](../architecture/interaction-contract.md#身份分组与依赖)明确不同关系可以重叠、每类关系只有一个可写 owner，但没有明确同一 item 能否同时属于两个不同的 ReplayGroup。唯一可写 owner 不等于只能属于一个组；这不是公共路径或 Rust 命名选择。
-
-最小抽象反例：`G1 = [Reasoning R, Call C]`、`G2 = [Call C, Call S]`，两个组都属于 replay 关系，且成员只引用同一个 `C`，不复制正文。它不声称任何原生协议已报告这种关系，也不授权工具执行。
-
-- **允许显式重叠**：共享核心可以表达两个独立的组声明；`C` 的相关编辑必须分别重验两组依赖，不能合并 opaque 或从一组的通过推定另一组通过。具体格式/目标仍可要求更窄的结构。
-- **同类组互斥**：上述构造在关系验证时拒绝；反向 view 至多返回一个同类组，不能用复制 `C` 的正文或另造相同调用绕过。
-
-Message ownership 的既有单一 assistant owner 不因此重新选择；不同关系之间的重叠、唯一权威、成员顺序、预算、删除不复活、禁止副作用和严格目标边界继续保持。
-
-仅暂停依赖该关系 owner 的子片，不回退现有源码或删除观察。选择定稿后将基数规则归入交互合同，给出独立正反例、编辑失效和迁移预期，再移除此条；不预建可写 membership 的双权威兼容层。
-
 ## Reasoning opaque 的闭合后权威
 
 ### 状态与实施边界

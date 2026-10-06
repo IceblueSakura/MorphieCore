@@ -101,3 +101,40 @@ pub(super) fn call_alias(item: &Item) -> Option<(Option<&NativeAliasDomain>, Nat
         _ => None,
     }
 }
+
+fn same_call_meaning(left: &Item, right: &Item) -> bool {
+    match (left, right) {
+        (Item::ToolCall(a), Item::ToolCall(b)) => {
+            a.call_id == b.call_id
+                && a.name == b.name
+                && a.arguments.same_authority(&b.arguments)
+                && a.context == b.context
+        }
+        (Item::CustomCall(a), Item::CustomCall(b)) => {
+            a.call_id == b.call_id
+                && a.name == b.name
+                && a.input == b.input
+                && a.context == b.context
+        }
+        (Item::Program(a), Item::Program(b)) => a == b,
+        _ => false,
+    }
+}
+/// In-place call edits and native-alias reuse cannot reinterpret prior results.
+/// A new invocation needs both an explicitly allocated owner and a new alias.
+pub(super) fn check_call_edits(
+    source: &[(ItemId, Item)],
+    edited: &[(ItemId, Item)],
+) -> Result<(), super::GenerationError> {
+    for (owner, old) in source.iter().filter(|(_, item)| item.is_call()) {
+        for (next, value) in edited {
+            if (*owner == *next
+                || call_alias(old).is_some() && call_alias(old) == call_alias(value))
+                && !same_call_meaning(old, value)
+            {
+                return Err(super::GenerationError::InvalidDependency);
+            }
+        }
+    }
+    Ok(())
+}

@@ -2,9 +2,9 @@
 
 ## 当前范围
 
-**当前方向是[三协议约束下的 ClientManaged Generation IR 完善](client-managed-ir.md)。S1.1 的异构关系迁移等待[同类 replay 组 membership 基数](../implementation-status/open-questions.md#同类-replay-组的-membership-基数)定稿。** 尚未开始该关系重写；后续子片按实际依赖进入，不以局部 identity 检查宣称整个 S1 或 M1/M2 完成。
+**当前方向是[三协议约束下的 ClientManaged Generation IR 完善](client-managed-ir.md)。当前没有启动中的代码行为切片。** 下一子片迁移 Message ownership 的旧唯一 owner，随后进入 Provider 观察与跨响应关联；后续按实际依赖进入，不以局部检查宣称整个 S1 或 M1/M2 完成。
 
-后续关系子片覆盖 A04–A08：组成员只引用 surviving identity，反向 view 派生，调用参数编辑形成新 identity，旧结果不得移挂；重排、删除和候选隔离分别给出反例。关系基数定稿前，不增加双写 membership 或以全历史失效替代具体依赖，也不先行重写依赖该 owner 的 Provider 观察与 ClientManaged 结构。
+同类 replay 组的重叠规则归[交互合同](../architecture/interaction-contract.md#身份分组与依赖)。后续关系迁移不增加第二张可写 membership 或 ResultOf 表；无标准载体的关系维持严格拒绝，不因新类型自动激活接口、工具执行或模型 I/O。
 
 范围、依赖和测试归属统一归该计划，不在本页维护第二份清单。三协议是语义设计依据；Google/Anthropic 原生实现、ServerManaged 和 Agent 执行/恢复延期。现有标准文本/function、模型发现、图片与请求型音频保留为回归边界；音频扩展按[后续计划](next-goal.md)独立选片。
 

@@ -409,6 +409,9 @@ impl EventEncoder {
             StreamEvent::LogprobsSnapshot { .. }
             | StreamEvent::TextMetadata { .. }
             | StreamEvent::Usage(_) => vec![],
+            StreamEvent::ReplayGroup(_) => {
+                return Err(CodecError::Unsupported("replay group event carrier".into()));
+            }
             StreamEvent::Progress(_) => {
                 return Err(CodecError::Unsupported("interaction progress".into()));
             }

@@ -96,6 +96,54 @@
       "budget": "Existing fidelity and target limits",
       "forbidden_effects": "No private carrier, silent domain loss or product activation",
       "scope": "required"
+    },
+    {
+      "case_key": "call_revision_identity",
+      "ids": ["A05", "T06"],
+      "slice": "S1.1",
+      "sample_kind": "abstract_contract",
+      "evidence": "interaction-contract.md#身份分组与依赖; native schema not applicable",
+      "owner": "src/semantic/task/generation/identity.rs; request.rs; tool.rs",
+      "target": "semantic",
+      "symbols": ["call_revisions::changed_arguments_cannot_reuse_owner_or_move_an_old_result", "call_revisions::explicit_revision_preserves_source_and_does_not_synthesize_or_retarget_results", "call_revisions::structured_argument_order_is_authority_even_when_value_equality_ignores_it"],
+      "input": "Observed call/result and raw or ordered structured arguments; explicit new invocation owner/alias",
+      "expected": "Existing invocation changes rejected; old results not retargeted; explicit derivation is inspectable and immutable source survives",
+      "transform": "Replace arguments and invocation; independently change structured object order",
+      "budget": "Validated item/value limits and bounded derivation metadata",
+      "forbidden_effects": "No execution, fabricated result, alias inference or private derivation carrier",
+      "scope": "required"
+    },
+    {
+      "case_key": "overlapping_replay_membership",
+      "ids": ["A04", "A06", "A07", "T06", "T28"],
+      "slice": "S1.1",
+      "sample_kind": "abstract_contract",
+      "evidence": "interaction-contract.md#身份分组与依赖; native schema not applicable",
+      "owner": "src/semantic/task/generation/group.rs; dependency.rs",
+      "target": "semantic",
+      "symbols": ["replay_groups::shared_member_has_two_derived_views_and_no_second_body", "replay_groups::dangling_duplicate_and_reversed_memberships_fail_at_the_core_owner", "replay_groups::shared_dependencies_invalidate_each_group_without_rejecting_outside_edits", "replay_groups::aggregate_membership_budget_counts_shared_references_independently"],
+      "input": "Two typed heterogeneous groups sharing one member; ordered references and independently captured group dependencies",
+      "expected": "Borrowed membership, no duplicated body; each dependency invalidates independently; unrelated insertion stays valid; dangling/duplicate/order violations rejected",
+      "transform": "Delete, replace, insert outside dependencies or remove one group",
+      "budget": "Aggregate group/reference B-1/B/B+1, checked before set allocation",
+      "forbidden_effects": "No member resurrection, source body in view Debug, inferred ownership or opaque merging",
+      "scope": "required; message-owner migration remains separate"
+    },
+    {
+      "case_key": "replay_group_event_and_target_boundary",
+      "ids": ["A02", "A07", "T30", "T31"],
+      "slice": "S1.1",
+      "sample_kind": "abstract_contract",
+      "evidence": "interaction-contract.md#身份分组与依赖; native group schema not applicable",
+      "owner": "src/semantic/task/generation/event.rs; src/lowering/events.rs; src/lowering/generation.rs",
+      "target": "semantic",
+      "symbols": ["replay_groups::groups_have_no_private_or_silently_dropped_standard_carrier", "replay_groups::normative_group_events_match_an_independent_static_declaration_and_cannot_reopen_terminal"],
+      "input": "Normative completed members, two independent group declarations and terminal; plain request as positive target control",
+      "expected": "Static/event equality; conflicting or missing group owner rejected; existing targets reject groups rather than silently dropping them; terminal cannot reopen",
+      "transform": "Append an explicit relation before closure; conflicting or post-terminal declaration",
+      "budget": "Same aggregate reference/state limits",
+      "forbidden_effects": "No invented native group events, fake Google/Anthropic codec or terminal snapshot repair",
+      "scope": "required"
     }
   ]
 }

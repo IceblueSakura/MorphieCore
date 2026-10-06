@@ -16,7 +16,7 @@ pub use continuation::{CallReference, Continuation};
 pub use contract::{GenerationFeature, GenerationSemanticContract};
 mod event;
 mod group;
-pub use group::MessageGroup;
+pub use group::{GroupId, MessageGroup, ReplayGroup, ReplayGroupView};
 mod identity;
 pub use identity::{
     AliasResolutionError, LocalScope, NativeAliasDomain, NativeCallAlias, NativeIdKind,

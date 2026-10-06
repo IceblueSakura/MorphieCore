@@ -141,6 +141,8 @@ pub enum StreamEvent {
         replay: Option<ReasoningReplay>,
     },
     Usage(Usage),
+    /// An explicit relation declaration, not a native item or a replay payload.
+    ReplayGroup(ReplayGroup),
     Progress(InteractionProgress),
     Terminal {
         terminal: StreamTerminal,
@@ -195,6 +197,7 @@ pub struct StreamState {
     started: bool,
     queued: bool,
     items: Vec<StreamItem>,
+    replay_groups: Vec<ReplayGroup>,
     part_ids: BTreeSet<PartId>,
     terminal: Option<StreamTerminal>,
     usage: Vec<Usage>,
@@ -208,6 +211,9 @@ impl StreamState {
     }
     pub fn items(&self) -> &[StreamItem] {
         &self.items
+    }
+    pub fn replay_groups(&self) -> &[ReplayGroup] {
+        &self.replay_groups
     }
     pub fn started(&self) -> bool {
         self.started
@@ -673,6 +679,28 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             progress.validate(Outcome::Completed, &snapshot_items(&state)?)?;
             state.progress = progress;
         }
+        StreamEvent::ReplayGroup(group) => {
+            if state.replay_groups.len() >= MAX_ITEMS
+                || state
+                    .replay_groups
+                    .iter()
+                    .map(|g| g.members().len())
+                    .sum::<usize>()
+                    + group.members().len()
+                    > MAX_ITEMS
+            {
+                return Err(EventError::Limit);
+            }
+            if state.replay_groups.iter().any(|old| old.id() == group.id()) {
+                return Err(EventError::Identity);
+            }
+            let owners: Vec<_> = state.items.iter().map(|item| item.id).collect();
+            group.check_owners(&owners)?;
+            state.charge(
+                std::mem::size_of::<ReplayGroup>() + std::mem::size_of_val(group.members()),
+            )?;
+            state.replay_groups.push(group);
+        }
         StreamEvent::Usage(usage) => {
             if matches!(usage.scope, UsageScope::Item(id) if state.item(id).is_err()) {
                 return Err(EventError::Identity);
@@ -877,6 +905,7 @@ pub fn materialize(state: &StreamState) -> Result<GenerationResponse, EventError
         return Err(EventError::TerminalFailure(terminal));
     }
     let mut response = GenerationResponse::new(snapshot_items(state)?, outcome(terminal))?
+        .with_replay_groups(state.replay_groups.clone())?
         .with_progress(state.progress)?
         .with_details(state.details.clone())?;
     response = response.with_usage_reports(state.usage.clone())?;

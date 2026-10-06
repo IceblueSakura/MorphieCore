@@ -570,13 +570,18 @@ fn custom_tools_and_text_array_results_are_not_function_arguments() {
     assert!(matches!(&d.semantic.items()[0].1,Item::CustomCall(c) if c.input=="SELECT 1"));
     assert!(GenerationRequirements::derive(&d.semantic).custom_tools);
     let mut items = d.semantic.items().to_vec();
+    items[0].0 = ItemId::new(99);
+    items[1].0 = ItemId::new(100);
     let Item::CustomCall(c) = &mut items[0].1 else {
         panic!()
     };
     c.input = "not JSON, not executed".into();
+    c.call_id = text("edited-custom-call");
     let Item::CustomResult(r) = &mut items[1].1 else {
         panic!()
     };
+    // Explicit synthetic report for the new call, never automatic result relinking.
+    r.call_id = text("edited-custom-call");
     r.output = ToolOutput::Text("changed".into());
     d.semantic = d.semantic.with_items(items).unwrap();
     let out = request_wire(&d);
