@@ -26,7 +26,7 @@
 1. **语义与 codec**：typed invariant、正反映射、删除不复活、扩展 scope；无需网络。
 2. **字节与生命周期**：严格 JSON、SSE framing、UTF-8/CRLF、分片独立预算、EOF、背压、cancel、pre/post-commit。
 3. **固定消费者**：SDK create/stream/parse 及 structured replay、Agent tool loop；版本固定，synthetic loopback。
-4. **外部实际执行**：固定 Provider/account/model/payload 的能力和错误；需要单独授权，不能由前三层替代。
+4. **外部实际执行**：固定 Provider/account/model/payload 的能力和错误；授权归 [AGENTS.md](../../AGENTS.md#standing-authorization-for-live-provider-verification)，不能由前三层替代。
 
 模型输出质量和长期负载再单独评价，不要求 codec 引入大型真实会话或 benchmark 数据。Open Responses compliance 也必须与 OpenAI 标准版本分别标记。
 

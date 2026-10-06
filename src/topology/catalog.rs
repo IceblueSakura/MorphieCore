@@ -230,6 +230,13 @@ fn siwc_registration_is_public_responses_only_and_does_not_reuse_product_binding
             .responses_forced_stream
     );
     assert!(
+        endpoint
+            .representation
+            .adaptation
+            .rules
+            .responses_sse_without_content_type
+    );
+    assert!(
         !endpoint
             .representation
             .adaptation

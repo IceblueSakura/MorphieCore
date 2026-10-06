@@ -94,22 +94,21 @@ pub(super) async fn produce_candidate(
     if !(200..300).contains(&status) {
         return Err(ApiError::status(status));
     }
-    let content_type = upstream
-        .headers()
-        .get("content-type")
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or_default();
-    let content_type = if !upstream.headers().contains_key("content-type")
-        && candidate
-            .endpoint
-            .representation
-            .adaptation
-            .rules
-            .responses_sse_without_content_type
-    {
-        "text/event-stream"
-    } else {
-        content_type
+    let mut content_types = upstream.headers().get_all("content-type").iter();
+    let content_type = match (content_types.next(), content_types.next()) {
+        // Only true absence may use the trusted SSE-only contract.
+        (None, None)
+            if candidate
+                .endpoint
+                .representation
+                .adaptation
+                .rules
+                .responses_sse_without_content_type =>
+        {
+            "text/event-stream"
+        }
+        (Some(value), None) => value.to_str().map_err(|_| ApiError::upstream())?,
+        _ => return Err(ApiError::upstream()),
     };
     let media: mime::Mime = content_type.parse().map_err(|_| ApiError::upstream())?;
     let stream = request.delivery.streaming();

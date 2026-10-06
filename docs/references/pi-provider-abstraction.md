@@ -340,7 +340,7 @@ cache/session/turn 与登录细节分别归[扩展与上下文](extensions-and-c
 2. **离线合成边界**：使用自主构造的 Provider/stream 与独立预期，检查多 API 分派、transcript、headers、签名失效、ID 关联、缺失结果和错误/取消回放；不载入真实认证。
 3. **协议 fixture**：分别核对 wire→消息与消息→wire、流/静态一致性及畸形/partial 输入，不只看 round trip。
 4. **隔离消费者**：Agent 工具参数验证、工具结果续轮、扩展事件、取消与 cleanup 分别验收。
-5. **真实 Provider**：账号/endpoint/wire 接受、TLS/network、推理、usage 与 cache 收益需要明确目标、预算和脱敏的独立授权。
+5. **真实 Provider**：独立验证账号/endpoint/wire 接受、TLS/network、推理、usage 与 cache 收益；授权归 [AGENTS.md](../../AGENTS.md#standing-authorization-for-live-provider-verification)，执行与诊断边界归 [Probe 指南](../probes.md)。
 
 这些是方法与未覆盖边界，不是本页记录的成功结果。文档整理不证明运行时改进、一般 Agent 兼容性、真实 Provider 能力或生产就绪。
 

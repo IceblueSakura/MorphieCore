@@ -143,7 +143,7 @@ Unix 文件/目录 owner-only 权限与原子写入是官方要求的一部分�
 
 ## 模型发现与 HTTP Responses
 
-[Models and inference][inference] 指定用所选 access token 查询公共 `/v1/models`。该 flow 的文档响应是 `models` 数组，UI 显示 `display_name`、推理使用 `slug`，可筛选 `visibility:"list"` 并保留顺序；不能直接套普通 Platform Models 的 `data` 形状或把目录当 entitlement proof。Credential-bearing 发现需要独立授权，不在默认离线验证、codec 或列表刷新中隐式执行。
+[Models and inference][inference] 指定用所选 access token 查询公共 `/v1/models`。该 flow 的文档响应是 `models` 数组，UI 显示 `display_name`、推理使用 `slug`，可筛选 `visibility:"list"` 并保留顺序；不能直接套普通 Platform Models 的 `data` 形状或把目录当 entitlement proof。Credential-bearing 发现的调用授权归 [AGENTS.md](../../AGENTS.md#standing-authorization-for-live-provider-verification)，不在默认离线验证、codec 或列表刷新中隐式执行。
 
 推理使用公共 `/v1/responses` 和 Bearer access token，不能改发 `chatgpt.com/backend-api`。以下为不含真实 credential 的表示示例，不是可执行 probe 或本地模型注册声明：
 

@@ -1,10 +1,10 @@
 # 受控 Provider / SDK / pi 探测
 
-这些是显式授权的开发工具，不是生产重试器、压测器或额外协议框架。目标、默认值和暂停项读取入口代码及 `examples/probe_support/catalog.py`；它们不等于产品支持集合，查询方法见 [AGENTS.md](../AGENTS.md#current-provider-model-and-compatibility-information)。存在 key、创建计划或历史成功都不授权新的调用。结果只在当次交付与授权的 ignored run 目录中保存，不再写 Provider 验收页或当前模型清单。
+这些是受控开发工具，不是生产重试器、压测器或额外协议框架。调用授权归 [AGENTS.md](../AGENTS.md#standing-authorization-for-live-provider-verification)，本页维护执行方法与安全控制。目标、默认值和暂停项读取入口代码及 `examples/probe_support/catalog.py`；它们不等于产品支持集合，查询方法见 [AGENTS.md](../AGENTS.md#current-provider-model-and-compatibility-information)。结果只在当次交付与授权的 ignored run 目录中保存，不再写 Provider 验收页或当前模型清单。
 
 ## 先计划，后执行
 
-通用对话 runner 要求可发送的上游输出 token cap，因此不接入 SIWC；不能通过删掉 cap 或重命名旧产品测试项绕过预算合同。SIWC 真实 gate 需另行定稿请求数、时间/资源预算和无法保证上游停算/费用的边界，再取得具体授权。
+通用对话 runner 要求可发送的上游输出 token cap，因此不接入 SIWC；不能通过删掉 cap 或重命名旧产品测试项绕过预算合同。SIWC 真实 gate 需先定稿请求数、时间/资源预算和无法保证上游停算/费用的边界，并实现适用的执行守卫；调用授权不代替这些前置条件。
 
 全部自动 live 入口共享同一个 run 目录和 SQLite 账本。先查询并设置非敏感的 `PROVIDER_ID`、`PUBLIC_MODEL`（不是凭据），显式选取本次目标，不依赖默认模型。计划创建及 dry-run 不读取凭据、不启动服务、不联网：
 
@@ -18,7 +18,7 @@ uv run --project tests/sdk --locked --offline python examples/probe.py run \
 
 目录必须不存在；不覆盖旧计划。`plan.json` 的 hash 与账本绑定，修改预算/目标后不能继续消费原 run。公开 plan view 是副本；进程间 reservation 使用 SQLite 事务。发送前预留额度，已预留或 dispatched 后中断的请求仍计入预算，不能自动退款或重放同一 scenario。计划有效期 24 小时；过期后禁止新发送，但仍可读取报告和完成已预留请求的记录。
 
-授权覆盖这一具体批次后，显式运行：
+使用本次计划显式运行：
 
 ```sh
 cargo build --locked --offline --bin morphiecore
@@ -27,7 +27,7 @@ uv run --project tests/sdk --locked --offline python examples/probe.py run \
 uv run --project tests/sdk --locked --offline python examples/probe.py report testdata/runtime/my-run
 ```
 
-- Provider 只取固定 catalog 中的绑定。真实执行须用 `MORPHIECORE_PROBE_CREDENTIALS_DIR` 指定已配置的自有 JSON 目录；该变量仅含路径，不含 key 或账户选择。Gateway probe 将选定 models、临时入口 token 和 `max_attempts: 1` 写入 run 下的私有配置，binary 独自加载上游凭据；即使 store 的 pool 开启 fallback，probe 也不隐式多发请求。无 TOML/env key 回退或第三方 auth-cache 搜索。库级 probe 只读取已配置 API-key 池的首项快照，不自动 fallback/refresh。订阅 Provider 仍须明确选择。实际 SDK 客户端只获得临时 gateway token；上游凭据不复制进 run 或进程环境。
+- Provider 只取固定 catalog 中的绑定。真实执行须用 `MORPHIECORE_PROBE_CREDENTIALS_DIR` 显式传入按 [STORE 选择规则](../AGENTS.md#security-and-resources)确定的自有目录；默认值与覆盖方式见[凭据指南](credentials.md#自有文件目录)。该变量仅含路径，不含 key 或账户选择。Gateway probe 将选定 models、临时入口 token 和 `max_attempts: 1` 写入 run 下的私有配置，binary 独自加载上游凭据；即使 store 的 pool 开启 fallback，probe 也不隐式多发请求。无 TOML/env key 回退或第三方 auth-cache 搜索。库级 probe 只读取已配置 API-key 池的首项快照，不自动 fallback/refresh。订阅 Provider 仍须明确选择。实际 SDK 客户端只获得临时 gateway token；上游凭据不复制进 run 或进程环境。
 - `plan --model` 可重复，将所选 Provider 缩小到精确模型子集。重复、未知或不属于所选 Provider 的模型在读取凭据前拒绝。省略模型筛选则包含所选 Provider 的全部已登记测试绑定，不能将此默认扩大解释为授权。
 - `run --model` 可重复，必须属于计划；`--protocol chat|responses`、`--delivery json|sse` 缩小范围。`--effort none|minimal|medium|max` 是明确请求控制，不自动改默认。
 - cases：`text`、`json`、`tool`、`history`、`length`、`cancel`、`image`、`image_math`、`file`、`file_url`、`file_continue`、`file_replay`、`file_reasoning`、`file_reasoning_math`；`reasoning` 的目标限制读取 `examples/probe_support/scenarios.py`，不得套用到任意模型。
@@ -56,7 +56,7 @@ uv run --project tests/sdk --locked --offline python examples/probe.py run \
   testdata/runtime/image-run --model "$PUBLIC_MODEL" --cases image_generate --dry-run
 ```
 
-公开 Images API 的参数扩展不自动扩大既有付费 probe 矩阵；质量、尺寸、moderation 等新控制须另定场景，现有发送守卫仍拒绝它们。`image_generate` 是缺省、显式单图非流式、null 默认值三种独立请求；可用 `image_generate_minimal`、`image_generate_explicit`、`image_generate_nullable` 分别选择。只有 `images` 协议与 JSON 交付；不使用 reasoning、图片编辑、更多模型或自动 retry。真实发送仍需该矩阵授权、显式 `--live`、已配置的凭据目录与当前 binary；不把 plan 创建当作授权。不设 token cap 或金额 cap 不等于没有 request/image 数量边界，也不是远端费用硬限制。
+公开 Images API 的参数扩展不自动扩大既有付费 probe 矩阵；质量、尺寸、moderation 等新控制须另定场景，现有发送守卫仍拒绝它们。`image_generate` 是缺省、显式单图非流式、null 默认值三种独立请求；可用 `image_generate_minimal`、`image_generate_explicit`、`image_generate_nullable` 分别选择。只有 `images` 协议与 JSON 交付；不使用 reasoning、图片编辑、更多模型或自动 retry。真实发送使用计划内矩阵、显式 `--live`、已配置的凭据目录与当前 binary。request/image 数量边界不等于远端费用硬限制。
 
 多图使用独立新计划和显式场景，不扩大旧三场景：`plan --task images --images-per-request 2 --limit 1` 配合 `run --cases image_generate_pair`，其余目标参数同上。该场景一次请求两张图，控制仅为 `n=2, stream=false`；单图计划不能发送它，两图计划也不能消费旧单图场景。工具暂不提供其他数量的场景，不遍历 1–10。
 

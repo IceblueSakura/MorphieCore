@@ -6,7 +6,7 @@
 
 ## 授权与安全边界
 
-[OAuth/OIDC 标准](references/README.md#oauth-standards)与具体产品准入分开；登录、refresh、revocation、credential-bearing 发现与推理须分别取得目标、效果和必要预算授权。公开 metadata、固定源码与 synthetic 验证不能证明真实账户资格或上游接受。
+[OAuth/OIDC 标准](references/README.md#oauth-standards)与具体产品准入分开。凭据生命周期、credential-bearing 发现与推理的权限统一归 [AGENTS.md](../AGENTS.md#scope-and-authorization)。公开 metadata、固定源码与 synthetic 验证不能证明真实账户资格或上游接受。
 
 凭据、locator、选定账户、registration 与 refresh/retry state 属于认证/执行 owner，不进入 Task IR；纯 codec/lowering 不访问凭据、registry 或网络。业务 JSON 不选择 authority、账户、认证 headers 或脚本。数据面只借用短生命周期、身份绑定的 access 视图，不获得完整 credential bundle。
 
@@ -202,4 +202,4 @@ SIWC 的注册参数与应用名称归 [driver](../src/credential/siwc.rs)，des
 
 `list` 按 kind 输出本地状态；不输出 secret、主体/workspace、内部 replay identity 或 token 前后缀。API key 的 recovery 标记优先于 enabled；OAuth access 的 unknown 不等于 valid。Pool list 仅面向操作者显示引用和策略，不能作为下游凭据选择 API。
 
-新增授权 profile 实现 [driver](../src/credential/driver.rs)并显式注册；不在 manager/store 堆叠 Provider 分支或可执行脚本。默认验证只使用 synthetic 本地文件/authority，命令见 [开发指南](development.md)；真实授权、迁移、推理和付费 probes 仍须单独授权。
+新增授权 profile 实现 [driver](../src/credential/driver.rs)并显式注册；不在 manager/store 堆叠 Provider 分支或可执行脚本。默认验证只使用 synthetic 本地文件/authority，命令见 [开发指南](development.md)。

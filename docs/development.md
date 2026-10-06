@@ -109,7 +109,7 @@ SDK 场景使用不会被 Python 优化模式移除的显式检查；普通/优�
 
 ## 受控真实 Provider gates
 
-统一入口、计划、共享账本、预算、原调用诊断和具名场景归 [probe 指南](probes.md)。真实调用必须另行授权目标、矩阵、请求/token 预算和脱敏范围；已有凭据、计划或成功记录不授权重跑。
+真实调用授权归 [AGENTS.md](../AGENTS.md#standing-authorization-for-live-provider-verification)；统一入口、计划、共享账本、执行预算、原调用诊断和具名场景归 [probe 指南](probes.md)。
 
 离线回放仅处理明确指定的获准 capture，不读凭据、不联网，也不把同源 capture 当作独立 fixture。使用入口前检查 [library probe](../examples/live_probe.rs) 的 replay 分支或 [replay CLI](../examples/replay_chat.rs) 的实际参数范围。原始正文捕获默认关闭；诊断和报告只保存白名单元数据，不能记录 credentials、正文或 opaque 值。
 

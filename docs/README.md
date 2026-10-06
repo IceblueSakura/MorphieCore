@@ -4,7 +4,7 @@
 
 ## 按任务阅读
 
-- **运行与接入**：[HTTP 指南](http-gateway.md) → 所需的[凭据操作](credentials.md)；真实调用另按 [Probe 指南](probes.md)取得授权。
+- **运行与接入**：[HTTP 指南](http-gateway.md) → 所需的[凭据操作](credentials.md)；操作授权归 [AGENTS.md](../AGENTS.md#scope-and-authorization)，真实验证方法归 [Probe 指南](probes.md)。
 - **修改行为**：[当前焦点](implementation-plans/current-focus.md)与[后续计划](implementation-plans/next-goal.md) → [语义架构索引](architecture/README.md)中的相关合同 → owning code、独立测试与[开发检查](development.md)。不要求通读所有参考资料。
 - **定位缺口**：[实施边界索引](implementation-status/README.md)区分实现缺口与等待证据的问题；不要把缺口列表当排期。
 - **核对协议**：[来源索引](references/README.md)定位固定标准、SDK 与产品 profile；动态准入按 [AGENTS 查询流程](../AGENTS.md#current-provider-model-and-compatibility-information)现场核对。

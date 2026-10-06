@@ -28,7 +28,7 @@ Generation 主线是 Agent-first 的 Text/Image/File 交互，以规范 Response
 cargo run --locked --offline --bin morphiecore
 ```
 
-先按[HTTP 指南](docs/http-gateway.md)准备入口配置，账户与池操作见[凭据指南](docs/credentials.md)。真实登录、推理或付费测试需独立授权，使用[受控 probe](docs/probes.md)，不属于默认检查。
+先按[HTTP 指南](docs/http-gateway.md)准备入口配置，账户与池操作见[凭据指南](docs/credentials.md)。登录与真实调用的授权统一见 [AGENTS.md](AGENTS.md#scope-and-authorization)；真实推理使用[受控 probe](docs/probes.md)，不属于默认检查。
 
 ## 验证
 

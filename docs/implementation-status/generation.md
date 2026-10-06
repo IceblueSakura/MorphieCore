@@ -31,7 +31,7 @@
 - [CustomSections / CodexHeaders](../../src/protocol/extensions.rs)只是低层 carrier；[Adapter request](../../src/adapter/request.rs)限制 body sections，Codex headers 未接入 HTTP 主链。响应自定义段、typed observation headers、body/header 一致性、版本与 turn 生命周期仍需定稿。
 - configuration/program/cache 的表示不授权应用设置、执行 program、管理 turn 或扩展 prewarm 执行。Continuation 不提供自动 Agent loop。
 - [凭据管理](../credentials.md)与固定 Route/pool 前移不提供请求内登录、自动 refresh/轮换、动态 registry、同候选 retry、负载均衡、健康调度或 session affinity。更广失败分类与长期调度须独立合同；未知 scope 的 429 不授权换凭据。
-- SIWC 的真实 registration/账户资格、模型发现与执行需独立授权和验证；现有 token-cap probe 不能直接用于不支持上游输出 token cap 的 SIWC。远程 token 持久化/复制的条款边界仍按 [SIWC 来源](../references/siwc-login.md#远程-host-与分布式应用边界)确认，不由本地实现解除。
+- SIWC 的真实 registration/账户资格、模型发现与执行需独立验证，操作授权归 [AGENTS.md](../../AGENTS.md#scope-and-authorization)；现有 token-cap probe 不能直接用于不支持上游输出 token cap 的 SIWC。远程 token 持久化/复制的条款边界仍按 [SIWC 来源](../references/siwc-login.md#远程-host-与分布式应用边界)确认，不由本地实现解除。
 - canonical model 相同不证明跨候选 opaque replay 安全；内部 scope 也不是客户端 token 的 issuer 真实性证明。多成员入口尚无 client-carried affinity，source-bound replay 仍受现行拒绝边界约束。
 - 最小 loopback 网关与有界 probe 元数据不等于生产观测、负载或长期资源保障。
 

@@ -17,7 +17,7 @@ cargo run --locked --offline --bin morphiecore -- \
 
 Pool 按编译 binding 启用候选；只有账户或 key、没有 pool，不激活推理。凭据绑定变化与并发管理的规则见[凭据指南](credentials.md)；本地可借用不证明上游授权、模型资格或额度。
 
-仅启动不产生模型生成请求。真实登录、推理与付费测试需另行授权；默认验收只用 synthetic keys 和 loopback Provider。Ctrl-C 发起 graceful shutdown，取消在途上游并拒绝新业务请求，不证明 Provider 停算或停止计费。
+仅启动不产生模型生成请求。真实操作的授权归 [AGENTS.md](../AGENTS.md#scope-and-authorization)；默认验收只用 synthetic keys 和 loopback Provider。Ctrl-C 发起 graceful shutdown，取消在途上游并拒绝新业务请求，不证明 Provider 停算或停止计费。
 
 ## HTTP 合同
 
@@ -162,7 +162,7 @@ IR 保留实际末句/词时序及 channel；不从末句假造全文时序，�
 
 首次下游 frame 发布即保守冻结前移，body handoff 才确认 commit；HTTP response 已交出后不能改状态。Late error、取消、超时、错误/缺失终态中止 body，不合成成功 `response.completed` / `[DONE]`。模型 incomplete 等合法非成功语义终态与 transport 失败分开，不作为 fallback 理由。
 
-上游强制 SSE 与下游交付独立：JSON 有界聚合至验证终态及严格 EOF，SSE 增量交付。只有具名 profile 可接受缺失 Content-Type 的固定 SSE，显式冲突仍拒绝。每步至多消费一个 frame，未 handoff 不推进后续语义处理；严格 EOF 后释放终态，最终 handoff 后完成。编码/排队不是 commit，server handoff 也不是客户端/TCP acknowledgement。Drop、shutdown 或消费者不 poll 时，取消/deadline 仍释放上游资源。
+上游强制 SSE 与下游交付独立：JSON 有界聚合至验证终态及严格 EOF，SSE 增量交付。只有 [adapter](../src/adapter/mod.rs) 明确启用具名规则时，才可在 Content-Type 真正缺失时按固定 SSE 合同读取，不根据正文猜协议；显式空值、非法值、重复头或冲突媒体类型均拒绝。每步至多消费一个 frame，未 handoff 不推进后续语义处理；严格 EOF 后释放终态，最终 handoff 后完成。编码/排队不是 commit，server handoff 也不是客户端/TCP acknowledgement。Drop、shutdown 或消费者不 poll 时，取消/deadline 仍释放上游资源。
 
 ## 操作者诊断
 
@@ -178,4 +178,4 @@ Run/attempt 归属、指标解释与真实调用预算只由[Probe 指南](probe
 
 `Gateway::new` 接收编译 topology、显式 entries、凭据绑定与 limits，不读取环境。`router()` 的嵌入方维护 listener 安全边界；`serve()` 自行检查 loopback 并连接 shutdown，丢弃 serve future 也取消 owned workers。跨协议 entry 仍受相同 IR/投影约束。
 
-独立 owning-layer、Router/binary 与固定 SDK loopback 检查的职责和命令归[开发指南](development.md)。真实外部验证须按[Probe 指南](probes.md)另行授权；局部检查不证明一般 Agent、TLS/网络、缓存收益、负载或生产稳定性。运行结果不保存在本页。
+独立 owning-layer、Router/binary 与固定 SDK loopback 检查的职责和命令归[开发指南](development.md)，真实 Provider 验证方法归[Probe 指南](probes.md)。局部检查不证明一般 Agent、TLS/网络、缓存收益、负载或生产稳定性。运行结果不保存在本页。

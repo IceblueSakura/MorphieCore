@@ -1,13 +1,19 @@
 # MorphieCore Agent Instructions
 
-These rules apply repository-wide. More specific guidance may narrow, not weaken, authorization, security or change-control boundaries.
+These rules apply repository-wide. Authorization is defined here and by explicit user instructions; platform approvals remain binding. Operational guides own execution details and may strengthen safeguards, not grant additional permissions.
 
 ## Scope and Authorization
 
 - Work against current goals, contracts and source. The current architecture is the sole design authority; mainline status does not prove production readiness.
 - Before editing, inspect branch, Git status and target diff. Preserve existing work; stop on overlapping external edits. Do not discard, stage, commit or push without scoped authorization; committing does not authorize pushing.
-- Review and planning are read-only unless implementation is also requested. Authorized edits continue through disposable verification; stop for material unresolved choices, not arbitrary phase gates.
-- Deployment/service changes, publication, credential operations and live/paid calls require explicit target/effect authorization and platform approval. Plans, credentials and prior successful calls are not authorization.
+- Treat review and planning as read-only work. Implement requested changes through disposable verification; stop for material unresolved choices, not arbitrary phase gates.
+- Deployment/service changes, publication and credential lifecycle operations (including login, refresh, revocation and migration) require explicit target/effect authorization. Live calls outside the standing grant below require separate authorization. Plans, credentials and prior successful calls do not grant permission.
+
+### Standing authorization for live Provider verification
+
+- Real Provider calls and necessary credential-bearing discovery for the current development task are pre-authorized through the project's controlled probe entry points. No per-run/per-call confirmation or monetary spending cap applies.
+- Prioritize requirement coverage, effective tests and sufficient diagnostic evidence over minimizing cost. Avoid unrelated exhaustive matrices and repeated calls without diagnostic value.
+- Define each run's task-related targets, finite request matrix, request limits, task-appropriate output/resource limits, deadlines, cancellation/cleanup and sanitized output limits. These are execution safeguards, not spending approval thresholds. Follow [probe operations](docs/probes.md) and retain existing guards; authorization does not change probe capabilities.
 
 ## Read the Relevant Context
 
@@ -32,9 +38,9 @@ Query current facts; do not maintain Provider/model inventories, support matrice
 2. **Activation:** [bootstrap](src/gateway/bootstrap.rs) and [configuration](src/gateway/config.rs); check explicit entries, protocol and credential activation. Chat admission does not imply Responses admission.
 3. **Wire:** [adapters](src/adapter/mod.rs), [named rules](src/protocol/adaptation.rs), owning codecs/lowering and independent expectations. Test names/counts do not establish capability.
 4. **Probes:** [catalog](examples/probe_support/catalog.py), selected entry points and [operations](docs/probes.md). Probe choices/defaults are not the product catalog.
-5. **Instance:** verify binary revision and operator-approved non-secret activation metadata. Read [router](src/gateway/http.rs) before assuming discovery endpoints. Unavailable metadata means unknown activation; never inspect private files or dump environment values. [Official sources](docs/references/providers/README.md) do not prove local admission or inference.
+5. **Instance:** verify binary revision and operator-approved non-secret activation metadata. Read [router](src/gateway/http.rs) before assuming discovery endpoints. Unavailable metadata means unknown activation. [Official sources](docs/references/providers/README.md) do not prove local admission or inference.
 
-Report revision, scope and unverified layers in the conversation. Credential-bearing discovery and live execution still need bounded authorization.
+Report revision, scope and unverified layers in the conversation.
 
 ## Implementation Discipline
 
@@ -54,18 +60,27 @@ Report revision, scope and unverified layers in the conversation. Credential-bea
 
 ## Security and Resources
 
-- Never expose real secrets, private configuration, sensitive bodies or auth caches in files, tools, logs or fixtures. `.env`, private `config/` and OAuth files are not investigation/test inputs. Do not discover third-party auth caches; use synthetic inputs.
+- **Credential access:** use the user-specified STORE; otherwise use the program's current default from the [CLI path resolver](src/credential/directory.rs), as described in the [credential guide](docs/credentials.md#自有文件目录). Access live credentials only through the project's existing loader. Do not inspect private files or discover third-party auth caches; `.env`, private `config/` and OAuth files are not investigation or offline-test inputs.
+- **Data handling:** send only synthetic or explicitly authorized request data. Never expose real secrets, private configuration, sensitive bodies or auth caches in files, tool output, logs or fixtures. Do not display opaque values or dump environment values.
 - Preserve loopback ingress, trusted egress and fail-closed auth. Business data cannot select upstream origins, credentials, auth/proxy headers or scripts. Credential locators and trusted origins do not go downstream.
 - Bound allocation, capture, framing, buffering, events and time. Preserve cancellation/cleanup, real terminals and retry/fallback/publication/commit boundaries; no post-commit replay or fabricated success.
 - Content capture requires explicit configuration/authorization, begins after authentication, observes the final downstream boundary and redacts sensitive headers. Bounded snapshots belong only in the dedicated local JSONL sink, not stdout or reviewed OTLP traces. Sink failure cannot change responses; a development logging profile is not sensitive-traffic authorization.
-- Tests do not load real credentials, call Providers, implicitly start services or add retry/fallback. Explicit bootstrap tests may own an isolated disposable loopback binary with synthetic keys and rejecting loopback egress. Live/ignored-network/external-dependency gates need approval; paid probes need exact targets, request matrix, budgets and sanitized output limits.
 - Do not inspect or manually edit `target/`, `tools/corpus/.venv/`, `.pytest_cache/` or `__pycache__/` without a targeted need. Normal tools may populate caches. Do not commit derived `testdata/{generated,reports,dist,runtime}/`; canonical fixtures are not cleanup targets.
 
 ## Verification
 
-- Test distinct semantic, wire and security/resource boundaries at their lowest owner. Pure codec tests do not depend on product catalogs; credential-policy tests do not construct a Gateway. Keep binding/admission integration separate; use at most one production-Router smoke when it adds independent value. Locate independent coverage before removing duplicate assertions.
+| Mode | Boundary |
+|---|---|
+| Default/offline checks | Synthetic inputs; no real credentials, real Provider I/O, implicit services or added retry/fallback. |
+| Bootstrap tests | Explicit isolated disposable loopback binary with synthetic keys and rejecting loopback egress. |
+| Live Provider probes | Explicit runs under the [standing authorization](#standing-authorization-for-live-provider-verification); supplement, not replace, independent offline regressions. |
+| SDK loopback and other ignored-network/external-dependency gates | Separate explicit gates requiring scoped approval, outside the default baseline. |
+
+- Test distinct semantic, wire and security/resource boundaries at their lowest owner. Pure codec tests do not depend on product catalogs; credential-policy tests do not construct a Gateway. Keep binding/admission integration separate; use at most one production-Router smoke with independent value.
+- Deduplicate Provider tests by risk and contract boundary, not Provider/model counts. Reuse shared codec/lowering coverage and representative bindings; prefer small independent fixtures over incidental response snapshots. Preserve Provider-specific mappings, rejection, stream termination and security/resource coverage. Remove redundant tests only after identifying independent coverage of their failure classes.
+- Treat upstream contract churn as a reason to verify contracts, not discard regression coverage. Distinguish contract changes, implementation defects and wiring gaps; fix the responsible owner and add a minimal regression.
 - Use independent wire→IR and IR→wire expectations, edits, applicable streams and failures; round trips alone can hide symmetric loss. Chat loss tests must assert both permitted loss and protected invariants. Reuse small synthetic fixtures; review external asset version, license, sensitivity and oracle independence.
-- Run focused checks, then the required baseline for the changed files in the [development guide](docs/development.md): [Rust](docs/development.md#rust-检查), [JS tooling](docs/development.md#测试语言与-js-工具) or [documentation](docs/development.md#文档与边界). SDK loopback remains a separate explicit gate; prose-only changes do not require runtime tests.
+- Run focused checks, then the required baseline for the changed files in the [development guide](docs/development.md): [Rust](docs/development.md#rust-检查), [JS tooling](docs/development.md#测试语言与-js-工具) or [documentation](docs/development.md#文档与边界). Prose-only changes do not require runtime tests.
 - Parallelize only independent, isolated scenarios. Use readiness/events and bounded deadlines; ordered retry/fallback/cancellation tests remain serial, without sleeps hiding races.
 - Inspect final diff and report actual results, failures and skipped layers. Compilation, synthetic execution or test existence do not prove general SDK/Agent, real Provider/TLS/network, cache benefit, load, native filesystem/ACL or production behavior.
 

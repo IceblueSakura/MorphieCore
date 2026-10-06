@@ -48,6 +48,7 @@ impl Dialect {
                 WireRules {
                     responses_forced_stream: true,
                     responses_siwc: true,
+                    responses_sse_without_content_type: true,
                     ..Default::default()
                 },
             ),
