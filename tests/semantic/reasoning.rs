@@ -41,6 +41,37 @@ fn wire_part(output: usize, id: &str, index: usize, summary: bool, s: &str) -> V
     values
 }
 #[test]
+fn reasoning_effort_defaults_do_not_create_an_independent_enable_switch() {
+    use morphiecore::adapter::{Adapter, Dialect};
+    use morphiecore::semantic::value::Presence;
+
+    let codec = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    for reasoning in [None, Some(json!({})), Some(json!({"summary":"auto"}))] {
+        let mut body = json!({"model":"synthetic","input":"hello"});
+        if let Some(value) = reasoning {
+            body["reasoning"] = value;
+        }
+        let request = codec.decode_request(body.to_string().as_bytes()).unwrap();
+        assert_eq!(request.task.semantic.reasoning().effort, Presence::Absent);
+        let wire = codec
+            .encode_request(&request, "synthetic", &Contract::full())
+            .unwrap();
+        assert_eq!(wire.get("reasoning"), body.get("reasoning"));
+        assert!(wire.get("enable_thinking").is_none());
+    }
+    for enabled in [false, true] {
+        for field in ["enabled", "enable_thinking"] {
+            let mut body = json!({"model":"synthetic","input":"hello","reasoning":{}});
+            body["reasoning"][field] = json!(enabled);
+            assert!(codec.decode_request(body.to_string().as_bytes()).is_err());
+            body.as_object_mut().unwrap().shift_remove("reasoning");
+            body[field] = json!(enabled);
+            assert!(codec.decode_request(body.to_string().as_bytes()).is_err());
+        }
+    }
+}
+
+#[test]
 fn standard_summary_rejects_nonstandard_values_on_requests_echoes_and_events() {
     use morphiecore::adapter::{Adapter, Dialect};
     for name in ["summary", "generate_summary"] {

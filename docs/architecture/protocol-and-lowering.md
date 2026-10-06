@@ -15,6 +15,7 @@
 - Codec 拥有语法、envelope、presence、事件 grammar 与已声明 carrier；adapter 组合受信规则，不成为第二份语义模型。完整响应、请求简写和 SDK 派生视图分别验证。
 - Lowering 判断最终 typed 值是否能按指定目标和投影策略表达。它不选择 Provider、查 registry、取 credential 或联网，不在 encode 后修改 JSON。
 - 等价别名、已验证派生视图、精确数值推导与字段级兼容默认必须具名、有限且有前提。默认不覆盖实际报告或 malformed 值，来源记录在语义外；编码不能重做 intake 默认来恢复删除值。
+- 未知报告优先使用所选标准的缺省或 nullable 载体；Generation usage 未报告时输出 `null`，不补造零计量。格式错误或计数矛盾仍失败，不能替换为未知以掩盖错误。仅在现有标准语义无法表达时，才按定稿的具名规则考虑兼容回落值，并与实际报告区分；这不是通用补零或吞错许可。
 - 同协议与跨协议使用同一链路。对原始字节必须在丢失键序列前拒绝重复 JSON key，并限制解析深度/节点/bytes；预解析 Value 不能证明原字节合法。共享 parser 归 [JSON owner](../../src/semantic/value/json.rs)。
 
 ## 能力与固定目标

@@ -322,7 +322,7 @@ fn chat_encoder_uses_final_events_and_respects_usage_delivery() {
 }
 
 #[test]
-fn chat_encoder_padding_limits_and_missing_usage_do_not_emit_done() {
+fn chat_encoder_padding_limits_do_not_emit_done() {
     let mut d = decoder();
     let mut events = vec![];
     for v in wire::events(2) {
@@ -395,27 +395,107 @@ fn chat_encoder_padding_limits_and_missing_usage_do_not_emit_done() {
         assert!(encoder.finish().is_err());
         assert!(encoder.encode(events.last().unwrap(), &r.fidelity).is_err());
     }
-    let mut encoder = ChatSseEncoder::new(
-        r.metadata,
-        Contract::full(),
-        SseLimits::default(),
-        options(true),
-        Obfuscation::Disabled,
-    )
-    .unwrap();
-    for event in &events {
-        if matches!(event, StreamEvent::Usage(_)) {
-            continue;
+}
+
+#[test]
+fn requested_but_unreported_chat_usage_stays_null_without_fabricating_reports() {
+    for reason in ["stop", "length", "content_filter"] {
+        let mut values = wire::events(2);
+        values[3]["choices"][0]["finish_reason"] = json!(reason);
+        let mut d = decoder();
+        let mut events = vec![];
+        for value in values
+            .iter()
+            .filter(|value| !value["choices"].as_array().unwrap().is_empty())
+        {
+            events.extend(consume(&mut d, &frame(value), 1));
         }
-        if matches!(event, StreamEvent::Terminal { .. }) {
-            assert!(encoder.encode(event, &r.fidelity).is_err());
-        } else {
-            for frame in encoder.encode(event, &r.fidelity).unwrap() {
+        assert!(d.materialize().is_err());
+        events.extend(consume(&mut d, b"data: [DONE]\n\n", 1));
+        d.finish().unwrap();
+        let r = d.materialize().unwrap();
+        assert_eq!(r.semantic.usage(), None);
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, StreamEvent::Usage(_)))
+        );
+        for include_usage in [false, true] {
+            let mut encoder = ChatSseEncoder::new(
+                r.metadata.clone(),
+                Contract::full(),
+                SseLimits::default(),
+                options(include_usage),
+                Obfuscation::Disabled,
+            )
+            .unwrap();
+            let mut bytes = vec![];
+            for event in &events {
+                for frame in encoder.encode(event, &r.fidelity).unwrap() {
+                    bytes.extend(frame);
+                }
+            }
+            encoder.finish().unwrap();
+            let text = std::str::from_utf8(&bytes).unwrap();
+            assert_eq!(text.matches("data: [DONE]\n\n").count(), 1);
+            let chunks: Vec<Value> = text
+                .lines()
+                .filter_map(|line| line.strip_prefix("data: "))
+                .filter(|line| *line != "[DONE]")
+                .map(|line| serde_json::from_str(line).unwrap())
+                .collect();
+            assert!(
+                chunks
+                    .iter()
+                    .all(|chunk| chunk.get("usage") == Some(&Value::Null))
+            );
+            assert_eq!(
+                chunks.last().unwrap()["choices"][0]["finish_reason"],
+                reason
+            );
+            let mut round = decoder();
+            consume(&mut round, &bytes, 1);
+            round.finish().unwrap();
+            assert_eq!(round.materialize().unwrap().semantic, r.semantic);
+        }
+        let mut incomplete = ChatSseEncoder::new(
+            r.metadata.clone(),
+            Contract::full(),
+            SseLimits::default(),
+            options(true),
+            Obfuscation::Disabled,
+        )
+        .unwrap();
+        for event in events
+            .iter()
+            .filter(|event| !matches!(event, StreamEvent::Terminal { .. }))
+        {
+            for frame in incomplete.encode(event, &r.fidelity).unwrap() {
                 assert_ne!(frame.as_ref(), b"data: [DONE]\n\n");
             }
         }
+        assert!(incomplete.finish().is_err());
     }
-    assert!(encoder.finish().is_err());
+}
+
+#[test]
+fn invalid_chat_usage_cannot_fall_back_to_null_or_recover_at_done() {
+    for usage in [
+        json!({"prompt_tokens":1,"completion_tokens":2,"total_tokens":4}),
+        json!({"prompt_tokens":-1,"completion_tokens":2,"total_tokens":1}),
+        json!({"prompt_tokens":"1","completion_tokens":2,"total_tokens":3}),
+    ] {
+        let mut values = wire::events(2);
+        values.last_mut().unwrap()["usage"] = usage;
+        let mut d = decoder();
+        for value in &values[..values.len() - 1] {
+            consume(&mut d, &frame(value), 1);
+        }
+        assert!(d.consume(&frame(values.last().unwrap())).is_err());
+        assert!(d.consume(b"data: [DONE]\n\n").is_err());
+        assert!(d.finish().is_err());
+        assert!(d.materialize().is_err());
+    }
 }
 
 #[test]

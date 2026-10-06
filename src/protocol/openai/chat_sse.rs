@@ -158,7 +158,6 @@ pub struct ChatSseEncoder {
     wire_bytes: usize,
     events: usize,
     padding_bytes: usize,
-    usage_seen: bool,
     done: bool,
     rejected: bool,
 }
@@ -187,7 +186,6 @@ impl ChatSseEncoder {
             wire_bytes: 0,
             events: 0,
             padding_bytes: 0,
-            usage_seen: false,
             done: false,
             rejected: false,
         })
@@ -215,15 +213,10 @@ impl ChatSseEncoder {
                 return Err(SseError::Closed);
             }
             let terminal = matches!(event, StreamEvent::Terminal { .. });
-            if terminal && self.options.usage() && !self.usage_seen {
-                return Err(SseError::Codec(CodecError::Invalid(
-                    "missing requested Chat usage",
-                )));
-            }
+            // Nullable usage preserves an unknown report; requesting its delivery
+            // never authorizes inventing counters or replacing a real terminal.
+            // https://developers.openai.com/api/reference/resources/chat/completions
             let values = self.codec.encode(event, source)?;
-            if matches!(event, StreamEvent::Usage(_)) {
-                self.usage_seen = true;
-            }
             let mut frames = vec![];
             for mut value in values {
                 // Both standard empty-choice and repeated-finish adapters emit

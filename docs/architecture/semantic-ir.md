@@ -83,7 +83,7 @@ Presence 逐字段定义：Absent、Null、空值、false、显式 default 不�
 ## 7. 控制、计量与缓存
 
 - Schema 值/方言/引用、adherence 意图和目标 strict/配额分开；结构有效不等于生成结果遵循 Schema。不得删 required 或暗改约束迁就目标。当前准入归 [Schema profile](schema-profile.md)。
-- Reasoning mode、effort、数值预算、显示/summary、实际可读内容与 opaque replay 分开。隐藏摘要不证明未推理，也不解除回放依赖；详细交互规则归[交互合同](interaction-contract.md)。
+- Reasoning mode、effort、数值预算、显示/summary、实际可读内容与 opaque replay 分开。不承载“显式开启但不指定强度”的独立开关；effort 缺省保留模型默认行为，不解释为显式开启或关闭。不支持 effort 档位的目标后续通过定稿映射或专用 adapter 适配，不静默折叠控制。隐藏摘要不证明未推理，也不解除回放依赖；详细交互规则归[交互合同](interaction-contract.md)。
 - Usage 的 scope、basis、单位、重叠/互斥关系、最终性和缺省须明确。未知不补零，累计快照不相加，命名派生 view 借用唯一报告，不另存可修改 total；降级后的缺省也不得冒充上游未报告。
 - Provider 原生缓存意图与命中事实分开；前缀策略、亲和 hint、远端资源引用不互为别名。证明只检验已声明依赖，不证明 wire 字节相等、Provider 命中或收益。Gateway 不因表示 cache 就拥有回答缓存、跨请求粘性路由或 Agent 记忆。
 

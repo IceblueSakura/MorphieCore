@@ -65,7 +65,7 @@ Chat `response_format` 与 Responses `text.format` 共享输出意图，但 wrap
 
 ## Delivery and terminal rules
 
-`stream_options` 只与 stream 组合，presence 与 effective defaults 分开。请求 include_usage 时编码必须收到真实 Usage 后才可闭合；不请求时允许省略对应 wire tail而不篡改内部报告。Padding 只属交付，预算独立，需调用方提供对应 seed/disabled 策略，不能耗尽后暗关。
+`stream_options` 只与 stream 组合，presence 与 effective defaults 分开。请求 include_usage 时交付实际报告的 usage tail；未报告时保留终态 chunk 的 `usage:null`，不补造 Usage 或零值 tail，也不阻止已有真实终态闭合。不请求时允许省略对应 wire tail 而不篡改内部报告。非法计量和缺失真实终态仍失败，遵守[未知报告的标准载体优先规则](protocol-and-lowering.md#codec-与-lowering)。Padding 只属交付，预算独立，需调用方提供对应 seed/disabled 策略，不能耗尽后暗关。
 
 `length` 与 `content_filter` 保持不同 incomplete 原因，refusal 内容独立；未知 finish 不能当 stop。Finish reason 只结束 candidate，真实 `[DONE]` 和严格 framing/EOF 才关闭流；缺失、早到、重复终态、终态后业务数据、截断与取消均不能恢复成功。
 

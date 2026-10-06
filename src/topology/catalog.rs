@@ -198,6 +198,63 @@ fn declared_topology_compiles() {
 }
 #[cfg(test)]
 #[test]
+fn bailian_strict_tools_are_admitted_without_changing_schema_or_other_bindings() {
+    use crate::{adapter::Dialect, protocol::openai::Profile};
+    use serde_json::json;
+
+    let topology = default_topology().unwrap();
+    for binding in API_KEY_BINDINGS
+        .iter()
+        .filter(|binding| matches!(binding.dialect, Dialect::Bailian | Dialect::DeepSeek))
+    {
+        let expected = binding.dialect == Dialect::Bailian;
+        let public = topology.model(binding.model).unwrap();
+        let canonical = topology.canonical_model(&public.canonical_model).unwrap();
+        assert_eq!(canonical.contract.strict_tools, expected);
+        assert_eq!(public.contract.strict_tools, expected);
+        for &protocol in binding.protocols {
+            let endpoint = binding.endpoint(protocol);
+            assert_eq!(endpoint.representation.semantics.strict_tools, expected);
+        }
+    }
+    let binding = API_KEY_BINDINGS
+        .iter()
+        .find(|binding| binding.dialect == Dialect::Bailian)
+        .unwrap();
+    let schema = json!({"type":"object","properties":{"value":{"type":"string"}},
+        "required":["value"],"additionalProperties":false});
+    for (protocol, profile) in [
+        (ProtocolProfile::OpenAiChat, Profile::Chat),
+        (ProtocolProfile::OpenAiResponses, Profile::Responses),
+    ] {
+        let tool = json!({"name":"echo","parameters":schema,"strict":true});
+        let body = match profile {
+            Profile::Chat => {
+                json!({"model":"synthetic","messages":[{"role":"user","content":"echo"}],
+                "tools":[{"type":"function","function":tool}]})
+            }
+            Profile::Responses => {
+                let mut tool = tool;
+                tool["type"] = json!("function");
+                json!({"model":"synthetic","input":"echo","tools":[tool]})
+            }
+        };
+        let client = Adapter::new(profile, Dialect::Standard, None);
+        let request = client.decode_request(body.to_string().as_bytes()).unwrap();
+        let before = request.clone();
+        request
+            .check_semantic(&binding.public_model().contract)
+            .unwrap();
+        let endpoint = binding.endpoint(protocol);
+        let wire = Adapter::new(profile, binding.dialect, None)
+            .encode_request(&request, binding.upstream, &endpoint.representation)
+            .unwrap();
+        assert_eq!(wire["tools"], body["tools"]);
+        assert_eq!(request, before);
+    }
+}
+#[cfg(test)]
+#[test]
 fn siwc_registration_is_public_responses_only_and_does_not_reuse_product_bindings() {
     let topology = default_topology().unwrap();
     assert!(topology.provider("codex").is_none());

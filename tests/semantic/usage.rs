@@ -342,3 +342,120 @@ fn details_close_chat_streams_but_cannot_disappear_at_a_responses_target() {
         assert!(responses.finish().is_err());
     }
 }
+
+#[test]
+fn absent_and_null_usage_remain_unknown_while_reported_zero_and_errors_stay_distinct() {
+    for (profile, mut source, zero) in [
+        (
+            Profile::Chat,
+            body(),
+            json!({"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}),
+        ),
+        (
+            Profile::Responses,
+            json!({"id":"r","object":"response","created_at":1,"model":"m",
+                "status":"completed","output":[]}),
+            json!({"input_tokens":0,"output_tokens":0,"total_tokens":0}),
+        ),
+    ] {
+        for dialect in [Dialect::Standard, Dialect::Bailian] {
+            let codec = Adapter::new(profile, dialect, None);
+            for present in [false, true] {
+                source.as_object_mut().unwrap().shift_remove("usage");
+                if present {
+                    source["usage"] = Value::Null;
+                }
+                let decoded = codec
+                    .decode_response(source.to_string().as_bytes())
+                    .unwrap();
+                assert_eq!(decoded.semantic.usage(), None);
+                assert!(decoded.semantic.usage_reports().is_empty());
+                let output = codec.encode_response(&decoded, &Contract::full()).unwrap();
+                assert_eq!(output.get("usage"), Some(&Value::Null));
+            }
+            source["usage"] = zero.clone();
+            let mut decoded = codec
+                .decode_response(source.to_string().as_bytes())
+                .unwrap();
+            assert_eq!(decoded.semantic.usage(), Some(Usage::operation(0, 0, 0)));
+            assert_eq!(
+                codec.encode_response(&decoded, &Contract::full()).unwrap()["usage"],
+                zero
+            );
+            decoded.semantic = decoded.semantic.with_usage_reports(vec![]).unwrap();
+            assert_eq!(
+                codec
+                    .encode_response(&decoded, &Contract::full())
+                    .unwrap()
+                    .get("usage"),
+                Some(&Value::Null)
+            );
+            let input_key = if profile == Profile::Chat {
+                "prompt_tokens"
+            } else {
+                "input_tokens"
+            };
+            for bad in [
+                json!({}),
+                json!("unavailable"),
+                json!(-1),
+                {
+                    let mut bad = zero.clone();
+                    bad[input_key] = json!("0");
+                    bad
+                },
+                {
+                    let mut bad = zero.clone();
+                    bad["total_tokens"] = json!(1);
+                    bad
+                },
+            ] {
+                source["usage"] = bad;
+                assert!(
+                    codec
+                        .decode_response(source.to_string().as_bytes())
+                        .is_err()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn responses_events_keep_unknown_usage_null_and_reject_contradictory_reports() {
+    use morphiecore::protocol::openai::events::EventDecoder;
+    let mut values = crate::wire::events(2);
+    values.last_mut().unwrap()["response"]["usage"] = Value::Null;
+    let mut decoder = EventDecoder::new(Profile::Responses);
+    let mut events = vec![];
+    for value in &values {
+        events.extend(decoder.push(value).unwrap());
+    }
+    decoder.finish().unwrap();
+    let decoded = decoder.materialize().unwrap();
+    assert_eq!(decoded.semantic.usage(), None);
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, StreamEvent::Usage(_)))
+    );
+    let mut encoder = EventEncoder::new(Profile::Responses, decoded.metadata.clone()).unwrap();
+    let mut output = vec![];
+    for event in &events {
+        output.extend(encoder.encode(event, &decoded.fidelity).unwrap());
+    }
+    encoder.finish().unwrap();
+    assert_eq!(
+        output.last().unwrap()["response"].get("usage"),
+        Some(&Value::Null)
+    );
+    values.last_mut().unwrap()["response"]["usage"] =
+        json!({"input_tokens":1,"output_tokens":2,"total_tokens":4});
+    let mut invalid = EventDecoder::new(Profile::Responses);
+    for value in &values[..values.len() - 1] {
+        invalid.push(value).unwrap();
+    }
+    assert!(invalid.push(values.last().unwrap()).is_err());
+    assert!(invalid.finish().is_err());
+    assert!(invalid.materialize().is_err());
+}
