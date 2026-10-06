@@ -128,6 +128,7 @@ pub(super) fn call_context(o: &Map<String, Value>) -> Result<CallContext, CodecE
         namespace,
         async_call,
         caller,
+        alias_domain: None,
     })
 }
 pub(super) fn write_call_context(context: &CallContext, o: &mut Map<String, Value>) {
@@ -525,6 +526,9 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     }
     target.semantic.validate()?;
     check_item_carriers(target.semantic.items())?;
+    target
+        .fidelity
+        .check_wire_item_ids(target.semantic.items(), false)?;
     if target.semantic.items().iter().any(|(_, item)| matches!(item, Item::ToolResult(result) | Item::CustomResult(result)
         if result.execution.is_some() || matches!(result.output, ToolOutput::Structured(_))
             || matches!(&result.output, ToolOutput::Parts(parts)
@@ -619,7 +623,7 @@ pub(super) fn encode_items(
                 fidelity
                     .response_item_id(*id)
                     .map(str::to_owned)
-                    .unwrap_or_else(|| format!("item_{}", id.get()))
+                    .unwrap_or_else(|| crate::protocol::fidelity::generated_item_id(*id))
             );
             if let Some(s) = item.lifecycle() {
                 v["status"] = json!(status_label(s));
@@ -636,7 +640,7 @@ pub(super) fn encode_items(
             ) || matches!(item, Item::Instruction(i) if i.status.is_some())
             {
                 // Typed snapshots require identity; fresh task items assign it.
-                v["id"] = json!(format!("item_{}", id.get()));
+                v["id"] = json!(crate::protocol::fidelity::generated_item_id(*id));
             }
             if item
                 .lifecycle()

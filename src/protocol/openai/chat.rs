@@ -403,6 +403,9 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         return Err(CodecError::ProfileMismatch);
     }
     check_item_carriers(target.semantic.items())?;
+    target
+        .fidelity
+        .check_wire_item_ids(target.semantic.items(), false)?;
     if target.semantic.items().iter().any(|(_, item)| matches!(item, Item::ToolResult(result) | Item::CustomResult(result) if result.execution.is_some() || !result.output.is_text_only())) {
         return Err(CodecError::Unsupported("tool result semantics".into()));
     }

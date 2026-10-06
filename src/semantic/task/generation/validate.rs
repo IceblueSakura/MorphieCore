@@ -34,6 +34,7 @@ enum CallKind {
     Custom,
     Program,
 }
+type AliasKey<'a> = (Option<&'a NativeAliasDomain>, &'a str);
 pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, GenerationError> {
     if items.is_empty() {
         return Err(GenerationError::EmptyInput);
@@ -124,10 +125,14 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
             }
             Item::ToolCall(c) => {
                 call_context(&c.context, &mut bytes)?;
-                namespaces.insert(c.call_id.as_str(), c.context.namespace.as_ref());
+                namespaces.insert(
+                    (c.context.alias_domain.as_ref(), c.call_id.as_str()),
+                    c.context.namespace.as_ref(),
+                );
                 validate_call(
                     &mut calls,
                     &mut bytes,
+                    c.context.alias_domain.as_ref(),
                     &c.call_id,
                     &c.name,
                     "",
@@ -150,11 +155,15 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
             }
             Item::CustomCall(c) => {
                 call_context(&c.context, &mut bytes)?;
-                namespaces.insert(c.call_id.as_str(), c.context.namespace.as_ref());
+                namespaces.insert(
+                    (c.context.alias_domain.as_ref(), c.call_id.as_str()),
+                    c.context.namespace.as_ref(),
+                );
                 active_owner = None;
                 validate_call(
                     &mut calls,
                     &mut bytes,
+                    c.context.alias_domain.as_ref(),
                     &c.call_id,
                     &c.name,
                     &c.input,
@@ -167,7 +176,7 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
             Item::Program(p) => {
                 active_owner = None;
                 if calls
-                    .insert(p.call_id.as_str(), CallKind::Program)
+                    .insert((None, p.call_id.as_str()), CallKind::Program)
                     .is_some()
                 {
                     return Err(GenerationError::DuplicateCall);
@@ -184,8 +193,9 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
                 // Request replay is the association boundary: outputs must name a
                 // preceding program; response items stay self-describing snapshots.
                 if o.status == ItemLifecycle::InProgress
-                    || !response && calls.get(o.call_id.as_str()) != Some(&CallKind::Program)
-                    || !results.insert(o.call_id.as_str())
+                    || !response
+                        && calls.get(&(None, o.call_id.as_str())) != Some(&CallKind::Program)
+                    || !results.insert((None, o.call_id.as_str()))
                 {
                     return Err(GenerationError::InvalidProgramOutput);
                 }
@@ -206,8 +216,9 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
             }
             Item::ToolResult(r) | Item::CustomResult(r) => {
                 call_context(&r.context, &mut bytes)?;
+                let reference = (r.context.alias_domain.as_ref(), r.call_id.as_str());
                 if r.context.namespace.as_ref().is_some_and(|namespace| {
-                    namespaces.get(r.call_id.as_str()).copied().flatten() != Some(namespace)
+                    namespaces.get(&reference).copied().flatten() != Some(namespace)
                 }) {
                     return Err(GenerationError::InvalidToolResult);
                 }
@@ -220,9 +231,7 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
                 } else {
                     CallKind::Function
                 };
-                if calls.get(r.call_id.as_str()) != Some(&kind)
-                    || !results.insert(r.call_id.as_str())
-                {
+                if calls.get(&reference) != Some(&kind) || !results.insert(reference) {
                     return Err(GenerationError::InvalidToolResult);
                 }
                 add(&mut bytes, r.call_id.as_str())?;
@@ -268,6 +277,12 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
     Ok(bytes)
 }
 fn call_context(context: &CallContext, bytes: &mut usize) -> Result<(), GenerationError> {
+    if let Some(domain) = &context.alias_domain {
+        if domain.source.as_str().is_empty() || domain.source.as_str().len() > 256 {
+            return Err(GenerationError::Limit);
+        }
+        add(bytes, domain.source.as_str())?;
+    }
     if let Some(namespace) = &context.namespace {
         if namespace.as_str().is_empty() || namespace.as_str().len() > 128 {
             return Err(GenerationError::InvalidToolDefinition);
@@ -283,14 +298,15 @@ fn call_context(context: &CallContext, bytes: &mut usize) -> Result<(), Generati
     Ok(())
 }
 fn validate_call<'a>(
-    calls: &mut BTreeMap<&'a str, CallKind>,
+    calls: &mut BTreeMap<AliasKey<'a>, CallKind>,
     bytes: &mut usize,
+    domain: Option<&'a NativeAliasDomain>,
     id: &'a crate::semantic::value::Text,
     name: &crate::semantic::value::Text,
     payload: &str,
     kind: CallKind,
 ) -> Result<(), GenerationError> {
-    if calls.insert(id.as_str(), kind).is_some() {
+    if calls.insert((domain, id.as_str()), kind).is_some() {
         return Err(GenerationError::DuplicateCall);
     }
     if id.as_str().is_empty()

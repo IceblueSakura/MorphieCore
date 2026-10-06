@@ -64,6 +64,38 @@
       "budget": "Existing synthetic request limits",
       "forbidden_effects": "No catalog-dependent codec oracle or product activation",
       "scope": "required; instance activation remains a separate gate"
+    },
+    {
+      "case_key": "scoped_call_aliases",
+      "ids": ["A03", "T16", "T21"],
+      "slice": "S1.1",
+      "sample_kind": "abstract_contract",
+      "evidence": "interaction-contract.md#身份分组与依赖; native schema not applicable",
+      "owner": "src/semantic/task/generation/identity.rs; validate.rs; continuation.rs; event.rs",
+      "target": "semantic",
+      "symbols": ["scoped_identity::equal_local_ids_and_native_aliases_in_distinct_domains_do_not_conflict", "scoped_identity::missing_ambiguous_and_wrong_kind_aliases_are_distinct", "scoped_identity::event_and_static_calls_share_domain_isolation_without_a_wire_projection", "scoped_identity::alias_lookup_binds_source_and_checks_its_independent_budget"],
+      "input": "Equal local IDs and native aliases in distinct explicit source/reference domains; result owner in a third scope",
+      "expected": "Unique exact association, independent pending calls, and equal static/event semantics; missing, ambiguous and wrong kind are distinct",
+      "transform": "Select explicit reference domain; vary source and alias kind",
+      "budget": "MAX_ITEMS and source/alias byte limits; source at B-1/B/B+1",
+      "forbidden_effects": "No nearest-match inference, random IDs, execution permission or source-tag trust",
+      "scope": "required identity isolation; product multi-candidate activation deferred"
+    },
+    {
+      "case_key": "scoped_alias_target_boundary",
+      "ids": ["A02", "A03"],
+      "slice": "S1.1",
+      "sample_kind": "abstract_contract",
+      "evidence": "protocol-and-lowering.md#source-records; native schema not applicable",
+      "owner": "src/protocol/fidelity.rs; src/lowering/generation.rs; src/lowering/events.rs",
+      "target": "semantic",
+      "symbols": ["scoped_identity::scoped_wire_ids_do_not_grant_a_carrier_for_ambiguous_target_aliases", "scoped_identity::event_and_static_calls_share_domain_isolation_without_a_wire_projection", "scoped_identity::scoped_local_wire_labels_are_deterministic_and_target_collisions_fail_before_emission"],
+      "input": "Equal reported wire IDs in distinct source scopes; a conflicting ID in the same scope; independently constructed scoped message owners",
+      "expected": "Source records isolate scopes; same-scope collision fails; new native reference domain lacks a public standard carrier and is rejected; generated carrier IDs are deterministic, and cross-scope source IDs cannot collide in target output",
+      "transform": "Bind native ID to surviving scoped owner",
+      "budget": "Existing fidelity and target limits",
+      "forbidden_effects": "No private carrier, silent domain loss or product activation",
+      "scope": "required"
     }
   ]
 }

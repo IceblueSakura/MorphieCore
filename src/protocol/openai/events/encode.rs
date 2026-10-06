@@ -94,7 +94,15 @@ impl EventEncoder {
                 let id = source
                     .response_item_id(*item)
                     .map(str::to_owned)
-                    .unwrap_or_else(|| format!("item_{}", item.get()));
+                    .unwrap_or_else(|| crate::protocol::fidelity::generated_item_id(*item));
+                if self
+                    .state()?
+                    .items()
+                    .iter()
+                    .any(|old| self.fidelity.response_item_id(old.id) == Some(id.as_str()))
+                {
+                    return Err(CodecError::Invalid("duplicate target wire identity"));
+                }
                 self.fidelity.record_response_item_id(*item, &id)?;
             }
             // Chat summary chunks have not emitted a wire item identity yet.

@@ -139,10 +139,12 @@ impl<'a> ResponseContinuation<'a> {
                 return Err(ContinuationError::ChangedResponse);
             }
             previous_position = Some(position);
-            let call_id = match item {
-                Item::ToolCall(call) => call.call_id.as_str(),
-                Item::CustomCall(call) => call.call_id.as_str(),
-                Item::Program(call) => call.call_id.as_str(),
+            let (domain, call_id) = match item {
+                Item::ToolCall(call) => (call.context.alias_domain.as_ref(), call.call_id.as_str()),
+                Item::CustomCall(call) => {
+                    (call.context.alias_domain.as_ref(), call.call_id.as_str())
+                }
+                Item::Program(call) => (None, call.call_id.as_str()),
                 _ => continue,
             };
             calls += 1;
@@ -151,7 +153,8 @@ impl<'a> ResponseContinuation<'a> {
                 .find_map(|(_, value)| match (item, value) {
                     (Item::ToolCall(_), Item::ToolResult(result))
                     | (Item::CustomCall(_), Item::CustomResult(result))
-                        if result.call_id.as_str() == call_id =>
+                        if result.call_id.as_str() == call_id
+                            && result.context.alias_domain.as_ref() == domain =>
                     {
                         Some(result.status)
                     }

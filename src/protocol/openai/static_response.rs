@@ -570,6 +570,9 @@ pub fn encode_chat(target: &ResponseRepresentation<'_>) -> Result<Value, CodecEr
     }
     check_response_carriers(target.semantic)?;
     check_item_carriers(target.semantic.items())?;
+    target
+        .fidelity
+        .check_wire_item_ids(target.semantic.items(), true)?;
     let finish = chat_finish(target.semantic)?;
     let mut messages = chat::encode_items_with(
         target.semantic.items(),
@@ -633,6 +636,9 @@ pub fn encode_responses(target: &ResponseRepresentation<'_>) -> Result<Value, Co
         Outcome::Failed => "failed",
         Outcome::Cancelled => "cancelled",
     };
+    target
+        .fidelity
+        .check_wire_item_ids(target.semantic.items(), true)?;
     let output = responses::encode_items(target.semantic.items(), target.fidelity, true);
     let m = target.metadata;
     let mut value = json!({"id":m.id,"object":"response","created_at":m.created,"model":m.model,"status":status,

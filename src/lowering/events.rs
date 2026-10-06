@@ -48,6 +48,11 @@ pub fn check_event(
         }
         StreamEvent::ItemStarted { kind, replay, .. } => {
             match kind {
+                ItemKind::ToolCall { context, .. } | ItemKind::CustomCall { context, .. }
+                    if context.alias_domain.is_some() =>
+                {
+                    return Err(RepresentationError::UnmigratedSemantic);
+                }
                 // Reject before rendering the call: a terminal check cannot
                 // repair membership lost from an already delivered item.
                 ItemKind::ToolCall {

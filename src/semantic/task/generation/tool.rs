@@ -38,6 +38,8 @@ pub struct CallContext {
     pub namespace: Option<Text>,
     pub async_call: bool,
     pub caller: Option<CallOrigin>,
+    /// Explicit native reference domain; never inferred from a result's owner.
+    pub alias_domain: Option<super::NativeAliasDomain>,
 }
 impl CallContext {
     pub fn is_direct(&self) -> bool {

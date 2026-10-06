@@ -682,7 +682,7 @@ impl EventEncoder {
             StreamEvent::PartStarted{kind:PartKind::Summary,..} if self.contract.adaptation.rules.structured_chat_reasoning => vec![self.chunk(json!({"reasoning_details":[{"type":"reasoning.summary","summary":"","format":"openai-responses-v1","index":0}]}),Value::Null)],
             StreamEvent::ItemFinished{item,replay:Some(replay),..} if self.contract.adaptation.rules.structured_chat_reasoning => {
                 let state=self.state()?.item(*item)?;
-                let id=self.fidelity.response_item_id(*item).map(str::to_owned).unwrap_or_else(||format!("item_{}",item.get()));
+                let id=self.fidelity.response_item_id(*item).map(str::to_owned).unwrap_or_else(||crate::protocol::fidelity::generated_item_id(*item));
                 vec![self.chunk(json!({"reasoning_details":[{"type":"reasoning.encrypted","data":replay.value.as_str(),"format":"openai-responses-v1","index":state.parts.len(),"id":id}]}),Value::Null)]
             }
             StreamEvent::Delta{item,part,fragment,..}=>{

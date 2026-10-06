@@ -7,7 +7,6 @@ use crate::{
     },
     semantic::task::generation::*,
 };
-use std::collections::BTreeSet;
 
 /// Delivery policy for reported response facts (ADR 0008). Absence is a
 /// reported fact; a target that demands the SDK-strict complete form fails
@@ -516,6 +515,14 @@ fn text_items(
     request: bool,
 ) -> Result<(), RepresentationError> {
     for (_, i) in items {
+        // Public carriers have no source/reference-domain field. A domain
+        // declaration is not permission to erase it or invent a private carrier.
+        if matches!(i, Item::ToolCall(call) if call.context.alias_domain.is_some())
+            || matches!(i, Item::CustomCall(call) if call.context.alias_domain.is_some())
+            || matches!(i, Item::ToolResult(result) | Item::CustomResult(result) if result.context.alias_domain.is_some())
+        {
+            return Err(RepresentationError::UnmigratedSemantic);
+        }
         // These profiles have neither structured argument nor execution-report carriers.
         if matches!(i, Item::ToolCall(call) if !matches!(call.arguments, ToolArguments::Raw(_))) {
             return Err(RepresentationError::Tools);
@@ -708,17 +715,9 @@ fn validate_wire_ids(
     fidelity: &FidelityRecords,
     generate: bool,
 ) -> Result<(), RepresentationError> {
-    let mut ids = BTreeSet::new();
-    for (id, _) in items {
-        let value = fidelity
-            .response_item_id(*id)
-            .map(str::to_owned)
-            .or_else(|| generate.then(|| format!("item_{}", id.get())));
-        if value.is_some_and(|value| !ids.insert(value)) {
-            return Err(RepresentationError::Metadata);
-        }
-    }
-    Ok(())
+    fidelity
+        .check_wire_item_ids(items, generate)
+        .map_err(|_| RepresentationError::Metadata)
 }
 fn check_tool_selection(choice: Option<&ToolChoice>) -> Result<(), RepresentationError> {
     // The pinned standard named-tool types have no qualified-reference carrier.

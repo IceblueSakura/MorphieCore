@@ -2,23 +2,41 @@
 use super::*;
 use crate::semantic::value::{Presence, Text};
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct ItemId(u64);
+pub struct ItemId {
+    scope: LocalScope,
+    value: u64,
+}
 impl ItemId {
     pub const fn new(v: u64) -> Self {
-        Self(v)
+        Self::scoped(LocalScope::ROOT, v)
+    }
+    pub const fn scoped(scope: LocalScope, value: u64) -> Self {
+        Self { scope, value }
+    }
+    pub const fn scope(self) -> LocalScope {
+        self.scope
     }
     pub const fn get(self) -> u64 {
-        self.0
+        self.value
     }
 }
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct PartId(u64);
+pub struct PartId {
+    scope: LocalScope,
+    value: u64,
+}
 impl PartId {
     pub const fn new(v: u64) -> Self {
-        Self(v)
+        Self::scoped(LocalScope::ROOT, v)
+    }
+    pub const fn scoped(scope: LocalScope, value: u64) -> Self {
+        Self { scope, value }
+    }
+    pub const fn scope(self) -> LocalScope {
+        self.scope
     }
     pub const fn get(self) -> u64 {
-        self.0
+        self.value
     }
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

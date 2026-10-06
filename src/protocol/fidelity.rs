@@ -9,6 +9,14 @@ use std::collections::BTreeMap;
 
 use crate::protocol::{adaptation::Adaptation, openai::Profile};
 const RESPONSE_EXTRAS_BUDGET: usize = 4096;
+/// Outgoing carrier identity, not an upstream-reported fact or persistent key.
+pub(crate) fn generated_item_id(owner: ItemId) -> String {
+    if owner.scope() == LocalScope::ROOT {
+        format!("item_{}", owner.get())
+    } else {
+        format!("item_{}_{}", owner.scope().get(), owner.get())
+    }
+}
 pub(crate) const RESPONSE_EXTRA_FIELDS: &[&str] =
     &["content_filters", "frequency_penalty", "presence_penalty"];
 pub(crate) fn declared_response_extras(
@@ -145,10 +153,9 @@ impl FidelityRecords {
     ) -> Result<(), CodecError> {
         if (!self.response_item_ids.contains_key(&owner)
             && self.response_item_ids.len() >= MAX_ITEMS)
-            || self
-                .response_item_ids
-                .iter()
-                .any(|(id, text)| *id != owner && text.as_str() == value)
+            || self.response_item_ids.iter().any(|(id, text)| {
+                *id != owner && id.scope() == owner.scope() && text.as_str() == value
+            })
         {
             return Err(CodecError::Invalid(
                 "duplicate or excessive wire item identities",
@@ -160,6 +167,30 @@ impl FidelityRecords {
     }
     pub fn response_item_id(&self, owner: ItemId) -> Option<&str> {
         self.response_item_ids.get(&owner).map(Text::as_str)
+    }
+    /// Source scopes may reuse aliases; a single target envelope may not.
+    pub(crate) fn check_wire_item_ids(
+        &self,
+        items: &[(ItemId, Item)],
+        response: bool,
+    ) -> Result<(), CodecError> {
+        let mut aliases = std::collections::BTreeSet::new();
+        for (owner, item) in items {
+            let generated = response
+                || matches!(
+                    item,
+                    Item::Reasoning(_) | Item::Program(_) | Item::ProgramOutput(_)
+                )
+                || matches!(item, Item::Instruction(instruction) if instruction.status.is_some());
+            let alias = self
+                .response_item_id(*owner)
+                .map(str::to_owned)
+                .or_else(|| generated.then(|| generated_item_id(*owner)));
+            if alias.is_some_and(|alias| !aliases.insert(alias)) {
+                return Err(CodecError::Invalid("duplicate target wire identity"));
+            }
+        }
+        Ok(())
     }
     /// Capture at trusted decode/event boundaries, never to bless a transformed value.
     pub fn record_replay(

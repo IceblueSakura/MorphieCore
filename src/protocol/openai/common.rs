@@ -309,6 +309,16 @@ pub(super) fn check_response_carriers(response: &GenerationResponse) -> Result<(
 }
 
 pub(super) fn check_item_carriers(items: &[(ItemId, Item)]) -> Result<(), CodecError> {
+    if items.iter().any(|(_, item)| match item {
+        Item::ToolCall(call) => call.context.alias_domain.is_some(),
+        Item::CustomCall(call) => call.context.alias_domain.is_some(),
+        Item::ToolResult(result) | Item::CustomResult(result) => {
+            result.context.alias_domain.is_some()
+        }
+        _ => false,
+    }) {
+        return Err(CodecError::Unsupported("native reference domain".into()));
+    }
     if items.iter().any(|(_, item)| matches!(item, Item::Reasoning(r) if r.replay.as_ref().is_some_and(|value| value.format() != ReplayFormat::ResponsesEncrypted))) {
         return Err(CodecError::Unsupported("replay format".into()));
     }

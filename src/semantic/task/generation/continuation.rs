@@ -27,22 +27,28 @@ pub(super) fn pending_results(items: &[(ItemId, Item)]) -> Continuation<'_> {
     let mut results = BTreeMap::new();
     let mut pending = Vec::new();
     for (item, value) in items.iter().rev() {
-        let call_id = match value {
+        let (domain, call_id) = match value {
             Item::ToolResult(result) | Item::CustomResult(result) => {
-                results.insert(result.call_id.as_str(), value);
+                results.insert(
+                    (
+                        result.context.alias_domain.as_ref(),
+                        result.call_id.as_str(),
+                    ),
+                    value,
+                );
                 continue;
             }
             Item::ProgramOutput(result) => {
-                results.insert(result.call_id.as_str(), value);
+                results.insert((None, result.call_id.as_str()), value);
                 continue;
             }
-            Item::ToolCall(call) => call.call_id.as_str(),
-            Item::CustomCall(call) => call.call_id.as_str(),
-            Item::Program(call) => call.call_id.as_str(),
+            Item::ToolCall(call) => (call.context.alias_domain.as_ref(), call.call_id.as_str()),
+            Item::CustomCall(call) => (call.context.alias_domain.as_ref(), call.call_id.as_str()),
+            Item::Program(call) => (None, call.call_id.as_str()),
             _ => continue,
         };
         if !matches!(
-            (value, results.get(call_id).copied()),
+            (value, results.get(&(domain, call_id)).copied()),
             (Item::ToolCall(_), Some(Item::ToolResult(_)))
                 | (Item::CustomCall(_), Some(Item::CustomResult(_)))
                 | (Item::Program(_), Some(Item::ProgramOutput(_)))

@@ -17,6 +17,11 @@ pub use contract::{GenerationFeature, GenerationSemanticContract};
 mod event;
 mod group;
 pub use group::MessageGroup;
+mod identity;
+pub use identity::{
+    AliasResolutionError, LocalScope, NativeAliasDomain, NativeCallAlias, NativeIdKind,
+    resolve_call_alias,
+};
 mod output;
 mod pattern;
 mod progress;

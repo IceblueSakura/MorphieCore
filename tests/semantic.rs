@@ -92,6 +92,8 @@ mod response_requirements;
 mod router_adapter;
 #[path = "semantic/schema.rs"]
 mod schema;
+#[path = "semantic/scoped_identity.rs"]
+mod scoped_identity;
 #[path = "semantic/scoped_usage.rs"]
 mod scoped_usage;
 #[path = "semantic/speech.rs"]

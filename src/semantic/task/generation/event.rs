@@ -65,6 +65,14 @@ impl ItemKind {
             _ => None,
         }
     }
+    fn alias_domain(&self) -> Option<&NativeAliasDomain> {
+        match self {
+            Self::ToolCall { context, .. } | Self::CustomCall { context, .. } => {
+                context.alias_domain.as_ref()
+            }
+            _ => None,
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PartKind {
@@ -298,16 +306,21 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 if call_id.as_str().is_empty() || call_id.as_str().len() > 256 {
                     return Err(EventError::Limit);
                 }
-                if state
-                    .items
-                    .iter()
-                    .any(|i| i.kind.call_id().is_some_and(|id| id == call_id))
-                {
+                if state.items.iter().any(|i| {
+                    i.kind.alias_domain() == kind.alias_domain()
+                        && i.kind.call_id().is_some_and(|id| id == call_id)
+                }) {
                     return Err(EventError::Identity);
                 }
                 state.charge(call_id.as_str().len())?;
             }
             if let Some((_, name, message)) = kind.call() {
+                if let Some(domain) = kind.alias_domain() {
+                    if domain.source.as_str().is_empty() || domain.source.as_str().len() > 256 {
+                        return Err(EventError::Limit);
+                    }
+                    state.charge(domain.source.as_str().len())?;
+                }
                 if name.as_str().is_empty() || name.as_str().len() > 128 {
                     return Err(EventError::Limit);
                 }
