@@ -137,6 +137,7 @@ pub(super) fn write_control_values(c: &GenerationControls, o: &mut Map<String, V
 #[derive(Default)]
 pub(super) struct Items {
     pub items: Vec<(ItemId, Item)>,
+    pub message_owners: Vec<(ItemId, ItemId)>,
     pub fidelity: FidelityRecords,
     next_item: u64,
     next_part: u64,
@@ -204,7 +205,6 @@ pub(super) fn strict_default(profile: Profile) -> StrictDefault {
 pub(super) fn tool_call(
     o: &Map<String, Value>,
     profile: Profile,
-    message: Option<ItemId>,
     item_status: Option<&str>,
     replay: bool,
 ) -> Result<ToolCall, CodecError> {
@@ -279,7 +279,6 @@ pub(super) fn tool_call(
         call_id: text(id, "call_id", 256)?,
         name: text(string(f, "name")?, "function name", 128)?,
         arguments: raw_string(f, "arguments")?.into(),
-        message,
         status,
         context: if profile == Profile::Responses {
             super::responses::call_context(o)?
@@ -327,6 +326,35 @@ pub(super) fn check_item_carriers(items: &[(ItemId, Item)]) -> Result<(), CodecE
     }
     if items.iter().any(|(_, item)| matches!(item, Item::ToolCall(call) if !matches!(call.arguments, ToolArguments::Raw(_)))) {
         return Err(CodecError::Unsupported("structured arguments".into()));
+    }
+    Ok(())
+}
+pub(super) fn check_message_carriers(
+    items: &[(ItemId, Item)],
+    owners: &std::collections::BTreeMap<ItemId, ItemId>,
+    profile: Profile,
+) -> Result<(), CodecError> {
+    if profile == Profile::Responses && !owners.is_empty() {
+        return Err(CodecError::Unsupported("message grouping".into()));
+    }
+    for (member, parent) in owners {
+        let first = items
+            .iter()
+            .position(|(id, _)| id == parent)
+            .ok_or(CodecError::Invalid("message owner"))?;
+        let last = items
+            .iter()
+            .position(|(id, _)| id == member)
+            .ok_or(CodecError::Invalid("message member"))?;
+        if last <= first
+            || items[first + 1..=last].iter().any(|(id, item)| {
+                !matches!(item, Item::ToolCall(_)) || owners.get(id) != Some(parent)
+            })
+        {
+            return Err(CodecError::Unsupported(
+                "noncontiguous message grouping".into(),
+            ));
+        }
     }
     Ok(())
 }

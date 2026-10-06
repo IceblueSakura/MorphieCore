@@ -18,7 +18,6 @@ fn call() -> (ItemId, Item) {
             call_id: text("c"),
             name: text("lookup"),
             arguments: "{}".into(),
-            message: None,
             status: ItemLifecycle::Completed,
             context: CallContext::default(),
         }),

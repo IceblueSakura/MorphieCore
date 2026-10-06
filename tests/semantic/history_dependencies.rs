@@ -35,14 +35,20 @@ fn call(id: u64) -> (ItemId, Item) {
             call_id: text(&format!("c{id}")),
             name: text("lookup"),
             arguments: "{}".into(),
-            message: Some(ItemId::new(1)),
             status: ItemLifecycle::Completed,
             context: CallContext::default(),
         }),
     )
 }
 fn history(items: Vec<(ItemId, Item)>) -> GenerationRequest {
-    GenerationRequest::new(items, GenerationControls::default()).unwrap()
+    let owners = items
+        .iter()
+        .filter_map(|(id, item)| matches!(item, Item::ToolCall(_)).then_some((*id, ItemId::new(1))))
+        .collect();
+    GenerationRequest::new(items, GenerationControls::default())
+        .unwrap()
+        .with_message_owners(owners)
+        .unwrap()
 }
 
 #[test]

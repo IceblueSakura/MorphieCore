@@ -241,6 +241,7 @@ pub struct GenerationRequest {
     settings: GenerationSettings,
     replay_groups: Vec<ReplayGroup>,
     call_derivations: std::collections::BTreeMap<ItemId, ItemId>,
+    message_owners: std::collections::BTreeMap<ItemId, ItemId>,
 }
 impl GenerationRequest {
     pub fn new(
@@ -264,6 +265,7 @@ impl GenerationRequest {
             settings,
             replay_groups: vec![],
             call_derivations: Default::default(),
+            message_owners: Default::default(),
         };
         r.validate()?;
         Ok(r)
@@ -276,6 +278,8 @@ impl GenerationRequest {
             super::validate::items(&self.items, false)?
         };
         let groups = super::group::validate_replay_groups(&self.items, &self.replay_groups)?;
+        let message_owners =
+            super::group::validate_message_owners(&self.items, &self.message_owners)?;
         if self.call_derivations.len() > MAX_ITEMS {
             return Err(GenerationError::Limit);
         }
@@ -293,6 +297,7 @@ impl GenerationRequest {
             .saturating_add(settings)
             .saturating_add(groups)
             .saturating_add(derivations)
+            .saturating_add(message_owners)
             > MAX_TOTAL_BYTES
         {
             return Err(GenerationError::Limit);
@@ -307,6 +312,17 @@ impl GenerationRequest {
     }
     pub fn replay_groups(&self) -> &[ReplayGroup] {
         &self.replay_groups
+    }
+    pub fn message_owners(&self) -> &std::collections::BTreeMap<ItemId, ItemId> {
+        &self.message_owners
+    }
+    pub fn with_message_owners(
+        mut self,
+        owners: Vec<(ItemId, ItemId)>,
+    ) -> Result<Self, GenerationError> {
+        self.message_owners = super::group::message_owners(owners)?;
+        self.validate()?;
+        Ok(self)
     }
     pub fn with_replay_groups(mut self, groups: Vec<ReplayGroup>) -> Result<Self, GenerationError> {
         self.replay_groups = groups;
@@ -413,6 +429,8 @@ impl GenerationRequest {
             return Err(GenerationError::Limit);
         }
         self.call_derivations
+            .retain(|owner, _| items.iter().any(|(id, _)| id == owner));
+        self.message_owners
             .retain(|owner, _| items.iter().any(|(id, _)| id == owner));
         let source = std::mem::replace(&mut self.items, items);
         self.validate()?;

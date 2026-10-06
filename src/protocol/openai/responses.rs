@@ -241,7 +241,6 @@ pub(super) fn decode_items(
             Some("function_call") => Item::ToolCall(tool_call(
                 o,
                 Profile::Responses,
-                None,
                 response.then_some(item_status),
                 !response,
             )?),
@@ -524,6 +523,11 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     if target.profile != Profile::Responses {
         return Err(CodecError::ProfileMismatch);
     }
+    check_message_carriers(
+        target.semantic.items(),
+        target.semantic.message_owners(),
+        Profile::Responses,
+    )?;
     target.semantic.validate()?;
     if !target.semantic.replay_groups().is_empty() || !target.semantic.call_derivations().is_empty()
     {

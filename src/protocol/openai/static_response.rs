@@ -459,8 +459,9 @@ pub(crate) fn decode_chat_with(
         }
     }
     let usage = usage(o.get("usage"), Profile::Chat, adaptation, &mut b.fidelity)?;
-    let semantic = response_with_usage(b.items, outcome, usage)?.with_details(
-        if outcome == Outcome::Incomplete {
+    let semantic = response_with_usage(b.items, outcome, usage)?
+        .with_message_owners(b.message_owners)?
+        .with_details(if outcome == Outcome::Incomplete {
             TerminalDetails {
                 error: None,
                 incomplete: Some(if c["finish_reason"] == "content_filter" {
@@ -471,8 +472,7 @@ pub(crate) fn decode_chat_with(
             }
         } else {
             TerminalDetails::default()
-        },
-    )?;
+        })?;
     // Chat's finish label must agree with content even though response outcome
     // no longer encodes a call/no-call distinction.
     if chat_finish(&semantic)? != string(c, "finish_reason")? {
@@ -574,8 +574,14 @@ pub fn encode_chat(target: &ResponseRepresentation<'_>) -> Result<Value, CodecEr
         .fidelity
         .check_wire_item_ids(target.semantic.items(), true)?;
     let finish = chat_finish(target.semantic)?;
+    check_message_carriers(
+        target.semantic.items(),
+        target.semantic.message_owners(),
+        Profile::Chat,
+    )?;
     let mut messages = chat::encode_items_with(
         target.semantic.items(),
+        target.semantic.message_owners(),
         target.fidelity,
         target.adaptation.rules.structured_chat_reasoning,
         true,
@@ -639,6 +645,11 @@ pub fn encode_responses(target: &ResponseRepresentation<'_>) -> Result<Value, Co
     target
         .fidelity
         .check_wire_item_ids(target.semantic.items(), true)?;
+    check_message_carriers(
+        target.semantic.items(),
+        target.semantic.message_owners(),
+        Profile::Responses,
+    )?;
     let output = responses::encode_items(target.semantic.items(), target.fidelity, true);
     let m = target.metadata;
     let mut value = json!({"id":m.id,"object":"response","created_at":m.created,"model":m.model,"status":status,

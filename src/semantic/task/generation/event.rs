@@ -828,12 +828,11 @@ impl StreamItem {
                 format,
                 call_id,
                 name,
-                message,
                 context,
+                ..
             } => Item::ToolCall(ToolCall {
                 call_id: call_id.clone(),
                 name: name.clone(),
-                message: *message,
                 status,
                 arguments: i
                     .parts
@@ -905,6 +904,19 @@ pub fn materialize(state: &StreamState) -> Result<GenerationResponse, EventError
         return Err(EventError::TerminalFailure(terminal));
     }
     let mut response = GenerationResponse::new(snapshot_items(state)?, outcome(terminal))?
+        .with_message_owners(
+            state
+                .items
+                .iter()
+                .filter_map(|item| match &item.kind {
+                    ItemKind::ToolCall {
+                        message: Some(owner),
+                        ..
+                    } => Some((item.id, *owner)),
+                    _ => None,
+                })
+                .collect(),
+        )?
         .with_replay_groups(state.replay_groups.clone())?
         .with_progress(state.progress)?
         .with_details(state.details.clone())?;

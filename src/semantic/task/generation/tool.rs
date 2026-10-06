@@ -1,5 +1,5 @@
 //! Client-executed tools. Payloads and grammar are data; this module never executes them.
-use super::{GenerationError, ItemId, MAX_TEXT_BYTES, StructuredValue};
+use super::{GenerationError, MAX_TEXT_BYTES, StructuredValue};
 use crate::semantic::value::Text;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StrictDefault {
@@ -225,8 +225,6 @@ pub struct ToolCall {
     pub call_id: Text,
     pub name: Text,
     pub arguments: ToolArguments,
-    /// Explicit assistant owner. Absence does not declare membership in a neighboring group.
-    pub message: Option<ItemId>,
     pub status: ItemLifecycle,
     pub context: CallContext,
 }

@@ -144,6 +144,22 @@
       "budget": "Same aggregate reference/state limits",
       "forbidden_effects": "No invented native group events, fake Google/Anthropic codec or terminal snapshot repair",
       "scope": "required"
+    },
+    {
+      "case_key": "message_membership_single_owner",
+      "ids": ["A04", "A06", "A08", "T28"],
+      "slice": "S1.1",
+      "sample_kind": "abstract_contract",
+      "evidence": "interaction-contract.md#身份分组与依赖; native constraints independently covered by existing Chat wire fixtures",
+      "owner": "src/semantic/task/generation/group.rs; request.rs; response.rs; event.rs; src/semantic/cache.rs",
+      "target": "semantic",
+      "symbols": ["message_ownership_owner::noncontiguous_explicit_message_membership_is_core_data_not_a_target_permission", "message_ownership_owner::membership_is_unique_and_dangling_or_wrong_kind_owners_are_rejected", "message_ownership_owner::prefix_cannot_cut_an_interleaved_explicit_group", "message_groups::groups_follow_declared_membership_and_final_order_without_copying_values", "message_groups::refusal_and_attached_calls_conflict_at_the_first_known_event_in_either_order", "group_projection::attached_calls_fail_responses_request_and_static_projection_without_changing_ir"],
+      "input": "Single-parent call membership, unrelated interleaved reasoning, independently lifted Chat containers",
+      "expected": "Core retains noncontiguous references without body copies; duplicate/wrong/missing/refusal parents fail; target carrier boundaries remain strict; prefix cannot split a group",
+      "transform": "Reorder whole groups, delete member/parent, transfer event declarations into static ownership",
+      "budget": "MAX_ITEMS and aggregate ownership metadata bytes",
+      "forbidden_effects": "No writable ToolCall.message, inferred ownership, resurrection, private carrier or activation",
+      "scope": "required"
     }
   ]
 }

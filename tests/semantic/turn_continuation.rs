@@ -9,7 +9,6 @@ fn call(id: u64, name: &str) -> (ItemId, Item) {
             call_id: text(name),
             name: text("lookup"),
             arguments: "{}".into(),
-            message: None,
             status: ItemLifecycle::Completed,
             context: CallContext::default(),
         }),

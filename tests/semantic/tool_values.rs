@@ -16,7 +16,6 @@ fn call(arguments: ToolArguments) -> (ItemId, Item) {
             call_id: text("c"),
             name: text("lookup"),
             arguments,
-            message: None,
             status: ItemLifecycle::Completed,
             context: CallContext::default(),
         }),

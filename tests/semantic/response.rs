@@ -232,13 +232,13 @@ fn chat_finish_cannot_replace_mixed_message_and_call_status() {
     use crate::events_support::{call_item, envelope};
     let d=responses::decode_response(&envelope("incomplete",json!([{"id":"m","type":"message","role":"assistant","status":"completed","content":[]},call_item("fc","c","{","incomplete")]))).unwrap();
     let m = metadata();
-    let mut items = d.semantic.items().to_vec();
+    let items = d.semantic.items().to_vec();
     let owner = items[0].0;
-    let Item::ToolCall(call) = &mut items[1].1 else {
-        panic!("call");
-    };
-    call.message = Some(owner);
-    let response = GenerationResponse::new(items, Outcome::Incomplete).unwrap();
+    let member = items[1].0;
+    let response = GenerationResponse::new(items, Outcome::Incomplete)
+        .unwrap()
+        .with_message_owners(vec![(member, owner)])
+        .unwrap();
     assert!(matches!(
         lower_response(&response, &d.fidelity, &m, Profile::Chat, Contract::full()),
         Err(RepresentationError::Terminal)

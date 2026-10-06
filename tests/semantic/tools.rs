@@ -209,10 +209,13 @@ fn independent_decode_preserves_function_meaning_and_message_ownership() {
             call_id: text("call_a"),
             name: text("weather"),
             arguments: "{ \"city\": \"Paris\" }".into(),
-            message: Some(ItemId::new(2)),
             status: ItemLifecycle::Completed,
             context: CallContext::default(),
         }
+    );
+    assert_eq!(
+        d.semantic.message_owners().get(&ItemId::new(3)),
+        Some(&ItemId::new(2))
     );
     let ToolDefinition::Function(def) = &d.semantic.tools()[0] else {
         panic!("function");
@@ -251,7 +254,6 @@ fn independent_ir_encodes_call_and_empty_result_without_source_wire() {
                 call_id: text("call_new"),
                 name: text("lookup"),
                 arguments: "not valid JSON".into(),
-                message: None,
                 status: ItemLifecycle::Completed,
                 context: CallContext::default(),
             }),
@@ -296,7 +298,7 @@ fn responses_decode_uses_call_ids_not_wire_ids_or_result_positions() {
         panic!("call")
     };
     assert_eq!(call.call_id.as_str(), "call_a");
-    assert_eq!(call.message, None);
+    assert!(d.semantic.message_owners().is_empty());
     assert_eq!(d.fidelity.response_item_id(ItemId::new(3)), Some("wire_a"));
     assert_eq!(request_wire(&d, Profile::Responses), wire);
     let chat = request_wire(&d, Profile::Chat);
@@ -335,7 +337,6 @@ fn replacement_insertion_and_reordering_drive_both_encoders() {
                 call_id: text("call_c"),
                 name: text("weather"),
                 arguments: "{}".into(),
-                message: None,
                 status: ItemLifecycle::Completed,
                 context: CallContext::default(),
             }),
@@ -722,7 +723,6 @@ fn independently_constructed_static_ir_and_mutation_determine_all_response_wire(
             call_id: text("c"),
             name: text("f"),
             arguments: "{broken".into(),
-            message: None,
             status: ItemLifecycle::Completed,
             context: CallContext::default(),
         }),
@@ -947,7 +947,6 @@ fn semantic_construction_cannot_bypass_identifier_or_control_validation() {
         call_id: empty.clone(),
         name: text("f"),
         arguments: "{}".into(),
-        message: None,
         status: ItemLifecycle::Completed,
         context: CallContext::default(),
     });
@@ -1157,7 +1156,6 @@ fn program_call_id_integrity_rejects_swapped_dangling_and_duplicate_associations
                 call_id: text("call_p"),
                 name: text("lookup"),
                 arguments: "{}".into(),
-                message: None,
                 status: ItemLifecycle::Completed,
                 context: CallContext::default(),
             }),

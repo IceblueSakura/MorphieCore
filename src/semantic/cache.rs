@@ -38,13 +38,33 @@ impl CachePrefixIntent {
     }
     fn check_boundary(self, request: &GenerationRequest) -> Result<(), ContextError> {
         request.validate()?;
-        if !request.items().iter().any(|(id, _)| *id == self.through)
-            || request.message_groups().any(|group| {
-                group.items().iter().any(|(id, _)| *id == self.through)
-                    && group
-                        .items()
-                        .last()
-                        .is_some_and(|(id, _)| *id != self.through)
+        let end = request
+            .items()
+            .iter()
+            .position(|(id, _)| *id == self.through)
+            .ok_or(ContextError::Invalid("cache prefix boundary"))?;
+        let split = |first: crate::semantic::task::generation::ItemId,
+                     last: crate::semantic::task::generation::ItemId| {
+            let first = request
+                .items()
+                .iter()
+                .position(|(id, _)| *id == first)
+                .expect("validated group");
+            let last = request
+                .items()
+                .iter()
+                .position(|(id, _)| *id == last)
+                .expect("validated group");
+            first <= end && last > end
+        };
+        if request
+            .message_groups()
+            .any(|group| split(group.owner(), group.items().last().expect("group owner").0))
+            || request.replay_groups().iter().any(|group| {
+                split(
+                    group.members()[0],
+                    *group.members().last().expect("nonempty group"),
+                )
             })
         {
             return Err(ContextError::Invalid("cache prefix boundary"));

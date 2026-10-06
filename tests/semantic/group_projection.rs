@@ -56,6 +56,15 @@ fn attached_calls_fail_responses_request_and_static_projection_without_changing_
                     decoded.semantic.items().to_vec(),
                     GenerationControls::default(),
                 )
+                .unwrap()
+                .with_message_owners(
+                    decoded
+                        .semantic
+                        .message_owners()
+                        .iter()
+                        .map(|(a, b)| (*a, *b))
+                        .collect(),
+                )
                 .unwrap();
                 assert!(matches!(
                     lower_request(
@@ -197,7 +206,8 @@ fn independent_empty_owner_and_calls_preserve_identity_phase_and_status() {
         Item::Message(m) if m.parts.is_empty() && m.phase == Some(Phase::Commentary)
             && m.status == ItemLifecycle::Incomplete));
     assert!(matches!(&decoded.semantic.items()[1].1,
-        Item::ToolCall(c) if c.message.is_none() && c.status == ItemLifecycle::Completed));
+        Item::ToolCall(c) if c.status == ItemLifecycle::Completed));
+    assert!(decoded.semantic.message_owners().is_empty());
     assert_eq!(
         decoded
             .semantic
@@ -249,13 +259,15 @@ fn independent_empty_owner_and_calls_preserve_identity_phase_and_status() {
         Err(RepresentationError::MessageGrouping)
     ));
     // A new typed link must be rejected even when intake declared independent items.
-    let mut items = request.semantic.items().to_vec();
+    let items = request.semantic.items().to_vec();
     let owner = items[0].0;
-    let Item::ToolCall(call) = &mut items[1].1 else {
-        panic!("call")
-    };
-    call.message = Some(owner);
-    let attached = request.semantic.with_items(items).unwrap();
+    let member = items[1].0;
+    let attached = request
+        .semantic
+        .with_items(items)
+        .unwrap()
+        .with_message_owners(vec![(member, owner)])
+        .unwrap();
     assert!(matches!(
         lower_request(
             &attached,
@@ -265,7 +277,16 @@ fn independent_empty_owner_and_calls_preserve_identity_phase_and_status() {
         ),
         Err(RepresentationError::MessageGrouping)
     ));
-    let response = GenerationResponse::new(attached.items().to_vec(), Outcome::Completed).unwrap();
+    let response = GenerationResponse::new(attached.items().to_vec(), Outcome::Completed)
+        .unwrap()
+        .with_message_owners(
+            attached
+                .message_owners()
+                .iter()
+                .map(|(a, b)| (*a, *b))
+                .collect(),
+        )
+        .unwrap();
     assert!(matches!(
         lower_response(
             &response,

@@ -20,7 +20,6 @@ fn call(scope: u64) -> (ItemId, Item) {
             call_id: text("same"),
             name: text("lookup"),
             arguments: "{}".into(),
-            message: None,
             status: ItemLifecycle::Completed,
             context: CallContext {
                 alias_domain: Some(domain(scope)),

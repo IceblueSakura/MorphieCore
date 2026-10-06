@@ -105,7 +105,7 @@ fn dependency(
             .find(|g| g.owner() == *owner)
             .ok_or(GenerationError::InvalidDependency)?
             .items()
-            .iter()
+            .into_iter()
             .collect(),
         HistoryDependency::ReplayGroup(owner) => request
             .replay_group_views()
@@ -160,6 +160,8 @@ fn dependency(
     }
     for (owner, _) in &items {
         write!(writer, "{:?}", request.call_derivations().get(owner))
+            .map_err(|_| GenerationError::Limit)?;
+        write!(writer, "{:?}", request.message_owners().get(owner))
             .map_err(|_| GenerationError::Limit)?;
     }
     let s = request.settings();

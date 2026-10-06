@@ -17,12 +17,11 @@ fn message(role: MessageRole) -> Item {
         parts: vec![],
     })
 }
-fn call(id: &str, owner: Option<ItemId>) -> Item {
+fn call(id: &str) -> Item {
     Item::ToolCall(ToolCall {
         call_id: text(id),
         name: text("lookup"),
         arguments: "{}".into(),
-        message: owner,
         status: ItemLifecycle::Completed,
         context: CallContext::default(),
     })
@@ -30,17 +29,29 @@ fn call(id: &str, owner: Option<ItemId>) -> Item {
 fn items() -> Vec<(ItemId, Item)> {
     vec![
         (ItemId::new(10), message(MessageRole::Assistant)),
-        (ItemId::new(11), call("a", Some(ItemId::new(10)))),
-        (ItemId::new(12), call("b", Some(ItemId::new(10)))),
+        (ItemId::new(11), call("a")),
+        (ItemId::new(12), call("b")),
         (ItemId::new(20), message(MessageRole::Assistant)),
-        (ItemId::new(21), call("c", Some(ItemId::new(20)))),
-        (ItemId::new(30), call("independent", None)),
+        (ItemId::new(21), call("c")),
+        (ItemId::new(30), call("independent")),
     ]
+}
+fn owners() -> Vec<(ItemId, ItemId)> {
+    [(11, 10), (12, 10), (21, 20)]
+        .into_iter()
+        .map(|(member, owner)| (ItemId::new(member), ItemId::new(owner)))
+        .collect()
+}
+fn request(values: Vec<(ItemId, Item)>) -> GenerationRequest {
+    GenerationRequest::new(values, GenerationControls::default())
+        .unwrap()
+        .with_message_owners(owners())
+        .unwrap()
 }
 
 #[test]
 fn groups_follow_declared_membership_and_final_order_without_copying_values() {
-    let request = GenerationRequest::new(items(), GenerationControls::default()).unwrap();
+    let request = request(items());
     let groups: Vec<_> = request.message_groups().collect();
     assert_eq!(groups.len(), 2);
     assert_eq!(groups[0].owner(), ItemId::new(10));
@@ -63,13 +74,10 @@ fn groups_follow_declared_membership_and_final_order_without_copying_values() {
         groups[1].calls().map(|r| r.call_id).collect::<Vec<_>>(),
         ["c"]
     );
-    assert!(std::ptr::eq(
-        groups[0].items().as_ptr(),
-        request.items().as_ptr()
-    ));
+    assert!(std::ptr::eq(groups[0].items()[0], &request.items()[0]));
 
-    let mut reordered = groups[1].items().to_vec();
-    reordered.extend_from_slice(groups[0].items());
+    let mut reordered: Vec<_> = groups[1].items().into_iter().cloned().collect();
+    reordered.extend(groups[0].items().into_iter().cloned());
     reordered.push(request.items()[5].clone());
     let changed = request.clone().with_items(reordered).unwrap();
     assert_eq!(
@@ -79,7 +87,10 @@ fn groups_follow_declared_membership_and_final_order_without_copying_values() {
             .collect::<Vec<_>>(),
         [ItemId::new(20), ItemId::new(10)]
     );
-    let response = GenerationResponse::new(changed.items().to_vec(), Outcome::Completed).unwrap();
+    let response = GenerationResponse::new(changed.items().to_vec(), Outcome::Completed)
+        .unwrap()
+        .with_message_owners(owners())
+        .unwrap();
     assert_eq!(
         response
             .message_groups()
@@ -115,16 +126,33 @@ fn removing_or_crossing_an_owner_fails_instead_of_reattaching_calls() {
                 });
             }
             _ => {
-                let Item::ToolCall(call) = &mut values[1].1 else {
-                    unreachable!()
-                };
-                call.message = Some(ItemId::new(999));
+                values[1].0 = ItemId::new(999);
             }
         }
-        assert!(GenerationRequest::new(values.clone(), GenerationControls::default()).is_err());
-        assert!(GenerationResponse::new(values, Outcome::Completed).is_err());
+        let request = GenerationRequest::new(values.clone(), GenerationControls::default())
+            .and_then(|request| request.with_message_owners(owners()));
+        if edit == 1 {
+            let request = request.unwrap();
+            assert!(request.message_groups().any(|group| !group.is_contiguous()));
+            assert!(
+                morphiecore::lowering::generation::lower_request(
+                    &request,
+                    &Default::default(),
+                    Profile::Chat,
+                    morphiecore::lowering::generation::GenerationRepresentationContract::full()
+                )
+                .is_err()
+            );
+        } else {
+            assert!(request.is_err());
+            assert!(
+                GenerationResponse::new(values, Outcome::Completed)
+                    .and_then(|response| response.with_message_owners(owners()))
+                    .is_err()
+            );
+        }
     }
-    let request = GenerationRequest::new(items(), GenerationControls::default()).unwrap();
+    let request = request(items());
     let edited = request.retain_items(|id, _| id != ItemId::new(11)).unwrap();
     assert_eq!(
         edited
@@ -184,7 +212,9 @@ fn refusal_and_attached_calls_conflict_at_the_first_known_event_in_either_order(
         content: ContentPart::Refusal(text("no").into()),
     });
     assert_eq!(
-        GenerationResponse::new(values, Outcome::Completed).unwrap_err(),
+        GenerationResponse::new(values, Outcome::Completed)
+            .and_then(|response| response.with_message_owners(owners()))
+            .unwrap_err(),
         GenerationError::InvalidResponse
     );
 

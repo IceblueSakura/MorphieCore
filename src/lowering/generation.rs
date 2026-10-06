@@ -155,6 +155,11 @@ pub fn lower_request<'a>(
         crate::protocol::openai::responses::validate_program_history(r)
             .map_err(|_| RepresentationError::Tools)?;
     }
+    if (profile == Profile::Responses && !r.message_owners().is_empty())
+        || (profile == Profile::Chat && r.message_groups().any(|group| !group.is_contiguous()))
+    {
+        return Err(RepresentationError::MessageGrouping);
+    }
     text_items(r.items(), profile, true)?;
     let expected_default = if profile == Profile::Chat {
         StrictDefault::NonStrict
@@ -381,8 +386,13 @@ pub fn lower_response<'a>(
     {
         return Err(RepresentationError::Terminal);
     }
+    if (profile == Profile::Responses && !r.message_owners().is_empty())
+        || (profile == Profile::Chat && r.message_groups().any(|group| !group.is_contiguous()))
+    {
+        return Err(RepresentationError::MessageGrouping);
+    }
     text_items(r.items(), profile, false)?;
-    if profile == Profile::Chat && chat_message_count(r.items()) != 1 {
+    if profile == Profile::Chat && chat_message_count(r.items(), r.message_owners()) != 1 {
         return Err(RepresentationError::MessageGrouping);
     }
     if metadata.id.is_empty()
@@ -540,13 +550,6 @@ fn text_items(
         {
             return Err(RepresentationError::Tools);
         }
-        // Standard Responses has no message-call membership carrier. Keeping
-        // both items is insufficient to preserve this relation through history.
-        if profile == Profile::Responses
-            && matches!(i, Item::ToolCall(call) if call.message.is_some())
-        {
-            return Err(RepresentationError::MessageGrouping);
-        }
         if profile == Profile::Chat {
             match i {
                 Item::CustomCall(c) if !c.context.is_direct() => {
@@ -693,12 +696,15 @@ fn text_items(
 }
 /// Explicit normalization: a contiguous run of independent function calls is one Chat call message.
 /// Independent text messages are never merged into that run by positional guessing.
-fn chat_message_count(items: &[(ItemId, Item)]) -> usize {
+fn chat_message_count(
+    items: &[(ItemId, Item)],
+    owners: &std::collections::BTreeMap<ItemId, ItemId>,
+) -> usize {
     let mut count = 0;
     let mut run = false;
-    for (_, item) in items {
+    for (id, item) in items {
         match item {
-            Item::ToolCall(c) if c.message.is_none() => {
+            Item::ToolCall(_) if !owners.contains_key(id) => {
                 if !run {
                     count += 1;
                 }

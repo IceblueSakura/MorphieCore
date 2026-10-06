@@ -60,6 +60,8 @@ mod instructions;
 mod interaction_progress;
 #[path = "semantic/message_groups.rs"]
 mod message_groups;
+#[path = "semantic/message_ownership_owner.rs"]
+mod message_ownership_owner;
 #[path = "semantic/model_constraints.rs"]
 mod model_constraints;
 #[path = "semantic/modelbest.rs"]

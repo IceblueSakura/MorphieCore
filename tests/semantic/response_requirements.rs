@@ -86,7 +86,6 @@ fn output_requirements_still_enforce_tool_and_reasoning_domains() {
                 call_id: text("c"),
                 name: text("lookup"),
                 arguments: "{}".into(),
-                message: None,
                 status: ItemLifecycle::Completed,
                 context: CallContext::default(),
             }),

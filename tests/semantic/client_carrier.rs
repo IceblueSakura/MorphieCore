@@ -202,12 +202,11 @@ fn unsupported_typed_values_remain_rejected_instead_of_becoming_text_or_extras()
     let base = adapter
         .decode_response(&serde_json::to_vec(&wire::response(2)).unwrap())
         .unwrap();
-    let call = |arguments, message| {
+    let call = |arguments| {
         Item::ToolCall(ToolCall {
             call_id: event::text("c"),
             name: event::text("lookup"),
             arguments,
-            message,
             status: ItemLifecycle::Completed,
             context: Default::default(),
         })
@@ -219,10 +218,7 @@ fn unsupported_typed_values_remain_rejected_instead_of_becoming_text_or_extras()
     let response =
         |item| GenerationResponse::new(vec![(ItemId::new(1), item)], Outcome::Completed).unwrap();
     let mut grouped = base.semantic.items().to_vec();
-    grouped.push((
-        ItemId::new(2),
-        call(ToolArguments::Raw("{}".into()), Some(grouped[0].0)),
-    ));
+    grouped.push((ItemId::new(2), call(ToolArguments::Raw("{}".into()))));
     for semantic in [
         base.semantic
             .clone()
@@ -230,10 +226,9 @@ fn unsupported_typed_values_remain_rejected_instead_of_becoming_text_or_extras()
             .unwrap(),
         base.semantic.clone().with_usage(usage).unwrap(),
         base.semantic.clone().with_usage(prediction).unwrap(),
-        response(call(
-            ToolArguments::Structured(StructuredValue::new(json!({"n":1})).unwrap()),
-            None,
-        )),
+        response(call(ToolArguments::Structured(
+            StructuredValue::new(json!({"n":1})).unwrap(),
+        ))),
         response(Item::Reasoning(ReasoningItem {
             parts: vec![],
             status: ItemLifecycle::Completed,
@@ -242,7 +237,10 @@ fn unsupported_typed_values_remain_rejected_instead_of_becoming_text_or_extras()
                 event::text("synthetic"),
             )),
         })),
-        GenerationResponse::new(grouped, Outcome::Completed).unwrap(),
+        GenerationResponse::new(grouped, Outcome::Completed)
+            .unwrap()
+            .with_message_owners(vec![(ItemId::new(2), ItemId::new(1))])
+            .unwrap(),
     ] {
         let mut decoded = base.clone();
         decoded.semantic = semantic.clone();

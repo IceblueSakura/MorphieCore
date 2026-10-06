@@ -47,7 +47,6 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
     let mut calls = BTreeMap::new();
     let mut namespaces = BTreeMap::new();
     let mut results = BTreeSet::new();
-    let mut active_owner = None;
     let mut bytes = 0;
     let mut file_decoded_bytes = 0usize;
     for (id, item) in items {
@@ -59,7 +58,6 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
                 if response {
                     return Err(GenerationError::InvalidResponse);
                 }
-                active_owner = None;
                 for (id, t) in &i.parts {
                     part_id(&mut parts, *id)?;
                     add(&mut bytes, t.as_str())?;
@@ -78,7 +76,6 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
                 if m.role == MessageRole::User && m.parts.is_empty() {
                     return Err(GenerationError::EmptyMessage);
                 }
-                active_owner = (m.role == MessageRole::Assistant).then_some(*id);
                 for p in &m.parts {
                     part_id(&mut parts, p.id)?;
                     match &p.content {
@@ -144,14 +141,6 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
                 {
                     return Err(GenerationError::InvalidArguments);
                 }
-                if let Some(owner) = c.message {
-                    if active_owner != Some(owner) {
-                        return Err(GenerationError::InvalidMessageGroup);
-                    }
-                    if items.iter().any(|(id,item)|*id==owner && matches!(item,Item::Message(m) if m.parts.iter().any(|p|matches!(p.content,ContentPart::Refusal(_))))){return Err(GenerationError::InvalidResponse);}
-                } else {
-                    active_owner = None;
-                }
             }
             Item::CustomCall(c) => {
                 call_context(&c.context, &mut bytes)?;
@@ -159,7 +148,6 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
                     (c.context.alias_domain.as_ref(), c.call_id.as_str()),
                     c.context.namespace.as_ref(),
                 );
-                active_owner = None;
                 validate_call(
                     &mut calls,
                     &mut bytes,
@@ -170,11 +158,8 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
                     CallKind::Custom,
                 )?;
             }
-            Item::ConfigurationUpdate(_) => {
-                active_owner = None;
-            }
+            Item::ConfigurationUpdate(_) => {}
             Item::Program(p) => {
-                active_owner = None;
                 if calls
                     .insert((None, p.call_id.as_str()), CallKind::Program)
                     .is_some()
@@ -189,7 +174,6 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
                 add(&mut bytes, &p.fingerprint)?;
             }
             Item::ProgramOutput(o) => {
-                active_owner = None;
                 // Request replay is the association boundary: outputs must name a
                 // preceding program; response items stay self-describing snapshots.
                 if o.status == ItemLifecycle::InProgress
@@ -203,7 +187,6 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
                 add(&mut bytes, &o.result)?;
             }
             Item::Reasoning(r) => {
-                active_owner = None;
                 if let Some(value) = &r.replay {
                     value.validate()?;
                     add(&mut bytes, value.as_str())?;
@@ -225,7 +208,6 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
                 if response {
                     return Err(GenerationError::InvalidResponse);
                 }
-                active_owner = None;
                 let kind = if matches!(item, Item::CustomResult(_)) {
                     CallKind::Custom
                 } else {

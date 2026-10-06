@@ -35,7 +35,6 @@ fn typed_groups_calls_and_results_keep_qualified_identity_without_name_rewriting
                 call_id: call_id.clone(),
                 name: text("status"),
                 arguments: "{ }".into(),
-                message: None,
                 status: ItemLifecycle::Completed,
                 context: CallContext {
                     namespace: Some(text(namespace)),

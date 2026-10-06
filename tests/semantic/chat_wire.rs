@@ -164,7 +164,18 @@ fn history_reasoning_maps_to_a_carrier_and_rejects_unrepresentable_edits() {
             r.parts[0].1 = ReasoningContent::Summary(Text::new("think", "fixture", 128).unwrap());
         }
     }
-    let ir = GenerationRequest::new(edited, GenerationControls::default()).unwrap();
+    let ir = GenerationRequest::new(edited, GenerationControls::default())
+        .unwrap()
+        .with_message_owners(
+            request
+                .task
+                .semantic
+                .message_owners()
+                .iter()
+                .map(|(a, b)| (*a, *b))
+                .collect(),
+        )
+        .unwrap();
     assert!(
         lower_request(
             &ir,
@@ -188,7 +199,7 @@ fn history_reasoning_maps_to_a_carrier_and_rejects_unrepresentable_edits() {
     let mut unpaired = request.task.semantic.items().to_vec();
     unpaired.retain(|(_, item)| !matches!(item,Item::Message(m) if m.role==MessageRole::Assistant));
     // Removing the carrier also invalidates associated calls before projection.
-    assert!(GenerationRequest::new(unpaired, GenerationControls::default()).is_err());
+    assert!(request.task.semantic.clone().with_items(unpaired).is_err());
     for message in [
         json!({"role":"user","content":"x","reasoning_content":"bad"}),
         json!({"role":"assistant","content":"x","reasoning_content":5}),

@@ -3,7 +3,7 @@ use super::{
     CallReference, GenerationError, GenerationRequest, GenerationResponse, Item, ItemId,
     LocalScope, MAX_ITEMS, Message, MessageRole,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Caller-allocated group identity; neither a message nor a reported native ID.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -136,63 +136,133 @@ impl GenerationResponse {
     }
 }
 
-/// One assistant owner followed by its explicitly attached function calls.
-/// Values remain in the final ordered items; no second membership table is stored.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) fn validate_message_owners(
+    items: &[(ItemId, Item)],
+    owners: &BTreeMap<ItemId, ItemId>,
+) -> Result<usize, GenerationError> {
+    if owners.len() > MAX_ITEMS {
+        return Err(GenerationError::Limit);
+    }
+    for (member, parent) in owners {
+        let member_index = items
+            .iter()
+            .position(|(id, item)| id == member && matches!(item, Item::ToolCall(_)))
+            .ok_or(GenerationError::InvalidMessageGroup)?;
+        let parent_index = items
+            .iter()
+            .position(|(id, item)| {
+                id == parent && matches!(item, Item::Message(m) if m.role == MessageRole::Assistant)
+            })
+            .ok_or(GenerationError::InvalidMessageGroup)?;
+        if member_index <= parent_index {
+            return Err(GenerationError::InvalidMessageGroup);
+        }
+        if matches!(&items[parent_index].1, Item::Message(m) if m.parts.iter().any(|part| matches!(part.content, super::ContentPart::Refusal(_))))
+        {
+            return Err(GenerationError::InvalidResponse);
+        }
+    }
+    Ok(owners.len() * std::mem::size_of::<(ItemId, ItemId)>())
+}
+pub(super) fn message_owners(
+    declarations: Vec<(ItemId, ItemId)>,
+) -> Result<BTreeMap<ItemId, ItemId>, GenerationError> {
+    if declarations.len() > MAX_ITEMS {
+        return Err(GenerationError::Limit);
+    }
+    let mut owners = BTreeMap::new();
+    for (member, owner) in declarations {
+        if owners.insert(member, owner).is_some() {
+            return Err(GenerationError::InvalidMessageGroup);
+        }
+    }
+    Ok(owners)
+}
+/// Derived references, not a second membership table or a copied body.
+#[derive(Clone, Copy)]
 pub struct MessageGroup<'a> {
     items: &'a [(ItemId, Item)],
+    owners: &'a BTreeMap<ItemId, ItemId>,
+    position: usize,
+}
+impl std::fmt::Debug for MessageGroup<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MessageGroup")
+            .field("owner", &self.owner())
+            .finish()
+    }
 }
 impl<'a> MessageGroup<'a> {
     pub fn owner(&self) -> ItemId {
-        self.items[0].0
+        self.items[self.position].0
     }
     pub fn message(&self) -> &'a Message {
-        let Item::Message(message) = &self.items[0].1 else {
-            unreachable!("groups are derived from validated assistant owners")
+        let Item::Message(message) = &self.items[self.position].1 else {
+            unreachable!("validated assistant owner")
         };
         message
     }
-    /// Owner and attached calls in final semantic order, not wire coordinates.
-    pub fn items(&self) -> &'a [(ItemId, Item)] {
-        self.items
+    pub fn items(&self) -> Vec<&'a (ItemId, Item)> {
+        let owner = self.owner();
+        std::iter::once(&self.items[self.position])
+            .chain(
+                self.items
+                    .iter()
+                    .filter(|(id, _)| self.owners.get(id) == Some(&owner)),
+            )
+            .collect()
     }
-    pub fn calls(&self) -> impl ExactSizeIterator<Item = CallReference<'a>> + use<'a> {
-        self.items[1..].iter().map(|(id, item)| {
-            let Item::ToolCall(call) = item else {
-                unreachable!("validated group member")
-            };
-            CallReference {
-                item: *id,
-                call_id: call.call_id.as_str(),
-            }
+    pub fn is_contiguous(&self) -> bool {
+        self.items().iter().enumerate().all(|(offset, member)| {
+            self.items
+                .get(self.position + offset)
+                .is_some_and(|candidate| candidate.0 == member.0)
         })
     }
+    pub fn calls(&self) -> impl ExactSizeIterator<Item = CallReference<'a>> + use<'a> {
+        let owner = self.owner();
+        self.items
+            .iter()
+            .filter_map(|(id, item)| {
+                if self.owners.get(id) != Some(&owner) {
+                    return None;
+                }
+                let Item::ToolCall(call) = item else {
+                    unreachable!("validated group member")
+                };
+                Some(CallReference {
+                    item: *id,
+                    call_id: call.call_id.as_str(),
+                })
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
 }
-fn groups(mut items: &[(ItemId, Item)]) -> impl Iterator<Item = MessageGroup<'_>> {
-    std::iter::from_fn(move || {
-        loop {
-            let ((owner, item), tail) = items.split_first()?;
-            if matches!(item, Item::Message(m) if m.role == MessageRole::Assistant) {
-                let calls = tail.iter().take_while(|(_, item)| {
-                matches!(item, Item::ToolCall(call) if call.message == Some(*owner))
-            }).count();
-                let (members, rest) = items.split_at(calls + 1);
-                items = rest;
-                return Some(MessageGroup { items: members });
-            }
-            items = tail;
-        }
-    })
+fn groups<'a>(
+    items: &'a [(ItemId, Item)],
+    owners: &'a BTreeMap<ItemId, ItemId>,
+) -> impl Iterator<Item = MessageGroup<'a>> {
+    items
+        .iter()
+        .enumerate()
+        .filter_map(move |(position, (_, item))| {
+            matches!(item, Item::Message(m) if m.role == MessageRole::Assistant).then_some(
+                MessageGroup {
+                    items,
+                    owners,
+                    position,
+                },
+            )
+        })
 }
 impl GenerationRequest {
-    /// Only declared membership is visible; standalone calls/reasoning stay independent.
     pub fn message_groups(&self) -> impl Iterator<Item = MessageGroup<'_>> {
-        groups(self.items())
+        groups(self.items(), self.message_owners())
     }
 }
 impl GenerationResponse {
-    /// Member lifecycle remains per item. This view never asserts turn completion.
     pub fn message_groups(&self) -> impl Iterator<Item = MessageGroup<'_>> {
-        groups(self.items())
+        groups(self.items(), self.message_owners())
     }
 }

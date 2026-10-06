@@ -20,7 +20,6 @@ fn call(item: u64, id: &str) -> (ItemId, Item) {
             call_id: text(id),
             name: text("lookup"),
             arguments: "not parsed".into(),
-            message: None,
             status: ItemLifecycle::Completed,
             context: CallContext::default(),
         }),

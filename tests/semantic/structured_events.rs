@@ -66,7 +66,6 @@ fn complete_structured_events_equal_independent_static_values_and_release_the_bu
                 call_id: text("c"),
                 name: text("lookup"),
                 arguments: ToolArguments::Structured(value),
-                message: None,
                 status: ItemLifecycle::Completed,
                 context: CallContext::default(),
             }),

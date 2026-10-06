@@ -174,6 +174,15 @@ fn cache_boundary_cannot_split_a_declared_message_group() {
     };
     value.call_id = morphiecore::semantic::value::Text::new("new", "fixture", 32).unwrap();
     items.push(call);
-    extended.task.semantic = extended.task.semantic.with_items(items).unwrap();
+    extended.task.semantic = extended
+        .task
+        .semantic
+        .with_items(items)
+        .unwrap()
+        .with_message_owners(vec![
+            (ItemId::new(2), ItemId::new(1)),
+            (ItemId::new(3), ItemId::new(1)),
+        ])
+        .unwrap();
     assert!(extended.check_cache_prefix(&proof, &scope()).is_err());
 }

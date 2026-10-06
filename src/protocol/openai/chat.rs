@@ -74,7 +74,8 @@ pub(crate) fn decode_generation_with(
         ..Default::default()
     };
     super::chat_audio::settings(o, &mut settings)?;
-    let r = GenerationRequest::from_settings(b.items, settings)?;
+    let r = GenerationRequest::from_settings(b.items, settings)?
+        .with_message_owners(b.message_owners)?;
     Ok(DecodedRequest {
         semantic: function_tools::decode(r, o, Profile::Chat)?,
         fidelity: b.fidelity,
@@ -388,8 +389,9 @@ pub(super) fn decode_message(
                         Some(v) if v.as_u64() == Some(position as u64) => {}
                         _ => return Err(CodecError::Invalid("tool index")),
                     }
-                    let call = tool_call(call, Profile::Chat, Some(id), None, replay)?;
+                    let call = tool_call(call, Profile::Chat, None, replay)?;
                     let cid = b.id()?;
+                    b.message_owners.push((cid, id));
                     b.items.push((cid, Item::ToolCall(call)));
                 }
             }
@@ -408,6 +410,11 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     if target.profile != Profile::Chat {
         return Err(CodecError::ProfileMismatch);
     }
+    check_message_carriers(
+        target.semantic.items(),
+        target.semantic.message_owners(),
+        Profile::Chat,
+    )?;
     check_item_carriers(target.semantic.items())?;
     target
         .fidelity
@@ -417,6 +424,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     }
     let mut messages = encode_items_with(
         target.semantic.items(),
+        target.semantic.message_owners(),
         target.fidelity,
         target.adaptation.rules.structured_chat_reasoning,
         false,
@@ -461,6 +469,7 @@ pub(super) fn call_wire(c: &ToolCall) -> Value {
 }
 pub(super) fn encode_items_with(
     items: &[(ItemId, Item)],
+    owners: &std::collections::BTreeMap<ItemId, ItemId>,
     fidelity: &crate::protocol::fidelity::FidelityRecords,
     structured: bool,
     response: bool,
@@ -578,7 +587,7 @@ pub(super) fn encode_items_with(
                 messages.push(message);
             }
             Item::ToolCall(c) => {
-                if c.message.is_none() && !standalone_calls {
+                if !owners.contains_key(id) && !standalone_calls {
                     let mut message = json!({"role":"assistant","content":null});
                     if let Some(text) = reasoning.take() {
                         message["reasoning_content"] = json!(text);
@@ -594,7 +603,7 @@ pub(super) fn encode_items_with(
                     .entry("tool_calls")
                     .or_insert_with(|| json!([]));
                 calls.as_array_mut().expect("calls").push(call_wire(c));
-                standalone_calls = c.message.is_none();
+                standalone_calls = !owners.contains_key(id);
             }
             Item::CustomCall(_)
             | Item::CustomResult(_)

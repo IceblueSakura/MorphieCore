@@ -70,6 +70,7 @@ impl TerminalDetails {
 pub struct GenerationResponse {
     items: Vec<(ItemId, Item)>,
     replay_groups: Vec<super::ReplayGroup>,
+    message_owners: std::collections::BTreeMap<ItemId, ItemId>,
     outcome: Outcome,
     progress: super::InteractionProgress,
     usage: Vec<Usage>,
@@ -90,6 +91,7 @@ impl GenerationResponse {
         Ok(Self {
             items,
             replay_groups: vec![],
+            message_owners: Default::default(),
             outcome,
             progress: super::InteractionProgress::Unreported,
             usage: vec![],
@@ -140,6 +142,10 @@ impl GenerationResponse {
                 &self.items,
                 &self.replay_groups,
             )?)
+            .saturating_add(super::group::validate_message_owners(
+                &self.items,
+                &self.message_owners,
+            )?)
             > super::MAX_TOTAL_BYTES
         {
             return Err(GenerationError::Limit);
@@ -152,6 +158,17 @@ impl GenerationResponse {
     }
     pub fn replay_groups(&self) -> &[super::ReplayGroup] {
         &self.replay_groups
+    }
+    pub fn message_owners(&self) -> &std::collections::BTreeMap<ItemId, ItemId> {
+        &self.message_owners
+    }
+    pub fn with_message_owners(
+        mut self,
+        owners: Vec<(ItemId, ItemId)>,
+    ) -> Result<Self, GenerationError> {
+        self.message_owners = super::group::message_owners(owners)?;
+        let details = self.details.clone();
+        self.with_details(details)
     }
     pub fn with_replay_groups(
         mut self,
@@ -179,7 +196,13 @@ impl GenerationResponse {
         if items.len() > super::MAX_ITEMS {
             return Err(GenerationError::Limit);
         }
+        let owners = self
+            .message_owners
+            .into_iter()
+            .filter(|(owner, _)| items.iter().any(|(id, _)| id == owner))
+            .collect();
         let mut response = Self::new(items, self.outcome)?
+            .with_message_owners(owners)?
             .with_replay_groups(self.replay_groups)?
             .with_progress(self.progress)?
             .with_details(self.details)?;
