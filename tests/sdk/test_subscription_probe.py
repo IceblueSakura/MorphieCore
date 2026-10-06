@@ -13,8 +13,8 @@ from probe_support.runtime import gateway
 
 class SubscriptionProbeTests(unittest.TestCase):
     def test_probe_passes_only_explicit_directory_and_caps_upstream_attempts(self):
-        self.assertFalse({"openai-siwc", "grok"} & {row[0] for row in select_bindings()})
-        for unsupported in ("codex", "openai-siwc"):
+        self.assertFalse({"openai", "grok"} & {row[0] for row in select_bindings()})
+        for unsupported in ("codex", "openai", "openai-siwc", "siwc"):
             with self.assertRaises(RuntimeError):
                 select_bindings(unsupported)
         with tempfile.TemporaryDirectory() as directory:

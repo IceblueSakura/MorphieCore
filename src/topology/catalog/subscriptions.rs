@@ -10,11 +10,11 @@ pub struct SubscriptionBinding {
 }
 pub const SUBSCRIPTION_BINDINGS: &[SubscriptionBinding] = &[
     SubscriptionBinding {
-        profile: "siwc",
+        profile: "openai",
         model: "gpt-6.1-sol",
         upstream: "gpt-6.1-sol",
         dialect: Dialect::Siwc,
-        provider: catalog::siwc,
+        provider: catalog::openai,
     },
     SubscriptionBinding {
         profile: "grok",
@@ -27,7 +27,7 @@ pub const SUBSCRIPTION_BINDINGS: &[SubscriptionBinding] = &[
 impl SubscriptionBinding {
     fn contract(&self) -> GenerationSemanticContract {
         let mut contract = models::contract(self.model);
-        if self.profile == "siwc" {
+        if self.profile == "openai" {
             contract.max_output_tokens = false;
             contract.temperature = false;
             contract.top_p = false;

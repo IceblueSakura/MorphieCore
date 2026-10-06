@@ -8,7 +8,7 @@ Accepted. Fixed multi-member execution is governed by [ADR 0010](0010-canonical-
 
 - Expose authenticated Chat/Responses Generation over loopback using the shared adapter/execution chain. Startup binds compiled topology, explicit entries and credentials; business JSON cannot supply them.
 - Authenticate before body collection. Resolve public model/task from bounded strict JSON before semantic decode. Apply trusted output-budget policy before deriving requirements; reject excessive explicit limits instead of clipping them.
-- HTTP transport receives prepared trusted parts. It does not mutate IR, forward inbound headers, inherit ambient proxies, follow redirects or retry implicitly.
+- HTTP transport receives prepared trusted parts. It does not mutate IR, forward inbound headers, follow redirects or retry implicitly. Binary startup permits operator environment proxies with explicit overrides; embedded constructors remain opt-in. Business data never selects proxy policy; operational precedence belongs to the [credential guide](../../credentials.md#出站代理).
 - Bind replay scope to trusted entry and authentication ownership. This internal scope is not attestation of a client token's issuer.
 - Use bounded incremental delivery and explicit acknowledgement. Body handoff to server transport is the conservative commit boundary, not proof of peer receipt. Completion requires validated upstream closure and final handoff.
 - Bound concurrency, body collection, payload sizes and absolute exchange duration. Backpressure cannot suspend the upstream deadline. Timeout, cancellation, shutdown and late failure release resources without a fabricated terminal.

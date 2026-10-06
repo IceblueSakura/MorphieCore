@@ -22,3 +22,6 @@ mod test_files;
 #[cfg(test)]
 #[path = "../tests/support/properties.rs"]
 mod test_properties;
+#[cfg(test)]
+#[path = "../tests/support/proxy_environment.rs"]
+mod test_proxy_environment;

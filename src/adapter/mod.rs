@@ -44,7 +44,7 @@ impl Dialect {
         let (profile_id, rules) = match self {
             Self::Standard => ("standard-v1", WireRules::default()),
             Self::Siwc => (
-                "openai-siwc-responses",
+                "openai-responses",
                 WireRules {
                     responses_forced_stream: true,
                     responses_siwc: true,

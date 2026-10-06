@@ -1,5 +1,5 @@
 //! Semantically blind trusted HTTP transport. No inbound header propagation,
-//! redirects, implicit retries or ambient proxy discovery.
+//! redirects or implicit retries. Environment proxies require explicit startup opt-in.
 #[cfg(test)]
 #[path = "http_tests.rs"]
 mod tests;
@@ -15,11 +15,19 @@ pub struct HttpTransport {
 }
 impl HttpTransport {
     pub fn new(proxy: Option<&str>) -> Result<Self, ErrorClass> {
+        Self::with_environment_proxy(proxy, false)
+    }
+    pub(crate) fn with_environment_proxy(
+        proxy: Option<&str>,
+        environment: bool,
+    ) -> Result<Self, ErrorClass> {
         let mut builder = Client::builder()
-            .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
             .retry(reqwest::retry::never())
             .connect_timeout(Duration::from_secs(10));
+        if !environment || proxy.is_some() {
+            builder = builder.no_proxy();
+        }
         if let Some(proxy) = proxy {
             builder = builder.proxy(reqwest::Proxy::all(proxy).map_err(|_| ErrorClass::Upstream)?);
         }

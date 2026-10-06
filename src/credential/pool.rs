@@ -34,7 +34,7 @@ impl CredentialPool {
             || (self
                 .members
                 .iter()
-                .any(|m| matches!(m, CredentialRef::OAuth { profile, .. } if profile == "siwc"))
+                .any(|m| matches!(m, CredentialRef::OAuth { profile, .. } if profile == "openai"))
                 && (self.members.len() != 1 || self.fallback || self.max_attempts != 1))
         {
             return Err(Error::InvalidInput);

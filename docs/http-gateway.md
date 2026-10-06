@@ -4,15 +4,16 @@
 
 ## 启动
 
-启动只读取操作者指定的私有 JSON 配置与凭据目录，不读取环境 key/账户 alias、`.env`、旧 TOML 或第三方 auth cache。默认入口配置为目录内的 `gateway.json`，可用 `--config` 指定独立路径：
+启动只读取本应用的私有 JSON 配置与凭据 store，不读取环境 key/账户 alias、`.env`、旧 TOML 或第三方 auth cache。省略 `--credentials-dir` 使用[凭据指南的默认目录](credentials.md#自有文件目录)，显式参数可覆盖。默认入口配置为最终 store 内的 `gateway.json`，可用 `--config` 指定独立路径：
 
 ```sh
+cargo run --locked --offline --bin morphiecore
 cargo run --locked --offline --bin morphiecore -- --credentials-dir /path/to/private-store
 cargo run --locked --offline --bin morphiecore -- \
   --credentials-dir /path/to/private-store --config /path/to/private/gateway.json
 ```
 
-配置结构、synthetic 示例、API key/OAuth 与 pool 操作由[凭据指南](credentials.md#gateway-access-绑定)维护；精确解析归 [bootstrap](../src/gateway/bootstrap.rs)。入口 `client_key` 不等于上游 key，listener 只允许 literal loopback，出站 proxy 必须显式受信配置，不继承环境代理。不得打印配置正文。
+配置结构、synthetic 示例、API key/OAuth 与 pool 操作由[凭据指南](credentials.md#gateway-access-绑定)维护；精确解析归 [bootstrap](../src/gateway/bootstrap.rs)。入口 `client_key` 不等于上游 key，listener 只允许 literal loopback；出站代理按 `--proxy`、配置文件、环境代理的顺序选择，细则归[出站代理](credentials.md#出站代理)。不得打印配置正文。
 
 Pool 按编译 binding 启用候选；只有账户或 key、没有 pool，不激活推理。凭据绑定变化与并发管理的规则见[凭据指南](credentials.md)；本地可借用不证明上游授权、模型资格或额度。
 

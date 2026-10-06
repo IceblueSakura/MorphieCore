@@ -16,12 +16,25 @@ mod unix {
 
     use crate::test_files::Directory;
     async fn command(args: &[&std::ffi::OsStr]) -> std::process::Output {
+        command_with_home(args, None, None).await
+    }
+    async fn command_with_home(
+        args: &[&std::ffi::OsStr],
+        home: Option<&std::ffi::OsStr>,
+        cwd: Option<&Path>,
+    ) -> std::process::Output {
         let mut command = Command::new(env!("CARGO_BIN_EXE_morphiecore-auth"));
         command
             .args(args)
             .env_clear()
             .env("XAI_API_KEY", "unused-synthetic-key")
             .kill_on_drop(true);
+        if let Some(home) = home {
+            command.env("HOME", home);
+        }
+        if let Some(cwd) = cwd {
+            command.current_dir(cwd);
+        }
         timeout(Duration::from_secs(10), command.output())
             .await
             .expect("bounded CLI operation")
@@ -46,7 +59,7 @@ mod unix {
             .unwrap();
     }
     fn account(profile: &str, alias: &str, subject: &str) -> Value {
-        let siwc = profile == "siwc";
+        let siwc = profile == "openai";
         json!({
             "profile":profile,"alias":alias,
             "client_id":if siwc { "oaiapp_synthetic" } else { "synthetic-client" },
@@ -66,6 +79,102 @@ mod unix {
             .take()
     }
     #[tokio::test]
+    async fn default_directory_reads_only_the_selected_home_and_explicit_store_wins() {
+        use std::os::unix::fs::PermissionsExt;
+        let home = Directory::existing();
+        let cwd = Directory::existing();
+        let root = home.path.join(".local/share/morphiecore/credentials");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
+        save(
+            &root,
+            "grok",
+            "home",
+            &account("grok", "home", "synthetic-home-person"),
+        );
+        save(
+            &cwd.path,
+            "grok",
+            "override",
+            &account("grok", "override", "synthetic-override-person"),
+        );
+        let args = ["list".as_ref()];
+        let output = command_with_home(&args, Some(home.path.as_os_str()), Some(&cwd.path)).await;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let statuses: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(statuses.as_array().unwrap().len(), 1);
+        assert_eq!(statuses[0]["account"], "home");
+        assert_eq!(statuses[0]["access"], "valid");
+        assert!(!String::from_utf8_lossy(&output.stdout).contains("synthetic-"));
+
+        let args = ["list".as_ref(), "--store".as_ref(), cwd.path.as_os_str()];
+        for selected_home in [Some(home.path.as_os_str()), None] {
+            let output = command_with_home(&args, selected_home, Some(&cwd.path)).await;
+            assert!(output.status.success());
+            let statuses: Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(statuses.as_array().unwrap().len(), 1);
+            assert_eq!(statuses[0]["account"], "override");
+        }
+    }
+    #[tokio::test]
+    async fn default_directory_rejects_missing_invalid_home_and_unsafe_store_without_fallback() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        let cwd = Directory::existing();
+        save(
+            &cwd.path,
+            "grok",
+            "decoy",
+            &account("grok", "decoy", "synthetic-decoy"),
+        );
+        for home in [None, Some("".as_ref()), Some("relative-home".as_ref())] {
+            let output = command_with_home(&["list".as_ref()], home, Some(&cwd.path)).await;
+            assert!(!output.status.success());
+            assert!(output.stdout.is_empty());
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains("default credential directory")
+            );
+        }
+        let home = Directory::existing();
+        let root = home.path.join(".local/share/morphiecore/credentials");
+        std::fs::create_dir_all(root.parent().unwrap()).unwrap();
+        symlink(&cwd.path, &root).unwrap();
+        let output = command_with_home(
+            &["list".as_ref()],
+            Some(home.path.as_os_str()),
+            Some(&cwd.path),
+        )
+        .await;
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        std::fs::remove_file(&root).unwrap();
+        std::fs::create_dir(&root).unwrap();
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
+        save(
+            &root,
+            "grok",
+            "private",
+            &account("grok", "private", "synthetic-private"),
+        );
+        std::fs::set_permissions(
+            root.join("grok.json"),
+            std::fs::Permissions::from_mode(0o644),
+        )
+        .unwrap();
+        let output = command_with_home(
+            &["list".as_ref()],
+            Some(home.path.as_os_str()),
+            Some(&cwd.path),
+        )
+        .await;
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        assert!(!String::from_utf8_lossy(&output.stderr).contains("synthetic-"));
+    }
+    #[tokio::test]
     async fn binary_uses_account_files_and_account_locks_without_cross_profile_effects() {
         let dir = Directory::existing();
         save(
@@ -82,9 +191,9 @@ mod unix {
         );
         save(
             &dir.path,
-            "siwc",
+            "openai",
             "one",
-            &account("siwc", "one", "synthetic-person-one"),
+            &account("openai", "one", "synthetic-person-one"),
         );
         let path = dir.path.as_os_str();
         let all = command(&["list".as_ref(), "--store".as_ref(), path]).await;
@@ -139,7 +248,7 @@ mod unix {
             "synthetic-refresh"
         );
         assert_eq!(
-            read(&dir.path, "siwc", "one")["credential"]["refresh"],
+            read(&dir.path, "openai", "one")["credential"]["refresh"],
             "synthetic-refresh"
         );
         drop(lock);
@@ -192,15 +301,15 @@ mod unix {
         let dir = Directory::existing();
         save(
             &dir.path,
-            "siwc",
+            "openai",
             "one",
-            &account("siwc", "one", "synthetic-person"),
+            &account("openai", "one", "synthetic-person"),
         );
         OpenOptions::new()
             .write(true)
             .create_new(true)
             .mode(0o600)
-            .open(dir.path.join("siwc.oauth.one.pending"))
+            .open(dir.path.join("openai.oauth.one.pending"))
             .unwrap()
             .write_all(b"true")
             .unwrap();
@@ -211,7 +320,7 @@ mod unix {
         assert_eq!(statuses[0]["access"], "unavailable");
         assert_eq!(statuses[0]["recovery_required"], true);
         let logout = command(&[
-            "siwc".as_ref(),
+            "openai".as_ref(),
             "logout".as_ref(),
             "--store".as_ref(),
             dir.path.as_os_str(),
@@ -222,9 +331,9 @@ mod unix {
         .await;
         assert!(!logout.status.success());
         assert!(String::from_utf8_lossy(&logout.stdout).contains("NOT confirmed"));
-        assert!(read(&dir.path, "siwc", "one")["credential"].is_null());
+        assert!(read(&dir.path, "openai", "one")["credential"].is_null());
         assert_eq!(
-            std::fs::read(dir.path.join("siwc.oauth.one.pending")).unwrap(),
+            std::fs::read(dir.path.join("openai.oauth.one.pending")).unwrap(),
             b"false"
         );
     }
@@ -242,9 +351,10 @@ mod unix {
                 "--callback-port",
                 "0",
             ],
-            vec!["siwc", "login", "--method", "device"],
+            vec!["siwc", "login", "--method", "browser"],
+            vec!["openai", "login", "--method", "device"],
             vec![
-                "siwc",
+                "openai",
                 "login",
                 "--method",
                 "browser",
@@ -289,7 +399,7 @@ mod unix {
         for consent in [false, true] {
             let mut command = Command::new(env!("CARGO_BIN_EXE_morphiecore-auth"));
             command
-                .args(["siwc", "login", "--account", "personal", "--store"])
+                .args(["openai", "login", "--account", "personal", "--store"])
                 .arg(&store)
                 .args(["--proxy", &proxy]);
             if consent {
@@ -358,7 +468,7 @@ mod unix {
                     .unwrap()
                     .success()
             );
-            let account = read(&store, "siwc", "personal");
+            let account = read(&store, "openai", "personal");
             assert!(account["login_attempt"].is_null());
             assert!(account["credential"].is_null());
             drop(TcpListener::bind(address).await.unwrap());

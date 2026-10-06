@@ -1,6 +1,6 @@
 # 统一文件凭据管理器
 
-`CredentialManager` 管理 API key 的本地生命周期、OAuth 授权生命周期，以及供推理使用的有序凭据池。凭据只来自显式自有文件目录；CLI、Gateway 和 probe 不从环境变量读取上游 key 或账户 alias，不搜索第三方 auth cache。API key 不伪装成 OAuth grant，登录成功也不证明模型、订阅或额度资格。
+`CredentialManager` 管理 API key 的本地生命周期、OAuth 授权生命周期，以及供推理使用的有序凭据池。凭据只来自应用自有文件 store；CLI 默认目录与覆盖方式见[自有文件目录](#自有文件目录)。CLI、Gateway 和 probe 不从环境变量读取上游 key 或账户 alias，不搜索第三方 auth cache。API key 不伪装成 OAuth grant，登录成功也不证明模型、订阅或额度资格。
 
 合同归 [ADR 0012](architecture/decisions/0012-grok-personal-credential-pool.md)，执行前移归 [ADR 0010](architecture/decisions/0010-canonical-model-fixed-fallback.md)。OAuth 来源见 [Grok](references/grok-login.md)和 [SIWC](references/siwc-login.md)。ChatGPT plan usage 只提供独立 SIWC browser flow，不提供 Codex 产品登录、client override 或 token 转换；SIWC 也不是 Platform API key。
 
@@ -15,6 +15,9 @@
 ## Gateway access 绑定
 
 ```sh
+# 使用默认 store；仍须先准备 gateway.json 和显式 pool。
+cargo run --locked --offline --bin morphiecore
+# 覆盖 store。
 cargo run --locked --offline --bin morphiecore -- --credentials-dir /path/to/private-store
 # 入口配置可独立放置；不需要复制上游凭据。
 cargo run --locked --offline --bin morphiecore -- \
@@ -58,7 +61,21 @@ SIWC 是例外：单一显式 registration、单成员、`fallback:false`、`max
 
 不同凭据不共享 replay scope。多个候选的入口拒绝尚无亲和 carrier 的 encrypted-output 请求和 opaque history；不能去掉 signature 以继续，也不能凭 Provider/model 相同跨身份回放。池配置变更不热扩张正在运行的候选集合。
 
-## 显式自有文件目录
+<a id="显式自有文件目录"></a>
+
+## 自有文件目录
+
+两个 binary 共用 [CLI 路径解析](../src/credential/directory.rs)：省略 `morphiecore-auth --store` 或 `morphiecore --credentials-dir` 时，使用当前用户 home 下的 `.local/share/morphiecore/credentials`。Unix home 来自 `HOME`，Windows 来自 `USERPROFILE`，仅用于非秘密路径选择；缺失、空或相对 home 拒绝，不搜索当前目录或旧 `config/`，不采用 `XDG_DATA_HOME` 等其他目录 fallback。显式 CLI 路径优先且不依赖 home。库构造仍由调用者传入路径，不自动选择 store。
+
+Unix 首次使用可准备私有父目录；已有不安全权限不会自动修复：
+
+```sh
+install -d -m 700 "$HOME/.local/share/morphiecore"
+install -d -m 700 "$HOME/.local/share/morphiecore/credentials"
+target/debug/morphiecore-auth list
+```
+
+这只选择本应用的文件目录，不读取环境 secret 或默认账户。`--account`、pool 成员和 Gateway 激活仍须显式配置。目录迁移需独立授权并停止写入，整体保留 namespace 文档、host ID、锁文件和 recovery markers；程序不自动搬迁、转换或合并旧 store。
 
 每个 Provider namespace 使用一个 JSON 文档，包含 `provider`、文档 `revision`、`api_keys`、`oauth` 和 `pools`。OAuth 文档按授权 profile namespace 管理，可被 Provider pool 显式引用，不复制 grant。每个条目的 secret、身份与生命周期仍有唯一 typed owner；精确结构、预算和拒绝规则归 [store](../src/credential/store.rs)、[API key](../src/credential/api_key.rs) 和 [pool](../src/credential/pool.rs)。保留字及旧布局拒绝，不自动读取、转换或删除旧私有文件。
 
@@ -74,7 +91,7 @@ SIWC 是例外：单一显式 registration、单成员、`fallback:false`、`max
 
 ## 命令
 
-CLI 由 `clap` 解析，错误不回显输入值。每个命令必须显式提供 `--store`；父目录须由操作者准备，不读取默认账户或环境 key。
+CLI 由 `clap` 解析，错误不回显输入值。省略 `--store` 使用上述默认目录，显式参数可覆盖；父目录须由操作者准备，不读取默认账户或环境 key。以下命令保留显式 store，以便操作其他自有目录。
 
 ```sh
 cargo build --locked --offline --bin morphiecore-auth
@@ -130,24 +147,44 @@ target/debug/morphiecore-auth pool list --store "$STORE"
 
 ### OAuth
 
+OpenAI 的对外 profile 与 Provider ID 统一为 `openai`，其登录方式是 **ChatGPT subscription / SIWC**，不是 Platform API key。这与 pi 按 Provider 选择登录方式的命名分层一致，但不引入 pi 的凭据格式、自动刷新、模型发现或 API-key fallback。协议 owner 仍为 [SIWC driver](../src/credential/siwc.rs)，编译绑定归 [catalog](../src/topology/catalog/subscriptions.rs)。
+
 ```sh
 target/debug/morphiecore-auth grok login --store "$STORE" --account personal
 target/debug/morphiecore-auth grok login --store "$STORE" --account personal --method browser
-target/debug/morphiecore-auth siwc login --store "$STORE" --account personal
+target/debug/morphiecore-auth openai login --store "$STORE" --account personal
 # 身份已登录但未开启套餐权限时，由用户明确重新 consent。
-target/debug/morphiecore-auth siwc login --store "$STORE" --account personal --consent
+target/debug/morphiecore-auth openai login --store "$STORE" --account personal --consent
 target/debug/morphiecore-auth list --store "$STORE"
-target/debug/morphiecore-auth siwc refresh --store "$STORE" --account personal
-target/debug/morphiecore-auth siwc logout --store "$STORE" --account personal
+target/debug/morphiecore-auth openai list --store "$STORE"
+target/debug/morphiecore-auth openai refresh --store "$STORE" --account personal
+target/debug/morphiecore-auth openai logout --store "$STORE" --account personal
 # 显式远端撤销需独立授权；本地清理先于该请求。
-target/debug/morphiecore-auth siwc logout --store "$STORE" --account personal --revoke
+target/debug/morphiecore-auth openai logout --store "$STORE" --account personal --revoke
 ```
 
-- SIWC 缺省且仅支持 browser；Grok 缺省 device，browser 显式选择。失败不自动换 client/方法。Grok 可指定已获准 `--client-id`，SIWC 使用 callback issued client，不接受 override。代理只通过显式 `--proxy` 指定，不继承环境代理。
+store 使用 `openai.json`。旧 `siwc` profile / `openai-siwc` Provider 不作为别名注册。已有旧 store 必须在停止所有写入并取得迁移授权后，同步 namespace、OAuth 记录的 profile、锁/恢复标记名称和相关 pool 引用；不能只改 JSON 文件名。迁移保留 issued client、host ID、tokens、身份、expiry 与恢复状态，不重新登录或消费 refresh token。若目标已存在则停止，不自动合并；程序不自动迁移其他目录。
+
+- SIWC 缺省且仅支持 browser；Grok 缺省 device，browser 显式选择。失败不自动换 client/方法。Grok 可指定已获准 `--client-id`，SIWC 使用 callback issued client，不接受 override。auth 默认使用[环境代理](#出站代理)，`--proxy` 显式覆盖。
+- SIWC 浏览器登录的 code exchange / JWKS 非 200 响应报告固定阶段、HTTP 状态和精确白名单错误码，并保留原错误作为 cause；未知码仅显示 `unknown_or_missing`。不输出原始响应、description、任意 header、code 或 tokens；授权页展示 plan usage 不证明最终授予的 scopes。Refresh/revoke 的错误分类不变。
 - alias 不是已验证身份。登录结果必须通过 driver 的 issuer/client/subject/workspace 验证；不同 profile 的 token 不互换，不从 JWT header 选择可信 issuer/key URL。
 - 同账户竞争返回 busy。失败/取消的 login 保留已有可用 session；ticket 防止过期登录覆盖退出或后续登录。
 - refresh 发出前先持久化移除可复用 secrets；拒绝、取消或不确定消费结果需要重新登录，不能盲目重发 refresh token。SIWC 已收到的 replacement 在验证前持久化为 `renewal_pending`，禁止借用；再次 `refresh` 只验证这份材料，不再次发 token grant。身份不匹配不能发布，需显式 logout 后重新登录；不手动恢复旧备份。
 - logout 先清理本地，再可选远端 revoke；远端不确定不恢复本地 tokens。Ctrl-C 取消本次操作，不声称上游终止。
+
+## 出站代理
+
+auth 的 login/refresh/revoke 无显式 `--proxy` 时使用 reqwest 的环境代理规则：按目标 scheme 选择 `HTTP_PROXY` / `HTTPS_PROXY`，以 `ALL_PROXY` 为 fallback，并遵守 `NO_PROXY`；支持对应小写变量。大小写并存和 CGI 场景按锁定 reqwest 的规则处理，建议同一变量只设置一种拼写。
+
+主程序优先级为 `--proxy` > `gateway.json` 中的 `proxy` > 环境代理。显式 CLI/文件代理用于全部出站 HTTP(S)，不与环境代理或 `NO_PROXY` 混用。代理失败不会自动改走直连或重试。环境变量只来自操作者启动进程的配置，不从下游请求读取；不要打印代理 URL 或包含认证信息的环境值。
+
+```sh
+# 代理地址为示例；只配置选路，不执行登录或推理。
+export HTTPS_PROXY=http://127.0.0.1:7890
+export NO_PROXY=localhost,127.0.0.1,::1
+```
+
+`--proxy` 支持受信 HTTP/HTTPS 代理；不因此增加 SOCKS 支持。浏览器网络设置与 CLI 环境分别生效，浏览器授权成功不证明 CLI token exchange 使用相同出口。库级 `Gateway` / `HttpTransport::new` 与原 `Bootstrap::from_files` 保持无环境代理的显式策略；binary 通过 `Bootstrap::from_files_with_proxy` 选择环境默认。Synthetic authority 和隔离测试不继承真实环境代理。
 
 ## 交互与身份
 

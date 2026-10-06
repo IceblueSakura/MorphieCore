@@ -27,7 +27,7 @@ One chain shares its permit, attempt budget and deadline. Tighter endpoint limit
 
 ## Runtime authority
 
-Transport receives only prepared trusted origin/path/method, safe headers, sensitive auth, encoded bytes/stream and resource policy. It does not receive Task IR, forward inbound headers, inherit ambient proxies or follow redirects implicitly. Response task/profile remains the selected endpoint's contract, never inferred from body content.
+Transport receives only prepared trusted origin/path/method, safe headers, sensitive auth, encoded bytes/stream and resource policy. It does not receive Task IR, forward inbound headers or follow redirects implicitly. Binary startup opts into operator environment proxies unless explicitly overridden; embedded transport construction remains direct unless configured. Proxy selection is startup authority, never business input; precedence belongs to the [credential guide](../credentials.md#出站代理). Response task/profile remains the selected endpoint's contract, never inferred from body content.
 
 Credential material is acquired only at execution; ordinary requests do not log in, refresh or discover accounts. Secret ownership and recovery belong to [credentials](../credentials.md), not context/fidelity. Uncertain upstream completion may already have incurred work or billing; cancellation is not proof of remote termination.
 

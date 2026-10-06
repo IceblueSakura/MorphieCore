@@ -22,10 +22,10 @@ Generation 主线是 Agent-first 的 Text/Image/File 交互，以规范 Response
 
 ## 启动入口
 
-语义库构造不读取私有配置。`morphiecore` binary 通过显式入口配置与凭据目录启动；命令本身不发生成请求：
+语义库构造不读取私有配置。`morphiecore` binary 从[默认或显式覆盖的自有凭据目录](docs/credentials.md#自有文件目录)和入口配置启动；命令本身不发生成请求：
 
 ```sh
-cargo run --locked --offline --bin morphiecore -- --credentials-dir /path/to/private-store
+cargo run --locked --offline --bin morphiecore
 ```
 
 先按[HTTP 指南](docs/http-gateway.md)准备入口配置，账户与池操作见[凭据指南](docs/credentials.md)。真实登录、推理或付费测试需独立授权，使用[受控 probe](docs/probes.md)，不属于默认检查。

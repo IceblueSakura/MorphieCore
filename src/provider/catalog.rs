@@ -146,11 +146,11 @@ pub fn zhipu() -> ProviderDefinition {
 
 /// Public SIWC Responses; permission is checked on each access snapshot.
 /// Source: https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference
-pub fn siwc() -> ProviderDefinition {
+pub fn openai() -> ProviderDefinition {
     ProviderDefinition {
-        auth: AuthScheme::OAuthBearer("siwc"),
+        auth: AuthScheme::OAuthBearer("openai"),
         responses: Some(EndpointPath::new("/v1/responses").expect("static path")),
-        id: ProviderId::new("openai-siwc").expect("static identity"),
+        id: ProviderId::new("openai").expect("static identity"),
         origin: TrustedOrigin::parse("https://api.openai.com").expect("static origin"),
         chat_completions: None,
     }
@@ -168,7 +168,7 @@ pub fn grok() -> ProviderDefinition {
 }
 pub fn all() -> Vec<ProviderDefinition> {
     vec![
-        siwc(),
+        openai(),
         grok(),
         deepseek(),
         xiaomi(),

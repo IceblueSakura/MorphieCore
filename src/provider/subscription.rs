@@ -5,7 +5,7 @@ use crate::{
 };
 pub(crate) fn headers(auth: AuthScheme, grant: &AccessGrant) -> Result<Vec<(String, String)>, ()> {
     match auth {
-        AuthScheme::OAuthBearer("siwc") if grant.identity.scope.is_none() => {
+        AuthScheme::OAuthBearer("openai") if grant.identity.scope.is_none() => {
             Ok(vec![("user-agent".into(), siwc::USER_AGENT.into())])
         }
         AuthScheme::OAuthBearer("grok") if grant.identity.scope.is_none() => Ok(vec![]),

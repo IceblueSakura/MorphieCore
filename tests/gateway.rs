@@ -1269,7 +1269,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
 }
 
 #[tokio::test]
-async fn binary_bootstraps_only_explicit_files_and_ignores_environment_keys() {
+async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
     use morphiecore::credential::{CredentialPool, CredentialRef, Secret};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tokio::io::AsyncBufReadExt;
@@ -1293,7 +1293,8 @@ async fn binary_bootstraps_only_explicit_files_and_ignores_environment_keys() {
         .unwrap();
     }));
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().join("store");
+    let root = dir.path().join(".local/share/morphiecore/credentials");
+    std::fs::create_dir_all(root.parent().unwrap()).unwrap();
     let manager = morphiecore::credential::CredentialManager::new(&root, vec![]).unwrap();
     manager
         .add_api_key(
@@ -1351,15 +1352,19 @@ async fn binary_bootstraps_only_explicit_files_and_ignores_environment_keys() {
         .unwrap()
         .write_all(
             &serde_json::to_vec(
-                &json!({"client_key":support::CLIENT_KEY,"bind":"127.0.0.1:0","proxy":proxy,"models":["deepseek-flash","qwen-audio-3.0-tts-flash"]}),
+                &json!({"client_key":support::CLIENT_KEY,"bind":"127.0.0.1:0","proxy":"unsupported://invalid","models":["deepseek-flash","qwen-audio-3.0-tts-flash"]}),
             )
             .unwrap(),
         )
         .unwrap();
     let mut process = tokio::process::Command::new(env!("CARGO_BIN_EXE_morphiecore"))
-        .args(["--credentials-dir"])
-        .arg(&root)
+        .args(["--proxy", &proxy])
         .env_clear()
+        .env("HTTPS_PROXY", "unsupported://environment")
+        .env(
+            if cfg!(windows) { "USERPROFILE" } else { "HOME" },
+            dir.path(),
+        )
         .env(
             "MORPHIECORE_CLIENT_KEY",
             "synthetic-ignored-environment-key-0001",

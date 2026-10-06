@@ -196,6 +196,32 @@ impl Gateway {
         limits: Limits,
         proxy: Option<&str>,
     ) -> Result<Self, StartupError> {
+        Self::new_with_media_and_environment_proxy(
+            topology,
+            entries,
+            image_entries,
+            speech_entries,
+            transcription_entries,
+            credentials,
+            client_key,
+            limits,
+            proxy,
+            false,
+        )
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_with_media_and_environment_proxy(
+        topology: CompiledTopology,
+        entries: Vec<Entry>,
+        image_entries: Vec<ImageEntry>,
+        speech_entries: Vec<SpeechEntry>,
+        transcription_entries: Vec<TranscriptionEntry>,
+        credentials: impl Into<Credentials>,
+        client_key: SecretMaterial,
+        limits: Limits,
+        proxy: Option<&str>,
+        environment: bool,
+    ) -> Result<Self, StartupError> {
         let credentials = credentials.into();
         let images = super::images::bind(&topology, image_entries, &credentials)?;
         let speech = super::speech::bind(&topology, speech_entries, &credentials)?;
@@ -205,7 +231,8 @@ impl Gateway {
             return Err(StartupError::Limits);
         }
         let auth = auth::Auth::new(client_key)?;
-        let transport = HttpTransport::new(proxy).map_err(|_| StartupError::Transport)?;
+        let transport = HttpTransport::with_environment_proxy(proxy, environment)
+            .map_err(|_| StartupError::Transport)?;
         let mut bound: BTreeMap<(u8, String), BoundEntry> = BTreeMap::new();
         for entry in entries {
             let public = topology

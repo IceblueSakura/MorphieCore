@@ -3,14 +3,16 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use morphiecore::credential::{
     CredentialError as Error, CredentialManager, CredentialPool, CredentialStatus, LoginMethod,
     LoginOptions, LoginPrompt, LogoutOutcome, Secret, builtin_drivers, read_private_file,
+    resolve_store_directory,
 };
 use std::{path::PathBuf, process::ExitCode};
 
 #[derive(Parser)]
 #[command(subcommand_precedence_over_arg = true)]
 struct Options {
-    /// Authorization profile for OAuth operations; not an inference Provider selector.
+    /// OAuth profile: openai (ChatGPT subscription) or grok; not an API-key selector.
     profile: Option<String>,
+    /// Override the default ~/.local/share/morphiecore/credentials directory.
     #[arg(long, global = true)]
     store: Option<PathBuf>,
     #[command(subcommand)]
@@ -40,6 +42,7 @@ enum Command {
 struct Account {
     #[arg(long)]
     account: String,
+    /// Override environment proxies for this credential operation.
     #[arg(long)]
     proxy: Option<String>,
 }
@@ -58,7 +61,7 @@ struct Login {
     method: Option<Method>,
     #[arg(long)]
     callback_port: Option<u16>,
-    /// Explicitly request ChatGPT plan consent; ordinary SIWC re-login does not.
+    /// Explicitly request ChatGPT plan consent; ordinary OpenAI re-login does not.
     #[arg(long)]
     consent: bool,
 }
@@ -156,7 +159,7 @@ fn prompt(prompt: &LoginPrompt) {
     }
 }
 async fn execute(options: Options) -> Result<(), Error> {
-    let root = options.store.ok_or(Error::InvalidInput)?;
+    let root = resolve_store_directory(options.store)?;
     let profile = options.profile.as_deref();
     if matches!(
         options.command,
@@ -229,7 +232,7 @@ async fn execute(options: Options) -> Result<(), Error> {
         }
         Command::Login(login) => {
             let profile = profile.ok_or(Error::InvalidInput)?;
-            let method = login.method.unwrap_or(if profile == "siwc" {
+            let method = login.method.unwrap_or(if profile == "openai" {
                 Method::Browser
             } else {
                 Method::Device
@@ -252,7 +255,7 @@ async fn execute(options: Options) -> Result<(), Error> {
                 .find(|driver| driver.profile() == profile)
                 .ok_or(Error::UnknownProfile)?
                 .login_client(&settings)?;
-            if profile == "siwc" {
+            if profile == "openai" {
                 eprintln!("Continue with ChatGPT — MorphieCore");
                 eprintln!(
                     "Identity, granted permissions and tokens are stored only in the selected owner-only local store. No ChatGPT history is imported. Plan usage is only for your own authorized tasks in this application."

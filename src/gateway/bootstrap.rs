@@ -52,6 +52,22 @@ impl Bootstrap {
         Self::from_files(&directory.join("gateway.json"), directory)
     }
     pub fn from_files(configuration: &Path, directory: &Path) -> Result<Self, StartupError> {
+        Self::load(configuration, directory, None, false)
+    }
+    /// Binary startup opts into environment proxies; an explicit argument beats the file.
+    pub fn from_files_with_proxy(
+        configuration: &Path,
+        directory: &Path,
+        proxy: Option<&str>,
+    ) -> Result<Self, StartupError> {
+        Self::load(configuration, directory, proxy, true)
+    }
+    fn load(
+        configuration: &Path,
+        directory: &Path,
+        proxy: Option<&str>,
+        environment: bool,
+    ) -> Result<Self, StartupError> {
         let bytes = crate::credential::read_private_file(configuration, 65536)
             .map_err(|_| StartupError::Credentials)?;
         let configuration: Configuration =
@@ -208,7 +224,7 @@ impl Bootstrap {
         if selected.as_ref().is_some_and(|set| *set != activated) {
             return Err(StartupError::Binding);
         }
-        let mut gateway = Gateway::new_with_media(
+        let mut gateway = Gateway::new_with_media_and_environment_proxy(
             catalog::default_topology().map_err(|_| StartupError::Binding)?,
             entries,
             image_entries,
@@ -218,7 +234,8 @@ impl Bootstrap {
             SecretMaterial::new(configuration.client_key.expose())
                 .map_err(|_| StartupError::Credentials)?,
             Limits::default(),
-            configuration.proxy.as_deref(),
+            proxy.or(configuration.proxy.as_deref()),
+            environment,
         )?;
         if let Some(cap) = configuration.max_attempts {
             // This freshly built state is not published or shared yet. The same

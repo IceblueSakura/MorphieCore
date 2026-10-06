@@ -113,7 +113,7 @@ pub fn default_topology() -> Result<CompiledTopology, TopologyError> {
             id: public.route.clone(),
             task: public.task,
             policy: RoutePolicy {
-                max_attempts: if binding.profile == "siwc" {
+                max_attempts: if binding.profile == "openai" {
                     1
                 } else {
                     RoutePolicy::default().max_attempts
@@ -201,7 +201,8 @@ fn declared_topology_compiles() {
 fn siwc_registration_is_public_responses_only_and_does_not_reuse_product_bindings() {
     let topology = default_topology().unwrap();
     assert!(topology.provider("codex").is_none());
-    let provider = topology.provider("openai-siwc").unwrap();
+    assert!(topology.provider("openai-siwc").is_none());
+    let provider = topology.provider("openai").unwrap();
     assert_eq!(provider.origin.as_str(), "https://api.openai.com");
     assert_eq!(
         provider.responses.as_ref().unwrap().as_str(),
@@ -210,15 +211,15 @@ fn siwc_registration_is_public_responses_only_and_does_not_reuse_product_binding
     assert!(provider.chat_completions.is_none());
     assert_eq!(
         provider.auth,
-        crate::provider::AuthScheme::OAuthBearer("siwc")
+        crate::provider::AuthScheme::OAuthBearer("openai")
     );
     let endpoint = topology
-        .endpoint(&EndpointId::new("openai-siwc-responses").unwrap())
+        .endpoint(&EndpointId::new("openai-responses").unwrap())
         .unwrap();
-    assert_eq!(endpoint.credential.as_str(), "openai-siwc-oauth");
+    assert_eq!(endpoint.credential.as_str(), "openai-oauth");
     assert_eq!(
         endpoint.representation.adaptation.profile_id,
-        "openai-siwc-responses"
+        "openai-responses"
     );
     assert!(!endpoint.representation.semantics.max_output_tokens);
     assert!(
@@ -236,7 +237,7 @@ fn siwc_registration_is_public_responses_only_and_does_not_reuse_product_binding
             .responses_product_accounting
     );
     let route = topology
-        .route(&RouteId::new("openai-siwc-generation").unwrap())
+        .route(&RouteId::new("openai-generation").unwrap())
         .unwrap();
     assert_eq!(route.policy.max_attempts, 1);
     assert_eq!(route.policy.fallback, FallbackPolicy::Disabled);

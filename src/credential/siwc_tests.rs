@@ -58,7 +58,7 @@ async fn login(
 ) -> Result<AccountStatus, CredentialError> {
     let (send, recv) = tokio::sync::oneshot::channel();
     let send = Mutex::new(Some(send));
-    let mut login = Box::pin(manager.login("siwc", "personal", options(), |p| {
+    let mut login = Box::pin(manager.login("openai", "personal", options(), |p| {
         let LoginPrompt::Browser(p) = p else {
             panic!("browser only")
         };
@@ -174,8 +174,9 @@ fn builtin_siwc_is_a_dynamic_browser_profile() {
     );
     let driver = drivers
         .iter()
-        .find(|d| d.profile() == "siwc")
-        .expect("SIWC profile must be registered");
+        .find(|d| d.profile() == "openai")
+        .expect("OpenAI ChatGPT OAuth profile must be registered");
+    assert!(!drivers.iter().any(|d| d.profile() == "siwc"));
     assert!(driver.login_client(&LoginOptions::default()).is_err());
     assert_eq!(
         driver
@@ -205,16 +206,16 @@ async fn registration_returning_login_and_identity_only_access_are_separate() {
     )
     .await
     .unwrap();
-    let binding = manager.bind_access("siwc", "personal").unwrap();
+    let binding = manager.bind_access("openai", "personal").unwrap();
     assert_eq!(binding.borrow().unwrap_err(), CredentialError::Permission);
-    let before = read_account(&dir.path, "siwc", "personal");
+    let before = read_account(&dir.path, "openai", "personal");
     assert_eq!(before["client_id"], CLIENT);
     assert!(before["identity"]["scope"].is_null());
     let host = manager
         .store
         .transaction()
         .unwrap()
-        .host_id("siwc")
+        .host_id("openai")
         .unwrap();
     authority.steps.lock().unwrap().extend(login_steps());
     login(&manager, &authority, false, SCOPES, None, false)
@@ -226,7 +227,7 @@ async fn registration_returning_login_and_identity_only_access_are_separate() {
             .store
             .transaction()
             .unwrap()
-            .host_id("siwc")
+            .host_id("openai")
             .unwrap(),
         host
     );
@@ -256,16 +257,83 @@ async fn invalid_grant_retains_issued_client_and_never_repeats_dynamic_registrat
         login(&manager, &authority, true, SCOPES, Some(CLIENT), false)
             .await
             .unwrap_err(),
-        CredentialError::InvalidGrant
+        CredentialError::SiwcLoginResponse {
+            stage: siwc::LoginStage::TokenExchange,
+            status: 400,
+            code: "invalid_grant",
+            cause: Box::new(CredentialError::InvalidGrant),
+        }
     );
     assert_eq!(
-        read_account(&dir.path, "siwc", "personal")["client_id"],
+        read_account(&dir.path, "openai", "personal")["client_id"],
         CLIENT
     );
     authority.steps.lock().unwrap().extend(login_steps());
     login(&manager, &authority, false, SCOPES, None, false)
         .await
         .unwrap();
+    authority.done();
+}
+
+#[tokio::test]
+async fn login_http_diagnostics_identify_token_exchange_and_preserve_the_active_grant() {
+    let authority = Authority::new(login_steps()).await;
+    let dir = Directory::new();
+    let manager = authority.pool(&dir);
+    login(&manager, &authority, true, SCOPES, Some(CLIENT), false)
+        .await
+        .unwrap();
+    let binding = manager.bind_access("openai", "personal").unwrap();
+    let mut rejected = step(
+        "/api/accounts/oauth/token",
+        vec![("client_id", CLIENT)],
+        json!({"error":{"code":"invalid_scope","message":"synthetic-private-message"},
+            "access_token":"synthetic-private-token","client_id":"synthetic-private-client"}),
+    );
+    rejected.status = axum::http::StatusCode::FORBIDDEN;
+    authority.steps.lock().unwrap().push_back(rejected);
+    let error = login(&manager, &authority, false, SCOPES, None, false)
+        .await
+        .unwrap_err();
+    let message = error.to_string();
+    assert!(message.contains("stage=token_exchange"));
+    assert!(message.contains("HTTP=403"));
+    assert!(message.contains("code=invalid_scope"));
+    assert!(!message.contains("synthetic-private"));
+    assert_eq!(
+        std::error::Error::source(&error).unwrap().to_string(),
+        CredentialError::Denied.to_string()
+    );
+    assert_eq!(binding.borrow().unwrap().access.expose(), "siwc-access");
+    assert!(!manager.list(Some("openai")).unwrap()[0].login_pending);
+    authority.done();
+}
+
+#[tokio::test]
+async fn login_http_diagnostics_identify_jwks_and_never_echo_unknown_response_fields() {
+    let mut steps = login_steps();
+    steps[1].status = axum::http::StatusCode::UNAUTHORIZED;
+    steps[1].body = json!({
+        "error":{"code":"synthetic-private-code","description":"synthetic-private-description"},
+        "id_token":"synthetic-private-token"
+    });
+    let authority = Authority::new(steps).await;
+    let dir = Directory::new();
+    let manager = authority.pool(&dir);
+    let error = login(&manager, &authority, true, SCOPES, Some(CLIENT), false)
+        .await
+        .unwrap_err();
+    let message = error.to_string();
+    assert!(message.contains("stage=jwks"));
+    assert!(message.contains("HTTP=401"));
+    assert!(message.contains("code=unknown_or_missing"));
+    assert!(!message.contains("synthetic-private"));
+    assert!(!format!("{error:?}").contains("synthetic-private"));
+    let account = read_account(&dir.path, "openai", "personal");
+    assert_eq!(account["client_id"], CLIENT);
+    assert!(account["credential"].is_null());
+    assert!(account["identity"].is_null());
+    assert!(account["login_attempt"].is_null());
     authority.done();
 }
 
@@ -277,7 +345,7 @@ async fn rotated_material_survives_jwks_failure_and_recovers_without_token_reuse
     login(&manager, &authority, true, SCOPES, Some(CLIENT), false)
         .await
         .unwrap();
-    let binding = manager.bind_access("siwc", "personal").unwrap();
+    let binding = manager.bind_access("openai", "personal").unwrap();
     let mut replacement = token("", SCOPES);
     replacement["access_token"] = json!("new-access");
     replacement["refresh_token"] = json!("replacement-refresh");
@@ -300,11 +368,11 @@ async fn rotated_material_survives_jwks_failure_and_recovers_without_token_reuse
         ),
         failure,
     ]);
-    assert!(manager.refresh("siwc", "personal").await.is_err());
-    let state = manager.list(Some("siwc")).unwrap().remove(0);
+    assert!(manager.refresh("openai", "personal").await.is_err());
+    let state = manager.list(Some("openai")).unwrap().remove(0);
     assert!(state.renewal_pending);
     assert!(binding.borrow().is_err());
-    let stored = read_account(&dir.path, "siwc", "personal");
+    let stored = read_account(&dir.path, "openai", "personal");
     assert!(stored["credential"].is_null());
     assert_eq!(
         stored["pending_renewal"]["credential"]["refresh"],
@@ -316,7 +384,7 @@ async fn rotated_material_survives_jwks_failure_and_recovers_without_token_reuse
         .unwrap()
         .push_back(step("/.well-known/jwks.json", vec![], keys()));
     let reopened = authority.pool(&dir);
-    let state = reopened.refresh("siwc", "personal").await.unwrap();
+    let state = reopened.refresh("openai", "personal").await.unwrap();
     assert!(!state.renewal_pending);
     assert_eq!(binding.borrow().unwrap().access.expose(), "new-access");
     assert!(
@@ -386,7 +454,7 @@ async fn callback_must_issue_a_client_and_cannot_replace_an_existing_registratio
                 .await
                 .is_err()
         );
-        assert!(manager.bind_access("siwc", "personal").is_err());
+        assert!(manager.bind_access("openai", "personal").is_err());
         assert!(authority.forms.lock().unwrap().is_empty());
     }
     let authority = Authority::new(login_steps()).await;
@@ -411,12 +479,12 @@ async fn callback_must_issue_a_client_and_cannot_replace_an_existing_registratio
         CredentialError::IdentityMismatch
     );
     assert_eq!(
-        read_account(&dir.path, "siwc", "personal")["client_id"],
+        read_account(&dir.path, "openai", "personal")["client_id"],
         CLIENT
     );
     assert_eq!(
         manager
-            .bind_access("siwc", "personal")
+            .bind_access("openai", "personal")
             .unwrap()
             .borrow()
             .unwrap()
@@ -441,12 +509,12 @@ async fn renewal_omission_inherits_identity_but_scope_loss_disables_plan_usage()
         json!({"access_token":"identity-only-access","refresh_token":"replacement-refresh",
             "expires_in":3600,"token_type":"Bearer","scope":"openid profile email offline_access"}),
     ));
-    let status = manager.refresh("siwc", "personal").await.unwrap();
+    let status = manager.refresh("openai", "personal").await.unwrap();
     assert_eq!(status.plan_usage_enabled, Some(false));
     assert!(!status.renewal_pending);
     assert_eq!(
         manager
-            .bind_access("siwc", "personal")
+            .bind_access("openai", "personal")
             .unwrap()
             .borrow()
             .unwrap_err(),
@@ -467,7 +535,7 @@ async fn logout_discovers_only_the_pinned_revoke_target_and_keeps_registration()
         .store
         .transaction()
         .unwrap()
-        .host_id("siwc")
+        .host_id("openai")
         .unwrap();
     authority.steps.lock().unwrap().extend([
         step(
@@ -487,10 +555,10 @@ async fn logout_discovers_only_the_pinned_revoke_target_and_keeps_registration()
         ),
     ]);
     assert_eq!(
-        manager.logout("siwc", "personal", true).await.unwrap(),
+        manager.logout("openai", "personal", true).await.unwrap(),
         LogoutOutcome::Revoked
     );
-    let record = read_account(&dir.path, "siwc", "personal");
+    let record = read_account(&dir.path, "openai", "personal");
     assert_eq!(record["client_id"], CLIENT);
     assert!(record["credential"].is_null() && record["pending_renewal"].is_null());
     assert_eq!(
@@ -498,7 +566,7 @@ async fn logout_discovers_only_the_pinned_revoke_target_and_keeps_registration()
             .store
             .transaction()
             .unwrap()
-            .host_id("siwc")
+            .host_id("openai")
             .unwrap(),
         host
     );
@@ -513,12 +581,12 @@ async fn logout_discovers_only_the_pinned_revoke_target_and_keeps_registration()
     authority.steps.lock().unwrap().push_back(step("/.well-known/openid-configuration", vec![],
         json!({"issuer":"https://auth.openai.com","revocation_endpoint":"https://untrusted.invalid/revoke"})));
     assert_eq!(
-        manager.logout("siwc", "personal", true).await.unwrap(),
+        manager.logout("openai", "personal", true).await.unwrap(),
         LogoutOutcome::RevocationUnconfirmed
     );
     assert!(
         manager
-            .bind_access("siwc", "personal")
+            .bind_access("openai", "personal")
             .unwrap()
             .borrow()
             .is_err()
@@ -542,14 +610,14 @@ async fn uncertain_refresh_never_reuses_the_consumed_refresh_token() {
     failure.status = axum::http::StatusCode::BAD_REQUEST;
     authority.steps.lock().unwrap().push_back(failure);
     assert_eq!(
-        manager.refresh("siwc", "personal").await.unwrap_err(),
+        manager.refresh("openai", "personal").await.unwrap_err(),
         CredentialError::GrantReused
     );
     assert_eq!(
-        manager.refresh("siwc", "personal").await.unwrap_err(),
+        manager.refresh("openai", "personal").await.unwrap_err(),
         CredentialError::LoginRequired
     );
-    assert!(read_account(&dir.path, "siwc", "personal")["credential"].is_null());
+    assert!(read_account(&dir.path, "openai", "personal")["credential"].is_null());
     authority.done();
 }
 
@@ -569,7 +637,7 @@ async fn cancellation_during_pending_verification_is_recoverable_after_restart()
         step("/api/accounts/oauth/token", vec![], token("", SCOPES)),
         jwks,
     ]);
-    let mut renewal = Box::pin(manager.refresh("siwc", "personal"));
+    let mut renewal = Box::pin(manager.refresh("openai", "personal"));
     timeout(Duration::from_secs(3), async {
         loop {
             tokio::select! {
@@ -583,7 +651,7 @@ async fn cancellation_during_pending_verification_is_recoverable_after_restart()
     .await
     .unwrap();
     drop(renewal);
-    assert!(manager.list(Some("siwc")).unwrap()[0].renewal_pending);
+    assert!(manager.list(Some("openai")).unwrap()[0].renewal_pending);
     gate.notify_one();
     authority
         .steps
@@ -593,7 +661,7 @@ async fn cancellation_during_pending_verification_is_recoverable_after_restart()
     assert!(
         !authority
             .pool(&dir)
-            .refresh("siwc", "personal")
+            .refresh("openai", "personal")
             .await
             .unwrap()
             .renewal_pending
@@ -604,7 +672,7 @@ async fn cancellation_during_pending_verification_is_recoverable_after_restart()
 #[test]
 fn siwc_never_forms_a_rotation_pool_or_reuses_product_metadata() {
     let reference = CredentialRef::OAuth {
-        profile: "siwc".into(),
+        profile: "openai".into(),
         alias: "personal".into(),
     };
     for (members, fallback, max_attempts, accepted) in [
@@ -615,7 +683,7 @@ fn siwc_never_forms_a_rotation_pool_or_reuses_product_metadata() {
             vec![
                 reference,
                 CredentialRef::OAuth {
-                    profile: "siwc".into(),
+                    profile: "openai".into(),
                     alias: "other".into(),
                 },
             ],
@@ -644,7 +712,7 @@ fn siwc_never_forms_a_rotation_pool_or_reuses_product_metadata() {
     };
     assert_eq!(
         crate::provider::subscription::headers(
-            crate::provider::AuthScheme::OAuthBearer("siwc"),
+            crate::provider::AuthScheme::OAuthBearer("openai"),
             &grant
         )
         .unwrap(),
@@ -671,22 +739,22 @@ async fn changed_subject_in_replacement_remains_quarantined_until_explicit_logou
         step("/.well-known/jwks.json", vec![], keys()),
     ]);
     assert_eq!(
-        manager.refresh("siwc", "personal").await.unwrap_err(),
+        manager.refresh("openai", "personal").await.unwrap_err(),
         CredentialError::IdentityMismatch
     );
-    assert!(manager.list(Some("siwc")).unwrap()[0].renewal_pending);
+    assert!(manager.list(Some("openai")).unwrap()[0].renewal_pending);
     assert!(
         manager
-            .bind_access("siwc", "personal")
+            .bind_access("openai", "personal")
             .unwrap()
             .borrow()
             .is_err()
     );
     assert_eq!(
-        manager.logout("siwc", "personal", false).await.unwrap(),
+        manager.logout("openai", "personal", false).await.unwrap(),
         LogoutOutcome::LocalOnly
     );
-    let stored = read_account(&dir.path, "siwc", "personal");
+    let stored = read_account(&dir.path, "openai", "personal");
     assert!(stored["credential"].is_null() && stored["pending_renewal"].is_null());
     assert_eq!(stored["identity"]["subject"], "person-a");
     authority.done();

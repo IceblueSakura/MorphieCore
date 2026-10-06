@@ -205,7 +205,8 @@ pub fn compile(
             let endpoint = endpoint_map
                 .get(candidate.as_str())
                 .ok_or(TopologyError::UnknownEndpoint)?;
-            if endpoint.execution.credential_kind == crate::provider::CredentialKind::OAuth("siwc")
+            if endpoint.execution.credential_kind
+                == crate::provider::CredentialKind::OAuth("openai")
                 && (route.endpoints.len() != 1
                     || route.policy.max_attempts != 1
                     || route.policy.fallback != super::FallbackPolicy::Disabled)
@@ -393,9 +394,9 @@ mod tests {
             (1, false, 2, false),
         ] {
             let mut provider = provider();
-            provider.auth = AuthScheme::OAuthBearer("siwc");
+            provider.auth = AuthScheme::OAuthBearer("openai");
             let mut endpoint = endpoint(ProtocolProfile::OpenAiResponses);
-            endpoint.execution.credential_kind = CredentialKind::OAuth("siwc");
+            endpoint.execution.credential_kind = CredentialKind::OAuth("openai");
             let mut endpoints = vec![endpoint.clone()];
             let mut route = route();
             route.policy.max_attempts = attempts;

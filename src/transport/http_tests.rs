@@ -1,11 +1,43 @@
 //! Offline HTTP transport checks with two literal-loopback listeners.
 use super::*;
+use crate::test_proxy_environment as proxy_environment;
 use axum::{Router, body::Body, http::StatusCode, response::Response, routing::post};
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
 };
 use tokio::net::TcpListener;
+
+#[tokio::test]
+async fn environment_proxy_selection_is_isolated_and_explicit_proxy_wins() {
+    proxy_environment::matrix("transport::http::tests::environment_proxy_child").await;
+}
+#[tokio::test]
+#[ignore = "invoked only by the isolated proxy matrix"]
+async fn environment_proxy_child() {
+    let target = std::env::var("MORPHIECORE_TEST_PROXY_TARGET").unwrap();
+    let proxy = std::env::var("MORPHIECORE_TEST_PROXY_OVERRIDE").ok();
+    let transport = if std::env::var_os("MORPHIECORE_TEST_PROXY_ISOLATED").is_some() {
+        HttpTransport::new(None)
+    } else {
+        HttpTransport::with_environment_proxy(proxy.as_deref(), true)
+    }
+    .unwrap();
+    let result = transport
+        .client
+        .get(target)
+        .timeout(Duration::from_secs(2))
+        .send()
+        .await;
+    if proxy_environment::expected_status() == 0 {
+        assert!(result.is_err());
+    } else {
+        assert_eq!(
+            result.unwrap().status().as_u16(),
+            proxy_environment::expected_status()
+        );
+    }
+}
 struct Guard(tokio::task::AbortHandle);
 impl Drop for Guard {
     fn drop(&mut self) {

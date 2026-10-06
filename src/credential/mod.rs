@@ -5,6 +5,8 @@ mod access;
 pub use access::{AccessBinding, AccessGrant};
 mod browser;
 mod callback;
+mod directory;
+pub use directory::resolve_store_directory;
 mod driver;
 mod grok;
 mod grok_metadata;
@@ -89,6 +91,8 @@ pub enum CredentialError {
     InvalidInput,
     #[error("credential store is unavailable or unsafe")]
     Storage,
+    #[error("default credential directory is unavailable; specify --store or --credentials-dir")]
+    DefaultStoreUnavailable,
     #[error("credential store is busy")]
     Busy,
     #[error("credential pool limit reached")]
@@ -109,6 +113,14 @@ pub enum CredentialError {
     Timeout,
     #[error("authorization was denied")]
     Denied,
+    #[error("OpenAI login response rejected (stage={stage}, HTTP={status}, code={code}): {cause}")]
+    SiwcLoginResponse {
+        stage: siwc::LoginStage,
+        status: u16,
+        code: &'static str,
+        #[source]
+        cause: Box<CredentialError>,
+    },
     #[error("authorization transaction expired")]
     Expired,
     #[error("loopback callback listener is unavailable")]

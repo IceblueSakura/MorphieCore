@@ -24,6 +24,20 @@ const REVOKE: &str = "/api/accounts/oauth/revoke";
 const SCOPES: &str =
     "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct";
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LoginStage {
+    TokenExchange,
+    Jwks,
+}
+impl std::fmt::Display for LoginStage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::TokenExchange => "token_exchange",
+            Self::Jwks => "jwks",
+        })
+    }
+}
+
 pub(super) struct SiwcAuthority {
     http: AuthHttp,
 }
@@ -60,6 +74,10 @@ impl SiwcAuthority {
     ) -> Result<VerifiedIdentity, Error> {
         let (status, body) = self.http.get("/.well-known/jwks.json", deadline).await?;
         if status != 200 {
+            // Browser login carries a nonce; refresh retains its existing error contract.
+            if nonce.is_some() {
+                return Err(login_failure(LoginStage::Jwks, status, &body));
+            }
             return Err(failure(status, &body));
         }
         let keys = serde_json::from_slice(&body).map_err(|_| Error::Protocol)?;
@@ -145,7 +163,7 @@ fn token(status: u16, body: &[u8], previous: Option<&Credential>) -> Result<Pend
 }
 impl AuthDriver for SiwcAuthority {
     fn profile(&self) -> &'static str {
-        "siwc"
+        "openai"
     }
     fn dynamic_registration(&self) -> bool {
         true
@@ -242,6 +260,13 @@ impl AuthDriver for SiwcAuthority {
                         registration,
                     )
                     .await?;
+                if response.status != 200 {
+                    return Err(login_failure(
+                        LoginStage::TokenExchange,
+                        response.status,
+                        &response.body,
+                    ));
+                }
                 let pending = token(response.status, &response.body, None)?;
                 let identity = self
                     .identity(
@@ -379,12 +404,44 @@ impl AuthDriver for SiwcAuthority {
         })
     }
 }
-fn failure(status: u16, body: &[u8]) -> Error {
+fn login_failure(stage: LoginStage, status: u16, body: &[u8]) -> Error {
+    let code = error_code(body).unwrap_or("unknown_or_missing");
+    Error::SiwcLoginResponse {
+        stage,
+        status,
+        code,
+        cause: Box::new(failure(status, body)),
+    }
+}
+
+// Return only static allowlisted values, never a string borrowed from private body data.
+fn error_code(body: &[u8]) -> Option<&'static str> {
     let value: Option<serde_json::Value> = serde_json::from_slice(body).ok();
     let code = value.as_ref().and_then(|v| v.get("error")).and_then(|v| {
         v.as_str()
             .or_else(|| v.get("code").and_then(serde_json::Value::as_str))
     });
+    const KNOWN: &[&str] = &[
+        "invalid_request",
+        "invalid_client",
+        "invalid_grant",
+        "invalid_scope",
+        "unauthorized_client",
+        "unsupported_grant_type",
+        "access_denied",
+        "invalid_refresh_token",
+        "token_expired",
+        "refresh_token_expired",
+        "refresh_token_reused",
+        "refresh_token_invalidated",
+        "chatpass_v2_scope_not_authorized",
+        "chatpass_v2_invalid_authorization_context",
+    ];
+    KNOWN.iter().copied().find(|known| Some(*known) == code)
+}
+
+fn failure(status: u16, body: &[u8]) -> Error {
+    let code = error_code(body);
     match code {
         Some("invalid_grant" | "invalid_refresh_token") => Error::InvalidGrant,
         Some("token_expired" | "refresh_token_expired") => Error::GrantExpired,
@@ -393,5 +450,35 @@ fn failure(status: u16, body: &[u8]) -> Error {
         _ if status == 401 || status == 403 => Error::Denied,
         _ if status == 400 || status == 404 => Error::Protocol,
         _ => Error::Network,
+    }
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::*;
+
+    #[test]
+    fn error_codes_are_static_exact_matches_and_private_fields_never_reach_errors() {
+        for body in [
+            br#"{"error":"invalid_client","error_description":"synthetic-private-description"}"#
+                .as_slice(),
+            br#"{"error":{"code":"invalid_client","message":"synthetic-private-message"}}"#,
+        ] {
+            let error = login_failure(LoginStage::TokenExchange, 400, body);
+            assert!(error.to_string().contains("code=invalid_client"));
+            assert!(!format!("{error:?}").contains("synthetic-private"));
+        }
+        for body in [
+            br#"{"error":"synthetic-private-code","access_token":"synthetic-private-token"}"#
+                .as_slice(),
+            br#"{"error":{"code":"invalid_scope synthetic-private-token"}}"#,
+            br#"{"error":{"code":null},"description":"synthetic-private-description"}"#,
+            b"<html>synthetic-private-body</html>",
+            b"",
+        ] {
+            let error = login_failure(LoginStage::Jwks, 403, body);
+            assert!(error.to_string().contains("code=unknown_or_missing"));
+            assert!(!format!("{error:?}").contains("synthetic-private"));
+        }
     }
 }

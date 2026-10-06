@@ -1,4 +1,4 @@
-//! Bounded authority HTTP, with no redirects, ambient proxies or automatic retries.
+//! Bounded authority HTTP; explicit proxies override environment proxy selection.
 use super::{CredentialError as Error, SecretBytes};
 use futures_util::StreamExt;
 use reqwest::{Client, Method, header::HeaderValue};
@@ -26,11 +26,21 @@ impl AuthHttp {
         Self::build(origin.into(), proxy, None)
     }
     fn build(origin: String, proxy: Option<&str>, agent: Option<&str>) -> Result<Self, Error> {
+        Self::build_with_environment(origin, proxy, agent, true)
+    }
+    fn build_with_environment(
+        origin: String,
+        proxy: Option<&str>,
+        agent: Option<&str>,
+        environment: bool,
+    ) -> Result<Self, Error> {
         let mut builder = Client::builder()
-            .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
             .retry(reqwest::retry::never())
             .connect_timeout(Duration::from_secs(10));
+        if !environment || proxy.is_some() {
+            builder = builder.no_proxy();
+        }
         if let Some(agent) = agent {
             builder = builder.user_agent(agent);
         }
@@ -69,7 +79,7 @@ impl AuthHttp {
         {
             return Err(Error::InvalidInput);
         }
-        Self::build(origin.into(), None, agent)
+        Self::build_with_environment(origin.into(), None, agent, false)
     }
     pub async fn request(
         &self,
@@ -179,10 +189,39 @@ impl AuthHttp {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_proxy_environment as proxy_environment;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
     };
+    #[tokio::test]
+    async fn environment_proxy_selection_is_isolated_and_explicit_proxy_wins() {
+        proxy_environment::matrix("credential::http::tests::environment_proxy_child").await;
+    }
+    #[tokio::test]
+    #[ignore = "invoked only by the isolated proxy matrix"]
+    async fn environment_proxy_child() {
+        let target = std::env::var("MORPHIECORE_TEST_PROXY_TARGET").unwrap();
+        let proxy = std::env::var("MORPHIECORE_TEST_PROXY_OVERRIDE").ok();
+        let http = if std::env::var_os("MORPHIECORE_TEST_PROXY_ISOLATED").is_some() {
+            AuthHttp::synthetic_with_agent(target.trim_end_matches("/fixture"), None)
+        } else {
+            AuthHttp::build(
+                target.trim_end_matches("/fixture").into(),
+                proxy.as_deref(),
+                None,
+            )
+        }
+        .unwrap();
+        let result = http
+            .get("/fixture", Instant::now() + Duration::from_secs(2))
+            .await;
+        if proxy_environment::expected_status() == 0 {
+            assert!(result.is_err());
+        } else {
+            assert_eq!(result.unwrap().0, proxy_environment::expected_status());
+        }
+    }
     #[test]
     fn explicit_proxy_rejects_credentials_and_non_transport_fields() {
         for proxy in [
