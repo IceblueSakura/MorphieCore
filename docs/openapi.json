@@ -1,0 +1,729 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MorphieCore minimal model interaction gateway",
+    "version": "0.1.0",
+    "description": "Current envelope-level HTTP contract, not complete standard conformance. Responses uses the Standard adapter; Chat retains the explicit MorphieCore compatibility profile. Provider-specific rules cannot authorize private Responses carriers or silent loss. The independent _openbridge attachment is rejected on protocol envelopes/items and never emitted. Static Images, binary Speech and file Transcription are independent tasks with explicit single-source API-key activation, never inferred from conversation bindings. Binary media entries require explicit model selection and the matching single-source, non-fallback credential pool; embedded callers also activate entries explicitly. Named ancillary audio-report projections preserve full IR reports while emitting standard audio/JSON. Models exposes only activated public labels; fine-tuned model deletion is not authorized. No stateful resources, URL fetching or implicit local retry/fallback. Realtime and downstream audio SSE are not admitted."
+  },
+  "servers": [{"url": "http://127.0.0.1:8080"}],
+  "security": [{"bearerAuth": []}],
+  "paths": {
+    "/v1/models": {
+      "get": {
+        "operationId": "listModels",
+        "summary": "List activated task public labels",
+        "description": "Immutable local view, deduplicated across client protocols and candidates and sorted by label. No pagination, upstream discovery, capability/price extensions or request body. HEAD shares this route without a response body.",
+        "responses": {
+          "200": {
+            "description": "Complete standard model list, bounded at startup; never a truncated successful prefix.",
+            "headers": {"Cache-Control": {"schema": {"type": "string", "const": "no-store"}}},
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ModelList"}}}
+          },
+          "401": {"$ref": "#/components/responses/Error"},
+          "405": {"$ref": "#/components/responses/Error"},
+          "503": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/v1/models/{model}": {
+      "parameters": [{
+        "in": "path", "name": "model", "required": true,
+        "schema": {"$ref": "#/components/schemas/PublicModelLabel"}
+      }],
+      "get": {
+        "operationId": "retrieveModel",
+        "summary": "Retrieve an activated public model",
+        "responses": {
+          "200": {
+            "description": "The same model object as in the list; no Provider or account information.",
+            "headers": {"Cache-Control": {"schema": {"type": "string", "const": "no-store"}}},
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Model"}}}
+          },
+          "400": {"$ref": "#/components/responses/Error"},
+          "401": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"},
+          "405": {"$ref": "#/components/responses/Error"},
+          "503": {"$ref": "#/components/responses/Error"}
+        }
+      },
+      "delete": {
+        "operationId": "deleteModel",
+        "summary": "Reject deletion without fine-tuned model ownership",
+        "description": "This instance has no owned fine-tuned models or deletion capability. Activated labels return model_deletion_forbidden (403); unknown or inactive labels return model_not_found (404). No registry/activation mutation, upstream request or fabricated deleted:true response.",
+        "responses": {
+          "400": {"$ref": "#/components/responses/Error"},
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"},
+          "503": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/v1/chat/completions": {
+      "post": {
+        "operationId": "chatCompletion",
+        "parameters": [{"$ref": "#/components/parameters/ProbeId"}],
+        "summary": "Generate text from admitted text or user image input through single-candidate Chat",
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ChatRequest"}}}
+        },
+        "responses": {
+          "200": {"$ref": "#/components/responses/Generation"},
+          "400": {"$ref": "#/components/responses/Error"},
+          "401": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"},
+          "405": {"$ref": "#/components/responses/Error"},
+          "408": {"$ref": "#/components/responses/Error"},
+          "413": {"$ref": "#/components/responses/Error"},
+          "415": {"$ref": "#/components/responses/Error"},
+          "429": {"$ref": "#/components/responses/Error"},
+          "500": {"$ref": "#/components/responses/Error"},
+          "502": {"$ref": "#/components/responses/Error"},
+          "503": {"$ref": "#/components/responses/Error"},
+          "504": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/v1/images/generations": {
+      "post": {
+        "operationId": "imageGeneration",
+        "summary": "Generate an ordered inline image collection using the static GPT Image profile",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProbeId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImageGenerationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Complete ordered inline images after strict upstream EOF and exact requested-count validation. A short result, excess result or any invalid artifact fails the entire response; no prefix success or supplemental requests. Requires explicit activation. Binary image bindings must be selected in models and have the matching single-source, non-fallback pool.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageGenerationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error"
+          },
+          "408": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "502": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          },
+          "504": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/audio/transcriptions": {
+      "post": {
+        "operationId": "createTranscription",
+        "summary": "Transcribe one bounded WAV/MP3 upload through an explicitly activated binding",
+        "parameters": [{"$ref": "#/components/parameters/ProbeId"}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {"$ref": "#/components/schemas/TranscriptionRequest"},
+              "encoding": {"file": {"contentType": "audio/wav, audio/x-wav, audio/mpeg, audio/mp3, application/octet-stream"}}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Complete text and reported duration usage after strict native JSON and transport EOF. Ancillary sentence/word/channel and request identity reports remain in IR but are omitted by the named standard JSON projection. No invented language, duration or timing coverage.",
+            "headers": {"Cache-Control": {"schema": {"type": "string", "const": "no-store"}}},
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TranscriptionResponse"}}}
+          },
+          "400": {"$ref": "#/components/responses/Error"},
+          "401": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"},
+          "405": {"$ref": "#/components/responses/Error"},
+          "408": {"$ref": "#/components/responses/Error"},
+          "413": {"$ref": "#/components/responses/Error"},
+          "415": {"$ref": "#/components/responses/Error"},
+          "429": {"$ref": "#/components/responses/Error"},
+          "500": {"$ref": "#/components/responses/Error"},
+          "502": {"$ref": "#/components/responses/Error"},
+          "503": {"$ref": "#/components/responses/Error"},
+          "504": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/v1/audio/speech": {
+      "post": {
+        "operationId": "createSpeech",
+        "summary": "Generate bounded binary audio through an explicitly activated Speech binding",
+        "parameters": [{"$ref": "#/components/parameters/ProbeId"}],
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SpeechRequest"}}}
+        },
+        "responses": {
+          "200": {
+            "description": "Nonempty audio bytes after validated completion, strict upstream EOF and bounded collection, not low-latency audio streaming. A named native profile may aggregate upstream SSE without fetching a URL. Format-specific Content-Type reflects an admitted upstream report; application/octet-stream remains generic, never inferred from request format. Ancillary reference, accounting and alignment reports remain in IR and are omitted only by the named binary projection. Transport closure and MIME do not attest decodability or speech quality. No fabricated transcript, ID, expiry or usage.",
+            "headers": {
+              "Cache-Control": {"schema": {"type": "string", "const": "no-store"}},
+              "X-Content-Type-Options": {"schema": {"type": "string", "const": "nosniff"}}
+            },
+            "content": {
+              "application/octet-stream": {"schema": {"type": "string", "format": "binary"}},
+              "audio/mpeg": {"schema": {"type": "string", "format": "binary"}},
+              "audio/opus": {"schema": {"type": "string", "format": "binary"}},
+              "audio/aac": {"schema": {"type": "string", "format": "binary"}},
+              "audio/flac": {"schema": {"type": "string", "format": "binary"}},
+              "audio/wav": {"schema": {"type": "string", "format": "binary"}},
+              "audio/pcm": {"schema": {"type": "string", "format": "binary"}}
+            }
+          },
+          "400": {"$ref": "#/components/responses/Error"},
+          "401": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"},
+          "405": {"$ref": "#/components/responses/Error"},
+          "408": {"$ref": "#/components/responses/Error"},
+          "413": {"$ref": "#/components/responses/Error"},
+          "415": {"$ref": "#/components/responses/Error"},
+          "429": {"$ref": "#/components/responses/Error"},
+          "500": {"$ref": "#/components/responses/Error"},
+          "502": {"$ref": "#/components/responses/Error"},
+          "503": {"$ref": "#/components/responses/Error"},
+          "504": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/v1/responses": {
+      "post": {
+        "operationId": "response",
+        "parameters": [{"$ref": "#/components/parameters/ProbeId"}],
+        "summary": "Generate text from explicitly admitted text, image, inline or URL file input through stateless Responses",
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ResponsesRequest"}}}
+        },
+        "responses": {
+          "200": {"$ref": "#/components/responses/Generation"},
+          "400": {"$ref": "#/components/responses/Error"},
+          "401": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"},
+          "405": {"$ref": "#/components/responses/Error"},
+          "408": {"$ref": "#/components/responses/Error"},
+          "413": {"$ref": "#/components/responses/Error"},
+          "415": {"$ref": "#/components/responses/Error"},
+          "429": {"$ref": "#/components/responses/Error"},
+          "500": {"$ref": "#/components/responses/Error"},
+          "502": {"$ref": "#/components/responses/Error"},
+          "503": {"$ref": "#/components/responses/Error"},
+          "504": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "ProbeId": {
+        "in": "header", "name": "x-morphiecore-probe-id", "required": false,
+        "schema": {"type": "string"},
+        "description": "Operator correlation only when private probe diagnostics are enabled and authentication succeeds. Valid form: 32 lowercase hex run ID, colon, then decimal 1..999999. Invalid/duplicate values disable observation only, not business admission. Never forwarded upstream or echoed downstream. Not semantic request data."
+      }
+    },
+    "securitySchemes": {"bearerAuth": {"type": "http", "scheme": "bearer", "description": "Exactly one Authorization header. Configured startup secret, not an upstream API key."}},
+    "schemas": {
+      "Model": {
+        "type": "object", "required": ["id", "object", "created", "owned_by"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"$ref": "#/components/schemas/PublicModelLabel"},
+          "object": {"const": "model"},
+          "created": {
+            "type": "integer", "format": "unixtime", "minimum": 1, "maximum": 9223372036854775807,
+            "description": "Developer publication time in Unix seconds. Date-only sources use UTC midnight; not a router listing or Gateway startup timestamp."
+          },
+          "owned_by": {"type": "string", "minLength": 1, "maxLength": 128, "description": "Model developer name, not inference Provider or account owner."},
+          "shutdown_date": {"type": ["string", "null"], "format": "date", "description": "Optional standard report; omitted when unreported, not fabricated."}
+        }
+      },
+      "ModelList": {
+        "type": "object", "required": ["object", "data"], "additionalProperties": false,
+        "properties": {
+          "object": {"const": "list"},
+          "data": {"type": "array", "maxItems": 64, "items": {"$ref": "#/components/schemas/Model"}}
+        }
+      },
+      "TranscriptionRequest": {
+        "type": "object", "required": ["model", "file"], "additionalProperties": false,
+        "properties": {
+          "model": {"$ref": "#/components/schemas/PublicModelLabel"},
+          "file": {"type": "string", "format": "binary", "minLength": 1, "maxLength": 1048576,
+            "description": "One nonempty WAV/MP3 file, at most 1 MiB of actual bytes. Filename and MIME are declarations, must not conflict, and do not prove valid audio. No URL, file ID or local-path resolution."},
+          "language": {"type": "string", "pattern": "^[a-z]{2}(?![\\s\\S])", "description": "Language intent; the selected target must support the code. Not copied into a detected-language report."},
+          "response_format": {"const": "json", "default": "json"},
+          "stream": {"const": false, "default": false}
+        },
+        "description": "Abstract multipart schema, not a JSON request. Fields and file occur at most once; empty, null or unsupported controls cannot bypass admission. Whole upload hard ceiling is 1 MiB plus 16 KiB framing; operator limits can be smaller. Prompt, temperature, timestamps, other response formats, streaming, provider options and private fields are rejected before I/O. Files are never persisted or decoded locally; bytes are re-encoded as Base64 only for the trusted native target."
+      },
+      "TranscriptionResponse": {
+        "type": "object", "required": ["text"], "additionalProperties": false,
+        "properties": {
+          "text": {"type": "string", "maxLength": 1048576, "description": "Complete recognized text, additionally bounded to 1 MiB UTF-8 bytes. Empty text does not itself imply a failure."},
+          "usage": {
+            "type": "object", "required": ["type", "seconds"], "additionalProperties": false,
+            "properties": {
+              "type": {"const": "duration"},
+              "seconds": {"type": "number", "minimum": 0, "description": "Reported processed audio duration; not inferred from word timestamps or locally measured file metadata."}
+            }
+          }
+        }
+      },
+      "SpeechRequest": {
+        "type": "object",
+        "required": ["model", "input", "voice"],
+        "additionalProperties": false,
+        "properties": {
+          "model": {"$ref": "#/components/schemas/PublicModelLabel"},
+          "input": {"type": "string", "minLength": 1, "maxLength": 4096},
+          "voice": {
+            "type": "string", "minLength": 1, "maxLength": 128,
+            "pattern": "^[^\\s\\u0000-\\u001f\\u007f-\\u009f]+(?![\\s\\S])",
+            "description": "Named voice, additionally limited to 128 UTF-8 bytes and the target's explicit allowlist. Custom voice ID objects are not admitted."
+          },
+          "instructions": {"type": "string", "maxLength": 4096},
+          "speed": {"type": "number", "minimum": 0.25, "maximum": 4, "default": 1},
+          "response_format": {"enum": ["mp3", "opus", "aac", "flac", "wav", "pcm"], "default": "mp3"},
+          "stream_format": {"const": "audio", "default": "audio"}
+        },
+        "description": "Standard bounded Speech audio branch; every field is non-nullable. Empty instructions and explicit defaults remain distinct from absence. Speed retains exact numeric value with bounded numeric spelling; target voice, format and control admission is independent. PCM means headerless signed 16-bit little-endian, 24 kHz mono under this profile. Input/instructions each also have a 16384-byte bound. Explicit audio delivery does not promise low latency; SSE, custom voice references, generic stream, private extensions and unknown fields fail closed. No token cap is injected; local byte/time limits do not bound upstream fees."
+      },
+      "ImageGenerationRequest": {
+        "type": "object",
+        "required": [
+          "model",
+          "prompt"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "$ref": "#/components/schemas/PublicModelLabel"
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32000
+          },
+          "n": {
+            "type": ["integer", "null"],
+            "minimum": 1,
+            "maximum": 10,
+            "description": "Exact local delivery requirement. Missing/null means one. An upper-bound target may be attempted once, but a legal short upstream result fails local satisfaction; this is not a claim that upstream guarantees the count."
+          },
+          "stream": {
+            "enum": [
+              false,
+              null
+            ]
+          },
+          "output_format": {
+            "enum": [
+              "png",
+              "jpeg",
+              "webp",
+              null
+            ]
+          },
+          "size": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImagePixelSize"
+              },
+              {
+                "enum": [
+                  "auto",
+                  null
+                ]
+              }
+            ]
+          },
+          "quality": {
+            "enum": [
+              "auto",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max",
+              null
+            ]
+          },
+          "background": {
+            "enum": [
+              "auto",
+              "transparent",
+              "opaque",
+              null
+            ]
+          },
+          "output_compression": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100
+          },
+          "moderation": {
+            "enum": [
+              "auto",
+              "low",
+              null
+            ]
+          },
+          "user": {
+            "type": "string",
+            "maxLength": 256
+          }
+        },
+        "description": "Bounded static ordered-image profile. Missing, null and explicit controls remain distinct; user is not nullable. Explicit compression requires explicit JPEG or WebP. Transparent background cannot use JPEG. Unknown/legacy fields, edits and streaming are rejected. Targets independently admit controls; a standard carrier does not prove a target accepts it. Identity hints never select credentials or routing. Explicit model activation is required.",
+        "allOf": [
+          {
+            "not": {
+              "required": [
+                "output_format",
+                "background"
+              ],
+              "properties": {
+                "output_format": {
+                  "const": "jpeg"
+                },
+                "background": {
+                  "const": "transparent"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "required": [
+                "output_compression"
+              ],
+              "properties": {
+                "output_compression": {
+                  "type": "integer"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "output_format"
+              ],
+              "properties": {
+                "output_format": {
+                  "enum": [
+                    "jpeg",
+                    "webp"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ImagePixelSize": {
+        "type": "string",
+        "pattern": "^(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-6])x(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-6])(?![\\s\\S])",
+        "description": "Canonical WIDTHxHEIGHT in pixels, each dimension 1..65536. Target-specific admitted dimensions may be narrower."
+      },
+      "ImageTokenBreakdown": {
+        "type": "object",
+        "required": [
+          "text_tokens",
+          "image_tokens"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "text_tokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "image_tokens": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "ImageUsage": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "required": [
+          "input_tokens",
+          "input_tokens_details",
+          "output_tokens",
+          "total_tokens"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "input_tokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "input_tokens_details": {
+            "$ref": "#/components/schemas/ImageTokenBreakdown"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "output_tokens_details": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImageTokenBreakdown"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "total_tokens": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "description": "Unsigned 64-bit reported counts. Total equals input plus output; each supplied modality breakdown sums to its owning count. Unknown usage is not synthesized. For a trusted route using OmitUnrepresentableAccounting, token reports that cannot satisfy this complete standard shape are retained in IR but the entire downstream usage is omitted. Billing has no standard carrier and is omitted only under that policy; strict routes reject it."
+      },
+      "ImageGenerationResponse": {
+        "type": "object",
+        "required": [
+          "created",
+          "data"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "created": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "data": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "description": "Ordered actual artifacts, exactly matching effective request n on success. Aggregate decoded bytes have a fixed 8 MiB hard ceiling; the Gateway default aggregate limit is 2 MiB, not multiplied by n.",
+            "items": {
+              "type": "object",
+              "required": [
+                "b64_json"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "b64_json": {
+                  "type": "string",
+                  "minLength": 4,
+                  "maxLength": 11184812,
+                  "contentEncoding": "base64",
+                  "description": "Strict Base64, nonempty decoded bytes, at most 8 MiB decoded. Gateway defaults are narrower; operator, endpoint and image-response JSON budgets still apply. Representation validation does not decode pixels or attest format."
+                }
+              }
+            }
+          },
+          "output_format": {
+            "enum": [
+              "png",
+              "jpeg",
+              "webp",
+              null
+            ]
+          },
+          "size": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImagePixelSize"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "background": {
+            "enum": [
+              "transparent",
+              "opaque",
+              null
+            ]
+          },
+          "quality": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max",
+              null
+            ]
+          },
+          "usage": {
+            "$ref": "#/components/schemas/ImageUsage"
+          }
+        },
+        "description": "All optional facts preserve absent/null/value. Top-level artifact reports apply uniformly to the collection; heterogeneous values or mixed presence are not silently omitted or replaced by the first image. Usage belongs to the whole operation, not each image. No URL fetch, file service, revised prompt or private carrier. Image-response JSON has a separate 16 MiB hard ceiling; ordinary conversation JSON remains at 4 MiB. Gateway operator and endpoint limits can be tighter. Per-image and aggregate decoded limits are independently enforced (each defaults to 2 MiB, each hard ceiling 8 MiB).",
+        "allOf": [
+          {
+            "not": {
+              "required": [
+                "output_format",
+                "background"
+              ],
+              "properties": {
+                "output_format": {
+                  "const": "jpeg"
+                },
+                "background": {
+                  "const": "transparent"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "PublicModelLabel": {
+        "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9_.-]+$",
+        "description": "Activated public model label without a provider/ prefix. Resolves a fixed trusted Route; canonical identity and Provider-specific upstream model names remain internal. Clients cannot select a Provider."
+      },
+      "CacheSession": {
+        "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$",
+        "description": "MorphieCore scoped extension: caller-supplied Provider cache/observability grouping, not a gateway-managed session. Only explicitly supporting targets may receive it. No derivation from prompt_cache_key, user, safety_identifier or opaque replay; unsupported targets reject it. OpenCode Go maps an explicit ASCII session_id to x-opencode-session instead of the upstream body; absent values do not create an identity. Incoming session headers are not forwarded."
+      },
+      "ChatRequest": {
+        "type": "object", "required": ["model", "messages"],
+        "not": {"anyOf": [{"required": ["provider"]}, {"required": ["_openbridge"]}]},
+        "properties": {
+          "model": {"$ref": "#/components/schemas/PublicModelLabel"},
+          "session_id": {"$ref": "#/components/schemas/CacheSession"},
+          "prompt_cache_key": {"type": ["string", "null"], "maxLength": 256, "description": "Advisory Provider cache-affinity key. Targets without a declared key carrier omit it; automatic caching is independent. Does not select or reorder MorphieCore candidates."},
+          "messages": {"type": "array", "items": {"type": "object", "not": {"required": ["_openbridge"]}}, "description": "User/assistant and system/developer content accepts a string or nonempty ordered plain-text part array. Tool result content accepts a string or ordered plain-text part array, including an empty array; single tool-result parts remain arrays. User content additionally admits ordered text/image_url parts when public and endpoint contracts permit image input; one image remains an array. HTTP(S) URL and Base64 image data URL only; file IDs, other roles' images, tool-result media remains rejected. Assistant audio history has separate library admission and trusted source/expiry requirements in the Chat media profile; unbound audio IDs and existing text/image-only product bindings reject it."},
+          "modalities": {"type": ["array", "null"], "items": {"enum": ["text", "audio"]}, "minItems": 1, "maxItems": 2, "uniqueItems": true, "description": "Library output intent; audio requires matching audio options and explicit public/endpoint audio_output admission. Existing text/image bindings do not gain audio admission."},
+          "audio": {"type": ["object", "null"], "required": ["format", "voice"], "additionalProperties": false, "properties": {"format": {"enum": ["wav", "aac", "mp3", "flac", "opus", "pcm16"]}, "voice": {"type": "string", "minLength": 1, "maxLength": 128}}, "description": "Named-voice output options, not voice/account management. Requires audio modality; streaming requires pcm16. No audio model is activated by this schema."},
+          "stream": {"type": ["boolean", "null"], "default": false},
+          "max_completion_tokens": {"type": ["integer", "null"], "minimum": 1, "description": "Bootstrap defaults absent/null to 1024 only when the public contract admits this control, and rejects values above 16384 after semantic decode. Targets without output-token control do not receive a fabricated cap."},
+          "metadata": {"type": ["object", "null"], "maxProperties": 16, "propertyNames": {"maxLength": 64}, "additionalProperties": {"type": "string", "maxLength": 512}, "description": "Typed request hint, never copied into reported response metadata."},
+          "service_tier": {"type": ["string", "null"], "enum": ["auto", "default", "flex", "scale", "priority", "fast", null], "description": "Request hint; the reported effective tier may differ. Endpoint context admission remains independent."},
+          "logprobs": {"type": ["boolean", "null"], "description": "Return token probabilities when true; null/false are inactive controls."},
+          "top_logprobs": {"type": ["integer", "null"], "minimum": 0, "maximum": 20, "description": "A non-null integer requires logprobs:true; null normalizes to absent."}
+        },
+        "allOf": [{"if": {"required": ["top_logprobs"], "properties": {"top_logprobs": {"type": "integer"}}}, "then": {"required": ["logprobs"], "properties": {"logprobs": {"const": true}}}}],
+        "additionalProperties": true,
+        "description": "Additional fields require admission by the Chat text profile and selected public contract; additionalProperties does not authorize arbitrary upstream parameters. Function-only tool_choice.allowed_tools uses the nested Chat shell. Explicit assistant-message/tool-call membership cannot be projected to a standard Responses target; incompatible history is rejected before upstream I/O, without dropping the owner or membership. MorphieCore's Chat extension admits scoped openai-responses-v1 reasoning_details on assistant history; preserve those actual output details for replay rather than treating them as ordinary assistant text."
+      },
+      "ResponsesReasoningSummary": {
+        "type": ["string", "null"],
+        "enum": ["auto", "concise", "detailed", null],
+        "description": "Standard summary control. Boolean false is not a disabled carrier; typed Disabled remains unrepresentable, not omission or null."
+      },
+      "ResponsesLeafTool": {
+        "type": "object", "required": ["type", "name"],
+        "properties": {
+          "type": {"enum": ["function", "custom"]},
+          "name": {"type": "string", "minLength": 1, "maxLength": 128},
+          "async": {"type": "boolean"},
+          "defer_loading": {"type": "boolean"}
+        },
+        "additionalProperties": true,
+        "description": "Envelope subset. Parameters, format, strict defaults and dispatch combinations require owning codec/profile checks."
+      },
+      "ResponsesToolNamespace": {
+        "type": "object", "required": ["type", "name", "description", "tools"],
+        "properties": {
+          "type": {"const": "namespace"},
+          "name": {"type": "string", "minLength": 1, "maxLength": 128},
+          "description": {"type": "string"},
+          "tools": {"type": "array", "minItems": 1, "maxItems": 127, "items": {"$ref": "#/components/schemas/ResponsesLeafTool"}}
+        },
+        "additionalProperties": false,
+        "description": "Ordered non-nested group. Same-kind names are unique within a group; different groups may reuse names. Total definitions plus groups share the tool budget. Calls carry namespace; results refer to call_id."
+      },
+      "ResponsesRequest": {
+        "type": "object", "required": ["model"],
+        "not": {"anyOf": [{"required": ["provider"]}, {"required": ["_openbridge"]}, {"required": ["session_id"]}]},
+        "properties": {
+          "model": {"$ref": "#/components/schemas/PublicModelLabel"},
+          "prompt_cache_key": {"type": ["string", "null"], "maxLength": 256, "description": "Advisory Provider cache-affinity key, not session identity. Cache echoes/usage are only upstream-reported facts."},
+          "input": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "object", "not": {"required": ["_openbridge"]}}}]},
+          "tools": {
+            "type": "array",
+            "maxItems": 128,
+            "items": {"oneOf": [{"$ref": "#/components/schemas/ResponsesLeafTool"}, {"$ref": "#/components/schemas/ResponsesToolNamespace"}]},
+            "description": "Envelope subset only. Namespace tool choice uses auto/required/none; no private qualified-name syntax is admitted. Parameters, strict defaults, dispatch combinations and tool choice require owning codec/profile checks."
+          },
+          "reasoning": {
+            "type": ["object", "null"],
+            "properties": {
+              "summary": {"$ref": "#/components/schemas/ResponsesReasoningSummary"},
+              "generate_summary": {"$ref": "#/components/schemas/ResponsesReasoningSummary", "deprecated": true}
+            },
+            "additionalProperties": true,
+            "description": "Other reasoning controls and conflicting aliases are checked by the owning codec and selected target."
+          },
+          "stream": {"type": ["boolean", "null"], "default": false},
+          "max_output_tokens": {"type": ["integer", "null"], "minimum": 1, "description": "Bootstrap defaults absent/null to 1024 only when the public contract admits this control, and rejects values above 16384 after semantic decode. SIWC rejects explicit values and has no upstream token cap; local bytes/events/deadline limits do not prove upstream termination or bounded charges."}
+        },
+        "additionalProperties": true,
+        "description": "Detailed input, settings and inactive-state admission follow the Responses profile, including its user input_image URL/inline slice and target-specific optional detail restrictions. User input_file admits exactly one of bounded Base64 data URLs in file_data or HTTP(S) file_url, optional filename (including an explicit empty string) and auto/low/high detail only when public and endpoint contracts explicitly admit file_input. file_url additionally requires the target URL flag, is preserved exactly, forbids userinfo/control/whitespace/backslash characters and never selects Gateway origin/auth. Remote MIME, size, redirects and content stability are unknown to the Gateway. File IDs, raw Base64 without a data URL, file cache breakpoints, tool files and Chat file projection are rejected; no file is opened, fetched, uploaded or parsed. File budgets and target restrictions are independent of images, and this schema does not activate a file model. Function/custom tool-result arrays additionally admit ordered text and URL/inline image parts only when the public/endpoint contracts explicitly admit tool_result_images; user image admission alone is insufficient. User and tool images share target image limits. File IDs, image cache breakpoints, instruction/assistant images and generated media remain rejected; Chat targets reject tool images before I/O. Models with only a Chat startup entry return model_not_found here; no implicit protocol fallback. Each program in replay history requires a matching program_output; missing outputs are rejected before upstream I/O. Library continuation views do not add request fields, infer turn completion or authorize automatic execution. No arbitrary endpoint, credential or header selection. The independent _openbridge attachment is rejected, not ignored. Typed structured arguments/results, execution reports, message-call membership and nonstandard replay remain unrepresentable by the public wire. Ordinary business keys inside permitted metadata or raw arguments/output are not protocol attachments. Precise admission belongs to the client-generation profile."
+      },
+      "Error": {
+        "type": "object", "required": ["error"], "additionalProperties": false,
+        "properties": {"error": {
+          "type": "object", "required": ["message", "type", "param", "code"], "additionalProperties": false,
+          "properties": {"message": {"type": "string"}, "type": {"type": "string", "enum": ["invalid_request_error", "api_error"]}, "param": {"type": "null"}, "code": {"type": "string"}}
+        }}
+      }
+    },
+    "responses": {
+      "Generation": {
+        "description": "Current profile-specific JSON response or incremental SSE, retaining the public model label. Typed output, usage and dependencies must be representable by the selected client contract; unrepresentable facts are not silently dropped. No independent _openbridge attachment is emitted. Other named profile differences still prevent a full standard-conformance claim. Exact text, tool, usage, grouping and replay admission belongs to docs/architecture/responses-text-profile.md, chat-text-profile.md and client-generation-profile.md. Chat audio/citations have separate library scope in chat-media-profile.md, not automatic product activation. HTTP 200 does not prove semantic completion, stream closure or output adherence. Late failures abort the body without a fabricated successful terminal.",
+        "headers": {"Cache-Control": {"schema": {"type": "string", "const": "no-store"}}},
+        "content": {"application/json": {"schema": {"type": "object", "not": {"required": ["_openbridge"]}}}, "text/event-stream": {"schema": {"type": "string"}}}
+      },
+      "Error": {
+        "description": "Sanitized application error. 401 includes WWW-Authenticate: Bearer. No upstream body, origin, credential locator or parser input is reflected. HTTP parser failures occur outside this envelope.",
+        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+      }
+    }
+  }
+}

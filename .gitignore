@@ -1,0 +1,32 @@
+/target/
+/node_modules/
+/.codex/
+.env
+.env.*
+# Planned private configuration; it may contain local upstream/downstream credentials.
+config/local.toml
+config/local.*.toml
+/config/users.toml
+/config/users.*.toml
+!/config/users.example.toml
+/config/upstream-credentials.toml
+/config/upstream-credentials.*.toml
+!/config/upstream-credentials.example.toml
+config/chatgpt/*
+
+# Standalone protocol corpus derived artifacts and Python tool environments.
+/testdata/generated/
+/testdata/reports/
+/testdata/dist/
+/testdata/runtime/
+/tools/corpus/.venv/
+/tools/corpus/.pytest_cache/
+/tests/sdk/.venv/
+**/__pycache__/
+
+# JetBrains IDE：仅共享项目词典。
+/.idea/*
+!/.idea/dictionaries/
+/.idea/dictionaries/*
+!/.idea/dictionaries/project.xml
+

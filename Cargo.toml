@@ -1,0 +1,51 @@
+[package]
+name = "morphiecore"
+version = "0.1.0"
+edition = "2024"
+description = "分布式Agent Runtime的测试性路由网关"
+license = "MIT"
+
+[dependencies]
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
+futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
+getrandom = "0.4.3"
+httpdate = "1.0.3"
+reqwest = { version = "0.13.5", default-features = false, features = ["stream", "rustls"] }
+subtle = "2.6.1"
+tokio = { version = "1.53.2", features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal", "io-util"], default-features = false }
+bytes = "1.12.1"
+base64 = "0.23.1"
+url = "2.5.8"
+mime = "0.3.17"
+multer = { version = "3.1.0", default-features = false }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.151", features = ["preserve_order", "arbitrary_precision", "raw_value"] }
+sha2 = "0.11.0"
+thiserror = "2.0.21"
+strum = { version = "0.28.0", features = ["derive"] }
+fs-mistrust = { version = "0.16.0", default-features = false }
+atomicwrites = "0.4.4"
+clap = { version = "4.6.7", default-features = false, features = ["std", "derive", "help", "usage"] }
+serde_with = { version = "3.24.0", default-features = false, features = ["std"] }
+secrecy = "0.10.3"
+zeroize = "1.9.0"
+oauth2 = { version = "5.0.0", default-features = false }
+tokio-util = { version = "0.7.19", default-features = false, features = ["rt"] }
+jsonwebtoken = { version = "11.1.0", default-features = false, features = ["aws_lc_rs"] }
+httparse = "1.10.1"
+oxc_regular_expression = "0.153.0"
+oxc_allocator = "0.153.0"
+
+[target.'cfg(windows)'.dependencies]
+windows-permissions = "0.2.4"
+
+[target.'cfg(unix)'.dev-dependencies]
+libc = "0.2.190"
+
+[dev-dependencies]
+proptest = { version = "1.11.0", default-features = false, features = ["std"] }
+ring = "0.17.14"
+tempfile = "3.27.0"
+reqwest = { version = "0.13.5", default-features = false, features = ["json"] }
+tower = { version = "0.5.3", features = ["util"] }
+tokio = { version = "1.53.2", default-features = false, features = ["process", "io-util"] }

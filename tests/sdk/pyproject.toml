@@ -1,0 +1,10 @@
+[project]
+name = "morphiecore-sdk-tests"
+version = "0.1.0"
+requires-python = ">=3.13,<3.14"
+dependencies = ["openai==3.24.0", "httpx2==2.13.1"]
+
+[dependency-groups]
+dev = [
+    "jsonschema==4.26.0",
+]
