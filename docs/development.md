@@ -10,6 +10,27 @@
 
 完成时检查最终 diff 与引用，报告实际检查、失败与未验收范围；按当前合同验收，不以旧版功能对等为门槛。
 
+## Nix 开发环境
+
+根 [flake.nix](../flake.nix) 提供可复用的开发环境；`flake.lock` 固定 nixpkgs 修订，不依赖全局 Nix registry 或 rustup。需启用 Nix 的 `nix-command` 和 `flakes`。输出覆盖 `x86_64-linux`、`aarch64-linux` 和 `aarch64-darwin`；其他平台不在当前声明范围内。
+
+```sh
+nix develop          # Rust、Node、Python、uv 和 Nix 格式化工具
+nix develop .#rust   # 仅 Rust 工具链、rust-analyzer 与原生编译依赖
+nix flake check      # 当前平台的工具可执行性与 Node 版本检查
+nix fmt -- --check flake.nix
+```
+
+两个 shell 共享 Rust/Cargo、clippy、rustfmt、源码路径与 C/C++ 编译环境，并提供 `aws-lc-sys` / `ring` 所需的 CMake 和 pkg-config。默认 shell 的 Node 必须与 `package.json` 的精确版本一致；不匹配时求值失败，应显式维护环境锁，而不是放宽项目版本约束。
+
+Nix 提供 Python 3.13 分支供一般脚本使用；SDK gate 的精确补丁版本仍归 `tests/sdk/.python-version`，由 uv 按下文管理，不保证与 shell 的 `python3` 补丁版本相同。进入 shell 不执行 Cargo/npm/uv 依赖安装，不读取私有配置、不登录、不启动 Gateway，也不运行 probe。首次取得 Nix 工具可能需要下载；语言依赖继续使用各自锁文件，离线检查仍需预先准备缓存。
+
+可将检查作为一次性命令执行，例如 `nix develop --command cargo fmt -- --check`；环境也可从其他目录通过 `nix develop /path/to/MorphieCore` 复用。Git 工作树中的 flake 只包含已纳入 Git 的文件，新增 `flake.nix` / `flake.lock` 须由操作者纳入版本管理后再使用，不使用 `path:.` 将整个工作目录（含私有配置）复制到 Nix store。
+
+可选自动切换使用根 [.envrc](../.envrc)：在系统配置好 direnv 与 nix-direnv 的 shell 集成后，审核文件并显式执行 `direnv allow`；该动作不由项目自动执行。缓存写入被忽略的 `.direnv/`。
+
+工具链更新单独执行 `nix flake update nixpkgs`，审阅 `flake.lock` 差异后运行 `nix flake check` 和受影响的语言基线。Nix 工具检查不代替下文的 Rust、TS 或显式 SDK gate，也不证明其他平台的运行结果。
+
 ## Rust 检查
 
 Rust/Cargo 使用 stable 工具链与配套 rustfmt/clippy；可由锁定 nixpkgs 等声明式开发环境提供，不要求 rustup。根 `rust-toolchain.toml` 为识别该文件的环境声明 stable，原生 Nix Cargo 不通过它选择版本；实际工具链由开发环境锁定。工具链更新是显式环境维护，不与普通测试捆绑；验证时报告实际版本，不为普通项目检查切换全局工具链。
