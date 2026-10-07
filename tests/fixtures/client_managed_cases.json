@@ -1,10 +1,11 @@
 {
-  "contract": "docs/implementation-plans/client-managed-ir.md@v0.4",
+  "contract": "docs/implementation-plans/client-managed-ir.md@v0.5",
+  "traceability": "case_key and source ids are stable; area groups semantic coverage, not execution phases. Each case covers only its declared expectations and scope.",
   "cases": [
     {
       "case_key": "validated_output",
       "ids": ["A01"],
-      "slice": "S0",
+      "area": "validation",
       "sample_kind": "abstract_contract",
       "evidence": "interaction-contract.md#client-managed-context; native schema not applicable",
       "owner": "src/semantic/task/generation/request.rs",
@@ -20,7 +21,7 @@
     {
       "case_key": "validated_reasoning",
       "ids": ["A01"],
-      "slice": "S0",
+      "area": "validation",
       "sample_kind": "abstract_contract",
       "evidence": "interaction-contract.md#client-managed-context; native schema not applicable",
       "owner": "src/semantic/task/generation/request.rs",
@@ -36,7 +37,7 @@
     {
       "case_key": "validated_combined_budget",
       "ids": ["A01", "A02"],
-      "slice": "S0",
+      "area": "validation",
       "sample_kind": "abstract_contract",
       "evidence": "interaction-contract.md#client-managed-context; native schema not applicable",
       "owner": "src/semantic/task/generation/request.rs",
@@ -52,7 +53,7 @@
     {
       "case_key": "admission_layers",
       "ids": ["A02"],
-      "slice": "S0",
+      "area": "admission",
       "sample_kind": "abstract_contract",
       "evidence": "protocol-and-lowering.md#能力与固定目标; native schema not applicable",
       "owner": "src/semantic/task/generation/contract.rs; src/lowering/generation.rs",
@@ -68,7 +69,7 @@
     {
       "case_key": "scoped_call_aliases",
       "ids": ["A03", "T16", "T21"],
-      "slice": "S1.1",
+      "area": "identity-and-relations",
       "sample_kind": "abstract_contract",
       "evidence": "interaction-contract.md#身份分组与依赖; native schema not applicable",
       "owner": "src/semantic/task/generation/identity.rs; validate.rs; continuation.rs; event.rs",
@@ -84,7 +85,7 @@
     {
       "case_key": "scoped_alias_target_boundary",
       "ids": ["A02", "A03"],
-      "slice": "S1.1",
+      "area": "identity-and-relations",
       "sample_kind": "abstract_contract",
       "evidence": "protocol-and-lowering.md#source-records; native schema not applicable",
       "owner": "src/protocol/fidelity.rs; src/lowering/generation.rs; src/lowering/events.rs",
@@ -100,7 +101,7 @@
     {
       "case_key": "call_revision_identity",
       "ids": ["A05", "T06"],
-      "slice": "S1.1",
+      "area": "identity-and-relations",
       "sample_kind": "abstract_contract",
       "evidence": "interaction-contract.md#身份分组与依赖; native schema not applicable",
       "owner": "src/semantic/task/generation/identity.rs; request.rs; tool.rs",
@@ -116,7 +117,7 @@
     {
       "case_key": "overlapping_replay_membership",
       "ids": ["A04", "A06", "A07", "T06", "T28"],
-      "slice": "S1.1",
+      "area": "identity-and-relations",
       "sample_kind": "abstract_contract",
       "evidence": "interaction-contract.md#身份分组与依赖; native schema not applicable",
       "owner": "src/semantic/task/generation/group.rs; dependency.rs",
@@ -127,12 +128,12 @@
       "transform": "Delete, replace, insert outside dependencies or remove one group",
       "budget": "Aggregate group/reference B-1/B/B+1, checked before set allocation",
       "forbidden_effects": "No member resurrection, source body in view Debug, inferred ownership or opaque merging",
-      "scope": "required; message-owner migration remains separate"
+      "scope": "required; message ownership has independent coverage"
     },
     {
       "case_key": "replay_group_event_and_target_boundary",
       "ids": ["A02", "A07", "T30", "T31"],
-      "slice": "S1.1",
+      "area": "identity-and-relations",
       "sample_kind": "abstract_contract",
       "evidence": "interaction-contract.md#身份分组与依赖; native group schema not applicable",
       "owner": "src/semantic/task/generation/event.rs; src/lowering/events.rs; src/lowering/generation.rs",
@@ -148,7 +149,7 @@
     {
       "case_key": "message_membership_single_owner",
       "ids": ["A04", "A06", "A08", "T28"],
-      "slice": "S1.1",
+      "area": "identity-and-relations",
       "sample_kind": "abstract_contract",
       "evidence": "interaction-contract.md#身份分组与依赖; native constraints independently covered by existing Chat wire fixtures",
       "owner": "src/semantic/task/generation/group.rs; request.rs; response.rs; event.rs; src/semantic/cache.rs",
@@ -164,7 +165,7 @@
     {
       "case_key": "provider_observation_and_selected_history",
       "ids": ["A09", "A10", "A11", "T16", "T17", "T18", "T30", "T31", "E01"],
-      "slice": "S1.2",
+      "area": "provider-observations",
       "sample_kind": "abstract_contract",
       "evidence": "interaction-contract.md#provider-tool-observations; abstract reported operation/result facts, no native schema claim",
       "owner": "src/semantic/task/generation/provider.rs; validate.rs; identity.rs; event.rs; contract.rs",
@@ -180,7 +181,7 @@
     {
       "case_key": "provider_result_fragments",
       "ids": ["A10", "A11", "T12", "T30", "T31", "E04"],
-      "slice": "S1.2",
+      "area": "provider-observations",
       "sample_kind": "abstract_contract",
       "evidence": "interaction-contract.md#provider-tool-observations; normative events, no native schema claim",
       "owner": "src/semantic/task/generation/event.rs; stream_value.rs; validate.rs",
@@ -196,7 +197,7 @@
     {
       "case_key": "client_managed_explicit_selection",
       "ids": ["A12", "A13", "A14", "A15", "E01", "E02", "E06"],
-      "slice": "S2.1",
+      "area": "client-managed-context",
       "sample_kind": "abstract_contract",
       "evidence": "interaction-contract.md#client-managed-context; selected typed records, not session/SDK behavior",
       "owner": "src/semantic/task/generation/client_managed.rs; request.rs; dependency.rs",
@@ -212,7 +213,7 @@
     {
       "case_key": "historical_configuration_definition_binding",
       "ids": ["A13", "E01", "E02"],
-      "slice": "S2.1",
+      "area": "configuration",
       "sample_kind": "abstract_contract",
       "evidence": "interaction-contract.md#client-managed-context; caller-declared configuration, native schema not applicable",
       "owner": "src/semantic/task/generation/configuration.rs; request.rs; client_managed.rs; tool.rs",
@@ -223,12 +224,12 @@
       "transform": "Select response/history into new current settings; edit versioned settings with or without a new revision; remove a bound owner",
       "budget": "Validated settings, reference counts and cumulative retained snapshot bytes",
       "forbidden_effects": "No inference from current same-named tools, automatic configuration inheritance, global registry, schema evaluation or execution",
-      "scope": "required configuration subset; composition and transformation coverage is declared in the S2 context cases; Provider definitions remain with S1.2"
+      "scope": "required configuration subset; composition and transformation coverage is declared in the context cases; Provider action definitions are outside this case"
     },
     {
       "case_key": "configuration_binding_edit_and_dependency",
       "ids": ["A05", "A13", "T06", "T25", "E02"],
-      "slice": "S2.1",
+      "area": "configuration",
       "sample_kind": "abstract_contract",
       "evidence": "interaction-contract.md#client-managed-context; immutable typed values, native schema not applicable",
       "owner": "src/semantic/task/generation/configuration.rs; identity.rs; dependency.rs",
@@ -244,7 +245,7 @@
     {
       "case_key": "configuration_static_event_and_public_boundary",
       "ids": ["A02", "A13", "A32", "T27", "T30", "E04"],
-      "slice": "S2.1",
+      "area": "configuration",
       "sample_kind": "abstract_contract",
       "evidence": "interaction-contract.md#client-managed-context; normative events, no native configuration carrier claim",
       "owner": "src/semantic/task/generation/configuration.rs; event.rs; requirements.rs; contract.rs; src/lowering/",
@@ -260,7 +261,7 @@
     {
       "case_key": "explicit_context_transform_and_diagnostics",
       "ids": ["A12", "A13", "A15", "A18", "T23", "E02", "E06"],
-      "slice": "S2.1",
+      "area": "client-managed-context",
       "sample_kind": "abstract_contract",
       "evidence": "interaction-contract.md#client-managed-context; Pi fixed projection reference; native schema not applicable",
       "owner": "src/semantic/task/generation/context_transform.rs; client_managed.rs; dependency.rs",
@@ -271,12 +272,12 @@
       "transform": "Sparse selection, atomic insert/delete/replace/reorder, new summary item/part, explicit configuration change",
       "budget": "MAX_ITEMS bounds edits, diagnostic weight, selection count/references; receipt B-1/B/B+1 even for empty responses; final request aggregate limits",
       "forbidden_effects": "No automatic summary, authority promotion, report reinterpretation, resurrection, I/O or persistent journal",
-      "scope": "required S2 transformations; resource/replay dual-anchor and format-specific E02 assertions remain with S3"
+      "scope": "required context transformations; resource/replay dual-anchor and format-specific E02 assertions are outside this case"
     },
     {
       "case_key": "configured_mixed_client_managed_successor",
       "ids": ["A09", "A10", "A12", "A13", "A14", "T23", "E01"],
-      "slice": "S2.1",
+      "area": "client-managed-context",
       "sample_kind": "abstract_contract",
       "evidence": "interaction-contract.md#provider-tool-observations and #client-managed-context; synthetic typed observations, not native wire",
       "owner": "src/semantic/task/generation/client_managed.rs; continuation.rs; dependency.rs",
@@ -287,12 +288,12 @@
       "transform": "Build successor, vary current revision, add reported results without changing R1",
       "budget": "Existing item/group/configuration budgets and bounded requirement vectors",
       "forbidden_effects": "No tool execution, native mapping, server history lookup, automatic continuation or end-of-turn inference",
-      "scope": "required E01 S2 configuration/association closure; Provider action content and S3 resource/replay conditions have separate owners"
+      "scope": "required E01 configuration/association closure; Provider action content and format-specific resource/replay conditions have separate owners"
     },
     {
       "case_key": "three_source_pure_control_accounting_consumer",
       "ids": ["A16", "A18", "E06"],
-      "slice": "S2.1/S2.2",
+      "area": "client-managed-context",
       "sample_kind": "abstract_contract",
       "evidence": "upstream-sync.md#client-managed-s2 @s2-controls-2026-10-07; abstract contrasts, native schema not applicable",
       "owner": "src/semantic/task/generation/client_managed.rs; reasoning.rs; usage_views.rs",
@@ -303,12 +304,12 @@
       "transform": "Select output and append a reported client result under explicit settings",
       "budget": "Existing typed request and usage limits",
       "forbidden_effects": "No fake parser, missing-zero synthesis, configuration inheritance, billing claim or native protocol activation",
-      "scope": "required E06 S2 pure consumer subset; native Google/Anthropic and S3 consumer gates are not claimed"
+      "scope": "required E06 pure consumer subset; native Google/Anthropic and cross-boundary consumer gates are not claimed"
     },
     {
       "case_key": "client_managed_existing_wire_authority",
       "ids": ["A12", "A15", "T23", "T24", "E06"],
-      "slice": "S2.1",
+      "area": "client-managed-context",
       "sample_kind": "native_wire",
       "evidence": "upstream-sync.md pinned OpenAI SDK be9d66628ad7377bd36fe5a76ae6d735843f0e76; Responses/Chat profiles",
       "owner": "src/protocol/openai/; src/lowering/generation.rs",
@@ -324,7 +325,7 @@
     {
       "case_key": "reasoning_control_combinations",
       "ids": ["A16", "T20"],
-      "slice": "S2.2",
+      "area": "reasoning-controls",
       "sample_kind": "abstract_contract",
       "evidence": "upstream-sync.md#client-managed-s2 @s2-controls-2026-10-07; hard reasoning limit is an abstract constraint, not a native budget_tokens mapping",
       "owner": "src/semantic/task/generation/reasoning.rs",
@@ -340,9 +341,9 @@
     {
       "case_key": "reasoning_standard_carrier_boundary",
       "ids": ["A02", "A16", "T20"],
-      "slice": "S2.2",
+      "area": "reasoning-controls",
       "sample_kind": "native_wire",
-      "evidence": "upstream-sync.md pinned OpenAI SDK and S2 controls source; current Responses/Chat carriers",
+      "evidence": "upstream-sync.md pinned OpenAI SDK and #client-managed-s2 controls source; current Responses/Chat carriers",
       "owner": "src/protocol/openai/reasoning.rs; src/lowering/generation.rs",
       "target": "semantic",
       "symbols": ["reasoning_controls::adding_core_modes_does_not_expand_standard_request_echo_or_event_admission", "reasoning_controls::each_new_control_independently_rejects_request_echo_and_stream_projection", "reasoning::reasoning_effort_defaults_do_not_create_an_independent_enable_switch"],
@@ -356,7 +357,7 @@
     {
       "case_key": "schema_dialect_and_supplied_graph",
       "ids": ["A17", "T20"],
-      "slice": "S2.2",
+      "area": "schema-documents",
       "sample_kind": "abstract_contract",
       "evidence": "upstream-sync.md#client-managed-s2; JSON Schema 2020-12 Core, admitted local subset; native schema not applicable",
       "owner": "src/semantic/task/generation/schema_document.rs; schema.rs",
@@ -372,9 +373,9 @@
     {
       "case_key": "schema_existing_wire_strictness_and_order",
       "ids": ["A17", "T09", "T10", "T20", "E04", "E06"],
-      "slice": "S2.2",
+      "area": "schema-documents",
       "sample_kind": "native_wire",
-      "evidence": "upstream-sync.md pinned OpenAI SDK; schema-profile.md and S2 source subset",
+      "evidence": "upstream-sync.md pinned OpenAI SDK and #client-managed-s2 source subset; schema-profile.md",
       "owner": "src/protocol/openai/settings.rs; function_tools.rs; chat.rs; src/semantic/task/generation/schema.rs",
       "target": "semantic",
       "symbols": ["text_profile::raw_envelopes_reject_duplicate_keys_before_task_decode", "schema::exact_numeric_schema_checks_never_round_values_or_expand_large_exponents", "schema::explicit_strict_rejects_open_incomplete_or_unsupported_shapes", "schema::function_strict_defaults_and_output_schemas_have_separate_admission", "schema::raw_schema_order_survives_ir_and_independent_protocol_projections", "schema::final_schema_edits_own_order_and_deleted_constraints_do_not_return", "schema::reported_schema_order_closes_across_static_and_sse", "schema::invalid_schema_metadata_poisons_stream_decode_and_encode_updates", "schema_documents::function_parameter_and_output_dialects_cannot_be_erased_by_echo_or_event_codecs"],
@@ -383,12 +384,12 @@
       "transform": "Wire decode, root/property edits/deletion, independent target encoding and applicable SSE metadata",
       "budget": "Existing strict quotas, raw JSON and graph budgets",
       "forbidden_effects": "No normalization by rewriting, draft/resource loss, terminal repair or implicit product admission",
-      "scope": "required existing W and S2 E04/E06 subset; general SDK/Agent consumption is a separate gate"
+      "scope": "required existing W and Schema E04/E06 subset; general SDK/Agent consumption is a separate gate"
     },
     {
       "case_key": "exact_argument_authority_and_semantic_batches",
       "ids": ["T09", "T10", "T11", "T12", "E04"],
-      "slice": "S2.2",
+      "area": "argument-values",
       "sample_kind": "abstract_contract",
       "evidence": "interaction-contract.md argument authority; synthetic canonical events, native schema not applicable",
       "owner": "src/semantic/task/generation/tool.rs; structured.rs; stream_value.rs; event.rs",
@@ -399,14 +400,14 @@
       "transform": "Semantic fragmentation, value closure, malformed/duplicate-key inputs and edits",
       "budget": "Existing StreamPartValue and strict JSON byte/depth/node limits",
       "forbidden_effects": "No duplicate-key archive AST, snapshot repair, execution readiness or fake native decoder",
-      "scope": "required S2 argument subset; byte framing and S3 opaque finalization are independently owned"
+      "scope": "required argument subset; byte framing and format-specific opaque finalization are independently owned"
     },
     {
       "case_key": "declared_input_cache_accounting",
       "ids": ["A18", "A27", "T15"],
-      "slice": "S2.2",
+      "area": "usage-accounting",
       "sample_kind": "abstract_contract",
-      "evidence": "client-managed-ir.md A18; explicit disjoint accounting, existing OpenAI inclusive wire fixtures remain independent",
+      "evidence": "interaction-contract.md#报告控制与引用; explicit disjoint accounting, existing OpenAI inclusive wire fixtures remain independent",
       "owner": "src/semantic/task/generation/usage.rs; usage_views.rs; src/protocol/openai/static_response.rs",
       "target": "semantic",
       "symbols": ["usage_views::exclusive_cache_counts_require_explicit_disjoint_premises_without_zero_fill", "usage_views::cumulative_cache_reports_do_not_sum_snapshots_or_switch_relations", "usage::text_and_prediction_counts_are_preserved_and_not_summed_with_reasoning"],

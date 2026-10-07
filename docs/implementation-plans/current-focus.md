@@ -2,9 +2,9 @@
 
 ## 当前范围
 
-**当前方向是[三协议约束下的 ClientManaged Generation IR 完善](client-managed-ir.md)。当前没有启动中的代码行为切片。** 接续工作是 S1.2 的具体动作/参数证据与 typed 内容，再按实际依赖推进 S3 的 replay、资源和具名投影；S2 的核心 owner 不代表 M1/M2 全部退出条件已满足。
+**当前方向是[三协议约束下的 ClientManaged Generation IR 完善](client-managed-ir.md)。当前没有启动中的代码行为切片。** 下一入口为 [P1：Provider 动作语义](client-managed-ir.md#p1)，随后进行 [P2：纯交互核心验收](client-managed-ir.md#p2)；其余依赖与退出条件只查[剩余计划](client-managed-ir.md#execution-order)，不重复建设已有核心。
 
-当前实现落点和后续退出条件统一见[计划的实施边界](client-managed-ir.md#当前实施边界与剩余工作)。Provider 观察采用[独立 typed 分支](../architecture/interaction-contract.md#provider-tool-observations)；后续补足动作/参数时保留已报告事实，不以 generic JSON 或虚构函数调用替代。规范结果增量事件不等于原生分片接入，客户端原定义绑定与显式后继要求不能替代 Provider 原生定义/动作或 S3 的资源/replay 消费闭环。Google/Anthropic codecs、原生 hosted 工具输出选片、工具执行、模型 I/O、自动续轮、持久化和远端恢复不随纯核心实现恢复。
+Provider 观察采用[独立 typed 分支](../architecture/interaction-contract.md#provider-tool-observations)；补足动作/参数时保留已报告事实，不以 generic JSON 或虚构 function call 替代。库级能力不证明原生映射或接口/消费者闭环；Google/Anthropic codecs、原生 hosted 工具输出选片、工具执行、模型 I/O、自动续轮、持久化和远端恢复不随纯核心实现恢复。
 
 同类 replay 组的重叠规则归[交互合同](../architecture/interaction-contract.md#身份分组与依赖)。后续关系迁移不增加第二张可写 membership 或 ResultOf 表；无标准载体的关系维持严格拒绝，不因新类型自动激活接口、工具执行或模型 I/O。
 

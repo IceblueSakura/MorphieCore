@@ -10,7 +10,7 @@
 
 以下是**选片优先级，不是整块实施阶段**。每项按最小可观察场景拆分；前项只需闭合后项实际依赖的边界，不要求先补齐整个 Responses 标准。已有基础层和独立覆盖直接复用，不重复安排“重建 IR / Gateway / 凭据管理器”。
 
-**当前优先覆盖：ClientManaged Generation IR。** Responses、Interactions、Messages 共同提供语义反例，按[实施计划](client-managed-ir.md#4-实施切片与退出条件)推进身份/关系、provider-executed 工具观察、客户端历史与配置、控制/计量、replay/资源及具名投影。Google/Anthropic 原生实现、ServerManaged 和 Agent 执行/恢复不纳入本轮；不能因此删去 Provider 工具结果或必要生命周期语义。既有 Responses/Chat 随片迁移，不等待全部核心完成才修复 codec。
+**当前优先覆盖：ClientManaged Generation IR。** Responses、Interactions、Messages 共同提供语义反例，按[剩余计划的 P1–P6](client-managed-ir.md#execution-order)补齐 Provider 动作、收口核心验收，再推进 replay、资源、具名投影与消费者闭环；既有身份/上下文/配置/控制/计量作为输入与回归，不再重复排期。Google/Anthropic 原生实现、ServerManaged 和 Agent 执行/恢复不纳入本轮；不能因此删去 Provider 工具结果或必要生命周期语义。既有 Responses/Chat 随片迁移，不等待全部核心完成才修复 codec。
 
 **请求型音频转为维护与后续独立选片。** 基础 task、标准请求、有界交付及目标映射按 [Speech](../architecture/speech-profile.md)和[Transcription profile](../architecture/transcription-profile.md)维护，嵌入/binary 激活归 [HTTP 合同](../http-gateway.md)。低延迟交付、下游 SSE、转录扩展与实际服务验收仍可按具体需求独立定稿，不重复建设已有接线，也不成为 IR 的前置。下表为既有接口维护与后续产品选片顺序，不把本轮三协议语义工作缩减为单 function 子集。
 
@@ -59,7 +59,7 @@
 | Audio Realtime | 明确要实现；在请求型范围收敛并独立选片后展开协议与生命周期设计，不预建状态机或把音频重构塞入近期切片 |
 | Google Interactions / Anthropic Messages 原生实现 | 本轮仅作为设计来源与 typed 合同反例，不新增 codec、adapter、SDK 或网络接线；后续有具体目标与消费者需求时固定 profile 独立选片 |
 | ServerManaged 上下文 | 待后续评估；当前只实施 ClientManaged，不预建 previous-ID、conversation、连接级历史或不可用模式。现有主动状态化分支拒绝继续保持 |
-| Agent runtime 与恢复 | 原实施计划 S4 的工具执行、自动续轮、持久化/checkpoint、claim/CAS/fencing 和副作用恢复延期；纯工具观察、结果关联与请求型生命周期不因此删减 |
+| Agent runtime 与恢复 | 工具执行、自动续轮、持久化/checkpoint、claim/CAS/fencing 和副作用恢复延期；纯工具观察、结果关联与请求型生命周期不因此删减 |
 | Reasoning opaque 闭合后权威 | 只按[待决问题的恢复证据](../implementation-status/open-questions.md#恢复选片所需证据)重评，不作为其他任务前置，不预建更新事件、严格校验器或回放服务 |
 | 丰富模型发现与调度 | 更丰富 `/models` 的路径/schema 另定；标准目录不引入价格、成本路由、动态 registry、负载均衡或自动 credential refresh |
 
