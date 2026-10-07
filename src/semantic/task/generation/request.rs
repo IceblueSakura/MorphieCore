@@ -356,7 +356,13 @@ impl GenerationRequest {
         let next = replacement.0;
         let mut items = self.items.clone();
         items[index] = replacement;
-        let mut edited = self.with_items(items)?;
+        // Move an explicitly declared relation with the replacement, never infer
+        // a new parent from position or alias. Replay members are not retargeted.
+        let mut source_request = self;
+        if let Some(parent) = source_request.message_owners.remove(&source) {
+            source_request.message_owners.insert(next, parent);
+        }
+        let mut edited = source_request.with_items(items)?;
         edited.call_derivations.insert(next, source);
         edited.validate()?;
         Ok(edited)

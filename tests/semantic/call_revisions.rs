@@ -142,3 +142,45 @@ fn structured_argument_order_is_authority_even_when_value_equality_ignores_it() 
         GenerationError::InvalidDependency
     );
 }
+
+#[test]
+fn explicit_revision_keeps_declared_message_owner_without_moving_old_results() {
+    let mut items = source().items().to_vec();
+    items.pop();
+    items.insert(
+        0,
+        (
+            ItemId::new(9),
+            Item::Message(Message {
+                role: MessageRole::Assistant,
+                parts: vec![],
+                status: ItemLifecycle::Completed,
+                phase: None,
+            }),
+        ),
+    );
+    let source = GenerationRequest::new(items, GenerationControls::default())
+        .unwrap()
+        .with_message_owners(vec![(ItemId::new(1), ItemId::new(9))])
+        .unwrap();
+    let mut replacement = source.items()[1].clone();
+    replacement.0 = ItemId::new(3);
+    let Item::ToolCall(call) = &mut replacement.1 else {
+        unreachable!()
+    };
+    call.call_id = text("new");
+    call.arguments = r#"{"changed":true}"#.into();
+    let changed = source
+        .clone()
+        .revise_call(ItemId::new(1), replacement)
+        .unwrap();
+    assert_eq!(
+        changed.message_owners().get(&ItemId::new(3)),
+        Some(&ItemId::new(9))
+    );
+    assert!(!changed.message_owners().contains_key(&ItemId::new(1)));
+    assert_eq!(
+        source.message_owners().get(&ItemId::new(1)),
+        Some(&ItemId::new(9))
+    );
+}

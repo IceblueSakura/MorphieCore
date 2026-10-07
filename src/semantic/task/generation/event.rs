@@ -346,11 +346,6 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                     {
                         return Err(GenerationError::InvalidResponse.into());
                     }
-                    if state.items.iter().rev().take_while(|i| i.id != owner).any(
-                        |i| !matches!(&i.kind,ItemKind::ToolCall{message:Some(m),..} if *m==owner),
-                    ) {
-                        return Err(EventError::Lifecycle);
-                    }
                 }
                 state.charge(name.as_str().len())?;
             }

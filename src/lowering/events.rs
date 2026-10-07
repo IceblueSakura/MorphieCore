@@ -61,6 +61,21 @@ pub fn check_event(
                 } if profile == Profile::Responses => {
                     return Err(RepresentationError::MessageGrouping);
                 }
+                ItemKind::ToolCall {
+                    message: Some(owner),
+                    ..
+                } if profile == Profile::Chat => {
+                    let position = state
+                        .items()
+                        .iter()
+                        .position(|item| item.id == *owner)
+                        .ok_or(RepresentationError::MessageGrouping)?;
+                    if state.items()[position+1..].iter().any(|item| {
+                        !matches!(&item.kind, ItemKind::ToolCall { message: Some(parent), .. } if parent == owner)
+                    }) {
+                        return Err(RepresentationError::MessageGrouping);
+                    }
+                }
                 ItemKind::Message { phase: Some(_) } if profile == Profile::Chat => {
                     return Err(RepresentationError::UnmigratedSemantic);
                 }

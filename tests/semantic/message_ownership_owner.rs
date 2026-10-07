@@ -120,3 +120,136 @@ fn prefix_cannot_cut_an_interleaved_explicit_group() {
             .is_ok()
     );
 }
+
+#[test]
+fn noncontiguous_membership_events_match_static_and_targets_reject_before_call_emission() {
+    use morphiecore::lowering::events::check_event;
+    let mut state = reduce(StreamState::new(), StreamEvent::Started).unwrap();
+    for (id, kind) in [
+        (1, ItemKind::Message { phase: None }),
+        (2, ItemKind::Reasoning),
+    ] {
+        state = reduce(
+            state,
+            StreamEvent::ItemStarted {
+                item: ItemId::new(id),
+                kind,
+                replay: None,
+            },
+        )
+        .unwrap();
+        state = reduce(
+            state,
+            StreamEvent::ItemFinished {
+                item: ItemId::new(id),
+                status: ItemLifecycle::Completed,
+                replay: None,
+            },
+        )
+        .unwrap();
+    }
+    let call = StreamEvent::ItemStarted {
+        item: ItemId::new(3),
+        kind: ItemKind::ToolCall {
+            format: ArgumentFormat::Raw,
+            call_id: text("C"),
+            name: text("lookup"),
+            message: Some(ItemId::new(1)),
+            context: CallContext::default(),
+        },
+        replay: None,
+    };
+    for profile in [Profile::Chat, Profile::Responses] {
+        assert!(check_event(&state, &call, profile, &Contract::full()).is_err());
+    }
+    state = reduce(state, call).unwrap();
+    state = reduce(
+        state,
+        StreamEvent::PartStarted {
+            item: ItemId::new(3),
+            part: PartId::new(1),
+            kind: PartKind::Arguments,
+        },
+    )
+    .unwrap();
+    state = reduce(
+        state,
+        StreamEvent::Delta {
+            item: ItemId::new(3),
+            part: PartId::new(1),
+            fragment: "{}".into(),
+            logprobs: vec![],
+        },
+    )
+    .unwrap();
+    state = reduce(
+        state,
+        StreamEvent::ValueFinished {
+            item: ItemId::new(3),
+            part: PartId::new(1),
+        },
+    )
+    .unwrap();
+    state = reduce(
+        state,
+        StreamEvent::PartFinished {
+            item: ItemId::new(3),
+            part: PartId::new(1),
+        },
+    )
+    .unwrap();
+    state = reduce(
+        state,
+        StreamEvent::ItemFinished {
+            item: ItemId::new(3),
+            status: ItemLifecycle::Completed,
+            replay: None,
+        },
+    )
+    .unwrap();
+    state = reduce(
+        state,
+        StreamEvent::Terminal {
+            terminal: StreamTerminal::Completed,
+            details: TerminalDetails::default(),
+        },
+    )
+    .unwrap();
+    let expected = GenerationResponse::new(values(), Outcome::Completed)
+        .unwrap()
+        .with_message_owners(vec![(ItemId::new(3), ItemId::new(1))])
+        .unwrap();
+    assert_eq!(materialize(&state).unwrap(), expected);
+}
+
+#[test]
+fn continuation_rejects_lost_replay_group_and_added_message_membership() {
+    let items = vec![values()[0].clone(), values()[2].clone()];
+    let group = ReplayGroup::new(
+        GroupId::new(LocalScope::ROOT, 1),
+        vec![ItemId::new(1), ItemId::new(3)],
+    )
+    .unwrap();
+    let response = GenerationResponse::new(items.clone(), Outcome::Completed)
+        .unwrap()
+        .with_replay_groups(vec![group.clone()])
+        .unwrap();
+    let exchange = ResponseContinuation::new(
+        ResponseRelation::new(TurnId::new(1), ResponseId::new(1)),
+        &response,
+    );
+    let plain = GenerationRequest::new(items, GenerationControls::default()).unwrap();
+    assert_eq!(
+        exchange.inspect(&plain).unwrap_err(),
+        ContinuationError::ChangedResponse
+    );
+    let history = plain.with_replay_groups(vec![group]).unwrap();
+    exchange.inspect(&history).unwrap();
+    let changed = history
+        .with_message_owners(vec![(ItemId::new(3), ItemId::new(1))])
+        .unwrap();
+    assert_eq!(
+        exchange.inspect(&changed).unwrap_err(),
+        ContinuationError::ChangedResponse
+    );
+}

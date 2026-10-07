@@ -109,6 +109,20 @@ impl<'a> ResponseContinuation<'a> {
         history
             .validate()
             .map_err(|_| ContinuationError::InvalidHistory)?;
+        for group in self.response.replay_groups() {
+            if !history
+                .replay_groups()
+                .iter()
+                .any(|candidate| candidate == group)
+            {
+                return Err(ContinuationError::ChangedResponse);
+            }
+        }
+        for (owner, _) in self.response.items() {
+            if history.message_owners().get(owner) != self.response.message_owners().get(owner) {
+                return Err(ContinuationError::ChangedResponse);
+            }
+        }
         for group in self.response.message_groups() {
             if !history
                 .message_groups()

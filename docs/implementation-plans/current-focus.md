@@ -2,7 +2,7 @@
 
 ## 当前范围
 
-**当前方向是[三协议约束下的 ClientManaged Generation IR 完善](client-managed-ir.md)。当前没有启动中的代码行为切片。** 下一子片是 S1.2 Provider 观察与跨响应关联；后续按实际依赖进入，不以局部检查宣称整个 S1 或 M1/M2 完成。
+**当前方向是[三协议约束下的 ClientManaged Generation IR 完善](client-managed-ir.md)。当前没有启动中的代码行为切片。** 下一子片为 S1.2 Provider 观察与跨响应关联：先确定普通调用与 Provider 复合观察的 typed owner，再实施局部观察和历史关联入口；不放宽严格公共入口。后续按实际依赖进入，不以局部检查宣称整个 S1 或 M1/M2 完成。
 
 同类 replay 组的重叠规则归[交互合同](../architecture/interaction-contract.md#身份分组与依赖)。后续关系迁移不增加第二张可写 membership 或 ResultOf 表；无标准载体的关系维持严格拒绝，不因新类型自动激活接口、工具执行或模型 I/O。
 
