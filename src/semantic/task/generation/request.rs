@@ -81,7 +81,7 @@ impl Phase {
 pub enum ContentPart {
     Text(TextContent),
     Refusal(RefusalContent),
-    Resource(Resource),
+    Resource(ResourceUse),
     Audio(super::GeneratedAudio),
     AudioReference(super::AudioReference),
 }
@@ -254,6 +254,7 @@ impl GenerationSettings {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GenerationRequest {
     items: Vec<(ItemId, Item)>,
+    resources: ResourceTable,
     settings: std::sync::Arc<GenerationSettings>,
     configuration_revision: Option<ConfigurationId>,
     replay_groups: Vec<ReplayGroup>,
@@ -277,8 +278,16 @@ impl GenerationRequest {
         items: Vec<(ItemId, Item)>,
         settings: GenerationSettings,
     ) -> Result<Self, GenerationError> {
+        Self::from_resources(items, settings, ResourceTable::default())
+    }
+    pub fn from_resources(
+        items: Vec<(ItemId, Item)>,
+        settings: GenerationSettings,
+        resources: ResourceTable,
+    ) -> Result<Self, GenerationError> {
         let r = Self {
             items,
+            resources,
             settings: std::sync::Arc::new(settings),
             configuration_revision: None,
             replay_groups: vec![],
@@ -293,8 +302,9 @@ impl GenerationRequest {
         let items = if self.items.is_empty() && self.settings.instructions.value().is_some() {
             0
         } else {
-            super::validate::items(&self.items, false)?
+            super::validate::items(&self.items, false, &self.resources)?
         };
+        let resources = self.resources.uncharged_bytes(&self.items)?;
         if let Some(revision) = self.configuration_revision {
             for (_, item) in &self.items {
                 if let Some(binding) = super::configuration::item_binding(item) {
@@ -322,6 +332,7 @@ impl GenerationRequest {
         let derivations = self.call_derivations.len() * std::mem::size_of::<(ItemId, ItemId)>();
         if items
             .saturating_add(settings)
+            .saturating_add(resources)
             .saturating_add(groups)
             .saturating_add(derivations)
             .saturating_add(message_owners)
@@ -337,6 +348,14 @@ impl GenerationRequest {
     }
     pub fn items(&self) -> &[(ItemId, Item)] {
         &self.items
+    }
+    pub fn resources(&self) -> &ResourceTable {
+        &self.resources
+    }
+    pub fn with_resources(mut self, resources: ResourceTable) -> Result<Self, GenerationError> {
+        self.resources = resources;
+        self.validate()?;
+        Ok(self)
     }
     pub fn settings(&self) -> &GenerationSettings {
         &self.settings
@@ -561,6 +580,8 @@ pub enum GenerationError {
     InvalidResponse,
     #[error("invalid media resource or placement")]
     InvalidResource,
+    #[error("invalid citation coordinate or source binding")]
+    InvalidCitation,
     #[error("phase labels only apply to assistant messages")]
     PhaseInUserMessage,
     #[error("refusal requires assistant role")]

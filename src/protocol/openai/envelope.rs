@@ -221,7 +221,12 @@ impl ResponseContext {
         if let Some(messages) = &self.instruction_messages {
             o.insert(
                 "instructions".into(),
-                json!(super::responses::encode_items(messages, fidelity, false)),
+                json!(super::responses::encode_items(
+                    messages,
+                    fidelity,
+                    false,
+                    &ResourceTable::default()
+                )),
             );
         }
         if completed {

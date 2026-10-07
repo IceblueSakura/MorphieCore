@@ -5,7 +5,19 @@ use crate::semantic::{
     value::{Presence, Text},
 };
 use serde_json::{Map, Value, json};
-pub(super) fn read(o: &Map<String, Value>, replay: bool) -> Result<TextContent, CodecError> {
+pub(super) fn read(
+    o: &Map<String, Value>,
+    replay: bool,
+    items: &mut Items,
+) -> Result<TextContent, CodecError> {
+    read_existing(o, replay, items, &[])
+}
+pub(super) fn read_existing(
+    o: &Map<String, Value>,
+    replay: bool,
+    items: &mut Items,
+    existing: &[Annotation],
+) -> Result<TextContent, CodecError> {
     fields(
         o,
         if replay {
@@ -20,19 +32,38 @@ pub(super) fn read(o: &Map<String, Value>, replay: bool) -> Result<TextContent, 
         admit_parsed("parsed", o.get("parsed"), Some(text.as_str()))?;
     }
     let annotations = match o.get("annotations") {
-        Some(v) if !v.is_null() => read_annotations(v)?,
+        Some(v) if !v.is_null() => read_annotations(v, items, existing)?,
         // Both the output model and the request param require this array.
         _ => return Err(CodecError::Invalid("annotations")),
     };
     let logprobs = read_presence(o, "logprobs", read_logprobs)?;
     Ok(TextContent::new(text, annotations, logprobs)?)
 }
-pub(super) fn read_annotations(v: &Value) -> Result<Vec<Annotation>, CodecError> {
+pub(super) fn read_annotations(
+    v: &Value,
+    items: &mut Items,
+    existing: &[Annotation],
+) -> Result<Vec<Annotation>, CodecError> {
     let a = v.as_array().ok_or(CodecError::Invalid("annotations"))?;
     if a.len() > MAX_ITEMS {
         return Err(CodecError::Limit);
     }
-    serde_json::from_value(v.clone()).map_err(|_| CodecError::Invalid("annotations"))
+    if a.len() < existing.len() {
+        return Err(CodecError::Invalid("annotation snapshot"));
+    }
+    a.iter()
+        .enumerate()
+        .map(|(index, value)| {
+            if let Some(known) = existing.get(index) {
+                if super::citations::write(known, &items.resources)? != *value {
+                    return Err(CodecError::Invalid("annotation snapshot"));
+                }
+                Ok(known.clone())
+            } else {
+                super::citations::read(value, items)
+            }
+        })
+        .collect()
 }
 pub(super) fn read_logprobs(v: &Value) -> Result<Vec<Logprob>, CodecError> {
     let a = v.as_array().ok_or(CodecError::Invalid("logprobs"))?;
@@ -71,10 +102,15 @@ pub(super) fn event_logprobs(probs: &[Logprob]) -> Value {
             .collect::<Vec<_>>()
     )
 }
-pub(super) fn write(t: &TextContent, kind: &str) -> Value {
+pub(super) fn write(t: &TextContent, kind: &str, resources: &ResourceTable) -> Value {
     let mut v = json!({"type":kind,"text":t.as_str()});
     if kind == "output_text" || !t.annotations().is_empty() {
-        v["annotations"] = json!(t.annotations());
+        v["annotations"] = json!(
+            t.annotations()
+                .iter()
+                .map(|a| super::citations::write(a, resources).expect("checked citation"))
+                .collect::<Vec<_>>()
+        );
     }
     match t.logprobs() {
         Presence::Absent => {}

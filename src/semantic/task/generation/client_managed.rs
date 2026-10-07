@@ -32,6 +32,7 @@ impl ClientManaged {
             continuations: vec![],
             request: GenerationRequest {
                 items: vec![],
+                resources: ResourceTable::default(),
                 settings,
                 configuration_revision,
                 replay_groups: vec![],
@@ -43,6 +44,10 @@ impl ClientManaged {
     pub fn select_request(mut self, source: &GenerationRequest) -> Result<Self, GenerationError> {
         source.validate()?;
         self.reserve_selection(source.items(), source.replay_groups())?;
+        self.request.resources = self
+            .request
+            .resources
+            .merge(&source.resources().select_items(source.items())?)?;
         self.request.items.extend_from_slice(source.items());
         self.request
             .replay_groups
@@ -64,6 +69,10 @@ impl ClientManaged {
     }
     pub fn select_response(mut self, source: &GenerationResponse) -> Result<Self, GenerationError> {
         self.reserve_selection(source.items(), source.replay_groups())?;
+        self.request.resources = self
+            .request
+            .resources
+            .merge(&source.resources().select_items(source.items())?)?;
         self.request.items.extend_from_slice(source.items());
         self.request
             .replay_groups
@@ -185,6 +194,11 @@ impl ClientManaged {
             .cloned()
             .collect();
         self.reserve_selection(&items, &groups).map_err(selection)?;
+        self.request.resources = self
+            .request
+            .resources
+            .merge(&source.resources().select_items(&items).map_err(selection)?)
+            .map_err(selection)?;
         self.request.items.extend_from_slice(&items);
         self.request.replay_groups.extend(groups);
         let ownership = source

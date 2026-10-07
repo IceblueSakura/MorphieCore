@@ -2,24 +2,13 @@
 
 ## 当前范围
 
-**当前方向是[三协议约束下的 ClientManaged Generation IR 完善](client-managed-ir.md)。当前没有启动中的代码行为切片。** 下一入口为 [P4：资源、引用、Cache 与原报告归属](client-managed-ir.md#p4)；其余依赖与退出条件只查[剩余计划](client-managed-ir.md#execution-order)，不重复建设已有核心。
+**当前没有运行中的代码行为切片。下一入口为 [P5：具名投影、组合损失与复用重验](client-managed-ir.md#p5)。** 本次不启动 P5，也不将纯库与现有 wire 回归视为 P6 消费者验收。
 
-Provider 观察采用[独立 typed 分支](../architecture/interaction-contract.md#provider-tool-observations)；补足动作/参数时保留已报告事实，不以 generic JSON 或虚构 function call 替代。库级能力不证明原生映射或接口/消费者闭环；Google/Anthropic codecs、原生 hosted 工具输出选片、工具执行、模型 I/O、自动续轮、持久化和远端恢复不随纯核心实现恢复。
+资源、引用、Replay/cache 和原 usage 的现有 owner 与回归作为输入，不重复建设。下一次只选择一个已定稿损失规则或明确缺口；执行基线、依赖与停止点统一归[剩余计划](client-managed-ir.md#execution-order)。
 
-同类 replay 组的重叠规则归[交互合同](../architecture/interaction-contract.md#身份分组与依赖)。后续关系迁移不增加第二张可写 membership 或 ResultOf 表；无标准载体的关系维持严格拒绝，不因新类型自动激活接口、工具执行或模型 I/O。
+维护和延期范围只查[next-goal](next-goal.md)：既有标准文本/function、图片、基础文件、请求型音频与模型发现保留受影响回归；文件产品扩展、Google/Anthropic codecs、ServerManaged、Agent 执行/恢复和 Realtime 不随引用选片恢复。具体接口保持 owning profiles 的现行准入与拒绝，不新增私有载体。
 
-范围、依赖和测试归属统一归该计划，不在本页维护第二份清单。三协议是语义设计依据；Google/Anthropic 原生实现、ServerManaged 和 Agent 执行/恢复延期。现有标准文本/function、模型发现、图片与请求型音频保留为回归边界；音频扩展按[后续计划](next-goal.md)独立选片。
-
-文件产品扩展与 SIWC 实例准入仍按既有恢复条件处理；资源用途、locator 与引用的纯 IR 完善不等于开启文件服务。低延迟交付、下游 SSE 或转录扩展不自动恢复 Realtime、声音资源服务或通用媒体框架。
-
-现有能力维护仍遵守以下合同：
-
-- **请求型音频**：[Speech](../architecture/speech-profile.md) 与 [Transcription profile](../architecture/transcription-profile.md)拥有独立 task、标准分支与原生映射；[具名附属报告投影](../architecture/protocol-and-lowering.md#独立音频的附属报告投影)不授权丢弃请求控制、正文、失败或闭合约束。嵌入/binary 激活归 [HTTP 指南](../http-gateway.md)。EOF、SDK 消费或合成音频不能证明真实质量、低延迟或上游费用上限，不扩大 Chat 音频与 replay 准入，也不解除 Token Plan 的工具交互式使用限制。
-- **基础静态图片生成**：数量、报告与严格交付边界见 [HTTP 指南](../http-gateway.md#独立图片生成)；[具名计量损失](../architecture/protocol-and-lowering.md#独立-images-的计量投影)不授权丢弃请求控制、篡改产物报告或隐藏预算失败。
-- **基础文件输入**：仅维持 Responses user [inline](../architecture/responses-text-profile.md#user-inline-file-input) / [URL](../architecture/responses-text-profile.md#user-file-url-input) 输入及必要正确性、安全维护；不从 PDF carrier 推定所有格式、来源或工具文件均准入，也不新增 `/v1/files` 或 file_id 服务。
-- **客户端与迁移**：遵守[客户端合同](../architecture/client-generation-profile.md)，不恢复独立 `_openbridge` 或隐式兼容入口；允许破坏性重写不免除 IR 结构缺口报告，也不提前应用未定稿 Chat 损失规则。
-
-文件与必要 opaque 回传的验证分别覆盖“实际报告且回传”和“未报告”；后者即便内容正确也不证明 opaque 路径。显式 reasoning 控制不充当已生成 reasoning 的事实，有限场景通过不等于一般可靠性。真实验证授权归 [AGENTS.md](../../AGENTS.md#standing-authorization-for-live-provider-verification)，每次仍明确任务场景、有限矩阵与执行限制；计划不改变私有 activation、部署、凭据或真实工具副作用的授权边界。
+资源/引用完善不授权下载、上传、工具执行或自动续轮；实际 Provider 验证仍按 [AGENTS](../../AGENTS.md#standing-authorization-for-live-provider-verification)与[受控 probe](../probes.md)限定目标和诊断问题。SDK gates、部署、凭据生命周期及提交/推送不继承该授权。
 
 ## 待决问题与实施边界
 

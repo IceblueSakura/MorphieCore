@@ -1,4 +1,5 @@
 //! Owner-local replay values and trusted bindings, without native Google/Anthropic codecs.
+use crate::resources_support as resources;
 use morphiecore::{
     lowering::generation::{GenerationRepresentationContract, lower_request},
     protocol::{fidelity::FidelityRecords, openai::Profile},
@@ -38,10 +39,7 @@ fn message() -> Item {
             },
             Part {
                 id: PartId::new(2),
-                content: ContentPart::Resource(Resource {
-                    location: ResourceLocation::Url(text("https://example.test/image.png")),
-                    description: ResourceDescription::Image { detail: None },
-                }),
+                content: ContentPart::Resource(resources::output(1)),
                 replay: Some(token(ReplayFormat::GoogleGenerateContentPart)),
             },
             Part {
@@ -53,9 +51,16 @@ fn message() -> Item {
     })
 }
 fn request() -> GenerationRequest {
-    GenerationRequest::new(
+    GenerationRequest::from_resources(
         vec![(ItemId::new(1), message()), (ItemId::new(2), call())],
-        GenerationControls::default(),
+        GenerationSettings::default(),
+        resources::table([(
+            1,
+            Resource {
+                location: ResourceLocation::Url(text("https://example.test/image.png")),
+                description: ResourceDescription::Image { detail: None },
+            },
+        )]),
     )
     .unwrap()
 }
@@ -130,6 +135,7 @@ fn selected_part_binding_ignores_siblings_but_rejects_own_edits_and_resurrection
     assert!(fidelity.attachment_matches(owner, &outside, Some(&origin)));
     for edit in 0..5 {
         let mut items = source.items().to_vec();
+        let mut declarations = source.resources().clone();
         let Item::Message(m) = &mut items[0].1 else {
             panic!()
         };
@@ -138,7 +144,9 @@ fn selected_part_binding_ignores_siblings_but_rejects_own_edits_and_resurrection
                 let ContentPart::Resource(r) = &mut m.parts[1].content else {
                     panic!()
                 };
-                r.location = ResourceLocation::Url(text("https://example.test/changed.png"));
+                let mut value = r.media(source.resources()).unwrap().to_owned();
+                value.location = ResourceLocation::Url(text("https://example.test/changed.png"));
+                declarations = resources::replace(&declarations, r.id, value);
             }
             1 => {
                 m.parts[1].replay = Some(ReplayValue::final_value(
@@ -152,7 +160,12 @@ fn selected_part_binding_ignores_siblings_but_rejects_own_edits_and_resurrection
                 m.parts.remove(1);
             }
         }
-        let candidate = source.clone().with_items(items).unwrap();
+        let candidate = source
+            .clone()
+            .with_resources(declarations)
+            .unwrap()
+            .with_items(items)
+            .unwrap();
         assert!(!fidelity.attachment_matches(owner, &candidate, Some(&origin)));
         assert!(
             fidelity
@@ -182,7 +195,10 @@ fn formats_are_bound_to_legal_nodes_and_partial_values_are_not_replayable() {
         panic!()
     };
     m.parts[0].replay = Some(token(ReplayFormat::ResponsesEncrypted));
-    assert!(GenerationRequest::new(items, GenerationControls::default()).is_err());
+    assert_eq!(
+        request().with_items(items).unwrap_err(),
+        GenerationError::InvalidReplay
+    );
     let mut items = request().items().to_vec();
     let Item::ToolCall(c) = &mut items[1].1 else {
         panic!()
@@ -191,7 +207,7 @@ fn formats_are_bound_to_legal_nodes_and_partial_values_are_not_replayable() {
         ReplayFormat::GoogleGenerateContentPart,
         text("partial"),
     ));
-    let source = GenerationRequest::new(items, GenerationControls::default()).unwrap();
+    let source = request().with_items(items).unwrap();
     let mut fidelity = FidelityRecords::default();
     let origin = ReplayOrigin::new("synthetic").unwrap();
     let owner = ReplayOwner::Item(ItemId::new(2));

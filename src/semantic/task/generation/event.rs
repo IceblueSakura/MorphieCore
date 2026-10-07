@@ -96,6 +96,10 @@ pub enum PartKind {
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StreamEvent {
+    ResourceDeclared {
+        id: ResourceId,
+        resource: ResourceDeclaration,
+    },
     Started,
     Queued,
     ItemStarted {
@@ -210,6 +214,9 @@ pub struct StreamItem {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct StreamState {
     started: bool,
+    resources: ResourceTable,
+    used_resources: BTreeSet<ResourceId>,
+    file_decoded_bytes: usize,
     queued: bool,
     items: Vec<StreamItem>,
     replay_groups: Vec<ReplayGroup>,
@@ -226,6 +233,9 @@ impl StreamState {
     }
     pub fn items(&self) -> &[StreamItem] {
         &self.items
+    }
+    pub fn resources(&self) -> &ResourceTable {
+        &self.resources
     }
     pub fn replay_groups(&self) -> &[ReplayGroup] {
         &self.replay_groups
@@ -316,6 +326,14 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             }
             state.queued = true;
         }
+        StreamEvent::ResourceDeclared { id, resource } => {
+            let bytes = resource
+                .validate()?
+                .checked_add(std::mem::size_of::<ResourceId>())
+                .ok_or(EventError::Limit)?;
+            state.charge(bytes)?;
+            state.resources = std::mem::take(&mut state.resources).insert(id, resource)?;
+        }
         StreamEvent::ItemStarted { item, kind, replay } => {
             if matches!(&kind, ItemKind::ToolCall { context, .. } | ItemKind::CustomCall { context, .. } if context.replay.is_some())
             {
@@ -339,13 +357,33 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                         observed,
                         &mut bytes,
                         &mut state.part_ids,
+                        &state.resources,
                     )?;
                 } else {
                     super::validate::provider_observation(
                         observed,
                         &mut bytes,
                         &mut state.part_ids,
+                        &state.resources,
+                        &mut state.file_decoded_bytes,
                     )?;
+                }
+                // Declarations prepay each body once; repeated uses still charge expansion.
+                if let Some(ToolOutput::Parts(parts)) = &observed.output {
+                    for (_, part) in parts {
+                        if let ToolResultPart::Resource(value) = part
+                            && state.used_resources.insert(value.id)
+                        {
+                            bytes = bytes
+                                .checked_sub(match &value.resolve(&state.resources)?.body {
+                                    ResourceBody::Media(location) => {
+                                        location.source_view().validate()?
+                                    }
+                                    ResourceBody::Text(_) => return Err(EventError::Lifecycle),
+                                })
+                                .ok_or(EventError::Limit)?;
+                        }
+                    }
                 }
                 state.charge(bytes)?;
                 if let ProviderOperation::Reported {
@@ -642,6 +680,17 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             part,
             annotation,
         } => {
+            annotation.check_source(&state.resources)?;
+            if state
+                .items
+                .iter()
+                .flat_map(|i| &i.parts)
+                .map(|p| p.annotations.len())
+                .sum::<usize>()
+                >= MAX_ITEMS
+            {
+                return Err(EventError::Limit);
+            }
             let p = state.open_part(item, part)?;
             if p.kind != PartKind::Text || p.annotations.len() >= MAX_ITEMS {
                 return Err(EventError::Lifecycle);
@@ -667,6 +716,23 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             annotations,
             logprobs,
         } => {
+            for a in &annotations {
+                a.check_source(&state.resources)?;
+            }
+            let total = state
+                .items
+                .iter()
+                .flat_map(|i| &i.parts)
+                .map(|p| p.annotations.len())
+                .sum::<usize>();
+            if total.saturating_add(
+                annotations
+                    .len()
+                    .saturating_sub(state.part(item, part)?.annotations.len()),
+            ) > MAX_ITEMS
+            {
+                return Err(EventError::Limit);
+            }
             let p = state.open_part(item, part)?;
             if !matches!(p.kind, PartKind::Text | PartKind::Refusal)
                 || p.kind == PartKind::Refusal && !annotations.is_empty()
@@ -860,8 +926,11 @@ fn metadata_cost(
     if annotations.is_empty() && probs.is_absent() {
         return Ok(0);
     }
-    let a = crate::semantic::value::json_size(&annotations, MAX_TEXT_BYTES)
-        .map_err(|_| EventError::Limit)?;
+    let a = annotations.iter().try_fold(0usize, |n, a| {
+        n.checked_add(a.bytes())
+            .filter(|n| *n <= MAX_TEXT_BYTES)
+            .ok_or(EventError::Limit)
+    })?;
     let p = probs
         .value()
         .map(|p| {
@@ -1091,23 +1160,27 @@ pub fn materialize(state: &StreamState) -> Result<GenerationResponse, EventError
     if terminal == StreamTerminal::Error {
         return Err(EventError::TerminalFailure(terminal));
     }
-    let mut response = GenerationResponse::new(snapshot_items(state)?, outcome(terminal))?
-        .with_message_owners(
-            state
-                .items
-                .iter()
-                .filter_map(|item| match &item.kind {
-                    ItemKind::ToolCall {
-                        message: Some(owner),
-                        ..
-                    } => Some((item.id, *owner)),
-                    _ => None,
-                })
-                .collect(),
-        )?
-        .with_replay_groups(state.replay_groups.clone())?
-        .with_progress(state.progress)?
-        .with_details(state.details.clone())?;
+    let mut response = GenerationResponse::from_resources(
+        snapshot_items(state)?,
+        outcome(terminal),
+        state.resources.clone(),
+    )?
+    .with_message_owners(
+        state
+            .items
+            .iter()
+            .filter_map(|item| match &item.kind {
+                ItemKind::ToolCall {
+                    message: Some(owner),
+                    ..
+                } => Some((item.id, *owner)),
+                _ => None,
+            })
+            .collect(),
+    )?
+    .with_replay_groups(state.replay_groups.clone())?
+    .with_progress(state.progress)?
+    .with_details(state.details.clone())?;
     response = response.with_usage_reports(state.usage.clone())?;
     Ok(response)
 }

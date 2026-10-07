@@ -703,6 +703,24 @@ impl EventDecoder {
             .map(|p| p.id)
             .ok_or(CodecError::Invalid("part index"))
     }
+    fn declare_sources(
+        &mut self,
+        resources: &ResourceTable,
+        out: &mut Vec<StreamEvent>,
+    ) -> Result<(), CodecError> {
+        for (id, resource) in resources.iter() {
+            if self.state()?.resources().get(id).is_none() {
+                self.emit(
+                    StreamEvent::ResourceDeclared {
+                        id,
+                        resource: resource.clone(),
+                    },
+                    out,
+                )?;
+            }
+        }
+        Ok(())
+    }
     fn annotation_added(
         &mut self,
         o: &Map<String, Value>,
@@ -727,9 +745,10 @@ impl EventDecoder {
         let v = o
             .get("annotation")
             .ok_or(CodecError::Invalid("annotation"))?;
-        let annotation: Annotation =
-            serde_json::from_value(v.clone()).map_err(|_| CodecError::Invalid("annotation"))?;
-        if matches!(annotation, Annotation::FilePath { .. }) {
+        let mut sources = Items::from_resources(self.state()?.resources().clone());
+        let annotation = super::super::citations::read(v, &mut sources)?;
+        self.declare_sources(&sources.resources, out)?;
+        if annotation.value().kind == CitationKind::ArtifactReference {
             return Err(CodecError::Unsupported("file_path annotation event".into()));
         }
         self.emit(
@@ -789,7 +808,7 @@ impl EventDecoder {
             return Err(CodecError::Invalid("initial part"));
         }
         if kind == PartKind::Text {
-            let text = super::super::text::read(p, false)?;
+            let text = super::super::text::read(p, false, &mut Items::default())?;
             if !text.annotations().is_empty()
                 || text.logprobs().value().is_some_and(|v| !v.is_empty())
             {
@@ -1067,7 +1086,14 @@ impl EventDecoder {
             return Err(CodecError::Invalid("part snapshot"));
         }
         if kind == PartKind::Text {
-            let t = super::super::text::read(p, false)?;
+            let mut sources = Items::from_resources(self.state()?.resources().clone());
+            let t = super::super::text::read_existing(
+                p,
+                false,
+                &mut sources,
+                &self.state()?.part(item, part)?.annotations,
+            )?;
+            self.declare_sources(&sources.resources, out)?;
             self.emit(
                 StreamEvent::TextMetadata {
                     item,
@@ -1134,6 +1160,7 @@ impl EventDecoder {
             decoded.semantic.items(),
             &decoded.fidelity,
             true,
+            decoded.semantic.resources(),
         );
         if normalized.first() != Some(&expected) {
             return Err(CodecError::Invalid("item snapshot"));
@@ -1237,7 +1264,8 @@ impl EventDecoder {
             summary["output"] = json!(super::super::responses::encode_items(
                 &snapshot_items(self.state()?)?,
                 &self.fidelity,
-                true
+                true,
+                self.state()?.resources()
             ));
             &summary
         } else {
@@ -1256,7 +1284,6 @@ impl EventDecoder {
         };
         self.observe_metadata(p)?;
         let decoded = super::super::static_response::decode_responses_with(r, &self.adaptation)?;
-        self.fidelity.copy_response_records(&decoded.fidelity);
         if self.adaptation.rules.responses_terminal_reasoning
             && terminal == StreamTerminal::Completed
         {
@@ -1271,11 +1298,13 @@ impl EventDecoder {
             &snapshot_items(self.state()?)?,
             &self.fidelity,
             true,
+            self.state()?.resources(),
         );
         let actual = super::super::responses::encode_items(
             decoded.semantic.items(),
             &decoded.fidelity,
             true,
+            decoded.semantic.resources(),
         );
         if actual != expected {
             return Err(CodecError::Invalid(terminal_snapshot_difference(
@@ -1291,7 +1320,11 @@ impl EventDecoder {
                 details: decoded.semantic.details().clone(),
             },
             out,
-        )
+        )?;
+        let semantic = materialize(self.state()?)?;
+        self.fidelity
+            .bind_verified_snapshot_records(&decoded.fidelity, &semantic);
+        Ok(())
     }
 }
 

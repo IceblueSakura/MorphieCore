@@ -1,7 +1,7 @@
 //! Value-sensitive target restrictions, independent of the model's vision semantics.
 use crate::semantic::task::generation::{
     ContentPart, GenerationRequest, ImageDetail, ImageFormat, Item, MAX_IMAGE_DECODED_BYTES,
-    Resource, ResourceKind, ResourceLocation, ToolOutput, ToolResultPart,
+    ResourceKind, ResourceLocation, ToolOutput, ToolResultPart,
 };
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImageConstraints {
@@ -55,7 +55,7 @@ impl ImageConstraints {
         request: &GenerationRequest,
     ) -> Result<(), crate::semantic::task::generation::GenerationError> {
         let mut count = 0;
-        let mut check = |resource: &Resource| {
+        let mut check = |resource: crate::semantic::task::generation::ResourceView<'_>| {
             if resource.kind() != ResourceKind::Image {
                 return Ok(());
             }
@@ -71,7 +71,8 @@ impl ImageConstraints {
                             .inline_decoded_bytes()?
                             .is_some_and(|n| n <= self.max_inline_bytes)
                 }
-                ResourceLocation::OpaqueReference(_) => false,
+                ResourceLocation::OpaqueReference(_)
+                | ResourceLocation::NamespacedReference { .. } => false,
             };
             if count > self.max_images
                 || !source_ok
@@ -88,7 +89,7 @@ impl ImageConstraints {
                 Item::Message(message) => {
                     for part in &message.parts {
                         if let ContentPart::Resource(resource) = &part.content {
-                            check(resource)?;
+                            check(resource.media(request.resources())?)?;
                         }
                     }
                 }
@@ -96,7 +97,7 @@ impl ImageConstraints {
                     if let ToolOutput::Parts(parts) = &result.output {
                         for (_, part) in parts {
                             if let ToolResultPart::Resource(resource) = part {
-                                check(resource)?;
+                                check(resource.media(request.resources())?)?;
                             }
                         }
                     }

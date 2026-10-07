@@ -145,7 +145,7 @@ pub fn lower_request<'a>(
             for part in &message.parts {
                 if let ContentPart::Resource(resource) = &part.content
                     && profile == Profile::Chat
-                    && resource.image_detail() == Some(ImageDetail::Original)
+                    && resource.media(r.resources())?.image_detail() == Some(ImageDetail::Original)
                     && !c.adaptation.rules.chat_original_image_detail
                 {
                     return Err(RepresentationError::ImageInput);
@@ -162,7 +162,7 @@ pub fn lower_request<'a>(
     {
         return Err(RepresentationError::MessageGrouping);
     }
-    text_items(r.items(), profile, true)?;
+    text_items(r.items(), profile, true, r.resources())?;
     let expected_default = if profile == Profile::Chat {
         StrictDefault::NonStrict
     } else {
@@ -404,7 +404,7 @@ pub fn lower_response<'a>(
     {
         return Err(RepresentationError::MessageGrouping);
     }
-    text_items(r.items(), profile, false)?;
+    text_items(r.items(), profile, false, r.resources())?;
     if profile == Profile::Chat && chat_message_count(r.items(), r.message_owners()) != 1 {
         return Err(RepresentationError::MessageGrouping);
     }
@@ -545,7 +545,16 @@ fn text_items(
     items: &[(ItemId, Item)],
     profile: Profile,
     request: bool,
+    resources: &ResourceTable,
 ) -> Result<(), RepresentationError> {
+    crate::protocol::openai::citations::check_items(items, resources, profile)
+        .map_err(|_| RepresentationError::TextMetadata)?;
+    if resources
+        .iter()
+        .any(|(_, resource)| resource.conditions != ResourceConditions::default())
+    {
+        return Err(RepresentationError::UnmigratedSemantic);
+    }
     for (_, i) in items {
         // Public carriers have no source/reference-domain field. A domain
         // declaration is not permission to erase it or invent a private carrier.
@@ -602,9 +611,14 @@ fn text_items(
                     if m.parts.iter().any(|p| match &p.content {
                         ContentPart::Text(t) => {
                             (request && !t.is_plain())
-                                || t.annotations()
-                                    .iter()
-                                    .any(|a| !matches!(a, Annotation::UrlCitation { .. }))
+                                || t.annotations().iter().any(|a| {
+                                    crate::protocol::openai::citations::check(
+                                        a,
+                                        resources,
+                                        Profile::Chat,
+                                    )
+                                    .is_err()
+                                })
                         }
                         ContentPart::Refusal(t) => request && !t.logprobs().is_absent(),
                         _ => false,
@@ -640,16 +654,24 @@ fn text_items(
                 ContentPart::Audio(_) => profile != Profile::Chat,
                 ContentPart::AudioReference(_) => profile != Profile::Chat || !request,
                 ContentPart::Resource(resource) => {
+                    let Ok(resource) = resource.media(resources) else {
+                        return true;
+                    };
                     !request
                         || match resource.kind() {
                             ResourceKind::Image => {
-                                matches!(resource.location, ResourceLocation::OpaqueReference(_))
+                                matches!(
+                                    resource.location,
+                                    ResourceLocation::OpaqueReference(_)
+                                        | ResourceLocation::NamespacedReference { .. }
+                                )
                             }
                             ResourceKind::File => {
                                 profile != Profile::Responses
                                     || matches!(
                                         resource.location,
                                         ResourceLocation::OpaqueReference(_)
+                                            | ResourceLocation::NamespacedReference { .. }
                                     )
                             }
                             ResourceKind::Audio => true,

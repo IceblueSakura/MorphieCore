@@ -74,7 +74,7 @@ pub(crate) fn decode_generation_with(
         ..Default::default()
     };
     super::chat_audio::settings(o, &mut settings)?;
-    let r = GenerationRequest::from_settings(b.items, settings)?
+    let r = GenerationRequest::from_resources(b.items, settings, b.resources)?
         .with_message_owners(b.message_owners)?;
     Ok(DecodedRequest {
         semantic: function_tools::decode(r, o, Profile::Chat)?,
@@ -336,9 +336,9 @@ pub(super) fn decode_message(
                             "image_url" => parts.push(Part {
                                 replay: None,
                                 id: b.part_id()?,
-                                content: ContentPart::Resource(super::image::read(
-                                    part,
-                                    Profile::Chat,
+                                content: ContentPart::Resource(b.resource(
+                                    super::image::read(part, Profile::Chat)?,
+                                    ResourcePurpose::Input,
                                 )?),
                             }),
                             _ => return Err(CodecError::Unsupported("user content part".into())),
@@ -353,7 +353,7 @@ pub(super) fn decode_message(
                 (None | Some(Value::Null), None) if role == "assistant" => Vec::new(),
                 _ => return Err(CodecError::Unsupported("message content".into())),
             };
-            super::chat_annotations::attach(&mut parts, m.get("annotations"))?;
+            super::chat_annotations::attach(&mut parts, m.get("annotations"), b)?;
             if let Some(audio) = m.get("audio").filter(|v| !v.is_null()) {
                 if parts
                     .iter()
@@ -418,6 +418,12 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         Profile::Chat,
     )?;
     check_item_carriers(target.semantic.items())?;
+    check_resource_carriers(target.semantic.resources())?;
+    super::citations::check_items(
+        target.semantic.items(),
+        target.semantic.resources(),
+        Profile::Chat,
+    )?;
     target
         .fidelity
         .check_wire_item_ids(target.semantic.items(), false)?;
@@ -430,6 +436,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         target.fidelity,
         target.adaptation.rules.structured_chat_reasoning,
         false,
+        target.semantic.resources(),
     );
     if let Some(t) = target.semantic.instructions().value() {
         messages.insert(0, json!({"role":"developer","content":t.as_str()}));
@@ -478,6 +485,7 @@ pub(super) fn encode_items_with(
     fidelity: &crate::protocol::fidelity::FidelityRecords,
     structured: bool,
     response: bool,
+    resources: &ResourceTable,
 ) -> Vec<Value> {
     let mut messages = Vec::<Value>::new();
     let mut standalone_calls = false;
@@ -559,7 +567,7 @@ pub(super) fn encode_items_with(
                             message["content"] = json!(t.as_str());
                             if !t.annotations().is_empty() {
                                 message["annotations"] =
-                                    super::chat_annotations::write(t.annotations());
+                                    super::chat_annotations::write(t.annotations(), resources);
                             }
                         }
                         ContentPart::Refusal(t) => {
@@ -570,8 +578,10 @@ pub(super) fn encode_items_with(
                             unreachable!("filtered audio")
                         }
                         ContentPart::Resource(resource) => {
-                            message["content"] =
-                                json!([super::image::write(resource, Profile::Chat)])
+                            message["content"] = json!([super::image::write(
+                                resource.media(resources).expect("validated resource"),
+                                Profile::Chat
+                            )])
                         }
                     },
                     parts => {
@@ -581,8 +591,10 @@ pub(super) fn encode_items_with(
                                 .map(|part| match &part.content {
                                     ContentPart::Text(text) =>
                                         json!({"type":"text","text":text.as_str()}),
-                                    ContentPart::Resource(resource) =>
-                                        super::image::write(resource, Profile::Chat),
+                                    ContentPart::Resource(resource) => super::image::write(
+                                        resource.media(resources).expect("validated resource"),
+                                        Profile::Chat
+                                    ),
                                     _ => unreachable!("lowering rejects non-input request arrays"),
                                 })
                                 .collect::<Vec<_>>()

@@ -1,5 +1,5 @@
 //! Closed tool result values. Error reporting never changes a generation outcome.
-use super::{CallContext, ItemLifecycle, PartId, Resource};
+use super::{CallContext, ItemLifecycle, PartId, ResourceUse};
 use crate::semantic::value::Text;
 /// Execution conclusion is independent of the result value and artifact lifecycle.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -12,7 +12,7 @@ pub enum ToolExecution {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ToolResultPart {
     Text(Text),
-    Resource(Resource),
+    Resource(ResourceUse),
 }
 impl ToolResultPart {
     pub fn as_text(&self) -> Option<&str> {

@@ -1,4 +1,5 @@
 //! Independent image admission and projection oracles; no network or media decoder.
+use crate::resources_support as resources;
 use morphiecore::{
     adapter::{Adapter, Dialect},
     lowering::generation::GenerationRepresentationContract,
@@ -46,10 +47,10 @@ fn image_sources_detail_and_order_decode_then_project_independent_wire() {
         assert_eq!(message.parts.len(), 4);
         assert!(matches!(&message.parts[0].content, ContentPart::Text(t) if t.as_str()=="before"));
         assert!(
-            matches!(&message.parts[1].content, ContentPart::Resource(r) if r.kind()==ResourceKind::Image && matches!(&r.location,ResourceLocation::Url(url) if url.as_str()=="https://example.test/a.png"))
+            matches!(&message.parts[1].content, ContentPart::Resource(r) if r.media(request.task.semantic.resources()).is_ok_and(|r| r.kind()==ResourceKind::Image && matches!(&r.location,ResourceLocation::Url(url) if url.as_str()=="https://example.test/a.png")))
         );
         assert!(
-            matches!(&message.parts[3].content, ContentPart::Resource(r) if matches!(&r.location,ResourceLocation::Inline{media_type,data_base64} if media_type.as_str()=="image/png" && data_base64.as_str()=="AQID"))
+            matches!(&message.parts[3].content, ContentPart::Resource(r) if r.media(request.task.semantic.resources()).is_ok_and(|r| matches!(&r.location,ResourceLocation::Inline{media_type,data_base64} if media_type.as_str()=="image/png" && data_base64.as_str()=="AQID")))
         );
         assert_eq!(
             GenerationRequirements::derive(&request.task.semantic).image_inputs,
@@ -87,6 +88,11 @@ fn edits_delete_replace_insert_and_reorder_images_without_source_resurrection() 
     let ContentPart::Resource(resource) = &mut message.parts[1].content else {
         panic!()
     };
+    let resource_id = resource.id;
+    let mut resource = resource
+        .media(request.task.semantic.resources())
+        .unwrap()
+        .to_owned();
     resource.location = ResourceLocation::Url(
         morphiecore::semantic::value::Text::new(
             "https://example.test/replaced.png",
@@ -98,10 +104,25 @@ fn edits_delete_replace_insert_and_reorder_images_without_source_resurrection() 
     resource.description = ResourceDescription::Image {
         detail: Some(ImageDetail::High),
     };
+    let ContentPart::Resource(reference) = &mut message.parts[1].content else {
+        panic!()
+    };
+    reference.description = resource.description.clone();
+    let declarations = resources::replace(request.task.semantic.resources(), resource_id, resource);
     let inserted = Part {
         replay: None,
         id: PartId::new(100),
-        content: ContentPart::Resource(Resource {
+        content: ContentPart::Resource(ResourceUse {
+            description: ResourceDescription::Image {
+                detail: Some(ImageDetail::Auto),
+            },
+            ..resources::input(100)
+        }),
+    };
+    let declarations = resources::replace(
+        &declarations,
+        ResourceId::new(100),
+        Resource {
             location: ResourceLocation::Url(
                 morphiecore::semantic::value::Text::new(
                     "https://example.test/new.png",
@@ -113,12 +134,19 @@ fn edits_delete_replace_insert_and_reorder_images_without_source_resurrection() 
             description: ResourceDescription::Image {
                 detail: Some(ImageDetail::Auto),
             },
-        }),
-    };
+        },
+    );
     message.parts.remove(3);
     message.parts.insert(0, inserted);
     message.parts.swap(0, 2);
-    request.task.semantic = request.task.semantic.clone().with_items(items).unwrap();
+    request.task.semantic = request
+        .task
+        .semantic
+        .clone()
+        .with_resources(declarations)
+        .unwrap()
+        .with_items(items)
+        .unwrap();
     for target in [Profile::Chat, Profile::Responses] {
         let encoded = adapter(target)
             .encode_request(
@@ -252,10 +280,20 @@ fn typed_images_are_bounded_after_transforms_and_cannot_become_output() {
         description: ResourceDescription::Image { detail: None },
     };
     assert_eq!(resource.validate(), Err(GenerationError::Limit));
+    assert!(
+        ResourceTable::new(vec![(
+            ResourceId::new(0),
+            ResourceDeclaration {
+                body: ResourceBody::Media(resource.location),
+                conditions: Default::default()
+            }
+        )])
+        .is_err()
+    );
     let part = Part {
         replay: None,
         id: PartId::new(0),
-        content: ContentPart::Resource(resource),
+        content: ContentPart::Resource(resources::input(0)),
     };
     let message = Message {
         role: MessageRole::User,
@@ -279,28 +317,43 @@ fn typed_images_are_bounded_after_transforms_and_cannot_become_output() {
     let Item::Message(message) = &mut items[0].1 else {
         panic!()
     };
+    let large = Resource {
+        location: ResourceLocation::Inline {
+            media_type: Text::new("image/png", "synthetic", 64).unwrap(),
+            data_base64: Text::new("AAAA".repeat(220_000), "synthetic", MAX_TEXT_BYTES).unwrap(),
+        },
+        description: ResourceDescription::Image { detail: None },
+    };
+    let declarations = resources::replace(
+        decoded.task.semantic.resources(),
+        ResourceId::new(100),
+        large,
+    );
     message.parts = (0..5)
         .map(|i| Part {
             replay: None,
             id: PartId::new(i),
-            content: ContentPart::Resource(Resource {
-                location: ResourceLocation::Inline {
-                    media_type: Text::new("image/png", "synthetic", 64).unwrap(),
-                    data_base64: Text::new("AAAA".repeat(220_000), "synthetic", MAX_TEXT_BYTES)
-                        .unwrap(),
-                },
-                description: ResourceDescription::Image { detail: None },
-            }),
+            content: ContentPart::Resource(resources::input(100)),
         })
         .collect();
-    assert!(decoded.task.semantic.clone().with_items(items).is_err());
+    assert!(
+        decoded
+            .task
+            .semantic
+            .clone()
+            .with_resources(declarations)
+            .unwrap()
+            .with_items(items)
+            .is_err()
+    );
     let mut items = decoded.task.semantic.items().to_vec();
     let Item::Message(message) = &mut items[0].1 else {
         panic!()
     };
     message.role = MessageRole::Assistant;
     assert!(decoded.task.semantic.clone().with_items(items).is_err());
-    assert!(format!("{:?}", decoded.task.semantic).contains("Inline([redacted])"));
+    assert!(format!("{:?}", decoded.task.semantic).contains("ResourceTable"));
+    assert!(!format!("{:?}", decoded.task.semantic).contains("AQID"));
 }
 
 #[test]

@@ -32,7 +32,8 @@ pub fn decode_generation(v: &Value) -> Result<DecodedRequest, CodecError> {
         None if o.get("instructions").is_some_and(Value::is_string) => {}
         _ => return Err(CodecError::Invalid("input")),
     }
-    let semantic = GenerationRequest::from_settings(b.items, settings::read(o, false)?)?;
+    let semantic =
+        GenerationRequest::from_resources(b.items, settings::read(o, false)?, b.resources)?;
     validate_program_history(&semantic)?;
     Ok(DecodedRequest {
         semantic,
@@ -179,7 +180,10 @@ fn output(b: &mut Items, v: &Value) -> Result<ToolOutput, CodecError> {
             // https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/responses/response_function_call_output_item_list_param.py
             "input_image" => (
                 b.part_id()?,
-                ToolResultPart::Resource(super::image::read(o, Profile::Responses)?),
+                ToolResultPart::Resource(b.resource(
+                    super::image::read(o, Profile::Responses)?,
+                    ResourcePurpose::ToolResult,
+                )?),
             ),
             _ => return Err(CodecError::Unsupported("tool result media".into())),
         };
@@ -476,13 +480,18 @@ pub(super) fn decode_items(
                                 )
                             }
                             "input_image" if !response && role == MessageRole::User => {
-                                ContentPart::Resource(super::image::read(p, Profile::Responses)?)
+                                ContentPart::Resource(b.resource(
+                                    super::image::read(p, Profile::Responses)?,
+                                    ResourcePurpose::Input,
+                                )?)
                             }
                             "input_file" if !response && role == MessageRole::User => {
-                                ContentPart::Resource(super::file::read(p)?)
+                                ContentPart::Resource(
+                                    b.resource(super::file::read(p)?, ResourcePurpose::Input)?,
+                                )
                             }
                             "output_text" if role == MessageRole::Assistant => {
-                                ContentPart::Text(super::text::read(p, !response)?)
+                                ContentPart::Text(super::text::read(p, !response, b)?)
                             }
                             _ => return Err(CodecError::Unsupported("content part".into())),
                         };
@@ -539,6 +548,12 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         ));
     }
     check_item_carriers(target.semantic.items())?;
+    check_resource_carriers(target.semantic.resources())?;
+    super::citations::check_items(
+        target.semantic.items(),
+        target.semantic.resources(),
+        Profile::Responses,
+    )?;
     target
         .fidelity
         .check_wire_item_ids(target.semantic.items(), false)?;
@@ -548,7 +563,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
                 if parts.iter().any(|(id, part)| matches!(part, ToolResultPart::Resource(_)) && target.fidelity.cache_breakpoint(*id))))) {
         return Err(CodecError::Unsupported("tool result semantics".into()));
     }
-    let mut v = json!({"input":encode_items(target.semantic.items(), target.fidelity, false)});
+    let mut v = json!({"input":encode_items(target.semantic.items(), target.fidelity, false, target.semantic.resources())});
     settings::write(
         target.semantic.settings(),
         v.as_object_mut().expect("object"),
@@ -556,15 +571,17 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     bounded(&v)?;
     Ok(v)
 }
-fn output_wire(o: &ToolOutput, fidelity: &FidelityRecords) -> Value {
+fn output_wire(o: &ToolOutput, fidelity: &FidelityRecords, resources: &ResourceTable) -> Value {
     match o {
         ToolOutput::Text(s) => json!(s),
         ToolOutput::Parts(p) => json!(
             p.iter()
                 .map(|(id, part)| match part {
                     ToolResultPart::Text(text) => input_part(*id, text.as_str(), fidelity),
-                    ToolResultPart::Resource(resource) =>
-                        super::image::write(resource, Profile::Responses),
+                    ToolResultPart::Resource(resource) => super::image::write(
+                        resource.media(resources).expect("validated resource"),
+                        Profile::Responses
+                    ),
                 })
                 .collect::<Vec<_>>()
         ),
@@ -577,6 +594,7 @@ pub(super) fn encode_items(
     items: &[(ItemId, Item)],
     fidelity: &FidelityRecords,
     response: bool,
+    resources: &ResourceTable,
 ) -> Vec<Value> {
     let mut out = vec![];
     for (id, item) in items {
@@ -592,7 +610,7 @@ pub(super) fn encode_items(
             // Empty owners still carry identity, phase and lifecycle. Omitting
             // one here would also contradict its already emitted SSE item.
             Item::Message(m) => {
-                let mut v = json!({"type":"message","role":if m.role==MessageRole::User{"user"}else{"assistant"},"content":m.parts.iter().map(|p|match &p.content{ContentPart::Text(t)=>if !response && (m.role==MessageRole::User || fidelity.input_text_form(p.id) && t.is_plain()){input_part(p.id,t.as_str(),fidelity)}else{super::text::write(t,"output_text")},ContentPart::Refusal(t)=>json!({"type":"refusal","refusal":t.as_str()}),ContentPart::Resource(resource)=>match resource.kind(){ResourceKind::Image=>super::image::write(resource,Profile::Responses),ResourceKind::File=>super::file::write(resource),ResourceKind::Audio=>unreachable!("lowering rejects audio resources without a Responses carrier")},ContentPart::Audio(_)|ContentPart::AudioReference(_)=>unreachable!("lowering rejects audio without a Responses carrier")}).collect::<Vec<_>>()});
+                let mut v = json!({"type":"message","role":if m.role==MessageRole::User{"user"}else{"assistant"},"content":m.parts.iter().map(|p|match &p.content{ContentPart::Text(t)=>if !response && (m.role==MessageRole::User || fidelity.input_text_form(p.id) && t.is_plain()){input_part(p.id,t.as_str(),fidelity)}else{super::text::write(t,"output_text",resources)},ContentPart::Refusal(t)=>json!({"type":"refusal","refusal":t.as_str()}),ContentPart::Resource(value)=>{let resource=value.media(resources).expect("validated resource");match resource.kind(){ResourceKind::Image=>super::image::write(resource,Profile::Responses),ResourceKind::File=>super::file::write(resource),ResourceKind::Audio=>unreachable!("lowering rejects audio resources without a Responses carrier")}},ContentPart::Audio(_)|ContentPart::AudioReference(_)=>unreachable!("lowering rejects audio without a Responses carrier")}).collect::<Vec<_>>()});
                 if let Some(p) = m.phase {
                     v["phase"] = json!(p.label());
                 }
@@ -609,7 +627,7 @@ pub(super) fn encode_items(
                 v
             }
             Item::ToolResult(r) | Item::CustomResult(r) => {
-                let mut v = json!({"type":if matches!(item,Item::CustomResult(_)){"custom_tool_call_output"}else{"function_call_output"},"call_id":r.call_id.as_str(),"output":output_wire(&r.output, fidelity)});
+                let mut v = json!({"type":if matches!(item,Item::CustomResult(_)){"custom_tool_call_output"}else{"function_call_output"},"call_id":r.call_id.as_str(),"output":output_wire(&r.output, fidelity, resources)});
                 if let Some(s) = r.status {
                     v["status"] = json!(status_label(s));
                 }

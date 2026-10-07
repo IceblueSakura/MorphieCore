@@ -65,7 +65,7 @@ fn history_probability_presence_does_not_request_new_probability_generation() {
 
 #[test]
 fn semantic_contract_checks_final_request_without_a_representation_contract() {
-    let request = GenerationRequest::new(
+    let request = GenerationRequest::from_resources(
         vec![(
             ItemId::new(1),
             Item::Message(Message {
@@ -73,18 +73,22 @@ fn semantic_contract_checks_final_request_without_a_representation_contract() {
                 parts: vec![Part {
                     replay: None,
                     id: PartId::new(1),
-                    content: ContentPart::Resource(Resource {
-                        location: ResourceLocation::Url(
-                            Text::new("https://example.invalid/a", "synthetic", 128).unwrap(),
-                        ),
-                        description: ResourceDescription::Image { detail: None },
-                    }),
+                    content: ContentPart::Resource(crate::resources_support::input(1)),
                 }],
                 status: ItemLifecycle::Completed,
                 phase: None,
             }),
         )],
-        GenerationControls::default(),
+        GenerationSettings::default(),
+        crate::resources_support::table([(
+            1,
+            Resource {
+                location: ResourceLocation::Url(
+                    Text::new("https://example.invalid/a", "synthetic", 128).unwrap(),
+                ),
+                description: ResourceDescription::Image { detail: None },
+            },
+        )]),
     )
     .unwrap();
     let mut contract = GenerationSemanticContract::text_images();

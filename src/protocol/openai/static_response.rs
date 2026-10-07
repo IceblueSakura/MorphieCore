@@ -460,7 +460,7 @@ pub(crate) fn decode_chat_with(
         }
     }
     let usage = usage(o.get("usage"), Profile::Chat, adaptation, &mut b.fidelity)?;
-    let semantic = response_with_usage(b.items, outcome, usage)?
+    let semantic = response_with_usage(b.items, outcome, usage, b.resources)?
         .with_message_owners(b.message_owners)?
         .with_details(if outcome == Outcome::Incomplete {
             TerminalDetails {
@@ -531,8 +531,8 @@ pub(crate) fn decode_responses_with(
         adaptation,
         &mut b.fidelity,
     )?;
-    let semantic =
-        response_with_usage(b.items, outcome, usage)?.with_details(decode_details(o)?)?;
+    let semantic = response_with_usage(b.items, outcome, usage, b.resources)?
+        .with_details(decode_details(o)?)?;
     super::envelope::record_vendor_shapes(
         Profile::Responses,
         adaptation,
@@ -558,8 +558,9 @@ fn response_with_usage(
     items: Vec<(ItemId, Item)>,
     outcome: Outcome,
     usage: Option<Usage>,
+    resources: ResourceTable,
 ) -> Result<GenerationResponse, CodecError> {
-    let response = GenerationResponse::new(items, outcome)?;
+    let response = GenerationResponse::from_resources(items, outcome, resources)?;
     Ok(match usage {
         Some(usage) => response.with_usage(usage)?,
         None => response,
@@ -570,6 +571,11 @@ pub fn encode_chat(target: &ResponseRepresentation<'_>) -> Result<Value, CodecEr
         return Err(CodecError::ProfileMismatch);
     }
     check_response_carriers(target.semantic)?;
+    super::citations::check_items(
+        target.semantic.items(),
+        target.semantic.resources(),
+        target.profile,
+    )?;
     check_item_carriers(target.semantic.items())?;
     target
         .fidelity
@@ -586,6 +592,7 @@ pub fn encode_chat(target: &ResponseRepresentation<'_>) -> Result<Value, CodecEr
         target.fidelity,
         target.adaptation.rules.structured_chat_reasoning,
         true,
+        target.semantic.resources(),
     );
     if target.adaptation.rules.reasoning_alias {
         for message in &mut messages {
@@ -636,6 +643,11 @@ pub fn encode_responses(target: &ResponseRepresentation<'_>) -> Result<Value, Co
         return Err(CodecError::ProfileMismatch);
     }
     check_response_carriers(target.semantic)?;
+    super::citations::check_items(
+        target.semantic.items(),
+        target.semantic.resources(),
+        target.profile,
+    )?;
     check_item_carriers(target.semantic.items())?;
     let status = match target.semantic.outcome() {
         Outcome::Completed => "completed",
@@ -651,7 +663,12 @@ pub fn encode_responses(target: &ResponseRepresentation<'_>) -> Result<Value, Co
         target.semantic.message_owners(),
         Profile::Responses,
     )?;
-    let output = responses::encode_items(target.semantic.items(), target.fidelity, true);
+    let output = responses::encode_items(
+        target.semantic.items(),
+        target.fidelity,
+        true,
+        target.semantic.resources(),
+    );
     let m = target.metadata;
     let mut value = json!({"id":m.id,"object":"response","created_at":m.created,"model":m.model,"status":status,
         "output":output,"usage":target.semantic.usage().map(|usage| encode_usage(usage, Profile::Responses, &target.adaptation.rules))});

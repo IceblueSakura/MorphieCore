@@ -527,7 +527,25 @@ impl FidelityRecords {
         self.routing_extras = source.routing_extras.clone();
         self.normalizations = source.normalizations.clone();
     }
+    /// Intake only, after independent native snapshot equality and terminal materialization.
+    /// Local source IDs may differ between static and interleaved event parsing.
+    pub(crate) fn bind_verified_snapshot_records(
+        &mut self,
+        source: &Self,
+        semantic: &GenerationResponse,
+    ) {
+        self.copy_response_records(source);
+        let dependency = response_dependency(semantic);
+        for record in [&mut self.response_extras, &mut self.routing_extras]
+            .into_iter()
+            .flatten()
+        {
+            record.dependency = dependency;
+        }
+    }
     pub fn retain_owners(&mut self, items: &[(ItemId, Item)]) {
+        self.cache_breakpoints
+            .retain(|owner| part_exists(items, *owner));
         self.attachments
             .retain(|owner, _| owner.value(items).is_some());
         self.response_item_ids
@@ -538,6 +556,19 @@ impl FidelityRecords {
                 .any(|(owner, item)| owner == id && matches!(item, Item::Reasoning(_)))
         });
     }
+}
+fn part_exists(items: &[(ItemId, Item)], owner: PartId) -> bool {
+    items.iter().take(MAX_ITEMS).any(|(_, item)| {
+        let output = match item {
+            Item::Instruction(value) => return value.parts.iter().take(MAX_ITEMS).any(|(id, _)| *id == owner),
+            Item::Message(value) => return value.parts.iter().take(MAX_ITEMS).any(|part| part.id == owner),
+            Item::Reasoning(value) => return value.parts.iter().take(MAX_ITEMS).any(|(id, _)| *id == owner),
+            Item::ToolResult(value) | Item::CustomResult(value) => Some(&value.output),
+            Item::ProviderTool(value) => value.output.as_ref(),
+            _ => None,
+        };
+        matches!(output, Some(ToolOutput::Parts(parts)) if parts.iter().take(MAX_ITEMS).any(|(id, _)| *id == owner))
+    })
 }
 fn attachment_ready(owner: ReplayOwner, request: &GenerationRequest) -> bool {
     if owner
@@ -567,6 +598,11 @@ fn response_dependency(response: &GenerationResponse) -> [u8; 32] {
     use sha2::{Digest, Sha256};
     let mut hash = Sha256::new();
     hash.update(format!("{response:?}").as_bytes());
+    for (id, value) in response.resources().iter() {
+        hash.update(id.scope().get().to_le_bytes());
+        hash.update(id.get().to_le_bytes());
+        hash.update(value.fingerprint());
+    }
     // Opaque Debug is redacted; bind its bytes separately without formatting them.
     for (id, item) in response.items() {
         let replay = match item {
@@ -588,6 +624,11 @@ fn response_dependency(response: &GenerationResponse) -> [u8; 32] {
                     hash.update(value.fingerprint());
                 }
                 match &p.content {
+                    ContentPart::Text(t) => {
+                        for a in t.annotations() {
+                            hash.update(a.fingerprint());
+                        }
+                    }
                     ContentPart::Audio(a) => hash.update(a.fingerprint()),
                     ContentPart::AudioReference(a) => hash.update(a.fingerprint()),
                     _ => {}

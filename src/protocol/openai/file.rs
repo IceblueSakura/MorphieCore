@@ -58,7 +58,7 @@ pub(super) fn read(part: &Map<String, Value>) -> Result<Resource, CodecError> {
     resource.validate()?;
     Ok(resource)
 }
-pub(super) fn write(resource: &Resource) -> Value {
+pub(super) fn write(resource: ResourceView<'_>) -> Value {
     let ResourceDescription::File(file) = &resource.description else {
         unreachable!("file lowering requires a file description")
     };
@@ -70,7 +70,9 @@ pub(super) fn write(resource: &Resource) -> Value {
         } => {
             json!({"type":"input_file","file_data":format!("data:{};base64,{}",media_type.as_str(),data_base64.as_str())})
         }
-        ResourceLocation::OpaqueReference(_) => unreachable!("file lowering rejects IDs"),
+        ResourceLocation::OpaqueReference(_) | ResourceLocation::NamespacedReference { .. } => {
+            unreachable!("file lowering rejects IDs")
+        }
     };
     if let Some(name) = &file.filename {
         value["filename"] = json!(name.as_str());

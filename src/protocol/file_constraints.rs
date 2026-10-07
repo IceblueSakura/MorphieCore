@@ -80,6 +80,7 @@ impl FileConstraints {
                 let ContentPart::Resource(resource) = &part.content else {
                     continue;
                 };
+                let resource = resource.media(request.resources())?;
                 let ResourceDescription::File(file) = &resource.description else {
                     continue;
                 };
@@ -98,7 +99,8 @@ impl FileConstraints {
                                 .as_ref()
                                 .is_none_or(|types| types.iter().any(|t| t == media_type.as_str()))
                     }
-                    ResourceLocation::OpaqueReference(_) => false,
+                    ResourceLocation::OpaqueReference(_)
+                    | ResourceLocation::NamespacedReference { .. } => false,
                 };
                 if count > self.max_files
                     || !source_ok

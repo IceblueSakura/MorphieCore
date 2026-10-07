@@ -171,24 +171,32 @@ fn redacted_values_and_schema_order_remain_real_dependencies() {
             .is_err()
     );
     let image = |url| {
-        (
-            ItemId::new(1),
-            Item::Message(Message {
-                role: MessageRole::User,
-                parts: vec![Part {
-                    replay: None,
-                    id: PartId::new(1),
-                    content: ContentPart::Resource(Resource {
-                        location: ResourceLocation::Url(text(url)),
-                        description: ResourceDescription::Image { detail: None },
-                    }),
-                }],
-                status: ItemLifecycle::Completed,
-                phase: None,
-            }),
+        GenerationRequest::from_resources(
+            vec![(
+                ItemId::new(1),
+                Item::Message(Message {
+                    role: MessageRole::User,
+                    parts: vec![Part {
+                        replay: None,
+                        id: PartId::new(1),
+                        content: ContentPart::Resource(crate::resources_support::input(1)),
+                    }],
+                    status: ItemLifecycle::Completed,
+                    phase: None,
+                }),
+            )],
+            GenerationSettings::default(),
+            crate::resources_support::table([(
+                1,
+                Resource {
+                    location: ResourceLocation::Url(text(url)),
+                    description: ResourceDescription::Image { detail: None },
+                },
+            )]),
         )
+        .unwrap()
     };
-    let source = history(vec![image("https://example.invalid/a.png")]);
+    let source = image("https://example.invalid/a.png");
     let proof = RequestDependencyProof::capture(
         &source,
         HistoryDependency::PrefixThrough(ItemId::new(1)),
@@ -197,7 +205,7 @@ fn redacted_values_and_schema_order_remain_real_dependencies() {
     .unwrap();
     assert!(
         proof
-            .check(&history(vec![image("https://example.invalid/b.png")]))
+            .check(&image("https://example.invalid/b.png"))
             .is_err()
     );
     let mut settings = source.settings().clone();

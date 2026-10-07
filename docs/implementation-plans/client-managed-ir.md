@@ -1,6 +1,6 @@
 # ClientManaged Generation IR 剩余实施计划
 
-**修订：v0.8。只维护尚未闭合的工作，以 P4–P6 作为当前执行编号。** 已有能力不再单列建设任务；删除完成项不删除合同或回归，也不意味着整体验收通过。
+**修订：v0.10。只维护尚未闭合的工作，以 P5–P6 作为当前执行编号。** 已有能力作为执行基线，不重新排期；一次只执行一个有明确停止点的行为子片。
 
 语义归 [Semantic Model](../architecture/semantic-ir.md)与[交互合同](../architecture/interaction-contract.md)，映射与损失归 [protocol/lowering](../architecture/protocol-and-lowering.md)。本页拥有剩余依赖与退出条件，[next-goal](next-goal.md)拥有产品优先级，[current-focus](current-focus.md)只登记实际启动的行为切片。文档修订不启动代码行为或授予操作权限。
 
@@ -25,30 +25,18 @@ Provider 动作及引用域的输入归[交互合同](../architecture/interactio
 
 | 阶段 | 依赖 | 要交付的最小结果 |
 |---|---|---|
-| [P4 资源、引用与报告归属](#p4) | 纯核心组合与所选 Replay 依赖 owner | 双端引用、资源条件、cache 依赖与原报告归属 |
 | [P5 具名投影](#p5) | P4 与所选 Replay；已定稿损失规则 | 可检查的投影/损失结果及复用重验 |
 | [P6 接口与消费者验收](#p6) | P5；前序受影响回归 | 现有 Responses/Chat 的交付、保存、追加和回传闭环 |
 
-**默认按 P4 → P5 → P6 串行执行。** 资源证据与既有 Replay 回归可交错核对，但不并发重写共享 owner。每片只等待自己的实际依赖；来源冲突或新的 IR 缺口只阻塞相关子范围，不通过猜测或降低验收标准绕过。
+**默认按 P5 → P6 串行执行，一次只执行一个子片。** 子片满足退出条件后即停止扩展并交付，不自动串入下一子片。来源冲突或新的 IR 缺口只阻塞相关范围；必须扩大公共类型或迁移边界时先说明影响，不在实现中不断叠加任务。
 
-纯核心组合与 P6 的受保护现有接口分别验收；后续资源/投影不代替核心及 Replay 回归。验收逐条引用阶段与条目（如 P4.2），关联用例、执行证据和未闭合条件，不用单个“阶段完成”标签替代。仅有库级证据不能宣称接口、消费者或真实 Provider 通过。
+纯核心组合与 P6 的受保护现有接口分别验收；后续资源/投影不代替核心及 Replay 回归。验收逐条引用阶段与条目（如 P5.2），关联用例、执行证据和未闭合条件，不用单个“阶段完成”标签替代。仅有库级证据不能宣称接口、消费者或真实 Provider 通过。
 
 ## 各阶段退出条件
 
 <a id="p4"></a>
-### P4：资源、引用、Cache 与原报告归属
-
-**输入与 owner**：[资源与引用合同](../architecture/semantic-ir.md#5-内容产物与引用)、[resource](../../src/semantic/task/generation/resource.rs)、[text](../../src/semantic/task/generation/text.rs)、[cache](../../src/semantic/cache.rs)与[usage](../../src/semantic/task/generation/usage.rs)。范围为 Text/Image/File；其他 task 只做受影响回归。
-
-**逐项验收**：
-
-1. 区分资源 identity、locator 和输入/工具/推理/产物用途。外壳显式提供的 scope、权限、期限条件不足时拒绝表示或保留未满足要求；相同 URL/key 不证明相同资源、权限或 replay 资格。
-2. 引用同时绑定输出 claim 与源资源坐标，单位明确；源/输出两端的删除和替换分别重验，重排只按合同重算目标坐标。坐标转换须有明确单位与来源依据，不假称恢复已经丢失的原边界。
-3. cache hint、断点、prefix、TTL 意图和实际命中分开；删除不复活，配置/工具/Schema 与前缀依赖按声明重验，不声称缓存收益。
-4. 编辑后保留原 usage 的操作归属，不冒充新正文计量；缺项不补零、累计报告不重复相加、具名派生保留完整前提。
-5. 单资源、多个小资源总量、引用图与编码/解码预算分别验收；既有附件/依赖因资源变化受到影响时补组合回归。
-
-**追溯**：A18/A19/A21/A27；T15/T19/T28；E02 的资源/引用/报告部分。无下载、上传、转码、病毒扫描、文件服务或自动跨 Provider 复制。
+<a id="p4-citation-contract"></a>
+资源与引用输入归[唯一资源/引用合同](../architecture/semantic-ir.md#5-内容产物与引用)、[citation](../../src/semantic/task/generation/citation.rs)、[资源回归](../../tests/semantic/resource_table.rs)、[引用组合回归](../../tests/semantic/citation_bindings.rs)和用例清单的 resources/cache 领域。原生条件准入、缺失源正文恢复、更多坐标/媒体、文件服务与外部权限不由本地条件匹配或引用范围验证推出；现有标准引用与严格拒绝作为 P5 的输入，不重新实施资源层。显式断点退休不证明远端缓存收益，原 usage 保留不生成派生正文计量。
 
 <a id="p5"></a>
 ### P5：具名投影、组合损失与复用重验

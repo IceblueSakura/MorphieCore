@@ -137,12 +137,47 @@ pub(super) fn write_control_values(c: &GenerationControls, o: &mut Map<String, V
 #[derive(Default)]
 pub(super) struct Items {
     pub items: Vec<(ItemId, Item)>,
+    pub resources: ResourceTable,
     pub message_owners: Vec<(ItemId, ItemId)>,
     pub fidelity: FidelityRecords,
     next_item: u64,
     next_part: u64,
+    next_resource: u64,
 }
 impl Items {
+    pub fn resource(
+        &mut self,
+        value: Resource,
+        purpose: ResourcePurpose,
+    ) -> Result<ResourceUse, CodecError> {
+        let description = value.description;
+        let id = self.declare(ResourceDeclaration {
+            body: ResourceBody::Media(value.location),
+            conditions: Default::default(),
+        })?;
+        Ok(ResourceUse {
+            id,
+            purpose,
+            description,
+        })
+    }
+    pub fn from_resources(resources: ResourceTable) -> Self {
+        let next_resource = resources.iter().map(|(id, _)| id.get()).max().unwrap_or(0);
+        Self {
+            resources,
+            next_resource,
+            ..Default::default()
+        }
+    }
+    pub fn declare(&mut self, value: ResourceDeclaration) -> Result<ResourceId, CodecError> {
+        if self.next_resource as usize >= MAX_ITEMS {
+            return Err(CodecError::Limit);
+        }
+        self.next_resource += 1;
+        let id = ResourceId::new(self.next_resource);
+        self.resources = std::mem::take(&mut self.resources).insert(id, value)?;
+        Ok(id)
+    }
     pub fn id(&mut self) -> Result<ItemId, CodecError> {
         if self.next_item as usize >= MAX_ITEMS {
             return Err(CodecError::Limit);
@@ -290,6 +325,7 @@ pub(super) fn tool_call(
     })
 }
 pub(super) fn check_response_carriers(response: &GenerationResponse) -> Result<(), CodecError> {
+    check_resource_carriers(response.resources())?;
     if !response.replay_groups().is_empty() {
         return Err(CodecError::Unsupported("replay group carrier".into()));
     }
@@ -313,6 +349,17 @@ pub(super) fn check_response_carriers(response: &GenerationResponse) -> Result<(
     Ok(())
 }
 
+pub(super) fn check_resource_carriers(resources: &ResourceTable) -> Result<(), CodecError> {
+    if resources
+        .iter()
+        .any(|(_, value)| value.conditions != ResourceConditions::default())
+    {
+        return Err(CodecError::Unsupported(
+            "resource conditions carrier".into(),
+        ));
+    }
+    Ok(())
+}
 pub(super) fn check_item_carriers(items: &[(ItemId, Item)]) -> Result<(), CodecError> {
     if items
         .iter()

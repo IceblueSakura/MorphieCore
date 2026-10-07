@@ -840,12 +840,26 @@ fn static_file_path_is_not_an_annotation_added_event() {
         .unwrap()
         .with_contract(contract());
     let mut rejected = false;
+    let mut sources = ResourceTable::default();
     for mut event in events {
+        if let StreamEvent::ResourceDeclared { id, resource } = &mut event {
+            resource.body =
+                ResourceBody::Media(ResourceLocation::OpaqueReference(text("synthetic-file")));
+            sources = sources.insert(*id, resource.clone()).unwrap();
+        }
         if let StreamEvent::AnnotationAdded { annotation, .. } = &mut event {
-            *annotation = Annotation::FilePath {
-                file_id: "synthetic-file".into(),
-                index: 0,
-            };
+            *annotation = Annotation::new(
+                Citation {
+                    kind: CitationKind::ArtifactReference,
+                    claim: ClaimAnchor::Unreported,
+                    source: annotation.value().source,
+                    coordinates: SourceCoordinates::Unreported,
+                    label: None,
+                    reported_ordinal: Some(0),
+                },
+                &sources,
+            )
+            .unwrap();
         }
         if encoder.encode(&event, accepted.fidelity()).is_err() {
             rejected = true;
@@ -1044,12 +1058,30 @@ fn absent_error_code_and_unspecified_incomplete_reason_are_not_success() {
 }
 #[test]
 fn metadata_budget_and_ranges_fail_without_expanding_or_reusing_old_values() {
-    let ann = Annotation::UrlCitation {
-        start_index: 0,
-        end_index: 2,
-        title: "source".into(),
-        url: "https://example.test".into(),
-    };
+    let sources = ResourceTable::new(vec![(
+        ResourceId::new(1),
+        ResourceDeclaration {
+            body: ResourceBody::Media(ResourceLocation::Url(text("https://example.test"))),
+            conditions: Default::default(),
+        },
+    )])
+    .unwrap();
+    let ann = Annotation::new(
+        Citation {
+            kind: CitationKind::Citation,
+            claim: ClaimAnchor::Range(TextRange {
+                unit: TextUnit::UnicodeScalars,
+                start: 0,
+                end: 2,
+            }),
+            source: ResourceId::new(1),
+            coordinates: SourceCoordinates::Unreported,
+            label: Some(text("source")),
+            reported_ordinal: None,
+        },
+        &sources,
+    )
+    .unwrap();
     assert!(TextContent::new(text("x"), vec![ann], Presence::Absent).is_err());
     let mut value = wire::response(2);
     value["output"][0]["content"][0]["logprobs"][0]["bytes"] = json!([256]);

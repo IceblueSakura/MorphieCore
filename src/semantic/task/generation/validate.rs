@@ -36,7 +36,11 @@ enum CallKind {
     Provider,
 }
 type AliasKey<'a> = (Option<&'a NativeAliasDomain>, &'a str);
-pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, GenerationError> {
+pub fn items(
+    items: &[(ItemId, Item)],
+    response: bool,
+    resources: &ResourceTable,
+) -> Result<usize, GenerationError> {
     if items.is_empty() {
         return Err(GenerationError::EmptyInput);
     }
@@ -50,6 +54,7 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
     let mut results = BTreeSet::new();
     let mut bytes = super::configuration::validate_bindings(items)?;
     let mut file_decoded_bytes = 0usize;
+    let mut citations = 0usize;
     for (position, (id, item)) in items.iter().enumerate() {
         if !ids.insert(*id) {
             return Err(GenerationError::DuplicateItemId);
@@ -82,14 +87,9 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
                     if let Some(value) = &p.replay {
                         if m.role != MessageRole::Assistant
                             || value.format() != ReplayFormat::GoogleGenerateContentPart
-                            || !matches!(
-                                &p.content,
-                                ContentPart::Text(_)
-                                    | ContentPart::Resource(Resource {
-                                        description: ResourceDescription::Image { .. },
-                                        ..
-                                    })
-                            )
+                            || !(matches!(&p.content, ContentPart::Text(_))
+                                || matches!(&p.content, ContentPart::Resource(value)
+                                    if value.media(resources)?.kind() == ResourceKind::Image))
                         {
                             return Err(GenerationError::InvalidReplay);
                         }
@@ -99,6 +99,13 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
                     match &p.content {
                         ContentPart::Text(t) => {
                             t.validate()?;
+                            citations += t.annotations().len();
+                            if citations > MAX_ITEMS {
+                                return Err(GenerationError::Limit);
+                            }
+                            for a in t.annotations() {
+                                a.check_source(resources)?;
+                            }
                             charge(&mut bytes, t.bytes())?;
                         }
                         ContentPart::Refusal(t) => {
@@ -122,6 +129,14 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
                             charge(&mut bytes, reference.bytes())?;
                         }
                         ContentPart::Resource(resource) => {
+                            let expected = match m.role {
+                                MessageRole::User => ResourcePurpose::Input,
+                                MessageRole::Assistant => ResourcePurpose::Output,
+                            };
+                            if resource.purpose != expected {
+                                return Err(GenerationError::InvalidResource);
+                            }
+                            let resource = resource.media(resources)?;
                             // Assistant images are observations, not public carrier admission.
                             if m.role == MessageRole::Assistant
                                 && resource.kind() != ResourceKind::Image
@@ -233,7 +248,13 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
                 }
             }
             Item::ProviderTool(observed) => {
-                provider_observation(observed, &mut bytes, &mut parts)?;
+                provider_observation(
+                    observed,
+                    &mut bytes,
+                    &mut parts,
+                    resources,
+                    &mut file_decoded_bytes,
+                )?;
                 match &observed.operation {
                     ProviderOperation::Reported {
                         alias: Some(alias), ..
@@ -284,12 +305,17 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
                             match value {
                                 ToolResultPart::Text(text) => add(&mut bytes, text.as_str())?,
                                 ToolResultPart::Resource(resource) => {
+                                    if resource.purpose != ResourcePurpose::ToolResult {
+                                        return Err(GenerationError::InvalidResource);
+                                    }
+                                    let resource = resource.media(resources)?;
                                     // Selected tool media is inert URL/inline image content.
                                     // Opaque references need an issuer/lifecycle contract first.
                                     if resource.kind() != ResourceKind::Image
                                         || matches!(
                                             resource.location,
                                             ResourceLocation::OpaqueReference(_)
+                                                | ResourceLocation::NamespacedReference { .. }
                                         )
                                     {
                                         return Err(GenerationError::InvalidResource);
@@ -321,24 +347,29 @@ pub(super) fn provider_observation(
     observed: &ProviderToolObservation,
     bytes: &mut usize,
     parts: &mut BTreeSet<PartId>,
+    resources: &ResourceTable,
+    file_decoded_bytes: &mut usize,
 ) -> Result<(), GenerationError> {
-    provider_observation_value(observed, bytes, parts, false)
+    provider_observation_value(observed, bytes, parts, false, resources, file_decoded_bytes)
 }
 pub(super) fn provider_result_header(
     observed: &ProviderToolObservation,
     bytes: &mut usize,
     parts: &mut BTreeSet<PartId>,
+    resources: &ResourceTable,
 ) -> Result<(), GenerationError> {
     if observed.output.is_some() {
         return Err(GenerationError::InvalidProviderObservation);
     }
-    provider_observation_value(observed, bytes, parts, true)
+    provider_observation_value(observed, bytes, parts, true, resources, &mut 0)
 }
 fn provider_observation_value(
     observed: &ProviderToolObservation,
     bytes: &mut usize,
     parts: &mut BTreeSet<PartId>,
     building_result: bool,
+    resources: &ResourceTable,
+    file_decoded_bytes: &mut usize,
 ) -> Result<(), GenerationError> {
     if observed.source.source.as_str().is_empty() || observed.source.source.as_str().len() > 256 {
         return Err(GenerationError::InvalidProviderObservation);
@@ -441,7 +472,21 @@ fn provider_observation_value(
                 part_id(parts, *id)?;
                 match value {
                     ToolResultPart::Text(value) => add(bytes, value.as_str())?,
-                    ToolResultPart::Resource(resource) => charge(bytes, resource.validate()?)?,
+                    ToolResultPart::Resource(resource) => {
+                        if resource.purpose != ResourcePurpose::ToolResult {
+                            return Err(GenerationError::InvalidResource);
+                        }
+                        let resource = resource.media(resources)?;
+                        charge(bytes, resource.validate()?)?;
+                        if resource.kind() == ResourceKind::File {
+                            *file_decoded_bytes = file_decoded_bytes
+                                .checked_add(resource.inline_decoded_bytes()?.unwrap_or(0))
+                                .ok_or(GenerationError::Limit)?;
+                            if *file_decoded_bytes > MAX_TOTAL_FILE_DECODED_BYTES {
+                                return Err(GenerationError::Limit);
+                            }
+                        }
+                    }
                 }
             }
         }

@@ -10,7 +10,7 @@ This bounded library profile extends the shared Chat codec, not a Provider diale
 
 ## URL citations
 
-Chat's nested `url_citation` maps to the existing flat `Annotation::UrlCitation` on one text part. The fixed profile retains its existing Unicode-scalar range validation; it does not infer byte/UTF-16 or source-document coordinates. Unknown annotation kinds, extra fields, malformed ranges and active annotations without a text owner fail. Absent/null/empty annotation carriers mean no citations under this profile.
+Chat's nested `url_citation` maps to an owner-local citation on one text part, referring to a declaration in the unique resource table; the native DTO stays in the codec. The fixed profile retains its existing Unicode-scalar range validation; it does not infer byte/UTF-16 or source-document coordinates. Unknown annotation kinds, extra fields, malformed ranges and active annotations without a text owner fail. Absent/null/empty annotation carriers mean no citations under this profile.
 
 Responses and Chat static output can project this shared URL citation. Replacing text invalidates its dependent citations and probabilities; source JSON cannot restore them. Other annotation kinds stay unrepresentable in Chat.
 

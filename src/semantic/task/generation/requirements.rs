@@ -82,7 +82,11 @@ impl GenerationRequirements {
                             ContentPart::Resource(resource) => {
                                 x.resource_count += 1;
                                 if m.role == super::MessageRole::User {
-                                    match resource.kind() {
+                                    match resource
+                                        .media(r.resources())
+                                        .expect("validated resource")
+                                        .kind()
+                                    {
                                         ResourceKind::Image => x.image_inputs += 1,
                                         ResourceKind::Audio => x.audio_inputs += 1,
                                         ResourceKind::File => x.file_inputs += 1,
@@ -105,7 +109,7 @@ impl GenerationRequirements {
                         super::ToolOutput::Structured(_) => x.structured_tool_results = true,
                         super::ToolOutput::Parts(parts) => {
                             for (_, part) in parts {
-                                if matches!(part, super::ToolResultPart::Resource(resource) if resource.kind() == ResourceKind::Image)
+                                if matches!(part, super::ToolResultPart::Resource(resource) if resource.media(r.resources()).is_ok_and(|r| r.kind() == ResourceKind::Image))
                                 {
                                     x.tool_result_images += 1;
                                     x.resource_count += 1;

@@ -138,7 +138,7 @@ fn item_wire(
     fidelity: &FidelityRecords,
 ) -> Result<Value, CodecError> {
     let item = state.item(id)?.snapshot()?;
-    super::responses::encode_items(&[(id, item)], fidelity, true)
+    super::responses::encode_items(&[(id, item)], fidelity, true, state.resources())
         .into_iter()
         .next()
         .ok_or(CodecError::Invalid("item snapshot"))

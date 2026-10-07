@@ -250,7 +250,9 @@ fn dependency(
                 if let Some(ToolOutput::Parts(parts)) = &observed.output {
                     for (_, part) in parts {
                         if let ToolResultPart::Resource(resource) = part {
-                            resource_dependency(&mut writer.hash, resource);
+                            writer
+                                .hash
+                                .update(resource.fingerprint(request.resources())?);
                         }
                     }
                 }
@@ -266,9 +268,14 @@ fn dependency(
                         writer.hash.update(value.fingerprint());
                     }
                     match &part.content {
-                        ContentPart::Resource(resource) => {
-                            resource_dependency(&mut writer.hash, resource)
+                        ContentPart::Text(t) => {
+                            for a in t.annotations() {
+                                writer.hash.update(a.fingerprint());
+                            }
                         }
+                        ContentPart::Resource(resource) => writer
+                            .hash
+                            .update(resource.fingerprint(request.resources())?),
                         ContentPart::Audio(audio) => writer.hash.update(audio.fingerprint()),
                         ContentPart::AudioReference(reference) => {
                             writer.hash.update(reference.fingerprint())
@@ -286,7 +293,9 @@ fn dependency(
                 if let ToolOutput::Parts(parts) = &result.output {
                     for (_, part) in parts {
                         if let ToolResultPart::Resource(resource) = part {
-                            resource_dependency(&mut writer.hash, resource);
+                            writer
+                                .hash
+                                .update(resource.fingerprint(request.resources())?);
                         }
                     }
                 }
@@ -323,15 +332,25 @@ pub(super) fn part_dependency(
     if let Some(value) = &part.replay {
         writer.hash.update(value.fingerprint());
     }
+    if let ContentPart::Text(t) = &part.content {
+        for a in t.annotations() {
+            writer.hash.update(a.fingerprint());
+        }
+    }
     if let ContentPart::Resource(resource) = &part.content {
-        resource_dependency(&mut writer.hash, resource);
+        writer
+            .hash
+            .update(resource.fingerprint(request.resources())?);
     }
     Ok(writer.hash.finalize().into())
 }
-fn resource_dependency(hash: &mut Sha256, resource: &Resource) {
-    let values: &[&str] = match &resource.location {
+pub(super) fn location_dependency(hash: &mut Sha256, location: &ResourceLocation) {
+    let values: &[&str] = match location {
         ResourceLocation::Url(value) | ResourceLocation::OpaqueReference(value) => {
             &[value.as_str()]
+        }
+        ResourceLocation::NamespacedReference { namespace, id } => {
+            &[namespace.as_str(), id.as_str()]
         }
         ResourceLocation::Inline {
             media_type,
@@ -341,12 +360,5 @@ fn resource_dependency(hash: &mut Sha256, resource: &Resource) {
     for value in values {
         hash.update((value.len() as u64).to_le_bytes());
         hash.update(value.as_bytes());
-    }
-    // Debug retains filename presence, but its private value must bind separately.
-    if let ResourceDescription::File(file) = &resource.description
-        && let Some(filename) = &file.filename
-    {
-        hash.update((filename.as_str().len() as u64).to_le_bytes());
-        hash.update(filename.as_str().as_bytes());
     }
 }

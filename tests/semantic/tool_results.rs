@@ -1,5 +1,6 @@
 //! Tool result kind, artifact lifecycle and wire representability are independent.
 use crate::events_support::text;
+use crate::resources_support as resources;
 use morphiecore::{
     lowering::generation::{
         GenerationRepresentationContract as Contract, RepresentationError, lower_request,
@@ -20,18 +21,51 @@ fn call() -> (ItemId, Item) {
         }),
     )
 }
+struct Payload {
+    value: ToolOutput,
+    resources: Vec<(u64, Resource)>,
+}
+impl From<ToolOutput> for Payload {
+    fn from(value: ToolOutput) -> Self {
+        Self {
+            value,
+            resources: vec![],
+        }
+    }
+}
+impl From<(ToolOutput, Vec<(u64, Resource)>)> for Payload {
+    fn from((value, resources): (ToolOutput, Vec<(u64, Resource)>)) -> Self {
+        Self { value, resources }
+    }
+}
 fn request(
-    output: ToolOutput,
+    output: impl Into<Payload>,
     status: Option<ItemLifecycle>,
 ) -> Result<GenerationRequest, GenerationError> {
     request_with_execution(output, status, None)
 }
 fn request_with_execution(
-    output: ToolOutput,
+    output: impl Into<Payload>,
     status: Option<ItemLifecycle>,
     execution: Option<ToolExecution>,
 ) -> Result<GenerationRequest, GenerationError> {
-    GenerationRequest::new(
+    let output = output.into();
+    let table = ResourceTable::new(
+        output
+            .resources
+            .into_iter()
+            .map(|(id, resource)| {
+                (
+                    ResourceId::new(id),
+                    ResourceDeclaration {
+                        body: ResourceBody::Media(resource.location),
+                        conditions: Default::default(),
+                    },
+                )
+            })
+            .collect(),
+    )?;
+    GenerationRequest::from_resources(
         vec![
             call(),
             (
@@ -39,13 +73,14 @@ fn request_with_execution(
                 Item::ToolResult(ToolResult {
                     execution,
                     call_id: text("c"),
-                    output,
+                    output: output.value,
                     status,
                     context: CallContext::default(),
                 }),
             ),
         ],
-        GenerationControls::default(),
+        GenerationSettings::default(),
+        table,
     )
 }
 fn image(url: &str) -> Resource {
@@ -54,11 +89,18 @@ fn image(url: &str) -> Resource {
         description: ResourceDescription::Image { detail: None },
     }
 }
-fn media(url: &str) -> ToolOutput {
-    ToolOutput::Parts(vec![
-        (PartId::new(10), ToolResultPart::Text(text("caption"))),
-        (PartId::new(11), ToolResultPart::Resource(image(url))),
-    ])
+fn media(url: &str) -> Payload {
+    (
+        ToolOutput::Parts(vec![
+            (PartId::new(10), ToolResultPart::Text(text("caption"))),
+            (
+                PartId::new(11),
+                ToolResultPart::Resource(resources::tool(1)),
+            ),
+        ]),
+        vec![(1, image(url))],
+    )
+        .into()
 }
 #[test]
 fn structured_value_preserves_integer_precision_order_and_bounds() {
@@ -160,7 +202,13 @@ fn ordered_media_has_unique_parts_and_distinct_requirements() {
     opaque.location = ResourceLocation::OpaqueReference(text("issuer-file"));
     assert!(
         request(
-            ToolOutput::Parts(vec![(PartId::new(10), ToolResultPart::Resource(opaque))]),
+            (
+                ToolOutput::Parts(vec![(
+                    PartId::new(10),
+                    ToolResultPart::Resource(resources::tool(1))
+                )]),
+                vec![(1, opaque)]
+            ),
             None
         )
         .is_err()
@@ -187,11 +235,11 @@ fn responses_tool_images_have_independent_decode_and_encode_oracles() {
     };
     assert_eq!(parts.len(), 4);
     assert!(
-        matches!(&parts[1].1, ToolResultPart::Resource(r) if r.kind() == ResourceKind::Image && r.image_detail() == Some(ImageDetail::Low))
+        matches!(&parts[1].1, ToolResultPart::Resource(r) if r.media(decoded.semantic.resources()).is_ok_and(|r| r.kind() == ResourceKind::Image && r.image_detail() == Some(ImageDetail::Low)))
     );
     assert!(matches!(&parts[2].1, ToolResultPart::Text(t) if t.as_str().is_empty()));
     assert!(
-        matches!(&parts[3].1, ToolResultPart::Resource(r) if r.image_detail().is_none() && matches!(&r.location, ResourceLocation::Inline { data_base64, .. } if data_base64.as_str() == "AQID"))
+        matches!(&parts[3].1, ToolResultPart::Resource(r) if r.media(decoded.semantic.resources()).is_ok_and(|r| r.image_detail().is_none() && matches!(&r.location, ResourceLocation::Inline { data_base64, .. } if data_base64.as_str() == "AQID")))
     );
     let mut url = image("https://example.invalid/a.png");
     url.description = ResourceDescription::Image {
@@ -205,18 +253,30 @@ fn responses_tool_images_have_independent_decode_and_encode_oracles() {
         description: ResourceDescription::Image { detail: None },
     };
     let independent = request(
-        ToolOutput::Parts(vec![
-            (PartId::new(30), ToolResultPart::Text(text("caption"))),
-            (PartId::new(31), ToolResultPart::Resource(url)),
-            (
-                PartId::new(32),
-                ToolResultPart::Text(
-                    morphiecore::semantic::value::Text::allowing_empty("", "synthetic", 10)
-                        .unwrap(),
+        (
+            ToolOutput::Parts(vec![
+                (PartId::new(30), ToolResultPart::Text(text("caption"))),
+                (
+                    PartId::new(31),
+                    ToolResultPart::Resource(ResourceUse {
+                        description: url.description.clone(),
+                        ..resources::tool(1)
+                    }),
                 ),
-            ),
-            (PartId::new(33), ToolResultPart::Resource(inline)),
-        ]),
+                (
+                    PartId::new(32),
+                    ToolResultPart::Text(
+                        morphiecore::semantic::value::Text::allowing_empty("", "synthetic", 10)
+                            .unwrap(),
+                    ),
+                ),
+                (
+                    PartId::new(33),
+                    ToolResultPart::Resource(resources::tool(2)),
+                ),
+            ]),
+            vec![(1, url), (2, inline)],
+        ),
         None,
     )
     .unwrap();
@@ -282,7 +342,7 @@ fn custom_image_results_share_the_carrier_without_becoming_function_results() {
     assert!(
         matches!(&decoded.semantic.items()[1].1, Item::CustomResult(r) if matches!(&r.output, ToolOutput::Parts(parts) if matches!(&parts[0].1, ToolResultPart::Resource(_))))
     );
-    let independent = GenerationRequest::new(
+    let independent = GenerationRequest::from_resources(
         vec![
             (
                 ItemId::new(20),
@@ -300,14 +360,15 @@ fn custom_image_results_share_the_carrier_without_becoming_function_results() {
                     call_id: text("c"),
                     output: ToolOutput::Parts(vec![(
                         PartId::new(40),
-                        ToolResultPart::Resource(image("https://example.invalid/a.png")),
+                        ToolResultPart::Resource(resources::tool(1)),
                     )]),
                     status: None,
                     context: CallContext::default(),
                 }),
             ),
         ],
-        GenerationControls::default(),
+        GenerationSettings::default(),
+        resources::table([(1, image("https://example.invalid/a.png"))]),
     )
     .unwrap();
     let fidelity = FidelityRecords::default();
@@ -342,12 +403,20 @@ fn tool_and_user_images_share_target_limits_and_edits_remove_media() {
                 parts: vec![Part {
                     replay: None,
                     id: PartId::new(90),
-                    content: ContentPart::Resource(image("https://example.invalid/user.png")),
+                    content: ContentPart::Resource(resources::input(2)),
                 }],
             }),
         ),
     );
-    let history = GenerationRequest::new(items, GenerationControls::default()).unwrap();
+    let history = GenerationRequest::from_resources(
+        items,
+        GenerationSettings::default(),
+        resources::table([
+            (1, image("https://example.invalid/a.png")),
+            (2, image("https://example.invalid/user.png")),
+        ]),
+    )
+    .unwrap();
     let fidelity = FidelityRecords::default();
     let mut contract = Contract::full();
     contract.images.max_images = 1;
@@ -362,18 +431,29 @@ fn tool_and_user_images_share_target_limits_and_edits_remove_media() {
         Some(RepresentationError::ImageInput)
     );
     let inline = request(
-        ToolOutput::Parts(vec![(
-            PartId::new(10),
-            ToolResultPart::Resource(Resource {
-                description: ResourceDescription::Image {
-                    detail: Some(ImageDetail::Low),
+        (
+            ToolOutput::Parts(vec![(
+                PartId::new(10),
+                ToolResultPart::Resource(ResourceUse {
+                    description: ResourceDescription::Image {
+                        detail: Some(ImageDetail::Low),
+                    },
+                    ..resources::tool(1)
+                }),
+            )]),
+            vec![(
+                1,
+                Resource {
+                    description: ResourceDescription::Image {
+                        detail: Some(ImageDetail::Low),
+                    },
+                    location: ResourceLocation::Inline {
+                        media_type: text("image/png"),
+                        data_base64: text("AQID"),
+                    },
                 },
-                location: ResourceLocation::Inline {
-                    media_type: text("image/png"),
-                    data_base64: text("AQID"),
-                },
-            }),
-        )]),
+            )],
+        ),
         None,
     )
     .unwrap();
@@ -488,12 +568,25 @@ fn replacing_inserting_reordering_and_deleting_tool_parts_never_revives_old_medi
         panic!("parts")
     };
     let old_owner = parts[1].0;
-    parts[1].1 = ToolResultPart::Resource(image("https://example.invalid/new.png"));
+    let ToolResultPart::Resource(reference) = &mut parts[1].1 else {
+        panic!()
+    };
+    reference.description = image("https://example.invalid/new.png").description;
+    let table = resources::replace(
+        source.semantic.resources(),
+        reference.id,
+        image("https://example.invalid/new.png"),
+    );
     parts[0].1 = ToolResultPart::Text(text("new caption"));
     parts.swap(0, 1);
     parts.insert(1, (PartId::new(90), ToolResultPart::Text(text("inserted"))));
     assert_eq!(parts[0].0, old_owner);
-    let edited = source.semantic.with_items(items).unwrap();
+    let edited = source
+        .semantic
+        .with_resources(table)
+        .unwrap()
+        .with_items(items)
+        .unwrap();
     let target = lower_request(
         &edited,
         &source.fidelity,

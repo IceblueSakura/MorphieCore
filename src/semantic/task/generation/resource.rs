@@ -67,6 +67,20 @@ pub enum ResourceLocation {
     Url(Text),
     Inline { media_type: Text, data_base64: Text },
     OpaqueReference(Text),
+    NamespacedReference { namespace: Text, id: Text },
+}
+impl ResourceLocation {
+    /// Generic source validation checks MIME/encoding, not how a particular use interprets it.
+    pub(super) fn source_view(&self) -> ResourceView<'_> {
+        static DESCRIPTION: ResourceDescription = ResourceDescription::File(FileDescription {
+            filename: None,
+            detail: None,
+        });
+        ResourceView {
+            location: self,
+            description: &DESCRIPTION,
+        }
+    }
 }
 // URLs, query strings and inline bodies can contain private data.
 impl std::fmt::Debug for ResourceLocation {
@@ -75,6 +89,7 @@ impl std::fmt::Debug for ResourceLocation {
             Self::Url(_) => "Url([redacted])",
             Self::Inline { .. } => "Inline([redacted])",
             Self::OpaqueReference(_) => "OpaqueReference([redacted])",
+            Self::NamespacedReference { .. } => "NamespacedReference([redacted])",
         })
     }
 }
@@ -84,6 +99,38 @@ pub struct Resource {
     pub description: ResourceDescription,
 }
 impl Resource {
+    pub fn view(&self) -> ResourceView<'_> {
+        ResourceView {
+            location: &self.location,
+            description: &self.description,
+        }
+    }
+    pub fn kind(&self) -> ResourceKind {
+        self.view().kind()
+    }
+    pub fn image_detail(&self) -> Option<ImageDetail> {
+        self.view().image_detail()
+    }
+    pub fn inline_decoded_bytes(&self) -> Result<Option<usize>, GenerationError> {
+        self.view().inline_decoded_bytes()
+    }
+    pub fn validate(&self) -> Result<usize, GenerationError> {
+        self.view().validate()
+    }
+}
+/// Borrow the unique source and the current use's options without cloning a payload.
+#[derive(Clone, Copy, Debug)]
+pub struct ResourceView<'a> {
+    pub location: &'a ResourceLocation,
+    pub description: &'a ResourceDescription,
+}
+impl ResourceView<'_> {
+    pub fn to_owned(self) -> Resource {
+        Resource {
+            location: self.location.clone(),
+            description: self.description.clone(),
+        }
+    }
     pub fn kind(&self) -> ResourceKind {
         match self.description {
             ResourceDescription::Image { .. } => ResourceKind::Image,
@@ -93,7 +140,7 @@ impl Resource {
     }
     pub fn image_detail(&self) -> Option<ImageDetail> {
         match self.description {
-            ResourceDescription::Image { detail } => detail,
+            ResourceDescription::Image { detail } => *detail,
             _ => None,
         }
     }
@@ -192,6 +239,15 @@ impl Resource {
                 }
                 // Include the data URL header in the aggregate semantic budget.
                 media_type.as_str().len() + data.len() + "data:;base64,".len()
+            }
+            ResourceLocation::NamespacedReference { namespace, id } => {
+                if [namespace, id]
+                    .iter()
+                    .any(|v| v.as_str().is_empty() || v.as_str().len() > 256)
+                {
+                    return Err(GenerationError::InvalidResource);
+                }
+                namespace.as_str().len() + id.as_str().len()
             }
             ResourceLocation::OpaqueReference(id) => {
                 if id.as_str().is_empty() || id.as_str().len() > 256 {

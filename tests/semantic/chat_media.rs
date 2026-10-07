@@ -485,14 +485,23 @@ fn chat_url_citations_are_standard_typed_and_cross_profile() {
     let ContentPart::Text(text) = &message.parts[0].content else {
         panic!()
     };
+    assert_eq!(text.annotations().len(), 1);
+    let citation = text.annotations()[0].value();
     assert_eq!(
-        text.annotations(),
-        &[Annotation::UrlCitation {
-            start_index: 0,
-            end_index: 5,
-            title: "Synthetic".into(),
-            url: "https://example.invalid/source".into()
-        }]
+        citation.claim,
+        ClaimAnchor::Range(TextRange {
+            unit: TextUnit::UnicodeScalars,
+            start: 0,
+            end: 5
+        })
+    );
+    assert_eq!(citation.kind, CitationKind::Citation);
+    assert_eq!(citation.coordinates, SourceCoordinates::Unreported);
+    assert_eq!(citation.label.as_ref().unwrap().as_str(), "Synthetic");
+    assert_eq!(citation.reported_ordinal, None);
+    assert!(
+        matches!(&decoded.semantic.resources().get(citation.source).unwrap().body,
+        ResourceBody::Media(ResourceLocation::Url(url)) if url.as_str() == "https://example.invalid/source")
     );
     let encoded = standard(Profile::Chat)
         .encode_response(&decoded, &Contract::full())

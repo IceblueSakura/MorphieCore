@@ -115,6 +115,16 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
 fn text(value: &str) -> Text {
     Text::new(value, "synthetic", 256).unwrap()
 }
+fn resource_table(url: &str) -> ResourceTable {
+    ResourceTable::new(vec![(
+        ResourceId::new(1),
+        ResourceDeclaration {
+            body: ResourceBody::Media(ResourceLocation::Url(text(url))),
+            conditions: Default::default(),
+        },
+    )])
+    .unwrap()
+}
 #[test]
 fn forged_handles_cannot_drop_owner_local_replay_or_assistant_media() {
     let replay = ReplayValue::final_value(
@@ -134,8 +144,9 @@ fn forged_handles_cannot_drop_owner_local_replay_or_assistant_media() {
     for (content, attachment) in [
         (ContentPart::Text(text("text").into()), Some(replay)),
         (
-            ContentPart::Resource(Resource {
-                location: ResourceLocation::Url(text("https://example.test/image.png")),
+            ContentPart::Resource(ResourceUse {
+                id: ResourceId::new(1),
+                purpose: ResourcePurpose::Output,
                 description: ResourceDescription::Image { detail: None },
             }),
             None,
@@ -161,11 +172,18 @@ fn forged_handles_cannot_drop_owner_local_replay_or_assistant_media() {
         instruction_fidelity: Default::default(),
     };
     for item in items {
-        let source =
-            GenerationRequest::new(vec![(ItemId::new(1), item)], GenerationControls::default())
-                .unwrap();
-        let response =
-            GenerationResponse::new(source.items().to_vec(), Outcome::Completed).unwrap();
+        let source = GenerationRequest::from_resources(
+            vec![(ItemId::new(1), item)],
+            GenerationSettings::default(),
+            resource_table("https://example.test/image.png"),
+        )
+        .unwrap();
+        let response = GenerationResponse::from_resources(
+            source.items().to_vec(),
+            Outcome::Completed,
+            source.resources().clone(),
+        )
+        .unwrap();
         for profile in [Profile::Chat, Profile::Responses] {
             let forged = RequestRepresentation {
                 semantic: &source,
@@ -215,8 +233,9 @@ fn request_codecs_enforce_result_carriers_before_rendering() {
         (
             ToolOutput::Parts(vec![(
                 PartId::new(1),
-                ToolResultPart::Resource(Resource {
-                    location: ResourceLocation::Url(text("https://example.invalid/image.png")),
+                ToolResultPart::Resource(ResourceUse {
+                    id: ResourceId::new(1),
+                    purpose: ResourcePurpose::ToolResult,
                     description: ResourceDescription::Image { detail: None },
                 }),
             )]),
@@ -224,7 +243,7 @@ fn request_codecs_enforce_result_carriers_before_rendering() {
         ),
     ];
     for (output, execution) in outputs {
-        let semantic = GenerationRequest::new(
+        let semantic = GenerationRequest::from_resources(
             vec![
                 (
                     ItemId::new(1),
@@ -247,7 +266,8 @@ fn request_codecs_enforce_result_carriers_before_rendering() {
                     }),
                 ),
             ],
-            GenerationControls::default(),
+            GenerationSettings::default(),
+            resource_table("https://example.invalid/image.png"),
         )
         .unwrap();
         let media = matches!(&semantic.items()[1].1, Item::ToolResult(r) if matches!(r.output, ToolOutput::Parts(_)));

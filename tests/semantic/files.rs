@@ -1,4 +1,5 @@
 //! Independent inline-file wire oracles; no file parser, credentials or network.
+use crate::resources_support as resources;
 use morphiecore::{
     adapter::{Adapter, Dialect},
     lowering::generation::GenerationRepresentationContract as Contract,
@@ -36,16 +37,17 @@ fn inline_file_is_admitted_and_preserves_mixed_part_order() {
     let ContentPart::Resource(resource) = &message.parts[1].content else {
         panic!("file")
     };
+    let resource = resource.media(request.task.semantic.resources()).unwrap();
     assert_eq!(resource.kind(), ResourceKind::File);
     assert_eq!(
-        resource.description,
+        *resource.description,
         ResourceDescription::File(FileDescription {
             filename: Some(text("synthetic.pdf")),
             detail: Some(FileDetail::Low),
         })
     );
     assert_eq!(
-        resource.location,
+        *resource.location,
         ResourceLocation::Inline {
             media_type: text("application/pdf"),
             data_base64: text("AQID"),
@@ -90,7 +92,7 @@ fn file_url_has_independent_wire_and_typed_oracles() {
         panic!()
     };
     assert!(matches!(&message.parts[0].content, ContentPart::Resource(r)
-        if r.location == ResourceLocation::Url(text(raw)) && r.description == ResourceDescription::File(FileDescription { filename:Some(text("")), detail:Some(FileDetail::High) })));
+        if r.media(request.task.semantic.resources()).is_ok_and(|r| *r.location == ResourceLocation::Url(text(raw)) && *r.description == ResourceDescription::File(FileDescription { filename:Some(text("")), detail:Some(FileDetail::High) }))));
     assert!(!format!("{request:?}").contains("synthetic-private"));
     let mut resource = typed_file(None);
     resource.location = ResourceLocation::Url(text(raw));
@@ -180,26 +182,46 @@ fn typed_file(name: Option<&str>) -> Resource {
         }),
     }
 }
-fn typed_request(resources: Vec<Resource>) -> Result<GenerationRequest, GenerationError> {
-    GenerationRequest::new(
+fn typed_request(values: Vec<Resource>) -> Result<GenerationRequest, GenerationError> {
+    let parts = values
+        .iter()
+        .enumerate()
+        .map(|(i, value)| Part {
+            replay: None,
+            id: PartId::new(i as u64 + 1),
+            content: ContentPart::Resource(ResourceUse {
+                description: value.description.clone(),
+                ..resources::input(i as u64 + 1)
+            }),
+        })
+        .collect();
+    let table = ResourceTable::new(
+        values
+            .into_iter()
+            .enumerate()
+            .map(|(i, value)| {
+                (
+                    ResourceId::new(i as u64 + 1),
+                    ResourceDeclaration {
+                        body: ResourceBody::Media(value.location),
+                        conditions: Default::default(),
+                    },
+                )
+            })
+            .collect(),
+    )?;
+    GenerationRequest::from_resources(
         vec![(
             ItemId::new(1),
             Item::Message(Message {
                 role: MessageRole::User,
-                parts: resources
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, resource)| Part {
-                        replay: None,
-                        id: PartId::new(i as u64 + 1),
-                        content: ContentPart::Resource(resource),
-                    })
-                    .collect(),
+                parts,
                 status: ItemLifecycle::Completed,
                 phase: None,
             }),
         )],
-        GenerationControls::default(),
+        GenerationSettings::default(),
+        table,
     )
 }
 fn encode_typed(
@@ -383,8 +405,21 @@ fn file_url_limits_intersections_and_edits_do_not_claim_remote_bytes() {
         panic!()
     };
     let id = m.parts[0].id;
-    m.parts[0].content = ContentPart::Resource(typed_file(Some("edited.pdf")));
-    decoded.task.semantic = source.clone().with_items(items).unwrap();
+    let ContentPart::Resource(reference) = &mut m.parts[0].content else {
+        panic!()
+    };
+    reference.description = typed_file(Some("edited.pdf")).description;
+    let table = resources::replace(
+        source.resources(),
+        reference.id,
+        typed_file(Some("edited.pdf")),
+    );
+    decoded.task.semantic = source
+        .clone()
+        .with_resources(table)
+        .unwrap()
+        .with_items(items)
+        .unwrap();
     assert!(proof.check(&decoded.task.semantic).is_err());
     let wire = adapter()
         .encode_request(&decoded, "synthetic", &Contract::full())
@@ -444,6 +479,11 @@ fn file_edits_preserve_identity_and_never_resurrect_deleted_values() {
     let ContentPart::Resource(resource) = &mut message.parts[0].content else {
         panic!()
     };
+    let resource_id = resource.id;
+    let mut resource = resource
+        .media(decoded.task.semantic.resources())
+        .unwrap()
+        .to_owned();
     resource.location = ResourceLocation::Inline {
         media_type: text("text/plain"),
         data_base64: text("BAUG"),
@@ -452,17 +492,33 @@ fn file_edits_preserve_identity_and_never_resurrect_deleted_values() {
         filename: Some(text("changed.txt")),
         detail: None,
     });
+    let ContentPart::Resource(reference) = &mut message.parts[0].content else {
+        panic!()
+    };
+    reference.description = resource.description.clone();
+    let table = resources::replace(decoded.task.semantic.resources(), resource_id, resource);
+    let table = resources::replace(&table, ResourceId::new(100), typed_file(None));
     message.parts.insert(
         1,
         Part {
             replay: None,
             id: PartId::new(100),
-            content: ContentPart::Resource(typed_file(None)),
+            content: ContentPart::Resource(ResourceUse {
+                description: typed_file(None).description,
+                ..resources::input(100)
+            }),
         },
     );
     message.parts.swap(0, 1);
     assert_eq!(message.parts[1].id, id);
-    decoded.task.semantic = decoded.task.semantic.clone().with_items(items).unwrap();
+    decoded.task.semantic = decoded
+        .task
+        .semantic
+        .clone()
+        .with_resources(table)
+        .unwrap()
+        .with_items(items)
+        .unwrap();
     let encoded = adapter()
         .encode_request(&decoded, "synthetic", &Contract::full())
         .unwrap();
@@ -602,13 +658,16 @@ fn malformed_typed_files_and_aggregate_budgets_are_revalidated_after_edits() {
         data_base64: text(&"A".repeat(MAX_TEXT_BYTES + 4)),
     };
     assert_eq!(resource.validate(), Err(GenerationError::Limit));
-    let decoded = decode(json!([file()])).unwrap();
-    let mut items = decoded.task.semantic.items().to_vec();
-    let Item::Message(message) = &mut items[0].1 else {
-        panic!()
-    };
-    message.parts[0].content = ContentPart::Resource(resource);
-    assert!(decoded.task.semantic.clone().with_items(items).is_err());
+    assert!(
+        ResourceTable::new(vec![(
+            ResourceId::new(1),
+            ResourceDeclaration {
+                body: ResourceBody::Media(resource.location),
+                conditions: Default::default(),
+            }
+        )])
+        .is_err()
+    );
     // Generic IDs remain typed but have no issuer-bound file carrier.
     let mut resource = typed_file(None);
     resource.location = ResourceLocation::OpaqueReference(text("file-synthetic"));

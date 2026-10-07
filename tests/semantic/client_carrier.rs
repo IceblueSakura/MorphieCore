@@ -237,10 +237,14 @@ fn unsupported_typed_values_remain_rejected_instead_of_becoming_text_or_extras()
                 event::text("synthetic"),
             )),
         })),
-        GenerationResponse::new(grouped, Outcome::Completed)
-            .unwrap()
-            .with_message_owners(vec![(ItemId::new(2), ItemId::new(1))])
-            .unwrap(),
+        GenerationResponse::from_resources(
+            grouped,
+            Outcome::Completed,
+            base.semantic.resources().clone(),
+        )
+        .unwrap()
+        .with_message_owners(vec![(ItemId::new(2), ItemId::new(1))])
+        .unwrap(),
     ] {
         let mut decoded = base.clone();
         decoded.semantic = semantic.clone();

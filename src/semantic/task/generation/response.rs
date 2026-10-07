@@ -69,6 +69,7 @@ impl TerminalDetails {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GenerationResponse {
     items: Vec<(ItemId, Item)>,
+    resources: super::ResourceTable,
     replay_groups: Vec<super::ReplayGroup>,
     message_owners: std::collections::BTreeMap<ItemId, ItemId>,
     outcome: Outcome,
@@ -78,8 +79,20 @@ pub struct GenerationResponse {
 }
 impl GenerationResponse {
     pub fn new(items: Vec<(ItemId, Item)>, outcome: Outcome) -> Result<Self, GenerationError> {
+        Self::from_resources(items, outcome, super::ResourceTable::default())
+    }
+    pub fn from_resources(
+        items: Vec<(ItemId, Item)>,
+        outcome: Outcome,
+        resources: super::ResourceTable,
+    ) -> Result<Self, GenerationError> {
+        let mut item_bytes = 0;
         if !items.is_empty() {
-            super::validate::items(&items, true)?;
+            item_bytes = super::validate::items(&items, true, &resources)?;
+        }
+        let resource_bytes = resources.uncharged_bytes(&items)?;
+        if item_bytes.saturating_add(resource_bytes) > super::MAX_TOTAL_BYTES {
+            return Err(GenerationError::Limit);
         }
         if outcome == Outcome::Completed
             && items
@@ -90,6 +103,7 @@ impl GenerationResponse {
         }
         Ok(Self {
             items,
+            resources,
             replay_groups: vec![],
             message_owners: Default::default(),
             outcome,
@@ -133,10 +147,11 @@ impl GenerationResponse {
         let bytes = if self.items.is_empty() {
             0
         } else {
-            super::validate::items(&self.items, true)?
+            super::validate::items(&self.items, true, &self.resources)?
         };
         if bytes
             .saturating_add(details.bytes())
+            .saturating_add(self.resources.uncharged_bytes(&self.items)?)
             .saturating_add(self.usage.len() * std::mem::size_of::<Usage>())
             .saturating_add(super::group::validate_replay_groups(
                 &self.items,
@@ -188,6 +203,17 @@ impl GenerationResponse {
     pub fn usage_reports(&self) -> &[Usage] {
         &self.usage
     }
+    pub fn resources(&self) -> &super::ResourceTable {
+        &self.resources
+    }
+    pub fn with_resources(
+        mut self,
+        resources: super::ResourceTable,
+    ) -> Result<Self, GenerationError> {
+        self.resources = resources;
+        let details = self.details.clone();
+        self.with_details(details)
+    }
     pub fn details(&self) -> &TerminalDetails {
         &self.details
     }
@@ -201,7 +227,7 @@ impl GenerationResponse {
             .into_iter()
             .filter(|(owner, _)| items.iter().any(|(id, _)| id == owner))
             .collect();
-        let mut response = Self::new(items, self.outcome)?
+        let mut response = Self::from_resources(items, self.outcome, self.resources)?
             .with_message_owners(owners)?
             .with_replay_groups(self.replay_groups)?
             .with_progress(self.progress)?

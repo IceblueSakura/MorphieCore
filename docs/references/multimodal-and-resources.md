@@ -29,6 +29,17 @@
 
 Provider 返回的 file ID、音频 ID、container ID 和签名 URL 不是可移植正文；换 profile 不能猜测替换或自动重新上传。源 annotations、cache breakpoint、signature 随 owner 生存，不能按数组下标重新附着。
 
+<a id="citation-coordinates"></a>
+### 引用坐标来源
+
+证据标识 `resource-citations-2026-10-07`，以下条目查阅于 **2026-10-07**；不升级其他来源基线，也不声明原生 Google/Anthropic 接入。
+
+- 固定 OpenAI SDK 的 [response_output_text.py](https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/responses/response_output_text.py) 将 URL/container citation 的 start/end 描述为输出消息内的字符索引；file citation 与 file path 的 `index` 是**文件列表序号**。不能将后者当作输出位置或源文本范围，也不能由字段名证明 bytes、Unicode scalar 与 UTF-16 可互换。
+- [Google Interactions v1 reference](https://ai.google.dev/api/interactions-api-v1) 的所选 file citation 将输出起点明确为 **bytes**，结束位置排除；可报告 URI、文件名与页码等来源信息。不能沿用 Responses 的字符计数去验证 byte offset，也不从缺失的源正文推定页数。
+- [Anthropic citations](https://platform.claude.com/docs/en/build-with-claude/citations) 将被支持的 claim 附着于 text block；源字符、页与自定义内容 block 坐标分开。字符和 block 索引从 0 开始，页码从 1 开始，结束索引排除；document index 是跨消息输入文档列表中的 0-based 位置，不是资源身份。title/context 不属于可引用的 source 正文。
+
+本地资源身份不由这些索引或 locator 推断。已报告但缺少原文/边界的坐标保留其未知验证条件，不恢复丢失的源边界；映射只采用已定稿的单位与边界规则。Google 文档采用 CC-BY-4.0 attribution；固定 SDK 的许可见[来源基线](upstream-sync.md)，不复制外部实现或真实响应。
+
 ## 3. 不由纯 codec 承担的工作
 
 下载、DNS/redirect、MIME sniffing、音视频转码、上传、扫描、缓存和资源授权属于显式资源/执行服务。纯 codec 不因收到 URL 就发网络请求，也不以 transcript 替代音频并声称无损。

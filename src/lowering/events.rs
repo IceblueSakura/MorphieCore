@@ -18,6 +18,24 @@ pub fn check_event(
         return Err(RepresentationError::ReplayPhase);
     }
     match event {
+        StreamEvent::AnnotationAdded { annotation, .. } => {
+            crate::protocol::openai::citations::check(annotation, state.resources(), profile)
+                .map_err(|_| RepresentationError::TextMetadata)?;
+        }
+        StreamEvent::TextMetadata { annotations, .. } => {
+            for a in annotations {
+                crate::protocol::openai::citations::check(a, state.resources(), profile)
+                    .map_err(|_| RepresentationError::TextMetadata)?;
+            }
+        }
+        _ => {}
+    }
+    match event {
+        StreamEvent::ResourceDeclared { resource, .. } => {
+            if !crate::protocol::openai::citations::context(resource) {
+                return Err(RepresentationError::UnmigratedSemantic);
+            }
+        }
         StreamEvent::ReplayGroup(_) | StreamEvent::ReplayFinalized { .. } => {
             return Err(RepresentationError::UnmigratedSemantic);
         }

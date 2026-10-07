@@ -382,6 +382,7 @@ impl EventEncoder {
                         super::super::text::write(
                             &TextContent::new(text, p.annotations.clone(), p.logprobs.clone())?,
                             "output_text",
+                            self.state()?.resources(),
                         )
                     } else {
                         part_wire(
@@ -401,16 +402,18 @@ impl EventEncoder {
                 part,
                 annotation,
             } => {
-                if matches!(annotation, Annotation::FilePath { .. }) {
+                if annotation.value().kind == CitationKind::ArtifactReference {
                     return Err(CodecError::Unsupported("file_path annotation event".into()));
                 }
                 let mut v = self.coordinates(*item, *part)?;
                 v["type"] = json!("response.output_text.annotation.added");
                 v["annotation_index"] =
                     json!(self.state()?.part(*item, *part)?.annotations.len() - 1);
-                v["annotation"] = json!(annotation);
+                v["annotation"] =
+                    super::super::citations::write(annotation, self.state()?.resources())?;
                 vec![v]
             }
+            StreamEvent::ResourceDeclared { .. } => vec![],
             StreamEvent::LogprobsSnapshot { .. }
             | StreamEvent::TextMetadata { .. }
             | StreamEvent::Usage(_) => vec![],

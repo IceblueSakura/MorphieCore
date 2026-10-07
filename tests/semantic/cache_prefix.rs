@@ -155,6 +155,7 @@ fn prefix_settings_bind_schema_and_tool_order_without_a_second_value_authority()
 }
 #[test]
 fn cache_boundary_cannot_split_a_declared_message_group() {
+    // Prefix membership is checked on each candidate, not inferred from adjacency.
     let wire: Value = json!({"model":"synthetic","messages":[{"role":"assistant","content":null,"tool_calls":[{"id":"c","type":"function","function":{"name":"lookup","arguments":"{}"}}]}]});
     let source = Adapter::new(Profile::Chat, Dialect::Standard, None)
         .decode_request(&serde_json::to_vec(&wire).unwrap())
@@ -186,4 +187,24 @@ fn cache_boundary_cannot_split_a_declared_message_group() {
         ])
         .unwrap();
     assert!(extended.check_cache_prefix(&proof, &scope()).is_err());
+}
+
+#[test]
+fn retired_cache_part_records_cannot_reappear_on_a_later_value() {
+    let source = request();
+    let Item::Message(message) = &source.task.semantic.items()[0].1 else {
+        panic!()
+    };
+    let owner = message.parts[0].id;
+    let foreign = PartId::scoped(LocalScope::new(99), owner.get());
+    let mut fidelity = morphiecore::protocol::fidelity::FidelityRecords::default();
+    fidelity.record_cache_breakpoint(owner).unwrap();
+    fidelity.record_cache_breakpoint(foreign).unwrap();
+    fidelity.retain_owners(source.task.semantic.items());
+    assert!(fidelity.cache_breakpoint(owner));
+    assert!(!fidelity.cache_breakpoint(foreign));
+    fidelity.retain_owners(&[]);
+    assert!(!fidelity.cache_breakpoint(owner));
+    fidelity.retain_owners(source.task.semantic.items());
+    assert!(!fidelity.cache_breakpoint(owner));
 }

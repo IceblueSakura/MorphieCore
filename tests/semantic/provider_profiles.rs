@@ -1074,9 +1074,10 @@ fn response_billing_view_is_checked_not_a_second_usage_authority() {
     assert_eq!(projected["usage"]["input_tokens"], 4);
     assert!(projected["usage"].get("x_details").is_none());
     assert!(projected.get("frequency_penalty").is_none());
-    edited.semantic = morphiecore::semantic::task::generation::GenerationResponse::new(
+    edited.semantic = morphiecore::semantic::task::generation::GenerationResponse::from_resources(
         edited.semantic.items().to_vec(),
         edited.semantic.outcome(),
+        edited.semantic.resources().clone(),
     )
     .unwrap();
     let projected = provider

@@ -3,6 +3,8 @@
 mod events_support;
 #[path = "support/image_generation.rs"]
 mod image_support;
+#[path = "support/resources.rs"]
+mod resources_support;
 #[path = "support/responses_profile.rs"]
 mod wire;
 
@@ -22,6 +24,8 @@ mod chat_logprobs;
 mod chat_media;
 #[path = "semantic/chat_wire.rs"]
 mod chat_wire;
+#[path = "semantic/citation_bindings.rs"]
+mod citation_bindings;
 #[path = "semantic/client_carrier.rs"]
 mod client_carrier;
 #[path = "semantic/client_managed.rs"]
@@ -104,6 +108,8 @@ mod replay_groups;
 mod replay_ownership;
 #[path = "semantic/request_edits.rs"]
 mod request_edits;
+#[path = "semantic/resource_table.rs"]
+mod resource_table;
 #[path = "semantic/response.rs"]
 mod response;
 #[path = "semantic/response_requirements.rs"]

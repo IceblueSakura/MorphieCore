@@ -1,35 +1,9 @@
 //! Readable text and dependent annotations/probabilities have one immutable owner.
-use super::{GenerationError, MAX_ITEMS, MAX_TEXT_BYTES};
+use super::{Annotation, GenerationError, MAX_ITEMS, MAX_TEXT_BYTES};
 use crate::semantic::value::{Presence, Text};
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
-pub enum Annotation {
-    UrlCitation {
-        start_index: usize,
-        end_index: usize,
-        title: String,
-        url: String,
-    },
-    FileCitation {
-        file_id: String,
-        filename: String,
-        index: usize,
-    },
-    ContainerFileCitation {
-        container_id: String,
-        file_id: String,
-        filename: String,
-        start_index: usize,
-        end_index: usize,
-    },
-    FilePath {
-        file_id: String,
-        index: usize,
-    },
-}
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TopLogprob {
@@ -111,8 +85,9 @@ impl TextContent {
             .as_str()
             .len()
             .saturating_add(
-                crate::semantic::value::json_size(&self.annotations, MAX_TEXT_BYTES)
-                    .unwrap_or(usize::MAX),
+                self.annotations
+                    .iter()
+                    .fold(0usize, |n, a| n.saturating_add(a.bytes())),
             )
             .saturating_add(self.logprobs.value().map_or(0, |v| {
                 crate::semantic::value::json_size(v, MAX_TEXT_BYTES).unwrap_or(usize::MAX)
@@ -126,24 +101,8 @@ impl TextContent {
         {
             return Err(GenerationError::Limit);
         }
-        let chars = self.text.as_str().chars().count();
-        for a in &self.annotations {
-            let range = match a {
-                Annotation::UrlCitation {
-                    start_index,
-                    end_index,
-                    ..
-                }
-                | Annotation::ContainerFileCitation {
-                    start_index,
-                    end_index,
-                    ..
-                } => Some((*start_index, *end_index)),
-                _ => None,
-            };
-            if range.is_some_and(|(start, end)| start > end || end > chars) {
-                return Err(GenerationError::InvalidResponse);
-            }
+        for annotation in &self.annotations {
+            annotation.validate_claim(self.text.as_str())?;
         }
         if let Presence::Value(probs) = &self.logprobs {
             validate_logprobs(probs)?;

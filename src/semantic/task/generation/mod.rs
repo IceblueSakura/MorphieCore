@@ -40,6 +40,11 @@ pub use replay::{ReplayFormat, ReplayOwner, ReplayValue};
 mod request;
 mod requirements;
 mod resource;
+mod resource_table;
+pub use resource_table::{
+    ResourceBody, ResourceConditions, ResourceDeclaration, ResourceDependency, ResourceId,
+    ResourcePurpose, ResourceTable, ResourceTarget, ResourceUse,
+};
 mod response;
 mod schema;
 mod schema_document;
@@ -49,8 +54,13 @@ pub use schema_document::{
 mod schema_number;
 mod stream_value;
 pub use stream_value::StreamPartValue;
+mod citation;
 mod structured;
 mod text;
+pub use citation::{
+    Annotation, Citation, CitationKind, ClaimAnchor, SourceBounds, SourceCoordinates, TextRange,
+    TextUnit,
+};
 mod tool;
 pub use structured::StructuredValue;
 mod tool_result;
@@ -83,11 +93,10 @@ pub use resource::{
     FileDescription, FileDetail, ImageDetail, ImageFormat, MAX_FILE_DECODED_BYTES,
     MAX_FILE_NAME_BYTES, MAX_IMAGE_DECODED_BYTES, MAX_RESOURCE_MEDIA_TYPE_BYTES,
     MAX_RESOURCE_URL_BYTES, MAX_TOTAL_FILE_DECODED_BYTES, Resource, ResourceDescription,
-    ResourceKind, ResourceLocation,
+    ResourceKind, ResourceLocation, ResourceView,
 };
 pub use text::{
-    Annotation, Logprob, RefusalContent, TextContent, TopLogprob, compatible_logprobs,
-    validate_logprobs,
+    Logprob, RefusalContent, TextContent, TopLogprob, compatible_logprobs, validate_logprobs,
 };
 pub use tool::{
     ArgumentFormat, CallContext, CallOrigin, CallerMode, CustomCall, CustomFormat, CustomTool,

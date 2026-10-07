@@ -4,7 +4,11 @@ use super::{CodecError, common::*};
 use crate::semantic::{task::generation::*, value::Text};
 use serde_json::{Value, json};
 
-pub(super) fn attach(parts: &mut [Part], value: Option<&Value>) -> Result<(), CodecError> {
+pub(super) fn attach(
+    parts: &mut [Part],
+    value: Option<&Value>,
+    items: &mut Items,
+) -> Result<(), CodecError> {
     let Some(value) = value.filter(|v| !v.is_null()) else {
         return Ok(());
     };
@@ -36,22 +40,9 @@ pub(super) fn attach(parts: &mut [Part], value: Option<&Value>) -> Result<(), Co
                 .ok_or(CodecError::Invalid("url citation"))?,
         )?;
         fields(cite, &["start_index", "end_index", "title", "url"])?;
-        annotations.push(Annotation::UrlCitation {
-            start_index: usize::try_from(
-                cite.get("start_index")
-                    .and_then(Value::as_u64)
-                    .ok_or(CodecError::Invalid("citation index"))?,
-            )
-            .map_err(|_| CodecError::Limit)?,
-            end_index: usize::try_from(
-                cite.get("end_index")
-                    .and_then(Value::as_u64)
-                    .ok_or(CodecError::Invalid("citation index"))?,
-            )
-            .map_err(|_| CodecError::Limit)?,
-            title: string(cite, "title")?.into(),
-            url: string(cite, "url")?.into(),
-        });
+        let mut flat = cite.clone();
+        flat.insert("type".into(), json!("url_citation"));
+        annotations.push(super::citations::read(&Value::Object(flat), items)?);
     }
     *text = TextContent::new(
         Text::allowing_empty(text.as_str(), "text", MAX_TEXT_BYTES)
@@ -61,9 +52,17 @@ pub(super) fn attach(parts: &mut [Part], value: Option<&Value>) -> Result<(), Co
     )?;
     Ok(())
 }
-pub(super) fn write(annotations: &[Annotation]) -> Value {
-    json!(annotations.iter().map(|annotation|match annotation {
-        Annotation::UrlCitation{start_index,end_index,title,url}=>json!({"type":"url_citation","url_citation":{"start_index":start_index,"end_index":end_index,"title":title,"url":url}}),
-        _=>unreachable!("lowering checks Chat annotation kind"),
-    }).collect::<Vec<_>>())
+pub(super) fn write(annotations: &[Annotation], resources: &ResourceTable) -> Value {
+    json!(
+        annotations
+            .iter()
+            .map(|a| {
+                let mut v = super::citations::write(a, resources).expect("checked citation");
+                v.as_object_mut()
+                    .expect("citation object")
+                    .shift_remove("type");
+                json!({"type":"url_citation","url_citation":v})
+            })
+            .collect::<Vec<_>>()
+    )
 }

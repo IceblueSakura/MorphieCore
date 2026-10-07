@@ -63,7 +63,7 @@ pub(super) fn read(part: &Map<String, Value>, profile: Profile) -> Result<Resour
     resource.validate()?;
     Ok(resource)
 }
-pub(super) fn write(resource: &Resource, profile: Profile) -> Value {
+pub(super) fn write(resource: ResourceView<'_>, profile: Profile) -> Value {
     let url = match &resource.location {
         ResourceLocation::Url(url) => url.as_str().to_owned(),
         ResourceLocation::Inline {
@@ -74,7 +74,9 @@ pub(super) fn write(resource: &Resource, profile: Profile) -> Value {
             media_type.as_str(),
             data_base64.as_str()
         ),
-        ResourceLocation::OpaqueReference(_) => unreachable!("lowering rejects resource IDs"),
+        ResourceLocation::OpaqueReference(_) | ResourceLocation::NamespacedReference { .. } => {
+            unreachable!("lowering rejects resource IDs")
+        }
     };
     let mut image = match profile {
         Profile::Chat => json!({"url":url}),
