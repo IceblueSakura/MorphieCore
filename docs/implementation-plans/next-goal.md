@@ -10,7 +10,7 @@
 
 以下是**选片优先级，不是整块实施阶段**。每项按最小可观察场景拆分；前项只需闭合后项实际依赖的边界，不要求先补齐整个 Responses 标准。已有基础层和独立覆盖直接复用，不重复安排“重建 IR / Gateway / 凭据管理器”。
 
-**当前优先覆盖：ClientManaged Generation IR。** Responses、Interactions、Messages 共同提供语义反例，按[剩余计划的 P5–P6](client-managed-ir.md#execution-order)推进具名投影与消费者闭环；既有资源/引用、身份/上下文/配置/控制/计量、所选 Provider 动作、Replay 附件与纯核心组合场景作为输入与回归，不再重复排期。Google/Anthropic 原生实现、ServerManaged 和 Agent 执行/恢复不纳入本轮；不能因此删去 Provider 工具结果或必要生命周期语义。既有 Responses/Chat 随片迁移，不等待全部核心完成才修复 codec。
+**当前优先覆盖：ClientManaged Generation IR。** Responses、Interactions、Messages 共同提供语义反例，按[剩余计划的 P6](client-managed-ir.md#execution-order)推进消费者闭环；既有具名投影、资源/引用、身份/上下文/配置/控制/计量、所选 Provider 动作、Replay 附件与纯核心组合场景作为输入与回归，不再重复排期。Google/Anthropic 原生实现、ServerManaged 和 Agent 执行/恢复不纳入本轮；不能因此删去 Provider 工具结果或必要生命周期语义。既有 Responses/Chat 随片迁移，不等待全部核心完成才修复 codec。
 
 **请求型音频转为维护与后续独立选片。** 基础 task、标准请求、有界交付及目标映射按 [Speech](../architecture/speech-profile.md)和[Transcription profile](../architecture/transcription-profile.md)维护，嵌入/binary 激活归 [HTTP 合同](../http-gateway.md)。低延迟交付、下游 SSE、转录扩展与实际服务验收仍可按具体需求独立定稿，不重复建设已有接线，也不成为 IR 的前置。下表为既有接口维护与后续产品选片顺序，不把本轮三协议语义工作缩减为单 function 子集。
 

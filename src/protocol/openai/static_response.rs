@@ -570,7 +570,7 @@ pub fn encode_chat(target: &ResponseRepresentation<'_>) -> Result<Value, CodecEr
     if target.profile != Profile::Chat {
         return Err(CodecError::ProfileMismatch);
     }
-    check_response_carriers(target.semantic)?;
+    check_response_carriers(&target.semantic)?;
     super::citations::check_items(
         target.semantic.items(),
         target.semantic.resources(),
@@ -580,7 +580,7 @@ pub fn encode_chat(target: &ResponseRepresentation<'_>) -> Result<Value, CodecEr
     target
         .fidelity
         .check_wire_item_ids(target.semantic.items(), true)?;
-    let finish = chat_finish(target.semantic)?;
+    let finish = chat_finish(&target.semantic)?;
     check_message_carriers(
         target.semantic.items(),
         target.semantic.message_owners(),
@@ -631,7 +631,7 @@ pub fn encode_chat(target: &ResponseRepresentation<'_>) -> Result<Value, CodecEr
         target.fidelity,
         target.profile,
         &target.adaptation,
-        target.semantic,
+        &target.semantic,
         &target.metadata.id,
         value.as_object_mut().expect("object"),
     );
@@ -642,7 +642,7 @@ pub fn encode_responses(target: &ResponseRepresentation<'_>) -> Result<Value, Co
     if target.profile != Profile::Responses {
         return Err(CodecError::ProfileMismatch);
     }
-    check_response_carriers(target.semantic)?;
+    check_response_carriers(&target.semantic)?;
     super::citations::check_items(
         target.semantic.items(),
         target.semantic.resources(),
@@ -681,7 +681,7 @@ pub fn encode_responses(target: &ResponseRepresentation<'_>) -> Result<Value, Co
         target.fidelity,
         target.profile,
         &target.adaptation,
-        target.semantic,
+        &target.semantic,
         &target.metadata.id,
         value.as_object_mut().expect("object"),
     );

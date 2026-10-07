@@ -13,7 +13,7 @@ fn response(count: Value) -> Value {
     }})
 }
 #[test]
-fn named_image_usage_mapping_preserves_counts_and_rejects_standard_targets() {
+fn named_image_usage_mapping_preserves_counts_and_standard_chat_projects_detail() {
     let source = response(json!(7));
     let provider = Adapter::new(Profile::Chat, Dialect::Xiaomi, None);
     let decoded = provider
@@ -28,11 +28,20 @@ fn named_image_usage_mapping_preserves_counts_and_rejects_standard_targets() {
             "input_tokens_details"
         };
         assert_eq!(encoded["usage"][detail]["image_tokens"], 7);
-        assert!(
-            Adapter::new(profile, Dialect::Standard, None)
-                .encode_response(&decoded, &Contract::full())
-                .is_err()
-        );
+        let standard = Adapter::new(profile, Dialect::Standard, None)
+            .encode_response(&decoded, &Contract::full());
+        if profile == Profile::Chat {
+            assert_eq!(
+                standard.unwrap()["usage"],
+                json!({
+                    "prompt_tokens":10,"completion_tokens":2,"total_tokens":12,
+                    "prompt_tokens_details":{"cached_tokens":1},
+                    "completion_tokens_details":{"reasoning_tokens":0}
+                })
+            );
+        } else {
+            assert!(standard.is_err());
+        }
     }
     assert!(
         Adapter::new(Profile::Chat, Dialect::Standard, None)
@@ -221,6 +230,23 @@ fn image_usage_static_and_events_close_under_named_slots_and_poison_unsupported_
             expected.semantic.usage()
         );
         let mut rejected = EventEncoder::new(profile, expected.metadata.clone()).unwrap();
+        if profile == Profile::Chat {
+            let mut projected = vec![];
+            for event in &events {
+                projected.extend(rejected.encode(event, &expected.fidelity).unwrap());
+            }
+            rejected.finish().unwrap();
+            let usage = &projected.iter().find(|v| v["usage"].is_object()).unwrap()["usage"];
+            assert_eq!(
+                usage,
+                &json!({
+                    "prompt_tokens":10,"completion_tokens":2,"total_tokens":12,
+                    "prompt_tokens_details":{"cached_tokens":1},
+                    "completion_tokens_details":{"reasoning_tokens":0}
+                })
+            );
+            continue;
+        }
         for event in &events {
             let result = rejected.encode(event, &expected.fidelity);
             if matches!(event, StreamEvent::Usage(_)) {

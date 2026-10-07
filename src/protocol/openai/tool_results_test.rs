@@ -97,7 +97,8 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
     ] {
         for profile in [Profile::Chat, Profile::Responses] {
             let forged = ResponseRepresentation {
-                semantic,
+                semantic: std::borrow::Cow::Borrowed(semantic),
+                projection: vec![],
                 fidelity: &fidelity,
                 metadata: &metadata,
                 profile,
@@ -199,7 +200,8 @@ fn forged_handles_cannot_drop_owner_local_replay_or_assistant_media() {
                 .is_err()
             );
             let forged = ResponseRepresentation {
-                semantic: &response,
+                semantic: std::borrow::Cow::Borrowed(&response),
+                projection: vec![],
                 fidelity: &fidelity,
                 profile,
                 adaptation: Default::default(),

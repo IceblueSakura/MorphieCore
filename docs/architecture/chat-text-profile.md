@@ -1,6 +1,6 @@
 # Chat Completions：当前兼容 profile
 
-Chat 是必须维护的公开兼容接口，设计允许[声明范围内的语义损失](protocol-and-lowering.md#semantic-loss)。**本页描述当前严格实现，不是新损失规则已经生效的声明。** 每条降级需有方向、前提、后果、必要依赖与独立预期；不能将兼容目标理解为任意丢字段或放宽 wire grammar。
+Chat 是必须维护的公开兼容接口，只允许[已定稿范围内的语义损失](protocol-and-lowering.md#semantic-loss)。除具名规则外保持严格拒绝。每条降级需有方向、前提、后果、必要依赖与独立预期；不能将兼容目标理解为任意丢字段或放宽 wire grammar。
 
 Chat 与 Responses 使用同一 Generation IR、reducer 和严格 JSON 边界，不建立第二 IR。当前是单候选 profile，不是完整 Chat 标准或运行实例准入。固定标准/消费者版本归 [upstream-sync](../references/upstream-sync.md)，HTTP 接线归[网关指南](../http-gateway.md)。
 
@@ -37,7 +37,7 @@ Request `logprobs` 与 `top_logprobs` 有组合约束；响应概率是独立报
 
 Usage 的缺失/null 保持 unknown，显式零仍是报告。输入/输出细分以各自 total 为边界；prediction 的互斥与加法条件按 typed owner 校验，重叠的 text/reasoning/cache counts 不用于盲目求和。累计事件不是增量 token 相加。
 
-Standard Chat、Responses 及 MorphieCore modality carriers 的位置不相同。现行 profile 对不可投影 facts 拒绝，不悄悄丢弃或把缺失补零；Chat 降级未来若省略部分报告，须按[损失合同](protocol-and-lowering.md#semantic-loss)区分省略与未报告。Audio details 归 [media usage](chat-media-profile.md#usage-and-unsupported-targets)，其他独立证据归 [usage](../../tests/semantic/usage.rs)与[image usage](../../tests/semantic/image_usage.rs)。
+Standard Chat、Responses 及 MorphieCore modality carriers 的位置不相同。目标 Chat 没有图片 token 明细载体时，只按[具名明细投影](protocol-and-lowering.md#chat-图片-token-明细投影)省略该报告并保留可检查损失；这不放宽 intake，也不授权其他字段降级或缺失补零。Audio details 归 [media usage](chat-media-profile.md#usage-and-unsupported-targets)，其他独立证据归 [usage](../../tests/semantic/usage.rs)与[image usage](../../tests/semantic/image_usage.rs)。
 
 ## Function selection and tool results
 

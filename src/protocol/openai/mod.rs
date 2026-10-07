@@ -48,10 +48,60 @@ pub struct RequestRepresentation<'a> {
     pub(crate) fidelity: &'a FidelityRecords,
     pub(crate) profile: Profile,
 }
+impl RequestRepresentation<'_> {
+    /// Requests/history have no new loss rule; the immutable final source is
+    /// the checked value. A changed input or target requires fresh lowering.
+    pub fn semantic(&self) -> &GenerationRequest {
+        self.semantic
+    }
+    pub fn profile(&self) -> Profile {
+        self.profile
+    }
+    pub fn requirements(&self) -> crate::semantic::task::generation::GenerationRequirements {
+        crate::semantic::task::generation::GenerationRequirements::derive(self.semantic)
+    }
+}
 pub struct ResponseRepresentation<'a> {
     pub(crate) adaptation: crate::protocol::adaptation::Adaptation,
-    pub(crate) semantic: &'a GenerationResponse,
+    pub(crate) semantic: std::borrow::Cow<'a, GenerationResponse>,
     pub(crate) fidelity: &'a FidelityRecords,
     pub(crate) metadata: &'a ResponseMetadata,
     pub(crate) profile: Profile,
+    pub(crate) projection: Vec<crate::lowering::projection::ProjectionStage>,
+}
+impl ResponseRepresentation<'_> {
+    pub fn semantic(&self) -> &GenerationResponse {
+        &self.semantic
+    }
+    pub fn projection(&self) -> &[crate::lowering::projection::ProjectionStage] {
+        &self.projection
+    }
+    pub fn requirements(
+        &self,
+    ) -> crate::semantic::task::generation::GenerationResponseRequirements {
+        crate::semantic::task::generation::GenerationResponseRequirements::derive(&self.semantic)
+    }
+    /// Revalidate the final value at a new fixed target. Never return to a hidden
+    /// original to restore information omitted by an earlier stage.
+    pub fn reproject(
+        &self,
+        profile: Profile,
+        contract: crate::lowering::generation::GenerationRepresentationContract,
+    ) -> Result<ResponseRepresentation<'_>, crate::lowering::generation::RepresentationError> {
+        use crate::lowering::{generation, projection::MAX_PROJECTION_STAGES};
+        if self.projection.len() >= MAX_PROJECTION_STAGES {
+            return Err(generation::RepresentationError::ProjectionLimit);
+        }
+        let mut next = generation::lower_response(
+            &self.semantic,
+            self.fidelity,
+            self.metadata,
+            profile,
+            contract,
+        )?;
+        let mut stages = self.projection.clone();
+        stages.append(&mut next.projection);
+        next.projection = stages;
+        Ok(next)
+    }
 }

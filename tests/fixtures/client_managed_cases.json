@@ -3,6 +3,22 @@
   "traceability": "case_key and source ids are stable; area groups semantic coverage, not execution phases. Each case covers only its declared expectations and scope.",
   "cases": [
     {
+      "case_key": "named_chat_accounting_projection_and_target_revalidation",
+      "ids": ["A15", "A23", "A24", "T02", "T20", "T21", "T23", "T25", "T28", "T29"],
+      "area": "projection",
+      "sample_kind": "native_wire",
+      "evidence": "protocol-and-lowering.md#chat-图片-token-明细投影; existing fixed Chat/Responses profiles",
+      "owner": "src/lowering/projection.rs; generation.rs; events.rs; src/protocol/openai/events/encode.rs",
+      "target": "semantic",
+      "symbols": ["projection::chat_omits_only_unrepresentable_image_accounting", "projection::chained_loss_is_not_erased_and_candidates_start_from_the_source", "projection::unknown_rules_and_stage_overflow_are_rejected", "projection::event_projection_agrees_with_static_and_rejects_malformed_usage", "projection::a_stream_cannot_switch_target_policy_after_publication", "projection::accounting_loss_cannot_hide_group_phase_replay_or_resource_rejections"],
+      "input": "Final operation usage with absent/zero/bounded image detail; fixed targets with and without a detail carrier",
+      "expected": "Only named Chat image-detail loss; source and totals unchanged; inspectable final values and cumulative stages; unknown rules rejected; exact targets retain reported detail",
+      "transform": "Reproject final values across fixed targets; independently project original source; change target facts policy; retain strict grouping, phase, replay and resource conditions",
+      "budget": "Bounded stage chain including limit and overflow; original semantic/resource/wire budgets remain enforced",
+      "forbidden_effects": "No message/part merge, source restoration, policy switching after first event, usage invention or network I/O",
+      "scope": "Selected Generation response/event rule; requests/history and other unsupported reports remain strict"
+    },
+    {
       "case_key": "citation_source_owners_coordinates_and_dependency_edits",
       "ids": ["A19", "A21", "A27", "T19", "T28", "E02"],
       "area": "resources",

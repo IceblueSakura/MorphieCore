@@ -306,6 +306,47 @@ pub fn lower_response<'a>(
     profile: Profile,
     c: GenerationRepresentationContract,
 ) -> Result<ResponseRepresentation<'a>, RepresentationError> {
+    let mut semantic = std::borrow::Cow::Borrowed(r);
+    let mut loss = None;
+    if profile == Profile::Chat
+        && let Some(usage) = r.usage()
+    {
+        let (projected, omitted) =
+            super::projection::chat_usage(usage, c.adaptation.rules.chat_image_usage)?;
+        loss = omitted;
+        if loss.is_some() {
+            // Preserve every report and its scope; projection is not aggregation.
+            let reports = r
+                .usage_reports()
+                .iter()
+                .map(|report| if *report == usage { projected } else { *report })
+                .collect();
+            semantic = std::borrow::Cow::Owned(r.clone().with_usage_reports(reports)?);
+        }
+    }
+    validate_response(&semantic, fidelity, metadata, profile, &c)?;
+    let projection = vec![super::projection::ProjectionStage::response(
+        profile,
+        c.adaptation.profile_id,
+        loss,
+    )];
+    Ok(ResponseRepresentation {
+        semantic,
+        fidelity,
+        metadata,
+        profile,
+        adaptation: c.adaptation,
+        projection,
+    })
+}
+
+fn validate_response(
+    r: &GenerationResponse,
+    fidelity: &FidelityRecords,
+    metadata: &ResponseMetadata,
+    profile: Profile,
+    c: &GenerationRepresentationContract,
+) -> Result<(), RepresentationError> {
     if !r.replay_groups().is_empty() {
         return Err(RepresentationError::UnmigratedSemantic);
     }
@@ -334,7 +375,7 @@ pub fn lower_response<'a>(
     {
         return Err(RepresentationError::UnmigratedSemantic);
     }
-    require_reported_facts(r, metadata, &c)?;
+    require_reported_facts(r, metadata, c)?;
     if profile == Profile::Responses
         && metadata
             .context
@@ -445,13 +486,7 @@ pub fn lower_response<'a>(
         return Err(RepresentationError::Metadata);
     }
     validate_wire_ids(r.items(), fidelity, true)?;
-    Ok(ResponseRepresentation {
-        semantic: r,
-        fidelity,
-        metadata,
-        profile,
-        adaptation: c.adaptation,
-    })
+    Ok(())
 }
 /// Chat can carry readable reasoning text on its carrier message: each reasoning
 /// item must hold exactly one non-empty text part and sit immediately before the
@@ -806,6 +841,10 @@ fn check_tool_selection(choice: Option<&ToolChoice>) -> Result<(), Representatio
 }
 #[derive(Clone, Debug, Eq, thiserror::Error, PartialEq)]
 pub enum RepresentationError {
+    #[error("unknown projection rule")]
+    UnknownProjectionRule,
+    #[error("projection stage budget exceeded")]
+    ProjectionLimit,
     #[error(transparent)]
     Admission(#[from] GenerationFeature),
     #[error(transparent)]

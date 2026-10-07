@@ -2,4 +2,5 @@
 pub mod events;
 pub mod generation;
 pub mod images;
+pub mod projection;
 pub mod speech;

@@ -690,10 +690,10 @@ impl EventEncoder {
             }
             StreamEvent::Terminal{..}=>{
                 let response=materialize(self.state()?)?;
-                crate::lowering::generation::lower_response(&response,&self.fidelity,&self.metadata,Profile::Chat,self.contract.clone()).map_err(|_|CodecError::Unsupported("Chat terminal".into()))?;
+                let target=crate::lowering::generation::lower_response(&response,&self.fidelity,&self.metadata,Profile::Chat,self.contract.clone()).map_err(|_|CodecError::Unsupported("Chat terminal".into()))?;
                 let finish=super::super::terminal::chat_finish(&response)?;
                 let mut chunks=vec![self.chunk(json!({}),json!(finish))];
-                if let Some(usage)=response.usage(){
+                if let Some(usage)=target.semantic().usage(){
                     let mut v=if self.contract.adaptation.rules.repeated_finish_usage {
                         self.chunk(json!({}),json!(finish))
                     } else {
@@ -701,7 +701,12 @@ impl EventEncoder {
                     };
                     v["usage"]=super::super::static_response::encode_usage(usage,Profile::Chat,&self.contract.adaptation.rules);chunks.push(v);
                 }
-                super::super::envelope::write_response_extras(&self.fidelity,Profile::Chat,&self.contract.adaptation,&response,&self.metadata.id,chunks.last_mut().expect("terminal chunk").as_object_mut().expect("object"));
+                super::super::envelope::write_response_extras(&self.fidelity,Profile::Chat,&self.contract.adaptation,target.semantic(),&self.metadata.id,chunks.last_mut().expect("terminal chunk").as_object_mut().expect("object"));
+                let mut stages=target.projection().to_vec();
+                for stage in &mut stages {
+                    stage.direction=crate::lowering::projection::ProjectionDirection::Event;
+                }
+                self.projection=stages;
                 chunks
             }
             _=>vec![],

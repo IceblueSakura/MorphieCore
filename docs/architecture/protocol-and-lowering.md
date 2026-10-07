@@ -53,6 +53,15 @@ Responses 完善优先，不为 Chat 扩大标准核心以外的执行行为。�
 
 **标准 wire 正确性、功能覆盖和保真度分别验收。** 有损输出必须仍是规范 Chat，而不是借兼容名义增加任意字段；往返不能被要求恢复已经声明丢失的信息。核心 IR 保留原始权威值，不为 Chat 的限制缩减设计。
 
+### Chat 图片 token 明细投影
+
+`chat.omit-input-image-tokens.v1` 只适用于 Generation response/event → Chat：目标 profile 未声明图片 token 明细载体时，默认从投影副本省略 `Usage.input_image_tokens`。Owner 是 [Usage](../../src/semantic/task/generation/usage.rs)，规则与有界诊断归 [projection](../../src/lowering/projection.rs)。显式零同样是已报告值，省略必须可检查；没有报告则不记损失，有载体则保持精确值。
+
+- 先验证完整报告，再投影和重新验证最终值、依赖、预算与 requirements。只移除图片 token 明细；总量、其他明细、scope/basis/计数关系不变，不从图片数或文本推算计量，不将非法 usage 改成未知。
+- 原始 IR 保持权威；`ResponseRepresentation` 以不可变借用或私有副本提供最终值与逐段规则、owner、方向、目标和修订。`reproject` 从上一段最终值重验并累积损失，不能从来源记录恢复省略值；独立候选仍从同一原观察开始。借用和私有字段防止修改已验证值/目标，输入、配置、资源或目标变化需要新的 lowering。
+- 表示证明仅覆盖本地合同，不代表资源权限、issuer 接受或执行准入；未满足的必要本地前提仍返回错误，不用损失标记放行。事件目标从首次 encode 起固定；静态与事件共用同一规则，只有验证成功的终态提供完整投影诊断。
+- 不修改请求/history、Responses 或独立媒体策略；不省略其他报告、不合并消息/part、不改变正文、分组、phase、工具关联、必要 replay、硬控制或失败/终态。新的损失继续单独定稿；未知规则拒绝。
+
 ### 独立 Images 的计量投影
 
 标准 Images 静态响应另有明确限定的 `OmitUnrepresentableAccounting` 策略，由受信 Route 选择，不继承或扩张 Chat 规则。方向仅为 ImageGeneration response → 标准 Images response；owner 为 [图片计量](../../src/semantic/task/image_generation/accounting.rs)，实现归 [Images lowering](../../src/lowering/images.rs)。

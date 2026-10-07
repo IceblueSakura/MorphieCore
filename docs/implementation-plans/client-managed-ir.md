@@ -1,6 +1,6 @@
 # ClientManaged Generation IR 剩余实施计划
 
-**修订：v0.10。只维护尚未闭合的工作，以 P5–P6 作为当前执行编号。** 已有能力作为执行基线，不重新排期；一次只执行一个有明确停止点的行为子片。
+**修订：v0.11。只维护尚未闭合的工作，以 P6 作为当前执行编号。** 已有能力作为执行基线，不重新排期；一次只执行一个有明确停止点的行为子片。
 
 语义归 [Semantic Model](../architecture/semantic-ir.md)与[交互合同](../architecture/interaction-contract.md)，映射与损失归 [protocol/lowering](../architecture/protocol-and-lowering.md)。本页拥有剩余依赖与退出条件，[next-goal](next-goal.md)拥有产品优先级，[current-focus](current-focus.md)只登记实际启动的行为切片。文档修订不启动代码行为或授予操作权限。
 
@@ -25,10 +25,9 @@ Provider 动作及引用域的输入归[交互合同](../architecture/interactio
 
 | 阶段 | 依赖 | 要交付的最小结果 |
 |---|---|---|
-| [P5 具名投影](#p5) | P4 与所选 Replay；已定稿损失规则 | 可检查的投影/损失结果及复用重验 |
 | [P6 接口与消费者验收](#p6) | P5；前序受影响回归 | 现有 Responses/Chat 的交付、保存、追加和回传闭环 |
 
-**默认按 P5 → P6 串行执行，一次只执行一个子片。** 子片满足退出条件后即停止扩展并交付，不自动串入下一子片。来源冲突或新的 IR 缺口只阻塞相关范围；必须扩大公共类型或迁移边界时先说明影响，不在实现中不断叠加任务。
+**P6 按子片串行执行。** 子片满足退出条件后即停止扩展并交付；后继工作须在获准范围内重新定稿焦点。来源冲突或新的 IR 缺口只阻塞相关范围；必须扩大公共类型或迁移边界时先说明影响，不在实现中不断叠加任务。
 
 纯核心组合与 P6 的受保护现有接口分别验收；后续资源/投影不代替核心及 Replay 回归。验收逐条引用阶段与条目（如 P5.2），关联用例、执行证据和未闭合条件，不用单个“阶段完成”标签替代。仅有库级证据不能宣称接口、消费者或真实 Provider 通过。
 
@@ -39,18 +38,7 @@ Provider 动作及引用域的输入归[交互合同](../architecture/interactio
 资源与引用输入归[唯一资源/引用合同](../architecture/semantic-ir.md#5-内容产物与引用)、[citation](../../src/semantic/task/generation/citation.rs)、[资源回归](../../tests/semantic/resource_table.rs)、[引用组合回归](../../tests/semantic/citation_bindings.rs)和用例清单的 resources/cache 领域。原生条件准入、缺失源正文恢复、更多坐标/媒体、文件服务与外部权限不由本地条件匹配或引用范围验证推出；现有标准引用与严格拒绝作为 P5 的输入，不重新实施资源层。显式断点退休不证明远端缓存收益，原 usage 保留不生成派生正文计量。
 
 <a id="p5"></a>
-### P5：具名投影、组合损失与复用重验
-
-**输入与 owner**：所选 Replay 与 P4 最终值及 [semantic-loss 合同](../architecture/protocol-and-lowering.md#semantic-loss)、[lowering](../../src/lowering/generation.rs)与[具名适配](../../src/protocol/adaptation.rs)。每条新损失规则先定稿方向、目标 profile、owner、前提与后果，不设全局近似开关。
-
-**逐项验收**：
-
-1. 返回可检查的投影值、规则/owner/方向/后果、剩余前提和修订；精确、具名损失、未知规则能区分，既有合法规则保持，未知规则拒绝。
-2. 源值、目标/profile、配置或资源条件改变后，旧投影/绑定不可直接复用；变换后重新验证最终值、预算、依赖与 requirements。
-3. 多段损失累积且端到端重验；各固定候选从同一不可变源开始，不互相污染、不取能力并集或重排 route。
-4. 必要身份/关联/replay、指令 authority/scope/phase、硬 Schema/控制、真实失败/终态均不因兼容投影被弱化。连续同角色/多文本的合并只有在具名规则允许时才进行，并明确不可逆边界，不能借来源记录恢复丢失分组。
-
-**追溯**：A15/A23/A24；T02/T20/T21/T23/T25/T28/T29；E02/E06 的投影部分。没有新审批/执行许可、资源准备 I/O 或产品 catalog 重建。
+投影输入归 [semantic-loss 合同](../architecture/protocol-and-lowering.md#semantic-loss)、[具名规则与诊断](../../src/lowering/projection.rs)、[lowering](../../src/lowering/generation.rs)及用例清单的 `projection` 领域。只采用已定稿损失，不合并消息/part；新的规则单独选片。不可变源、复用重验、累计损失与受保护依赖继续作为 P6 回归输入，不重新建设投影层。
 
 <a id="p6"></a>
 ### P6：现有接口与消费者闭环验收

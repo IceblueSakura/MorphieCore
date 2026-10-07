@@ -9,8 +9,10 @@ pub struct EventEncoder {
     pub(super) fidelity: FidelityRecords,
     pub(super) contract: GenerationRepresentationContract,
     poisoned: bool,
+    target_locked: bool,
     sequence: u64,
     pub(super) chat_audio_pending: Vec<u8>,
+    pub(super) projection: Vec<crate::lowering::projection::ProjectionStage>,
 }
 impl EventEncoder {
     pub fn new(profile: Profile, metadata: ResponseMetadata) -> Result<Self, CodecError> {
@@ -31,8 +33,10 @@ impl EventEncoder {
             fidelity: FidelityRecords::default(),
             contract: GenerationRepresentationContract::full(),
             poisoned: false,
+            target_locked: false,
             sequence: 0,
             chat_audio_pending: Vec::new(),
+            projection: Vec::new(),
         })
     }
     /// Refresh reported settings/completion metadata without changing response identity.
@@ -71,7 +75,12 @@ impl EventEncoder {
         result
     }
     pub fn with_contract(mut self, contract: GenerationRepresentationContract) -> Self {
-        self.contract = contract;
+        if self.target_locked && self.contract != contract {
+            self.poisoned = true;
+            self.projection.clear();
+        } else {
+            self.contract = contract;
+        }
         self
     }
     pub fn encode(
@@ -82,6 +91,7 @@ impl EventEncoder {
         if self.poisoned {
             return Err(CodecError::Invalid("rejected stream"));
         }
+        self.target_locked = true;
         let result = (|| {
             crate::lowering::events::check_event(
                 self.state()?,
@@ -162,6 +172,7 @@ impl EventEncoder {
         })();
         if result.is_err() {
             self.poisoned = true;
+            self.projection.clear();
         }
         result
     }
@@ -171,6 +182,10 @@ impl EventEncoder {
         }
         end_of_stream(self.state()?)?;
         Ok(())
+    }
+    /// Only a successfully checked terminal supplies response projection evidence.
+    pub fn projection(&self) -> &[crate::lowering::projection::ProjectionStage] {
+        if self.poisoned { &[] } else { &self.projection }
     }
     pub(super) fn state(&self) -> Result<&StreamState, CodecError> {
         self.state.as_ref().ok_or(CodecError::Invalid("state"))
@@ -216,7 +231,7 @@ impl EventEncoder {
         )?;
         Ok(v)
     }
-    fn responses(&self, event: &StreamEvent) -> Result<Vec<Value>, CodecError> {
+    fn responses(&mut self, event: &StreamEvent) -> Result<Vec<Value>, CodecError> {
         let result = match event {
             StreamEvent::AudioDelta { .. } => {
                 return Err(CodecError::Unsupported("Responses audio carrier".into()));
@@ -454,6 +469,11 @@ impl EventEncoder {
                     }
                     StreamTerminal::Error => unreachable!(),
                 };
+                let mut stages = target.projection().to_vec();
+                for stage in &mut stages {
+                    stage.direction = crate::lowering::projection::ProjectionDirection::Event;
+                }
+                self.projection = stages;
                 vec![json!({"type":kind,"response":v})]
             }
         };

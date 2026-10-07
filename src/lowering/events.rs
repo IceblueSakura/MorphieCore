@@ -65,7 +65,12 @@ pub fn check_event(
             return Err(RepresentationError::InteractionProgress);
         }
         StreamEvent::Usage(usage) => {
-            super::generation::check_usage(*usage, profile, &contract.adaptation.rules)?;
+            let projected = if profile == Profile::Chat {
+                super::projection::chat_usage(*usage, contract.adaptation.rules.chat_image_usage)?.0
+            } else {
+                *usage
+            };
+            super::generation::check_usage(projected, profile, &contract.adaptation.rules)?;
         }
         StreamEvent::ItemStarted { kind, replay, .. } => {
             if let ItemKind::ToolCall {

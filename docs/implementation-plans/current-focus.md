@@ -2,9 +2,9 @@
 
 ## 当前范围
 
-**当前没有运行中的代码行为切片。下一入口为 [P5：具名投影、组合损失与复用重验](client-managed-ir.md#p5)。** 本次不启动 P5，也不将纯库与现有 wire 回归视为 P6 消费者验收。
+**当前没有运行中的代码行为切片。下一入口为 [P6：现有接口与消费者闭环验收](client-managed-ir.md#p6)。** 纯库与 wire 回归不替代固定消费者 gate；不得从已定稿投影规则扩大损失白名单或合并消息/part。
 
-资源、引用、Replay/cache 和原 usage 的现有 owner 与回归作为输入，不重复建设。下一次只选择一个已定稿损失规则或明确缺口；执行基线、依赖与停止点统一归[剩余计划](client-managed-ir.md#execution-order)。
+资源、引用、Replay/cache 和原 usage 的现有 owner 与回归作为输入，不重复建设；执行基线、依赖与停止点统一归[剩余计划](client-managed-ir.md#execution-order)。
 
 维护和延期范围只查[next-goal](next-goal.md)：既有标准文本/function、图片、基础文件、请求型音频与模型发现保留受影响回归；文件产品扩展、Google/Anthropic codecs、ServerManaged、Agent 执行/恢复和 Realtime 不随引用选片恢复。具体接口保持 owning profiles 的现行准入与拒绝，不新增私有载体。
 
