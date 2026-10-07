@@ -1,12 +1,14 @@
 //! Immutable schema admission, not instance evaluation or remote reference resolution.
-use super::{GenerationError, MAX_TEXT_BYTES, MAX_TOTAL_BYTES, pattern};
+use super::{
+    GenerationError, MAX_SCHEMA_REFERENCES, MAX_SCHEMA_RESOURCES, MAX_TEXT_BYTES, MAX_TOTAL_BYTES,
+    SchemaDialect, SchemaDocument, pattern,
+};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_JSON_DEPTH: usize = 64;
 const MAX_JSON_NODES: usize = 65_536;
 const MAX_SCHEMA_NODES: usize = 16_384;
-const MAX_REFS: usize = 8_192;
 const MAX_ENUMS: usize = 8_192;
 // Fixed local Structured Outputs profile, not universal model capability limits.
 const STRICT_PROPERTIES: usize = 5_000;
@@ -58,15 +60,52 @@ fn charge(total: &mut usize, n: usize, max: usize) -> Result<(), GenerationError
     Ok(())
 }
 
-pub(super) fn validate(value: &Value, mode: Mode) -> Result<usize, GenerationError> {
+pub(super) fn validate(schema: &SchemaDocument, mode: Mode) -> Result<usize, GenerationError> {
+    if schema.resources().len() > MAX_SCHEMA_RESOURCES
+        || schema.dialect() == SchemaDialect::Unspecified && !schema.resources().is_empty()
+    {
+        return Err(if schema.resources().len() > MAX_SCHEMA_RESOURCES {
+            GenerationError::Limit
+        } else {
+            invalid()
+        });
+    }
     // Value callers bypass raw byte admission. Bound all data, including annotations,
     // before serde serialization, enum cloning or recursive schema traversal.
     let mut raw_nodes = 0;
-    preflight(value, 0, &mut raw_nodes)?;
-    let bytes = crate::semantic::value::json_size(value, MAX_TEXT_BYTES)
+    preflight(schema.root(), 0, &mut raw_nodes)?;
+    let mut bytes = crate::semantic::value::json_size(schema.root(), MAX_TEXT_BYTES)
         .map_err(|_| GenerationError::Limit)?;
+    let mut resources = BTreeMap::new();
+    for (index, resource) in schema.resources().iter().enumerate() {
+        let id = resource.id.as_str();
+        if id.len() > 8192 {
+            return Err(GenerationError::Limit);
+        }
+        let uri = url::Url::parse(id).map_err(|_| invalid())?;
+        if !matches!(uri.scheme(), "https" | "http" | "urn")
+            || uri.fragment().is_some()
+            || !uri.username().is_empty()
+            || uri.password().is_some()
+            || id.chars().any(char::is_whitespace)
+            || resources.insert(id, index + 1).is_some()
+        {
+            return Err(invalid());
+        }
+        preflight(&resource.value, 0, &mut raw_nodes)?;
+        charge(&mut bytes, id.len(), MAX_TOTAL_BYTES)?;
+        charge(
+            &mut bytes,
+            crate::semantic::value::json_size(&resource.value, MAX_TEXT_BYTES)
+                .map_err(|_| GenerationError::Limit)?,
+            MAX_TOTAL_BYTES,
+        )?;
+    }
     let mut check = Check {
         mode,
+        dialect: schema.dialect(),
+        document: 0,
+        resources,
         nodes: BTreeMap::new(),
         refs: vec![],
         path_bytes: 0,
@@ -75,7 +114,11 @@ pub(super) fn validate(value: &Value, mode: Mode) -> Result<usize, GenerationErr
         chars: 0,
         enum_bytes: 0,
     };
-    check.walk(value, String::new(), 0)?;
+    check.walk(schema.root(), String::new(), 0)?;
+    for (index, resource) in schema.resources().iter().enumerate() {
+        check.document = index + 1;
+        check.walk(&resource.value, String::new(), 0)?;
+    }
     for target in &check.refs {
         if !check.nodes.contains_key(target) {
             return Err(invalid());
@@ -84,7 +127,7 @@ pub(super) fn validate(value: &Value, mode: Mode) -> Result<usize, GenerationErr
     if mode != Mode::General {
         // Only the root's alias chain needs a concrete object type. Other recursive
         // edges are checked by membership, never expanded into an infinite tree.
-        let mut path = String::new();
+        let mut path = (0, String::new());
         let mut seen = BTreeSet::new();
         loop {
             if !seen.insert(path.clone()) {
@@ -93,7 +136,7 @@ pub(super) fn validate(value: &Value, mode: Mode) -> Result<usize, GenerationErr
             let node = check.nodes.get(&path).ok_or_else(invalid)?;
             let o = node.as_object().ok_or_else(invalid)?;
             if let Some(reference) = o.get("$ref") {
-                path = reference_path(reference.as_str().ok_or_else(invalid)?)?;
+                path = check.reference(path.0, reference.as_str().ok_or_else(invalid)?)?;
             } else {
                 if o.contains_key("anyOf")
                     || o.get("type").and_then(Value::as_str) != Some("object")
@@ -132,8 +175,11 @@ fn preflight(v: &Value, depth: usize, nodes: &mut usize) -> Result<(), Generatio
 }
 struct Check<'a> {
     mode: Mode,
-    nodes: BTreeMap<String, &'a Value>,
-    refs: Vec<String>,
+    dialect: SchemaDialect,
+    document: usize,
+    resources: BTreeMap<&'a str, usize>,
+    nodes: BTreeMap<(usize, String), &'a Value>,
+    refs: Vec<(usize, String)>,
     path_bytes: usize,
     properties: usize,
     enums: usize,
@@ -141,6 +187,18 @@ struct Check<'a> {
     enum_bytes: usize,
 }
 impl<'a> Check<'a> {
+    fn reference(
+        &self,
+        document: usize,
+        reference: &str,
+    ) -> Result<(usize, String), GenerationError> {
+        if reference.starts_with('#') {
+            return Ok((document, reference_path(reference)?));
+        }
+        let (resource, fragment) = reference.split_once('#').unwrap_or((reference, ""));
+        let document = self.resources.get(resource).copied().ok_or_else(invalid)?;
+        Ok((document, reference_path(&format!("#{fragment}"))?))
+    }
     fn strings(&mut self, n: usize) -> Result<(), GenerationError> {
         if self.mode != Mode::General {
             charge(&mut self.chars, n, STRICT_CHARS)?;
@@ -148,12 +206,18 @@ impl<'a> Check<'a> {
         Ok(())
     }
     fn walk(&mut self, v: &'a Value, path: String, depth: usize) -> Result<(), GenerationError> {
-        let o = v.as_object().ok_or_else(invalid)?;
         if self.nodes.len() == MAX_SCHEMA_NODES {
             return Err(GenerationError::Limit);
         }
         charge(&mut self.path_bytes, path.len(), MAX_TOTAL_BYTES)?;
-        self.nodes.insert(path.clone(), v);
+        self.nodes.insert((self.document, path.clone()), v);
+        if v.is_boolean()
+            && self.dialect == SchemaDialect::Draft202012
+            && self.mode == Mode::General
+        {
+            return Ok(());
+        }
+        let o = v.as_object().ok_or_else(invalid)?;
         let types = type_names(o.get("type"))?;
         if self.mode != Mode::General {
             self.strict_node(o, &types)?;
@@ -191,6 +255,11 @@ impl<'a> Check<'a> {
             }
             let child_path = || format!("{path}/{}", escape(key));
             match key.as_str() {
+                "$schema"
+                    if path.is_empty()
+                        && self.dialect == SchemaDialect::Draft202012
+                        && value.as_str()
+                            == Some("https://json-schema.org/draft/2020-12/schema") => {}
                 "type" => {}
                 "properties" | "patternProperties" | "$defs" | "dependentSchemas" => {
                     let map = value.as_object().ok_or_else(invalid)?;
@@ -249,16 +318,19 @@ impl<'a> Check<'a> {
                     }
                 }
                 "additionalProperties" | "unevaluatedProperties" | "unevaluatedItems" => {
-                    if !value.is_boolean() {
+                    if !value.is_boolean()
+                        || self.dialect == SchemaDialect::Draft202012 && self.mode == Mode::General
+                    {
                         self.walk(value, child_path(), nested)?;
                     }
                 }
                 "$ref" => {
-                    if self.refs.len() == MAX_REFS {
+                    if self.refs.len() == MAX_SCHEMA_REFERENCES {
                         return Err(GenerationError::Limit);
                     }
-                    let target = reference_path(value.as_str().ok_or_else(invalid)?)?;
-                    charge(&mut self.path_bytes, target.len(), MAX_TOTAL_BYTES)?;
+                    let target =
+                        self.reference(self.document, value.as_str().ok_or_else(invalid)?)?;
+                    charge(&mut self.path_bytes, target.1.len(), MAX_TOTAL_BYTES)?;
                     self.refs.push(target);
                 }
                 "enum" => {
@@ -349,7 +421,7 @@ impl<'a> Check<'a> {
             if o.keys().any(|k| {
                 !matches!(
                     k.as_str(),
-                    "$ref" | "title" | "description" | "default" | "examples" | "$defs"
+                    "$ref" | "title" | "description" | "default" | "examples" | "$defs" | "$schema"
                 )
             }) {
                 return Err(invalid());

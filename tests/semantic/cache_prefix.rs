@@ -132,10 +132,11 @@ fn prefix_settings_bind_schema_and_tool_order_without_a_second_value_authority()
         name: morphiecore::semantic::value::Text::new("answer", "fixture", 32).unwrap(),
         description: None,
         strict: Some(false),
-        schema: serde_json::from_str(
+        schema: serde_json::from_str::<Value>(
             r#"{"type":"object","properties":{"a":{"type":"string"},"b":{"type":"string"}}}"#,
         )
-        .unwrap(),
+        .unwrap()
+        .into(),
     });
     source.task.semantic = source
         .task
@@ -147,7 +148,7 @@ fn prefix_settings_bind_schema_and_tool_order_without_a_second_value_authority()
     else {
         panic!("schema")
     };
-    schema["properties"] =
+    schema.root_mut()["properties"] =
         serde_json::from_str(r#"{"b":{"type":"string"},"a":{"type":"string"}}"#).unwrap();
     changed.task.semantic = source.task.semantic.with_settings(settings).unwrap();
     assert!(changed.check_cache_prefix(&proof, &scope()).is_err());

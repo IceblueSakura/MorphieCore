@@ -22,7 +22,7 @@ fn output_edit_must_not_return_an_invalid_request() {
     let edited = request().with_output(OutputConstraint::JsonSchema {
         name: Text::new("answer", "schema name", 64).unwrap(),
         description: None,
-        schema: json!({"type":"unknown"}),
+        schema: json!({"type":"unknown"}).into(),
         strict: Some(false),
     });
     assert_eq!(edited.unwrap_err(), GenerationError::InvalidSchema);
@@ -66,7 +66,7 @@ fn output_edit_checks_combined_history_and_settings_budget() {
         let output = OutputConstraint::JsonSchema {
             name: Text::new("a", "schema name", 64).unwrap(),
             description: None,
-            schema: json!({"type":"string"}),
+            schema: json!({"type":"string"}).into(),
             strict: Some(false),
         };
         let mut settings = GenerationSettings::default();

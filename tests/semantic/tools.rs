@@ -224,7 +224,7 @@ fn independent_decode_preserves_function_meaning_and_message_ownership() {
     assert_eq!(def.strict, FunctionStrictness::Explicit(false));
     assert_eq!(
         def.parameters,
-        Some(json!({"type":"object","properties":{"city":{"type":"string"}}}))
+        Some(json!({"type":"object","properties":{"city":{"type":"string"}}}).into())
     );
     assert_eq!(
         d.semantic.tool_choice(),

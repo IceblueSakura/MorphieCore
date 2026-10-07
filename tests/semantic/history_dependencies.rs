@@ -205,10 +205,11 @@ fn redacted_values_and_schema_order_remain_real_dependencies() {
             name: text("answer"),
             description: None,
             strict: Some(false),
-            schema: serde_json::from_str(
+            schema: serde_json::from_str::<serde_json::Value>(
                 r#"{"type":"object","properties":{"a":{"type":"string"},"b":{"type":"string"}}}"#,
             )
-            .unwrap(),
+            .unwrap()
+            .into(),
         });
     let source = source.with_settings(settings.clone()).unwrap();
     let proof = RequestDependencyProof::capture(
@@ -221,7 +222,7 @@ fn redacted_values_and_schema_order_remain_real_dependencies() {
         panic!("schema")
     };
     let mut reordered = schema.clone();
-    reordered["properties"] =
+    reordered.root_mut()["properties"] =
         serde_json::from_str(r#"{"b":{"type":"string"},"a":{"type":"string"}}"#).unwrap();
     assert_eq!(*schema, reordered);
     let morphiecore::semantic::value::Presence::Value(OutputConstraint::JsonSchema {

@@ -67,6 +67,7 @@ pub fn lower_request<'a>(
     c: GenerationRepresentationContract,
 ) -> Result<RequestRepresentation<'a>, RepresentationError> {
     let q = check(r, c.clone())?;
+    check_schema_documents(r.settings())?;
     if q.provider_observations || !r.replay_groups().is_empty() || !r.call_derivations().is_empty()
     {
         return Err(RepresentationError::UnmigratedSemantic);
@@ -309,6 +310,10 @@ pub fn lower_response<'a>(
         return Err(RepresentationError::UnmigratedSemantic);
     }
     if let Some(settings) = &metadata.context.settings {
+        check_schema_documents(settings)?;
+        if settings.reasoning.requires_extended_controls() {
+            return Err(RepresentationError::Reasoning);
+        }
         check_tool_selection(settings.tool_choice.as_ref())?;
     }
     if r.progress() != InteractionProgress::Unreported {
@@ -476,6 +481,9 @@ fn represent_reasoning(
 ) -> Result<(), RepresentationError> {
     let structured_chat = adaptation.rules.structured_chat_reasoning;
     let request = history.is_some();
+    if controls.requires_extended_controls() {
+        return Err(RepresentationError::Reasoning);
+    }
     if profile == Profile::Responses && controls.summary() == Some(ReasoningSummary::Disabled) {
         return Err(RepresentationError::Reasoning);
     }
@@ -541,8 +549,8 @@ fn text_items(
     for (_, i) in items {
         // Public carriers have no source/reference-domain field. A domain
         // declaration is not permission to erase it or invent a private carrier.
-        if matches!(i, Item::ToolCall(call) if call.context.alias_domain.is_some())
-            || matches!(i, Item::CustomCall(call) if call.context.alias_domain.is_some())
+        if matches!(i, Item::ToolCall(call) if call.context.alias_domain.is_some() || call.context.definition.is_some())
+            || matches!(i, Item::CustomCall(call) if call.context.alias_domain.is_some() || call.context.definition.is_some())
             || matches!(i, Item::ToolResult(result) | Item::CustomResult(result) if result.context.alias_domain.is_some())
         {
             return Err(RepresentationError::UnmigratedSemantic);
@@ -738,6 +746,31 @@ fn validate_wire_ids(
     fidelity
         .check_wire_item_ids(items, generate)
         .map_err(|_| RepresentationError::Metadata)
+}
+fn check_schema_documents(settings: &GenerationSettings) -> Result<(), RepresentationError> {
+    settings.validate()?;
+    if matches!(settings.output(),OutputConstraint::JsonSchema { schema, .. } if !schema.is_unversioned_local())
+    {
+        return Err(RepresentationError::StructuredOutput);
+    }
+    for tool in settings
+        .tools
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .flat_map(ToolDefinition::leaves)
+    {
+        if let ToolDefinition::Function(tool) = tool
+            && tool
+                .parameters
+                .iter()
+                .chain(&tool.output_schema)
+                .any(|s| !s.is_unversioned_local())
+        {
+            return Err(RepresentationError::Tools);
+        }
+    }
+    Ok(())
 }
 fn check_tool_selection(choice: Option<&ToolChoice>) -> Result<(), RepresentationError> {
     // The pinned standard named-tool types have no qualified-reference carrier.

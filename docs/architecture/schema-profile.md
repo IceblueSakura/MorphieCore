@@ -1,6 +1,12 @@
 # Generation schema admission
 
-This is the local schema admission contract, not a general JSON Schema evaluator or proof of model output adherence. Semantic ownership stays with `OutputConstraint::JsonSchema` and `FunctionTool`; protocol codecs do not maintain a second schema. The fixed [Structured Outputs baseline](../references/responses-standard.md#4-tools-与-schema) supplies the strict rules and dated quotas. No live Provider validation is implied.
+This is the local schema admission contract, not a general JSON Schema evaluator or proof of model output adherence. `OutputConstraint::JsonSchema` and `FunctionTool` use one [SchemaDocument](../../src/semantic/task/generation/schema_document.rs) owner for the dialect, root value and explicitly supplied resources; codecs do not maintain a second schema. The fixed [Structured Outputs baseline](../references/responses-standard.md#4-tools-与-schema) supplies the strict rules and dated quotas. No live Provider validation is implied.
+
+## Dialect and public projection
+
+Unspecified dialect retains the existing closed Generation vocabulary; it does not infer a draft from keywords. An explicit Draft202012 document admits the same vocabulary plus boolean schema positions and a matching root `$schema` declaration, following the [fixed Core source](../references/upstream-sync.md#client-managed-s2). This is a bounded subset, not a full evaluator or support for every draft. Unknown/mismatched declarations, nested dialect switches, `$id` rebasing, anchors and dynamic references remain rejected.
+
+Current Responses/Chat carriers accept only unversioned local documents. Explicit dialects and supplied external resources remain valid pure IR but fail target projection, including function parameters/output schemas and reported static/event settings. No expansion, inlining, lossy draft conversion or private resource table is emitted. Editing uses the final root/resources; no parser view can restore a deleted definition.
 
 ## Modes and defaults
 
@@ -13,7 +19,7 @@ This is the local schema admission contract, not a general JSON Schema evaluator
 | function parameters, Explicit(false) or Omitted(NonStrict) | General structural |
 | function output_schema | General structural, independent of parameter strict |
 
-Absent function schemas remain absent. General structural mode permits `{}` and does not require an object instance type. All schema nodes in this profile are JSON objects; boolean values are allowed as additional/unevaluated property/item policies, not as standalone schema nodes.
+Absent function schemas remain absent. General structural mode permits `{}` and does not require an object instance type. Unspecified-dialect schema nodes are JSON objects; boolean values there are additional/unevaluated property/item policies only. Explicit Draft202012 general mode also admits boolean schemas. The two strict modes retain their existing narrower shape rules.
 
 Normalization intent shares strict vocabulary, root and quota admission but does not demand already-complete required lists or explicit additionalProperties=false. Those omissions retain their declared source default; the gateway neither adds constraints nor claims that normalization has executed. Explicit strict requires those invariants before accepting the schema. Existing cross-profile strict-default rejection remains in lowering.
 
@@ -34,9 +40,9 @@ Normalization intent shares strict vocabulary, root and quota admission but does
 | multipleOf | Positive number |
 | min/maxLength, min/maxItems, min/maxProperties, min/maxContains | Nonnegative integers; a present lower bound cannot exceed its upper bound |
 | uniqueItems | Boolean |
-| $ref | Resolvable local JSON Pointer fragment; see below |
+| $ref | Resolvable local JSON Pointer fragment or an explicitly supplied resource reference; see below |
 
-Unknown keywords, alternate dialect declarations (`$schema`), resource rebasing (`$id`), anchors/dynamic references and unsupported boolean-schema positions are rejected, not ignored. This is a deliberately closed vocabulary, not a statement that these are invalid in every JSON Schema dialect.
+Unknown keywords, dialect declarations not admitted above, resource rebasing (`$id`), anchors/dynamic references and unsupported boolean-schema positions are rejected, not ignored. This is a deliberately closed vocabulary, not a statement that these are invalid in every JSON Schema dialect.
 
 ## Strict subset
 
@@ -56,11 +62,14 @@ Before parsing, a non-recursive scan enforces at most 65,536 UTF-8 bytes, 64 nes
 
 ## References and resources
 
-A reference must be `#` or a `#/...` pointer, with valid percent encoding, UTF-8 and ~0/~1 escapes. Targets must be registered schema positions, not arbitrary objects in default/enum/examples or the properties map itself. Forward references and recursive graphs are allowed. Every schema node is checked once in the physical document, including unused definitions; every reference edge is resolved without recursively expanding its target. Removing a referenced definition must fail revalidation.
+A local reference must be `#` or a `#/...` pointer, with valid percent encoding, UTF-8 and ~0/~1 escapes. Explicit Draft202012 also permits absolute references whose resource ID exactly matches a caller-supplied document, optionally followed by such a fragment. Resource IDs are unique absolute HTTP/HTTPS/URN identifiers without userinfo or fragments; relative rebasing is not inferred. No URI is fetched. All documents share the declared dialect and mode.
+
+Targets must be registered schema positions, not arbitrary objects in default/enum/examples or the properties map itself. Forward references and cycles within or across supplied resources are allowed. Every schema node is checked once in its physical document, including unused resources/definitions; edges do not recursively expand targets. Removing a referenced definition must fail revalidation. A source URI does not authenticate a document.
 
 Local resource bounds apply in every mode:
 
-- Serialized schema: 1 MiB; preflight raw Value depth 64 and 65,536 values/keys before recursive serialization or cloning of enum data.
+- Each serialized document: 1 MiB; root plus supplied resources and IDs: 4 MiB. At most 32 supplied resources, each ID at most 8,192 UTF-8 bytes.
+- Preflight raw Value depth 64 per document and 65,536 values/keys across the graph, before recursive serialization or cloning of enum data. This depth is independent of the reference graph.
 - Schema nodes: 16,384; reference edges: 8,192; stored pointer-path bytes: 4 MiB.
 - Enum entries: 8,192 total; canonical enum comparison data: 4 MiB total.
 

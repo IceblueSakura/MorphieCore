@@ -26,6 +26,10 @@ mod chat_wire;
 mod client_carrier;
 #[path = "semantic/client_managed.rs"]
 mod client_managed;
+#[path = "semantic/configuration_revisions.rs"]
+mod configuration_revisions;
+#[path = "semantic/context_transforms.rs"]
+mod context_transforms;
 #[path = "semantic/continuation.rs"]
 mod continuation;
 #[path = "semantic/contract_ownership.rs"]
@@ -86,6 +90,8 @@ mod provider_profiles;
 mod reasoning;
 #[path = "semantic/reasoning_boundary.rs"]
 mod reasoning_boundary;
+#[path = "semantic/reasoning_controls.rs"]
+mod reasoning_controls;
 #[path = "semantic/replay_formats.rs"]
 mod replay_formats;
 #[path = "semantic/replay_groups.rs"]
@@ -102,6 +108,8 @@ mod response_requirements;
 mod router_adapter;
 #[path = "semantic/schema.rs"]
 mod schema;
+#[path = "semantic/schema_documents.rs"]
+mod schema_documents;
 #[path = "semantic/scoped_identity.rs"]
 mod scoped_identity;
 #[path = "semantic/scoped_usage.rs"]

@@ -105,8 +105,8 @@ fn read_response_format(v: &Value) -> Result<OutputConstraint, CodecError> {
         _ => return Err(CodecError::Unsupported("response format".into())),
     })
 }
-fn write_response_format(f: &OutputConstraint) -> Value {
-    match f {
+fn write_response_format(f: &OutputConstraint) -> Result<Value, CodecError> {
+    Ok(match f {
         OutputConstraint::Text => json!({"type":"text"}),
         OutputConstraint::JsonObject => json!({"type":"json_object"}),
         OutputConstraint::JsonSchema {
@@ -122,10 +122,10 @@ fn write_response_format(f: &OutputConstraint) -> Value {
                 description.as_ref(),
                 schema,
                 *strict,
-            );
+            )?;
             json!({"type":"json_schema","json_schema":Value::Object(body)})
         }
-    }
+    })
 }
 /// Request-only text arrays preserve ordered part ownership; canonical single parts
 /// encode as strings. This does not admit response arrays or media placeholders.
@@ -452,12 +452,15 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     if let Some(n) = target.semantic.controls().top_logprobs {
         o.insert("top_logprobs".into(), json!(n));
     }
-    put_presence(
-        o,
-        "response_format",
-        &target.semantic.text_options().format,
-        write_response_format,
-    );
+    match &target.semantic.text_options().format {
+        crate::semantic::value::Presence::Absent => {}
+        crate::semantic::value::Presence::Null => {
+            o.insert("response_format".into(), Value::Null);
+        }
+        crate::semantic::value::Presence::Value(format) => {
+            o.insert("response_format".into(), write_response_format(format)?);
+        }
+    }
     super::chat_audio::write_settings(target.semantic.settings(), o);
     function_tools::encode(target.semantic, Profile::Chat, o)?;
     super::reasoning::write_request(target.semantic.reasoning(), o, Profile::Chat)?;

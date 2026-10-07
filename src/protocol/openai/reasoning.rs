@@ -62,9 +62,10 @@ pub(super) fn request(
         s.parse::<ReasoningContext>()
             .map_err(|_| CodecError::Unsupported("reasoning context".into()))
     })?;
-    r.mode = optional_label(reasoning, "mode", |s| {
-        s.parse::<ReasoningMode>()
-            .map_err(|_| CodecError::Unsupported("reasoning mode".into()))
+    r.mode = optional_label(reasoning, "mode", |s| match s {
+        "standard" => Ok(ReasoningMode::Standard),
+        "pro" => Ok(ReasoningMode::Pro),
+        _ => Err(CodecError::Unsupported("reasoning mode".into())),
     })?;
     r.validate()?;
     Ok(r)
@@ -90,6 +91,10 @@ pub(super) fn write_request(
     o: &mut Map<String, Value>,
     profile: Profile,
 ) -> Result<(), CodecError> {
+    value.validate()?;
+    if value.requires_extended_controls() {
+        return Err(CodecError::Unsupported("reasoning controls".into()));
+    }
     if profile == Profile::Responses && value.summary() == Some(ReasoningSummary::Disabled) {
         // Typed control intent cannot be replaced by absence or null. This also
         // protects reported settings on events, before a final response exists.

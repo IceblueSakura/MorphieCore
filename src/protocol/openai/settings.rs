@@ -1,6 +1,9 @@
 //! Task settings shared by request parsing and provider-reported response echoes.
 use super::{CodecError, Profile, common::*, function_tools, reasoning};
-use crate::semantic::{task::generation::*, value::Text};
+use crate::semantic::{
+    task::generation::*,
+    value::{Presence, Text},
+};
 use serde_json::{Map, Value, json};
 pub(super) const FIELDS: &[&str] = &[
     "instructions",
@@ -123,7 +126,8 @@ pub(super) fn read_schema_body(o: &Map<String, Value>) -> Result<OutputConstrain
         schema: o
             .get("schema")
             .cloned()
-            .ok_or(CodecError::Invalid("schema"))?,
+            .ok_or(CodecError::Invalid("schema"))?
+            .into(),
         strict: o
             .get("strict")
             .filter(|v| !v.is_null())
@@ -136,20 +140,27 @@ pub(super) fn write_schema_body(
     o: &mut Map<String, Value>,
     name: &Text,
     description: Option<&Text>,
-    schema: &Value,
+    schema: &SchemaDocument,
     strict: Option<bool>,
-) {
+) -> Result<(), CodecError> {
+    schema.validate()?;
+    if !schema.is_unversioned_local() {
+        return Err(CodecError::Unsupported(
+            "schema dialect or resources".into(),
+        ));
+    }
     o.insert("name".into(), json!(name.as_str()));
     if let Some(d) = description {
         o.insert("description".into(), json!(d.as_str()));
     }
-    o.insert("schema".into(), schema.clone());
+    o.insert("schema".into(), schema.root().clone());
     if let Some(s) = strict {
         o.insert("strict".into(), json!(s));
     }
+    Ok(())
 }
-pub(super) fn write_format(f: &OutputConstraint) -> Value {
-    match f {
+pub(super) fn write_format(f: &OutputConstraint) -> Result<Value, CodecError> {
+    Ok(match f {
         OutputConstraint::Text => json!({"type":"text"}),
         OutputConstraint::JsonObject => json!({"type":"json_object"}),
         OutputConstraint::JsonSchema {
@@ -160,10 +171,10 @@ pub(super) fn write_format(f: &OutputConstraint) -> Value {
         } => {
             let mut o = Map::new();
             o.insert("type".into(), json!("json_schema"));
-            write_schema_body(&mut o, name, description.as_ref(), schema, *strict);
+            write_schema_body(&mut o, name, description.as_ref(), schema, *strict)?;
             Value::Object(o)
         }
-    }
+    })
 }
 pub(super) fn write(s: &GenerationSettings, o: &mut Map<String, Value>) -> Result<(), CodecError> {
     put_presence(o, "instructions", &s.instructions, |t| json!(t.as_str()));
@@ -193,7 +204,15 @@ pub(super) fn write(s: &GenerationSettings, o: &mut Map<String, Value>) -> Resul
     }
     if s.text.presence {
         let mut t = Map::new();
-        put_presence(&mut t, "format", &s.text.format, write_format);
+        match &s.text.format {
+            Presence::Absent => {}
+            Presence::Null => {
+                t.insert("format".into(), Value::Null);
+            }
+            Presence::Value(format) => {
+                t.insert("format".into(), write_format(format)?);
+            }
+        }
         put_presence(&mut t, "verbosity", &s.text.verbosity, |v| {
             json!(match v {
                 Verbosity::Low => "low",

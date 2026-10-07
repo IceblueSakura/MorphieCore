@@ -207,6 +207,7 @@ impl GenerationResponse {
             .with_progress(self.progress)?
             .with_details(self.details)?;
         super::identity::check_call_edits(&self.items, response.items())?;
+        super::request::context_transform::check_protected_edits(&self.items, response.items())?;
         response = response.with_usage_reports(self.usage)?;
         Ok(response)
     }

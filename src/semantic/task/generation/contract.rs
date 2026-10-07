@@ -10,6 +10,7 @@ pub enum GenerationFeature {
     MaxOutputTokens,
     Tools,
     ProviderObservation,
+    ConfigurationRevision,
     TextMetadata,
     Controls,
     ParallelTools,
@@ -148,6 +149,9 @@ impl GenerationSemanticContract {
     ) -> Result<GenerationResponseRequirements, GenerationFeature> {
         use GenerationFeature::*;
         let q = GenerationResponseRequirements::derive(response);
+        if q.configuration_revisions {
+            return Err(ConfigurationRevision);
+        }
         if q.provider_observations {
             return Err(ProviderObservation);
         }
@@ -178,6 +182,9 @@ impl GenerationSemanticContract {
     ) -> Result<GenerationRequirements, GenerationFeature> {
         use GenerationFeature::*;
         let q = GenerationRequirements::derive(r);
+        if q.configuration_revisions {
+            return Err(ConfigurationRevision);
+        }
         if q.provider_observations {
             return Err(ProviderObservation);
         }

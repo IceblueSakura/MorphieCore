@@ -6,13 +6,15 @@ pub use audio::{
     OutputModality,
 };
 pub use audio_stream::{AudioBuffer, AudioUpdate};
+mod configuration;
 mod continuation;
+pub use configuration::{ConfigurationId, ConfigurationSnapshot, ToolDefinitionBinding};
 mod dependency;
 pub use dependency::{
     HistoryDependency, RequestDependencyProof, SettingsDependency, SettingsField,
 };
 mod contract;
-pub use continuation::{CallReference, Continuation};
+pub use continuation::{CallReference, Continuation, ProviderContinuationRequirement};
 pub use contract::{GenerationFeature, GenerationSemanticContract};
 mod event;
 mod group;
@@ -39,6 +41,10 @@ mod requirements;
 mod resource;
 mod response;
 mod schema;
+mod schema_document;
+pub use schema_document::{
+    MAX_SCHEMA_REFERENCES, MAX_SCHEMA_RESOURCES, SchemaDialect, SchemaDocument, SchemaResource,
+};
 mod schema_number;
 mod stream_value;
 pub use stream_value::StreamPartValue;
@@ -61,13 +67,15 @@ pub use usage_views::{DerivedTokenCount, UsageFormula};
 mod validate;
 pub use output::{OutputConstraint, TextOptions, Verbosity};
 pub use reasoning::{
-    ReasoningContent, ReasoningContext, ReasoningEffort, ReasoningItem, ReasoningMode,
-    ReasoningPresence, ReasoningReplay, ReasoningRequest, ReasoningSummary,
+    ReasoningBudget, ReasoningContent, ReasoningContext, ReasoningDisplay, ReasoningEffort,
+    ReasoningItem, ReasoningMode, ReasoningPresence, ReasoningReplay, ReasoningRequest,
+    ReasoningSummary,
 };
 pub use request::{
-    ClientManaged, ConfigurationUpdate, ContentPart, GenerationControls, GenerationError,
-    GenerationRequest, GenerationSettings, Instruction, InstructionAuthority, Item, ItemId,
-    Message, MessageRole, Part, PartId, Phase, Truncation,
+    ClientManaged, ConfigurationUpdate, ContentPart, ContextBuild, ContextChange, ContextEdit,
+    ContextError, ContextStage, GenerationControls, GenerationError, GenerationRequest,
+    GenerationSettings, Instruction, InstructionAuthority, Item, ItemId, Message, MessageRole,
+    Part, PartId, Phase, SelectedHistory, Truncation,
 };
 pub use requirements::{GenerationRequirements, GenerationResponseRequirements};
 pub use resource::{

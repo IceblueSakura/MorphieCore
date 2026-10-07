@@ -40,6 +40,8 @@ pub struct CallContext {
     pub caller: Option<CallOrigin>,
     /// Explicit native reference domain; never inferred from a result's owner.
     pub alias_domain: Option<super::NativeAliasDomain>,
+    /// Historical definition association on function/custom calls only, never results.
+    pub definition: Option<super::ToolDefinitionBinding>,
 }
 impl CallContext {
     pub fn is_direct(&self) -> bool {
@@ -50,9 +52,9 @@ impl CallContext {
 pub struct FunctionTool {
     pub name: Text,
     pub description: Option<String>,
-    pub parameters: Option<serde_json::Value>,
+    pub parameters: Option<super::SchemaDocument>,
     pub strict: FunctionStrictness,
-    pub output_schema: Option<serde_json::Value>,
+    pub output_schema: Option<super::SchemaDocument>,
     pub dispatch: ToolDispatch,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -200,7 +202,7 @@ impl From<String> for ToolArguments {
 }
 // Both trees passed the structured-value depth/node budget. Object order is
 // authority here even though serde_json::Value equality ignores it.
-fn ordered_json_equal(left: &serde_json::Value, right: &serde_json::Value) -> bool {
+pub(super) fn ordered_json_equal(left: &serde_json::Value, right: &serde_json::Value) -> bool {
     use serde_json::Value;
     match (left, right) {
         (Value::Object(a), Value::Object(b)) => {

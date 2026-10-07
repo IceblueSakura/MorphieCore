@@ -13,6 +13,7 @@ pub enum HistoryDependency {
 }
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum SettingsField {
+    ConfigurationRevision,
     Instructions,
     Controls,
     Tools,
@@ -165,7 +166,10 @@ fn dependency(
             .map_err(|_| GenerationError::Limit)?;
     }
     let s = request.settings();
+    let pinned_configuration = request.configuration_revision().is_some()
+        && settings.includes(SettingsField::ConfigurationRevision);
     for field in [
+        SettingsField::ConfigurationRevision,
         SettingsField::Instructions,
         SettingsField::Controls,
         SettingsField::Tools,
@@ -175,10 +179,22 @@ fn dependency(
         SettingsField::Reasoning,
         SettingsField::Audio,
     ] {
-        if !settings.includes(field) {
+        if !settings.includes(field)
+            || pinned_configuration && field != SettingsField::ConfigurationRevision
+        {
             continue;
         }
         let result = match field {
+            SettingsField::ConfigurationRevision => {
+                // A local ID cannot vouch for independently reconstructed settings.
+                // Pin the immutable contents once; avoid hashing all fields twice.
+                write!(
+                    writer,
+                    "{field:?}:{:?}:{:?}",
+                    request.configuration_revision(),
+                    request.configuration_revision().map(|_| s)
+                )
+            }
             SettingsField::Instructions => write!(writer, "{field:?}:{:?}", s.instructions),
             SettingsField::Controls => write!(writer, "{field:?}:{:?}", s.controls),
             SettingsField::Tools => write!(writer, "{field:?}:{:?}", s.tools),
@@ -194,6 +210,18 @@ fn dependency(
     }
     for (id, item) in items {
         writer.hash.update(id.get().to_le_bytes());
+        // Public Debug redacts bindings. Hash the original immutable authority,
+        // not the redacted view or a lookup in the current tool definitions.
+        if let Some(binding) = super::configuration::item_binding(item) {
+            write!(
+                writer,
+                "{:?}:{:?}:{:?}",
+                binding.snapshot().revision(),
+                binding.reference(),
+                binding.snapshot().settings()
+            )
+            .map_err(|_| GenerationError::Limit)?;
+        }
         match item {
             Item::ProviderTool(observed) => {
                 write!(

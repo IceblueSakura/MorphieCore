@@ -189,13 +189,13 @@ fn response_format_shells_map_to_one_owner_with_independent_shapes() {
     let full = OutputConstraint::JsonSchema {
         name: text("answer"),
         description: Some(text("pick")),
-        schema: closed.clone(),
+        schema: closed.clone().into(),
         strict: Some(true),
     };
     let bare = OutputConstraint::JsonSchema {
         name: text("answer"),
         description: None,
-        schema: closed.clone(),
+        schema: closed.clone().into(),
         strict: None,
     };
     for (format, chat_format, responses_text, structured) in [

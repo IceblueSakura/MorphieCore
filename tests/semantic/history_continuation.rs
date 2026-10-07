@@ -407,7 +407,7 @@ fn typed_function_history_keeps_raw_arguments_while_summary_and_results_are_edit
         tools: Some(vec![ToolDefinition::Function(FunctionTool {
             name: text("lookup"),
             description: None,
-            parameters: Some(json!({"type":"object"})),
+            parameters: Some(json!({"type":"object"}).into()),
             strict: FunctionStrictness::Explicit(false),
             output_schema: None,
             dispatch: ToolDispatch::default(),

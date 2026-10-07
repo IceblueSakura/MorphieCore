@@ -216,3 +216,237 @@ fn selected_derivations_and_budgets_survive_without_copying_source_configuration
     invalid.controls.max_output_tokens = Some(0);
     assert!(ClientManaged::new(invalid).is_err());
 }
+
+#[test]
+fn configured_mixed_successor_separates_client_results_provider_progress_and_revision_dependencies()
+{
+    let settings = GenerationSettings {
+        instructions: Presence::Value(text("original configuration")),
+        tools: Some(vec![ToolDefinition::Function(FunctionTool {
+            name: text("lookup"),
+            description: None,
+            parameters: Some(serde_json::json!({"type":"object"}).into()),
+            strict: FunctionStrictness::Explicit(false),
+            output_schema: None,
+            dispatch: Default::default(),
+        })]),
+        ..Default::default()
+    };
+    let config = ConfigurationSnapshot::new(
+        ConfigurationId::new(LocalScope::new(1), 1),
+        settings.clone(),
+    )
+    .unwrap();
+    let mut client = call();
+    let Item::ToolCall(c) = &mut client else {
+        panic!()
+    };
+    c.context.definition = Some(
+        ToolDefinitionBinding::new(
+            config.clone(),
+            ToolReference {
+                kind: ToolKind::Function,
+                name: text("lookup"),
+                namespace: None,
+            },
+        )
+        .unwrap(),
+    );
+    let r1 = GenerationResponse::new(
+        vec![
+            (
+                ItemId::new(5),
+                Item::Message(Message {
+                    role: MessageRole::Assistant,
+                    parts: vec![Part {
+                        id: PartId::new(5),
+                        content: ContentPart::Text(text("reported text").into()),
+                    }],
+                    status: ItemLifecycle::Completed,
+                    phase: None,
+                }),
+            ),
+            (
+                ItemId::new(6),
+                Item::Reasoning(ReasoningItem {
+                    parts: vec![],
+                    status: ItemLifecycle::Completed,
+                    replay: None,
+                }),
+            ),
+            (ItemId::new(1), client),
+            (ItemId::new(2), provider(false)),
+        ],
+        Outcome::Completed,
+    )
+    .unwrap()
+    .with_replay_groups(vec![
+        ReplayGroup::new(
+            GroupId::new(LocalScope::ROOT, 1),
+            vec![
+                ItemId::new(5),
+                ItemId::new(6),
+                ItemId::new(1),
+                ItemId::new(2),
+            ],
+        )
+        .unwrap(),
+    ])
+    .unwrap()
+    .with_progress(InteractionProgress::NeedsContinuation)
+    .unwrap();
+    let selected = ClientManaged::from_configuration(config.clone())
+        .unwrap()
+        .select_response(&r1)
+        .unwrap();
+    let pending = selected.clone().finish(&[]).unwrap();
+    let Continuation::ToolResults(calls) = pending.client_results() else {
+        panic!()
+    };
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].item, ItemId::new(1));
+    assert_eq!(pending.provider_continuations().count(), 0);
+    let requirement = ProviderContinuationRequirement::capture(
+        pending.request(),
+        ItemId::new(2),
+        SettingsDependency::only(SettingsField::ConfigurationRevision),
+    )
+    .unwrap();
+    assert!(
+        ProviderContinuationRequirement::capture(
+            pending.request(),
+            ItemId::new(1),
+            SettingsDependency::All
+        )
+        .is_err()
+    );
+    let selected = selected
+        .require_provider_continuation(requirement.clone())
+        .unwrap();
+    assert_eq!(
+        selected
+            .clone()
+            .finish(&[])
+            .unwrap()
+            .provider_continuations()
+            .count(),
+        1
+    );
+    let proof = RequestDependencyProof::capture(
+        pending.request(),
+        HistoryDependency::ReplayGroup(GroupId::new(LocalScope::ROOT, 1)),
+        SettingsDependency::only(SettingsField::ConfigurationRevision),
+    )
+    .unwrap();
+    let r2 = GenerationResponse::new(vec![(ItemId::new(4), provider(true))], Outcome::Completed)
+        .unwrap();
+    let successor = selected
+        .append_items(vec![(ItemId::new(3), result())])
+        .unwrap()
+        .select_response(&r2)
+        .unwrap()
+        .finish(std::slice::from_ref(&proof))
+        .unwrap();
+    assert_eq!(successor.client_results(), Continuation::Unreported);
+    assert_eq!(
+        successor.selections()[1].progress,
+        Some(InteractionProgress::Unreported)
+    );
+    let Item::ProviderTool(s) = &successor.request().items().last().unwrap().1 else {
+        panic!()
+    };
+    assert_eq!(
+        s.resolve(successor.request().items()).unwrap(),
+        ItemId::new(2)
+    );
+    assert!(
+        ClientManaged::from_configuration(config)
+            .unwrap()
+            .select_response(&r2)
+            .is_err()
+    );
+    let changed = ClientManaged::from_configuration(
+        ConfigurationSnapshot::new(ConfigurationId::new(LocalScope::new(1), 2), settings).unwrap(),
+    )
+    .unwrap()
+    .select_request(successor.request())
+    .unwrap()
+    .finish(&[proof])
+    .unwrap_err();
+    assert_eq!(changed.stage, ContextStage::Dependency);
+    let changed = ClientManaged::from_configuration(
+        ConfigurationSnapshot::new(
+            ConfigurationId::new(LocalScope::new(1), 3),
+            successor.request().settings().clone(),
+        )
+        .unwrap(),
+    )
+    .unwrap()
+    .select_request(successor.request())
+    .unwrap()
+    .require_provider_continuation(requirement)
+    .unwrap()
+    .finish(&[])
+    .unwrap_err();
+    assert_eq!(changed.stage, ContextStage::Continuation);
+    assert_eq!(r1.items().len(), 4);
+    assert_eq!(r1.progress(), InteractionProgress::NeedsContinuation);
+}
+
+#[test]
+fn one_pure_consumer_handles_three_source_control_and_accounting_contracts() {
+    for source in ["responses", "interactions-v1", "messages"] {
+        let mut controls = ReasoningRequest::present(Some(ReasoningEffort::High), None);
+        let mut usage = Usage::operation(4106, 20, 4126);
+        usage.cached_input_tokens = Some(4096);
+        if source == "interactions-v1" {
+            controls.summary = Presence::Value(ReasoningSummary::Auto);
+            usage.cached_input_tokens = None;
+        } else if source == "messages" {
+            controls.mode = Presence::Value(ReasoningMode::Adaptive);
+            controls.display = Presence::Value(ReasoningDisplay::Omitted);
+            usage.input_relation = InputTokenRelation::ExcludesCacheReadAndWrite;
+            usage.total_relation = TotalTokenRelation::Unreported;
+            usage.input_tokens = Some(10);
+            usage.input_cache_write_tokens = Some(0);
+            usage.total_tokens = None;
+        }
+        let response = GenerationResponse::new(vec![(ItemId::new(1), call())], Outcome::Completed)
+            .unwrap()
+            .with_usage(usage)
+            .unwrap();
+        let output = ClientManaged::new(GenerationSettings {
+            reasoning: controls.clone(),
+            ..Default::default()
+        })
+        .unwrap()
+        .select_response(&response)
+        .unwrap()
+        .append_items(vec![(ItemId::new(2), result())])
+        .unwrap()
+        .finish(&[])
+        .unwrap();
+        assert_eq!(output.client_results(), Continuation::Unreported);
+        assert_eq!(output.request().reasoning(), &controls);
+        assert_eq!(response.usage_reports(), &[usage]);
+        let formula = if source == "messages" {
+            UsageFormula::InputPlusCacheReadAndWrite
+        } else {
+            UsageFormula::InputMinusCacheRead
+        };
+        let view = response
+            .usage()
+            .unwrap()
+            .derive(formula)
+            .unwrap()
+            .map(|v| v.tokens());
+        assert_eq!(
+            view,
+            match source {
+                "responses" => Some(10),
+                "messages" => Some(4106),
+                _ => None,
+            }
+        );
+    }
+}

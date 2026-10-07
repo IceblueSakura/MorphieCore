@@ -107,7 +107,7 @@ fn schema_keywords_are_checked_before_ir_or_reported_settings_admission() {
         let r = d.semantic.with_output(OutputConstraint::JsonSchema {
             name: Text::new("answer", "test", 64).unwrap(),
             description: None,
-            schema: bad.clone(),
+            schema: bad.clone().into(),
             strict: Some(false),
         });
         assert_eq!(r.unwrap_err(), GenerationError::InvalidSchema);
@@ -182,13 +182,17 @@ fn local_reference_graphs_allow_recursion_but_not_dangling_or_non_schema_targets
     else {
         panic!()
     };
-    schema.as_object_mut().unwrap().shift_remove("$defs");
+    schema
+        .root_mut()
+        .as_object_mut()
+        .unwrap()
+        .shift_remove("$defs");
     assert!(d.semantic.clone().with_settings(settings.clone()).is_err());
     let Presence::Value(OutputConstraint::JsonSchema { schema, .. }) = &mut settings.text.format
     else {
         panic!()
     };
-    schema["properties"]["value"] = json!({"type":"boolean"});
+    schema.root_mut()["properties"]["value"] = json!({"type":"boolean"});
     d.semantic = d.semantic.with_settings(settings).unwrap();
     let out = responses::encode_generation(
         &lower_request(
@@ -373,7 +377,7 @@ fn invalid_schema_metadata_poisons_stream_decode_and_encode_updates() {
     else {
         panic!()
     };
-    *schema = invalid;
+    *schema = invalid.into();
     assert!(encoder.update_metadata(metadata).is_err());
     assert!(
         encoder
@@ -389,12 +393,12 @@ fn raw_schema_order_survives_ir_and_independent_protocol_projections() {
     let OutputConstraint::JsonSchema { schema, .. } = d.task.semantic.output() else {
         panic!()
     };
-    assert_original(schema);
+    assert_original(schema.root());
     let ToolDefinition::Function(tool) = &d.task.semantic.tools()[0] else {
         panic!()
     };
-    assert_original(tool.parameters.as_ref().unwrap());
-    assert_original(tool.output_schema.as_ref().unwrap());
+    assert_original(tool.parameters.as_ref().unwrap().root());
+    assert_original(tool.output_schema.as_ref().unwrap().root());
     let encoded = envelope::encode_request(
         &lower_request(
             &d.task.semantic,
@@ -465,7 +469,7 @@ fn switching_or_deleting_the_output_constraint_cannot_resurrect_a_schema() {
     settings.text.format = Presence::Value(OutputConstraint::JsonSchema {
         name: Text::new("answer", "schema name", 64).unwrap(),
         description: None,
-        schema: replacement.clone(),
+        schema: replacement.clone().into(),
         strict: Some(true),
     });
     d.task.semantic = d.task.semantic.with_settings(settings.clone()).unwrap();
@@ -529,13 +533,13 @@ fn final_schema_edits_own_order_and_deleted_constraints_do_not_return() {
     else {
         panic!()
     };
-    let properties = schema["properties"].as_object_mut().unwrap();
+    let properties = schema.root_mut()["properties"].as_object_mut().unwrap();
     properties.insert("middle".into(), json!({"type":"integer"}));
     properties.insert("new_first".into(), json!({"type":"string"}));
     // Retain surviving properties in their declared order.
     properties.retain(|key, _| key != "zeta");
-    schema["required"] = json!(["middle", "alpha", "new_first"]);
-    assert_order(schema, &["middle", "alpha", "new_first"]);
+    schema.root_mut()["required"] = json!(["middle", "alpha", "new_first"]);
+    assert_order(schema.root(), &["middle", "alpha", "new_first"]);
     let replacement = schema.clone();
     let ToolDefinition::Function(tool) = &mut settings.tools.as_mut().unwrap()[0] else {
         panic!()
@@ -623,7 +627,7 @@ fn reported_schema_order_closes_across_static_and_sse() {
     else {
         panic!()
     };
-    assert_original(schema);
+    assert_original(schema.root());
     let mut encoder = ResponsesSseEncoder::new(
         d.metadata,
         Contract::full(),

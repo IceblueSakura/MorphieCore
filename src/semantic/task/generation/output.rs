@@ -8,7 +8,7 @@ pub enum OutputConstraint {
     JsonSchema {
         name: Text,
         description: Option<Text>,
-        schema: serde_json::Value,
+        schema: super::SchemaDocument,
         strict: Option<bool>,
     },
 }

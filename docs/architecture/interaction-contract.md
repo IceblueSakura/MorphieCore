@@ -25,10 +25,14 @@ Generation request 拥有有序 history、指令和生成意图；response 拥�
 已接受观察与派生请求是不同语义对象。原观察不可被投影原地改写，最终请求只拥有一份当前 typed 值；来源、索引和变换报告不保存可以覆盖它的第二正文。纯库直接构造请求不必建立 session tree。Gateway 不因调用此能力而持有跨请求会话状态。
 
 - 每次请求显式提供本次所需的历史、指令、工具与控制；不依赖 `previous_*_id`、conversation 或连接级增量历史。无状态历史、response storage、原生 cache 和 opaque replay 是不同机制，不以其中一个开关推导其他机制或 ZDR 保证。
-- 配置与工具定义有可引用的修订。历史调用保留原定义关联；当前同名定义不重新解释旧参数。只有触及已声明依赖的变化才使该依赖失效，不以全历史/全配置变化一律拒绝。
+- 配置与工具定义有可引用的修订。[配置 owner](../../src/semantic/task/generation/configuration.rs)以调用者显式声明的 scoped revision 关联不可变完整快照，客户端工具定义由原修订与限定 kind/namespace/name 唯一定位；没有原始关联时不从当前工具列表补猜。历史调用保留原定义关联，当前同名定义不重新解释旧参数；同修订不同内容是冲突，改变历史调用的绑定遵守新调用身份规则。修订标签不提供认证，也不要求建设全局 registry。只有触及已声明依赖的变化才使该依赖失效，不以全历史/全配置变化一律拒绝。
 - 历史指令保留 authority、scope 与 phase。不能将所有中途变更无条件折叠为当前顶层指令；目标没有必要载体时按投影合同处理。原生 ConfigurationUpdate 等观察不自动修改受信请求配置。
 - 显式选择、插入、删除、替换和重排返回新值并重验依赖；所有承诺返回合法请求的修改方法遵守与构造器相同的验证保证。调用者已验证过原值不免除修改后的校验。
 - 外部提供的摘要是有来源的派生内容，不是被替换的上游观察，不继承其 opaque、计量或 instruction authority。裁剪不能孤立工具结果或破坏必要 replay；缺失返回诊断，不补造 `No result provided` 或自动调用模型修复。
+
+本轮作用范围由完整当前配置与有序历史位置区分，沿用现有 message phase；不凭空创建通用指令 phase 或策略语言。[变换 owner](../../src/semantic/task/generation/context_transform.rs)提供原子显式编辑、source-ID 诊断及分阶段错误；保留的指令不能跨越其他保留项改变作用位置，同 owner 的 authority/role/phase 不能改写。外部摘要只选择连续、普通完整文本，使用新的 item/part 身份与 user authority；不把工具、refusal、媒体、opaque 或带 phase 的内容自动摘要成文本。更广摘要策略仍归调用者，并须另有受保护变换合同。
+
+稀疏选择不是编辑源响应：原 usage、outcome、progress 留在原观察，进度只作为有来源的选择记录。Provider 后继要求由调用者/profile 显式声明并检查选定配置依赖，不从 `NeedsContinuation` 推断，也不与 pending client results 合并为执行队列。固定修订的依赖同时绑定内容，不能靠重建相同普通标签绕过检查；这些进程内检查仍不是认证或持久化许可。
 
 Pi 的[上下文投影参考](../references/pi-provider-abstraction.md#client-managed-projection)提供历史与请求视图分离的方法，不决定本项目的 role、损失或信任规则。自动摘要、裁剪策略、分支存储、工具执行与续轮调度仍属于调用方。
 
@@ -119,6 +123,8 @@ Usage report 声明 scope、basis、unit 和计数关系。Operation、item、se
 Schema 结构/方言/引用、adherence 意图与目标 strict/配额分开。Reasoning mode、effort、预算、显示意图与 replay 分开。请求设置不是响应事实，不能回显补齐；共享时间/identity 不受某个 wire 的必填形式反向限制。
 
 有证据的 mode 与 effort/预算按组合规则验证，例如 adaptive 与 effort 不因示意枚举而被强制互斥。硬上限遇到只有偏好式 effort 的目标不能宣称约束已满足。外部 Schema 引用只使用明确提供的解析内容，不联网；Schema 引用图与输入 JSON nesting 分别预算。
+
+有限控制组合归 [reasoning owner](../../src/semantic/task/generation/reasoning.rs)，方言、资源引用与 strict 规则归 [Schema profile](schema-profile.md)；依据为 [S2 固定来源](../references/upstream-sync.md#client-managed-s2)。Budgeted 必须有数值预算，不提供裸 enabled；soft target 不超过同时声明的 hard limit，省略显示不声称省略内部推理。新 mode/预算/显示、明确方言与外部引用资源没有现行公开 carrier 时保留 typed 值并拒绝目标，不偷偷改为 effort、展开 Schema 或输出私有字段。
 
 引用同时依赖输出 claim 和源资源坐标，单位必须明确；不能近似转换落在 UTF-8 中间的 offset。源编辑使引用重验，wire 索引由最终顺序投影。Configuration update 与 compaction 有作用范围/替代关系，不是普通摘要或可执行设置 patch；当前实现不得因有 union 分支而扩大执行能力。
 

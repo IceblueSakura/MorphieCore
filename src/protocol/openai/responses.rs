@@ -129,6 +129,7 @@ pub(super) fn call_context(o: &Map<String, Value>) -> Result<CallContext, CodecE
         async_call,
         caller,
         alias_domain: None,
+        definition: None,
     })
 }
 pub(super) fn write_call_context(context: &CallContext, o: &mut Map<String, Value>) {

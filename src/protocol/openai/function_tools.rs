@@ -210,12 +210,20 @@ pub(super) fn read_tool(
             .filter(|v| !v.is_null())
             .map(|_| raw_string(f, "description"))
             .transpose()?,
-        parameters: f.get("parameters").filter(|v| !v.is_null()).cloned(),
+        parameters: f
+            .get("parameters")
+            .filter(|v| !v.is_null())
+            .cloned()
+            .map(Into::into),
         strict: match nullable_bool(f, "strict")? {
             Some(v) => FunctionStrictness::Explicit(v),
             None => FunctionStrictness::Omitted(strict_default(profile)),
         },
-        output_schema: f.get("output_schema").filter(|v| !v.is_null()).cloned(),
+        output_schema: f
+            .get("output_schema")
+            .filter(|v| !v.is_null())
+            .cloned()
+            .map(Into::into),
         dispatch,
     }))
 }
@@ -353,10 +361,22 @@ pub(super) fn write_tool(t: &ToolDefinition, profile: Profile) -> Result<Value, 
                 f["description"] = json!(d);
             }
             if let Some(p) = &t.parameters {
-                f["parameters"] = p.clone();
+                p.validate()?;
+                if !p.is_unversioned_local() {
+                    return Err(CodecError::Unsupported(
+                        "schema dialect or resources".into(),
+                    ));
+                }
+                f["parameters"] = p.root().clone();
             }
             if let Some(p) = &t.output_schema {
-                f["output_schema"] = p.clone();
+                p.validate()?;
+                if !p.is_unversioned_local() {
+                    return Err(CodecError::Unsupported(
+                        "schema dialect or resources".into(),
+                    ));
+                }
+                f["output_schema"] = p.root().clone();
             }
             if let FunctionStrictness::Explicit(b) = t.strict {
                 f["strict"] = json!(b);

@@ -43,6 +43,33 @@ pub enum ReasoningContext {
 pub enum ReasoningMode {
     Standard,
     Pro,
+    /// Model-selected allocation, compatible with explicit effort guidance.
+    Adaptive,
+    /// Explicit numeric allocation intent; never a bare thinking-enabled switch.
+    Budgeted,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReasoningDisplay {
+    Summary,
+    Omitted,
+}
+/// Reasoning-token constraints, distinct from a total response-token ceiling.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ReasoningBudget {
+    pub hard_limit: Option<u64>,
+    pub soft_target: Option<u64>,
+}
+impl ReasoningBudget {
+    pub fn validate(self) -> Result<(), super::GenerationError> {
+        if self.hard_limit.is_none() && self.soft_target.is_none()
+            || self.hard_limit == Some(0)
+            || self.soft_target == Some(0)
+            || matches!((self.soft_target, self.hard_limit), (Some(target), Some(limit)) if target > limit)
+        {
+            return Err(super::GenerationError::InvalidControl);
+        }
+        Ok(())
+    }
 }
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ReasoningRequest {
@@ -51,6 +78,8 @@ pub struct ReasoningRequest {
     pub summary: crate::semantic::value::Presence<ReasoningSummary>,
     pub context: crate::semantic::value::Presence<ReasoningContext>,
     pub mode: crate::semantic::value::Presence<ReasoningMode>,
+    pub budget: Option<ReasoningBudget>,
+    pub display: crate::semantic::value::Presence<ReasoningDisplay>,
     encrypted_output: bool,
 }
 impl ReasoningRequest {
@@ -83,11 +112,16 @@ impl ReasoningRequest {
         self.summary.value().copied()
     }
     pub fn validate(&self) -> Result<(), super::GenerationError> {
+        if let Some(budget) = self.budget {
+            budget.validate()?;
+        }
         if self.presence != ReasoningPresence::Present
             && (!self.effort.is_absent()
                 || !self.summary.is_absent()
                 || !self.context.is_absent()
-                || !self.mode.is_absent())
+                || !self.mode.is_absent()
+                || self.budget.is_some()
+                || !self.display.is_absent())
         {
             return Err(super::GenerationError::InvalidControl);
         }
@@ -98,7 +132,33 @@ impl ReasoningRequest {
         {
             return Err(super::GenerationError::InvalidControl);
         }
+        if self.mode.value() == Some(&ReasoningMode::Budgeted) && self.budget.is_none()
+            || self.effort() == Some(ReasoningEffort::None)
+                && (self.budget.is_some()
+                    || matches!(
+                        self.mode.value(),
+                        Some(ReasoningMode::Adaptive | ReasoningMode::Budgeted)
+                    )
+                    || self.display.value() == Some(&ReasoningDisplay::Summary))
+            || self.display.value() == Some(&ReasoningDisplay::Omitted)
+                && self
+                    .summary()
+                    .is_some_and(|s| s != ReasoningSummary::Disabled)
+            || self.display.value() == Some(&ReasoningDisplay::Summary)
+                && self.summary() == Some(ReasoningSummary::Disabled)
+        {
+            return Err(super::GenerationError::InvalidControl);
+        }
         Ok(())
+    }
+    /// No current Responses/Chat carrier can preserve these independent intents.
+    pub fn requires_extended_controls(&self) -> bool {
+        self.budget.is_some()
+            || !self.display.is_absent()
+            || matches!(
+                self.mode.value(),
+                Some(ReasoningMode::Adaptive | ReasoningMode::Budgeted)
+            )
     }
 }
 /// Event-owned value and trusted intake scope. Materialization moves the value

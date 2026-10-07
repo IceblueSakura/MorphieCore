@@ -350,6 +350,38 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 }
             }
             if let Some(call_id) = kind.call_id() {
+                let binding = match &kind {
+                    ItemKind::ToolCall { name, context, .. }
+                    | ItemKind::CustomCall { name, context, .. } => {
+                        if let Some(binding) = &context.definition {
+                            binding.check_call(
+                                if matches!(kind, ItemKind::ToolCall { .. }) {
+                                    ToolKind::Function
+                                } else {
+                                    ToolKind::Custom
+                                },
+                                name,
+                                context.namespace.as_ref(),
+                            )?;
+                        }
+                        context.definition.as_ref()
+                    }
+                    _ => None,
+                };
+                if let Some(binding) = binding {
+                    for old in &state.items {
+                        if let ItemKind::ToolCall { context, .. }
+                        | ItemKind::CustomCall { context, .. } = &old.kind
+                            && let Some(previous) = &context.definition
+                        {
+                            binding.snapshot().check_revision(
+                                previous.snapshot().revision(),
+                                previous.snapshot().settings(),
+                            )?;
+                        }
+                    }
+                    state.charge(binding.bytes()?)?;
+                }
                 if call_id.as_str().is_empty() || call_id.as_str().len() > 256 {
                     return Err(EventError::Limit);
                 }

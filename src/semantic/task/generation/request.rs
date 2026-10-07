@@ -4,6 +4,11 @@ use crate::semantic::value::{Presence, Text};
 #[path = "client_managed.rs"]
 mod client_managed;
 pub use client_managed::ClientManaged;
+#[path = "context_transform.rs"]
+pub(super) mod context_transform;
+pub use context_transform::{
+    ContextBuild, ContextChange, ContextEdit, ContextError, ContextStage, SelectedHistory,
+};
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ItemId {
     scope: LocalScope,
@@ -242,7 +247,8 @@ impl GenerationSettings {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GenerationRequest {
     items: Vec<(ItemId, Item)>,
-    settings: GenerationSettings,
+    settings: std::sync::Arc<GenerationSettings>,
+    configuration_revision: Option<ConfigurationId>,
     replay_groups: Vec<ReplayGroup>,
     call_derivations: std::collections::BTreeMap<ItemId, ItemId>,
     message_owners: std::collections::BTreeMap<ItemId, ItemId>,
@@ -266,7 +272,8 @@ impl GenerationRequest {
     ) -> Result<Self, GenerationError> {
         let r = Self {
             items,
-            settings,
+            settings: std::sync::Arc::new(settings),
+            configuration_revision: None,
             replay_groups: vec![],
             call_derivations: Default::default(),
             message_owners: Default::default(),
@@ -281,6 +288,15 @@ impl GenerationRequest {
         } else {
             super::validate::items(&self.items, false)?
         };
+        if let Some(revision) = self.configuration_revision {
+            for (_, item) in &self.items {
+                if let Some(binding) = super::configuration::item_binding(item) {
+                    binding
+                        .snapshot()
+                        .check_revision(revision, &self.settings)?;
+                }
+            }
+        }
         let groups = super::group::validate_replay_groups(&self.items, &self.replay_groups)?;
         let message_owners =
             super::group::validate_message_owners(&self.items, &self.message_owners)?;
@@ -302,6 +318,10 @@ impl GenerationRequest {
             .saturating_add(groups)
             .saturating_add(derivations)
             .saturating_add(message_owners)
+            .saturating_add(
+                self.configuration_revision
+                    .map_or(0, |_| std::mem::size_of::<ConfigurationId>()),
+            )
             > MAX_TOTAL_BYTES
         {
             return Err(GenerationError::Limit);
@@ -313,6 +333,22 @@ impl GenerationRequest {
     }
     pub fn settings(&self) -> &GenerationSettings {
         &self.settings
+    }
+    pub const fn configuration_revision(&self) -> Option<ConfigurationId> {
+        self.configuration_revision
+    }
+    /// Select a complete explicit revision; old call bindings remain unchanged.
+    pub fn with_configuration(
+        mut self,
+        snapshot: ConfigurationSnapshot,
+    ) -> Result<Self, GenerationError> {
+        if let Some(revision) = self.configuration_revision {
+            snapshot.check_revision(revision, &self.settings)?;
+        }
+        self.settings = snapshot.settings;
+        self.configuration_revision = Some(snapshot.revision);
+        self.validate()?;
+        Ok(self)
     }
     pub fn replay_groups(&self) -> &[ReplayGroup] {
         &self.replay_groups
@@ -399,21 +435,27 @@ impl GenerationRequest {
         &self.settings.reasoning
     }
     pub fn with_settings(mut self, settings: GenerationSettings) -> Result<Self, GenerationError> {
-        self.settings = settings;
+        settings.validate()?;
+        if self.configuration_revision.is_some()
+            && !super::configuration::same_settings(&self.settings, &settings)
+        {
+            return Err(GenerationError::ConfigurationRevisionConflict);
+        }
+        self.settings = std::sync::Arc::new(settings);
         self.validate()?;
         Ok(self)
     }
     pub fn with_tool_settings(
-        mut self,
+        self,
         tools: Option<Vec<ToolDefinition>>,
         choice: Option<ToolChoice>,
         parallel: Option<bool>,
     ) -> Result<Self, GenerationError> {
-        self.settings.tools = tools;
-        self.settings.tool_choice = choice;
-        self.settings.parallel_tool_calls = parallel;
-        self.validate()?;
-        Ok(self)
+        let mut settings = self.settings().clone();
+        settings.tools = tools;
+        settings.tool_choice = choice;
+        settings.parallel_tool_calls = parallel;
+        self.with_settings(settings)
     }
     pub fn with_tools(
         self,
@@ -423,16 +465,16 @@ impl GenerationRequest {
         let parallel = self.parallel_tool_calls();
         self.with_tool_settings(Some(tools), Some(choice), parallel)
     }
-    pub fn with_output(mut self, output: OutputConstraint) -> Result<Self, GenerationError> {
-        self.settings.text.presence = true;
-        self.settings.text.format = Presence::Value(output);
-        self.validate()?;
-        Ok(self)
+    pub fn with_output(self, output: OutputConstraint) -> Result<Self, GenerationError> {
+        let mut settings = self.settings().clone();
+        settings.text.presence = true;
+        settings.text.format = Presence::Value(output);
+        self.with_settings(settings)
     }
-    pub fn with_reasoning(mut self, reasoning: ReasoningRequest) -> Result<Self, GenerationError> {
-        self.settings.reasoning = reasoning;
-        self.validate()?;
-        Ok(self)
+    pub fn with_reasoning(self, reasoning: ReasoningRequest) -> Result<Self, GenerationError> {
+        let mut settings = self.settings().clone();
+        settings.reasoning = reasoning;
+        self.with_settings(settings)
     }
     pub fn with_items(mut self, items: Vec<(ItemId, Item)>) -> Result<Self, GenerationError> {
         if items.len() > MAX_ITEMS {
@@ -445,6 +487,7 @@ impl GenerationRequest {
         let source = std::mem::replace(&mut self.items, items);
         self.validate()?;
         super::identity::check_call_edits(&source, &self.items)?;
+        context_transform::check_protected_edits(&source, &self.items)?;
         Ok(self)
     }
     pub fn retain_items(
@@ -476,6 +519,12 @@ pub enum GenerationError {
     InvalidControl,
     #[error("history dependency is missing or changed")]
     InvalidDependency,
+    #[error("configuration revision has conflicting contents or needs an explicit new revision")]
+    ConfigurationRevisionConflict,
+    #[error("historical tool definition is missing or incompatible with its call owner")]
+    InvalidToolBinding,
+    #[error("context transformation would change a protected authority, scope, phase or owner")]
+    InvalidContextTransform,
     #[error("tool call identity is duplicated")]
     DuplicateCall,
     #[error("tool result has no matching preceding call or duplicates a result")]

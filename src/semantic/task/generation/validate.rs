@@ -48,7 +48,7 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
     let mut calls = BTreeMap::new();
     let mut namespaces = BTreeMap::new();
     let mut results = BTreeSet::new();
-    let mut bytes = 0;
+    let mut bytes = super::configuration::validate_bindings(items)?;
     let mut file_decoded_bytes = 0usize;
     for (position, (id, item)) in items.iter().enumerate() {
         if !ids.insert(*id) {
@@ -450,6 +450,13 @@ pub fn tools(
     tools: &[ToolDefinition],
     choice: Option<&ToolChoice>,
 ) -> Result<usize, GenerationError> {
+    fn schema_bytes(total: &mut usize, bytes: usize) -> Result<(), GenerationError> {
+        *total = total.checked_add(bytes).ok_or(GenerationError::Limit)?;
+        if *total > MAX_TOTAL_BYTES {
+            return Err(GenerationError::Limit);
+        }
+        Ok(())
+    }
     if tools.len() > MAX_TOOLS {
         return Err(GenerationError::Limit);
     }
@@ -499,10 +506,10 @@ pub fn tools(
                         }
                         _ => super::schema::Mode::General,
                     };
-                    charge(&mut bytes, super::schema::validate(s, mode)?)?;
+                    schema_bytes(&mut bytes, super::schema::validate(s, mode)?)?;
                 }
                 if let Some(s) = &t.output_schema {
-                    charge(
+                    schema_bytes(
                         &mut bytes,
                         super::schema::validate(s, super::schema::Mode::General)?,
                     )?;
