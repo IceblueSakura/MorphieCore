@@ -285,6 +285,24 @@ pub(super) fn provider_observation(
     bytes: &mut usize,
     parts: &mut BTreeSet<PartId>,
 ) -> Result<(), GenerationError> {
+    provider_observation_value(observed, bytes, parts, false)
+}
+pub(super) fn provider_result_header(
+    observed: &ProviderToolObservation,
+    bytes: &mut usize,
+    parts: &mut BTreeSet<PartId>,
+) -> Result<(), GenerationError> {
+    if observed.output.is_some() {
+        return Err(GenerationError::InvalidProviderObservation);
+    }
+    provider_observation_value(observed, bytes, parts, true)
+}
+fn provider_observation_value(
+    observed: &ProviderToolObservation,
+    bytes: &mut usize,
+    parts: &mut BTreeSet<PartId>,
+    building_result: bool,
+) -> Result<(), GenerationError> {
     if observed.source.source.as_str().is_empty() || observed.source.source.as_str().len() > 256 {
         return Err(GenerationError::InvalidProviderObservation);
     }
@@ -309,7 +327,8 @@ pub(super) fn provider_observation(
                 }
                 add(bytes, alias.as_str())?;
             }
-            if observed.progress.is_none()
+            if !building_result
+                && observed.progress.is_none()
                 && observed.execution.is_none()
                 && observed.output.is_none()
                 && observed.artifact_status.is_none()

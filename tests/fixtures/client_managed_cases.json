@@ -176,6 +176,22 @@
       "budget": "Payload B-1/B/B+1, aggregate MAX_TOTAL_BYTES, shared part identity and MAX_ITEMS",
       "forbidden_effects": "No native codec, hosted request activation, tool execution, inferred result, terminal snapshot repair or private wire carrier",
       "scope": "required; covers E01 observation/association subset, not complete configured successor construction or native fragmented results"
+    },
+    {
+      "case_key": "provider_result_fragments",
+      "ids": ["A10", "A11", "T12", "T30", "T31", "E04"],
+      "slice": "S1.2",
+      "sample_kind": "abstract_contract",
+      "evidence": "interaction-contract.md#provider-tool-observations; normative events, no native schema claim",
+      "owner": "src/semantic/task/generation/event.rs; stream_value.rs; validate.rs",
+      "target": "semantic",
+      "symbols": ["provider_observations::fragmented_provider_results_have_independent_static_values_and_no_snapshot_repair", "provider_observations::result_builders_reject_conflicting_headers_bad_json_and_unclosed_results"],
+      "input": "External operation reference with text/JSON result fragments, explicit value/part/item/response closure",
+      "expected": "Semantic batching preserves exact text/JSON; no missing result defaults; bad JSON, duplicate keys, repeated parts, conflicting headers and unclosed values fail",
+      "transform": "UTF-8 semantic batches, exact large integer, explicit empty text, truncation, post-terminal input",
+      "budget": "Shared bounded StreamPartValue and cumulative event budget",
+      "forbidden_effects": "No terminal repair, native Provider codec, execution or public carrier",
+      "scope": "required; partial builder is not a closed static result; media fragmentation excluded"
     }
   ]
 }

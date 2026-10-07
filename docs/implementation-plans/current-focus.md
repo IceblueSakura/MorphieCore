@@ -2,7 +2,7 @@
 
 ## 当前范围
 
-**当前方向是[三协议约束下的 ClientManaged Generation IR 完善](client-managed-ir.md)。当前没有启动中的代码行为切片。** 后续仍须闭合 S1.2 的规范工具结果增量事件与 S2.1 的显式配置后继构造，不以整值 Provider 观察或局部检查宣称整个 S1 或 M1/M2 完成。
+**当前方向是[三协议约束下的 ClientManaged Generation IR 完善](client-managed-ir.md)。当前没有启动中的代码行为切片。** 下一子片为 S2.1 的显式历史与配置后继构造；S1.2 的动作/参数表达仍须按具体语义样本核对，不以局部检查宣称整个 S1 或 M1/M2 完成。
 
 Provider 观察采用[独立 typed 分支](../architecture/interaction-contract.md#provider-tool-observations)；后续补足动作/参数时保留已报告事实，不以 generic JSON 或虚构函数调用替代。整值观察事件不等于原生分片接入，配置依赖和混合 C/S 后继请求按 E01 补齐。Google/Anthropic codecs、原生 hosted 工具输出选片、工具执行、模型 I/O、自动续轮、持久化和远端恢复不随纯核心实现恢复。
 

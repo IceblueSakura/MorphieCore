@@ -44,6 +44,11 @@ pub enum ItemKind {
     },
     /// An already reported value, not a fragmented Provider wire payload.
     ProviderTool(ProviderToolObservation),
+    /// Header only; exactly one result part supplies the final output.
+    ProviderResult {
+        observation: ProviderToolObservation,
+        format: ProviderResultFormat,
+    },
 }
 impl ItemKind {
     pub fn call(&self) -> Option<(&Text, &Text, Option<ItemId>)> {
@@ -86,6 +91,8 @@ pub enum PartKind {
     Arguments,
     StructuredArguments,
     CustomInput,
+    ResultText,
+    ResultJson,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StreamEvent {
@@ -310,15 +317,32 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             if state.items.iter().any(|i| i.id == item) {
                 return Err(EventError::Identity);
             }
-            if let ItemKind::ProviderTool(observed) = &kind {
+            if let ItemKind::ProviderTool(observed)
+            | ItemKind::ProviderResult {
+                observation: observed,
+                ..
+            } = &kind
+            {
                 let mut bytes = 0;
-                super::validate::provider_observation(observed, &mut bytes, &mut state.part_ids)?;
+                if matches!(kind, ItemKind::ProviderResult { .. }) {
+                    super::validate::provider_result_header(
+                        observed,
+                        &mut bytes,
+                        &mut state.part_ids,
+                    )?;
+                } else {
+                    super::validate::provider_observation(
+                        observed,
+                        &mut bytes,
+                        &mut state.part_ids,
+                    )?;
+                }
                 state.charge(bytes)?;
                 if let ProviderOperation::Reported {
                     alias: Some(alias), ..
                 } = &observed.operation
                     && state.items.iter().any(|old| match &old.kind {
-                        ItemKind::ProviderTool(value) => value.source==observed.source && matches!(&value.operation,ProviderOperation::Reported { alias: Some(value),.. } if value==alias),
+                        ItemKind::ProviderTool(value) | ItemKind::ProviderResult { observation: value,.. } => value.source==observed.source && matches!(&value.operation,ProviderOperation::Reported { alias: Some(value),.. } if value==alias),
                         _ => old.kind.alias_domain()==Some(&observed.source) && old.kind.call_id()==Some(alias),
                     })
                 {
@@ -330,7 +354,7 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                     return Err(EventError::Limit);
                 }
                 if state.items.iter().any(|i| {
-                    matches!(&i.kind, ItemKind::ProviderTool(observed) if Some(&observed.source)==kind.alias_domain()
+                    matches!(&i.kind, ItemKind::ProviderTool(observed) | ItemKind::ProviderResult { observation: observed,.. } if Some(&observed.source)==kind.alias_domain()
                         && matches!(&observed.operation,ProviderOperation::Reported { alias: Some(alias),.. } if alias==call_id))
                     || i.kind.alias_domain() == kind.alias_domain()
                         && i.kind.call_id().is_some_and(|id| id == call_id)
@@ -435,11 +459,29 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                     },
                     PartKind::StructuredArguments
                 ) | (ItemKind::CustomCall { .. }, PartKind::CustomInput)
+                    | (
+                        ItemKind::ProviderResult {
+                            format: ProviderResultFormat::Text,
+                            ..
+                        },
+                        PartKind::ResultText
+                    )
+                    | (
+                        ItemKind::ProviderResult {
+                            format: ProviderResultFormat::Json,
+                            ..
+                        },
+                        PartKind::ResultJson
+                    )
             );
             if !valid
                 || matches!(
                     kind,
-                    PartKind::Arguments | PartKind::StructuredArguments | PartKind::CustomInput
+                    PartKind::Arguments
+                        | PartKind::StructuredArguments
+                        | PartKind::CustomInput
+                        | PartKind::ResultText
+                        | PartKind::ResultJson
                 ) && !owner.parts.is_empty()
             {
                 return Err(EventError::Lifecycle);
@@ -449,7 +491,7 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 kind,
                 data: if kind == PartKind::Audio {
                     StreamPartValue::AudioFragments(AudioBuffer::default())
-                } else if kind == PartKind::StructuredArguments {
+                } else if matches!(kind, PartKind::StructuredArguments | PartKind::ResultJson) {
                     StreamPartValue::JsonFragments(String::new())
                 } else {
                     StreamPartValue::Text(String::new())
@@ -658,6 +700,11 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 return Err(EventError::Lifecycle);
             }
             let owner = state.open_item(item)?;
+            if matches!(owner.kind, ItemKind::ProviderResult { .. })
+                && (owner.parts.len() != 1 || owner.parts.iter().any(|part| !part.finished))
+            {
+                return Err(EventError::Lifecycle);
+            }
             if status == ItemLifecycle::Completed && owner.parts.iter().any(|p| !p.finished) {
                 return Err(EventError::Lifecycle);
             }
@@ -909,6 +956,20 @@ impl StreamItem {
                 status,
             }),
             ItemKind::ProviderTool(observed) => Item::ProviderTool(observed.clone()),
+            ItemKind::ProviderResult { observation, .. } => {
+                let part = i
+                    .parts
+                    .first()
+                    .filter(|part| part.finished)
+                    .ok_or(EventError::Lifecycle)?;
+                let mut observed = observation.clone();
+                observed.output = Some(match &part.data {
+                    StreamPartValue::Text(value) => ToolOutput::Text(value.clone()),
+                    StreamPartValue::Json(value) => ToolOutput::Structured(value.clone()),
+                    _ => return Err(EventError::Lifecycle),
+                });
+                Item::ProviderTool(observed)
+            }
         };
         Ok(item)
     }

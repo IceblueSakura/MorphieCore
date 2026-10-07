@@ -13,6 +13,11 @@ pub enum ProviderExecutionProgress {
     Queued,
     Running,
 }
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProviderResultFormat {
+    Text,
+    Json,
+}
 /// The sole writable reference. Resolution is a borrowed-history operation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProviderOperationReference {

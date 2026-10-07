@@ -274,7 +274,7 @@ impl EventEncoder {
                     ItemKind::ProgramOutput { call_id, result } => {
                         json!({"id":id,"type":"program_output","call_id":call_id.as_str(),"result":result})
                     }
-                    ItemKind::ProviderTool(_) => {
+                    ItemKind::ProviderTool(_) | ItemKind::ProviderResult { .. } => {
                         return Err(CodecError::Unsupported(
                             "Provider observation carrier".into(),
                         ));
@@ -469,6 +469,9 @@ fn validate_metadata(profile: Profile, metadata: &ResponseMetadata) -> Result<()
 }
 fn event_stem(kind: PartKind) -> &'static str {
     match kind {
+        PartKind::ResultText | PartKind::ResultJson => {
+            unreachable!("Provider result carrier rejected")
+        }
         PartKind::Audio => unreachable!("Responses audio carrier rejected"),
         PartKind::Text => "output_text",
         PartKind::Refusal => "refusal",

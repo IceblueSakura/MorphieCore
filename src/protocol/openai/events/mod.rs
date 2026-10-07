@@ -58,6 +58,9 @@ fn replay(
 }
 fn kind_name(kind: PartKind) -> &'static str {
     match kind {
+        PartKind::ResultText | PartKind::ResultJson => {
+            unreachable!("Provider result carrier rejected")
+        }
         PartKind::Audio => unreachable!("audio has no Responses event carrier"),
         PartKind::Text => "output_text",
         PartKind::Refusal => "refusal",

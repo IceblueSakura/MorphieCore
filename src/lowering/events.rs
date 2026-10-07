@@ -38,7 +38,7 @@ pub fn check_event(
             return Err(RepresentationError::UnmigratedSemantic);
         }
         StreamEvent::PartStarted {
-            kind: PartKind::StructuredArguments,
+            kind: PartKind::StructuredArguments | PartKind::ResultText | PartKind::ResultJson,
             ..
         } => return Err(RepresentationError::Tools),
         StreamEvent::Progress(_) => {
@@ -66,7 +66,9 @@ pub fn check_event(
                 }
             }
             match kind {
-                ItemKind::ProviderTool(_) => return Err(RepresentationError::UnmigratedSemantic),
+                ItemKind::ProviderTool(_) | ItemKind::ProviderResult { .. } => {
+                    return Err(RepresentationError::UnmigratedSemantic);
+                }
                 ItemKind::ToolCall { context, .. } | ItemKind::CustomCall { context, .. }
                     if context.alias_domain.is_some() =>
                 {

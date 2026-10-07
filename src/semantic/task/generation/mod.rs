@@ -29,7 +29,7 @@ pub use progress::InteractionProgress;
 mod provider;
 pub use provider::{
     ProviderExecutionProgress, ProviderOperation, ProviderOperationReference, ProviderRequester,
-    ProviderToolObservation,
+    ProviderResultFormat, ProviderToolObservation,
 };
 mod reasoning;
 mod replay;

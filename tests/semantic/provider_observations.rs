@@ -34,6 +34,238 @@ fn report() -> ProviderToolObservation {
         artifact_status: None,
     }
 }
+#[test]
+fn fragmented_provider_results_have_independent_static_values_and_no_snapshot_repair() {
+    for (format, parts, expected) in [
+        (
+            ProviderResultFormat::Text,
+            vec!["你", "好"],
+            ToolOutput::Text("你好".into()),
+        ),
+        (
+            ProviderResultFormat::Text,
+            vec![""],
+            ToolOutput::Text(String::new()),
+        ),
+        (
+            ProviderResultFormat::Json,
+            vec![r#"{"n":"#, "9007199254740993", "}"],
+            ToolOutput::Structured(
+                StructuredValue::from_bytes(br#"{"n":9007199254740993}"#).unwrap(),
+            ),
+        ),
+    ] {
+        for fragments in [parts.clone(), vec![]] {
+            let joined = parts.concat();
+            let fragments = if fragments.is_empty() {
+                vec![joined.as_str()]
+            } else {
+                fragments
+            };
+            let mut observed = report();
+            observed.execution = None;
+            let mut state = reduce(StreamState::new(), StreamEvent::Started).unwrap();
+            state = reduce(
+                state,
+                StreamEvent::ItemStarted {
+                    item: ItemId::new(1),
+                    kind: ItemKind::ProviderResult {
+                        observation: observed.clone(),
+                        format,
+                    },
+                    replay: None,
+                },
+            )
+            .unwrap();
+            state = reduce(
+                state,
+                StreamEvent::PartStarted {
+                    item: ItemId::new(1),
+                    part: PartId::new(1),
+                    kind: if format == ProviderResultFormat::Json {
+                        PartKind::ResultJson
+                    } else {
+                        PartKind::ResultText
+                    },
+                },
+            )
+            .unwrap();
+            for fragment in fragments {
+                state = reduce(
+                    state,
+                    StreamEvent::Delta {
+                        item: ItemId::new(1),
+                        part: PartId::new(1),
+                        fragment: fragment.into(),
+                        logprobs: vec![],
+                    },
+                )
+                .unwrap();
+            }
+            assert!(snapshot_items(&state).is_err());
+            assert!(
+                reduce(
+                    state.clone(),
+                    StreamEvent::ItemFinished {
+                        item: ItemId::new(1),
+                        status: ItemLifecycle::Completed,
+                        replay: None
+                    }
+                )
+                .is_err()
+            );
+            state = reduce(
+                state,
+                StreamEvent::ValueFinished {
+                    item: ItemId::new(1),
+                    part: PartId::new(1),
+                },
+            )
+            .unwrap();
+            state = reduce(
+                state,
+                StreamEvent::PartFinished {
+                    item: ItemId::new(1),
+                    part: PartId::new(1),
+                },
+            )
+            .unwrap();
+            state = reduce(
+                state,
+                StreamEvent::ItemFinished {
+                    item: ItemId::new(1),
+                    status: ItemLifecycle::Completed,
+                    replay: None,
+                },
+            )
+            .unwrap();
+            state = reduce(
+                state,
+                StreamEvent::Terminal {
+                    terminal: StreamTerminal::Completed,
+                    details: TerminalDetails::default(),
+                },
+            )
+            .unwrap();
+            observed.output = Some(expected.clone());
+            assert_eq!(
+                materialize(&state).unwrap(),
+                GenerationResponse::new(
+                    vec![(ItemId::new(1), Item::ProviderTool(observed))],
+                    Outcome::Completed
+                )
+                .unwrap()
+            );
+            assert!(
+                reduce(
+                    state,
+                    StreamEvent::ValueFinished {
+                        item: ItemId::new(1),
+                        part: PartId::new(1)
+                    }
+                )
+                .is_err()
+            );
+        }
+    }
+}
+#[test]
+fn result_builders_reject_conflicting_headers_bad_json_and_unclosed_results() {
+    let mut header = report();
+    header.execution = None;
+    let start = |observation| StreamEvent::ItemStarted {
+        item: ItemId::new(1),
+        kind: ItemKind::ProviderResult {
+            observation,
+            format: ProviderResultFormat::Json,
+        },
+        replay: None,
+    };
+    let fresh = || reduce(StreamState::new(), StreamEvent::Started).unwrap();
+    let mut conflict = header.clone();
+    conflict.output = Some("already reported".into());
+    assert!(reduce(fresh(), start(conflict)).is_err());
+    for raw in [r#"{"n":1,"n":2}"#, r#"{"n":"#] {
+        let mut state = reduce(fresh(), start(header.clone())).unwrap();
+        state = reduce(
+            state,
+            StreamEvent::PartStarted {
+                item: ItemId::new(1),
+                part: PartId::new(1),
+                kind: PartKind::ResultJson,
+            },
+        )
+        .unwrap();
+        assert!(
+            reduce(
+                state.clone(),
+                StreamEvent::PartStarted {
+                    item: ItemId::new(1),
+                    part: PartId::new(2),
+                    kind: PartKind::ResultJson
+                }
+            )
+            .is_err()
+        );
+        state = reduce(
+            state,
+            StreamEvent::Delta {
+                item: ItemId::new(1),
+                part: PartId::new(1),
+                fragment: raw.into(),
+                logprobs: vec![],
+            },
+        )
+        .unwrap();
+        assert!(
+            reduce(
+                state.clone(),
+                StreamEvent::ValueFinished {
+                    item: ItemId::new(1),
+                    part: PartId::new(1)
+                }
+            )
+            .is_err()
+        );
+        assert!(
+            reduce(
+                state,
+                StreamEvent::ItemFinished {
+                    item: ItemId::new(1),
+                    status: ItemLifecycle::Incomplete,
+                    replay: None
+                }
+            )
+            .is_err()
+        );
+    }
+    let state = reduce(fresh(), start(header.clone())).unwrap();
+    assert!(
+        reduce(
+            state,
+            StreamEvent::ItemFinished {
+                item: ItemId::new(1),
+                status: ItemLifecycle::Completed,
+                replay: None
+            }
+        )
+        .is_err()
+    );
+    for profile in [
+        morphiecore::protocol::openai::Profile::Chat,
+        morphiecore::protocol::openai::Profile::Responses,
+    ] {
+        assert!(
+            morphiecore::lowering::events::check_event(
+                &fresh(),
+                &start(header.clone()),
+                profile,
+                &morphiecore::lowering::generation::GenerationRepresentationContract::full()
+            )
+            .is_err()
+        );
+    }
+}
 fn client_call() -> Item {
     Item::ToolCall(ToolCall {
         call_id: text("C"),
