@@ -1,6 +1,6 @@
 # 三协议约束下的 ClientManaged Generation IR 实施计划
 
-**交付修订：v0.2。范围与设计约束已定稿；不声明代码、测试或原生接入已完成。**
+**交付修订：v0.3。范围与设计约束不变；纯核心已进入分片实施，M1/M2 尚未整体闭合，原生接入不随库级实现启用。**
 
 本页是实施切片与验收需求的唯一维护入口，不是第二份语义合同、运行报告或操作授权。概念归 [Semantic Model](../architecture/semantic-ir.md)，交互规则归 [Generation 合同](../architecture/interaction-contract.md)，映射与损失归 [protocol/lowering](../architecture/protocol-and-lowering.md)。[next-goal](next-goal.md)拥有优先级，[current-focus](current-focus.md)拥有实际行为切片。
 
@@ -36,8 +36,8 @@ T 编号来自协议调研；AGC/S 编号沿用旧总计划所引用的《Morphi
 |---|---|---|
 | AGC-01 | [scoped identity、native alias、修订与派生](../architecture/interaction-contract.md#身份分组与依赖)；参数改写形成新调用，旧结果不移挂 | `request.rs`、`turn.rs`、`dependency.rs`、source records |
 | AGC-02 | 有序异构 items 与有限 typed group；每类关系唯一 owner，成员不复制正文，反向 view 派生 | `group.rs`、`validate.rs`、`protocol/fidelity.rs` |
-| AGC-03 | [Provider 工具观察](../architecture/interaction-contract.md#provider-tool-observations)；requester、执行责任、进度、结果和产物分离 | `tool.rs`、`tool_result.rs`、`continuation.rs`、`event.rs` |
-| AGC-04 | [ClientManaged](../architecture/interaction-contract.md#client-managed-context)；调用者选定历史，显式配置修订，要求集合不代表自动执行 | `request.rs`、`semantic/context.rs`、`turn.rs`、`progress.rs` |
+| AGC-03 | [Provider 工具观察](../architecture/interaction-contract.md#provider-tool-observations)采用独立 typed 分支；requester、执行责任、进度、结果和产物分离 | `provider.rs`、`tool_result.rs`、`continuation.rs`、`event.rs` |
+| AGC-04 | [ClientManaged](../architecture/interaction-contract.md#client-managed-context)；调用者选定历史，显式配置修订，要求集合不代表自动执行 | `client_managed.rs`、`request.rs`、`semantic/context.rs`、`turn.rs`、`progress.rs` |
 | AGC-05 | [replay/编辑失效](../architecture/interaction-contract.md#typed-replay-与信任)、[资源与引用](../architecture/semantic-ir.md#5-内容产物与引用)；唯一载荷、按格式依赖，不复活删除值 | `reasoning.rs`、`replay.rs`、`dependency.rs`、`resource.rs`、`text.rs`、`usage.rs` |
 | AGC-06 | 本轮只实现请求型观察、严格事件/终态与已有交付边界；后继报告不重开旧 reducer | `event.rs`、既有 decoder、`execution/`、`transport/` |
 | AGC-07 | 局部观察、关联解析、最终请求、目标表示和产品准入分层；[具名投影](../architecture/protocol-and-lowering.md#semantic-loss)不授权弱化硬约束 | `validate.rs`、`request.rs`、`lowering/`、`protocol/` |
@@ -97,6 +97,25 @@ owner / 实际 target::symbol
 - 涉及执行的未知事实不授权 fallback；本轮不启用需要新副作用恢复策略的 hosted 请求。保留既有提交前后、取消、deadline、backpressure 与清理防线。
 
 ## 4. 实施切片与退出条件
+
+### 当前实施边界与剩余工作
+
+下表用于定位下一步工作，不替代下文的完整退出条件，也不是运行结果或完成日记。实现事实以链接的源码与[用例追溯清单](../../tests/fixtures/client_managed_cases.json)为准；清单中的 ID 只覆盖各 case 声明的子范围，不能推定整个 A/T/E 已验收。
+
+| 切片 | 当前实现落点 | 尚未闭合的要求 / 接续边界 |
+|---|---|---|
+| S0 | [validated 请求修改](../../src/semantic/task/generation/request.rs)包含 output/reasoning 重验；[独立反例](../../tests/semantic/request_edits.rs)和追溯入口已建立 | 三协议具体样本的固定证据仍随依赖子片核对，不能由 A01 修复推定所有来源已闭合 |
+| S1.1 | [scoped identity/alias](../../src/semantic/task/generation/identity.rs)、[重叠 replay group 与单一 message owner](../../src/semantic/task/generation/group.rs)、调用修订与[续接关系检查](../../src/semantic/task/generation/turn.rs)已有实现 | 核心关系不授权 wire carrier；后续新增动作/参数必须接入相同身份、编辑和依赖保护，跨阶段验收仍须逐项核对 |
+| S1.2（部分） | [独立 Provider 观察](../../src/semantic/task/generation/provider.rs)表达操作/引用、可缺省报告与结果；[规范事件](../../src/semantic/task/generation/event.rs)包含整值观察和文本/JSON 结果 builder；[反例](../../tests/semantic/provider_observations.rs)覆盖 C/S 区分与跨响应关联 | Provider 动作/参数的必要 typed 内容仍待具体样本核对；未闭合结果只在 builder 中观察，不能物化为闭合静态结果；不包含原生 Provider parser 或媒体增量 |
+| S2.1（部分） | [ClientManaged](../../src/semantic/task/generation/client_managed.rs)显式选择历史/追加结果，保留关系，不继承旧配置；[构造反例](../../tests/semantic/client_managed.rs)覆盖混合后继请求和声明依赖 | 配置修订标识、历史调用与原工具定义的关联及完整变换诊断尚未闭合；现有 settings proof 不能替代这些语义 owner |
+| S2.2（部分） | [usage](../../src/semantic/task/generation/usage.rs)与[具名 view](../../src/semantic/task/generation/usage_views.rs)表达 input/cache 包含、互斥与未知关系，保留累计报告口径 | reasoning mode/effort/硬软预算/显示组合、Schema 方言及对应独立预算/引用验收仍待补足；不把计量子片当作整个 S2.2 |
+| S3.1–S3.3（待整体实施） | 复用既有 replay、资源、prefix、usage 和投影基础；当前 S1/S2 的共享修改不是零基础，也不等于 S3 交付 | 逐格式附件/依赖、资源双端引用与原报告归属、具名损失及消费者闭环仍按各片退出条件实施 |
+
+**M1 尚未闭合**：先补 S2.1 配置/定义修订关联，核对 S1.2 动作内容，再补 S2.2 控制与 Schema，最后对 E01/E02/E04/E06 的本轮子范围逐项核对。**M2 尚未闭合**：S3 与必要消费 gates 不因前序库级实现而视为完成。
+
+验证层次不能混用：确定性 Core、现有 wire 回归与离线基线按开发指南执行；固定 SDK/其他外部消费者和真实 Provider 验证是单独门槛，没有对应执行证据不得标记通过。新 Provider 观察、未实现关系 carrier 和非标准 usage 口径在现有目标仍明确拒绝，测试存在不证明 HTTP 准入或上游接受。
+
+### 依赖顺序
 
 ```text
 S0 验证承诺 / 独立预期
@@ -299,14 +318,15 @@ E04 将字节切分与语义事件分批分别验证；包含 UTF-8/转义截断
 - 不丢弃用户工作树，不因回滚代码重发未知状态的请求、删除观察或改变 activation。实际数据删除、部署和 Git 提交/推送分别受授权约束。
 - 发生新 IR 缺口时给出最小反例、owner/状态/事件/迁移选项；只暂停依赖该缺口的子片，不用 adapter、generic JSON 或无断言测试绕过。
 
-### 实施前尚需固定的细节
+### 后续实施仍需固定的细节
 
 | 事项 | 决策时点 | 未满足时的处理 |
 |---|---|---|
 | 所选 Interactions 版本、Messages 功能与事件证据 | 对应 S0 样本 / S1–S3 合同前 | 不混用 v1/v1beta 或 generateContent；仅阻塞依赖分支 |
-| scoped key、关系 owner 与具体 Rust 公共路径 | S1.1 | 用既定不变量比较最小方案；有实质语义选择再报告，不私建第二权威 |
-| Provider 观察种类与跨响应 alias 解析域 | S1.2 | 缺失/歧义明确保留，不按名称猜，不启用相应请求 |
-| mode/预算组合、Schema 子集与计数关系 | S2.2 | 硬约束不近似满足；不以 native JSON 槽代替缺失概念 |
+| 新增动作/参数与既有 identity、关系 owner 的衔接 | S1.2 后续子片 | 复用既有 scoped identity 与唯一关系 owner，不私建第二权威 |
+| Provider 动作内容与具体原生引用域映射 | S1.2 后续子片 | 独立观察分支与纯 alias 解析不代表原生映射；缺失/歧义不按名称猜，不启用相应请求 |
+| 配置修订标识与历史工具定义关联 | S2.1 后续子片 | 显式当前 settings 与 proof 不替代历史定义绑定，不重新解释旧调用 |
+| mode/预算组合、Schema 方言/子集 | S2.2 后续子片 | 硬约束不近似满足；不以 native JSON 槽代替缺失概念；复用已有计数关系，不重造 usage owner |
 | 每格式 replay 依赖、资源用途/坐标与新损失规则 | S3 对应子片 | 维持当前拒绝，闭合后 opaque 争议独立延期 |
 | 可选 Responses Provider 工具输出分支 | 独立行为选片 | 未选就不新增原生支持声明，不阻塞抽象核心 |
 

@@ -4,7 +4,7 @@
 
 **当前方向是[三协议约束下的 ClientManaged Generation IR 完善](client-managed-ir.md)。当前没有启动中的代码行为切片。** 下一子片优先补 S2.1 的配置修订标识/历史工具定义关联，再补 S2.2 reasoning mode/预算组合与 Schema 方言；S1.2 的动作/参数表达仍须按具体语义样本核对，不以局部检查宣称整个 S1 或 M1/M2 完成。
 
-Provider 观察采用[独立 typed 分支](../architecture/interaction-contract.md#provider-tool-observations)；后续补足动作/参数时保留已报告事实，不以 generic JSON 或虚构函数调用替代。整值观察事件不等于原生分片接入，配置依赖和混合 C/S 后继请求按 E01 补齐。Google/Anthropic codecs、原生 hosted 工具输出选片、工具执行、模型 I/O、自动续轮、持久化和远端恢复不随纯核心实现恢复。
+当前实现落点和后续退出条件统一见[计划的实施边界](client-managed-ir.md#当前实施边界与剩余工作)。Provider 观察采用[独立 typed 分支](../architecture/interaction-contract.md#provider-tool-observations)；后续补足动作/参数时保留已报告事实，不以 generic JSON 或虚构函数调用替代。规范结果增量事件不等于原生分片接入，E01 的配置修订/原定义关联不能由后继请求可构造推定。Google/Anthropic codecs、原生 hosted 工具输出选片、工具执行、模型 I/O、自动续轮、持久化和远端恢复不随纯核心实现恢复。
 
 同类 replay 组的重叠规则归[交互合同](../architecture/interaction-contract.md#身份分组与依赖)。后续关系迁移不增加第二张可写 membership 或 ResultOf 表；无标准载体的关系维持严格拒绝，不因新类型自动激活接口、工具执行或模型 I/O。
 
