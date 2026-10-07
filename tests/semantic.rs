@@ -24,6 +24,8 @@ mod chat_media;
 mod chat_wire;
 #[path = "semantic/client_carrier.rs"]
 mod client_carrier;
+#[path = "semantic/client_managed.rs"]
+mod client_managed;
 #[path = "semantic/continuation.rs"]
 mod continuation;
 #[path = "semantic/contract_ownership.rs"]

@@ -63,9 +63,9 @@ pub use reasoning::{
     ReasoningPresence, ReasoningReplay, ReasoningRequest, ReasoningSummary,
 };
 pub use request::{
-    ConfigurationUpdate, ContentPart, GenerationControls, GenerationError, GenerationRequest,
-    GenerationSettings, Instruction, InstructionAuthority, Item, ItemId, Message, MessageRole,
-    Part, PartId, Phase, Truncation,
+    ClientManaged, ConfigurationUpdate, ContentPart, GenerationControls, GenerationError,
+    GenerationRequest, GenerationSettings, Instruction, InstructionAuthority, Item, ItemId,
+    Message, MessageRole, Part, PartId, Phase, Truncation,
 };
 pub use requirements::{GenerationRequirements, GenerationResponseRequirements};
 pub use resource::{

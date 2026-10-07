@@ -1,6 +1,9 @@
 //! Validated Generation history and settings. Response echoes reuse settings, never raw request JSON.
 use super::*;
 use crate::semantic::value::{Presence, Text};
+#[path = "client_managed.rs"]
+mod client_managed;
+pub use client_managed::ClientManaged;
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ItemId {
     scope: LocalScope,
