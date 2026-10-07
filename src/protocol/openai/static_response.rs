@@ -124,6 +124,7 @@ pub(super) fn usage(
         scope: crate::semantic::task::generation::UsageScope::Operation,
         basis: crate::semantic::task::generation::UsageBasis::Final,
         output_relation: crate::semantic::task::generation::OutputTokenRelation::IncludesReasoning,
+        input_relation: crate::semantic::task::generation::InputTokenRelation::IncludesCache,
         total_relation: crate::semantic::task::generation::TotalTokenRelation::InputAndOutput,
         input_tokens: Some(count(usage, input_key)?),
         output_tokens: Some(count(usage, output_key)?),

@@ -208,6 +208,22 @@
       "budget": "MAX_ITEMS, relation limits and final aggregate request validation",
       "forbidden_effects": "No session store, ID synthesis, history mutation, response usage promotion, tool execution or dispatch",
       "scope": "required pure construction subset; configuration revision identity and historical tool-definition binding remain separate"
+    },
+    {
+      "case_key": "declared_input_cache_accounting",
+      "ids": ["A18", "A27", "T15"],
+      "slice": "S2.2",
+      "sample_kind": "abstract_contract",
+      "evidence": "client-managed-ir.md A18; explicit disjoint accounting, existing OpenAI inclusive wire fixtures remain independent",
+      "owner": "src/semantic/task/generation/usage.rs; usage_views.rs; src/protocol/openai/static_response.rs",
+      "target": "semantic",
+      "symbols": ["usage_views::exclusive_cache_counts_require_explicit_disjoint_premises_without_zero_fill", "usage_views::cumulative_cache_reports_do_not_sum_snapshots_or_switch_relations", "usage::text_and_prediction_counts_are_preserved_and_not_summed_with_reasoning"],
+      "input": "Uncached input 10, cache read 4096, explicit write zero; inclusive and unreported relationships",
+      "expected": "Disjoint input/cache sum is a borrowed view with all premises; no missing-zero inference, overflow or reinterpretation as OpenAI input",
+      "transform": "Missing count, changed relation, overflow, cumulative 10/20/30 remains 30",
+      "budget": "Checked u64 arithmetic and existing usage report bounds",
+      "forbidden_effects": "No billing inference, native Provider activation, implicit usage conversion or overwriting source counts",
+      "scope": "required pure accounting and affected existing wire"
     }
   ]
 }

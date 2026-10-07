@@ -53,7 +53,9 @@ pub use turn::{
     ContinuationError, ResponseContinuation, ResponseId, ResponseRelation, ResultReadiness, TurnId,
 };
 mod usage;
-pub use usage::{OutputTokenRelation, TotalTokenRelation, Usage, UsageBasis, UsageScope};
+pub use usage::{
+    InputTokenRelation, OutputTokenRelation, TotalTokenRelation, Usage, UsageBasis, UsageScope,
+};
 mod usage_views;
 pub use usage_views::{DerivedTokenCount, UsageFormula};
 mod validate;

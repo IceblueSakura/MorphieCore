@@ -297,6 +297,7 @@ pub(super) fn check_response_carriers(response: &GenerationResponse) -> Result<(
                 || usage.basis != UsageBasis::Final
                 || usage.output_relation != OutputTokenRelation::IncludesReasoning
                 || usage.total_relation != TotalTokenRelation::InputAndOutput
+                || usage.input_relation != InputTokenRelation::IncludesCache
                 || usage.input_tokens.is_none()
                 || usage.output_tokens.is_none()
                 || usage.total_tokens.is_none()

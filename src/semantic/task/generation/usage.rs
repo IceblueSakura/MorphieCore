@@ -19,9 +19,17 @@ pub enum OutputTokenRelation {
     Unreported,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InputTokenRelation {
+    IncludesCache,
+    /// Input, cache reads and cache writes are reported disjoint categories.
+    ExcludesCacheReadAndWrite,
+    Unreported,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TotalTokenRelation {
     InputAndOutput,
     InputOutputAndReasoning,
+    InputCacheAndOutput,
     Unreported,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -29,6 +37,7 @@ pub struct Usage {
     pub scope: UsageScope,
     pub basis: UsageBasis,
     pub output_relation: OutputTokenRelation,
+    pub input_relation: InputTokenRelation,
     pub total_relation: TotalTokenRelation,
     pub input_tokens: Option<u64>,
     pub output_tokens: Option<u64>,
@@ -51,6 +60,7 @@ impl Usage {
             scope: UsageScope::Operation,
             basis: UsageBasis::Final,
             output_relation: OutputTokenRelation::IncludesReasoning,
+            input_relation: InputTokenRelation::IncludesCache,
             total_relation: TotalTokenRelation::InputAndOutput,
             input_tokens: Some(input),
             output_tokens: Some(output),
@@ -72,8 +82,9 @@ impl Usage {
         if self.counters().iter().all(Option::is_none)
             || self.output_relation == OutputTokenRelation::IncludesReasoning
                 && !subset(self.reasoning_tokens, self.output_tokens)
-            || !subset(self.cached_input_tokens, self.input_tokens)
-            || !subset(self.input_cache_write_tokens, self.input_tokens)
+            || self.input_relation == InputTokenRelation::IncludesCache
+                && (!subset(self.cached_input_tokens, self.input_tokens)
+                    || !subset(self.input_cache_write_tokens, self.input_tokens))
             || !subset(self.input_text_tokens, self.input_tokens)
             || !subset(self.input_image_tokens, self.input_tokens)
             || !subset(self.input_audio_tokens, self.input_tokens)
@@ -95,6 +106,9 @@ impl Usage {
         }
         if self.total_relation == TotalTokenRelation::InputOutputAndReasoning
             && self.output_relation != OutputTokenRelation::ExcludesReasoning
+            || self.total_relation == TotalTokenRelation::InputCacheAndOutput
+                && (self.input_relation != InputTokenRelation::ExcludesCacheReadAndWrite
+                    || self.output_relation != OutputTokenRelation::IncludesReasoning)
         {
             return Err(GenerationError::InvalidResponse);
         }
@@ -104,6 +118,12 @@ impl Usage {
                 self.input_tokens,
                 self.output_tokens,
                 self.reasoning_tokens,
+            ]),
+            TotalTokenRelation::InputCacheAndOutput => Some(vec![
+                self.input_tokens,
+                self.cached_input_tokens,
+                self.input_cache_write_tokens,
+                self.output_tokens,
             ]),
             TotalTokenRelation::Unreported => None,
         };
@@ -143,6 +163,7 @@ impl Usage {
             let old = reports[index];
             if old.basis == UsageBasis::Final
                 || old.output_relation != next.output_relation
+                || old.input_relation != next.input_relation
                 || old.total_relation != next.total_relation
             {
                 return Err(GenerationError::InvalidResponse);

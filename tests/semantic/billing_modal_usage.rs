@@ -60,6 +60,8 @@ fn modality_billing_view_promotes_typed_facts_and_edits_cannot_restore_the_view(
         .with_usage(Usage {
             scope: morphiecore::semantic::task::generation::UsageScope::Operation,
             basis: morphiecore::semantic::task::generation::UsageBasis::Final,
+            input_relation:
+                morphiecore::semantic::task::generation::InputTokenRelation::IncludesCache,
             output_relation:
                 morphiecore::semantic::task::generation::OutputTokenRelation::IncludesReasoning,
             total_relation:
@@ -83,6 +85,8 @@ fn modality_billing_view_promotes_typed_facts_and_edits_cannot_restore_the_view(
         .with_usage(Usage {
             scope: morphiecore::semantic::task::generation::UsageScope::Operation,
             basis: morphiecore::semantic::task::generation::UsageBasis::Final,
+            input_relation:
+                morphiecore::semantic::task::generation::InputTokenRelation::IncludesCache,
             output_relation:
                 morphiecore::semantic::task::generation::OutputTokenRelation::IncludesReasoning,
             total_relation:

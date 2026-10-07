@@ -1,10 +1,12 @@
 //! Named, premise-checked views over one reported usage snapshot, never billing.
-use super::{GenerationError, OutputTokenRelation, Usage};
+use super::{GenerationError, InputTokenRelation, OutputTokenRelation, Usage};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UsageFormula {
     /// Input total less the reported cache-read subset; cache-write may overlap.
     InputMinusCacheRead,
+    /// Sum only explicitly disjoint reported input/cache categories.
+    InputPlusCacheReadAndWrite,
     /// Output total less reported reasoning; the remainder is not visible text.
     OutputMinusReasoning,
 }
@@ -24,6 +26,14 @@ impl<'a> DerivedTokenCount<'a> {
     }
     pub fn tokens(&self) -> u64 {
         match self.formula {
+            UsageFormula::InputPlusCacheReadAndWrite => {
+                self.source.input_tokens.expect("validated premise")
+                    + self.source.cached_input_tokens.expect("validated premise")
+                    + self
+                        .source
+                        .input_cache_write_tokens
+                        .expect("validated premise")
+            }
             UsageFormula::InputMinusCacheRead => {
                 self.source
                     .input_tokens
@@ -54,7 +64,30 @@ impl Usage {
     ) -> Result<Option<DerivedTokenCount<'_>>, GenerationError> {
         self.validate()?;
         let premise = match formula {
-            UsageFormula::InputMinusCacheRead => self.input_tokens.zip(self.cached_input_tokens),
+            UsageFormula::InputMinusCacheRead
+                if self.input_relation == InputTokenRelation::IncludesCache =>
+            {
+                self.input_tokens.zip(self.cached_input_tokens)
+            }
+            UsageFormula::InputPlusCacheReadAndWrite
+                if self.input_relation == InputTokenRelation::ExcludesCacheReadAndWrite =>
+            {
+                match (
+                    self.input_tokens,
+                    self.cached_input_tokens,
+                    self.input_cache_write_tokens,
+                ) {
+                    (Some(input), Some(read), Some(write)) => {
+                        input
+                            .checked_add(read)
+                            .and_then(|sum| sum.checked_add(write))
+                            .ok_or(GenerationError::InvalidResponse)?;
+                        Some((input, read))
+                    }
+                    _ => None,
+                }
+            }
+            UsageFormula::InputMinusCacheRead | UsageFormula::InputPlusCacheReadAndWrite => None,
             UsageFormula::OutputMinusReasoning
                 if self.output_relation == OutputTokenRelation::IncludesReasoning =>
             {

@@ -825,6 +825,8 @@ fn usage_projects_known_totals_across_profiles_without_estimating() {
         Some(Usage {
             scope: UsageScope::Operation,
             basis: UsageBasis::Final,
+            input_relation:
+                morphiecore::semantic::task::generation::InputTokenRelation::IncludesCache,
             output_relation: OutputTokenRelation::IncludesReasoning,
             total_relation: TotalTokenRelation::InputAndOutput,
             input_tokens: Some(5),

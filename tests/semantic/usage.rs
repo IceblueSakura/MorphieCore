@@ -29,6 +29,7 @@ fn text_and_prediction_counts_are_preserved_and_not_summed_with_reasoning() {
     let expected = Usage {
         scope: UsageScope::Operation,
         basis: UsageBasis::Final,
+        input_relation: morphiecore::semantic::task::generation::InputTokenRelation::IncludesCache,
         output_relation: OutputTokenRelation::IncludesReasoning,
         total_relation: TotalTokenRelation::InputAndOutput,
         input_tokens: Some(10),
@@ -57,6 +58,7 @@ fn text_and_prediction_counts_are_preserved_and_not_summed_with_reasoning() {
     let changed = Usage {
         scope: UsageScope::Operation,
         basis: UsageBasis::Final,
+        input_relation: morphiecore::semantic::task::generation::InputTokenRelation::IncludesCache,
         output_relation: OutputTokenRelation::IncludesReasoning,
         total_relation: TotalTokenRelation::InputAndOutput,
         input_text_tokens: Some(6),
@@ -75,6 +77,7 @@ fn text_and_prediction_counts_are_preserved_and_not_summed_with_reasoning() {
     let cleared = Usage {
         scope: UsageScope::Operation,
         basis: UsageBasis::Final,
+        input_relation: morphiecore::semantic::task::generation::InputTokenRelation::IncludesCache,
         output_relation: OutputTokenRelation::IncludesReasoning,
         total_relation: TotalTokenRelation::InputAndOutput,
         input_text_tokens: None,
@@ -102,6 +105,8 @@ fn text_and_prediction_counts_are_preserved_and_not_summed_with_reasoning() {
         Usage {
             scope: UsageScope::Operation,
             basis: UsageBasis::Final,
+            input_relation:
+                morphiecore::semantic::task::generation::InputTokenRelation::IncludesCache,
             output_relation: OutputTokenRelation::IncludesReasoning,
             total_relation: TotalTokenRelation::InputAndOutput,
             input_text_tokens: Some(0),
@@ -110,6 +115,8 @@ fn text_and_prediction_counts_are_preserved_and_not_summed_with_reasoning() {
         Usage {
             scope: UsageScope::Operation,
             basis: UsageBasis::Final,
+            input_relation:
+                morphiecore::semantic::task::generation::InputTokenRelation::IncludesCache,
             output_relation: OutputTokenRelation::IncludesReasoning,
             total_relation: TotalTokenRelation::InputAndOutput,
             output_text_tokens: Some(0),
@@ -118,6 +125,8 @@ fn text_and_prediction_counts_are_preserved_and_not_summed_with_reasoning() {
         Usage {
             scope: UsageScope::Operation,
             basis: UsageBasis::Final,
+            input_relation:
+                morphiecore::semantic::task::generation::InputTokenRelation::IncludesCache,
             output_relation: OutputTokenRelation::IncludesReasoning,
             total_relation: TotalTokenRelation::InputAndOutput,
             accepted_prediction_tokens: Some(0),
@@ -126,6 +135,8 @@ fn text_and_prediction_counts_are_preserved_and_not_summed_with_reasoning() {
         Usage {
             scope: UsageScope::Operation,
             basis: UsageBasis::Final,
+            input_relation:
+                morphiecore::semantic::task::generation::InputTokenRelation::IncludesCache,
             output_relation: OutputTokenRelation::IncludesReasoning,
             total_relation: TotalTokenRelation::InputAndOutput,
             rejected_prediction_tokens: Some(0),
@@ -158,6 +169,8 @@ fn text_and_prediction_counts_are_preserved_and_not_summed_with_reasoning() {
             .with_usage(Usage {
                 scope: UsageScope::Operation,
                 basis: UsageBasis::Final,
+                input_relation:
+                    morphiecore::semantic::task::generation::InputTokenRelation::IncludesCache,
                 output_relation: OutputTokenRelation::IncludesReasoning,
                 total_relation: TotalTokenRelation::InputAndOutput,
                 output_text_tokens: Some(21),

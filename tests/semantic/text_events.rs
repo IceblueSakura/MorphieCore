@@ -196,6 +196,8 @@ fn chat_refusal_and_empty_text_survive_usage_and_done() {
         e.push(StreamEvent::Usage(Usage {
             scope: UsageScope::Operation,
             basis: UsageBasis::Final,
+            input_relation:
+                morphiecore::semantic::task::generation::InputTokenRelation::IncludesCache,
             output_relation: OutputTokenRelation::IncludesReasoning,
             total_relation: TotalTokenRelation::InputAndOutput,
             input_tokens: Some(3),

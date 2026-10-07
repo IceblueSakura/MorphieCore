@@ -1,9 +1,110 @@
 //! Named subtraction views borrow reported facts and never add overlapping details.
 use morphiecore::semantic::task::generation::*;
+#[test]
+fn exclusive_cache_counts_require_explicit_disjoint_premises_without_zero_fill() {
+    let mut report = Usage::operation(10, 2, 4108);
+    report.input_relation = InputTokenRelation::ExcludesCacheReadAndWrite;
+    report.total_relation = TotalTokenRelation::InputCacheAndOutput;
+    report.cached_input_tokens = Some(4096);
+    report.input_cache_write_tokens = Some(0);
+    report.validate().unwrap();
+    assert_eq!(
+        report
+            .derive(UsageFormula::InputPlusCacheReadAndWrite)
+            .unwrap()
+            .unwrap()
+            .tokens(),
+        4106
+    );
+    assert!(
+        report
+            .derive(UsageFormula::InputMinusCacheRead)
+            .unwrap()
+            .is_none()
+    );
+    let original = report;
+    report.input_cache_write_tokens = None;
+    assert!(
+        report
+            .derive(UsageFormula::InputPlusCacheReadAndWrite)
+            .unwrap()
+            .is_none()
+    );
+    report = original;
+    report.input_relation = InputTokenRelation::IncludesCache;
+    assert!(report.validate().is_err());
+    report = original;
+    report.total_tokens = None;
+    report.total_relation = TotalTokenRelation::Unreported;
+    report.input_relation = InputTokenRelation::Unreported;
+    assert!(
+        report
+            .derive(UsageFormula::InputPlusCacheReadAndWrite)
+            .unwrap()
+            .is_none()
+    );
+    report.input_relation = InputTokenRelation::ExcludesCacheReadAndWrite;
+    report.input_tokens = Some(u64::MAX);
+    assert!(
+        report
+            .derive(UsageFormula::InputPlusCacheReadAndWrite)
+            .is_err()
+    );
+    assert_eq!(original.input_tokens, Some(10));
+}
+#[test]
+fn cumulative_cache_reports_do_not_sum_snapshots_or_switch_relations() {
+    let report = |input| {
+        let mut report = Usage::operation(input, 0, input);
+        report.basis = UsageBasis::Cumulative;
+        report.input_relation = InputTokenRelation::ExcludesCacheReadAndWrite;
+        report.total_relation = TotalTokenRelation::Unreported;
+        report.total_tokens = None;
+        report.cached_input_tokens = Some(4096);
+        report.input_cache_write_tokens = Some(0);
+        report
+    };
+    let response = GenerationResponse::new(vec![], Outcome::Completed)
+        .unwrap()
+        .with_usage_reports(vec![report(10), report(20), report(30)])
+        .unwrap();
+    assert_eq!(response.usage_reports().len(), 1);
+    assert_eq!(response.usage_reports()[0].input_tokens, Some(30));
+    let mut changed = report(40);
+    changed.input_relation = InputTokenRelation::Unreported;
+    assert!(
+        GenerationResponse::new(vec![], Outcome::Completed)
+            .unwrap()
+            .with_usage_reports(vec![report(30), changed])
+            .is_err()
+    );
+    let mut final_report = report(30);
+    final_report.basis = UsageBasis::Final;
+    let response = GenerationResponse::new(vec![], Outcome::Completed)
+        .unwrap()
+        .with_usage(final_report)
+        .unwrap();
+    for profile in [
+        morphiecore::protocol::openai::Profile::Chat,
+        morphiecore::protocol::openai::Profile::Responses,
+    ] {
+        assert!(matches!(
+            morphiecore::lowering::generation::lower_response(
+                &response,
+                &Default::default(),
+                &crate::events_support::metadata(),
+                profile,
+                morphiecore::lowering::generation::GenerationRepresentationContract::full()
+            ),
+            Err(morphiecore::lowering::generation::RepresentationError::UsageProjection)
+        ));
+    }
+}
 fn usage() -> Usage {
     Usage {
         scope: UsageScope::Operation,
         basis: UsageBasis::Final,
+        input_relation: morphiecore::semantic::task::generation::InputTokenRelation::IncludesCache,
         output_relation: OutputTokenRelation::IncludesReasoning,
         total_relation: TotalTokenRelation::InputAndOutput,
         input_tokens: Some(12),
@@ -93,6 +194,7 @@ fn super_usage_max() -> Usage {
     Usage {
         scope: UsageScope::Operation,
         basis: UsageBasis::Final,
+        input_relation: morphiecore::semantic::task::generation::InputTokenRelation::IncludesCache,
         output_relation: OutputTokenRelation::IncludesReasoning,
         total_relation: TotalTokenRelation::InputAndOutput,
         input_tokens: Some(u64::MAX),

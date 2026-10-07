@@ -85,6 +85,8 @@ fn readable_chat_modality_counters_remain_typed_without_claiming_responses_slots
         .with_usage(morphiecore::semantic::task::generation::Usage {
             scope: morphiecore::semantic::task::generation::UsageScope::Operation,
             basis: morphiecore::semantic::task::generation::UsageBasis::Final,
+            input_relation:
+                morphiecore::semantic::task::generation::InputTokenRelation::IncludesCache,
             output_relation:
                 morphiecore::semantic::task::generation::OutputTokenRelation::IncludesReasoning,
             total_relation:
@@ -123,6 +125,8 @@ fn image_usage_presence_edits_and_bounds_do_not_restore_deleted_counts() {
             let changed = Usage {
                 scope: morphiecore::semantic::task::generation::UsageScope::Operation,
                 basis: morphiecore::semantic::task::generation::UsageBasis::Final,
+                input_relation:
+                    morphiecore::semantic::task::generation::InputTokenRelation::IncludesCache,
                 output_relation:
                     morphiecore::semantic::task::generation::OutputTokenRelation::IncludesReasoning,
                 total_relation:
@@ -137,7 +141,11 @@ fn image_usage_presence_edits_and_bounds_do_not_restore_deleted_counts() {
                 .semantic
                 .clone()
                 .with_usage(Usage {
-                    scope: morphiecore::semantic::task::generation::UsageScope::Operation, basis: morphiecore::semantic::task::generation::UsageBasis::Final, output_relation: morphiecore::semantic::task::generation::OutputTokenRelation::IncludesReasoning, total_relation: morphiecore::semantic::task::generation::TotalTokenRelation::InputAndOutput,
+                    scope: morphiecore::semantic::task::generation::UsageScope::Operation,
+                    basis: morphiecore::semantic::task::generation::UsageBasis::Final,
+                    input_relation: morphiecore::semantic::task::generation::InputTokenRelation::IncludesCache,
+                    output_relation: morphiecore::semantic::task::generation::OutputTokenRelation::IncludesReasoning,
+                    total_relation: morphiecore::semantic::task::generation::TotalTokenRelation::InputAndOutput,
                     input_image_tokens: None,
                     ..usage
                 })

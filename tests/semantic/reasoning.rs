@@ -479,6 +479,7 @@ fn reasoning_and_parallel_call_results_preserve_continuation_history() {
     events.push(StreamEvent::Usage(Usage {
         scope: UsageScope::Operation,
         basis: UsageBasis::Final,
+        input_relation: morphiecore::semantic::task::generation::InputTokenRelation::IncludesCache,
         output_relation: OutputTokenRelation::IncludesReasoning,
         total_relation: TotalTokenRelation::InputAndOutput,
         input_tokens: Some(4),
