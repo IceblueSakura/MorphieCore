@@ -13,6 +13,7 @@ fn message(id: u64, s: &str) -> (ItemId, Item) {
         Item::Message(Message {
             role: MessageRole::User,
             parts: vec![Part {
+                replay: None,
                 id: PartId::new(id),
                 content: ContentPart::Text(text(s).into()),
             }],

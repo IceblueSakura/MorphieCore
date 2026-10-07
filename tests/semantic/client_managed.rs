@@ -26,6 +26,7 @@ fn result() -> Item {
 }
 fn provider(reference: bool) -> Item {
     Item::ProviderTool(ProviderToolObservation {
+        replay: None,
         source: NativeAliasDomain {
             source: text("abstract"),
             scope: LocalScope::new(8),
@@ -37,6 +38,10 @@ fn provider(reference: bool) -> Item {
                 tool: text("search"),
                 alias: Some(text("S")),
                 requester: ProviderRequester::Model,
+                action: Some(ProviderAction::Search {
+                    query: None,
+                    queries: Some(vec![text("synthetic query")]),
+                }),
             }
         },
         progress: None,
@@ -162,6 +167,7 @@ fn first_request_needs_no_session_and_selected_relations_are_not_lost() {
             Item::Message(Message {
                 role: MessageRole::User,
                 parts: vec![Part {
+                    replay: None,
                     id: PartId::new(1),
                     content: ContentPart::Text(text("hello").into()),
                 }],
@@ -259,6 +265,7 @@ fn configured_mixed_successor_separates_client_results_provider_progress_and_rev
                 Item::Message(Message {
                     role: MessageRole::Assistant,
                     parts: vec![Part {
+                        replay: None,
                         id: PartId::new(5),
                         content: ContentPart::Text(text("reported text").into()),
                     }],

@@ -566,6 +566,7 @@ fn wire_reasoning_identity_is_required_and_fresh_items_assign_request_ids() {
                 Item::Message(Message {
                     role: MessageRole::User,
                     parts: vec![Part {
+                        replay: None,
                         id: PartId::new(2),
                         content: ContentPart::Text(text("next").into()),
                     }],

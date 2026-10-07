@@ -18,7 +18,9 @@ pub fn check_event(
         return Err(RepresentationError::ReplayPhase);
     }
     match event {
-        StreamEvent::ReplayGroup(_) => return Err(RepresentationError::UnmigratedSemantic),
+        StreamEvent::ReplayGroup(_) | StreamEvent::ReplayFinalized { .. } => {
+            return Err(RepresentationError::UnmigratedSemantic);
+        }
         StreamEvent::Terminal {
             terminal: StreamTerminal::Cancelled,
             ..
@@ -70,7 +72,9 @@ pub fn check_event(
                     return Err(RepresentationError::UnmigratedSemantic);
                 }
                 ItemKind::ToolCall { context, .. } | ItemKind::CustomCall { context, .. }
-                    if context.alias_domain.is_some() || context.definition.is_some() =>
+                    if context.alias_domain.is_some()
+                        || context.definition.is_some()
+                        || context.replay.is_some() =>
                 {
                     return Err(RepresentationError::UnmigratedSemantic);
                 }

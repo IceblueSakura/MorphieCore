@@ -65,6 +65,10 @@ Requester、执行责任、执行进度、结果正文与产物生命周期分�
 
 Provider 复合观察采用共享 Generation items 中的独立 typed 分支，不将普通 function/custom 调用与 Provider action 重写成同一参数节点。共享身份、引用、执行报告、结果值和资源基础类型；报告调用事实的观察与引用先前操作的观察分别表达，单一原生 item 不强拆成虚构 call/result。来源域标签用于关联而非认证或执行权限，纯核心构造不证明真实 Provider 执行。
 
+具体动作内容归[Provider action owner](../../src/semantic/task/generation/provider.rs)，不是任意 JSON 参数袋。动作未报告与已报告但参数未报告分开；单查询、有序查询列表及其空值不互相归一化、去重或补猜，URL/查找模式仅是观察内容，不触发 I/O。工具名称不推导动作或执行责任。引用结果只指向原操作，不复制其动作正文；原生 sources、引用与 replay 附件须按各自 owner 另行准入，不能因动作可表达而静默丢失。选中来源与附件域区别见[动作证据](../references/upstream-sync.md#provider-actions)。
+
+修改动作遵守调用身份规则，复用显式修订与派生关系；Provider 修订不能变成客户端调用，也不能携带原操作的进度、执行、正文或产物报告。旧结果不自动重关联；删除或显式修复悬空关系后才可构成新请求。新动作纳入内容依赖而非脱敏 Debug 的占位文本；脱敏不应使不同参数共享证明。规范事件只接收完整 typed 动作；原生分片在有相应 parser 合同之前不能作为已闭合值输入，后继报告也不修改已终止的观察。
+
 验证保证分层，而不是放宽原有严格入口：
 
 1. **局部观察合法性**：验证值、presence、局部 identity、生命周期和预算；允许明确未解析的外部调用引用，不抹掉已收到的合法观察。
@@ -90,6 +94,10 @@ Provider 复合观察采用共享 Generation items 中的独立 typed 分支，�
 Reasoning opaque 是由上游提供、绑定于特定交互项的协议专属回放值。客户端可以保存、搬运和按协议重新序列化，但不解释、不自行改写或根据可见 reasoning 重建它；回放保留原值及协议要求的所属关系。“不可自行改写”不等于“从首次出现起永不变化”，协议规定的片段组装与最终化也不属于客户端擅自改写。
 
 Replay attachment 拥有明确格式、唯一值、owner、partial/final、可见性与预算；绑定记录拥有可信兼容 scope 和依赖证明，不复制正文。其基础边界为：
+
+附件采用 **owner-local typed 载荷**：只归实际承载它的 item/part，组只有存在独立载荷证据时才拥有值，否则只表达 replay 依赖。没有独立的 request/response 可写附件表；统一查询/绑定键只定位节点，不成为第二个载荷位置。非 reasoning 的调用、Provider 观察与文本/图片 part 分别保留各自 owner，不伪造 reasoning item。格式与节点组合由验证器限定；删除节点或其 typed 值后，来源记录不能恢复它。
+
+所选格式依据[Replay 来源](../references/upstream-sync.md#replay-attachments)。绑定分离节点自身依赖与受信 intake 显式声明的历史/组/配置依赖；不能重新捕获编辑后的值来弱化原绑定。非 reasoning 的规范最终化事件只在 item 尚未闭合、适用的可见值/参数已闭合时接收完整附件，重复最终化或闭合后事件拒绝；这不是通用 replay 更新服务。纯库中的 assistant 图片观察不启用标准 Generation 输出 carrier。
 
 - 原样保留的是 opaque 值及必要关联，不要求外围 JSON 的空白、键顺序或等价转义写法逐字节相同。不截断、补造或拼接独立 opaque 值；不能从 summary 生成替代值。
 - 值不能移挂到另一 owner；删除 owner 或 typed 值不能从 fidelity 恢复。可见 summary 与 opaque 的依赖由具体格式规定，不预设整个 reasoning 对象的每个字段都被签名绑定；已声明的依赖约束仍须保留。

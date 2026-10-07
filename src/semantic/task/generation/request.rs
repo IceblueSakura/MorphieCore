@@ -89,6 +89,7 @@ pub enum ContentPart {
 pub struct Part {
     pub id: PartId,
     pub content: ContentPart,
+    pub replay: Option<super::ReplayValue>,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Message {
@@ -132,6 +133,12 @@ impl Item {
             self,
             Self::ToolCall(_) | Self::CustomCall(_) | Self::Program(_)
         )
+    }
+    /// Includes Provider operations only for identity/derivation protection.
+    pub(super) fn is_operation(&self) -> bool {
+        self.is_call()
+            || matches!(self, Self::ProviderTool(observed)
+                if matches!(observed.operation, ProviderOperation::Reported { .. }))
     }
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -308,7 +315,7 @@ impl GenerationRequest {
                 || !self
                     .items
                     .iter()
-                    .any(|(id, item)| id == owner && item.is_call())
+                    .any(|(id, item)| id == owner && item.is_operation())
         }) {
             return Err(GenerationError::InvalidDependency);
         }
@@ -379,7 +386,7 @@ impl GenerationRequest {
         replacement: (ItemId, Item),
     ) -> Result<Self, GenerationError> {
         if source == replacement.0
-            || !replacement.1.is_call()
+            || !replacement.1.is_operation()
             || self.items.iter().any(|(owner, _)| *owner == replacement.0)
             || self
                 .call_derivations
@@ -391,8 +398,9 @@ impl GenerationRequest {
         let index = self
             .items
             .iter()
-            .position(|(id, item)| *id == source && item.is_call())
+            .position(|(id, item)| *id == source && item.is_operation())
             .ok_or(GenerationError::InvalidDependency)?;
+        super::identity::check_operation_revision(&self.items[index].1, &replacement.1)?;
         let next = replacement.0;
         let mut items = self.items.clone();
         items[index] = replacement;
@@ -529,6 +537,8 @@ pub enum GenerationError {
     DuplicateCall,
     #[error("tool result has no matching preceding call or duplicates a result")]
     InvalidToolResult,
+    #[error("invalid replay attachment format or owner")]
+    InvalidReplay,
     #[error("invalid Provider operation observation or unresolved history reference")]
     InvalidProviderObservation,
     #[error("tool calls must remain contiguous with their assistant owner")]

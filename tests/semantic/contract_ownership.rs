@@ -21,6 +21,7 @@ fn history_probability_presence_does_not_request_new_probability_generation() {
                 Item::Message(Message {
                     role: MessageRole::Assistant,
                     parts: vec![Part {
+                        replay: None,
                         id: PartId::new(1),
                         content: ContentPart::Text(
                             TextContent::new(
@@ -70,6 +71,7 @@ fn semantic_contract_checks_final_request_without_a_representation_contract() {
             Item::Message(Message {
                 role: MessageRole::User,
                 parts: vec![Part {
+                    replay: None,
                     id: PartId::new(1),
                     content: ContentPart::Resource(Resource {
                         location: ResourceLocation::Url(

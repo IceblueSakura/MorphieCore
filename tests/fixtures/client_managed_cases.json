@@ -1,5 +1,5 @@
 {
-  "contract": "docs/implementation-plans/client-managed-ir.md@v0.5",
+  "contract": "docs/implementation-plans/client-managed-ir.md",
   "traceability": "case_key and source ids are stable; area groups semantic coverage, not execution phases. Each case covers only its declared expectations and scope.",
   "cases": [
     {
@@ -179,6 +179,70 @@
       "scope": "required; covers E01 observation/association subset, not complete configured successor construction or native fragmented results"
     },
     {
+      "case_key": "provider_typed_actions_and_revisions",
+      "ids": ["A05", "A09", "A10", "A11", "T03", "T11", "T12", "T16", "T17", "T18", "E01"],
+      "area": "provider-observations",
+      "sample_kind": "abstract_contract",
+      "evidence": "upstream-sync.md#provider-actions @provider-actions-2026-10-07; Responses action, Interactions v1 Step and Messages direct web_search_20250305 contrasts; native schema not applicable",
+      "owner": "src/semantic/task/generation/provider.rs; identity.rs; request.rs; context_transform.rs; dependency.rs; validate.rs",
+      "target": "semantic",
+      "symbols": ["provider_observations::complete_actions_preserve_presence_and_match_independent_static_events", "provider_observations::action_edits_require_new_identity_and_derivation_without_retargeting_results", "provider_observations::action_dependencies_bind_kind_presence_order_and_each_parameter", "provider_observations::three_source_actions_keep_reference_domains_and_do_not_infer_client_execution", "provider_observations::action_limits_cover_fields_collections_aggregate_and_redaction", "client_managed::configured_mixed_successor_separates_client_results_provider_progress_and_revision_dependencies"],
+      "input": "Typed search/open-page/find-in-page observations; optional single/ordered batch queries; scoped R1 operations and R2 result references; explicit action edits",
+      "expected": "One action authority, independent presence/order, no inferred success or client execution; distinct Step/Part reference domains; explicit new identity/derivation without old reports or result retargeting; final static/event values agree",
+      "transform": "Revise operation directly and atomically, compare independently rebuilt values against content proofs, preserve immutable source and separate candidates, delete dangling old result",
+      "budget": "Field and collection B-1/B/B+1; query storage and cumulative bytes; action/operation Debug redaction",
+      "forbidden_effects": "No generic JSON action, fake call/result split, source-label authentication, native parser, hosted request activation, I/O, automatic continuation or private wire carrier",
+      "scope": "selected action content only; complete normative values, not native action fragments; sources/citations and Step/Part replay attachments remain separate"
+    },
+    {
+      "case_key": "reasoning_replay_scoped_owner_and_format_finalization",
+      "ids": ["A06", "A07", "A20", "A22", "A32", "T03", "T04", "T16", "T22", "E04"],
+      "area": "replay-protection",
+      "sample_kind": "abstract_contract",
+      "evidence": "interaction-contract.md#typed-replay-与信任; responses-text-profile.md#reasoning-replay-authority; existing Responses wire oracle reused, Google normative values are not native wire",
+      "owner": "src/protocol/fidelity.rs; src/semantic/task/generation/event.rs",
+      "target": "semantic",
+      "symbols": ["replay_ownership::replacements_and_owner_transplants_cannot_reuse_proofs", "replay_formats::replay_finalization_preserves_format_without_requiring_an_initial_payload", "replay_ownership::independent_owner_reordering_and_deletion_keep_surviving_bindings", "replay_ownership::stream_snapshots_and_materialization_own_partial_final_and_removed_values"],
+      "input": "Same reasoning body/token with a changed part scope; partial Responses/Interactions-thought values finalized on the same owner",
+      "expected": "Scoped part identity binds reuse; finalization keeps format/origin; same-format replacement, late initial value and partial deletion retain their existing semantics",
+      "transform": "Change only part scope; switch format under an unchanged origin; finalize from absent/partial without post-closure updates",
+      "budget": "Existing replay field/aggregate bounds; no new allocation or increased budget",
+      "forbidden_effects": "No format substitution, cross-owner replay, issuer-authentication claim, native Google parser, terminal repair or private carrier",
+      "scope": "reasoning replay protection; non-reasoning attachment and group-dependency cases are separate, not native Google/Anthropic wire"
+    },
+    {
+      "case_key": "owner_local_replay_values_events_and_dependencies",
+      "ids": ["A06", "A07", "A20", "A22", "A32", "T03", "T04", "T05", "T06", "T07", "T08", "T13", "T22", "T27", "T28", "T30", "T32", "E02", "E04"],
+      "area": "replay-protection",
+      "sample_kind": "abstract_contract",
+      "evidence": "upstream-sync.md#replay-attachments @replay-attachments-2026-10-07; selected typed attachments, not native Google/Anthropic wire",
+      "owner": "src/semantic/task/generation/replay.rs; dependency.rs; event.rs; validate.rs; requirements.rs; src/protocol/fidelity.rs",
+      "target": "semantic",
+      "symbols": ["replay_attachments::local_attachments_have_one_owner_and_no_existing_public_carrier", "replay_attachments::selected_part_binding_ignores_siblings_but_rejects_own_edits_and_resurrection", "replay_attachments::formats_are_bound_to_legal_nodes_and_partial_values_are_not_replayable", "replay_attachments::late_part_attachment_is_finalized_before_item_closure_and_matches_static", "replay_attachments::call_and_provider_step_events_preserve_their_own_attachments", "replay_attachments::shared_group_and_settings_dependencies_are_checked_without_cross_candidate_pollution", "replay_attachments::attachment_budgets_count_each_value_and_the_aggregate_in_static_and_events", "replay_attachments::cleared_call_attachments_do_not_return_from_fidelity", "replay_attachments::attachment_binding_budget_is_shared_with_reasoning_bindings"],
+      "input": "Owner-local call/Provider Step/text/image attachments, selected groups and configuration dependencies; late complete signatures and empty visible reasoning",
+      "expected": "Typed values have one owner; exact trusted origin and final phase gate local reuse; edited owner/content/resource or selected group/settings invalidate bindings; outside edits remain valid; finalization cannot repeat or reopen closed items",
+      "transform": "Change resource URL, token, scoped part identity, selected group/content/tools/output setting; remove attachment/owner; semantic text batches, late signature, malformed owner/format and partial rejection",
+      "budget": "Single opaque and aggregate B-1/B/B+1; shared binding count reaches MAX_ITEMS then rejects one more; bounded locator and Debug redaction",
+      "forbidden_effects": "No central writable payload table, group token invention, implicit issuer/model compatibility, raw resurrection, signature parsing, media fragmentation, native codec or public activation",
+      "scope": "selected P3 attachments and local proofs; actual raw/native replay and consumer return are not asserted"
+    },
+    {
+      "case_key": "owner_local_replay_native_encoder_guard",
+      "ids": ["A02", "A20", "A32", "T22"],
+      "area": "replay-protection",
+      "sample_kind": "abstract_contract",
+      "evidence": "existing Responses/Chat carrier contracts; independently forged crate-internal representations, no Google/Anthropic native schema claim",
+      "owner": "src/protocol/openai/common.rs; tool_results_test.rs",
+      "target": "lib",
+      "symbols": ["protocol::openai::tool_results_test::forged_handles_cannot_drop_owner_local_replay_or_assistant_media"],
+      "input": "Call/text attachments and assistant image observations in forged request/response target handles",
+      "expected": "Both native encoders reject unsupported semantics even when lowering is bypassed internally",
+      "transform": "Select each target and request/response boundary independently",
+      "budget": "Small synthetic values",
+      "forbidden_effects": "No silent attachment/media loss, custom fields or product activation",
+      "scope": "internal codec guard; public API has no new carrier"
+    },
+    {
       "case_key": "provider_result_fragments",
       "ids": ["A10", "A11", "T12", "T30", "T31", "E04"],
       "area": "provider-observations",
@@ -289,6 +353,22 @@
       "budget": "Existing item/group/configuration budgets and bounded requirement vectors",
       "forbidden_effects": "No tool execution, native mapping, server history lookup, automatic continuation or end-of-turn inference",
       "scope": "required E01 configuration/association closure; Provider action content and format-specific resource/replay conditions have separate owners"
+    },
+    {
+      "case_key": "three_source_combined_history_and_independent_branches",
+      "ids": ["A03", "A05", "A09", "A10", "A12", "A13", "A14", "A15", "A16", "A18", "T09", "T10", "T11", "T16", "T23", "E01", "E02", "E06"],
+      "area": "client-managed-context",
+      "sample_kind": "abstract_contract",
+      "evidence": "upstream-sync.md#provider-actions @provider-actions-2026-10-07 and #client-managed-s2 @s2-controls-2026-10-07; hand-authored typed expectations, native schema not applicable",
+      "owner": "src/semantic/task/generation/client_managed.rs; configuration.rs; context_transform.rs; identity.rs; dependency.rs; continuation.rs",
+      "target": "semantic",
+      "symbols": ["client_managed_composition::three_source_configured_successors_preserve_authorities_and_separate_progress", "client_managed_composition::independent_branches_preserve_original_definitions_arguments_and_reports", "client_managed_composition::combined_history_rejects_broken_association_authority_phase_and_dependencies"],
+      "input": "Three source contrasts with explicit current configuration, original definition binding, exact raw/structured arguments, phased text/reasoning/C/S group, C result and R2 Provider failure body",
+      "expected": "Only C requires client results; explicit Provider conditions and original progress remain separate; R2 resolves to R1; two derived contexts retain original definitions/arguments/report ownership and unchanged selected relations",
+      "transform": "Two branches from one immutable source: insert/replace/delete/reorder outside dependencies, change current configuration; reject changed selected dependencies, dangling history, same-owner argument or binding edits, instruction authority/position and phase edits",
+      "budget": "Shared constructor/edit/configuration limits; boundary matrices remain in their existing owner cases",
+      "forbidden_effects": "No implicit configuration inheritance, inferred turn completion, fake native parser, execution, automatic continuation, report reinterpretation or private carrier",
+      "scope": "pure E01/E02/E06 composition; E04 batches and existing wire boundaries reuse their owning cases; resource dual anchors, format-specific replay and actual consumer return remain outside this case"
     },
     {
       "case_key": "three_source_pure_control_accounting_consumer",

@@ -13,6 +13,7 @@ fn message(id: u64, body: &str) -> (ItemId, Item) {
         Item::Message(Message {
             role: MessageRole::Assistant,
             parts: vec![Part {
+                replay: None,
                 id: PartId::new(id),
                 content: ContentPart::Text(
                     TextContent::new(
@@ -175,6 +176,7 @@ fn redacted_values_and_schema_order_remain_real_dependencies() {
             Item::Message(Message {
                 role: MessageRole::User,
                 parts: vec![Part {
+                    replay: None,
                     id: PartId::new(1),
                     content: ContentPart::Resource(Resource {
                         location: ResourceLocation::Url(text(url)),

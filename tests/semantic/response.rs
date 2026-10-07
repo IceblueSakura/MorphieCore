@@ -264,6 +264,7 @@ fn empty_message_wire_identity_cannot_collide_with_another_item() {
                 role: MessageRole::Assistant,
                 status: ItemLifecycle::Completed,
                 parts: vec![Part {
+                    replay: None,
                     id: PartId::new(1),
                     content: ContentPart::Text(crate::events_support::text("hello").into()),
                 }],

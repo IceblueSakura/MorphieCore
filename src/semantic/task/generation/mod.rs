@@ -30,12 +30,13 @@ mod progress;
 pub use progress::InteractionProgress;
 mod provider;
 pub use provider::{
-    ProviderExecutionProgress, ProviderOperation, ProviderOperationReference, ProviderRequester,
-    ProviderResultFormat, ProviderToolObservation,
+    ProviderAction, ProviderExecutionProgress, ProviderOperation, ProviderOperationReference,
+    ProviderRequester, ProviderResultFormat, ProviderToolObservation,
 };
 mod reasoning;
 mod replay;
-pub use replay::{ReplayFormat, ReplayValue};
+pub(crate) use replay::ReplayDependency;
+pub use replay::{ReplayFormat, ReplayOwner, ReplayValue};
 mod request;
 mod requirements;
 mod resource;

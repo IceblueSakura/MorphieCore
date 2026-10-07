@@ -334,6 +334,7 @@ pub(super) fn decode_message(
                                 parts.push(b.part(string(part, "text")?)?);
                             }
                             "image_url" => parts.push(Part {
+                                replay: None,
                                 id: b.part_id()?,
                                 content: ContentPart::Resource(super::image::read(
                                     part,
@@ -361,6 +362,7 @@ pub(super) fn decode_message(
                     return Err(CodecError::Invalid("audio with refusal"));
                 }
                 parts.push(Part {
+                    replay: None,
                     id: b.part_id()?,
                     content: super::chat_audio::read(audio, replay)?,
                 });

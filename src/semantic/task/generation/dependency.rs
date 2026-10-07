@@ -224,6 +224,18 @@ fn dependency(
         }
         match item {
             Item::ProviderTool(observed) => {
+                if let Some(value) = &observed.replay {
+                    writer.hash.update(value.fingerprint());
+                }
+                if let ProviderOperation::Reported {
+                    action: Some(action),
+                    ..
+                } = &observed.operation
+                {
+                    action
+                        .write_dependency(&mut writer)
+                        .map_err(|_| GenerationError::Limit)?;
+                }
                 write!(
                     writer,
                     "{:?}:{:?}:{:?}:{:?}:{:?}:{:?}",
@@ -250,6 +262,9 @@ fn dependency(
             }
             Item::Message(m) => {
                 for part in &m.parts {
+                    if let Some(value) = &part.replay {
+                        writer.hash.update(value.fingerprint());
+                    }
                     match &part.content {
                         ContentPart::Resource(resource) => {
                             resource_dependency(&mut writer.hash, resource)
@@ -260,6 +275,11 @@ fn dependency(
                         }
                         _ => {}
                     }
+                }
+            }
+            Item::ToolCall(call) => {
+                if let Some(value) = &call.context.replay {
+                    writer.hash.update(value.fingerprint());
                 }
             }
             Item::ToolResult(result) | Item::CustomResult(result) => {
@@ -273,6 +293,38 @@ fn dependency(
             }
             _ => {}
         }
+    }
+    Ok(writer.hash.finalize().into())
+}
+pub(super) fn part_dependency(
+    request: &GenerationRequest,
+    item: ItemId,
+    part: PartId,
+) -> Result<[u8; 32], GenerationError> {
+    let Some((_, Item::Message(message))) = request.items().iter().find(|(id, _)| *id == item)
+    else {
+        return Err(GenerationError::InvalidReplay);
+    };
+    let part = message
+        .parts
+        .iter()
+        .find(|p| p.id == part)
+        .ok_or(GenerationError::InvalidReplay)?;
+    let mut writer = HashWriter {
+        hash: Sha256::new(),
+        remaining: MAX_TOTAL_BYTES * 8,
+    };
+    write!(
+        writer,
+        "{item:?}:{:?}:{:?}:{:?}:{part:?}",
+        message.role, message.phase, message.status
+    )
+    .map_err(|_| GenerationError::Limit)?;
+    if let Some(value) = &part.replay {
+        writer.hash.update(value.fingerprint());
+    }
+    if let ContentPart::Resource(resource) = &part.content {
+        resource_dependency(&mut writer.hash, resource);
     }
     Ok(writer.hash.finalize().into())
 }

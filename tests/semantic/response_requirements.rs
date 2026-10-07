@@ -14,6 +14,7 @@ fn response_requirements_are_derived_from_output_not_request_configuration() {
             Item::Message(Message {
                 role: MessageRole::Assistant,
                 parts: vec![Part {
+                    replay: None,
                     id: PartId::new(2),
                     content: ContentPart::Text(text("answer").into()),
                 }],

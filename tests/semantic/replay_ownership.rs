@@ -72,7 +72,7 @@ fn replacements_and_owner_transplants_cannot_reuse_proofs() {
     value["summary"] =
         json!([{"type":"summary_text","text":"first"},{"type":"summary_text","text":"second"}]);
     let d = request(json!([value]));
-    for mutation in 0..6 {
+    for mutation in 0..7 {
         let mut items = d.semantic.items().to_vec();
         match mutation {
             0 => {
@@ -87,7 +87,11 @@ fn replacements_and_owner_transplants_cannot_reuse_proofs() {
             2 => reason(&mut items, 0).status = ItemLifecycle::Incomplete,
             3 => items[0].0 = ItemId::new(97),
             4 => reason(&mut items, 0).parts.swap(0, 1),
-            _ => reason(&mut items, 0).parts[0].0 = PartId::new(97),
+            5 => reason(&mut items, 0).parts[0].0 = PartId::new(97),
+            _ => {
+                let part = reason(&mut items, 0).parts[0].0;
+                reason(&mut items, 0).parts[0].0 = PartId::scoped(LocalScope::new(97), part.get());
+            }
         }
         let changed = d.semantic.clone().with_items(items).unwrap();
         assert!(encode(&changed, &d.fidelity).is_err());

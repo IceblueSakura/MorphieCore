@@ -144,6 +144,11 @@ pub enum StreamEvent {
         item: ItemId,
         part: PartId,
     },
+    /// One complete attachment before item closure, including after visible part closure.
+    ReplayFinalized {
+        owner: ReplayOwner,
+        value: ReplayValue,
+    },
     ItemFinished {
         item: ItemId,
         status: ItemLifecycle,
@@ -176,6 +181,7 @@ pub enum EventError {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StreamPart {
     pub id: PartId,
+    pub replay: Option<ReplayValue>,
     pub kind: PartKind,
     data: StreamPartValue,
     pub value_finished: bool,
@@ -311,6 +317,10 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             state.queued = true;
         }
         StreamEvent::ItemStarted { item, kind, replay } => {
+            if matches!(&kind, ItemKind::ToolCall { context, .. } | ItemKind::CustomCall { context, .. } if context.replay.is_some())
+            {
+                return Err(EventError::Lifecycle);
+            }
             if state.items.len() >= MAX_ITEMS {
                 return Err(EventError::Limit);
             }
@@ -519,6 +529,7 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 return Err(EventError::Lifecycle);
             }
             owner.parts.push(StreamPart {
+                replay: None,
                 id: part,
                 kind,
                 data: if kind == PartKind::Audio {
@@ -748,11 +759,9 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 if !matches!(owner.kind, ItemKind::Reasoning) || r.value.replay_token().is_none() {
                     return Err(EventError::Lifecycle);
                 }
-                if owner
-                    .replay
-                    .as_ref()
-                    .is_some_and(|old| old.origin != r.origin)
-                {
+                if owner.replay.as_ref().is_some_and(|old| {
+                    old.origin != r.origin || old.value.format() != r.value.format()
+                }) {
                     return Err(EventError::Identity);
                 }
             }
@@ -762,6 +771,23 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             let owner = state.open_item(item)?;
             owner.replay = replay;
             owner.status = Some(status);
+        }
+        StreamEvent::ReplayFinalized { owner, value } => {
+            value.validate()?;
+            if value.replay_token().is_none() {
+                return Err(EventError::Lifecycle);
+            }
+            let format = value.format();
+            let slot = state
+                .open_item(owner.item())?
+                .attachment_slot(owner, format)?;
+            if slot.is_some() {
+                return Err(EventError::Lifecycle);
+            }
+            state.charge(value.as_str().len())?;
+            *state
+                .open_item(owner.item())?
+                .attachment_slot(owner, format)? = Some(value);
         }
         StreamEvent::Progress(progress) => {
             if progress == InteractionProgress::Unreported
@@ -873,6 +899,59 @@ pub fn snapshot_items(state: &StreamState) -> Result<Vec<(ItemId, Item)>, EventE
         .collect()
 }
 impl StreamItem {
+    fn attachment_slot(
+        &mut self,
+        owner: ReplayOwner,
+        format: ReplayFormat,
+    ) -> Result<&mut Option<ReplayValue>, EventError> {
+        if self.status.is_some() {
+            return Err(EventError::Lifecycle);
+        }
+        match (owner, &mut self.kind) {
+            (ReplayOwner::Item(_), ItemKind::ToolCall { context, .. }) => {
+                if !matches!(
+                    format,
+                    ReplayFormat::GoogleGenerateContentPart
+                        | ReplayFormat::GoogleInteractionsV1Step
+                ) || self.parts.len() != 1
+                    || self.parts.iter().any(|p| !p.finished)
+                {
+                    return Err(EventError::Lifecycle);
+                }
+                Ok(&mut context.replay)
+            }
+            (ReplayOwner::Item(_), ItemKind::ProviderTool(observed)) => {
+                if format != ReplayFormat::GoogleInteractionsV1Step {
+                    return Err(EventError::Identity);
+                }
+                Ok(&mut observed.replay)
+            }
+            (ReplayOwner::Item(_), ItemKind::ProviderResult { observation, .. }) => {
+                if format != ReplayFormat::GoogleInteractionsV1Step
+                    || self.parts.len() != 1
+                    || self.parts.iter().any(|p| !p.finished)
+                {
+                    return Err(EventError::Lifecycle);
+                }
+                Ok(&mut observation.replay)
+            }
+            (ReplayOwner::Part { part, .. }, ItemKind::Message { .. }) => {
+                if format != ReplayFormat::GoogleGenerateContentPart {
+                    return Err(EventError::Identity);
+                }
+                let part = self
+                    .parts
+                    .iter_mut()
+                    .find(|p| p.id == part)
+                    .ok_or(EventError::Identity)?;
+                if part.kind != PartKind::Text || !part.finished {
+                    return Err(EventError::Lifecycle);
+                }
+                Ok(&mut part.replay)
+            }
+            _ => Err(EventError::Identity),
+        }
+    }
     pub(crate) fn snapshot(&self) -> Result<Item, EventError> {
         let i = self;
         let status = i.status.unwrap_or(ItemLifecycle::InProgress);
@@ -894,6 +973,7 @@ impl StreamItem {
                     .iter()
                     .map(|p| {
                         Ok(Part {
+                            replay: p.replay.clone(),
                             id: p.id,
                             content: match p.kind {
                                 PartKind::Audio => match &p.data {

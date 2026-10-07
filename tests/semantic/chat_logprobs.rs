@@ -374,6 +374,7 @@ fn independent_probability_owners_encode_and_text_edits_invalidate_only_their_fa
             status: ItemLifecycle::Completed,
             phase: None,
             parts: vec![Part {
+                replay: None,
                 id: PartId::new(9),
                 content,
             }],

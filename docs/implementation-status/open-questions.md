@@ -4,6 +4,9 @@
 
 基础语义归[交互合同](../architecture/interaction-contract.md#typed-replay-与信任)，实现缺口概览归 [Generation 状态](generation.md)，推进方向归 [next-goal](../implementation-plans/next-goal.md)。本页不复制完整缺口清单或 Provider 能力矩阵。
 
+<a id="replay-attachment-owner"></a>
+Replay 附件所有权归[交互合同](../architecture/interaction-contract.md#typed-replay-与信任)，实际行为切片归[current-focus](../implementation-plans/current-focus.md)，不在待决页维护第二份结构合同。
+
 ## Reasoning opaque 的闭合后权威
 
 ### 状态与实施边界

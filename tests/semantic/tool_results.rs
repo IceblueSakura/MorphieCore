@@ -340,6 +340,7 @@ fn tool_and_user_images_share_target_limits_and_edits_remove_media() {
                 status: ItemLifecycle::Completed,
                 phase: None,
                 parts: vec![Part {
+                    replay: None,
                     id: PartId::new(90),
                     content: ContentPart::Resource(image("https://example.invalid/user.png")),
                 }],

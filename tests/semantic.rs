@@ -26,6 +26,8 @@ mod chat_wire;
 mod client_carrier;
 #[path = "semantic/client_managed.rs"]
 mod client_managed;
+#[path = "semantic/client_managed_composition.rs"]
+mod client_managed_composition;
 #[path = "semantic/configuration_revisions.rs"]
 mod configuration_revisions;
 #[path = "semantic/context_transforms.rs"]
@@ -92,6 +94,8 @@ mod reasoning;
 mod reasoning_boundary;
 #[path = "semantic/reasoning_controls.rs"]
 mod reasoning_controls;
+#[path = "semantic/replay_attachments.rs"]
+mod replay_attachments;
 #[path = "semantic/replay_formats.rs"]
 mod replay_formats;
 #[path = "semantic/replay_groups.rs"]

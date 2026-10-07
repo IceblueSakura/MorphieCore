@@ -414,7 +414,7 @@ impl EventEncoder {
             StreamEvent::LogprobsSnapshot { .. }
             | StreamEvent::TextMetadata { .. }
             | StreamEvent::Usage(_) => vec![],
-            StreamEvent::ReplayGroup(_) => {
+            StreamEvent::ReplayGroup(_) | StreamEvent::ReplayFinalized { .. } => {
                 return Err(CodecError::Unsupported("replay group event carrier".into()));
             }
             StreamEvent::Progress(_) => {

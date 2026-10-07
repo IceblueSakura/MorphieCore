@@ -120,6 +120,7 @@ fn removing_or_crossing_an_owner_fails_instead_of_reattaching_calls() {
                     phase: None,
                     status: ItemLifecycle::Completed,
                     parts: vec![Part {
+                        replay: None,
                         id: PartId::new(90),
                         content: ContentPart::Text(text("user").into()),
                     }],
@@ -208,6 +209,7 @@ fn refusal_and_attached_calls_conflict_at_the_first_known_event_in_either_order(
         unreachable!()
     };
     message.parts.push(Part {
+        replay: None,
         id: PartId::new(1),
         content: ContentPart::Refusal(text("no").into()),
     });

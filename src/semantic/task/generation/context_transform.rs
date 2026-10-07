@@ -232,12 +232,13 @@ impl GenerationRequest {
                         ContextChange::Reordered(order)
                     }
                     ContextEdit::ReviseCall { source, replacement } => {
-                        if source == replacement.0 || !replacement.1.is_call()
+                        if source == replacement.0 || !replacement.1.is_operation()
                             || request.items.iter().any(|(id,_)| *id == replacement.0)
                             || request.call_derivations.values().any(|id| *id == replacement.0)
                         { return Err(GenerationError::InvalidDependency); }
                         let position = index(&request.items, source)?;
-                        if !request.items[position].1.is_call() { return Err(GenerationError::InvalidDependency); }
+                        if !request.items[position].1.is_operation() { return Err(GenerationError::InvalidDependency); }
+                        super::super::identity::check_operation_revision(&request.items[position].1, &replacement.1)?;
                         let owner = replacement.0;
                         request.items[position] = replacement;
                         if let Some(parent) = request.message_owners.remove(&source) {
@@ -266,7 +267,7 @@ impl GenerationRequest {
                         let sources: Vec<_> = values.iter().map(|(id,_)| *id).collect();
                         request.items.retain(|(id,_)| !sources.contains(id));
                         request.items.insert(position, (owner, Item::Message(Message {
-                            role: MessageRole::User, parts: vec![Part { id: part, content: ContentPart::Text(text.into()) }],
+                            role: MessageRole::User, parts: vec![Part { id: part, content: ContentPart::Text(text.into()), replay: None }],
                             status: ItemLifecycle::Completed, phase: None,
                         })));
                         ContextChange::Summarized { sources, owner }

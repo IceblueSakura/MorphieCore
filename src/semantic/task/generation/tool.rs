@@ -42,6 +42,8 @@ pub struct CallContext {
     pub alias_domain: Option<super::NativeAliasDomain>,
     /// Historical definition association on function/custom calls only, never results.
     pub definition: Option<super::ToolDefinitionBinding>,
+    /// Owner-local function-call attachment; illegal on client result/custom nodes.
+    pub replay: Option<super::ReplayValue>,
 }
 impl CallContext {
     pub fn is_direct(&self) -> bool {

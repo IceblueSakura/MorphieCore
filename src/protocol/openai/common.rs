@@ -163,6 +163,7 @@ impl Items {
             return Err(CodecError::Limit);
         }
         Ok(Part {
+            replay: None,
             id: PartId::new(self.next_part),
             content: ContentPart::Refusal(text.into()),
         })
@@ -173,6 +174,7 @@ impl Items {
             return Err(CodecError::Limit);
         }
         Ok(Part {
+            replay: None,
             id: PartId::new(self.next_part),
             content: ContentPart::Text(
                 Text::allowing_empty(s, "text", MAX_TEXT_BYTES)
@@ -312,6 +314,14 @@ pub(super) fn check_response_carriers(response: &GenerationResponse) -> Result<(
 }
 
 pub(super) fn check_item_carriers(items: &[(ItemId, Item)]) -> Result<(), CodecError> {
+    if items
+        .iter()
+        .any(|(_, item)| item.has_non_reasoning_replay() || item.has_assistant_media())
+    {
+        return Err(CodecError::Unsupported(
+            "replay attachment or assistant media carrier".into(),
+        ));
+    }
     if items
         .iter()
         .any(|(_, item)| matches!(item, Item::ProviderTool(_)))

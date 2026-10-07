@@ -79,6 +79,23 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
                 }
                 for p in &m.parts {
                     part_id(&mut parts, p.id)?;
+                    if let Some(value) = &p.replay {
+                        if m.role != MessageRole::Assistant
+                            || value.format() != ReplayFormat::GoogleGenerateContentPart
+                            || !matches!(
+                                &p.content,
+                                ContentPart::Text(_)
+                                    | ContentPart::Resource(Resource {
+                                        description: ResourceDescription::Image { .. },
+                                        ..
+                                    })
+                            )
+                        {
+                            return Err(GenerationError::InvalidReplay);
+                        }
+                        value.validate()?;
+                        add(&mut bytes, value.as_str())?;
+                    }
                     match &p.content {
                         ContentPart::Text(t) => {
                             t.validate()?;
@@ -105,7 +122,10 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
                             charge(&mut bytes, reference.bytes())?;
                         }
                         ContentPart::Resource(resource) => {
-                            if response || m.role != MessageRole::User {
+                            // Assistant images are observations, not public carrier admission.
+                            if m.role == MessageRole::Assistant
+                                && resource.kind() != ResourceKind::Image
+                            {
                                 return Err(GenerationError::InvalidResource);
                             }
                             charge(&mut bytes, resource.validate()?)?;
@@ -123,6 +143,17 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
             }
             Item::ToolCall(c) => {
                 call_context(&c.context, &mut bytes)?;
+                if let Some(value) = &c.context.replay {
+                    if !matches!(
+                        value.format(),
+                        ReplayFormat::GoogleGenerateContentPart
+                            | ReplayFormat::GoogleInteractionsV1Step
+                    ) {
+                        return Err(GenerationError::InvalidReplay);
+                    }
+                    value.validate()?;
+                    add(&mut bytes, value.as_str())?;
+                }
                 namespaces.insert(
                     (c.context.alias_domain.as_ref(), c.call_id.as_str()),
                     c.context.namespace.as_ref(),
@@ -144,6 +175,9 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
                 }
             }
             Item::CustomCall(c) => {
+                if c.context.replay.is_some() {
+                    return Err(GenerationError::InvalidReplay);
+                }
                 call_context(&c.context, &mut bytes)?;
                 namespaces.insert(
                     (c.context.alias_domain.as_ref(), c.call_id.as_str()),
@@ -189,7 +223,7 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
             }
             Item::Reasoning(r) => {
                 if let Some(value) = &r.replay {
-                    value.validate()?;
+                    value.validate_reasoning()?;
                     add(&mut bytes, value.as_str())?;
                 }
                 for (id, p) in &r.parts {
@@ -220,6 +254,9 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
                 }
             }
             Item::ToolResult(r) | Item::CustomResult(r) => {
+                if r.context.replay.is_some() {
+                    return Err(GenerationError::InvalidReplay);
+                }
                 call_context(&r.context, &mut bytes)?;
                 let reference = (r.context.alias_domain.as_ref(), r.call_id.as_str());
                 if r.context.namespace.as_ref().is_some_and(|namespace| {
@@ -307,8 +344,20 @@ fn provider_observation_value(
         return Err(GenerationError::InvalidProviderObservation);
     }
     add(bytes, observed.source.source.as_str())?;
+    if let Some(value) = &observed.replay {
+        if value.format() != ReplayFormat::GoogleInteractionsV1Step {
+            return Err(GenerationError::InvalidReplay);
+        }
+        value.validate()?;
+        add(bytes, value.as_str())?;
+    }
     match &observed.operation {
-        ProviderOperation::Reported { tool, alias, .. } => {
+        ProviderOperation::Reported {
+            tool,
+            alias,
+            action,
+            ..
+        } => {
             if tool.as_str().is_empty() || tool.as_str().len() > 128 {
                 return Err(GenerationError::InvalidProviderObservation);
             }
@@ -318,6 +367,36 @@ fn provider_observation_value(
                     return Err(GenerationError::Limit);
                 }
                 add(bytes, alias.as_str())?;
+            }
+            if let Some(action) = action {
+                match action {
+                    ProviderAction::Search { query, queries } => {
+                        if let Some(query) = query {
+                            add(bytes, query.as_str())?;
+                        }
+                        if let Some(queries) = queries {
+                            if queries.len() > MAX_ITEMS {
+                                return Err(GenerationError::Limit);
+                            }
+                            charge(
+                                bytes,
+                                queries.len() * std::mem::size_of::<crate::semantic::value::Text>(),
+                            )?;
+                            for query in queries {
+                                add(bytes, query.as_str())?;
+                            }
+                        }
+                    }
+                    ProviderAction::OpenPage { url } => {
+                        if let Some(url) = url {
+                            add(bytes, url.as_str())?;
+                        }
+                    }
+                    ProviderAction::FindInPage { url, pattern } => {
+                        add(bytes, url.as_str())?;
+                        add(bytes, pattern.as_str())?;
+                    }
+                }
             }
         }
         ProviderOperation::Reference(reference) => {

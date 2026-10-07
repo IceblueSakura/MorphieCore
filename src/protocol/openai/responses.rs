@@ -125,6 +125,7 @@ pub(super) fn call_context(o: &Map<String, Value>) -> Result<CallContext, CodecE
         }
     };
     Ok(CallContext {
+        replay: None,
         namespace,
         async_call,
         caller,
@@ -490,6 +491,7 @@ pub(super) fn decode_items(
                             record_input_form(b, part_id, p)?;
                         }
                         parts.push(Part {
+                            replay: None,
                             id: part_id,
                             content,
                         });

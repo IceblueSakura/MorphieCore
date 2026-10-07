@@ -3,6 +3,8 @@ use super::{
 };
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct GenerationRequirements {
+    pub replay_attachments: bool,
+    pub assistant_media: bool,
     pub instruction_count: usize,
     pub message_count: usize,
     pub text_part_count: usize,
@@ -57,6 +59,8 @@ impl GenerationRequirements {
             ..Self::default()
         };
         for (_, i) in r.items() {
+            x.replay_attachments |= i.has_non_reasoning_replay();
+            x.assistant_media |= i.has_assistant_media();
             x.configuration_revisions |= super::configuration::item_binding(i).is_some();
             match i {
                 Item::Instruction(_) => x.instruction_count += 1,
@@ -77,10 +81,12 @@ impl GenerationRequirements {
                             }
                             ContentPart::Resource(resource) => {
                                 x.resource_count += 1;
-                                match resource.kind() {
-                                    ResourceKind::Image => x.image_inputs += 1,
-                                    ResourceKind::Audio => x.audio_inputs += 1,
-                                    ResourceKind::File => x.file_inputs += 1,
+                                if m.role == super::MessageRole::User {
+                                    match resource.kind() {
+                                        ResourceKind::Image => x.image_inputs += 1,
+                                        ResourceKind::Audio => x.audio_inputs += 1,
+                                        ResourceKind::File => x.file_inputs += 1,
+                                    }
                                 }
                             }
                         }
@@ -129,6 +135,8 @@ impl GenerationRequirements {
 /// Actual output domains, independent of input controls or tool declarations.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct GenerationResponseRequirements {
+    pub replay_attachments: bool,
+    pub assistant_media: bool,
     pub provider_observations: bool,
     pub configuration_revisions: bool,
     pub audio_output: bool,
@@ -144,6 +152,8 @@ impl GenerationResponseRequirements {
     pub fn derive(response: &GenerationResponse) -> Self {
         let mut q = Self::default();
         for (_, item) in response.items() {
+            q.replay_attachments |= item.has_non_reasoning_replay();
+            q.assistant_media |= item.has_assistant_media();
             q.configuration_revisions |= super::configuration::item_binding(item).is_some();
             match item {
                 Item::Instruction(_) => q.instructions = true,

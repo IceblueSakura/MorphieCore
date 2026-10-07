@@ -67,6 +67,7 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
         vec![(
             ItemId::new(1),
             Item::ProviderTool(ProviderToolObservation {
+                replay: None,
                 source: NativeAliasDomain {
                     source: text("abstract"),
                     scope: LocalScope::ROOT,
@@ -75,6 +76,7 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
                     tool: text("search"),
                     alias: None,
                     requester: ProviderRequester::Unreported,
+                    action: None,
                 },
                 progress: None,
                 execution: None,
@@ -112,6 +114,88 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
 
 fn text(value: &str) -> Text {
     Text::new(value, "synthetic", 256).unwrap()
+}
+#[test]
+fn forged_handles_cannot_drop_owner_local_replay_or_assistant_media() {
+    let replay = ReplayValue::final_value(
+        ReplayFormat::GoogleGenerateContentPart,
+        text("synthetic-opaque"),
+    );
+    let mut items = vec![Item::ToolCall(ToolCall {
+        call_id: text("C"),
+        name: text("lookup"),
+        arguments: "{}".into(),
+        status: ItemLifecycle::Completed,
+        context: CallContext {
+            replay: Some(replay.clone()),
+            ..Default::default()
+        },
+    })];
+    for (content, attachment) in [
+        (ContentPart::Text(text("text").into()), Some(replay)),
+        (
+            ContentPart::Resource(Resource {
+                location: ResourceLocation::Url(text("https://example.test/image.png")),
+                description: ResourceDescription::Image { detail: None },
+            }),
+            None,
+        ),
+    ] {
+        items.push(Item::Message(Message {
+            role: MessageRole::Assistant,
+            status: ItemLifecycle::Completed,
+            phase: None,
+            parts: vec![Part {
+                id: PartId::new(1),
+                content,
+                replay: attachment,
+            }],
+        }));
+    }
+    let fidelity = FidelityRecords::default();
+    let metadata = ResponseMetadata {
+        id: "r".into(),
+        model: "synthetic".into(),
+        created: 1.into(),
+        context: Default::default(),
+        instruction_fidelity: Default::default(),
+    };
+    for item in items {
+        let source =
+            GenerationRequest::new(vec![(ItemId::new(1), item)], GenerationControls::default())
+                .unwrap();
+        let response =
+            GenerationResponse::new(source.items().to_vec(), Outcome::Completed).unwrap();
+        for profile in [Profile::Chat, Profile::Responses] {
+            let forged = RequestRepresentation {
+                semantic: &source,
+                fidelity: &fidelity,
+                profile,
+                adaptation: Default::default(),
+            };
+            assert!(
+                match profile {
+                    Profile::Chat => chat::encode_generation(&forged),
+                    Profile::Responses => responses::encode_generation(&forged),
+                }
+                .is_err()
+            );
+            let forged = ResponseRepresentation {
+                semantic: &response,
+                fidelity: &fidelity,
+                profile,
+                adaptation: Default::default(),
+                metadata: &metadata,
+            };
+            assert!(
+                match profile {
+                    Profile::Chat => static_response::encode_chat(&forged),
+                    Profile::Responses => static_response::encode_responses(&forged),
+                }
+                .is_err()
+            );
+        }
+    }
 }
 #[test]
 fn request_codecs_enforce_result_carriers_before_rendering() {

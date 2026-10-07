@@ -10,6 +10,8 @@ pub enum GenerationFeature {
     MaxOutputTokens,
     Tools,
     ProviderObservation,
+    ReplayAttachment,
+    ImageOutput,
     ConfigurationRevision,
     TextMetadata,
     Controls,
@@ -149,6 +151,12 @@ impl GenerationSemanticContract {
     ) -> Result<GenerationResponseRequirements, GenerationFeature> {
         use GenerationFeature::*;
         let q = GenerationResponseRequirements::derive(response);
+        if q.replay_attachments {
+            return Err(ReplayAttachment);
+        }
+        if q.assistant_media {
+            return Err(ImageOutput);
+        }
         if q.configuration_revisions {
             return Err(ConfigurationRevision);
         }
@@ -182,6 +190,12 @@ impl GenerationSemanticContract {
     ) -> Result<GenerationRequirements, GenerationFeature> {
         use GenerationFeature::*;
         let q = GenerationRequirements::derive(r);
+        if q.replay_attachments {
+            return Err(ReplayAttachment);
+        }
+        if q.assistant_media {
+            return Err(ImageOutput);
+        }
         if q.configuration_revisions {
             return Err(ConfigurationRevision);
         }

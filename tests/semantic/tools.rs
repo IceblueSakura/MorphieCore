@@ -759,6 +759,7 @@ fn independently_constructed_static_ir_and_mutation_determine_all_response_wire(
                 status: ItemLifecycle::Completed,
                 role: MessageRole::Assistant,
                 parts: vec![Part {
+                    replay: None,
                     id: PartId::new(1),
                     content: ContentPart::Text(text("replaced").into()),
                 }],
@@ -916,6 +917,7 @@ fn transformed_total_request_budget_includes_tools_and_history() {
                     role: MessageRole::User,
                     status: ItemLifecycle::Completed,
                     parts: vec![Part {
+                        replay: None,
                         id: PartId::new(i),
                         content: ContentPart::Text(crate::events_support::text(&payload).into()),
                     }],

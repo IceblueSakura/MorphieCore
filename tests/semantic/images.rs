@@ -99,6 +99,7 @@ fn edits_delete_replace_insert_and_reorder_images_without_source_resurrection() 
         detail: Some(ImageDetail::High),
     };
     let inserted = Part {
+        replay: None,
         id: PartId::new(100),
         content: ContentPart::Resource(Resource {
             location: ResourceLocation::Url(
@@ -252,6 +253,7 @@ fn typed_images_are_bounded_after_transforms_and_cannot_become_output() {
     };
     assert_eq!(resource.validate(), Err(GenerationError::Limit));
     let part = Part {
+        replay: None,
         id: PartId::new(0),
         content: ContentPart::Resource(resource),
     };
@@ -279,6 +281,7 @@ fn typed_images_are_bounded_after_transforms_and_cannot_become_output() {
     };
     message.parts = (0..5)
         .map(|i| Part {
+            replay: None,
             id: PartId::new(i),
             content: ContentPart::Resource(Resource {
                 location: ResourceLocation::Inline {

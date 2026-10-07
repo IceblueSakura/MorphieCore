@@ -61,18 +61,93 @@ struct AudioBinding {
     body: Option<[u8; 32]>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct AttachmentBinding {
+    origin: ReplayOrigin,
+    local: ReplayDependency,
+    history: Option<RequestDependencyProof>,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct FidelityRecords {
     response_item_ids: BTreeMap<ItemId, Text>,
     cache_breakpoints: std::collections::BTreeSet<PartId>,
     input_text_forms: std::collections::BTreeSet<PartId>,
     reasoning_replay: BTreeMap<ItemId, ReplayBinding>,
+    attachments: BTreeMap<ReplayOwner, AttachmentBinding>,
     audio: BTreeMap<PartId, AudioBinding>,
     response_extras: Option<ResponseExtras>,
     routing_extras: Option<ResponseExtras>,
     normalizations: std::collections::BTreeSet<Normalization>,
 }
 impl FidelityRecords {
+    /// Capture an already selected non-reasoning owner at a trusted intake boundary.
+    /// Exact origin equality is a local compatibility condition, not issuer authentication.
+    pub fn record_attachment(
+        &mut self,
+        owner: ReplayOwner,
+        source: &GenerationRequest,
+        origin: ReplayOrigin,
+    ) -> Result<(), CodecError> {
+        source.validate()?;
+        if !attachment_ready(owner, source) {
+            return Err(CodecError::Invalid("replay attachment owner or phase"));
+        }
+        let local = ReplayDependency::capture(owner, source)?;
+        if let Some(old) = self.attachments.get(&owner) {
+            if old.origin != origin || old.local != local {
+                return Err(CodecError::Invalid("replay attachment rebinding"));
+            }
+            return Ok(());
+        }
+        if self.attachments.len() + self.reasoning_replay.len() >= MAX_ITEMS {
+            return Err(CodecError::Limit);
+        }
+        self.attachments.insert(
+            owner,
+            AttachmentBinding {
+                origin,
+                local,
+                history: None,
+            },
+        );
+        Ok(())
+    }
+    pub fn attachment_matches(
+        &self,
+        owner: ReplayOwner,
+        request: &GenerationRequest,
+        target: Option<&ReplayOrigin>,
+    ) -> bool {
+        attachment_ready(owner, request)
+            && self.attachments.get(&owner).is_some_and(|binding| {
+                Some(&binding.origin) == target
+                    && binding.local.check(owner, request)
+                    && binding
+                        .history
+                        .as_ref()
+                        .is_none_or(|proof| proof.check(request).is_ok())
+            })
+    }
+    pub fn bind_attachment_dependency(
+        &mut self,
+        owner: ReplayOwner,
+        proof: RequestDependencyProof,
+        source: &GenerationRequest,
+    ) -> Result<(), CodecError> {
+        proof.check(source)?;
+        let binding = self
+            .attachments
+            .get_mut(&owner)
+            .ok_or(CodecError::Invalid("unbound replay attachment"))?;
+        if !binding.local.check(owner, source)
+            || binding.history.as_ref().is_some_and(|old| old != &proof)
+        {
+            return Err(CodecError::Invalid("replay dependency rebinding"));
+        }
+        binding.history = Some(proof);
+        Ok(())
+    }
     /// Trusted intake association, never issuer authentication or a client-supplied scope.
     pub fn record_audio(
         &mut self,
@@ -203,8 +278,10 @@ impl FidelityRecords {
             self.remove_replay(owner);
             return Ok(());
         };
-        value.validate()?;
-        if !self.reasoning_replay.contains_key(&owner) && self.reasoning_replay.len() >= MAX_ITEMS {
+        value.validate_reasoning()?;
+        if !self.reasoning_replay.contains_key(&owner)
+            && self.reasoning_replay.len() + self.attachments.len() >= MAX_ITEMS
+        {
             return Err(CodecError::Limit);
         }
         let final_value = value.replay_token().is_some();
@@ -451,6 +528,8 @@ impl FidelityRecords {
         self.normalizations = source.normalizations.clone();
     }
     pub fn retain_owners(&mut self, items: &[(ItemId, Item)]) {
+        self.attachments
+            .retain(|owner, _| owner.value(items).is_some());
         self.response_item_ids
             .retain(|id, _| items.iter().any(|(owner, _)| owner == id));
         self.reasoning_replay.retain(|id, _| {
@@ -460,6 +539,28 @@ impl FidelityRecords {
         });
     }
 }
+fn attachment_ready(owner: ReplayOwner, request: &GenerationRequest) -> bool {
+    if owner
+        .value(request.items())
+        .and_then(ReplayValue::replay_token)
+        .is_none()
+    {
+        return false;
+    }
+    request.items().iter().any(|(id, item)| {
+        *id == owner.item()
+            && match (owner, item) {
+                (ReplayOwner::Item(_), Item::ToolCall(call)) => {
+                    call.status == ItemLifecycle::Completed
+                }
+                (ReplayOwner::Item(_), Item::ProviderTool(_)) => true,
+                (ReplayOwner::Part { .. }, Item::Message(message)) => {
+                    message.status == ItemLifecycle::Completed
+                }
+                _ => false,
+            }
+    })
+}
 // This in-process fingerprint is not persisted or exposed as a wire identity.
 // Hashing the complete typed response conservatively invalidates extras after edits.
 fn response_dependency(response: &GenerationResponse) -> [u8; 32] {
@@ -468,9 +569,14 @@ fn response_dependency(response: &GenerationResponse) -> [u8; 32] {
     hash.update(format!("{response:?}").as_bytes());
     // Opaque Debug is redacted; bind its bytes separately without formatting them.
     for (id, item) in response.items() {
-        if let Item::Reasoning(r) = item
-            && let Some(value) = &r.replay
-        {
+        let replay = match item {
+            Item::Reasoning(r) => r.replay.as_ref(),
+            Item::ToolCall(c) => c.context.replay.as_ref(),
+            Item::ProviderTool(p) => p.replay.as_ref(),
+            _ => None,
+        };
+        if let Some(value) = replay {
+            hash.update(id.scope().get().to_le_bytes());
             hash.update(id.get().to_le_bytes());
             hash.update(value.fingerprint());
         }
@@ -478,6 +584,9 @@ fn response_dependency(response: &GenerationResponse) -> [u8; 32] {
     for (_, item) in response.items() {
         if let Item::Message(m) = item {
             for p in &m.parts {
+                if let Some(value) = &p.replay {
+                    hash.update(value.fingerprint());
+                }
                 match &p.content {
                     ContentPart::Audio(a) => hash.update(a.fingerprint()),
                     ContentPart::AudioReference(a) => hash.update(a.fingerprint()),
@@ -506,6 +615,7 @@ fn fingerprint(item: &ReasoningItem) -> [u8; 32] {
         }
     }
     for (id, part) in &item.parts {
+        hash.update(id.scope().get().to_le_bytes());
         hash.update(id.get().to_le_bytes());
         let (kind, text) = match part {
             ReasoningContent::Summary(t) => (0, t),

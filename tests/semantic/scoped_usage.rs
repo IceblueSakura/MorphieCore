@@ -13,6 +13,7 @@ fn message() -> (ItemId, Item) {
         Item::Message(Message {
             role: MessageRole::Assistant,
             parts: vec![Part {
+                replay: None,
                 id: PartId::new(2),
                 content: ContentPart::Text(text("a").into()),
             }],

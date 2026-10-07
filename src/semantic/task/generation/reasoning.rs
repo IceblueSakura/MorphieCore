@@ -170,7 +170,7 @@ pub struct ReasoningReplay {
 }
 impl ReasoningReplay {
     pub fn validate(&self) -> Result<(), super::GenerationError> {
-        self.value.validate()
+        self.value.validate_reasoning()
     }
     pub fn permits(&self, target: Option<&crate::semantic::value::ReplayOrigin>) -> bool {
         self.origin.is_some() && self.origin.as_ref() == target

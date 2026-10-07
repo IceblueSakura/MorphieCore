@@ -2,7 +2,7 @@
 
 ## 当前范围
 
-**当前方向是[三协议约束下的 ClientManaged Generation IR 完善](client-managed-ir.md)。当前没有启动中的代码行为切片。** 下一入口为 [P1：Provider 动作语义](client-managed-ir.md#p1)，随后进行 [P2：纯交互核心验收](client-managed-ir.md#p2)；其余依赖与退出条件只查[剩余计划](client-managed-ir.md#execution-order)，不重复建设已有核心。
+**当前方向是[三协议约束下的 ClientManaged Generation IR 完善](client-managed-ir.md)。当前没有启动中的代码行为切片。** 下一入口为 [P4：资源、引用、Cache 与原报告归属](client-managed-ir.md#p4)；其余依赖与退出条件只查[剩余计划](client-managed-ir.md#execution-order)，不重复建设已有核心。
 
 Provider 观察采用[独立 typed 分支](../architecture/interaction-contract.md#provider-tool-observations)；补足动作/参数时保留已报告事实，不以 generic JSON 或虚构 function call 替代。库级能力不证明原生映射或接口/消费者闭环；Google/Anthropic codecs、原生 hosted 工具输出选片、工具执行、模型 I/O、自动续轮、持久化和远端恢复不随纯核心实现恢复。
 

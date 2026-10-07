@@ -113,13 +113,20 @@ pub(super) fn call_alias(item: &Item) -> Option<(Option<&NativeAliasDomain>, Nat
     }
 }
 
+fn same_call_context(a: &super::CallContext, b: &super::CallContext) -> bool {
+    a.namespace == b.namespace
+        && a.async_call == b.async_call
+        && a.caller == b.caller
+        && a.alias_domain == b.alias_domain
+        && a.definition == b.definition
+}
 fn same_call_meaning(left: &Item, right: &Item) -> bool {
     match (left, right) {
         (Item::ToolCall(a), Item::ToolCall(b)) => {
             a.call_id == b.call_id
                 && a.name == b.name
                 && a.arguments.same_authority(&b.arguments)
-                && a.context == b.context
+                && same_call_context(&a.context, &b.context)
         }
         (Item::CustomCall(a), Item::CustomCall(b)) => {
             a.call_id == b.call_id
@@ -140,8 +147,7 @@ pub(super) fn check_call_edits(
     source: &[(ItemId, Item)],
     edited: &[(ItemId, Item)],
 ) -> Result<(), super::GenerationError> {
-    for (owner, old) in source.iter().filter(|(_, item)| item.is_call()
-        || matches!(item,Item::ProviderTool(observed) if matches!(observed.operation,super::ProviderOperation::Reported { .. }))) {
+    for (owner, old) in source.iter().filter(|(_, item)| item.is_operation()) {
         for (next, value) in edited {
             if (*owner == *next
                 || call_alias(old).is_some() && call_alias(old) == call_alias(value))
@@ -152,4 +158,30 @@ pub(super) fn check_call_edits(
         }
     }
     Ok(())
+}
+
+/// Revising an observed Provider operation creates a proposal, not new reported facts.
+pub(super) fn check_operation_revision(
+    source: &Item,
+    replacement: &Item,
+) -> Result<(), super::GenerationError> {
+    match (source, replacement) {
+        (Item::ProviderTool(_), Item::ProviderTool(next))
+            if (call_alias(source).is_none() || call_alias(source) != call_alias(replacement))
+                && next.progress.is_none()
+                && next.execution.is_none()
+                && next.output.is_none()
+                && next.replay.is_none()
+                && next.artifact_status.is_none() =>
+        {
+            Ok(())
+        }
+        (Item::ProviderTool(_), _) | (_, Item::ProviderTool(_)) => {
+            Err(super::GenerationError::InvalidDependency)
+        }
+        (_, Item::ToolCall(call)) if call.context.replay.is_some() => {
+            Err(super::GenerationError::InvalidDependency)
+        }
+        _ => Ok(()),
+    }
 }

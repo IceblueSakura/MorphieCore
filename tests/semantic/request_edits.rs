@@ -79,6 +79,7 @@ fn output_edit_checks_combined_history_and_settings_budget() {
         while left > 0 {
             let count = left.min(MAX_TEXT_BYTES);
             parts.push(Part {
+                replay: None,
                 id: PartId::new(parts.len() as u64),
                 content: ContentPart::Text(
                     Text::new("x".repeat(count), "synthetic", MAX_TEXT_BYTES)

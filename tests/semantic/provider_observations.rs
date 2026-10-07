@@ -12,11 +12,16 @@ fn domain() -> NativeAliasDomain {
 }
 fn operation() -> ProviderToolObservation {
     ProviderToolObservation {
+        replay: None,
         source: domain(),
         operation: ProviderOperation::Reported {
             tool: text("search"),
             alias: Some(text("S")),
             requester: ProviderRequester::Model,
+            action: Some(ProviderAction::Search {
+                query: Some(text("synthetic query")),
+                queries: None,
+            }),
         },
         progress: None,
         execution: None,
@@ -26,6 +31,7 @@ fn operation() -> ProviderToolObservation {
 }
 fn report() -> ProviderToolObservation {
     ProviderToolObservation {
+        replay: None,
         source: domain(),
         operation: ProviderOperation::Reference(ProviderOperationReference::Native(text("S"))),
         progress: None,
@@ -34,6 +40,553 @@ fn report() -> ProviderToolObservation {
         artifact_status: None,
     }
 }
+fn with_action(action: ProviderAction) -> ProviderToolObservation {
+    let mut observed = operation();
+    let ProviderOperation::Reported { action: value, .. } = &mut observed.operation else {
+        unreachable!()
+    };
+    *value = Some(action);
+    observed
+}
+
+#[test]
+fn complete_actions_preserve_presence_and_match_independent_static_events() {
+    let empty = Text::allowing_empty("", "query", MAX_TEXT_BYTES).unwrap();
+    for action in [
+        ProviderAction::Search {
+            query: None,
+            queries: None,
+        },
+        ProviderAction::Search {
+            query: Some(empty.clone()),
+            queries: Some(vec![]),
+        },
+        ProviderAction::Search {
+            query: Some(text("single")),
+            queries: Some(vec![text("second"), text("first"), text("second")]),
+        },
+        ProviderAction::OpenPage { url: None },
+        ProviderAction::OpenPage {
+            url: Some(text("https://example.test/page")),
+        },
+        ProviderAction::FindInPage {
+            url: text("https://example.test/page"),
+            pattern: empty,
+        },
+    ] {
+        let observed = with_action(action.clone());
+        let expected = GenerationResponse::new(
+            vec![(ItemId::new(1), Item::ProviderTool(observed.clone()))],
+            Outcome::Completed,
+        )
+        .unwrap();
+        let Item::ProviderTool(value) = &expected.items()[0].1 else {
+            unreachable!()
+        };
+        let ProviderOperation::Reported { action: actual, .. } = &value.operation else {
+            unreachable!()
+        };
+        assert_eq!(actual.as_ref(), Some(&action));
+        assert!(value.output.is_none() && value.execution.is_none());
+        let mut state = reduce(StreamState::new(), StreamEvent::Started).unwrap();
+        state = reduce(
+            state,
+            StreamEvent::ItemStarted {
+                item: ItemId::new(1),
+                kind: ItemKind::ProviderTool(observed),
+                replay: None,
+            },
+        )
+        .unwrap();
+        assert!(materialize(&state).is_err());
+        state = reduce(
+            state,
+            StreamEvent::ItemFinished {
+                item: ItemId::new(1),
+                status: ItemLifecycle::Completed,
+                replay: None,
+            },
+        )
+        .unwrap();
+        state = reduce(
+            state,
+            StreamEvent::Terminal {
+                terminal: StreamTerminal::Completed,
+                details: TerminalDetails::default(),
+            },
+        )
+        .unwrap();
+        assert_eq!(materialize(&state).unwrap(), expected);
+    }
+}
+
+#[test]
+fn action_edits_require_new_identity_and_derivation_without_retargeting_results() {
+    let source = GenerationRequest::new(
+        vec![(ItemId::new(1), Item::ProviderTool(operation()))],
+        GenerationControls::default(),
+    )
+    .unwrap();
+    let proof = RequestDependencyProof::capture(
+        &source,
+        HistoryDependency::Owners(vec![ItemId::new(1)]),
+        SettingsDependency::All,
+    )
+    .unwrap();
+    let mut changed = with_action(ProviderAction::Search {
+        query: Some(text("changed query")),
+        queries: None,
+    });
+    for owner in [ItemId::new(1), ItemId::new(2)] {
+        assert!(
+            source
+                .clone()
+                .with_items(vec![(owner, Item::ProviderTool(changed.clone()))])
+                .is_err()
+        );
+    }
+    // Independently constructed values still invalidate a content dependency.
+    let rebuilt = GenerationRequest::new(
+        vec![(ItemId::new(1), Item::ProviderTool(changed.clone()))],
+        GenerationControls::default(),
+    )
+    .unwrap();
+    assert!(proof.check(&rebuilt).is_err());
+    let ProviderOperation::Reported { alias, .. } = &mut changed.operation else {
+        unreachable!()
+    };
+    *alias = Some(text("new-S"));
+    let replacement = (ItemId::new(3), Item::ProviderTool(changed.clone()));
+    let revised = source
+        .clone()
+        .revise_call(ItemId::new(1), replacement.clone())
+        .unwrap();
+    assert_eq!(
+        revised.call_derivations().get(&ItemId::new(3)),
+        Some(&ItemId::new(1))
+    );
+    assert_eq!(revised.continuation(), Continuation::Unreported);
+    assert!(!revised.items()[0].1.is_call());
+    assert!(proof.check(&revised).is_err());
+    let atomic = source
+        .clone()
+        .transform(
+            vec![ContextEdit::ReviseCall {
+                source: ItemId::new(1),
+                replacement: replacement.clone(),
+            }],
+            &[],
+        )
+        .unwrap();
+    assert_eq!(atomic.request(), &revised);
+    assert_eq!(
+        atomic.changes(),
+        &[ContextChange::CallRevised {
+            source: ItemId::new(1),
+            owner: ItemId::new(3)
+        }]
+    );
+    let with_result = source
+        .clone()
+        .with_items(vec![
+            (ItemId::new(1), Item::ProviderTool(operation())),
+            (ItemId::new(2), Item::ProviderTool(report())),
+        ])
+        .unwrap();
+    assert!(
+        with_result
+            .clone()
+            .revise_call(ItemId::new(1), replacement.clone())
+            .is_err()
+    );
+    assert!(
+        with_result
+            .clone()
+            .transform(
+                vec![ContextEdit::ReviseCall {
+                    source: ItemId::new(1),
+                    replacement: replacement.clone(),
+                }],
+                &[]
+            )
+            .is_err()
+    );
+    let repaired = with_result
+        .transform(
+            vec![
+                ContextEdit::Delete(vec![ItemId::new(2)]),
+                ContextEdit::ReviseCall {
+                    source: ItemId::new(1),
+                    replacement,
+                },
+            ],
+            &[],
+        )
+        .unwrap();
+    assert_eq!(repaired.request(), &revised);
+    assert_eq!(source.items()[0].1, Item::ProviderTool(operation()));
+    assert_eq!(report().resolve(source.items()).unwrap(), ItemId::new(1));
+    assert_eq!(
+        report().resolve(revised.items()),
+        Err(AliasResolutionError::Missing)
+    );
+    for dimension in 0..4 {
+        // Each reported dimension must stay on the original operation.
+        let mut fabricated = changed.clone();
+        match dimension {
+            0 => fabricated.progress = Some(ProviderExecutionProgress::Running),
+            1 => fabricated.execution = Some(ToolExecution::Succeeded),
+            2 => fabricated.output = Some("old report".into()),
+            _ => fabricated.artifact_status = Some(ItemLifecycle::Completed),
+        }
+        assert!(
+            source
+                .clone()
+                .revise_call(
+                    ItemId::new(1),
+                    (ItemId::new(4), Item::ProviderTool(fabricated.clone())),
+                )
+                .is_err()
+        );
+        assert!(
+            source
+                .clone()
+                .transform(
+                    vec![ContextEdit::ReviseCall {
+                        source: ItemId::new(1),
+                        replacement: (ItemId::new(4), Item::ProviderTool(fabricated)),
+                    }],
+                    &[]
+                )
+                .is_err()
+        );
+    }
+    assert!(
+        source
+            .clone()
+            .revise_call(ItemId::new(1), (ItemId::new(4), client_call()))
+            .is_err()
+    );
+    // A result reference is not an operation proposal.
+    assert!(
+        source
+            .revise_call(
+                ItemId::new(1),
+                (ItemId::new(4), Item::ProviderTool(report()))
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn action_dependencies_bind_kind_presence_order_and_each_parameter() {
+    let source = GenerationRequest::new(
+        vec![(ItemId::new(1), Item::ProviderTool(operation()))],
+        GenerationControls::default(),
+    )
+    .unwrap();
+    // Even an unchanged action cannot relabel the old invocation as a new proposal.
+    let replacement = (ItemId::new(2), Item::ProviderTool(operation()));
+    assert!(
+        source
+            .clone()
+            .revise_call(ItemId::new(1), replacement.clone())
+            .is_err()
+    );
+    assert!(
+        source
+            .transform(
+                vec![ContextEdit::ReviseCall {
+                    source: ItemId::new(1),
+                    replacement,
+                }],
+                &[]
+            )
+            .is_err()
+    );
+    let actions = [
+        None,
+        Some(ProviderAction::Search {
+            query: None,
+            queries: None,
+        }),
+        Some(ProviderAction::Search {
+            query: Some(text("a")),
+            queries: None,
+        }),
+        Some(ProviderAction::Search {
+            query: Some(text("b")),
+            queries: None,
+        }),
+        Some(ProviderAction::Search {
+            query: None,
+            queries: Some(vec![]),
+        }),
+        Some(ProviderAction::Search {
+            query: None,
+            queries: Some(vec![text("a"), text("b")]),
+        }),
+        Some(ProviderAction::Search {
+            query: None,
+            queries: Some(vec![text("b"), text("a")]),
+        }),
+        Some(ProviderAction::OpenPage { url: None }),
+        Some(ProviderAction::OpenPage {
+            url: Some(text("a")),
+        }),
+        Some(ProviderAction::OpenPage {
+            url: Some(text("b")),
+        }),
+        Some(ProviderAction::FindInPage {
+            url: text("a"),
+            pattern: text("a"),
+        }),
+        Some(ProviderAction::FindInPage {
+            url: text("a"),
+            pattern: text("b"),
+        }),
+        Some(ProviderAction::FindInPage {
+            url: text("b"),
+            pattern: text("a"),
+        }),
+    ];
+    let requests: Vec<_> = actions
+        .into_iter()
+        .map(|action| {
+            let mut observed = operation();
+            let ProviderOperation::Reported { action: value, .. } = &mut observed.operation else {
+                unreachable!()
+            };
+            *value = action;
+            GenerationRequest::new(
+                vec![(ItemId::new(1), Item::ProviderTool(observed))],
+                GenerationControls::default(),
+            )
+            .unwrap()
+        })
+        .collect();
+    for (i, source) in requests.iter().enumerate() {
+        let proof = RequestDependencyProof::capture(
+            source,
+            HistoryDependency::Owners(vec![ItemId::new(1)]),
+            SettingsDependency::All,
+        )
+        .unwrap();
+        for (j, candidate) in requests.iter().enumerate() {
+            assert_eq!(proof.check(candidate).is_ok(), i == j);
+        }
+    }
+}
+
+#[test]
+fn three_source_actions_keep_reference_domains_and_do_not_infer_client_execution() {
+    // Abstract expectations from provider-actions evidence, not native parsers.
+    for (family, action) in [
+        (
+            "openai.responses",
+            ProviderAction::Search {
+                query: None,
+                queries: None,
+            },
+        ),
+        (
+            "google.interactions.v1.step",
+            ProviderAction::Search {
+                query: None,
+                queries: Some(vec![text("one"), text("two")]),
+            },
+        ),
+        (
+            "anthropic.messages.web_search_20250305",
+            ProviderAction::Search {
+                query: Some(text("one")),
+                queries: None,
+            },
+        ),
+    ] {
+        let mut observed = with_action(action);
+        observed.source.source = text(family);
+        let r1 = GenerationResponse::new(
+            vec![
+                (ItemId::scoped(LocalScope::new(1), 1), client_call()),
+                (
+                    ItemId::scoped(LocalScope::new(1), 2),
+                    Item::ProviderTool(observed.clone()),
+                ),
+            ],
+            Outcome::Completed,
+        )
+        .unwrap();
+        let mut result = report();
+        result.source = observed.source.clone();
+        let r2 = GenerationResponse::new(
+            vec![(
+                ItemId::scoped(LocalScope::new(2), 1),
+                Item::ProviderTool(result.clone()),
+            )],
+            Outcome::Completed,
+        )
+        .unwrap();
+        let history = ClientManaged::new(GenerationSettings::default())
+            .unwrap()
+            .select_response(&r1)
+            .unwrap()
+            .select_response(&r2)
+            .unwrap()
+            .build(&[])
+            .unwrap();
+        assert!(
+            matches!(history.continuation(), Continuation::ToolResults(ref pending)
+            if pending.len() == 1 && pending[0].call_id == "C")
+        );
+        assert_eq!(result.resolve(history.items()).unwrap(), r1.items()[1].0);
+        assert_eq!(r1.items()[1].1, Item::ProviderTool(observed));
+        // Same Google brand and native ID are not a shared Step/Part reference domain.
+        result.source.source = text("google.generateContent.v1beta.part");
+        assert_eq!(
+            result.resolve(history.items()),
+            Err(AliasResolutionError::Missing)
+        );
+        assert!(
+            ClientManaged::new(GenerationSettings::default())
+                .unwrap()
+                .select_response(&r1)
+                .unwrap()
+                .append_items(vec![(
+                    ItemId::scoped(LocalScope::new(3), 1),
+                    Item::ProviderTool(result)
+                )])
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn action_limits_cover_fields_collections_aggregate_and_redaction() {
+    for length in [MAX_TEXT_BYTES - 1, MAX_TEXT_BYTES, MAX_TEXT_BYTES + 1] {
+        let value = Text::allowing_empty("x".repeat(length), "synthetic", length).unwrap();
+        for action in [
+            ProviderAction::Search {
+                query: Some(value.clone()),
+                queries: None,
+            },
+            ProviderAction::Search {
+                query: None,
+                queries: Some(vec![value.clone()]),
+            },
+            ProviderAction::OpenPage {
+                url: Some(value.clone()),
+            },
+            ProviderAction::FindInPage {
+                url: text("url"),
+                pattern: value.clone(),
+            },
+            ProviderAction::FindInPage {
+                url: value.clone(),
+                pattern: text("pattern"),
+            },
+        ] {
+            let observed = with_action(action);
+            assert_eq!(
+                GenerationResponse::new(
+                    vec![(ItemId::new(1), Item::ProviderTool(observed.clone()))],
+                    Outcome::Completed,
+                )
+                .is_ok(),
+                length <= MAX_TEXT_BYTES
+            );
+            let state = reduce(StreamState::new(), StreamEvent::Started).unwrap();
+            assert_eq!(
+                reduce(
+                    state,
+                    StreamEvent::ItemStarted {
+                        item: ItemId::new(1),
+                        kind: ItemKind::ProviderTool(observed),
+                        replay: None,
+                    }
+                )
+                .is_ok(),
+                length <= MAX_TEXT_BYTES
+            );
+        }
+    }
+    for count in [MAX_ITEMS - 1, MAX_ITEMS, MAX_ITEMS + 1] {
+        let observed = with_action(ProviderAction::Search {
+            query: None,
+            queries: Some(vec![text("query"); count]),
+        });
+        assert_eq!(
+            GenerationResponse::new(
+                vec![(ItemId::new(1), Item::ProviderTool(observed.clone()))],
+                Outcome::Completed,
+            )
+            .is_ok(),
+            count <= MAX_ITEMS
+        );
+        let state = reduce(StreamState::new(), StreamEvent::Started).unwrap();
+        assert_eq!(
+            reduce(
+                state,
+                StreamEvent::ItemStarted {
+                    item: ItemId::new(1),
+                    kind: ItemKind::ProviderTool(observed),
+                    replay: None,
+                }
+            )
+            .is_ok(),
+            count <= MAX_ITEMS
+        );
+    }
+    for total in [MAX_TOTAL_BYTES - 1, MAX_TOTAL_BYTES, MAX_TOTAL_BYTES + 1] {
+        // Independent budget oracle: four Text slots and the reported header.
+        let overhead = "abstract-provider".len()
+            + "search".len()
+            + "S".len()
+            + 4 * std::mem::size_of::<Text>();
+        let mut queries =
+            vec![Text::new("x".repeat(MAX_TEXT_BYTES), "synthetic", MAX_TEXT_BYTES).unwrap(); 3];
+        queries.push(
+            Text::new(
+                "x".repeat(total - overhead - 3 * MAX_TEXT_BYTES),
+                "synthetic",
+                MAX_TEXT_BYTES,
+            )
+            .unwrap(),
+        );
+        let observed = with_action(ProviderAction::Search {
+            query: None,
+            queries: Some(queries),
+        });
+        assert_eq!(
+            GenerationResponse::new(
+                vec![(ItemId::new(1), Item::ProviderTool(observed.clone()))],
+                Outcome::Completed,
+            )
+            .is_ok(),
+            total <= MAX_TOTAL_BYTES
+        );
+        let state = reduce(StreamState::new(), StreamEvent::Started).unwrap();
+        assert_eq!(
+            reduce(
+                state,
+                StreamEvent::ItemStarted {
+                    item: ItemId::new(1),
+                    kind: ItemKind::ProviderTool(observed),
+                    replay: None,
+                }
+            )
+            .is_ok(),
+            total <= MAX_TOTAL_BYTES
+        );
+    }
+    let action = ProviderAction::Search {
+        query: Some(text("private-query")),
+        queries: None,
+    };
+    assert!(!format!("{action:?}").contains("private-query"));
+    assert!(!format!("{:?}", with_action(action).operation).contains("private-query"));
+}
+
 #[test]
 fn fragmented_provider_results_have_independent_static_values_and_no_snapshot_repair() {
     for (format, parts, expected) in [

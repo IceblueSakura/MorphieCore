@@ -154,6 +154,7 @@ fn grouping_checks_follow_final_membership_after_insert_replace_reorder_and_dele
                 phase: None,
                 status: ItemLifecycle::Completed,
                 parts: vec![Part {
+                    replay: None,
                     id: PartId::new(90),
                     content: ContentPart::Text(text("inserted").into()),
                 }],

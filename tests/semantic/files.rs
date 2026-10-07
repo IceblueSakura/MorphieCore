@@ -190,6 +190,7 @@ fn typed_request(resources: Vec<Resource>) -> Result<GenerationRequest, Generati
                     .into_iter()
                     .enumerate()
                     .map(|(i, resource)| Part {
+                        replay: None,
                         id: PartId::new(i as u64 + 1),
                         content: ContentPart::Resource(resource),
                     })
@@ -454,6 +455,7 @@ fn file_edits_preserve_identity_and_never_resurrect_deleted_values() {
     message.parts.insert(
         1,
         Part {
+            replay: None,
             id: PartId::new(100),
             content: ContentPart::Resource(typed_file(None)),
         },

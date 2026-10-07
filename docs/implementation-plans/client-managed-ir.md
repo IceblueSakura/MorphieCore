@@ -1,6 +1,6 @@
 # ClientManaged Generation IR 剩余实施计划
 
-**修订：v0.5。只维护尚未闭合的工作，以 P1–P6 作为当前执行编号。** 已有能力不再单列建设任务；删除完成项不删除合同或回归，也不意味着整体验收通过。
+**修订：v0.8。只维护尚未闭合的工作，以 P4–P6 作为当前执行编号。** 已有能力不再单列建设任务；删除完成项不删除合同或回归，也不意味着整体验收通过。
 
 语义归 [Semantic Model](../architecture/semantic-ir.md)与[交互合同](../architecture/interaction-contract.md)，映射与损失归 [protocol/lowering](../architecture/protocol-and-lowering.md)。本页拥有剩余依赖与退出条件，[next-goal](next-goal.md)拥有产品优先级，[current-focus](current-focus.md)只登记实际启动的行为切片。文档修订不启动代码行为或授予操作权限。
 
@@ -11,70 +11,29 @@
 - ClientManaged 显式选择历史，不意味着发送全部日志，也不证明无服务端存储或 ZDR。工具观察、上下文变换与后继要求不授权工具执行、自动续轮或自动摘要。
 - 现有 Responses/Chat 的受影响调用点与独立预期随每片迁移，不集中拖到最后。新 typed 值不自动激活公共 carrier；没有合法映射仍拒绝，不恢复 `_openbridge` 或引入同义私有字段。
 
+<a id="p1"></a>
+Provider 动作及引用域的输入归[交互合同](../architecture/interaction-contract.md#provider-tool-observations)、[动作来源](../references/upstream-sync.md#provider-actions)与用例清单的 `provider-observations` 领域；不从库级表达推定原生 hosted 工具接线。
+
+<a id="p2"></a>
+纯核心组合输入归[ClientManaged 合同](../architecture/interaction-contract.md#client-managed-context)、[三来源组合回归](../../tests/semantic/client_managed_composition.rs)及用例清单中的配置、控制、Schema、计量、事件和现有 wire 正反例。每个 case 只覆盖声明的预期，不由核心表达推定接口、消费者或真实 Provider 验收。
+
+<a id="p3"></a>
+所选 Replay 的输入归[owner-local 合同](../architecture/interaction-contract.md#typed-replay-与信任)、[格式来源](../references/upstream-sync.md#replay-attachments)、[附件回归](../../tests/semantic/replay_attachments.rs)及用例清单的 `replay-protection` 领域。组只作依赖，库级值/绑定不代表原生 parser、issuer 验证或公开 carrier；资源双端条件和实际消费者回传仍属下方剩余范围。
+
 <a id="execution-order"></a>
 ## 执行顺序
 
 | 阶段 | 依赖 | 要交付的最小结果 |
 |---|---|---|
-| [P1 Provider 动作语义](#p1) | 既有核心；所选动作证据 | 有必要 typed 内容的动作观察及关联/编辑保护 |
-| [P2 纯交互核心验收](#p2) | P1 | 核心组合场景和来源缺口闭合；不是新一轮基础设施实现 |
-| [P3 Replay 保护](#p3) | P2；所选格式证据 | 逐格式附件、依赖与合法最终化 |
-| [P4 资源、引用与报告归属](#p4) | P2；与 P3 对齐的依赖 owner | 双端引用、资源条件、cache 依赖与原报告归属 |
-| [P5 具名投影](#p5) | P3、P4；已定稿损失规则 | 可检查的投影/损失结果及复用重验 |
+| [P4 资源、引用与报告归属](#p4) | 纯核心组合与所选 Replay 依赖 owner | 双端引用、资源条件、cache 依赖与原报告归属 |
+| [P5 具名投影](#p5) | P4 与所选 Replay；已定稿损失规则 | 可检查的投影/损失结果及复用重验 |
 | [P6 接口与消费者验收](#p6) | P5；前序受影响回归 | 现有 Responses/Chat 的交付、保存、追加和回传闭环 |
 
-**默认按 P1 → P2 → P3 → P4 → P5 → P6 串行执行。** P3/P4 的证据整理可并行，但不并发重写共享 owner。每片只等待自己的实际依赖；来源冲突或新的 IR 缺口只阻塞相关子范围，不通过猜测或降低验收标准绕过。
+**默认按 P4 → P5 → P6 串行执行。** 资源证据与既有 Replay 回归可交错核对，但不并发重写共享 owner。每片只等待自己的实际依赖；来源冲突或新的 IR 缺口只阻塞相关子范围，不通过猜测或降低验收标准绕过。
 
-P2 是纯交互核心的验收点，P6 是受保护现有接口的验收点。两者分开交付；验收逐条引用阶段与条目（如 P3.2），关联用例、执行证据和未闭合条件，不用单个“阶段完成”标签替代。仅有库级证据不能宣称接口、消费者或真实 Provider 通过。
+纯核心组合与 P6 的受保护现有接口分别验收；后续资源/投影不代替核心及 Replay 回归。验收逐条引用阶段与条目（如 P4.2），关联用例、执行证据和未闭合条件，不用单个“阶段完成”标签替代。仅有库级证据不能宣称接口、消费者或真实 Provider 通过。
 
 ## 各阶段退出条件
-
-<a id="p1"></a>
-### P1：Provider 动作语义与引用域
-
-**输入与 owner**：[Provider 观察](../../src/semantic/task/generation/provider.rs)、[身份](../../src/semantic/task/generation/identity.rs)、[规范事件](../../src/semantic/task/generation/event.rs)及其现有回归。先固定本片所需的官方 API family/version、动作内容、参数、引用域和适用事件证据，不做无关的全协议调研。
-
-**新增工作**：从代表性样本确定最小 typed 动作/参数结构，接入既有身份、修订、关系、依赖和预算。不能用 generic JSON、动作名称猜测或虚构 function call 替代缺失概念。
-
-**逐项验收**：
-
-1. 选中动作有独立正例与最小反例；Interactions Step 与 generateContent Part 的来源/附件位置不混用，来源冲突有明确诊断。
-2. 新增动作内容的修改形成适当的新调用身份/派生关系，旧结果与证明不移挂；删除、重排与候选隔离复用既有保护。
-3. 混合客户端 C / Provider S 仍只要求客户端提交 C；requester、执行责任、执行报告、正文和产物状态不混同，不从参数或 scope 标签取得信任。无报告不补成功，失败可有正文，后继事实不擦除旧观察。
-4. R2 的结果在选中历史中唯一解析到 R1；缺失、歧义、错 kind 分别拒绝。静态与规范事件一致，partial 不物化成闭合结果，终态 snapshot 不补内容。
-5. 新语义的现有目标拒绝和产品准入边界保留；不启用 hosted 请求、工具执行或新原生 parser。
-
-**追溯**：A05、A09–A11；T03、T11/T12、T16–T18；E01 的动作/责任部分。新增用例与 `provider-observations` 领域的已有用例合并核对。
-
-<a id="p2"></a>
-### P2：纯交互核心组合验收
-
-**输入与 owner**：P1 的类型/证据与[静态追溯清单](../../tests/fixtures/client_managed_cases.json)。只补真正缺失的断言或修复负责的 owner，不重新实现已存在的核心。
-
-**逐项验收**：
-
-1. 核对三协议设计样本与人工语义预期；既有配置、控制、Schema、usage 证据直接复用，只补实际缺口。每个拒绝反例有对应正例，不能靠“全部拒绝”宣称表达完整。
-2. 将 P1 的具体动作带入配置化 C/S 后继请求：保留文本/reasoning、身份与显式组，追加已报告 C 结果，再将 R2 的 S 结果解析到 R1。历史/配置依赖缺失须诊断，不重建调用、补造结果或执行请求。
-3. 在同一不可变源上构造两个派生上下文；插入、替换、删除、重排和配置漂移不相互污染。原定义、参数权威、指令作用位置/authority、phase 与原报告不因变换被改称新事实。
-4. 客户端 pending results、显式 Provider 后继要求和 reported progress 保持分离；空结果要求不推导 turn finished。复用三来源纯消费者、规范事件分批及现有 wire 正反例，不造 Google/Anthropic 测试 codec。
-5. 用例选择器非空、真实符号已执行；结构、关联、目标表示和实例准入分层结论明确。资源双端依赖、逐格式 replay 与实际消费者回传由 P3–P6 验收，不混入此处的通过声明。
-
-**追溯**：E01、E02/E04/E06 的纯核心部分；复用清单中验证、身份/关系、上下文、控制/Schema/计量领域的适用 T/A 断言。P2 不新增外部消费者或真实服务门槛。
-
-<a id="p3"></a>
-### P3：逐格式 Replay 与受保护编辑
-
-**输入与 owner**：[replay 合同](../architecture/interaction-contract.md#typed-replay-与信任)、[typed 值](../../src/semantic/task/generation/replay.rs)、[依赖](../../src/semantic/task/generation/dependency.rs)、[fidelity](../../src/protocol/fidelity.rs)。先固定所选格式的附件位置、兼容 scope、依赖和最终化条件。
-
-**逐项验收**：
-
-1. item/part/group 的实际附件各有 typed 唯一载荷；绑定只保留来源/依赖，不复制正文或混并 opaque。空可见 reasoning 不删除实际 opaque；call/media part 的附件不移挂到其他 owner。
-2. 按格式检查来源、scope、partial/final 和必要依赖；跨模型/版本兼容有明确允许依据，未知则拒绝。普通 scope 或本地 hash 不充当 issuer 验签。
-3. 依赖内的内容、顺序、组、prefix、工具/Schema、配置或资源修改失效；依赖外编辑不过度拒绝。删除 owner/typed 值后，索引、raw 或 fidelity 不恢复它。
-4. 可见内容结束后、owner 合法闭合前的末尾材料保留；闭合后的权威改写继续遵守[延期边界](../implementation-status/open-questions.md#reasoning-opaque-的闭合后权威)，不扩大本片。
-5. 独立静态 oracle 与事件分批一致；未闭合 opaque、单值/累计预算及脱敏分别验证。raw 未保留、冲突或已脱敏时据实降低保真声明，不泄漏到 Debug/UI/普通日志或异源请求。
-
-**追溯**：A06/A07、A20/A22/A32；T03–T08、T13、T22、T27/T28/T30/T32；E02/E04 的 replay 部分。没有存储服务、认证证明服务或跨进程恢复。
 
 <a id="p4"></a>
 ### P4：资源、引用、Cache 与原报告归属
@@ -87,14 +46,14 @@ P2 是纯交互核心的验收点，P6 是受保护现有接口的验收点。�
 2. 引用同时绑定输出 claim 与源资源坐标，单位明确；源/输出两端的删除和替换分别重验，重排只按合同重算目标坐标。坐标转换须有明确单位与来源依据，不假称恢复已经丢失的原边界。
 3. cache hint、断点、prefix、TTL 意图和实际命中分开；删除不复活，配置/工具/Schema 与前缀依赖按声明重验，不声称缓存收益。
 4. 编辑后保留原 usage 的操作归属，不冒充新正文计量；缺项不补零、累计报告不重复相加、具名派生保留完整前提。
-5. 单资源、多个小资源总量、引用图与编码/解码预算分别验收；P3 的附件/依赖因资源变化受到影响时补组合回归。
+5. 单资源、多个小资源总量、引用图与编码/解码预算分别验收；既有附件/依赖因资源变化受到影响时补组合回归。
 
 **追溯**：A18/A19/A21/A27；T15/T19/T28；E02 的资源/引用/报告部分。无下载、上传、转码、病毒扫描、文件服务或自动跨 Provider 复制。
 
 <a id="p5"></a>
 ### P5：具名投影、组合损失与复用重验
 
-**输入与 owner**：P3/P4 最终值及 [semantic-loss 合同](../architecture/protocol-and-lowering.md#semantic-loss)、[lowering](../../src/lowering/generation.rs)与[具名适配](../../src/protocol/adaptation.rs)。每条新损失规则先定稿方向、目标 profile、owner、前提与后果，不设全局近似开关。
+**输入与 owner**：所选 Replay 与 P4 最终值及 [semantic-loss 合同](../architecture/protocol-and-lowering.md#semantic-loss)、[lowering](../../src/lowering/generation.rs)与[具名适配](../../src/protocol/adaptation.rs)。每条新损失规则先定稿方向、目标 profile、owner、前提与后果，不设全局近似开关。
 
 **逐项验收**：
 
@@ -142,6 +101,6 @@ T/A/E 是来源追溯号，不随 P 阶段重排改写其含义：T 来自《主
 
 ## 明确延期
 
-ServerManaged/主动 previous-ID/conversation、远端操作恢复、Agent 执行与自动续轮、持久化/checkpoint/journal、claim/CAS/fencing、OpaqueStore、Google/Anthropic 原生接入及其他媒体扩展继续按 [next-goal](next-goal.md#延期目标与恢复条件)处理；不预建空壳，也不作为 P2/P6 前置。原 A25/A26/A28/A29 与 E03/E05 的远端/持久化部分不在本轮，延期不等于通过。
+ServerManaged/主动 previous-ID/conversation、远端操作恢复、Agent 执行与自动续轮、持久化/checkpoint/journal、claim/CAS/fencing、OpaqueStore、Google/Anthropic 原生接入及其他媒体扩展继续按 [next-goal](next-goal.md#延期目标与恢复条件)处理；不预建空壳，也不作为核心回归或 P6 前置。原 A25/A26/A28/A29 与 E03/E05 的远端/持久化部分不在本轮，延期不等于通过。
 
-Reasoning opaque 的闭合后权威遵守[待决状态](../implementation-status/open-questions.md#reasoning-opaque-的闭合后权威)。可选 Responses Provider 工具输出观察须另行选片，不阻塞 P2，也不自动开放 hosted 请求或工具执行。更广控制/Schema 的具体目标映射不从已有库级表达推定启用。
+Reasoning opaque 的闭合后权威遵守[待决状态](../implementation-status/open-questions.md#reasoning-opaque-的闭合后权威)。可选 Responses Provider 工具输出观察须另行选片，不阻塞纯核心工作，也不自动开放 hosted 请求或工具执行。更广控制/Schema 的具体目标映射不从已有库级表达推定启用。
