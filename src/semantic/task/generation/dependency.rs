@@ -195,6 +195,26 @@ fn dependency(
     for (id, item) in items {
         writer.hash.update(id.get().to_le_bytes());
         match item {
+            Item::ProviderTool(observed) => {
+                write!(
+                    writer,
+                    "{:?}:{:?}:{:?}:{:?}:{:?}:{:?}",
+                    observed.source,
+                    observed.operation,
+                    observed.progress,
+                    observed.execution,
+                    observed.output,
+                    observed.artifact_status
+                )
+                .map_err(|_| GenerationError::Limit)?;
+                if let Some(ToolOutput::Parts(parts)) = &observed.output {
+                    for (_, part) in parts {
+                        if let ToolResultPart::Resource(resource) = part {
+                            resource_dependency(&mut writer.hash, resource);
+                        }
+                    }
+                }
+            }
             Item::Reasoning(r) => {
                 if let Some(value) = &r.replay {
                     writer.hash.update(value.fingerprint());

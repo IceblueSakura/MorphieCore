@@ -26,6 +26,11 @@ mod output;
 mod pattern;
 mod progress;
 pub use progress::InteractionProgress;
+mod provider;
+pub use provider::{
+    ProviderExecutionProgress, ProviderOperation, ProviderOperationReference, ProviderRequester,
+    ProviderToolObservation,
+};
 mod reasoning;
 mod replay;
 pub use replay::{ReplayFormat, ReplayValue};

@@ -311,6 +311,14 @@ pub(super) fn check_response_carriers(response: &GenerationResponse) -> Result<(
 }
 
 pub(super) fn check_item_carriers(items: &[(ItemId, Item)]) -> Result<(), CodecError> {
+    if items
+        .iter()
+        .any(|(_, item)| matches!(item, Item::ProviderTool(_)))
+    {
+        return Err(CodecError::Unsupported(
+            "Provider observation carrier".into(),
+        ));
+    }
     if items.iter().any(|(_, item)| match item {
         Item::ToolCall(call) => call.context.alias_domain.is_some(),
         Item::CustomCall(call) => call.context.alias_domain.is_some(),

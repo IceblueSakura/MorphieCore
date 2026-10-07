@@ -76,6 +76,8 @@ mod openrouter_speech_binding;
 mod parsed_replay;
 #[path = "semantic/phase.rs"]
 mod phase;
+#[path = "semantic/provider_observations.rs"]
+mod provider_observations;
 #[path = "semantic/provider_profiles.rs"]
 mod provider_profiles;
 #[path = "semantic/reasoning.rs"]

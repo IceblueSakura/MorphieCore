@@ -67,7 +67,8 @@ pub fn lower_request<'a>(
     c: GenerationRepresentationContract,
 ) -> Result<RequestRepresentation<'a>, RepresentationError> {
     let q = check(r, c.clone())?;
-    if !r.replay_groups().is_empty() || !r.call_derivations().is_empty() {
+    if q.provider_observations || !r.replay_groups().is_empty() || !r.call_derivations().is_empty()
+    {
         return Err(RepresentationError::UnmigratedSemantic);
     }
     check_tool_selection(r.tool_choice())?;
@@ -357,6 +358,12 @@ pub fn lower_response<'a>(
         && r.items()
             .iter()
             .any(|(_, i)| matches!(i, Item::Message(m) if m.phase.is_some()))
+    {
+        return Err(RepresentationError::UnmigratedSemantic);
+    }
+    if r.items()
+        .iter()
+        .any(|(_, item)| matches!(item, Item::ProviderTool(_)))
     {
         return Err(RepresentationError::UnmigratedSemantic);
     }

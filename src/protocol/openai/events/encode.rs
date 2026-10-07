@@ -274,6 +274,11 @@ impl EventEncoder {
                     ItemKind::ProgramOutput { call_id, result } => {
                         json!({"id":id,"type":"program_output","call_id":call_id.as_str(),"result":result})
                     }
+                    ItemKind::ProviderTool(_) => {
+                        return Err(CodecError::Unsupported(
+                            "Provider observation carrier".into(),
+                        ));
+                    }
                     ItemKind::ToolCall {
                         call_id,
                         name,

@@ -9,6 +9,7 @@ pub enum GenerationFeature {
     Temperature,
     MaxOutputTokens,
     Tools,
+    ProviderObservation,
     TextMetadata,
     Controls,
     ParallelTools,
@@ -147,6 +148,9 @@ impl GenerationSemanticContract {
     ) -> Result<GenerationResponseRequirements, GenerationFeature> {
         use GenerationFeature::*;
         let q = GenerationResponseRequirements::derive(response);
+        if q.provider_observations {
+            return Err(ProviderObservation);
+        }
         for (needed, supported, feature) in [
             (q.audio_output, self.audio_output, AudioOutput),
             (q.instructions, self.instructions, Instructions),
@@ -174,6 +178,9 @@ impl GenerationSemanticContract {
     ) -> Result<GenerationRequirements, GenerationFeature> {
         use GenerationFeature::*;
         let q = GenerationRequirements::derive(r);
+        if q.provider_observations {
+            return Err(ProviderObservation);
+        }
         for (required, supported, feature) in [
             (q.instruction_count > 0, self.instructions, Instructions),
             (q.temperature, self.temperature, Temperature),

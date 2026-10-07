@@ -48,7 +48,25 @@ pub fn check_event(
             super::generation::check_usage(*usage, profile, &contract.adaptation.rules)?;
         }
         StreamEvent::ItemStarted { kind, replay, .. } => {
+            if let ItemKind::ToolCall {
+                message: Some(owner),
+                ..
+            } = kind
+                && profile == Profile::Chat
+            {
+                let position = state
+                    .items()
+                    .iter()
+                    .position(|item| item.id == *owner)
+                    .ok_or(RepresentationError::MessageGrouping)?;
+                if state.items()[position+1..].iter().any(|item| {
+                    !matches!(&item.kind, ItemKind::ToolCall { message: Some(parent), .. } if parent == owner)
+                }) {
+                    return Err(RepresentationError::MessageGrouping);
+                }
+            }
             match kind {
+                ItemKind::ProviderTool(_) => return Err(RepresentationError::UnmigratedSemantic),
                 ItemKind::ToolCall { context, .. } | ItemKind::CustomCall { context, .. }
                     if context.alias_domain.is_some() =>
                 {
@@ -60,21 +78,6 @@ pub fn check_event(
                     message: Some(_), ..
                 } if profile == Profile::Responses => {
                     return Err(RepresentationError::MessageGrouping);
-                }
-                ItemKind::ToolCall {
-                    message: Some(owner),
-                    ..
-                } if profile == Profile::Chat => {
-                    let position = state
-                        .items()
-                        .iter()
-                        .position(|item| item.id == *owner)
-                        .ok_or(RepresentationError::MessageGrouping)?;
-                    if state.items()[position+1..].iter().any(|item| {
-                        !matches!(&item.kind, ItemKind::ToolCall { message: Some(parent), .. } if parent == owner)
-                    }) {
-                        return Err(RepresentationError::MessageGrouping);
-                    }
                 }
                 ItemKind::Message { phase: Some(_) } if profile == Profile::Chat => {
                     return Err(RepresentationError::UnmigratedSemantic);

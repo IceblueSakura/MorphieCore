@@ -33,6 +33,7 @@ enum CallKind {
     Function,
     Custom,
     Program,
+    Provider,
 }
 type AliasKey<'a> = (Option<&'a NativeAliasDomain>, &'a str);
 pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, GenerationError> {
@@ -49,7 +50,7 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
     let mut results = BTreeSet::new();
     let mut bytes = 0;
     let mut file_decoded_bytes = 0usize;
-    for (id, item) in items {
+    for (position, (id, item)) in items.iter().enumerate() {
         if !ids.insert(*id) {
             return Err(GenerationError::DuplicateItemId);
         }
@@ -197,6 +198,27 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
                     add(&mut bytes, t.as_str())?;
                 }
             }
+            Item::ProviderTool(observed) => {
+                provider_observation(observed, &mut bytes, &mut parts)?;
+                match &observed.operation {
+                    ProviderOperation::Reported {
+                        alias: Some(alias), ..
+                    } => {
+                        if calls
+                            .insert((Some(&observed.source), alias.as_str()), CallKind::Provider)
+                            .is_some()
+                        {
+                            return Err(GenerationError::DuplicateCall);
+                        }
+                    }
+                    ProviderOperation::Reference(_) if !response => {
+                        observed
+                            .resolve(&items[..position])
+                            .map_err(|_| GenerationError::InvalidProviderObservation)?;
+                    }
+                    _ => {}
+                }
+            }
             Item::ToolResult(r) | Item::CustomResult(r) => {
                 call_context(&r.context, &mut bytes)?;
                 let reference = (r.context.alias_domain.as_ref(), r.call_id.as_str());
@@ -257,6 +279,77 @@ pub fn items(items: &[(ItemId, Item)], response: bool) -> Result<usize, Generati
         }
     }
     Ok(bytes)
+}
+pub(super) fn provider_observation(
+    observed: &ProviderToolObservation,
+    bytes: &mut usize,
+    parts: &mut BTreeSet<PartId>,
+) -> Result<(), GenerationError> {
+    if observed.source.source.as_str().is_empty() || observed.source.source.as_str().len() > 256 {
+        return Err(GenerationError::InvalidProviderObservation);
+    }
+    add(bytes, observed.source.source.as_str())?;
+    match &observed.operation {
+        ProviderOperation::Reported { tool, alias, .. } => {
+            if tool.as_str().is_empty() || tool.as_str().len() > 128 {
+                return Err(GenerationError::InvalidProviderObservation);
+            }
+            add(bytes, tool.as_str())?;
+            if let Some(alias) = alias {
+                if alias.as_str().is_empty() || alias.as_str().len() > 256 {
+                    return Err(GenerationError::Limit);
+                }
+                add(bytes, alias.as_str())?;
+            }
+        }
+        ProviderOperation::Reference(reference) => {
+            if let ProviderOperationReference::Native(alias) = reference {
+                if alias.as_str().is_empty() || alias.as_str().len() > 256 {
+                    return Err(GenerationError::Limit);
+                }
+                add(bytes, alias.as_str())?;
+            }
+            if observed.progress.is_none()
+                && observed.execution.is_none()
+                && observed.output.is_none()
+                && observed.artifact_status.is_none()
+            {
+                return Err(GenerationError::InvalidProviderObservation);
+            }
+        }
+    }
+    if observed.progress.is_some()
+        && observed
+            .execution
+            .as_ref()
+            .is_some_and(|execution| !matches!(execution, ToolExecution::Unknown))
+    {
+        return Err(GenerationError::InvalidProviderObservation);
+    }
+    if let Some(ToolExecution::Failed { code: Some(code) }) = &observed.execution {
+        if code.as_str().is_empty() || code.as_str().len() > 128 {
+            return Err(GenerationError::Limit);
+        }
+        add(bytes, code.as_str())?;
+    }
+    match &observed.output {
+        Some(ToolOutput::Text(value)) => add(bytes, value)?,
+        Some(ToolOutput::Structured(value)) => charge(bytes, value.bytes()?)?,
+        Some(ToolOutput::Parts(values)) => {
+            if values.len() > MAX_ITEMS {
+                return Err(GenerationError::Limit);
+            }
+            for (id, value) in values {
+                part_id(parts, *id)?;
+                match value {
+                    ToolResultPart::Text(value) => add(bytes, value.as_str())?,
+                    ToolResultPart::Resource(resource) => charge(bytes, resource.validate()?)?,
+                }
+            }
+        }
+        None => {}
+    }
+    Ok(())
 }
 fn call_context(context: &CallContext, bytes: &mut usize) -> Result<(), GenerationError> {
     if let Some(domain) = &context.alias_domain {

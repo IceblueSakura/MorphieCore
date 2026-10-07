@@ -23,6 +23,7 @@ pub struct GenerationRequirements {
     pub parallel_tool_calls: Option<bool>,
     pub strict_function_tools: bool,
     pub tool_history: bool,
+    pub provider_observations: bool,
     pub structured_arguments: bool,
     pub structured_tool_results: bool,
     pub tool_execution_reports: bool,
@@ -115,6 +116,7 @@ impl GenerationRequirements {
                     x.reasoning = true;
                 }
                 Item::ConfigurationUpdate(_) => x.reasoning = true,
+                Item::ProviderTool(_) => x.provider_observations = true,
             }
         }
         x
@@ -124,6 +126,7 @@ impl GenerationRequirements {
 /// Actual output domains, independent of input controls or tool declarations.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct GenerationResponseRequirements {
+    pub provider_observations: bool,
     pub audio_output: bool,
     pub instructions: bool,
     pub tools: bool,
@@ -139,6 +142,7 @@ impl GenerationResponseRequirements {
         for (_, item) in response.items() {
             match item {
                 Item::Instruction(_) => q.instructions = true,
+                Item::ProviderTool(_) => q.provider_observations = true,
                 Item::ToolCall(call) => {
                     q.tools = true;
                     q.structured_arguments |=

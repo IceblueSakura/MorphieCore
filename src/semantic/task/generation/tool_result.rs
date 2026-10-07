@@ -6,6 +6,8 @@ use crate::semantic::value::Text;
 pub enum ToolExecution {
     Succeeded,
     Failed { code: Option<Text> },
+    Cancelled,
+    Unknown,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ToolResultPart {

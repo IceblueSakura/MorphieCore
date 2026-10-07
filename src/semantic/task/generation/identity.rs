@@ -27,6 +27,7 @@ pub enum NativeIdKind {
     FunctionCall,
     CustomCall,
     ProgramCall,
+    ProviderOperation,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NativeCallAlias {
@@ -98,6 +99,16 @@ pub(super) fn call_alias(item: &Item) -> Option<(Option<&NativeAliasDomain>, Nat
             call.call_id.as_str(),
         )),
         Item::Program(call) => Some((None, NativeIdKind::ProgramCall, call.call_id.as_str())),
+        Item::ProviderTool(observed) => match &observed.operation {
+            super::ProviderOperation::Reported {
+                alias: Some(alias), ..
+            } => Some((
+                Some(&observed.source),
+                NativeIdKind::ProviderOperation,
+                alias.as_str(),
+            )),
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -117,6 +128,9 @@ fn same_call_meaning(left: &Item, right: &Item) -> bool {
                 && a.context == b.context
         }
         (Item::Program(a), Item::Program(b)) => a == b,
+        (Item::ProviderTool(a), Item::ProviderTool(b)) => {
+            a.source == b.source && a.operation == b.operation
+        }
         _ => false,
     }
 }
@@ -126,7 +140,8 @@ pub(super) fn check_call_edits(
     source: &[(ItemId, Item)],
     edited: &[(ItemId, Item)],
 ) -> Result<(), super::GenerationError> {
-    for (owner, old) in source.iter().filter(|(_, item)| item.is_call()) {
+    for (owner, old) in source.iter().filter(|(_, item)| item.is_call()
+        || matches!(item,Item::ProviderTool(observed) if matches!(observed.operation,super::ProviderOperation::Reported { .. }))) {
         for (next, value) in edited {
             if (*owner == *next
                 || call_alias(old).is_some() && call_alias(old) == call_alias(value))

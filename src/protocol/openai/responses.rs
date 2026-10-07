@@ -627,6 +627,7 @@ pub(super) fn encode_items(
                 json!({"type":"program_output","call_id":o.call_id.as_str(),"result":o.result,"status":status_label(o.status)})
             }
             Item::Reasoning(r) => super::reasoning::encode_item(r, response),
+            Item::ProviderTool(_) => unreachable!("checked Provider carrier"),
         };
         if response {
             v["id"] = json!(

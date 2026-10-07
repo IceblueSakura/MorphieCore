@@ -42,6 +42,8 @@ pub enum ItemKind {
         call_id: Text,
         result: String,
     },
+    /// An already reported value, not a fragmented Provider wire payload.
+    ProviderTool(ProviderToolObservation),
 }
 impl ItemKind {
     pub fn call(&self) -> Option<(&Text, &Text, Option<ItemId>)> {
@@ -308,12 +310,29 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             if state.items.iter().any(|i| i.id == item) {
                 return Err(EventError::Identity);
             }
+            if let ItemKind::ProviderTool(observed) = &kind {
+                let mut bytes = 0;
+                super::validate::provider_observation(observed, &mut bytes, &mut state.part_ids)?;
+                state.charge(bytes)?;
+                if let ProviderOperation::Reported {
+                    alias: Some(alias), ..
+                } = &observed.operation
+                    && state.items.iter().any(|old| match &old.kind {
+                        ItemKind::ProviderTool(value) => value.source==observed.source && matches!(&value.operation,ProviderOperation::Reported { alias: Some(value),.. } if value==alias),
+                        _ => old.kind.alias_domain()==Some(&observed.source) && old.kind.call_id()==Some(alias),
+                    })
+                {
+                        return Err(EventError::Identity);
+                }
+            }
             if let Some(call_id) = kind.call_id() {
                 if call_id.as_str().is_empty() || call_id.as_str().len() > 256 {
                     return Err(EventError::Limit);
                 }
                 if state.items.iter().any(|i| {
-                    i.kind.alias_domain() == kind.alias_domain()
+                    matches!(&i.kind, ItemKind::ProviderTool(observed) if Some(&observed.source)==kind.alias_domain()
+                        && matches!(&observed.operation,ProviderOperation::Reported { alias: Some(alias),.. } if alias==call_id))
+                    || i.kind.alias_domain() == kind.alias_domain()
                         && i.kind.call_id().is_some_and(|id| id == call_id)
                 }) {
                     return Err(EventError::Identity);
@@ -889,6 +908,7 @@ impl StreamItem {
                 result: result.clone(),
                 status,
             }),
+            ItemKind::ProviderTool(observed) => Item::ProviderTool(observed.clone()),
         };
         Ok(item)
     }

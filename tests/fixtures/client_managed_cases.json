@@ -160,6 +160,22 @@
       "budget": "MAX_ITEMS and aggregate ownership metadata bytes",
       "forbidden_effects": "No writable ToolCall.message, inferred ownership, resurrection, private carrier or activation",
       "scope": "required"
+    },
+    {
+      "case_key": "provider_observation_and_selected_history",
+      "ids": ["A09", "A10", "A11", "T16", "T17", "T18", "T30", "T31", "E01"],
+      "slice": "S1.2",
+      "sample_kind": "abstract_contract",
+      "evidence": "interaction-contract.md#provider-tool-observations; abstract reported operation/result facts, no native schema claim",
+      "owner": "src/semantic/task/generation/provider.rs; validate.rs; identity.rs; event.rs; contract.rs",
+      "target": "semantic",
+      "symbols": ["provider_observations::mixed_operations_only_require_client_results_and_do_not_infer_execution", "provider_observations::local_result_only_observation_requires_selected_history_without_a_fabricated_call", "provider_observations::resolution_diagnoses_ambiguity_kind_and_domain_instead_of_nearest_match", "provider_observations::report_payload_execution_and_artifact_facts_are_independent_and_bounded", "provider_observations::no_standard_target_can_drop_provider_observations", "provider_observations::changed_operation_cannot_reuse_identity_or_native_alias_and_proofs_bind_reports", "provider_observations::local_references_need_no_native_alias_and_later_facts_do_not_erase_unknown_reports", "provider_observations::provider_observations_are_not_implicitly_admitted_by_existing_product_contracts", "provider_observations::normative_observation_events_match_static_and_cannot_reopen_a_terminal", "provider_observations::aggregate_payload_and_part_identity_limits_apply_to_static_and_events", "provider_observations::stream_alias_conflicts_and_existing_call_capability_checks_remain_strict"],
+      "input": "Mixed client C and reported Provider S; later response reports only S result or unknown execution; explicit reference domain",
+      "expected": "Only C requires client result; local R2 survives without a fake call, selected history resolves uniquely; missing/ambiguous/wrong kind fail; execution report and body absence remain independent",
+      "transform": "Delete or reorder history, change operation identity, append later reports, compare normative whole-value event with independent static oracle",
+      "budget": "Payload B-1/B/B+1, aggregate MAX_TOTAL_BYTES, shared part identity and MAX_ITEMS",
+      "forbidden_effects": "No native codec, hosted request activation, tool execution, inferred result, terminal snapshot repair or private wire carrier",
+      "scope": "required; covers E01 observation/association subset, not complete configured successor construction or native fragmented results"
     }
   ]
 }

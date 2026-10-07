@@ -606,6 +606,7 @@ pub(super) fn encode_items_with(
                 standalone_calls = !owners.contains_key(id);
             }
             Item::CustomCall(_)
+            | Item::ProviderTool(_)
             | Item::CustomResult(_)
             | Item::ConfigurationUpdate(_)
             | Item::Program(_)

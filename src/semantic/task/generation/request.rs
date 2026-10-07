@@ -101,6 +101,7 @@ pub enum Item {
     ConfigurationUpdate(ConfigurationUpdate),
     Program(Program),
     ProgramOutput(ProgramOutput),
+    ProviderTool(ProviderToolObservation),
 }
 /// Ordered reasoning-effort update. It does not patch request settings.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -476,6 +477,8 @@ pub enum GenerationError {
     DuplicateCall,
     #[error("tool result has no matching preceding call or duplicates a result")]
     InvalidToolResult,
+    #[error("invalid Provider operation observation or unresolved history reference")]
+    InvalidProviderObservation,
     #[error("tool calls must remain contiguous with their assistant owner")]
     InvalidMessageGroup,
     #[error("invalid replay group identity, member reference or order")]

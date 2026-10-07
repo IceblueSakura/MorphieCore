@@ -59,6 +59,8 @@ Requester、执行责任、执行进度、结果正文与产物生命周期分�
 
 原生表示不一定有分离的 call/result block：某些工具将 action/status/result 放在同一 item，另一些把答案与引用放在独立 message。只提取实际报告的事实；不能按邻接、名称或“工具已完成”补造独立结果及因果边。结果正文、来源证据和对答案的引用各有 owner。
 
+Provider 复合观察采用共享 Generation items 中的独立 typed 分支，不将普通 function/custom 调用与 Provider action 重写成同一参数节点。共享身份、引用、执行报告、结果值和资源基础类型；报告调用事实的观察与引用先前操作的观察分别表达，单一原生 item 不强拆成虚构 call/result。来源域标签用于关联而非认证或执行权限，纯核心构造不证明真实 Provider 执行。
+
 验证保证分层，而不是放宽原有严格入口：
 
 1. **局部观察合法性**：验证值、presence、局部 identity、生命周期和预算；允许明确未解析的外部调用引用，不抹掉已收到的合法观察。

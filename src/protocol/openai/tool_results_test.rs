@@ -63,7 +63,36 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
         context: Default::default(),
         instruction_fidelity: Default::default(),
     };
-    for semantic in [&structured, &progress, &scoped, &replay, &grouped] {
+    let provider = GenerationResponse::new(
+        vec![(
+            ItemId::new(1),
+            Item::ProviderTool(ProviderToolObservation {
+                source: NativeAliasDomain {
+                    source: text("abstract"),
+                    scope: LocalScope::ROOT,
+                },
+                operation: ProviderOperation::Reported {
+                    tool: text("search"),
+                    alias: None,
+                    requester: ProviderRequester::Unreported,
+                },
+                progress: None,
+                execution: None,
+                output: None,
+                artifact_status: None,
+            }),
+        )],
+        Outcome::Completed,
+    )
+    .unwrap();
+    for semantic in [
+        &structured,
+        &progress,
+        &scoped,
+        &replay,
+        &grouped,
+        &provider,
+    ] {
         for profile in [Profile::Chat, Profile::Responses] {
             let forged = ResponseRepresentation {
                 semantic,
