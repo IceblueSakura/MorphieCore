@@ -98,6 +98,9 @@ def run(base_url: str, stream: bool) -> dict[str, object]:
                     finish, usage = choice.finish_reason, result.usage
                     message = choice.message.model_dump(exclude_none=True)
             check(usage is not None and usage.total_tokens == 5)
+            check(usage.prompt_tokens == 3 and usage.completion_tokens == 2)
+            check("image_tokens" not in usage.prompt_tokens_details.model_dump(exclude_none=True),
+                  "named projection must omit the unsupported detail before SDK consumption")
             check(usage.prompt_tokens_details.text_tokens == 3)
             check(usage.completion_tokens_details.text_tokens == 2)
             check(usage.completion_tokens_details.accepted_prediction_tokens == 1)

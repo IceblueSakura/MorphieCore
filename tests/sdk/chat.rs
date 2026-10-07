@@ -125,6 +125,13 @@ pub(super) async fn handle(
         let mut body = wire::response(turn as u8);
         body["usage"] = usage();
         let mut d = envelope::decode_response_bytes(&serde_json::to_vec(&body).unwrap()).unwrap();
+        // Synthetic typed source fact has no Standard Chat carrier. The SDK
+        // must consume the named projection, not preserve an unknown field.
+        let source_usage = morphiecore::semantic::task::generation::Usage {
+            input_image_tokens: Some(1),
+            ..d.semantic.usage().unwrap()
+        };
+        d.semantic = d.semantic.with_usage(source_usage).unwrap();
         if turn == 2 {
             let mut items = d.semantic.items().to_vec();
             let Item::Message(m) = &mut items[0].1 else {
@@ -141,17 +148,25 @@ pub(super) async fn handle(
             );
             d.semantic = d.semantic.with_items(items).unwrap();
         }
-        let out = envelope::encode_response(
-            &lower_response(
-                &d.semantic,
-                &d.fidelity,
-                &d.metadata,
-                Profile::Chat,
-                Contract::full(),
-            )
-            .unwrap(),
+        let projected = lower_response(
+            &d.semantic,
+            &d.fidelity,
+            &d.metadata,
+            Profile::Chat,
+            Contract::full(),
         )
         .unwrap();
+        assert_eq!(
+            projected.projection()[0].loss,
+            Some(morphiecore::lowering::projection::LossRule::OmitChatInputImageTokens)
+        );
+        let out = envelope::encode_response(&projected).unwrap();
+        assert_eq!(d.semantic.usage(), Some(source_usage));
+        assert!(
+            out["usage"]["prompt_tokens_details"]
+                .get("image_tokens")
+                .is_none()
+        );
         return Response::builder()
             .header(CONTENT_TYPE, "application/json")
             .body(Body::from(out.to_string()))
@@ -194,6 +209,9 @@ pub(super) async fn handle(
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<Bytes, std::convert::Infallible>>(1);
     tokio::spawn(async move {
         for mut event in events {
+            if let StreamEvent::Usage(usage) = &mut event {
+                usage.input_image_tokens = Some(1);
+            }
             if turn == 2 {
                 match &mut event {
                     // The synthesized structured text is rendered from final IR, not source JSON.

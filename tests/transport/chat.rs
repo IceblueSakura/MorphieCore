@@ -48,6 +48,44 @@ fn options(usage: bool) -> StreamOptions {
 }
 
 #[test]
+fn identical_text_deltas_are_real_content_not_duplicate_events() {
+    let mut bytes = vec![];
+    for (delta, finish) in [
+        (json!({"role":"assistant","content":"echo 🧪"}), Value::Null),
+        (json!({"content":"echo 🧪"}), Value::Null),
+        (json!({}), json!("stop")),
+    ] {
+        bytes.extend(frame(&json!({
+            "id":"r","object":"chat.completion.chunk","created":1,"model":"synthetic",
+            "choices":[{"index":0,"delta":delta,"finish_reason":finish}]
+        })));
+    }
+    bytes.extend(b"data: [DONE]\n\n");
+    let static_wire = json!({
+        "id":"r","object":"chat.completion","created":1,"model":"synthetic",
+        "choices":[{"index":0,"message":{"role":"assistant","content":"echo 🧪echo 🧪"},"finish_reason":"stop"}],
+        "usage":null
+    });
+    let expected =
+        envelope::decode_response_bytes(&serde_json::to_vec(&static_wire).unwrap()).unwrap();
+    for size in [1, bytes.len()] {
+        let mut parsed = decoder();
+        let events = consume(&mut parsed, &bytes, size);
+        parsed.finish().unwrap();
+        assert_eq!(parsed.materialize().unwrap().semantic, expected.semantic);
+        assert_eq!(
+            events
+                .iter()
+                .filter(
+                    |e| matches!(e, StreamEvent::Delta { fragment, .. } if fragment == "echo 🧪")
+                )
+                .count(),
+            2
+        );
+    }
+}
+
+#[test]
 fn complete_chat_envelope_separates_delivery_and_rejects_unsupported_admission() {
     let source = json!({"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"top_p":0.8,"n":1,"stream":true,"stream_options":{"include_usage":true,"include_obfuscation":false}});
     let d = envelope::decode_request_bytes(&serde_json::to_vec(&source).unwrap()).unwrap();

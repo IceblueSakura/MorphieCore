@@ -50,6 +50,91 @@ fn references(view: Continuation<'_>) -> Vec<(ItemId, &str)> {
 }
 
 #[test]
+fn one_typed_consumer_saves_appends_and_returns_both_native_protocols() {
+    use morphiecore::protocol::openai::chat;
+    let arguments = r#"{"n":9007199254740993,"a":"\u0061"}"#;
+    for profile in [Profile::Responses, Profile::Chat] {
+        let adapter = Adapter::new(profile, Dialect::Standard, None);
+        let wire = match profile {
+            Profile::Responses => json!({
+                "id":"r","object":"response","created_at":1,"model":"synthetic","status":"completed",
+                "output":[{"type":"function_call","id":"fc","call_id":"c","name":"lookup","arguments":arguments,"status":"completed"}],
+                "usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5}
+            }),
+            Profile::Chat => json!({
+                "id":"r","object":"chat.completion","created":1,"model":"synthetic",
+                "choices":[{"index":0,"message":{"role":"assistant","content":null,
+                    "tool_calls":[{"id":"c","type":"function","function":{"name":"lookup","arguments":arguments}}]},
+                    "finish_reason":"tool_calls"}],
+                "usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}
+            }),
+        };
+        let delivered = adapter
+            .decode_response(&serde_json::to_vec(&wire).unwrap())
+            .unwrap();
+        let saved = delivered.clone();
+        // The consumer uses only shared semantic values, never a protocol DTO.
+        let consume = |output| {
+            ClientManaged::new(Default::default())
+                .unwrap()
+                .select_response(&saved.semantic)
+                .unwrap()
+                .append_items(vec![(
+                    ItemId::new(900),
+                    Item::ToolResult(ToolResult {
+                        call_id: text("c"),
+                        output,
+                        status: None,
+                        context: Default::default(),
+                        execution: None,
+                    }),
+                )])
+                .unwrap()
+                .build(&[])
+        };
+        let request = consume(ToolOutput::Text("synthetic result".into())).unwrap();
+        assert_eq!(request.continuation(), Continuation::Unreported);
+        let target = lower_request(&request, &saved.fidelity, profile, Contract::full()).unwrap();
+        let returned = match profile {
+            Profile::Responses => responses::encode_generation(&target).unwrap(),
+            Profile::Chat => chat::encode_generation(&target).unwrap(),
+        };
+        match profile {
+            Profile::Responses => {
+                assert_eq!(returned["input"][0]["arguments"], arguments);
+                assert_eq!(returned["input"][0]["call_id"], "c");
+                assert_eq!(
+                    returned["input"][1],
+                    json!({
+                        "type":"function_call_output","call_id":"c","output":"synthetic result"
+                    })
+                );
+            }
+            Profile::Chat => {
+                assert_eq!(
+                    returned["messages"][0]["tool_calls"][0]["function"]["arguments"],
+                    arguments
+                );
+                assert_eq!(returned["messages"][0]["tool_calls"][0]["id"], "c");
+                assert_eq!(
+                    returned["messages"][1],
+                    json!({
+                        "role":"tool","tool_call_id":"c","content":"synthetic result"
+                    })
+                );
+            }
+        }
+        let unsupported = consume(ToolOutput::Structured(
+            StructuredValue::new(json!({"ok":true})).unwrap(),
+        ))
+        .unwrap();
+        assert!(lower_request(&unsupported, &saved.fidelity, profile, Contract::full()).is_err());
+        assert_eq!(saved.semantic, delivered.semantic);
+        assert_eq!(saved.semantic.usage(), Some(Usage::operation(2, 3, 5)));
+    }
+}
+
+#[test]
 fn parallel_calls_resolve_individually_then_a_new_response_has_its_own_requirements() {
     let request = history(vec![call(10, "a"), call(20, "b")]);
     let response = GenerationResponse::new(request.items().to_vec(), Outcome::Completed).unwrap();

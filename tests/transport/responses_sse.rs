@@ -51,6 +51,83 @@ fn consume_all(d: &mut ResponsesSseDecoder, bytes: &[u8], chunk_len: usize) -> u
 }
 
 #[test]
+fn semantic_batches_and_byte_splits_share_an_independent_static_oracle() {
+    let expected = morphiecore::protocol::openai::envelope::decode_response_bytes(
+        &serde_json::to_vec(&wire::response(1)).unwrap(),
+    )
+    .unwrap();
+    for semantic_split in [false, true] {
+        let mut frames = vec![];
+        for event in wire::events(1) {
+            if semantic_split
+                && matches!(
+                    event["type"].as_str(),
+                    Some(
+                        "response.reasoning_summary_text.delta"
+                            | "response.function_call_arguments.delta"
+                    )
+                )
+            {
+                for scalar in event["delta"].as_str().unwrap().chars() {
+                    let mut next = event.clone();
+                    next["delta"] = json!(scalar.to_string());
+                    frames.push(next);
+                }
+            } else {
+                frames.push(event);
+            }
+        }
+        let mut bytes = vec![];
+        for (sequence, mut event) in frames.into_iter().enumerate() {
+            event["sequence_number"] = json!(sequence);
+            bytes.extend(encode_frame(&event, SseLimits::default().max_event_bytes).unwrap());
+        }
+        for byte_split in [1, 7, 1024] {
+            let mut actual = decoder(SseLimits::default());
+            consume_all(&mut actual, &bytes, byte_split);
+            actual.finish().unwrap();
+            let observed = actual.materialize().unwrap();
+            assert_eq!(
+                &observed.semantic.items()[..3],
+                &expected.semantic.items()[..3]
+            );
+            // Argument builders allocate local part IDs in the stream, but
+            // static raw arguments have no part owner. Compare message values
+            // and wire identities, not unrelated parser allocation counters.
+            use morphiecore::semantic::task::generation::Item;
+            let Item::Message(a) = &observed.semantic.items()[3].1 else {
+                panic!()
+            };
+            let Item::Message(b) = &expected.semantic.items()[3].1 else {
+                panic!()
+            };
+            assert_eq!((a.role, a.status, a.phase), (b.role, b.status, b.phase));
+            assert_eq!(a.parts.len(), 1);
+            assert_eq!(a.parts[0].content, b.parts[0].content);
+            assert_eq!(a.parts[0].replay, b.parts[0].replay);
+            for ((actual_id, _), (expected_id, _)) in observed
+                .semantic
+                .items()
+                .iter()
+                .zip(expected.semantic.items())
+            {
+                assert_eq!(
+                    observed.fidelity.response_item_id(*actual_id),
+                    expected.fidelity.response_item_id(*expected_id)
+                );
+            }
+            assert_eq!(observed.semantic.resources(), expected.semantic.resources());
+            assert_eq!(
+                observed.semantic.usage_reports(),
+                expected.semantic.usage_reports()
+            );
+            assert_eq!(observed.semantic.outcome(), expected.semantic.outcome());
+            assert_eq!(observed.semantic.details(), expected.semantic.details());
+        }
+    }
+}
+
+#[test]
 fn timestamp_underflow_is_rejected_in_snapshots_and_poisons_fragmented_streams() {
     for (kind, field) in [
         ("response.created", "created_at"),
@@ -512,6 +589,20 @@ fn fragmented_utf8_and_bare_cr_preserve_the_same_terminal_and_output() {
 
 #[test]
 fn malformed_http_event_identity_eof_and_post_terminal_fail_closed() {
+    let initial = encode_frame(&wire::events(2)[0], SseLimits::default().max_event_bytes).unwrap();
+    let future =
+        b"event: response.future\ndata: {\"type\":\"response.future\",\"sequence_number\":1}\n\n";
+    let mut unknown = decoder(SseLimits::default());
+    consume_all(&mut unknown, &initial, 1);
+    assert!(matches!(
+        unknown.consume(future),
+        Err(morphiecore::protocol::openai::sse::SseError::Codec(
+            morphiecore::protocol::openai::CodecError::Unsupported(_)
+        ))
+    ));
+    assert!(unknown.consume(&wire_events()).is_err());
+    assert!(unknown.finish().is_err());
+    assert!(unknown.materialize().is_err());
     for (status, content_type) in [
         (201, "text/event-stream"),
         (200, "application/json"),

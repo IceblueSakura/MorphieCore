@@ -2,7 +2,7 @@
 
 ## 当前主线
 
-目标是让 **Gateway 与未来 Agent 复用同一套独立 Semantic Model / IR，通过标准 API 完成可验证的模型交互**。当前优先进行[三协议约束下的 ClientManaged Generation IR 完善](client-managed-ir.md)，Generation 仍以规范 Responses 为主要客户端接口。请求型音频保持独立 Speech/Transcription task；已有 Text/Image/File、标准文本/function、类型化消费和独立媒体作为维护与回归边界。不以增加 Provider、模型数量或模态枚举作为进度。Chat Completions 是有限有损的兼容投影，不反向限制共享核心。
+目标是让 **Gateway 与未来 Agent 复用同一套独立 Semantic Model / IR，通过标准 API 完成可验证的模型交互**。[三协议约束下的 ClientManaged Generation IR](client-managed-ir.md)作为后续选片与回归基线，Generation 仍以规范 Responses 为主要客户端接口。请求型音频保持独立 Speech/Transcription task；已有 Text/Image/File、标准文本/function、类型化消费和独立媒体作为维护与回归边界。不以增加 Provider、模型数量或模态枚举作为进度。Chat Completions 是有限有损的兼容投影，不反向限制共享核心。
 
 本页维护推荐优先级、依赖和选片条件，不是实现完成声明或操作授权。有效合同归 [Semantic Model](../architecture/semantic-ir.md)，已定稿行为切片及其当前状态只归 [current-focus](current-focus.md)，实际缺口归[实施边界](../implementation-status/generation.md)，等待证据的问题归[待决状态](../implementation-status/open-questions.md)。
 
@@ -10,7 +10,7 @@
 
 以下是**选片优先级，不是整块实施阶段**。每项按最小可观察场景拆分；前项只需闭合后项实际依赖的边界，不要求先补齐整个 Responses 标准。已有基础层和独立覆盖直接复用，不重复安排“重建 IR / Gateway / 凭据管理器”。
 
-**当前优先覆盖：ClientManaged Generation IR。** Responses、Interactions、Messages 共同提供语义反例，按[剩余计划的 P6](client-managed-ir.md#execution-order)推进消费者闭环；既有具名投影、资源/引用、身份/上下文/配置/控制/计量、所选 Provider 动作、Replay 附件与纯核心组合场景作为输入与回归，不再重复排期。Google/Anthropic 原生实现、ServerManaged 和 Agent 执行/恢复不纳入本轮；不能因此删去 Provider 工具结果或必要生命周期语义。既有 Responses/Chat 随片迁移，不等待全部核心完成才修复 codec。
+**ClientManaged 选片边界。** Responses、Interactions、Messages 共同提供语义反例；既有具名投影、资源/引用、身份/上下文/配置/控制/计量、所选 Provider 动作、Replay 附件与纯核心/消费者组合场景作为输入与回归，不再重复排期。当前没有自动进入的后继阶段；新差异按[选片条件](client-managed-ir.md#execution-order)定稿。Google/Anthropic 原生实现、ServerManaged 和 Agent 执行/恢复不自动恢复；不能因此删去 Provider 工具结果或必要生命周期语义。既有 Responses/Chat 随片迁移，不等待整个标准完成才修复 codec。
 
 **请求型音频转为维护与后续独立选片。** 基础 task、标准请求、有界交付及目标映射按 [Speech](../architecture/speech-profile.md)和[Transcription profile](../architecture/transcription-profile.md)维护，嵌入/binary 激活归 [HTTP 合同](../http-gateway.md)。低延迟交付、下游 SSE、转录扩展与实际服务验收仍可按具体需求独立定稿，不重复建设已有接线，也不成为 IR 的前置。下表为既有接口维护与后续产品选片顺序，不把本轮三协议语义工作缩减为单 function 子集。
 
@@ -32,7 +32,7 @@
 
 ## 后续选片条件
 
-本轮首先按 [ClientManaged 计划](client-managed-ir.md)选择实际依赖已闭合的子片，在 current-focus 定稿输入、输出、非目标与独立失败预期；后续产品工作按上表选片。不把缺口清单直接当排期，也不以完整 Responses union、更多模态或 SIWC 为前置。
+后续依据具体消费者反例或实现缺口，按 [ClientManaged 边界](client-managed-ir.md)选择实际依赖已闭合的子片，在 current-focus 定稿输入、输出、非目标与独立失败预期；产品优先级按上表选片。不把缺口清单直接当排期，也不以完整 Responses union、更多模态或 SIWC 为前置。
 
 1. 标准文本/function、工具与 opaque 回传、类型化编辑、已有图片和基础文件输入随片回归；新发现的真实差异按最低 owner 修复，不把已有基础层重新列为待建设任务。
 2. 模型发现的字段来源、激活视图与拒绝边界归[HTTP 合同](../http-gateway.md#标准模型发现)。后续消费者差异须有具体反例，不假定 Agent 会自动发现，也不直接透传上游/账户目录。

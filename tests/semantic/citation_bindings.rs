@@ -331,6 +331,15 @@ fn source_selection_edits_replay_cache_and_original_usage_share_one_dependency_o
     fidelity
         .record_attachment(replay_owner, &request, origin.clone())
         .unwrap();
+    let dependency = RequestDependencyProof::capture(
+        &request,
+        HistoryDependency::Owners(vec![ItemId::new(1)]),
+        SettingsDependency::All,
+    )
+    .unwrap();
+    fidelity
+        .bind_attachment_dependency(replay_owner, dependency, &request)
+        .unwrap();
     let hints = ExecutionHints::default();
     let context = CachePrefixContext {
         model: "synthetic",
@@ -412,6 +421,48 @@ fn source_selection_edits_replay_cache_and_original_usage_share_one_dependency_o
     assert!(branch.resources().is_empty());
     assert!(cache.check(&branch, context, &scope).is_err());
     assert!(!fidelity.attachment_matches(replay_owner, &branch, Some(&origin)));
+    // A second branch changes configuration, not either citation anchor.
+    let mut settings = request.settings().clone();
+    settings.instructions = Presence::Value(text("branch configuration"));
+    let configured = request
+        .clone()
+        .with_configuration(
+            ConfigurationSnapshot::new(ConfigurationId::new(LocalScope::new(9), 2), settings)
+                .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(configured.items(), request.items());
+    assert_eq!(configured.resources(), request.resources());
+    assert!(cache.check(&configured, context, &scope).is_err());
+    assert!(!fidelity.attachment_matches(replay_owner, &configured, Some(&origin)));
+    let recaptured = RequestDependencyProof::capture(
+        &configured,
+        HistoryDependency::Owners(vec![ItemId::new(1)]),
+        SettingsDependency::All,
+    )
+    .unwrap();
+    assert!(
+        fidelity
+            .bind_attachment_dependency(replay_owner, recaptured, &configured)
+            .is_err()
+    );
+    assert!(fidelity.attachment_matches(replay_owner, &request, Some(&origin)));
+    for candidate in [&request, &configured] {
+        for profile in [
+            morphiecore::protocol::openai::Profile::Chat,
+            morphiecore::protocol::openai::Profile::Responses,
+        ] {
+            let mut contract =
+                morphiecore::lowering::generation::GenerationRepresentationContract::full();
+            contract.replay_origin = Some(origin.clone());
+            assert!(
+                morphiecore::lowering::generation::lower_request(
+                    candidate, &fidelity, profile, contract
+                )
+                .is_err()
+            );
+        }
+    }
     assert_eq!(response.usage().unwrap().output_tokens, Some(5));
 }
 #[test]
