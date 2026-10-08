@@ -6,6 +6,41 @@ from pathlib import Path
 
 
 class SdkOracleTests(unittest.TestCase):
+    def test_reasoning_replay_oracle_keeps_readable_and_opaque_facts_separate(self):
+        code = """
+from copy import deepcopy
+from responses_text_loop import check_reasoning
+from sdk_support import SdkCheckFailure
+readable = {"type": "reasoning", "id": "reasoning", "status": "completed",
+            "summary": [{"type": "summary_text", "text": "Plan 🧪"}],
+            "content": [{"type": "reasoning_text", "text": "Check"}]}
+encrypted = {**readable, "encrypted_content": "synthetic-final-token"}
+check_reasoning([readable], False)
+check_reasoning([encrypted], True)
+bad_summary = deepcopy(encrypted)
+bad_summary["summary"][0]["text"] = "changed"
+bad_content = deepcopy(encrypted)
+bad_content["content"][0]["text"] = "changed"
+for output, opaque in [
+    ([], True), ([encrypted, encrypted], True),
+    ([readable], True), ([encrypted], False),
+    ([{**encrypted, "encrypted_content": "synthetic-partial-token"}], True),
+    ([{**encrypted, "encrypted_content": "changed"}], True),
+    ([{**readable, "encrypted_content": ""}], False),
+    ([bad_summary], True), ([bad_content], True),
+]:
+    try:
+        check_reasoning(output, opaque)
+    except SdkCheckFailure:
+        continue
+    raise RuntimeError("wrong reasoning result passed its oracle")
+"""
+        for flags in ([], ["-O"]):
+            with self.subTest(flags=flags):
+                result = subprocess.run([sys.executable, *flags, "-c", code],
+                    cwd=Path(__file__).parent, capture_output=True, text=True, timeout=15)
+                self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_wrong_sdk_results_fail_in_normal_and_optimized_modes(self):
         code = """
 from types import SimpleNamespace

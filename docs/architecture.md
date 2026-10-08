@@ -48,7 +48,7 @@ Authenticated bounded HTTP input
 
 ## 依赖与复用边界
 
-`semantic` 是任务值、validation、requirements 与 reducer 的唯一 owner，不依赖 protocol/provider/topology/execution。Codec、lowering 与 adapter 保持纯映射；协议共同类型不放入某家 Provider IR。Gateway、未来 Agent 的类型化入口都消费同一语义模型，具体 Agent runtime 尚未实现。
+`semantic` 是任务值、validation、requirements 与 reducer 的唯一 owner，不依赖 protocol/provider/topology/execution。Codec、lowering 与 adapter 保持纯映射；协议共同类型不放入某家 Provider IR。Gateway、未来 Agent 的类型化入口都消费同一语义模型；Agent runtime 与恢复属于[项目非目标](architecture/semantic-ir.md#1-语义权威与消费者)，不作为待实现能力。
 
 模块按职责拆分，保留必要公共路径的显式 re-export，不复制 SDK 目录、预建未实现 task 模块或引入万能 raw-JSON 请求。当前保持一个 crate；独立 SDK/crate 与持久化格式仅在有明确消费者后定稿。Loss-aware Chat 是[目标投影设计](architecture/protocol-and-lowering.md#semantic-loss)，不是已接线事实，也不改变共享输入或运行时权限。
 

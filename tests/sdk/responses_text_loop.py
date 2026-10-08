@@ -11,7 +11,21 @@ class Answer(BaseModel):
     ok: bool
 
 
-def run(base_url: str, stream: bool) -> dict[str, object]:
+def check_reasoning(output: list[dict[str, object]], opaque: bool) -> None:
+    """Check independent readable facts and only the reported final replay value."""
+    items = [item for item in output if item["type"] == "reasoning"]
+    check(len(items) == 1, "exactly one reasoning owner expected")
+    item = items[0]
+    check(item["summary"] == [{"type": "summary_text", "text": "Plan 🧪"}])
+    check(item.get("content") == [{"type": "reasoning_text", "text": "Check"}])
+    if opaque:
+        check(item.get("encrypted_content") == "synthetic-final-token",
+              "partial or changed opaque must not become final replay")
+    else:
+        check("encrypted_content" not in item, "unreported opaque must stay absent")
+
+
+def run(base_url: str, stream: bool, opaque: bool = True) -> dict[str, object]:
     """Check stateless Responses history and parsed-view replay on the fixed listener."""
     client = client_for(base_url)
     tools = [
@@ -54,8 +68,8 @@ def run(base_url: str, stream: bool) -> dict[str, object]:
             if turn == 1:
                 calls = [item for item in result.output if item.type in ("function_call", "custom_tool_call")]
                 check(len(calls) == 2 and {call.call_id for call in calls} == {"c_lookup", "c_sql"})
-                check(any(item.type == "reasoning" for item in result.output))
                 dumped = [item.model_dump(exclude_none=True) for item in result.output]
+                check_reasoning(dumped, opaque)
                 function = next(item for item in dumped if item["type"] == "function_call")
                 check(function["parsed_arguments"] == {"n": 1}, "dump must carry the derived view")
                 history.extend(dumped)
@@ -70,16 +84,17 @@ def run(base_url: str, stream: bool) -> dict[str, object]:
                 history.extend(dumped)
             else:
                 check(result.output_text == '{"ok":false}', "raw body stays authoritative on replay")
-        return {"turns": 3, "stream": stream, "event_counts": event_counts}
+        return {"turns": 3, "stream": stream, "event_counts": event_counts, "opaque": opaque}
     finally:
         client.close()
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3 or sys.argv[2] not in ("json", "sse"):
-        raise SystemExit("usage: responses_text_loop.py LOOPBACK_BASE_URL json|sse")
+    if (len(sys.argv) != 4 or sys.argv[2] not in ("json", "sse")
+            or sys.argv[3] not in ("opaque", "readable")):
+        raise SystemExit("usage: responses_text_loop.py LOOPBACK_BASE_URL json|sse opaque|readable")
     try:
-        print(json.dumps(run(sys.argv[1], sys.argv[2] == "sse")))
+        print(json.dumps(run(sys.argv[1], sys.argv[2] == "sse", sys.argv[3] == "opaque")))
     except Exception as exc:
         cause = exc.__cause__
         errors = ([{"loc": list(entry["loc"]), "type": entry["type"]} for entry in cause.errors()]

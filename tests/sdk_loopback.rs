@@ -56,7 +56,11 @@ fn contract() -> GenerationRepresentationContract {
 }
 
 #[derive(Clone, Default)]
-struct Suite(Arc<Mutex<(usize, Option<&'static str>)>>);
+struct Suite(
+    Arc<Mutex<(usize, Option<&'static str>)>>,
+    // Responses-only fixture variant: readable reasoning without reported opaque.
+    bool,
+);
 
 fn failure(code: StatusCode, phase: &'static str, state: &Suite) -> Response {
     state.0.lock().unwrap().1 = Some(phase);
@@ -66,11 +70,22 @@ fn failure(code: StatusCode, phase: &'static str, state: &Suite) -> Response {
         .unwrap()
 }
 
-fn response_fixture(turn: u8) -> Value {
+fn remove_opaque(item: &mut Value) {
+    if item["type"] == "reasoning" {
+        item.as_object_mut().unwrap().remove("encrypted_content");
+    }
+}
+
+fn response_fixture(turn: u8, without_opaque: bool) -> Value {
     let mut response = wire::response(turn);
     // SDK v3's strict response model requires integer timestamps.
     response["created_at"] = 1.into();
     response["completed_at"] = 2.into();
+    if without_opaque {
+        for item in response["output"].as_array_mut().unwrap() {
+            remove_opaque(item);
+        }
+    }
     response
 }
 
@@ -137,6 +152,25 @@ async fn handle(State(state): State<Suite>, headers: HeaderMap, body: Bytes) -> 
         seen.0 += 1;
         seen.0
     };
+    if encoded["reasoning"] != serde_json::json!({"effort":"low","summary":"auto"}) {
+        return failure(StatusCode::BAD_REQUEST, "reasoning controls", &state);
+    }
+    if turn >= 2 {
+        let items: Vec<_> = encoded["input"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|item| item["type"] == "reasoning")
+            .collect();
+        let expected_opaque = (!state.1).then(|| Value::from("synthetic-final-token"));
+        if items.len() != 1
+            || items[0]["summary"] != serde_json::json!([{"type":"summary_text","text":"Plan 🧪"}])
+            || items[0]["content"] != serde_json::json!([{"type":"reasoning_text","text":"Check"}])
+            || items[0].get("encrypted_content") != expected_opaque.as_ref()
+        {
+            return failure(StatusCode::BAD_REQUEST, "reasoning history replay", &state);
+        }
+    }
     if turn > 3
         || turn == 2
             && encoded["input"].as_array().is_none_or(|items| {
@@ -172,7 +206,7 @@ async fn handle(State(state): State<Suite>, headers: HeaderMap, body: Bytes) -> 
     {
         return failure(StatusCode::BAD_REQUEST, "parsed_arguments replay", &state);
     }
-    let response = response_fixture(turn as u8);
+    let response = response_fixture(turn as u8, state.1);
     if !decoded.context.delivery.streaming() {
         let Ok(mut decoded) =
             envelope::decode_response_bytes(&serde_json::to_vec(&response).unwrap())
@@ -230,6 +264,19 @@ async fn handle(State(state): State<Suite>, headers: HeaderMap, body: Bytes) -> 
     .unwrap();
     let mut events = Vec::new();
     for mut payload in wire::events(turn as u8) {
+        if state.1 {
+            if let Some(item) = payload.get_mut("item") {
+                remove_opaque(item);
+            }
+            if let Some(output) = payload
+                .pointer_mut("/response/output")
+                .and_then(Value::as_array_mut)
+            {
+                for item in output {
+                    remove_opaque(item);
+                }
+            }
+        }
         if payload["type"] == "response.created" || payload["type"] == "response.completed" {
             payload["response"]["created_at"] = 1.into();
             payload["response"]["completed_at"] = if payload["type"] == "response.created" {
@@ -315,8 +362,8 @@ impl Drop for ServerGuard {
     }
 }
 
-async fn sdk_case(sse: bool, profile: Profile) {
-    let suite = Suite::default();
+async fn sdk_case(sse: bool, profile: Profile, without_opaque: bool) {
+    let suite = Suite(Default::default(), without_opaque);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let observed = suite.clone();
@@ -347,6 +394,9 @@ async fn sdk_case(sse: bool, profile: Profile) {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if profile == Profile::Responses {
+        command.arg(if without_opaque { "readable" } else { "opaque" });
+    }
     for name in [
         "OPENAI_API_KEY",
         "OPENAI_BASE_URL",
@@ -370,6 +420,9 @@ async fn sdk_case(sse: bool, profile: Profile) {
     assert_eq!(observed.0.lock().unwrap().0, 3);
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["turns"], 3);
+    if profile == Profile::Responses {
+        assert_eq!(report["opaque"], !without_opaque);
+    }
     if sse && profile == Profile::Responses {
         assert!(report["event_counts"][0].as_u64().unwrap() > 5);
     }
@@ -379,7 +432,9 @@ async fn sdk_case(sse: bool, profile: Profile) {
 #[ignore = "requires locked tests/sdk Python environment; JSON/SSE synthetic loopback"]
 async fn sdk_three_turn_text_json_and_sse() {
     for mode in [false, true] {
-        sdk_case(mode, Profile::Responses).await;
+        for without_opaque in [false, true] {
+            sdk_case(mode, Profile::Responses, without_opaque).await;
+        }
     }
 }
 
@@ -387,6 +442,6 @@ async fn sdk_three_turn_text_json_and_sse() {
 #[ignore = "requires locked tests/sdk Python environment; Chat JSON/SSE synthetic loopback"]
 async fn sdk_chat_three_turn_text_json_and_sse() {
     for mode in [false, true] {
-        sdk_case(mode, Profile::Chat).await;
+        sdk_case(mode, Profile::Chat, false).await;
     }
 }
