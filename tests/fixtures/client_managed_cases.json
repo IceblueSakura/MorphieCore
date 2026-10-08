@@ -48,9 +48,9 @@
       "owner": "tests/sdk_loopback.rs; tests/sdk; src/gateway/http.rs",
       "target": "sdk_loopback",
       "symbols": ["sdk_three_turn_text_json_and_sse", "sdk_chat_three_turn_text_json_and_sse", "gateway_sdk::sdk_uses_gateway_for_both_protocols_and_deliveries", "chat_media_sdk::sdk_chat_media_values_streams_and_history"],
-      "input": "Pinned SDK against isolated authenticated loopback with synthetic tool results, readable reasoning with and without reported opaque, citations and independent media",
+      "input": "Pinned SDK against isolated authenticated loopback with distinct same-name function calls, synthetic tool results, readable reasoning with and without reported opaque, citations and independent media with strict function/text constraints",
       "expected": "JSON/SSE delivery and real SDK save/append/return; Responses controls, summary/content and final opaque replay remain distinct, unreported opaque stays absent; Chat named accounting loss reaches the consumer without image_tokens or changed totals; typed derived views preserve raw authority",
-      "transform": "Edit emitted text, replay saved observations, append results, retain media identities and reject unsupported requests",
+      "transform": "Edit emitted text, replay saved observations, append same-name function results in reverse call order while preserving precise raw arguments, retain media identities and strict request constraints, and reject unsupported requests",
       "budget": "Fixed process deadline, bounded output and loopback request/body limits; explicit ignored gate",
       "forbidden_effects": "No real credentials/Provider, environment proxy, automatic retry, tool execution or private configuration",
       "scope": "Only the pinned consumers and existing operations; test presence is not execution evidence or general Agent/production compatibility"

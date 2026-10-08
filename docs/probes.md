@@ -31,7 +31,7 @@ uv run --project tests/sdk --locked --offline python examples/probe.py report te
 - `plan --model` 可重复，将所选 Provider 缩小到精确模型子集。重复、未知或不属于所选 Provider 的模型在读取凭据前拒绝。省略模型筛选则包含所选 Provider 的全部已登记测试绑定，不能将此默认扩大解释为授权。
 - `run --model` 可重复，必须属于计划；`--protocol chat|responses`、`--delivery json|sse` 缩小范围。`--effort none|minimal|medium|max` 是明确请求控制，不自动改默认。
 - cases：`text`、`json`、`schema`、`tool`、`history`、`length`、`cancel`、`image`、`image_math`、`file`、`file_url`、`file_continue`、`file_replay`、`file_reasoning`、`file_reasoning_math`；`reasoning` 的目标限制读取 `examples/probe_support/scenarios.py`，不得套用到任意模型。
-- `json` 只请求 JSON object；`schema` 必须显式选择 Responses，每种交付两请求，使用 `text.format` 的固定 strict JSON Schema，实际 output 原样追加后续轮。独立 oracle 检查属性顺序、整数类型、固定标签和两轮数值；重复键、额外字段与代码围栏拒绝，不补救模型输出。预算沿用 run token cap（最多 2048）；不证明一般 Schema adherence，也不激活原本未准入的控制或模型。场景不进入默认矩阵。
+- `json` 只请求 JSON object。`schema` 的 live 执行按[strict 验证边界](implementation-plans/next-goal.md#strict-verification)暂停，保留离线场景/控制/oracle 回归；其既有定义为显式 Responses、每种交付两请求、固定 strict JSON Schema 与实际 output 回传。独立 oracle 检查属性顺序、整数类型、固定标签和两轮数值；重复键、额外字段与代码围栏拒绝。保留的 run token cap（最多 2048）及场景选择机制不构成恢复实测授权，场景不进入默认矩阵。
 - `image` 每个协议/交付一请求，使用程序生成的两张无敏感 PNG 与交错文本，提示限定固定基础色集合，oracle 严格检查按图片顺序返回颜色，不对细分色名做同义词容错；最多 512 输出 token，可显式 `--effort none`。不下载图片、不使用账号文件资源、不保存图片或正文；模型准入必须按 catalog 现场查询。独立 PNG 像素/预算守卫在 `tests/sdk/test_probe_core.py`，此场景不证明一般视觉理解质量。
 - `image_math` 每个协议/交付一请求，先从两张程序生成的方块图获得视觉计数，再计算固定算术式，以严格 JSON 数值 oracle 验收；预算取 run 的 token cap（最多 2048）。图片像素、计数和算术预期由独立离线检查保护。可用相同输入分别选取 `--effort none|minimal|medium|max`；档位的真实语义和支持按官方页面现场核对，不从名称推导强度排序。
 - `file` 的精确目标限制由 `scenarios.py` 与 catalog 维护，仅 Responses；每个交付两请求（首次提取 build marker、显式回传实际 output 与原始文件后提取 patch marker），JSON/SSE 合计四请求。使用程序生成的一页有效 PDF（小于 16 KiB）、最多 512 输出 tokens，marker 只在文件内，不在 prompt 提供答案；沿用共享账本、零重试和正文禁存。场景与文档结构的独立预期归 `tests/sdk/test_probe_core.py`，不证明一般 PDF 质量或扩大文件 URL/ID 准入。
@@ -110,9 +110,11 @@ uv run --project tests/sdk --locked --offline python examples/probe.py run \
 
 Rust 入口在凭据加载前验证计划选择，默认不做目录请求。显式 `MORPHIECORE_PROBE_LIST_MODELS=1` 的目录查询也占共享 request slot，不将“免费预检”当作预算外 I/O。所有 native 报告位于 run 子目录。
 
-库级 raw capture 默认关闭；仅另行授权的 synthetic forensic 调查才能启用 `MORPHIECORE_PROBE_CAPTURE=1`。会拒存包含当前 key 的数据并去掉已知 opaque/signature/credential 字段和 error 对象；这不是通用敏感数据脱敏器，也不授权生产内容捕获。redacted capture 不再是原始 wire 或可靠 replay oracle，不进入独立 fixtures。既有 `MORPHIECORE_PROBE_REPLAY_DIR` 和 `examples/replay_chat.rs` 保持离线，不加载 key；只能使用明确选定、符合其旧格式边界的历史 synthetic capture。
+库级 raw capture 默认关闭；仅另行授权的 synthetic forensic 调查才能启用 `MORPHIECORE_PROBE_CAPTURE=1`。会拒存包含当前 key 的数据并去掉已知 opaque/signature/credential 字段和 error 对象；这不是通用敏感数据脱敏器，也不授权生产内容捕获。redacted capture 不再是原始 wire 或可靠 replay oracle，不进入独立 fixtures。既有 `MORPHIECORE_PROBE_REPLAY_DIR` 和 `examples/replay_chat.rs` 保持离线，不加载 key；只能使用明确选定、符合对应格式边界的历史 synthetic capture。库级回放可用 `MORPHIECORE_PROBE_PROTOCOL`、`MORPHIECORE_PROBE_CASE`、`MORPHIECORE_PROBE_DELIVERY` 缩小读取范围，包括已捕获的 Responses `schema`/`image`，不因此发送请求。
 
-库级 `MORPHIECORE_PROBE_CASE=schema|image` 是显式单轮对照，不进入默认矩阵；必须选择 Responses，图片仅接受已固定的图片目标。Schema 使用与 SDK `schema` 同形的首轮 strict 约束，图片复用同字节的两张合成 PNG 和顺序提示。它们沿用共享账本、deadline、输出及捕获预算；单轮库级对照不能代替 SDK 两轮回传，也不放宽捕获授权。
+库级 `MORPHIECORE_PROBE_CASE=schema|image` 是显式单轮对照，不进入默认矩阵；必须选择 Responses，图片仅接受已固定的图片目标。Schema 使用与 SDK `schema` 同形的首轮 strict 约束，其 live 执行同样暂停；图片复用同字节的两张合成 PNG 和顺序提示。它们沿用共享账本、deadline、输出及捕获预算；单轮库级对照不能代替 SDK 两轮回传，也不放宽捕获授权。
+
+库级 probe 的下游 contract 独立于 Endpoint 请求准入，保留所选 public reported-fact policy 与可信 scope；Responses 使用标准 profile。不能把上游不接受某个控制误用为删除或拒绝响应已报告事实的理由。编码和 history 投影使用同一 client contract；请求侧仍按原 Endpoint 限制预检。
 
 ## pi
 

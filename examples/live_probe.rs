@@ -23,6 +23,7 @@ mod test_files;
 use morphiecore::{
     adapter::{Adapter, Dialect},
     execution::{Attempt, AttemptError, ResponseDelivery, admit, prepare},
+    lowering::generation::{GenerationRepresentationContract, ReportedFactPolicy},
     protocol::openai::{
         Profile,
         chat_sse::ChatSseDecoder,
@@ -42,6 +43,29 @@ use tokio::time::{Duration, sleep};
 const CALL_TIMEOUT: Duration = Duration::from_secs(120);
 const CALL_INTERVAL: Duration = Duration::from_secs(2);
 const CAPTURE_LIMIT: usize = 2 * 1024 * 1024;
+
+fn downstream_contract(
+    upstream: &GenerationRepresentationContract,
+    reported_facts: ReportedFactPolicy,
+) -> GenerationRepresentationContract {
+    // Input controls and reported output facts have independent admission.
+    GenerationRepresentationContract {
+        replay_origin: upstream.adaptation.scope.clone(),
+        reported_facts,
+        ..GenerationRepresentationContract::full()
+    }
+}
+
+fn downstream_adapter(profile: Profile, upstream: &GenerationRepresentationContract) -> Adapter {
+    Adapter::new(
+        profile,
+        match profile {
+            Profile::Responses => Dialect::Standard,
+            Profile::Chat => Dialect::MorphieCore,
+        },
+        upstream.adaptation.scope.clone(),
+    )
+}
 
 const TEXT_PROMPT: &str = "Reply with exactly the word pong.";
 const LENGTH_PROMPT: &str = "Write alpha 200 times separated by spaces. Do not summarize.";
@@ -673,11 +697,7 @@ async fn run_call_inner(
         ProtocolProfile::OpenAiChat => Profile::Chat,
         ProtocolProfile::OpenAiResponses => Profile::Responses,
     };
-    let client_adapter = Adapter::new(
-        family,
-        Dialect::MorphieCore,
-        ctx.endpoint.representation.adaptation.scope.clone(),
-    );
+    let client_adapter = downstream_adapter(family, &ctx.endpoint.representation);
     let decoded = match client_adapter.decode_request(&bytes) {
         Ok(request) => request,
         Err(error) => {
@@ -801,7 +821,7 @@ async fn run_call_inner(
     let mut raw_body: Vec<u8> = vec![];
     let mut delivery = ResponseDelivery::new(
         client_adapter.clone(),
-        ctx.endpoint.representation.clone(),
+        downstream_contract(&ctx.endpoint.representation, ctx.public.reported_facts),
         ctx.label,
         SseLimits::default(),
         chat_stream_options(),
@@ -912,8 +932,10 @@ async fn run_call_inner(
     };
     let (text, mut tool_call) = extract(&finished.semantic);
     if let Some(call) = &mut tool_call
-        && let Ok(projection) =
-            client_adapter.encode_response(finished, &ctx.endpoint.representation)
+        && let Ok(projection) = client_adapter.encode_response(
+            finished,
+            &downstream_contract(&ctx.endpoint.representation, ctx.public.reported_facts),
+        )
     {
         call.history = if family == Profile::Chat {
             vec![projection["choices"][0]["message"].clone()]
@@ -1191,13 +1213,43 @@ fn selection(name: &str, allowed: &[&str]) -> Option<String> {
 /// Replay only the fixed synthetic matrix captures, without credentials or I/O to providers.
 fn replay_capture(dir: &str) -> Result<(), String> {
     let topology = topology_catalog::default_topology().map_err(|e| e.to_string())?;
+    let public = topology.model("gpt-6-luna").expect("fixed public binding");
+    let protocol_only = selection("MORPHIECORE_PROBE_PROTOCOL", &["chat", "responses"]);
+    let delivery_only = selection("MORPHIECORE_PROBE_DELIVERY", &["json", "sse"]);
+    let case_only = selection(
+        "MORPHIECORE_PROBE_CASE",
+        &["text", "json_object", "tool", "schema", "image"],
+    );
+    let cases = match case_only.as_deref() {
+        Some("schema") => &[Case::Schema][..],
+        Some("image") => &[Case::Image][..],
+        _ => &CASES[..],
+    };
     let mut failures = 0;
     for (name, profile) in [("chat", Profile::Chat), ("responses", Profile::Responses)] {
+        if protocol_only
+            .as_deref()
+            .is_some_and(|selected| selected != name)
+        {
+            continue;
+        }
         let endpoint = topology
             .endpoint(&EndpointId::new(&format!("openrouter-{name}")).unwrap())
             .unwrap();
-        for case in CASES {
+        for &case in cases {
+            if case_only
+                .as_deref()
+                .is_some_and(|selected| selected != case.name())
+            {
+                continue;
+            }
             for delivery in [Delivery::Json, Delivery::Stream] {
+                if delivery_only
+                    .as_deref()
+                    .is_some_and(|selected| selected != delivery.name())
+                {
+                    continue;
+                }
                 let path = format!(
                     "{dir}/raw/gpt-6-luna-{name}-{}-{}-r1.resp.txt",
                     case.name(),
@@ -1214,11 +1266,7 @@ fn replay_capture(dir: &str) -> Result<(), String> {
                     if bytes.len() > CAPTURE_LIMIT {
                         return Err("capture limit".into());
                     }
-                    let client = Adapter::new(
-                        profile,
-                        Dialect::MorphieCore,
-                        endpoint.representation.adaptation.scope.clone(),
-                    );
+                    let client = downstream_adapter(profile, &endpoint.representation);
                     let mut attempt =
                         Attempt::new(endpoint.adapter(), CAPTURE_LIMIT, SseLimits::default());
                     attempt
@@ -1233,7 +1281,7 @@ fn replay_capture(dir: &str) -> Result<(), String> {
                         .map_err(|e| e.to_string())?;
                     let mut output = ResponseDelivery::new(
                         client.clone(),
-                        endpoint.representation.clone(),
+                        downstream_contract(&endpoint.representation, public.reported_facts),
                         "gpt-6-luna",
                         SseLimits::default(),
                         chat_stream_options(),
@@ -1661,6 +1709,129 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn downstream_reports_do_not_inherit_upstream_request_control_rejections() {
+        let mut upstream = GenerationRepresentationContract::full();
+        upstream.semantics.logprobs = false;
+        upstream.adaptation.scope =
+            Some(morphiecore::semantic::value::ReplayOrigin::new("synthetic-scope").unwrap());
+        let client = downstream_adapter(Profile::Responses, &upstream);
+        assert_eq!(
+            client.adaptation,
+            Adapter::new(
+                Profile::Responses,
+                Dialect::Standard,
+                upstream.adaptation.scope.clone()
+            )
+            .adaptation
+        );
+        let target = downstream_contract(&upstream, ReportedFactPolicy::Faithful);
+        assert_eq!(target.replay_origin, upstream.adaptation.scope);
+        assert_eq!(
+            downstream_contract(&upstream, ReportedFactPolicy::StrictComplete).reported_facts,
+            ReportedFactPolicy::StrictComplete
+        );
+        let requested = client.decode_request(br#"{"model":"synthetic","input":"hi","include":["message.output_text.logprobs"],"top_logprobs":1}"#).unwrap();
+        assert!(
+            client
+                .encode_request(&requested, "synthetic", &upstream)
+                .is_err()
+        );
+        let body = json!({"id":"response-local","object":"response","model":"synthetic",
+        "created_at":1,"status":"completed","usage":null,"output":[
+            {"id":"message-local","type":"message","role":"assistant","status":"completed",
+             "content":[{"type":"output_text","text":"synthetic","annotations":[],"logprobs":[]}]}
+        ]});
+        let mut attempt = Attempt::new(client.clone(), CAPTURE_LIMIT, SseLimits::default());
+        attempt.begin(200, "application/json").unwrap();
+        attempt.push(&serde_json::to_vec(&body).unwrap()).unwrap();
+        attempt.finish().unwrap();
+        assert!(
+            client
+                .encode_response(attempt.response().unwrap(), &upstream)
+                .is_err()
+        );
+        let mut delivery = ResponseDelivery::new(
+            client.clone(),
+            target.clone(),
+            "public",
+            SseLimits::default(),
+            chat_stream_options(),
+            Obfuscation::Disabled,
+        );
+        let bytes = delivery.encode_json(&attempt).unwrap();
+        let result: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(result["model"], "public");
+        assert_eq!(result["output"], body["output"]);
+        client.decode_response(&bytes).unwrap();
+        delivery.commit().unwrap();
+        delivery.complete(&attempt).unwrap();
+        assert!(!upstream.semantics.logprobs);
+
+        let mut initial = body.clone();
+        initial["status"] = json!("in_progress");
+        initial["output"] = json!([]);
+        let item = &body["output"][0];
+        let part = &item["content"][0];
+        let events = [
+            json!({"type":"response.created","response":initial}),
+            json!({"type":"response.output_item.added","output_index":0,
+                "item":{"id":"message-local","type":"message","role":"assistant","status":"in_progress","content":[]}}),
+            json!({"type":"response.content_part.added","output_index":0,"item_id":"message-local","content_index":0,
+                "part":{"type":"output_text","text":"","annotations":[],"logprobs":[]}}),
+            json!({"type":"response.output_text.delta","output_index":0,"item_id":"message-local","content_index":0,
+                "delta":"synthetic","logprobs":[]}),
+            json!({"type":"response.output_text.done","output_index":0,"item_id":"message-local","content_index":0,
+                "text":"synthetic","logprobs":[]}),
+            json!({"type":"response.content_part.done","output_index":0,"item_id":"message-local","content_index":0,"part":part}),
+            json!({"type":"response.output_item.done","output_index":0,"item":item}),
+            json!({"type":"response.completed","response":body}),
+        ];
+        let mut attempt = Attempt::new(client.clone(), CAPTURE_LIMIT, SseLimits::default());
+        attempt.begin(200, "text/event-stream").unwrap();
+        let mut delivery = ResponseDelivery::new(
+            client,
+            target,
+            "public",
+            SseLimits::default(),
+            chat_stream_options(),
+            Obfuscation::Disabled,
+        );
+        let mut rendered = Vec::new();
+        for (index, mut event) in events.into_iter().enumerate() {
+            event["sequence_number"] = json!(index);
+            let frame =
+                morphiecore::protocol::openai::sse::encode_frame(&event, CAPTURE_LIMIT).unwrap();
+            let (used, semantic) = attempt.push(&frame).unwrap();
+            assert_eq!(used, frame.len());
+            for frame in delivery.encode_events(&attempt, &semantic).unwrap() {
+                rendered.extend_from_slice(&frame);
+            }
+        }
+        attempt.finish().unwrap();
+        for frame in delivery.finish_stream(&attempt).unwrap() {
+            rendered.extend_from_slice(&frame);
+        }
+        let mut consumer =
+            ResponsesSseDecoder::new(200, "text/event-stream", SseLimits::default(), None).unwrap();
+        feed(
+            &mut |chunk| {
+                consumer
+                    .consume(chunk)
+                    .map(|(used, _)| used)
+                    .map_err(|_| "synthetic stream".into())
+            },
+            &rendered,
+        )
+        .unwrap();
+        consumer.finish().unwrap();
+        let decoded = consumer.materialize().unwrap();
+        assert_eq!(decoded.semantic, attempt.response().unwrap().semantic);
+        assert_eq!(decoded.metadata.model, "public");
+        delivery.commit().unwrap();
+        delivery.complete(&attempt).unwrap();
+    }
+
     #[test]
     fn schema_and_image_forensics_are_opt_in_and_match_fixed_synthetic_inputs() {
         use base64::Engine;

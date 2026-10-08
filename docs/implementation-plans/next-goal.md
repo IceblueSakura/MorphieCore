@@ -8,6 +8,10 @@ Agent runtime 与恢复不列入本项目的实施或延期目标；职责边界
 
 **先功能，后稳定性专项。** 近期优先正常功能、标准消费与必要回传；不主动扩展上游 HTTP 失败、非标准 JSON/解压失败、断流或慢消费者等异常矩阵，不将其作为新增功能的前置。现有认证、预算、取消、严格终态及拒绝回归继续保留；实际阻断所选功能的问题按最低 owner 修复，不借机扩展通用重试、调度或诊断框架。
 
+<a id="strict-verification"></a>
+
+**Strict 约束的验证边界。** strict JSON Schema 与 strict function tools 暂仅执行静态/离线验证，包括 pure IR、codec/lowering 及固定 SDK 的 synthetic loopback 组合；不执行真实 Provider 的 strict 能力/adherence 验证，也不以其稳定支持作为当前退出条件。保留 strict/default、Schema 顺序/精度、参数/结果关联与未准入拒绝，不删除约束或改变公共合同。既有 strict live probe 保留但暂停执行；未来恢复须重新明确范围。普通文本、非 strict 工具/history 与媒体功能仍可按授权独立验证。
+
 本页维护推荐优先级、依赖和选片条件，不是实现完成声明或操作授权。有效合同归 [Semantic Model](../architecture/semantic-ir.md)，已定稿行为切片及其当前状态只归 [current-focus](current-focus.md)，实际缺口归[实施边界](../implementation-status/generation.md)，等待证据的问题归[待决状态](../implementation-status/open-questions.md)。
 
 ## 推进顺序与退出条件
@@ -37,7 +41,7 @@ Agent runtime 与恢复不列入本项目的实施或延期目标；职责边界
 
 文本、单/多 function/history 与 reasoning 的基础交付—保存—追加—回传作为维护和后续输入，不重复排期。独立预期归 [history continuation](../../tests/semantic/history_continuation.rs)、[reasoning](../../tests/semantic/reasoning.rs)与[固定 SDK gate](../../tests/sdk_loopback.rs)；reported final opaque 与未报告 opaque 分别验收，现行 scope、finality 和编辑失效边界不变。
 
-Structured Outputs 的 strict/default、Schema 顺序/精度与已有图片/基础文件组合复用 [Schema](../../tests/semantic/schema.rs)、[Provider profiles](../../tests/semantic/provider_profiles.rs)及 SDK 回归。正常功能 probe 区分 JSON object、两轮 strict Schema、工具 history 和固定基础色/文件场景，操作归[probe 指南](../probes.md)。这些是可复用验收入口，不是动态能力表；真实目标与执行证据每次独立报告，不从某次通过推定完整标准、全部 Provider 或一般输出质量。
+Structured Outputs 的 strict/default、Schema 顺序/精度与已有图片/基础文件组合复用 [Schema](../../tests/semantic/schema.rs)、[Provider profiles](../../tests/semantic/provider_profiles.rs)及 SDK 回归；strict 场景遵守上文[离线验证边界](#strict-verification)。正常功能 probe 的 JSON object、非 strict 工具 history 和固定基础色/文件场景归[probe 指南](../probes.md)。这些是可复用验收入口，不是动态能力表；真实目标与执行证据每次独立报告，不从某次通过推定完整标准、全部 Provider 或一般输出质量。
 
 | 单元 | 输入、实施范围与 owning sources | 验收与停止点 |
 |---|---|---|

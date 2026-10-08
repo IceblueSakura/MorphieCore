@@ -2,7 +2,7 @@
 
 ## 当前范围
 
-**当前没有运行中的代码行为切片。** 后续按[next-goal](next-goal.md#近期实施单元与停止点)定稿 F5 的跨协议分组/回传取舍或具体新消费差异；不自动扩大准入，不把通过的拒绝测试当成功能扩展。
+**当前没有运行中的代码行为切片。** 后续按[next-goal](next-goal.md#近期实施单元与停止点)定稿 F5 的跨协议分组/回传取舍或具体新消费差异；不自动扩大准入，不把通过的拒绝测试当成功能扩展。strict JSON Schema 与 strict function tools 遵守[仅静态/离线验证边界](next-goal.md#strict-verification)，不恢复真实 adherence 验证。
 
 文本/function/history、reasoning、资源/引用、Replay/cache、具名投影和原 usage 的现有 owner 与回归作为输入，不重复建设；合同归[交互模型](../architecture/interaction-contract.md)，独立预期及来源追溯归[用例清单](../../tests/fixtures/client_managed_cases.json)，执行与验收方法归[开发指南](../development.md)。固定 SDK 的保存/追加/回传区分 reported final opaque 与未报告 opaque；外部 Provider 的接入验收不能由 synthetic gate 替代。
 

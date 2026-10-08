@@ -17,6 +17,36 @@ use std::{
     time::Duration,
 };
 use tokio::{net::TcpListener, process::Command, sync::oneshot};
+fn tool_response(turn: u8) -> Value {
+    let mut response = wire::response(turn);
+    if turn == 1 {
+        response["output"].as_array_mut().unwrap().push(json!({
+            "id":"function-large","type":"function_call","call_id":"c_lookup_large",
+            "name":"lookup","arguments":" { \"n\": 9007199254740993 } ","status":"completed"
+        }));
+    }
+    response
+}
+fn tool_events(turn: u8) -> Vec<Value> {
+    let mut events = wire::events(turn);
+    if turn == 1 {
+        let mut terminal = events.pop().unwrap();
+        terminal["response"] = tool_response(turn);
+        events.extend([
+            json!({"type":"response.output_item.added","output_index":4,
+                "item":{"id":"function-large","type":"function_call","call_id":"c_lookup_large",
+                    "name":"lookup","arguments":"","status":"in_progress"}}),
+            json!({"type":"response.function_call_arguments.delta","output_index":4,
+                "item_id":"function-large","delta":" { \"n\": 9007199254740993 } "}),
+            json!({"type":"response.function_call_arguments.done","output_index":4,
+                "item_id":"function-large","arguments":" { \"n\": 9007199254740993 } "}),
+            json!({"type":"response.output_item.done","output_index":4,
+                "item":tool_response(turn)["output"][4]}),
+            terminal,
+        ]);
+    }
+    events
+}
 fn owner_response() -> Value {
     let mut value = wire::response(2);
     value["output"] = json!([
@@ -125,6 +155,26 @@ async fn provider(
             request["reasoning"],
             json!({"summary": if turn == 1 { json!("auto") } else { Value::Null }})
         );
+        assert_eq!(request["tools"][0]["strict"], true);
+        assert_eq!(
+            request["tools"][0]["parameters"],
+            json!({
+                "type":"object","properties":{"n":{"type":"integer"}},
+                "required":["n"],"additionalProperties":false
+            })
+        );
+        if turn == 2 {
+            assert_eq!(
+                request["text"],
+                json!({"format":{
+                    "type":"json_schema","name":"answer","strict":true,"schema":{
+                        "type":"object","properties":{"ok":{"type":"boolean"}},
+                        "required":["ok"],"additionalProperties":false}
+                }})
+            );
+        } else {
+            assert!(request.get("text").is_none());
+        }
     }
     if turn == 2 {
         let history = request[if chat { "messages" } else { "input" }]
@@ -136,6 +186,32 @@ async fn provider(
                 && item["content"] == "{\"n\":1}"));
         } else {
             assert!(history.iter().any(|item|item["type"]=="function_call" && item["arguments"]=="{\"n\":1}"));
+            assert_eq!(
+                history
+                    .iter()
+                    .filter(|item| item["type"] == "function_call")
+                    .map(|item| (
+                        item["call_id"].as_str().unwrap(),
+                        item["name"].as_str().unwrap(),
+                        item["arguments"].as_str().unwrap()
+                    ))
+                    .collect::<Vec<_>>(),
+                [
+                    ("c_lookup", "lookup", "{\"n\":1}"),
+                    ("c_lookup_large", "lookup", " { \"n\": 9007199254740993 } ")
+                ]
+            );
+            assert_eq!(
+                history
+                    .iter()
+                    .filter(|item| item["type"] == "function_call_output")
+                    .cloned()
+                    .collect::<Vec<_>>(),
+                [
+                    json!({"type":"function_call_output","call_id":"c_lookup_large","output":"{\"n\":9007199254740993}"}),
+                    json!({"type":"function_call_output","call_id":"c_lookup","output":"{\"n\":1}"})
+                ]
+            );
             assert!(
                 history
                     .iter()
@@ -171,7 +247,7 @@ async fn provider(
         } else if chat {
             chat_wire::events(turn)
         } else {
-            wire::events(if nonstandard_usage { 2 } else { turn })
+            tool_events(if nonstandard_usage { 2 } else { turn })
         };
         for (sequence, mut value) in frames.into_iter().enumerate() {
             if !chat {
@@ -200,7 +276,7 @@ async fn provider(
         } else if chat {
             chat_wire::response(turn)
         } else {
-            wire::response(if nonstandard_usage { 2 } else { turn })
+            tool_response(if nonstandard_usage { 2 } else { turn })
         }))
         .unwrap()
     };

@@ -98,6 +98,11 @@ def run(base_url: str) -> None:
                 params = dict(model="public-model", input=history, instructions="Answer precisely",
                               store=False, tools=tools, tool_choice="auto" if turn == 1 else "none",
                               reasoning={"summary": "auto" if turn == 1 else None})
+                if turn == 2:
+                    params["text"] = {"format": {"type": "json_schema", "name": "answer",
+                        "strict": True, "schema": {"type": "object",
+                            "properties": {"ok": {"type": "boolean"}},
+                            "required": ["ok"], "additionalProperties": False}}}
                 if stream:
                     completed = 0
                     with client.responses.stream(**params) as events:
@@ -113,10 +118,16 @@ def run(base_url: str) -> None:
                 if turn == 1:
                     dumped = [item.model_dump(exclude_none=True) for item in result.output]
                     check({item["call_id"] for item in dumped if item["type"] in (
-                        "function_call", "custom_tool_call")} == {"c_lookup", "c_sql"})
+                        "function_call", "custom_tool_call")} == {"c_lookup", "c_lookup_large", "c_sql"})
+                    functions = [item for item in dumped if item["type"] == "function_call"]
+                    check([(item["call_id"], item["name"], item["arguments"]) for item in functions]
+                          == [("c_lookup", "lookup", '{"n":1}'),
+                              ("c_lookup_large", "lookup", ' { "n": 9007199254740993 } ')])
+                    check(functions[1]["parsed_arguments"] == {"n": 9007199254740993})
                     check(any(item.get("encrypted_content") == "synthetic-final-token" for item in dumped))
                     history.extend(dumped)
                     history.extend([
+                        {"type": "function_call_output", "call_id": "c_lookup_large", "output": '{"n":9007199254740993}'},
                         {"type": "function_call_output", "call_id": "c_lookup", "output": '{"n":1}'},
                         {"type": "custom_tool_call_output", "call_id": "c_sql", "output": "1"},
                     ])
