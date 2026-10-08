@@ -32,11 +32,10 @@ pub enum Dialect {
     Xiaomi,
     OpenRouter,
     OpenCodeGo,
-    LongCat,
     ModelBest,
     Nvidia,
     Bailian,
-    Kimi,
+    BailianTokenPlan,
     Zhipu,
 }
 impl Dialect {
@@ -123,18 +122,6 @@ impl Dialect {
                     ..Default::default()
                 },
             ),
-            Self::LongCat => (
-                "longcat-v1",
-                WireRules {
-                    readable_reasoning: true,
-                    legacy_max_tokens: true,
-                    chat_stop_diagnostics: true,
-                    zero_usage_details: true,
-                    responses_usage_detail_view: true,
-                    chunk_created_drift: true,
-                    ..Default::default()
-                },
-            ),
             // Hosted Chat grammar and readable reasoning are distinct from
             // reasoning control admission; no native Responses operation is inferred.
             // https://github.com/OpenBMB/MiniCPM-V/blob/main/docs/api.md
@@ -167,9 +154,16 @@ impl Dialect {
                     ..Default::default()
                 },
             ),
-            Self::Bailian => (
-                "bailian-v1",
+            Self::Bailian | Self::BailianTokenPlan => (
+                if self == Self::BailianTokenPlan {
+                    "bailian-tokenplan-v1"
+                } else {
+                    "bailian-v1"
+                },
                 WireRules {
+                    // Scope timestamp normalization to the plan's Chat carrier.
+                    chunk_created_drift: self == Self::BailianTokenPlan,
+                    empty_continuation_call_id: self == Self::BailianTokenPlan,
                     readable_reasoning: true,
                     legacy_max_tokens: true,
                     inactive_chat_fields: true,
@@ -183,14 +177,6 @@ impl Dialect {
                     // Modality counters are reported facts, never inferred from images.
                     // https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions
                     chat_image_usage: true,
-                    ..Default::default()
-                },
-            ),
-            Self::Kimi => (
-                "kimi-v1",
-                WireRules {
-                    readable_reasoning: true,
-                    legacy_max_tokens: true,
                     ..Default::default()
                 },
             ),
@@ -288,9 +274,14 @@ pub enum AdapterError {
 }
 impl Adapter {
     pub fn new(protocol: Profile, dialect: Dialect, scope: Option<ReplayOrigin>) -> Self {
+        let mut adaptation = dialect.adaptation(scope);
+        if dialect == Dialect::BailianTokenPlan && protocol != Profile::Chat {
+            adaptation.rules.chunk_created_drift = false;
+            adaptation.rules.empty_continuation_call_id = false;
+        }
         Self {
             protocol,
-            adaptation: dialect.adaptation(scope),
+            adaptation,
         }
     }
     pub fn contract(

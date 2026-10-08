@@ -403,6 +403,7 @@ impl EventDecoder {
                     Some(value) => object(value)?,
                 };
                 fields(f, &["name", "arguments"])?;
+                let established = n < self.chat_calls.len();
                 let item = if n == self.chat_calls.len() {
                     let item = self.allocate_item()?;
                     let kind = ItemKind::ToolCall {
@@ -448,7 +449,14 @@ impl EventDecoder {
                     Some(Value::String(s)) if s == expected => Ok(()),
                     _ => Err(CodecError::Invalid("call identity")),
                 };
-                same_identity(call.get("id"), call_id.as_str())?;
+                // Only this named continuation sentinel denotes an omitted ID.
+                // Initial/unknown-index calls still require their own identity.
+                if !(established
+                    && self.adaptation.rules.empty_continuation_call_id
+                    && call.get("id").and_then(Value::as_str) == Some(""))
+                {
+                    same_identity(call.get("id"), call_id.as_str())?;
+                }
                 same_identity(f.get("name"), name.as_str())?;
                 if let Some(v) = f.get("arguments").filter(|v| !v.is_null()) {
                     let fragment = v.as_str().ok_or(CodecError::Invalid("arguments"))?;

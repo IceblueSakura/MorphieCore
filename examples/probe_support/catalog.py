@@ -54,13 +54,6 @@ BINDINGS = (
         ("chat", "responses"),
     ),
     (
-        "longcat",
-        "longcat-2.5-preview",
-        "longcat-api-key",
-        None,
-        ("chat", "responses"),
-    ),
-    (
         "aliyun-dashscope-cn",
         "qwen3.8-max",
         "aliyun-dashscope-cn-api-key",

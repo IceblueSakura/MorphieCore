@@ -347,14 +347,17 @@ impl EventDecoder {
             // Response identity is strict; providers re-stamp scalar facts such
             // as `created` and `system_fingerprint` per chunk, so the first
             // reported value binds and later drift is normalized away.
-            if old.id != m.id || old.model != m.model {
-                return Err(CodecError::Invalid("metadata changed"));
+            if old.id != m.id {
+                return Err(CodecError::Invalid("response id changed"));
+            }
+            if old.model != m.model {
+                return Err(CodecError::Invalid("response model changed"));
             }
             if old.created != m.created {
                 if !(self.adaptation.rules.chunk_metadata_drift
                     || self.adaptation.rules.chunk_created_drift)
                 {
-                    return Err(CodecError::Invalid("metadata changed"));
+                    return Err(CodecError::Invalid("created changed"));
                 }
                 m.created = old.created.clone();
             }

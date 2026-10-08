@@ -71,4 +71,8 @@ Chat `response_format` 与 Responses `text.format` 共享输出意图，但 wrap
 
 具名 normalization 可处理 continuation 的 absent/null delta、checked index、空 opening 或 metadata drift，但 id/model/工具身份及实际内容冲突仍失败。投影事件与静态结果必须一致，不能靠 SDK accumulator 的宽松推断补 finish、audio 或其他内容。
 
+Token Plan 的 `bailian-tokenplan-v1` Chat profile 仅允许已验证 `created` 的逐 chunk 漂移，并固定首次值；不允许 id/model、fingerprint 或 service tier 冲突，不接受非法时间戳。普通 Bailian、Standard 及 Token Plan Responses 不继承这一规则。选择来自受信 adapter/binding，不由请求指定。
+
+同一 profile 的 `empty_continuation_call_id` 只将已建立调用、同一 index 的后续空 `id` 视为省略，沿用既有身份；不接受初始空 ID、未知 index、非空身份冲突或空/冲突名称。它不改变参数片段、调用关联或其他 profile 的严格检查。
+
 当前应用层 budget、背压、publication/commit、取消与 late-error 行为归[执行合同](execution-model.md)；改变 Chat 兼容策略不能改变它们。Owners：[transport checks](../../tests/transport/chat.rs)、[event codec](../../src/protocol/openai/events/mod.rs)和[SDK consumer](../../tests/sdk/chat_text_loop.py)。执行命令见[开发指南](../development.md)，结果不写入 profile。

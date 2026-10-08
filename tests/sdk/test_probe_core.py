@@ -23,6 +23,22 @@ def reserve_worker(path, number):
 
 
 class ProbeCoreTests(unittest.TestCase):
+    def test_removed_provider_selections_are_rejected(self):
+        from probe_support.catalog import select_bindings
+        for provider in ("longcat", "kimi"):
+            with self.assertRaises(RuntimeError):
+                select_bindings(provider)
+
+    def test_image_oracle_separates_format_and_color_without_accepting_either_failure(self):
+        from probe_support.scenarios import expect_image, image_observation
+        for value, code in (("red, blue","image_answer_format"), ("blue,red","image_answer_colors"),
+                            ("orange,blue","image_answer_colors"), ("red,blue.","image_answer_format")):
+            with self.assertRaises(ProbeFailure) as raised:
+                expect_image(value, [], [])
+            self.assertEqual(raised.exception.code, code)
+        expect_image("red,blue", [], [])
+        self.assertEqual(image_observation("red, blue"), {"image_answer_format_ok":False,"image_color_order_ok":True})
+
     def test_source_fingerprint_includes_typescript_and_toolchain(self):
         from probe_support.ledger import source_fingerprint
         with tempfile.TemporaryDirectory() as temp:
@@ -47,8 +63,8 @@ class ProbeCoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             run = Run.create(
                 Path(temp) / "run",
-                providers="xiaomi,longcat",
-                models=["mimo-v2.6-flash", "longcat-2.5-preview"],
+                providers="xiaomi,deepseek",
+                models=["mimo-v2.6-flash", "deepseek-flash"],
                 limit=72,
             )
             run = Run(run.directory)
@@ -361,9 +377,9 @@ class ProbeCoreTests(unittest.TestCase):
             run = Run.create(Path(temp) / "run", limit=1)
             view = run.plan
             view["limit"] = 99
-            view["models"].append("kimi-k3")
+            view["models"].append("synthetic-unselected")
             self.assertEqual(run.plan["limit"], 1)
-            self.assertNotIn("kimi-k3", run.plan["models"])
+            self.assertNotIn("synthetic-unselected", run.plan["models"])
             identity = run.reserve("nemotron-3-super", "first", 8)
             with patch(
                 "probe_support.ledger.time.time", return_value=run.plan["expires"] + 1

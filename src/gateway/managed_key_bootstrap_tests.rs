@@ -31,6 +31,48 @@ fn setup() -> (tempfile::TempDir, CredentialManager) {
     (dir, manager)
 }
 #[test]
+fn explicit_selection_ignores_unrelated_unregistered_pools_without_activating_them() {
+    let (dir, manager) = setup();
+    manager
+        .add_api_key(
+            "retired",
+            "one",
+            Secret::new("synthetic-retired".into()).unwrap(),
+        )
+        .unwrap();
+    manager
+        .set_pool(
+            "retired",
+            "retired-api-key",
+            0,
+            CredentialPool {
+                members: vec![CredentialRef::ApiKey {
+                    alias: "one".into(),
+                }],
+                fallback: false,
+                max_attempts: 1,
+            },
+        )
+        .unwrap();
+    assert!(Bootstrap::from_directory(dir.path()).is_err());
+    manager.write_gateway_config_for_test(&serde_json::json!({
+        "client_key":"synthetic-gateway-key-at-least-32-bytes","models":["deepseek-flash"]
+    }));
+    let boot = Bootstrap::from_directory(dir.path()).unwrap();
+    assert_eq!(boot.gateway.state.entries.len(), 2);
+    manager.write_gateway_config_for_test(&serde_json::json!({
+        "client_key":"synthetic-gateway-key-at-least-32-bytes","models":["retired-model"]
+    }));
+    assert!(Bootstrap::from_directory(dir.path()).is_err());
+    assert!(
+        manager
+            .pools()
+            .unwrap()
+            .iter()
+            .any(|(provider, _, _)| provider == "retired")
+    );
+}
+#[test]
 fn modelbest_pool_binds_distinct_chat_targets_and_vision_is_not_text_admission() {
     let dir = crate::credential::test_support::private_directory();
     let manager = CredentialManager::new(dir.path(), vec![]).unwrap();

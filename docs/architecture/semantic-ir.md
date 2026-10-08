@@ -7,7 +7,7 @@ MorphieCore 的核心是**独立、可复用的模型交互语义体系**：承�
 ## 1. 语义权威与消费者
 
 - **Semantic Model** 定义内容、操作、identity、关系、合法状态与变化的含义；**IR** 是其 typed 值、请求、结果及适用事件的实现。
-- OpenAI Responses 是主要客户端接口与参考，不是 IR 的字段模板或表达力上限。Responses、Google Interactions 与 Anthropic Messages 共同检验请求型 Generation 的概念、关系和状态；不采用协议最小交集、机械字段并集或 raw SDK DTO。设计参照不等于新增原生 codec 或产品准入，实施范围归[ClientManaged IR 计划](../implementation-plans/client-managed-ir.md)。
+- OpenAI Responses 是主要客户端接口与参考，不是 IR 的字段模板或表达力上限。Responses、Google Interactions 与 Anthropic Messages 共同检验请求型 Generation 的概念、关系和状态；不采用协议最小交集、机械字段并集或 raw SDK DTO。设计参照不等于新增原生 codec 或产品准入，实施范围归[当前焦点](../implementation-plans/current-focus.md)，后续选片与延期归[后续计划](../implementation-plans/next-goal.md)。
 - 每个概念只有一个 owner。Typed 能力域与 scoped 值属于同一权威；它们不自动成为自定义 HTTP 字段。Fidelity 仅保存有界表示/来源/依赖记录，不保留竞争的语义正文。
 - Gateway 与未来 Agent 都经过 validation、requirements、目标投影与执行边界。Agent 可通过类型化库接口使用语义能力，不必先编码 Responses 再解码回来；这不是新增公开私有 API，也不绕过准入。
 - Agent 的规划、记忆选择、工具执行、预算调度与循环策略属于 Agent runtime。IR 表达交互和执行报告，不成为任意可执行 DAG 或通用工作流引擎。

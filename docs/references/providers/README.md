@@ -48,17 +48,6 @@ Messages 基础合同、beta 能力及各云平台的 wrapper/资源合同分别
 - [JSON output](https://api-docs.deepseek.com/guides/json_mode/)、[function calling](https://api-docs.deepseek.com/guides/function_calling/)、[strict tools](https://api-docs.deepseek.com/guides/tool_calls/)
 - [Thinking](https://api-docs.deepseek.com/guides/thinking_mode)、[vision](https://api-docs.deepseek.com/guides/vision)
 
-## Kimi
-
-- [API overview](https://platform.kimi.com/docs/api/overview)、[Chat](https://platform.kimi.com/docs/api/chat)
-- [Models and parameters](https://platform.kimi.com/docs/api/models-overview)
-
-## LongCat
-
-- [Quick start](https://longcat.chat/platform/docs/)
-- [Chat reference](https://longcat.chat/platform/docs/api/chat.html)
-- [Codex configuration](https://longcat.chat/platform/docs/Codex.html)
-
 ## NVIDIA
 
 - [NIM LLM API reference](https://docs.nvidia.com/nim/large-language-models/latest/api-reference.html)

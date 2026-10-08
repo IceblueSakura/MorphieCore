@@ -55,6 +55,21 @@ fn decode_failure(error: &crate::execution::AttemptError) -> &'static str {
     };
     match codec {
         CodecError::Invalid(label) => match *label {
+            "response id changed" => "metadata_id_changed",
+            "response model changed" => "metadata_model_changed",
+            "created changed" => "metadata_created_changed",
+            "JSON" => "invalid_json",
+            "object" | "response object" => "invalid_object",
+            "chunk object" => "invalid_chunk_object",
+            "id" | "model" | "created time" | "timestamp" => "invalid_metadata_shape",
+            "choices" => "invalid_choices",
+            "call identity" => "invalid_call_identity",
+            "delta" | "role" => "invalid_delta",
+            "usage tail" => "invalid_usage_tail",
+            "early usage" => "invalid_early_usage",
+            "chunk after finish" | "content after finish" | "repeated finish" => {
+                "invalid_after_finish"
+            }
             "sequence" => "invalid_sequence",
             "metadata changed" | "service tier changed" | "fingerprint changed" => {
                 "invalid_metadata"
@@ -480,6 +495,11 @@ mod tests {
             Some("invalid_terminal_snapshot")
         );
         for (label, expected) in [
+            ("chunk object", "invalid_chunk_object"),
+            ("created changed", "metadata_created_changed"),
+            ("choices", "invalid_choices"),
+            ("usage tail", "invalid_usage_tail"),
+            ("synthetic-private-field", "invalid_other"),
             ("terminal snapshot replay added", "snapshot_replay_added"),
             (
                 "terminal snapshot replay removed",

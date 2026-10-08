@@ -60,6 +60,9 @@ pub struct WireRules {
     pub chunk_metadata_drift: bool,
     /// Normalize timestamp drift only, without permitting fingerprint changes.
     pub chunk_created_drift: bool,
+    /// Empty IDs on continuation chunks retain an already announced call identity.
+    /// Initial IDs and function names stay strict; this never creates a call.
+    pub empty_continuation_call_id: bool,
     /// Bounded, source-bound router and billing facts, never task semantics.
     pub routing_extras: bool,
     /// A readable alias must not conflict with the canonical reasoning carrier.
@@ -92,8 +95,6 @@ pub struct WireRules {
     pub reported_request_id: bool,
     /// Normalize only explicit integer-zero unsupported usage details.
     pub zero_usage_details: bool,
-    /// Validate an exact duplicate Chat-named input detail view on Responses.
-    pub responses_usage_detail_view: bool,
     /// Only an explicit null billing placeholder is inactive. Real billing needs
     /// its own owner; this does not admit or discard vendor usage detail views.
     pub null_response_billing: bool,

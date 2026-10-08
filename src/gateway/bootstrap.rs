@@ -205,7 +205,9 @@ impl Bootstrap {
                     endpoint: binding.endpoint_id(),
                 });
             }
-            if !known {
+            // Explicit selection cannot activate an unrelated stale pool.
+            // Unfiltered startup still rejects unknown configuration.
+            if !known && selected.is_none() {
                 return Err(StartupError::Binding);
             }
             if used {

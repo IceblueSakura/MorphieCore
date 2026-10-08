@@ -1,4 +1,4 @@
-"""Provider matrix selection over the shared bounded runner; Kimi remains paused."""
+"""Provider matrix selection over the shared bounded runner."""
 
 from probe_support.entry import entry
 

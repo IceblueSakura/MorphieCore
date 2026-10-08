@@ -69,15 +69,6 @@ pub const MODELS: &[ModelDefinition] = &[
         released_at: 1_790_035_200,
         developer: "OpenAI",
     },
-    // Source: https://longcat.chat/platform/docs/zh/change-log (2026-09-25).
-    ModelDefinition {
-        id: "longcat-2.5-preview",
-        images: false,
-        files: false,
-        strict_tools: false,
-        released_at: 1_790_294_400,
-        developer: "Meituan",
-    },
     // Source: https://blogs.nvidia.com/blog/nemotron-3-super-agentic-ai/ (2026-03-11).
     ModelDefinition {
         id: "nemotron-3-super",
@@ -140,15 +131,6 @@ pub const MODELS: &[ModelDefinition] = &[
         strict_tools: false,
         released_at: 1_787_875_200,
         developer: "Tencent",
-    },
-    // Source: https://www.moonshot.ai/ -> https://www.kimi.ai/blog/kimi-k3 (2026-07-16).
-    ModelDefinition {
-        id: "kimi-k3",
-        images: false,
-        files: false,
-        strict_tools: false,
-        released_at: 1_784_160_000,
-        developer: "Moonshot AI",
     },
     // Source: https://docs.bigmodel.cn/cn/update/new-releases#2026-8-19 (2026-08-19).
     ModelDefinition {

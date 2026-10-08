@@ -64,6 +64,7 @@ NUMBERS = {
     "event_items", "event_reasoning_items", "event_parts", "event_deltas", "event_item_closures",
 }
 BOOLS = {
+    "image_answer_format_ok", "image_color_order_ok",
     "sdk_consumed",
     "image_decoded", "image_usage_omitted", "image_billing_omitted",
     "wire_closed",
@@ -74,6 +75,10 @@ BOOLS = {
 }
 ENUMS = {
     "decode_failure": {"invalid_sequence", "invalid_metadata", "invalid_item_snapshot",
+        "metadata_id_changed", "metadata_model_changed", "metadata_created_changed",
+        "invalid_json", "invalid_object", "invalid_chunk_object", "invalid_metadata_shape",
+        "invalid_choices", "invalid_delta", "invalid_usage_tail", "invalid_early_usage", "invalid_after_finish",
+        "invalid_call_identity",
         "invalid_terminal_snapshot", "invalid_value_snapshot", "invalid_reasoning",
         "invalid_probabilities", "invalid_item", "invalid_identity", "invalid_other",
         "unsupported", "event_identity", "event_lifecycle", "limit", "missing_terminal",
@@ -82,6 +87,7 @@ ENUMS = {
         "snapshot_replay_added", "snapshot_replay_removed", "snapshot_replay_changed",
         "snapshot_text", "snapshot_annotations", "snapshot_probability_presence", "snapshot_probabilities"},
     "oracle_failure": {
+        "image_answer_calls", "image_answer_format", "image_answer_colors",
         "exact_text", "image_format", "image_decode", "image_pixels", "visual_math_format", "visual_math_value",
         "visual_math_calls", "file_marker", "file_math", "missing_opaque", "unexpected_terminal", "other",
     },

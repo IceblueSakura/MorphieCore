@@ -274,7 +274,12 @@ fn opencode_go_usage_tail_can_repeat_only_the_existing_finish_without_new_conten
 
 #[test]
 fn transport_markers_and_stop_diagnostics_do_not_replace_semantic_terminals() {
-    let provider = adapter(Dialect::LongCat);
+    // Shared diagnostic slots remain tested independently of product bindings.
+    let mut provider = adapter(Dialect::Standard);
+    provider.adaptation.rules.readable_reasoning = true;
+    provider.adaptation.rules.chat_stop_diagnostics = true;
+    provider.adaptation.rules.zero_usage_details = true;
+    provider.adaptation.rules.chunk_created_drift = true;
     let mut value = body();
     value["lastOne"] = json!(false);
     value["choices"][0]["delta"] = Value::Null;
@@ -432,17 +437,10 @@ fn reported_text_usage_is_typed_even_when_a_view_equals_the_total() {
 }
 
 #[test]
-fn responses_duplicate_usage_details_are_scoped_and_conflicts_poison_snapshots() {
-    let provider = Adapter::new(Profile::Responses, Dialect::LongCat, None);
+fn responses_undeclared_usage_aliases_are_rejected_in_static_and_events() {
+    let provider = Adapter::new(Profile::Responses, Dialect::Standard, None);
     let mut value = crate::wire::response(2);
     value["usage"]["prompt_tokens_details"] = value["usage"]["input_tokens_details"].clone();
-    let decoded = provider
-        .decode_response(value.to_string().as_bytes())
-        .unwrap();
-    let encoded = provider
-        .encode_response(&decoded, &Contract::full())
-        .unwrap();
-    assert!(encoded["usage"].get("prompt_tokens_details").is_none());
     assert!(
         Adapter::new(Profile::Responses, Dialect::Standard, None)
             .decode_response(value.to_string().as_bytes())
@@ -470,18 +468,13 @@ fn responses_duplicate_usage_details_are_scoped_and_conflicts_poison_snapshots()
                 }
             }
             let result = decoder.push(&event);
-            if terminal && conflict {
+            if terminal {
                 assert!(result.is_err());
             } else {
                 result.unwrap();
             }
         }
-        if conflict {
-            assert!(decoder.finish().is_err());
-        } else {
-            decoder.finish().unwrap();
-            assert_eq!(decoder.materialize().unwrap().semantic, decoded.semantic);
-        }
+        assert!(decoder.finish().is_err());
     }
 }
 
@@ -1264,6 +1257,118 @@ fn request_diagnostics_are_source_bound_not_public_facts() {
     assert!(
         provider
             .decode_response(value.to_string().as_bytes())
+            .is_err()
+    );
+}
+#[test]
+fn token_plan_created_drift_does_not_relax_other_profiles_or_identity() {
+    assert!(
+        !Adapter::new(Profile::Responses, Dialect::BailianTokenPlan, None)
+            .adaptation
+            .rules
+            .chunk_created_drift
+    );
+    let first = json!({"id":"r","object":"chat.completion.chunk","model":"synthetic","created":1,
+        "choices":[{"index":0,"delta":{"role":"assistant","content":"pong"},"finish_reason":null}]});
+    let last = json!({"id":"r","object":"chat.completion.chunk","model":"synthetic","created":2,
+        "choices":[{"index":0,"delta":{},"finish_reason":"stop"}]});
+    for (dialect, admitted) in [
+        (Dialect::Standard, false),
+        (Dialect::Bailian, false),
+        (Dialect::BailianTokenPlan, true),
+    ] {
+        let provider = adapter(dialect);
+        let mut decoder = provider.event_decoder();
+        decoder.push(&first).unwrap();
+        assert_eq!(decoder.push(&last).is_ok(), admitted);
+        if admitted {
+            decoder.done().unwrap();
+            let decoded = decoder.materialize().unwrap();
+            assert_eq!(
+                provider
+                    .encode_response(&decoded, &Contract::full())
+                    .unwrap()["created"],
+                1
+            );
+        } else {
+            assert!(decoder.finish().is_err());
+        }
+    }
+    for (key, old, changed) in [
+        ("id", json!("r"), json!("other")),
+        ("model", json!("synthetic"), json!("other")),
+        ("created", json!(1), json!(-1)),
+        ("system_fingerprint", json!("a"), json!("b")),
+        ("service_tier", json!("priority"), json!("default")),
+    ] {
+        let mut a = first.clone();
+        let mut b = last.clone();
+        a[key] = old;
+        b[key] = changed;
+        let mut decoder = adapter(Dialect::BailianTokenPlan).event_decoder();
+        decoder.push(&a).unwrap();
+        assert!(decoder.push(&b).is_err(), "{key}");
+        assert!(decoder.done().is_err());
+    }
+}
+#[test]
+fn token_plan_empty_continuation_call_id_preserves_bound_identity_only() {
+    let first = json!({"id":"r","model":"synthetic","created":1,"object":"chat.completion.chunk",
+        "choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call-a","type":"function","function":{"name":"lookup","arguments":"{\"key\":"}}]},"finish_reason":null}]});
+    let next = json!({"id":"r","model":"synthetic","created":1,"object":"chat.completion.chunk",
+        "choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"","function":{"name":null,"arguments":"\"alpha\"}"}}]},"finish_reason":null}]});
+    let finish = json!({"id":"r","model":"synthetic","created":1,"object":"chat.completion.chunk",
+        "choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]});
+    for (dialect, allowed) in [
+        (Dialect::Standard, false),
+        (Dialect::Bailian, false),
+        (Dialect::BailianTokenPlan, true),
+    ] {
+        let provider = adapter(dialect);
+        let mut d = provider.event_decoder();
+        d.push(&first).unwrap();
+        assert_eq!(d.push(&next).is_ok(), allowed);
+        if allowed {
+            d.push(&finish).unwrap();
+            d.done().unwrap();
+            let encoded = provider
+                .encode_response(&d.materialize().unwrap(), &Contract::full())
+                .unwrap();
+            assert_eq!(
+                encoded["choices"][0]["message"]["tool_calls"][0]["id"],
+                "call-a"
+            );
+            assert_eq!(
+                encoded["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"],
+                "{\"key\":\"alpha\"}"
+            );
+        } else {
+            assert!(d.done().is_err());
+        }
+    }
+    for (path, value) in [
+        ("/choices/0/delta/tool_calls/0/id", json!("other")),
+        ("/choices/0/delta/tool_calls/0/id", json!(7)),
+        (
+            "/choices/0/delta/tool_calls/0/function/name",
+            json!("other"),
+        ),
+        ("/choices/0/delta/tool_calls/0/function/name", json!("")),
+        ("/choices/0/delta/tool_calls/0/index", json!(1)),
+    ] {
+        let mut changed = next.clone();
+        *changed.pointer_mut(path).unwrap() = value;
+        let mut d = adapter(Dialect::BailianTokenPlan).event_decoder();
+        d.push(&first).unwrap();
+        assert!(d.push(&changed).is_err(), "{path}");
+        assert!(d.done().is_err());
+    }
+    let mut bad = first;
+    bad["choices"][0]["delta"]["tool_calls"][0]["id"] = json!("");
+    assert!(
+        adapter(Dialect::BailianTokenPlan)
+            .event_decoder()
+            .push(&bad)
             .is_err()
     );
 }

@@ -8,7 +8,7 @@
 
 文件仅维持既有 Responses user inline/URL 基础输入及必要正确性、安全维护。Issuer-bound 文件 ID、工具文件结果、生成文件产物、更多文件格式/目标、Chat 文件投影及文件管理 API 等扩展继续暂停，恢复评估按[计划的有限首批范围与重评节点](../implementation-plans/next-goal.md#推进顺序与退出条件)执行，不等待所有模态完成，也不自动恢复实施。下列缺口继续保留，不表示下一片实施优先级，也不作为其他模态的前置；延期不放宽现行拒绝或授权边界。
 
-上述延期限定产品承载与资源操作，不阻止[ClientManaged IR 计划](../implementation-plans/client-managed-ir.md)按明确反例完善资源 identity、用途、locator 和引用坐标的纯语义合同；设计变化仍不激活 file ID、工具文件回传或文件服务。
+上述延期限定产品承载与资源操作，不阻止按明确反例和[ClientManaged 交互合同](../architecture/interaction-contract.md#client-managed-context)完善资源 identity、用途、locator 和引用坐标的纯语义合同；设计变化仍不激活 file ID、工具文件回传或文件服务。
 
 ## 语义与表示缺口
 

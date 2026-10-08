@@ -23,12 +23,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         _ => return Err("unknown diagnostic protocol".into()),
     };
     let dialect = match args[1].as_str() {
-        "longcat" => Dialect::LongCat,
         "xiaomi" => Dialect::Xiaomi,
         "nvidia" => Dialect::Nvidia,
         "opencode-go" => Dialect::OpenCodeGo,
         "aliyun-dashscope-cn" => Dialect::Bailian,
-        "kimi" => Dialect::Kimi,
+        "aliyun-tokenplan-cn" => Dialect::BailianTokenPlan,
         "zhipu" => Dialect::Zhipu,
         _ => return Err("unknown diagnostic provider".into()),
     };

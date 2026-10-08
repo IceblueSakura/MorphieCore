@@ -2,9 +2,9 @@
 
 ## 当前范围
 
-**当前没有运行中的代码行为切片。** 后续按[next-goal](next-goal.md)和具体消费者反例重新选片；[ClientManaged 边界](client-managed-ir.md)保留回归输入与延期条件，不自动扩大损失白名单、合并消息/part 或启动新产品方向。
+**当前没有运行中的代码行为切片。** 后续按[next-goal](next-goal.md#后续选片条件)和具体消费者反例重新选片，不自动扩大损失白名单、合并消息/part 或启动新产品方向。
 
-资源、引用、Replay/cache、具名投影和原 usage 的现有 owner 与回归作为输入，不重复建设；执行基线、依赖与停止点统一归[选片边界](client-managed-ir.md#execution-order)。
+资源、引用、Replay/cache、具名投影和原 usage 的现有 owner 与回归作为输入，不重复建设；合同归[交互模型](../architecture/interaction-contract.md)，独立预期及来源追溯归[用例清单](../../tests/fixtures/client_managed_cases.json)，执行与验收方法归[开发指南](../development.md)。
 
 维护和延期范围只查[next-goal](next-goal.md)：既有标准文本/function、图片、基础文件、请求型音频与模型发现保留受影响回归；文件产品扩展、Google/Anthropic codecs、ServerManaged、Agent 执行/恢复和 Realtime 不随引用选片恢复。具体接口保持 owning profiles 的现行准入与拒绝，不新增私有载体。
 

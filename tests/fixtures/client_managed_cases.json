@@ -1,6 +1,11 @@
 {
-  "contract": "docs/implementation-plans/client-managed-ir.md",
-  "traceability": "case_key and source ids are stable; area groups semantic coverage, not execution phases. Each case covers only its declared expectations and scope.",
+  "contract": "docs/architecture/interaction-contract.md",
+  "traceability": "case_key and source ids are stable; area groups semantic coverage, not execution phases. Each case covers only its declared expectations and scope, not an entire source ID. Symbol presence does not prove execution. abstract_contract is not native-schema evidence; native_wire applies only to the declared profile.",
+  "sources": {
+    "T": "《主流大模型协议深度剖析与跨厂商统一语义 IR 设计方案：审计修订版 v0.2》",
+    "A/E": "《MorphieCore：IR 完善与面向 Agent 的测试、实施总计划 v0.1》；其引用的《面向 Agent 的核心合同调整提案 v0.1》仅作已采纳合同的来源",
+    "authority": "Current architecture contracts govern; source examples do not mandate all proposed tasks or Rust shapes. Deferred remote/persistence scope is owned by docs/implementation-plans/next-goal.md."
+  },
   "cases": [
     {
       "case_key": "native_client_managed_consumer_return",

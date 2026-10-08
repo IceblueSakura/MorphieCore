@@ -83,6 +83,7 @@ Report revision, scope and unverified layers in the conversation.
 - Run focused checks, then the required baseline for the changed files in the [development guide](docs/development.md): [Rust](docs/development.md#rust-检查), [JS tooling](docs/development.md#测试语言与-js-工具) or [documentation](docs/development.md#文档与边界). Prose-only changes do not require runtime tests.
 - Parallelize only independent, isolated scenarios. Use readiness/events and bounded deadlines; ordered retry/fallback/cancellation tests remain serial, without sleeps hiding races.
 - Inspect final diff and report actual results, failures and skipped layers. Compilation, synthetic execution or test existence do not prove general SDK/Agent, real Provider/TLS/network, cache benefit, load, native filesystem/ACL or production behavior.
+- Close transient live-service issues under the [retest acceptance rule](docs/probes.md#复测与问题收口); do not add statistical reruns or relax runtime guards to obtain a clean report.
 
 ## Documentation and Comments
 

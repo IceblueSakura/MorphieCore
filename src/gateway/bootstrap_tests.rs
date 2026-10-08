@@ -110,9 +110,7 @@ fn shared_provider_credentials_keep_model_and_protocol_targets_distinct() {
     let boot = Fixture::from_lookup(|name| {
         Ok(match name {
             "client_key" => Some("synthetic-gateway-client-token-0001".into()),
-            "xiaomi-api-key" | "longcat-api-key" | "zhipu-api-key" => {
-                Some("synthetic-upstream".into())
-            }
+            "xiaomi-api-key" | "zhipu-api-key" => Some("synthetic-upstream".into()),
             _ => None,
         })
     })
@@ -131,13 +129,6 @@ fn shared_provider_credentials_keep_model_and_protocol_targets_distinct() {
             "xiaomi-api-key",
             "/v1",
             "/v1",
-        ),
-        (
-            "longcat-2.5-preview",
-            "LongCat-2.5-Preview",
-            "longcat-api-key",
-            "/openai/v1",
-            "/openai/v1",
         ),
         (
             "glm-5.3",
@@ -289,7 +280,7 @@ fn bootstrap_only_admits_explicit_protocol_entries() {
     let boot = Fixture::from_lookup(|name| {
         Ok(match name {
             "client_key" => Some("synthetic-gateway-client-token-0001".into()),
-            "nvidia-api-key" | "kimi-api-key" => Some("synthetic-upstream".into()),
+            "nvidia-api-key" | "modelbest-api-key" => Some("synthetic-upstream".into()),
             _ => None,
         })
     })
@@ -314,7 +305,7 @@ fn bootstrap_only_admits_explicit_protocol_entries() {
         super::super::admission::prepare(
             &boot.gateway.state,
             Profile::Chat,
-            br#"{"model":"kimi-k3","messages":[{"role":"user","content":"hi"}]}"#
+            br#"{"model":"minicpm5-2b","messages":[{"role":"user","content":"hi"}]}"#
         )
         .is_ok()
     );
@@ -322,7 +313,7 @@ fn bootstrap_only_admits_explicit_protocol_entries() {
         super::super::admission::prepare(
             &boot.gateway.state,
             Profile::Responses,
-            br#"{"model":"kimi-k3","input":"hi"}"#
+            br#"{"model":"minicpm5-2b","input":"hi"}"#
         )
         .is_err()
     );

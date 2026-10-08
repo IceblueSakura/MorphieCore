@@ -17,6 +17,8 @@ cargo run --locked --offline --bin morphiecore -- \
 
 Pool 按编译 binding 启用候选；只有账户或 key、没有 pool，不激活推理。凭据绑定变化与并发管理的规则见[凭据指南](credentials.md)；本地可借用不证明上游授权、模型资格或额度。
 
+显式 `models` 过滤只绑定所选模型所需的 pool；无关、未注册的旧 pool 不被激活，也不要求删除其凭据。所选模型未知或没有匹配绑定仍拒绝启动。省略 `models` 的未过滤启动保持对未知 pool 的严格拒绝，不静默推断退役目标。
+
 仅启动不产生模型生成请求。真实操作的授权归 [AGENTS.md](../AGENTS.md#scope-and-authorization)；默认验收只用 synthetic keys 和 loopback Provider。Ctrl-C 发起 graceful shutdown，取消在途上游并拒绝新业务请求，不证明 Provider 停算或停止计费。
 
 ## HTTP 合同

@@ -255,6 +255,16 @@ fn bailian_strict_tools_are_admitted_without_changing_schema_or_other_bindings()
 }
 #[cfg(test)]
 #[test]
+fn removed_providers_have_no_routes_and_unrelated_bindings_survive() {
+    let removed = default_topology().unwrap();
+    for (provider, model) in [("longcat", "longcat-2.5-preview"), ("kimi", "kimi-k3")] {
+        assert!(removed.provider(provider).is_none());
+        assert!(removed.model(model).is_none());
+    }
+    assert!(removed.provider("opencode-go").is_some());
+}
+#[cfg(test)]
+#[test]
 fn siwc_registration_is_public_responses_only_and_does_not_reuse_product_bindings() {
     let topology = default_topology().unwrap();
     assert!(topology.provider("codex").is_none());

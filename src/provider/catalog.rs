@@ -74,18 +74,6 @@ pub fn modelbest() -> ProviderDefinition {
     )
 }
 
-/// Native Responses entry is explicit, not inferred from Chat compatibility.
-/// Source: <https://longcat.chat/platform/docs/Codex.html>.
-pub fn longcat() -> ProviderDefinition {
-    ProviderDefinition {
-        responses: Some(EndpointPath::new("/openai/v1/responses").expect("static path")),
-        ..chat_provider(
-            "longcat",
-            "https://api.longcat.chat",
-            "/openai/v1/chat/completions",
-        )
-    }
-}
 /// Hosted origin, not an arbitrary self-hosted NIM deployment.
 /// Source: <https://docs.nvidia.com/nim/large-language-models/latest/api-reference.html>.
 pub fn nvidia() -> ProviderDefinition {
@@ -125,10 +113,6 @@ pub fn aliyun_tokenplan_cn() -> ProviderDefinition {
             "/compatible-mode/v1/chat/completions",
         )
     }
-}
-/// Source: <https://platform.kimi.com/docs/api/chat>.
-pub fn kimi() -> ProviderDefinition {
-    chat_provider("kimi", "https://api.moonshot.cn", "/v1/chat/completions")
 }
 /// The native Responses base path differs from Chat; never append to the Chat base.
 /// Sources: <https://docs.bigmodel.cn/cn/guide/develop/openai/introduction>,
@@ -175,11 +159,9 @@ pub fn all() -> Vec<ProviderDefinition> {
         modelbest(),
         openrouter(),
         opencode_go(),
-        longcat(),
         nvidia(),
         aliyun_dashscope_cn(),
         aliyun_tokenplan_cn(),
-        kimi(),
         zhipu(),
     ]
 }

@@ -287,7 +287,6 @@ pub(crate) fn decode<'a>(
         && !adaptation.rules.zero_usage_details
         && !adaptation.rules.inactive_chat_fields
         && !adaptation.rules.chat_inference_response_shape
-        && !adaptation.rules.responses_usage_detail_view
         && !adaptation.rules.responses_billing_view
         && !adaptation.rules.null_response_billing
         && !adaptation.rules.responses_inactive_state
@@ -302,14 +301,6 @@ pub(crate) fn decode<'a>(
         .ok_or(CodecError::Invalid("response object"))?;
     if profile == Profile::Chat && adaptation.rules.chat_inference_response_shape {
         super::inference_shapes::decode(o)?;
-    }
-    if let Some(usage) = o.get_mut("usage").and_then(Value::as_object_mut)
-        && profile == Profile::Responses
-        && adaptation.rules.responses_usage_detail_view
-        && let Some(view) = usage.shift_remove("prompt_tokens_details")
-        && (!view.is_object() || usage.get("input_tokens_details") != Some(&view))
-    {
-        return Err(CodecError::Invalid("duplicate usage details"));
     }
     if profile == Profile::Responses
         && adaptation.rules.null_response_billing

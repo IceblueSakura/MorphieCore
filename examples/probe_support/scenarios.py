@@ -1,6 +1,7 @@
 """Fixed independent scenarios over one shared execution/measurement boundary."""
 
 import json
+import re
 import time
 from .checks import ProbeFailure, require
 from .codecs import chat_result, response_result, opaque_records, reasoning_chars
@@ -111,6 +112,8 @@ def call(
             "unexpected_terminal",
         )
         phase = "oracle"
+        if oracle is expect_image:
+            metrics.update(image_observation(text))
         if oracle:
             oracle(text, calls, output)
         metrics["content_ok"] = True
@@ -183,6 +186,22 @@ def expect_text(value):
         require(not calls and text.strip() == value, "exact_text")
 
     return check
+
+
+def image_observation(text):
+    """Closed diagnostic facts; never persist the answer or infer correctness from format."""
+    value = text.strip()
+    return {
+        "image_answer_format_ok": re.fullmatch(r"[a-z]+,[a-z]+", value) is not None,
+        "image_color_order_ok": tuple(part.strip().lower() for part in value.split(",")) == ("red", "blue"),
+    }
+
+
+def expect_image(text, calls, output):
+    facts = image_observation(text)
+    require(not calls, "image_answer_calls")
+    require(facts["image_answer_format_ok"], "image_answer_format")
+    require(facts["image_color_order_ok"], "image_answer_colors")
 
 
 def expect_json(text, calls, output):
@@ -425,7 +444,7 @@ def matrix(
                     invoke(1,
                         image_history(proto) if case == "image" else visual_math_history(proto),
                         extra=controls,
-                        oracle=expect_text("red,blue") if case == "image" else expect_visual_math)
+                        oracle=expect_image if case == "image" else expect_visual_math)
                 elif case in ("text", "json", "length", "cancel"):
                     prompt = {
                         "text": "Reply with exactly pong.",

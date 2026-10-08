@@ -66,11 +66,21 @@ uv run --project tests/sdk --locked --offline python examples/probe.py run \
 
 ## 共用执行层与结果解释
 
+### 复测与问题收口
+
+服务波动属于预期行为。针对原失败场景的本次受控复测未再出现同类错误，即按本轮验收口径视为解决，不因缺少长期稳定性统计继续阻塞，也不为统计证明反复请求。该结论不保证未来不再发生，不证明原故障根因已确定。
+
+复测必须实际覆盖对应场景；`not_run`、启动失败、预算中断或换用未覆盖原边界的场景不能作为通过证据。本次仍出现的协议、数据或内容 oracle 失败独立报告，不归入“未复现”。此口径只决定问题收口，不修改原账本的失败记录，不放宽 codec/oracle、预算和停止条件，也不启用自动重试、fallback 或凭据刷新。
+
+### 分层结果
+
 `examples/probe_support/` 分担 catalog、显式 checks、ledger、SDK collectors、raw wire、listener/send/report 生命周期及固定 scenarios。具名入口只选择场景，不各自实现预算、清理或验收。没有动态插件、业务 transformation 或新 task schema。
 
 实际网络 send 强制流式读取，即使请求 JSON，也先检查 raw 字节预算再交给 SDK。SSE 观察有独立 frame/event/text 上限；终态所在 chunk 保留到真实 HTTP EOF 后再交给会在 DONE 停读的 SDK，防止尾随数据被藏起来。错误使观察状态不可恢复。观察器只针对网关输出，不取代 Rust codec 或完整 SSE 标准验证。
 
 结果分列：`sdk_consumed`、`wire_closed`、`terminal`、`content_ok`、`history_ok`。SDK 成功解析不自动证明 wire 闭合；HTTP 200 不代表生成完成；`length` 不转成 stop。`oracle_failure` 只保存封闭分类，视觉算术的 JSON 格式失败与数值不符分别记录；不会保存异常消息或模型正文，也不会通过解析代码围栏来放宽 oracle。严格文本/JSON/工具 oracle 使用显式异常检查，`python -O` 不会绕过。工具结果要求实际调用和关联正确，并满足明确返回值，不用子串出现代替语义正确。stdout 和持久报告不保存正文、参数、reasoning、opaque 或 credential。
+
+颜色图片场景另记录格式与颜色顺序的两个布尔观察，失败分类区分格式、颜色和意外工具调用。单项正确不使整次请求通过；不靠容错解析、trim 内部空白或重试消除严格答案失败。它们只诊断该固定 synthetic oracle，不证明一般视觉准确率。
 
 `reported_input_tokens`、`reported_output_tokens`、`reported_reasoning_tokens`、`reported_image_tokens`、`reported_cached_tokens` 仅取 SDK 消费到的实际 reported usage；缺省/null 为未知，不补零，不从可读文本长度估计。非成功 terminal 携带的 actual usage 同样可记录，但不因此标记成功。`reasoning_chars` 按 Chat/Responses 各自 owner 统计可读视图（含 summary/content），排除 opaque 值且避免重复载体计数；它不是推理 token 的替代品。对照时分别报告协议、交付、场景、终态和 oracle。单次耗时包含网络、缓存、生成和消费影响；顺序执行的小样本不能证明档位因果排序、一般模型质量、缓存收益或计费差异。
 
@@ -83,6 +93,8 @@ uv run --project tests/sdk --locked --offline python examples/probe.py run \
 可观察字段限于最后阶段、完成/中断结果、上游 HTTP、规范化 Retry-After、接收/已 handoff 字节、耗时、固定 decode 失败分类和成功消费的语义事件结构计数。分类不输出未知字段名、异常消息或正文；事件计数不含身份、文本、reasoning、opaque 或认证值，不证明产物完整或终态闭合。`upstream_head_ms`、`first_upstream_bytes_ms` 从认证后的请求处理开始计时，不是 TTFT 或 Provider 纯推理时间；handoff 不等于客户端收到。静态 JSON 的解析可发生于 `terminal`（intake EOF finalize）阶段。
 
 有界队列满、文件预算满、写失败或强杀均可能缺少诊断，缺失必须记为未知，不据此猜测上游状态。原 HTTP 错误映射、取消和交付策略不变；这不是生产可观测性系统，也不因此启用任何自动 retry/backoff。
+
+已知首帧/字段错误及 id/model/created 漂移使用封闭细分类，未知标签仍归通用错误；不透传任意字段名或异常字符串。分类说明失败的本地检查点，不自动断言是上游合同变化或实现缺陷。
 
 ## 具名入口与库级对照
 

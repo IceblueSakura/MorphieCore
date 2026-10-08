@@ -58,7 +58,7 @@ struct ModelSpec {
     responses_endpoint: Option<&'static str>,
 }
 
-const MODELS: [ModelSpec; 14] = [
+const MODELS: [ModelSpec; 12] = [
     ModelSpec {
         label: "deepseek-flash",
         pool: "deepseek-api-key",
@@ -90,14 +90,6 @@ const MODELS: [ModelSpec; 14] = [
         models_path: Some("/api/v1/models"),
         chat_endpoint: "openrouter-chat",
         responses_endpoint: Some("openrouter-responses"),
-    },
-    ModelSpec {
-        label: "longcat-2.5-preview",
-        pool: "longcat-api-key",
-        provider: "longcat",
-        models_path: Some("/openai/v1/models"),
-        chat_endpoint: "longcat-chat",
-        responses_endpoint: Some("longcat-responses"),
     },
     ModelSpec {
         label: "nemotron-3-super",
@@ -146,14 +138,6 @@ const MODELS: [ModelSpec; 14] = [
         provider: "modelbest",
         models_path: Some("/v1/models"),
         chat_endpoint: "modelbest-minicpm-v-4.6-chat",
-        responses_endpoint: None,
-    },
-    ModelSpec {
-        label: "kimi-k3",
-        pool: "kimi-api-key",
-        provider: "kimi",
-        models_path: Some("/v1/models"),
-        chat_endpoint: "kimi-chat",
         responses_endpoint: None,
     },
     ModelSpec {
@@ -1284,11 +1268,9 @@ async fn main() {
             "mimo-v2.6-pro",
             "mimo-v2.6-flash",
             "gpt-6-luna",
-            "longcat-2.5-preview",
             "nemotron-3-super",
             "qwen3.8-max",
             "qwen3.8-flash",
-            "kimi-k3",
             "glm-5.3",
             "glm-5.3-flash",
             "minicpm5-1b",
