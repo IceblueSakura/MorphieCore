@@ -164,6 +164,8 @@ enum Case {
     JsonObject,
     Tool,
     Length,
+    Schema,
+    Image,
 }
 
 impl Case {
@@ -173,6 +175,8 @@ impl Case {
             Self::JsonObject => "json_object",
             Self::Tool => "tool",
             Self::Length => "length",
+            Self::Schema => "schema",
+            Self::Image => "image",
         }
     }
 
@@ -181,6 +185,8 @@ impl Case {
             Self::Text => 64,
             Self::Length => 8,
             Self::JsonObject | Self::Tool => 192,
+            Self::Schema => 2048,
+            Self::Image => 512,
         }
     }
 }
@@ -283,6 +289,7 @@ fn scenario_request(
                 Case::JsonObject => JSON_PROMPT,
                 Case::Tool => TOOL_PROMPT,
                 Case::Length => LENGTH_PROMPT,
+                Case::Schema | Case::Image => unreachable!("Responses-only probe"),
             }})];
             if round == 2 {
                 let call = call.expect("round two carries a tool call");
@@ -314,9 +321,33 @@ fn scenario_request(
                 Case::JsonObject => JSON_PROMPT,
                 Case::Tool => TOOL_PROMPT,
                 Case::Length => LENGTH_PROMPT,
+                Case::Schema => {
+                    "Return JSON with z_answer equal to 7 and a_label equal to synthetic."
+                }
+                Case::Image => {
+                    "Classify the dominant color of each image in order using only these basic labels: blue, green, black, red, white, yellow. Do not use shade names. Reply with exactly two lowercase labels separated by a comma, no spaces or other text."
+                }
             };
             let mut input =
                 vec![json!({"role":"user","content":[{"type":"input_text","text":prompt}]})];
+            if case == Case::Image {
+                // Exact synthetic 192x192 RGB fixtures from probe_support.images.color_png.
+                // The repeated Base64 segment avoids duplicating a long opaque literal.
+                let red = format!(
+                    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAIAAADdvvtQAAACW0lEQVR4nO3OQQkAQBDEsPFv+s7DfkqhEAHZ25Iz{}fhC1DxwqeGLAr8TfAAAAAElFTkSuQmCC",
+                    "fhA1".repeat(190)
+                );
+                let blue = format!(
+                    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAIAAADdvvtQAAACW0lEQVR4nO3OQQkAQBDEsPFv+k7EPkqhEAHZ9pID{}fhCxDytZeGJa8Jr2AAAAAElFTkSuQmCC",
+                    "fhA1".repeat(190)
+                );
+                input[0]["content"] = json!([
+                    {"type":"input_text","text":prompt},
+                    {"type":"input_image","image_url":red},
+                    {"type":"input_text","text":"Now the second image:"},
+                    {"type":"input_image","image_url":blue}
+                ]);
+            }
             if round == 2 {
                 let call = call.expect("round two carries a tool call");
                 input.extend(call.history.clone());
@@ -325,6 +356,15 @@ fn scenario_request(
             let mut value = json!({"model":label,"input":input,"max_output_tokens":case.cap()});
             if case == Case::JsonObject {
                 value["text"] = json!({"format":{"type":"json_object"}});
+            }
+            if case == Case::Schema {
+                value["text"] = json!({"format":{
+                    "type":"json_schema","name":"ordered_answer","strict":true,
+                    "schema":{"type":"object","properties":{
+                        "z_answer":{"type":"integer"},
+                        "a_label":{"type":"string","enum":["synthetic"]}},
+                        "required":["z_answer","a_label"],"additionalProperties":false}
+                }});
             }
             if case == Case::Tool {
                 value["tools"] = json!([responses_tool()]);
@@ -339,6 +379,10 @@ fn scenario_request(
             value
         }
     };
+    if matches!(case, Case::Schema | Case::Image) {
+        // Match the SDK probe's explicit delivery flag for the same fixed input.
+        value["stream"] = json!(streaming);
+    }
     if streaming {
         value["stream"] = json!(true);
         if protocol == ProtocolProfile::OpenAiChat {
@@ -889,6 +933,13 @@ async fn run_call_inner(
         ) == (ctx.case == Case::Tool && round == 1)
         && match ctx.case {
             Case::Length => tool_call.is_none(),
+            Case::Image => text.trim() == "red,blue",
+            Case::Schema => serde_json::from_str::<Value>(&text).ok().is_some_and(|v| {
+                v.as_object()
+                    .is_some_and(|o| o.keys().map(String::as_str).eq(["z_answer", "a_label"]))
+                    && v["z_answer"].as_u64() == Some(7)
+                    && v["a_label"] == "synthetic"
+            }),
             Case::Text => text.trim() == "pong",
             Case::JsonObject => serde_json::from_str::<Value>(&text)
                 .ok()
@@ -1283,9 +1334,16 @@ async fn main() {
     let protocol_only = selection("MORPHIECORE_PROBE_PROTOCOL", &["chat", "responses"]);
     let case_only = selection(
         "MORPHIECORE_PROBE_CASE",
-        &["text", "json_object", "tool", "length"],
+        &["text", "json_object", "tool", "length", "schema", "image"],
     );
     let delivery_only = selection("MORPHIECORE_PROBE_DELIVERY", &["json", "sse"]);
+    if matches!(case_only.as_deref(), Some("schema" | "image"))
+        && (protocol_only.as_deref() != Some("responses")
+            || case_only.as_deref() == Some("image") && only.as_deref() != Some("gpt-6-luna"))
+    {
+        eprintln!("schema/image probes require an explicit supported Responses target");
+        std::process::exit(2);
+    }
     let cap = std::env::var("MORPHIECORE_PROBE_MAX_TOKENS").ok().map(|s| {
         s.parse::<u64>()
             .ok()
@@ -1456,10 +1514,11 @@ async fn main() {
                 .endpoint(&EndpointId::new(endpoint_id).expect("endpoint id"))
                 .expect("compiled endpoint");
             // The diagnostic truncation case is opt-in, never added to default matrices.
-            let cases = if case_only.as_deref() == Some("length") {
-                &[Case::Length][..]
-            } else {
-                &CASES[..]
+            let cases = match case_only.as_deref() {
+                Some("length") => &[Case::Length][..],
+                Some("schema") => &[Case::Schema][..],
+                Some("image") => &[Case::Image][..],
+                _ => &CASES[..],
             };
             for &case in cases {
                 if case == Case::Length && protocol != ProtocolProfile::OpenAiChat {
@@ -1602,6 +1661,71 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn schema_and_image_forensics_are_opt_in_and_match_fixed_synthetic_inputs() {
+        use base64::Engine;
+        use sha2::Digest;
+        assert!(!CASES.contains(&Case::Schema));
+        assert!(!CASES.contains(&Case::Image));
+        let schema = scenario_request(
+            ProtocolProfile::OpenAiResponses,
+            "m",
+            Case::Schema,
+            Delivery::Json,
+            1,
+            None,
+        );
+        assert_eq!(schema["max_output_tokens"], 2048);
+        assert_eq!(schema["text"]["format"]["strict"], true);
+        assert_eq!(
+            schema["text"]["format"]["schema"]["required"],
+            json!(["z_answer", "a_label"])
+        );
+        assert_eq!(
+            schema["text"]["format"]["schema"]["properties"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["z_answer", "a_label"],
+        );
+        let image = scenario_request(
+            ProtocolProfile::OpenAiResponses,
+            "m",
+            Case::Image,
+            Delivery::Json,
+            1,
+            None,
+        );
+        assert_eq!(image["max_output_tokens"], 512);
+        let parts = image["input"][0]["content"].as_array().unwrap();
+        assert_eq!(parts.len(), 4);
+        // Digests of the independently generated SDK probe PNGs.
+        for (index, expected) in [
+            (
+                1,
+                "3d90e707ad8e4ee8083642b6b6497870978e8414ad9c332daac4257f5c690a87",
+            ),
+            (
+                3,
+                "09fe43177780ae8870512a285fed35df07c36bf0e7571500484fb473ee3d0230",
+            ),
+        ] {
+            let data = parts[index]["image_url"]
+                .as_str()
+                .unwrap()
+                .strip_prefix("data:image/png;base64,")
+                .unwrap();
+            let bytes = base64::prelude::BASE64_STANDARD.decode(data).unwrap();
+            let digest: String = sha2::Sha256::digest(bytes)
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect();
+            assert_eq!(digest, expected);
+        }
+    }
+
     #[test]
     fn length_diagnostic_matches_sdk_boundary_without_expanding_default_matrix() {
         assert!(!CASES.contains(&Case::Length));

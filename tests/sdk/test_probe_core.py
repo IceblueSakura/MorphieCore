@@ -23,6 +23,68 @@ def reserve_worker(path, number):
 
 
 class ProbeCoreTests(unittest.TestCase):
+    def test_strict_schema_oracle_checks_order_types_and_exact_values(self):
+        from probe_support.scenarios import expect_schema
+        check = expect_schema(7)
+        check('{"z_answer":7,"a_label":"synthetic"}', [], [])
+        for text in (
+            '{"z_answer":7.0,"a_label":"synthetic"}',
+            '{"z_answer":"7","a_label":"synthetic"}',
+            '{"z_answer":8,"a_label":"synthetic"}',
+            '{"a_label":"synthetic","z_answer":7}',
+            '{"z_answer":7,"a_label":"other"}',
+            '{"z_answer":7}', '{"z_answer":7,"a_label":"synthetic","extra":0}',
+            '{"z_answer":7,"z_answer":7,"a_label":"synthetic"}',
+            '[]', 'null', '```json\\n{"z_answer":7,"a_label":"synthetic"}\\n```',
+        ):
+            with self.subTest(text=text), self.assertRaises(ProbeFailure):
+                check(text, [], [])
+        with self.assertRaises(ProbeFailure):
+            check('{"z_answer":7,"a_label":"synthetic"}', [{"id": "unexpected"}], [])
+
+    def test_strict_schema_matrix_preserves_controls_and_actual_two_turn_history(self):
+        from contextlib import nullcontext
+        from copy import deepcopy
+        from probe_support.scenarios import matrix, plan_groups
+        observed = []
+        outputs = []
+
+        def send(*args, **kwargs):
+            observed.append((deepcopy(args[5]), args[6], deepcopy(kwargs["extra"])))
+            answer = 7 if len(observed) % 2 else 8
+            text = json.dumps({"z_answer": answer, "a_label": "synthetic"})
+            output = [{"type": "message", "role": "assistant", "id": f"m-{len(observed)}",
+                       "content": [{"type": "output_text", "text": text}]}]
+            kwargs["oracle"](text, [], output)
+            outputs.append(deepcopy(output))
+            self.assertEqual(kwargs["cap"], 1024)
+            return output, text, []
+
+        with tempfile.TemporaryDirectory() as temp:
+            run = Run.create(Path(temp) / "run", providers="openrouter",
+                models=["gpt-6-luna"], limit=4, tokens=1024)
+            groups = plan_groups(run, run.plan["models"], cases=("schema",), protocol="responses")
+            self.assertEqual([(g[2], g[5], g[6]) for g in groups],
+                             [(False, 2, 1024), (True, 2, 1024)])
+            with self.assertRaises(ProbeFailure):
+                plan_groups(run, run.plan["models"], cases=("schema",), protocol="chat")
+            with patch("probe_support.scenarios.session", return_value=nullcontext((None, None))), patch(
+                "probe_support.scenarios.call", side_effect=send):
+                self.assertTrue(matrix(run, run.plan["models"], cases=("schema",), protocol="responses"))
+            self.assertEqual(len(run.snapshot()), 4)
+            self.assertEqual([row[1] for row in observed], [False, False, True, True])
+            for index in (1, 3):
+                self.assertEqual(observed[index][0][1:-1], outputs[index - 1])
+            for _, _, extra in observed:
+                self.assertEqual(extra, {"text": {"format": {
+                    "type": "json_schema", "name": "ordered_answer", "strict": True,
+                    "schema": {"type": "object", "properties": {
+                        "z_answer": {"type": "integer"},
+                        "a_label": {"type": "string", "enum": ["synthetic"]}},
+                        "required": ["z_answer", "a_label"], "additionalProperties": False}}}})
+                self.assertEqual(list(extra["text"]["format"]["schema"]["properties"]),
+                                 ["z_answer", "a_label"])
+
     def test_removed_provider_selections_are_rejected(self):
         from probe_support.catalog import select_bindings
         for provider in ("longcat", "kimi"):
@@ -32,7 +94,8 @@ class ProbeCoreTests(unittest.TestCase):
     def test_image_oracle_separates_format_and_color_without_accepting_either_failure(self):
         from probe_support.scenarios import expect_image, image_observation
         for value, code in (("red, blue","image_answer_format"), ("blue,red","image_answer_colors"),
-                            ("orange,blue","image_answer_colors"), ("red,blue.","image_answer_format")):
+                            ("orange,blue","image_answer_colors"), ("maroon,blue","image_answer_colors"),
+                            ("red,blue.","image_answer_format")):
             with self.assertRaises(ProbeFailure) as raised:
                 expect_image(value, [], [])
             self.assertEqual(raised.exception.code, code)
@@ -301,6 +364,9 @@ class ProbeCoreTests(unittest.TestCase):
         for protocol in ("chat", "responses"):
             content = image_history(protocol)[0]["content"]
             self.assertEqual(len(content), 4)
+            self.assertIn("blue, green, black, red, white, yellow", content[0]["text"])
+            self.assertIn("Do not use shade names.", content[0]["text"])
+            self.assertNotIn("red,blue", content[0]["text"])
             for index, rgb in ((1, bytes((255, 0, 0))), (3, bytes((0, 0, 255)))):
                 image = content[index]
                 url = image["image_url"]["url"] if protocol == "chat" else image["image_url"]

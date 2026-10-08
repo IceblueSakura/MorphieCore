@@ -42,7 +42,7 @@ def _image(protocol, url):
 def image_history(protocol):
     """Interleave two distinct images and text; answer depends on image order."""
     return [{"role": "user", "content": [
-        _text(protocol, "Identify the dominant color of each image in order. Reply with exactly two lowercase English color names separated by a comma, no spaces or other text."),
+        _text(protocol, "Classify the dominant color of each image in order using only these basic labels: blue, green, black, red, white, yellow. Do not use shade names. Reply with exactly two lowercase labels separated by a comma, no spaces or other text."),
         _image(protocol, color_png((255, 0, 0))),
         _text(protocol, "Now the second image:"),
         _image(protocol, color_png((0, 0, 255))),

@@ -123,6 +123,10 @@ pub struct WireRules {
     /// response placeholders, never permission to resolve or replay remote state.
     /// Source: <https://docs.bigmodel.cn/cn/guide/develop/responses/introduction>.
     pub responses_inactive_state: bool,
+    /// Reported JSON Schema uses schema_ as a field alias, never a new constraint.
+    /// Requests and standard downstream encoding retain the canonical schema key.
+    /// Source: https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-responses
+    pub responses_reported_schema_alias: bool,
     /// Documented null placeholders do not enable active media or legacy calls.
     pub inactive_chat_fields: bool,
     /// vLLM-shaped null-only debug slots and typed cache/image report aliases.

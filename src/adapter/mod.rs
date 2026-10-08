@@ -164,6 +164,7 @@ impl Dialect {
                     // Scope timestamp normalization to the plan's Chat carrier.
                     chunk_created_drift: self == Self::BailianTokenPlan,
                     empty_continuation_call_id: self == Self::BailianTokenPlan,
+                    responses_reported_schema_alias: self == Self::BailianTokenPlan,
                     readable_reasoning: true,
                     legacy_max_tokens: true,
                     inactive_chat_fields: true,

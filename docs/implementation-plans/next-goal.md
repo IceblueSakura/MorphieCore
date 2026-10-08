@@ -22,8 +22,8 @@ Agent runtime 与恢复不列入本项目的实施或延期目标；职责边界
 
 | 优先级 | 目标与产出 | 退出条件与非目标 |
 |---|---|---|
-| **1. Responses 核心功能** | 维护文本/function/history 与 reasoning 回归，按下节 F3 和具体消费差异完善 Structured Outputs 及输入组合 | 所选功能形成 wire→IR→标准输出→必要回传闭环，不以接口接通或拒绝测试通过代替功能完成；不一次补齐完整 union |
-| **2. 多 Provider 标准消费** | F4 选择代表性原生 Responses 路径，用同一标准消费者核对功能；差异归受信 adapter/profile | 除模型及明确支持的控制外，消费者不需要 Provider 专用解析或 history 重写；不按 Provider/model 数量铺测试矩阵 |
+| **1. Responses 核心功能** | 维护文本/function/history、reasoning、Structured Outputs 与已有图片/基础文件输入回归；仅按具体新消费差异扩展 | 所选功能形成 wire→IR→标准输出→必要回传闭环，不以接口接通或拒绝测试通过代替功能完成；不一次补齐完整 union |
+| **2. 多 Provider 标准消费** | 代表性原生 Responses 场景作为接入回归；新增目标或实际差异按最小功能独立选片，差异归受信 adapter/profile | 除模型及明确支持的控制外，消费者不需要 Provider 专用解析或 history 重写；不按 Provider/model 数量铺测试矩阵 |
 | **3. 非原生上游转换** | F5 先解决 Chat→Responses 工具分组与回传合同，再实施最小映射和显式接线 | 静态、事件与回传一致；现有 Chat 损失许可不自动适用于 Responses，不以私有字段或静默丢关系绕过决策 |
 | **4. 稳定性专项** | 核心功能收敛后，按实际使用问题选择异常、负载与长期运行边界 | 不提前扩张；正常功能中已遇到的阻断问题可随片修复，现有防线始终保持 |
 
@@ -35,12 +35,12 @@ Agent runtime 与恢复不列入本项目的实施或延期目标；职责边界
 
 以下编号仅定位剩余工作，不是完成记录。先核对已有覆盖；已经满足的单元复用证据，不为凑阶段重复改代码。每次只在 current-focus 定稿一个实际行为缺口，采用独立失败例→最低 owner 修复→受影响回归的顺序。
 
-文本、单/多 function/history 与 reasoning 的基础交付—保存—追加—回传作为维护和后续输入，不重复排期。独立预期归 [history continuation](../../tests/semantic/history_continuation.rs)、[reasoning](../../tests/semantic/reasoning.rs)与[固定 SDK gate](../../tests/sdk_loopback.rs)；reported final opaque 与未报告 opaque 分别验收，现行 scope、finality 和编辑失效边界不变。测试存在或 synthetic gate 不证明真实 Provider 接入，外部差异继续由 F4 按目标闭合。
+文本、单/多 function/history 与 reasoning 的基础交付—保存—追加—回传作为维护和后续输入，不重复排期。独立预期归 [history continuation](../../tests/semantic/history_continuation.rs)、[reasoning](../../tests/semantic/reasoning.rs)与[固定 SDK gate](../../tests/sdk_loopback.rs)；reported final opaque 与未报告 opaque 分别验收，现行 scope、finality 和编辑失效边界不变。
+
+Structured Outputs 的 strict/default、Schema 顺序/精度与已有图片/基础文件组合复用 [Schema](../../tests/semantic/schema.rs)、[Provider profiles](../../tests/semantic/provider_profiles.rs)及 SDK 回归。正常功能 probe 区分 JSON object、两轮 strict Schema、工具 history 和固定基础色/文件场景，操作归[probe 指南](../probes.md)。这些是可复用验收入口，不是动态能力表；真实目标与执行证据每次独立报告，不从某次通过推定完整标准、全部 Provider 或一般输出质量。
 
 | 单元 | 输入、实施范围与 owning sources | 验收与停止点 |
 |---|---|---|
-| **F3 Structured Outputs 与输入组合** | 核对 function strict 与 text.format 的独立默认、Schema 顺序/精度及正常生成消费；按实际需求组合已有 user 图片、inline/URL 文件 | 标准请求不被削弱，消费者可取得和回传所选结果；Schema 表示与模型输出 adherence 分别验收。不建设通用 evaluator，不恢复文件服务或更多媒体；文件扩展先重评 |
-| **F4 代表性原生 Responses 接入** | 现场选择有不同合同风险的有限绑定；先复用核心回归及所需 F3 覆盖，再固定消费者 gate、受控真实调用。优先级沿用上文产品选型 | 同一消费者只改变 public model 和已准入控制，不带 Provider 专用字段修补。仅修复影响所选功能的差异；不以一次解析或 HTTP 200 代替输出/回传成功，不遍历模型库存 |
 | **F5 Chat→Responses 功能转换** | 以 [group projection](../../tests/semantic/group_projection.rs) 和 [Gateway 跨协议预期](../../tests/gateway.rs)为最小反例，分析 message-call membership、顺序、原始参数及回传。现行限制归 [Responses profile](../architecture/responses-text-profile.md#message-owners-and-cross-protocol-grouping) | 先决定合法映射及必要信息的权威位置，再补独立静态/事件/history 预期和最小接线。未定稿时保留拒绝并明确功能未闭合；不将拒绝通过写成转换完成，不自动激活所有 Chat-only 绑定 |
 
 **执行准备与验证顺序：**
@@ -48,7 +48,7 @@ Agent runtime 与恢复不列入本项目的实施或延期目标；职责边界
 1. 核对分支、工作区与目标 diff；读取对应合同和最低 owner 的测试。用 [ClientManaged 用例清单](../../tests/fixtures/client_managed_cases.json)追溯已有覆盖，不复制测试清单或历史结果到计划。
 2. 按[开发指南](../development.md#nix-开发环境)使用项目锁定工具链；Node、Python/SDK 版本分别以 manifests/locks 为准。先确认解释器及依赖可用，再执行相关 gate；缺少缓存不以降版本、解锁依赖或全局安装绕过。
 3. 先执行所选纯库/codec 检查；行为变化按 TDD 同步实现、profiles、OpenAPI 与受影响 fixtures，再跑[规定基线](../development.md#rust-检查)。固定 SDK/其他外部依赖 gate 需单独取得相符执行授权，计划本身不替代授权。
-4. F4 的 live run 只通过[受控 probe](../probes.md#先计划后执行)。执行前现场固定目标、场景、请求上限、输出/资源上限、deadline、取消清理与脱敏范围；读取凭据仅走现有 loader。不在计划中保存动态模型库存、私有 activation 或运行结果；凭据生命周期与实例切换仍需独立授权。
+4. live run 只通过[受控 probe](../probes.md#先计划后执行)。执行前现场固定目标、场景、请求上限、输出/资源上限、deadline、取消清理与脱敏范围；读取凭据仅走现有 loader。不在计划中保存动态模型库存、私有 activation 或运行结果；凭据生命周期与实例切换仍需独立授权。
 5. 每个单元交付时分别报告功能、标准 wire、消费者、真实 Provider 的证据与未验收层；完成所选边界即停止并清理 focus，复审后续单元，不自动滚动进入整个列表。
 
 Agent Loop/Runtime 仅在用户后续阅读 Pi `AgentSession`、明确复用边界后另行规划；本表不安排该调研或实现。固定 SDK/Agent 消费验收不等于建设 Agent runtime。

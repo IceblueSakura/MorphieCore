@@ -219,6 +219,31 @@ def expect_json(text, calls, output):
     )
 
 
+def expect_schema(answer):
+    """Independent oracle for one fixed strict schema, not a general evaluator."""
+    def unique_object(pairs):
+        value = {}
+        for key, child in pairs:
+            require(key not in value, "schema_answer")
+            value[key] = child
+        return value
+
+    def check(text, calls, output):
+        try:
+            value = json.loads(text, object_pairs_hook=unique_object)
+        except ValueError:
+            raise ProbeFailure("schema_answer") from None
+        require(
+            not calls and isinstance(value, dict)
+            and list(value) == ["z_answer", "a_label"]
+            and type(value["z_answer"]) is int and value["z_answer"] == answer
+            and value["a_label"] == "synthetic",
+            "schema_answer",
+        )
+
+    return check
+
+
 def expect_visual_math(text, calls, output):
     def unique_object(pairs):
         value = {}
@@ -278,6 +303,7 @@ def plan_groups(
                             "tool",
                             "history",
                             "json",
+                            "schema",
                             "length",
                             "cancel",
                             "reasoning",
@@ -294,6 +320,7 @@ def plan_groups(
                         "setup",
                     )
                     require(case not in ("file", "file_url", "file_continue", "file_replay") or model == "gpt-6-luna" and proto == "responses", "file_target", "setup")
+                    require(case != "schema" or proto == "responses", "schema_target", "setup")
                     require(case not in ("file_reasoning", "file_reasoning_math") or model == "gpt-6-luna" and proto == "responses" and effort in (None, "medium"), "file_reasoning_target", "setup")
                     if case in ("file_replay", "file_reasoning", "file_reasoning_math") and not stream:
                         continue
@@ -314,6 +341,7 @@ def plan_groups(
                     count = {
                         "text": 1,
                         "json": 1,
+                        "schema": 2,
                         "length": 1,
                         "cancel": 2,
                         "tool": 2,
@@ -445,6 +473,22 @@ def matrix(
                         image_history(proto) if case == "image" else visual_math_history(proto),
                         extra=controls,
                         oracle=expect_image if case == "image" else expect_visual_math)
+                elif case == "schema":
+                    extra["text"] = {"format": {
+                        "type": "json_schema", "name": "ordered_answer", "strict": True,
+                        "schema": {"type": "object", "properties": {
+                            "z_answer": {"type": "integer"},
+                            "a_label": {"type": "string", "enum": ["synthetic"]}},
+                            "required": ["z_answer", "a_label"], "additionalProperties": False},
+                    }}
+                    history = [{"role": "user", "content":
+                        "Return JSON with z_answer equal to 7 and a_label equal to synthetic."}]
+                    for n, answer in enumerate((7, 8), 1):
+                        output, _, _ = invoke(n, history, extra=extra, oracle=expect_schema(answer))
+                        history.extend(output)
+                        if n == 1:
+                            history.append({"role": "user", "content":
+                                "Add 1 to your previous z_answer and keep a_label unchanged. Return only JSON."})
                 elif case in ("text", "json", "length", "cancel"):
                     prompt = {
                         "text": "Reply with exactly pong.",

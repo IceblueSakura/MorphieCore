@@ -88,7 +88,7 @@ ENUMS = {
         "snapshot_text", "snapshot_annotations", "snapshot_probability_presence", "snapshot_probabilities"},
     "oracle_failure": {
         "image_answer_calls", "image_answer_format", "image_answer_colors",
-        "exact_text", "image_format", "image_decode", "image_pixels", "visual_math_format", "visual_math_value",
+        "exact_text", "schema_answer", "image_format", "image_decode", "image_pixels", "visual_math_format", "visual_math_value",
         "visual_math_calls", "file_marker", "file_math", "missing_opaque", "unexpected_terminal", "other",
     },
     "operator_outcome": {"error", "interrupted", "timeout", "shutdown", "complete"},

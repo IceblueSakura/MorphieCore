@@ -290,6 +290,7 @@ pub(crate) fn decode<'a>(
         && !adaptation.rules.responses_billing_view
         && !adaptation.rules.null_response_billing
         && !adaptation.rules.responses_inactive_state
+        && !adaptation.rules.responses_reported_schema_alias
         && !adaptation.rules.responses_product_accounting
         && !adaptation.rules.responses_context_accounting
     {
@@ -299,6 +300,22 @@ pub(crate) fn decode<'a>(
     let o = value
         .as_object_mut()
         .ok_or(CodecError::Invalid("response object"))?;
+    if profile == Profile::Responses
+        && adaptation.rules.responses_reported_schema_alias
+        && let Some(format) = o
+            .get_mut("text")
+            .and_then(|text| text.get_mut("format"))
+            .and_then(Value::as_object_mut)
+        && format.contains_key("schema_")
+    {
+        if format.get("type").and_then(Value::as_str) != Some("json_schema")
+            || format.contains_key("schema")
+        {
+            return Err(CodecError::Invalid("reported schema alias"));
+        }
+        let schema = format.shift_remove("schema_").expect("checked alias");
+        format.insert("schema".into(), schema);
+    }
     if profile == Profile::Chat && adaptation.rules.chat_inference_response_shape {
         super::inference_shapes::decode(o)?;
     }

@@ -102,6 +102,8 @@ Schema 与工具参数/输出约束保留 authoritative JSON 的属性顺序，�
 
 Value 调用方负责入站前未丢顺序；普通 Value equality/round trip 不证明顺序保持。Shared text-format 意图与 Chat shell 可映射，但不是字节同构；function strict 默认不等价时当前拒绝，而不是归一到同一值。独立证据归 [schema tests](../../tests/semantic/schema.rs)。
 
+Token Plan 的受信 Responses profile 仅在 reported `text.format.type=json_schema` 中将 `schema_` 映射为 `schema`。两字段同时出现（含 null）拒绝；映射后的 Schema 沿用相同验证，属性顺序、精度与 strict 保持。静态响应与事件 snapshot 共用此规则；请求、标准下游及普通 Bailian/Chat 不继承别名准入，编码只使用最终 typed `schema`，编辑不恢复旧 alias。Owners：[具名规则](../../src/protocol/adaptation.rs)、[映射](../../src/protocol/openai/adapter_shapes.rs)、[独立预期](../../tests/semantic/provider_profiles.rs)。
+
 ## Control, message and annotation admission details
 
 当前有几个不能与标准目标混同的边界：

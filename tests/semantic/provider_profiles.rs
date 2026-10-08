@@ -1372,3 +1372,166 @@ fn token_plan_empty_continuation_call_id_preserves_bound_identity_only() {
             .is_err()
     );
 }
+#[test]
+fn token_plan_reported_schema_alias_preserves_final_values_in_static_and_events() {
+    use morphiecore::{
+        protocol::openai::events::EventEncoder,
+        semantic::{task::generation::OutputConstraint, value::Presence},
+    };
+    let provider = Adapter::new(Profile::Responses, Dialect::BailianTokenPlan, None);
+    let standard = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    let schema: Value = serde_json::from_str(
+        r#"{"type":"object","properties":{"zeta":{"type":"integer","default":9007199254740993},"alpha":{"type":"string"}},"required":["zeta","alpha"],"additionalProperties":false}"#,
+    ).unwrap();
+    let format = json!({"type":"json_schema","name":"synthetic","strict":true,"schema":schema});
+    let alias = json!({"type":"json_schema","name":"synthetic","strict":true,"schema_":schema});
+    let mut source = crate::wire::response(2);
+    source["text"] = json!({"format":alias});
+    let saved = source.clone();
+    let decoded = provider
+        .decode_response(source.to_string().as_bytes())
+        .unwrap();
+    let encoded = standard
+        .encode_response(&decoded, &Contract::full())
+        .unwrap();
+    assert_eq!(encoded["text"]["format"], format);
+    assert_eq!(source, saved);
+    let properties = &encoded["text"]["format"]["schema"]["properties"];
+    assert_eq!(
+        properties
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        ["zeta", "alpha"]
+    );
+    assert_eq!(
+        properties["zeta"]["default"].to_string(),
+        "9007199254740993"
+    );
+    // Requests keep the canonical carrier even when going to the same Provider.
+    let request = standard
+        .decode_request(
+            json!({
+                "model":"synthetic","input":"hello","text":{"format":format}
+            })
+            .to_string()
+            .as_bytes(),
+        )
+        .unwrap();
+    let outgoing = provider
+        .encode_request(&request, "bound", &Contract::full())
+        .unwrap();
+    assert_eq!(outgoing["text"]["format"], format);
+
+    let mut decoder = provider.event_decoder();
+    let mut events = vec![];
+    for mut value in crate::wire::events(2) {
+        if let Some(response) = value.get_mut("response") {
+            response["text"] = json!({"format":alias});
+        }
+        events.extend(decoder.push(&value).unwrap());
+    }
+    decoder.finish().unwrap();
+    let streamed = decoder.materialize().unwrap();
+    assert_eq!(streamed.semantic, decoded.semantic);
+    assert_eq!(
+        streamed.metadata.context.settings,
+        decoded.metadata.context.settings
+    );
+    let mut encoder = EventEncoder::new(Profile::Responses, streamed.metadata.clone()).unwrap();
+    let mut wire = vec![];
+    for event in events {
+        wire.extend(encoder.encode(&event, &streamed.fidelity).unwrap());
+    }
+    encoder.finish().unwrap();
+    assert_eq!(wire.last().unwrap()["response"]["text"]["format"], format);
+
+    let mut edited = decoded;
+    edited
+        .metadata
+        .context
+        .settings
+        .as_mut()
+        .unwrap()
+        .text
+        .format = Presence::Value(OutputConstraint::Text);
+    assert_eq!(
+        standard
+            .encode_response(&edited, &Contract::full())
+            .unwrap()["text"],
+        json!({"format":{"type":"text"}})
+    );
+}
+
+#[test]
+fn token_plan_schema_alias_is_response_only_and_rejects_ambiguity() {
+    let provider = Adapter::new(Profile::Responses, Dialect::BailianTokenPlan, None);
+    let mut source = crate::wire::response(2);
+    source["text"] = json!({"format":{
+        "type":"json_schema","name":"synthetic","strict":false,"schema_":{"type":"object"}
+    }});
+    for dialect in [Dialect::Standard, Dialect::MorphieCore, Dialect::Bailian] {
+        assert!(
+            Adapter::new(Profile::Responses, dialect, None)
+                .decode_response(source.to_string().as_bytes())
+                .is_err()
+        );
+    }
+    assert!(
+        provider
+            .decode_request(
+                json!({
+                    "model":"synthetic","input":"hello","text":source["text"]
+                })
+                .to_string()
+                .as_bytes()
+            )
+            .is_err()
+    );
+    for value in [
+        Value::Null,
+        json!({"type":"object"}),
+        json!({"type":"string"}),
+    ] {
+        let mut ambiguous = source.clone();
+        ambiguous["text"]["format"]["schema"] = value;
+        assert!(
+            provider
+                .decode_response(ambiguous.to_string().as_bytes())
+                .is_err()
+        );
+        let mut stream = provider.event_decoder();
+        ambiguous["status"] = json!("in_progress");
+        ambiguous["output"] = json!([]);
+        assert!(
+            stream
+                .push(&json!({
+                    "type":"response.created","sequence_number":0,"response":ambiguous
+                }))
+                .is_err()
+        );
+    }
+    for (key, value) in [
+        ("schema_", Value::Null),
+        ("schema_", json!(42)),
+        ("type", json!("json_object")),
+        ("unknown", json!(true)),
+    ] {
+        let mut invalid = source.clone();
+        invalid["text"]["format"][key] = value;
+        assert!(
+            provider
+                .decode_response(invalid.to_string().as_bytes())
+                .is_err()
+        );
+    }
+    let chat = Adapter::new(Profile::Chat, Dialect::BailianTokenPlan, None);
+    let mut chat_wire = body();
+    chat_wire["response_format"] = source["text"]["format"].clone();
+    assert!(
+        chat.decode_response(chat_wire.to_string().as_bytes())
+            .is_err()
+    );
+}
