@@ -23,9 +23,10 @@ pub const MODELS: &[ModelDefinition] = &[
         developer: "OpenAI",
     },
     // Source: https://x.ai/news/grok-4-7 (2026-09-21).
+    // Image input: https://docs.x.ai/developers/grok-4-7
     ModelDefinition {
         id: "grok-4.7",
-        images: false,
+        images: true,
         files: false,
         strict_tools: false,
         released_at: 1_789_948_800,

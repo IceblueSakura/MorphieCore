@@ -31,9 +31,13 @@ uv run --project tests/sdk --locked --offline python examples/probe.py report te
 - `plan --model` 可重复，将所选 Provider 缩小到精确模型子集。重复、未知或不属于所选 Provider 的模型在读取凭据前拒绝。省略模型筛选则包含所选 Provider 的全部已登记测试绑定，不能将此默认扩大解释为授权。
 - `run --model` 可重复，必须属于计划；`--protocol chat|responses`、`--delivery json|sse` 缩小范围。`--effort none|minimal|medium|max` 是明确请求控制，不自动改默认。
 - cases：`text`、`json`、`schema`、`tool`、`history`、`length`、`cancel`、`image`、`image_math`、`file`、`file_url`、`file_continue`、`file_replay`、`file_reasoning`、`file_reasoning_math`；`reasoning` 的目标限制读取 `examples/probe_support/scenarios.py`，不得套用到任意模型。
+- `reasoning_content` 是显式 Responses 下游的单轮明文验收，每种交付一请求，最多 2048 输出 tokens；不进入默认矩阵。原生 Responses 上游与显式 `--responses-via-chat` 的 Chat 上游分别建计划验收，不互相替代。固定算术 prompt 要求纯文本整数答案，oracle 同时要求实际非空 reasoning content，summary/opaque 不替代。缺省不添加 reasoning 控制，显式 effort 只发送 effort，不附带 summary 请求。SSE 的 content 增量按 owner/坐标累积并校对 done 与终态，不能用快照补缺失增量；复用现有字节、事件、时间和账本守卫。
 - `json` 只请求 JSON object。`schema` 的 live 执行按[strict 验证边界](implementation-plans/next-goal.md#strict-verification)暂停，保留离线场景/控制/oracle 回归；其既有定义为显式 Responses、每种交付两请求、固定 strict JSON Schema 与实际 output 回传。独立 oracle 检查属性顺序、整数类型、固定标签和两轮数值；重复键、额外字段与代码围栏拒绝。保留的 run token cap（最多 2048）及场景选择机制不构成恢复实测授权，场景不进入默认矩阵。
 - `image` 每个协议/交付一请求，使用程序生成的两张无敏感 PNG 与交错文本，提示限定固定基础色集合，oracle 严格检查按图片顺序返回颜色，不对细分色名做同义词容错；最多 512 输出 token，可显式 `--effort none`。不下载图片、不使用账号文件资源、不保存图片或正文；模型准入必须按 catalog 现场查询。独立 PNG 像素/预算守卫在 `tests/sdk/test_probe_core.py`，此场景不证明一般视觉理解质量。
 - `image_math` 每个协议/交付一请求，先从两张程序生成的方块图获得视觉计数，再计算固定算术式，以严格 JSON 数值 oracle 验收；预算取 run 的 token cap（最多 2048）。图片像素、计数和算术预期由独立离线检查保护。可用相同输入分别选取 `--effort none|minimal|medium|max`；档位的真实语义和支持按官方页面现场核对，不从名称推导强度排序。
+- `image_reasoning_content` 复用 `image_math` 的两张合成 PNG 与交错文本，但要求纯文本整数答案和实际非空明文 reasoning content，不请求 JSON/strict 输出。只验收 Responses 下游；原生 Responses 与显式 `--responses-via-chat` 分别建计划，每种交付一请求、最多 2048 输出 tokens。沿用 `reasoning_content` 的 content/summary 区分、SSE 增量检查及资源守卫，不下载或保存图片，不证明一般视觉能力。
+- `opaque_text` / `opaque_image` 是显式原生 Responses 两轮回传场景，目标限制归 `scenarios.py`，不进入默认矩阵或 bridge。前者使用文本算术，后者复用合成方块图；首轮完整 output 原样追加至原始输入，再要求答案加 37。每轮都要求非空 opaque 和正确纯文本答案；显式 medium effort、encrypted include、`store:false`，不发送 previous response ID。每组两请求，`--delivery` 选择首轮交付，第二轮采用相反交付；两场景的 JSON→SSE / SSE→JSON 共 8 请求，每次最多 2048 输出 tokens，首轮失败不发送依赖轮次。SSE 仅在内存核对 reasoning item-done 与终态的 owner、presence 和 opaque 值，不比较不同响应的密文。沿用 history 序列化检查、资源/时间/停止守卫；成功续轮不证明服务端使用相同隐藏推理或长期回放安全。
+- `opaque_image_colors` 是同目标/控制/预算的独立图文对照：复用两张纯色 PNG，首轮识别颜色顺序，原样回传完整 output 后要求反序回答；JSON→SSE / SSE→JSON 共 4 请求。颜色与 opaque 都有严格 oracle，不以通过该对照改写 `opaque_image` 的视觉算术结果。
 - `file` 的精确目标限制由 `scenarios.py` 与 catalog 维护，仅 Responses；每个交付两请求（首次提取 build marker、显式回传实际 output 与原始文件后提取 patch marker），JSON/SSE 合计四请求。使用程序生成的一页有效 PDF（小于 16 KiB）、最多 512 输出 tokens，marker 只在文件内，不在 prompt 提供答案；沿用共享账本、零重试和正文禁存。场景与文档结构的独立预期归 `tests/sdk/test_probe_core.py`，不证明一般 PDF 质量或扩大文件 URL/ID 准入。
 - `file_url` 仅明确选定的 Responses 目标，每种交付两请求、最多512输出tokens：读取公开W3C测试PDF的可见文本，再保留原URL与实际output续轮回答词数。来源/许可归[资源参考](references/multimodal-and-resources.md#5-后续验收的最小单元)；probe不上传/发布文件，Gateway不下载，外部PDF仅用于有授权的live场景。此检查不能证明上游确实下载而非缓存/先验知识回答，也不证明远端内容永久不变。
 - `file_replay` 每组两请求：SSE 首轮提取 build marker，随后将原始文件和实际 output 回传至 JSON 续轮提取 patch marker。只选 Responses/SSE 组（第二次交付固定 JSON），最多 512 输出 tokens，首轮失败停止；opaque 未报告时不宣称已验证 opaque 回传。MorphieCore 不 retry/fallback，聚合商内部路由策略不由本地账本保证。
@@ -50,7 +54,7 @@ uv run --project tests/sdk --locked --offline python examples/probe.py report te
 
 对话 `plan --responses-via-chat` 必须显式指定模型，且目标在 probe catalog 同时声明 Chat/Responses。计划将选择绑定到不可变 hash；runner 在临时 Gateway 配置中设置 `responses_via_chat`，只走固定 Chat endpoint，不尝试 native Responses 或额外 fallback。创建和 dry-run 仍不读凭据或联网。
 
-这种计划要求 `run --protocol responses`，只选择 `text,json,tool,history,parallel` 的有限场景；不能借它恢复 strict adherence 或文件/媒体矩阵。其请求上限、output-token cap、deadline、零重试、源码指纹、脱敏和取消清理仍使用共用守卫。结果说明的是标准客户端到 Chat 上游的所选闭环，不证明源容器无损回传或 SDK 严格完整模式；未报告 settings/usage 明细不得补造。
+这种计划要求 `run --protocol responses`，只选择 `text,json,tool,history,parallel,reasoning_content,image_reasoning_content` 的有限场景；图片仅为上述合成图文明文场景，不能借它恢复 strict adherence、文件或一般媒体矩阵。其请求上限、output-token cap、deadline、零重试、源码指纹、脱敏和取消清理仍使用共用守卫。结果说明的是标准客户端到 Chat 上游的所选闭环，不证明源容器无损回传或 SDK 严格完整模式；未报告 settings/usage 明细不得补造。
 
 ## 独立图片生成 probe
 
@@ -91,6 +95,10 @@ uv run --project tests/sdk --locked --offline python examples/probe.py run \
 颜色图片场景另记录格式与颜色顺序的两个布尔观察，失败分类区分格式、颜色和意外工具调用。单项正确不使整次请求通过；不靠容错解析、trim 内部空白或重试消除严格答案失败。它们只诊断该固定 synthetic oracle，不证明一般视觉准确率。
 
 `reported_input_tokens`、`reported_output_tokens`、`reported_reasoning_tokens`、`reported_image_tokens`、`reported_cached_tokens` 仅取 SDK 消费到的实际 reported usage；缺省/null 为未知，不补零，不从可读文本长度估计。非成功 terminal 携带的 actual usage 同样可记录，但不因此标记成功。`reasoning_chars` 按 Chat/Responses 各自 owner 统计可读视图（含 summary/content），排除 opaque 值且避免重复载体计数；它不是推理 token 的替代品。对照时分别报告协议、交付、场景、终态和 oracle。单次耗时包含网络、缓存、生成和消费影响；顺序执行的小样本不能证明档位因果排序、一般模型质量、缓存收益或计费差异。
+
+Responses 另以 `reasoning_content_chars` / `reasoning_summary_chars` 分别计数实际 content/summary 文本，不保存正文；`reasoning_content_stream_ok` 只表示明文场景中增量、done 与终态一致，不证明上游报告了非空 content，后者由独立 oracle 检查。
+
+Opaque 场景的 `replayed_opaque_items` 仅计数实际提交 history 中的回放项；`opaque_stream_ok` 表示当前 SSE 的 item-done 与终态一致。它们不输出 item ID、密文或 hash，也不替代非空 opaque、完整 history 一致性及续轮 oracle。
 
 `ledger.sqlite3` 是权威账本，`summary.json` 是原子替换的派生视图。状态为 `reserved/dispatched/passed/oracle_failed/failed/cancelled/not_run`；取消是预期测试动作，不是成功生成终态。报表字段使用封闭枚举和有界数值，不能借 arbitrary error/message/header 字段保存私有值。
 

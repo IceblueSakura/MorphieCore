@@ -127,7 +127,24 @@ def chat_result(result, streaming, *, allowed_finishes=("stop", "tool_calls"), m
     return ([message], message.get("content") or "", message.get("tool_calls") or [])
 
 
-def response_result(result, streaming, *, metrics=None):
+def reasoning_content_metrics(history):
+    """Separate standard Responses content and summary; never count opaque."""
+    return {
+        metric: sum(len(part.get("text") or "")
+                    for item in history if item.get("type") == "reasoning"
+                    for part in item.get(field) or [] if part.get("type") == kind)
+        for metric, field, kind in (
+            ("reasoning_content_chars", "content", "reasoning_text"),
+            ("reasoning_summary_chars", "summary", "summary_text"),
+        )
+    }
+
+
+def response_result(result, streaming, *, metrics=None, check_reasoning_content=False,
+                    check_opaque=False):
+    def replay_snapshot(item):
+        return {key: item[key] for key in ("id", "encrypted_content") if key in item}
+
     def record_usage(snapshot):
         if metrics is not None:
             usage = getattr(snapshot, "usage", None)
@@ -135,6 +152,7 @@ def response_result(result, streaming, *, metrics=None):
                 usage.model_dump(mode="json", exclude_unset=True) if usage is not None else None,
                 "responses"))
 
+    reasoning_parts, reasoning_done, opaque_done = {}, set(), {}
     if streaming:
         final = None
         total = frames = 0
@@ -142,6 +160,35 @@ def response_result(result, streaming, *, metrics=None):
             frames += 1
             total += len(event.model_dump_json())
             require(frames <= 65536 and total <= 2 * 1024 * 1024, "sdk_shape", "wire")
+            if check_opaque and event.type == "response.output_item.done":
+                value = event.model_dump(mode="json", exclude_unset=True)
+                item = value.get("item") or {}
+                if item.get("type") == "reasoning":
+                    index = value.get("output_index")
+                    require(type(index) is int and index >= 0 and index not in opaque_done,
+                            "opaque_item_done", "wire")
+                    opaque_done[index] = replay_snapshot(item)
+            if check_reasoning_content and event.type in (
+                "response.reasoning_text.delta", "response.reasoning_text.done"
+            ):
+                value = event.model_dump(mode="json", exclude_unset=True)
+                coords = (value.get("output_index"), value.get("content_index"))
+                require(all(type(n) is int and n >= 0 for n in coords),
+                        "reasoning_content_coordinates", "wire")
+                identity = value.get("item_id")
+                require(isinstance(identity, str) and bool(identity)
+                        and coords not in reasoning_done,
+                        "reasoning_content_owner", "wire")
+                owner, text = reasoning_parts.get(coords, (identity, ""))
+                require(owner == identity, "reasoning_content_owner", "wire")
+                if event.type == "response.reasoning_text.delta":
+                    delta = value.get("delta")
+                    require(isinstance(delta, str), "reasoning_content_delta", "wire")
+                    reasoning_parts[coords] = (owner, text + delta)
+                else:
+                    require(coords in reasoning_parts and value.get("text") == text,
+                            "reasoning_content_done", "wire")
+                    reasoning_done.add(coords)
             if event.type in ("response.completed", "response.incomplete", "response.failed"):
                 record_usage(event.response)
             if event.type == "response.completed":
@@ -159,6 +206,23 @@ def response_result(result, streaming, *, metrics=None):
     history = [
         item.model_dump(mode="json", exclude_unset=True) for item in result.output
     ]
+    if streaming and check_opaque:
+        expected = {index: replay_snapshot(item) for index, item in enumerate(history)
+                    if item.get("type") == "reasoning"}
+        require(opaque_done == expected, "opaque_snapshot", "wire")
+        if metrics is not None:
+            metrics["opaque_stream_ok"] = True
+    if streaming and check_reasoning_content:
+        expected = {
+            (index, part_index): (item.get("id"), part.get("text"))
+            for index, item in enumerate(history) if item.get("type") == "reasoning"
+            for part_index, part in enumerate(item.get("content") or [])
+            if part.get("type") == "reasoning_text"
+        }
+        require(reasoning_parts == expected and reasoning_done == set(expected),
+                "reasoning_content_snapshot", "wire")
+        if metrics is not None:
+            metrics["reasoning_content_stream_ok"] = True
     text = "".join(
         (
             part["text"]

@@ -64,10 +64,13 @@ def _grid_png(grid):
     return _png(rows)
 
 
-def visual_math_history(protocol):
+def visual_math_history(protocol, *, plain_text=False):
     """Require independent visual counts before combining the two panels."""
+    answer = ("Return only the integer answer, without words, punctuation or code fences."
+              if plain_text else
+              "Return only a JSON object with exactly one integer field answer.")
     return [{"role": "user", "content": [
-        _text(protocol, "Each image contains separate red and blue squares on a white background. Let R1 and B1 be the numbers of red and blue squares in the first image, and R2 and B2 those in the second image. Compute R1 * B2 - B1 * R2. Return only a JSON object with exactly one integer field answer."),
+        _text(protocol, "Each image contains separate red and blue squares on a white background. Let R1 and B1 be the numbers of red and blue squares in the first image, and R2 and B2 those in the second image. Compute R1 * B2 - B1 * R2. " + answer),
         _image(protocol, _grid_png(("RRB", "BRR", "BBR"))),
         _text(protocol, "Second image:"),
         _image(protocol, _grid_png(("BRB", "BBR", "RBB"))),

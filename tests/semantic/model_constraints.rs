@@ -53,3 +53,39 @@ fn same_model_keeps_semantics_while_each_target_projects_media_independently() {
         .unwrap();
     assert!(client.encode_request(&omitted, "b", &compatible).is_ok());
 }
+
+#[test]
+fn grok_image_input_and_opaque_include_reach_the_fixed_responses_endpoint() {
+    use morphiecore::topology::{ProtocolProfile, catalog::SUBSCRIPTION_BINDINGS};
+    let binding = SUBSCRIPTION_BINDINGS
+        .iter()
+        .find(|binding| binding.profile == "grok")
+        .unwrap();
+    let endpoint = binding.endpoint();
+    assert_eq!(endpoint.protocol, ProtocolProfile::OpenAiResponses);
+    assert_eq!(endpoint.target.origin.as_str(), "https://api.x.ai");
+    assert_eq!(endpoint.target.path.as_str(), "/v1/responses");
+    let client = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    let body = json!({"model":binding.model,"store":false,
+        "include":["reasoning.encrypted_content"],
+        "input":[{"role":"user","content":[
+            {"type":"input_text","text":"before"},
+            {"type":"input_image","image_url":"data:image/png;base64,AQID"},
+            {"type":"input_text","text":"after"}]}]});
+    let request = client.decode_request(body.to_string().as_bytes()).unwrap();
+    request
+        .check_semantic(&binding.public_model().contract)
+        .unwrap();
+    assert!(endpoint.representation.semantics.image_input);
+    assert!(!endpoint.representation.semantics.file_input);
+    assert!(!endpoint.representation.semantics.tool_result_images);
+    let upstream = Adapter::new(Profile::Responses, binding.dialect, None)
+        .encode_request(&request, binding.upstream, &endpoint.representation)
+        .unwrap();
+    assert_eq!(
+        upstream["input"],
+        json!([{"type":"message","role":"user","content":body["input"][0]["content"]}])
+    );
+    assert_eq!(upstream["include"], body["include"]);
+    assert_eq!(upstream["store"], false);
+}

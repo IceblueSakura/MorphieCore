@@ -49,6 +49,7 @@ NUMBERS = {
     "wire_bytes",
     "text_chars",
     "reasoning_chars",
+    "reasoning_content_chars", "reasoning_summary_chars",
     "tool_calls",
     "reported_output_tokens",
     "reported_input_tokens",
@@ -57,6 +58,7 @@ NUMBERS = {
     "reported_cached_tokens",
     "reported_logprob_slots",
     "reported_opaque_items",
+    "replayed_opaque_items",
     "handed_off_bytes",
     "received_bytes",
     "upstream_head_ms",
@@ -66,6 +68,8 @@ NUMBERS = {
 BOOLS = {
     "image_answer_format_ok", "image_color_order_ok",
     "sdk_consumed",
+    "reasoning_content_stream_ok",
+    "opaque_stream_ok",
     "image_decoded", "image_usage_omitted", "image_billing_omitted",
     "wire_closed",
     "content_ok",
@@ -91,6 +95,7 @@ ENUMS = {
         "snapshot_text", "snapshot_annotations", "snapshot_probability_presence", "snapshot_probabilities"},
     "oracle_failure": {
         "image_answer_calls", "image_answer_format", "image_answer_colors",
+        "missing_reasoning_content", "reasoning_output_shape",
         "exact_text", "schema_answer", "image_format", "image_decode", "image_pixels", "visual_math_format", "visual_math_value",
         "visual_math_calls", "file_marker", "file_math", "missing_opaque", "unexpected_terminal", "other",
     },

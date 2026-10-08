@@ -4,6 +4,8 @@
 
 实际准入须分别核对 [adapters](../../src/adapter/mod.rs)、[codecs](../../src/protocol/openai/mod.rs)、[lowering](../../src/lowering/generation.rs)、[HTTP activation](../../src/gateway/config.rs)和独立预期；库类型、目标表示、实例启用和上游接受不是同一层。现有 Chat/Responses profiles 仍有约束力，新的协议中立设计不自动扩大准入。
 
+名录按四层阅读：**语义/合同**（缺概念、状态或决定）、**wire/投影**（IR 可表达但目标载体或映射未闭合）、**接线/执行**（绑定、准入、I/O 或消费者主链缺口）、**验收**（缺少特定场景的独立或实际证据）。一项可跨多层；已存在库类型不证明产品可用，明确的非目标或标准不可表示也不自动成为待修 bug。是否近期选片与是否保留为缺口分别判断，优先级和延期条件只归[next-goal](../implementation-plans/next-goal.md)。
+
 ## 文件范围与延期边界
 
 文件仅维持既有 Responses user inline/URL 基础输入及必要正确性、安全维护。Issuer-bound 文件 ID、工具文件结果、生成文件产物、更多文件格式/目标、Chat 文件投影及文件管理 API 等扩展继续暂停，恢复评估按[计划的有限首批范围与重评节点](../implementation-plans/next-goal.md#推进顺序与退出条件)执行，不等待所有模态完成，也不自动恢复实施。下列缺口继续保留，不表示下一片实施优先级，也不作为其他模态的前置；延期不放宽现行拒绝或授权边界。
@@ -15,11 +17,13 @@
 - **Text/Image/File 承载**：[资源表与使用处](../../src/semantic/task/generation/resource_table.rs)的本地身份、声明条件和借用视图不补足 issuer-bound 原生引用、实际权限或一般产物生命周期。[owner-local 引用](../../src/semantic/task/generation/citation.rs)及声明依赖不补足未报告的源正文/边界、更多坐标或未实现的原生载体；资源条件目前只有独立的本地匹配检查，现行 lowering/codecs 拒绝所有非默认条件；本地匹配成功不代表目标准入或实际权限。标准 user inline 与 URL 文件分别以 [inline profile](../architecture/responses-text-profile.md#user-inline-file-input)和 [URL profile](../architecture/responses-text-profile.md#user-file-url-input)为界；issuer-bound 文件 ID、工具文件结果、资源操作及更多目标的文件载体仍缺主链。按[当前主线](../implementation-plans/next-goal.md)分别选片，不从共享 source 或文件输入推定所有用途已准入，不以 adapter 或私有字段补偿必要承载不足。
 - **后续媒体与 Embedding**：Chat [生成音频](../../src/semantic/task/generation/audio.rs)仍采用其固定 reference/expiry/transcript 组合，独立 [Speech](../architecture/speech-profile.md)不补足一般音频 history/资源主链；生成图片的流式产物与事件、vector 所需独立请求/结果合同尚未闭合；静态有序产物的独立 ImageGeneration task 不补足这些分支。[TaskKind](../../src/semantic/task/mod.rs)枚举不证明实现。这些缺口保留，但不作为 Text/Image/File 或基础 TTS 的前置。
 - **标准客户端目标**：尚未完成整个标准 union 的逐分支准入与消费者验收；[HTTP 配置](../../src/gateway/config.rs)选择 Standard Responses 不消除这些缺口，也不为无标准载体的报告添加位置。[目标投影](../architecture/protocol-and-lowering.md#semantic-loss)仅采用已定稿规则，其他报告省略仍需选片，不任意合并独立消息/part 或伪造标准字段。现行边界归 [Responses profile](../architecture/responses-text-profile.md#control-message-and-annotation-admission-details)。
+- **原生协议接入**：Google Interactions / Anthropic Messages 仍是语义设计来源，没有对应的原生 codec、adapter 与执行主链；[协议模块](../../src/protocol/mod.rs)和[适配入口](../../src/adapter/mod.rs)的现有 OpenAI 兼容路径不能替代它们。具体产品需要这些原生协议时，先按[next-goal 的恢复条件](../implementation-plans/next-goal.md#延期目标与恢复条件)选定 profile，不据参考合同或 typed 分支推定接入。
 
 - **交互与依赖主链**：跨 response 的逻辑 turn/continuation、所选容器投影以外的跨协议关系与逐格式 replay 的原生交付/回传尚无完整主链。[共享消息容器](../../src/semantic/task/generation/envelope.rs)、[pending-call 视图](../../src/semantic/task/generation/continuation.rs)、[本地 response 关联](../../src/semantic/task/generation/turn.rs)和[进程内依赖证明](../../src/semantic/task/generation/dependency.rs)以及[reported progress](../../src/semantic/task/generation/progress.rs)/[owner-local 格式绑定值](../../src/semantic/task/generation/replay.rs)不补足真实上游 turn 映射、全链身份、opaque/目标/执行权限的整体判据，或部分结果 history 的执行准入。非 reasoning 附件没有现行公开 carrier，媒体分片和未选格式仍需独立合同；库级 assistant 图片观察不启用 Generation 图片输出。结果关联齐备与 `Unreported` 都不能证明 turn 已结束或下一请求已就绪；具体边界见[continuation profile](../architecture/responses-text-profile.md#response-outcome-and-continuation)。
 - **ClientManaged 与 Provider 工具观察**：[Provider 独立分支](../../src/semantic/task/generation/provider.rs)的选定 typed 动作和附件不补足一般工具内容、搜索来源/引用、未选格式或原生映射；[结果 builder](../../src/semantic/task/generation/event.rs)中的未完成值不能物化为闭合静态结果，也不代表媒体或原生动作分片接入。来源域冲突的关联诊断不代替未知原生分支的 parser 诊断。普通 ToolResult 的严格 response 拒绝仍保留；不能因 Provider 观察可表达而放宽公共入口。既有[构造](../../src/semantic/task/generation/client_managed.rs)、[配置绑定](../../src/semantic/task/generation/configuration.rs)和[受保护变换](../../src/semantic/task/generation/context_transform.rs)不提供 Provider 原定义映射、一般指令策略语言或完整资源/replay 组合保证；原生 intake 不推断修订，未声明原定义仍未知。修订及绑定没有公开 carrier，ServerManaged 与 session manager 不由这些纯核心入口自动恢复实施。
 - **Replay 闭合后权威**：已闭合 item 的迟到 opaque 与回放权威尚未定稿，具体问题、实施边界和恢复所需证据集中在[待决状态](open-questions.md#reasoning-opaque-的闭合后权威)。当前接受/拒绝归 [Responses profile](../architecture/responses-text-profile.md#reasoning-replay-authority)；不因这个缺口预建更新事件或回放服务。
 - **分组与客户端 replay**：[客户端边界](../architecture/client-generation-profile.md)没有消息容器、其他格式 replay、跨响应身份或 authenticated dependency proof 的私有位置。容器边界仅按[具名投影](../architecture/protocol-and-lowering.md#message-envelope-projection)省略，Chat 目标组装不恢复源归属；一般异构容器到 Chat、非连续关系和必要 replay 的跨协议回传仍需独立合同，不得以邻接或删除 carrier 推定必要依赖可丢失。
+- **跨目标 opaque / thinking 投影**：按 Provider/Model 剥离 opaque、可见 thinking 转 assistant text 尚无已定稿执行合同及实现；来源可信性、所选 owner/格式、依赖处置、损失诊断与标准客户端回传仍需闭合。仅保留[未来方向](../implementation-plans/next-goal.md#cross-target-history)，本阶段不实施，也不与 ServerManaged 捆绑；现有同目标回放和不兼容拒绝不能算作该转换已支持。
 - **限定工具选择**：共享 namespace definitions、调用和结果关联不证明标准具名 `tool_choice` 有限定引用载体。当前固定类型缺少该位置；按 [namespace 合同](../architecture/responses-text-profile.md#tool-namespaces)保留 typed 引用并拒绝投影，等待明确标准载体，不以扩展字段、名称拼接或选择其他同名工具替代。
 - **内容、结果与资源**：[结构化参数/结果及独立执行报告](../architecture/client-generation-profile.md)保留 typed owner，但无公开 wire 主链；工具图片仍无 Chat carrier。更多资源坐标/引用的原生映射、一般 file/resource ID 生命周期、完整工具媒体、结果 Schema adherence 与更广媒体输出/events 尚未闭合。[Chat 生成音频](../architecture/chat-media-profile.md)仅提供有界库级值、控制、显式终态流和受信 scope 的引用投影；公开 Gateway 的无状态来源证明、资源保留/刷新及音频产品激活不由该切片补足。
 - **Cache 与 usage**：[前缀证明](../../src/semantic/cache.rs)不承载 Provider 断点/TTL/远端缓存资源，也不保证 wire 字节或命中；[命名 usage view](../../src/semantic/task/generation/usage_views.rs)不是一般计费或完整模态分解。非 operation-final 或不满足标准关系的 scoped reports 没有公开客户端位置；不能合并成虚构 total 或补猜缺失计数，现行目标限制仍有效。
@@ -39,6 +43,8 @@
 - 最小 loopback 网关与有界 probe 元数据不等于生产观测、负载或长期资源保障。
 
 ## 验收缺口
+
+**组合功能与目标差异**：单项文本、reasoning、图片或工具回归不能自动证明它们在所选目标上的组合。新增 Provider/model 绑定或 profile 时，需分别核对语义准入、实际 wire、标准消费者交付和必要 history/opaque/工具结果回传；新目标的缺口按负责层处理，不以模型清单、测试数量或一个代表性目标的结果替代。当前目录、账户资格与实例激活仍须现场查询，本页不记录动态清单或运行结果。
 
 固定标准 union 尚无完整逐分支 required/null/跨 kind 与组合审计。独立回归入口见 [semantic](../../tests/semantic.rs)、[transport](../../tests/transport.rs)、[credential](../../tests/credential.rs)与[gateway](../../tests/gateway.rs)；存在测试不证明完整覆盖或最近执行通过。
 

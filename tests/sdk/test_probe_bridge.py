@@ -61,3 +61,39 @@ class BridgeTests(unittest.TestCase):
             ]:
                 with self.assertRaises(ProbeFailure):
                     Run.create(Path(temp) / "bad", responses_via_chat=True, **kwargs)
+
+    def test_reasoning_content_bridge_keeps_two_requests_and_shared_oracle(self):
+        from contextlib import nullcontext
+        from unittest.mock import patch
+        from probe_support.scenarios import matrix, expect_reasoning_content
+
+        with tempfile.TemporaryDirectory() as temp:
+            created = Run.create(Path(temp) / "bridge", providers="xiaomi",
+                                 models=["mimo-v2.6-pro"], limit=2, tokens=2048,
+                                 responses_via_chat=True)
+            run = Run(created.directory)
+            self.assertTrue(run.plan["responses_via_chat"])
+            groups = plan_groups(run, run.plan["models"],
+                                 cases=("reasoning_content",), protocol="responses")
+            self.assertEqual([(g[1], g[2], g[5], g[6]) for g in groups],
+                             [("responses", False, 1, 2048),
+                              ("responses", True, 1, 2048)])
+            for protocol, cases in [
+                ("chat", ("reasoning_content",)), (None, ("reasoning_content",)),
+                ("responses", ("reasoning_content", "image")),
+                ("responses", ("reasoning_content", "schema")),
+                ("responses", ("reasoning_content", "reasoning")),
+            ]:
+                with self.assertRaises(ProbeFailure):
+                    plan_groups(run, run.plan["models"], cases=cases, protocol=protocol)
+            with patch("probe_support.scenarios.session",
+                       return_value=nullcontext((None, None))), patch(
+                       "probe_support.scenarios.call", return_value=([], "", [])) as send:
+                self.assertTrue(matrix(run, run.plan["models"],
+                                       cases=("reasoning_content",), protocol="responses"))
+            self.assertEqual(send.call_count, 2)
+            for call in send.call_args_list:
+                self.assertEqual(call.args[2:4], ("mimo-v2.6-pro", "responses"))
+                self.assertEqual(call.kwargs["cap"], 2048)
+                self.assertEqual(call.kwargs["extra"], {})
+                self.assertIs(call.kwargs["oracle"], expect_reasoning_content)

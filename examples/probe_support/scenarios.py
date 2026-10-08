@@ -4,7 +4,10 @@ import json
 import re
 import time
 from .checks import ProbeFailure, require
-from .codecs import chat_result, response_result, opaque_records, reasoning_chars
+from .codecs import (
+    chat_result, response_result, opaque_records, reasoning_chars,
+    reasoning_content_metrics,
+)
 from .ledger import MODELS, ENUMS
 from .runtime import session
 
@@ -35,6 +38,7 @@ def call(
     extra=None,
     oracle=None,
     cancel=False,
+    check_opaque=False,
 ):
     transport.prepare(model, protocol, scenario, history)
     started = time.monotonic()
@@ -85,7 +89,12 @@ def call(
                 else result.choices[0].finish_reason
             )
         else:
-            output, text, calls = response_result(result, streaming, metrics=metrics)
+            output, text, calls = response_result(
+                result, streaming, metrics=metrics,
+                check_reasoning_content=oracle in (
+                    expect_reasoning_content, expect_image_reasoning_content),
+                check_opaque=check_opaque,
+            )
             actual = "response.completed"
         metrics.update(
             sdk_consumed=True,
@@ -95,6 +104,9 @@ def call(
             reasoning_chars=reasoning_chars(output, protocol),
         )
         if protocol == "responses":
+            metrics.update(reasoning_content_metrics(output))
+            if check_opaque:
+                metrics["replayed_opaque_items"] = len(opaque_records(history))
             # Shape counters diagnose replay admission without capturing values.
             metrics["reported_logprob_slots"] = sum(
                 "logprobs" in part for item in output if item.get("type") == "message"
@@ -185,6 +197,53 @@ def expect_text(value):
     def check(text, calls, output):
         require(not calls and text.strip() == value, "exact_text")
 
+    return check
+
+
+def require_reasoning_text_output(calls, output):
+    """Require actual plaintext reasoning and exclude tools or non-text artifacts."""
+    require(
+        any(part.get("type") == "reasoning_text"
+            and isinstance(part.get("text"), str) and part["text"].strip()
+            for item in output if item.get("type") == "reasoning"
+            for part in item.get("content") or []),
+        "missing_reasoning_content",
+    )
+    require(not calls and all(
+        item.get("type") == "reasoning"
+        or item.get("type") == "message" and item.get("role") == "assistant"
+        and all(part.get("type") == "output_text" for part in item.get("content") or [])
+        for item in output
+    ), "reasoning_output_shape")
+
+
+def expect_reasoning_content(text, calls, output):
+    """Require actual plaintext content and a separate exact arithmetic answer."""
+    require_reasoning_text_output(calls, output)
+    expect_text("15144")(text, calls, output)
+
+
+def expect_image_reasoning_content(text, calls, output):
+    """The independent pixel counts yield 5 * 6 - 4 * 3, not a prompt-supplied answer."""
+    require_reasoning_text_output(calls, output)
+    expect_text("18")(text, calls, output)
+
+
+def expect_opaque_answer(answer):
+    """Check opaque presence/identity, not its hidden meaning or long-term validity."""
+    def check(text, calls, output):
+        records = opaque_records(output)
+        require(bool(records) and all(
+            isinstance(identity, str) and identity
+            and isinstance(token, str) and token
+            for identity, token in records
+        ) and len({identity for identity, _ in records}) == len(records), "missing_opaque")
+        require(all(item.get("type") == "reasoning"
+                    or item.get("type") == "message" and item.get("role") == "assistant"
+                    and all(part.get("type") == "output_text"
+                            for part in item.get("content") or [])
+                    for item in output), "reasoning_output_shape")
+        expect_text(str(answer))(text, calls, output)
     return check
 
 
@@ -307,7 +366,9 @@ def plan_groups(
 ):
     if run.plan.get("responses_via_chat"):
         require(protocol == "responses" and all(
-            case in ("text", "json", "tool", "history", "parallel") for case in cases
+            case in ("text", "json", "tool", "history", "parallel", "reasoning_content",
+                     "image_reasoning_content")
+            for case in cases
         ), "bridge_selection", "setup")
     require(effort in (None, "none", "minimal", "medium", "max"), "effort", "setup")
     groups = []
@@ -332,6 +393,11 @@ def plan_groups(
                             "length",
                             "cancel",
                             "reasoning",
+                            "reasoning_content",
+                            "image_reasoning_content",
+                            "opaque_text",
+                            "opaque_image",
+                            "opaque_image_colors",
                             "image",
                             "image_math",
                             "file",
@@ -346,6 +412,12 @@ def plan_groups(
                     )
                     require(case not in ("file", "file_url", "file_continue", "file_replay") or model == "gpt-6-luna" and proto == "responses", "file_target", "setup")
                     require(case != "schema" or proto == "responses", "schema_target", "setup")
+                    require(case not in ("opaque_text", "opaque_image", "opaque_image_colors")
+                            or model == "grok-4.7" and proto == "responses"
+                            and effort in (None, "medium"), "opaque_target", "setup")
+                    require(case not in ("reasoning_content", "image_reasoning_content")
+                            or proto == "responses",
+                            "reasoning_content_target", "setup")
                     require(case not in ("file_reasoning", "file_reasoning_math") or model == "gpt-6-luna" and proto == "responses" and effort in (None, "medium"), "file_reasoning_target", "setup")
                     if case in ("file_replay", "file_reasoning", "file_reasoning_math") and not stream:
                         continue
@@ -373,6 +445,11 @@ def plan_groups(
                         "history": 4,
                         "parallel": 2,
                         "reasoning": 2,
+                        "reasoning_content": 1,
+                        "image_reasoning_content": 1,
+                        "opaque_text": 2,
+                        "opaque_image": 2,
+                        "opaque_image_colors": 2,
                         "image": 1,
                         "image_math": 1,
                         "file": 2,
@@ -385,7 +462,9 @@ def plan_groups(
                     cap = min(1024, run.plan["tokens"]) if case in ("file_reasoning", "file_reasoning_math") else 8 if case == "length" else min(512 if case in ("image", "file", "file_url", "file_continue", "file_replay") else 2048, run.plan["tokens"])
                     require(cap <= run.plan["tokens"], "case_budget", "budget")
                     selected_effort = (
-                        "medium" if case in ("reasoning", "file_reasoning", "file_reasoning_math") else effort or "default"
+                        "medium" if case in ("reasoning", "file_reasoning", "file_reasoning_math",
+                                            "opaque_text", "opaque_image",
+                                            "opaque_image_colors") else effort or "default"
                     )
                     group = f"sdk:{model}:{proto}:{'sse' if stream else 'json'}:{case}:{selected_effort}"
                     groups.append((model, proto, stream, case, group, count, cap))
@@ -522,6 +601,49 @@ def matrix(
                         image_history(proto) if case == "image" else visual_math_history(proto),
                         extra=controls,
                         oracle=expect_image if case == "image" else expect_visual_math)
+                elif case in ("opaque_text", "opaque_image", "opaque_image_colors"):
+                    controls = {"store": False, "include": ["reasoning.encrypted_content"],
+                                "reasoning": {"effort": "medium"}}
+                    followup = ("Add 37 to your previous answer. Return only the integer, "
+                                "without words, punctuation or code fences.")
+                    if case == "opaque_image_colors":
+                        from .images import image_history
+                        history = image_history(proto)
+                        answers = ("red,blue", "blue,red")
+                        followup = ("Return those two color labels in reverse order. "
+                                    "Use exactly two lowercase labels separated by a comma, "
+                                    "no spaces or other text.")
+                    elif case == "opaque_image":
+                        from .images import visual_math_history
+                        history = visual_math_history(proto, plain_text=True)
+                        answers = (18, 55)
+                    else:
+                        history = [{"role": "user", "content":
+                            "Compute (317 * 43) + (89 * 17). Return only the integer answer, "
+                            "without words, punctuation or code fences."}]
+                        answers = (15144, 15181)
+                    for n, answer in enumerate(answers, 1):
+                        output, _, _ = invoke(
+                            n, history, extra=controls, check_opaque=True,
+                            streaming=stream if n == 1 else not stream,
+                            oracle=expect_opaque_answer(answer))
+                        # Carry the complete reported output, never reconstruct a reasoning item.
+                        history.extend(output)
+                        if n == 1:
+                            history.append({"role": "user", "content": followup})
+                elif case in ("reasoning_content", "image_reasoning_content"):
+                    # Effort is optional; summary is not a request for raw content.
+                    controls = {"reasoning": {"effort": effort}} if effort is not None else {}
+                    if case == "image_reasoning_content":
+                        from .images import visual_math_history
+                        history = visual_math_history(proto, plain_text=True)
+                        oracle = expect_image_reasoning_content
+                    else:
+                        history = [{"role": "user", "content":
+                            "Compute (317 * 43) + (89 * 17). Return only the integer answer, "
+                            "without words, punctuation or code fences."}]
+                        oracle = expect_reasoning_content
+                    invoke(1, history, extra=controls, oracle=oracle)
                 elif case == "schema":
                     extra["text"] = {"format": {
                         "type": "json_schema", "name": "ordered_answer", "strict": True,
