@@ -18,9 +18,7 @@ Agent runtime 与恢复不列入本项目的实施或延期目标；职责边界
 
 以下是**选片优先级，不是整块实施阶段**。每项按最小可观察场景拆分；前项只需闭合后项实际依赖的边界，不要求先补齐整个 Responses 标准。已有基础层和独立覆盖直接复用，不重复安排“重建 IR / Gateway / 凭据管理器”。
 
-**ClientManaged 选片边界。** Responses、Interactions、Messages 共同提供语义反例；既有具名投影、资源/引用、身份/上下文/配置/控制/计量、所选 Provider 动作、Replay 附件与纯核心/消费者组合场景作为输入与回归，不再重复排期。当前没有自动进入的后继阶段；新差异按[选片条件](#后续选片条件)定稿。Google/Anthropic 原生实现与 ServerManaged 不自动恢复；不能因此删去 Provider 工具结果或必要生命周期语义。既有 Responses/Chat 随片迁移，不等待整个标准完成才修复 codec。
-
-**请求型音频转为维护与后续独立选片。** 基础 task、标准请求、有界交付及目标映射按 [Speech](../architecture/speech-profile.md)和[Transcription profile](../architecture/transcription-profile.md)维护，嵌入/binary 激活归 [HTTP 合同](../http-gateway.md)。低延迟交付、下游 SSE、转录扩展与实际服务验收仍可按具体需求独立定稿，不重复建设已有接线，也不成为 IR 的前置。下表为既有接口维护与后续产品选片顺序，不把本轮三协议语义工作缩减为单 function 子集。
+现有 ClientManaged 语义、Responses/Chat 转换、模型发现及请求型媒体是维护输入，不再作为待建基础层排期。具体承载、接线与消费者缺口查[实施边界](../implementation-status/generation.md)，所选 profile 的合同和回归随片维护；不以整个标准、其他模态或账户资格作为纯库修复的前置。
 
 **产品选型顺序：优先 OpenRouter 上采用标准 OpenAI 协议的模型，次选 Token Plan 相关模型。** 这是接入优先级，不是请求内自动 fallback，也不限定模型研发者必须是 OpenAI。按具体 operation 核对协议、默认值、控制与产物；“OpenAI-compatible”不能替代逐项合同。必要差异仅在受信 profile 中具名映射，保持标准下游与共享 IR，不把不支持的控制静默丢弃。Token Plan 的套餐准入和所需原生协议分别核对，不与普通按量端点或凭据互换。来源入口见 [OpenRouter](../references/providers/README.md#openrouter) 与 [Model Studio](../references/providers/README.md#alibaba-cloud-model-studio)；此顺序不授权真实调用或私有 activation。
 
@@ -33,33 +31,14 @@ Agent runtime 与恢复不列入本项目的实施或延期目标；职责边界
 
 **依赖关系：**第 1、2 项按实际功能交错推进，不等待完整标准；第 3 项的设计论证可独立进行，行为实施必须先闭合所选映射合同。类型化消费与必要回传从首片开始，纯库检查不等待账户资格。标准模型发现保持维护，不重新建设；SIWC 采用按下节独立处理，不阻塞 API-key 路径。其他资源与媒体按具体消费需求独立选片，不作为本表前置。
 
-**文件重评节点：**在下一次文件产品行为选片前评估是否继续延期，不等待所有模态完成。没有新的恢复决定前，仅维护既有 Responses user inline/URL 基础输入及必要正确性、安全边界；重评不自动恢复 issuer-bound ID、工具文件结果、生成文件、更多格式/目标、Chat 文件投影或 `/v1/files` 服务。本轮 IR 中资源 identity、用途、locator 与引用坐标的纯语义完善不受这一产品延期阻塞，也不因此激活新文件承载。
+**文件重评节点：**在下一次文件产品行为选片前评估是否继续延期，不等待所有模态完成。没有新的恢复决定前，仅维护既有 Responses user inline/URL 基础输入及必要正确性、安全边界；重评不自动恢复 issuer-bound ID、工具文件结果、生成文件、更多格式/目标、Chat 文件投影或 `/v1/files` 服务。资源 identity、用途、locator 与引用坐标的纯语义完善不受这一产品延期阻塞，也不因此激活新文件承载。
 
-## 近期实施单元与停止点
-
-本节只收敛剩余工作，不记录历史完成情况。先核对已有覆盖；已经满足的单元复用证据，不为凑阶段重复改代码。每次只在 current-focus 定稿一个实际行为缺口，采用独立失败例→最低 owner 修复→受影响回归的顺序。
-
-文本、单/多 function/history 与 reasoning 的基础交付—保存—追加—回传作为维护和后续输入，不重复排期。独立预期归 [history continuation](../../tests/semantic/history_continuation.rs)、[reasoning](../../tests/semantic/reasoning.rs)与[固定 SDK gate](../../tests/sdk_loopback.rs)；reported final opaque 与未报告 opaque 分别验收，现行 scope、finality 和编辑失效边界不变。
-
-Structured Outputs 的 strict/default、Schema 顺序/精度与已有图片/基础文件组合复用 [Schema](../../tests/semantic/schema.rs)、[Provider profiles](../../tests/semantic/provider_profiles.rs)及 SDK 回归；strict 场景遵守上文[离线验证边界](#strict-verification)。正常功能 probe 的 JSON object、非 strict 工具 history 和固定基础色/文件场景归[probe 指南](../probes.md)。这些是可复用验收入口，不是动态能力表；真实目标与执行证据每次独立报告，不从某次通过推定完整标准、全部 Provider 或一般输出质量。
-
-Chat→Responses 的共享消息容器、目标局部重组与有限附属报告损失归[具名规则](../architecture/protocol-and-lowering.md#semantic-loss)。维护静态/事件/history、响应作用域身份与显式绑定时，复用 [group projection](../../tests/semantic/group_projection.rs)、[交付链](../../tests/transport/chain.rs)和 [Gateway 跨协议预期](../../tests/gateway.rs)。无载体且未授权损失的事实继续拒绝，不自动激活所有 Chat-only 绑定。
-
-**执行准备与验证顺序：**
-
-1. 核对分支、工作区与目标 diff；读取对应合同和最低 owner 的测试。用 [ClientManaged 用例清单](../../tests/fixtures/client_managed_cases.json)追溯已有覆盖，不复制测试清单或历史结果到计划。
-2. 按[开发指南](../development.md#nix-开发环境)使用项目锁定工具链；Node、Python/SDK 版本分别以 manifests/locks 为准。先确认解释器及依赖可用，再执行相关 gate；缺少缓存不以降版本、解锁依赖或全局安装绕过。
-3. 先执行所选纯库/codec 检查；行为变化按 TDD 同步实现、profiles、OpenAPI 与受影响 fixtures，再跑[规定基线](../development.md#rust-检查)。固定 SDK/其他外部依赖 gate 需单独取得相符执行授权，计划本身不替代授权。
-4. live run 只通过[受控 probe](../probes.md#先计划后执行)。执行前现场固定目标、场景、请求上限、输出/资源上限、deadline、取消清理与脱敏范围；读取凭据仅走现有 loader。不在计划中保存动态模型库存、私有 activation 或运行结果；凭据生命周期与实例切换仍需独立授权。
-5. 每个单元交付时分别报告功能、标准 wire、消费者、真实 Provider 的证据与未验收层；完成所选边界即停止并清理 focus，复审后续单元，不自动滚动进入整个列表。
-
-Agent Loop/Runtime 仅在用户后续阅读 Pi `AgentSession`、明确复用边界后另行规划；本表不安排该调研或实现。固定 SDK/Agent 消费验收不等于建设 Agent runtime。
-
+<a id="近期实施单元与停止点"></a>
 <a id="下一片候选标准模型发现"></a>
 
 ## 后续选片条件
 
-后续依据具体消费者反例或实现缺口，按[交互合同](../architecture/interaction-contract.md)选择实际依赖已闭合的子片，在 current-focus 定稿输入、输出、非目标与独立失败预期和停止点；产品优先级按上表选片。不把缺口清单直接当排期，也不以完整 Responses union、更多模态或 SIWC 为前置。来源冲突或新的 IR 缺口只阻塞相关范围，扩大公共类型或迁移边界前先说明影响。
+后续依据具体消费者反例或实现缺口，按[交互合同](../architecture/interaction-contract.md)选择实际依赖已闭合的子片，在 current-focus 定稿输入、输出、非目标与独立失败预期和停止点；产品优先级按上表选片。不把缺口清单直接当排期，也不以完整 Responses union、更多模态或 SIWC 为前置。来源冲突或新的 IR 缺口只阻塞相关范围，扩大公共类型或迁移边界前先说明影响。完成所选边界即清理 focus，不自动滚动进入后继任务。
 
 1. 标准文本/function、工具与 opaque 回传、类型化编辑、已有图片和基础文件输入随片回归；新发现的真实差异按最低 owner 修复，不把已有基础层重新列为待建设任务。
 2. 模型发现的字段来源、激活视图与拒绝边界归[HTTP 合同](../http-gateway.md#标准模型发现)。后续消费者差异须有具体反例，不假定 Agent 会自动发现，也不直接透传上游/账户目录。
@@ -84,19 +63,11 @@ Agent Loop/Runtime 仅在用户后续阅读 Pi `AgentSession`、明确复用边�
 | 高级图片 | 维持 `/v1/images/generations` 基础静态生成与有序产物；SSE、预览/最终产物事件、编辑、蒙版、参考图、URL 下载和文件服务延期。恢复时独立选片，先完善所选 API 再追加模型验证，不自动扩大测试集合 |
 | Embedding、其他请求型音频与独立媒体 operation | 基础 Speech/Transcription 按现有合同维护；其他分支分别确定最小 task、输入/产物及资源范围。Embedding 保持独立 `/v1/embeddings` 目标；独立任务不强塞 Responses |
 | Audio Realtime | 明确要实现；在请求型范围收敛并独立选片后展开协议与生命周期设计，不预建状态机或把音频重构塞入近期切片 |
-| Google Interactions / Anthropic Messages 原生实现 | 本轮仅作为设计来源与 typed 合同反例，不新增 codec、adapter、SDK 或网络接线；后续有具体目标与消费者需求时固定 profile 独立选片 |
+| Google Interactions / Anthropic Messages 原生实现 | 当前仅作为设计来源与 typed 合同反例，不新增 codec、adapter、SDK 或网络接线；后续有具体目标与消费者需求时固定 profile 独立选片 |
 | ServerManaged 上下文 | 待后续评估；当前只实施 ClientManaged，不预建 previous-ID、conversation、连接级历史或不可用模式。现有主动状态化分支拒绝继续保持 |
 | Reasoning opaque 闭合后权威 | 只按[待决问题的恢复证据](../implementation-status/open-questions.md#恢复选片所需证据)重评，不作为其他任务前置，不预建更新事件、严格校验器或回放服务 |
 | 丰富模型发现与调度 | 更丰富 `/models` 的路径/schema 另定；标准目录不引入价格、成本路由、动态 registry、负载均衡或自动 credential refresh |
 
-## 每个切片的执行与验收
+<a id="每个切片的执行与验收"></a>
 
-1. **定稿范围**：只解决场景实际依赖的缺口；按 [IR 缺口规则](../architecture/semantic-ir.md#4-ir-不足与标准载体缺口)区分语义缺失、目标无载体与未接线，结构选择先报告 owner、合法状态、事件/依赖和迁移影响。
-2. **独立失败预期与类型化消费**：先 TDD，再同步验证纯库构造/检查/编辑及适用的标准输入输出；不复制第二套 IR，不把内存 fingerprint 当持久化协议。
-3. **贯通交付与必要回传**：在最低 owning layer 保护 presence、顺序、精度、身份、依赖、预算、取消和真实终态；适用时覆盖 JSON/SSE、实际 body handoff 与续轮。必要 opaque 分别验证“实际报告且回传”和“未报告”，后者不能冒充前者。
-4. **必要 Chat 兼容随片完成**：只应用逐条定稿的有限损失规则，未定稿时维持拒绝；保护指令/工具行为、call identity、必要 replay 与终态。规则在对应兼容路径默认应用，不逐请求另加开关；`phase` 等 optional 信息不自动视为安全损失。静态/事件一致，投影不能污染核心或其他候选。
-5. **同步与交付**：类型、序列化、profile、OpenAPI、fixtures 与消费者按实际影响一起更新；执行[开发基线](../development.md)和所选独立 gates，报告未验证层。闭合后清理 current-focus 与对应缺口，不保留完成日记。
-
-允许在明确迁移范围内破坏性重写，不要求旧 API/类型兼容垫片，也不授权无关全库重写或数据丢弃。迁移不恢复独立 `_openbridge`、隐式兼容入口或同义私有字段；未来是否重建扩展须重新决定。Provider 原生缓存、计量、Schema、凭据与运行保障只按场景依赖维护，不借规划扩张基础设施。
-
-真实登录、账户发现、付费推理、部署、凭据迁移与提交均需目标和效果相符的授权；代码或 synthetic 检查通过不证明外部准入、真实质量或生产就绪。计划不记录动态模型库存或执行结果。
+执行与验收统一遵循 [AGENTS.md](../../AGENTS.md)、[开发指南](../development.md)及[具名投影合同](../architecture/protocol-and-lowering.md#semantic-loss)，本页不另设执行清单。真实调用按[受控 probe](../probes.md)限定目标和诊断问题；计划不授予登录、部署、凭据操作或提交权限，也不记录动态模型库存与执行结果。

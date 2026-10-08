@@ -16,10 +16,10 @@
 | [根 README](../README.md) | 产品定位、使用和构建入口 |
 | [AGENTS.md](../AGENTS.md) | 授权、安全、变更和验证规则；不复制架构或字段表 |
 | [当前架构](architecture.md) | 跨模块职责与数据流；细节链接源码 |
-| [设计与 ADR](architecture/README.md) / [Semantic Model](architecture/semantic-ir.md) | Gateway/Agent 共用语义，标准 API 与缺口决策；[投影合同](architecture/protocol-and-lowering.md)拥有 Chat 损失规则；子域不另设主线 |
+| [设计与 ADR](architecture/README.md) / [Semantic Model](architecture/semantic-ir.md) | Gateway/Agent 共用语义，标准 API 与缺口决策；[投影合同](architecture/protocol-and-lowering.md)拥有各目标的具名损失规则；子域不另设主线 |
 | [模型交互缺口](implementation-status/generation.md) | 尚未准入、不可表示、未接线与验收缺口；不列完成记录 |
 | [当前待决问题](implementation-status/open-questions.md) | 等待证据或语义决策的具体问题、实施边界与恢复条件；不作为排期、合同或测试报告 |
-| [实施计划索引](implementation-plans/README.md)：[当前焦点](implementation-plans/current-focus.md) / [后续计划](implementation-plans/next-goal.md) | 获准行为切片 / 推进方向；不是授权来源 |
+| [实施计划索引](implementation-plans/README.md)：[当前焦点](implementation-plans/current-focus.md) / [后续计划](implementation-plans/next-goal.md) | 只保留当前行为切片 / 推进方向与延期条件；完成后移除执行内容，不另存档，也不是授权来源 |
 | [开发指南](development.md) | 本地检查方法与验证层级，不记录执行结果 |
 | [HTTP 指南](http-gateway.md) / [OpenAPI](openapi.json) | 启动与公共 HTTP 接口 |
 | [凭据管理](credentials.md) | API key / OAuth 的统一文件管理、各自生命周期与存储恢复边界 |

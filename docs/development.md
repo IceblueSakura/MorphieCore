@@ -8,6 +8,8 @@
 
 先运行最低职责层的受影响检查，再按变更类型执行下列基线。Codec 的 decode 与 encode 使用独立预期，覆盖 IR 插入、替换、删除及失败边界；[Chat 有损兼容](architecture/protocol-and-lowering.md#semantic-loss)还须断言允许损失、受保护不变量和静态/事件一致性。Round trip 不能自证或要求恢复已丢失信息。
 
+已有 ClientManaged 场景的语义需求、独立预期与来源由[用例清单](../tests/fixtures/client_managed_cases.json)索引，不在计划里复制回归矩阵。必要 opaque 分别验证“实际报告且回传”与“未报告”，后者不能替代前者；纯库、固定 SDK 与真实 Provider 的验收边界分别报告。
+
 完成时检查最终 diff 与引用，报告实际检查、失败与未验收范围；按当前合同验收，不以旧版功能对等为门槛。
 
 ## Nix 开发环境

@@ -8,7 +8,7 @@ MorphieCore 以一套独立 Semantic Model / IR 支撑低损 Provider 映射、�
 |---|---|
 | [Semantic Model / IR](semantic-ir.md) | 统一语义、task/内容/资源、Responses/Embedding/Chat 目标、Agent 复用与 IR 缺口决策 |
 | [Generation 交互](interaction-contract.md) | 值权威、工具结果、response/turn、有限关系、replay 与报告 |
-| [Protocol / lowering](protocol-and-lowering.md) | Codec 与投影、四层能力、固定目标、Chat 允许损失及 fidelity |
+| [Protocol / lowering](protocol-and-lowering.md) | Codec 与投影、四层能力、固定目标、各目标的具名损失及 fidelity |
 | [Execution](execution-model.md) | 有界 I/O、publication/commit、取消、失败与执行权限 |
 | [当前架构](../architecture.md) | 实际接线、模块 owner、依赖方向与复用边界 |
 | [实现缺口](../implementation-status/generation.md) | 未承载、不可表示、未接线与未验收；不保存完成记录 |
@@ -22,7 +22,7 @@ MorphieCore 以一套独立 Semantic Model / IR 支撑低损 Provider 映射、�
 - [Speech](speech-profile.md)：独立 TTS task、标准控制与有界二进制产物，不扩大 Chat/Responses 音频准入。
 - [Transcription](transcription-profile.md)：独立识别 task、有界上传、实际时序报告与标准 JSON 投影，不提供文件服务。
 - [Schema](schema-profile.md)：当前结构/strict/reference 准入，不证明生成 adherence。
-- [客户端 Generation 边界](client-generation-profile.md)：无独立 `_openbridge` attachment；typed 语义保留，缺少目标载体时明确拒绝。
+- [客户端 Generation 边界](client-generation-profile.md)：无独立 `_openbridge` attachment；typed 语义保留，缺少目标载体且无具名损失许可时明确拒绝。
 
 ## 架构决策
 
@@ -47,4 +47,4 @@ ADRs 只保留有效决策、必要理由、后果与直接 owner；不记录决
 
 [固定来源](../references/upstream-sync.md)区分 OpenAI 公共标准、SDK 和 Codex 产品 profile；[来源索引](../references/README.md)定位其他 operation。外部资料不决定本地准入，也不授予真实调用。
 
-[验收基线](../references/conformance-baseline.md)定义独立 oracle、变换、损失与失败边界；[开发指南](../development.md)拥有命令。当前行为切片见 [current-focus](../implementation-plans/current-focus.md)。Realtime 等详细设计当前后置，不为未来接口预建类型或要求本轮完成。
+[验收基线](../references/conformance-baseline.md)定义独立 oracle、变换、损失与失败边界；[开发指南](../development.md)拥有命令。当前行为切片见 [current-focus](../implementation-plans/current-focus.md)。Realtime 等详细设计当前后置，不为未来接口预建类型，也不作为当前请求型功能的前置。

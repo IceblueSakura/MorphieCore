@@ -5,7 +5,7 @@
 | 入口 | 用途 |
 |---|---|
 | [固定上游来源](upstream-sync.md) | OpenAI SDK、Codex 的固定提交、许可和官方页面入口 |
-| [ClientManaged S2 来源](upstream-sync.md#client-managed-s2) | Interactions v1、Messages 控制区别及 JSON Schema 2020-12 的有限设计证据；不代表原生接入 |
+| [推理控制与 Schema 来源](upstream-sync.md#reasoning-schema-sources) | Interactions v1、Messages 控制区别及 JSON Schema 2020-12 的有限设计证据；不代表原生接入 |
 | [Responses 标准基线](responses-standard.md) | Responses codec 的固定公开语义；不是共享 IR 的上限，也不等于本地准入 |
 | [扩展与上下文](extensions-and-context.md) | session/cache/turn、存储与连接状态；固定 Codex/pi 投影，与认证 owner 分开 |
 | [pi Provider 抽象](pi-provider-abstraction.md) | 固定 `1.0.2` 的 Provider/API/Model 分层、统一 transcript/事件、认证/目录/路由和回放损失；不改变本项目合同 |

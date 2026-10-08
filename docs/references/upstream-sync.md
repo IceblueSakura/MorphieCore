@@ -28,7 +28,8 @@
 新增子域时固定相关 schema/SDK/profile，并分别确认 request、response、event 和生命周期，不能从事件名猜出完整任务。按需保留必要来源和许可，不保存页面抽取日志、hash 清单或历史分析。字段准入看当前代码；Provider 可用性与 SDK/Agent 执行需要另外验证。
 
 <a id="client-managed-s2"></a>
-## ClientManaged S2 设计证据
+<a id="reasoning-schema-sources"></a>
+## 推理控制与 Schema 设计证据
 
 本节固定 `s2-controls-2026-10-07` 的概念依据，查阅日期为 **2026-10-07**；不升级上方 OpenAI 基线，也不声明 Google/Anthropic codec 或实例准入。抽象 fixture 不冒充原生响应，具体接线时仍须固定对应 SDK/schema 修订。
 
@@ -38,7 +39,7 @@
 | Anthropic Messages 的 [adaptive/steering](https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking) 与 [manual extended thinking](https://platform.claude.com/docs/en/build-with-claude/extended-thinking) 分支 | adaptive 可以与 effort 组合；manual `budget_tokens` 是目标而非严格上限，不能伪装硬约束。显示 omitted 不代表未生成思考。原生最小预算、总输出/交错思考规则属于具体 profile，不硬编码为所有 IR 值的限制 |
 | [JSON Schema 2020-12 Core](https://json-schema.org/draft/2020-12/json-schema-core)，§8.1.1、§8.2.3.1 | `$schema` 声明方言；`$ref` 指向 Schema 位置，URI 是标识而非联网命令；boolean Schema 与递归图需要独立表达。采用的有限词汇、禁止 rebasing/dynamic refs 及预算仍归 [Schema profile](../architecture/schema-profile.md) |
 
-本轮硬 reasoning 上限是调用者的独立约束反例，不把任何 `budget_tokens` 字段未经证据直接映射为硬上限；当前无等价 carrier 时明确拒绝。来源仅作概念依据，样本由本地独立编写；Google 文档 CC-BY-4.0、示例 Apache-2.0 的 attribution 保持，不复制供应商 SDK、真实正文或外部实现。
+硬 reasoning 上限是调用者的独立约束反例，不把任何 `budget_tokens` 字段未经证据直接映射为硬上限；当前无等价 carrier 时明确拒绝。来源仅作概念依据，样本由本地独立编写；Google 文档 CC-BY-4.0、示例 Apache-2.0 的 attribution 保持，不复制供应商 SDK、真实正文或外部实现。
 
 <a id="provider-actions"></a>
 ## Provider 动作设计证据
@@ -63,7 +64,7 @@
 |---|---|
 | OpenAI Responses 的 [reasoning](https://developers.openai.com/api/docs/guides/reasoning)、固定 SDK reasoning item 与[流事件](https://developers.openai.com/api/reference/resources/responses/streaming-events) | `encrypted_content` 归 reasoning item；现行 partial→item-done 最终化及闭合后拒绝边界只归 [Responses profile](../architecture/responses-text-profile.md#reasoning-replay-authority)，不外推给其他格式 |
 | Google Interactions **v1** 的 [thinking](https://ai.google.dev/gemini-api/docs/thinking)、[Step 流事件](https://ai.google.dev/gemini-api/docs/interactions/streaming)和 [Step reference](https://ai.google.dev/api/interactions-api-v1) | thought 的 signature 独立于可选 summary，最后一个 thought-signature delta 在 step.stop 前到达；function/Provider Step 的 signature 附着于该 Step，不移入独立 reasoning。选定范围是文本/opaque-only thought 及函数/Provider 观察，非完整 Step union |
-| Google generateContent **v1beta** 的 [Part reference](https://ai.google.dev/api/generate-content#Part) | thoughtSignature 属于原 Part，不是 Interactions Step 字段。本轮选定 function call 与 assistant 文本/图片 Part 的静态承载；语义 call item 是该调用的 owner，不能将签名移给邻接消息或媒体。媒体分片和原生流 parser 不由此恢复 |
+| Google generateContent **v1beta** 的 [Part reference](https://ai.google.dev/api/generate-content#Part) | thoughtSignature 属于原 Part，不是 Interactions Step 字段。此处选定 function call 与 assistant 文本/图片 Part 的静态承载；语义 call item 是该调用的 owner，不能将签名移给邻接消息或媒体。媒体分片和原生流 parser 不由此恢复 |
 | Anthropic Messages 的 [thinking](https://platform.claude.com/docs/en/build-with-claude/thinking) | signature 归 thinking block；可见 thinking 为空仍保留它。signature_delta 在 content_block_stop 前到达，opaque 不解析、不重建；选定普通 thinking block，不将 redacted-thinking 或工具结果 encrypted_content 混为同一格式 |
 
 具体合法节点与预算归[Replay owner](../../src/semantic/task/generation/replay.rs)及验证器。纯规范事件只接收已经组装完整的非 reasoning 附件，并在 owner 闭合前最终化；没有新增原生 opaque 分片 parser。组只作有来源的依赖，不因类型对称性制造组载荷。

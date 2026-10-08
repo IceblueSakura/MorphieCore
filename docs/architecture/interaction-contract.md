@@ -134,7 +134,7 @@ Schema 结构/方言/引用、adherence 意图与目标 strict/配额分开。Re
 
 有证据的 mode 与 effort/预算按组合规则验证，例如 adaptive 与 effort 不因示意枚举而被强制互斥。硬上限遇到只有偏好式 effort 的目标不能宣称约束已满足。外部 Schema 引用只使用明确提供的解析内容，不联网；Schema 引用图与输入 JSON nesting 分别预算。
 
-有限控制组合归 [reasoning owner](../../src/semantic/task/generation/reasoning.rs)，方言、资源引用与 strict 规则归 [Schema profile](schema-profile.md)；依据为 [S2 固定来源](../references/upstream-sync.md#client-managed-s2)。Budgeted 必须有数值预算，不提供裸 enabled；soft target 不超过同时声明的 hard limit，省略显示不声称省略内部推理。新 mode/预算/显示、明确方言与外部引用资源没有现行公开 carrier 时保留 typed 值并拒绝目标，不偷偷改为 effort、展开 Schema 或输出私有字段。
+有限控制组合归 [reasoning owner](../../src/semantic/task/generation/reasoning.rs)，方言、资源引用与 strict 规则归 [Schema profile](schema-profile.md)；依据为[推理控制与 Schema 固定来源](../references/upstream-sync.md#reasoning-schema-sources)。Budgeted 必须有数值预算，不提供裸 enabled；soft target 不超过同时声明的 hard limit，省略显示不声称省略内部推理。新 mode/预算/显示、明确方言与外部引用资源没有现行公开 carrier 时保留 typed 值并拒绝目标，不偷偷改为 effort、展开 Schema 或输出私有字段。
 
 引用同时依赖输出 claim 和源资源坐标，单位必须明确；不能近似转换落在 UTF-8 中间的 offset。源编辑使引用重验，wire 索引由最终顺序投影。Configuration update 与 compaction 有作用范围/替代关系，不是普通摘要或可执行设置 patch；当前实现不得因有 union 分支而扩大执行能力。
 

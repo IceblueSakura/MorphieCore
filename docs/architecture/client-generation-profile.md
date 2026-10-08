@@ -1,6 +1,6 @@
 # 客户端 Generation 边界
 
-公开主目标是[规范 Responses](semantic-ir.md#3-客户端-api-目标与扩展边界)，Chat 仅作有界有损的兼容路径。HTTP Responses 选择 `Dialect::Standard`，Chat 保持 `Dialect::MorphieCore`；Provider 的 reasoning、usage、cache 等具名规则不能扩张标准下游。标准无载体时拒绝而不是暗中省略，已实现范围仍按 owning codec/profile 核对，不代表整个标准已符合。
+公开主目标是[规范 Responses](semantic-ir.md#3-客户端-api-目标与扩展边界)，Chat 仅作有界有损的兼容路径。HTTP Responses 选择 `Dialect::Standard`，Chat 保持 `Dialect::MorphieCore`；Provider 的 reasoning、usage、cache 等具名规则不能扩张标准下游。标准无载体且不属于[已定稿目标投影](protocol-and-lowering.md#semantic-loss)时拒绝，不能暗中省略；已实现范围仍按 owning codec/profile 核对，不代表整个标准已符合。
 
 ## 无独立私有 attachment
 
