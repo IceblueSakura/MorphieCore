@@ -70,6 +70,8 @@ mod images;
 mod instructions;
 #[path = "semantic/interaction_progress.rs"]
 mod interaction_progress;
+#[path = "semantic/message_envelopes.rs"]
+mod message_envelopes;
 #[path = "semantic/message_groups.rs"]
 mod message_groups;
 #[path = "semantic/message_ownership_owner.rs"]

@@ -53,6 +53,17 @@ Responses 完善优先，不为 Chat 扩大标准核心以外的执行行为。�
 
 **标准 wire 正确性、功能覆盖和保真度分别验收。** 有损输出必须仍是规范 Chat，而不是借兼容名义增加任意字段；往返不能被要求恢复已经声明丢失的信息。核心 IR 保留原始权威值，不为 Chat 的限制缩减设计。
 
+<a id="message-envelope-projection"></a>
+### 消息容器与目标重组
+
+共享消息容器归[交互合同](interaction-contract.md#身份分组与依赖)。以下是独立批准的规则，不使 Responses 继承一般 Chat 损失许可；来源 IR 始终保留原分组，投影仅改变候选私有副本：
+
+- `responses.omit-message-envelopes.v1`：request/history、response/event → 标准 Responses。省略目标没有位置的来源容器边界，保留有序 items、内容、call identity、原始参数、结果关联和终态。容器本身不是工具执行或逻辑 turn 边界。不承诺跨标准客户端保存后恢复原始分组，不编码私有字段或特殊 wire ID。携带 opaque 或其他必要 replay/依赖而无法保持其前提时仍拒绝。
+- `chat.regroup-message-items.v1`：request/history、response/event → Chat。没有来源归属的 assistant message 与其后连续独立 function calls 可以组装成目标 assistant message；不跨 user、指令、结果或其他不支持的 item 合并，不把独立调用加入已有来源容器。空文本 owner、调用参数和 call-result ID 原样保留，不按名称重关联，不把空参数补成 `{}`。更广异构容器、多个文本单元或不能保持顺序的组合仍按所选 profile 拒绝。
+- 目标分组是编码安排，不是源语义推断；解析 Responses 时不写入伪造 membership，编码后也不污染原观察、其他候选或后续重投影。静态和事件使用同一规则，事件失败不能发成功终态；typed projection 记录区分省略/重组与原本未报告。
+
+方法依据：[OpenAI 迁移指南](https://developers.openai.com/api/docs/guides/migrate-to-responses#2-map-messages-to-items)明确将 Messages 拆成独立 Items，并以 call ID 连接结果；[OpenAI Agents SDK converter](https://github.com/openai/openai-agents-python/blob/38636a5c04d54717030878a133fd21970a0e1dec/src/agents/models/chatcmpl_converter.py)提供目标 assistant 累积/工具结果切断的实现参考。后者不是 API 的无损保证；不采用其参数补值、文本拼接、私有 metadata 或 opaque 重建策略。源码与独立预期拥有精确准入。
+
 ### Chat 图片 token 明细投影
 
 `chat.omit-input-image-tokens.v1` 只适用于 Generation response/event → Chat：目标 profile 未声明图片 token 明细载体时，默认从投影副本省略 `Usage.input_image_tokens`。Owner 是 [Usage](../../src/semantic/task/generation/usage.rs)，规则与有界诊断归 [projection](../../src/lowering/projection.rs)。显式零同样是已报告值，省略必须可检查；没有报告则不记损失，有载体则保持精确值。
@@ -61,6 +72,22 @@ Responses 完善优先，不为 Chat 扩大标准核心以外的执行行为。�
 - 原始 IR 保持权威；`ResponseRepresentation` 以不可变借用或私有副本提供最终值与逐段规则、owner、方向、目标和修订。`reproject` 从上一段最终值重验并累积损失，不能从来源记录恢复省略值；独立候选仍从同一原观察开始。借用和私有字段防止修改已验证值/目标，输入、配置、资源或目标变化需要新的 lowering。
 - 表示证明仅覆盖本地合同，不代表资源权限、issuer 接受或执行准入；未满足的必要本地前提仍返回错误，不用损失标记放行。事件目标从首次 encode 起固定；静态与事件共用同一规则，只有验证成功的终态提供完整投影诊断。
 - 不修改请求/history、Responses 或独立媒体策略；不省略其他报告、不合并消息/part、不改变正文、分组、phase、工具关联、必要 replay、硬控制或失败/终态。新的损失继续单独定稿；未知规则拒绝。
+
+<a id="responses-usage-projection"></a>
+### 标准 Responses 的附属 token 明细
+
+Generation response/event → Responses 允许独立、逐字段的 `responses.omit-*-tokens.v1` 规则；具体字段与 typed loss 枚举归 [projection](../../src/lowering/projection.rs)。它仅覆盖目标无载体的输入图像/文本/音频、输出文本/音频与预测接受/拒绝细分；目标有具名 carrier 时保留，不扩大入站字段准入。
+
+先验证完整原报告，再投影副本并重验。Input/output/total、cache-read/cache-write、reasoning、scope/basis 与计数关系不变；不从细分推算总量、不把未知补零、不将 malformed usage 改成 absent。原 IR 保留全部报告；显式零的省略同样记录损失。静态与事件共用规则，重投影只从上一段最终值开始，fidelity 不能恢复删除值；各字段的记录共同受投影阶段预算限制。
+
+本规则不涉及请求控制、正文/模态转换、工具行为、必要 replay 或终态。`StrictComplete` 对未报告的必填事实仍拒绝，不因为省略附属计量就获得完整报告。标准差异以固定 SDK 的 [ResponseUsage](https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/responses/response_usage.py) 与 [CompletionUsage](https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/completion_usage.py)核对。
+
+<a id="responses-fingerprint-projection"></a>
+### Responses 的 system_fingerprint 投影
+
+`responses.omit-system-fingerprint.v1` 仅适用于 Generation response/event → Responses：目标没有 Chat `ResponseContext.system_fingerprint` 的载体时，从私有 metadata 副本省略该字段。Absent 不产生损失记录；null 或有效 value 的存在均记录，原 metadata 保持原 presence/value，不把它改写成 user metadata、请求字段或私有 attachment。
+
+完整 metadata 先验证；非法空值、超限值不能借省略通过。响应 ID/model/timestamps、其他 metadata、正文、usage、工具关联与必要 replay 不变。静态/事件使用同一规则，重投影只消费最终 metadata，不从原来源恢复字段；不把这个字段当作 opaque replay 或凭据，也不授权其他附属字段的省略。Owning code 与逐项诊断归 [lowering](../../src/lowering/generation.rs) / [projection](../../src/lowering/projection.rs)。
 
 ### 独立 Images 的计量投影
 

@@ -41,9 +41,16 @@ uv run --project tests/sdk --locked --offline python examples/probe.py report te
 - `file_reasoning` 固定目标由 `scenarios.py` 限定，显式 medium reasoning/include，每组三请求 SSE→JSON→SSE、每次最多1024输出tokens；原文件和实际output原样追加。每轮必须报告非空opaque且文件marker正确，缺值不算通过，失败停止；只保存计数不保存密文。该有限场景不证明任意文件或多轮可靠性。
 - `file_continue` 使用明确的客户端自有 synthetic 历史（PDF、已知 build marker 的 assistant message、patch 查询），每个交付一请求、最多 512 输出 tokens。它用于隔离续轮问题，不冒充实际上游 transcript，也不能替代 `file` 的真实 output 回传门槛。
 - `history` 每个交付四请求，两个实际 lookup 调用/返回；`length` 是 8-token Chat 截断，只有这一场景接受 length；`cancel` 是 Chat SSE 提前关闭和后续普通请求，不证明 Provider 停算/停止计费。
+- `parallel` 每个交付两请求：首轮实际报告两个不同 ID 的 lookup（固定 alpha/beta），按反向顺序追加对应 synthetic 结果后要求返回其和；不执行模型提供的脚本或外部工具。参数、结果和正文只在内存内验收。
 - 默认串行、SDK 零重试，精确限制目标 origin/port/path、model、请求大小、输出 cap 与完整序列化历史。不会因省略 filter 而跳出 run 的模型集合。
 - 所有组在 I/O 前登记；未执行的请求显示 `not_run`，中断的 reservation/dispatched 不算通过。HTTP/传输/wire/配置错误停止该目标；工具链失败跳过其依赖轮次。只有计划明确 `--continue-oracle` 时，内容/预期终态失败后才继续独立组。不自动重复失败请求。
 - `source_fingerprint` 标记计划创建及各进程预留时的源码/锁文件状态，进程内检测源码变化后拒绝新预留。它不是对正在运行的 binary 的密码学证明；Rust 改动后必须按上述命令重新构建。
+
+### 显式 Responses→Chat 验证
+
+对话 `plan --responses-via-chat` 必须显式指定模型，且目标在 probe catalog 同时声明 Chat/Responses。计划将选择绑定到不可变 hash；runner 在临时 Gateway 配置中设置 `responses_via_chat`，只走固定 Chat endpoint，不尝试 native Responses 或额外 fallback。创建和 dry-run 仍不读凭据或联网。
+
+这种计划要求 `run --protocol responses`，只选择 `text,json,tool,history,parallel` 的有限场景；不能借它恢复 strict adherence 或文件/媒体矩阵。其请求上限、output-token cap、deadline、零重试、源码指纹、脱敏和取消清理仍使用共用守卫。结果说明的是标准客户端到 Chat 上游的所选闭环，不证明源容器无损回传或 SDK 严格完整模式；未报告 settings/usage 明细不得补造。
 
 ## 独立图片生成 probe
 
@@ -92,6 +99,10 @@ uv run --project tests/sdk --locked --offline python examples/probe.py run \
 见 [HTTP guide](http-gateway.md#操作者诊断)。runner 为每个 owned binary 创建新的、私有 `gateway-*.jsonl` 文件，以 `x-morphiecore-probe-id = run-id:attempt` 关联同一次请求。诊断在入口认证后才开始，且不向客户端回显。
 
 可观察字段限于最后阶段、完成/中断结果、上游 HTTP、规范化 Retry-After、接收/已 handoff 字节、耗时、固定 decode 失败分类和成功消费的语义事件结构计数。分类不输出未知字段名、异常消息或正文；事件计数不含身份、文本、reasoning、opaque 或认证值，不证明产物完整或终态闭合。`upstream_head_ms`、`first_upstream_bytes_ms` 从认证后的请求处理开始计时，不是 TTFT 或 Provider 纯推理时间；handoff 不等于客户端收到。静态 JSON 的解析可发生于 `terminal`（intake EOF finalize）阶段。
+
+`projection_failure` 单独标记投影阶段的封闭错误类别（如不可表示的 usage 明细、分组或 replay），不将其误归为 HTTP/解析失败；只取错误类型，不输出错误消息或真实字段值。它说明拒绝边界，不授权放宽投影或删除上游事实。
+
+`reported_usage_detail_mask` 只表示固定附属计量字段是否报告（显式零也计为存在），位定义归[诊断 owner](../src/gateway/diagnostics.rs)。它不输出计数值、原始字段名或正文，不从 modality 明细的存在推定请求包含该模态。
 
 有界队列满、文件预算满、写失败或强杀均可能缺少诊断，缺失必须记为未知，不据此猜测上游状态。原 HTTP 错误映射、取消和交付策略不变；这不是生产可观测性系统，也不因此启用任何自动 retry/backoff。
 

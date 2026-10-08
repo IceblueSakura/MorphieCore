@@ -100,7 +100,7 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
                 semantic: std::borrow::Cow::Borrowed(semantic),
                 projection: vec![],
                 fidelity: &fidelity,
-                metadata: &metadata,
+                metadata: std::borrow::Cow::Borrowed(&metadata),
                 profile,
                 adaptation: Default::default(),
             };
@@ -187,7 +187,8 @@ fn forged_handles_cannot_drop_owner_local_replay_or_assistant_media() {
         .unwrap();
         for profile in [Profile::Chat, Profile::Responses] {
             let forged = RequestRepresentation {
-                semantic: &source,
+                semantic: std::borrow::Cow::Borrowed(&source),
+                projection: vec![],
                 fidelity: &fidelity,
                 profile,
                 adaptation: Default::default(),
@@ -205,7 +206,7 @@ fn forged_handles_cannot_drop_owner_local_replay_or_assistant_media() {
                 fidelity: &fidelity,
                 profile,
                 adaptation: Default::default(),
-                metadata: &metadata,
+                metadata: std::borrow::Cow::Borrowed(&metadata),
             };
             assert!(
                 match profile {
@@ -276,7 +277,8 @@ fn request_codecs_enforce_result_carriers_before_rendering() {
         let fidelity = FidelityRecords::default();
         for profile in [Profile::Chat, Profile::Responses] {
             let forged = RequestRepresentation {
-                semantic: &semantic,
+                semantic: std::borrow::Cow::Borrowed(&semantic),
+                projection: vec![],
                 fidelity: &fidelity,
                 profile,
                 adaptation: Default::default(),
@@ -295,7 +297,8 @@ fn request_codecs_enforce_result_carriers_before_rendering() {
                 let mut breakpoint = FidelityRecords::default();
                 breakpoint.record_cache_breakpoint(PartId::new(1)).unwrap();
                 let forged = RequestRepresentation {
-                    semantic: &semantic,
+                    semantic: std::borrow::Cow::Borrowed(&semantic),
+                    projection: vec![],
                     fidelity: &breakpoint,
                     profile,
                     adaptation: Default::default(),

@@ -28,7 +28,7 @@ Agent runtime 与恢复不列入本项目的实施或延期目标；职责边界
 |---|---|---|
 | **1. Responses 核心功能** | 维护文本/function/history、reasoning、Structured Outputs 与已有图片/基础文件输入回归；仅按具体新消费差异扩展 | 所选功能形成 wire→IR→标准输出→必要回传闭环，不以接口接通或拒绝测试通过代替功能完成；不一次补齐完整 union |
 | **2. 多 Provider 标准消费** | 代表性原生 Responses 场景作为接入回归；新增目标或实际差异按最小功能独立选片，差异归受信 adapter/profile | 除模型及明确支持的控制外，消费者不需要 Provider 专用解析或 history 重写；不按 Provider/model 数量铺测试矩阵 |
-| **3. 非原生上游转换** | F5 先解决 Chat→Responses 工具分组与回传合同，再实施最小映射和显式接线 | 静态、事件与回传一致；现有 Chat 损失许可不自动适用于 Responses，不以私有字段或静默丢关系绕过决策 |
+| **3. 非原生上游转换** | 维护现有 Chat→Responses 工具闭环，新的消费差异按[current-focus](current-focus.md)独立选片 | 静态、事件与回传一致；具名投影不自动授权其他损失，不以私有字段或静默丢关系绕过决策 |
 | **4. 稳定性专项** | 核心功能收敛后，按实际使用问题选择异常、负载与长期运行边界 | 不提前扩张；正常功能中已遇到的阻断问题可随片修复，现有防线始终保持 |
 
 **依赖关系：**第 1、2 项按实际功能交错推进，不等待完整标准；第 3 项的设计论证可独立进行，行为实施必须先闭合所选映射合同。类型化消费与必要回传从首片开始，纯库检查不等待账户资格。标准模型发现保持维护，不重新建设；SIWC 采用按下节独立处理，不阻塞 API-key 路径。其他资源与媒体按具体消费需求独立选片，不作为本表前置。
@@ -37,15 +37,13 @@ Agent runtime 与恢复不列入本项目的实施或延期目标；职责边界
 
 ## 近期实施单元与停止点
 
-以下编号仅定位剩余工作，不是完成记录。先核对已有覆盖；已经满足的单元复用证据，不为凑阶段重复改代码。每次只在 current-focus 定稿一个实际行为缺口，采用独立失败例→最低 owner 修复→受影响回归的顺序。
+本节只收敛剩余工作，不记录历史完成情况。先核对已有覆盖；已经满足的单元复用证据，不为凑阶段重复改代码。每次只在 current-focus 定稿一个实际行为缺口，采用独立失败例→最低 owner 修复→受影响回归的顺序。
 
 文本、单/多 function/history 与 reasoning 的基础交付—保存—追加—回传作为维护和后续输入，不重复排期。独立预期归 [history continuation](../../tests/semantic/history_continuation.rs)、[reasoning](../../tests/semantic/reasoning.rs)与[固定 SDK gate](../../tests/sdk_loopback.rs)；reported final opaque 与未报告 opaque 分别验收，现行 scope、finality 和编辑失效边界不变。
 
 Structured Outputs 的 strict/default、Schema 顺序/精度与已有图片/基础文件组合复用 [Schema](../../tests/semantic/schema.rs)、[Provider profiles](../../tests/semantic/provider_profiles.rs)及 SDK 回归；strict 场景遵守上文[离线验证边界](#strict-verification)。正常功能 probe 的 JSON object、非 strict 工具 history 和固定基础色/文件场景归[probe 指南](../probes.md)。这些是可复用验收入口，不是动态能力表；真实目标与执行证据每次独立报告，不从某次通过推定完整标准、全部 Provider 或一般输出质量。
 
-| 单元 | 输入、实施范围与 owning sources | 验收与停止点 |
-|---|---|---|
-| **F5 Chat→Responses 功能转换** | 以 [group projection](../../tests/semantic/group_projection.rs) 和 [Gateway 跨协议预期](../../tests/gateway.rs)为最小反例，分析 message-call membership、顺序、原始参数及回传。现行限制归 [Responses profile](../architecture/responses-text-profile.md#message-owners-and-cross-protocol-grouping) | 先决定合法映射及必要信息的权威位置，再补独立静态/事件/history 预期和最小接线。未定稿时保留拒绝并明确功能未闭合；不将拒绝通过写成转换完成，不自动激活所有 Chat-only 绑定 |
+Chat→Responses 的共享消息容器、目标局部重组与有限附属报告损失归[具名规则](../architecture/protocol-and-lowering.md#semantic-loss)。维护静态/事件/history、响应作用域身份与显式绑定时，复用 [group projection](../../tests/semantic/group_projection.rs)、[交付链](../../tests/transport/chain.rs)和 [Gateway 跨协议预期](../../tests/gateway.rs)。无载体且未授权损失的事实继续拒绝，不自动激活所有 Chat-only 绑定。
 
 **执行准备与验证顺序：**
 

@@ -140,6 +140,71 @@ fn incremental_chain_emits_before_terminal_and_does_not_commit_by_encoding() {
     }
 }
 #[test]
+fn generated_chat_item_ids_are_response_scoped_in_static_and_stream_history() {
+    for streaming in [false, true] {
+        let mut history = vec![json!({"role":"user","content":"lookup"})];
+        let mut identities = std::collections::BTreeSet::new();
+        for round in 1..=3 {
+            let turn = if round == 1 { 1 } else { 2 };
+            let mut intake = Attempt::new(standard(Profile::Chat), 8192, SseLimits::default());
+            let mut output = delivery(standard(Profile::Responses), Contract::full());
+            let completed = if streaming {
+                intake.begin(200, "text/event-stream").unwrap();
+                let mut frames = chat_wire::events(turn);
+                for frame in &mut frames {
+                    frame["id"] = json!(format!("response-{round}"));
+                }
+                let body = frames
+                    .iter()
+                    .map(|v| format!("data: {v}\n\n"))
+                    .collect::<String>()
+                    + "data: [DONE]\n\n";
+                let mut bytes = consume(&mut intake, &mut output, body.as_bytes()).unwrap();
+                intake.finish().unwrap();
+                bytes.extend(output.finish_stream(&intake).unwrap().into_iter().flatten());
+                let mut decoder =
+                    ResponsesSseDecoder::new(200, "text/event-stream", SseLimits::default(), None)
+                        .unwrap();
+                let mut rest = bytes.as_slice();
+                while !rest.is_empty() {
+                    let (used, _) = decoder.consume(rest).unwrap();
+                    rest = &rest[used..];
+                }
+                decoder.finish().unwrap();
+                let decoded = decoder.materialize().unwrap();
+                standard(Profile::Responses)
+                    .encode_response(&decoded, &Contract::full())
+                    .unwrap()
+            } else {
+                intake.begin(200, "application/json").unwrap();
+                let mut wire = chat_wire::response(turn);
+                wire["id"] = json!(format!("response-{round}"));
+                intake.push(&serde_json::to_vec(&wire).unwrap()).unwrap();
+                intake.finish().unwrap();
+                serde_json::from_slice(&output.encode_json(&intake).unwrap()).unwrap()
+            };
+            for item in completed["output"].as_array().unwrap() {
+                assert!(
+                    identities.insert(item["id"].as_str().unwrap().to_owned()),
+                    "generated IDs cannot collide with earlier response items"
+                );
+                history.push(item.clone());
+            }
+            if round == 1 {
+                history.push(
+                    json!({"type":"function_call_output","call_id":"call-local","output":"1"}),
+                );
+            }
+            standard(Profile::Responses)
+                .decode_request(
+                    &serde_json::to_vec(&json!({"model":"public-model","input":history})).unwrap(),
+                )
+                .unwrap();
+        }
+    }
+}
+
+#[test]
 fn delivery_cannot_switch_attempts_even_when_wire_identity_matches() {
     let profile = Profile::Responses;
     let body = bytes(profile);

@@ -39,6 +39,18 @@ pub fn check_event(
         StreamEvent::ReplayGroup(_) | StreamEvent::ReplayFinalized { .. } => {
             return Err(RepresentationError::UnmigratedSemantic);
         }
+        StreamEvent::MessageEnvelope(group) => {
+            let items = snapshot_items(state).map_err(|_| RepresentationError::MessageGrouping)?;
+            if profile == Profile::Chat && group.chat_owner(&items).is_none() {
+                return Err(RepresentationError::MessageGrouping);
+            }
+            super::message_groups::project(
+                &items,
+                std::slice::from_ref(group),
+                &Default::default(),
+                profile,
+            )?;
+        }
         StreamEvent::Terminal {
             terminal: StreamTerminal::Cancelled,
             ..
@@ -68,7 +80,7 @@ pub fn check_event(
             let projected = if profile == Profile::Chat {
                 super::projection::chat_usage(*usage, contract.adaptation.rules.chat_image_usage)?.0
             } else {
-                *usage
+                super::projection::responses_usage(*usage, &contract.adaptation.rules)?.0
             };
             super::generation::check_usage(projected, profile, &contract.adaptation.rules)?;
         }
@@ -77,7 +89,6 @@ pub fn check_event(
                 message: Some(owner),
                 ..
             } = kind
-                && profile == Profile::Chat
             {
                 let position = state
                     .items()
@@ -88,6 +99,10 @@ pub fn check_event(
                     !matches!(&item.kind, ItemKind::ToolCall { message: Some(parent), .. } if parent == owner)
                 }) {
                     return Err(RepresentationError::MessageGrouping);
+                }
+                if profile == Profile::Responses && state.items().iter().any(|i| i.replay.is_some())
+                {
+                    return Err(RepresentationError::ReplayOrigin);
                 }
             }
             match kind {
@@ -100,13 +115,6 @@ pub fn check_event(
                         || context.replay.is_some() =>
                 {
                     return Err(RepresentationError::UnmigratedSemantic);
-                }
-                // Reject before rendering the call: a terminal check cannot
-                // repair membership lost from an already delivered item.
-                ItemKind::ToolCall {
-                    message: Some(_), ..
-                } if profile == Profile::Responses => {
-                    return Err(RepresentationError::MessageGrouping);
                 }
                 ItemKind::Message { phase: Some(_) } if profile == Profile::Chat => {
                     return Err(RepresentationError::UnmigratedSemantic);
@@ -165,7 +173,9 @@ pub fn check_event(
                 ItemKind::ToolCall { message, .. }
                     if profile == Profile::Chat
                         && state.items().iter().any(|i| {
-                            matches!(i.kind, ItemKind::Message { .. }) && Some(i.id) != *message
+                            matches!(i.kind, ItemKind::Message { .. })
+                                && message.is_some()
+                                && Some(i.id) != *message
                         }) =>
                 {
                     return Err(RepresentationError::MessageGrouping);

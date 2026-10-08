@@ -83,6 +83,8 @@ Provider 复合观察采用共享 Generation items 中的独立 typed 分支，�
 - Local item/part/call reference、wire ID、call ID、stream index、response/turn/resource identity 各有范围。Native alias 包含来源、声明作用域和 ID kind；结果的引用域由协议决定，不能直接使用结果所在 response 的 scope。不同域同值 ID 可以共存；同引用域冲突或多个可匹配祖先须诊断，不选择最近一个。未知上游身份不合成成 reported fact；纯构造所需本地 scope/ID 分配由调用者明确提供，不在 decoder 隐式随机生成。
 - 重排保持 surviving identity；编辑产生新修订。修改已观察调用的参数形成新的调用提案/identity，并保留派生来源，旧结果不能移挂。原观察可保留，但不覆盖当前派生值；本地修订不充当持久化编码或 issuer 认证。
 - Message ownership、operation association 与共同 replay group 是不同关系。异构组可以包含文本、reasoning、call/result；不同关系可重叠。每类关系只有一个可写 owner，成员引用不复制正文，反向索引派生；声明顺序须与该关系合同一致，目标要求的连续性由目标另验，不从相邻、role 或名称推断。不能同时独立写 group membership 与调用的反向 message owner，或结果引用与第二张 ResultOf 表。
+- 显式消息容器由独立的 scoped identity、role、有序 item 引用及必要的空容器位置组成，不把某段文本当成所有协议的消息容器。Chat 的 assistant 文本/function 归属是其窄形状；Anthropic assistant 的 thinking/text/tool-use/Provider 观察及 user 的 tool-result/text 可组成异构容器。内容仍只有原 typed owner，role 必须相容；容器既不产生 result-of 边，也不授予执行责任。相邻但未分组的 Responses items / Interactions steps 不补来源分组。
+- 消息容器成员不重叠，ReplayGroup 可重叠；两者不可互换。保留成员相对顺序，编辑删除成员后重验，空容器用显式身份锚点或末尾位置表示，不用数组坐标附到新值。必要依赖绑定容器声明及其所选内容；公共 wire 的边界损失和目标重组只按[具名投影](protocol-and-lowering.md#message-envelope-projection)发生，不回写原观察。
 - 同一 item 可以被多个显式 ReplayGroup 引用；各组有独立 identity、成员顺序和依赖。共享成员的相关编辑分别重验所有受影响组，不合并 opaque，也不以一组通过替代另一组通过。成员顺序与最终 items 的相对顺序一致，不要求核心成员连续；具体格式/目标可收紧结构。Message ownership 仍只有一个 assistant owner，不从 replay membership 推导 message ownership 或执行权限。
 - 插入、重排、删除、替换及设置变化须维护 owner，并重验内容、成员/顺序、选定 prefix、工具/Schema、有效设置和资源依赖。能力合同选择依赖范围，业务 JSON 不提供任意 selector 或降低证明范围。
 - 悬空关系须修复或拒绝，不能将旧 metadata 附到同坐标的新 owner。跨协议丢失关系只可能由明确的[有损合同](protocol-and-lowering.md#semantic-loss)处理，且必须保护实际续轮依赖；现行 profile 的拒绝不因设计许可自动解除。

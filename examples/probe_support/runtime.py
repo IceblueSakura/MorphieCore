@@ -169,7 +169,8 @@ def diagnostics(run):
                     "elapsed_ms",
                     "upstream_head_ms",
                     "first_upstream_bytes_ms",
-                    "decode_failure", "event_items", "event_reasoning_items",
+                    "decode_failure", "projection_failure", "reported_usage_detail_mask",
+                    "event_items", "event_reasoning_items",
                     "event_parts", "event_deltas", "event_item_closures",
                 }
                 from .ledger import closed_metrics
@@ -240,6 +241,10 @@ def gateway(run, models=None, *, synthetic=False, proxy=None):
         "bind": "127.0.0.1:0", "client_key": key, "models": models, "max_attempts": 1,
         "diagnostics": str(run.directory / f"gateway-{uuid.uuid4().hex}.jsonl"),
     }
+    if run.plan.get("responses_via_chat"):
+        require(not synthetic or all("chat" in MODELS[m][4] for m in models),
+                "bridge_selection", "setup")
+        config["responses_via_chat"] = models
     if proxy:
         config["proxy"] = proxy
     elif not synthetic:

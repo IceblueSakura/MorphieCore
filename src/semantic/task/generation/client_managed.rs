@@ -52,7 +52,7 @@ impl ClientManaged {
         self.request
             .replay_groups
             .extend_from_slice(source.replay_groups());
-        self.merge_owners(source.message_owners())?;
+        self.merge_envelopes(source.message_envelopes())?;
         for (owner, ancestor) in source.call_derivations() {
             if self
                 .request
@@ -77,7 +77,7 @@ impl ClientManaged {
         self.request
             .replay_groups
             .extend_from_slice(source.replay_groups());
-        self.merge_owners(source.message_owners())?;
+        self.merge_envelopes(source.message_envelopes())?;
         self.request.validate()?;
         self.record_selection(source.items(), Some(source.progress()))?;
         Ok(self)
@@ -201,13 +201,13 @@ impl ClientManaged {
             .map_err(selection)?;
         self.request.items.extend_from_slice(&items);
         self.request.replay_groups.extend(groups);
-        let ownership = source
-            .message_owners()
-            .iter()
-            .filter(|(id, _)| owners.contains(id))
-            .map(|(id, parent)| (*id, *parent))
-            .collect();
-        self.merge_owners(&ownership).map_err(selection)?;
+        let selected = super::envelope::MessageEnvelopes::new(
+            source.items(),
+            source.message_envelopes().to_vec(),
+        )
+        .and_then(|groups| groups.edited(&items))
+        .map_err(selection)?;
+        self.merge_envelopes(selected.values()).map_err(selection)?;
         self.request
             .validate()
             .map_err(|e| ContextError::at(ContextStage::Association, None, e))?;
@@ -257,20 +257,20 @@ impl ClientManaged {
         }
         Ok(())
     }
-    fn merge_owners(
-        &mut self,
-        owners: &std::collections::BTreeMap<ItemId, ItemId>,
-    ) -> Result<(), GenerationError> {
-        for (member, parent) in owners {
-            if self
-                .request
-                .message_owners
-                .insert(*member, *parent)
-                .is_some()
-            {
-                return Err(GenerationError::InvalidMessageGroup);
-            }
+    fn merge_envelopes(&mut self, groups: &[MessageEnvelope]) -> Result<(), GenerationError> {
+        if self
+            .request
+            .message_envelopes()
+            .len()
+            .saturating_add(groups.len())
+            > MAX_ITEMS
+        {
+            return Err(GenerationError::Limit);
         }
+        let mut values = self.request.message_envelopes().to_vec();
+        values.extend_from_slice(groups);
+        self.request.message_owners =
+            super::envelope::MessageEnvelopes::new(self.request.items(), values)?;
         Ok(())
     }
 }

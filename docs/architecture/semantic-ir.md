@@ -41,7 +41,7 @@ Generation 保留有序异构 items 与必要 typed 关系，Message 只是其�
 - **Embedding：规范 OpenAI Embeddings 接口。** 与 Generation 共用语义体系和受信执行原则，不将 vector 塞进 Responses message。
 - **Chat Completions：必须维护的兼容接口，允许部分语义损失。** 损失发生在有合同的目标投影，不削弱核心 IR；具体规则与不可损失边界归 [Semantic loss](protocol-and-lowering.md#semantic-loss)。不是承诺与 Responses 功能等价。
 - 标准规范性、能力覆盖度和映射保真度分别判断。规范 wire 可以是有损投影；未实现分支、未批准的损失或缺失必要依赖仍须明确拒绝。
-- 公开边界[不提供独立 `_openbridge` carrier](client-generation-profile.md)，不保留隐式兼容或替代字段。共享 typed 语义不因此删除；无标准载体且不属于已定稿 Chat 损失时仍拒绝。是否重建扩展在迁移完成后决定，新方案须说明标准缺口、IR owner 和消费者/回传后果。
+- 公开边界[不提供独立 `_openbridge` carrier](client-generation-profile.md)，不保留隐式兼容或替代字段。共享 typed 语义不因此删除；无标准载体且不属于已定稿目标投影时仍拒绝。是否重建扩展在迁移完成后决定，新方案须说明标准缺口、IR owner 和消费者/回传后果。
 
 独立 TTS 采用标准 `/v1/audio/speech` 的[有界音频分支](speech-profile.md)，语音识别采用标准 `/v1/audio/transcriptions` 的[文件上传/JSON 分支](transcription-profile.md)，独立图片生成采用标准 Images operation；其他音频端点与资源服务范围仍需另定。Responses 是 Generation 主接口，不意味着任意模态或独立任务都有 Responses carrier；没有标准载体时报告选择，不伪造字段或隐式新增端点。
 
@@ -50,7 +50,7 @@ Generation 保留有序异构 items 与必要 typed 关系，Message 只是其�
 先判断问题在哪一层：
 
 1. **IR 无法承载**：给出最小反例、缺失概念、受影响 owner/关系，分析结构方案、合法状态、事件、迁移与验证影响，并向用户报告后定稿。不得用 adapter、fidelity 或任意 JSON 掩盖。
-2. **IR 可表达、目标无位置**：进行目标可表示性判断；Chat 可采用已经定稿的有损兼容规则；独立任务只有明确限定的 [Images 计量投影](protocol-and-lowering.md#独立-images-的计量投影)与[音频附属报告投影](protocol-and-lowering.md#独立音频的附属报告投影)许可，其他情况报告并拒绝或另行选择合同，不反向删弱 IR。
+2. **IR 可表达、目标无位置**：进行目标可表示性判断；Chat、Responses 与独立媒体分别只采用[投影合同](protocol-and-lowering.md#semantic-loss)中逐条定稿且方向/前提匹配的有限规则，不互相继承损失许可。其他情况报告并拒绝或另行选择合同，不反向删弱 IR。
 3. **IR 与标准都可表达但未接线**：实现 codec、准入、执行或消费者闭环，不为局部缺口重建语义权威。
 
 不存在统一的保真百分比或全局 best-effort 许可。区分精确映射、具名前提下的等价归一化、声明的有损投影与不可表示。媒体替换成说明文本/transcript 是内容变换，不是编码别名；标准 Base64 等保持 typed 含义的编码转换与此不同。

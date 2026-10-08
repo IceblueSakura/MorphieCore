@@ -394,10 +394,10 @@ fn group_bound_replay_cannot_bypass_final_history_checks() {
     assert!(fidelity.replay_matches_request(ItemId::new(9), &reasoning, Some(&origin), &request));
     let mut contract = Contract::full();
     contract.replay_origin = Some(origin);
-    // Standard Responses still cannot carry explicit membership, independent of valid replay.
+    // Boundary omission cannot bypass a necessary group-bound replay dependency.
     assert_eq!(
         lower_request(&request, &fidelity, Profile::Responses, contract.clone()).err(),
-        Some(RepresentationError::MessageGrouping)
+        Some(RepresentationError::ReplayOrigin)
     );
     let mut items = request.items().to_vec();
     items[1] = message(1, "changed");

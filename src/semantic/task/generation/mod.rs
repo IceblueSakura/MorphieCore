@@ -16,7 +16,9 @@ pub use dependency::{
 mod contract;
 pub use continuation::{CallReference, Continuation, ProviderContinuationRequirement};
 pub use contract::{GenerationFeature, GenerationSemanticContract};
+mod envelope;
 mod event;
+pub use envelope::{MessageEnvelope, MessageEnvelopeRole};
 mod group;
 pub use group::{GroupId, MessageGroup, ReplayGroup, ReplayGroupView};
 mod identity;

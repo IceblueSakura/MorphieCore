@@ -21,11 +21,11 @@ Dialect/rules 从受信 [Adapter](../../src/adapter/mod.rs)选择，不是统一
 
 ## Explicit message groups
 
-Chat assistant message 是显式 owner，包括 tool-only 输出；`ToolCall.message` 是 attached function calls 的唯一 membership 权威。`message_groups()` 只借用派生 contiguous group，不猜相邻独立 call 的归属。
+Chat assistant message（包括 tool-only 输出）的显式归属由共享消息容器维护；`message_owners()` 与 `message_groups()` 是窄 Chat 形状的派生视图，不是第二份可写权威。普通 call-result 关联仍归 call ID。
 
-重排保持 identity 并重验 group，删除 owner 或移出组必须显式修复。Refusal 与 attached calls 的冲突在静态/事件首次发生时拒绝。标准 Responses 缺 membership carrier，现行 request/static/event 投影拒绝；[客户端边界](client-generation-profile.md)也不提供私有位置，不能把缺少 carrier 理解为已经允许丢失关系。
+重排保持 identity 并重验 group，删除原生 content owner 或移出组必须显式修复。Refusal 与 attached calls 的冲突在静态/事件首次发生时拒绝。标准 Responses 的容器边界省略与独立 items 回传 Chat 的目标组装遵守[具名规则](protocol-and-lowering.md#message-envelope-projection)，不恢复来源关系、不拼接正文、不补参数；原生分组与目标编码安排分开。
 
-Owners：[group view](../../src/semantic/task/generation/group.rs)、[message group tests](../../tests/semantic/message_groups.rs)、[cross-profile tests](../../tests/semantic/group_projection.rs)。未来兼容策略必须区分仅展示信息与必要续轮关系，不能用通用 flatten 丢掉后者。
+Owners：[消息容器](../../src/semantic/task/generation/envelope.rs)、[group view](../../src/semantic/task/generation/group.rs)、[message group tests](../../tests/semantic/message_groups.rs)、[cross-profile tests](../../tests/semantic/group_projection.rs)。一般异构容器到 Chat 的表示仍须独立定稿，不用通用 flatten 丢掉必要续轮关系。
 
 ## Text and refusal probabilities
 

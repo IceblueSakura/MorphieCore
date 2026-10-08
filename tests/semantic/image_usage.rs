@@ -40,7 +40,14 @@ fn named_image_usage_mapping_preserves_counts_and_standard_chat_projects_detail(
                 })
             );
         } else {
-            assert!(standard.is_err());
+            assert_eq!(
+                standard.unwrap()["usage"],
+                json!({
+                    "input_tokens":10,"output_tokens":2,"total_tokens":12,
+                    "input_tokens_details":{"cached_tokens":1},
+                    "output_tokens_details":{"reasoning_tokens":0}
+                })
+            );
         }
     }
     assert!(
@@ -83,10 +90,16 @@ fn readable_chat_modality_counters_remain_typed_without_claiming_responses_slots
         responses["usage"]["output_tokens_details"],
         json!({"reasoning_tokens":0,"text_tokens":2})
     );
-    assert!(
-        Adapter::new(Profile::Responses, Dialect::Standard, None)
-            .encode_response(&decoded, &Contract::full())
-            .is_err()
+    let standard = Adapter::new(Profile::Responses, Dialect::Standard, None)
+        .encode_response(&decoded, &Contract::full())
+        .unwrap();
+    assert_eq!(
+        standard["usage"]["input_tokens_details"],
+        json!({"cached_tokens":1})
+    );
+    assert_eq!(
+        standard["usage"]["output_tokens_details"],
+        json!({"reasoning_tokens":0})
     );
     decoded.semantic = decoded
         .semantic
@@ -179,9 +192,8 @@ fn image_usage_presence_edits_and_bounds_do_not_restore_deleted_counts() {
 }
 
 #[test]
-fn image_usage_static_and_events_close_under_named_slots_and_poison_unsupported_targets() {
+fn image_usage_static_and_events_close_with_named_carriers_or_explicit_loss() {
     use morphiecore::protocol::openai::events::EventEncoder;
-    use morphiecore::semantic::task::generation::StreamEvent;
     let provider = Adapter::new(Profile::Chat, Dialect::Xiaomi, None);
     let source = response(json!(7));
     let expected = provider
@@ -247,19 +259,19 @@ fn image_usage_static_and_events_close_under_named_slots_and_poison_unsupported_
             );
             continue;
         }
+        let mut projected = vec![];
         for event in &events {
-            let result = rejected.encode(event, &expected.fidelity);
-            if matches!(event, StreamEvent::Usage(_)) {
-                assert!(result.is_err());
-                break;
-            }
-            result.unwrap();
+            projected.extend(rejected.encode(event, &expected.fidelity).unwrap());
         }
-        assert!(
-            rejected
-                .encode(events.last().unwrap(), &expected.fidelity)
-                .is_err()
+        rejected.finish().unwrap();
+        assert_eq!(
+            projected.last().unwrap()["response"]["usage"],
+            json!({
+                "input_tokens":10,"output_tokens":2,"total_tokens":12,
+                "input_tokens_details":{"cached_tokens":1},
+                "output_tokens_details":{"reasoning_tokens":0}
+            })
         );
-        assert!(rejected.finish().is_err());
+        assert!(rejected.projection().iter().any(|s| s.loss.is_some()));
     }
 }

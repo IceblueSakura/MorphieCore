@@ -3,9 +3,7 @@
 use crate::events_support::*;
 use crate::wire;
 use morphiecore::{
-    lowering::generation::{
-        GenerationRepresentationContract as Contract, RepresentationError, lower_request,
-    },
+    lowering::generation::{GenerationRepresentationContract as Contract, lower_request},
     protocol::openai::{
         CodecError, DecodedRequest, Profile, chat, chat_envelope, envelope, events::EventDecoder,
         responses,
@@ -309,15 +307,16 @@ fn function_parsed_arguments_follow_the_same_replay_rule_in_both_shells() {
             lower_request(&d.semantic, &d.fidelity, Profile::Chat, Contract::full()).unwrap();
         let c = chat::encode_generation(&target).unwrap();
         assert!(!c.to_string().contains("parsed_arguments"));
-        assert!(matches!(
-            lower_request(
-                &d.semantic,
-                &d.fidelity,
-                Profile::Responses,
-                Contract::full()
-            ),
-            Err(RepresentationError::MessageGrouping)
-        ));
+        let target = lower_request(
+            &d.semantic,
+            &d.fidelity,
+            Profile::Responses,
+            Contract::full(),
+        )
+        .unwrap();
+        let wire = responses::encode_generation(&target).unwrap();
+        assert_eq!(wire["input"][1]["arguments"], "{\"n\":1}");
+        assert!(!wire.to_string().contains("parsed_arguments"));
     }
     // The Responses function_call shell has the same rule on its own wire shape.
     let admitted = [
@@ -396,15 +395,17 @@ fn dumped_sdk_views_replay_through_the_full_envelope_and_never_leak_into_wire() 
     assert!(!dumped.contains("parsed_arguments"));
     assert!(!dumped.contains("\"parsed\""));
     assert!(dumped.contains("lookup"));
-    assert!(matches!(
-        lower_request(
-            &d.task.semantic,
-            &d.task.fidelity,
-            Profile::Responses,
-            Contract::full()
-        ),
-        Err(RepresentationError::MessageGrouping)
-    ));
+    let target = lower_request(
+        &d.task.semantic,
+        &d.task.fidelity,
+        Profile::Responses,
+        Contract::full(),
+    )
+    .unwrap();
+    let projected = responses::encode_generation(&target).unwrap().to_string();
+    assert!(!projected.contains("parsed_arguments"));
+    assert!(!projected.contains("\"parsed\""));
+    assert!(projected.contains("lookup"));
 }
 
 #[test]

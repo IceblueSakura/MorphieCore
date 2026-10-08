@@ -77,6 +77,7 @@ fn owner_events() -> Vec<Value> {
 struct Scenario {
     chat: bool,
     stream: bool,
+    cross: bool,
     empty_owner: bool,
     nonstandard_usage: bool,
 }
@@ -103,6 +104,10 @@ async fn provider(
     let stream = request["stream"] == true;
     let owner_case = request["metadata"]["case"] == "empty-owner";
     let nonstandard_usage = request["metadata"]["case"] == "nonstandard-usage";
+    let cross = request["metadata"]["case"] == "cross-tools";
+    if cross {
+        assert!(chat, "the Responses client must dispatch Chat upstream");
+    }
     if owner_case {
         assert!(
             !chat,
@@ -136,6 +141,7 @@ async fn provider(
             .entry(Scenario {
                 chat,
                 stream,
+                cross,
                 empty_owner: owner_case,
                 nonstandard_usage,
             })
@@ -184,6 +190,16 @@ async fn provider(
             assert!(history.iter().any(|item| item["role"] == "tool"
                 && item["tool_call_id"] == "call-local"
                 && item["content"] == "{\"n\":1}"));
+            if cross {
+                assert_eq!(
+                    history,
+                    &vec![
+                        json!({"role":"user","content":"lookup"}),
+                        chat_wire::response(1)["choices"][0]["message"].clone(),
+                        json!({"role":"tool","tool_call_id":"call-local","content":"{\"n\":1}"}),
+                    ]
+                );
+            }
         } else {
             assert!(history.iter().any(|item|item["type"]=="function_call" && item["arguments"]=="{\"n\":1}"));
             assert_eq!(
@@ -461,7 +477,7 @@ async fn sdk_uses_gateway_for_both_protocols_and_deliveries() {
         String::from_utf8_lossy(&output.stderr)
     );
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["requests"], 50);
+    assert_eq!(report["requests"], 54);
     assert_eq!(report["model_requests"], 7);
     assert_eq!(report["native_audio_requests"], 10);
     assert_eq!(report["speech_requests"], 9);
@@ -472,7 +488,7 @@ async fn sdk_uses_gateway_for_both_protocols_and_deliveries() {
     assert_eq!(observed.5.load(std::sync::atomic::Ordering::SeqCst), 3);
     {
         let observed = observed.0.lock().unwrap();
-        assert_eq!(observed.len(), 8);
+        assert_eq!(observed.len(), 10);
         assert!(observed.iter().all(|(scenario, count)| *count
             == if scenario.empty_owner || scenario.nonstandard_usage {
                 1

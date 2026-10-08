@@ -60,6 +60,13 @@ impl CachePrefixIntent {
         if request
             .message_groups()
             .any(|group| split(group.owner(), group.items().last().expect("group owner").0))
+            || request.message_envelopes().iter().any(|group| {
+                group
+                    .members()
+                    .first()
+                    .zip(group.members().last())
+                    .is_some_and(|(first, last)| split(*first, *last))
+            })
             || request.replay_groups().iter().any(|group| {
                 split(
                     group.members()[0],

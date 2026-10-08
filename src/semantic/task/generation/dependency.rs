@@ -6,6 +6,7 @@ use std::{collections::BTreeSet, fmt::Write};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HistoryDependency {
     MessageGroup(ItemId),
+    MessageEnvelope(GroupId),
     ReplayGroup(GroupId),
     PrefixThrough(ItemId),
     /// A source-declared ordered selection, not inferred group membership.
@@ -101,6 +102,24 @@ fn dependency(
 ) -> Result<[u8; 32], GenerationError> {
     request.validate()?;
     let items: Vec<&(ItemId, Item)> = match scope {
+        HistoryDependency::MessageEnvelope(owner) => {
+            let group = request
+                .message_envelopes()
+                .iter()
+                .find(|g| g.id() == *owner)
+                .ok_or(GenerationError::InvalidDependency)?;
+            group
+                .members()
+                .iter()
+                .map(|id| {
+                    request
+                        .items()
+                        .iter()
+                        .find(|(owner, _)| owner == id)
+                        .ok_or(GenerationError::InvalidDependency)
+                })
+                .collect::<Result<_, _>>()?
+        }
         HistoryDependency::MessageGroup(owner) => request
             .message_groups()
             .find(|g| g.owner() == *owner)
@@ -151,6 +170,19 @@ fn dependency(
         remaining: MAX_TOTAL_BYTES * 8,
     };
     write!(writer, "{scope:?}:{settings:?}:{items:?}").map_err(|_| GenerationError::Limit)?;
+    for group in request.message_envelopes() {
+        if matches!(scope, HistoryDependency::MessageEnvelope(id) if *id == group.id())
+            || group
+                .members()
+                .iter()
+                .any(|id| items.iter().any(|(owner, _)| owner == id))
+            || group
+                .before()
+                .is_some_and(|id| items.iter().any(|(owner, _)| *owner == id))
+        {
+            write!(writer, "{group:?}").map_err(|_| GenerationError::Limit)?;
+        }
+    }
     if let HistoryDependency::ReplayGroup(owner) = scope {
         let group = request
             .replay_groups()

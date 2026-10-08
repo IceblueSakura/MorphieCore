@@ -282,9 +282,33 @@ def expect_call(key):
     return check
 
 
+def expect_parallel(text, calls, output):
+    """Two independent calls, keyed by identity; result order is deliberately different."""
+    require(len(calls) == 2, "tool_count")
+    keys, identities = [], []
+    for call_item in calls:
+        function = call_item.get("function", call_item)
+        require(function.get("name") == "lookup", "tool_name")
+        try:
+            arguments = json.loads(function["arguments"])
+        except (ValueError, KeyError):
+            raise ProbeFailure("tool_arguments") from None
+        require(isinstance(arguments, dict) and set(arguments) == {"key"}
+                and arguments["key"] in ("alpha", "beta"), "tool_arguments")
+        keys.append(arguments["key"])
+        identities.append(call_item.get("call_id", call_item.get("id")))
+    require(set(keys) == {"alpha", "beta"} and all(
+        isinstance(identity, str) and identity for identity in identities
+    ) and identities[0] != identities[1], "tool_arguments")
+
+
 def plan_groups(
     run, models, *, cases=("text", "tool"), protocol=None, delivery=None, effort=None
 ):
+    if run.plan.get("responses_via_chat"):
+        require(protocol == "responses" and all(
+            case in ("text", "json", "tool", "history", "parallel") for case in cases
+        ), "bridge_selection", "setup")
     require(effort in (None, "none", "minimal", "medium", "max"), "effort", "setup")
     groups = []
     for model in models:
@@ -302,6 +326,7 @@ def plan_groups(
                             "text",
                             "tool",
                             "history",
+                            "parallel",
                             "json",
                             "schema",
                             "length",
@@ -346,6 +371,7 @@ def plan_groups(
                         "cancel": 2,
                         "tool": 2,
                         "history": 4,
+                        "parallel": 2,
                         "reasoning": 2,
                         "image": 1,
                         "image_math": 1,
@@ -394,7 +420,9 @@ def matrix(
                 extra.update(
                     {"reasoning_effort": effort}
                     if proto == "chat"
-                    else {"reasoning": {"effort": effort, "summary": "auto"}}
+                    else {"reasoning": {"effort": effort, **(
+                        {} if run.plan.get("responses_via_chat") else {"summary": "auto"}
+                    )}}
                 )
 
             def invoke(n, history, **options):
@@ -411,7 +439,28 @@ def matrix(
                 )
 
             try:
-                if case in ("file_reasoning", "file_reasoning_math"):
+                if case == "parallel":
+                    extra["tools"] = ([{"type": "function", "function": TOOL}]
+                        if proto == "chat" else [{"type": "function", **TOOL}])
+                    history = [{"role": "user", "content":
+                        "Call lookup twice in this response, once with key alpha and once with key beta. "
+                        "Do not answer until you receive both results. Then return only their sum as an integer."}]
+                    output, _, calls = invoke(1, history, extra=extra,
+                                              terminal="tool_calls", oracle=expect_parallel)
+                    history.extend(output)
+                    # Reverse result order to test identity rather than positional pairing.
+                    for call_item in reversed(calls):
+                        function = call_item.get("function", call_item)
+                        key = json.loads(function["arguments"])["key"]
+                        value = {"alpha": 7, "beta": 11}[key]
+                        history.append(
+                            {"role": "tool", "tool_call_id": call_item["id"],
+                             "content": json.dumps({"value": value})}
+                            if proto == "chat" else
+                            {"type": "function_call_output", "call_id": call_item["call_id"],
+                             "output": json.dumps({"value": value})})
+                    invoke(2, history, extra=extra, oracle=expect_text("18"))
+                elif case in ("file_reasoning", "file_reasoning_math"):
                     from .files import file_history
                     history = file_history()
                     math_case = case == "file_reasoning_math"

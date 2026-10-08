@@ -225,7 +225,6 @@ fn unsupported_typed_values_remain_rejected_instead_of_becoming_text_or_extras()
             .with_progress(InteractionProgress::TurnFinished)
             .unwrap(),
         base.semantic.clone().with_usage(usage).unwrap(),
-        base.semantic.clone().with_usage(prediction).unwrap(),
         response(call(ToolArguments::Structured(
             StructuredValue::new(json!({"n":1})).unwrap(),
         ))),
@@ -237,20 +236,39 @@ fn unsupported_typed_values_remain_rejected_instead_of_becoming_text_or_extras()
                 event::text("synthetic"),
             )),
         })),
-        GenerationResponse::from_resources(
-            grouped,
-            Outcome::Completed,
-            base.semantic.resources().clone(),
-        )
-        .unwrap()
-        .with_message_owners(vec![(ItemId::new(2), ItemId::new(1))])
-        .unwrap(),
     ] {
         let mut decoded = base.clone();
         decoded.semantic = semantic.clone();
         assert!(adapter.encode_response(&decoded, &contract()).is_err());
         assert_eq!(decoded.semantic, semantic);
     }
+    let mut decoded = base.clone();
+    decoded.semantic = GenerationResponse::from_resources(
+        grouped,
+        Outcome::Completed,
+        base.semantic.resources().clone(),
+    )
+    .unwrap()
+    .with_message_owners(vec![(ItemId::new(2), ItemId::new(1))])
+    .unwrap();
+    let encoded = adapter.encode_response(&decoded, &contract()).unwrap();
+    no_attachment(&encoded);
+    assert_eq!(encoded["output"][1]["call_id"], "c");
+    assert_eq!(decoded.semantic.message_owners().len(), 1);
+    let mut counted = base.clone();
+    counted.semantic = counted.semantic.with_usage(prediction).unwrap();
+    let projected = adapter.encode_response(&counted, &contract()).unwrap();
+    no_attachment(&projected);
+    assert_eq!(projected["usage"]["total_tokens"], 8);
+    assert!(
+        projected["usage"]["output_tokens_details"]
+            .get("accepted_prediction_tokens")
+            .is_none()
+    );
+    assert_eq!(
+        counted.semantic.usage().unwrap().accepted_prediction_tokens,
+        Some(1)
+    );
     let request = adapter
         .decode_request(
             &serde_json::to_vec(&json!({"model":"fixture-model","input":[

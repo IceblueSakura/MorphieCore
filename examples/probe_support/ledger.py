@@ -74,6 +74,9 @@ BOOLS = {
     "exact_answer",
 }
 ENUMS = {
+    "projection_failure": {None, "usage_details", "usage", "reported_facts",
+        "message_grouping", "unmigrated_semantic", "replay", "metadata", "system_fingerprint",
+        "terminal", "other", "codec"},
     "decode_failure": {"invalid_sequence", "invalid_metadata", "invalid_item_snapshot",
         "metadata_id_changed", "metadata_model_changed", "metadata_created_changed",
         "invalid_json", "invalid_object", "invalid_chunk_object", "invalid_metadata_shape",
@@ -134,7 +137,9 @@ ENUMS = {
 def closed_metrics(metrics):
     result = {}
     for key, value in metrics.items():
-        if key == "reported_image_cost_usd":
+        if key == "reported_usage_detail_mask":
+            require(type(value) is int and 0 <= value <= 127, "report_number", "setup")
+        elif key == "reported_image_cost_usd":
             require(isinstance(value, str) and len(value) <= 128 and re.fullmatch(r"[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?", value) is not None, "report_cost", "setup")
         elif key in NUMBERS:
             require(
@@ -165,13 +170,20 @@ class Run:
         continue_oracle=False,
         task="generation",
         images_per_request=None,
+        responses_via_chat=False,
     ):
         require(task in ("generation", "images"), "plan_task", "setup")
         image_task = task == "images"
+        require(type(responses_via_chat) is bool and (
+            not responses_via_chat or not image_task and bool(models)
+        ), "bridge_selection", "setup")
         require(images_per_request is None or image_task, "plan_task", "setup")
         image_count = 1 if images_per_request is None else images_per_request
         require(type(image_count) is int and 1 <= image_count <= 10, "plan_images", "setup")
         rows = select_image_bindings(providers, models) if image_task else select_bindings(providers, models=models)
+        require(not responses_via_chat or all(
+            "chat" in row[4] and "responses" in row[4] for row in rows
+        ), "bridge_selection", "setup")
         require(
             type(limit) is int
             and 1 <= limit <= 256
@@ -196,6 +208,8 @@ class Run:
         }
         if image_task:
             plan["images_per_request"] = image_count
+        if responses_via_chat:
+            plan["responses_via_chat"] = True
         raw = json.dumps(plan, sort_keys=True).encode()
         fd = os.open(
             directory / "plan.json", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
@@ -238,7 +252,8 @@ class Run:
                 "source_fingerprint",
                 "sdk",
                 "pi",
-            } | ({"images_per_request"} if self._plan.get("version") == 2 else set()),
+            } | ({"images_per_request"} if self._plan.get("version") == 2 else set())
+              | ({"responses_via_chat"} if "responses_via_chat" in self._plan else set()),
             "plan_shape",
             "setup",
         )
@@ -265,6 +280,10 @@ class Run:
             "plan_model",
             "setup",
         )
+        if "responses_via_chat" in self._plan:
+            require(self._plan["responses_via_chat"] is True and not self.is_images
+                    and all("chat" in MODELS[m][4] and "responses" in MODELS[m][4]
+                            for m in self._plan["models"]), "bridge_selection", "setup")
         self.digest = hashlib.sha256(raw).hexdigest()
         self.source = source_fingerprint()
         with self._db() as db:

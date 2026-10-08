@@ -36,6 +36,9 @@ struct Configuration {
     diagnostics: Option<std::path::PathBuf>,
     #[serde(default)]
     models: Option<Vec<String>>,
+    /// Explicit Responses entry on the fixed Chat endpoint; never a fallback route.
+    #[serde(default)]
+    responses_via_chat: Vec<String>,
     /// Trusted global ceiling; probes set one to forbid hidden extra dispatches.
     #[serde(default)]
     max_attempts: Option<usize>,
@@ -92,6 +95,21 @@ impl Bootstrap {
         }) {
             return Err(StartupError::Binding);
         }
+        let bridges: BTreeSet<_> = configuration.responses_via_chat.iter().cloned().collect();
+        if bridges.len() != configuration.responses_via_chat.len()
+            || bridges.len() > 64
+            || bridges.iter().any(|model| {
+                selected.as_ref().is_none_or(|set| !set.contains(model))
+                    || !catalog::API_KEY_BINDINGS.iter().any(|binding| {
+                        binding.model == model
+                            && binding
+                                .protocols
+                                .contains(&crate::topology::ProtocolProfile::OpenAiChat)
+                    })
+            })
+        {
+            return Err(StartupError::Binding);
+        }
         let manager = CredentialManager::new(
             directory,
             crate::credential::builtin_drivers(None).map_err(|_| StartupError::Credentials)?,
@@ -120,6 +138,11 @@ impl Bootstrap {
                 used = true;
                 activated.insert(binding.model.to_owned());
                 for protocol in binding.protocols {
+                    if bridges.contains(binding.model)
+                        && *protocol == crate::topology::ProtocolProfile::OpenAiResponses
+                    {
+                        continue;
+                    }
                     let family = match protocol {
                         crate::topology::ProtocolProfile::OpenAiChat => Profile::Chat,
                         crate::topology::ProtocolProfile::OpenAiResponses => Profile::Responses,
@@ -128,6 +151,13 @@ impl Bootstrap {
                         model: binding.model.into(),
                         protocol: family,
                         endpoint: binding.endpoint_id(*protocol),
+                    });
+                }
+                if bridges.contains(binding.model) {
+                    entries.push(Entry {
+                        model: binding.model.into(),
+                        protocol: Profile::Responses,
+                        endpoint: binding.endpoint_id(crate::topology::ProtocolProfile::OpenAiChat),
                     });
                 }
             }

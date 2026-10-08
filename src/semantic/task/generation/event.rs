@@ -161,6 +161,8 @@ pub enum StreamEvent {
     Usage(Usage),
     /// An explicit relation declaration, not a native item or a replay payload.
     ReplayGroup(ReplayGroup),
+    /// Complete container declaration after its members close, before response terminal.
+    MessageEnvelope(MessageEnvelope),
     Progress(InteractionProgress),
     Terminal {
         terminal: StreamTerminal,
@@ -220,6 +222,7 @@ pub struct StreamState {
     queued: bool,
     items: Vec<StreamItem>,
     replay_groups: Vec<ReplayGroup>,
+    message_envelopes: Vec<MessageEnvelope>,
     part_ids: BTreeSet<PartId>,
     terminal: Option<StreamTerminal>,
     usage: Vec<Usage>,
@@ -239,6 +242,9 @@ impl StreamState {
     }
     pub fn replay_groups(&self) -> &[ReplayGroup] {
         &self.replay_groups
+    }
+    pub fn message_envelopes(&self) -> &[MessageEnvelope] {
+        &self.message_envelopes
     }
     pub fn started(&self) -> bool {
         self.started
@@ -864,6 +870,43 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             progress.validate(Outcome::Completed, &snapshot_items(&state)?)?;
             state.progress = progress;
         }
+        StreamEvent::MessageEnvelope(group) => {
+            if state.message_envelopes.len() >= MAX_ITEMS {
+                return Err(EventError::Limit);
+            }
+            if group.members().iter().any(|id| {
+                state
+                    .items
+                    .iter()
+                    .find(|item| item.id == *id)
+                    .is_none_or(|item| item.status.is_none())
+            }) {
+                return Err(EventError::Lifecycle);
+            }
+            let mut groups = state.message_envelopes.clone();
+            groups.push(group.clone());
+            let values = snapshot_items(&state)?;
+            let native = super::envelope::MessageEnvelopes::from_chat(
+                &values,
+                state
+                    .items
+                    .iter()
+                    .filter_map(|item| match &item.kind {
+                        ItemKind::ToolCall {
+                            message: Some(owner),
+                            ..
+                        } => Some((item.id, *owner)),
+                        _ => None,
+                    })
+                    .collect(),
+            )?;
+            groups.extend_from_slice(native.values());
+            super::envelope::MessageEnvelopes::new(&values, groups)?;
+            state.charge(
+                std::mem::size_of::<MessageEnvelope>() + std::mem::size_of_val(group.members()),
+            )?;
+            state.message_envelopes.push(group);
+        }
         StreamEvent::ReplayGroup(group) => {
             if state.replay_groups.len() >= MAX_ITEMS
                 || state
@@ -1181,6 +1224,11 @@ pub fn materialize(state: &StreamState) -> Result<GenerationResponse, EventError
     .with_replay_groups(state.replay_groups.clone())?
     .with_progress(state.progress)?
     .with_details(state.details.clone())?;
+    if !state.message_envelopes.is_empty() {
+        let mut groups = response.message_envelopes().to_vec();
+        groups.extend_from_slice(&state.message_envelopes);
+        response = response.with_message_envelopes(groups)?;
+    }
     response = response.with_usage_reports(state.usage.clone())?;
     Ok(response)
 }

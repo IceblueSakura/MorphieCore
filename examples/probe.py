@@ -25,6 +25,8 @@ def main():
     plan.add_argument("--task", choices=["generation", "images"], default="generation")
     plan.add_argument("--images-per-request", type=int, choices=range(1, 11))
     plan.add_argument("--continue-oracle", action="store_true")
+    plan.add_argument("--responses-via-chat", action="store_true",
+                      help="Bind selected Responses clients to fixed Chat upstream endpoints")
     plan.add_argument("--dry-run", action="store_true")
     run = sub.add_parser("run")
     run.add_argument("directory")
@@ -47,6 +49,9 @@ def main():
         image_task = args.task == "images"
         require(args.images_per_request is None or image_task, "plan_task", "setup")
         rows = select_image_bindings(args.providers, args.model) if image_task else select_bindings(args.providers, models=args.model)
+        require(not args.responses_via_chat or not image_task and bool(args.model)
+                and all("chat" in row[4] and "responses" in row[4] for row in rows),
+                "bridge_selection", "setup")
         tokens = args.tokens if image_task else (2048 if args.tokens is None else args.tokens)
         require(1 <= args.limit <= 256 and (tokens is None if image_task else 1 <= tokens <= 2048), "plan_budget", "setup")
         if args.dry_run:
@@ -56,6 +61,7 @@ def main():
                         "models": [row[1] for row in rows],
                         "limit": args.limit,
                         "tokens": tokens,
+                        **({"responses_via_chat": True} if args.responses_via_chat else {}),
                         **({"images_per_request": args.images_per_request or 1} if image_task else {}),
                     }
                 )
@@ -70,6 +76,7 @@ def main():
             task=args.task,
             images_per_request=args.images_per_request,
             continue_oracle=args.continue_oracle,
+            responses_via_chat=args.responses_via_chat,
         )
         print(json.dumps({"run": str(created.directory), "id": created.plan["id"]}))
         return 0

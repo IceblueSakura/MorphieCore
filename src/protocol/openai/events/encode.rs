@@ -428,7 +428,7 @@ impl EventEncoder {
                     super::super::citations::write(annotation, self.state()?.resources())?;
                 vec![v]
             }
-            StreamEvent::ResourceDeclared { .. } => vec![],
+            StreamEvent::ResourceDeclared { .. } | StreamEvent::MessageEnvelope(_) => vec![],
             StreamEvent::LogprobsSnapshot { .. }
             | StreamEvent::TextMetadata { .. }
             | StreamEvent::Usage(_) => vec![],

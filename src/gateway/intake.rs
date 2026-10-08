@@ -46,9 +46,10 @@ async fn produce(
             rest = &rest[used..];
             if stream {
                 trace.stage(Stage::Projection);
-                let frames = delivery
-                    .encode_events(attempt, &events)
-                    .map_err(|_| ApiError::upstream())?;
+                let frames = delivery.encode_events(attempt, &events).map_err(|error| {
+                    trace.projection_error(&error);
+                    ApiError::upstream()
+                })?;
                 send_frames(lane, delivery, frames, trace).await?;
                 trace.stage(Stage::Intake);
             }
@@ -61,13 +62,18 @@ async fn produce(
     })?;
     trace.stage(Stage::Projection);
     let frames = if stream {
-        delivery
-            .finish_stream(attempt)
-            .map_err(|_| ApiError::upstream())?
+        delivery.finish_stream(attempt).map_err(|error| {
+            trace.projection_error(&error);
+            ApiError::upstream()
+        })?
     } else {
-        let bytes = delivery
-            .encode_json(attempt)
-            .map_err(|_| ApiError::upstream())?;
+        if let Some(usage) = attempt.response().ok().and_then(|r| r.semantic.usage()) {
+            trace.reported_usage(usage);
+        }
+        let bytes = delivery.encode_json(attempt).map_err(|error| {
+            trace.projection_error(&error);
+            ApiError::upstream()
+        })?;
         if bytes.len() > limit {
             return Err(ApiError::upstream());
         }

@@ -231,10 +231,16 @@ fn fingerprint_presence_and_vendor_metadata_drift_are_explicit() {
             .unwrap();
         assert_eq!(wire.get("system_fingerprint"), fingerprint.as_ref());
         if fingerprint.is_some() {
-            assert!(
-                Adapter::new(Profile::Responses, Dialect::Standard, None)
+            let projected = Adapter::new(Profile::Responses, Dialect::Standard, None)
+                .encode_response(&decoded, &Contract::full())
+                .unwrap();
+            assert!(projected.get("system_fingerprint").is_none());
+            assert_eq!(
+                client()
                     .encode_response(&decoded, &Contract::full())
-                    .is_err()
+                    .unwrap()
+                    .get("system_fingerprint"),
+                fingerprint.as_ref()
             );
         }
     }

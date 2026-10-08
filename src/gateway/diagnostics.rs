@@ -146,6 +146,11 @@ struct Record {
     first_upstream_bytes_ms: Option<u64>,
     candidates: Vec<CandidateRecord>,
     decode_failure: Option<&'static str>,
+    projection_failure: Option<&'static str>,
+    /// Presence only: input image/text, output text, accepted/rejected prediction,
+    /// input/output audio, in that bit order. Never count values or response text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reported_usage_detail_mask: Option<u8>,
     #[serde(flatten)]
     events: EventCounts,
     #[serde(flatten)]
@@ -239,6 +244,8 @@ impl Trace {
                 first_upstream_bytes_ms: None,
                 candidates: vec![],
                 decode_failure: None,
+                projection_failure: None,
+                reported_usage_detail_mask: None,
                 events: EventCounts::default(),
                 image: ImageAccountingObservation::default(),
             },
@@ -315,12 +322,62 @@ impl Trace {
             self.record.decode_failure = Some(decode_failure(error));
         }
     }
+    pub(super) fn projection_error(&mut self, error: &crate::execution::AttemptError) {
+        use crate::{
+            adapter::AdapterError, execution::AttemptError,
+            lowering::generation::RepresentationError as R,
+        };
+        if self.sink.is_none() {
+            return;
+        }
+        let label = match error {
+            AttemptError::Adapter(AdapterError::Representation(error))
+            | AttemptError::Representation(error) => match error {
+                R::UsageDetails => "usage_details",
+                R::UsageProjection => "usage",
+                R::ReportedFacts => "reported_facts",
+                R::MessageGrouping => "message_grouping",
+                R::UnmigratedSemantic => "unmigrated_semantic",
+                R::ReplayOrigin | R::ReplayFormat | R::ReplayPhase => "replay",
+                R::Metadata => "metadata",
+                R::SystemFingerprint => "system_fingerprint",
+                R::Terminal => "terminal",
+                _ => "other",
+            },
+            _ => "codec",
+        };
+        self.record.projection_failure = Some(label);
+    }
+    pub(super) fn reported_usage(&mut self, usage: crate::semantic::task::generation::Usage) {
+        if self.sink.is_none() {
+            return;
+        }
+        self.record.reported_usage_detail_mask = Some(
+            [
+                usage.input_image_tokens,
+                usage.input_text_tokens,
+                usage.output_text_tokens,
+                usage.accepted_prediction_tokens,
+                usage.rejected_prediction_tokens,
+                usage.input_audio_tokens,
+                usage.output_audio_tokens,
+            ]
+            .iter()
+            .enumerate()
+            .fold(0, |mask, (bit, value)| {
+                mask | if value.is_some() { 1 << bit } else { 0 }
+            }),
+        );
+    }
     pub(super) fn events(&mut self, events: &[crate::semantic::task::generation::StreamEvent]) {
         use crate::semantic::task::generation::{ItemKind, StreamEvent};
         if self.sink.is_none() {
             return;
         }
         for event in events {
+            if let StreamEvent::Usage(usage) = event {
+                self.reported_usage(*usage);
+            }
             let counts = &mut self.record.events;
             match event {
                 StreamEvent::ItemStarted { kind, .. } => {
@@ -383,6 +440,8 @@ impl Drop for Trace {
                 first_upstream_bytes_ms: None,
                 candidates: vec![],
                 decode_failure: None,
+                projection_failure: None,
+                reported_usage_detail_mask: None,
                 events: EventCounts::default(),
                 image: ImageAccountingObservation::default(),
             };
@@ -480,6 +539,26 @@ mod tests {
             fragment: "synthetic-private-body".into(),
             logprobs: vec![],
         }]);
+        trace.projection_error(&AttemptError::Adapter(
+            crate::adapter::AdapterError::Representation(
+                crate::lowering::generation::RepresentationError::UsageDetails,
+            ),
+        ));
+        assert_eq!(trace.record.projection_failure, Some("usage_details"));
+        trace.projection_error(&AttemptError::Codec(CodecError::Unsupported(
+            "synthetic-private-projection".into(),
+        )));
+        assert_eq!(trace.record.projection_failure, Some("codec"));
+        let usage = crate::semantic::task::generation::Usage {
+            input_text_tokens: Some(0),
+            rejected_prediction_tokens: Some(0),
+            ..crate::semantic::task::generation::Usage::operation(3, 2, 5)
+        };
+        trace.reported_usage(usage);
+        assert_eq!(trace.record.reported_usage_detail_mask, Some(18));
+        let mut disabled = Trace::new(None, &headers);
+        disabled.reported_usage(usage);
+        assert!(disabled.record.reported_usage_detail_mask.is_none());
         trace.decode_error(&AttemptError::Codec(CodecError::Unsupported(
             "synthetic-private-field".into(),
         )));

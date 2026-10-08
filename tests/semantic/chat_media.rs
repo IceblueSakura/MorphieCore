@@ -64,7 +64,7 @@ fn audio_stream_closes_only_complete_artifact_and_preserves_bytes() {
     );
 }
 #[test]
-fn reported_audio_usage_is_typed_and_never_erased_for_another_profile() {
+fn reported_audio_usage_stays_in_ir_and_responses_explicitly_projects_details() {
     let mut wire = completion(json!({"role":"assistant","content":"hello"}));
     wire["usage"] = json!({"prompt_tokens":10,"completion_tokens":6,"total_tokens":16,"prompt_tokens_details":{"audio_tokens":3},"completion_tokens_details":{"audio_tokens":4}});
     let decoded = standard(Profile::Chat)
@@ -74,10 +74,20 @@ fn reported_audio_usage_is_typed_and_never_erased_for_another_profile() {
         .encode_response(&decoded, &Contract::full())
         .unwrap();
     assert_eq!(encoded["usage"], wire["usage"]);
-    assert!(
-        standard(Profile::Responses)
-            .encode_response(&decoded, &Contract::full())
-            .is_err()
+    let projected = standard(Profile::Responses)
+        .encode_response(&decoded, &Contract::full())
+        .unwrap();
+    assert_eq!(
+        projected["usage"],
+        json!({"input_tokens":10,"output_tokens":6,"total_tokens":16})
+    );
+    assert_eq!(
+        decoded.semantic.usage().unwrap().input_audio_tokens,
+        Some(3)
+    );
+    assert_eq!(
+        decoded.semantic.usage().unwrap().output_audio_tokens,
+        Some(4)
     );
 }
 #[test]

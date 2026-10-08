@@ -16,11 +16,13 @@
 
 ## Message owners and cross-protocol grouping
 
-当前标准 Responses 没有 `ToolCall.message` 的 carrier。Request/static lowering 拒绝显式 message-call membership，event 投影在 attached call 的 opening 拒绝；不能仅保留两个独立 item 就声称关系仍在。空的 tool-only message owner 也适用。当前 MorphieCore adapter 也不提供私有 wire-ID 关联。
+当前标准 Responses 没有来源消息容器的 carrier。Request/static/event 按[具名容器投影](protocol-and-lowering.md#message-envelope-projection)省略获准的连续容器边界，保留内容 items、原始参数、call-result ID、顺序和真实终态；typed 诊断报告损失，原 IR 不变。非连续分组及无法保持的必要 replay 仍拒绝，不以私有字段或 wire-ID 编码补关系。
 
-独立 assistant message（包括空 owner）与独立 function call 按其身份/状态保留，不从邻接推断归属。Standalone-call run 的具名 Chat 投影不使反向 membership 自动获得标准位置。重排依赖 final typed identity，删除 owner 不能附到相同位置的新项。
+独立 assistant message（包括空 owner）与独立 function call 按其身份/状态保留，解析不从邻接推断来源归属。回传 Chat 时允许目标局部组装，不承诺恢复原始容器；重排依赖 final typed identity，删除 owner 不能附到相同位置的新项。
 
-有损 Chat 是[设计方向](protocol-and-lowering.md#semantic-loss)，不是此处现行拒绝的自动撤销；标准 Responses 也不继承 Chat 的损失许可。Owning checks：[group projection tests](../../tests/semantic/group_projection.rs)、[group view](../../src/semantic/task/generation/group.rs)。
+实际[交付层](../../src/execution/delivery.rs)对未报告原生 item ID 的输出分配 response-scoped carrier IDs，静态与事件一致，防止解码器的本地编号在多轮 history 中碰撞。已有原生 ID 不改写；生成 ID 不报告上游事实、不编码消息归属、不提供 issuer 或 replay 完整性证明。
+
+此规则独立于一般 Chat 损失许可。Chat 未报告的 settings echo、usage details 仍按 `Faithful` 保持未报告，不为 SDK 严格完整模式补事实；`StrictComplete` 继续拒绝不完整报告。Owning checks：[group projection tests](../../tests/semantic/group_projection.rs)、[message envelopes](../../src/semantic/task/generation/envelope.rs)及[SDK consumer](../../tests/sdk/chat_bridge_checks.py)。
 
 ## Reasoning replay authority
 
@@ -50,7 +52,7 @@ Responses function/custom result history 的标准 carrier 接受有序 `input_t
 
 Codec 不下载、重定向、OCR、解析像素、转码或上传；URL 语法合法不证明 Provider 获取安全或可用。库级、HTTP body 与 Endpoint 预算独立。Owners：[resource](../../src/semantic/task/generation/resource.rs)、[image codec](../../src/protocol/openai/image.rs)、[image tests](../../tests/semantic/images.rs)。
 
-Reported image/text/audio token counts 不是从正文或图像大小估计的值。MorphieCore 对 image/text usage 的具名 carrier 属于非标准位置，普通 Responses 目标无对应位置时当前拒绝，包括显式零。计量别名/视图从最终 typed 报告再投影，不保存第二个 total；来源不足不补猜。精确规则归 [adaptation](../../src/protocol/adaptation.rs)、[image usage](../../tests/semantic/image_usage.rs)和[billing modality tests](../../tests/semantic/billing_modal_usage.rs)。
+Reported image/text/audio token counts 不是从正文或图像大小估计的值。MorphieCore 对 image/text usage 的具名 carrier 属于非标准位置；普通 Responses 无对应载体的附属 token 明细仅按[独立计量投影](protocol-and-lowering.md#responses-usage-projection)省略，包括显式零，并记录逐字段损失。总量、可表示明细和原 IR 不变；计量别名/视图从最终 typed 报告再投影，不保存第二个 total，来源不足不补猜。精确规则归 [projection](../../src/lowering/projection.rs)、[image usage](../../tests/semantic/image_usage.rs)和[billing modality tests](../../tests/semantic/billing_modal_usage.rs)。
 
 ## User inline file input
 

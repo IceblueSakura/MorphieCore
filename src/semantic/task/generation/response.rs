@@ -71,7 +71,7 @@ pub struct GenerationResponse {
     items: Vec<(ItemId, Item)>,
     resources: super::ResourceTable,
     replay_groups: Vec<super::ReplayGroup>,
-    message_owners: std::collections::BTreeMap<ItemId, ItemId>,
+    message_owners: super::envelope::MessageEnvelopes,
     outcome: Outcome,
     progress: super::InteractionProgress,
     usage: Vec<Usage>,
@@ -157,10 +157,7 @@ impl GenerationResponse {
                 &self.items,
                 &self.replay_groups,
             )?)
-            .saturating_add(super::group::validate_message_owners(
-                &self.items,
-                &self.message_owners,
-            )?)
+            .saturating_add(self.message_owners.validate(&self.items)?)
             > super::MAX_TOTAL_BYTES
         {
             return Err(GenerationError::Limit);
@@ -175,13 +172,24 @@ impl GenerationResponse {
         &self.replay_groups
     }
     pub fn message_owners(&self) -> &std::collections::BTreeMap<ItemId, ItemId> {
-        &self.message_owners
+        self.message_owners.chat()
+    }
+    pub fn message_envelopes(&self) -> &[super::MessageEnvelope] {
+        self.message_owners.values()
+    }
+    pub fn with_message_envelopes(
+        mut self,
+        groups: Vec<super::MessageEnvelope>,
+    ) -> Result<Self, GenerationError> {
+        self.message_owners = super::envelope::MessageEnvelopes::new(&self.items, groups)?;
+        let details = self.details.clone();
+        self.with_details(details)
     }
     pub fn with_message_owners(
         mut self,
         owners: Vec<(ItemId, ItemId)>,
     ) -> Result<Self, GenerationError> {
-        self.message_owners = super::group::message_owners(owners)?;
+        self.message_owners = super::envelope::MessageEnvelopes::from_chat(&self.items, owners)?;
         let details = self.details.clone();
         self.with_details(details)
     }
@@ -222,13 +230,9 @@ impl GenerationResponse {
         if items.len() > super::MAX_ITEMS {
             return Err(GenerationError::Limit);
         }
-        let owners = self
-            .message_owners
-            .into_iter()
-            .filter(|(owner, _)| items.iter().any(|(id, _)| id == owner))
-            .collect();
+        let groups = self.message_owners.edited(&items)?.values().to_vec();
         let mut response = Self::from_resources(items, self.outcome, self.resources)?
-            .with_message_owners(owners)?
+            .with_message_envelopes(groups)?
             .with_replay_groups(self.replay_groups)?
             .with_progress(self.progress)?
             .with_details(self.details)?;

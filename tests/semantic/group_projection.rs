@@ -1,4 +1,4 @@
-//! A standard Responses target cannot carry explicit message-call ownership.
+//! Standard Responses omits native container boundaries, never tool identity or outcome.
 use crate::events_support::{metadata, text};
 use morphiecore::{
     lowering::{
@@ -25,22 +25,32 @@ fn source(content: Value, finish: &str) -> Value {
 }
 
 #[test]
-fn attached_calls_fail_responses_request_and_static_projection_without_changing_ir() {
+fn attached_calls_project_to_responses_without_changing_source_ir() {
     for content in [Value::Null, json!("Checking.")] {
         for finish in ["tool_calls", "length", "content_filter"] {
             let wire = source(content.clone(), finish);
             let decoded = chat::decode_response(&wire).unwrap();
             let original = decoded.semantic.clone();
-            assert!(matches!(
-                lower_response(
-                    &decoded.semantic,
-                    &decoded.fidelity,
-                    &decoded.metadata,
-                    Profile::Responses,
-                    Contract::full()
-                ),
-                Err(RepresentationError::MessageGrouping)
-            ));
+            let projected = lower_response(
+                &decoded.semantic,
+                &decoded.fidelity,
+                &decoded.metadata,
+                Profile::Responses,
+                Contract::full(),
+            )
+            .unwrap();
+            let output = responses::encode_response(&projected).unwrap();
+            assert_eq!(output["output"][1]["call_id"], "c");
+            assert_eq!(output["output"][1]["arguments"], "{}");
+            assert_eq!(
+                output["status"],
+                if finish == "tool_calls" {
+                    "completed"
+                } else {
+                    "incomplete"
+                }
+            );
+            assert!(projected.semantic().message_envelopes().is_empty());
             assert_eq!(decoded.semantic, original);
             let native = lower_response(
                 &decoded.semantic,
@@ -66,15 +76,17 @@ fn attached_calls_fail_responses_request_and_static_projection_without_changing_
                         .collect(),
                 )
                 .unwrap();
-                assert!(matches!(
-                    lower_request(
-                        &request,
-                        &decoded.fidelity,
-                        Profile::Responses,
-                        Contract::full()
-                    ),
-                    Err(RepresentationError::MessageGrouping)
-                ));
+                let target = lower_request(
+                    &request,
+                    &decoded.fidelity,
+                    Profile::Responses,
+                    Contract::full(),
+                )
+                .unwrap();
+                assert_eq!(
+                    responses::encode_generation(&target).unwrap()["input"][1]["call_id"],
+                    "c"
+                );
             }
         }
     }
@@ -125,16 +137,16 @@ fn native_chat_delivery_and_history_replay_keep_explicit_groups() {
     )
     .unwrap();
     assert_eq!(chat::encode_generation(&native).unwrap(), expected);
-    assert_eq!(
-        lower_request(
-            &history.semantic,
-            &history.fidelity,
-            Profile::Responses,
-            Contract::full()
-        )
-        .err(),
-        Some(RepresentationError::MessageGrouping),
-    );
+    let target = lower_request(
+        &history.semantic,
+        &history.fidelity,
+        Profile::Responses,
+        Contract::full(),
+    )
+    .unwrap();
+    let projected = responses::encode_generation(&target).unwrap();
+    assert_eq!(projected["input"][2]["call_id"], "c");
+    assert_eq!(projected["input"][5]["call_id"], "next");
 }
 
 #[test]
@@ -166,15 +178,16 @@ fn grouping_checks_follow_final_membership_after_insert_replace_reorder_and_dele
     };
     owner.parts[0].content = ContentPart::Text(text("replacement").into());
     let edited = decoded.semantic.clone().with_items(reordered).unwrap();
-    assert!(matches!(
-        lower_request(
-            &edited,
-            &decoded.fidelity,
-            Profile::Responses,
-            Contract::full()
-        ),
-        Err(RepresentationError::MessageGrouping)
-    ));
+    let target = lower_request(
+        &edited,
+        &decoded.fidelity,
+        Profile::Responses,
+        Contract::full(),
+    )
+    .unwrap();
+    let projected = responses::encode_generation(&target).unwrap();
+    assert_eq!(projected["input"][2]["call_id"], "b");
+    assert_eq!(projected["input"][4]["call_id"], "a");
     let deleted = edited
         .retain_items(|_, item| !matches!(item, Item::ToolCall(_)))
         .unwrap();
@@ -249,17 +262,23 @@ fn independent_empty_owner_and_calls_preserve_identity_phase_and_status() {
     );
     let response =
         GenerationResponse::new(request.semantic.items().to_vec(), Outcome::Completed).unwrap();
-    assert!(matches!(
-        lower_response(
-            &response,
-            &request.fidelity,
-            &metadata(),
-            Profile::Chat,
-            Contract::full()
-        ),
-        Err(RepresentationError::MessageGrouping)
-    ));
-    // A new typed link must be rejected even when intake declared independent items.
+    let meta = metadata();
+    let target = lower_response(
+        &response,
+        &request.fidelity,
+        &meta,
+        Profile::Chat,
+        Contract::full(),
+    )
+    .unwrap();
+    assert_eq!(
+        chat::encode_response(&target).unwrap()["choices"][0]["message"],
+        json!({"role":"assistant","content":null,"tool_calls":[
+            {"id":"c","type":"function","function":{"name":"lookup","arguments":"{}"}}
+        ]})
+    );
+    assert!(response.message_owners().is_empty());
+    // An explicit new link changes source data, while standard delivery omits its boundary.
     let items = request.semantic.items().to_vec();
     let owner = items[0].0;
     let member = items[1].0;
@@ -269,15 +288,14 @@ fn independent_empty_owner_and_calls_preserve_identity_phase_and_status() {
         .unwrap()
         .with_message_owners(vec![(member, owner)])
         .unwrap();
-    assert!(matches!(
-        lower_request(
-            &attached,
-            &request.fidelity,
-            Profile::Responses,
-            Contract::full()
-        ),
-        Err(RepresentationError::MessageGrouping)
-    ));
+    let target = lower_request(
+        &attached,
+        &request.fidelity,
+        Profile::Responses,
+        Contract::full(),
+    )
+    .unwrap();
+    assert!(target.semantic().message_owners().is_empty());
     let response = GenerationResponse::new(attached.items().to_vec(), Outcome::Completed)
         .unwrap()
         .with_message_owners(
@@ -288,16 +306,19 @@ fn independent_empty_owner_and_calls_preserve_identity_phase_and_status() {
                 .collect(),
         )
         .unwrap();
-    assert!(matches!(
-        lower_response(
-            &response,
-            &request.fidelity,
-            &metadata(),
-            Profile::Responses,
-            Contract::full()
-        ),
-        Err(RepresentationError::MessageGrouping)
-    ));
+    let meta = metadata();
+    let target = lower_response(
+        &response,
+        &request.fidelity,
+        &meta,
+        Profile::Responses,
+        Contract::full(),
+    )
+    .unwrap();
+    assert_eq!(
+        responses::encode_response(&target).unwrap()["output"][1]["call_id"],
+        "c"
+    );
 }
 
 #[test]
@@ -323,7 +344,7 @@ fn empty_owner_still_participates_in_wire_identity_checks() {
 }
 
 #[test]
-fn chat_stream_rejects_at_the_first_attached_call_and_cannot_emit_a_terminal() {
+fn chat_stream_projects_attached_calls_and_preserves_the_terminal() {
     for content in [Value::Null, json!("Checking.")] {
         let chunk = |delta: Value, finish: Value| json!({"id":"r","object":"chat.completion.chunk","created":0,"model":"synthetic","choices":[{"index":0,"delta":delta,"finish_reason":finish}]});
         let mut decoder = EventDecoder::new(Profile::Chat);
@@ -357,36 +378,20 @@ fn chat_stream_rejects_at_the_first_attached_call_and_cannot_emit_a_terminal() {
         let mut state = StreamState::new();
         let mut prefix = vec![];
         for event in &events {
-            if matches!(
-                event,
-                StreamEvent::ItemStarted {
-                    kind: ItemKind::ToolCall {
-                        message: Some(_),
-                        ..
-                    },
-                    ..
-                }
-            ) {
-                assert_eq!(
-                    check_event(&state, event, Profile::Responses, &Contract::full()),
-                    Err(RepresentationError::MessageGrouping)
-                );
-                assert!(encoder.encode(event, &decoded.fidelity).is_err());
-                assert!(
-                    encoder
-                        .encode(events.last().unwrap(), &decoded.fidelity)
-                        .is_err()
-                );
-                assert!(encoder.finish().is_err());
-                break;
-            }
+            check_event(&state, event, Profile::Responses, &Contract::full()).unwrap();
             prefix.extend(encoder.encode(event, &decoded.fidelity).unwrap());
             state = reduce(state, event.clone()).unwrap();
         }
+        encoder.finish().unwrap();
+        assert_eq!(prefix.last().unwrap()["type"], "response.completed");
+        assert_eq!(
+            prefix.last().unwrap()["response"]["output"][1]["arguments"],
+            "{}"
+        );
         assert!(
-            !prefix
+            prefix
                 .iter()
-                .any(|v| v["type"] == "response.completed" || v["item"]["type"] == "function_call")
+                .any(|v| v["type"] == "response.function_call_arguments.delta")
         );
         let mut native = EventEncoder::new(Profile::Chat, decoded.metadata.clone()).unwrap();
         for event in &events {

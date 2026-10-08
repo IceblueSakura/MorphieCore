@@ -415,6 +415,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     check_message_carriers(
         target.semantic.items(),
         target.semantic.message_owners(),
+        target.semantic.message_envelopes(),
         Profile::Chat,
     )?;
     check_item_carriers(target.semantic.items())?;
@@ -444,7 +445,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     let mut v = json!({"messages": messages});
     let o = v.as_object_mut().expect("object literal");
     write_controls(
-        target.semantic,
+        &target.semantic,
         o,
         if target.adaptation.rules.legacy_max_tokens {
             "max_tokens"
@@ -471,7 +472,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         }
     }
     super::chat_audio::write_settings(target.semantic.settings(), o);
-    function_tools::encode(target.semantic, Profile::Chat, o)?;
+    function_tools::encode(&target.semantic, Profile::Chat, o)?;
     super::reasoning::write_request(target.semantic.reasoning(), o, Profile::Chat)?;
     bounded(&v)?;
     Ok(v)

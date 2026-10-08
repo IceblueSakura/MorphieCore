@@ -187,10 +187,6 @@ fn content_filter_is_incomplete_not_length_or_refusal_success() {
                 profile,
                 Contract::full(),
             );
-            if profile == Profile::Responses && message.get("tool_calls").is_some() {
-                assert!(matches!(target, Err(RepresentationError::MessageGrouping)));
-                continue;
-            }
             let target = target.unwrap();
             if profile == Profile::Chat {
                 let encoded = chat::encode_response(&target).unwrap();

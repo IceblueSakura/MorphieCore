@@ -584,6 +584,7 @@ pub fn encode_chat(target: &ResponseRepresentation<'_>) -> Result<Value, CodecEr
     check_message_carriers(
         target.semantic.items(),
         target.semantic.message_owners(),
+        target.semantic.message_envelopes(),
         Profile::Chat,
     )?;
     let mut messages = chat::encode_items_with(
@@ -602,7 +603,7 @@ pub fn encode_chat(target: &ResponseRepresentation<'_>) -> Result<Value, CodecEr
     let message = messages
         .first()
         .ok_or(CodecError::Invalid("empty Chat candidate"))?;
-    let m = target.metadata;
+    let m = &target.metadata;
     let mut value = json!({"id":m.id,"object":"chat.completion","created":m.created,"model":m.model,
         "choices":[{"index":0,"message":message,"finish_reason":finish}],
         "usage":target.semantic.usage().map(|usage| encode_usage(usage, Profile::Chat, &target.adaptation.rules))});
@@ -642,6 +643,9 @@ pub fn encode_responses(target: &ResponseRepresentation<'_>) -> Result<Value, Co
     if target.profile != Profile::Responses {
         return Err(CodecError::ProfileMismatch);
     }
+    if !target.metadata.context.system_fingerprint.is_absent() {
+        return Err(CodecError::Unsupported("unprojected fingerprint".into()));
+    }
     check_response_carriers(&target.semantic)?;
     super::citations::check_items(
         target.semantic.items(),
@@ -661,6 +665,7 @@ pub fn encode_responses(target: &ResponseRepresentation<'_>) -> Result<Value, Co
     check_message_carriers(
         target.semantic.items(),
         target.semantic.message_owners(),
+        target.semantic.message_envelopes(),
         Profile::Responses,
     )?;
     let output = responses::encode_items(
@@ -669,7 +674,7 @@ pub fn encode_responses(target: &ResponseRepresentation<'_>) -> Result<Value, Co
         true,
         target.semantic.resources(),
     );
-    let m = target.metadata;
+    let m = &target.metadata;
     let mut value = json!({"id":m.id,"object":"response","created_at":m.created,"model":m.model,"status":status,
         "output":output,"usage":target.semantic.usage().map(|usage| encode_usage(usage, Profile::Responses, &target.adaptation.rules))});
     super::envelope::write_metadata(

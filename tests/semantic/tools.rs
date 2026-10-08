@@ -96,15 +96,7 @@ fn chat_tool_text_arrays_preserve_parts_and_project_only_final_ir() {
             );
         }
         assert_eq!(request_wire(&decoded, Profile::Chat), c);
-        assert!(matches!(
-            lower_request(
-                &decoded.semantic,
-                &decoded.fidelity,
-                Profile::Responses,
-                Contract::full()
-            ),
-            Err(RepresentationError::MessageGrouping)
-        ));
+        assert_eq!(request_wire(&decoded, Profile::Responses), r);
         let independent = responses::decode_generation(&r).unwrap();
         assert_eq!(request_wire(&independent, Profile::Responses), r);
         // Responses call items have no Chat carrier-message association.
@@ -235,15 +227,10 @@ fn independent_decode_preserves_function_meaning_and_message_ownership() {
     assert_eq!(q.parallel_tool_calls, Some(false));
     assert!(!q.strict_function_tools);
     assert_eq!(request_wire(&d, Profile::Chat), chat_history());
-    assert!(matches!(
-        lower_request(
-            &d.semantic,
-            &d.fidelity,
-            Profile::Responses,
-            Contract::full()
-        ),
-        Err(RepresentationError::MessageGrouping)
-    ));
+    assert_eq!(
+        request_wire(&d, Profile::Responses),
+        expected_responses_history()
+    );
 }
 #[test]
 fn independent_ir_encodes_call_and_empty_result_without_source_wire() {
@@ -302,16 +289,13 @@ fn responses_decode_uses_call_ids_not_wire_ids_or_result_positions() {
     assert_eq!(d.fidelity.response_item_id(ItemId::new(3)), Some("wire_a"));
     assert_eq!(request_wire(&d, Profile::Responses), wire);
     let chat = request_wire(&d, Profile::Chat);
-    // The named call-run normalization merges only independent calls, never adjacent text.
+    // Target assembly does not create a reported source membership.
+    assert_eq!(chat["messages"][1], chat_history()["messages"][1]);
     assert_eq!(
-        chat["messages"][1],
-        json!({"role":"assistant","content":"Checking."})
-    );
-    assert_eq!(
-        chat["messages"][2]["tool_calls"].as_array().unwrap().len(),
+        chat["messages"][1]["tool_calls"].as_array().unwrap().len(),
         2
     );
-    assert_eq!(chat["messages"][3]["tool_call_id"], "call_b");
+    assert_eq!(chat["messages"][2]["tool_call_id"], "call_b");
 }
 #[test]
 fn replacement_insertion_and_reordering_drive_both_encoders() {
@@ -355,13 +339,13 @@ fn replacement_insertion_and_reordering_drive_both_encoders() {
     d.semantic = d.semantic.with_items(items).unwrap();
     let c = request_wire(&d, Profile::Chat);
     let r = request_wire(&d, Profile::Responses);
-    assert_eq!(c["messages"][2]["tool_calls"][0]["id"], "call_b");
-    assert_eq!(c["messages"][2]["tool_calls"][1]["id"], "call_a_edited");
+    assert_eq!(c["messages"][1]["tool_calls"][0]["id"], "call_b");
+    assert_eq!(c["messages"][1]["tool_calls"][1]["id"], "call_a_edited");
     assert_eq!(
-        c["messages"][2]["tool_calls"][1]["function"]["arguments"],
+        c["messages"][1]["tool_calls"][1]["function"]["arguments"],
         "{\"city\":\"Tokyo\"}"
     );
-    assert_eq!(c["messages"][2]["tool_calls"][2]["id"], "call_c");
+    assert_eq!(c["messages"][1]["tool_calls"][2]["id"], "call_c");
     assert_eq!(r["input"][2]["call_id"], "call_b");
     assert_eq!(r["input"][3]["arguments"], "{\"city\":\"Tokyo\"}");
     assert_eq!(r["input"][4]["call_id"], "call_c");
@@ -641,16 +625,24 @@ fn static_response_encodes_independent_expectations_and_replays_into_history() {
             },
         ])
     );
-    assert!(matches!(
-        lower_response(
-            &a.semantic,
-            &a.fidelity,
-            &a.metadata,
-            Profile::Responses,
-            Contract::full()
-        ),
-        Err(RepresentationError::MessageGrouping)
-    ));
+    let projected = lower_response(
+        &a.semantic,
+        &a.fidelity,
+        &a.metadata,
+        Profile::Responses,
+        Contract::full(),
+    )
+    .unwrap();
+    let encoded = responses::encode_response(&projected).unwrap();
+    assert_eq!(
+        encoded["output"][0],
+        json!({"type":"message","id":"item_1",
+        "role":"assistant","content":[],"status":"completed"})
+    );
+    assert_eq!(
+        &encoded["output"].as_array().unwrap()[1..],
+        responses_response()["output"].as_array().unwrap()
+    );
     let native = lower_response(
         &a.semantic,
         &a.fidelity,
@@ -803,16 +795,21 @@ fn response_failures_and_independent_message_grouping_do_not_become_success() {
     let mut w = responses_response();
     w["output"].as_array_mut().unwrap().insert(0, json!({"type":"message","id":"msg","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Checking.","annotations":[]}]}));
     let d = responses::decode_response(&w).unwrap();
-    assert!(matches!(
-        lower_response(
-            &d.semantic,
-            &d.fidelity,
-            &d.metadata,
-            Profile::Chat,
-            Contract::full()
-        ),
-        Err(RepresentationError::MessageGrouping)
-    ));
+    let target = lower_response(
+        &d.semantic,
+        &d.fidelity,
+        &d.metadata,
+        Profile::Chat,
+        Contract::full(),
+    )
+    .unwrap();
+    let encoded = chat::encode_response(&target).unwrap();
+    assert_eq!(encoded["choices"][0]["message"]["content"], "Checking.");
+    assert_eq!(
+        encoded["choices"][0]["message"]["tool_calls"],
+        chat_response()["choices"][0]["message"]["tool_calls"]
+    );
+    assert!(d.semantic.message_owners().is_empty());
 }
 #[test]
 fn usage_projects_known_totals_across_profiles_without_estimating() {

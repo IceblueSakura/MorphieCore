@@ -6,10 +6,10 @@ from sdk_support import check
 from models_checks import check_models
 from speech_checks import check_speech
 from tokenplan_audio_checks import check_native_audio
+from chat_bridge_checks import check_chat_bridge
 from urllib.parse import urlsplit
 
 import openai
-import httpx2
 
 
 def run(base_url: str) -> None:
@@ -82,6 +82,7 @@ def run(base_url: str) -> None:
                     history.append({"role": "tool", "tool_call_id": call.id, "content": '{"n":1}'})
                 else:
                     check(result.choices[0].finish_reason == "stop" and message.content == "old 🧪")
+        requests += check_chat_bridge(base_url, function)
         for stream in (False, True):
             history = [{"role": "user", "content": [
                 {"type": "input_text", "text": "lookup"},
@@ -155,31 +156,23 @@ def run(base_url: str) -> None:
             check(owner.type == "message" and owner.status == "completed" and owner.content == [])
             check(call.type == "function_call" and call.call_id == "call-local")
             check(json.loads(call.arguments) == {"n": 1})
-        # Upstream-only accounting has no standard downstream carrier. Static
-        # delivery fails; a published stream must abort without a fake terminal.
+        # Only approved auxiliary accounting is omitted; standard totals remain.
         for stream in (False, True):
             requests += 1
             completed = 0
-            received_events = 0
             params = dict(model="public-model", input="lookup",
                           metadata={"case": "nonstandard-usage"})
-            try:
-                if stream:
-                    with client.responses.stream(**params) as events:
-                        for event in events:
-                            received_events += 1
-                            completed += event.type == "response.completed"
-                        events.get_final_response()
-                else:
-                    client.responses.create(**params)
-            except (openai.APIError, httpx2.TransportError, RuntimeError) as error:
-                if not stream:
-                    check(isinstance(error, openai.APIStatusError) and error.status_code == 502)
-                else:
-                    check(received_events > 0)
-                check(completed == 0)
+            if stream:
+                with client.responses.stream(**params) as events:
+                    for event in events:
+                        completed += event.type == "response.completed"
+                    result = events.get_final_response()
+                check(completed == 1)
             else:
-                check(False, "unrepresentable accounting must not be dropped for success")
+                result = client.responses.create(**params)
+            check(result.status == "completed" and result.usage.total_tokens == 8)
+            check(result.usage.input_tokens == 3 and result.usage.output_tokens == 5)
+            check("image_tokens" not in result.usage.input_tokens_details.model_dump(exclude_unset=True))
         for index, count in enumerate((1, 2, 2)):
             params = dict(model="public-image", prompt="synthetic image", n=count,
                 stream=False, size="1536x1024", quality="high", background="transparent",

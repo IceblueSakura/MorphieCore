@@ -849,47 +849,63 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         assert_eq!(response.status(), 400);
         assert_eq!(observed.0.lock().unwrap().len(), before);
     }
-    // Responses has no message-call membership carrier: static projection fails,
-    // while an already-published stream aborts without a fabricated terminal.
+    // Standard Responses delivery and actual replay use a fixed Chat upstream.
     for stream in [false, true] {
         let before = observed.0.lock().unwrap().len();
-        let mut response = client
+        let response = client
             .post(format!("{url}/v1/responses"))
             .bearer_auth(support::CLIENT_KEY)
             .json(&json!({"model":"cross-model","input":"lookup","stream":stream}))
             .send()
             .await
             .unwrap();
-        if stream {
-            assert_eq!(response.status(), 200);
-            let mut body = Vec::new();
-            loop {
-                match response.chunk().await {
-                    Ok(Some(chunk)) => body.extend_from_slice(&chunk),
-                    Err(_) => break,
-                    Ok(None) => panic!("unrepresentable output completed its HTTP body"),
-                }
-            }
-            let text = String::from_utf8_lossy(&body);
-            assert!(!text.contains("private-model"));
-            assert!(!text.contains("_openbridge"));
-            assert!(!text.contains("response.completed"));
-        } else {
-            assert_eq!(response.status(), 502);
-            let value: Value = response.json().await.unwrap();
-            assert_eq!(value["error"]["code"], "upstream_error");
-        }
+        assert_eq!(response.status(), 200);
+        let body = response.bytes().await.unwrap();
+        let text = String::from_utf8_lossy(&body);
+        assert!(!text.contains("private-model"));
+        assert!(!text.contains("_openbridge"));
+        let decoded = responses_delivery(&body, stream);
+        assert_eq!(decoded.semantic.outcome(), Outcome::Completed);
+        let encoded = Adapter::new(Profile::Responses, Dialect::Standard, None)
+            .encode_response(&decoded, &GenerationRepresentationContract::full())
+            .unwrap();
+        assert_eq!(encoded["output"][1]["call_id"], "call-local");
+        assert_eq!(encoded["output"][1]["arguments"], "{\"n\":1}");
         assert_eq!(observed.0.lock().unwrap().len(), before + 1);
-
-        // Opposite request direction: explicit Chat history must be rejected
-        // during candidate projection, before any HTTP Provider call.
+        let mut history = vec![json!({"role":"user","content":"lookup"})];
+        history.extend(encoded["output"].as_array().unwrap().iter().cloned());
+        history.push(
+            json!({"type":"function_call_output","call_id":"call-local","output":"{\"n\":1}"}),
+        );
+        let response = client
+            .post(format!("{url}/v1/responses"))
+            .bearer_auth(support::CLIENT_KEY)
+            .json(&json!({"model":"cross-model","input":history,"stream":stream}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        let followup = responses_delivery(&response.bytes().await.unwrap(), stream);
+        assert_eq!(followup.semantic.outcome(), Outcome::Completed);
+        assert_eq!(observed.0.lock().unwrap().len(), before + 2);
+        assert_eq!(
+            observed.0.lock().unwrap().last().unwrap()["messages"],
+            json!([
+                {"role":"user","content":"lookup"},
+                {"role":"assistant","content":null,"tool_calls":[
+                    {"id":"call-local","type":"function","function":{"name":"lookup","arguments":"{\"n\":1}"}}
+                ]},
+                {"role":"tool","tool_call_id":"call-local","content":"{\"n\":1}"}
+            ])
+        );
+        // Wrong result identity still fails before any upstream dispatch.
         let before = observed.0.lock().unwrap().len();
         let response = client
             .post(format!("{url}/v1/chat/completions"))
             .bearer_auth(support::CLIENT_KEY)
             .json(&json!({"model":"cross-model","stream":stream,"messages":[
                 {"role":"assistant","content":null,"tool_calls":[{"id":"c","type":"function","function":{"name":"lookup","arguments":"{}"}}]},
-                {"role":"tool","tool_call_id":"c","content":"ok"}
+                {"role":"tool","tool_call_id":"wrong","content":"ok"}
             ]}))
             .send().await.unwrap();
         assert_eq!(response.status(), 400);

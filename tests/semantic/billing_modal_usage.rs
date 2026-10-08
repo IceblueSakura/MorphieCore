@@ -38,10 +38,13 @@ fn modality_billing_view_promotes_typed_facts_and_edits_cannot_restore_the_view(
         client.encode_response(&decoded, &Contract::full()).unwrap()["usage"],
         expected_usage()
     );
-    assert!(
-        Adapter::new(Profile::Responses, Dialect::Standard, None)
-            .encode_response(&decoded, &Contract::full())
-            .is_err()
+    let standard = Adapter::new(Profile::Responses, Dialect::Standard, None)
+        .encode_response(&decoded, &Contract::full())
+        .unwrap();
+    assert_eq!(
+        standard["usage"],
+        json!({"input_tokens":10,"output_tokens":2,"total_tokens":12,
+        "input_tokens_details":{"cached_tokens":1},"output_tokens_details":{"reasoning_tokens":0}})
     );
     let native = provider
         .encode_response(&decoded, &Contract::full())

@@ -8,7 +8,7 @@
 
 请求、响应及事件的 envelope/item **不接受或输出独立 `_openbridge` 字段**，包括 null、空对象及带版本的对象。不存在开关恢复、同义替代字段或私有事件。普通文本、raw tool arguments/output 或允许任意键的用户 metadata 中的同名业务数据不被当作协议 attachment。
 
-需要标准载体的正文、工具 call/result、图片与原生 Responses encrypted content 继续使用其标准位置。Typed 结构化参数/结果、执行报告、message-call membership、显式 interaction progress、scoped usage 和其他格式 replay 仍由共享语义 owner 表达；无载体时按目标拒绝，不能把它们 stringify、去掉关联或藏入 fidelity。
+需要标准载体的正文、工具 call/result、图片与原生 Responses encrypted content 继续使用其标准位置。来源消息容器只按[具名投影](protocol-and-lowering.md#message-envelope-projection)省略边界或在 Chat 目标重组，不承诺标准客户端保存后恢复原分组。Typed 结构化参数/结果、执行报告、显式 interaction progress、scoped usage 和其他格式 replay 仍由共享语义 owner 表达；无载体且不在已定稿规则内时拒绝，不能 stringify、去掉必要关联或藏入 fidelity。
 
 必要 replay 的 format、finality、scope 与依赖规则不因客户端字段删除而减弱。未来 Agent 可以直接消费同一 typed 模型，不要求客户端保留 unknown fields，也不从普通 hash 或 scope label 推定 issuer 认证。
 

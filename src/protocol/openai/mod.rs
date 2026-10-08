@@ -44,34 +44,40 @@ pub enum Profile {
 /// Only lowering can construct an encoding input; codecs cannot bypass representability.
 pub struct RequestRepresentation<'a> {
     pub(crate) adaptation: crate::protocol::adaptation::Adaptation,
-    pub(crate) semantic: &'a GenerationRequest,
+    pub(crate) semantic: std::borrow::Cow<'a, GenerationRequest>,
     pub(crate) fidelity: &'a FidelityRecords,
     pub(crate) profile: Profile,
+    pub(crate) projection: Vec<crate::lowering::projection::ProjectionStage>,
 }
 impl RequestRepresentation<'_> {
-    /// Requests/history have no new loss rule; the immutable final source is
-    /// the checked value. A changed input or target requires fresh lowering.
+    /// Final candidate-local value; a changed input or target needs fresh lowering.
     pub fn semantic(&self) -> &GenerationRequest {
-        self.semantic
+        &self.semantic
+    }
+    pub fn projection(&self) -> &[crate::lowering::projection::ProjectionStage] {
+        &self.projection
     }
     pub fn profile(&self) -> Profile {
         self.profile
     }
     pub fn requirements(&self) -> crate::semantic::task::generation::GenerationRequirements {
-        crate::semantic::task::generation::GenerationRequirements::derive(self.semantic)
+        crate::semantic::task::generation::GenerationRequirements::derive(&self.semantic)
     }
 }
 pub struct ResponseRepresentation<'a> {
     pub(crate) adaptation: crate::protocol::adaptation::Adaptation,
     pub(crate) semantic: std::borrow::Cow<'a, GenerationResponse>,
     pub(crate) fidelity: &'a FidelityRecords,
-    pub(crate) metadata: &'a ResponseMetadata,
+    pub(crate) metadata: std::borrow::Cow<'a, ResponseMetadata>,
     pub(crate) profile: Profile,
     pub(crate) projection: Vec<crate::lowering::projection::ProjectionStage>,
 }
 impl ResponseRepresentation<'_> {
     pub fn semantic(&self) -> &GenerationResponse {
         &self.semantic
+    }
+    pub fn metadata(&self) -> &ResponseMetadata {
+        &self.metadata
     }
     pub fn projection(&self) -> &[crate::lowering::projection::ProjectionStage] {
         &self.projection
@@ -95,10 +101,13 @@ impl ResponseRepresentation<'_> {
         let mut next = generation::lower_response(
             &self.semantic,
             self.fidelity,
-            self.metadata,
+            &self.metadata,
             profile,
             contract,
         )?;
+        if self.projection.len().saturating_add(next.projection.len()) > MAX_PROJECTION_STAGES {
+            return Err(generation::RepresentationError::ProjectionLimit);
+        }
         let mut stages = self.projection.clone();
         stages.append(&mut next.projection);
         next.projection = stages;

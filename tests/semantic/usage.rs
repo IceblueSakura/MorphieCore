@@ -49,10 +49,13 @@ fn text_and_prediction_counts_are_preserved_and_not_summed_with_reasoning() {
     assert_eq!(decoded.semantic.usage(), Some(expected));
     let output = chat.encode_response(&decoded, &Contract::full()).unwrap();
     assert_eq!(output["usage"], source["usage"]);
-    assert!(
+    assert_eq!(
         adapter(Profile::Responses)
             .encode_response(&decoded, &Contract::full())
-            .is_err()
+            .unwrap()["usage"],
+        json!({"input_tokens":10,"output_tokens":20,"total_tokens":30,
+            "input_tokens_details":{"cached_tokens":2,"cache_write_tokens":1},
+            "output_tokens_details":{"reasoning_tokens":6}})
     );
     let mut edited = decoded.clone();
     let changed = Usage {
@@ -145,10 +148,14 @@ fn text_and_prediction_counts_are_preserved_and_not_summed_with_reasoning() {
     ] {
         let mut inserted = edited.clone();
         inserted.semantic = inserted.semantic.with_usage(usage).unwrap();
+        let projected = adapter(Profile::Responses)
+            .encode_response(&inserted, &Contract::full())
+            .unwrap();
+        assert_eq!(projected["usage"]["total_tokens"], 30);
         assert!(
-            adapter(Profile::Responses)
-                .encode_response(&inserted, &Contract::full())
-                .is_err()
+            projected["usage"]["output_tokens_details"]
+                .get("accepted_prediction_tokens")
+                .is_none()
         );
         assert_eq!(
             chat.decode_response(
@@ -210,10 +217,13 @@ fn detail_zero_is_reported_but_null_is_not_and_invalid_counters_fail_closed() {
                 output["usage"]["completion_tokens_details"]["accepted_prediction_tokens"],
                 0
             );
-            assert!(
-                adapter(Profile::Responses)
-                    .encode_response(&decoded, &Contract::full())
-                    .is_err()
+            let projected = adapter(Profile::Responses)
+                .encode_response(&decoded, &Contract::full())
+                .unwrap();
+            assert_eq!(projected["usage"]["total_tokens"], 30);
+            assert_eq!(
+                decoded.semantic.usage().unwrap().accepted_prediction_tokens,
+                Some(0)
             );
         }
     }
@@ -275,7 +285,7 @@ fn detail_zero_is_reported_but_null_is_not_and_invalid_counters_fail_closed() {
     assert!(chat.decode_response(source.to_string().as_bytes()).is_err());
 }
 #[test]
-fn details_close_chat_streams_but_cannot_disappear_at_a_responses_target() {
+fn details_close_chat_streams_and_responses_uses_the_named_projection() {
     let chat = adapter(Profile::Chat);
     let source = body();
     let expected = chat.decode_response(source.to_string().as_bytes()).unwrap();
@@ -338,21 +348,27 @@ fn details_close_chat_streams_but_cannot_disappear_at_a_responses_target() {
         );
         let mut responses =
             EventEncoder::new(Profile::Responses, expected.metadata.clone()).unwrap();
+        let mut output = vec![];
         for event in &events {
-            let encoded = responses.encode(event, &expected.fidelity);
-            if matches!(event, StreamEvent::Usage(_)) {
-                assert!(encoded.is_err());
-                break;
-            } else {
-                encoded.unwrap();
-            }
+            output.extend(responses.encode(event, &expected.fidelity).unwrap());
         }
-        assert!(
-            responses
-                .encode(events.last().unwrap(), &expected.fidelity)
-                .is_err()
+        responses.finish().unwrap();
+        assert_eq!(
+            output.last().unwrap()["response"]["usage"],
+            json!({
+                "input_tokens":10,"output_tokens":20,"total_tokens":30,
+                "input_tokens_details":{"cached_tokens":2,"cache_write_tokens":1},
+                "output_tokens_details":{"reasoning_tokens":6}
+            })
         );
-        assert!(responses.finish().is_err());
+        assert_eq!(
+            responses
+                .projection()
+                .iter()
+                .filter(|s| s.loss.is_some())
+                .count(),
+            4
+        );
     }
 }
 

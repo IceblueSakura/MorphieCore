@@ -398,7 +398,12 @@ impl Fixture {
                     .unwrap();
             }
         }
-        let config = serde_json::json!({"client_key":get("client_key")?.ok_or(StartupError::Credentials)?,"bind":get("bind")?.unwrap_or("127.0.0.1:0".into())});
+        let mut config = serde_json::json!({"client_key":get("client_key")?.ok_or(StartupError::Credentials)?,"bind":get("bind")?.unwrap_or("127.0.0.1:0".into())});
+        for field in ["models", "responses_via_chat"] {
+            if let Some(value) = get(field)? {
+                config[field] = serde_json::from_str(&value).map_err(|_| StartupError::Binding)?;
+            }
+        }
         manager.write_gateway_config_for_test(&config);
         let boot = Bootstrap::from_directory(directory.path())?;
         Ok(Self {
@@ -406,4 +411,52 @@ impl Fixture {
             _directory: directory,
         })
     }
+}
+
+#[test]
+fn responses_chat_bridge_is_explicit_and_replaces_not_falls_back_to_native_responses() {
+    let settings = |name: &str| {
+        Ok(match name {
+            "client_key" => Some("synthetic-gateway-client-token-0001".into()),
+            "openrouter-api-key" => Some("synthetic-upstream-only".into()),
+            "models" | "responses_via_chat" => Some(r#"["gpt-6-luna"]"#.into()),
+            _ => None,
+        })
+    };
+    let boot = Fixture::from_lookup(settings).unwrap();
+    let entry = &boot.gateway.state.entries[&(
+        super::super::family(Profile::Responses),
+        "gpt-6-luna".into(),
+    )];
+    assert_eq!(entry.candidates.len(), 1);
+    assert_eq!(
+        entry.candidates[0].endpoint.protocol,
+        crate::topology::ProtocolProfile::OpenAiChat
+    );
+    assert_eq!(
+        entry.candidates[0].endpoint.target.path.as_str(),
+        "/api/v1/chat/completions"
+    );
+    for invalid in [
+        r#"["unknown"]"#,
+        r#"["gpt-6-luna","gpt-6-luna"]"#,
+        r#"["hy4-preview"]"#,
+    ] {
+        assert!(
+            Fixture::from_lookup(|name| if name == "responses_via_chat" {
+                Ok(Some(invalid.into()))
+            } else {
+                settings(name)
+            })
+            .is_err()
+        );
+    }
+    assert!(
+        Fixture::from_lookup(|name| if name == "models" {
+            Ok(None)
+        } else {
+            settings(name)
+        })
+        .is_err()
+    );
 }

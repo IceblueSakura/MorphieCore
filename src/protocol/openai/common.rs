@@ -398,10 +398,16 @@ pub(super) fn check_item_carriers(items: &[(ItemId, Item)]) -> Result<(), CodecE
 pub(super) fn check_message_carriers(
     items: &[(ItemId, Item)],
     owners: &std::collections::BTreeMap<ItemId, ItemId>,
+    groups: &[MessageEnvelope],
     profile: Profile,
 ) -> Result<(), CodecError> {
-    if profile == Profile::Responses && !owners.is_empty() {
+    if profile == Profile::Responses && (!owners.is_empty() || !groups.is_empty()) {
         return Err(CodecError::Unsupported("message grouping".into()));
+    }
+    for group in groups {
+        if group.chat_owner(items).is_none() {
+            return Err(CodecError::Unsupported("message envelope carrier".into()));
+        }
     }
     for (member, parent) in owners {
         let first = items

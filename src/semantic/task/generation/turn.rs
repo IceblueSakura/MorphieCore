@@ -119,6 +119,20 @@ impl<'a> ResponseContinuation<'a> {
             }
         }
         for (owner, _) in self.response.items() {
+            if history
+                .message_envelopes()
+                .iter()
+                .filter(|g| g.members().contains(owner))
+                .collect::<Vec<_>>()
+                != self
+                    .response
+                    .message_envelopes()
+                    .iter()
+                    .filter(|g| g.members().contains(owner))
+                    .collect::<Vec<_>>()
+            {
+                return Err(ContinuationError::ChangedResponse);
+            }
             if history.message_owners().get(owner) != self.response.message_owners().get(owner) {
                 return Err(ContinuationError::ChangedResponse);
             }

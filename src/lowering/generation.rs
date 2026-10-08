@@ -66,6 +66,26 @@ pub fn lower_request<'a>(
     profile: Profile,
     c: GenerationRepresentationContract,
 ) -> Result<RequestRepresentation<'a>, RepresentationError> {
+    r.validate()?;
+    let mut semantic = std::borrow::Cow::Borrowed(r);
+    let mut projection = Vec::new();
+    if let Some((groups, loss)) = super::message_groups::project(
+        r.items(),
+        r.message_envelopes(),
+        r.message_owners(),
+        profile,
+    )? {
+        // Replay dependencies must be checked against the final target value below.
+        semantic = std::borrow::Cow::Owned(r.clone().with_message_envelopes(groups)?);
+        let mut stage = super::projection::ProjectionStage::response(
+            profile,
+            c.adaptation.profile_id,
+            Some(loss),
+        );
+        stage.direction = super::projection::ProjectionDirection::Request;
+        projection.push(stage);
+    }
+    let r = semantic.as_ref();
     let q = check(r, c.clone())?;
     check_schema_documents(r.settings())?;
     if q.provider_observations || !r.replay_groups().is_empty() || !r.call_derivations().is_empty()
@@ -224,9 +244,10 @@ pub fn lower_request<'a>(
     validate_wire_ids(r.items(), fidelity, false)?;
     Ok(RequestRepresentation {
         adaptation: c.adaptation,
-        semantic: r,
+        semantic,
         fidelity,
         profile,
+        projection,
     })
 }
 /// A strict-complete target cannot deliver a response whose reported facts are
@@ -306,30 +327,68 @@ pub fn lower_response<'a>(
     profile: Profile,
     c: GenerationRepresentationContract,
 ) -> Result<ResponseRepresentation<'a>, RepresentationError> {
+    metadata
+        .context
+        .validate()
+        .map_err(|_| RepresentationError::Metadata)?;
+    let mut metadata = std::borrow::Cow::Borrowed(metadata);
     let mut semantic = std::borrow::Cow::Borrowed(r);
-    let mut loss = None;
-    if profile == Profile::Chat
-        && let Some(usage) = r.usage()
-    {
-        let (projected, omitted) =
-            super::projection::chat_usage(usage, c.adaptation.rules.chat_image_usage)?;
-        loss = omitted;
-        if loss.is_some() {
+    let mut projection = Vec::new();
+    if profile == Profile::Responses && !metadata.context.system_fingerprint.is_absent() {
+        metadata.to_mut().context.system_fingerprint = crate::semantic::value::Presence::Absent;
+        projection.push(super::projection::ProjectionStage::response(
+            profile,
+            c.adaptation.profile_id,
+            Some(super::projection::LossRule::OmitResponsesSystemFingerprint),
+        ));
+    }
+    if let Some((groups, loss)) = super::message_groups::project(
+        r.items(),
+        r.message_envelopes(),
+        r.message_owners(),
+        profile,
+    )? {
+        semantic = std::borrow::Cow::Owned(r.clone().with_message_envelopes(groups)?);
+        projection.push(super::projection::ProjectionStage::response(
+            profile,
+            c.adaptation.profile_id,
+            Some(loss),
+        ));
+    }
+    if let Some(usage) = r.usage() {
+        let (projected, losses) = match profile {
+            Profile::Chat => {
+                let (usage, loss) =
+                    super::projection::chat_usage(usage, c.adaptation.rules.chat_image_usage)?;
+                (usage, loss.into_iter().collect::<Vec<_>>())
+            }
+            Profile::Responses => super::projection::responses_usage(usage, &c.adaptation.rules)?,
+        };
+        if !losses.is_empty() {
             // Preserve every report and its scope; projection is not aggregation.
             let reports = r
                 .usage_reports()
                 .iter()
                 .map(|report| if *report == usage { projected } else { *report })
                 .collect();
-            semantic = std::borrow::Cow::Owned(r.clone().with_usage_reports(reports)?);
+            semantic = std::borrow::Cow::Owned(semantic.into_owned().with_usage_reports(reports)?);
+            projection.extend(losses.into_iter().map(|loss| {
+                super::projection::ProjectionStage::response(
+                    profile,
+                    c.adaptation.profile_id,
+                    Some(loss),
+                )
+            }));
         }
     }
-    validate_response(&semantic, fidelity, metadata, profile, &c)?;
-    let projection = vec![super::projection::ProjectionStage::response(
-        profile,
-        c.adaptation.profile_id,
-        loss,
-    )];
+    validate_response(&semantic, fidelity, &metadata, profile, &c)?;
+    if projection.is_empty() {
+        projection.push(super::projection::ProjectionStage::response(
+            profile,
+            c.adaptation.profile_id,
+            None,
+        ));
+    }
     Ok(ResponseRepresentation {
         semantic,
         fidelity,
@@ -398,7 +457,7 @@ fn validate_response(
     }
     // `system_fingerprint` is a Chat reported fact with no Responses wire position.
     if profile == Profile::Responses && !metadata.context.system_fingerprint.is_absent() {
-        return Err(RepresentationError::UnmigratedSemantic);
+        return Err(RepresentationError::SystemFingerprint);
     }
     // Phase labels are Responses-only; reject instead of dropping the label.
     if profile == Profile::Chat
@@ -903,4 +962,6 @@ pub enum RepresentationError {
     UsageProjection,
     #[error("invalid or conflicting response representation metadata")]
     Metadata,
+    #[error("target has no system fingerprint carrier")]
+    SystemFingerprint,
 }

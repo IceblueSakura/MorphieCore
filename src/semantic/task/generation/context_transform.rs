@@ -27,6 +27,7 @@ pub enum ContextEdit {
     Configuration(ConfigurationSnapshot),
     ReplayGroups(Vec<ReplayGroup>),
     MessageOwners(Vec<(ItemId, ItemId)>),
+    MessageEnvelopes(Vec<MessageEnvelope>),
 }
 impl std::fmt::Debug for ContextEdit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -53,6 +54,7 @@ pub enum ContextChange {
     },
     ReplayGroups,
     MessageOwners,
+    MessageEnvelopes,
 }
 impl ContextChange {
     pub(super) fn weight(&self) -> usize {
@@ -241,9 +243,7 @@ impl GenerationRequest {
                         super::super::identity::check_operation_revision(&request.items[position].1, &replacement.1)?;
                         let owner = replacement.0;
                         request.items[position] = replacement;
-                        if let Some(parent) = request.message_owners.remove(&source) {
-                            request.message_owners.insert(owner,parent);
-                        }
+                        request.message_owners.revise(source, owner);
                         request.call_derivations.insert(owner, source);
                         ContextChange::CallRevised { source, owner }
                     }
@@ -292,8 +292,12 @@ impl GenerationRequest {
                         ContextChange::ReplayGroups
                     }
                     ContextEdit::MessageOwners(owners) => {
-                        request.message_owners = super::super::group::message_owners(owners)?;
+                        request.message_owners = super::super::envelope::MessageEnvelopes::from_chat(&request.items, owners)?;
                         ContextChange::MessageOwners
+                    }
+                    ContextEdit::MessageEnvelopes(groups) => {
+                        request.message_owners = super::super::envelope::MessageEnvelopes::new(&request.items, groups)?;
+                        ContextChange::MessageEnvelopes
                     }
                 })
             })().map_err(|error| fail(ContextStage::Edit, Some(at), error))?;
@@ -306,9 +310,10 @@ impl GenerationRequest {
         request
             .call_derivations
             .retain(|id, _| request.items.iter().any(|(owner, _)| owner == id));
-        request
+        request.message_owners = request
             .message_owners
-            .retain(|id, _| request.items.iter().any(|(owner, _)| owner == id));
+            .edited(&request.items)
+            .map_err(|e| fail(ContextStage::Association, None, e))?;
         request.replay_groups.retain(|g| {
             g.members()
                 .iter()

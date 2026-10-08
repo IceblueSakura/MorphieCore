@@ -19,6 +19,8 @@ Pool 按编译 binding 启用候选；只有账户或 key、没有 pool，不激
 
 显式 `models` 过滤只绑定所选模型所需的 pool；无关、未注册的旧 pool 不被激活，也不要求删除其凭据。所选模型未知或没有匹配绑定仍拒绝启动。省略 `models` 的未过滤启动保持对未知 pool 的严格拒绝，不静默推断退役目标。
 
+Responses→Chat 上游必须通过[入口配置](credentials.md#gateway-access-绑定)的 `responses_via_chat` 显式选择，嵌入调用方则选择对应 `Entry`；不因 Chat 存在就自动激活 Responses。转换边界归[消息容器投影](architecture/protocol-and-lowering.md#message-envelope-projection)；Chat 没有报告的 settings/usage 明细仍保持未知，不能以 SDK 默认消费成功声称严格完整报告。
+
 仅启动不产生模型生成请求。真实操作的授权归 [AGENTS.md](../AGENTS.md#scope-and-authorization)；默认验收只用 synthetic keys 和 loopback Provider。Ctrl-C 发起 graceful shutdown，取消在途上游并拒绝新业务请求，不证明 Provider 停算或停止计费。
 
 ## HTTP 合同
@@ -40,9 +42,9 @@ Pool 按编译 binding 启用候选；只有账户或 key、没有 pool，不激
 - 仅在 Public Model 准入输出 token 控制时，将 operator 缺省上限写入最终 IR，再派生 requirements/admission/lowering；显式超限拒绝，不静默裁剪。SIWC 不支持该上游参数：省略时不补值，显式请求拒绝。本地 bytes/events/deadline 预算不证明上游停算或费用上限。响应 reported facts 不从请求补齐。
 - 文本数组、工具选择/结果、概率、Schema 与 reported context 的精确接受/拒绝由上述 profiles 和 owning code 维护，不因路由存在而扩大 Public Model/Endpoint 合同。当前跨协议不可表示时仍明确拒绝；设计允许的 Chat 有损规则尚需逐片实现，不能提前按该方向丢字段换取成功。
 - user 与 Responses 工具结果的 URL/inline 图片有独立准入，见[图片输入](architecture/responses-text-profile.md#user-image-input)与[工具图片结果](architecture/responses-text-profile.md#tool-image-results)。Responses 另有[标准 user inline 文件输入](architecture/responses-text-profile.md#user-inline-file-input)及[URL 文件输入](architecture/responses-text-profile.md#user-file-url-input)，仍需 public model 与 endpoint 显式文件准入；库 codec 不自动激活文件模型。不下载、解析文档、转码或放宽 body 预算；file ID、工具文件、Chat 工具图片、图片输出与资源服务不因此启用。
-- HTTP envelope/item 上的独立 `_openbridge` 字段不准入，包括 null、空对象及版本化 attachment，也不输出该字段。结构化值、执行报告、message membership、progress/scoped usage 和 replay 的 typed owner 不因此删除；无标准载体的 history/目标投影明确拒绝。请求拒绝发生在上游 I/O 前；不可交付的静态输出失败，已发布 SSE 只能中止，不伪造终态或前移。普通正文、raw arguments/output 与用户 metadata 中的同名业务数据不被当成协议字段。详见[客户端边界](architecture/client-generation-profile.md)。
+- HTTP envelope/item 上的独立 `_openbridge` 字段不准入，包括 null、空对象及版本化 attachment，也不输出该字段。结构化值、执行报告、message membership、progress/scoped usage 和 replay 的 typed owner 不因此删除；无标准载体且未获具名投影许可的 history/目标明确拒绝。请求拒绝发生在上游 I/O 前；不可交付的静态输出失败，已发布 SSE 只能中止，不伪造终态或前移。普通正文、raw arguments/output 与用户 metadata 中的同名业务数据不被当成协议字段。详见[客户端边界](architecture/client-generation-profile.md)。
 - Responses 拒绝非标准 `session_id`（包括 null），标准 identity/cache hints 保留各自 owner。Chat 兼容入口的 `session_id` body 扩展仍按声明的目标投影，不提供网关会话或粘性路由，不从 cache key 派生，也不透传 session headers；精确 carrier 归 [adapter request](../src/adapter/request.rs)与[cache projection](../src/protocol/cache.rs)。未声明 carrier 的 advisory cache hint 可按合同省略，行为控制与 identity/session 要求不能随之静默丢弃。
-- 标准 Responses 无位置的具名 image/text 计量明细不输出，也不静默删除后继续成功；静态投影失败，已发布 SSE 中止。IR 中的实际报告仍保留，不能继承独立 Images 的计量损失许可。
+- 标准 Responses 无载体的附属 token 明细仅按[独立具名规则](architecture/protocol-and-lowering.md#responses-usage-projection)从目标副本省略，逐字段记录损失；总量、可表示明细与原 IR 保留，非法计量仍拒绝。这不是继承独立 Images 的计量损失许可。
 - [Continuation](architecture/responses-text-profile.md#response-outcome-and-continuation)库视图不增加 HTTP 字段、执行就绪证明或自动 Agent loop。低层 CustomSections/CodexHeaders 也不等于 HTTP 接线；仅开放表中路由；状态资源、WebSocket、hosted-tool/program 执行等[缺口](implementation-status/generation.md)仍独立。
 
 ### 标准模型发现

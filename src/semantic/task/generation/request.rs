@@ -259,7 +259,7 @@ pub struct GenerationRequest {
     configuration_revision: Option<ConfigurationId>,
     replay_groups: Vec<ReplayGroup>,
     call_derivations: std::collections::BTreeMap<ItemId, ItemId>,
-    message_owners: std::collections::BTreeMap<ItemId, ItemId>,
+    message_owners: super::envelope::MessageEnvelopes,
 }
 impl GenerationRequest {
     pub fn new(
@@ -315,8 +315,7 @@ impl GenerationRequest {
             }
         }
         let groups = super::group::validate_replay_groups(&self.items, &self.replay_groups)?;
-        let message_owners =
-            super::group::validate_message_owners(&self.items, &self.message_owners)?;
+        let message_owners = self.message_owners.validate(&self.items)?;
         if self.call_derivations.len() > MAX_ITEMS {
             return Err(GenerationError::Limit);
         }
@@ -380,13 +379,24 @@ impl GenerationRequest {
         &self.replay_groups
     }
     pub fn message_owners(&self) -> &std::collections::BTreeMap<ItemId, ItemId> {
-        &self.message_owners
+        self.message_owners.chat()
+    }
+    pub fn message_envelopes(&self) -> &[MessageEnvelope] {
+        self.message_owners.values()
+    }
+    pub fn with_message_envelopes(
+        mut self,
+        groups: Vec<MessageEnvelope>,
+    ) -> Result<Self, GenerationError> {
+        self.message_owners = super::envelope::MessageEnvelopes::new(&self.items, groups)?;
+        self.validate()?;
+        Ok(self)
     }
     pub fn with_message_owners(
         mut self,
         owners: Vec<(ItemId, ItemId)>,
     ) -> Result<Self, GenerationError> {
-        self.message_owners = super::group::message_owners(owners)?;
+        self.message_owners = super::envelope::MessageEnvelopes::from_chat(&self.items, owners)?;
         self.validate()?;
         Ok(self)
     }
@@ -426,9 +436,7 @@ impl GenerationRequest {
         // Move an explicitly declared relation with the replacement, never infer
         // a new parent from position or alias. Replay members are not retargeted.
         let mut source_request = self;
-        if let Some(parent) = source_request.message_owners.remove(&source) {
-            source_request.message_owners.insert(next, parent);
-        }
+        source_request.message_owners.revise(source, next);
         let mut edited = source_request.with_items(items)?;
         edited.call_derivations.insert(next, source);
         edited.validate()?;
@@ -509,8 +517,7 @@ impl GenerationRequest {
         }
         self.call_derivations
             .retain(|owner, _| items.iter().any(|(id, _)| id == owner));
-        self.message_owners
-            .retain(|owner, _| items.iter().any(|(id, _)| id == owner));
+        self.message_owners = self.message_owners.edited(&items)?;
         let source = std::mem::replace(&mut self.items, items);
         self.validate()?;
         super::identity::check_call_edits(&source, &self.items)?;

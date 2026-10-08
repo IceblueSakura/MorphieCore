@@ -35,6 +35,171 @@ fn response() -> GenerationResponse {
 }
 
 #[test]
+fn responses_fingerprint_projection_is_explicit_and_keeps_source_metadata() {
+    use crate::events_support::terminal;
+    use morphiecore::{
+        protocol::openai::{events::EventEncoder, responses},
+        semantic::value::Presence,
+    };
+    let source = response().with_usage_reports(vec![]).unwrap();
+    let fidelity = FidelityRecords::default();
+    for fingerprint in [
+        Presence::Absent,
+        Presence::Null,
+        Presence::Value("synthetic-fp".into()),
+    ] {
+        let mut meta = metadata();
+        meta.context.system_fingerprint = fingerprint.clone();
+        let original = meta.clone();
+        let projected = lower_response(
+            &source,
+            &fidelity,
+            &meta,
+            Profile::Responses,
+            Contract::full(),
+        )
+        .unwrap();
+        let wire = responses::encode_response(&projected).unwrap();
+        assert!(wire.get("system_fingerprint").is_none());
+        assert_eq!(wire["id"], meta.id);
+        assert_eq!(meta, original);
+        assert_eq!(
+            projected
+                .projection()
+                .iter()
+                .filter(|s| s
+                    .loss
+                    .is_some_and(|rule| rule.name() == "responses.omit-system-fingerprint.v1"))
+                .count(),
+            usize::from(!fingerprint.is_absent())
+        );
+        let back = projected
+            .reproject(Profile::Chat, Contract::full())
+            .unwrap();
+        assert!(
+            chat::encode_response(&back)
+                .unwrap()
+                .get("system_fingerprint")
+                .is_none()
+        );
+        let native =
+            lower_response(&source, &fidelity, &meta, Profile::Chat, Contract::full()).unwrap();
+        assert_eq!(
+            chat::encode_response(&native)
+                .unwrap()
+                .get("system_fingerprint")
+                .is_some(),
+            !fingerprint.is_absent()
+        );
+        let mut encoder = EventEncoder::new(Profile::Responses, meta.clone()).unwrap();
+        for event in text_events() {
+            encoder.encode(&event, &fidelity).unwrap();
+        }
+        let output = encoder
+            .encode(&terminal(StreamTerminal::Completed), &fidelity)
+            .unwrap();
+        encoder.finish().unwrap();
+        assert!(
+            output.last().unwrap()["response"]
+                .get("system_fingerprint")
+                .is_none()
+        );
+        assert_eq!(
+            encoder
+                .projection()
+                .iter()
+                .filter(|s| s.loss.is_some())
+                .count(),
+            usize::from(!fingerprint.is_absent())
+        );
+    }
+    for value in [String::new(), "x".repeat(257)] {
+        let mut meta = metadata();
+        meta.context.system_fingerprint = Presence::Value(value);
+        assert!(
+            lower_response(
+                &source,
+                &fidelity,
+                &meta,
+                Profile::Responses,
+                Contract::full()
+            )
+            .is_err()
+        );
+        assert!(EventEncoder::new(Profile::Responses, meta).is_err());
+    }
+}
+
+#[test]
+fn responses_omits_only_details_without_carriers_and_never_changes_totals() {
+    use morphiecore::protocol::openai::responses;
+    let usage = Usage {
+        cached_input_tokens: Some(2),
+        input_cache_write_tokens: Some(1),
+        reasoning_tokens: Some(1),
+        input_image_tokens: Some(2),
+        input_text_tokens: Some(3),
+        output_text_tokens: Some(2),
+        input_audio_tokens: Some(0),
+        output_audio_tokens: Some(0),
+        accepted_prediction_tokens: Some(1),
+        rejected_prediction_tokens: Some(1),
+        ..Usage::operation(10, 5, 15)
+    };
+    let source = response().with_usage(usage).unwrap();
+    let fidelity = FidelityRecords::default();
+    let metadata = metadata();
+    let projected = lower_response(
+        &source,
+        &fidelity,
+        &metadata,
+        Profile::Responses,
+        Contract::full(),
+    )
+    .unwrap();
+    assert_eq!(source.usage(), Some(usage));
+    assert_eq!(
+        projected
+            .projection()
+            .iter()
+            .filter(|s| s.loss.is_some())
+            .count(),
+        7
+    );
+    assert_eq!(
+        responses::encode_response(&projected).unwrap()["usage"],
+        serde_json::json!({
+            "input_tokens":10,"output_tokens":5,"total_tokens":15,
+            "input_tokens_details":{"cached_tokens":2,"cache_write_tokens":1},
+            "output_tokens_details":{"reasoning_tokens":1}
+        })
+    );
+    assert_eq!(projected.semantic().items(), source.items());
+    let back = projected
+        .reproject(Profile::Chat, Contract::full())
+        .unwrap();
+    assert_eq!(back.semantic().usage(), projected.semantic().usage());
+    let mut carriers = Contract::full();
+    carriers.adaptation.rules.responses_image_usage = true;
+    carriers.adaptation.rules.responses_text_usage = true;
+    let named =
+        lower_response(&source, &fidelity, &metadata, Profile::Responses, carriers).unwrap();
+    assert_eq!(
+        named
+            .projection()
+            .iter()
+            .filter(|s| s.loss.is_some())
+            .count(),
+        4
+    );
+    assert_eq!(named.semantic().usage().unwrap().input_text_tokens, Some(3));
+    assert_eq!(
+        named.semantic().usage().unwrap().input_image_tokens,
+        Some(2)
+    );
+}
+
+#[test]
 fn chat_omits_only_unrepresentable_image_accounting() {
     let source = response();
     let fidelity = FidelityRecords::default();
@@ -70,15 +235,17 @@ fn chat_omits_only_unrepresentable_image_accounting() {
         })
     );
     assert_eq!(source.usage().unwrap().input_image_tokens, Some(7));
-    assert!(
-        lower_response(
-            &source,
-            &fidelity,
-            &metadata,
-            Profile::Responses,
-            Contract::full()
-        )
-        .is_err()
+    let responses = lower_response(
+        &source,
+        &fidelity,
+        &metadata,
+        Profile::Responses,
+        Contract::full(),
+    )
+    .unwrap();
+    assert_eq!(
+        responses.projection()[0].loss,
+        Some(LossRule::OmitResponsesInputImageTokens)
     );
 }
 
@@ -248,6 +415,76 @@ fn event_projection_agrees_with_static_and_rejects_malformed_usage() {
             .is_err()
     );
     assert!(encoder.projection().is_empty());
+}
+
+#[test]
+fn responses_detail_projection_validates_before_omission_and_keeps_zero_distinct() {
+    use crate::events_support::terminal;
+    use morphiecore::{lowering::projection::LossRule, protocol::openai::events::EventEncoder};
+    let fidelity = FidelityRecords::default();
+    for audio in [None, Some(0), Some(2)] {
+        let mut encoder = EventEncoder::new(Profile::Responses, metadata()).unwrap();
+        for event in text_events() {
+            encoder.encode(&event, &fidelity).unwrap();
+        }
+        encoder
+            .encode(
+                &StreamEvent::Usage(Usage {
+                    input_audio_tokens: audio,
+                    cached_input_tokens: Some(0),
+                    ..Usage::operation(10, 2, 12)
+                }),
+                &fidelity,
+            )
+            .unwrap();
+        let wire = encoder
+            .encode(&terminal(StreamTerminal::Completed), &fidelity)
+            .unwrap();
+        encoder.finish().unwrap();
+        assert_eq!(
+            wire.last().unwrap()["response"]["usage"],
+            serde_json::json!({
+                "input_tokens":10,"output_tokens":2,"total_tokens":12,
+                "input_tokens_details":{"cached_tokens":0}
+            })
+        );
+        assert_eq!(
+            encoder.projection()[0].loss,
+            audio.map(|_| LossRule::OmitResponsesInputAudioTokens)
+        );
+    }
+    for usage in [
+        Usage {
+            input_audio_tokens: Some(11),
+            ..Usage::operation(10, 2, 12)
+        },
+        Usage {
+            accepted_prediction_tokens: Some(2),
+            rejected_prediction_tokens: Some(1),
+            ..Usage::operation(10, 2, 12)
+        },
+        Usage {
+            scope: UsageScope::Session,
+            input_audio_tokens: Some(0),
+            ..Usage::operation(10, 2, 12)
+        },
+    ] {
+        let mut encoder = EventEncoder::new(Profile::Responses, metadata()).unwrap();
+        for event in text_events() {
+            encoder.encode(&event, &fidelity).unwrap();
+        }
+        assert!(
+            encoder
+                .encode(&StreamEvent::Usage(usage), &fidelity)
+                .is_err()
+        );
+        assert!(
+            encoder
+                .encode(&terminal(StreamTerminal::Completed), &fidelity)
+                .is_err()
+        );
+        assert!(encoder.projection().is_empty());
+    }
 }
 
 #[test]

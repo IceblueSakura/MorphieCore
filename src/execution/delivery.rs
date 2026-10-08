@@ -14,6 +14,30 @@ use crate::{
     semantic::{context::StreamOptions, task::generation::StreamEvent},
 };
 use bytes::Bytes;
+use sha2::{Digest, Sha256};
+
+/// Outgoing carrier identity, not an upstream item fact or replay credential.
+/// Local decoder counters restart for every response; a history can contain many.
+fn delivery_item_id(
+    model: &str,
+    response: &str,
+    owner: crate::semantic::task::generation::ItemId,
+) -> String {
+    let mut hash = Sha256::new();
+    for value in [model, response] {
+        hash.update((value.len() as u64).to_le_bytes());
+        hash.update(value.as_bytes());
+    }
+    let digest: String = hash
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    format!(
+        "{}_{digest}",
+        crate::protocol::fidelity::generated_item_id(owner)
+    )
+}
 
 enum Encoder {
     Responses(ResponsesSseEncoder),
@@ -99,6 +123,16 @@ impl ResponseDelivery {
             self.bind(attempt)?;
             let mut decoded = attempt.response()?.clone();
             decoded.metadata = self.metadata(attempt)?;
+            if self.adapter.protocol == Profile::Responses {
+                for (owner, _) in decoded.semantic.items() {
+                    if decoded.fidelity.response_item_id(*owner).is_none() {
+                        decoded.fidelity.record_response_item_id(
+                            *owner,
+                            &delivery_item_id(&self.public_label, &decoded.metadata.id, *owner),
+                        )?;
+                    }
+                }
+            }
             let value = self.adapter.encode_response(&decoded, &self.contract)?;
             let body = serde_json::to_vec(&value)
                 .map_err(|_| AttemptError::Protocol("body serialization"))?;
@@ -187,18 +221,31 @@ impl ResponseDelivery {
         let source = attempt
             .fidelity()
             .ok_or(AttemptError::Protocol("missing response fidelity"))?;
+        let mut source = std::borrow::Cow::Borrowed(source);
+        if self.adapter.protocol == Profile::Responses {
+            for event in events {
+                if let StreamEvent::ItemStarted { item, .. } = event
+                    && source.response_item_id(*item).is_none()
+                {
+                    source.to_mut().record_response_item_id(
+                        *item,
+                        &delivery_item_id(&self.public_label, &metadata.id, *item),
+                    )?;
+                }
+            }
+        }
         let mut frames = vec![];
         match self.encoder.as_mut().expect("encoder initialized") {
             Encoder::Responses(encoder) => {
                 encoder.update_metadata(metadata)?;
                 for event in events {
-                    frames.extend(encoder.encode(event, source)?);
+                    frames.extend(encoder.encode(event, &source)?);
                 }
             }
             Encoder::Chat(encoder) => {
                 encoder.update_metadata(metadata)?;
                 for event in events {
-                    frames.extend(encoder.encode(event, source)?);
+                    frames.extend(encoder.encode(event, &source)?);
                 }
             }
         }
