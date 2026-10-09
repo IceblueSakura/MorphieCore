@@ -100,7 +100,11 @@ pub fn check_event(
                 }) {
                     return Err(RepresentationError::MessageGrouping);
                 }
-                if profile == Profile::Responses && state.items().iter().any(|i| i.replay.is_some())
+                if profile == Profile::Responses
+                    && state
+                        .items()
+                        .iter()
+                        .any(|i| i.replay.is_some() && !matches!(i.kind, ItemKind::Reasoning))
                 {
                     return Err(RepresentationError::ReplayOrigin);
                 }

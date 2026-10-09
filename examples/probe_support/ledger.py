@@ -19,6 +19,10 @@ from .checks import require
 
 MODELS = {row[1]: row for row in (*BINDINGS, *IMAGE_BINDINGS)}
 
+UNCAPPED_BUDGET = {
+    "local_limits_only": True, "request_bytes": 256 << 10,
+    "wire_bytes": 2 << 20, "exchange_seconds": 120, "run_seconds": 2160,
+}
 
 def source_fingerprint(root=None):
     root = Path(__file__).resolve().parents[2] if root is None else root
@@ -69,6 +73,7 @@ BOOLS = {
     "image_answer_format_ok", "image_color_order_ok",
     "sdk_consumed",
     "reasoning_content_stream_ok",
+    "tool_arguments_stream_ok",
     "opaque_stream_ok",
     "image_decoded", "image_usage_omitted", "image_billing_omitted",
     "wire_closed",
@@ -98,6 +103,7 @@ ENUMS = {
         "missing_reasoning_content", "reasoning_output_shape",
         "exact_text", "schema_answer", "image_format", "image_decode", "image_pixels", "visual_math_format", "visual_math_value",
         "visual_math_calls", "file_marker", "file_math", "missing_opaque", "unexpected_terminal", "other",
+        "tool_count", "tool_name", "tool_arguments", "tool_identity", "tool_namespace", "combination_shape",
     },
     "operator_outcome": {"error", "interrupted", "timeout", "shutdown", "complete"},
     "stage": {
@@ -136,6 +142,7 @@ ENUMS = {
         "setup",
         "unknown",
     },
+    "gateway_error": {"credential_unavailable", "shutting_down", "other"},
 }
 
 
@@ -176,9 +183,15 @@ class Run:
         task="generation",
         images_per_request=None,
         responses_via_chat=False,
+        uncapped_siwc=False,
     ):
         require(task in ("generation", "images"), "plan_task", "setup")
         image_task = task == "images"
+        require(type(uncapped_siwc) is bool and (not uncapped_siwc or
+                task == "generation" and providers == "openai-siwc"
+                and models == ["gpt-6.1-sol"] and tokens is None
+                and not responses_via_chat and type(limit) is int and 1 <= limit <= 32),
+                "uncapped_plan", "setup")
         require(type(responses_via_chat) is bool and (
             not responses_via_chat or not image_task and bool(models)
         ), "bridge_selection", "setup")
@@ -186,20 +199,22 @@ class Run:
         image_count = 1 if images_per_request is None else images_per_request
         require(type(image_count) is int and 1 <= image_count <= 10, "plan_images", "setup")
         rows = select_image_bindings(providers, models) if image_task else select_bindings(providers, models=models)
+        require(uncapped_siwc or all(row[1] != "gpt-6.1-sol" for row in rows),
+                "uncapped_plan", "setup")
         require(not responses_via_chat or all(
-            "chat" in row[4] and "responses" in row[4] for row in rows
+            "chat" in row[4] for row in rows
         ), "bridge_selection", "setup")
         require(
             type(limit) is int
             and 1 <= limit <= 256
-            and (tokens is None if image_task else type(tokens) is int and 1 <= tokens <= 2048),
+            and (tokens is None if image_task or uncapped_siwc else type(tokens) is int and 1 <= tokens <= 2048),
             "plan_budget",
             "setup",
         )
         directory = Path(directory)
         directory.mkdir(mode=0o700, parents=True, exist_ok=False)
         plan = {
-            "version": 2 if image_task else 1,
+            "version": 3 if uncapped_siwc else 2 if image_task else 1,
             "id": uuid.uuid4().hex,
             "models": [row[1] for row in rows],
             "limit": limit,
@@ -213,6 +228,8 @@ class Run:
         }
         if image_task:
             plan["images_per_request"] = image_count
+        if uncapped_siwc:
+            plan["uncapped_budget"] = UNCAPPED_BUDGET
         if responses_via_chat:
             plan["responses_via_chat"] = True
         raw = json.dumps(plan, sort_keys=True).encode()
@@ -258,12 +275,13 @@ class Run:
                 "sdk",
                 "pi",
             } | ({"images_per_request"} if self._plan.get("version") == 2 else set())
+              | ({"uncapped_budget"} if self._plan.get("version") == 3 else set())
               | ({"responses_via_chat"} if "responses_via_chat" in self._plan else set()),
             "plan_shape",
             "setup",
         )
         require(
-            type(self.plan["version"]) is int and self.plan["version"] in (1, 2)
+            type(self.plan["version"]) is int and self.plan["version"] in (1, 2, 3)
             and re.fullmatch("[0-9a-f]{32}", self.plan["id"]) is not None,
             "plan_id",
             "setup",
@@ -274,7 +292,8 @@ class Run:
             "setup",
         )
         require(
-            (self.plan["tokens"] is None and type(self.plan["images_per_request"]) is int and 1 <= self.plan["images_per_request"] <= 10
+            (self.plan["tokens"] is None if self.is_uncapped else
+             self.plan["tokens"] is None and type(self.plan["images_per_request"]) is int and 1 <= self.plan["images_per_request"] <= 10
              if self.is_images else type(self.plan["tokens"]) is int and 1 <= self.plan["tokens"] <= 2048),
             "plan_tokens",
             "setup",
@@ -285,9 +304,15 @@ class Run:
             "plan_model",
             "setup",
         )
+        require((self.plan["models"] == ["gpt-6.1-sol"]
+                 and self.plan["limit"] <= 32 and self.plan["uncapped_budget"] == UNCAPPED_BUDGET
+                 and all(type(self.plan["uncapped_budget"][key]) is type(value)
+                         for key, value in UNCAPPED_BUDGET.items())
+                 and "responses_via_chat" not in self.plan) if self.is_uncapped else
+                "gpt-6.1-sol" not in self.plan["models"], "uncapped_plan", "setup")
         if "responses_via_chat" in self._plan:
             require(self._plan["responses_via_chat"] is True and not self.is_images
-                    and all("chat" in MODELS[m][4] and "responses" in MODELS[m][4]
+                    and all("chat" in MODELS[m][4]
                             for m in self._plan["models"]), "bridge_selection", "setup")
         self.digest = hashlib.sha256(raw).hexdigest()
         self.source = source_fingerprint()
@@ -298,9 +323,18 @@ class Run:
     def is_images(self):
         return self._plan["version"] == 2
 
+    @property
+    def is_uncapped(self):
+        return self._plan["version"] == 3
+
+    def protocols(self, model):
+        """Client protocols follow the explicit plan, not native endpoint availability."""
+        require(model in self._plan["models"], "selection", "budget")
+        return ("responses",) if self._plan.get("responses_via_chat") else MODELS[model][4]
+
     def valid_budget(self, model, tokens):
         return model in self.plan["models"] and (
-            tokens is None if self.is_images else
+            tokens is None if self.is_images or self.is_uncapped else
             type(tokens) is int and 1 <= tokens <= self.plan["tokens"]
         )
 
@@ -335,6 +369,9 @@ class Run:
         )
         if active:
             require(time.time() <= self.plan["expires"], "plan_expired", "budget")
+            require(not self.is_uncapped or time.time() <=
+                    self.plan["created"] + self.plan["uncapped_budget"]["run_seconds"],
+                    "run_expired", "budget")
         # Also detect edits made after this object was opened.
         require(
             hashlib.sha256((self.directory / "plan.json").read_bytes()).hexdigest()

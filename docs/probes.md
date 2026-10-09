@@ -4,7 +4,7 @@
 
 ## 先计划，后执行
 
-通用对话 runner 要求可发送的上游输出 token cap，因此不接入 SIWC；不能通过删掉 cap 或重命名旧产品测试项绕过预算合同。SIWC 真实 gate 需先定稿请求数、时间/资源预算和无法保证上游停算/费用的边界，并实现适用的执行守卫；调用授权不代替这些前置条件。
+默认对话计划 v1 要求可发送的上游输出 token cap，不能通过删掉 cap 或重命名旧产品测试项绕过预算合同。SIWC 只使用下方[独立 uncapped gate](#siwc-独立-uncapped-gate)，与普通计划和图片 task 隔离；本地 deadline/资源限制不保证上游停算或费用上限。
 
 全部自动 live 入口共享同一个 run 目录和 SQLite 账本。先查询并设置非敏感的 `PROVIDER_ID`、`PUBLIC_MODEL`（不是凭据），显式选取本次目标，不依赖默认模型。计划创建及 dry-run 不读取凭据、不启动服务、不联网：
 
@@ -52,9 +52,37 @@ uv run --project tests/sdk --locked --offline python examples/probe.py report te
 
 ### 显式 Responses→Chat 验证
 
-对话 `plan --responses-via-chat` 必须显式指定模型，且目标在 probe catalog 同时声明 Chat/Responses。计划将选择绑定到不可变 hash；runner 在临时 Gateway 配置中设置 `responses_via_chat`，只走固定 Chat endpoint，不尝试 native Responses 或额外 fallback。创建和 dry-run 仍不读凭据或联网。
+对话 `plan --responses-via-chat` 必须显式指定模型，且目标在 probe catalog 声明 Chat；不要求有 native Responses，也不因此向原生 catalog 增加 Responses。计划的客户端协议固定为 Responses，与上游 Chat endpoint 声明分开。计划将选择绑定到不可变 hash；runner 在临时 Gateway 配置中设置 `responses_via_chat`，只走固定 Chat endpoint，不尝试 native Responses 或额外 fallback。创建和 dry-run 仍不读凭据或联网。
 
-这种计划要求 `run --protocol responses`，只选择 `text,json,tool,history,parallel,reasoning_content,image_reasoning_content` 的有限场景；图片仅为上述合成图文明文场景，不能借它恢复 strict adherence、文件或一般媒体矩阵。其请求上限、output-token cap、deadline、零重试、源码指纹、脱敏和取消清理仍使用共用守卫。结果说明的是标准客户端到 Chat 上游的所选闭环，不证明源容器无损回传或 SDK 严格完整模式；未报告 settings/usage 明细不得补造。
+这种计划要求 `run --protocol responses`，选择 `text,json,tool,history,parallel,reasoning_content,image_reasoning_content` 或下方组合场景；另仅为显式选定的 `minicpm-v-4.6` / `mimo-v2.6-flash` 开放既有合成 `image,image_math` 场景。不借它恢复 strict adherence、文件或一般媒体矩阵。其请求上限、output-token cap、deadline、零重试、源码指纹、脱敏和取消清理仍使用共用守卫。结果说明的是标准客户端到 Chat 上游的所选闭环，不证明源容器无损回传或 SDK 严格完整模式；未报告 settings/usage 明细不得补造。
+
+### 图文与工具组合
+
+`vision_tool,vision_parallel,vision_parallel_reverse,vision_replay` 只用于显式 Responses 下游及 `combinations.py` 中登记的图片目标，不进入默认矩阵。两张合成方块 PNG 的像素、计数、预期参数和运算由独立测试保护；单调用结果、双调用反序结果、图片交换及新图片续轮分别检查。并行使用非交换运算，不能靠求和掩盖错配。每组在 JSON↔SSE 之间交替，完整实际 output 原样回传；原生与 bridge 分计划，不在比较中跨目标转移历史。
+
+主目标按 owning code 要求实际明文 reasoning；扩展目标分别报告 content/summary/opaque，缺值不补造。组合 collector 独立校对 reasoning、function arguments 增量/value-done/item-done/terminal，不用最终快照补缺失事件。工具参数拒绝重复 JSON 键、错误 namespace、空/重复 identity；函数仅返回固定 synthetic 数据，不执行模型脚本。`vision_replay` 第二轮使用此前未出现的 PNG，不证明一般视觉质量或服务端确实重新读取旧图片。
+
+Responses probe 的 SSE 请求显式设置标准 `stream_options.include_obfuscation:false`；保持2MiB接收上限，不让每帧 padding 充当内容预算，也不改变产品默认值。显式传入的其他 stream options 不由 probe 覆盖。此选择不证明开启 padding 时的所有资源组合。
+
+完整四场景每目标/path 上限20请求，单次 cap≤2048。独立 `vision_tool_named` 使用标准显式函数选择，主目标首轮同时关闭并行调用；结果轮恢复 auto，不能把请求强制选择当模型自主工具选择的证据。每种首轮交付两请求，与 auto 场景分开报告。`text_tool,text_parallel,text_parallel_reverse` 是独立文本控制，不冒充视觉验收。生产 tool-result images 仍须单独准入，不能以 user 图片支持推定、改写成 user 内容或占位文字。
+
+### SIWC 独立 uncapped gate
+
+只允许明确的 `openai-siwc` / `gpt-6.1-sol`，计划 v3、`tokens:null` 与封闭本地资源预算。普通 plan 不接受该目标，v3 只允许 `text` 基础对照和下述 namespace 工具场景，不接受 token cap、bridge、图片、strict 或截断场景；发送守卫连显式 null cap 字段也拒绝。当前 Sol user/tool 图片准入未恢复。
+
+```sh
+cargo build --locked --offline --example siwc_probe_gateway
+uv run --project tests/sdk --locked --offline python examples/probe.py plan \
+  testdata/runtime/my-siwc-run --providers openai-siwc --model gpt-6.1-sol \
+  --uncapped-siwc --limit 16 --continue-oracle
+uv run --project tests/sdk --locked --offline python examples/probe.py run \
+  testdata/runtime/my-siwc-run --protocol responses \
+  --cases text_tool,text_parallel,text_parallel_reverse --dry-run
+```
+
+真实运行沿用显式 STORE/live 选择。受控 launcher 使用既有 embedded Gateway、固定 catalog endpoint 与自有 loader 的唯一 SIWC 注册，零/多个注册或失效 grant 均停止，不选择第一个可用账户、不 refresh、不建立或修改持久化 pool，不改变普通 binary bootstrap。上游强制 SSE，下游 JSON/SSE 分别消费；工具使用标准 namespace，实际 qualified calls 原样回传。
+
+预算及执行守卫归 `ledger.py` / `probe.py`：限制请求数、请求/响应字节、事件、exchange 与有限全局 deadline；保留 transactional reservations、源码指纹、零重试、严格终态和取消清理。POSIX alarm 中止前触发已有 finally 清理；外层 job 应覆盖清理余量并有硬截止。**本地超时/关闭不能证明 Provider 停算，也不是 token 或计费硬上限。** 报告不得记录账号 selector、正文或 opaque 值。
 
 ## 独立图片生成 probe
 

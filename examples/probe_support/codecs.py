@@ -141,7 +141,7 @@ def reasoning_content_metrics(history):
 
 
 def response_result(result, streaming, *, metrics=None, check_reasoning_content=False,
-                    check_opaque=False):
+                    check_opaque=False, check_function_calls=False):
     def replay_snapshot(item):
         return {key: item[key] for key in ("id", "encrypted_content") if key in item}
 
@@ -152,7 +152,11 @@ def response_result(result, streaming, *, metrics=None, check_reasoning_content=
                 usage.model_dump(mode="json", exclude_unset=True) if usage is not None else None,
                 "responses"))
 
+    def call_identity(item):
+        return tuple(item.get(key) for key in ("id", "call_id", "name", "namespace"))
+
     reasoning_parts, reasoning_done, opaque_done = {}, set(), {}
+    call_added, call_values, call_value_done, call_done = {}, {}, set(), {}
     if streaming:
         final = None
         total = frames = 0
@@ -160,6 +164,36 @@ def response_result(result, streaming, *, metrics=None, check_reasoning_content=
             frames += 1
             total += len(event.model_dump_json())
             require(frames <= 65536 and total <= 2 * 1024 * 1024, "sdk_shape", "wire")
+            if check_function_calls:
+                value = event.model_dump(mode="json", exclude_unset=True)
+                index = value.get("output_index")
+                item = value.get("item") or {}
+                if event.type == "response.output_item.added" and item.get("type") == "function_call":
+                    require(type(index) is int and index >= 0 and index not in call_added,
+                            "call_added", "wire")
+                    require(all(isinstance(item.get(k), str) and item[k]
+                                for k in ("id", "call_id", "name"))
+                            and isinstance(item.get("arguments"), str), "call_added", "wire")
+                    call_added[index] = call_identity(item)
+                    call_values[index] = item["arguments"]
+                if event.type in ("response.function_call_arguments.delta",
+                                  "response.function_call_arguments.done"):
+                    require(type(index) is int and index in call_added
+                            and index not in call_value_done
+                            and value.get("item_id") == call_added[index][0],
+                            "call_owner", "wire")
+                    if event.type.endswith(".delta"):
+                        require(isinstance(value.get("delta"), str), "call_delta", "wire")
+                        call_values[index] += value["delta"]
+                    else:
+                        require(value.get("arguments") == call_values[index], "call_value_done", "wire")
+                        call_value_done.add(index)
+                if event.type == "response.output_item.done" and item.get("type") == "function_call":
+                    require(type(index) is int and index in call_value_done and index not in call_done
+                            and call_identity(item) == call_added[index]
+                            and item.get("arguments") == call_values[index],
+                            "call_item_done", "wire")
+                    call_done[index] = (call_identity(item), item.get("arguments"))
             if check_opaque and event.type == "response.output_item.done":
                 value = event.model_dump(mode="json", exclude_unset=True)
                 item = value.get("item") or {}
@@ -206,6 +240,13 @@ def response_result(result, streaming, *, metrics=None, check_reasoning_content=
     history = [
         item.model_dump(mode="json", exclude_unset=True) for item in result.output
     ]
+    if streaming and check_function_calls:
+        expected = {index: (call_identity(item), item.get("arguments"))
+                    for index, item in enumerate(history) if item.get("type") == "function_call"}
+        require(call_done == expected and set(call_added) == set(expected)
+                and call_value_done == set(expected), "call_snapshot", "wire")
+        if metrics is not None:
+            metrics["tool_arguments_stream_ok"] = True
     if streaming and check_opaque:
         expected = {index: replay_snapshot(item) for index, item in enumerate(history)
                     if item.get("type") == "reasoning"}

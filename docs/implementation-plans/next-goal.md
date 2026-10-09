@@ -36,6 +36,22 @@ Agent runtime 与恢复不列入本项目的实施或延期目标；职责边界
 
 **依赖与停止点：**第 1、2 项按真实功能交错推进，第 3 项不等待完整 Generation union。每次只在 [current-focus](current-focus.md)固定本片输入、产出、非目标、独立失败例和验证边界；闭合即收口，不自动进入下一片。同目标 replay 与现行拒绝继续维护，不能为扩大支持面提前启用跨目标 opaque/thinking 降级；严格约束实测、其他延期能力和稳定性专项不因本阶段方向自动恢复。
 
+### 用户选定的后续测试范围
+
+以下是用户指定的有限选片目标，不是 Provider/model 库存、支持矩阵或账户准入声明。**本轮只固定测试方向，不实现新协议、增加不可用占位绑定或修改私有 activation。** 不扩大默认 probe 矩阵；已有目标复用原绑定与独立回归，不因重新选择而重复注册。
+
+- **Token Plan CN**：`qwen3.8-flash`、`glm-5.3`、DeepSeek V4.1 Flash（期望公开名 `deepseek-flash`）；独立图片 `qwen-image-3.0-pro`、识别 `qwen-audio-3.0-asr-flash`、Realtime `qwen-audio-3.0-realtime-plus`、合成 `qwen-audio-3.0-tts-plus`。
+- **ModelBest**：`MiniCPM-V-4.6`。
+- **OpenCode Go**：`claude-haiku-5-5`、`minimax-m3`。
+
+实施前分别闭合以下选择，不把目录出现或模型家族相同视为既有接线可复用：
+
+1. **公开标签与上游 ID**：Token Plan 的 `glm-5.3` / `deepseek-flash` 与已有其他 Provider 的 public labels 重名。先决定保留独立标签还是调整受信绑定，并核对实际 upstream ID；不覆盖原绑定、推定跨 Provider 等价或隐式合并 fallback。
+2. **图片产物**：所选 Qwen 图片接口的 URL 产物与当前 inline 分支不同。先按 [Semantic Model](../architecture/semantic-ir.md#4-ir-不足与标准载体缺口)定稿保留 URL 或受控获取后转 inline 的语义、资源和安全边界；不假定 `b64_json` 生效，也不借模型登记恢复下载、编辑或文件服务。
+3. **新的协议与生命周期**：Go 的两个目标分别核对原生 Anthropic operation/profile；Realtime 独立确定下游标准接口、双工传输、会话/事件与预算合同。按下方[延期恢复条件](#延期目标与恢复条件)选片，不套用 OpenAI Chat profile、单 response reducer 或通用 token-cap probe。
+
+这些目标不改变当前合同或拒绝边界。实际行为只在具体子片定稿后进入 [current-focus](current-focus.md)，每片闭合即停止，不自动滚动实施其余目标。
+
 <a id="cross-target-history"></a>
 ### 后续保留：跨 Provider/Model 历史投影（本阶段不实施）
 

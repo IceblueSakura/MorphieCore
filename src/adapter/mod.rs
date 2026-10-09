@@ -47,6 +47,11 @@ impl Dialect {
                 WireRules {
                     responses_forced_stream: true,
                     responses_siwc: true,
+                    responses_access_programs: true,
+                    responses_zero_tool_accounting: true,
+                    responses_inactive_reports: true,
+                    responses_usage_attribution: true,
+                    responses_event_owned_output: true,
                     responses_sse_without_content_type: true,
                     ..Default::default()
                 },

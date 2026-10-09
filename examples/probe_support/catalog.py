@@ -1,6 +1,6 @@
 """Fixed live selections. Never discover credentials, models or endpoints at runtime."""
 
-OAUTH_PROVIDERS = {"grok"}
+OAUTH_PROVIDERS = {"grok", "openai-siwc"}
 
 # Separate task selections never enlarge the default conversation matrix.
 IMAGE_BINDINGS = (("openrouter", "gpt-image-2.5-flare", "openrouter-api-key", None, ("images",)),)
@@ -15,8 +15,8 @@ def select_image_bindings(selection, models):
     return rows
 
 BINDINGS = (
-    # SIWC cannot satisfy this runner's required upstream output-token cap.
-    # It needs a separately authorized budget contract, not a renamed product row.
+    # SIWC requires explicit uncapped plan v3 and a fixed embedded launcher.
+    ("openai-siwc", "gpt-6.1-sol", "openai-oauth", "openai", ("responses",)),
     ("grok", "grok-4.7", "grok-oauth", "grok", ("responses",)),
     (
         "nvidia",

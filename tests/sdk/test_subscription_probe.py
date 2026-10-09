@@ -14,9 +14,11 @@ from probe_support.runtime import gateway
 class SubscriptionProbeTests(unittest.TestCase):
     def test_probe_passes_only_explicit_directory_and_caps_upstream_attempts(self):
         self.assertFalse({"openai", "grok"} & {row[0] for row in select_bindings()})
-        for unsupported in ("codex", "openai", "openai-siwc", "siwc"):
+        for unsupported in ("codex", "openai", "siwc"):
             with self.assertRaises(RuntimeError):
                 select_bindings(unsupported)
+        self.assertNotIn("openai-siwc", {row[0] for row in select_bindings()})
+        self.assertEqual(select_bindings("openai-siwc", models=["gpt-6.1-sol"])[0][3], "openai")
         with tempfile.TemporaryDirectory() as directory:
             run = Run.create(Path(directory) / "run", providers="grok", limit=1)
             class Stop(Exception):

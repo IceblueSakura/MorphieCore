@@ -473,6 +473,10 @@ impl FidelityRecords {
                 || adaptation.rules.chat_stop_diagnostics
                 || adaptation.rules.reported_request_id
                 || adaptation.rules.responses_product_accounting
+                || adaptation.rules.responses_access_programs
+                || adaptation.rules.responses_zero_tool_accounting
+                || adaptation.rules.responses_inactive_reports
+                || adaptation.rules.responses_usage_attribution
                 || adaptation.rules.responses_context_accounting)
             {
                 return Err(CodecError::Unsupported("routing extras".into()));
@@ -506,6 +510,10 @@ impl FidelityRecords {
                     || adaptation.rules.chat_stop_diagnostics
                     || adaptation.rules.reported_request_id
                     || adaptation.rules.responses_product_accounting
+                    || adaptation.rules.responses_access_programs
+                    || adaptation.rules.responses_zero_tool_accounting
+                    || adaptation.rules.responses_inactive_reports
+                    || adaptation.rules.responses_usage_attribution
                     || adaptation.rules.responses_context_accounting)
                     && r.protocol == protocol
                     && r.profile == adaptation.profile_id

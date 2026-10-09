@@ -15,6 +15,15 @@ pub struct WireRules {
     pub responses_forced_stream: bool,
     /// Closed product access/zero-tool accounting, retained as scoped fidelity.
     pub responses_product_accounting: bool,
+    /// Closed public access-program report, not product moderation/tool accounting.
+    /// https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference
+    pub responses_access_programs: bool,
+    /// Exact zero-only tool counters are inactive source reports, not hosted usage.
+    pub responses_zero_tool_accounting: bool,
+    /// Numeric-zero penalty echoes and null moderation are inactive reports only.
+    pub responses_inactive_reports: bool,
+    /// Closed attribution coordinates remain scoped reports, never Generation totals.
+    pub responses_usage_attribution: bool,
     /// Distinct billing ticks/context-window counters, never standard token usage.
     pub responses_context_accounting: bool,
     /// A completed stream may carry an empty terminal output summary after all

@@ -292,6 +292,10 @@ pub(crate) fn decode<'a>(
         && !adaptation.rules.responses_inactive_state
         && !adaptation.rules.responses_reported_schema_alias
         && !adaptation.rules.responses_product_accounting
+        && !adaptation.rules.responses_access_programs
+        && !adaptation.rules.responses_zero_tool_accounting
+        && !adaptation.rules.responses_inactive_reports
+        && !adaptation.rules.responses_usage_attribution
         && !adaptation.rules.responses_context_accounting
     {
         return Ok((Cow::Borrowed(value), Extras::new()));
@@ -350,9 +354,24 @@ pub(crate) fn decode<'a>(
     if profile == Profile::Responses {
         if adaptation.rules.responses_product_accounting {
             super::accounting_shapes::product(o, &mut extras)?;
+        } else if adaptation.rules.responses_access_programs {
+            super::accounting_shapes::programs(o, &mut extras)?;
+        }
+        if !adaptation.rules.responses_product_accounting
+            && adaptation.rules.responses_zero_tool_accounting
+        {
+            super::accounting_shapes::zero_tools(o, &mut extras)?;
         }
         if adaptation.rules.responses_context_accounting {
             super::accounting_shapes::context(o, &mut extras)?;
+        }
+        if adaptation.rules.responses_inactive_reports {
+            super::accounting_shapes::inactive_reports(o, &mut extras)?;
+        }
+        if !adaptation.rules.responses_product_accounting
+            && adaptation.rules.responses_usage_attribution
+        {
+            super::accounting_shapes::usage_attribution(o, &mut extras)?;
         }
         check_budget(&extras)?;
     }
@@ -507,7 +526,8 @@ pub(crate) fn encode_message(value: &mut Value) {
 pub(crate) fn write_extras(o: &mut Map<String, Value>, values: &Extras) {
     for (path, value) in values {
         match path.as_str() {
-            "/provider" | "/request_id" | "/access_programs" | "/moderation" | "/tool_usage" => {
+            "/provider" | "/request_id" | "/access_programs" | "/moderation" | "/tool_usage"
+            | "/frequency_penalty" | "/presence_penalty" => {
                 o.insert(path.trim_start_matches('/').into(), value.clone());
             }
             "/usage/cost"

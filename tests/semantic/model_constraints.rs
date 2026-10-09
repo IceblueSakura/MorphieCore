@@ -89,3 +89,55 @@ fn grok_image_input_and_opaque_include_reach_the_fixed_responses_endpoint() {
     assert_eq!(upstream["include"], body["include"]);
     assert_eq!(upstream["store"], false);
 }
+
+#[test]
+fn selected_production_contracts_do_not_infer_tool_images_from_user_images() {
+    let topology = morphiecore::topology::catalog::default_topology().unwrap();
+    let client = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    let tool_image = client
+        .decode_request(
+            json!({"model":"synthetic","input":[
+        {"type":"function_call","name":"lookup","call_id":"a","arguments":"{}"},
+        {"type":"function_call_output","call_id":"a","output":[
+            {"type":"input_text","text":"before"},
+            {"type":"input_image","image_url":"data:image/png;base64,AQID"},
+            {"type":"input_text","text":"after"}]}]})
+            .to_string()
+            .as_bytes(),
+        )
+        .unwrap();
+    for model in [
+        "mimo-v2.6-flash",
+        "mimo-v2.6-pro",
+        "deepseek-flash",
+        "gpt-6-luna",
+        "gpt-6.1-sol",
+        "grok-4.7",
+    ] {
+        let public = topology.model(model).unwrap();
+        assert!(!public.contract.tool_result_images);
+        assert!(tool_image.check_semantic(&public.contract).is_err());
+        for endpoint in topology.route_endpoints(&public.route) {
+            assert!(!endpoint.representation.semantics.tool_result_images);
+            assert!(
+                tool_image
+                    .check_semantic(&endpoint.representation.semantics)
+                    .is_err()
+            );
+        }
+    }
+    let image = client
+        .decode_request(
+            json!({"model":"synthetic","input":[
+        {"role":"user","content":[
+            {"type":"input_image","image_url":"data:image/png;base64,AQID"}]}]})
+            .to_string()
+            .as_bytes(),
+        )
+        .unwrap();
+    assert!(
+        image
+            .check_semantic(&topology.model("gpt-6.1-sol").unwrap().contract)
+            .is_err()
+    );
+}

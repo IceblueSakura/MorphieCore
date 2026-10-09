@@ -143,6 +143,10 @@ impl EventDecoder {
                     && (self.adaptation.rules.routing_extras
                         || self.adaptation.rules.responses_billing_view
                         || self.adaptation.rules.responses_product_accounting
+                        || self.adaptation.rules.responses_access_programs
+                        || self.adaptation.rules.responses_zero_tool_accounting
+                        || self.adaptation.rules.responses_inactive_reports
+                        || self.adaptation.rules.responses_usage_attribution
                         || self.adaptation.rules.responses_context_accounting
                         || self.adaptation.rules.null_response_billing
                         || self.adaptation.rules.responses_inactive_state

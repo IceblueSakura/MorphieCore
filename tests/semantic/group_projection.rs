@@ -25,6 +25,164 @@ fn source(content: Value, finish: &str) -> Value {
 }
 
 #[test]
+fn owner_only_encrypted_reasoning_survives_independent_message_envelope_projection() {
+    use morphiecore::{
+        adapter::{Adapter, Dialect},
+        semantic::value::ReplayOrigin,
+    };
+    let origin = ReplayOrigin::new("synthetic-owner-scope").unwrap();
+    let adapter = Adapter::new(Profile::Chat, Dialect::OpenRouter, Some(origin.clone()));
+    let mut wire = source(Value::Null, "tool_calls");
+    wire["choices"][0]["message"]["reasoning_details"] = json!([
+        {"type":"reasoning.encrypted","format":"openai-responses-v1","index":0,
+         "id":"rs","data":"synthetic-final"}]);
+    let decoded = adapter
+        .decode_response(wire.to_string().as_bytes())
+        .unwrap();
+    let original = decoded.semantic.clone();
+    let mut contract = Contract::full();
+    contract.replay_origin = Some(origin.clone());
+    let target = lower_response(
+        &decoded.semantic,
+        &decoded.fidelity,
+        &decoded.metadata,
+        Profile::Responses,
+        contract.clone(),
+    )
+    .unwrap();
+    let output = responses::encode_response(&target).unwrap();
+    assert_eq!(output["output"][0]["id"], "rs");
+    assert_eq!(output["output"][0]["encrypted_content"], "synthetic-final");
+    assert_eq!(output["output"][1]["content"], json!([]));
+    assert_eq!(output["output"][2]["call_id"], "c");
+    assert_eq!(output["output"][2]["arguments"], "{}");
+    assert_eq!(decoded.semantic, original);
+    assert!(target.semantic().message_envelopes().is_empty());
+    let history = GenerationRequest::new(
+        decoded.semantic.items().to_vec(),
+        GenerationControls::default(),
+    )
+    .unwrap()
+    .with_message_envelopes(decoded.semantic.message_envelopes().to_vec())
+    .unwrap();
+    let projected = lower_request(
+        &history,
+        &decoded.fidelity,
+        Profile::Responses,
+        contract.clone(),
+    )
+    .unwrap();
+    let input = responses::encode_generation(&projected).unwrap();
+    assert_eq!(input["input"][0]["encrypted_content"], "synthetic-final");
+    assert_eq!(input["input"][2]["call_id"], "c");
+    let client = Adapter::new(
+        Profile::Responses,
+        Dialect::MorphieCore,
+        Some(origin.clone()),
+    );
+    let mut saved = output["output"].as_array().unwrap().clone();
+    saved.push(json!({"type":"function_call_output","call_id":"c","output":"synthetic-result"}));
+    let returned = client
+        .decode_request(
+            json!({"model":"synthetic","input":saved})
+                .to_string()
+                .as_bytes(),
+        )
+        .unwrap();
+    let upstream = adapter
+        .encode_request(&returned, "synthetic", &adapter.contract(&contract))
+        .unwrap();
+    assert_eq!(
+        upstream["messages"][0]["reasoning_details"][0]["data"],
+        "synthetic-final"
+    );
+    assert_eq!(upstream["messages"][0]["tool_calls"][0]["id"], "c");
+    assert_eq!(upstream["messages"][1]["tool_call_id"], "c");
+    let mut changed = decoded.semantic.items().to_vec();
+    let Item::Reasoning(reasoning) = &mut changed[0].1 else {
+        panic!("reasoning owner")
+    };
+    reasoning.replay = Some(ReplayValue::final_value(
+        ReplayFormat::ResponsesEncrypted,
+        text("changed"),
+    ));
+    let changed = decoded.semantic.clone().with_items(changed).unwrap();
+    assert_eq!(
+        lower_response(
+            &changed,
+            &decoded.fidelity,
+            &decoded.metadata,
+            Profile::Responses,
+            contract.clone()
+        )
+        .err(),
+        Some(RepresentationError::ReplayOrigin)
+    );
+    contract.replay_origin = Some(ReplayOrigin::new("wrong-scope").unwrap());
+    assert_eq!(
+        lower_response(
+            &decoded.semantic,
+            &decoded.fidelity,
+            &decoded.metadata,
+            Profile::Responses,
+            contract
+        )
+        .err(),
+        Some(RepresentationError::ReplayOrigin)
+    );
+}
+
+#[test]
+fn owner_only_replay_with_attached_calls_projects_incrementally_without_terminal_repair() {
+    use morphiecore::{
+        adapter::{Adapter, Dialect},
+        semantic::value::ReplayOrigin,
+    };
+    let origin = ReplayOrigin::new("synthetic-owner-scope").unwrap();
+    let adapter = Adapter::new(Profile::Chat, Dialect::OpenRouter, Some(origin.clone()));
+    let chunk = |delta: Value, finish: Value| json!({"id":"r","object":"chat.completion.chunk","created":0,"model":"synthetic","choices":[{"index":0,"delta":delta,"finish_reason":finish}]});
+    let mut decoder = adapter.event_decoder();
+    let mut events = vec![];
+    for wire in [
+        chunk(
+            json!({"role":"assistant","content":null,
+            "reasoning_details":[{"type":"reasoning.encrypted","format":"openai-responses-v1",
+                                 "index":0,"id":"rs","data":"synthetic-final"}],
+            "tool_calls":[{"index":0,"id":"c","type":"function",
+                           "function":{"name":"lookup","arguments":"{"}}]}),
+            Value::Null,
+        ),
+        chunk(
+            json!({"tool_calls":[{"index":0,"function":{"arguments":"}"}}]}),
+            Value::Null,
+        ),
+        chunk(json!({}), json!("tool_calls")),
+    ] {
+        events.extend(decoder.push(&wire).unwrap());
+    }
+    events.extend(decoder.done().unwrap());
+    let decoded = decoder.materialize().unwrap();
+    let mut contract = Contract::full();
+    contract.replay_origin = Some(origin);
+    let mut encoder = EventEncoder::new(Profile::Responses, decoded.metadata.clone())
+        .unwrap()
+        .with_contract(contract.clone());
+    let mut state = StreamState::new();
+    let mut output = vec![];
+    for event in &events {
+        check_event(&state, event, Profile::Responses, &contract).unwrap();
+        output.extend(encoder.encode(event, &decoded.fidelity).unwrap());
+        state = reduce(state, event.clone()).unwrap();
+    }
+    encoder.finish().unwrap();
+    assert_eq!(output.last().unwrap()["type"], "response.completed");
+    let terminal = &output.last().unwrap()["response"]["output"];
+    assert_eq!(terminal[0]["encrypted_content"], "synthetic-final");
+    assert_eq!(terminal[2]["call_id"], "c");
+    assert_eq!(terminal[2]["arguments"], "{}");
+}
+
+#[test]
 fn attached_calls_project_to_responses_without_changing_source_ir() {
     for content in [Value::Null, json!("Checking.")] {
         for finish in ["tool_calls", "length", "content_filter"] {

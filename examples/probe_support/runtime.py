@@ -66,7 +66,7 @@ class ProbeClient(DefaultHttpxClient):
     def prepare(self, model, protocol, scenario, history):
         require(self.attempt is None, "unfinished_attempt", "setup")
         require(
-            model in self.run.plan["models"] and protocol in MODELS[model][4]
+            model in self.run.plan["models"] and protocol in self.run.protocols(model)
             and (protocol == "images") == self.run.is_images,
             "selection",
             "budget",
@@ -108,6 +108,9 @@ class ProbeClient(DefaultHttpxClient):
         else:
             cap = body.get("max_output_tokens" if protocol == "responses" else "max_completion_tokens")
             require(body.get("model") == model and self.run.valid_budget(model, cap), "controls", "budget")
+            require(not self.run.is_uncapped or protocol == "responses" and
+                    not any(k in body for k in ("max_output_tokens", "max_completion_tokens", "max_tokens")),
+                    "controls", "budget")
             require("max_tokens" not in body and type(body.get("stream", False)) is bool, "controls", "budget")
             field = "input" if protocol == "responses" else "messages"
         require(body.get(field) == self.expected_history, "history_changed", "budget")
@@ -268,9 +271,11 @@ def gateway(run, models=None, *, synthetic=False, proxy=None):
     save("gateway.json", config)
     server = subprocess.Popen(
         [
-            str(ROOT / "target/debug/morphiecore"),
+            str(ROOT / ("target/debug/examples/siwc_probe_gateway" if run.is_uncapped
+                        else "target/debug/morphiecore")),
             "--credentials-dir", credential_directory,
             "--config", str(private / "gateway.json"),
+            *(["--live"] if run.is_uncapped else []),
         ],
         cwd=ROOT,
         env={},

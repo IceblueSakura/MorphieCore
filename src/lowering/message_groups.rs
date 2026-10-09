@@ -28,10 +28,12 @@ pub(super) fn project(
                 return Err(RepresentationError::MessageGrouping);
             }
         }
-        // Group-dependent opaque cannot be made independent by deleting its container.
-        if items.iter().any(|(_, item)| {
+        // An unrelated reasoning owner survives envelope omission unchanged.
+        // Final lowering still checks its scope, value and declared history proof.
+        if items.iter().any(|(id, item)| {
             item.has_non_reasoning_replay()
-                || matches!(item, Item::Reasoning(r) if r.replay.is_some())
+                || matches!(item, Item::Reasoning(r) if r.replay.is_some()
+                    && groups.iter().any(|group| group.members().contains(id)))
         }) {
             return Err(RepresentationError::ReplayOrigin);
         }
@@ -69,8 +71,10 @@ pub(super) fn project(
     if additions.is_empty() {
         return Ok(None);
     }
-    if items.iter().any(|(_, item)| {
-        item.has_non_reasoning_replay() || matches!(item, Item::Reasoning(r) if r.replay.is_some())
+    if items.iter().any(|(id, item)| {
+        item.has_non_reasoning_replay()
+            || matches!(item, Item::Reasoning(r) if r.replay.is_some()
+            && additions.iter().any(|(owner, calls)| owner == id || calls.contains(id)))
     }) {
         return Err(RepresentationError::ReplayOrigin);
     }

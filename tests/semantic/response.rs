@@ -18,6 +18,52 @@ fn metadata() -> ResponseMetadata {
         instruction_fidelity: Default::default(),
     }
 }
+#[test]
+fn readable_reasoning_only_incomplete_is_valid_but_contradictory_reports_are_not() {
+    use morphiecore::{
+        adapter::{Adapter, Dialect},
+        protocol::CodecError,
+    };
+    let wire = json!({"id":"r","object":"response","created_at":0,"model":"synthetic",
+        "status":"incomplete","error":null,"incomplete_details":{"reason":"max_output_tokens"},
+        "output":[{"id":"rs","type":"reasoning","status":"incomplete","summary":[],
+                   "content":[{"type":"reasoning_text","text":"checking"}]}],
+        "usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3,
+                 "output_tokens_details":{"reasoning_tokens":2}}});
+    for dialect in [Dialect::Standard, Dialect::Xiaomi] {
+        let adapter = Adapter::new(Profile::Responses, dialect, None);
+        let decoded = adapter
+            .decode_response(wire.to_string().as_bytes())
+            .unwrap();
+        assert_eq!(decoded.semantic.outcome(), Outcome::Incomplete);
+        assert_eq!(
+            decoded.semantic.details().incomplete,
+            Some(IncompleteReason::MaxOutputTokens)
+        );
+        assert!(matches!(&decoded.semantic.items()[0].1, Item::Reasoning(r)
+                         if r.status == ItemLifecycle::Incomplete
+                         && matches!(&r.parts[0].1, ReasoningContent::Text(t) if t.as_str()=="checking")));
+        let encoded = adapter
+            .encode_response(&decoded, &Contract::full())
+            .unwrap();
+        assert_eq!(encoded["status"], "incomplete");
+        assert_eq!(encoded["incomplete_details"]["reason"], "max_output_tokens");
+        assert_eq!(encoded["usage"]["output_tokens"], 2);
+        let mut contradictory = wire.clone();
+        contradictory["error"] = json!({"code":"server_error","message":"synthetic"});
+        assert!(matches!(
+            adapter.decode_response(contradictory.to_string().as_bytes()),
+            Err(CodecError::Semantic(GenerationError::InvalidResponse))
+        ));
+        contradictory = wire.clone();
+        contradictory["usage"]["output_tokens_details"]["reasoning_tokens"] = json!(3);
+        assert!(matches!(
+            adapter.decode_response(contradictory.to_string().as_bytes()),
+            Err(CodecError::Semantic(GenerationError::InvalidResponse))
+        ));
+    }
+}
+
 fn chat_refusal() -> Value {
     json!({"id":"response_1","object":"chat.completion","created":10,"model":"fixture-model",
         "choices":[{"index":0,"message":{"role":"assistant","content":null,"refusal":"Cannot do that."},"finish_reason":"stop"}],

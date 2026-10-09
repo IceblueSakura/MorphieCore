@@ -10,6 +10,7 @@ from .codecs import (
 )
 from .ledger import MODELS, ENUMS
 from .runtime import session
+from .combinations import CASES as COMBINATIONS, VISION_MODELS, execute as combination
 
 TOOL = {
     "name": "lookup",
@@ -39,6 +40,8 @@ def call(
     oracle=None,
     cancel=False,
     check_opaque=False,
+    check_content=False,
+    check_calls=False,
 ):
     transport.prepare(model, protocol, scenario, history)
     started = time.monotonic()
@@ -48,7 +51,9 @@ def call(
     try:
         params = {"model": model, "stream": streaming, **(extra or {})}
         if protocol == "chat":
-            params.update(messages=history, max_completion_tokens=cap)
+            params.update(messages=history)
+            if cap is not None:
+                params["max_completion_tokens"] = cap
             if streaming:
                 params["stream_options"] = {
                     "include_usage": True,
@@ -56,7 +61,11 @@ def call(
                 }
             result = client.chat.completions.create(**params)
         else:
-            params.update(input=history, max_output_tokens=cap)
+            params.update(input=history)
+            if cap is not None:
+                params["max_output_tokens"] = cap
+            if streaming:
+                params.setdefault("stream_options", {"include_obfuscation": False})
             result = client.responses.create(**params)
         if cancel:
             require(streaming and protocol == "chat", "cancel_shape", "setup")
@@ -91,9 +100,10 @@ def call(
         else:
             output, text, calls = response_result(
                 result, streaming, metrics=metrics,
-                check_reasoning_content=oracle in (
+                check_reasoning_content=check_content or oracle in (
                     expect_reasoning_content, expect_image_reasoning_content),
                 check_opaque=check_opaque,
+                check_function_calls=check_calls,
             )
             actual = "response.completed"
         metrics.update(
@@ -151,10 +161,14 @@ def call(
         if (
             transport.wire
             and transport.wire.closed
-            and transport.wire.terminal in ("response.incomplete", "response.failed")
+            and (transport.wire.terminal in ("response.incomplete", "response.failed")
+                 or protocol == "responses" and not streaming
+                 and isinstance(error, ProbeFailure) and error.code == "sdk_shape"
+                 and getattr(result, "status", None) in ("incomplete", "failed"))
         ):
             kind = "oracle"
-            metrics.update(sdk_consumed=True, terminal=transport.wire.terminal)
+            metrics.update(sdk_consumed=True, terminal=transport.wire.terminal or
+                           f"response.{result.status}")
         if kind not in (
             "http",
             "transport",
@@ -166,10 +180,14 @@ def call(
         ):
             kind = "unknown"
         if kind == "oracle":
-            code = getattr(error, "code", "other")
+            code = ("unexpected_terminal" if metrics.get("terminal") in
+                    ("response.incomplete", "response.failed") else getattr(error, "code", "other"))
             metrics["oracle_failure"] = (
                 code if isinstance(code, str) and code in ENUMS["oracle_failure"] else "other"
             )
+        if kind == "http":
+            code = getattr(error, "code", None)
+            metrics["gateway_error"] = code if isinstance(code, str) and code in ENUMS["gateway_error"] else "other"
         metrics.update(
             failure=kind, elapsed_ms=round((time.monotonic() - started) * 1000)
         )
@@ -364,17 +382,23 @@ def expect_parallel(text, calls, output):
 def plan_groups(
     run, models, *, cases=("text", "tool"), protocol=None, delivery=None, effort=None
 ):
+    require(not run.is_uncapped or protocol == "responses" and effort is None
+            and all(case in ("text", "text_tool", "text_parallel", "text_parallel_reverse") for case in cases),
+            "uncapped_selection", "setup")
     if run.plan.get("responses_via_chat"):
         require(protocol == "responses" and all(
             case in ("text", "json", "tool", "history", "parallel", "reasoning_content",
                      "image_reasoning_content")
+            or case in ("image", "image_math")
+            and all(model in ("minicpm-v-4.6", "mimo-v2.6-flash") for model in models)
+            or case in COMBINATIONS
             for case in cases
         ), "bridge_selection", "setup")
     require(effort in (None, "none", "minimal", "medium", "max"), "effort", "setup")
     groups = []
     for model in models:
         require(model in run.plan["models"], "model", "budget")
-        for proto in MODELS[model][4]:
+        for proto in run.protocols(model):
             if protocol and proto != protocol:
                 continue
             for stream in (False, True):
@@ -383,7 +407,7 @@ def plan_groups(
                 for case in cases:
                     require(
                         case
-                        in (
+                        in (*COMBINATIONS,
                             "text",
                             "tool",
                             "history",
@@ -410,6 +434,9 @@ def plan_groups(
                         "case",
                         "setup",
                     )
+                    require(case not in COMBINATIONS or proto == "responses"
+                            and (not case.startswith("vision") or model in VISION_MODELS),
+                            "combination_target", "setup")
                     require(case not in ("file", "file_url", "file_continue", "file_replay") or model == "gpt-6-luna" and proto == "responses", "file_target", "setup")
                     require(case != "schema" or proto == "responses", "schema_target", "setup")
                     require(case not in ("opaque_text", "opaque_image", "opaque_image_colors")
@@ -435,7 +462,7 @@ def plan_groups(
                         "reasoning_preset",
                         "setup",
                     )
-                    count = {
+                    count = {**COMBINATIONS,
                         "text": 1,
                         "json": 1,
                         "schema": 2,
@@ -459,8 +486,8 @@ def plan_groups(
                         "file_reasoning": 3,
                         "file_reasoning_math": 3,
                     }[case]
-                    cap = min(1024, run.plan["tokens"]) if case in ("file_reasoning", "file_reasoning_math") else 8 if case == "length" else min(512 if case in ("image", "file", "file_url", "file_continue", "file_replay") else 2048, run.plan["tokens"])
-                    require(cap <= run.plan["tokens"], "case_budget", "budget")
+                    cap = None if run.is_uncapped else min(1024, run.plan["tokens"]) if case in ("file_reasoning", "file_reasoning_math") else 8 if case == "length" else min(512 if case in ("image", "file", "file_url", "file_continue", "file_replay") else 2048, run.plan["tokens"])
+                    require(run.valid_budget(model, cap), "case_budget", "budget")
                     selected_effort = (
                         "medium" if case in ("reasoning", "file_reasoning", "file_reasoning_math",
                                             "opaque_text", "opaque_image",
@@ -518,7 +545,9 @@ def matrix(
                 )
 
             try:
-                if case == "parallel":
+                if case in COMBINATIONS:
+                    combination(case, invoke, stream, model=model, tool=TOOL, extra=extra)
+                elif case == "parallel":
                     extra["tools"] = ([{"type": "function", "function": TOOL}]
                         if proto == "chat" else [{"type": "function", **TOOL}])
                     history = [{"role": "user", "content":

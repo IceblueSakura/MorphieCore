@@ -25,6 +25,8 @@ def main():
     plan.add_argument("--task", choices=["generation", "images"], default="generation")
     plan.add_argument("--images-per-request", type=int, choices=range(1, 11))
     plan.add_argument("--continue-oracle", action="store_true")
+    plan.add_argument("--uncapped-siwc", action="store_true",
+                      help="Explicit Sol-only local-resource budget; no upstream token/fee cap")
     plan.add_argument("--responses-via-chat", action="store_true",
                       help="Bind selected Responses clients to fixed Chat upstream endpoints")
     plan.add_argument("--dry-run", action="store_true")
@@ -50,10 +52,15 @@ def main():
         require(args.images_per_request is None or image_task, "plan_task", "setup")
         rows = select_image_bindings(args.providers, args.model) if image_task else select_bindings(args.providers, models=args.model)
         require(not args.responses_via_chat or not image_task and bool(args.model)
-                and all("chat" in row[4] and "responses" in row[4] for row in rows),
+                and all("chat" in row[4] for row in rows),
                 "bridge_selection", "setup")
-        tokens = args.tokens if image_task else (2048 if args.tokens is None else args.tokens)
-        require(1 <= args.limit <= 256 and (tokens is None if image_task else 1 <= tokens <= 2048), "plan_budget", "setup")
+        require(not args.uncapped_siwc or not image_task and not args.responses_via_chat
+                and args.providers == "openai-siwc" and args.model == ["gpt-6.1-sol"]
+                and args.tokens is None and 1 <= args.limit <= 32, "uncapped_plan", "setup")
+        require(args.uncapped_siwc or all(row[1] != "gpt-6.1-sol" for row in rows),
+                "uncapped_plan", "setup")
+        tokens = args.tokens if image_task or args.uncapped_siwc else (2048 if args.tokens is None else args.tokens)
+        require(1 <= args.limit <= 256 and (tokens is None if image_task or args.uncapped_siwc else 1 <= tokens <= 2048), "plan_budget", "setup")
         if args.dry_run:
             print(
                 json.dumps(
@@ -62,6 +69,7 @@ def main():
                         "limit": args.limit,
                         "tokens": tokens,
                         **({"responses_via_chat": True} if args.responses_via_chat else {}),
+                        **({"uncapped_siwc": True} if args.uncapped_siwc else {}),
                         **({"images_per_request": args.images_per_request or 1} if image_task else {}),
                     }
                 )
@@ -77,6 +85,7 @@ def main():
             images_per_request=args.images_per_request,
             continue_oracle=args.continue_oracle,
             responses_via_chat=args.responses_via_chat,
+            uncapped_siwc=args.uncapped_siwc,
         )
         print(json.dumps({"run": str(created.directory), "id": created.plan["id"]}))
         return 0
@@ -135,6 +144,16 @@ def main():
         )
         return 0
     require(args.live, "live_not_enabled", "setup")
+    if ledger.is_uncapped:
+        import signal
+        import time
+        require(hasattr(signal, "SIGALRM"), "uncapped_deadline", "setup")
+        def deadline(signum, frame):
+            raise SystemExit(124)
+        remaining = ledger.plan["created"] + ledger.plan["uncapped_budget"]["run_seconds"] - time.time()
+        require(remaining >= 1, "uncapped_deadline", "setup")
+        signal.signal(signal.SIGALRM, deadline)
+        signal.alarm(int(remaining))
     os.environ["MORPHIECORE_PROBE_LIVE"] = "1"
     if ledger.is_images:
         from probe_support.image_generation import matrix

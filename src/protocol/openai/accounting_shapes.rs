@@ -11,7 +11,7 @@ fn take(o: &mut Map<String, Value>, key: &str, path: &str, extras: &mut Extras) 
         extras.insert(path.into(), value);
     }
 }
-pub(super) fn product(o: &mut Map<String, Value>, extras: &mut Extras) -> Result<(), CodecError> {
+pub(super) fn programs(o: &mut Map<String, Value>, extras: &mut Extras) -> Result<(), CodecError> {
     if let Some(value) = o.get("access_programs") {
         let programs = object(value)?;
         fields(programs, &["cyber"])?;
@@ -27,20 +27,41 @@ pub(super) fn product(o: &mut Map<String, Value>, extras: &mut Extras) -> Result
         }
         take(o, "access_programs", "/access_programs", extras);
     }
+    Ok(())
+}
+pub(super) fn inactive_reports(
+    o: &mut Map<String, Value>,
+    extras: &mut Extras,
+) -> Result<(), CodecError> {
+    for field in ["frequency_penalty", "presence_penalty"] {
+        if let Some(value) = o.get(field) {
+            if value.as_f64() != Some(0.0) {
+                return Err(CodecError::Unsupported("active penalty report".into()));
+            }
+            take(o, field, &format!("/{field}"), extras);
+        }
+    }
+    null_moderation(o, extras)
+}
+fn null_moderation(o: &mut Map<String, Value>, extras: &mut Extras) -> Result<(), CodecError> {
     if let Some(value) = o.get("moderation") {
         if !value.is_null() {
             return Err(CodecError::Unsupported("active moderation report".into()));
         }
         take(o, "moderation", "/moderation", extras);
     }
-    if let Some(value) = o.get("tool_usage") {
-        // No hosted-tool accounting semantics are admitted by the text slice.
-        let expected = json!({"image_gen":{"input_tokens":0,"input_tokens_details":{"image_tokens":0,"text_tokens":0},"output_tokens":0,"output_tokens_details":{"image_tokens":0,"text_tokens":0},"total_tokens":0},"web_search":{"num_requests":0}});
-        if value != &expected {
-            return Err(CodecError::Unsupported("active tool accounting".into()));
-        }
-        take(o, "tool_usage", "/tool_usage", extras);
-    }
+    Ok(())
+}
+pub(super) fn product(o: &mut Map<String, Value>, extras: &mut Extras) -> Result<(), CodecError> {
+    programs(o, extras)?;
+    null_moderation(o, extras)?;
+    zero_tools(o, extras)?;
+    usage_attribution(o, extras)
+}
+pub(super) fn usage_attribution(
+    o: &mut Map<String, Value>,
+    extras: &mut Extras,
+) -> Result<(), CodecError> {
     if let Some(usage) = o.get_mut("usage").and_then(Value::as_object_mut)
         && let Some(value) = usage.get("attribution")
     {
@@ -49,12 +70,26 @@ pub(super) fn product(o: &mut Map<String, Value>, extras: &mut Extras) -> Result
     }
     Ok(())
 }
+pub(super) fn zero_tools(
+    o: &mut Map<String, Value>,
+    extras: &mut Extras,
+) -> Result<(), CodecError> {
+    if let Some(value) = o.get("tool_usage") {
+        // No hosted-tool accounting semantics are admitted by the text slice.
+        let expected = json!({"image_gen":{"input_tokens":0,"input_tokens_details":{"image_tokens":0,"text_tokens":0},"output_tokens":0,"output_tokens_details":{"image_tokens":0,"text_tokens":0},"total_tokens":0},"web_search":{"num_requests":0}});
+        if value != &expected {
+            return Err(CodecError::Unsupported("active tool accounting".into()));
+        }
+        take(o, "tool_usage", "/tool_usage", extras);
+    }
+    Ok(())
+}
 // Attribution uses upstream input/output coordinates, not local ItemId. Keep
 // the entire closed view source-bound; never attach it to a new semantic owner
 // or sum it into billed totals (context and billing can account differently).
 fn attribution(value: &Value) -> Result<(), CodecError> {
     let attribution = object(value)?;
-    fields(attribution, &["items"])?;
+    fields(attribution, &["items", "request_fields"])?;
     let items = object(
         attribution
             .get("items")
@@ -89,15 +124,24 @@ fn attribution(value: &Value) -> Result<(), CodecError> {
             return Err(CodecError::Invalid("attribution coordinate"));
         }
         counts(item, true)?;
-        let content = item
-            .get("content")
-            .and_then(Value::as_array)
+        let Some(content) = item.get("content") else {
+            continue;
+        };
+        let content = content
+            .as_array()
             .ok_or(CodecError::Invalid("attribution content"))?;
         if content.len() > 64 {
             return Err(CodecError::Limit);
         }
         for part in content {
             counts(part, false)?;
+        }
+    }
+    if let Some(request_fields) = attribution.get("request_fields") {
+        let request_fields = object(request_fields)?;
+        fields(request_fields, &["tools"])?;
+        for value in request_fields.values() {
+            counts(value, false)?;
         }
     }
     Ok(())
