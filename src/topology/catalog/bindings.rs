@@ -9,6 +9,7 @@ pub enum RequestSlice {
     Canonical,
     RestrictedLuna,
     OpenCodeHy4,
+    AudioText,
 }
 impl RequestSlice {
     pub fn apply(
@@ -32,6 +33,14 @@ impl RequestSlice {
             contract.logprobs = false;
             contract.verbosity = false;
             contract.truncation = false;
+            contract.parallel_tool_calls = false;
+        }
+        if matches!(self, Self::AudioText) {
+            contract.reasoning = false;
+            contract.verbosity = false;
+            contract.truncation = false;
+            contract.structured_output = false;
+            contract.logprobs = false;
             contract.parallel_tool_calls = false;
         }
         contract
@@ -61,6 +70,21 @@ const BOTH: &[ProtocolProfile] = &[
 const CHAT: &[ProtocolProfile] = &[ProtocolProfile::OpenAiChat];
 /// Only declared protocol members are activated by the environment bootstrap.
 pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
+    // https://openrouter.ai/api/v1/models/openai/gpt-audio-mini/endpoints
+    ApiKeyBinding {
+        provider: catalog::openrouter,
+        dialect: Dialect::OpenRouter,
+        endpoint_prefix: "openrouter-audio",
+        model: "gpt-audio-mini",
+        canonical_model: "gpt-audio-mini",
+        upstream: "openai/gpt-audio-mini",
+        credential: "openrouter-api-key",
+        protocols: CHAT,
+        replay_responses: false,
+        replay_chat: false,
+        public_slice: RequestSlice::AudioText,
+        endpoint_slice: RequestSlice::AudioText,
+    },
     ApiKeyBinding {
         provider: catalog::deepseek,
         dialect: Dialect::DeepSeek,

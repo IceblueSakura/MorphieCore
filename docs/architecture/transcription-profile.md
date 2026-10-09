@@ -17,6 +17,10 @@ File bytes are retained unchanged in the task. The trusted [native profile](../.
 
 The full recognized text is authoritative. The native current-sentence object reports only the last sentence, not an invented complete segmentation of the full text. Reported sentence/word order, punctuation, channel and millisecond timestamps remain typed. A reported unfinished sentence or unstable word cannot become a complete result; inconsistent text/timing is rejected rather than repaired.
 
+The native nested-report form is closed: duplicated text/sentence and request/usage
+reports must equal their authoritative counterparts. Missing, conflicting, unknown
+or recursively wrapped reports fail; this is not an arbitrary extras carrier.
+
 Reported processed seconds retain their usage meaning. They can map to standard duration usage, but do not become an independently measured precise file duration or a language report. No usage is fabricated when absent. A static successful HTTP response still requires bounded strict JSON and transport EOF; late read errors, excess bytes and cancellation fail the entire response.
 
 The standard JSON projection emits full text and representable duration usage. Omission of ancillary reports is limited to the [named audio projection](protocol-and-lowering.md#独立音频的附属报告投影); typed omission flags distinguish loss from absent reports. The original result remains available to library consumers. Editing text invalidates its associated request, timing and usage reports; no retained wire record restores them.
@@ -24,5 +28,10 @@ The standard JSON projection emits full text and representable duration usage. O
 ## Execution and deferred boundaries
 
 The [compiled route](../../src/topology/transcription.rs) fixes one trusted target and API-key source without retry/fallback. Request and response buffers, concurrency, body/exchange deadlines and cancellation remain bounded. No URL fetch, local file access, temporary upload service, model polling or automatic continuation is introduced.
+
+The [catalog](../../src/topology/catalog/transcription.rs) may expose explicit
+credential-domain aliases of the same canonical ASR. Each keeps its own trusted
+origin and credential domain; selecting one never enables automatic plan/metered
+switching or infers another account's permission.
 
 Verbose JSON, subtitles, full word/segment timing delivery, diarization, URL inputs, translation, streaming recognition and realtime protocols require separate contracts. Standard JSON success and synthetic SDK consumption do not establish real recognition quality, remote availability, pricing or load behavior.

@@ -129,6 +129,14 @@ impl Bootstrap {
                     continue;
                 }
                 known = true;
+                // Voice input is deliberately selected, not inferred from a text pool.
+                if binding.public_model().contract.audio_input
+                    && !selected
+                        .as_ref()
+                        .is_some_and(|set| set.contains(binding.model))
+                {
+                    continue;
+                }
                 if selected
                     .as_ref()
                     .is_some_and(|set| !set.contains(binding.model))

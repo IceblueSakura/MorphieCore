@@ -13,6 +13,53 @@ fn response() -> serde_json::Value {
         "usage":{"duration":1}})
 }
 #[test]
+fn native_asr_nested_reports_require_closed_and_identical_values() {
+    let mut wire = response();
+    let mut inner = wire["output"].clone();
+    inner["request_id"] = wire["request_id"].clone();
+    wire["output"]["output"] = inner;
+    wire["output"]["request_id"] = wire["request_id"].clone();
+    wire["output"]["usage"] = wire["usage"].clone();
+    let result = aliyun_asr::decode_response(&serde_json::to_vec(&wire).unwrap()).unwrap();
+    assert_eq!(result.text(), "Hi.");
+    assert_eq!(result.report().processed_seconds, Some(1));
+    for (path, value) in [
+        ("/output/output/text", json!("different")),
+        ("/output/output/request_id", json!("different")),
+        ("/output/request_id", json!("different")),
+        ("/output/usage/duration", json!(2)),
+        ("/output/output/sentence/end_time", json!(1)),
+        ("/output/output/sentence/words/0/fixed", json!(false)),
+    ] {
+        let mut bad = wire.clone();
+        *bad.pointer_mut(path).unwrap() = value;
+        assert!(aliyun_asr::decode_response(&serde_json::to_vec(&bad).unwrap()).is_err());
+    }
+    for path in ["/output", "/output/output"] {
+        let mut bad = wire.clone();
+        bad.pointer_mut(path).unwrap()["unknown"] = json!(1);
+        assert!(aliyun_asr::decode_response(&serde_json::to_vec(&bad).unwrap()).is_err());
+    }
+    for key in ["text", "sentence", "request_id"] {
+        let mut bad = wire.clone();
+        bad["output"]["output"].as_object_mut().unwrap().remove(key);
+        assert!(aliyun_asr::decode_response(&serde_json::to_vec(&bad).unwrap()).is_err());
+    }
+}
+#[test]
+fn native_asr_usage_seconds_do_not_claim_an_exact_timing_ceiling() {
+    let mut value = response();
+    value["output"]["sentence"]["end_time"] = json!(1750);
+    let result = aliyun_asr::decode_response(&serde_json::to_vec(&value).unwrap()).unwrap();
+    assert_eq!(result.report().processed_seconds, Some(1));
+    assert_eq!(result.report().last_sentence.as_ref().unwrap().end_ms, 1750);
+    value["output"]["sentence"]["end_time"] = json!(300_001);
+    assert!(aliyun_asr::decode_response(&serde_json::to_vec(&value).unwrap()).is_err());
+    value["output"]["sentence"]["end_time"] = json!(1750);
+    value["usage"]["duration"] = json!(301);
+    assert!(aliyun_asr::decode_response(&serde_json::to_vec(&value).unwrap()).is_err());
+}
+#[test]
 fn tokenplan_asr_has_independent_file_semantics_and_exact_native_input() {
     let mut task = RecognitionRequest::new(
         AudioInput::new(bytes::Bytes::from_static(b"abc"), InputFormat::Wav).unwrap(),

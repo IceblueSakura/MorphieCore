@@ -168,12 +168,18 @@ pub fn default_topology() -> Result<CompiledTopology, TopologyError> {
                     b.metadata(),
                 )
             }))
-            .chain(TRANSCRIPTION_BINDINGS.iter().map(|b| {
-                (
-                    ModelId::new(b.model).expect("static transcription id"),
-                    b.metadata(),
-                )
-            })),
+            // Public credential-domain aliases share the original canonical publication.
+            .chain(
+                TRANSCRIPTION_BINDINGS
+                    .iter()
+                    .filter(|b| b.model == b.canonical_model)
+                    .map(|b| {
+                        (
+                            ModelId::new(b.model).expect("static transcription id"),
+                            b.metadata(),
+                        )
+                    }),
+            ),
     )
 }
 #[cfg(test)]

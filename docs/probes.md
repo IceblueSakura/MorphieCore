@@ -84,6 +84,37 @@ uv run --project tests/sdk --locked --offline python examples/probe.py run \
 
 预算及执行守卫归 `ledger.py` / `probe.py`：限制请求数、请求/响应字节、事件、exchange 与有限全局 deadline；保留 transactional reservations、源码指纹、零重试、严格终态和取消清理。POSIX alarm 中止前触发已有 finally 清理；外层 job 应覆盖清理余量并有硬截止。**本地超时/关闭不能证明 Provider 停算，也不是 token 或计费硬上限。** 报告不得记录账号 selector、正文或 opaque 值。
 
+## Voice input → Text output
+
+`examples/voice_probe.py` 是显式、有界的双链路 gate，不进入默认对话矩阵：
+标准 Speech 生成 synthetic MP3，标准 Transcription 上传本地 WAV/MP3 与实际
+TTS MP3，实际转写再送入文本 Generation；另用标准 Chat `input_audio` 直接
+听取短音频问题并以文本回答、保存实际消息后发送新语音续轮。后者不发送
+转写或已知答案，不把前一链的结果作为原生音频输入替代。
+
+```sh
+uv run --project tests/sdk --locked --offline python examples/voice_probe.py plan testdata/runtime/my-voice-run
+uv run --project tests/sdk --locked --offline python examples/voice_probe.py run testdata/runtime/my-voice-run --live \
+  --espeak /trusted/path/to/espeak-ng
+```
+
+已闭合原生链而需更换 ASR 目标时，使用 `plan ... --asr-only --asr-model`
+显式选择 catalog 中的独立凭据域标签，随后 `run ... --asr-only --live --espeak ...`。
+该计划最多7请求，不重跑原生音频矩阵，也不在一次调用内自动切换目标。
+
+显式选择 `MORPHIECORE_PROBE_CREDENTIALS_DIR`，binary 先按上文重建。短合成
+语音通过独立 WAV 布局/非静音与有界 ffmpeg 解码检查；espeak-ng/ffmpeg 是
+显式本地工具依赖，不由 Gateway 获取或转码。三个计划复用既有 transactional
+ledger 的实现，各自固定媒体/文本/原生音频目标，合计最多12请求，
+Generation cap≤512、wire≤2MiB、每 exchange 120s、创建后1800秒外层截止，
+零重试/redirect/fallback。计划不读取凭据或联网。
+
+媒体计划 v4 仅允许封闭 Speech/Transcription 目标与 `tokens:null`，不是
+上游时长/计费硬上限。正文与实际音频仅在内存消费；持久报告只留计数、
+状态、源码指纹和脱敏观察。独立失败和依赖未执行分开报告；内容正确性、
+标准消费和必要回传分别检查。不得用合成语音或 EOF 声明一般 ASR 质量、
+所有音频模型支持或 Realtime 已实现。
+
 ## 独立图片生成 probe
 
 图片计划与对话计划分开，不把图片输出套入文本 token cap。`plan --task images` 要求明确 Provider/model 选择，不接受 `--tokens`；图片计划版本 2 使用 `tokens: null` 和显式 `images_per_request`（缺省 1），沿用共用 SQLite 预留、dispatch、停止与源码指纹检查。每次预留占用计划规定的图片数量，整批图片上限为 request limit × images_per_request；实际发送数量必须匹配计划。版本 1 的对话预算和已有账本不变；不同 task 的计划不能互相消费。

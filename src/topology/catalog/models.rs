@@ -13,6 +13,15 @@ pub struct ModelDefinition {
 }
 // Official publication dates normalized to UTC midnight, not router listing timestamps.
 pub const MODELS: &[ModelDefinition] = &[
+    // https://platform.openai.com/docs/changelog (2025-10-06 release).
+    ModelDefinition {
+        id: "gpt-audio-mini",
+        images: false,
+        files: false,
+        strict_tools: false,
+        released_at: 1_759_708_800,
+        developer: "OpenAI",
+    },
     // Source: https://openai.com/index/introducing-gpt-6-1-sol/ (2026-09-29).
     ModelDefinition {
         id: "gpt-6.1-sol",
@@ -160,6 +169,7 @@ pub fn contract(id: &str) -> GenerationSemanticContract {
     GenerationSemanticContract {
         image_input: definition.images,
         file_input: definition.files,
+        audio_input: id == "gpt-audio-mini",
         strict_tools: definition.strict_tools,
         ..GenerationSemanticContract::text_images()
     }

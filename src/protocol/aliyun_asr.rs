@@ -67,7 +67,32 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
 pub fn decode_response(bytes: &[u8]) -> Result<RecognitionResult, CodecError> {
     let value = super::openai::json::decode(bytes)?;
     let root = object(&value, &["request_id", "output", "usage"])?;
-    let output = object(required(root, "output")?, &["text", "sentence"])?;
+    let raw_output = required(root, "output")?;
+    let output = object(
+        raw_output,
+        &["text", "sentence", "output", "request_id", "usage"],
+    )?;
+    // A native wrapper may duplicate final reports. It is not an extras channel:
+    // every copy must close identically before any authoritative value is decoded.
+    if output.contains_key("output") {
+        let inner = object(
+            required(output, "output")?,
+            &["text", "sentence", "request_id"],
+        )?;
+        for key in ["text", "sentence"] {
+            if required(inner, key)? != required(output, key)? {
+                return Err(invalid());
+            }
+        }
+        if required(inner, "request_id")? != required(root, "request_id")?
+            || required(output, "request_id")? != required(root, "request_id")?
+            || required(output, "usage")? != required(root, "usage")?
+        {
+            return Err(invalid());
+        }
+    } else if output.contains_key("request_id") || output.contains_key("usage") {
+        return Err(invalid());
+    }
     let body = text(output, "text")?;
     let last_sentence = output
         .get("sentence")
@@ -127,9 +152,8 @@ pub fn decode_response(bytes: &[u8]) -> Result<RecognitionResult, CodecError> {
         })
         .transpose()?;
     if processed_seconds.is_some_and(|s| s > 300)
-        || last_sentence.as_ref().is_some_and(|s| {
-            s.end_ms > 300_000 || processed_seconds.is_some_and(|n| s.end_ms > n * 1000)
-        })
+        // Integral usage is a reported processing count, not an exact file/timestamp ceiling.
+        || last_sentence.as_ref().is_some_and(|s| s.end_ms > 300_000)
     {
         return Err(invalid());
     }

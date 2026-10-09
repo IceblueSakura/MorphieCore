@@ -341,6 +341,14 @@ pub(super) fn decode_message(
                                     ResourcePurpose::Input,
                                 )?),
                             }),
+                            "input_audio" => parts.push(Part {
+                                replay: None,
+                                id: b.part_id()?,
+                                content: ContentPart::Resource(b.resource(
+                                    super::input_audio::read(part)?,
+                                    ResourcePurpose::Input,
+                                )?),
+                            }),
                             _ => return Err(CodecError::Unsupported("user content part".into())),
                         }
                     }
@@ -579,9 +587,8 @@ pub(super) fn encode_items_with(
                             unreachable!("filtered audio")
                         }
                         ContentPart::Resource(resource) => {
-                            message["content"] = json!([super::image::write(
-                                resource.media(resources).expect("validated resource"),
-                                Profile::Chat
+                            message["content"] = json!([write_input_resource(
+                                resource.media(resources).expect("validated resource")
                             )])
                         }
                     },
@@ -592,9 +599,8 @@ pub(super) fn encode_items_with(
                                 .map(|part| match &part.content {
                                     ContentPart::Text(text) =>
                                         json!({"type":"text","text":text.as_str()}),
-                                    ContentPart::Resource(resource) => super::image::write(
-                                        resource.media(resources).expect("validated resource"),
-                                        Profile::Chat
+                                    ContentPart::Resource(resource) => write_input_resource(
+                                        resource.media(resources).expect("validated resource")
                                     ),
                                     _ => unreachable!("lowering rejects non-input request arrays"),
                                 })
@@ -644,4 +650,12 @@ pub(super) fn encode_items_with(
         }
     }
     messages
+}
+
+fn write_input_resource(resource: ResourceView<'_>) -> Value {
+    match resource.kind() {
+        ResourceKind::Audio => super::input_audio::write(resource),
+        ResourceKind::Image => super::image::write(resource, Profile::Chat),
+        ResourceKind::File => unreachable!("lowering rejects Chat files"),
+    }
 }

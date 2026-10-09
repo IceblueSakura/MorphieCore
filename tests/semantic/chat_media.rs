@@ -11,6 +11,176 @@ fn chunk(delta: Value, finish: Value) -> Value {
     json!({"id":"synthetic-response","object":"chat.completion.chunk","created":1,"model":"synthetic-model","choices":[{"index":0,"delta":delta,"finish_reason":finish}]})
 }
 #[test]
+fn input_audio_is_an_ordered_inline_resource_not_a_transcript_or_assistant_artifact() {
+    let adapter = standard(Profile::Chat);
+    for (format, mime) in [("wav", "audio/wav"), ("mp3", "audio/mpeg")] {
+        let wire = json!({"model":"synthetic-model","messages":[{"role":"user","content":[
+            {"type":"text","text":"Listen."},
+            {"type":"input_audio","input_audio":{"data":"AQID","format":format}},
+            {"type":"text","text":"Answer with text."}]}]});
+        let decoded = adapter
+            .decode_request(&serde_json::to_vec(&wire).unwrap())
+            .unwrap();
+        assert_eq!(
+            GenerationRequirements::derive(&decoded.task.semantic).audio_inputs,
+            1
+        );
+        let Item::Message(message) = &decoded.task.semantic.items()[0].1 else {
+            panic!("message")
+        };
+        let ContentPart::Resource(audio) = &message.parts[1].content else {
+            panic!("audio resource")
+        };
+        let view = audio.media(decoded.task.semantic.resources()).unwrap();
+        assert_eq!(view.kind(), ResourceKind::Audio);
+        assert!(
+            matches!(view.location, ResourceLocation::Inline{media_type,data_base64}
+            if media_type.as_str()==mime && data_base64.as_str()=="AQID")
+        );
+        let output = adapter
+            .encode_request(&decoded, "synthetic-model", &Contract::full())
+            .unwrap();
+        assert_eq!(output["messages"], wire["messages"]);
+        let mut edited = decoded.clone();
+        let replacement = ResourceTable::default()
+            .insert(
+                audio.id,
+                ResourceDeclaration {
+                    body: ResourceBody::Media(ResourceLocation::Inline {
+                        media_type: morphiecore::semantic::value::Text::new(mime, "mime", 64)
+                            .unwrap(),
+                        data_base64: morphiecore::semantic::value::Text::new("BAUG", "audio", 100)
+                            .unwrap(),
+                    }),
+                    conditions: Default::default(),
+                },
+            )
+            .unwrap();
+        edited.task.semantic = edited
+            .task
+            .semantic
+            .clone()
+            .with_resources(replacement)
+            .unwrap();
+        let updated = adapter
+            .encode_request(&edited, "synthetic-model", &Contract::full())
+            .unwrap();
+        assert_eq!(
+            updated["messages"][0]["content"][1]["input_audio"]["data"],
+            "BAUG"
+        );
+        let mut items = decoded.task.semantic.items().to_vec();
+        let Item::Message(message) = &mut items[0].1 else {
+            panic!("message")
+        };
+        message.parts.remove(1);
+        message.parts.reverse();
+        edited.task.semantic = decoded.task.semantic.clone().with_items(items).unwrap();
+        let updated = adapter
+            .encode_request(&edited, "synthetic-model", &Contract::full())
+            .unwrap();
+        assert_eq!(
+            updated["messages"][0]["content"],
+            json!([
+            {"type":"text","text":"Answer with text."},{"type":"text","text":"Listen."}])
+        );
+        assert_eq!(
+            GenerationRequirements::derive(&edited.task.semantic).audio_inputs,
+            0
+        );
+        assert!(
+            standard(Profile::Responses)
+                .encode_request(&decoded, "synthetic-model", &Contract::full())
+                .is_err()
+        );
+        let mut unsupported = Contract::full();
+        unsupported.semantics.audio_input = false;
+        assert!(
+            adapter
+                .encode_request(&decoded, "synthetic-model", &unsupported)
+                .is_err()
+        );
+        for role in ["assistant", "system", "developer", "tool"] {
+            let mut bad = wire.clone();
+            bad["messages"][0]["role"] = json!(role);
+            assert!(
+                adapter
+                    .decode_request(&serde_json::to_vec(&bad).unwrap())
+                    .is_err()
+            );
+        }
+        for value in [
+            json!({"data":"AQID","format":"flac"}),
+            json!({"data":"https://example.invalid/a.wav","format":"wav"}),
+            json!({"data":"","format":"wav"}),
+            json!({"data":"AQID","format":"wav","extra":1}),
+            json!({"data":"AQID","format":null}),
+        ] {
+            let mut bad = wire.clone();
+            bad["messages"][0]["content"][1]["input_audio"] = value;
+            assert!(
+                adapter
+                    .decode_request(&serde_json::to_vec(&bad).unwrap())
+                    .is_err()
+            );
+        }
+    }
+}
+#[test]
+fn typed_audio_input_has_an_independent_ir_to_wire_expectation() {
+    use morphiecore::{
+        lowering::generation::lower_request,
+        protocol::{fidelity::FidelityRecords, openai::chat},
+        semantic::value::Text,
+    };
+    let resources = ResourceTable::default()
+        .insert(
+            ResourceId::new(1),
+            ResourceDeclaration {
+                body: ResourceBody::Media(ResourceLocation::Inline {
+                    media_type: Text::new("audio/mpeg", "media", 64).unwrap(),
+                    data_base64: Text::new("BAUG", "audio", 100).unwrap(),
+                }),
+                conditions: Default::default(),
+            },
+        )
+        .unwrap();
+    let part = Part {
+        id: PartId::new(1),
+        replay: None,
+        content: ContentPart::Resource(ResourceUse {
+            id: ResourceId::new(1),
+            purpose: ResourcePurpose::Input,
+            description: ResourceDescription::Audio,
+        }),
+    };
+    let request = GenerationRequest::from_resources(
+        vec![(
+            ItemId::new(1),
+            Item::Message(Message {
+                role: MessageRole::User,
+                phase: None,
+                status: ItemLifecycle::Completed,
+                parts: vec![part],
+            }),
+        )],
+        GenerationSettings::default(),
+        resources,
+    )
+    .unwrap();
+    let fidelity = FidelityRecords::default();
+    let encoded = chat::encode_generation(
+        &lower_request(&request, &fidelity, Profile::Chat, Contract::full()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        encoded["messages"],
+        json!([{"role":"user","content":[
+        {"type":"input_audio","input_audio":{"format":"mp3","data":"BAUG"}}]}])
+    );
+}
+
+#[test]
 fn audio_stream_closes_only_complete_artifact_and_preserves_bytes() {
     let mut decoder = standard(Profile::Chat).event_decoder();
     let frames = [

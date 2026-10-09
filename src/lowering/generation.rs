@@ -768,7 +768,13 @@ fn text_items(
                                             | ResourceLocation::NamespacedReference { .. }
                                     )
                             }
-                            ResourceKind::Audio => true,
+                            ResourceKind::Audio => {
+                                profile != Profile::Chat
+                                    || m.role != MessageRole::User
+                                    || !crate::protocol::openai::input_audio::representable(
+                                        resource,
+                                    )
+                            }
                         }
                 }
             }) {

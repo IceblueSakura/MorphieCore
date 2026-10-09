@@ -14,10 +14,10 @@ import re
 import sqlite3
 import time
 import uuid
-from .catalog import BINDINGS, IMAGE_BINDINGS, select_bindings, select_image_bindings
+from .catalog import BINDINGS, IMAGE_BINDINGS, MEDIA_BINDINGS, select_bindings, select_image_bindings, select_media_bindings
 from .checks import require
 
-MODELS = {row[1]: row for row in (*BINDINGS, *IMAGE_BINDINGS)}
+MODELS = {row[1]: row for row in (*BINDINGS, *IMAGE_BINDINGS, *MEDIA_BINDINGS)}
 
 UNCAPPED_BUDGET = {
     "local_limits_only": True, "request_bytes": 256 << 10,
@@ -45,6 +45,7 @@ def source_fingerprint(root=None):
 
 
 NUMBERS = {
+    "audio_bytes", "audio_samples", "audio_rate",
     "http",
     "image_count", "image_bytes", "image_width", "image_height",
     "upstream_status",
@@ -81,6 +82,7 @@ BOOLS = {
     "history_ok",
     "client_closed_before_terminal",
     "exact_answer",
+    "audio_decoded", "transcription_ok",
 }
 ENUMS = {
     "projection_failure": {None, "usage_details", "usage", "reported_facts",
@@ -185,20 +187,22 @@ class Run:
         responses_via_chat=False,
         uncapped_siwc=False,
     ):
-        require(task in ("generation", "images"), "plan_task", "setup")
+        require(task in ("generation", "images", "media"), "plan_task", "setup")
         image_task = task == "images"
+        media_task = task == "media"
         require(type(uncapped_siwc) is bool and (not uncapped_siwc or
                 task == "generation" and providers == "openai-siwc"
                 and models == ["gpt-6.1-sol"] and tokens is None
                 and not responses_via_chat and type(limit) is int and 1 <= limit <= 32),
                 "uncapped_plan", "setup")
         require(type(responses_via_chat) is bool and (
-            not responses_via_chat or not image_task and bool(models)
+            not responses_via_chat or not image_task and not media_task and bool(models)
         ), "bridge_selection", "setup")
         require(images_per_request is None or image_task, "plan_task", "setup")
         image_count = 1 if images_per_request is None else images_per_request
         require(type(image_count) is int and 1 <= image_count <= 10, "plan_images", "setup")
-        rows = select_image_bindings(providers, models) if image_task else select_bindings(providers, models=models)
+        rows = (select_media_bindings(providers, models) if media_task else
+                select_image_bindings(providers, models) if image_task else select_bindings(providers, models=models))
         require(uncapped_siwc or all(row[1] != "gpt-6.1-sol" for row in rows),
                 "uncapped_plan", "setup")
         require(not responses_via_chat or all(
@@ -207,14 +211,14 @@ class Run:
         require(
             type(limit) is int
             and 1 <= limit <= 256
-            and (tokens is None if image_task or uncapped_siwc else type(tokens) is int and 1 <= tokens <= 2048),
+            and (tokens is None if image_task or media_task or uncapped_siwc else type(tokens) is int and 1 <= tokens <= 2048),
             "plan_budget",
             "setup",
         )
         directory = Path(directory)
         directory.mkdir(mode=0o700, parents=True, exist_ok=False)
         plan = {
-            "version": 3 if uncapped_siwc else 2 if image_task else 1,
+            "version": 4 if media_task else 3 if uncapped_siwc else 2 if image_task else 1,
             "id": uuid.uuid4().hex,
             "models": [row[1] for row in rows],
             "limit": limit,
@@ -281,7 +285,7 @@ class Run:
             "setup",
         )
         require(
-            type(self.plan["version"]) is int and self.plan["version"] in (1, 2, 3)
+            type(self.plan["version"]) is int and self.plan["version"] in (1, 2, 3, 4)
             and re.fullmatch("[0-9a-f]{32}", self.plan["id"]) is not None,
             "plan_id",
             "setup",
@@ -292,7 +296,7 @@ class Run:
             "setup",
         )
         require(
-            (self.plan["tokens"] is None if self.is_uncapped else
+            (self.plan["tokens"] is None if self.is_uncapped or self.is_media else
              self.plan["tokens"] is None and type(self.plan["images_per_request"]) is int and 1 <= self.plan["images_per_request"] <= 10
              if self.is_images else type(self.plan["tokens"]) is int and 1 <= self.plan["tokens"] <= 2048),
             "plan_tokens",
@@ -301,6 +305,10 @@ class Run:
         require(
             self.plan["models"]
             and all(model in MODELS and (MODELS[model][4] == ("images",)) == self.is_images for model in self.plan["models"]),
+                "plan_model", "setup",
+        )
+        require(all((MODELS[m][4] in (("speech",),("transcription",))) == self.is_media
+                    for m in self.plan["models"]),
             "plan_model",
             "setup",
         )
@@ -327,6 +335,10 @@ class Run:
     def is_uncapped(self):
         return self._plan["version"] == 3
 
+    @property
+    def is_media(self):
+        return self._plan["version"] == 4
+
     def protocols(self, model):
         """Client protocols follow the explicit plan, not native endpoint availability."""
         require(model in self._plan["models"], "selection", "budget")
@@ -334,7 +346,7 @@ class Run:
 
     def valid_budget(self, model, tokens):
         return model in self.plan["models"] and (
-            tokens is None if self.is_images or self.is_uncapped else
+            tokens is None if self.is_images or self.is_uncapped or self.is_media else
             type(tokens) is int and 1 <= tokens <= self.plan["tokens"]
         )
 

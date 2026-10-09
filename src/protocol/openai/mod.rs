@@ -17,6 +17,7 @@ mod function_tools;
 mod image;
 pub mod images;
 mod inference_shapes;
+pub(crate) mod input_audio;
 pub(crate) mod json;
 mod reasoning;
 pub mod responses;

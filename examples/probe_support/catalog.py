@@ -4,6 +4,19 @@ OAUTH_PROVIDERS = {"grok", "openai-siwc"}
 
 # Separate task selections never enlarge the default conversation matrix.
 IMAGE_BINDINGS = (("openrouter", "gpt-image-2.5-flare", "openrouter-api-key", None, ("images",)),)
+MEDIA_BINDINGS = (
+    ("openrouter", "qwen-audio-3.0-tts-flash", "openrouter-api-key", None, ("speech",)),
+    ("aliyun-tokenplan-cn", "qwen-audio-3.0-asr-flash", "aliyun-tokenplan-cn-api-key", None, ("transcription",)),
+    ("aliyun-dashscope-cn", "qwen-audio-3.0-asr-flash-dashscope", "aliyun-dashscope-cn-api-key", None, ("transcription",)),
+)
+
+
+def select_media_bindings(selection, models):
+    rows = [row for row in MEDIA_BINDINGS if row[0] in selection.split(",")
+            and models and row[1] in models]
+    if not models or len(set(models)) != len(models) or len(rows) != len(models):
+        raise RuntimeError("explicit known media models required")
+    return rows
 
 
 def select_image_bindings(selection, models):
@@ -15,6 +28,7 @@ def select_image_bindings(selection, models):
     return rows
 
 BINDINGS = (
+    ("openrouter", "gpt-audio-mini", "openrouter-api-key", None, ("chat",)),
     # SIWC requires explicit uncapped plan v3 and a fixed embedded launcher.
     ("openai-siwc", "gpt-6.1-sol", "openai-oauth", "openai", ("responses",)),
     ("grok", "grok-4.7", "grok-oauth", "grok", ("responses",)),
@@ -115,7 +129,8 @@ def select_bindings(selection=None, *, models=None):
         or any(name not in available for name in names)
     ):
         raise RuntimeError("unknown, duplicate or paused provider selection")
-    rows = [row for name in names for row in BINDINGS if row[0] == name]
+    rows = [row for name in names for row in BINDINGS if row[0] == name
+            and (models is not None or row[1] != "gpt-audio-mini")]
     if models is not None:
         admitted = {row[1] for row in rows}
         if (

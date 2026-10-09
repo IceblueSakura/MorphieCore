@@ -4,6 +4,51 @@ use crate::credential::{CredentialPool, CredentialRef};
 use serde_json::json;
 
 #[test]
+fn native_voice_generation_is_not_activated_by_a_conversation_pool_default() {
+    for explicit in [false, true] {
+        let dir = crate::credential::test_support::private_directory();
+        let manager = CredentialManager::new(dir.path(), vec![]).unwrap();
+        manager
+            .add_api_key(
+                "openrouter",
+                "source",
+                Secret::new("synthetic-owned-key".into()).unwrap(),
+            )
+            .unwrap();
+        manager
+            .set_pool(
+                "openrouter",
+                "openrouter-api-key",
+                0,
+                CredentialPool {
+                    members: vec![CredentialRef::ApiKey {
+                        alias: "source".into(),
+                    }],
+                    fallback: false,
+                    max_attempts: 1,
+                },
+            )
+            .unwrap();
+        let mut config = json!({"client_key":"synthetic-gateway-key-at-least-32-bytes"});
+        if explicit {
+            config["models"] = json!(["gpt-audio-mini"]);
+        }
+        manager.write_gateway_config_for_test(&config);
+        let boot = Bootstrap::from_directory(dir.path()).unwrap();
+        let view: serde_json::Value =
+            serde_json::from_slice(&boot.gateway.state.models.list).unwrap();
+        assert_eq!(
+            view["data"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|m| m["id"] == "gpt-audio-mini"),
+            explicit
+        );
+    }
+}
+
+#[test]
 fn openrouter_speech_requires_explicit_selection_and_single_nonfallback_pool() {
     for (selection, members, fallback, accepted) in [
         (None, 1, false, true),

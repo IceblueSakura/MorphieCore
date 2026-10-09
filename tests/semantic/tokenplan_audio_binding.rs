@@ -6,6 +6,34 @@ use morphiecore::{
     topology::catalog,
 };
 #[test]
+fn asr_aliases_share_canonical_identity_but_not_credential_or_origin() {
+    let topology = catalog::default_topology().unwrap();
+    let plan = topology
+        .transcription_route("qwen-audio-3.0-asr-flash")
+        .unwrap();
+    let metered = topology
+        .transcription_route("qwen-audio-3.0-asr-flash-dashscope")
+        .unwrap();
+    assert_eq!(plan.canonical_model, metered.canonical_model);
+    assert_ne!(plan.endpoint.provider, metered.endpoint.provider);
+    assert_ne!(plan.endpoint.credential, metered.endpoint.credential);
+    assert_ne!(plan.endpoint.target.origin, metered.endpoint.target.origin);
+    assert_eq!(metered.endpoint.upstream_model, "qwen-audio-3.0-asr-flash");
+    assert_eq!(
+        metered.endpoint.credential.as_str(),
+        "aliyun-dashscope-cn-api-key"
+    );
+    assert_eq!(
+        metered.endpoint.target.origin.as_str(),
+        "https://dashscope.aliyuncs.com"
+    );
+    assert_eq!(
+        topology.model_metadata(&metered.canonical_model),
+        topology.model_metadata(&plan.canonical_model)
+    );
+}
+
+#[test]
 fn tokenplan_asr_binding_has_native_operation_and_its_own_task_identity() {
     let topology = catalog::default_topology().unwrap();
     let route = topology
