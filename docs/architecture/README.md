@@ -1,6 +1,6 @@
 # 语义架构与有效决策
 
-MorphieCore 以一套独立 Semantic Model / IR 支撑低损 Provider 映射、标准 Gateway 和未来 Agent 复用。**目的与概念只由 [Semantic Model](semantic-ir.md)维护，推进顺序只由[后续计划](../implementation-plans/next-goal.md)维护。** 本目录描述有效合同，不证明当前实现或生产就绪。
+本目录导航当前合同与最终 ADR。目的与概念由 [Semantic Model](semantic-ir.md)维护，接线由[当前架构](../architecture.md)维护，推进顺序由[后续计划](../implementation-plans/next-goal.md)维护。
 
 ## 阅读入口
 
@@ -15,10 +15,10 @@ MorphieCore 以一套独立 Semantic Model / IR 支撑低损 Provider 映射、�
 
 ## 当前 profiles
 
-这些文档维护当前合同，不是完整标准、动态产品清单或架构表达力上限。设计允许 Chat 有损兼容，不自动解除代码中尚未替换的严格拒绝。
+各 profile 维护所选 wire 的准入与交付合同；设计目标与当前实现范围分别核对。
 
 - [Responses](responses-text-profile.md)：请求型 Generation 的现有边界及本地兼容形式。
-- [Chat](chat-text-profile.md)：单候选兼容路径；[Chat media](chat-media-profile.md)单独限定 citations/audio 值、事件与引用。
+- [Chat](chat-text-profile.md)：单候选兼容路径；[Chat media](chat-media-profile.md)限定 citations/生成音频值、事件与引用；[语音输入](chat-input-audio-profile.md)限定 user WAV/MP3→文本。
 - [Speech](speech-profile.md)：独立 TTS task、标准控制与有界二进制产物，不扩大 Chat/Responses 音频准入。
 - [Transcription](transcription-profile.md)：独立识别 task、有界上传、实际时序报告与标准 JSON 投影，不提供文件服务。
 - [Schema](schema-profile.md)：当前结构/strict/reference 准入，不证明生成 adherence。
@@ -45,6 +45,6 @@ ADRs 只保留有效决策、必要理由、后果与直接 owner；不记录决
 
 ## 来源与验收
 
-[固定来源](../references/upstream-sync.md)区分 OpenAI 公共标准、SDK 和 Codex 产品 profile；[来源索引](../references/README.md)定位其他 operation。外部资料不决定本地准入，也不授予真实调用。
+[固定来源](../references/upstream-sync.md)区分 OpenAI 公共标准、SDK 和 Codex 产品 profile；[来源索引](../references/README.md)定位其他 operation。
 
-[验收基线](../references/conformance-baseline.md)定义独立 oracle、变换、损失与失败边界；[开发指南](../development.md)拥有命令。当前行为切片见 [current-focus](../implementation-plans/current-focus.md)。Realtime 等详细设计当前后置，不为未来接口预建类型，也不作为当前请求型功能的前置。
+[验收基线](../references/conformance-baseline.md)定义独立 oracle、变换、损失与失败边界；[开发指南](../development.md)拥有命令。当前行为切片见 [current-focus](../implementation-plans/current-focus.md)，延期范围见[后续计划](../implementation-plans/next-goal.md#延期目标与恢复条件)。

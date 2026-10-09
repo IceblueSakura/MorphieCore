@@ -165,7 +165,7 @@ target/debug/morphiecore-auth openai logout --store "$STORE" --account personal
 target/debug/morphiecore-auth openai logout --store "$STORE" --account personal --revoke
 ```
 
-store 使用 `openai.json`。旧 `siwc` profile / `openai-siwc` Provider 不作为别名注册。已有旧 store 必须在停止所有写入并取得迁移授权后，同步 namespace、OAuth 记录的 profile、锁/恢复标记名称和相关 pool 引用；不能只改 JSON 文件名。迁移保留 issued client、host ID、tokens、身份、expiry 与恢复状态，不重新登录或消费 refresh token。若目标已存在则停止，不自动合并；程序不自动迁移其他目录。
+store 使用 `openai.json`，不注册旧名称别名，也不自动迁移或合并其他 store。目录管理归[自有文件目录](#自有文件目录)。
 
 - SIWC 缺省且仅支持 browser；Grok 缺省 device，browser 显式选择。失败不自动换 client/方法。Grok 可指定已获准 `--client-id`，SIWC 使用 callback issued client，不接受 override。auth 默认使用[环境代理](#出站代理)，`--proxy` 显式覆盖。
 - SIWC 浏览器登录的 code exchange / JWKS 非 200 响应报告固定阶段、HTTP 状态和精确白名单错误码，并保留原错误作为 cause；未知码仅显示 `unknown_or_missing`。不输出原始响应、description、任意 header、code 或 tokens；授权页展示 plan usage 不证明最终授予的 scopes。Refresh/revoke 的错误分类不变。
@@ -198,7 +198,7 @@ Grok browser 使用 ES256/OIDC nonce 与 UserInfo subject 对齐；device 验证
 
 SIWC 的注册参数与应用名称归 [driver](../src/credential/siwc.rs)，description 取 package metadata。公开授权参数没有 description 字段，不发送猜测字段。CLI 在登录前告知本地数据存储与单用户应用用途，使用 `Continue with ChatGPT`；状态报告 `plan_usage_enabled`，没有实际套餐权限时不可借用推理。权限不证明所选模型可调用；usage 管理入口为 <https://chatgpt.com/settings/usage>。
 
-新 SIWC 登录不会转换、撤销或删除旧 Codex 文件。为新路径选择显式 store，并按当前 catalog 配置新的单成员 Provider pool；旧 pool 不自动重命名或启用。私有文件清理与远端撤销须分别授权。
+SIWC 使用自有 store 与当前 catalog 的单成员 Provider pool；不转换、读取或清理 Codex 产品凭据。
 
 ## 状态与验收
 

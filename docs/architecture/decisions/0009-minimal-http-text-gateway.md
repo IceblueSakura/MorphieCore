@@ -1,20 +1,19 @@
-# ADR 0009: Minimal HTTP Text Gateway
+# ADR 0009: Minimal Authenticated Loopback Gateway
 
 ## Status
 
-Accepted. Fixed multi-member execution is governed by [ADR 0010](0010-canonical-model-fixed-fallback.md); this record does not constrain every entry to one candidate.
+Accepted.
 
 ## Decision
 
-- Expose authenticated Chat/Responses Generation over loopback using the shared adapter/execution chain. Startup binds compiled topology, explicit entries and credentials; business JSON cannot supply them.
-- Authenticate before body collection. Resolve public model/task from bounded strict JSON before semantic decode. Apply trusted output-budget policy before deriving requirements; reject excessive explicit limits instead of clipping them.
-- HTTP transport receives prepared trusted parts. It does not mutate IR, forward inbound headers, follow redirects or retry implicitly. Binary startup permits operator environment proxies with explicit overrides; embedded constructors remain opt-in. Business data never selects proxy policy; operational precedence belongs to the [credential guide](../../credentials.md#出站代理).
-- Bind replay scope to trusted entry and authentication ownership. This internal scope is not attestation of a client token's issuer.
-- Use bounded incremental delivery and explicit acknowledgement. Body handoff to server transport is the conservative commit boundary, not proof of peer receipt. Completion requires validated upstream closure and final handoff.
-- Bound concurrency, body collection, payload sizes and absolute exchange duration. Backpressure cannot suspend the upstream deadline. Timeout, cancellation, shutdown and late failure release resources without a fabricated terminal.
+- Startup binds compiled topology, explicit entries and credentials. Authenticate before collecting business bodies.
+- Strict bounded input resolves public model/task. Trusted output-budget policy precedes requirements and rejects excessive explicit limits rather than clipping them.
+- Transport receives prepared trusted parts. Proxy policy is operator configuration; embedded constructors remain opt-in.
+- Replay scope is bound to trusted entry/auth ownership. Incremental delivery uses publication, handoff and completion stages from the [execution model](../execution-model.md).
+- Concurrency, bodies, payloads and absolute exchange duration are bounded. Timeout, cancellation, shutdown and late failure release resources.
 
 ## Rationale and consequences
 
-A minimal runnable gateway exercises the same semantic path as the library without importing a general service framework. Bootstrap reads explicit private configuration and credential-pool files only, with no ambient secret or account fallback. Dynamic registry, multi-user credential management and arbitrary configuration scripts require separate decisions. Optional diagnostics remain bounded, private and nonblocking; sink failure cannot affect business responses or expose upstream diagnostics downstream.
+The gateway exercises the library's semantic path without a general service framework. Bootstrap uses the owned store and explicit pools; request data cannot select credentials, headers, origins or scripts. Optional private diagnostics are bounded and nonblocking, and sink failures do not affect responses.
 
-Owners: [bootstrap](../../../src/gateway/bootstrap.rs), [admission](../../../src/gateway/admission.rs), [HTTP transport](../../../src/transport/http.rs), [body lifecycle](../../../src/gateway/body.rs). Startup and public HTTP usage belong to the [gateway guide](../../http-gateway.md), not an ADR implementation snapshot.
+Owner: [HTTP guide](../../http-gateway.md). Implementation: [bootstrap](../../../src/gateway/bootstrap.rs), [admission](../../../src/gateway/admission.rs), [transport](../../../src/transport/http.rs) and [body](../../../src/gateway/body.rs).

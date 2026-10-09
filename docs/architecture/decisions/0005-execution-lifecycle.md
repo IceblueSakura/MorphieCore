@@ -6,12 +6,12 @@ Accepted.
 
 ## Decision
 
-Execution consumes compiled candidate plans and encoded representations. It owns credential binding, attempts, cancellation, transport and delivery lifecycle, not semantic mutation. Response bytes/events re-enter semantics through the selected adapter before downstream delivery.
+Execution owns compiled attempts, credential binding, cancellation, transport and delivery. Encoded requests are not mutated; responses re-enter semantics through the selected adapter.
 
-Retry/fallback must remain bounded and pre-commit, preserving fixed route order and immutable semantic input. Encoding bytes does not constitute downstream commit.
+Retry/fallback uses immutable input, fixed candidate order and bounded pre-publication advancement. Encoding, publication, acknowledged handoff/commit and completion are distinct stages.
 
 ## Rationale and consequences
 
-Keeping execution out of field conversion prevents late mutations from bypassing validation. I/O owners explicitly acknowledge visibility and completion; failure or cancellation cannot become a successful terminal. HTTP publication may freeze candidate advancement earlier than commit, as required by [ADR 0010](0010-canonical-model-fixed-fallback.md).
+Explicit I/O ownership prevents late mutation from bypassing validation. Validated closure and final handoff establish completion; failures abort rather than fabricate success. [ADR 0010](0010-canonical-model-fixed-fallback.md) defines candidate advancement.
 
-Owners: [execution](../../../src/execution/mod.rs), [delivery](../../../src/execution/delivery.rs), [HTTP body](../../../src/gateway/body.rs). Detailed contracts: [execution model](../execution-model.md).
+Owner: [execution model](../execution-model.md). Implementation: [execution](../../../src/execution/mod.rs), [delivery](../../../src/execution/delivery.rs) and [HTTP body](../../../src/gateway/body.rs).

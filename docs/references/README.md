@@ -8,11 +8,11 @@
 | [推理控制与 Schema 来源](upstream-sync.md#reasoning-schema-sources) | Interactions v1、Messages 控制区别及 JSON Schema 2020-12 的有限设计证据；不代表原生接入 |
 | [Responses 标准基线](responses-standard.md) | Responses codec 的固定公开语义；不是共享 IR 的上限，也不等于本地准入 |
 | [扩展与上下文](extensions-and-context.md) | session/cache/turn、存储与连接状态；固定 Codex/pi 投影，与认证 owner 分开 |
-| [pi Provider 抽象](pi-provider-abstraction.md) | 固定 `1.0.2` 的 Provider/API/Model 分层、统一 transcript/事件、认证/目录/路由和回放损失；不改变本项目合同 |
+| [pi Provider、上下文与回放](pi-provider-abstraction.md) | 固定 `1.0.2` 的 Provider/API/Model 与 replay、`1.0.4` 的 ClientManaged 投影入口 |
 | [OAuth/OIDC 标准](#oauth-standards) | 共用协议来源；实现、存储与操作授权归[凭据指南](../credentials.md) |
 | [Grok Build / xAI 登录](grok-login.md) | 官方浏览器/标准设备授权、pi 内置与补充参考、credential/backend 边界 |
 | [Codex 产品协议识别](chatgpt-login.md) | 产品认证的固定出处与协议隔离；不是本项目登录入口 |
-| [公开 SIWC 与 ChatGPT plan usage](siwc-login.md) | 官方条款、动态 registration、身份/权限、renewal、推理限制与采用依据 |
+| [公开 SIWC 与 ChatGPT plan usage](siwc-login.md) | 官方条款、动态 registration、身份/权限、renewal 与推理限制 |
 | [多模态与资源](multimodal-and-resources.md) | task、wire、资源与媒体的语义边界 |
 | [Codec 验收方法](conformance-baseline.md) | 独立 oracle、变换和失败/资源边界；不是执行记录 |
 | [OpenAI operation 导航](openai/README.md) | 集中定位标准资料与既有日期；Embedding 有独立任务来源，不复制多份字段/事件快照 |
@@ -37,4 +37,4 @@ IR 的共享语义由[设计基线](../architecture/semantic-ir.md)定义，不�
 - [RFC 7009](https://www.rfc-editor.org/rfc/rfc7009.html)：token revocation；本地清理、远端撤销与删除 registration 分开。
 - [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707.html)：resource indicators；scope、resource/audience 与推理 backend 分别绑定。
 
-标准不决定具体产品的 registration、订阅资格、scope、账户/workspace、redirect URI 或 endpoint。公开 client ID 不是 secret，也不授予第三方复用资格。具体 authority 的采用边界归 [Grok](grok-login.md)、[SIWC](siwc-login.md)；操作授权与自有存储归[凭据指南](../credentials.md#授权与安全边界)。
+标准不决定具体产品的 registration、订阅资格、scope、账户/workspace、redirect URI 或 endpoint。公开 client ID 不是 secret，也不授予第三方复用资格。具体 authority 来源归 [Grok](grok-login.md)、[SIWC](siwc-login.md)；项目决定归 [ADR 0012](../architecture/decisions/0012-grok-personal-credential-pool.md)，操作授权与自有存储归[凭据指南](../credentials.md#授权与安全边界)。

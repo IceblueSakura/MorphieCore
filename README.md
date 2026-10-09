@@ -1,46 +1,33 @@
 # MorphieCore
 
-MorphieCore 建立**可由 Gateway 与未来自研 Agent 复用的模型交互 Semantic Model / IR**，以尽量低的语义损失连接不同 Provider，并向下游提供稳定的标准 API。项目尚未上线；优先稳定概念、所有权与不变量，不冻结当前 Rust 类型或照搬协议 DTO。
+MorphieCore 是 Gateway 与未来 Agent 共用的模型交互 Semantic Model / IR，通过标准 API 连接不同 Provider。Generation 以 OpenAI Responses 为主接口，Chat Completions 为具名有损兼容路径；独立媒体 operation 使用各自 task。
 
-Generation 主线是 Agent-first 的 Text/Image/File 交互，以规范 Responses 为主要接口；Chat Completions 仅作允许声明损失的兼容路径。独立多模态 task 不强塞 Responses。有效合同归[语义架构](docs/architecture/README.md)，推进顺序、文件扩展延期及后续媒体范围统一归[后续计划](docs/implementation-plans/next-goal.md)，不代表当前能力已经扩大。
-
-项目展示名为 **MorphieCore**；Rust crate 与主程序为 `morphiecore`，凭据 CLI 为 `morphiecore-auth`。开发工具环境变量统一使用 `MORPHIECORE_` 前缀。
+项目处于开发阶段。设计权威见[语义架构](docs/architecture/README.md)，当前接线见[架构](docs/architecture.md)，未完成方向见[后续计划](docs/implementation-plans/next-goal.md)。
 
 ## 当前范围
 
-当前工作区包含 Rust 语义库、统一文件凭据管理器与最小认证 loopback 网关，不是完整标准实现或生产就绪服务。
+- 共享 Rust 语义库与认证 loopback Gateway；Chat/Responses 的文本、工具、reasoning 与图片输入按具体 profile 和目标准入。
+- Responses 支持选定文件输入；标准 Chat 支持 WAV/MP3 语音输入→文本，范围见[音频输入 profile](docs/architecture/chat-input-audio-profile.md)。
+- 独立 Images、Speech、Transcription 接口与只读 Models 目录。API 用法和显式激活见[HTTP 指南](docs/http-gateway.md)。
+- 同协议与跨协议共用 validation/lowering；允许的损失见[投影合同](docs/architecture/protocol-and-lowering.md#semantic-loss)。
+- 自有文件凭据与显式有序池；Provider 原生缓存亲和。Agent orchestration、会话服务与动态路由不属于当前实现。
 
-- HTTP 入口为 Chat Completions / Responses，提供有界文本/function 工具往返与选定 URL/inline 图片输入，不维护跨请求会话。库与可嵌入 Gateway 另有标准 Responses inline/URL 文件承载，但仍需模型/目标显式准入，不由 codec 推定启用。工具图片结果有独立准入，不能由 user 图片支持推定；协议、模型与实例启用分别核查。
-- 标准 Chat 另有显式目标准入的 [inline WAV/MP3 语音输入→文本](docs/architecture/chat-input-audio-profile.md)，复用 Generation Audio resource，不以转写替代音频、不扩展 Responses 请求载体，也不自动启用音频输出或 Realtime。
-- 标准 Models 列表/查询仅公开本实例已激活 public labels；字段来源、嵌入准入与无微调模型删除权限的边界见[模型发现](docs/http-gateway.md#标准模型发现)，不请求上游目录或承诺实际推理可用。
-- Gateway 另有显式绑定的标准 `/v1/images/generations` 静态图片生成切片，使用独立 ImageGeneration task 和有序 inline 产物集合；图片绑定须显式选择并配置凭据池，不随已有 Chat/Responses 默认启用，入口与边界见 [HTTP 指南](docs/http-gateway.md#独立图片生成)。
-- 库与 Gateway 支持独立 `/v1/audio/speech` 的有界二进制 TTS 与 `/v1/audio/transcriptions` 的文件上传/JSON 分支，binary 仅激活显式选定且配置匹配凭据池的音频绑定，不因已有对话凭据自动启用；不含下游音频 SSE、Realtime 或声音资源服务，入口见 [Speech](docs/http-gateway.md#独立语音生成)与[Transcription](docs/http-gateway.md#独立语音识别)。
-- 同协议与跨协议都经过共享 IR、验证和目标可表示性检查，再按 operation 交付 JSON、SSE 或二进制；仅采用[已定稿的具名损失规则](docs/architecture/protocol-and-lowering.md#semantic-loss)，超出许可的不可表示语义明确拒绝，不承诺任意无损转换。
-- 凭据只从操作者指定的自有文件加载；显式池策略允许受预算约束的提交前 fallback，不提供普通请求内登录、自动 refresh、负载均衡或会话管理。
-- 缓存亲和利用 Provider 原生功能和声明的 carrier，不实现网关回答缓存；前缀稳定不证明命中或收益。
-
-当前模块接线见[架构](docs/architecture.md)，尚未闭合的语义、表示、执行与验收范围见[Generation 缺口](docs/implementation-status/generation.md)。推进方向由[next-goal](docs/implementation-plans/next-goal.md)维护，获准行为切片由[current-focus](docs/implementation-plans/current-focus.md)维护，等待证据或语义决策的问题归[待决状态](docs/implementation-status/open-questions.md)；设计或计划不授予操作权限。
+当前 Provider/model 与实例准入查源码和 [AGENTS 查询方法](AGENTS.md#current-provider-model-and-compatibility-information)，不在文档维护库存。
 
 ## 启动入口
 
-语义库构造不读取私有配置。`morphiecore` binary 从[默认或显式覆盖的自有凭据目录](docs/credentials.md#自有文件目录)和入口配置启动；命令本身不发生成请求：
+主程序为 `morphiecore`，凭据 CLI 为 `morphiecore-auth`，开发变量使用 `MORPHIECORE_` 前缀。先按[HTTP 指南](docs/http-gateway.md)准备入口，凭据路径与管理见[凭据指南](docs/credentials.md)。
 
 ```sh
 cargo run --locked --offline --bin morphiecore
 ```
 
-先按[HTTP 指南](docs/http-gateway.md)准备入口配置，账户与池操作见[凭据指南](docs/credentials.md)。登录与真实调用的授权统一见 [AGENTS.md](AGENTS.md#scope-and-authorization)；真实推理使用[受控 probe](docs/probes.md)，不属于默认检查。
-
 ## 验证
 
-检查命令、工具链与依赖准备统一见[开发指南](docs/development.md)：[Rust 基线](docs/development.md#rust-检查)、[TS 工具](docs/development.md#测试语言与-js-工具)、[固定 OpenAI SDK loopback](docs/development.md#固定-openai-sdk-loopback)和[文档检查](docs/development.md#文档与边界)。SDK loopback 单独显式运行，真实 Provider probe 不属于默认检查。
-
-检查结果只在当次交付中报告；synthetic 执行不证明真实 Provider、一般 SDK/Agent、网络、负载或生产兼容性。
+检查方法统一见[开发指南](docs/development.md)。默认检查使用 synthetic 数据；固定 SDK loopback 是独立显式 gate，真实 Provider 使用[受控 probe](docs/probes.md)。授权与安全规则归 [AGENTS.md](AGENTS.md)。
 
 ## 文档
 
-实现事实优先由源码、邻近注释和独立测试维护。当前 Provider/model 与实例准入按 [AGENTS 查询方法](AGENTS.md#current-provider-model-and-compatibility-information)现场核对，不在 Markdown 或记忆中维护库存及测试结果。
+[文档索引](docs/README.md)导航当前合同、最终 ADR、未完成计划和固定来源。实现细节归源码与独立测试，执行结果在当次交付中报告，决策过程查 Git。
 
-[文档索引](docs/README.md)区分设计合同、实现缺口、操作指南和[固定来源](docs/references/README.md)。项目只维护一套当前架构，不保留平行的历史架构入口。
-
-原创代码和文档采用 [MIT License](LICENSE)。外部资料保留各自来源与必要 attribution。
+原创代码和文档采用 [MIT License](LICENSE)；外部材料保留其来源与许可。

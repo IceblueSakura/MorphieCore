@@ -6,10 +6,10 @@ Accepted.
 
 ## Decision
 
-Keep semantic, representation, execution and public contracts separate. Requirements come from final Task IR and delivery intent; no generic capability bitset is authoritative across all dimensions.
+Semantic, representation, execution and public contracts are separate. Requirements derive from final Task IR and delivery intent; topology compilation validates the relationships between contracts.
 
 ## Rationale and consequences
 
-Standard expressiveness, target encoding, executable resources and public admission answer different questions. Topology compilation validates their relationships. Candidate compatibility checks the whole typed request, not ad-hoc JSON filters or unions of candidate capabilities.
+Model meaning, wire encoding, executable resources and public promises answer different questions. Candidate admission checks the whole typed request rather than a generic bitset, JSON filter or capability union.
 
-Design: [capability and projection contract](../protocol-and-lowering.md#能力与固定目标). Owners: [semantic contract](../../../src/semantic/task/generation/contract.rs), [representation](../../../src/lowering/generation.rs), [topology](../../../src/topology/mod.rs).
+Owner: [capability contract](../protocol-and-lowering.md#能力与固定目标). Implementation: [semantic contract](../../../src/semantic/task/generation/contract.rs), [representation](../../../src/lowering/generation.rs) and [topology](../../../src/topology/mod.rs).
