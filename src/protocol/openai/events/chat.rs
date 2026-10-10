@@ -612,7 +612,12 @@ impl EventEncoder {
         if self.contract.adaptation.rules.reasoning_alias {
             super::super::adapter_shapes::encode_message(&mut delta);
         }
-        let mut value = json!({"id":self.metadata.id,"object":"chat.completion.chunk","created":self.metadata.created,"model":self.metadata.model,"choices":[{"index":0,"delta":delta,"finish_reason":finish}],"usage":null});
+        let created = self
+            .metadata
+            .created
+            .as_ref()
+            .expect("validated Chat timestamp");
+        let mut value = json!({"id":self.metadata.id,"object":"chat.completion.chunk","created":created,"model":self.metadata.model,"choices":[{"index":0,"delta":delta,"finish_reason":finish}],"usage":null});
         put_presence(
             value.as_object_mut().expect("object"),
             "system_fingerprint",

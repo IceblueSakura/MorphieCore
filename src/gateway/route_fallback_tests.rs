@@ -81,6 +81,7 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
                 origin: TrustedOrigin::parse(&format!("http://{upstream_addr}")).unwrap(),
                 chat_completions: Some(EndpointPath::new(&format!("/{id}")).unwrap()),
                 responses: Some(EndpointPath::new(&format!("/{id}")).unwrap()),
+                messages: None,
                 auth: AuthScheme::Bearer,
             };
             let credential = CredentialBindingId::new(&format!("{id}-key")).unwrap();

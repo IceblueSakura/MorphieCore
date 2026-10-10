@@ -15,7 +15,7 @@ fn native_audio_binding_is_explicit_chat_input_with_text_only_output() {
         .unwrap();
     assert_eq!(binding.upstream, "openai/gpt-audio-mini");
     assert_eq!(binding.protocols, &[ProtocolProfile::OpenAiChat]);
-    let endpoint = binding.endpoint(ProtocolProfile::OpenAiChat);
+    let endpoint = binding.endpoint(ProtocolProfile::OpenAiChat).unwrap();
     assert!(endpoint.representation.semantics.audio_input);
     assert!(!endpoint.representation.semantics.audio_output);
     assert!(!endpoint.representation.semantics.audio_history);

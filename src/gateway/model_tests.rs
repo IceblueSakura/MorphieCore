@@ -219,6 +219,7 @@ fn aliases(count: usize, metadata: bool) -> crate::topology::CompiledTopology {
         origin: TrustedOrigin::parse("http://127.0.0.1:9").unwrap(),
         chat_completions: Some(EndpointPath::new("/chat/completions").unwrap()),
         responses: None,
+        messages: None,
         auth: AuthScheme::Bearer,
     };
     let endpoint = Endpoint {

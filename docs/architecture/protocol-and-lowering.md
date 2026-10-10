@@ -16,6 +16,7 @@
 - Lowering 判断最终 typed 值是否能按指定目标和投影策略表达。它不选择 Provider、查 registry、取 credential 或联网，不在 encode 后修改 JSON。
 - 等价别名、已验证派生视图、精确数值推导与字段级兼容默认必须具名、有限且有前提。默认不覆盖实际报告或 malformed 值，来源记录在语义外；编码不能重做 intake 默认来恢复删除值。
 - 未知报告优先使用所选标准的缺省或 nullable 载体；Generation usage 未报告时输出 `null`，不补造零计量。格式错误或计数矛盾仍失败，不能替换为未知以掩盖错误。仅在现有标准语义无法表达时，才按定稿的具名规则考虑兼容回落值，并与实际报告区分；这不是通用补零或吞错许可。
+- [共享响应 metadata](../../src/protocol/decoded.rs)的创建时间分开表达未报告与精确 Number；独立校验允许缺省，不把非法报告改成未知。Chat/Responses 的静态与事件目标仍要求有效 created/created_at，Chat 保持整数限制；缺少必要值时拒绝，不填本地时间、零或 null。流已绑定的时间不能删除或替换，失败后不恢复成功。
 - 同协议与跨协议使用同一链路。对原始字节必须在丢失键序列前拒绝重复 JSON key，并限制解析深度/节点/bytes；预解析 Value 不能证明原字节合法。共享 parser 归 [JSON owner](../../src/semantic/value/json.rs)。
 
 ## 能力与固定目标
@@ -63,6 +64,10 @@ Responses 完善优先，不为 Chat 扩大标准核心以外的执行行为。�
 - 目标分组是编码安排，不是源语义推断；解析 Responses 时不写入伪造 membership，编码后也不污染原观察、其他候选或后续重投影。静态和事件使用同一规则，事件失败不能发成功终态；typed projection 记录区分省略/重组与原本未报告。
 
 方法依据：[OpenAI 迁移指南](https://developers.openai.com/api/docs/guides/migrate-to-responses#2-map-messages-to-items)明确将 Messages 拆成独立 Items，并以 call ID 连接结果；[OpenAI Agents SDK converter](https://github.com/openai/openai-agents-python/blob/38636a5c04d54717030878a133fd21970a0e1dec/src/agents/models/chatcmpl_converter.py)提供目标 assistant 累积/工具结果切断的实现参考。后者不是 API 的无损保证；不采用其参数补值、文本拼接、私有 metadata 或 opaque 重建策略。源码与独立预期拥有精确准入。
+
+### Anthropic 原生工具投影
+
+所选 request/history → Anthropic Messages 的 `anthropic.function-json-object.v1` 表示归一化和 `anthropic.omit-tool-execution-detail.v1` 有限损失由[原生合同](anthropic-messages-profile.md#参数身份与工具结果)维护。前者仅允许完整 JSON object 参数的编码表示变化；后者仅省略目标没有 carrier 的、调用者已报告的有限执行细节，保留错误位、正文与 call 关联。两者尚待实现，不放宽 Responses/Chat 或 Provider 工具准入，也不授权 native source 容器之外的自动重组。
 
 ### Chat 图片 token 明细投影
 

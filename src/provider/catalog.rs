@@ -16,6 +16,7 @@ pub fn deepseek() -> ProviderDefinition {
         origin: TrustedOrigin::parse("https://api.deepseek.com").expect("static origin"),
         chat_completions: Some(EndpointPath::new("/chat/completions").expect("static path")),
         responses: Some(EndpointPath::new("/responses").expect("static path")),
+        messages: None,
         auth: AuthScheme::Bearer,
     }
 }
@@ -28,19 +29,22 @@ pub fn xiaomi() -> ProviderDefinition {
         origin: TrustedOrigin::parse("https://api.xiaomimimo.com").expect("static origin"),
         chat_completions: Some(EndpointPath::new("/v1/chat/completions").expect("static path")),
         responses: Some(EndpointPath::new("/v1/responses").expect("static path")),
+        messages: None,
         auth: AuthScheme::Bearer,
     }
 }
 
-/// Go's model-specific entries are not interchangeable with the Zen balance API.
-/// Hy4 is documented on Chat only; other Go models do not admit Responses here.
-/// Source: <https://opencode.ai/docs/go/#endpoints>.
+/// Go operation entries are separate from model admission and the Zen balance API.
+/// Source: <https://opencode.ai/docs/go/#endpoints> and the pinned Messages route
+/// in `docs/references/agent-protocol-adaptation.md`.
 pub fn opencode_go() -> ProviderDefinition {
-    chat_provider(
+    let mut provider = chat_provider(
         "opencode-go",
         "https://opencode.ai",
         "/zen/go/v1/chat/completions",
-    )
+    );
+    provider.messages = Some(EndpointPath::new("/zen/go/v1/messages").expect("static path"));
+    provider
 }
 
 /// Aggregator entries; source: <https://openrouter.ai/docs/api/reference/responses/overview>.
@@ -50,6 +54,7 @@ pub fn openrouter() -> ProviderDefinition {
         origin: TrustedOrigin::parse("https://openrouter.ai").expect("static origin"),
         chat_completions: Some(EndpointPath::new("/api/v1/chat/completions").expect("static path")),
         responses: Some(EndpointPath::new("/api/v1/responses").expect("static path")),
+        messages: None,
         auth: AuthScheme::Bearer,
     }
 }
@@ -60,6 +65,7 @@ fn chat_provider(id: &str, origin: &str, path: &str) -> ProviderDefinition {
         origin: TrustedOrigin::parse(origin).expect("static origin"),
         chat_completions: Some(EndpointPath::new(path).expect("static path")),
         responses: None,
+        messages: None,
         auth: AuthScheme::Bearer,
     }
 }
@@ -132,6 +138,7 @@ pub fn zhipu() -> ProviderDefinition {
 /// Source: https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference
 pub fn openai() -> ProviderDefinition {
     ProviderDefinition {
+        messages: None,
         auth: AuthScheme::OAuthBearer("openai"),
         responses: Some(EndpointPath::new("/v1/responses").expect("static path")),
         id: ProviderId::new("openai").expect("static identity"),
@@ -143,6 +150,7 @@ pub fn openai() -> ProviderDefinition {
 /// Source: https://docs.x.ai/developers/model-capabilities/text/generate-text
 pub fn grok() -> ProviderDefinition {
     ProviderDefinition {
+        messages: None,
         auth: AuthScheme::OAuthBearer("grok"),
         responses: Some(EndpointPath::new("/v1/responses").expect("static path")),
         id: ProviderId::new("grok").expect("static identity"),

@@ -18,7 +18,7 @@ pub fn metadata() -> ResponseMetadata {
     ResponseMetadata {
         id: "r".into(),
         model: "synthetic".into(),
-        created: 0.into(),
+        created: Some(0.into()),
         context: Default::default(),
         instruction_fidelity: Default::default(),
     }

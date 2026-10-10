@@ -723,7 +723,7 @@ fn independently_constructed_static_ir_and_mutation_determine_all_response_wire(
     let metadata = ResponseMetadata {
         id: "r".into(),
         model: "fixture".into(),
-        created: 0.into(),
+        created: Some(0.into()),
         context: Default::default(),
         instruction_fidelity: Default::default(),
     };

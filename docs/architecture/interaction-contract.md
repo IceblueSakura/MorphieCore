@@ -54,6 +54,18 @@ Pi 的[上下文投影参考](../references/pi-provider-abstraction.md#client-ma
 
 Continuation 是要求/依赖而不是动作命令。当前 [pending view](../../src/semantic/task/generation/continuation.rs)与[本地后继检查](../../src/semantic/task/generation/turn.rs)只提供有界事实，不替代真实 upstream turn identity、跨请求完整性或执行授权。
 
+<a id="client-tool-result-errors"></a>
+### 客户端工具的结果错误与执行事实
+
+结果的错误报告与实际执行结论是独立事实，由 ToolResult 拥有，不改变正文或 Generation outcome。错误可能来自调用者的参数校验、权限拒绝、执行异常或其他处理失败；一个原生错误位不能说明工具是否执行。
+
+- 错误报告区分未报告、明确非错误与明确错误，不由正文、产物 Completed 或缺省推断。它不是模型端 strict/adherence 控制，也不证明参数已校验。
+- 执行事实区分明确未执行、已知成功/失败/取消、显式结果未知与未报告。明确未执行不能冒充执行失败；错误位不能补成任何执行事实。调用者的实际报告才能确定阶段，不解析错误文字重建它。
+- 调用者可将参数拒绝或执行失败反馈为带正文的结果，再决定是否发出后继请求；核心只维护 call 关联与合法 history，不执行工具、修复参数或自动重试。修正调用是新观察/identity，不把旧结果重关联。
+- 最终结果须验证这些报告的适用组合和 presence，编辑后重新推导 requirements/依赖；没有目标 carrier 的事实只能按具名投影处理，不能隐藏在 fidelity 或私有字段。
+
+当前 [ToolResult / ToolExecution](../../src/semantic/task/generation/tool_result.rs)尚缺独立错误报告和明确未执行状态；这是待实施的最小语义差额，不通过重新解释 Failed 掩盖。原生映射、有限执行细节省略和独立反例归 [Anthropic 合同](anthropic-messages-profile.md#参数身份与工具结果)。标准 Responses/Chat 尚无对应载体合同，现有拒绝保持有效。
+
 <a id="provider-tool-observations"></a>
 ## Provider 工具观察与分层验证
 

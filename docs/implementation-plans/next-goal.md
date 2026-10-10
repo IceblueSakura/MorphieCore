@@ -2,11 +2,15 @@
 
 ## 当前主线
 
-优先扩展多模态相关功能：下一片选择文件服务与文件消费链，随后按实际需求补充 Embedding 和其他媒体增量。Generation 继续使用多个 Provider API → 共享 Semantic Model / IR → 标准 Responses 的主链，Chat 是兼容路径；独立 task 使用各自标准 operation。总体职责归 [Semantic Model](../architecture/semantic-ir.md)，本页只维护未完成方向。
+下一步以 **pi/OpenCode 的实际 Agent 工具循环为使用基线，结合 new-api/RelayKit 的协议转换方案，完成必要 IR 收敛与 Anthropic Messages 原生接入**。随后扩展 Embedding 与图片/音频功能，最后闭合文件操作与消费链。Generation 继续使用多个 Provider API → 共享 Semantic Model / IR → 标准 Responses 的主链，Chat 是兼容路径；独立 task 使用各自标准 operation。总体职责归 [Semantic Model](../architecture/semantic-ir.md)，本页只维护未完成方向。
+
+**优先复用方案，不先建设通用框架。** 从工具选择、参数、执行结果/错误和历史续轮出发，参考[固定 Agent 与转换源码](../references/agent-protocol-adaptation.md)，只补 MorphieCore 与所选用法之间的差额。完整性用于覆盖交互需要，消融用于减少重复表达与维护分支；不以原始 wire 全部可恢复为目标，也不压成协议最小公分母。具体有损行为在 owning contract 定稿后实施，现行拒绝不因本计划自动放宽。
+
+首个落地场景及分步验收归 [Anthropic 接入计划](anthropic-messages-draft.md)：先文本、普通 function、工具错误反馈及默认 thinking 的原生库级闭环，再解决标准 Responses 的交付、保存与回传。custom/grammar→function 是按消费者需要选择的适配规则，不是独立桥接工程或 Anthropic 的前置任务。
 
 **先功能，后稳定性专项。** 保留现有认证、资源、取消和终态回归；新增工作从实际消费需求或最小反例出发，不扩张通用调度、重试或防御框架。
 
-每片保留独立 synthetic 回归和受影响开发基线；大范围固定 SDK、真实 Provider 组合、质量和稳定性集中验收在所选功能清单接近完善后进行。用户指定目标可做有限接入验证，不据此扩张默认矩阵。
+每片保留独立 synthetic 回归和受影响开发基线；与该片直接相关的固定消费者闭环随功能验证，按独立 gate 执行。大范围 SDK、真实 Provider 组合、质量和稳定性集中验收在所选功能清单接近完善后进行。用户指定目标可做有限接入验证，不据此扩张默认矩阵。
 
 <a id="strict-verification"></a>
 
@@ -18,10 +22,12 @@
 
 | 优先级 | 工作 | 退出条件 |
 |---|---|---|
-| 1 | 文件服务与 Responses 文件消费 | 定服务操作、存储/访问/删除生命周期及 Gateway ID 与 issuer-bound ID 的关系，再闭合所选消费链 |
-| 2 | Embedding 与其他媒体增量 | 按实际需求选择编码、输入、产物或独立 operation；不从已有文本/float 分支推定更广支持 |
-| 3 | Generation 功能增量 | 保持目标准入、标准消费和必要回传边界 |
+| 1 | 参考实现驱动的 Agent 兼容与 Anthropic 原生接入 | 定所选用法、转换代价与最小 IR 差额；先闭合原生文本/工具/错误/thinking，再单独验收标准 Responses 与固定消费者；原生成功不代替标准回传 |
+| 2 | Embedding 与图片/音频扩展 | 按实际需求选择编码、输入、产物或独立 operation；不从已有分支推定更广支持 |
+| 3 | 文件操作与 Responses 文件消费 | 定服务操作、存储/访问/删除生命周期及 Gateway ID 与 issuer-bound ID 的关系，再闭合所选消费链 |
 | 4 | 集中兼容性验收，再稳定性专项 | 围绕已实现功能清单补固定消费者、真实 Provider、组合和运行证据 |
+
+其他 Generation 增量按实际需求选片。工具结构消融随所选适配的重复分支评估，不要求先统一全部工具类型、补齐所有协议字段或完成下表延期项。
 
 ### 未完成的指定目标
 
@@ -34,27 +40,30 @@ Token Plan 的重名标签/上游 ID、图片 URL 产物，以及 Go 原生 Anth
 
 ## 后续选片条件
 
-从[实现缺口](../implementation-status/generation.md)选择可观察结果，在 [current-focus](current-focus.md)记录需求、独立失败例、非目标和验证边界。按最低 owner 修复，每片闭合即停止并清空 focus，不自动滚动实施下一片。实现与验证方法归[开发指南](../development.md)。
+从所选 Agent 用法和[实现缺口](../implementation-status/generation.md)选择可观察结果：先定位现成实现与字段映射，说明对参数、生成约束、结果、历史和交付的影响，再区分 IR 缺口、目标限制与未接线。采用结论只迁入对应合同，不另存全协议比较矩阵；缺口列表不等于实施清单。
+
+在 [current-focus](current-focus.md)记录需求、独立失败例、非目标和验证边界。按最低 owner 修复，每片闭合即停止并清空 focus，不自动滚动实施下一片。能直接使用的库优先复用；跨语言方案不以新增进程服务为默认实现。方法和依赖/许可检查归[开发指南](../development.md)及[固定来源](../references/agent-protocol-adaptation.md)。
 
 文件服务模型由具体消费需求选择，不默认复用 Embedding 模型。相关切片前定稿服务范围及资源/issuer 合同；维护既有 Responses user inline/URL 输入，不以新增服务为由自动放宽 ID、工具或生成文件准入。
 
 <a id="cross-target-history"></a>
 ### 跨 Provider/Model 历史投影
 
-保留策略方向，实施延期：对送往不同 Provider 或 Model 的历史，在目标副本剥离不兼容 opaque，并将可见 thinking 转为 assistant text。保留真实文字、顺序、消息/part 边界和工具关联；原观察不变，同目标沿用既有 replay 条件。
+保留策略方向，实施延期：以“切换模型后继续任务”为目标，对目标副本剥离不兼容 opaque，并将可见 thinking 转为 assistant text。它不等于恢复原模型内部推理状态，也不能替代同目标工具续轮的 replay。保留真实文字、顺序、消息/part 边界和工具关联；更广重组须单独定稿，原观察不变。
 
-恢复时先定来源证据、格式/owner、opaque-only/空 owner 处置、依赖重验与 typed 损失诊断。来源未知仍按现行边界处理。该策略与 ServerManaged、普通 response/event 交付分开；方法来源见 [pi 参考](../references/pi-provider-abstraction.md)。
+有具体消费者需要跨目标续轮时恢复，先定来源证据、格式/owner、opaque-only/空 owner 处置、依赖重验与有界行为诊断。来源未知仍按现行边界处理。该策略与 ServerManaged、普通 response/event 交付分开；方法来源见 [Agent 历史转换](../references/agent-protocol-adaptation.md#history)。
 
 ## 延期目标与恢复条件
 
 | 方向 | 恢复条件 |
 |---|---|
 | 跨目标 history 投影 | 按上节明确来源、消费者和依赖合同 |
+| 更广工具与 Schema 转换 | 具体消费者需要 custom/grammar、namespace、托管工具或方言适配时，采用已有方案并定执行输入、生成约束和回传代价；不先建设转换框架 |
 | 文件扩展 | 具体消费场景与资源/issuer 合同；分别选择 ID、工具/生成文件、格式、Chat 投影或文件服务 |
 | 高级图片 | 分别选择流式/预览、编辑/蒙版、参考图、URL 获取与资源服务 |
 | 更广 Embedding 与其他媒体 operation | 分别选择 Base64、token 输入、稀疏或多模态向量等增量；不从文本向量主链推定实现 |
 | Audio Realtime | 请求型范围收敛后独立确定双工协议、会话、事件与预算 |
-| Interactions / Messages 原生接入 | 有具体目标需求后固定 operation/profile，再实现 codec 与执行主链 |
+| Google Interactions 原生接入 | 有具体目标需求后固定 operation/profile，再实现 codec 与执行主链 |
 | ServerManaged / Gateway 短期会话 | 定历史权威、标准引用、并发/分支、账号绑定、期限/删除与缓存关系；与 history 投影分开 |
 | Opaque 闭合后权威 | 按[待决问题](../implementation-status/open-questions.md#恢复选片所需证据)取得事件与消费者证据 |
 | 丰富模型发现与调度 | 独立确定公开路径/schema 与选择策略；现有 Models 视图归[HTTP](../http-gateway.md#标准模型发现) |

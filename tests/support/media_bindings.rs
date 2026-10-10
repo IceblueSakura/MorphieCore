@@ -17,6 +17,7 @@ fn provider(origin: &str, id: &str) -> ProviderDefinition {
         origin: TrustedOrigin::parse(origin).unwrap(),
         chat_completions: None,
         responses: None,
+        messages: None,
         auth: AuthScheme::Bearer,
     }
 }

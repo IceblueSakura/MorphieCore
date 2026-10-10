@@ -2,6 +2,7 @@
 pub mod adaptation;
 pub mod aliyun_asr;
 pub mod aliyun_speech;
+pub mod anthropic;
 pub mod cache;
 mod decoded;
 pub use decoded::{CodecError, DecodedRequest, DecodedResponse, ResponseMetadata};

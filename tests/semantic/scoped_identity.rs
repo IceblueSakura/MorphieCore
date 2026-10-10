@@ -235,7 +235,7 @@ fn scoped_local_wire_labels_are_deterministic_and_target_collisions_fail_before_
     let metadata = ResponseMetadata {
         id: "synthetic-response".into(),
         model: "synthetic".into(),
-        created: 1.into(),
+        created: Some(1.into()),
         context: Default::default(),
         instruction_fidelity: Default::default(),
     };

@@ -252,7 +252,16 @@ fn fingerprint_presence_and_vendor_metadata_drift_are_explicit() {
     let mut decoder = vendor().event_decoder();
     decoder.push(&first).unwrap();
     decoder.push(&next).unwrap();
-    assert_eq!(decoder.metadata().unwrap().created.as_u64(), Some(1));
+    assert_eq!(
+        decoder
+            .metadata()
+            .unwrap()
+            .created
+            .as_ref()
+            .unwrap()
+            .as_u64(),
+        Some(1)
+    );
     assert_eq!(
         decoder.metadata().unwrap().context.system_fingerprint,
         Presence::Value("fp-1".into())

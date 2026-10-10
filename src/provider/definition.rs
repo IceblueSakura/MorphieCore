@@ -107,8 +107,19 @@ impl EndpointPath {
     }
 }
 
-/// Trusted provider facts: origin, per-protocol relative entries and the auth
-/// scheme for one credential kind.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GenerationOperation {
+    ChatCompletions,
+    Responses,
+    AnthropicMessages,
+}
+/// A borrowed operation declaration; endpoints cannot override its path or auth.
+#[derive(Clone, Copy, Debug)]
+pub struct GenerationEntry<'a> {
+    pub path: &'a EndpointPath,
+    pub auth: AuthScheme,
+}
+/// Trusted provider facts. Generation auth is selected with its declared operation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProviderDefinition {
     pub id: ProviderId,
@@ -117,7 +128,23 @@ pub struct ProviderDefinition {
     pub chat_completions: Option<EndpointPath>,
     /// Absent when this provider has no admitted native Responses entry.
     pub responses: Option<EndpointPath>,
+    /// A native Messages operation declaration, not a usable public model binding.
+    pub messages: Option<EndpointPath>,
+    /// Credential-domain default, also used by independently declared media operations.
     pub auth: AuthScheme,
+}
+impl ProviderDefinition {
+    pub fn generation_entry(&self, operation: GenerationOperation) -> Option<GenerationEntry<'_>> {
+        let (path, auth) = match operation {
+            GenerationOperation::ChatCompletions => (self.chat_completions.as_ref()?, self.auth),
+            GenerationOperation::Responses => (self.responses.as_ref()?, self.auth),
+            GenerationOperation::AnthropicMessages => (
+                self.messages.as_ref()?,
+                AuthScheme::ApiKeyHeader("x-api-key"),
+            ),
+        };
+        Some(GenerationEntry { path, auth })
+    }
 }
 
 #[cfg(test)]

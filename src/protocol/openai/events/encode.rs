@@ -16,16 +16,8 @@ pub struct EventEncoder {
 }
 impl EventEncoder {
     pub fn new(profile: Profile, metadata: ResponseMetadata) -> Result<Self, CodecError> {
-        if metadata.id.is_empty()
-            || metadata.model.is_empty()
-            || metadata.id.len() > 256
-            || metadata.model.len() > 256
-        {
-            return Err(CodecError::Invalid("metadata"));
-        }
-        metadata.context.validate()?;
+        metadata.validate()?;
         validate_metadata(profile, &metadata)?;
-        super::super::envelope::timestamp(&Value::Number(metadata.created.clone()))?;
         Ok(Self {
             profile,
             metadata,
@@ -52,7 +44,7 @@ impl EventEncoder {
             {
                 return Err(CodecError::Invalid("metadata changed"));
             }
-            metadata.context.validate()?;
+            metadata.validate()?;
             validate_metadata(self.profile, &metadata)?;
             if self.profile == Profile::Chat && self.state()?.started() {
                 let old = &self.metadata.context;
@@ -223,7 +215,12 @@ impl EventEncoder {
         Ok(v)
     }
     pub(super) fn envelope(&self, status: &str, output: Vec<Value>) -> Result<Value, CodecError> {
-        let mut v = json!({"id":self.metadata.id,"object":"response","created_at":self.metadata.created,"model":self.metadata.model,"status":status,"output":output});
+        let created = self
+            .metadata
+            .created
+            .as_ref()
+            .ok_or(CodecError::Invalid("created time"))?;
+        let mut v = json!({"id":self.metadata.id,"object":"response","created_at":created,"model":self.metadata.model,"status":status,"output":output});
         super::super::envelope::write_metadata(
             &self.metadata,
             v.as_object_mut().expect("object"),
@@ -481,9 +478,13 @@ impl EventEncoder {
     }
 }
 fn validate_metadata(profile: Profile, metadata: &ResponseMetadata) -> Result<(), CodecError> {
+    let created = metadata
+        .created
+        .as_ref()
+        .ok_or(CodecError::Invalid("created time"))?;
     if profile == Profile::Chat {
         super::super::chat_envelope::validate_context(&metadata.context.execution)?;
-        if metadata.created.as_u64().is_none() || !metadata.context.execution.metadata.is_absent() {
+        if created.as_u64().is_none() || !metadata.context.execution.metadata.is_absent() {
             // Chat chunks have no metadata slot; never silently discard a static fact.
             return Err(CodecError::Unsupported("Chat stream metadata".into()));
         }

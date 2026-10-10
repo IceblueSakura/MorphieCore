@@ -21,6 +21,7 @@ pub(crate) fn topology() -> CompiledTopology {
         origin: TrustedOrigin::parse("http://127.0.0.1:9").unwrap(),
         chat_completions: Some(EndpointPath::new("/chat/completions").unwrap()),
         responses: Some(EndpointPath::new("/responses").unwrap()),
+        messages: None,
         auth: AuthScheme::Bearer,
     };
     let canonical = ModelId::new("fixture-canonical").unwrap();

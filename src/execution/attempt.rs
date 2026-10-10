@@ -1,7 +1,7 @@
 //! Attempt preparation and bounded intake. Wire projection belongs to adapters;
 //! transport I/O and downstream commit belong to their respective owners.
 use crate::{
-    adapter::{Adapter, AdapterError, Request},
+    adapter::{AdapterError, Request, UpstreamAdapter},
     lowering::generation::RepresentationError,
     protocol::{
         CodecError, DecodedResponse, ResponseMetadata,
@@ -71,15 +71,34 @@ pub fn admit(
     Ok(request.check_semantic(&public.contract)?)
 }
 
+pub(crate) fn operation_auth(
+    endpoint: &Endpoint,
+    provider: &ProviderDefinition,
+) -> Result<crate::provider::AuthScheme, AttemptError> {
+    endpoint
+        .validate()
+        .map_err(|_| AttemptError::Protocol("invalid endpoint"))?;
+    let entry = provider
+        .generation_entry(endpoint.protocol.operation())
+        .ok_or(AttemptError::Protocol("undeclared operation"))?;
+    if provider.id != endpoint.provider
+        || provider.origin != endpoint.target.origin
+        || entry.path != &endpoint.target.path
+        || entry.auth.kind() != endpoint.execution.credential_kind
+        || entry.auth.kind() != provider.auth.kind()
+    {
+        return Err(AttemptError::Protocol("provider/endpoint mismatch"));
+    }
+    Ok(entry.auth)
+}
+
 pub fn prepare(
     endpoint: &Endpoint,
     provider: &ProviderDefinition,
     secret: &SecretMaterial,
     request: &Request,
 ) -> Result<UpstreamRequest, AttemptError> {
-    if provider.id != endpoint.provider || provider.origin != endpoint.target.origin {
-        return Err(AttemptError::Protocol("provider/endpoint mismatch"));
-    }
+    let auth = operation_auth(endpoint, provider)?;
     let streaming = request.delivery.streaming()
         || endpoint
             .representation
@@ -117,7 +136,7 @@ pub fn prepare(
         method: "POST",
         path: endpoint.target.path.as_str().into(),
         safe_headers,
-        auth_header: provider.auth.auth_header(secret),
+        auth_header: auth.auth_header(secret),
         body,
     })
 }
@@ -134,7 +153,7 @@ enum Intake {
 /// strict EOF validation so a truncated/trailing-invalid body cannot emit success.
 pub struct Attempt {
     identity: std::sync::Arc<()>,
-    adapter: Adapter,
+    adapter: UpstreamAdapter,
     body_limit: usize,
     limits: SseLimits,
     intake: Intake,
@@ -143,10 +162,10 @@ pub struct Attempt {
     rejected: bool,
 }
 impl Attempt {
-    pub fn new(adapter: Adapter, body_limit: usize, limits: SseLimits) -> Self {
+    pub fn new(adapter: impl Into<UpstreamAdapter>, body_limit: usize, limits: SseLimits) -> Self {
         Self {
             identity: std::sync::Arc::new(()),
-            adapter,
+            adapter: adapter.into(),
             body_limit,
             limits,
             intake: Intake::Pending,
@@ -163,6 +182,7 @@ impl Attempt {
             if let StatusClass::Failure(class) = classify_status(status) {
                 return Err(AttemptError::Status { status, class });
             }
+            let adapter = self.adapter.openai()?;
             let media = content_type
                 .split(';')
                 .next()
@@ -170,18 +190,18 @@ impl Attempt {
                 .trim()
                 .to_ascii_lowercase();
             self.intake = if media == "text/event-stream" {
-                match self.adapter.protocol {
+                match adapter.protocol {
                     Profile::Chat => Intake::Chat(ChatSseDecoder::with_decoder(
                         status,
                         content_type,
                         self.limits,
-                        self.adapter.event_decoder(),
+                        adapter.event_decoder(),
                     )?),
                     Profile::Responses => Intake::Responses(ResponsesSseDecoder::with_decoder(
                         status,
                         content_type,
                         self.limits,
-                        self.adapter.event_decoder(),
+                        adapter.event_decoder(),
                     )?),
                 }
             } else if media == "application/json"

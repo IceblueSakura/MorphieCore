@@ -353,7 +353,7 @@ fn independent_probability_owners_encode_and_text_edits_invalidate_only_their_fa
     let metadata = ResponseMetadata {
         id: "c".into(),
         model: "m".into(),
-        created: 1.into(),
+        created: Some(1.into()),
         context: Default::default(),
         instruction_fidelity: Default::default(),
     };

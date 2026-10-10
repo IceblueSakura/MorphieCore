@@ -12,7 +12,10 @@ pub mod errors;
 pub(crate) mod subscription;
 
 pub use auth::{AuthScheme, CredentialBindingId, CredentialKind, SecretMaterial};
-pub use definition::{EndpointPath, ProviderDefinition, ProviderId, TrustedOrigin};
+pub use definition::{
+    EndpointPath, GenerationEntry, GenerationOperation, ProviderDefinition, ProviderId,
+    TrustedOrigin,
+};
 pub use errors::{ErrorClass, ProviderError, StatusClass, classify_status};
 
 /// Shared identity grammar for provider, endpoint, route and model labels.

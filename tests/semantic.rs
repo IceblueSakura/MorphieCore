@@ -10,6 +10,8 @@ mod wire;
 
 #[path = "semantic/adapters.rs"]
 mod adapters;
+#[path = "semantic/anthropic_profile.rs"]
+mod anthropic_profile;
 #[path = "semantic/billing_modal_usage.rs"]
 mod billing_modal_usage;
 #[path = "semantic/cache_prefix.rs"]

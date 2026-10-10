@@ -281,6 +281,12 @@ impl Gateway {
                 .endpoint(&entry.endpoint)
                 .ok_or(StartupError::Binding)?
                 .clone();
+            if !matches!(
+                endpoint.adapter(),
+                crate::adapter::UpstreamAdapter::OpenAi(_)
+            ) {
+                return Err(StartupError::Binding);
+            }
             let provider = topology
                 .provider(endpoint.provider.as_str())
                 .ok_or(StartupError::Binding)?

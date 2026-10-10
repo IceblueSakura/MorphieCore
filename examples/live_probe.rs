@@ -298,7 +298,7 @@ fn load_credentials(path: &str) -> Result<Credentials, String> {
 }
 
 fn scenario_request(
-    protocol: ProtocolProfile,
+    protocol: Profile,
     label: &str,
     case: Case,
     delivery: Delivery,
@@ -307,7 +307,7 @@ fn scenario_request(
 ) -> Value {
     let streaming = delivery == Delivery::Stream;
     let mut value = match protocol {
-        ProtocolProfile::OpenAiChat => {
+        Profile::Chat => {
             let mut messages = vec![json!({"role":"user","content": match case {
                 Case::Text => TEXT_PROMPT,
                 Case::JsonObject => JSON_PROMPT,
@@ -339,7 +339,7 @@ fn scenario_request(
             }
             value
         }
-        ProtocolProfile::OpenAiResponses => {
+        Profile::Responses => {
             let prompt = match case {
                 Case::Text => TEXT_PROMPT,
                 Case::JsonObject => JSON_PROMPT,
@@ -409,7 +409,7 @@ fn scenario_request(
     }
     if streaming {
         value["stream"] = json!(true);
-        if protocol == ProtocolProfile::OpenAiChat {
+        if protocol == Profile::Chat {
             value["stream_options"] = json!({"include_usage":true,"include_obfuscation":false});
         }
     }
@@ -488,7 +488,7 @@ struct CallContext<'a> {
     secret: &'a SecretMaterial,
     endpoint: &'a Endpoint,
     public: &'a PublicModel,
-    downstream: ProtocolProfile,
+    downstream: Profile,
     delivery: Delivery,
     case: Case,
 }
@@ -593,7 +593,7 @@ async fn run_call(
     request_json: Value,
     round: u8,
 ) -> CallOutcome {
-    let protocol = if ctx.downstream == ProtocolProfile::OpenAiChat {
+    let protocol = if ctx.downstream == Profile::Chat {
         "chat"
     } else {
         "responses"
@@ -660,8 +660,8 @@ async fn run_call_inner(
         model: ctx.label.into(),
         provider: ctx.provider_name.into(),
         protocol: match ctx.downstream {
-            ProtocolProfile::OpenAiChat => "chat",
-            ProtocolProfile::OpenAiResponses => "responses",
+            Profile::Chat => "chat",
+            Profile::Responses => "responses",
         }
         .into(),
         case: ctx.case.name().into(),
@@ -693,10 +693,7 @@ async fn run_call_inner(
 
     // 1. Downstream request bytes must decode through the real admission codecs.
     let bytes = serde_json::to_vec(&request_json).expect("request serializes");
-    let family = match ctx.downstream {
-        ProtocolProfile::OpenAiChat => Profile::Chat,
-        ProtocolProfile::OpenAiResponses => Profile::Responses,
-    };
+    let family = ctx.downstream;
     let client_adapter = downstream_adapter(family, &ctx.endpoint.representation);
     let decoded = match client_adapter.decode_request(&bytes) {
         Ok(request) => request,
@@ -748,8 +745,8 @@ async fn run_call_inner(
         ctx.out_dir,
         ctx.label,
         match ctx.downstream {
-            ProtocolProfile::OpenAiChat => "chat",
-            ProtocolProfile::OpenAiResponses => "responses",
+            Profile::Chat => "chat",
+            Profile::Responses => "responses",
         },
         ctx.case.name(),
         ctx.delivery.name(),
@@ -1029,8 +1026,8 @@ async fn run_call_inner(
     let consumed = match ctx.delivery {
         Delivery::Json => client_adapter.decode_response(&delivered).is_ok(),
         Delivery::Stream => match ctx.downstream {
-            ProtocolProfile::OpenAiChat => consume_chat_stream(&delivered).is_ok(),
-            ProtocolProfile::OpenAiResponses => consume_responses_stream(&delivered).is_ok(),
+            Profile::Chat => consume_chat_stream(&delivered).is_ok(),
+            Profile::Responses => consume_responses_stream(&delivered).is_ok(),
         },
     };
     if !consumed {
@@ -1551,12 +1548,13 @@ async fn main() {
             if protocol_only.as_deref().is_some_and(|s| s != protocol_name) {
                 continue;
             }
-            let endpoint_id = match protocol {
-                ProtocolProfile::OpenAiChat => spec.chat_endpoint,
+            let (endpoint_id, family) = match protocol {
+                ProtocolProfile::OpenAiChat => (spec.chat_endpoint, Profile::Chat),
                 ProtocolProfile::OpenAiResponses => match spec.responses_endpoint {
-                    Some(id) => id,
+                    Some(id) => (id, Profile::Responses),
                     None => continue,
                 },
+                ProtocolProfile::AnthropicMessages => continue,
             };
             let endpoint = topology
                 .endpoint(&EndpointId::new(endpoint_id).expect("endpoint id"))
@@ -1590,12 +1588,11 @@ async fn main() {
                         secret: &secret,
                         endpoint,
                         public,
-                        downstream: protocol,
+                        downstream: family,
                         delivery,
                         case,
                     };
-                    let mut request =
-                        scenario_request(protocol, spec.label, case, delivery, 1, None);
+                    let mut request = scenario_request(family, spec.label, case, delivery, 1, None);
                     if let Some(cap) = cap.filter(|_| case != Case::Length) {
                         request[if protocol == ProtocolProfile::OpenAiChat {
                             "max_completion_tokens"
@@ -1620,7 +1617,7 @@ async fn main() {
                     {
                         sleep(CALL_INTERVAL).await;
                         let mut request =
-                            scenario_request(protocol, spec.label, case, delivery, 2, Some(&call));
+                            scenario_request(family, spec.label, case, delivery, 2, Some(&call));
                         if let Some(cap) = cap {
                             request[if protocol == ProtocolProfile::OpenAiChat {
                                 "max_completion_tokens"
@@ -1839,7 +1836,7 @@ mod tests {
         assert!(!CASES.contains(&Case::Schema));
         assert!(!CASES.contains(&Case::Image));
         let schema = scenario_request(
-            ProtocolProfile::OpenAiResponses,
+            Profile::Responses,
             "m",
             Case::Schema,
             Delivery::Json,
@@ -1862,7 +1859,7 @@ mod tests {
             ["z_answer", "a_label"],
         );
         let image = scenario_request(
-            ProtocolProfile::OpenAiResponses,
+            Profile::Responses,
             "m",
             Case::Image,
             Delivery::Json,
@@ -1900,25 +1897,15 @@ mod tests {
     #[test]
     fn length_diagnostic_matches_sdk_boundary_without_expanding_default_matrix() {
         assert!(!CASES.contains(&Case::Length));
-        let request = scenario_request(
-            ProtocolProfile::OpenAiChat,
-            "m",
-            Case::Length,
-            Delivery::Json,
-            1,
-            None,
-        );
+        let request = scenario_request(Profile::Chat, "m", Case::Length, Delivery::Json, 1, None);
         assert_eq!(request["max_completion_tokens"], 8);
         assert_eq!(request["messages"][0]["content"], LENGTH_PROMPT);
         assert!(request.get("tools").is_none());
     }
     #[test]
     fn continuation_uses_actual_reasoning_and_call_history() {
-        for protocol in [
-            ProtocolProfile::OpenAiChat,
-            ProtocolProfile::OpenAiResponses,
-        ] {
-            let history = if protocol == ProtocolProfile::OpenAiChat {
+        for protocol in [Profile::Chat, Profile::Responses] {
+            let history = if protocol == Profile::Chat {
                 vec![
                     json!({"role":"assistant","content":null,"reasoning_details":[{"type":"reasoning.encrypted","data":"synthetic","id":"rs","index":0,"format":"openai-responses-v1"}],"tool_calls":[{"type":"function","id":"c","function":{"name":"lookup","arguments":"{\"key\":\"alpha\"}"}}]}),
                 ]
@@ -1936,7 +1923,7 @@ mod tests {
             };
             let request =
                 scenario_request(protocol, "m", Case::Tool, Delivery::Json, 2, Some(&call));
-            let key = if protocol == ProtocolProfile::OpenAiChat {
+            let key = if protocol == Profile::Chat {
                 "messages"
             } else {
                 "input"

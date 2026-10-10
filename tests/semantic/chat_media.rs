@@ -577,7 +577,7 @@ fn byte_fragments_encode_as_one_base64_value() {
     let meta = morphiecore::protocol::ResponseMetadata {
         id: "r".into(),
         model: "synthetic".into(),
-        created: 1.into(),
+        created: Some(1.into()),
         context: Default::default(),
         instruction_fidelity: Default::default(),
     };

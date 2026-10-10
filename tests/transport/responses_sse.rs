@@ -208,7 +208,10 @@ fn timestamp_zero_fractional_and_underflow_positive_values_survive_fragmentation
             consume_all(&mut d, &frames, fragment);
             d.finish().unwrap();
             let metadata = d.materialize().unwrap().metadata;
-            assert_eq!(metadata.created.as_str(), expected.as_str());
+            assert_eq!(
+                metadata.created.as_ref().unwrap().as_str(),
+                expected.as_str()
+            );
             assert_eq!(
                 metadata.context.completed_at.value().unwrap().as_str(),
                 expected.as_str()

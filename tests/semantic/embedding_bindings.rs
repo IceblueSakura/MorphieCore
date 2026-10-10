@@ -116,6 +116,7 @@ fn embedding_topology_rejects_untrusted_targets_wrong_tasks_and_execution_contra
         origin: TrustedOrigin::parse("http://127.0.0.1:9").unwrap(),
         chat_completions: None,
         responses: None,
+        messages: None,
         auth: AuthScheme::Bearer,
     };
     let (operation, route) = fixed::binding(&provider);
@@ -173,6 +174,7 @@ fn preparation_uses_final_typed_encoding_without_mutating_source_or_injecting_ge
         origin: TrustedOrigin::parse("http://127.0.0.1:9").unwrap(),
         chat_completions: None,
         responses: None,
+        messages: None,
         auth: AuthScheme::Bearer,
     };
     let (_, route) = fixed::binding(&provider);

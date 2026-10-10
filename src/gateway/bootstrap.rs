@@ -159,6 +159,9 @@ impl Bootstrap {
                     let family = match protocol {
                         crate::topology::ProtocolProfile::OpenAiChat => Profile::Chat,
                         crate::topology::ProtocolProfile::OpenAiResponses => Profile::Responses,
+                        crate::topology::ProtocolProfile::AnthropicMessages => {
+                            return Err(StartupError::Binding);
+                        }
                     };
                     entries.push(Entry {
                         model: binding.model.into(),

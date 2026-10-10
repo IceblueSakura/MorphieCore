@@ -20,10 +20,32 @@ pub struct DecodedResponse {
 pub struct ResponseMetadata {
     pub id: String,
     pub model: String,
-    pub created: serde_json::Number,
+    /// An upstream-reported timestamp; absence never implies zero or local time.
+    pub created: Option<serde_json::Number>,
     pub context: crate::semantic::context::ResponseContext,
     /// Representation records for the independently owned instruction echo.
     pub instruction_fidelity: FidelityRecords,
+}
+impl ResponseMetadata {
+    /// Validate shared facts without imposing a wire family's required fields.
+    pub fn validate(&self) -> Result<(), CodecError> {
+        if self.id.is_empty()
+            || self.model.is_empty()
+            || self.id.len() > 256
+            || self.model.len() > 256
+        {
+            return Err(CodecError::Invalid("metadata"));
+        }
+        if self
+            .created
+            .as_ref()
+            .is_some_and(|created| !crate::semantic::value::valid_timestamp(created))
+        {
+            return Err(CodecError::Invalid("timestamp"));
+        }
+        self.context.validate()?;
+        Ok(())
+    }
 }
 #[derive(Clone, Debug, Eq, thiserror::Error, PartialEq)]
 pub enum CodecError {

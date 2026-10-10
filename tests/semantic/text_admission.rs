@@ -324,7 +324,7 @@ fn known_unrepresentable_event_fields_and_changed_bound_metadata_fail_early() {
     let metadata = ResponseMetadata {
         id: "c".into(),
         model: "m".into(),
-        created: 1.into(),
+        created: Some(1.into()),
         context: Default::default(),
         instruction_fidelity: Default::default(),
     };

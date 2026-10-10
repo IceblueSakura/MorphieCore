@@ -242,7 +242,7 @@ fn modelbest_created_drift_is_not_identity_or_fingerprint_drift() {
     stream.done().unwrap();
     assert_eq!(
         stream.metadata().unwrap().created,
-        json!(1).as_number().unwrap().clone()
+        Some(json!(1).as_number().unwrap().clone())
     );
     for field in ["id", "model", "system_fingerprint"] {
         let mut before = first.clone();

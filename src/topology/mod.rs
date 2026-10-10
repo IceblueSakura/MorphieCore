@@ -60,6 +60,17 @@ pub enum TaskKind {
 pub enum ProtocolProfile {
     OpenAiChat,
     OpenAiResponses,
+    AnthropicMessages,
+}
+impl ProtocolProfile {
+    pub fn operation(self) -> crate::provider::GenerationOperation {
+        use crate::provider::GenerationOperation;
+        match self {
+            Self::OpenAiChat => GenerationOperation::ChatCompletions,
+            Self::OpenAiResponses => GenerationOperation::Responses,
+            Self::AnthropicMessages => GenerationOperation::AnthropicMessages,
+        }
+    }
 }
 
 #[cfg(test)]

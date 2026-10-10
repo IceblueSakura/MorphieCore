@@ -18,6 +18,7 @@ fn provider(id: &str) -> ProviderDefinition {
         origin: TrustedOrigin::parse("https://synthetic.invalid").unwrap(),
         chat_completions: None,
         responses: Some(EndpointPath::new("/responses").unwrap()),
+        messages: None,
         auth: AuthScheme::Bearer,
     }
 }

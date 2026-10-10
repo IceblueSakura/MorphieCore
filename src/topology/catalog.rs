@@ -34,7 +34,7 @@ impl ApiKeyBinding {
             reported_facts: ReportedFactPolicy::Faithful,
         }
     }
-    pub fn endpoint(&self, protocol: ProtocolProfile) -> Endpoint {
+    pub fn endpoint(&self, protocol: ProtocolProfile) -> Result<Endpoint, TopologyError> {
         let provider = (self.provider)();
         let (family, path, replay) = match protocol {
             ProtocolProfile::OpenAiChat => (
@@ -47,6 +47,7 @@ impl ApiKeyBinding {
                 provider.responses.clone().expect("declared entry"),
                 self.replay_responses,
             ),
+            ProtocolProfile::AnthropicMessages => return Err(TopologyError::ContractUnsatisfiable),
         };
         let scope = ReplayOrigin::new(provider.id.as_str()).expect("static scope");
         let contract = GenerationRepresentationContract {
@@ -59,7 +60,7 @@ impl ApiKeyBinding {
             standard_context: false,
             ..GenerationRepresentationContract::full()
         };
-        Endpoint {
+        Ok(Endpoint {
             id: self.endpoint_id(protocol),
             canonical_model: ModelId::new(self.canonical_model).expect("static id"),
             provider: provider.id.clone(),
@@ -80,12 +81,13 @@ impl ApiKeyBinding {
                 timeout_ms: 120_000,
             },
             credential: CredentialBindingId::new(self.credential).expect("static binding"),
-        }
+        })
     }
     pub fn endpoint_id(&self, protocol: ProtocolProfile) -> EndpointId {
         let suffix = match protocol {
             ProtocolProfile::OpenAiChat => "chat",
             ProtocolProfile::OpenAiResponses => "responses",
+            ProtocolProfile::AnthropicMessages => "messages",
         };
         EndpointId::new(&format!("{}-{suffix}", self.endpoint_prefix)).expect("static id")
     }
@@ -106,7 +108,13 @@ pub fn default_topology() -> Result<CompiledTopology, TopologyError> {
                 .map(|&p| binding.endpoint_id(p))
                 .collect(),
         });
-        endpoints.extend(binding.protocols.iter().map(|&p| binding.endpoint(p)));
+        endpoints.extend(
+            binding
+                .protocols
+                .iter()
+                .map(|&p| binding.endpoint(p))
+                .collect::<Result<Vec<_>, _>>()?,
+        );
         public_models.push(public);
     }
     for binding in SUBSCRIPTION_BINDINGS {
@@ -231,7 +239,7 @@ fn bailian_strict_tools_are_admitted_without_changing_schema_or_other_bindings()
         assert_eq!(canonical.contract.strict_tools, expected);
         assert_eq!(public.contract.strict_tools, expected);
         for &protocol in binding.protocols {
-            let endpoint = binding.endpoint(protocol);
+            let endpoint = binding.endpoint(protocol).unwrap();
             assert_eq!(endpoint.representation.semantics.strict_tools, expected);
         }
     }
@@ -263,7 +271,7 @@ fn bailian_strict_tools_are_admitted_without_changing_schema_or_other_bindings()
         request
             .check_semantic(&binding.public_model().contract)
             .unwrap();
-        let endpoint = binding.endpoint(protocol);
+        let endpoint = binding.endpoint(protocol).unwrap();
         let wire = Adapter::new(profile, binding.dialect, None)
             .encode_request(&request, binding.upstream, &endpoint.representation)
             .unwrap();

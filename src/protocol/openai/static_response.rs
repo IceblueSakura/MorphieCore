@@ -48,7 +48,7 @@ pub(super) fn metadata(
     Ok(ResponseMetadata {
         id,
         model,
-        created,
+        created: Some(created),
         context,
         instruction_fidelity,
     })
@@ -604,7 +604,11 @@ pub fn encode_chat(target: &ResponseRepresentation<'_>) -> Result<Value, CodecEr
         .first()
         .ok_or(CodecError::Invalid("empty Chat candidate"))?;
     let m = &target.metadata;
-    let mut value = json!({"id":m.id,"object":"chat.completion","created":m.created,"model":m.model,
+    let created = m
+        .created
+        .as_ref()
+        .ok_or(CodecError::Invalid("created time"))?;
+    let mut value = json!({"id":m.id,"object":"chat.completion","created":created,"model":m.model,
         "choices":[{"index":0,"message":message,"finish_reason":finish}],
         "usage":target.semantic.usage().map(|usage| encode_usage(usage, Profile::Chat, &target.adaptation.rules))});
     if let Some(probabilities) = super::chat_logprobs::choice(target.semantic.items())? {
@@ -675,7 +679,11 @@ pub fn encode_responses(target: &ResponseRepresentation<'_>) -> Result<Value, Co
         target.semantic.resources(),
     );
     let m = &target.metadata;
-    let mut value = json!({"id":m.id,"object":"response","created_at":m.created,"model":m.model,"status":status,
+    let created = m
+        .created
+        .as_ref()
+        .ok_or(CodecError::Invalid("created time"))?;
+    let mut value = json!({"id":m.id,"object":"response","created_at":created,"model":m.model,"status":status,
         "output":output,"usage":target.semantic.usage().map(|usage| encode_usage(usage, Profile::Responses, &target.adaptation.rules))});
     super::envelope::write_metadata(
         m,

@@ -59,7 +59,7 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
     let metadata = ResponseMetadata {
         id: "r".into(),
         model: "synthetic".into(),
-        created: 1.into(),
+        created: Some(1.into()),
         context: Default::default(),
         instruction_fidelity: Default::default(),
     };
@@ -168,7 +168,7 @@ fn forged_handles_cannot_drop_owner_local_replay_or_assistant_media() {
     let metadata = ResponseMetadata {
         id: "r".into(),
         model: "synthetic".into(),
-        created: 1.into(),
+        created: Some(1.into()),
         context: Default::default(),
         instruction_fidelity: Default::default(),
     };

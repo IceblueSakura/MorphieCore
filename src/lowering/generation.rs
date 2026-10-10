@@ -508,11 +508,7 @@ fn validate_response(
     if profile == Profile::Chat && chat_message_count(r.items(), r.message_owners()) != 1 {
         return Err(RepresentationError::MessageGrouping);
     }
-    if metadata.id.is_empty()
-        || metadata.model.is_empty()
-        || metadata.id.len() > 256
-        || metadata.model.len() > 256
-    {
+    if metadata.validate().is_err() {
         return Err(RepresentationError::Metadata);
     }
     if profile == Profile::Chat
@@ -538,9 +534,10 @@ fn validate_response(
     {
         return Err(RepresentationError::Metadata);
     }
-    if metadata.context.validate().is_err()
-        || !crate::semantic::value::valid_timestamp(&metadata.created)
-        || profile == Profile::Chat && metadata.created.as_u64().is_none()
+    if metadata
+        .created
+        .as_ref()
+        .is_none_or(|created| profile == Profile::Chat && created.as_u64().is_none())
     {
         return Err(RepresentationError::Metadata);
     }

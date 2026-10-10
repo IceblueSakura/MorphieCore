@@ -13,7 +13,7 @@ fn metadata() -> ResponseMetadata {
     ResponseMetadata {
         id: "response_1".into(),
         model: "fixture-model".into(),
-        created: 10.into(),
+        created: Some(10.into()),
         context: Default::default(),
         instruction_fidelity: Default::default(),
     }

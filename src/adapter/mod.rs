@@ -19,7 +19,9 @@ mod request;
 mod siwc;
 pub mod speech;
 pub mod transcription;
+mod upstream;
 pub use request::Request;
+pub use upstream::UpstreamAdapter;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Dialect {

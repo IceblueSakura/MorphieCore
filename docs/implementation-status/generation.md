@@ -13,8 +13,9 @@
 | 资源与引用 | issuer-bound 原生映射、更多有单位坐标、访问/期限条件的目标表示与资源生命周期；[资源表](../../src/semantic/task/generation/resource_table.rs)、[引用](../../src/semantic/task/generation/citation.rs) |
 | 独立 task / 媒体 | Embedding 的 token/Base64/稀疏/多模态/Batch 增量、流式图片/产物、通用音频 history、完整字幕/说话人/翻译、更多编码及 Realtime；各[profile](../architecture/README.md#当前-profiles)与[计划](../implementation-plans/next-goal.md#延期目标与恢复条件) |
 | 标准客户端覆盖 | 所选 profile 以外的 standard union、结构化参数/结果、执行报告、进度和非 operation-final usage 的公开载体；[客户端边界](../architecture/client-generation-profile.md) |
-| 原生协议 | Google Interactions / Anthropic Messages codec、adapter 和执行主链 |
+| 原生协议 | Google Interactions 原生主链；Anthropic wire↔IR、SSE reducer/intake、目标/客户端接线与准入，纯 wire 存在不代表闭环；[Messages profile](../architecture/anthropic-messages-profile.md) |
 | 交互依赖 | 跨 response 逻辑 turn、continuation、部分结果 history 的执行准入，以及逐格式 replay 的原生交付；[交互合同](../architecture/interaction-contract.md) |
+| 客户端工具错误 | 独立结果错误报告与明确未执行状态尚未承载；现有 execution Failed 不能替代；[结果错误合同](../architecture/interaction-contract.md#client-tool-result-errors)与[所选原生映射](../architecture/anthropic-messages-profile.md) |
 | Provider 工具 / 配置 | 更广工具动作、内容、来源引用、定义修订、配置和受保护变换的原生映射；[Provider 观察](../../src/semantic/task/generation/provider.rs)、[配置](../../src/semantic/task/generation/configuration.rs) |
 | Replay | 非 reasoning 附件的公开 carrier、一般异构分组/非连续关系的回传；[分组投影](../architecture/protocol-and-lowering.md#message-envelope-projection) |
 | 跨目标 history | opaque/thinking 投影的来源、格式、依赖和标准回传合同；[延期方向](../implementation-plans/next-goal.md#cross-target-history) |

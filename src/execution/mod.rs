@@ -14,6 +14,8 @@ pub mod embeddings;
 pub mod fallback;
 pub mod images;
 pub mod lifecycle;
+mod messages;
+pub use messages::prepare_messages;
 pub mod plan;
 pub mod speech;
 pub mod transcription;

@@ -14,6 +14,8 @@ mod chat;
 mod fallback_policy;
 #[path = "transport/framing.rs"]
 mod framing;
+#[path = "transport/native_bindings.rs"]
+mod native_bindings;
 #[path = "transport/planning.rs"]
 mod planning;
 #[path = "transport/responses_sse.rs"]

@@ -9,6 +9,7 @@
 | [Responses 标准基线](responses-standard.md) | Responses codec 的固定公开语义；不是共享 IR 的上限，也不等于本地准入 |
 | [扩展与上下文](extensions-and-context.md) | session/cache/turn、存储与连接状态；固定 Codex/pi 投影，与认证 owner 分开 |
 | [pi Provider、上下文与回放](pi-provider-abstraction.md) | 固定 `1.0.2` 的 Provider/API/Model 与 replay、`1.0.4` 的 ClientManaged 投影入口 |
+| [Agent 用法与协议转换来源](agent-protocol-adaptation.md) | pi 工具/生成约束、OpenCode 校验与历史、new-api 映射的固定源码与许可，以及所选 Anthropic 原生来源；不替代既有专项版本 |
 | [OAuth/OIDC 标准](#oauth-standards) | 共用协议来源；实现、存储与操作授权归[凭据指南](../credentials.md) |
 | [Grok Build / xAI 登录](grok-login.md) | 官方浏览器/标准设备授权、pi 内置与补充参考、credential/backend 边界 |
 | [Codex 产品协议识别](chatgpt-login.md) | 产品认证的固定出处与协议隔离；不是本项目登录入口 |

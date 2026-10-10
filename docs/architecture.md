@@ -29,6 +29,8 @@ Authenticated bounded HTTP input
 | [gateway](../src/gateway/mod.rs) | 认证、启动准入、预算和实际 HTTP body 所有权 |
 | [binary](../src/bin/morphiecore.rs) | 显式私有文件 bootstrap 与 loopback listener |
 
+Generation 的 [Endpoint.adapter](../src/topology/endpoint.rs)返回独立 [UpstreamAdapter](../src/adapter/upstream.rs)，客户端 Adapter 继续使用标准 Chat/Responses Profile。Provider 的 [generation_entry](../src/provider/definition.rs)拥有 operation path/auth；topology 编译与 attempt 准备都检查该固定关系和 credential domain，不由业务字段选择认证。原生 Messages 的 wire 类型、低层准备及未接线拒绝边界归 [Messages profile](architecture/anthropic-messages-profile.md#纯-wire-接口与接线边界)，不是另一个 Agent API 或可用模型声明。
+
 独立静态图片生成采用 [ImageGeneration task](../src/semantic/task/image_generation.rs)、[类型化请求入口](../src/adapter/images.rs) 与 [Images codec](../src/protocol/openai/images.rs)。[图片 binding](../src/topology/images.rs)在同一 CompiledTopology 中显式声明 public label、canonical identity、单 endpoint 与 Provider operation 路径，不给 Generation 合同填占位字段；有序产物集合共享一次执行和响应级计量，目标 profile 与计量投影策略分别显式选择。Gateway 的 [Images intake](../src/gateway/images.rs)共享认证、受信 transport 和上述 body publication/handoff 生命周期，不增加重试或资源服务。产品绑定归[图片 catalog](../src/topology/catalog/images.rs)，binary 仅激活明确选定的图片标签，不从已有凭据池推定媒体授权。
 
 [Models 目录](../src/gateway/models.rs)从启动激活的各 task 标签构建有界只读视图；[publication metadata](../src/topology/model_metadata.rs)归 topology canonical identity，不进入 task IR 或依赖具体推理 Provider。它复用认证但不经过生成执行链，也不访问上游目录或操作凭据；公开合同归[模型发现](http-gateway.md#标准模型发现)。

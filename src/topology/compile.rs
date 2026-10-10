@@ -4,8 +4,8 @@ use crate::{
     lowering::generation::GenerationRepresentationContract,
     provider::ProviderDefinition,
     topology::{
-        CanonicalModel, Endpoint, EndpointId, GenerationSemanticContract, ProtocolProfile,
-        PublicModel, Route, RouteId,
+        CanonicalModel, Endpoint, EndpointId, GenerationSemanticContract, PublicModel, Route,
+        RouteId,
     },
 };
 use std::collections::BTreeMap;
@@ -165,20 +165,13 @@ pub fn compile(
         if definition.origin != endpoint.target.origin {
             return Err(TopologyError::TargetMismatch);
         }
-        let bound_path = match endpoint.protocol {
-            ProtocolProfile::OpenAiChat => definition
-                .chat_completions
-                .as_ref()
-                .ok_or(TopologyError::TargetMismatch)?,
-            ProtocolProfile::OpenAiResponses => definition
-                .responses
-                .as_ref()
-                .ok_or(TopologyError::TargetMismatch)?,
-        };
-        if bound_path != &endpoint.target.path {
-            return Err(TopologyError::TargetMismatch);
-        }
-        if definition.auth.kind() != endpoint.execution.credential_kind {
+        let operation = definition
+            .generation_entry(endpoint.protocol.operation())
+            .ok_or(TopologyError::TargetMismatch)?;
+        if operation.path != &endpoint.target.path
+            || operation.auth.kind() != endpoint.execution.credential_kind
+            || operation.auth.kind() != definition.auth.kind()
+        {
             return Err(TopologyError::TargetMismatch);
         }
         if endpoint_map
@@ -247,6 +240,10 @@ pub fn compile(
             if endpoint.canonical_model != model.canonical_model {
                 return Err(TopologyError::CanonicalModelMismatch);
             }
+            // A native wire declaration is not an implemented semantic representation.
+            if endpoint.protocol == super::ProtocolProfile::AnthropicMessages {
+                return Err(TopologyError::ContractUnsatisfiable);
+            }
             if route.policy.candidates == super::CandidatePolicy::RequireAll
                 && (!promised(&model.contract, &endpoint.representation)
                     || model.standard_context && !endpoint.representation.standard_context)
@@ -284,7 +281,9 @@ mod tests {
             CredentialBindingId, CredentialKind, EndpointPath, ProviderDefinition, ProviderId,
             TrustedOrigin, auth::AuthScheme,
         },
-        topology::{Endpoint, EndpointTarget, ExecutionContract, ModelId, TaskKind},
+        topology::{
+            Endpoint, EndpointTarget, ExecutionContract, ModelId, ProtocolProfile, TaskKind,
+        },
     };
 
     fn provider() -> ProviderDefinition {
@@ -293,16 +292,18 @@ mod tests {
             origin: TrustedOrigin::parse("http://127.0.0.1:39217").unwrap(),
             chat_completions: Some(EndpointPath::new("/chat/completions").unwrap()),
             responses: Some(EndpointPath::new("/responses").unwrap()),
+            messages: None,
             auth: AuthScheme::Bearer,
         }
     }
 
     fn endpoint(protocol: ProtocolProfile) -> Endpoint {
         let definition = provider();
-        let path = match protocol {
-            ProtocolProfile::OpenAiChat => definition.chat_completions.expect("test Chat entry"),
-            ProtocolProfile::OpenAiResponses => definition.responses.expect("test Responses entry"),
-        };
+        let path = definition
+            .generation_entry(protocol.operation())
+            .expect("test operation")
+            .path
+            .clone();
         Endpoint {
             id: EndpointId::new("fixture-endpoint").unwrap(),
             provider: ProviderId::new("fixture").unwrap(),

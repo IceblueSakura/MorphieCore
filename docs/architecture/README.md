@@ -18,6 +18,7 @@
 各 profile 维护所选 wire 的准入与交付合同；设计目标与当前实现范围分别核对。
 
 - [Responses](responses-text-profile.md)：请求型 Generation 的现有边界及本地兼容形式。
+- [Anthropic Messages](anthropic-messages-profile.md)：所选文本/工具/thinking 合同、纯 wire 接口与接线边界；完整语义/执行主链尚未闭合，不扩大标准客户端准入。
 - [Chat](chat-text-profile.md)：单候选兼容路径；[Chat media](chat-media-profile.md)限定 citations/生成音频值、事件与引用；[语音输入](chat-input-audio-profile.md)限定 user WAV/MP3→文本。
 - [Speech](speech-profile.md)：独立 TTS task、标准控制与有界二进制产物，不扩大 Chat/Responses 音频准入。
 - [Transcription](transcription-profile.md)：独立识别 task、有界上传、实际时序报告与标准 JSON 投影，不提供文件服务。

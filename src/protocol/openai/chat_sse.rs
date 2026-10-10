@@ -175,7 +175,12 @@ impl ChatSseEncoder {
         if options.obfuscation() != matches!(padding, Obfuscation::Seeded(_)) {
             return Err(SseError::Codec(CodecError::Invalid("Chat padding policy")));
         }
-        if metadata.created.as_u64().is_none() {
+        if metadata
+            .created
+            .as_ref()
+            .and_then(serde_json::Number::as_u64)
+            .is_none()
+        {
             return Err(SseError::Codec(CodecError::Invalid("Chat created")));
         }
         Ok(Self {
