@@ -225,7 +225,7 @@ pub(super) fn decode_item(
         replay: encrypted,
     })
 }
-pub(super) fn encode_item(item: &ReasoningItem, response: bool) -> Value {
+pub(crate) fn encode_item(item: &ReasoningItem, response: bool) -> Value {
     let summary: Vec<_> = item
         .parts
         .iter()

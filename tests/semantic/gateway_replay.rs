@@ -55,6 +55,122 @@ fn client_view(
     decoded
 }
 #[test]
+fn explicit_responses_carrier_survives_real_flat_history_without_guessing_format() {
+    let (source, owner) = fixture();
+    let codec = GatewayReplayCodec::new([7; 32]).unwrap();
+    let item = codec
+        .seal_responses_reasoning_item(&source, owner, &target(), "principal", 100, "rs_one")
+        .unwrap();
+    assert_eq!(item["type"], "reasoning");
+    assert_eq!(item["summary"], serde_json::json!([]));
+    assert!(!item.to_string().contains("synthetic-signature"));
+    let input = serde_json::json!({"max_output_tokens":32,"instructions":"fixed","input":[
+        {"role":"user","content":"go"},item,{"role":"assistant","content":"answer"},
+        {"role":"user","content":"next"}]});
+    let decoded = morphiecore::protocol::openai::responses::decode_generation(&input).unwrap();
+    assert!(decoded.semantic.message_envelopes().is_empty());
+    let owner = decoded.semantic.items()[1].0;
+    assert!(matches!(&decoded.semantic.items()[1].1,Item::Reasoning(r)
+        if r.replay.as_ref().unwrap().format()==ReplayFormat::ResponsesEncrypted));
+    let restored = codec
+        .restore_responses_replay(&decoded, owner, &target(), "principal", 99)
+        .unwrap();
+    let projected = Profile::AdaptiveTextTools
+        .encode_generation_request(
+            &restored.request.semantic,
+            &restored.request.fidelity,
+            &target(),
+        )
+        .unwrap();
+    assert_eq!(
+        projected.value["messages"],
+        serde_json::json!([
+        {"role":"user","content":[{"type":"text","text":"go"}]},
+        {"role":"assistant","content":[{"type":"thinking","thinking":"","signature":"synthetic-signature"},
+            {"type":"text","text":"answer"}]},
+        {"role":"user","content":[{"type":"text","text":"next"}]}])
+    );
+    assert!(
+        codec
+            .restore_responses_replay(&decoded, owner, &target(), "other", 99)
+            .is_err()
+    );
+    assert!(decoded.semantic.message_envelopes().is_empty());
+}
+
+#[test]
+fn flat_multiple_signatures_restore_in_order_without_rebinding_edited_prefixes() {
+    let p = Profile::AdaptiveTextTools;
+    let source=p.decode_generation_request(br#"{"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":"go"}]}"#,LocalScope::new(1),&target()).unwrap();
+    let response=p.decode_generation_response(br#"{"id":"r","type":"message","role":"assistant","model":"synthetic-model","content":[{"type":"thinking","thinking":"first","signature":"sig-one"},{"type":"thinking","thinking":"second","signature":"sig-two"},{"type":"text","text":"answer"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":2}}"#,LocalScope::new(2),&source,&target()).unwrap();
+    let history = morphiecore::protocol::DecodedRequest {
+        semantic: ClientManaged::new(source.semantic.settings().clone())
+            .unwrap()
+            .select_request(&source.semantic)
+            .unwrap()
+            .select_response(&response.semantic)
+            .unwrap()
+            .build(&[])
+            .unwrap(),
+        fidelity: response.fidelity,
+    };
+    let codec = GatewayReplayCodec::new([7; 32]).unwrap();
+    let mut input = vec![serde_json::json!({"role":"user","content":"go"})];
+    for (owner, item) in history.semantic.items() {
+        if matches!(item, Item::Reasoning(_)) {
+            input.push(
+                codec
+                    .seal_responses_reasoning_item(
+                        &history,
+                        *owner,
+                        &target(),
+                        "principal",
+                        100,
+                        &format!("rs_{}", owner.get()),
+                    )
+                    .unwrap(),
+            );
+        }
+    }
+    input.extend([
+        serde_json::json!({"role":"assistant","content":"answer"}),
+        serde_json::json!({"role":"user","content":"next"}),
+    ]);
+    let decoded = morphiecore::protocol::openai::responses::decode_generation(
+        &serde_json::json!({"max_output_tokens":32,"input":input}),
+    )
+    .unwrap();
+    let mut restored = decoded.clone();
+    for owner in [decoded.semantic.items()[1].0, decoded.semantic.items()[2].0] {
+        restored = codec
+            .restore_responses_replay(&restored, owner, &target(), "principal", 99)
+            .unwrap()
+            .request;
+    }
+    let wire = p
+        .encode_generation_request(&restored.semantic, &restored.fidelity, &target())
+        .unwrap()
+        .value;
+    assert_eq!(wire["messages"][1]["content"][0]["signature"], "sig-one");
+    assert_eq!(wire["messages"][1]["content"][1]["signature"], "sig-two");
+    let mut edited = decoded.clone();
+    let mut items = edited.semantic.items().to_vec();
+    items.remove(0);
+    edited.semantic = edited.semantic.with_items(items).unwrap();
+    assert!(
+        codec
+            .restore_responses_replay(
+                &edited,
+                edited.semantic.items()[0].0,
+                &target(),
+                "principal",
+                99
+            )
+            .is_err()
+    );
+}
+
+#[test]
 fn authenticated_signature_only_replay_restores_native_format_without_a_second_body() {
     let (source, owner) = fixture();
     let codec = GatewayReplayCodec::new([7; 32]).unwrap();

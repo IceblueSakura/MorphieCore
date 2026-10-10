@@ -18,7 +18,7 @@
 | 客户端工具错误 | 标准客户端新错误的 carrier 与投影尚未定稿，不能从正文推断错误位或 execution；共享值与原生静态映射归[结果错误合同](../architecture/interaction-contract.md#client-tool-result-errors)与[所选原生映射](../architecture/anthropic-messages-profile.md) |
 | Provider 工具 / 配置 | 更广工具动作、内容、来源引用、定义修订、配置和受保护变换的原生映射；[Provider 观察](../../src/semantic/task/generation/provider.rs)、[配置](../../src/semantic/task/generation/configuration.rs) |
 | Replay | 非 reasoning 附件的公开 carrier、一般异构分组/非连续关系的回传；[分组投影](../architecture/protocol-and-lowering.md#message-envelope-projection) |
-| Gateway 续轮载荷 | 标准 carrier dispatch、跨客户端来源容器恢复、本地响应时间与固定消费者；纯库认证加密不证明公开接线或上游 issuer 接受，Go 分组独立按[缓存载体](../architecture/protocol-and-lowering.md#cache-affinity-projection)处理；[载荷合同](../architecture/anthropic-messages-profile.md#gateway-自有续轮载荷) |
+| Gateway 续轮载荷 | 完整标准响应投影、本地响应时间、公开接线与固定消费者；item 级载荷及认证前缀恢复不证明完整交付或上游 issuer 接受，Go 分组独立按[缓存载体](../architecture/protocol-and-lowering.md#cache-affinity-projection)处理；[载荷合同](../architecture/anthropic-messages-profile.md#gateway-自有续轮载荷) |
 | 跨目标 history | opaque/thinking 投影的来源、格式、依赖和标准回传合同；[延期方向](../implementation-plans/next-goal.md#cross-target-history) |
 | Opaque 权威 | 已闭合 item 的迟到补全、替换与撤销；[待决问题](open-questions.md#reasoning-opaque-的闭合后权威) |
 | 限定工具选择 | 固定标准类型缺少 namespace-qualified `tool_choice` 位置；[namespace profile](../architecture/responses-text-profile.md#tool-namespaces) |

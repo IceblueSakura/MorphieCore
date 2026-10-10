@@ -130,7 +130,7 @@ Go 的固定路径/认证依据归[原生来源](../references/agent-protocol-ad
 
 标准 Responses 仍是最终 Generation 主接口。以下待决点阻塞相应标准消费分支，不阻塞独立原生库片；取舍不足时报告可行选项和行为代价，不自行发明扩展或把当前拒绝当永久设计：
 
-1. Anthropic signature 的标准交付与必要回传采用 [Gateway 自有认证加密载荷](../architecture/anthropic-messages-profile.md#gateway-自有续轮载荷)。下一步闭合 reasoning `encrypted_content` 的显式 carrier dispatch、来源容器恢复与固定消费者；纯库签发/验证不启用公开路径，不恢复独立 `_openbridge`。
+1. Anthropic signature 的标准交付与必要回传采用 [Gateway 自有认证加密载荷](../architecture/anthropic-messages-profile.md#gateway-自有续轮载荷)。下一步闭合完整响应交付、公开接线与固定消费者；item 级签发/认证前缀恢复不启用公开路径，不恢复独立 `_openbridge`。
 2. 固定消费者自动携带[中性 conversation header](../http-gateway.md#conversation-context)，验证首次请求、无 thinking 与模型切换；上游分组规则在 Gateway 内部完成，不将 Provider session 参数或 key 作用域要求交给使用者，也不将分组绑定进加密 reasoning。
 3. Structured tool input 的字符串参数投影、保存与回传，以及工具错误报告的 carrier；参考现成用法定有限转换，而非要求所有来源形状原样恢复。
 4. Reported progress、stop/refusal detail 的目标表达；明确哪些事实影响 Agent 是否调用工具、继续请求或停止，再决定允许的省略。

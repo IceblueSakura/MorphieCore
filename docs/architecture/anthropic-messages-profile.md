@@ -77,7 +77,11 @@ Custom/grammar 包装、namespace、server/program tools、媒体、redacted thi
 
 跨请求前缀使用有版本的[原生投影编码](../../src/protocol/anthropic/semantic_request.rs)，不序列化 Rust Debug、进程内 ID 或整份 IR。先验证当前 typed history 与认证载荷中的依赖，再建立本次 intake 的本地绑定；载荷不是恢复已删改正文的备份。签名仅在同 Provider/Model、有效期限和匹配依赖下恢复；目标变化只产生去除 opaque 的目标副本，并移除 opaque-only 空 owner，原观察不变。
 
-纯库签发/验证不启用公开字段或密钥 loader。标准 Responses 的显式 carrier dispatch、来源容器恢复、下游本地时间、客户端新错误及固定消费者闭环仍未闭合；generic OpenAI codecs 不从字符串前缀猜格式，不接受 GatewayContinuation 作为 Provider 的 ResponsesEncrypted。Go 分组投影独立于该载荷；密钥生命周期与服务端存储不属于 codec。
+纯库提供显式 `seal_responses_reasoning_item` / `restore_responses_replay` 边界：调用者提供下游本地 item ID，标准 reasoning item 使用 `encrypted_content`，generic Responses 解码仍将其标为 ResponsesEncrypted；只有调用者显式选择 Gateway dispatch 并认证载荷后，才恢复原生格式。Generic OpenAI codecs 不猜字符串前缀，也不接受 GatewayContinuation 作为 Provider 的 ResponsesEncrypted。独立反例归 [Gateway replay tests](../../tests/semantic/gateway_replay.rs)。
+
+载荷 v2 在原有认证内容中增加 owner 的稳定序位及必要前缀的 role/member 序位 receipts，不保存正文或进程内 ID，不兼容未激活的 v1 原型。`anthropic.responses-container-prefix.v1` 仅从认证 receipts 恢复签名必要前缀；已有容器仍按当前真实值验证，不用 receipts 覆盖冲突。Owner 后的独立 Responses 文本、普通调用和结果，只按原顺序装配到当前目标的 assistant/user 容器，不改正文、搬移结果或补缺失调用，也不称作恢复未知来源。多个载荷按历史顺序恢复后，仍需通过原生整请求及前缀依赖校验。
+
+这些 item 级静态操作不启用公开 Gateway、密钥 loader 或完整响应交付。下游本地响应时间、客户端新错误与固定消费者闭环仍待定/接线；Go 分组投影独立于该载荷，密钥生命周期与服务端存储不属于 codec。Pi 保留 signature-only 的消费方式和 new-api 的 block/参数映射只作为方案参照；不采用后者的补空对象/占位文本或省略必要 replay。
 
 ## Envelope、进度与计量
 
