@@ -21,6 +21,7 @@ pub struct Request {
     pub delivery: DeliveryIntent,
     pub extensions: CustomSections,
     pub conversation: Option<ConversationContext>,
+    pub(crate) inferred_affinity: Option<crate::protocol::cache::InferredAffinity>,
     pub cache_session: Option<crate::protocol::cache::CacheSession>,
     source: Option<Profile>,
     n: Presence<u64>,
@@ -46,6 +47,7 @@ impl Request {
             extensions: Default::default(),
             conversation: None,
             cache_session: None,
+            inferred_affinity: None,
             source: None,
             n: Presence::Absent,
         })
@@ -60,7 +62,11 @@ impl Request {
         let mut context = self.context.clone();
         cache.project(&mut context)?;
         if go {
-            cache.opencode_session(self.conversation.as_ref(), self.cache_session.as_ref())?;
+            cache.opencode_session(
+                self.conversation.as_ref(),
+                self.cache_session.as_ref(),
+                self.inferred_affinity,
+            )?;
         }
         if context != ExecutionHints::default()
             || self.delivery.streaming()
@@ -180,6 +186,7 @@ impl Adapter {
                     source: Some(self.protocol),
                     conversation: None,
                     cache_session,
+                    inferred_affinity: None,
                     n: decoded.context.n,
                 }
             }
@@ -205,6 +212,7 @@ impl Adapter {
                     source: Some(self.protocol),
                     conversation: None,
                     cache_session,
+                    inferred_affinity: None,
                     n: Presence::Absent,
                 }
             }
@@ -245,6 +253,7 @@ impl Adapter {
         let session = cache.opencode_session(
             request.conversation.as_ref(),
             request.cache_session.as_ref(),
+            request.inferred_affinity,
         )?;
         let mut headers = vec![(
             "user-agent".into(),
@@ -279,9 +288,11 @@ impl Adapter {
         }
         let contract = self.contract(contract);
         let mut context = request.context.clone();
-        contract
-            .cache
-            .project_request(&mut context, request.conversation.as_ref())?;
+        contract.cache.project_request(
+            &mut context,
+            request.conversation.as_ref(),
+            request.inferred_affinity,
+        )?;
         if !contract.identity_hints
             && (!context.identity.user.is_absent()
                 || !context.identity.safety_identifier.is_absent())
@@ -459,6 +470,61 @@ mod tests {
             target
                 .encode_request(&flat, "selected-slug", &contract)
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn inferred_hints_are_optional_and_never_override_explicit_presence_or_identity() {
+        use crate::protocol::cache::{CacheProjection, InferredAffinity};
+        let client = Adapter::new(Profile::Responses, Dialect::Standard, None);
+        let target = Adapter::new(Profile::Responses, Dialect::Grok, None);
+        let contract = GenerationRepresentationContract::full();
+        let mut request = client
+            .decode_request(br#"{"model":"synthetic","input":"hello"}"#)
+            .unwrap();
+        request.conversation = Some(ConversationContext::independent_request("one").unwrap());
+        let original = request.clone();
+        request.inferred_affinity = Some(InferredAffinity([7; 16]));
+        let wire = target
+            .encode_request(&request, "upstream", &contract)
+            .unwrap();
+        assert_eq!(wire["prompt_cache_key"].as_str().unwrap().len(), 64);
+        assert_eq!(request.task, original.task);
+        assert_eq!(request.context, original.context);
+        assert_eq!(request.conversation, original.conversation);
+        let go = Adapter::new(Profile::Chat, Dialect::OpenCodeGo, None);
+        let inferred = go
+            .request_headers(&request, CacheProjection::all())
+            .unwrap();
+        for presence in [
+            Presence::Null,
+            Presence::Value("shared-explicit-key".into()),
+        ] {
+            request.context.cache.prompt_cache_key = presence.clone();
+            assert_eq!(
+                target
+                    .encode_request(&request, "upstream", &contract)
+                    .unwrap()["prompt_cache_key"],
+                match presence {
+                    Presence::Null => Value::Null,
+                    Presence::Value(v) => serde_json::json!(v),
+                    _ => unreachable!(),
+                }
+            );
+            assert_eq!(
+                inferred,
+                go.request_headers(&request, CacheProjection::all())
+                    .unwrap()
+            );
+        }
+        request.conversation = Some(ConversationContext::conversation("stable").unwrap());
+        let mut without_hint = request.clone();
+        without_hint.inferred_affinity = None;
+        assert_eq!(
+            go.request_headers(&request, CacheProjection::all())
+                .unwrap(),
+            go.request_headers(&without_hint, CacheProjection::all())
+                .unwrap()
         );
     }
 

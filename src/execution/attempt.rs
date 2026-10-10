@@ -145,6 +145,7 @@ pub fn prepare(
             Some(endpoint.representation.cache.opencode_session(
                 request.conversation.as_ref(),
                 request.cache_session.as_ref(),
+                request.inferred_affinity,
             )?)
         } else {
             None

@@ -31,6 +31,7 @@ uv run --project tests/sdk --locked --offline python examples/probe.py report te
 - `plan --model` 可重复，将所选 Provider 缩小到精确模型子集。重复、未知或不属于所选 Provider 的模型在读取凭据前拒绝。省略模型筛选则包含所选 Provider 的全部已登记测试绑定，不能将此默认扩大解释为授权。
 - `run --model` 可重复，必须属于计划；`--protocol chat|responses`、`--delivery json|sse` 缩小范围。`--effort none|minimal|medium|max` 是明确请求控制，不自动改默认。
 - cases：`text`、`json`、`schema`、`tool`、`history`、`length`、`cancel`、`image`、`image_math`、`file`、`file_url`、`file_continue`、`file_replay`、`file_reasoning`、`file_reasoning_math`；`reasoning` 的目标限制读取 `examples/probe_support/scenarios.py`，不得套用到任意模型。
+- `cache_affinity` / `cache_affinity_tool` 是显式选择的隐式亲和场景，不进入默认矩阵，目标准入归 `scenarios.py`。两者均不发送中性 conversation header、Provider session 或标准 cache key；首轮为文本回答或非 strict function 调用，完整实际 output 回传后追加新输入/固定 synthetic 结果，第二轮采用相反交付。每组两请求、cap 沿用计划且最多 2048、接收 2 MiB、单次 120 秒；运行另设覆盖矩阵的有限外层截止，首轮失败不发送依赖轮次。合成参考表只提供足够前缀长度，不是命中 oracle。索引来源、实际出站 carrier 与 reported cache-read 分开观察，不从命中推定收益，不提高 cap 或重复矩阵来追求命中。
 - `reasoning_content` 是显式 Responses 下游的单轮明文验收，每种交付一请求，最多 2048 输出 tokens；不进入默认矩阵。原生 Responses 上游与显式 `--responses-via-chat` 的 Chat 上游分别建计划验收，不互相替代。固定算术 prompt 要求纯文本整数答案，oracle 同时要求实际非空 reasoning content，summary/opaque 不替代。缺省不添加 reasoning 控制，显式 effort 只发送 effort，不附带 summary 请求。SSE 的 content 增量按 owner/坐标累积并校对 done 与终态，不能用快照补缺失增量；复用现有字节、事件、时间和账本守卫。
 - `json` 只请求 JSON object。`schema` 的 live 执行按[strict 验证边界](implementation-plans/next-goal.md#strict-verification)暂停，保留离线场景/控制/oracle 回归；其既有定义为显式 Responses、每种交付两请求、固定 strict JSON Schema 与实际 output 回传。独立 oracle 检查属性顺序、整数类型、固定标签和两轮数值；重复键、额外字段与代码围栏拒绝。保留的 run token cap（最多 2048）及场景选择机制不构成恢复实测授权，场景不进入默认矩阵。
 - `image` 每个协议/交付一请求，使用程序生成的两张无敏感 PNG 与交错文本，提示限定固定基础色集合，oracle 严格检查按图片顺序返回颜色，不对细分色名做同义词容错；最多 512 输出 token，可显式 `--effort none`。不下载图片、不使用账号文件资源、不保存图片或正文；模型准入必须按 catalog 现场查询。独立 PNG 像素/预算守卫在 `tests/sdk/test_probe_core.py`，此场景不证明一般视觉理解质量。
@@ -170,6 +171,8 @@ Opaque 场景的 `replayed_opaque_items` 仅计数实际提交 history 中的回
 `projection_failure` 单独标记投影阶段的封闭错误类别（如不可表示的 usage 明细、分组或 replay），不将其误归为 HTTP/解析失败；只取错误类型，不输出错误消息或真实字段值。它说明拒绝边界，不授权放宽投影或删除上游事实。
 
 `reported_usage_detail_mask` 只表示固定附属计量字段是否报告（显式零也计为存在），位定义归[诊断 owner](../src/gateway/diagnostics.rs)。它不输出计数值、原始字段名或正文，不从 modality 明细的存在推定请求包含该模态。
+
+`affinity_source` 仅报告固定的显式/未映射、禁用、不适用、miss/hit、歧义或不可用类别；carrier 布尔只表示已交给 transport 且取得上游 response head 的 key/session 载体存在，不输出值，不证明 Provider 使用它。候选观察各自保留这些类别；`reported_cached_tokens` 仅取实际报告，未知不补零。摘要、内部 group、原 conversation ID、凭据 provenance 和高基数标签不进入诊断。
 
 有界队列满、文件预算满、写失败或强杀均可能缺少诊断，缺失必须记为未知，不据此猜测上游状态。原 HTTP 错误映射、取消和交付策略不变；这不是生产可观测性系统，也不因此启用任何自动 retry/backoff。
 

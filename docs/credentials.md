@@ -32,6 +32,8 @@ cargo run --locked --offline --bin morphiecore -- \
 
 可选 `responses_via_chat` 是 `models` 的显式子集，仅允许已注册 API-key Chat 绑定；缺省不启用。它将所选模型的 Responses 入口固定到该模型 Chat endpoint，并替代该入口原有的 native Responses 绑定，不是失败后 fallback；其他模型和 Chat 入口不变。未知、重复、未显式选定或无 Chat endpoint 的标签拒绝启动。该设置不增加模型控制能力或标准载体，也不授权修改现有实例配置；受控 probe 使用独立临时配置，见[probe 指南](probes.md)。
 
+可选布尔 `implicit_cache_affinity` 缺省为 true；false 关闭本网关的[可丢弃前缀索引](architecture/protocol-and-lowering.md#implicit-cache-affinity)，不关闭 Provider 自动缓存或显式中性会话投影。它不保存历史、不改变候选/凭据顺序；嵌入调用方使用同名 `Limits` 字段。修改真实实例配置仍须独立授权。
+
 ```json
 {
   "client_key": "synthetic-local-ingress-token-00000001",

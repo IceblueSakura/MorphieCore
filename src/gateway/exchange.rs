@@ -64,17 +64,33 @@ pub(super) async fn produce_chain(
         let attempt_deadline = deadline
             .min(Instant::now() + Duration::from_millis(candidate.endpoint.execution.timeout_ms));
         let result = tokio::time::timeout_at(attempt_deadline, async {
+            // Each candidate starts from the original immutable input. Only the fixed
+            // bound credential is validated; affinity never chooses or advances it.
+            let mut local = std::borrow::Cow::Borrowed(request);
+            let mut affinity = None;
             let upstream = if let Some(response) = observed.take() {
                 response
             } else {
                 let runtime = runtime.as_ref().ok_or(ApiError::upstream())?;
                 trace.stage(Stage::Prepare);
                 let (secret, grant) = candidate.secret.resolve()?;
+                affinity = super::affinity::choose(&runtime.affinity, candidate, request, trace);
+                if let Some(selection) = &affinity {
+                    if let Some(projected) = selection.project(candidate, request) {
+                        local = std::borrow::Cow::Owned(projected);
+                    } else {
+                        // A hint must not turn an otherwise valid request into a
+                        // body-budget/admission error. Reuse the original projection.
+                        local = std::borrow::Cow::Borrowed(request);
+                        affinity = None;
+                        trace.affinity("unavailable", false, false);
+                    }
+                }
                 let mut prepared = crate::execution::prepare(
                     &candidate.endpoint,
                     &candidate.provider,
                     &secret,
-                    request,
+                    &local,
                 )
                 .map_err(|_| ApiError::invalid())?;
                 if let Some(grant) = grant {
@@ -83,18 +99,37 @@ pub(super) async fn produce_chain(
                             .map_err(|_| ApiError::upstream())?,
                     );
                 }
+                let key_sent = serde_json::from_slice::<serde_json::Value>(&prepared.body)
+                    .ok()
+                    .is_some_and(|v| {
+                        v.get("prompt_cache_key")
+                            .is_some_and(serde_json::Value::is_string)
+                    });
+                let session_sent = prepared
+                    .safe_headers
+                    .iter()
+                    .any(|(name, _)| name == "x-opencode-session");
                 trace.stage(Stage::Connect);
-                runtime
+                let response = runtime
                     .transport
                     .send(
                         prepared,
                         attempt_deadline.saturating_duration_since(Instant::now()),
                     )
                     .await
-                    .map_err(ApiError::transport)?
+                    .map_err(ApiError::transport)?;
+                trace.affinity_carriers(key_sent, session_sent);
+                response
             };
-            intake::produce_candidate(entry, candidate, request, upstream, limits, &lane, trace)
-                .await
+            let successor =
+                intake::produce_candidate(entry, candidate, &local, upstream, limits, &lane, trace)
+                    .await?;
+            if let (Some(selection), Some(successor), Some(runtime)) =
+                (affinity, successor, &runtime)
+            {
+                selection.publish(&runtime.affinity, candidate, Some(&successor));
+            }
+            Ok(())
         })
         .await
         .unwrap_or_else(|_| Err(ApiError::timeout()));

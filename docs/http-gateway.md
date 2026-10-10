@@ -53,7 +53,7 @@ Responses→Chat 上游必须通过[入口配置](credentials.md#gateway-access-
 
 Chat/Responses 接受可选、唯一的 `X-MorphieCore-Conversation-Id` header。值为 1–256 个 ASCII 可见非空白字符，不能含逗号；重复值（即使相同）、逗号合并值、空值、控制字符或超限值在认证后、body 收集前拒绝。它不是官方 OpenAI header，也不表示服务端保存了历史。
 
-SDK/Agent 接入层为同一逻辑对话自动保存并携带同一 ID；新建/分支对话分配新 ID，切换模型不需要了解上游或修改 ID。没有 header 时 Gateway 仅为当前请求生成一次性分组，不与其他请求关联，不回显生成值，也不建立会话服务。多轮请求仍须提交完整必要历史。
+SDK/Agent 接入层为同一逻辑对话自动保存并携带同一 ID；新建/分支对话分配新 ID，切换模型不需要了解上游或修改 ID。没有 header 时 Gateway 保持请求本地 identity，可按[隐式亲和合同](architecture/protocol-and-lowering.md#implicit-cache-affinity)尽力复用兼容目标的内部缓存分组；不回显生成值、不把匹配当 conversation 身份，也不建立会话服务。禁用、未命中或不适用时正常发送完整请求。多轮请求仍须提交完整必要历史。
 
 标准 body `prompt_cache_key` 可省略；显式提供时只表达缓存分组，允许多个 conversation 共享。它不代替 conversation ID，也不是用户必须填写的 Provider 参数。中性 header 不作为授权、凭据选择或 reasoning replay 证明，原值不透传给上游或进入普通诊断日志。
 

@@ -1,5 +1,8 @@
 //! Minimal HTTP ingress over immutable, explicitly bound task entries.
 mod admission;
+mod affinity;
+#[cfg(test)]
+mod affinity_tests;
 mod aliyun_speech;
 mod auth;
 mod body;
@@ -99,6 +102,7 @@ impl BoundEntry {
 }
 struct Runtime {
     diagnostics: Option<diagnostics::Sink>,
+    affinity: affinity::Index,
     auth: auth::Auth,
     entries: BTreeMap<(u8, String), Arc<BoundEntry>>,
     images: BTreeMap<String, Arc<images::BoundImage>>,

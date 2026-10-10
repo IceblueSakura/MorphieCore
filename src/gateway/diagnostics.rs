@@ -109,6 +109,8 @@ fn decode_failure(error: &crate::execution::AttemptError) -> &'static str {
 }
 #[derive(Serialize)]
 struct CandidateRecord {
+    #[serde(flatten)]
+    affinity: AffinityObservation,
     ordinal: usize,
     stage: Stage,
     upstream_status: Option<u16>,
@@ -134,6 +136,10 @@ struct ImageAccountingObservation {
 }
 #[derive(Serialize)]
 struct Record {
+    #[serde(flatten)]
+    affinity: AffinityObservation,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reported_cached_tokens: Option<u64>,
     attempt: String,
     stage: Stage,
     outcome: Outcome,
@@ -155,6 +161,15 @@ struct Record {
     events: EventCounts,
     #[serde(flatten)]
     image: ImageAccountingObservation,
+}
+#[derive(Clone, Copy, Default, Serialize)]
+struct AffinityObservation {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    affinity_source: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    affinity_key_sent: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    affinity_session_sent: Option<bool>,
 }
 impl Sink {
     pub(super) fn open(path: &Path) -> std::io::Result<Self> {
@@ -232,6 +247,8 @@ impl Trace {
         Self {
             sink: sink.filter(|_| id.is_some()).cloned(),
             record: Record {
+                affinity: AffinityObservation::default(),
+                reported_cached_tokens: None,
                 attempt: id.unwrap_or_default().into(),
                 stage: Stage::Admission,
                 outcome: Outcome::Error,
@@ -254,6 +271,8 @@ impl Trace {
         }
     }
     pub(super) fn begin_candidate(&mut self, ordinal: usize) {
+        self.record.affinity = AffinityObservation::default();
+        self.record.reported_cached_tokens = None;
         self.record.upstream_status = None;
         self.record.retry_after_seconds = None;
         self.record.upstream_head_ms = None;
@@ -271,6 +290,7 @@ impl Trace {
             && self.record.candidates.len() < crate::topology::route::MAX_ROUTE_CANDIDATES
         {
             self.record.candidates.push(CandidateRecord {
+                affinity: self.record.affinity,
                 ordinal,
                 stage: self.record.stage,
                 upstream_status: self.record.upstream_status,
@@ -352,6 +372,7 @@ impl Trace {
         if self.sink.is_none() {
             return;
         }
+        self.record.reported_cached_tokens = usage.cached_input_tokens;
         self.record.reported_usage_detail_mask = Some(
             [
                 usage.input_image_tokens,
@@ -421,6 +442,21 @@ impl Trace {
     pub(super) fn handed_off(&mut self, n: usize) {
         self.record.handed_off_bytes = self.record.handed_off_bytes.saturating_add(n as u64);
     }
+    pub(super) fn affinity(&mut self, source: &'static str, key: bool, session: bool) {
+        if self.sink.is_some() {
+            self.record.affinity = AffinityObservation {
+                affinity_source: Some(source),
+                affinity_key_sent: Some(key),
+                affinity_session_sent: Some(session),
+            };
+        }
+    }
+    pub(super) fn affinity_carriers(&mut self, key: bool, session: bool) {
+        if self.sink.is_some() {
+            self.record.affinity.affinity_key_sent = Some(key);
+            self.record.affinity.affinity_session_sent = Some(session);
+        }
+    }
 }
 impl Drop for Trace {
     fn drop(&mut self) {
@@ -428,6 +464,8 @@ impl Drop for Trace {
         if let Some(sink) = self.sink.take() {
             self.record.elapsed_ms = self.start.elapsed().as_millis().min(u64::MAX as u128) as u64;
             let placeholder = Record {
+                affinity: AffinityObservation::default(),
+                reported_cached_tokens: None,
                 attempt: String::new(),
                 stage: Stage::Complete,
                 outcome: Outcome::Complete,

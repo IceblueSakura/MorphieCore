@@ -17,6 +17,6 @@ Accepted.
 
 Stable admission avoids public-contract drift when Providers change. Provider-owned caching requires no answer cache or cross-request routing ownership. Explicit grouping is the stable option; implicit affinity is best-effort, not a promise of maximum hit rate or cross-Provider reuse. The Gateway's separately planned history service owns stateful correctness, never the affinity index. Prefix proofs check declared dependencies; cache hits and benefits require separate observation.
 
-Owners: [catalog](../../../src/topology/catalog.rs), [selector](../../../src/execution/plan.rs), [cache projection](../../../src/protocol/cache.rs), [prefix proof](../../../src/semantic/cache.rs) and [adapter request](../../../src/adapter/request.rs).
+Owners: [catalog](../../../src/topology/catalog.rs), [selector](../../../src/execution/plan.rs), [cache projection](../../../src/protocol/cache.rs), [prefix encoding](../../../src/protocol/cache_affinity.rs), [disposable index](../../../src/gateway/affinity.rs), [prefix proof](../../../src/semantic/cache.rs) and [adapter request](../../../src/adapter/request.rs).
 
-Lifecycle contracts: [implicit affinity](../protocol-and-lowering.md#implicit-cache-affinity) and [history authority](../interaction-contract.md#context-authority). Acceptance of these contracts does not activate the planned index or stateful API.
+Lifecycle contracts: [implicit affinity](../protocol-and-lowering.md#implicit-cache-affinity) and [history authority](../interaction-contract.md#context-authority). Index activation does not implement or authorize the separately planned stateful API.

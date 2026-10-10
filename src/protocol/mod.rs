@@ -4,6 +4,7 @@ pub mod aliyun_asr;
 pub mod aliyun_speech;
 pub mod anthropic;
 pub mod cache;
+pub(crate) mod cache_affinity;
 mod decoded;
 pub use decoded::{CodecError, DecodedRequest, DecodedResponse, ResponseMetadata};
 pub mod extensions;

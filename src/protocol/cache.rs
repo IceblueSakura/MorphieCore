@@ -7,15 +7,30 @@ use crate::semantic::{
 use sha2::{Digest, Sha256};
 
 fn affinity_key(context: &ConversationContext, domain: &[u8]) -> String {
+    grouping_key(
+        context.id().as_bytes(),
+        context.is_conversation_scoped() as u8,
+        domain,
+    )
+}
+fn grouping_key(id: &[u8], kind: u8, domain: &[u8]) -> String {
     let mut hash = Sha256::new();
     hash.update(domain);
-    hash.update([u8::from(context.is_conversation_scoped())]);
-    hash.update((context.id().len() as u32).to_le_bytes());
-    hash.update(context.id().as_bytes());
+    hash.update([kind]);
+    hash.update((id.len() as u32).to_le_bytes());
+    hash.update(id);
     hash.finalize()
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
+}
+/// Candidate-local optimization input, never caller conversation identity.
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(crate) struct InferredAffinity(pub(crate) [u8; 16]);
+impl std::fmt::Debug for InferredAffinity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("InferredAffinity([redacted])")
+    }
 }
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct CacheProjection {
@@ -61,14 +76,18 @@ impl CacheProjection {
         self,
         context: &mut ExecutionHints,
         conversation: Option<&ConversationContext>,
+        inferred: Option<InferredAffinity>,
     ) -> Result<(), CodecError> {
         self.project(context)?;
-        if self.key
-            && context.cache.prompt_cache_key.is_absent()
-            && let Some(group) = conversation.filter(|c| c.is_conversation_scoped())
-        {
-            context.cache.prompt_cache_key =
-                Presence::Value(affinity_key(group, b"MorphieCore.prompt-cache.v1\0"));
+        if self.key && context.cache.prompt_cache_key.is_absent() {
+            let key = if let Some(group) = conversation.filter(|c| c.is_conversation_scoped()) {
+                Some(affinity_key(group, b"MorphieCore.prompt-cache.v1\0"))
+            } else {
+                inferred.map(|group| grouping_key(&group.0, 2, b"MorphieCore.prompt-cache.v1\0"))
+            };
+            if let Some(key) = key {
+                context.cache.prompt_cache_key = Presence::Value(key);
+            }
         }
         Ok(())
     }
@@ -77,11 +96,19 @@ impl CacheProjection {
         self,
         conversation: Option<&ConversationContext>,
         session: Option<&CacheSession>,
+        inferred: Option<InferredAffinity>,
     ) -> Result<String, CodecError> {
         if !self.session_id {
             return Err(CodecError::Unsupported("Go session carrier".into()));
         }
         match (conversation, session) {
+            (Some(group), None) if !group.is_conversation_scoped() && inferred.is_some() => {
+                Ok(grouping_key(
+                    &inferred.expect("checked").0,
+                    2,
+                    b"MorphieCore.go-session.v1\0",
+                ))
+            }
             (Some(group), None) => Ok(affinity_key(group, b"MorphieCore.go-session.v1\0")),
             (None, Some(session)) => Ok(session.header_value()?.into()),
             _ => Err(CodecError::Invalid("request grouping")),

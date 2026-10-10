@@ -37,6 +37,8 @@ pub struct EmbeddingEntry {
 }
 #[derive(Clone, Debug)]
 pub struct Limits {
+    /// Disposable implicit affinity only; explicit grouping remains available when disabled.
+    pub implicit_cache_affinity: bool,
     pub request_bytes: usize,
     pub response_bytes: usize,
     /// Decoded output bytes per image; cannot enlarge response or endpoint ceilings.
@@ -58,6 +60,7 @@ pub struct Limits {
 impl Default for Limits {
     fn default() -> Self {
         Self {
+            implicit_cache_affinity: true,
             request_bytes: 256 << 10,
             response_bytes: 8 << 20,
             image_bytes: 2 << 20,
@@ -417,6 +420,7 @@ impl Gateway {
         Ok(Self {
             state: Arc::new(Runtime {
                 diagnostics: None,
+                affinity: super::affinity::Index::new(limits.implicit_cache_affinity),
                 auth,
                 entries: activated,
                 images,

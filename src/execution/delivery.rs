@@ -114,6 +114,63 @@ impl ResponseDelivery {
             Ok(())
         }
     }
+    fn client_response(
+        &self,
+        attempt: &Attempt,
+    ) -> Result<crate::protocol::DecodedResponse, AttemptError> {
+        let mut decoded = attempt.response()?.clone();
+        decoded.metadata = self.metadata(attempt)?;
+        if self.adapter.protocol == Profile::Responses {
+            for (owner, _) in decoded.semantic.items() {
+                if decoded.fidelity.response_item_id(*owner).is_none() {
+                    decoded.fidelity.record_response_item_id(
+                        *owner,
+                        &delivery_item_id(&self.public_label, &decoded.metadata.id, *owner),
+                    )?;
+                }
+            }
+        }
+        Ok(decoded)
+    }
+    /// Bounded cache-only projection of exactly the delivered values; not stored history.
+    pub(crate) fn cache_successor(
+        &self,
+        attempt: &Attempt,
+        request: &crate::adapter::Request,
+    ) -> Option<crate::adapter::Request> {
+        use crate::protocol::cache_affinity::{MAX_PROMPT_BYTES, prefixes};
+        if self.rejected
+            || self.lifecycle.state() != crate::execution::DeliveryState::Terminal
+            || attempt.response().ok()?.semantic.outcome()
+                != crate::semantic::task::generation::Outcome::Completed
+        {
+            return None;
+        }
+        let mut input = self
+            .adapter
+            .encode_request(request, &self.public_label, &self.contract)
+            .ok()?;
+        prefixes(&input, self.adapter.protocol)?;
+        let decoded = self.client_response(attempt).ok()?;
+        let output = self
+            .adapter
+            .encode_response(&decoded, &self.contract)
+            .ok()?;
+        crate::semantic::value::json_size(&output, MAX_PROMPT_BYTES).ok()?;
+        let (field, items) = match self.adapter.protocol {
+            Profile::Chat => (
+                "messages",
+                vec![output.get("choices")?.get(0)?.get("message")?.clone()],
+            ),
+            Profile::Responses => ("input", output.get("output")?.as_array()?.clone()),
+        };
+        input.get_mut(field)?.as_array_mut()?.extend(items);
+        prefixes(&input, self.adapter.protocol)?;
+        crate::semantic::value::json_size(&input, MAX_PROMPT_BYTES).ok()?;
+        self.adapter
+            .decode_request(&serde_json::to_vec(&input).ok()?)
+            .ok()
+    }
     pub fn encode_json(&mut self, attempt: &Attempt) -> Result<Vec<u8>, AttemptError> {
         let result = (|| {
             self.ready()?;
@@ -121,18 +178,7 @@ impl ResponseDelivery {
                 return Err(AttemptError::Delivery("stream already started"));
             }
             self.bind(attempt)?;
-            let mut decoded = attempt.response()?.clone();
-            decoded.metadata = self.metadata(attempt)?;
-            if self.adapter.protocol == Profile::Responses {
-                for (owner, _) in decoded.semantic.items() {
-                    if decoded.fidelity.response_item_id(*owner).is_none() {
-                        decoded.fidelity.record_response_item_id(
-                            *owner,
-                            &delivery_item_id(&self.public_label, &decoded.metadata.id, *owner),
-                        )?;
-                    }
-                }
-            }
+            let decoded = self.client_response(attempt)?;
             let value = self.adapter.encode_response(&decoded, &self.contract)?;
             let body = serde_json::to_vec(&value)
                 .map_err(|_| AttemptError::Protocol("body serialization"))?;

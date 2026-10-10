@@ -32,11 +32,11 @@ Requirements 从最终值和 delivery 推导，不含路由选择。每个固定
 
 下游只表达 Provider 无关的逻辑 conversation；HTTP carrier 归[网关指南](../http-gateway.md#conversation-context)，typed owner 为共享 `ConversationContext`。它区分稳定 conversation 与独立请求范围，不存历史，不证明认证、issuer 或 replay 兼容。上游 session/cache 载体由目标内部选择，消费者不承担 Provider 分组规则。
 
-以下为当前显式路径；隐式索引尚待接线，现行无 header 请求仍采用一次性分组。
+显式分组与下述有界隐式优化共用纯目标投影；缺省请求仍具有独立的请求 identity，推断亲和不把它改成真实 conversation。
 
-- 有显式 conversation 时，同一逻辑对话保持 ID，切换模型/Provider 不要求更换；缺省 HTTP 请求分配一次性分组，不从内容、用户、cache key 或凭据推断跨请求关联。分组在候选预检前确定，候选/attempt 不重新分配。
-- `prompt_cache_key` 仍是独立可选缓存分组，可以跨 conversation 共用。显式 value/null 按目标准入与原 presence 处理；只有 absent 且具有 conversation 范围时，才在支持标准 key 的目标副本派生默认 key。独立请求不自动填充标准 key，未发送 hint 不等于关闭自动缓存。
-- Go Chat/native Messages 只从中性上下文派生 `x-opencode-session`，不从 cache key 反推 session；原生 body 不增加 cache/session 字段。派生编码使用有版本、用途隔离的确定性 SHA-256，生成有界 ASCII，算法归 [cache projection](../../src/protocol/cache.rs)，不是认证凭据或必要 replay 证明。
+- 有显式 conversation 时，同一逻辑对话保持 ID，切换模型/Provider 不要求更换。缺省 HTTP 请求在候选预检前分配一次性 identity；优化层只能为固定兼容候选选择内部亲和提示，不改写该 identity，不按用户、cache key 或凭据猜 conversation。
+- `prompt_cache_key` 仍是独立可选缓存分组，可以跨 conversation 共用。显式 value/null 按目标准入与原 presence 处理；absent 时可从显式 conversation 或候选局部亲和提示派生默认 key。禁用或不适用隐式优化的独立请求不自动填充标准 key，未发送 hint 不等于关闭自动缓存。
+- Go Chat 从显式中性上下文、候选局部亲和提示或请求本地分组派生 `x-opencode-session`；native Messages 保持其显式上下文路径。不从 cache key 反推 session，原生 body 不增加 cache/session 字段。派生编码使用有版本、用途隔离的确定性 SHA-256，生成有界 ASCII，算法归 [cache projection](../../src/protocol/cache.rs)，不是认证凭据或必要 replay 证明。
 - HTTP Chat/Responses 均拒绝 Provider `session_id` body。纯库低层的显式 Provider 分组仍可用于独立原生 wire 准备；它与中性上下文不能同时成为权威。纯 codec 不生成随机 ID，也不解析 HTTP headers。
 - 未映射的 advisory key/retention 仅按既有 cache projection 从目标副本省略；非法 typed 值先拒绝，活动 cache options 仍需目标准入。新上下文只进入可选缓存前缀检查，不增加 reasoning replay 的 conversation/key 绑定。
 
@@ -55,7 +55,11 @@ Requirements 从最终值和 delivery 推导，不含路由选择。每个固定
 - 编辑、压缩、格式变化、歧义、过期、禁用、容量不足或索引故障均可视为未命中；按原合同发送完整请求。该降级不吞原请求的验证错误，不添加 retry/fallback。TTL、条目/累计内存和每请求检查点均有硬界限，索引可随时丢弃。
 - 稳定前缀优先于更复杂的匹配。是否派生 key、发送 session header 或使用原生缓存控制归具体 profile；不为所有目标强制同一策略。索引命中与实际 cache-read/usage 分别观察，未报告不补零，不以高命中率作为正确性门槛。
 
-Gateway 拥有索引和候选局部亲和元数据，纯 codec/lowering 只消费显式投影输入。与权威历史存储的失败边界归[交互合同](interaction-contract.md#context-authority)，下一实现片归[缓存计划](../implementation-plans/cache-affinity-draft.md)。
+当前 Chat/Responses 的完整文本、普通 function 与可读 reasoning 历史使用有版本的[最终 wire 前缀编码](../../src/protocol/cache_affinity.rs)；媒体、opaque、custom/program/Provider tool history 等未声明组合跳过推断。完整目标值编码后才取摘要，保留 system/tools、实际 call/item ID、参数字符串、顺序和精确数值；派生 hint、delivery、计量及非 prompt envelope 不参与匹配。只查询有限完整 item 边界，登记完整请求及可表示的后继输出前缀，不截断、拼补或存储正文。
+
+Gateway 的[索引](../../src/gateway/affinity.rs)以固定候选的受信 identity/scope 和 profile 修订隔离，默认启用且可关闭；TTL、记录/累计内存、编码和检查点硬界限归索引与编码 owner。非阻塞锁竞争、poison、禁用、过期、淘汰与同摘要不同分组的歧义均按未命中处理。凭据正常刷新不改变已绑定身份；材料/身份/epoch 失效仍由现有 loader 拒绝。
+
+[候选接线](../../src/gateway/exchange.rs)验证固定凭据后选择提示，从原请求构造私有副本并重新预检；hint 超出预算时回到原投影，不把优化失败变成请求错误。严格上游 EOF、完整语义终态、最终目标投影及下游 handoff 成立后才发布记录，取消、失败或不可表示的后继输出不登记。纯 codec/lowering 不访问索引。启停方式归[启动配置](../credentials.md#gateway-access-绑定)，与权威历史存储的失败边界归[交互合同](interaction-contract.md#context-authority)。
 
 ## Semantic loss
 

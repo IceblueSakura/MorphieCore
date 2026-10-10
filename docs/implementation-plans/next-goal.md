@@ -14,7 +14,6 @@
 ### API 与缓存目标
 
 - 当前保持 ClientManaged 完整输入；显式会话 ID 是稳定分组方案，隐式缓存只求尽力，不追求绝对命中率或跨 Provider 缓存。
-- 下一候选实现片是[短 TTL 亲和索引的最小闭环](cache-affinity-draft.md)，不保存历史正文，不以它阻塞或替代未完成的 Anthropic/F 消费链。
 - 网关自管 `previous_response_id` 历史服务是[确定的终期目标](#stateful-api)，不是仍待决定是否实现。亲和索引与历史存储分开，权威和失败合同归[交互](../architecture/interaction-contract.md#context-authority)。
 
 **先功能，后稳定性专项。** 保留现有认证、资源、取消和终态回归；新增工作从实际消费需求或最小反例出发，不扩张通用调度、重试或防御框架。
@@ -31,7 +30,7 @@
 
 | 优先级 | 工作 | 退出条件 |
 |---|---|---|
-| 1 | 无状态主线：缓存亲和小片、Agent 兼容与 Anthropic 原生接入 | 按[缓存计划](cache-affinity-draft.md)闭合最小隐式优化后停止扩张；保留并继续原生/标准消费者的独立验收，不以缓存或原生成功代替完整回传 |
+| 1 | 无状态主线：Agent 兼容与 Anthropic 原生接入 | 闭合原生/标准消费者的独立验收；不以缓存或原生成功代替完整回传，也不先扩张缓存匹配或历史服务 |
 | 2 | Embedding 与图片/音频扩展 | 按实际需求选择编码、输入、产物或独立 operation；不从已有分支推定更广支持 |
 | 3 | 文件操作与 Responses 文件消费 | 定服务操作、存储/访问/删除生命周期及 Gateway ID 与 issuer-bound ID 的关系，再闭合所选消费链 |
 | 4 | 终期网关自管有状态 Responses API | 按[终期计划](#stateful-api)闭合限时历史、标准引用、工具续轮与 JSON/SSE；不依赖上游会话存储 |

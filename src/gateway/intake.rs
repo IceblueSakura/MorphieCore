@@ -93,7 +93,7 @@ pub(super) async fn produce_candidate(
     limits: &Limits,
     lane: &Lane<'_>,
     trace: &mut Trace,
-) -> Result<(), ApiError> {
+) -> Result<Option<Request>, ApiError> {
     trace.stage(Stage::ResponseHead);
     let status = upstream.status().as_u16();
     trace.head(status, upstream.headers());
@@ -184,5 +184,10 @@ pub(super) async fn produce_candidate(
         attempt.cancel();
         delivery.cancel();
     }
-    result
+    result?;
+    Ok(request
+        .inferred_affinity
+        .is_some()
+        .then(|| delivery.cache_successor(&attempt, request))
+        .flatten())
 }

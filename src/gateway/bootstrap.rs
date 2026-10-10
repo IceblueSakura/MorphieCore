@@ -43,12 +43,17 @@ struct Configuration {
     /// Explicit Responses entry on the fixed Chat endpoint; never a fallback route.
     #[serde(default)]
     responses_via_chat: Vec<String>,
+    #[serde(default = "enabled")]
+    implicit_cache_affinity: bool,
     /// Trusted global ceiling; probes set one to forbid hidden extra dispatches.
     #[serde(default)]
     max_attempts: Option<usize>,
 }
 fn listen() -> SocketAddr {
     ([127, 0, 0, 1], 8080).into()
+}
+fn enabled() -> bool {
+    true
 }
 pub struct Bootstrap {
     pub gateway: Gateway,
@@ -299,7 +304,10 @@ impl Bootstrap {
             credentials,
             SecretMaterial::new(configuration.client_key.expose())
                 .map_err(|_| StartupError::Credentials)?,
-            Limits::default(),
+            Limits {
+                implicit_cache_affinity: configuration.implicit_cache_affinity,
+                ..Limits::default()
+            },
             proxy.or(configuration.proxy.as_deref()),
             environment,
         )?;

@@ -71,6 +71,7 @@ NUMBERS = {
     "event_items", "event_reasoning_items", "event_parts", "event_deltas", "event_item_closures",
 }
 BOOLS = {
+    "affinity_key_sent", "affinity_session_sent",
     "image_answer_format_ok", "image_color_order_ok",
     "sdk_consumed",
     "reasoning_content_stream_ok",
@@ -85,6 +86,8 @@ BOOLS = {
     "audio_decoded", "transcription_ok",
 }
 ENUMS = {
+    "affinity_source": {"miss", "hit", "ambiguous", "disabled", "unsupported",
+                        "unavailable", "explicit", "explicit_or_unmapped"},
     "projection_failure": {None, "usage_details", "usage", "reported_facts",
         "message_grouping", "unmigrated_semantic", "replay", "metadata", "system_fingerprint",
         "terminal", "other", "codec"},

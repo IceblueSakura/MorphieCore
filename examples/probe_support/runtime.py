@@ -162,6 +162,8 @@ def diagnostics(run):
             if re.fullmatch(run.plan["id"] + r":[1-9][0-9]{0,5}", identity):
                 # Reports expose only the sink's closed scalar schema.
                 allowed = {
+                    "affinity_source", "affinity_key_sent", "affinity_session_sent",
+                    "reported_cached_tokens",
                     "stage",
                     "upstream_status",
                     "retry_after_seconds",

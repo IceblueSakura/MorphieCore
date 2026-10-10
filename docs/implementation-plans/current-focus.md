@@ -1,7 +1,5 @@
 # 当前开发焦点
 
-下一候选小片为[无状态隐式缓存亲和](cache-affinity-draft.md)，仅完成规划，尚未启动行为变更。实施时在本页固定其可观察结果、反例和停止点；下方 F 的未完成方向继续保留，不由文档修订自动收口或扩张。
-
 ## F：Gateway 自有续轮载荷与标准消费者
 
 可观察结果：标准 Responses 能交付、保存并回传 Gateway 自有认证加密载荷，内部原生 signature 不冒充 OpenAI 签发值。切换 Provider 或 Model 时不续传 opaque，同目标必须重验必要依赖。

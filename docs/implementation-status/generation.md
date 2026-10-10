@@ -23,7 +23,7 @@
 | Opaque 权威 | 已闭合 item 的迟到补全、替换与撤销；[待决问题](open-questions.md#reasoning-opaque-的闭合后权威) |
 | 限定工具选择 | 固定标准类型缺少 namespace-qualified `tool_choice` 位置；[namespace profile](../architecture/responses-text-profile.md#tool-namespaces) |
 | Cache / usage | Provider 断点、TTL、远端缓存资源与更广 scoped 报告映射；[cache](../../src/semantic/cache.rs)、[usage views](../../src/semantic/task/generation/usage_views.rs) |
-| 隐式缓存亲和 | 短 TTL 前缀索引、兼容域绑定、候选局部投影和有界观察尚未接线；显式中性上下文不等于已具备隐式命中；[投影合同](../architecture/protocol-and-lowering.md#implicit-cache-affinity)与[下一片](../implementation-plans/cache-affinity-draft.md) |
+| 更广隐式缓存亲和 | 媒体、opaque 及其他未声明 history 的前缀匹配须另片定稿；当前按[所选合同](../architecture/protocol-and-lowering.md#implicit-cache-affinity)跳过推断，不以 cache-read 报告证明索引命中或历史权威 |
 | 网关限时历史 | 确定的终期目标，尚无 Gateway response 引用、授权存储、物化及过期/分支/提交闭环；当前 `previous_response_id`/`store` 占位或拒绝不是实现；[历史合同](../architecture/interaction-contract.md#server-managed-context) |
 | 文本 / Schema | 未准入的控制/history、概率、reported context、多 part、方言/引用坐标、adherence evaluator 与更广 timestamp/metadata；[Chat](../architecture/chat-text-profile.md)、[Responses](../architecture/responses-text-profile.md)、[Schema](../architecture/schema-profile.md) |
 

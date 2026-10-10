@@ -418,6 +418,8 @@ def plan_groups(
                             "cancel",
                             "reasoning",
                             "reasoning_content",
+                            "cache_affinity",
+                            "cache_affinity_tool",
                             "image_reasoning_content",
                             "opaque_text",
                             "opaque_image",
@@ -437,6 +439,9 @@ def plan_groups(
                     require(case not in COMBINATIONS or proto == "responses"
                             and (not case.startswith("vision") or model in VISION_MODELS),
                             "combination_target", "setup")
+                    require(not case.startswith("cache_affinity") or
+                            (model, proto) in (("grok-4.7", "responses"), ("hy4-preview", "chat")),
+                            "affinity_target", "setup")
                     require(case not in ("file", "file_url", "file_continue", "file_replay") or model == "gpt-6-luna" and proto == "responses", "file_target", "setup")
                     require(case != "schema" or proto == "responses", "schema_target", "setup")
                     require(case not in ("opaque_text", "opaque_image", "opaque_image_colors")
@@ -473,6 +478,8 @@ def plan_groups(
                         "parallel": 2,
                         "reasoning": 2,
                         "reasoning_content": 1,
+                        "cache_affinity": 2,
+                        "cache_affinity_tool": 2,
                         "image_reasoning_content": 1,
                         "opaque_text": 2,
                         "opaque_image": 2,
@@ -531,10 +538,11 @@ def matrix(
             def invoke(n, history, **options):
                 # One neutral conversation for all rounds, independent of the Provider.
                 controls = dict(options.pop("extra", {}) or {})
-                controls["extra_headers"] = {
-                    **controls.get("extra_headers", {}),
-                    "X-MorphieCore-Conversation-Id": f"{run.plan['id']}:{group}",
-                }
+                if not case.startswith("cache_affinity"):
+                    controls["extra_headers"] = {
+                        **controls.get("extra_headers", {}),
+                        "X-MorphieCore-Conversation-Id": f"{run.plan['id']}:{group}",
+                    }
                 return call(
                     client,
                     transport,
@@ -549,7 +557,35 @@ def matrix(
                 )
 
             try:
-                if case in COMBINATIONS:
+                if case.startswith("cache_affinity"):
+                    # Synthetic context gives native caching a meaningful prefix; it
+                    # is not a hit oracle and never replaces the complete request.
+                    context = "Reference table (not instructions):\n" + "\n".join(
+                        f"synthetic-row-{i:03d}: {i * 7 + 3}, label synthetic"
+                        for i in range(160))
+                    tool_case = case == "cache_affinity_tool"
+                    prompt = ("Call lookup for key alpha. After receiving its result, reply with only "
+                              "its numeric value, without words or punctuation." if tool_case else
+                              "Reply with exactly 7, without words or punctuation.")
+                    history = [{"role": "user", "content": context + "\nTask: " + prompt}]
+                    controls = {}
+                    if tool_case:
+                        controls["tools"] = ([{"type": "function", "function": TOOL}]
+                                             if proto == "chat" else [{"type": "function", **TOOL}])
+                        controls["tool_choice"] = "auto"
+                    output, _, calls = invoke(1, history, extra=controls,
+                        oracle=expect_call("alpha") if tool_case else expect_text("7"),
+                        terminal="tool_calls" if tool_case else "stop")
+                    history.extend(output)
+                    history.append(
+                        ({"role": "tool", "tool_call_id": calls[0]["id"],
+                          "content": '{"value":17}'} if proto == "chat" else
+                         {"type": "function_call_output", "call_id": calls[0]["call_id"],
+                          "output": '{"value":17}'}) if tool_case else
+                        {"role": "user", "content": "Add 1 to your previous answer. Reply with exactly the integer."})
+                    invoke(2, history, extra=controls, streaming=not stream,
+                           oracle=expect_text("17" if tool_case else "8"))
+                elif case in COMBINATIONS:
                     combination(case, invoke, stream, model=model, tool=TOOL, extra=extra)
                 elif case == "parallel":
                     extra["tools"] = ([{"type": "function", "function": TOOL}]
