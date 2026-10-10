@@ -5,6 +5,8 @@ mod semantic;
 mod semantic_intake;
 mod semantic_request;
 mod shape;
+mod sse;
+pub use sse::MessageSseDecoder;
 mod target;
 use crate::protocol::CodecError;
 pub use request::*;

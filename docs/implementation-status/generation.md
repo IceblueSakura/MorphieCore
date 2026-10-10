@@ -13,7 +13,7 @@
 | 资源与引用 | issuer-bound 原生映射、更多有单位坐标、访问/期限条件的目标表示与资源生命周期；[资源表](../../src/semantic/task/generation/resource_table.rs)、[引用](../../src/semantic/task/generation/citation.rs) |
 | 独立 task / 媒体 | Embedding 的 token/Base64/稀疏/多模态/Batch 增量、流式图片/产物、通用音频 history、完整字幕/说话人/翻译、更多编码及 Realtime；各[profile](../architecture/README.md#当前-profiles)与[计划](../implementation-plans/next-goal.md#延期目标与恢复条件) |
 | 标准客户端覆盖 | 所选 profile 以外的 standard union、结构化参数/结果、执行报告、进度和非 operation-final usage 的公开载体；[客户端边界](../architecture/client-generation-profile.md) |
-| 原生协议 | Google Interactions 原生主链；Anthropic SSE reducer、目标/标准客户端接线与实例准入；所选静态映射、typed adapter/admission 与显式原请求 JSON intake 不代表完整闭环；[Messages profile](../architecture/anthropic-messages-profile.md) |
+| 原生协议 | Google Interactions 原生主链；Anthropic 目标/标准客户端接线、实例准入及增量 native→标准事件交付；原生 JSON/有界 SSE 聚合与 typed adapter/admission 不代表完整消费者闭环；[Messages profile](../architecture/anthropic-messages-profile.md) |
 | 交互依赖 | 跨 response 逻辑 turn、continuation、部分结果 history 的执行准入，以及逐格式 replay 的原生交付；[交互合同](../architecture/interaction-contract.md) |
 | 客户端工具错误 | 标准客户端新错误的 carrier 与投影尚未定稿，不能从正文推断错误位或 execution；共享值与原生静态映射归[结果错误合同](../architecture/interaction-contract.md#client-tool-result-errors)与[所选原生映射](../architecture/anthropic-messages-profile.md) |
 | Provider 工具 / 配置 | 更广工具动作、内容、来源引用、定义修订、配置和受保护变换的原生映射；[Provider 观察](../../src/semantic/task/generation/provider.rs)、[配置](../../src/semantic/task/generation/configuration.rs) |

@@ -1,6 +1,6 @@
 # Anthropic Messages 文本与客户端工具合同
 
-本页维护所选原生库场景的合同。[wire 类型/校验](../../src/protocol/anthropic/mod.rs)、所选[静态语义映射](../../src/protocol/anthropic/semantic.rs)、typed adapter/admission 与显式原请求上下文的 JSON intake 可独立使用；SSE、标准消费者与实例准入仍未闭合。共享概念归 [Generation 交互](interaction-contract.md)，通用投影边界归 [protocol/lowering](protocol-and-lowering.md)，未完成工作归[接入计划](../implementation-plans/anthropic-messages-draft.md)。它不是公开 `/v1/messages` 或标准 Responses 的新准入。
+本页维护所选原生库场景的合同。[wire 类型/校验](../../src/protocol/anthropic/mod.rs)、所选[语义映射](../../src/protocol/anthropic/semantic.rs)、typed adapter/admission 与显式原请求上下文的 JSON/有界 SSE intake 可独立使用；完整标准消费者与实例准入仍未闭合。共享概念归 [Generation 交互](interaction-contract.md)，通用投影边界归 [protocol/lowering](protocol-and-lowering.md)，未完成工作归[接入计划](../implementation-plans/anthropic-messages-draft.md)。它不是公开 `/v1/messages` 或标准 Responses 的新准入。
 
 ## 范围与采用依据
 
@@ -26,7 +26,17 @@ Custom/grammar 包装、namespace、server/program tools、媒体、redacted thi
 
 [上游 adapter](../../src/adapter/upstream.rs)与客户端 OpenAI Profile 分开；[operation 声明](../../src/provider/definition.rs)决定固定 path/auth，编译和准备都检查 origin、path 与 credential kind/domain。Messages 使用 x-api-key，不全局切换 Chat 的认证；业务数据不能覆盖这些绑定。[低层原生准备](../../src/execution/messages.rs)只对已选 endpoint 和匹配模型验证 wire/headers/budget，不取凭据、不联网，也不替代语义准入。Go session 由中性上下文按[内部缓存投影](protocol-and-lowering.md#cache-affinity-projection)派生；纯原生 wire 准备仍接受独立的显式 Provider 分组，不将该低层参数暴露为下游 HTTP 输入。
 
-[Request::from_generation](../../src/adapter/request.rs)提供非 OpenAI DTO 的 typed 入口；native adapter、candidate preflight 与 prepare 共用所选语义投影，保留 operation path/auth 和显式 session 的检查。有限 Public Model 合同只可声明 profile 实际实现的语义，native replay 的 Provider scope 必须与固定 endpoint 一致；不发布空壳能力。[Attempt::native_messages](../../src/execution/attempt.rs)只在已有显式原请求上下文时接收有界静态 JSON，完整字节输入结束后才 materialize，完成/取消后释放原请求。SSE intake、Gateway/binary 激活仍拒绝；库绑定不等于指定目标可用。静态语义片不接受空 system blocks 或流式意图，不将其改成缺省。
+[Request::from_generation](../../src/adapter/request.rs)提供非 OpenAI DTO 的 typed 入口；native adapter、candidate preflight 与 prepare 共用所选语义投影，保留 operation path/auth 和显式 session 的检查。流式交付在 typed Request 的独立 delivery 中表达，原生 wire 的 stream 与 Accept 一致，仍需 endpoint 明确允许；null 与 OpenAI stream options 不被吞掉。静态 task 解码不代为解释 wire 的 streaming 交付控制，不接受空 system blocks。
+
+有限 Public Model 合同只可声明 profile 实际实现的语义，native replay 的 Provider scope 必须与固定 endpoint 一致；不发布空壳能力。[Attempt::native_messages](../../src/execution/attempt.rs)只在已有显式原请求上下文时接收有界 JSON 或 SSE，严格 EOF 后才 materialize，完成/取消后释放原请求。Gateway/binary 激活仍未接线；库绑定不等于指定目标可用。
+
+### 原生 SSE 责任边界
+
+[MessageSseDecoder](../../src/protocol/anthropic/sse.rs)复用现有 framer，每次只消费一个 frame，保留有界最终 Message 状态而非帧日志。Opening、连续 index 的 block start/delta/stop、累计 message delta、message stop 与严格 EOF 分开检查；error、错序、重复 closure、缺终态或尾随业务事件均 poison 并释放状态，ping 只允许在 message stop 前。EOF 不补事件分隔符。
+
+Text/thinking/signature 保留初始值与实际增量；进入 signature 阶段后不再接受 thinking 文字。Tool opening 只接受空 object，闭合时对实际 JSON 分片使用共享精确、拒绝重复 key 的 parser；没有分片的已报告空 object 只有在合法 block/message closure 和 EOF 后才可成为空参数。Partial JSON 不补 `{}`，signature 必须非空且完整。Usage 按实际累计快照更新，不求和；缺省字段不覆盖之前报告，显式 null 不补数值。
+
+Wire/frame/event 与语义 bytes/nodes 各自有硬界限，append 前验证。该路径目前是有界聚合后的静态语义 intake，不证明增量 native→标准事件交付。独立 static/分片/字节切分、失败、预算与取消预期归 [native SSE tests](../../tests/transport/anthropic_sse.rs)；未知 beta、redacted thinking 与更广报告仍拒绝。
 
 ## 请求、Schema 与消息位置
 
@@ -62,7 +72,7 @@ Custom/grammar 包装、namespace、server/program tools、媒体、redacted thi
 
 - 默认控制留给受信模型/profile，不把缺省解释为关闭。所选默认 adaptive 路径不插入旧式 enabled/budget_tokens，不擅自填 effort 或删除显式 sampling。静态原生映射保留显式 adaptive/display/effort，不因此扩大标准目标或产品绑定，也不从 pi 的通用默认推断具体模型行为。
 - `max_tokens` 是包含 thinking 的总输出上限，不是 reasoning 的独立硬上限；小预算可能在可见回答出现前合法截断。请求 summarized display 不解除必要签名回传。
-- 静态完整 block 验证后最终化；SSE 在原 block 中依次构造 thinking/signature，content_block_stop 后才是完整值。非空签名或初始空对象不证明 block 完成；迟到 signature、缺 closure、error、取消与异常 EOF 不恢复成功。D 仍需固定完整事件 grammar。
+- 静态完整 block 验证后最终化；SSE 在原 block 中依次构造 thinking/signature，content_block_stop 后才是完整值。非空签名或初始空对象不证明 block 完成；迟到 signature、缺 closure、error、取消与异常 EOF 不恢复成功，严格 EOF 后才建立原请求依赖。
 - 同目标保存→追加结果→回传须保持整块文字/签名及原始顺序。必要签名丢失时拒绝保持同等续轮的请求；不生成空签名、不把可见 thinking 降为 assistant text，也不从来源记录恢复删除值。
 - 绑定在受信 intake 取得原请求与输出前缀时建立，覆盖 system、tools、之前的 messages/blocks 和来源容器安排，包括同一输出中位于本 block 之前的内容。编辑、重排或删除该前缀使绑定失效；只追加本 block 之后的工具结果/新输入不自行改变它。不能到编码时对修改后的 history 重新取证，不能用笼统“同 key/model/session”替代依赖检查。
 - 上述是本地必要条件，不证明 wire 前缀符合 issuer 检查、聚合层账号稳定或签名确被模型使用。账号/目标来源未知需明确报告；不采用同目标 prefix mismatch 自动 drop_block。切换 Provider 或 Model 时不续传 opaque；可见 thinking 的目标转换仍须独立定稿，不反向修改原观察。

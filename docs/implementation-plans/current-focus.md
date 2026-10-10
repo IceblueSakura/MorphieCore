@@ -6,7 +6,7 @@
 
 - F：闭合完整标准响应的投影、下游本地响应时间及固定消费者；复用[显式 item 载荷与认证前缀恢复](../architecture/anthropic-messages-profile.md#gateway-自有续轮载荷)，不把 item 级签发/验证等同于完整或公开交付，不新增独立 attachment。
 - 独立失败例：同样错误位对应未执行/执行失败；前缀编辑、owner 删除、签名移挂；载荷篡改/错误密钥/超限；同目标必要回传缺失；跨 Provider/Model 续传 opaque。
-- 非目标：D 的原生 SSE reducer、E 的目标激活/真实调用；密钥生命周期与服务端会话存储。Go 分组独立遵循[缓存载体合同](../architecture/protocol-and-lowering.md#cache-affinity-projection)，不从加密 reasoning 反推；客户端新工具错误的公开载体仍须定稿。
+- 非目标：E 的目标激活/真实调用、增量 native→标准事件交付、密钥生命周期与服务端会话存储。Go 分组独立遵循[缓存载体合同](../architecture/protocol-and-lowering.md#cache-affinity-projection)，不从加密 reasoning 反推；客户端新工具错误的公开载体仍须定稿。
 - 验证：最低 owner 独立 synthetic 回归与受影响 Rust 离线基线。固定消费者与公开 Gateway 接线只在其前置合同成立后验证，不将纯库通过当作完整 F 验收。
 - 停止点：闭合当前可独立验证的静态责任边界；遇到错误载体等实质未决选择时保留明确缺口，不静默降级，不提交或部署。
 

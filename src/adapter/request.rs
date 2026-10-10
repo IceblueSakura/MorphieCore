@@ -69,7 +69,6 @@ impl Request {
             )?;
         }
         if context != ExecutionHints::default()
-            || self.delivery.streaming()
             || self.delivery.stream == Presence::Null
             || !self.delivery.options.is_absent()
             || self.extensions != CustomSections::default()

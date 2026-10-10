@@ -37,14 +37,14 @@ impl Default for SseLimits {
     }
 }
 impl SseLimits {
-    pub(super) fn validate(self) -> Result<(), SseError> {
+    pub(crate) fn validate(self) -> Result<(), SseError> {
         if self.max_event_bytes == 0 || self.max_wire_bytes == 0 || self.max_events == 0 {
             return Err(SseError::Limit);
         }
         Ok(())
     }
 }
-pub(super) fn validate_http(status: u16, content_type: &str) -> Result<(), SseError> {
+pub(crate) fn validate_http(status: u16, content_type: &str) -> Result<(), SseError> {
     let media: mime::Mime = content_type.parse().map_err(|_| SseError::Http)?;
     if status != 200
         || media.type_() != mime::TEXT

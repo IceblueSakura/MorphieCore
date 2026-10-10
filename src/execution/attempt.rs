@@ -176,6 +176,7 @@ enum Intake {
     Static(Vec<u8>),
     Responses(ResponsesSseDecoder),
     Chat(ChatSseDecoder),
+    Messages(crate::protocol::anthropic::MessageSseDecoder),
     Closed,
 }
 
@@ -245,6 +246,19 @@ impl Attempt {
                 if self.native_source.is_none() {
                     return Err(AttemptError::Protocol("missing native request context"));
                 }
+                if media == "text/event-stream" {
+                    self.intake =
+                        Intake::Messages(crate::protocol::anthropic::MessageSseDecoder::new(
+                            status,
+                            content_type,
+                            SseLimits {
+                                max_wire_bytes: self.limits.max_wire_bytes.min(self.body_limit),
+                                max_event_bytes: self.limits.max_event_bytes.min(self.body_limit),
+                                ..self.limits
+                            },
+                        )?);
+                    return Ok(());
+                }
                 if media != "application/json"
                     && !(media.starts_with("application/") && media.ends_with("+json"))
                 {
@@ -300,6 +314,7 @@ impl Attempt {
                 }
                 Intake::Responses(decoder) => decoder.consume(chunk)?,
                 Intake::Chat(decoder) => decoder.consume(chunk)?,
+                Intake::Messages(decoder) => (decoder.consume(chunk)?, vec![]),
                 _ => return Err(AttemptError::Protocol("attempt is closed")),
             };
             if matches!(events.last(), Some(StreamEvent::Terminal { .. })) {
@@ -356,6 +371,18 @@ impl Attempt {
                     Intake::Chat(d) => {
                         d.finish()?;
                         d.materialize()?
+                    }
+                    Intake::Messages(d) => {
+                        let (source, target, scope) = self
+                            .native_source
+                            .as_ref()
+                            .ok_or(AttemptError::Protocol("missing native request context"))?;
+                        self.adapter.messages()?.decode_generation_message(
+                            d.finish()?,
+                            *scope,
+                            source,
+                            target,
+                        )?
                     }
                     _ => return Err(AttemptError::Protocol("attempt is closed")),
                 })

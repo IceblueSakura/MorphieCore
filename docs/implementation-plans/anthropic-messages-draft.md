@@ -1,6 +1,6 @@
 # Agent 使用方案驱动的 Anthropic Messages 接入计划
 
-**状态：当前优先 F 的 Gateway 自有续轮载荷与标准消费者；原生 SSE 和真实验证按依赖分别推进。当前小片归 [current-focus](current-focus.md)，所选静态语义与接口归 [Anthropic 合同](../architecture/anthropic-messages-profile.md)。**
+**状态：F 的完整标准响应/消费者与 E 的显式目标验证按依赖分别推进；所选原生 intake 与 item 载荷边界归 [Anthropic 合同](../architecture/anthropic-messages-profile.md)。当前小片归 [current-focus](current-focus.md)。**
 
 指定准备目标仍为 `opencode-go/claude-haiku-5-5`。以 pi/OpenCode 的真实工具循环为使用基线，结合 new-api/RelayKit 的字段映射，先完成保留默认 adaptive thinking 的原生库级闭环，再单独解决标准 Responses 的交付、保存与回传。不从计划推定产品注册、账户资格或实例激活。
 
@@ -58,18 +58,7 @@ Go 的固定路径/认证依据归[原生来源](../references/agent-protocol-ad
 
 ## 5. 实施顺序与停止点
 
-以下是同一主线的依赖顺序，不是要求一次实施全部的任务包。所选采用规则以 profile 为准；D–E 闭合原生流式与真实执行，F 解决标准消费者，可先推进其独立静态边界。每个获选小片在 current-focus 固定退出条件，闭合后停止，不自动进入下一片。复用[静态语义/接口](../architecture/anthropic-messages-profile.md)，不把离线类型、映射或绑定当成运行证明。
-
-### D. SSE 与静态一致性
-
-复用 [SSE framing](../../src/transport/sse.rs)，单独实现 `message_start`、block start/delta/stop、`message_delta`、`message_stop` 及所选 ping/error grammar。
-
-- JSON 参数按原生分片合同构造，初始 `{}` 不证明完成；截断不提升为完整参数。
-- Signature 按 block closure 最终化，不套用 Responses item-done 或闭合后权威规则。
-- 累计 usage 更新不求和；message terminal 不替代严格 HTTP EOF，不要求 OpenAI `[DONE]`。
-- 缺 closure、error、取消及尾随非法数据不可修补为成功；终态 snapshot 不补缺失必要事件。
-
-退出条件：静态、语义分片和字节切分共享独立 typed 预期，失败状态不可恢复成功。
+以下是同一主线的后续依赖，不是要求一次实施全部的任务包。所选采用规则以 profile 为准；E 闭合指定目标的真实原生执行，F 解决完整标准消费者。每个获选小片在 current-focus 固定退出条件，闭合后停止，不自动进入下一片。不把离线类型、映射、聚合 intake 或绑定当成运行证明。
 
 ### E. 显式目标绑定与受控原生验证
 

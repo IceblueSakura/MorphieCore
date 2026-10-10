@@ -136,8 +136,18 @@ impl Profile {
         source: &DecodedRequest,
         target: &ReplayTarget,
     ) -> Result<DecodedResponse, CodecError> {
-        source.semantic.validate()?;
         let wire = self.decode_response(bytes)?;
+        self.decode_generation_message(wire, scope, source, target)
+    }
+    pub(crate) fn decode_generation_message(
+        self,
+        wire: super::Message,
+        scope: LocalScope,
+        source: &DecodedRequest,
+        target: &ReplayTarget,
+    ) -> Result<DecodedResponse, CodecError> {
+        source.semantic.validate()?;
+        wire.validate(false)?;
         if wire.model != target.model() {
             return Err(CodecError::Invalid("native model binding"));
         }

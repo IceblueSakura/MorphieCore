@@ -4,6 +4,8 @@ mod chat_wire;
 #[path = "support/responses_profile.rs"]
 mod wire;
 
+#[path = "transport/anthropic_sse.rs"]
+mod anthropic_sse;
 #[path = "transport/body_lifecycle.rs"]
 mod body_lifecycle;
 #[path = "transport/chain.rs"]

@@ -52,13 +52,17 @@ impl UpstreamAdapter {
                     .as_ref()
                     .ok_or_else(|| CodecError::Unsupported("native replay scope".into()))?;
                 let target = anthropic::ReplayTarget::new(origin.as_str(), model)?;
-                Ok(profile
+                let mut wire = profile
                     .encode_generation_request(
                         &request.task.semantic,
                         &request.task.fidelity,
                         &target,
                     )?
-                    .value)
+                    .value;
+                if let Some(stream) = request.delivery.stream.value() {
+                    wire["stream"] = serde_json::json!(stream);
+                }
+                Ok(wire)
             }
         }
     }

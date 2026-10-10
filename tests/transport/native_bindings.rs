@@ -189,6 +189,24 @@ fn typed_native_requests_use_the_same_admission_preflight_and_preparation() {
     );
     request.delivery.stream = morphiecore::semantic::value::Presence::Value(true);
     assert!(representable(&native, &request).is_err());
+    native.execution.streaming = true;
+    representable(&native, &request).unwrap();
+    let streaming = prepare(
+        &native,
+        &p,
+        &SecretMaterial::new("synthetic-secret").unwrap(),
+        &request,
+    )
+    .unwrap();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&streaming.body).unwrap()["stream"],
+        true
+    );
+    assert!(
+        streaming
+            .safe_headers
+            .contains(&("accept".into(), "text/event-stream".into()))
+    );
     request.delivery.stream = morphiecore::semantic::value::Presence::Null;
     assert!(representable(&native, &request).is_err());
 }
@@ -389,7 +407,7 @@ fn native_binding_mismatches_and_unwired_semantic_paths_fail_closed() {
         4096,
     )
     .unwrap();
-    assert!(attempt.begin(200, "text/event-stream").is_err());
+    attempt.begin(200, "text/event-stream").unwrap();
     assert!(attempt.finish().is_err());
     for change in 0..3 {
         let mut bad = native.clone();
