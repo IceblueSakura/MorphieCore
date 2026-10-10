@@ -28,6 +28,7 @@ fn history(arguments: ToolArguments, execution: Option<ToolExecution>) -> Genera
             (
                 ItemId::new(2),
                 Item::ToolResult(ToolResult {
+                    is_error: None,
                     call_id: text("c"),
                     output: ToolOutput::Structured(
                         StructuredValue::new(json!({"diagnostic":42})).unwrap(),

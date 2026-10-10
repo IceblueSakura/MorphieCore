@@ -87,6 +87,9 @@ pub fn lower_request<'a>(
     }
     let r = semantic.as_ref();
     let q = check(r, c.clone())?;
+    if q.tool_result_errors {
+        return Err(RepresentationError::Tools);
+    }
     check_schema_documents(r.settings())?;
     if q.provider_observations || !r.replay_groups().is_empty() || !r.call_derivations().is_empty()
     {

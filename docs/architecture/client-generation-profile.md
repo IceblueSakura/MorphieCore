@@ -2,6 +2,8 @@
 
 公开主目标是[规范 Responses](semantic-ir.md#3-客户端-api-目标与扩展边界)，Chat 仅作有界有损的兼容路径。HTTP Responses 选择 `Dialect::Standard`，Chat 保持 `Dialect::MorphieCore`；Provider 的 reasoning、usage、cache 等具名规则不能扩张标准下游。标准无载体且不属于[已定稿目标投影](protocol-and-lowering.md#semantic-loss)时拒绝，不能暗中省略；已实现范围仍按 owning codec/profile 核对，不代表整个标准已符合。
 
+可选的[中性 conversation header](../http-gateway.md#conversation-context)只承载请求分组，不承载正文、工具错误或 opaque。它不引入 Provider 参数、不放宽 body schema，也不成为标准功能或 replay 的必需私有附件。
+
 ## 无独立私有 attachment
 
 `_openbridge` 是被禁止的独立协议字段的精确拼写，不随项目更名而替换；MorphieCore 不引入同义 carrier。
@@ -11,6 +13,8 @@
 需要标准载体的正文、工具 call/result、图片与原生 Responses encrypted content 继续使用其标准位置。来源消息容器只按[具名投影](protocol-and-lowering.md#message-envelope-projection)省略边界或在 Chat 目标重组，不承诺标准客户端保存后恢复原分组。Typed 结构化参数/结果、执行报告、显式 interaction progress、scoped usage 和其他格式 replay 仍由共享语义 owner 表达；无载体且不在已定稿规则内时拒绝，不能 stringify、去掉必要关联或藏入 fidelity。
 
 必要 replay 的 format、finality、scope 与依赖规则不因客户端字段删除而减弱。未来 Agent 可以直接消费同一 typed 模型，不要求客户端保留 unknown fields，也不从普通 hash 或 scope label 推定 issuer 认证。
+
+Gateway 自有认证加密续轮载荷的所选合同归 [Anthropic profile](anthropic-messages-profile.md#gateway-自有续轮载荷)。其纯库 codec 不自动启用标准 HTTP 或让普通 OpenAI codecs 接受其他 replay format；公开接线与固定消费者仍须独立闭合，不新增独立 attachment。
 
 ## 交付与失败
 

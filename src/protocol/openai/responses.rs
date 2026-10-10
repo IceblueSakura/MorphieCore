@@ -300,6 +300,7 @@ pub(super) fn decode_items(
                     }
                 }
                 let r = ToolResult {
+                    is_error: None,
                     execution: None,
                     call_id: text(call_id, "call id", 256)?,
                     output: output(
@@ -559,7 +560,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         .fidelity
         .check_wire_item_ids(target.semantic.items(), false)?;
     if target.semantic.items().iter().any(|(_, item)| matches!(item, Item::ToolResult(result) | Item::CustomResult(result)
-        if result.execution.is_some() || matches!(result.output, ToolOutput::Structured(_))
+        if result.execution.is_some() || result.is_error.is_some() || matches!(result.output, ToolOutput::Structured(_))
             || matches!(&result.output, ToolOutput::Parts(parts)
                 if parts.iter().any(|(id, part)| matches!(part, ToolResultPart::Resource(_)) && target.fidelity.cache_breakpoint(*id))))) {
         return Err(CodecError::Unsupported("tool result semantics".into()));

@@ -261,6 +261,7 @@ fn request_codecs_enforce_result_carriers_before_rendering() {
                 (
                     ItemId::new(2),
                     Item::ToolResult(ToolResult {
+                        is_error: None,
                         execution,
                         call_id: text("c"),
                         output,

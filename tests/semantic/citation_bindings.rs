@@ -345,6 +345,7 @@ fn source_selection_edits_replay_cache_and_original_usage_share_one_dependency_o
         model: "synthetic",
         hints: &hints,
         grouping: None,
+        conversation: None,
     };
     let scope = CachePrefixScope::new("synthetic").unwrap();
     let cache = CachePrefixIntent::through(ItemId::new(1))

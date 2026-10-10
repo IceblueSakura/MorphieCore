@@ -7,6 +7,27 @@ use axum::{
 };
 use futures_util::StreamExt;
 use std::sync::Arc;
+pub(super) fn conversation(
+    headers: &HeaderMap,
+) -> Result<crate::semantic::context::ConversationContext, ApiError> {
+    use crate::semantic::context::ConversationContext;
+    let mut values = headers.get_all("x-morphiecore-conversation-id").iter();
+    if let Some(value) = values.next() {
+        if values.next().is_some() || value.len() > 256 {
+            return Err(ApiError::invalid());
+        }
+        return ConversationContext::conversation(value.to_str().map_err(|_| ApiError::invalid())?)
+            .map_err(|_| ApiError::invalid());
+    }
+    // Authentication has already succeeded. This ID only groups this request;
+    // it neither infers a conversation nor fills a cross-request cache key.
+    let mut seed = [0_u8; 16];
+    getrandom::fill(&mut seed)
+        .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "entropy_unavailable"))?;
+    ConversationContext::independent_request(&format!("{:032x}", u128::from_be_bytes(seed)))
+        .map_err(|_| ApiError::invalid())
+}
+
 pub(super) fn headers(headers: &HeaderMap, limit: usize) -> Result<(), ApiError> {
     let mut types = headers.get_all("content-type").iter();
     let value = types.next().ok_or(ApiError::new(
@@ -84,6 +105,9 @@ pub(super) fn prepare(
         .get(&(family(profile), model.into()))
         .ok_or(ApiError::new(StatusCode::NOT_FOUND, "model_not_found"))?
         .clone();
+    if value.get("session_id").is_some() {
+        return Err(ApiError::invalid());
+    }
     let mut request = entry
         .client
         .decode_request(bytes)

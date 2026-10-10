@@ -45,6 +45,7 @@ fn typed_groups_calls_and_results_keep_qualified_identity_without_name_rewriting
         items.push((
             ItemId::new((i * 2 + 2) as u64),
             Item::ToolResult(ToolResult {
+                is_error: None,
                 call_id,
                 output: ToolOutput::Text(format!("{namespace} result")),
                 status: None,

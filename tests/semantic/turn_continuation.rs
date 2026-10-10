@@ -18,6 +18,7 @@ fn result(id: u64, call_id: &str, status: ItemLifecycle) -> (ItemId, Item) {
     (
         ItemId::new(id),
         Item::ToolResult(ToolResult {
+            is_error: None,
             execution: None,
             call_id: text(call_id),
             output: "done".into(),

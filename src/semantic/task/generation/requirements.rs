@@ -30,6 +30,7 @@ pub struct GenerationRequirements {
     pub structured_arguments: bool,
     pub structured_tool_results: bool,
     pub tool_execution_reports: bool,
+    pub tool_result_errors: bool,
     pub tool_result_images: usize,
     pub structured_output: bool,
     pub reasoning: bool,
@@ -105,6 +106,7 @@ impl GenerationRequirements {
                     x.tool_history = true;
                     x.custom_tools |= matches!(i, Item::CustomResult(_));
                     x.tool_execution_reports |= result.execution.is_some();
+                    x.tool_result_errors |= result.is_error.is_some();
                     match &result.output {
                         super::ToolOutput::Structured(_) => x.structured_tool_results = true,
                         super::ToolOutput::Parts(parts) => {

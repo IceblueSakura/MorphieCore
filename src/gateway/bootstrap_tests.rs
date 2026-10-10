@@ -47,10 +47,16 @@ fn opencode_go_key_only_activates_native_hy4_chat() {
         })
     })
     .unwrap();
-    let (_, request) = super::super::admission::prepare(
-            &boot.gateway.state, Profile::Chat,
-            br#"{"model":"hy4-preview","session_id":"synthetic-conversation","messages":[{"role":"user","content":"hi"}]}"#,
-        ).unwrap();
+    let (_, mut request) = super::super::admission::prepare(
+        &boot.gateway.state,
+        Profile::Chat,
+        br#"{"model":"hy4-preview","messages":[{"role":"user","content":"hi"}]}"#,
+    )
+    .unwrap();
+    request.conversation = Some(
+        crate::semantic::context::ConversationContext::conversation("synthetic-conversation")
+            .unwrap(),
+    );
     assert_eq!(
         request.task.semantic.controls().max_output_tokens,
         Some(1024)

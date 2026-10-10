@@ -1,6 +1,6 @@
 //! Explicit prefix stability intent. No cache store, TTL execution or routing state.
 use super::{
-    context::{ContextError, ExecutionHints},
+    context::{ContextError, ConversationContext, ExecutionHints},
     task::generation::{
         GenerationRequest, HistoryDependency, ItemId, MAX_TEXT_BYTES, RequestDependencyProof,
     },
@@ -104,6 +104,7 @@ pub struct CachePrefixContext<'a> {
     pub model: &'a str,
     pub hints: &'a ExecutionHints,
     pub grouping: Option<&'a str>,
+    pub conversation: Option<&'a ConversationContext>,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CachePrefixProof {
@@ -166,7 +167,14 @@ fn context_digest(context: CachePrefixContext<'_>) -> Result<[u8; 32], ContextEr
     // second serialized context body. All reported/hinted presence stays visible.
     serde_json::to_writer(
         &mut writer,
-        &(context.model, context.hints, context.grouping),
+        &(
+            context.model,
+            context.hints,
+            context.grouping,
+            context
+                .conversation
+                .map(|c| (c.is_conversation_scoped(), c.id())),
+        ),
     )
     .map_err(|_| ContextError::Limit)?;
     Ok(writer.hash.finalize().into())

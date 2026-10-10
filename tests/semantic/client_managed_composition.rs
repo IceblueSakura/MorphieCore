@@ -201,6 +201,7 @@ impl Sample {
         let client_result = (
             owner(2, 2),
             Item::ToolResult(ToolResult {
+                is_error: None,
                 call_id: text("C"),
                 output: "client-reported result".into(),
                 execution: Some(ToolExecution::Unknown),

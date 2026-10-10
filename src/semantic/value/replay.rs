@@ -7,4 +7,7 @@ impl ReplayOrigin {
     pub fn new(label: &str) -> Result<Self, ValueError> {
         Text::new(label, "replay origin", 256).map(Self)
     }
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
 }

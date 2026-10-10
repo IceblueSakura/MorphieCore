@@ -19,6 +19,7 @@ fn source() -> GenerationRequest {
             (
                 ItemId::new(2),
                 Item::ToolResult(ToolResult {
+                    is_error: None,
                     call_id: text("old"),
                     output: "reported result".into(),
                     execution: None,

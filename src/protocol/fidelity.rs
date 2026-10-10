@@ -347,6 +347,23 @@ impl FidelityRecords {
                     .is_none_or(|proof| proof.check(request).is_ok())
         })
     }
+    /// Selected native history must not lose a required owner or its value.
+    pub(crate) fn require_reasoning_replay(
+        &self,
+        request: &GenerationRequest,
+        target: &ReplayOrigin,
+    ) -> Result<(), CodecError> {
+        for owner in self.reasoning_replay.keys() {
+            let Some((_, Item::Reasoning(r))) = request.items().iter().find(|(id, _)| id == owner)
+            else {
+                return Err(CodecError::Invalid("missing native replay owner"));
+            };
+            if !self.replay_matches_request(*owner, r, Some(target), request) {
+                return Err(CodecError::Invalid("native replay dependency"));
+            }
+        }
+        Ok(())
+    }
     /// Trusted source contract only, before transforms. Binding cannot recapture
     /// an edited token or replace an existing dependency with a weaker scope.
     pub fn bind_replay_dependency(

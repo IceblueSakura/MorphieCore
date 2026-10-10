@@ -108,6 +108,7 @@ fn prefix_cannot_cut_an_interleaved_explicit_group() {
         model: "synthetic",
         hints: &hints,
         grouping: None,
+        conversation: None,
     };
     assert!(
         CachePrefixIntent::through(ItemId::new(2))

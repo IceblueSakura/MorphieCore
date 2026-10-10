@@ -12,6 +12,8 @@ mod wire;
 mod adapters;
 #[path = "semantic/anthropic_profile.rs"]
 mod anthropic_profile;
+#[path = "semantic/anthropic_semantics.rs"]
+mod anthropic_semantics;
 #[path = "semantic/billing_modal_usage.rs"]
 mod billing_modal_usage;
 #[path = "semantic/cache_prefix.rs"]
@@ -52,6 +54,8 @@ mod extensions;
 mod files;
 #[path = "semantic/function_events.rs"]
 mod function_events;
+#[path = "semantic/gateway_replay.rs"]
+mod gateway_replay;
 #[path = "semantic/group_projection.rs"]
 mod group_projection;
 #[path = "semantic/history_continuation.rs"]
@@ -162,6 +166,8 @@ mod tokenplan_audio_binding;
 mod tokenplan_speech;
 #[path = "semantic/tool_namespaces.rs"]
 mod tool_namespaces;
+#[path = "semantic/tool_result_errors.rs"]
+mod tool_result_errors;
 #[path = "semantic/tool_results.rs"]
 mod tool_results;
 #[path = "semantic/tool_values.rs"]

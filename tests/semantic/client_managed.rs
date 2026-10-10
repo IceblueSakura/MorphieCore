@@ -17,6 +17,7 @@ fn call() -> Item {
 }
 fn result() -> Item {
     Item::ToolResult(ToolResult {
+        is_error: None,
         call_id: text("C"),
         output: "reported".into(),
         execution: None,

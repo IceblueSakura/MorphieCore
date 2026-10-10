@@ -454,6 +454,7 @@ fn atomic_call_revision_never_retargets_results_and_relations_have_one_final_own
             (
                 ItemId::new(2),
                 Item::ToolResult(ToolResult {
+                    is_error: None,
                     call_id: text("C"),
                     output: "reported".into(),
                     execution: None,

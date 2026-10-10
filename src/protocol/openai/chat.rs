@@ -244,6 +244,7 @@ pub(super) fn decode_message(
             b.items.push((
                 id,
                 Item::ToolResult(ToolResult {
+                    is_error: None,
                     execution: None,
                     call_id: text(string(m, "tool_call_id")?, "call_id", 256)?,
                     output,
@@ -436,7 +437,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     target
         .fidelity
         .check_wire_item_ids(target.semantic.items(), false)?;
-    if target.semantic.items().iter().any(|(_, item)| matches!(item, Item::ToolResult(result) | Item::CustomResult(result) if result.execution.is_some() || !result.output.is_text_only())) {
+    if target.semantic.items().iter().any(|(_, item)| matches!(item, Item::ToolResult(result) | Item::CustomResult(result) if result.execution.is_some() || result.is_error.is_some() || !result.output.is_text_only())) {
         return Err(CodecError::Unsupported("tool result semantics".into()));
     }
     let mut messages = encode_items_with(

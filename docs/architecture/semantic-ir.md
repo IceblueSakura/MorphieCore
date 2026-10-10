@@ -38,6 +38,7 @@ Generation 保留有序异构 items 与必要 typed 关系，Message 只是其�
 ## 3. 客户端 API 目标与扩展边界
 
 - **Generation：规范 OpenAI Responses 为主要接口。** 标准场景不得依赖私有字段；遵守所选官方 operation/schema，而非仅让 SDK 宽松解析成功。
+- **上下文分两阶段。** 当前以完整请求的 ClientManaged 为主；终期提供本网关限时保存历史的 `previous_response_id` 续轮。两者物化为同一完整语义请求再验证和执行，历史权威与存储边界归[交互合同](interaction-contract.md#context-authority)。无状态 API 的正确性不依赖历史存储，不禁止可随时丢弃的优化元数据。
 - **Embedding：规范 OpenAI Embeddings 接口。** 与 Generation 共用语义体系和受信执行原则，不将 vector 塞进 Responses message。
 - **Chat Completions：必须维护的兼容接口，允许部分语义损失。** 损失发生在有合同的目标投影，不削弱核心 IR；具体规则与不可损失边界归 [Semantic loss](protocol-and-lowering.md#semantic-loss)。不是承诺与 Responses 功能等价。
 - 标准规范性、能力覆盖度和映射保真度分别判断。规范 wire 可以是有损投影；未实现分支、未批准的损失或缺失必要依赖仍须明确拒绝。
@@ -96,6 +97,8 @@ Presence 逐字段定义：Absent、Null、空值、false、显式 default 不�
 - Reasoning mode、effort、数值预算、显示/summary、实际可读内容与 opaque replay 分开。Mode 表达有证据的运行方式，不新增含义不明的全局 `enabled`；effort 缺省保留模型默认行为，不解释为显式开启或关闭。Mode 与 effort/预算可以具有明确的组合规则，不能用单一互斥枚举排除合法组合。硬上限与偏好分开；目标不支持时按定稿规则映射或拒绝，不静默折叠控制。隐藏摘要不证明未推理，也不解除回放依赖；详细交互规则归[交互合同](interaction-contract.md)。
 - Usage 的 scope、basis、单位、重叠/互斥关系、最终性和缺省须明确。未知不补零，累计快照不相加，命名派生 view 借用唯一报告，不另存可修改 total；降级后的缺省也不得冒充上游未报告。
 - Provider 原生缓存意图与命中事实分开；前缀策略、亲和 hint、远端资源引用不互为别名。证明只检验已声明依赖，不证明 wire 字节相等、Provider 命中或收益。Gateway 不因表示 cache 就拥有回答缓存、跨请求粘性路由或 Agent 记忆。
+- 缓存目标限于同 Provider/Model 及兼容授权域内的尽力复用，不追求绝对命中率或跨 Provider 缓存。显式分组与[隐式亲和索引](protocol-and-lowering.md#implicit-cache-affinity)都不能成为历史或 replay 权威；索引丢失只损失优化机会。
+- [ConversationContext](../../src/semantic/context.rs)拥有 Provider 无关的逻辑分组，区分 conversation 与独立请求范围；位于请求上下文，不是 task 正文、远端会话引用或认证身份。HTTP carrier 归[网关](../http-gateway.md#conversation-context)，上游 cache/session 派生归[目标投影](protocol-and-lowering.md#cache-affinity-projection)，不让下游承担 Provider 参数规则。
 
 ## 8. 稳定化判据
 

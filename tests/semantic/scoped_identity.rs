@@ -32,6 +32,7 @@ fn result(owner_scope: u64, reference_scope: u64) -> (ItemId, Item) {
     (
         ItemId::scoped(LocalScope::new(owner_scope), 2),
         Item::ToolResult(ToolResult {
+            is_error: None,
             call_id: text("same"),
             output: "synthetic result".into(),
             execution: None,

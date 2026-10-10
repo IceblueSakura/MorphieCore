@@ -224,7 +224,9 @@ impl Dialect {
             images.details.clear();
         }
         let cache = match self {
-            Self::Siwc => crate::protocol::cache::CacheProjection {
+            // Public Responses carriers, independent of OAuth or product session headers.
+            // https://docs.x.ai/developers/advanced-api-usage/prompt-caching/maximizing-cache-hits
+            Self::Siwc | Self::Grok => crate::protocol::cache::CacheProjection {
                 key: true,
                 ..Default::default()
             },
@@ -242,7 +244,8 @@ impl Dialect {
                 session_id: true,
                 ..Default::default()
             },
-            // Explicit session grouping is projected to x-opencode-session, not the body.
+            // Neutral request context supplies the internal session header;
+            // cache keys remain independent and do not enter the Go body.
             // https://opencode.ai/docs/go/#where-can-i-use-it
             Self::OpenCodeGo => crate::protocol::cache::CacheProjection {
                 session_id: true,
@@ -284,6 +287,9 @@ pub enum AdapterError {
 impl Adapter {
     pub fn new(protocol: Profile, dialect: Dialect, scope: Option<ReplayOrigin>) -> Self {
         let mut adaptation = dialect.adaptation(scope);
+        if dialect == Dialect::Grok && protocol != Profile::Responses {
+            adaptation.cache.key = false;
+        }
         if dialect == Dialect::BailianTokenPlan && protocol != Profile::Chat {
             adaptation.rules.chunk_created_drift = false;
             adaptation.rules.empty_continuation_call_id = false;

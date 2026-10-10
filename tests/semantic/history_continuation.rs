@@ -29,6 +29,7 @@ fn result(item: u64, id: &str) -> (ItemId, Item) {
     (
         ItemId::new(item),
         Item::ToolResult(ToolResult {
+            is_error: None,
             execution: None,
             call_id: text(id),
             output: "".into(),
@@ -82,6 +83,7 @@ fn one_typed_consumer_saves_appends_and_returns_both_native_protocols() {
                 .append_items(vec![(
                     ItemId::new(900),
                     Item::ToolResult(ToolResult {
+                        is_error: None,
                         call_id: text("c"),
                         output,
                         status: None,
@@ -276,6 +278,7 @@ fn custom_and_program_results_match_kind_identity_and_final_order() {
     let custom_result = (
         ItemId::new(900),
         Item::CustomResult(ToolResult {
+            is_error: None,
             execution: None,
             call_id: text("custom"),
             output: "done".into(),
@@ -348,6 +351,7 @@ fn custom_and_program_results_match_kind_identity_and_final_order() {
             (
                 ItemId::new(900),
                 Item::CustomResult(ToolResult {
+                    is_error: None,
                     execution: None,
                     call_id: text("x"),
                     output: "wrong kind".into(),

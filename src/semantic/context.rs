@@ -14,6 +14,43 @@ pub enum ContextError {
     #[error(transparent)]
     Generation(#[from] super::task::generation::GenerationError),
 }
+/// Caller-owned logical grouping, not stored history, authentication or replay authority.
+#[derive(Clone, Eq, PartialEq)]
+pub struct ConversationContext {
+    id: String,
+    conversation_scoped: bool,
+}
+impl std::fmt::Debug for ConversationContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ConversationContext([redacted])")
+    }
+}
+impl ConversationContext {
+    pub fn conversation(id: &str) -> Result<Self, ContextError> {
+        Self::new(id, true)
+    }
+    /// An explicit request-local group; pure callers allocate the ID themselves.
+    pub fn independent_request(id: &str) -> Result<Self, ContextError> {
+        Self::new(id, false)
+    }
+    fn new(id: &str, conversation_scoped: bool) -> Result<Self, ContextError> {
+        if id.is_empty() || id.len() > 256 || id.bytes().any(|b| !b.is_ascii_graphic() || b == b',')
+        {
+            return Err(ContextError::Invalid("conversation context"));
+        }
+        Ok(Self {
+            id: id.into(),
+            conversation_scoped,
+        })
+    }
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+    pub fn is_conversation_scoped(&self) -> bool {
+        self.conversation_scoped
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ServiceTier {

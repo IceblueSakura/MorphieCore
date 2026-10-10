@@ -23,10 +23,6 @@ pub fn prepare_messages(
             "native streaming intake is not wired",
         ));
     }
-    let go = endpoint.representation.adaptation.rules.opencode_go_headers;
-    if go && session.is_none() || !go && session.is_some() {
-        return Err(AttemptError::Protocol("native session carrier"));
-    }
     let value = profile.encode_request(request)?;
     crate::semantic::value::json_size(&value, endpoint.execution.request_body_limit)
         .map_err(|_| AttemptError::Limit)?;
@@ -35,18 +31,8 @@ pub fn prepare_messages(
     let mut safe_headers = vec![
         ("content-type".into(), "application/json".into()),
         ("accept".into(), "application/json".into()),
-        ("anthropic-version".into(), "2023-06-01".into()),
-        (
-            "user-agent".into(),
-            concat!("MorphieCore/", env!("CARGO_PKG_VERSION")).into(),
-        ),
     ];
-    if let Some(session) = session {
-        if !session.as_str().is_ascii() {
-            return Err(AttemptError::Protocol("native session header"));
-        }
-        safe_headers.push(("x-opencode-session".into(), session.as_str().into()));
-    }
+    safe_headers.extend(native_headers(endpoint, session.map(CacheSession::as_str))?);
     Ok(UpstreamRequest {
         origin: endpoint.target.origin.as_str().into(),
         method: "POST",
@@ -55,4 +41,28 @@ pub fn prepare_messages(
         auth_header: auth.auth_header(secret),
         body,
     })
+}
+pub(super) fn native_headers(
+    endpoint: &Endpoint,
+    session: Option<&str>,
+) -> Result<Vec<(String, String)>, AttemptError> {
+    let go = endpoint.representation.adaptation.rules.opencode_go_headers;
+    if go && session.is_none() || !go && session.is_some() {
+        return Err(AttemptError::Protocol("native session carrier"));
+    }
+    let mut safe_headers = vec![
+        ("anthropic-version".into(), "2023-06-01".into()),
+        (
+            "user-agent".into(),
+            concat!("MorphieCore/", env!("CARGO_PKG_VERSION")).into(),
+        ),
+    ];
+    if let Some(session) = session {
+        if !endpoint.representation.cache.session_id {
+            return Err(AttemptError::Protocol("native session header"));
+        }
+        let session = CacheSession::new(session)?;
+        safe_headers.push(("x-opencode-session".into(), session.header_value()?.into()));
+    }
+    Ok(safe_headers)
 }

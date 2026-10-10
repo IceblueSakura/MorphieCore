@@ -18,6 +18,25 @@ def validator(name):
 
 
 class OpenApiSchemaTests(unittest.TestCase):
+    def test_generation_has_one_neutral_conversation_header_and_no_provider_session_body(self):
+        parameter = DOCUMENT["components"]["parameters"]["ConversationId"]
+        self.assertEqual(parameter["in"], "header")
+        self.assertEqual(parameter["name"], "X-MorphieCore-Conversation-Id")
+        self.assertFalse(parameter["required"])
+        check = Draft202012Validator(parameter["schema"])
+        for value in ("synthetic-conversation", "x" * 256):
+            check.validate(value)
+        for value in ("", " ", "x,y", "x\ny", "中文", "x" * 257):
+            self.assertFalse(check.is_valid(value))
+        for path, schema, body in (
+            ("/v1/chat/completions", "ChatRequest", {"model": "synthetic", "messages": []}),
+            ("/v1/responses", "ResponsesRequest", {"model": "synthetic", "input": "hello"}),
+        ):
+            self.assertIn({"$ref": "#/components/parameters/ConversationId"},
+                          DOCUMENT["paths"][path]["post"]["parameters"])
+            for value in (None, "upstream-session"):
+                self.assertFalse(validator(schema).is_valid({**body, "session_id": value}))
+
     def test_all_component_schemas_and_local_references_are_valid(self):
         for schema in SCHEMAS.values():
             Draft202012Validator.check_schema(schema)

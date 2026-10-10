@@ -99,12 +99,14 @@ pub(super) async fn handle(
         .try_acquire_owned()
         .map_err(|_| ApiError::new(StatusCode::TOO_MANY_REQUESTS, "gateway_busy"))?;
     admission::headers(request.headers(), state.limits.request_bytes)?;
+    let conversation = admission::conversation(request.headers())?;
     let bytes = tokio::select! {
         biased;
         _=state.shutdown.cancelled()=>return Err(ApiError::shutdown()),
         result=tokio::time::timeout(state.limits.body_timeout,admission::collect(request.into_body(),state.limits.request_bytes))=>result.map_err(|_|ApiError::new(StatusCode::REQUEST_TIMEOUT,"request_timeout"))??,
     };
-    let (entry, semantic) = admission::prepare(&state, profile, &bytes)?;
+    let (entry, mut semantic) = admission::prepare(&state, profile, &bytes)?;
+    semantic.conversation = Some(conversation);
     let deadline = tokio::time::Instant::now() + state.limits.exchange_timeout;
     exchange::run(state, entry, semantic, deadline, permit, trace).await
 }

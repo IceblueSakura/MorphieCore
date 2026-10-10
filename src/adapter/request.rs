@@ -7,7 +7,7 @@ use crate::{
         openai::{self, CodecError, DecodedRequest, Profile, chat_envelope, envelope},
     },
     semantic::{
-        context::{DeliveryIntent, ExecutionHints, StreamOptions},
+        context::{ConversationContext, DeliveryIntent, ExecutionHints, StreamOptions},
         value::Presence,
     },
 };
@@ -20,11 +20,60 @@ pub struct Request {
     pub context: ExecutionHints,
     pub delivery: DeliveryIntent,
     pub extensions: CustomSections,
+    pub conversation: Option<ConversationContext>,
     pub cache_session: Option<crate::protocol::cache::CacheSession>,
-    source: Profile,
+    source: Option<Profile>,
     n: Presence<u64>,
 }
 impl Request {
+    /// Pure typed entry; model is a public label, not an origin or runtime target.
+    pub fn from_generation(
+        task: crate::protocol::DecodedRequest,
+        model: &str,
+    ) -> Result<Self, CodecError> {
+        task.semantic.validate()?;
+        if model.is_empty()
+            || model.len() > 256
+            || model.chars().any(|c| c.is_control() || c.is_whitespace())
+        {
+            return Err(CodecError::Invalid("model label"));
+        }
+        Ok(Self {
+            task,
+            model: model.into(),
+            context: Default::default(),
+            delivery: Default::default(),
+            extensions: Default::default(),
+            conversation: None,
+            cache_session: None,
+            source: None,
+            n: Presence::Absent,
+        })
+    }
+    pub(crate) fn check_native_context(
+        &self,
+        go: bool,
+        cache: crate::protocol::cache::CacheProjection,
+    ) -> Result<(), CodecError> {
+        self.check_grouping()?;
+        self.context.validate()?;
+        let mut context = self.context.clone();
+        cache.project(&mut context)?;
+        if go {
+            cache.opencode_session(self.conversation.as_ref(), self.cache_session.as_ref())?;
+        }
+        if context != ExecutionHints::default()
+            || self.delivery.streaming()
+            || self.delivery.stream == Presence::Null
+            || !self.delivery.options.is_absent()
+            || self.extensions != CustomSections::default()
+            || self.n.value().is_some_and(|n| *n != 1)
+            || !go && self.cache_session.is_some()
+        {
+            return Err(CodecError::Unsupported("native request context".into()));
+        }
+        Ok(())
+    }
     /// Optional caller-owned stability check, never a cache directive or hit claim.
     pub fn capture_cache_prefix(
         &self,
@@ -51,6 +100,7 @@ impl Request {
             model: &self.model,
             hints: &self.context,
             grouping: self.cache_session.as_ref().map(|session| session.as_str()),
+            conversation: self.conversation.as_ref(),
         }
     }
     pub fn check_semantic(
@@ -63,6 +113,7 @@ impl Request {
             .map_err(|e| RepresentationError::Admission(e).into())
     }
     pub fn check_context(&self, standard_context: bool) -> Result<(), AdapterError> {
+        self.check_grouping()?;
         self.context.validate().map_err(CodecError::from)?;
         self.delivery.validate().map_err(CodecError::from)?;
         if self.extensions != CustomSections::default()
@@ -72,6 +123,12 @@ impl Request {
                     || !self.context.max_tool_calls.is_absent())
         {
             return Err(RepresentationError::UnmigratedSemantic.into());
+        }
+        Ok(())
+    }
+    fn check_grouping(&self) -> Result<(), CodecError> {
+        if self.conversation.is_some() && self.cache_session.is_some() {
+            return Err(CodecError::Invalid("ambiguous request grouping"));
         }
         Ok(())
     }
@@ -120,7 +177,8 @@ impl Adapter {
                         options: decoded.context.stream_options,
                     },
                     extensions: CustomSections::default(),
-                    source: self.protocol,
+                    source: Some(self.protocol),
+                    conversation: None,
                     cache_session,
                     n: decoded.context.n,
                 }
@@ -144,7 +202,8 @@ impl Adapter {
                         options,
                     },
                     extensions: decoded.context.extensions,
-                    source: self.protocol,
+                    source: Some(self.protocol),
+                    conversation: None,
                     cache_session,
                     n: Presence::Absent,
                 }
@@ -177,21 +236,21 @@ impl Adapter {
     pub(crate) fn request_headers(
         &self,
         request: &Request,
+        mut cache: crate::protocol::cache::CacheProjection,
     ) -> Result<Vec<(String, String)>, CodecError> {
         if !self.adaptation.rules.opencode_go_headers {
             return Ok(vec![]);
         }
+        cache.intersect(self.adaptation.cache);
+        let session = cache.opencode_session(
+            request.conversation.as_ref(),
+            request.cache_session.as_ref(),
+        )?;
         let mut headers = vec![(
             "user-agent".into(),
             concat!("MorphieCore/", env!("CARGO_PKG_VERSION")).into(),
         )];
-        if let Some(session) = &request.cache_session {
-            // Body sessions can be Unicode; this HTTP carrier must be representable before I/O.
-            if !session.as_str().is_ascii() {
-                return Err(CodecError::Invalid("session header"));
-            }
-            headers.push(("x-opencode-session".into(), session.as_str().into()));
-        }
+        headers.push(("x-opencode-session".into(), session));
         Ok(headers)
     }
     pub fn encode_request(
@@ -220,7 +279,9 @@ impl Adapter {
         }
         let contract = self.contract(contract);
         let mut context = request.context.clone();
-        contract.cache.project(&mut context)?;
+        contract
+            .cache
+            .project_request(&mut context, request.conversation.as_ref())?;
         if !contract.identity_hints
             && (!context.identity.user.is_absent()
                 || !context.identity.safety_identifier.is_absent())
@@ -231,7 +292,7 @@ impl Adapter {
             return Err(CodecError::Unsupported("session_id".into()).into());
         }
         // Candidate preflight uses this same encoder, so invalid header carriers cannot reach I/O.
-        self.request_headers(request)?;
+        self.request_headers(request, contract.cache)?;
         if self.adaptation.rules.reject_reasoning_controls
             && (request.task.semantic.reasoning().presence()
                 == crate::semantic::task::generation::ReasoningPresence::Present
@@ -253,7 +314,7 @@ impl Adapter {
                 let mut options = request.delivery.options.clone();
                 // Cross-protocol delivery still needs actual upstream usage; request
                 // its wire report rather than synthesizing any counters.
-                if request.source != self.protocol && request.delivery.streaming() {
+                if request.source != Some(self.protocol) && request.delivery.streaming() {
                     let mut common = options.value().cloned().unwrap_or_default();
                     common.include_usage = Presence::Value(true);
                     options = Presence::Value(common);
@@ -262,7 +323,7 @@ impl Adapter {
                     &target,
                     &chat_envelope::RequestContext {
                         model: model.into(),
-                        n: if request.source == self.protocol {
+                        n: if request.source == Some(self.protocol) {
                             request.n.clone()
                         } else {
                             Presence::Absent
@@ -405,19 +466,33 @@ mod tests {
     fn project_profile_and_owned_user_agent_use_current_names() {
         let client = Adapter::new(Profile::Chat, Dialect::MorphieCore, None);
         assert_eq!(client.adaptation.profile_id, "morphiecore-v1");
-        let request = client
+        let mut request = client
             .decode_request(
                 br#"{"model":"synthetic","messages":[{"role":"user","content":"hello"}]}"#,
             )
             .unwrap();
+        request.conversation = Some(ConversationContext::conversation("conversation-one").unwrap());
         let provider = Adapter::new(Profile::Chat, Dialect::OpenCodeGo, None);
         assert_eq!(
-            provider.request_headers(&request).unwrap(),
-            vec![(
-                "user-agent".into(),
-                concat!("MorphieCore/", env!("CARGO_PKG_VERSION")).into(),
-            )]
+            provider
+                .request_headers(&request, crate::protocol::cache::CacheProjection::all())
+                .unwrap(),
+            vec![
+                (
+                    "user-agent".into(),
+                    concat!("MorphieCore/", env!("CARGO_PKG_VERSION")).into(),
+                ),
+                (
+                    "x-opencode-session".into(),
+                    "427d18da2021fadacd82a4b187acd8b4459e929ad27d1f77025fff66310a176e".into()
+                ),
+            ]
         );
-        assert!(client.request_headers(&request).unwrap().is_empty());
+        assert!(
+            client
+                .request_headers(&request, crate::protocol::cache::CacheProjection::all())
+                .unwrap()
+                .is_empty()
+        );
     }
 }

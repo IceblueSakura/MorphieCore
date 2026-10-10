@@ -8,6 +8,8 @@ pub enum ReplayFormat {
     GoogleInteractionsV1Step,
     GoogleGenerateContentPart,
     AnthropicMessagesThinking,
+    /// A Gateway-issued capsule, never Provider-issued encrypted reasoning.
+    GatewayContinuation,
 }
 #[derive(Clone, Eq, PartialEq)]
 pub enum ReplayValue {
@@ -49,6 +51,7 @@ impl ReplayValue {
             ReplayFormat::ResponsesEncrypted
                 | ReplayFormat::GoogleInteractionsV1Thought
                 | ReplayFormat::AnthropicMessagesThinking
+                | ReplayFormat::GatewayContinuation
         ) {
             return Err(GenerationError::InvalidReplay);
         }
@@ -63,6 +66,7 @@ impl ReplayValue {
             ReplayFormat::GoogleInteractionsV1Step => 2,
             ReplayFormat::GoogleGenerateContentPart => 3,
             ReplayFormat::AnthropicMessagesThinking => 4,
+            ReplayFormat::GatewayContinuation => 5,
         }]);
         hash.update([u8::from(self.replay_token().is_some())]);
         hash.update(self.as_str().as_bytes());

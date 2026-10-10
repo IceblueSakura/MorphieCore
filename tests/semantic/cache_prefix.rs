@@ -89,6 +89,17 @@ fn adapter_prefix_check_allows_append_and_rejects_prefix_context_and_scope_edits
     changed.cache_session =
         Some(morphiecore::protocol::cache::CacheSession::new("new-group").unwrap());
     assert!(changed.check_cache_prefix(&proof, &scope()).is_err());
+    let mut changed = request();
+    changed.conversation = Some(
+        morphiecore::semantic::context::ConversationContext::conversation("logical-one").unwrap(),
+    );
+    assert!(changed.check_cache_prefix(&proof, &scope()).is_err());
+    let scoped = changed.capture_cache_prefix(intent(), &scope()).unwrap();
+    changed.conversation = Some(
+        morphiecore::semantic::context::ConversationContext::independent_request("logical-one")
+            .unwrap(),
+    );
+    assert!(changed.check_cache_prefix(&scoped, &scope()).is_err());
 }
 #[test]
 fn prefix_settings_bind_schema_and_tool_order_without_a_second_value_authority() {

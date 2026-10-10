@@ -44,9 +44,18 @@ Responses→Chat 上游必须通过[入口配置](credentials.md#gateway-access-
 - 文本数组、工具选择/结果、概率、Schema 与 reported context 的精确接受/拒绝由上述 profiles 和 owning code 维护，不因路由存在而扩大 Public Model/Endpoint 合同。当前跨协议不可表示时仍明确拒绝；设计允许的 Chat 有损规则尚需逐片实现，不能提前按该方向丢字段换取成功。
 - user 与 Responses 工具结果的 URL/inline 图片有独立准入，见[图片输入](architecture/responses-text-profile.md#user-image-input)与[工具图片结果](architecture/responses-text-profile.md#tool-image-results)。Responses 另有[标准 user inline 文件输入](architecture/responses-text-profile.md#user-inline-file-input)及[URL 文件输入](architecture/responses-text-profile.md#user-file-url-input)，仍需 public model 与 endpoint 显式文件准入；库 codec 不自动激活文件模型。不下载、解析文档、转码或放宽 body 预算；file ID、工具文件、Chat 工具图片、图片输出与资源服务不因此启用。
 - HTTP envelope/item 上的独立 `_openbridge` 字段不准入，包括 null、空对象及版本化 attachment，也不输出该字段。结构化值、执行报告、message membership、progress/scoped usage 和 replay 的 typed owner 不因此删除；无标准载体且未获具名投影许可的 history/目标明确拒绝。请求拒绝发生在上游 I/O 前；不可交付的静态输出失败，已发布 SSE 只能中止，不伪造终态或前移。普通正文、raw arguments/output 与用户 metadata 中的同名业务数据不被当成协议字段。详见[客户端边界](architecture/client-generation-profile.md)。
-- Responses 拒绝非标准 `session_id`（包括 null），标准 identity/cache hints 保留各自 owner。Chat 兼容入口的 `session_id` body 扩展仍按声明的目标投影，不提供网关会话或粘性路由，不从 cache key 派生，也不透传 session headers；精确 carrier 归 [adapter request](../src/adapter/request.rs)与[cache projection](../src/protocol/cache.rs)。未声明 carrier 的 advisory cache hint 可按合同省略，行为控制与 identity/session 要求不能随之静默丢弃。
+- Chat/Responses 均拒绝 Provider `session_id` body（包括 null）。调用方仅使用下述中性 conversation 上下文，不按 Provider 填写分组参数；标准 `prompt_cache_key` 保留独立的可选缓存意图。上游载体由[内部投影](architecture/protocol-and-lowering.md#cache-affinity-projection)决定，入站 Provider session headers 不透传。
 - 标准 Responses 无载体的附属 token 明细仅按[独立具名规则](architecture/protocol-and-lowering.md#responses-usage-projection)从目标副本省略，逐字段记录损失；总量、可表示明细与原 IR 保留，非法计量仍拒绝。这不是继承独立 Images 的计量损失许可。
 - [Continuation](architecture/responses-text-profile.md#response-outcome-and-continuation)库视图不增加 HTTP 字段、执行就绪证明或自动 Agent loop。低层 CustomSections/CodexHeaders 也不等于 HTTP 接线；仅开放表中路由；状态资源、WebSocket、hosted-tool/program 执行等[缺口](implementation-status/generation.md)仍独立。
+
+<a id="conversation-context"></a>
+### 逻辑 conversation 上下文
+
+Chat/Responses 接受可选、唯一的 `X-MorphieCore-Conversation-Id` header。值为 1–256 个 ASCII 可见非空白字符，不能含逗号；重复值（即使相同）、逗号合并值、空值、控制字符或超限值在认证后、body 收集前拒绝。它不是官方 OpenAI header，也不表示服务端保存了历史。
+
+SDK/Agent 接入层为同一逻辑对话自动保存并携带同一 ID；新建/分支对话分配新 ID，切换模型不需要了解上游或修改 ID。没有 header 时 Gateway 仅为当前请求生成一次性分组，不与其他请求关联，不回显生成值，也不建立会话服务。多轮请求仍须提交完整必要历史。
+
+标准 body `prompt_cache_key` 可省略；显式提供时只表达缓存分组，允许多个 conversation 共享。它不代替 conversation ID，也不是用户必须填写的 Provider 参数。中性 header 不作为授权、凭据选择或 reasoning replay 证明，原值不透传给上游或进入普通诊断日志。
 
 ### 标准模型发现
 

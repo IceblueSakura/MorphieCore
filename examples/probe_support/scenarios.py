@@ -519,9 +519,6 @@ def matrix(
             if model in stopped:
                 continue
             extra = {}
-            if MODELS[model][0] == "opencode-go":
-                # The group is one synthetic conversation, including all tool-result rounds.
-                extra["extra_body"] = {"session_id": f"{run.plan['id']}:{group}"}
             if effort is not None:
                 extra.update(
                     {"reasoning_effort": effort}
@@ -532,6 +529,12 @@ def matrix(
                 )
 
             def invoke(n, history, **options):
+                # One neutral conversation for all rounds, independent of the Provider.
+                controls = dict(options.pop("extra", {}) or {})
+                controls["extra_headers"] = {
+                    **controls.get("extra_headers", {}),
+                    "X-MorphieCore-Conversation-Id": f"{run.plan['id']}:{group}",
+                }
                 return call(
                     client,
                     transport,
@@ -541,6 +544,7 @@ def matrix(
                     history,
                     options.pop("streaming", stream),
                     cap=cap,
+                    extra=controls,
                     **options,
                 )
 

@@ -71,6 +71,7 @@ fn request_with_execution(
             (
                 ItemId::new(2),
                 Item::ToolResult(ToolResult {
+                    is_error: None,
                     execution,
                     call_id: text("c"),
                     output: output.value,
@@ -356,6 +357,7 @@ fn custom_image_results_share_the_carrier_without_becoming_function_results() {
             (
                 ItemId::new(21),
                 Item::CustomResult(ToolResult {
+                    is_error: None,
                     execution: None,
                     call_id: text("c"),
                     output: ToolOutput::Parts(vec![(

@@ -74,6 +74,16 @@ pub fn representable(
     endpoint: &Endpoint,
     request: &crate::adapter::Request,
 ) -> Result<(), RejectionReason> {
+    if endpoint.protocol == crate::topology::ProtocolProfile::AnthropicMessages
+        && endpoint
+            .representation
+            .replay_origin
+            .as_ref()
+            .map(|o| o.as_str())
+            != Some(endpoint.provider.as_str())
+    {
+        return Err(RejectionReason::ReplayScope);
+    }
     if (request.delivery.streaming()
         || endpoint
             .representation

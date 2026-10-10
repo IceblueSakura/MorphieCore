@@ -226,5 +226,7 @@ class BridgeTests(unittest.TestCase):
             for call in send.call_args_list:
                 self.assertEqual(call.args[2:4], ("mimo-v2.6-pro", "responses"))
                 self.assertEqual(call.kwargs["cap"], 2048)
-                self.assertEqual(call.kwargs["extra"], {})
+                self.assertEqual(call.kwargs["extra"], {"extra_headers": {
+                    "X-MorphieCore-Conversation-Id":
+                        f"{run.plan['id']}:{call.args[4].rsplit(':', 1)[0]}"}})
                 self.assertIs(call.kwargs["oracle"], expect_reasoning_content)

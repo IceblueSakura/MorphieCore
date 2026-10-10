@@ -62,7 +62,7 @@
     "/v1/chat/completions": {
       "post": {
         "operationId": "chatCompletion",
-        "parameters": [{"$ref": "#/components/parameters/ProbeId"}],
+        "parameters": [{"$ref": "#/components/parameters/ProbeId"}, {"$ref": "#/components/parameters/ConversationId"}],
         "summary": "Generate text from admitted text or user image input through single-candidate Chat",
         "requestBody": {
           "required": true,
@@ -263,7 +263,7 @@
     "/v1/responses": {
       "post": {
         "operationId": "response",
-        "parameters": [{"$ref": "#/components/parameters/ProbeId"}],
+        "parameters": [{"$ref": "#/components/parameters/ProbeId"}, {"$ref": "#/components/parameters/ConversationId"}],
         "summary": "Generate text from explicitly admitted text, image, inline or URL file input through stateless Responses",
         "requestBody": {
           "required": true,
@@ -289,6 +289,11 @@
   },
   "components": {
     "parameters": {
+      "ConversationId": {
+        "in": "header", "name": "X-MorphieCore-Conversation-Id", "required": false,
+        "schema": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[\\u0021-\\u002b\\u002d-\\u007e]+$"},
+        "description": "Provider-neutral logical conversation ID, normally carried automatically by the client integration. Keep it stable across turns and model changes; use a new ID for a new or forked conversation. Duplicate values are rejected, even when equal. Absence creates only an independent request-local group, not stored history. Never forwarded verbatim, echoed, or used for authorization or replay permission."
+      },
       "ProbeId": {
         "in": "header", "name": "x-morphiecore-probe-id", "required": false,
         "schema": {"type": "string"},
@@ -700,17 +705,12 @@
         "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9_.-]+$",
         "description": "Activated public model label without a provider/ prefix. Resolves a fixed trusted Route; canonical identity and Provider-specific upstream model names remain internal. Clients cannot select a Provider."
       },
-      "CacheSession": {
-        "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$",
-        "description": "MorphieCore scoped extension: caller-supplied Provider cache/observability grouping, not a gateway-managed session. Only explicitly supporting targets may receive it. No derivation from prompt_cache_key, user, safety_identifier or opaque replay; unsupported targets reject it. OpenCode Go maps an explicit ASCII session_id to x-opencode-session instead of the upstream body; absent values do not create an identity. Incoming session headers are not forwarded."
-      },
       "ChatRequest": {
         "type": "object", "required": ["model", "messages"],
-        "not": {"anyOf": [{"required": ["provider"]}, {"required": ["_openbridge"]}]},
+        "not": {"anyOf": [{"required": ["provider"]}, {"required": ["_openbridge"]}, {"required": ["session_id"]}]},
         "properties": {
           "model": {"$ref": "#/components/schemas/PublicModelLabel"},
-          "session_id": {"$ref": "#/components/schemas/CacheSession"},
-          "prompt_cache_key": {"type": ["string", "null"], "maxLength": 256, "description": "Advisory Provider cache-affinity key. Targets without a declared key carrier omit it; automatic caching is independent. Does not select or reorder MorphieCore candidates."},
+          "prompt_cache_key": {"type": ["string", "null"], "maxLength": 256, "description": "Optional cache grouping intent, independent of logical conversation and allowed to be shared across conversations. Absence allows internal defaults; null is not filled from conversation context. Neither value guarantees a cache hit or disables automatic caching. No Provider session parameter is required from the client."},
           "messages": {"type": "array", "items": {"type": "object", "not": {"required": ["_openbridge"]}}, "description": "User/assistant and system/developer content accepts a string or nonempty ordered plain-text part array. Tool result content accepts a string or ordered plain-text part array, including an empty array; single tool-result parts remain arrays. User content additionally admits ordered text/image_url parts and inline input_audio WAV/MP3 parts only when public and endpoint contracts permit the corresponding input modality; one resource remains an array. Audio uses Base64 data plus explicit wav/mp3 format, not URL/transcript substitution. HTTP(S) URL and Base64 image data URL only; file IDs, other roles' input media and tool-result media remain rejected. Assistant audio history has separate library admission and trusted source/expiry requirements in the Chat media profile; unbound audio IDs and existing text/image-only product bindings reject it."},
           "modalities": {"type": ["array", "null"], "items": {"enum": ["text", "audio"]}, "minItems": 1, "maxItems": 2, "uniqueItems": true, "description": "Library output intent; audio requires matching audio options and explicit public/endpoint audio_output admission. Existing text/image bindings do not gain audio admission."},
           "audio": {"type": ["object", "null"], "required": ["format", "voice"], "additionalProperties": false, "properties": {"format": {"enum": ["wav", "aac", "mp3", "flac", "opus", "pcm16"]}, "voice": {"type": "string", "minLength": 1, "maxLength": 128}}, "description": "Named-voice output options, not voice/account management. Requires audio modality; streaming requires pcm16. No audio model is activated by this schema."},
@@ -757,7 +757,7 @@
         "not": {"anyOf": [{"required": ["provider"]}, {"required": ["_openbridge"]}, {"required": ["session_id"]}]},
         "properties": {
           "model": {"$ref": "#/components/schemas/PublicModelLabel"},
-          "prompt_cache_key": {"type": ["string", "null"], "maxLength": 256, "description": "Advisory Provider cache-affinity key, not session identity. Cache echoes/usage are only upstream-reported facts."},
+          "prompt_cache_key": {"type": ["string", "null"], "maxLength": 256, "description": "Optional cache grouping intent, independent of logical conversation and allowed to be shared across conversations. Absence allows internal defaults; null is not filled from conversation context. Neither value guarantees a cache hit or disables automatic caching. Cache echoes/usage remain upstream-reported facts."},
           "input": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "object", "not": {"required": ["_openbridge"]}}}]},
           "tools": {
             "type": "array",

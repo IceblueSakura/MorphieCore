@@ -9,6 +9,7 @@ pub use decoded::{CodecError, DecodedRequest, DecodedResponse, ResponseMetadata}
 pub mod extensions;
 pub mod fidelity;
 pub mod file_constraints;
+pub mod gateway_replay;
 pub mod image_constraints;
 pub mod openai;
 pub mod openrouter_images;

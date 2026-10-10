@@ -4,6 +4,8 @@ MorphieCore 是 Gateway 与未来 Agent 共用的模型交互 Semantic Model / I
 
 项目处于开发阶段。设计权威见[语义架构](docs/architecture/README.md)，当前接线见[架构](docs/architecture.md)，未完成方向见[后续计划](docs/implementation-plans/next-goal.md)。
 
+当前以客户端每次提交完整历史的无状态 API 为主，缓存优化只求尽力而为，显式会话标识提供稳定分组；网关自管限时历史的有状态 Responses API 是[确定的终期目标](docs/implementation-plans/next-goal.md#api-context-goals)，不是当前已实现能力。
+
 ## 当前范围
 
 - 共享 Rust 语义库与认证 loopback Gateway；Chat/Responses 的文本、工具、reasoning 与图片输入按具体 profile 和目标准入。

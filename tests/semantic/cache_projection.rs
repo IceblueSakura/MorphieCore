@@ -19,6 +19,176 @@ fn request(p: Profile) -> Value {
     }
 }
 #[test]
+fn public_responses_cache_key_preserves_presence_without_creating_session_identity() {
+    use morphiecore::semantic::value::Presence;
+    let client = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    for dialect in [Dialect::Siwc, Dialect::Grok] {
+        let target = Adapter::new(Profile::Responses, dialect, None);
+        for key in [None, Some(Value::Null), Some(json!("shared-workspace"))] {
+            let mut wire = json!({"model":"public","input":"hello"});
+            if let Some(key) = &key {
+                wire["prompt_cache_key"] = key.clone();
+            }
+            let mut request = client.decode_request(wire.to_string().as_bytes()).unwrap();
+            let expected = match &key {
+                None => Presence::Absent,
+                Some(Value::Null) => Presence::Null,
+                Some(_) => Presence::Value("shared-workspace".into()),
+            };
+            assert_eq!(request.context.cache.prompt_cache_key, expected);
+            assert!(request.cache_session.is_none());
+            let original = request.clone();
+            let out = target
+                .encode_request(&request, "upstream", &Contract::full())
+                .unwrap();
+            assert_eq!(out.get("prompt_cache_key"), key.as_ref(), "{dialect:?}");
+            assert!(out.get("session_id").is_none());
+            assert_eq!(request, original);
+            request.context.cache.prompt_cache_key = Presence::Absent;
+            let out = target
+                .encode_request(&request, "upstream", &Contract::full())
+                .unwrap();
+            assert!(out.get("prompt_cache_key").is_none());
+        }
+    }
+    let request = client
+        .decode_request(
+            br#"{"model":"public","input":"hello","prompt_cache_key":"shared-workspace"}"#,
+        )
+        .unwrap();
+    // The Responses carrier does not authorize an undocumented Grok Chat body field.
+    let out = Adapter::new(Profile::Chat, Dialect::Grok, None)
+        .encode_request(&request, "upstream", &Contract::full())
+        .unwrap();
+    assert!(out.get("prompt_cache_key").is_none());
+}
+
+#[test]
+fn neutral_conversation_defaults_cache_without_overriding_explicit_intent() {
+    use morphiecore::semantic::{context::ConversationContext, value::Presence};
+    let client = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    let mut request = client
+        .decode_request(br#"{"model":"public","input":"hello"}"#)
+        .unwrap();
+    request.conversation = Some(ConversationContext::conversation("conversation-one").unwrap());
+    let before = request.clone();
+    for dialect in [Dialect::Siwc, Dialect::Grok] {
+        let target = Adapter::new(Profile::Responses, dialect, None);
+        let out = target
+            .encode_request(&request, "upstream", &Contract::full())
+            .unwrap();
+        assert_eq!(
+            out["prompt_cache_key"],
+            "2b9fca8fab555e6f158d416aad2a034e943010b3721ca44a5fb1c3e77d9668af"
+        );
+        for key in [Presence::Null, Presence::Value("shared-workspace".into())] {
+            let mut explicit = request.clone();
+            explicit.context.cache.prompt_cache_key = key.clone();
+            let out = target
+                .encode_request(&explicit, "upstream", &Contract::full())
+                .unwrap();
+            assert_eq!(
+                out["prompt_cache_key"],
+                match key {
+                    Presence::Null => Value::Null,
+                    Presence::Value(s) => json!(s),
+                    _ => unreachable!(),
+                }
+            );
+        }
+        let mut independent = request.clone();
+        independent.conversation =
+            Some(ConversationContext::independent_request("conversation-one").unwrap());
+        assert!(
+            target
+                .encode_request(&independent, "upstream", &Contract::full())
+                .unwrap()
+                .get("prompt_cache_key")
+                .is_none()
+        );
+    }
+    assert_eq!(request, before);
+    assert!(request.cache_session.is_none());
+    assert!(!format!("{:?}", request.conversation).contains("conversation-one"));
+    for id in ["", " ", "x,y", "bad\r\nheader", "中文", &"x".repeat(257)] {
+        assert!(ConversationContext::conversation(id).is_err());
+    }
+}
+
+#[test]
+fn go_grouping_uses_neutral_context_and_never_infers_it_from_cache_keys() {
+    use morphiecore::{
+        protocol::cache::CacheSession,
+        semantic::{context::ConversationContext, value::Presence},
+    };
+    let client = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    let target = Adapter::new(Profile::Chat, Dialect::OpenCodeGo, None);
+    let mut request = client
+        .decode_request(
+            br#"{"model":"public","input":"hello","prompt_cache_key":"shared-workspace"}"#,
+        )
+        .unwrap();
+    assert!(
+        target
+            .encode_request(&request, "upstream", &Contract::full())
+            .is_err()
+    );
+    request.conversation = Some(ConversationContext::conversation("conversation-one").unwrap());
+    let before = request.clone();
+    let out = target
+        .encode_request(&request, "upstream", &Contract::full())
+        .unwrap();
+    assert!(out.get("prompt_cache_key").is_none());
+    assert!(out.get("session_id").is_none());
+    assert_eq!(request, before);
+    assert!(request.cache_session.is_none());
+    let mut boundary = request.clone();
+    boundary.context.cache.prompt_cache_key = Presence::Value("x".repeat(256));
+    target
+        .encode_request(&boundary, "upstream", &Contract::full())
+        .unwrap();
+    for key in [
+        Presence::Absent,
+        Presence::Null,
+        Presence::Value(String::new()),
+        Presence::Value("bad\r\nheader".into()),
+        Presence::Value("中文".into()),
+    ] {
+        let mut edited = request.clone();
+        edited.context.cache.prompt_cache_key = key;
+        target
+            .encode_request(&edited, "upstream", &Contract::full())
+            .unwrap();
+    }
+    let mut oversized = request.clone();
+    oversized.context.cache.prompt_cache_key = Presence::Value("x".repeat(257));
+    assert!(
+        target
+            .encode_request(&oversized, "upstream", &Contract::full())
+            .is_err()
+    );
+    let mut conflicting = request.clone();
+    conflicting.cache_session = Some(CacheSession::new("legacy-provider-group").unwrap());
+    assert!(
+        target
+            .encode_request(&conflicting, "upstream", &Contract::full())
+            .is_err()
+    );
+    let mut no_carrier = Contract::full();
+    no_carrier.cache.session_id = false;
+    assert!(
+        target
+            .encode_request(&request, "upstream", &no_carrier)
+            .is_err()
+    );
+    assert!(
+        target
+            .encode_request(&conflicting, "upstream", &no_carrier)
+            .is_err()
+    );
+}
+
+#[test]
 fn cache_omission_never_erases_independent_identity_fields() {
     for p in [Profile::Chat, Profile::Responses] {
         let mut wire = request(p);

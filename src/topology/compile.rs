@@ -240,9 +240,22 @@ pub fn compile(
             if endpoint.canonical_model != model.canonical_model {
                 return Err(TopologyError::CanonicalModelMismatch);
             }
-            // A native wire declaration is not an implemented semantic representation.
             if endpoint.protocol == super::ProtocolProfile::AnthropicMessages {
-                return Err(TopologyError::ContractUnsatisfiable);
+                let native =
+                    crate::protocol::anthropic::Profile::AdaptiveTextTools.semantic_contract();
+                if !native.supports(&endpoint.representation.semantics)
+                    || !native.supports(&model.contract)
+                    || endpoint
+                        .representation
+                        .replay_origin
+                        .as_ref()
+                        .map(|o| o.as_str())
+                        != Some(endpoint.provider.as_str())
+                    || endpoint.execution.streaming
+                    || model.standard_context
+                {
+                    return Err(TopologyError::ContractUnsatisfiable);
+                }
             }
             if route.policy.candidates == super::CandidatePolicy::RequireAll
                 && (!promised(&model.contract, &endpoint.representation)

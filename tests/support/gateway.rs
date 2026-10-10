@@ -67,6 +67,10 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool) -> Gateway {
             // A synthetic upstream-only carrier must not leak through the
             // independently selected standard downstream adapter.
             adaptation: morphiecore::protocol::adaptation::Adaptation {
+                cache: morphiecore::protocol::cache::CacheProjection {
+                    key: true,
+                    ..Default::default()
+                },
                 rules: morphiecore::protocol::adaptation::WireRules {
                     responses_image_usage: protocol == ProtocolProfile::OpenAiResponses,
                     ..Default::default()

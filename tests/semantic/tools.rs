@@ -248,6 +248,7 @@ fn independent_ir_encodes_call_and_empty_result_without_source_wire() {
         (
             ItemId::new(20),
             Item::ToolResult(ToolResult {
+                is_error: None,
                 execution: None,
                 call_id: text("call_new"),
                 output: "".into(),
@@ -329,6 +330,7 @@ fn replacement_insertion_and_reordering_drive_both_encoders() {
     items.push((
         ItemId::new(100),
         Item::ToolResult(ToolResult {
+            is_error: None,
             execution: None,
             call_id: text("call_c"),
             output: "rain".into(),
@@ -681,6 +683,7 @@ fn static_response_encodes_independent_expectations_and_replays_into_history() {
     history.push((
         ItemId::new(50),
         Item::ToolResult(ToolResult {
+            is_error: None,
             execution: None,
             call_id: text("call_b"),
             output: "rain".into(),
@@ -691,6 +694,7 @@ fn static_response_encodes_independent_expectations_and_replays_into_history() {
     history.push((
         ItemId::new(51),
         Item::ToolResult(ToolResult {
+            is_error: None,
             execution: None,
             call_id: text("call_a"),
             output: "sunny".into(),

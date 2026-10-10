@@ -75,7 +75,13 @@ class ProbeCoreTests(unittest.TestCase):
             self.assertEqual([row[1] for row in observed], [False, False, True, True])
             for index in (1, 3):
                 self.assertEqual(observed[index][0][1:-1], outputs[index - 1])
-            for _, _, extra in observed:
+            sessions = [extra["extra_headers"]["X-MorphieCore-Conversation-Id"]
+                        for _, _, extra in observed]
+            self.assertEqual(sessions[0], sessions[1])
+            self.assertEqual(sessions[2], sessions[3])
+            self.assertNotEqual(sessions[0], sessions[2])
+            for _, _, controls in observed:
+                extra = {key: value for key, value in controls.items() if key != "extra_headers"}
                 self.assertEqual(extra, {"text": {"format": {
                     "type": "json_schema", "name": "ordered_answer", "strict": True,
                     "schema": {"type": "object", "properties": {
@@ -153,7 +159,10 @@ class ProbeCoreTests(unittest.TestCase):
                 "probe_support.scenarios.call", return_value=([], "", [{"id":"synthetic-call"}])
             ) as send:
                 self.assertTrue(matrix(run, run.plan["models"], cases=("text", "tool")))
-            sessions = [call.kwargs["extra"]["extra_body"]["session_id"] for call in send.call_args_list]
+            sessions = [call.kwargs["extra"]["extra_headers"]["X-MorphieCore-Conversation-Id"]
+                        for call in send.call_args_list]
+            self.assertTrue(all("extra_body" not in call.kwargs["extra"]
+                                for call in send.call_args_list))
             self.assertEqual(len(sessions), 6)
             self.assertEqual(sessions[1], sessions[2])
             self.assertEqual(sessions[4], sessions[5])

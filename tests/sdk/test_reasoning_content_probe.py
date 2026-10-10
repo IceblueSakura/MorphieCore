@@ -150,9 +150,11 @@ class ReasoningContentTests(unittest.TestCase):
                 self.assertTrue(matrix(run, run.plan["models"],
                     cases=("reasoning_content",), protocol="responses", effort="medium"))
             self.assertEqual(len(observed), 2)
-            for _, kwargs in observed:
+            for args, kwargs in observed:
                 self.assertEqual(kwargs["cap"], 2048)
-                self.assertEqual(kwargs["extra"], {"reasoning": {"effort": "medium"}})
+                self.assertEqual(kwargs["extra"], {"reasoning": {"effort": "medium"},
+                    "extra_headers": {"X-MorphieCore-Conversation-Id":
+                        f"{run.plan['id']}:{args[3].rsplit(':', 1)[0]}"}})
 
     def test_new_metrics_remain_closed_and_payload_free(self):
         from probe_support.ledger import closed_metrics
@@ -225,7 +227,9 @@ class ReasoningContentTests(unittest.TestCase):
                     self.assertEqual(call.args[5],
                                      visual_math_history("responses", plain_text=True))
                     self.assertEqual(call.kwargs["cap"], 2048)
-                    self.assertEqual(call.kwargs["extra"], {})
+                    self.assertEqual(call.kwargs["extra"], {"extra_headers": {
+                        "X-MorphieCore-Conversation-Id":
+                            f"{run.plan['id']}:{call.args[4].rsplit(':', 1)[0]}"}})
                     self.assertIs(call.kwargs["oracle"], expect_image_reasoning_content)
 
     def test_image_content_call_enables_stream_check_and_records_only_metrics(self):

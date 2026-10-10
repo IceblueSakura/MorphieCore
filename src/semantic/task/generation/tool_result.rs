@@ -4,6 +4,7 @@ use crate::semantic::value::Text;
 /// Execution conclusion is independent of the result value and artifact lifecycle.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ToolExecution {
+    NotExecuted,
     Succeeded,
     Failed { code: Option<Text> },
     Cancelled,
@@ -53,6 +54,8 @@ impl From<&str> for ToolOutput {
 pub struct ToolResult {
     pub call_id: Text,
     pub output: ToolOutput,
+    /// Independent result report: missing is unknown, never inferred from execution or text.
+    pub is_error: Option<bool>,
     /// Missing remains unreported, not successful execution.
     pub execution: Option<ToolExecution>,
     /// Artifact lifecycle, not tool success; absent remains unreported.

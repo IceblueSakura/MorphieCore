@@ -327,6 +327,13 @@ pub fn items(
                     }
                     ToolOutput::Structured(value) => charge(&mut bytes, value.bytes()?)?,
                 }
+                if matches!(
+                    (&r.execution, r.is_error),
+                    (Some(ToolExecution::Succeeded), Some(true))
+                        | (Some(ToolExecution::Failed { .. }), Some(false))
+                ) {
+                    return Err(GenerationError::InvalidToolResult);
+                }
                 if let Some(execution) = &r.execution {
                     if r.status == Some(ItemLifecycle::InProgress) {
                         return Err(GenerationError::InvalidToolResult);

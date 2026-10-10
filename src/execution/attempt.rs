@@ -99,6 +99,16 @@ pub fn prepare(
     request: &Request,
 ) -> Result<UpstreamRequest, AttemptError> {
     let auth = operation_auth(endpoint, provider)?;
+    if endpoint.protocol == crate::topology::ProtocolProfile::AnthropicMessages
+        && endpoint
+            .representation
+            .replay_origin
+            .as_ref()
+            .map(|o| o.as_str())
+            != Some(provider.id.as_str())
+    {
+        return Err(AttemptError::Protocol("native provider replay scope"));
+    }
     let streaming = request.delivery.streaming()
         || endpoint
             .representation
@@ -130,7 +140,26 @@ pub fn prepare(
             .into(),
         ),
     ];
-    safe_headers.extend(endpoint.adapter().request_headers(request)?);
+    if matches!(endpoint.adapter(), UpstreamAdapter::AnthropicMessages(_)) {
+        let session = if endpoint.representation.adaptation.rules.opencode_go_headers {
+            Some(endpoint.representation.cache.opencode_session(
+                request.conversation.as_ref(),
+                request.cache_session.as_ref(),
+            )?)
+        } else {
+            None
+        };
+        safe_headers.extend(super::messages::native_headers(
+            endpoint,
+            session.as_deref(),
+        )?);
+    } else {
+        safe_headers.extend(
+            endpoint
+                .adapter()
+                .request_headers(request, endpoint.representation.cache)?,
+        );
+    }
     Ok(UpstreamRequest {
         origin: endpoint.target.origin.as_str().into(),
         method: "POST",
@@ -160,6 +189,11 @@ pub struct Attempt {
     decoded: Option<DecodedResponse>,
     terminal: Option<StreamEvent>,
     rejected: bool,
+    native_source: Option<(
+        crate::protocol::DecodedRequest,
+        crate::protocol::anthropic::ReplayTarget,
+        crate::semantic::task::generation::LocalScope,
+    )>,
 }
 impl Attempt {
     pub fn new(adapter: impl Into<UpstreamAdapter>, body_limit: usize, limits: SseLimits) -> Self {
@@ -172,7 +206,25 @@ impl Attempt {
             decoded: None,
             terminal: None,
             rejected: false,
+            native_source: None,
         }
+    }
+    /// Explicit immutable request context for native static intake, captured before I/O.
+    pub fn native_messages(
+        source: crate::protocol::DecodedRequest,
+        target: crate::protocol::anthropic::ReplayTarget,
+        scope: crate::semantic::task::generation::LocalScope,
+        body_limit: usize,
+    ) -> Result<Self, AttemptError> {
+        let profile = crate::protocol::anthropic::Profile::AdaptiveTextTools;
+        profile.encode_generation_request(&source.semantic, &source.fidelity, &target)?;
+        let mut attempt = Self::new(
+            UpstreamAdapter::AnthropicMessages(profile),
+            body_limit,
+            SseLimits::default(),
+        );
+        attempt.native_source = Some((source, target, scope));
+        Ok(attempt)
     }
     pub fn begin(&mut self, status: u16, content_type: &str) -> Result<(), AttemptError> {
         if self.rejected || !matches!(self.intake, Intake::Pending) {
@@ -182,13 +234,25 @@ impl Attempt {
             if let StatusClass::Failure(class) = classify_status(status) {
                 return Err(AttemptError::Status { status, class });
             }
-            let adapter = self.adapter.openai()?;
             let media = content_type
                 .split(';')
                 .next()
                 .unwrap_or_default()
                 .trim()
                 .to_ascii_lowercase();
+            if matches!(self.adapter, UpstreamAdapter::AnthropicMessages(_)) {
+                if self.native_source.is_none() {
+                    return Err(AttemptError::Protocol("missing native request context"));
+                }
+                if media != "application/json"
+                    && !(media.starts_with("application/") && media.ends_with("+json"))
+                {
+                    return Err(AttemptError::Protocol("native intake requires JSON"));
+                }
+                self.intake = Intake::Static(vec![]);
+                return Ok(());
+            }
+            let adapter = self.adapter.openai()?;
             self.intake = if media == "text/event-stream" {
                 match adapter.protocol {
                     Profile::Chat => Intake::Chat(ChatSseDecoder::with_decoder(
@@ -277,7 +341,13 @@ impl Attempt {
         if self.decoded.is_none() {
             let result = (|| -> Result<DecodedResponse, AttemptError> {
                 Ok(match &mut self.intake {
-                    Intake::Static(body) => self.adapter.decode_response(body)?,
+                    Intake::Static(body) => match (&self.adapter, &self.native_source) {
+                        (
+                            UpstreamAdapter::AnthropicMessages(profile),
+                            Some((source, target, scope)),
+                        ) => profile.decode_generation_response(body, *scope, source, target)?,
+                        _ => self.adapter.decode_response(body)?,
+                    },
                     Intake::Responses(d) => {
                         d.finish()?;
                         d.materialize()?
@@ -293,6 +363,7 @@ impl Attempt {
                 Ok(decoded) => {
                     self.decoded = Some(decoded);
                     self.intake = Intake::Closed;
+                    self.native_source = None;
                 }
                 Err(error) => {
                     self.reject();
@@ -326,5 +397,6 @@ impl Attempt {
         self.intake = Intake::Closed;
         self.decoded = None;
         self.terminal = None;
+        self.native_source = None;
     }
 }

@@ -79,6 +79,7 @@ async fn answer(
         "Bearer synthetic-upstream-credential-0001"
     );
     assert!(!headers.contains_key("x-never-forward"));
+    assert!(!headers.contains_key("x-morphiecore-conversation-id"));
     assert_eq!(request["model"], "private-model");
     let chat = request.get("messages").is_some();
     let cap = if chat {
@@ -536,11 +537,21 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
                 .post(format!("{url}{path}"))
                 .bearer_auth(support::CLIENT_KEY)
                 .header("x-never-forward", "private-input")
+                .header("X-MorphieCore-Conversation-Id", "conversation-one")
                 .json(&request)
                 .send()
                 .await
                 .unwrap();
             assert_eq!(response.status(), 200);
+            assert!(
+                !response
+                    .headers()
+                    .contains_key("x-morphiecore-conversation-id")
+            );
+            assert_eq!(
+                observed.0.lock().unwrap().last().unwrap()["prompt_cache_key"],
+                "2b9fca8fab555e6f158d416aad2a034e943010b3721ca44a5fb1c3e77d9668af"
+            );
             let body = response.bytes().await.unwrap();
             assert!(!String::from_utf8_lossy(&body).contains("private-model"));
             if !stream {
@@ -599,11 +610,16 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
                 let followup = client
                     .post(format!("{url}{path}"))
                     .bearer_auth(support::CLIENT_KEY)
+                    .header("X-MorphieCore-Conversation-Id", "conversation-one")
                     .json(&json!({"model":"public-model","input":history,"stream":stream}))
                     .send()
                     .await
                     .unwrap();
                 assert_eq!(followup.status(), 200);
+                assert_eq!(
+                    observed.0.lock().unwrap().last().unwrap()["prompt_cache_key"],
+                    "2b9fca8fab555e6f158d416aad2a034e943010b3721ca44a5fb1c3e77d9668af"
+                );
                 let finished = responses_delivery(&followup.bytes().await.unwrap(), stream);
                 assert_eq!(finished.semantic.outcome(), Outcome::Completed);
                 assert_eq!(finished.semantic.continuation(), Continuation::Unreported);

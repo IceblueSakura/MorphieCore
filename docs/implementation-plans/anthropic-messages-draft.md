@@ -1,6 +1,6 @@
 # Agent 使用方案驱动的 Anthropic Messages 接入计划
 
-**状态：所选采用规则与纯 wire/operation 接口归 [Anthropic 合同](../architecture/anthropic-messages-profile.md)；下一片从 C 的共享语义映射与历史闭环选取。更广映射和 Rust 结构仍按切片定稿，当前没有进行中的行为切片。**
+**状态：当前优先 F 的 Gateway 自有续轮载荷与标准消费者；原生 SSE 和真实验证按依赖分别推进。当前小片归 [current-focus](current-focus.md)，所选静态语义与接口归 [Anthropic 合同](../architecture/anthropic-messages-profile.md)。**
 
 指定准备目标仍为 `opencode-go/claude-haiku-5-5`。以 pi/OpenCode 的真实工具循环为使用基线，结合 new-api/RelayKit 的字段映射，先完成保留默认 adaptive thinking 的原生库级闭环，再单独解决标准 Responses 的交付、保存与回传。不从计划推定产品注册、账户资格或实例激活。
 
@@ -39,7 +39,7 @@
 
 原生文本、工具、错误、thinking、基本终态与计量的有限范围归 [profile](../architecture/anthropic-messages-profile.md)。动态目录、目标资格和模型特定控制/缺省在实施时复核，来源归参考页，不维护能力库存。
 
-Go 的固定路径/认证依据归[原生来源](../references/agent-protocol-adaptation.md#anthropic-native)。准备显式发送 `anthropic-version: 2023-06-01`，使用真实 MorphieCore User-Agent；库调用者为同一对话显式提供稳定 `x-opencode-session`，不从 user/key/cache hint 推导。Messages、Chat 与 Zen balance 分别绑定，不通过本地无 fallback 推定服务端不会消耗 Zen balance。只发送 synthetic 编码任务，不将订阅入口规划成任意流量代理。
+Go 的固定路径/认证依据归[原生来源](../references/agent-protocol-adaptation.md#anthropic-native)。准备显式发送 `anthropic-version: 2023-06-01`，使用真实 MorphieCore User-Agent；分组遵循[中性上下文的内部投影](../architecture/protocol-and-lowering.md#cache-affinity-projection)。Messages、Chat 与 Zen balance 分别绑定，不通过本地无 fallback 推定服务端不会消耗 Zen balance。只发送 synthetic 编码任务，不将订阅入口规划成任意流量代理。
 
 ## 4. 本地差额与结构选择
 
@@ -47,7 +47,7 @@ Go 的固定路径/认证依据归[原生来源](../references/agent-protocol-ad
 
 | 边界 / owner | 对接缺口 | 草案方案与待定点 |
 |---|---|---|
-| [工具](../../src/semantic/task/generation/tool.rs)、[结果](../../src/semantic/task/generation/tool_result.rs) | Structured/raw 参数已有 owner；独立结果错误位与明确未执行状态尚缺 | 按[结果错误合同](../architecture/interaction-contract.md#client-tool-result-errors)补最小语义差额，再实现所选原生映射；不把 is_error 直接解释为已执行失败，不先合并全部工具类型 |
+| [工具](../../src/semantic/task/generation/tool.rs)、[结果](../../src/semantic/task/generation/tool_result.rs) | 标准消费者的新错误 carrier 与投影尚未闭合 | 按[结果错误合同](../architecture/interaction-contract.md#client-tool-result-errors)选择有限载体或损失，不从正文推断执行事实，不先合并全部工具类型 |
 | [请求投影](../../src/adapter/request.rs)、[lowering](../../src/lowering/generation.rs)、[delivery](../../src/execution/delivery.rs) | 选用 custom 包装等规则时，响应需要知道本次请求的映射 | 按实际规则返回有界投影依据并传到对应 attempt；transport 不解释它，IR 不承载运行时状态。预检与发送使用同一规则，不能只改请求不闭合响应/history |
 | [能力合同](../../src/semantic/task/generation/contract.rs)、[规划](../../src/execution/plan.rs) | 原生能力与经批准适配后的可用性需要区分 | 仅为选定规则检查原请求准入、策略前提及投影后 requirements；不把原生 capability 标成 true，不重写通用能力系统 |
 | [Replay](../../src/semantic/task/generation/replay.rs)、[依赖](../../src/semantic/task/generation/dependency.rs) | 已有 Anthropic 格式，但无原生 parser/encoder 与逐格式绑定闭环 | 实现 signature intake、finalization、编码与实际 prefix/configuration 依赖；不以普通 fingerprint 声称跨请求认证 |
@@ -58,19 +58,7 @@ Go 的固定路径/认证依据归[原生来源](../references/agent-protocol-ad
 
 ## 5. 实施顺序与停止点
 
-以下是同一主线的依赖顺序，不是要求一次实施全部的任务包。所选采用规则以 profile 为准；C–E 闭合原生语义与执行，F 单独解决标准消费者。每个获选小片在 current-focus 固定退出条件，闭合后停止，不自动进入下一片。复用纯 wire、operation 绑定和共享 metadata，不把它们当成已完成的 IR/运行证明。
-
-### C. 静态工具循环与历史
-
-- 先定结果错误 presence 与明确未执行状态的 Rust 合法组合和序列化，再实现其最低 owner 回归；不绕过共享语义直接运行 wire DTO。
-- 闭合原生 request/Message ↔ IR 的独立映射及 adapter/JSON intake；从实际已实现的有限值推导 representation/requirements，再允许相应语义绑定，不以 wire 声明发布完整能力。
-- 实现第 3 节的原生范围；采用已有 function/字符串工具用法，不要求先实现 custom 包装。
-- 分别验证成功结果和带正文的工具错误：Gateway 传递已知报告，校验/执行及下一轮修正由 Agent 或 synthetic 调用者负责。
-- System/Developer authority、指令作用位置、block 顺序、call/result 关联、数值与 signature owner 按所选映射检查；必要的目标重组单独定稿。
-- 原观察与派生请求分开；保存观察、追加 synthetic 结果、选择历史后重验依赖。
-- Signature intake 必须获得原请求配置及此前 messages/输出 blocks 的受信依赖，不在后继编码时补捕获；纯签名、前缀编辑、删除与追加结果分别给出独立预期。
-
-退出条件：独立 wire→IR 与 IR→wire 预期，以及 typed 保存→追加成功/错误结果→再次请求成立。错误正文不会被丢掉或误升为 Generation 失败，未执行与执行失败不互相补猜。
+以下是同一主线的依赖顺序，不是要求一次实施全部的任务包。所选采用规则以 profile 为准；D–E 闭合原生流式与真实执行，F 解决标准消费者，可先推进其独立静态边界。每个获选小片在 current-focus 固定退出条件，闭合后停止，不自动进入下一片。复用[静态语义/接口](../architecture/anthropic-messages-profile.md)，不把离线类型、映射或绑定当成运行证明。
 
 ### D. SSE 与静态一致性
 
@@ -142,14 +130,14 @@ Go 的固定路径/认证依据归[原生来源](../references/agent-protocol-ad
 
 标准 Responses 仍是最终 Generation 主接口。以下待决点阻塞相应标准消费分支，不阻塞独立原生库片；取舍不足时报告可行选项和行为代价，不自行发明扩展或把当前拒绝当永久设计：
 
-1. Anthropic signature 的标准交付与必要回传：不能冒充 `ResponsesEncrypted`，也不恢复独立 `_openbridge`。
-2. Go session 的可信入口：当前标准 Responses 不接受 `session_id`；不能用 `prompt_cache_key` 冒充，新增客户端 carrier 必须另行批准。
+1. Anthropic signature 的标准交付与必要回传采用 [Gateway 自有认证加密载荷](../architecture/anthropic-messages-profile.md#gateway-自有续轮载荷)。下一步闭合 reasoning `encrypted_content` 的显式 carrier dispatch、来源容器恢复与固定消费者；纯库签发/验证不启用公开路径，不恢复独立 `_openbridge`。
+2. 固定消费者自动携带[中性 conversation header](../http-gateway.md#conversation-context)，验证首次请求、无 thinking 与模型切换；上游分组规则在 Gateway 内部完成，不将 Provider session 参数或 key 作用域要求交给使用者，也不将分组绑定进加密 reasoning。
 3. Structured tool input 的字符串参数投影、保存与回传，以及工具错误报告的 carrier；参考现成用法定有限转换，而非要求所有来源形状原样恢复。
 4. Reported progress、stop/refusal detail 的目标表达；明确哪些事实影响 Agent 是否调用工具、继续请求或停止，再决定允许的省略。
 5. 上游未报告 timestamp 时，下游本地响应时间的 owner、来源和标准含义；本地 envelope metadata 不冒充上游报告。
 6. Message boundary 投影与必要 replay/prefix 依赖的兼容条件。
 
-C–E 原生范围闭合即停止并移除已完成计划内容：原生 JSON/SSE、typed IR、工具成功/错误及 signature/history 成立，既有协议和安全边界不回归；F 的未决方向保留，不宣称标准 Responses 或完整 Agent 已可用。
+D–E 原生范围闭合即停止并移除已完成计划内容：原生 JSON/SSE、typed IR、工具成功/错误及 signature/history 成立，既有协议和安全边界不回归；F 的未决方向保留，不宣称标准 Responses 或完整 Agent 已可用。
 
 ## 8. 随使用收敛的 IR 消融
 

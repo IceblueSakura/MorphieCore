@@ -1,6 +1,6 @@
 # Generation 交互合同
 
-本页细化 [Semantic Model](semantic-ir.md)中的请求型 Generation，约束工具、结果、响应进度、replay 与报告；不规定新客户端 API，不是 Agent 调度器或 Realtime 设计。具体优先级归[计划](../implementation-plans/next-goal.md)，现有准入归 [Responses](responses-text-profile.md)、[Chat](chat-text-profile.md)和[客户端边界](client-generation-profile.md)。
+本页细化 [Semantic Model](semantic-ir.md)中的请求型 Generation，约束历史权威、工具、结果、响应进度、replay 与报告；标准引用的采用不自动启用 HTTP 分支，也不是 Agent 调度器或 Realtime 设计。具体优先级归[计划](../implementation-plans/next-goal.md)，现有准入归 [Responses](responses-text-profile.md)、[Chat](chat-text-profile.md)和[客户端边界](client-generation-profile.md)。
 
 ## 表示与唯一权威
 
@@ -10,10 +10,24 @@ Generation request 拥有有序 history、指令和生成意图；response 拥�
 
 完整字符串不证明 JSON 有效，JSON 有效不证明符合参数 Schema，符合 Schema 不授予工具执行权限。Custom/grammar input 不强行按 JSON 解释。Partial builder 完成须验证，不能用初始空对象、缺字段默认或终态 snapshot 修补截断内容。
 
+<a id="context-authority"></a>
+## 历史权威与 API 模式
+
+当前主线是 ClientManaged：客户端每次提交完整请求，语义正确性不依赖前次 Gateway 状态。显式中性 conversation ID 只提供稳定分组；缺少它时可按[缓存合同](protocol-and-lowering.md#implicit-cache-affinity)尽力推断亲和，不能据此补写或覆盖历史。
+
+ServerManaged 是确定的终期目标：本网关通过标准 `previous_response_id` 解析获准保存的历史，加上本轮新增输入，物化为同一 GenerationRequest；之后仍经过原有验证、requirements、目标投影与执行，不建立第二套 Provider/Agent IR。
+
+| 层 | 保存内容与权威 | 不可用时 |
+|---|---|---|
+| 亲和索引 | 前缀摘要、内部分组和作用域/期限；非历史权威，不保存正文 | 当作未命中，继续处理完整请求 |
+| 历史存储 | 获准保留的输入/输出、关系与必要来源/依赖；是有状态请求的历史来源 | 引用请求明确失败，不退化为新对话 |
+
+二者分开拥有 TTL、容量、清理与失败策略。Session ID、cache key、前缀 hash 都不是历史读取凭证；知道 response ID 也不能绕过认证与主体范围检查。Agent 的工具执行、自动续轮和长期记忆不随历史服务进入项目范围。
+
 <a id="client-managed-context"></a>
 ## ClientManaged 上下文与配置
 
-客户端拥有历史并明确选择本次使用的记录；核心从选中历史、新输入/结果和显式配置快照构造请求，不读取 session 文件、选择分支或维护第二套 AgentHistory。初次请求是空历史加新输入，不要求独立 Fresh 状态机。ServerManaged 的实施与恢复条件归[计划](../implementation-plans/next-goal.md#延期目标与恢复条件)，不以空壳变体预建。
+客户端拥有历史并明确选择本次使用的记录；核心从选中历史、新输入/结果和显式配置快照构造请求，不读取 session 文件、选择分支或维护第二套 AgentHistory。初次请求是空历史加新输入，不要求独立 Fresh 状态机。ServerManaged 的实施顺序归[终期计划](../implementation-plans/next-goal.md#stateful-api)，不以空壳变体预建。
 
 ```text
 调用者选中的 typed 历史 / 已接受观察 + 配置快照 + 显式编辑或追加
@@ -22,7 +36,7 @@ Generation request 拥有有序 history、指令和生成意图；response 拥�
   → 目标投影 → 现有执行边界
 ```
 
-已接受观察与派生请求是不同语义对象。原观察不可被投影原地改写，最终请求只拥有一份当前 typed 值；来源、索引和变换报告不保存可以覆盖它的第二正文。纯库直接构造请求不必建立 session tree。Gateway 不因调用此能力而持有跨请求会话状态。
+已接受观察与派生请求是不同语义对象。原观察不可被投影原地改写，最终请求只拥有一份当前 typed 值；来源、索引和变换报告不保存可以覆盖它的第二正文。纯库直接构造请求不必建立 session tree。Gateway 不因调用此能力而取得历史恢复权限；可丢弃亲和元数据不改变 ClientManaged 的历史权威。
 
 - 每次请求显式提供本次所需的历史、指令、工具与控制；不依赖 `previous_*_id`、conversation 或连接级增量历史。无状态历史、response storage、原生 cache 和 opaque replay 是不同机制，不以其中一个开关推导其他机制或 ZDR 保证。
 - 配置与工具定义有可引用的修订。[配置 owner](../../src/semantic/task/generation/configuration.rs)以调用者显式声明的 scoped revision 关联不可变完整快照，客户端工具定义由原修订与限定 kind/namespace/name 唯一定位；没有原始关联时不从当前工具列表补猜。历史调用保留原定义关联，当前同名定义不重新解释旧参数；同修订不同内容是冲突，改变历史调用的绑定遵守新调用身份规则。修订标签不提供认证，也不要求建设全局 registry。只有触及已声明依赖的变化才使该依赖失效，不以全历史/全配置变化一律拒绝。
@@ -35,6 +49,22 @@ Generation request 拥有有序 history、指令和生成意图；response 拥�
 稀疏选择不是编辑源响应：原 usage、outcome、progress 留在原观察，进度只作为有来源的选择记录。Provider 后继要求由调用者/profile 显式声明并检查选定配置依赖，不从 `NeedsContinuation` 推断，也不与 pending client results 合并为执行队列。固定修订的依赖同时绑定内容，不能靠重建相同普通标签绕过检查；这些进程内检查仍不是认证或持久化许可。
 
 Pi 的[上下文投影参考](../references/pi-provider-abstraction.md#client-managed-projection)提供历史与请求视图分离的方法，不决定本项目的 role、损失或信任规则。自动摘要、裁剪策略、分支存储、工具执行与续轮调度仍属于调用方。
+
+<a id="server-managed-context"></a>
+## ServerManaged 限时历史合同
+
+本节定义终期目标，不表示当前 `store:true` 或活动 `previous_response_id` 已准入。标准字段语义以[Responses 基线](../references/responses-standard.md#2-create-request-的完整域)为准；HTTP Schema、默认值和错误合同在实施片同步闭合。
+
+- `response.id` 由 Gateway 作为下游服务签发；引用解析与保存归 Gateway，不把此 ID 当作上游 response ID 转发。初期可在本地恢复完整历史，再向已选 Provider 发送完整请求，不依赖其状态服务。
+- 无引用时，完整输入由调用者负责；有引用时，授权父记录与当前 `input` 按标准规则组成请求。不猜测 `input` 是否已经包含旧历史，不以 hash 自动去重。中性 header 仍只影响分组，不能选择或替换父记录。
+- 历史节点不可变。同一父 response 可以产生多个独立子节点，不维护由 session ID 隐式选择的“最新头”，也不把两个并发增量互相合并。
+- `store` 控制本网关对本轮响应及必要上下文的保留；`store:false` 不等于关闭 Provider prompt cache。下游保留意图与上游 `store` 投影分开。保留不缩短实际模型上下文，也不保证少计历史输入 tokens。
+- 恢复历史不复制整个旧请求。使用 `previous_response_id` 时，旧顶层 `instructions` 不自动继承；其他配置按各字段合同处理，不以便利性统一继承。标准 `conversation` 与 `previous_response_id` 互斥；前者不因本片而自动实现。
+- 保存工具关联、来源容器及必要 replay/资源依赖，物化后重验来源范围、时效、预算与目标兼容。历史读取授权不替代上游授权，不解除跨 Provider/Model 的 opaque 限制。
+- 可续接记录须满足相应终态、产物完整性与提交合同；失败、取消或未闭合输出不伪装成完整历史。保存失败不能宣称已成功保留，JSON/SSE 需采用一致的引用就绪边界。
+- 明确保留期限、删除、主体隔离、容量和重启行为。不得留下仍承诺可续接、却依赖已淘汰祖先的节点；过期、缺失或无权访问返回引用不可用错误，不自动换成无状态调用。
+
+首次实施优先单实例限时存储；持久化、分布式共享及更广状态资源按实际需求选片，不是当前隐式缓存索引的前置条件。
 
 ## Response outcome and continuation
 
@@ -64,7 +94,7 @@ Continuation 是要求/依赖而不是动作命令。当前 [pending view](../..
 - 调用者可将参数拒绝或执行失败反馈为带正文的结果，再决定是否发出后继请求；核心只维护 call 关联与合法 history，不执行工具、修复参数或自动重试。修正调用是新观察/identity，不把旧结果重关联。
 - 最终结果须验证这些报告的适用组合和 presence，编辑后重新推导 requirements/依赖；没有目标 carrier 的事实只能按具名投影处理，不能隐藏在 fidelity 或私有字段。
 
-当前 [ToolResult / ToolExecution](../../src/semantic/task/generation/tool_result.rs)尚缺独立错误报告和明确未执行状态；这是待实施的最小语义差额，不通过重新解释 Failed 掩盖。原生映射、有限执行细节省略和独立反例归 [Anthropic 合同](anthropic-messages-profile.md#参数身份与工具结果)。标准 Responses/Chat 尚无对应载体合同，现有拒绝保持有效。
+[ToolResult / ToolExecution](../../src/semantic/task/generation/tool_result.rs)分别承载可选错误报告与包括明确未执行在内的执行事实；requirements 与语义准入分别检查。明确成功不能同时报告结果错误，明确执行失败不能同时报告结果非错误；缺省不补猜。原生映射与有限执行细节省略归 [Anthropic 合同](anthropic-messages-profile.md#参数身份与工具结果)。标准 Responses/Chat 尚无错误报告载体合同，保留拒绝，不静默省略 false 或 true。
 
 <a id="provider-tool-observations"></a>
 ## Provider 工具观察与分层验证

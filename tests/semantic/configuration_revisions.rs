@@ -84,6 +84,7 @@ fn selected_history_keeps_original_definition_without_inheriting_current_setting
         .append_items(vec![(
             ItemId::new(2),
             Item::ToolResult(ToolResult {
+                is_error: None,
                 call_id: text("C"),
                 output: "reported".into(),
                 execution: None,
@@ -324,6 +325,7 @@ fn definitions_resolve_by_kind_namespace_and_name_and_results_cannot_own_them() 
     items.push((
         ItemId::new(2),
         Item::ToolResult(ToolResult {
+            is_error: None,
             call_id: text("C"),
             output: "reported".into(),
             execution: None,

@@ -27,6 +27,36 @@ Canonical Model 拥有模型语义身份；Public Model 绑定 task 和固定 Ro
 
 Requirements 从最终值和 delivery 推导，不含路由选择。每个固定候选独立从同一不可变 IR 投影，不能让前一候选的降级污染后一候选。投影若改变值，需重验剩余结构、依赖、大小与要求；它不能扩张已批准公共请求或目标能力，也不能靠换目标绕过授权。
 
+<a id="cache-affinity-projection"></a>
+## 缓存亲和与会话分组载体
+
+下游只表达 Provider 无关的逻辑 conversation；HTTP carrier 归[网关指南](../http-gateway.md#conversation-context)，typed owner 为共享 `ConversationContext`。它区分稳定 conversation 与独立请求范围，不存历史，不证明认证、issuer 或 replay 兼容。上游 session/cache 载体由目标内部选择，消费者不承担 Provider 分组规则。
+
+以下为当前显式路径；隐式索引尚待接线，现行无 header 请求仍采用一次性分组。
+
+- 有显式 conversation 时，同一逻辑对话保持 ID，切换模型/Provider 不要求更换；缺省 HTTP 请求分配一次性分组，不从内容、用户、cache key 或凭据推断跨请求关联。分组在候选预检前确定，候选/attempt 不重新分配。
+- `prompt_cache_key` 仍是独立可选缓存分组，可以跨 conversation 共用。显式 value/null 按目标准入与原 presence 处理；只有 absent 且具有 conversation 范围时，才在支持标准 key 的目标副本派生默认 key。独立请求不自动填充标准 key，未发送 hint 不等于关闭自动缓存。
+- Go Chat/native Messages 只从中性上下文派生 `x-opencode-session`，不从 cache key 反推 session；原生 body 不增加 cache/session 字段。派生编码使用有版本、用途隔离的确定性 SHA-256，生成有界 ASCII，算法归 [cache projection](../../src/protocol/cache.rs)，不是认证凭据或必要 replay 证明。
+- HTTP Chat/Responses 均拒绝 Provider `session_id` body。纯库低层的显式 Provider 分组仍可用于独立原生 wire 准备；它与中性上下文不能同时成为权威。纯 codec 不生成随机 ID，也不解析 HTTP headers。
+- 未映射的 advisory key/retention 仅按既有 cache projection 从目标副本省略；非法 typed 值先拒绝，活动 cache options 仍需目标准入。新上下文只进入可选缓存前缀检查，不增加 reasoning replay 的 conversation/key 绑定。
+
+投影不写回共享请求、伪造 response echo/usage、保存会话、选择凭据或改变候选顺序。预检与发送使用同一规则；不同 conversation、用途和一次性范围不混为同一分组。OAuth 不授权复制产品 backend 的 session/thread headers。目标载体依据：[xAI Responses 缓存](https://docs.x.ai/developers/advanced-api-usage/prompt-caching/maximizing-cache-hits)、[Go session 要求](https://opencode.ai/docs/go/)。
+
+<a id="implicit-cache-affinity"></a>
+### 尽力隐式亲和
+
+目标是在 ClientManaged 完整请求上改善同 Provider/Model 的原生缓存机会，不是回答缓存或历史服务。显式会话标识保持稳定方案；隐式优化失败不改变原请求、必要 replay 或执行结果的合法性。
+
+- 亲和来源依次采用显式中性会话标识、未来有状态父记录的已存关系、短 TTL 前缀索引、独立新分组或目标允许的无提示路径。标准 `prompt_cache_key` 是另一维度的显式缓存意图，按原 presence/目标准入处理，不以它反推 session。
+- 索引按认证主体、Provider/Model、已知上游授权/缓存域及投影版本隔离，不跨 Provider 复用。目标和凭据仍由固定执行规则选择；不能为了命中索引而换目标、换凭据或改序。无法界定兼容域时跳过隐式复用。
+- 只对有限数量的完整 item 边界做稳定内容编码与精确前缀摘要匹配，保留影响请求的顺序、参数与必要签名。不使用 Rust Debug、易变本地 ID、语义相似度或编辑猜测；不将每轮变化的整个请求 hash 直接作为上游 key。
+- 摘要范围由所选 profile 的 prompt 相关表示决定，排除本次派生的亲和提示和非 prompt 执行 metadata；不能借此省略实际送模型的 call ID 或其他有效内容。
+- 从已验证的完整请求/输出建立可复用前缀记录，只保存摘要、亲和标识、作用域与期限，不保存正文。索引只说明可能的缓存亲和，不创建真实 conversation identity，也不允许补齐历史或重新签发 replay 证明。
+- 编辑、压缩、格式变化、歧义、过期、禁用、容量不足或索引故障均可视为未命中；按原合同发送完整请求。该降级不吞原请求的验证错误，不添加 retry/fallback。TTL、条目/累计内存和每请求检查点均有硬界限，索引可随时丢弃。
+- 稳定前缀优先于更复杂的匹配。是否派生 key、发送 session header 或使用原生缓存控制归具体 profile；不为所有目标强制同一策略。索引命中与实际 cache-read/usage 分别观察，未报告不补零，不以高命中率作为正确性门槛。
+
+Gateway 拥有索引和候选局部亲和元数据，纯 codec/lowering 只消费显式投影输入。与权威历史存储的失败边界归[交互合同](interaction-contract.md#context-authority)，下一实现片归[缓存计划](../implementation-plans/cache-affinity-draft.md)。
+
 ## Semantic loss
 
 目标是**低损而不是任意无损**，不构造通用保真百分比。投影分为：

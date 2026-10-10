@@ -453,7 +453,47 @@ fn unified_request_projection_keeps_targets_trusted_and_debug_redacted() {
     }
 }
 #[test]
-fn opencode_go_projects_only_fixed_identity_and_explicit_session_headers() {
+fn grok_public_binding_uses_the_responses_cache_carrier() {
+    let topology = catalog::default_topology().unwrap();
+    let secret = SecretMaterial::new("synthetic-oauth-token").unwrap();
+    let binding = catalog::SUBSCRIPTION_BINDINGS
+        .iter()
+        .find(|binding| binding.profile == "grok")
+        .unwrap();
+    let provider = (binding.provider)();
+    let endpoint = binding.endpoint();
+    let request = standard(Profile::Responses)
+        .decode_request(
+            json!({"model":binding.model,"input":"hello","prompt_cache_key":"shared-workspace"})
+                .to_string()
+                .as_bytes(),
+        )
+        .unwrap();
+    admit(&binding.public_model(), &request).unwrap();
+    let plan = morphiecore::execution::ExecutionPlan::for_request(&topology, &request).unwrap();
+    assert_eq!(plan.candidates.len(), 1);
+    assert_eq!(plan.candidates[0].endpoint_id, endpoint.id);
+    let prepared = prepare(&endpoint, &provider, &secret, &request).unwrap();
+    let body: Value = serde_json::from_slice(&prepared.body).unwrap();
+    assert_eq!(body["prompt_cache_key"], "shared-workspace");
+    assert!(body.get("session_id").is_none());
+    assert!(prepared.safe_headers.iter().all(|(name, _)| {
+        ![
+            "session-id",
+            "thread-id",
+            "x-grok-conv-id",
+            "x-grok-session-id",
+            "x-opencode-session",
+            "x-client-request-id",
+        ]
+        .contains(&name.as_str())
+    }));
+    assert!(request.cache_session.is_none());
+}
+
+#[test]
+fn opencode_go_projects_neutral_conversations_independently_of_cache_groups() {
+    use morphiecore::semantic::context::ConversationContext;
     let topology = catalog::default_topology().unwrap();
     let endpoint = topology
         .endpoint(&EndpointId::new("opencode-go-chat").unwrap())
@@ -461,12 +501,34 @@ fn opencode_go_projects_only_fixed_identity_and_explicit_session_headers() {
     let provider = providers::opencode_go();
     let client = Adapter::new(Profile::Chat, Dialect::MorphieCore, None);
     let secret = SecretMaterial::new("synthetic-go-key").unwrap();
-    for session in [None, Some("synthetic-conversation")] {
+    for (group, key, expected) in [
+        (
+            ConversationContext::conversation("conversation-one").unwrap(),
+            None,
+            "427d18da2021fadacd82a4b187acd8b4459e929ad27d1f77025fff66310a176e",
+        ),
+        (
+            ConversationContext::conversation("conversation-one").unwrap(),
+            Some("shared-workspace"),
+            "427d18da2021fadacd82a4b187acd8b4459e929ad27d1f77025fff66310a176e",
+        ),
+        (
+            ConversationContext::conversation("conversation-two").unwrap(),
+            Some("shared-workspace"),
+            "7577d45153ce9042751834fb6f264cc0fb919b44f4408bb37a6defc6d3256d9f",
+        ),
+        (
+            ConversationContext::independent_request("conversation-one").unwrap(),
+            None,
+            "c5f1b4da1c5a286699d732449eb48d2f00c63c61f36cf2bd236e27de3d71ec25",
+        ),
+    ] {
         let mut body = json!({"model":"hy4-preview","messages":[{"role":"user","content":"keep"}],"max_completion_tokens":37});
-        if let Some(session) = session {
-            body["session_id"] = json!(session);
+        if let Some(key) = key {
+            body["prompt_cache_key"] = json!(key);
         }
-        let request = client.decode_request(body.to_string().as_bytes()).unwrap();
+        let mut request = client.decode_request(body.to_string().as_bytes()).unwrap();
+        request.conversation = Some(group);
         let original = request.clone();
         let prepared = prepare(endpoint, &provider, &secret, &request).unwrap();
         let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
@@ -474,6 +536,7 @@ fn opencode_go_projects_only_fixed_identity_and_explicit_session_headers() {
         assert_eq!(wire["max_tokens"], 37);
         assert!(wire.get("max_completion_tokens").is_none());
         assert!(wire.get("session_id").is_none());
+        assert!(wire.get("prompt_cache_key").is_none());
         assert!(wire.get("provider").is_none());
         assert!(prepared.safe_headers.contains(&(
             "user-agent".into(),
@@ -484,10 +547,26 @@ fn opencode_go_projects_only_fixed_identity_and_explicit_session_headers() {
             .iter()
             .find(|(name, _)| name == "x-opencode-session")
             .map(|(_, value)| value.as_str());
-        assert_eq!(projected, session);
+        assert_eq!(projected, Some(expected));
         assert_eq!(request, original);
         assert!(!format!("{prepared:?}").contains("synthetic-conversation"));
+        let plan = morphiecore::execution::ExecutionPlan::for_request(&topology, &request).unwrap();
+        assert_eq!(plan.candidates.len(), 1);
+        assert_eq!(plan.candidates[0].endpoint_id, endpoint.id);
+        let mut streaming = request.clone();
+        streaming.delivery.stream = Presence::Value(true);
+        let streamed = prepare(endpoint, &provider, &secret, &streaming).unwrap();
+        assert!(
+            streamed
+                .safe_headers
+                .contains(&("x-opencode-session".into(), expected.into()))
+        );
     }
+    let missing = client
+        .decode_request(br#"{"model":"hy4-preview","messages":[{"role":"user","content":"keep"}]}"#)
+        .unwrap();
+    assert!(prepare(endpoint, &provider, &secret, &missing).is_err());
+    assert!(morphiecore::execution::ExecutionPlan::for_request(&topology, &missing).is_err());
     let unsupported = client.decode_request(br#"{"model":"hy4-preview","session_id":"conversation-\u2603","messages":[{"role":"user","content":"keep"}]}"#).unwrap();
     assert!(prepare(endpoint, &provider, &secret, &unsupported).is_err());
     assert!(morphiecore::execution::ExecutionPlan::for_request(&topology, &unsupported).is_err());
@@ -498,7 +577,9 @@ fn opencode_go_projects_only_fixed_identity_and_explicit_session_headers() {
             )
             .is_err()
     );
-    let unsupported = client.decode_request(br#"{"model":"hy4-preview","messages":[{"role":"user","content":"keep"}],"response_format":{"type":"json_object"}}"#).unwrap();
+    let mut unsupported = client.decode_request(br#"{"model":"hy4-preview","messages":[{"role":"user","content":"keep"}],"response_format":{"type":"json_object"}}"#).unwrap();
+    unsupported.conversation =
+        Some(ConversationContext::conversation("synthetic-conversation").unwrap());
     assert!(admit(topology.model("hy4-preview").unwrap(), &unsupported).is_err());
     assert!(prepare(endpoint, &provider, &secret, &unsupported).is_err());
 }

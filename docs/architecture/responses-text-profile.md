@@ -112,7 +112,7 @@ Token Plan 的受信 Responses profile 仅在 reported `text.format.type=json_sc
 
 - `reasoning.summary` 与 deprecated `generate_summary` 仅接受 `auto/concise/detailed` 或 null；缺省、空对象和 null 分别保留，冲突 alias 拒绝。布尔值在请求、响应回显与事件中均拒绝。Typed `ReasoningSummary::Disabled` 仍是合法语义，但当前 Responses 目标没有载体，投影/编码失败，不改写为缺省或 null。
 - `cancelled` 可以是静态 response 状态，但固定 SDK 没有 `response.cancelled` SSE 事件；事件接收与编码均拒绝，不改写为 failed/completed。取消的 typed 产物仍保留，transport 取消不会合成事件或成功终态。
-- HTTP Responses 不接受 `session_id`；该 carrier 仅在显式库级 MorphieCore/Provider profile 或 Chat 兼容入口适用。标准 identity/cache hints 有各自 owner，不从 key/user/token 派生 session，不透传 session headers，也不提供服务端会话。
+- HTTP Responses 与 Chat 均不接受 Provider `session_id`；下游只使用[中性 conversation header](../http-gateway.md#conversation-context)。标准 cache hint 保留独立含义，上游载体由[内部投影](protocol-and-lowering.md#cache-affinity-projection)决定；不透传入站 Provider session headers，也不提供服务端会话。
 - Function/custom definition 的 `async` 与 `defer_loading` 是非 nullable 布尔字段；省略/false 均为 inactive，null 拒绝。Call item 的同名字段使用其独立 schema，不能用 definition 的缺省推断调用事实。
 - 仅 inactive state forms 准入，request `store` 投影为 false；活动 conversation、previous response、background、模板、moderation 和 compaction 尚未形成主链。
 - Configuration/program/custom 分支按 owning codecs 明确准入，只表示有限语义；不是任意设置 patch、工具执行或脚本授权。Program history 需要匹配的 reported output，Chat 不自动支持它。

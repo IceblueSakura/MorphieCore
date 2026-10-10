@@ -122,11 +122,13 @@ class OpaqueProbeTests(unittest.TestCase):
                 self.assertEqual(observed[index][0][0], observed[index - 1][0][0])
             for index in (2, 6):
                 self.assertEqual(observed[index][0], visual_math_history("responses", plain_text=True))
-            for _, _, options in observed:
+            for index, (_, _, options) in enumerate(observed):
                 self.assertTrue(options["check_opaque"])
                 self.assertEqual(options["extra"], {
                     "store": False, "include": ["reasoning.encrypted_content"],
-                    "reasoning": {"effort": "medium"}})
+                    "reasoning": {"effort": "medium"},
+                    "extra_headers": {"X-MorphieCore-Conversation-Id":
+                        f"{run.plan['id']}:{groups[index // 2][4]}"}})
             for protocol, effort in (("chat", None), ("responses", "none")):
                 with self.assertRaises(ProbeFailure):
                     plan_groups(run, run.plan["models"], cases=cases,

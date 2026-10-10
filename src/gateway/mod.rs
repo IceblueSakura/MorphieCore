@@ -6,6 +6,8 @@ mod body;
 pub mod bootstrap;
 mod config;
 #[cfg(test)]
+mod conversation_tests;
+#[cfg(test)]
 mod credential_fallback_tests;
 mod credentials;
 mod diagnostics;

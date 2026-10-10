@@ -57,10 +57,14 @@ fn opencode_go_keeps_readable_reasoning_and_tool_result_history() {
     let wire = client.encode_response(&decoded, &Contract::full()).unwrap();
     assert_eq!(wire["choices"][0]["message"]["content"], "pong");
     assert_eq!(wire["choices"][0]["message"]["reasoning_content"], "think");
-    let request = client.decode_request(br#"{"model":"hy4-preview","messages":[
+    let mut request = client.decode_request(br#"{"model":"hy4-preview","messages":[
         {"role":"user","content":"lookup"},
         {"role":"assistant","content":null,"reasoning_content":"think","tool_calls":[{"id":"call-1","type":"function","function":{"name":"lookup","arguments":"{\"key\":\"alpha\"}"}}]},
         {"role":"tool","tool_call_id":"call-1","content":"{\"value\":17}"}],"max_completion_tokens":37}"#).unwrap();
+    request.conversation = Some(
+        morphiecore::semantic::context::ConversationContext::conversation("synthetic-conversation")
+            .unwrap(),
+    );
     let contract = provider.contract(&Contract::full());
     let before = request.clone();
     let wire = provider
@@ -77,7 +81,8 @@ fn opencode_go_keeps_readable_reasoning_and_tool_result_history() {
         json!({"role":"tool","tool_call_id":"call-1","content":"{\"value\":17}"})
     );
     assert_eq!(request, before);
-    let controlled = client.decode_request(br#"{"model":"hy4-preview","messages":[{"role":"user","content":"keep"}],"reasoning_effort":"low"}"#).unwrap();
+    let mut controlled = client.decode_request(br#"{"model":"hy4-preview","messages":[{"role":"user","content":"keep"}],"reasoning_effort":"low"}"#).unwrap();
+    controlled.conversation = request.conversation.clone();
     assert!(
         provider
             .encode_request(&controlled, "synthetic-upstream", &contract)
@@ -193,6 +198,10 @@ fn opencode_go_unversioned_readable_views_are_closed_and_never_restore_deleted_r
     let mut request = provider
         .decode_request(history.to_string().as_bytes())
         .unwrap();
+    request.conversation = Some(
+        morphiecore::semantic::context::ConversationContext::conversation("synthetic-conversation")
+            .unwrap(),
+    );
     let mut items = request.task.semantic.items().to_vec();
     let Item::Reasoning(reason) = &mut items[0].1 else {
         panic!("reasoning owner")
