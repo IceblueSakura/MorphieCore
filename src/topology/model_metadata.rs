@@ -51,6 +51,10 @@ impl CompiledTopology {
                     .transcription_routes
                     .values()
                     .any(|r| r.canonical_model == id)
+                && !self
+                    .embedding_routes
+                    .values()
+                    .any(|r| r.canonical_model == id)
             {
                 return Err(TopologyError::UnknownCanonicalModel);
             }

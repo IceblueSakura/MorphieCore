@@ -10,6 +10,7 @@ mod chat_reasoning;
 pub mod chat_sse;
 pub(crate) mod citations;
 mod common;
+pub mod embeddings;
 pub mod envelope;
 pub mod events;
 mod file;

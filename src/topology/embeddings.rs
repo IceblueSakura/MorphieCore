@@ -1,11 +1,13 @@
-//! Explicit single-candidate image routes, compiled alongside conversation routes.
-//! A task-specific binding avoids meaningless Generation contracts on image tasks.
+//! Fixed single-target embedding routes, independent of Generation capability placeholders.
 use super::{
     CompiledTopology, EndpointId, EndpointTarget, ExecutionContract, ModelId, RouteId,
     TopologyError,
 };
-use crate::provider::{CredentialBindingId, CredentialKind, EndpointPath, ProviderId};
-use std::collections::BTreeMap;
+use crate::{
+    adapter::embeddings::{Contract, Profile},
+    provider::{CredentialBindingId, CredentialKind, EndpointPath, ProviderId},
+};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProviderEntry {
@@ -13,37 +15,34 @@ pub struct ProviderEntry {
     pub path: EndpointPath,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ImageEndpoint {
+pub struct EmbeddingEndpoint {
     pub id: EndpointId,
     pub provider: ProviderId,
     pub target: EndpointTarget,
     pub upstream_model: String,
     pub canonical_model: ModelId,
-    pub profile: crate::adapter::images::Profile,
+    pub profile: Profile,
+    pub contract: Contract,
     pub credential: CredentialBindingId,
     pub execution: ExecutionContract,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ImageRoute {
+pub struct EmbeddingRoute {
     pub id: RouteId,
     pub model: ModelId,
     pub canonical_model: ModelId,
-    pub accounting: crate::lowering::images::AccountingPolicy,
-    /// Exactly one target; no implicit retry, fallback or capability union.
-    pub endpoint: ImageEndpoint,
+    pub endpoint: EmbeddingEndpoint,
 }
 impl CompiledTopology {
-    pub fn image_route(&self, model: &str) -> Option<&ImageRoute> {
-        self.image_routes.get(model)
+    pub fn embedding_route(&self, model: &str) -> Option<&EmbeddingRoute> {
+        self.embedding_routes.get(model)
     }
-    /// Trusted startup input explicitly selects a static image wire profile.
-    /// No existing Chat/Responses registration implies an Images operation.
-    pub fn with_images(
+    pub fn with_embeddings(
         mut self,
         entries: Vec<ProviderEntry>,
-        routes: Vec<ImageRoute>,
+        routes: Vec<EmbeddingRoute>,
     ) -> Result<Self, TopologyError> {
-        if !self.image_routes.is_empty() || routes.len() > 64 || entries.len() > 64 {
+        if !self.embedding_routes.is_empty() || entries.len() > 64 || routes.len() > 64 {
             return Err(TopologyError::InvalidRoutePolicy);
         }
         let mut paths = BTreeMap::new();
@@ -55,8 +54,8 @@ impl CompiledTopology {
                 return Err(TopologyError::DuplicateProvider);
             }
         }
-        let mut ids = std::collections::BTreeSet::new();
-        let mut endpoints = std::collections::BTreeSet::new();
+        let mut ids = BTreeSet::new();
+        let mut endpoints = BTreeSet::new();
         for route in routes {
             let endpoint = &route.endpoint;
             let provider = self
@@ -71,15 +70,15 @@ impl CompiledTopology {
             }
             if self.canonical_model(&route.canonical_model).is_some()
                 || self
-                    .embedding_routes
-                    .values()
-                    .any(|r| r.canonical_model == route.canonical_model)
-                || self
-                    .transcription_routes
+                    .image_routes
                     .values()
                     .any(|r| r.canonical_model == route.canonical_model)
                 || self
                     .speech_routes
+                    .values()
+                    .any(|r| r.canonical_model == route.canonical_model)
+                || self
+                    .transcription_routes
                     .values()
                     .any(|r| r.canonical_model == route.canonical_model)
             {
@@ -97,6 +96,10 @@ impl CompiledTopology {
             {
                 return Err(TopologyError::InvalidModelBinding);
             }
+            endpoint
+                .contract
+                .validate()
+                .map_err(|_| TopologyError::ContractUnsatisfiable)?;
             if endpoint.execution.streaming
                 || endpoint.execution.retry_before_commit
                 || endpoint.execution.request_body_limit == 0
@@ -106,24 +109,24 @@ impl CompiledTopology {
                 return Err(TopologyError::InvalidExecutionLimits);
             }
             if self.route(&route.id).is_some()
-                || self.embedding_routes.values().any(|r| r.id == route.id)
-                || self.transcription_routes.values().any(|r| r.id == route.id)
+                || self.image_routes.values().any(|r| r.id == route.id)
                 || self.speech_routes.values().any(|r| r.id == route.id)
+                || self.transcription_routes.values().any(|r| r.id == route.id)
                 || !ids.insert(route.id.clone())
             {
                 return Err(TopologyError::DuplicateRoute);
             }
             if self.endpoint(&endpoint.id).is_some()
                 || self
-                    .embedding_routes
-                    .values()
-                    .any(|r| r.endpoint.id == endpoint.id)
-                || self
-                    .transcription_routes
+                    .image_routes
                     .values()
                     .any(|r| r.endpoint.id == endpoint.id)
                 || self
                     .speech_routes
+                    .values()
+                    .any(|r| r.endpoint.id == endpoint.id)
+                || self
+                    .transcription_routes
                     .values()
                     .any(|r| r.endpoint.id == endpoint.id)
                 || !endpoints.insert(endpoint.id.clone())
@@ -131,11 +134,11 @@ impl CompiledTopology {
                 return Err(TopologyError::DuplicateEndpoint);
             }
             if self.model(route.model.as_str()).is_some()
-                || self.embedding_route(route.model.as_str()).is_some()
-                || self.transcription_route(route.model.as_str()).is_some()
+                || self.image_route(route.model.as_str()).is_some()
                 || self.speech_route(route.model.as_str()).is_some()
+                || self.transcription_route(route.model.as_str()).is_some()
                 || self
-                    .image_routes
+                    .embedding_routes
                     .insert(route.model.as_str().into(), route)
                     .is_some()
             {

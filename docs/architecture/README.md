@@ -22,6 +22,7 @@
 - [Speech](speech-profile.md)：独立 TTS task、标准控制与有界二进制产物，不扩大 Chat/Responses 音频准入。
 - [Transcription](transcription-profile.md)：独立识别 task、有界上传、实际时序报告与标准 JSON 投影，不提供文件服务。
 - [Schema](schema-profile.md)：当前结构/strict/reference 准入，不证明生成 adherence。
+- [Embedding](embedding-profile.md)：独立文本批次、稠密 float 向量、索引/维度与计量；不借用 Generation 或文件服务。
 - [客户端 Generation 边界](client-generation-profile.md)：无独立 `_openbridge` attachment；typed 语义保留，缺少目标载体且无具名损失许可时明确拒绝。
 
 ## 架构决策

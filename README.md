@@ -9,6 +9,7 @@ MorphieCore 是 Gateway 与未来 Agent 共用的模型交互 Semantic Model / I
 - 共享 Rust 语义库与认证 loopback Gateway；Chat/Responses 的文本、工具、reasoning 与图片输入按具体 profile 和目标准入。
 - Responses 支持选定文件输入；标准 Chat 支持 WAV/MP3 语音输入→文本，范围见[音频输入 profile](docs/architecture/chat-input-audio-profile.md)。
 - 独立 Images、Speech、Transcription 接口与只读 Models 目录。API 用法和显式激活见[HTTP 指南](docs/http-gateway.md)。
+- 独立标准 Embeddings 文本/float 分支，按目标显式激活；范围见[Embedding profile](docs/architecture/embedding-profile.md)。
 - 同协议与跨协议共用 validation/lowering；允许的损失见[投影合同](docs/architecture/protocol-and-lowering.md#semantic-loss)。
 - 自有文件凭据与显式有序池；Provider 原生缓存亲和。Agent orchestration、会话服务与动态路由不属于当前实现。
 

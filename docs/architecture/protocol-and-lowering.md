@@ -107,6 +107,15 @@ Generation response/event → Responses 允许独立、逐字段的 `responses.o
 - IR 保留实际报告、单位、scope 和最终性；累计快照不相加。结果编辑使相关报告失效，纯库消费者可检查未投影的完整结果。不能把“投影省略”标作“上游未报告”，也不为通知损失新增私有字段。
 - 两种投影都先验证完整结果；请求控制、媒体/转录正文、真实失败/终态、预算、取消和 handoff 不得受损。上游 SSE 聚合仅用于明确的 Speech profile，不授权下游流式交付或其他音频 operation 的损失。
 
+### 独立 Embedding 的计量归一化与请求标识投影
+
+Embedding 不继承 Generation、Chat 或媒体的损失许可。以下规则仅用于所选静态文本/float 分支：
+
+- `dashscope.embedding-input-only-total.v1`：只有受信 DashScope Embedding profile 可以将其 `total_tokens` 解释为已报告的 input-only token aggregate。[同步 API](https://help.aliyun.com/en/model-studio/text-embedding-synchronous-api)明确该计数来自输入分词。IR 保存该 basis 和唯一 aggregate，未独立报告的 input counter 保持可判别；标准 `prompt_tokens` 是该已知 input-only aggregate 的派生 view，不是补零或从未知报告猜值。实际报告了 `prompt_tokens` 时逐值验证，不忽略 null、非法值或矛盾关系；缺少 total 仍拒绝。Standard/OpenRouter 的缺失 prompt 报告不能使用此规则。Owner 为 [Embedding usage](../../src/semantic/task/embedding.rs)，具名 intake 归 [codec](../../src/protocol/openai/embeddings.rs)。
+- `embeddings.omit-response-identifier.v1`：Embedding response → 标准 Embeddings response，只省略目标没有 carrier 的 ancillary request/response identifier。原 [envelope](../../src/adapter/embeddings.rs)保留 ID 和 presence；[投影](../../src/lowering/embeddings.rs)在验证后的私有副本移除，并以 typed flag 区分未报告与已省略。Model、向量顺序/精度、索引、维度、usage/basis 不变；非法 ID 不得借省略通过。该 ID 不承载资源权限、续轮或 replay，不增加私有 wire 字段。
+
+两条规则都不改变请求准入、标准 parser、错误、完整批次、EOF、预算或 handoff，也不授权 Base64 量化、其他报告省略或一般 best-effort。独立反例归 [Embedding tests](../../tests/semantic/embeddings.rs)，当前范围归 [profile](embedding-profile.md)。
+
 ## Source records
 
 Source/fidelity records 只保存有界的表示形式、wire identity、来源与依赖证明，不保存能覆盖 typed 值的第二正文。复用要求 owner 仍存在、目标/profile/scope 兼容、依赖未失效，且不能恢复删除值。请求、静态响应与事件分别检查。

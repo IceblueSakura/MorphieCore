@@ -2,9 +2,11 @@
 
 ## 当前主线
 
-优先完善多个 Provider API → 共享 Semantic Model / IR → 标准 Responses 的功能与必要回传。Chat 是兼容路径；独立媒体使用各自标准 operation。总体职责归 [Semantic Model](../architecture/semantic-ir.md)，本页只维护未完成方向。
+优先扩展多模态相关功能：下一片选择文件服务与文件消费链，随后按实际需求补充 Embedding 和其他媒体增量。Generation 继续使用多个 Provider API → 共享 Semantic Model / IR → 标准 Responses 的主链，Chat 是兼容路径；独立 task 使用各自标准 operation。总体职责归 [Semantic Model](../architecture/semantic-ir.md)，本页只维护未完成方向。
 
 **先功能，后稳定性专项。** 保留现有认证、资源、取消和终态回归；新增工作从实际消费需求或最小反例出发，不扩张通用调度、重试或防御框架。
+
+每片保留独立 synthetic 回归和受影响开发基线；大范围固定 SDK、真实 Provider 组合、质量和稳定性集中验收在所选功能清单接近完善后进行。用户指定目标可做有限接入验证，不据此扩张默认矩阵。
 
 <a id="strict-verification"></a>
 
@@ -16,9 +18,10 @@
 
 | 优先级 | 工作 | 退出条件 |
 |---|---|---|
-| 1 | Generation 的 reasoning、非 strict 工具/history、并行关联及图文组合 | 所选 wire→IR→标准 Responses→必要回传闭合 |
-| 2 | 具体 Provider/model 的绑定与差异映射 | 原生 Responses 与所需 Chat→Responses 路径各自完成消费验证 |
-| 3 | Images、Speech、Transcription 的实际需求增量 | 保持独立 task、目标准入和标准消费边界 |
+| 1 | 文件服务与 Responses 文件消费 | 定服务操作、存储/访问/删除生命周期及 Gateway ID 与 issuer-bound ID 的关系，再闭合所选消费链 |
+| 2 | Embedding 与其他媒体增量 | 按实际需求选择编码、输入、产物或独立 operation；不从已有文本/float 分支推定更广支持 |
+| 3 | Generation 功能增量 | 保持目标准入、标准消费和必要回传边界 |
+| 4 | 集中兼容性验收，再稳定性专项 | 围绕已实现功能清单补固定消费者、真实 Provider、组合和运行证据 |
 
 ### 未完成的指定目标
 
@@ -33,7 +36,7 @@ Token Plan 的重名标签/上游 ID、图片 URL 产物，以及 Go 原生 Anth
 
 从[实现缺口](../implementation-status/generation.md)选择可观察结果，在 [current-focus](current-focus.md)记录需求、独立失败例、非目标和验证边界。按最低 owner 修复，每片闭合即停止并清空 focus，不自动滚动实施下一片。实现与验证方法归[开发指南](../development.md)。
 
-文件产品扩展在下一次相关选片前重评。恢复前维护既有 Responses user inline/URL 输入；纯资源 identity、用途与坐标完善可独立推进。
+文件服务模型由具体消费需求选择，不默认复用 Embedding 模型。相关切片前定稿服务范围及资源/issuer 合同；维护既有 Responses user inline/URL 输入，不以新增服务为由自动放宽 ID、工具或生成文件准入。
 
 <a id="cross-target-history"></a>
 ### 跨 Provider/Model 历史投影
@@ -49,7 +52,7 @@ Token Plan 的重名标签/上游 ID、图片 URL 产物，以及 Go 原生 Anth
 | 跨目标 history 投影 | 按上节明确来源、消费者和依赖合同 |
 | 文件扩展 | 具体消费场景与资源/issuer 合同；分别选择 ID、工具/生成文件、格式、Chat 投影或文件服务 |
 | 高级图片 | 分别选择流式/预览、编辑/蒙版、参考图、URL 获取与资源服务 |
-| Embedding 与其他媒体 operation | 定最小独立 task、输入/产物和资源范围；Embedding 面向标准 `/v1/embeddings` |
+| 更广 Embedding 与其他媒体 operation | 分别选择 Base64、token 输入、稀疏或多模态向量等增量；不从文本向量主链推定实现 |
 | Audio Realtime | 请求型范围收敛后独立确定双工协议、会话、事件与预算 |
 | Interactions / Messages 原生接入 | 有具体目标需求后固定 operation/profile，再实现 codec 与执行主链 |
 | ServerManaged / Gateway 短期会话 | 定历史权威、标准引用、并发/分支、账号绑定、期限/删除与缓存关系；与 history 投影分开 |

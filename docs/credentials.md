@@ -26,6 +26,8 @@ cargo run --locked --offline --bin morphiecore -- \
 
 默认入口配置为目录中的 `gateway.json`，精确字段与资源上限归 [bootstrap](../src/gateway/bootstrap.rs)。该文件包含入口 `client_key`、可选 loopback `bind`、受信 `proxy`、诊断路径 `diagnostics`、显式模型过滤 `models` 和全局尝试上限 `max_attempts`。省略 models 使用已配置 pool 对应的默认对话绑定；[Images](http-gateway.md#独立图片生成)、[Speech](http-gateway.md#独立语音生成) 与 [Transcription](http-gateway.md#独立语音识别) 仍须分别显式选定，不因共享 pool 自动启用。空、重复、未知或未启用模型过滤拒绝。配置路径通过参数提供，不从 env 导入旧格式。
 
+[Embedding](http-gateway.md#独立文本-embedding)同样要求 `models` 显式选择及匹配的单来源、禁 fallback pool；不从已有 Generation 或媒体激活推定支持。
+
 以下仅为 synthetic 结构示例；模型占位符须按 catalog 查询替换，不是实际准入声明：
 
 可选 `responses_via_chat` 是 `models` 的显式子集，仅允许已注册 API-key Chat 绑定；缺省不启用。它将所选模型的 Responses 入口固定到该模型 Chat endpoint，并替代该入口原有的 native Responses 绑定，不是失败后 fallback；其他模型和 Chat 入口不变。未知、重复、未显式选定或无 Chat endpoint 的标签拒绝启动。该设置不增加模型控制能力或标准载体，也不授权修改现有实例配置；受控 probe 使用独立临时配置，见[probe 指南](probes.md)。

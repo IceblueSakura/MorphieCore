@@ -40,6 +40,10 @@ mod context_transforms;
 mod continuation;
 #[path = "semantic/contract_ownership.rs"]
 mod contract_ownership;
+#[path = "semantic/embedding_bindings.rs"]
+mod embedding_bindings;
+#[path = "semantic/embeddings.rs"]
+mod embeddings;
 #[path = "semantic/extensions.rs"]
 mod extensions;
 #[path = "semantic/files.rs"]

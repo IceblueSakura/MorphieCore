@@ -15,6 +15,8 @@ use morphiecore::{
     },
 };
 use std::{collections::BTreeMap, sync::Arc};
+#[path = "embeddings.rs"]
+mod embedding_support;
 #[path = "image_generation.rs"]
 mod image_support;
 #[path = "media_bindings.rs"]
@@ -23,7 +25,15 @@ mod media;
 #[path = "speech.rs"]
 mod speech_support;
 pub const CLIENT_KEY: &str = "synthetic-gateway-client-token-0001";
+#[allow(dead_code)] // Shared SDK gates use this variant; the Router smoke selects embeddings.
 pub fn gateway(origin: &str, limits: Limits) -> Gateway {
+    bound_gateway(origin, limits, false)
+}
+#[allow(dead_code)]
+pub fn gateway_with_embeddings(origin: &str, limits: Limits) -> Gateway {
+    bound_gateway(origin, limits, true)
+}
+fn bound_gateway(origin: &str, limits: Limits, embeddings: bool) -> Gateway {
     let provider = ProviderDefinition {
         id: ProviderId::new("fixture").unwrap(),
         origin: TrustedOrigin::parse(origin).unwrap(),
@@ -31,6 +41,7 @@ pub fn gateway(origin: &str, limits: Limits) -> Gateway {
         responses: Some(EndpointPath::new("/responses").unwrap()),
         auth: AuthScheme::Bearer,
     };
+    let (embedding_operation, embedding_route) = embedding_support::binding(&provider);
     let endpoints = [
         ("chat", ProtocolProfile::OpenAiChat),
         ("responses", ProtocolProfile::OpenAiResponses),
@@ -146,7 +157,13 @@ pub fn gateway(origin: &str, limits: Limits) -> Gateway {
     .unwrap()
     .with_transcriptions(vec![asr_operation], vec![asr])
     .unwrap()
+    .with_embeddings(vec![embedding_operation], vec![embedding_route])
+    .unwrap()
     .with_model_metadata([
+        (
+            ModelId::new("canonical-vector").unwrap(),
+            morphiecore::topology::ModelMetadata::new(14, "Synthetic Vector Developer").unwrap(),
+        ),
         (
             ModelId::new("canonical-fixture").unwrap(),
             morphiecore::topology::ModelMetadata::new(7, "Synthetic Developer").unwrap(),
@@ -223,7 +240,7 @@ pub fn gateway(origin: &str, limits: Limits) -> Gateway {
             Arc::new(SecretMaterial::new("synthetic-tokenplan-credential-0001").unwrap()),
         ),
     ]);
-    Gateway::new_with_media(
+    Gateway::new_with_embeddings(
         topology,
         entries,
         vec![
@@ -248,6 +265,13 @@ pub fn gateway(origin: &str, limits: Limits) -> Gateway {
         vec![morphiecore::gateway::TranscriptionEntry {
             model: "native-transcription".into(),
         }],
+        if embeddings {
+            vec![morphiecore::gateway::EmbeddingEntry {
+                model: "public-vector".into(),
+            }]
+        } else {
+            vec![]
+        },
         credentials,
         SecretMaterial::new(CLIENT_KEY).unwrap(),
         limits,

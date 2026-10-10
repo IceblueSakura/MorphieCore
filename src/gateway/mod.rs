@@ -9,6 +9,9 @@ mod config;
 mod credential_fallback_tests;
 mod credentials;
 mod diagnostics;
+#[cfg(test)]
+mod embedding_tests;
+mod embeddings;
 mod error;
 mod exchange;
 mod http;
@@ -41,7 +44,9 @@ use crate::{
     topology::{Endpoint, PublicModel},
     transport::http::HttpTransport,
 };
-pub use config::{Entry, ImageEntry, Limits, SpeechEntry, StartupError, TranscriptionEntry};
+pub use config::{
+    EmbeddingEntry, Entry, ImageEntry, Limits, SpeechEntry, StartupError, TranscriptionEntry,
+};
 pub use credentials::Credentials;
 use error::ApiError;
 use std::{collections::BTreeMap, sync::Arc};
@@ -97,6 +102,7 @@ struct Runtime {
     images: BTreeMap<String, Arc<images::BoundImage>>,
     speech: BTreeMap<String, Arc<speech::BoundSpeech>>,
     transcriptions: BTreeMap<String, Arc<transcription::BoundTranscription>>,
+    embeddings: BTreeMap<String, Arc<embeddings::BoundEmbedding>>,
     models: models::ModelView,
     limits: Limits,
     permits: Arc<Semaphore>,

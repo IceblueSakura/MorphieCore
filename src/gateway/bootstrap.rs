@@ -1,5 +1,8 @@
 //! Explicit private files only. Neither upstream secrets nor account selectors come from env.
 #[cfg(test)]
+#[path = "embedding_bootstrap_tests.rs"]
+mod embedding_tests;
+#[cfg(test)]
 #[path = "openrouter_image_bootstrap_tests.rs"]
 mod image_tests;
 #[cfg(test)]
@@ -15,7 +18,8 @@ mod tests;
 #[path = "tokenplan_audio_bootstrap_tests.rs"]
 mod tokenplan_audio_tests;
 use super::{
-    Credentials, Entry, Gateway, ImageEntry, Limits, SpeechEntry, StartupError, TranscriptionEntry,
+    Credentials, EmbeddingEntry, Entry, Gateway, ImageEntry, Limits, SpeechEntry, StartupError,
+    TranscriptionEntry,
 };
 use crate::{
     credential::{CredentialManager, Secret},
@@ -119,6 +123,7 @@ impl Bootstrap {
         let mut image_entries = Vec::new();
         let mut speech_entries = Vec::new();
         let mut transcription_entries = Vec::new();
+        let mut embedding_entries = Vec::new();
         let mut credentials = Credentials::new();
         let mut activated = BTreeSet::new();
         for (provider, id, status) in manager.pools().map_err(|_| StartupError::Credentials)? {
@@ -168,6 +173,23 @@ impl Bootstrap {
                         endpoint: binding.endpoint_id(crate::topology::ProtocolProfile::OpenAiChat),
                     });
                 }
+            }
+            for binding in catalog::EMBEDDING_BINDINGS {
+                if binding.credential != id || (binding.provider)().id.as_str() != provider {
+                    continue;
+                }
+                known = true;
+                if !selected
+                    .as_ref()
+                    .is_some_and(|set| set.contains(binding.model))
+                {
+                    continue;
+                }
+                used = true;
+                activated.insert(binding.model.to_owned());
+                embedding_entries.push(EmbeddingEntry {
+                    model: binding.model.into(),
+                });
             }
             for binding in catalog::IMAGE_BINDINGS {
                 if binding.credential != id || binding.provider().id.as_str() != provider {
@@ -270,6 +292,7 @@ impl Bootstrap {
             image_entries,
             speech_entries,
             transcription_entries,
+            embedding_entries,
             credentials,
             SecretMaterial::new(configuration.client_key.expose())
                 .map_err(|_| StartupError::Credentials)?,

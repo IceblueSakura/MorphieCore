@@ -177,6 +177,11 @@ pub(super) enum Producer {
         entry: Arc<super::transcription::BoundTranscription>,
         request: crate::adapter::transcription::Request,
     },
+    Embedding {
+        runtime: Arc<super::Runtime>,
+        entry: Arc<super::embeddings::BoundEmbedding>,
+        request: crate::adapter::embeddings::Request,
+    },
 }
 impl Producer {
     async fn produce(
@@ -193,6 +198,21 @@ impl Producer {
                 request,
                 source,
             } => produce_chain(source, &entry, &request, limits, deadline, tx, state, trace).await,
+            Self::Embedding {
+                runtime,
+                entry,
+                request,
+            } => {
+                super::embeddings::produce(
+                    runtime,
+                    entry,
+                    request,
+                    deadline,
+                    &Lane { tx, state },
+                    trace,
+                )
+                .await
+            }
             Self::Image {
                 runtime,
                 entry,

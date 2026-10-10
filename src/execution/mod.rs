@@ -10,6 +10,7 @@
 
 pub mod attempt;
 pub mod delivery;
+pub mod embeddings;
 pub mod fallback;
 pub mod images;
 pub mod lifecycle;

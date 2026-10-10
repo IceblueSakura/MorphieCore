@@ -1,5 +1,7 @@
 //! Compile explicit model declarations and deployment bindings. No alias inference.
 mod bindings;
+mod embeddings;
+pub use embeddings::{EMBEDDING_BINDINGS, EmbeddingBinding};
 mod images;
 mod models;
 pub use images::{IMAGE_BINDINGS, ImageBinding};
@@ -147,6 +149,10 @@ pub fn default_topology() -> Result<CompiledTopology, TopologyError> {
             .collect(),
         TRANSCRIPTION_BINDINGS.iter().map(|b| b.route()).collect(),
     )?
+    .with_embeddings(
+        EMBEDDING_BINDINGS.iter().map(|b| b.operation()).collect(),
+        EMBEDDING_BINDINGS.iter().map(|b| b.route()).collect(),
+    )?
     .with_model_metadata(
         models::MODELS
             .iter()
@@ -165,6 +171,12 @@ pub fn default_topology() -> Result<CompiledTopology, TopologyError> {
             .chain(SPEECH_BINDINGS.iter().map(|b| {
                 (
                     ModelId::new(b.model).expect("static speech id"),
+                    b.metadata(),
+                )
+            }))
+            .chain(EMBEDDING_BINDINGS.iter().map(|b| {
+                (
+                    ModelId::new(b.model).expect("static embedding id"),
                     b.metadata(),
                 )
             }))

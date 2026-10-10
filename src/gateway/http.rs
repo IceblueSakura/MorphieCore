@@ -22,6 +22,7 @@ impl Gateway {
             )
             .route("/v1/chat/completions", post(chat))
             .route("/v1/responses", post(responses))
+            .route("/v1/embeddings", post(super::embeddings::handle))
             .route("/v1/images/generations", post(super::images::handle))
             .route("/v1/audio/speech", post(super::speech::handle))
             .route(

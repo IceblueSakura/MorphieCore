@@ -32,6 +32,10 @@ pub struct TranscriptionEntry {
     pub model: String,
 }
 #[derive(Clone, Debug)]
+pub struct EmbeddingEntry {
+    pub model: String,
+}
+#[derive(Clone, Debug)]
 pub struct Limits {
     pub request_bytes: usize,
     pub response_bytes: usize,
@@ -196,12 +200,40 @@ impl Gateway {
         limits: Limits,
         proxy: Option<&str>,
     ) -> Result<Self, StartupError> {
+        Self::new_with_embeddings(
+            topology,
+            entries,
+            image_entries,
+            speech_entries,
+            transcription_entries,
+            vec![],
+            credentials,
+            client_key,
+            limits,
+            proxy,
+        )
+    }
+    /// Explicit embedding activation alongside existing tasks; old constructors activate none.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_embeddings(
+        topology: CompiledTopology,
+        entries: Vec<Entry>,
+        image_entries: Vec<ImageEntry>,
+        speech_entries: Vec<SpeechEntry>,
+        transcription_entries: Vec<TranscriptionEntry>,
+        embedding_entries: Vec<EmbeddingEntry>,
+        credentials: impl Into<Credentials>,
+        client_key: SecretMaterial,
+        limits: Limits,
+        proxy: Option<&str>,
+    ) -> Result<Self, StartupError> {
         Self::new_with_media_and_environment_proxy(
             topology,
             entries,
             image_entries,
             speech_entries,
             transcription_entries,
+            embedding_entries,
             credentials,
             client_key,
             limits,
@@ -216,6 +248,7 @@ impl Gateway {
         image_entries: Vec<ImageEntry>,
         speech_entries: Vec<SpeechEntry>,
         transcription_entries: Vec<TranscriptionEntry>,
+        embedding_entries: Vec<EmbeddingEntry>,
         credentials: impl Into<Credentials>,
         client_key: SecretMaterial,
         limits: Limits,
@@ -227,6 +260,7 @@ impl Gateway {
         let speech = super::speech::bind(&topology, speech_entries, &credentials)?;
         let transcriptions =
             super::transcription::bind(&topology, transcription_entries, &credentials)?;
+        let embeddings = super::embeddings::bind(&topology, embedding_entries, &credentials)?;
         if !limits.validate() {
             return Err(StartupError::Limits);
         }
@@ -335,7 +369,12 @@ impl Gateway {
                 }));
             }
         }
-        if bound.is_empty() && images.is_empty() && speech.is_empty() && transcriptions.is_empty() {
+        if bound.is_empty()
+            && images.is_empty()
+            && speech.is_empty()
+            && transcriptions.is_empty()
+            && embeddings.is_empty()
+        {
             return Err(StartupError::Binding);
         }
         let mut activated = BTreeMap::new();
@@ -365,7 +404,8 @@ impl Gateway {
                 .map(|(_, label)| label.as_str())
                 .chain(images.keys().map(String::as_str))
                 .chain(speech.keys().map(String::as_str))
-                .chain(transcriptions.keys().map(String::as_str)),
+                .chain(transcriptions.keys().map(String::as_str))
+                .chain(embeddings.keys().map(String::as_str)),
             limits.response_bytes,
         )?;
         Ok(Self {
@@ -376,6 +416,7 @@ impl Gateway {
                 images,
                 speech,
                 transcriptions,
+                embeddings,
                 models,
                 limits,
                 permits,

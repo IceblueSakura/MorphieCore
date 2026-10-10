@@ -49,6 +49,7 @@ impl ModelView {
                 .map(|m| &m.canonical_model)
                 .or_else(|| topology.image_route(label).map(|r| &r.canonical_model))
                 .or_else(|| topology.speech_route(label).map(|r| &r.canonical_model))
+                .or_else(|| topology.embedding_route(label).map(|r| &r.canonical_model))
                 .or_else(|| {
                     topology
                         .transcription_route(label)

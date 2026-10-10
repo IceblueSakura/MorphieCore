@@ -3,7 +3,7 @@
   "info": {
     "title": "MorphieCore minimal model interaction gateway",
     "version": "0.1.0",
-    "description": "Current envelope-level HTTP contract, not complete standard conformance. Responses uses the Standard adapter; Chat retains the explicit MorphieCore compatibility profile. Provider-specific rules cannot authorize private Responses carriers or silent loss. The independent _openbridge attachment is rejected on protocol envelopes/items and never emitted. Static Images, binary Speech and file Transcription are independent tasks with explicit single-source API-key activation, never inferred from conversation bindings. Binary media entries require explicit model selection and the matching single-source, non-fallback credential pool; embedded callers also activate entries explicitly. Named ancillary audio-report projections preserve full IR reports while emitting standard audio/JSON. Models exposes only activated public labels; fine-tuned model deletion is not authorized. No stateful resources, URL fetching or implicit local retry/fallback. Realtime and downstream audio SSE are not admitted."
+    "description": "Current envelope-level HTTP contract, not complete standard conformance. Responses uses the Standard adapter; Chat retains the explicit MorphieCore compatibility profile. Provider-specific rules cannot authorize private Responses carriers or silent loss. The independent _openbridge attachment is rejected on protocol envelopes/items and never emitted. Text/float Embeddings, static Images, binary Speech and file Transcription are independent tasks with explicit single-source API-key activation, never inferred from conversation bindings. Binary task entries require explicit model selection and the matching single-source, non-fallback credential pool; embedded callers also activate entries explicitly. Named ancillary audio-report projections preserve full IR reports while emitting standard audio/JSON. Models exposes only activated public labels; fine-tuned model deletion is not authorized. No stateful resources, URL fetching or implicit local retry/fallback. Realtime and downstream audio SSE are not admitted."
   },
   "servers": [{"url": "http://127.0.0.1:8080"}],
   "security": [{"bearerAuth": []}],
@@ -70,6 +70,36 @@
         },
         "responses": {
           "200": {"$ref": "#/components/responses/Generation"},
+          "400": {"$ref": "#/components/responses/Error"},
+          "401": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"},
+          "405": {"$ref": "#/components/responses/Error"},
+          "408": {"$ref": "#/components/responses/Error"},
+          "413": {"$ref": "#/components/responses/Error"},
+          "415": {"$ref": "#/components/responses/Error"},
+          "429": {"$ref": "#/components/responses/Error"},
+          "500": {"$ref": "#/components/responses/Error"},
+          "502": {"$ref": "#/components/responses/Error"},
+          "503": {"$ref": "#/components/responses/Error"},
+          "504": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/v1/embeddings": {
+      "post": {
+        "operationId": "createEmbedding",
+        "summary": "Embed an ordered text batch through an explicitly activated fixed target",
+        "parameters": [{"$ref": "#/components/parameters/ProbeId"}],
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/EmbeddingRequest"}}}
+        },
+        "responses": {
+          "200": {
+            "description": "Complete float vectors and actual required usage after strict EOF. Indices uniquely cover every input, vector widths agree and satisfy explicit dimensions; no partial batch or synthetic usage. Explicit single-source API-key activation; no local retry/fallback.",
+            "headers": {"Cache-Control": {"schema": {"type": "string", "const": "no-store"}}},
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/EmbeddingResponse"}}}
+          },
           "400": {"$ref": "#/components/responses/Error"},
           "401": {"$ref": "#/components/responses/Error"},
           "404": {"$ref": "#/components/responses/Error"},
@@ -267,6 +297,50 @@
     },
     "securitySchemes": {"bearerAuth": {"type": "http", "scheme": "bearer", "description": "Exactly one Authorization header. Configured startup secret, not an upstream API key."}},
     "schemas": {
+      "EmbeddingRequest": {
+        "type": "object", "required": ["model", "input"], "additionalProperties": false,
+        "properties": {
+          "model": {"$ref": "#/components/schemas/PublicModelLabel"},
+          "input": {
+            "oneOf": [
+              {"type": "string", "minLength": 1, "maxLength": 262144},
+              {"type": "array", "minItems": 1, "maxItems": 128,
+                "items": {"type": "string", "minLength": 1, "maxLength": 262144}}
+            ]
+          },
+          "dimensions": {"type": "integer", "minimum": 1, "maximum": 8192},
+          "encoding_format": {"const": "float", "default": "float"},
+          "user": {"type": "string", "minLength": 1, "maxLength": 256}
+        },
+        "description": "Selected standard text/float branch, not the full input/encoding union. Single text normalizes to a one-element batch without changing order or content. Aggregate text is bounded to 256 KiB UTF-8; JSON ingress may be tighter. Target batch, dimensions and identity admission are independent. Optional fields are non-nullable. Token arrays, Base64, sparse/multimodal vectors, stream, provider options and private attachments fail before I/O. Fixed SDK callers must explicitly select encoding_format=float rather than its Base64 convenience default."
+      },
+      "EmbeddingResponse": {
+        "type": "object", "required": ["object", "model", "data", "usage"], "additionalProperties": false,
+        "properties": {
+          "object": {"const": "list"},
+          "model": {"type": "string", "minLength": 1, "maxLength": 256},
+          "data": {
+            "type": "array", "minItems": 1, "maxItems": 128,
+            "items": {"$ref": "#/components/schemas/EmbeddingVector"}
+          },
+          "usage": {
+            "type": "object", "required": ["prompt_tokens", "total_tokens"], "additionalProperties": false,
+            "properties": {
+              "prompt_tokens": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+              "total_tokens": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615}
+            }
+          }
+        },
+        "description": "Reported model and vector-list order stay intact; index, not list position, associates each vector with input. Runtime enforces unique complete indices, equal widths, requested dimensions, aggregate scalar/byte budgets and total_tokens >= prompt_tokens. Exact numeric spelling/value is not narrowed to float32. Missing required usage, malformed reports, Base64 vectors or incomplete transport cannot produce successful output."
+      },
+      "EmbeddingVector": {
+        "type": "object", "required": ["object", "index", "embedding"], "additionalProperties": false,
+        "properties": {
+          "object": {"const": "embedding"},
+          "index": {"type": "integer", "minimum": 0, "maximum": 127},
+          "embedding": {"type": "array", "minItems": 1, "maxItems": 8192, "items": {"type": "number"}}
+        }
+      },
       "Model": {
         "type": "object", "required": ["id", "object", "created", "owned_by"],
         "additionalProperties": false,

@@ -65,6 +65,10 @@ impl CompiledTopology {
             }
             if self.canonical_model(&route.canonical_model).is_some()
                 || self
+                    .embedding_routes
+                    .values()
+                    .any(|r| r.canonical_model == route.canonical_model)
+                || self
                     .image_routes
                     .values()
                     .any(|r| r.canonical_model == route.canonical_model)
@@ -90,6 +94,7 @@ impl CompiledTopology {
                 return Err(TopologyError::InvalidExecutionLimits);
             }
             if self.route(&route.id).is_some()
+                || self.embedding_routes.values().any(|r| r.id == route.id)
                 || self.image_routes.values().any(|r| r.id == route.id)
                 || self.speech_routes.values().any(|r| r.id == route.id)
                 || !ids.insert(route.id.clone())
@@ -97,6 +102,10 @@ impl CompiledTopology {
                 return Err(TopologyError::DuplicateRoute);
             }
             if self.endpoint(&endpoint.id).is_some()
+                || self
+                    .embedding_routes
+                    .values()
+                    .any(|r| r.endpoint.id == endpoint.id)
                 || self
                     .image_routes
                     .values()
@@ -110,6 +119,7 @@ impl CompiledTopology {
                 return Err(TopologyError::DuplicateEndpoint);
             }
             if self.model(route.model.as_str()).is_some()
+                || self.embedding_route(route.model.as_str()).is_some()
                 || self.image_route(route.model.as_str()).is_some()
                 || self.speech_route(route.model.as_str()).is_some()
                 || self

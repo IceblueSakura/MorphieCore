@@ -32,6 +32,7 @@ Responses→Chat 上游必须通过[入口配置](credentials.md#gateway-access-
 | `DELETE /v1/models/{model}` | 已激活模型返回 403；未知或未激活标签返回 404，不执行删除 |
 | `POST /v1/chat/completions` | [单候选 Chat profile](architecture/chat-text-profile.md)；JSON 或 SSE |
 | `POST /v1/responses` | [无状态 Responses profile](architecture/responses-text-profile.md)；JSON 或 SSE |
+| `POST /v1/embeddings` | [独立文本 Embedding profile](architecture/embedding-profile.md)；完整批次 float JSON，须显式激活 |
 | `POST /v1/images/generations` | 显式激活的静态有序图片集合；JSON，inline 产物，图片模型须明确选择 |
 | `POST /v1/audio/speech` | 显式激活的独立 TTS；严格 EOF 后交付有界二进制音频，binary 模型须明确选择 |
 | `POST /v1/audio/transcriptions` | 显式激活的独立识别；有界 WAV/MP3 multipart 上传，严格 EOF 后返回标准 JSON |
@@ -84,6 +85,22 @@ Chat 请求发送到 `/v1/chat/completions`：
 Chat 图片 part 使用 `{"type":"image_url","image_url":{"url":"https://example.test/synthetic.png"}}`。实际图片与资源限制仍由目标合同检查，不把媒体当普通字符串。
 
 固定 SDK 的 `base_url` 指向本机 `/v1`，`api_key` 使用入口 token；不把上游 key 交给客户端。
+
+### 独立文本 Embedding
+
+该入口使用独立 [Embedding task](../src/semantic/task/embedding.rs)，接受单文本或有序非空文本数组、可选维度及 float 编码；完整报告、presence、关联与目标准入归 [profile](architecture/embedding-profile.md)和 [OpenAPI](openapi.json)。文本不能被解释为 URL、本地路径或文件 ID。
+
+嵌入方使用 `CompiledTopology::with_embeddings` 和 `Gateway::new_with_embeddings` 的独立 `EmbeddingEntry` 列表；binary 从 [Embedding catalog](../src/topology/catalog/embeddings.rs)取绑定，要求在 `models` 明确选择及匹配的单来源、禁 fallback API-key pool。省略 `models` 或使用旧 Gateway 构造器均不启用 Embedding。Models 目录仅显示实际激活标签，不证明真实推理资格。
+
+以下 synthetic 请求发往 `/v1/embeddings`；模型是占位符，维度仍需目标支持：
+
+```json
+{"model":"configured-embedding-model","input":["First synthetic document.","第二条合成文本。"],"dimensions":256,"encoding_format":"float"}
+```
+
+固定 Python SDK 调用必须显式选择 `encoding_format="float"`；本片不接受 SDK 默认发送的 Base64，也不将 float 向量隐式量化后伪装成该编码。结果的 reported model、列表顺序、向量数值和实际 usage 保留；索引完整覆盖输入且维度满足请求后，严格 EOF 才允许一次性交付。错误索引、少向量、错维度、缺失必要 usage 或传输失败不返回成功前缀。
+
+请求/响应 JSON、批次数、累计文本 bytes、每个向量宽度与累计数值各自有界。不注入 output-token cap，不 retry/fallback，不承诺模型质量或相似度效果；本地 bytes/deadline 不等于远端费用上限。Token 数组、Base64、稀疏/多模态向量、流式、Batch API、检索库与文件服务不属于当前分支。
 
 ### 独立图片生成
 

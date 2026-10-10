@@ -1,4 +1,5 @@
 //! Closed inference task family.
+pub mod embedding;
 pub mod generation;
 pub mod image_generation;
 pub mod speech_recognition;

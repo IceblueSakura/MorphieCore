@@ -37,6 +37,8 @@ Authenticated bounded HTTP input
 
 独立识别使用 [SpeechRecognition task](../src/semantic/task/speech_recognition.rs)、[标准 multipart/JSON codec](../src/protocol/openai/transcription.rs)和[原生 ASR 映射](../src/protocol/aliyun_asr.rs)。[绑定](../src/topology/transcription.rs)与[Gateway intake](../src/gateway/transcription.rs)不创建 Generation 消息、文件服务或 URL 获取器；[Transcription profile](architecture/transcription-profile.md)拥有报告 scope 与投影边界，显式激活归 [HTTP 指南](http-gateway.md#独立语音识别)。
 
+独立文本 Embedding 使用 [task](../src/semantic/task/embedding.rs)、[envelope](../src/adapter/embeddings.rs)、[标准 float codec](../src/protocol/openai/embeddings.rs)与[目标准入](../src/lowering/embeddings.rs)。[固定绑定](../src/topology/embeddings.rs)和 [Gateway intake](../src/gateway/embeddings.rs)复用受信 transport、严格 EOF、取消及共享 handoff，不创建 Generation items、文件服务、输出 token cap 或 retry/fallback。具体范围和显式激活归 [Embedding profile](architecture/embedding-profile.md)。
+
 ## 容易混淆的边界
 
 - **注册不等于启用**：catalog 声明与 bootstrap 激活分开。Public Model 的语义准入也不是响应 reported facts 的白名单。现场查询方法见 [AGENTS](../AGENTS.md#current-provider-model-and-compatibility-information)。

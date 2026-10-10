@@ -391,6 +391,34 @@ async fn image_answer(
 
 #[tokio::test]
 async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
+    async fn embedding_answer(
+        State(state): State<Upstream>,
+        headers: HeaderMap,
+        axum::Json(request): axum::Json<Value>,
+    ) -> Response {
+        assert_eq!(
+            headers["authorization"],
+            "Bearer synthetic-upstream-credential-0001"
+        );
+        assert!(!headers.contains_key("x-never-forward"));
+        assert_eq!(request["model"], "private-vector");
+        assert_eq!(request["encoding_format"], "float");
+        assert!(request.get("max_output_tokens").is_none());
+        assert!(request.get("max_completion_tokens").is_none());
+        state.0.lock().unwrap().push(request.clone());
+        let inputs = request["input"].as_array().unwrap();
+        let first = inputs[0].as_str().unwrap();
+        let data: Vec<_> = (0..inputs.len()).rev().map(|index| json!({
+            "object":"embedding","index":if first == "wrong-index" { 7 } else { index },
+            "embedding":if first == "wrong-dimension" { json!([0.5]) } else { json!([0.5,-0.125]) }
+        })).collect();
+        let value = json!({"object":"list","model":"reported-vector","id":"synthetic-request-id","data":data,
+            "usage":{"total_tokens":7}});
+        Response::builder()
+            .header("content-type", "application/json")
+            .body(Body::from(value.to_string()))
+            .unwrap()
+    }
     async fn native_answer(
         State(state): State<Upstream>,
         headers: HeaderMap,
@@ -457,6 +485,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
     let app = Router::new()
         .route("/chat/completions", post(answer))
         .route("/responses", post(answer))
+        .route("/embeddings", post(embedding_answer))
         .route("/images/generations", post(image_answer))
         .route("/api/v1/images", post(openrouter_image_answer))
         .route("/audio/speech", post(speech_answer))
@@ -473,7 +502,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
     let upstream_guard = Guard(tokio::spawn(async move {
         axum::serve(upstream, app).await.unwrap();
     }));
-    let gateway = support::gateway(
+    let gateway = support::gateway_with_embeddings(
         &origin,
         Limits {
             default_output_tokens: 32,
@@ -946,6 +975,66 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         .send().await.unwrap();
     assert_eq!(response.status(), 400);
     assert_eq!(observed.0.lock().unwrap().len(), before);
+    let response = client.post(format!("{url}/v1/embeddings"))
+        .bearer_auth(support::CLIENT_KEY).header("x-never-forward","synthetic-header")
+        .json(&json!({"model":"public-vector","input":["first","second"],"dimensions":2,"encoding_format":"float"}))
+        .send().await.unwrap();
+    assert_eq!(response.status(), 200);
+    let vector: Value = response.json().await.unwrap();
+    assert_eq!(
+        vector,
+        json!({"object":"list","model":"reported-vector","data":[
+        {"object":"embedding","index":1,"embedding":[0.5,-0.125]},
+        {"object":"embedding","index":0,"embedding":[0.5,-0.125]}],
+        "usage":{"prompt_tokens":7,"total_tokens":7}})
+    );
+    for first in ["wrong-index", "wrong-dimension"] {
+        let response = client
+            .post(format!("{url}/v1/embeddings"))
+            .bearer_auth(support::CLIENT_KEY)
+            .json(&json!({"model":"public-vector","input":first,"dimensions":2}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 502);
+    }
+    let before = observed.0.lock().unwrap().len();
+    for (request, status) in [
+        (
+            json!({"model":"public-vector","input":"x","dimensions":17}),
+            400,
+        ),
+        (
+            json!({"model":"public-vector","input":["x","x","x","x","x"]}),
+            400,
+        ),
+        (
+            json!({"model":"public-vector","input":"x","encoding_format":"base64"}),
+            400,
+        ),
+        (
+            json!({"model":"public-vector","input":"x","provider":null}),
+            400,
+        ),
+        (json!({"model":"public-model","input":"x"}), 404),
+    ] {
+        let response = client
+            .post(format!("{url}/v1/embeddings"))
+            .bearer_auth(support::CLIENT_KEY)
+            .json(&request)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), status);
+    }
+    let response = client
+        .post(format!("{url}/v1/embeddings"))
+        .json(&json!({"model":"public-vector","input":"x"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 401);
+    assert_eq!(observed.0.lock().unwrap().len(), before);
     // A distinct operation traverses the same authenticated Router and acknowledged body.
     let response=client.post(format!("{url}/v1/images/generations"))
         .bearer_auth(support::CLIENT_KEY).header("x-never-forward","private-client-header")
@@ -1267,6 +1356,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         .await
         .unwrap();
     assert!(models["data"].as_array().unwrap().contains(&json!({"id":"public-speech","object":"model","created":9,"owned_by":"Synthetic Speech Developer"})));
+    assert!(models["data"].as_array().unwrap().contains(&json!({"id":"public-vector","object":"model","created":14,"owned_by":"Synthetic Vector Developer"})));
     shutdown.send(()).unwrap();
     tokio::time::timeout(Duration::from_secs(3), serving)
         .await

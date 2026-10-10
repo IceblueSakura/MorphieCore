@@ -7,6 +7,7 @@
 
 pub mod catalog;
 pub mod compile;
+pub mod embeddings;
 pub mod endpoint;
 pub mod images;
 pub mod model;
