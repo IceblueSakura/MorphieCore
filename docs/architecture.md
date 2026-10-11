@@ -142,7 +142,7 @@ When Chat Completions cannot carry a semantic such as reasoning, MorphieCore fol
 | Lenient downstream fields | Unknown request fields are ignored and recorded; unknown discriminators are rejected |
 | Cross-target thinking as text | On a Provider or model switch, readable reasoning becomes plain assistant text in every turn; opaque values never cross |
 | Append-only projection | Earlier history projects byte-identically for a fixed target; see §4 |
-| Refusals are answers | A safety refusal is delivered by default and never retried on the same model; a refusal after content is an incomplete answer |
+| Refusals are answers | A safety refusal is delivered by default and never retried on the same model or another credential of it. A route may opt in to retrying a pre-content refusal on a different model, which then stays sticky for the conversation, as Anthropic recommends. A refusal after content is an incomplete answer |
 | Non-API 2xx is a failure | Classified like a 5xx before content is published |
 | Target affinity binds the exact credential | The binding names Endpoint, credential identity and upstream model; a different credential is a different cache domain. API keys are identified by binding plus an in-memory material fingerprint, OAuth by verified principal, so key rotation drops the binding and token refresh keeps it |
 | Minimal HTTP gateway | Loopback listener, single Bearer ingress auth, no inbound header pass-through |
