@@ -126,6 +126,7 @@ mod anthropic_profile {
             json!({"type":"content_block_delta","index":1,"delta":{"type":"signature_delta","signature":"synthetic-fragment"}}),
             json!({"type":"content_block_stop","index":0}),
             json!({"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"output_tokens":9}}),
+            json!({"type":"message_delta","delta":{"stop_reason":"stop_sequence","stop_sequence":"END"},"usage":{"output_tokens":9}}),
             json!({"type":"message_stop"}),
             json!({"type":"ping"}),
             json!({"type":"error","error":{"type":"overloaded_error","message":"synthetic failure"}}),
@@ -152,6 +153,7 @@ mod anthropic_profile {
         p.decode_event("error", billing.to_string().as_bytes())
             .unwrap();
         for wire in [
+            json!({"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":"END"},"usage":{"output_tokens":9}}),
             json!({"type":"content_block_delta","index":1024,"delta":{"type":"text_delta","text":"x"}}),
             json!({"type":"content_block_delta","index":0,"delta":{"type":"citations_delta","citation":{}}}),
         ] {
@@ -161,7 +163,7 @@ mod anthropic_profile {
             );
         }
         let mut bad = message();
-        bad["stop_reason"] = json!("refusal");
+        bad["stop_reason"] = json!("pause_turn");
         assert!(p.decode_response(bad.to_string().as_bytes()).is_err());
     }
     #[test]
@@ -288,6 +290,47 @@ mod anthropic_semantics {
                 .unwrap(),
             serde_json::from_slice::<Value>(response()).unwrap()
         );
+    }
+    #[test]
+    fn native_stop_reasons_have_independent_terminal_owners() {
+        let p = Profile::AdaptiveTextTools;
+        let decode = |stop: &str, sequence: Value| {
+            let wire = json!({"id":"msg_synthetic","type":"message","role":"assistant","model":"synthetic-model",
+                "content":[{"type":"text","text":"partial"}],"stop_reason":stop,"stop_sequence":sequence,
+                "stop_details":{"category":"cyber","explanation":"synthetic"},
+                "usage":{"input_tokens":11,"output_tokens":7}});
+            p.decode_generation_response(wire.to_string().as_bytes(), LocalScope::new(2), &target())
+        };
+        for (stop, sequence, outcome, progress, incomplete) in [
+            (
+                "stop_sequence",
+                json!("END"),
+                Outcome::Completed,
+                InteractionProgress::TurnFinished,
+                None,
+            ),
+            (
+                "model_context_window_exceeded",
+                Value::Null,
+                Outcome::Incomplete,
+                InteractionProgress::Unreported,
+                Some(IncompleteReason::MaxOutputTokens),
+            ),
+            (
+                "refusal",
+                Value::Null,
+                Outcome::Incomplete,
+                InteractionProgress::Unreported,
+                Some(IncompleteReason::ContentFilter),
+            ),
+        ] {
+            let observed = decode(stop, sequence).unwrap();
+            assert_eq!(observed.semantic.outcome(), outcome, "{stop}");
+            assert_eq!(observed.semantic.progress(), progress, "{stop}");
+            assert_eq!(observed.semantic.details().incomplete, incomplete, "{stop}");
+        }
+        assert!(decode("end_turn", json!("END")).is_err());
+        assert!(decode("stop_sequence", Value::Null).is_err());
     }
     #[test]
     fn saved_observation_and_appended_error_encode_the_independent_native_history() {

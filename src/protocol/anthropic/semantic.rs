@@ -343,7 +343,7 @@ impl Profile {
 }
 pub(super) fn outcome(stop: super::StopReason) -> (Outcome, InteractionProgress, TerminalDetails) {
     match stop {
-        super::StopReason::EndTurn => (
+        super::StopReason::EndTurn | super::StopReason::StopSequence => (
             Outcome::Completed,
             InteractionProgress::TurnFinished,
             TerminalDetails::default(),
@@ -353,11 +353,19 @@ pub(super) fn outcome(stop: super::StopReason) -> (Outcome, InteractionProgress,
             InteractionProgress::AwaitingToolResults,
             TerminalDetails::default(),
         ),
-        super::StopReason::MaxTokens => (
+        super::StopReason::MaxTokens | super::StopReason::ModelContextWindowExceeded => (
             Outcome::Incomplete,
             InteractionProgress::Unreported,
             TerminalDetails {
                 incomplete: Some(IncompleteReason::MaxOutputTokens),
+                error: None,
+            },
+        ),
+        super::StopReason::Refusal => (
+            Outcome::Incomplete,
+            InteractionProgress::Unreported,
+            TerminalDetails {
+                incomplete: Some(IncompleteReason::ContentFilter),
                 error: None,
             },
         ),

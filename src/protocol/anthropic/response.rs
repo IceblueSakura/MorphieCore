@@ -193,13 +193,21 @@ pub enum StopReason {
     EndTurn,
     ToolUse,
     MaxTokens,
+    StopSequence,
+    ModelContextWindowExceeded,
+    /// HTTP 200 with `stop_details`; the details are not carried.
+    Refusal,
 }
 impl StopReason {
+    /// `pause_turn` needs server tools, which no binding enables.
     fn read(v: &Value) -> Result<Self, CodecError> {
         match v.as_str() {
             Some("end_turn") => Ok(Self::EndTurn),
             Some("tool_use") => Ok(Self::ToolUse),
             Some("max_tokens") => Ok(Self::MaxTokens),
+            Some("stop_sequence") => Ok(Self::StopSequence),
+            Some("model_context_window_exceeded") => Ok(Self::ModelContextWindowExceeded),
+            Some("refusal") => Ok(Self::Refusal),
             _ => Err(CodecError::Unsupported("Anthropic stop reason".into())),
         }
     }
@@ -208,6 +216,9 @@ impl StopReason {
             Self::EndTurn => "end_turn",
             Self::ToolUse => "tool_use",
             Self::MaxTokens => "max_tokens",
+            Self::StopSequence => "stop_sequence",
+            Self::ModelContextWindowExceeded => "model_context_window_exceeded",
+            Self::Refusal => "refusal",
         }
     }
 }
@@ -287,8 +298,9 @@ impl Message {
         label(&self.id)?;
         label(&self.model)?;
         count(self.content.len())?;
+        let matched = self.stop_reason == Presence::Value(StopReason::StopSequence);
         if !matches!(self.usage.input_tokens, Presence::Value(_))
-            || self.stop_sequence.value().is_some()
+            || self.stop_sequence.value().is_some() != matched
         {
             return Err(CodecError::Invalid("Anthropic message reports"));
         }
@@ -300,6 +312,9 @@ impl Message {
             return Err(CodecError::Invalid("Anthropic final stop"));
         }
         let mut bytes = self.id.len() + self.model.len();
+        if let Presence::Value(s) = &self.stop_sequence {
+            charge(&mut bytes, text(s)?)?;
+        }
         let mut nodes = 64;
         let mut calls = std::collections::BTreeSet::new();
         for block in &self.content {
@@ -316,6 +331,7 @@ impl Message {
         }
         if !opening
             && (self.stop_reason == Presence::Value(StopReason::ToolUse) && calls.is_empty()
+                || matched && !calls.is_empty()
                 || self.stop_reason == Presence::Value(StopReason::EndTurn) && !calls.is_empty())
         {
             return Err(CodecError::Invalid("Anthropic stop/call combination"));
@@ -492,9 +508,18 @@ impl Event {
                 delta.bytes()?;
             }
             Self::BlockStop { index } => Self::index(*index)?,
-            Self::MessageDelta { stop_sequence, .. } => {
-                if stop_sequence.value().is_some() {
+            Self::MessageDelta {
+                stop_reason,
+                stop_sequence,
+                ..
+            } => {
+                if stop_sequence.value().is_some()
+                    != (*stop_reason == Presence::Value(StopReason::StopSequence))
+                {
                     return Err(CodecError::Invalid("Anthropic stop_sequence"));
+                }
+                if let Presence::Value(s) = stop_sequence {
+                    text(s)?;
                 }
             }
             Self::Error { kind, message } => {

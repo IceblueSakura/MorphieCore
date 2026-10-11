@@ -197,6 +197,10 @@ async fn answer(
         match prompt {
             "unknown-usage" => {}
             "truncated" => response["stop_reason"] = json!("max_tokens"),
+            "refusal" => {
+                response["stop_reason"] = json!("refusal");
+                response["stop_details"] = json!({"category":"cyber","explanation":"synthetic"});
+            }
             "malformed" => response["usage"]["input_tokens"] = json!("invalid"),
             "bad-signature" => {
                 response["content"] =
@@ -423,6 +427,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 ("bad-signature", 502),
                 ("unknown-usage", 200),
                 ("truncated", 200),
+                ("refusal", 200),
             ] {
                 input[if responses { "input" } else { "messages" }] =
                     json!([{"role":"user","content":prompt}]);
@@ -444,30 +449,22 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 assert!(!body.to_string().contains("synthetic-private"));
                 if expected == 200 {
                     assert!(body["usage"].is_null());
+                    let (status, reason, finish) = match prompt {
+                        "truncated" => ("incomplete", json!("max_output_tokens"), "length"),
+                        "refusal" => ("incomplete", json!("content_filter"), "content_filter"),
+                        _ => ("completed", Value::Null, "stop"),
+                    };
                     if responses {
-                        assert_eq!(
-                            body["status"],
-                            if prompt == "truncated" {
-                                "incomplete"
-                            } else {
-                                "completed"
-                            }
-                        );
+                        assert_eq!(body["status"], status);
+                        assert_eq!(body["incomplete_details"]["reason"], reason);
                     } else {
-                        assert_eq!(
-                            body["choices"][0]["finish_reason"],
-                            if prompt == "truncated" {
-                                "length"
-                            } else {
-                                "stop"
-                            }
-                        );
+                        assert_eq!(body["choices"][0]["finish_reason"], finish);
                     }
                 }
             }
         }
     }
-    assert_eq!(seen.lock().unwrap().len(), 20);
+    assert_eq!(seen.lock().unwrap().len(), 22);
     for profile in [Profile::Responses, Profile::Chat] {
         let responses = profile == Profile::Responses;
         let path = if responses {
@@ -560,7 +557,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             );
         }
     }
-    assert_eq!(seen.lock().unwrap().len(), 26);
+    assert_eq!(seen.lock().unwrap().len(), 28);
     diagnostic_owner.flush_diagnostics().await;
     let records = std::fs::read_to_string(&diagnostics).unwrap();
     assert!(records.contains(r#""request_rules":["messages.omit-sampling.v1"]"#));
