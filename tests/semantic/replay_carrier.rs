@@ -2,10 +2,11 @@
 //! only to the Provider/model that issued it.
 use crate::wire;
 use morphiecore::{
-    adapter::{Adapter, Dialect},
     execution::replay::{CLIENT_ORIGIN, open_from_client, seal_event, seal_for_client},
-    lowering::generation::GenerationRepresentationContract as Contract,
-    protocol::{openai::Profile, replay_envelope},
+    protocol::{
+        openai::{Adapter, Dialect, Profile, TargetCaps as Contract},
+        replay_envelope,
+    },
     semantic::{
         task::generation::{Item, ReplayFormat, StreamEvent},
         value::ReplayOrigin,

@@ -1,9 +1,7 @@
 //! Candidate filtering must be value-sensitive and preserve trusted ordering.
 use morphiecore::{
-    adapter::{Adapter, Dialect},
     execution::ExecutionPlan,
-    lowering::generation::GenerationRepresentationContract as Representation,
-    protocol::openai::Profile,
+    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Representation},
     provider::{
         AuthScheme, CredentialBindingId, EndpointPath, ProviderDefinition, ProviderId,
         TrustedOrigin,

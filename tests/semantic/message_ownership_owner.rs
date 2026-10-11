@@ -1,7 +1,9 @@
 //! A08/T28: semantic membership is independent of target contiguity.
 use morphiecore::{
-    lowering::generation::{GenerationRepresentationContract as Contract, lower_request},
-    protocol::{fidelity::FidelityRecords, openai::Profile},
+    protocol::{
+        fidelity::FidelityRecords,
+        openai::{Profile, TargetCaps as Contract, lowering::lower_request},
+    },
     semantic::{task::generation::*, value::Text},
 };
 fn text(value: &str) -> Text {
@@ -124,7 +126,7 @@ fn prefix_cannot_cut_an_interleaved_explicit_group() {
 
 #[test]
 fn noncontiguous_membership_events_match_static_and_targets_reject_before_call_emission() {
-    use morphiecore::lowering::events::check_event;
+    use morphiecore::protocol::openai::lowering::events::check_event;
     let mut state = reduce(StreamState::new(), StreamEvent::Started).unwrap();
     for (id, kind) in [
         (1, ItemKind::Message { phase: None }),

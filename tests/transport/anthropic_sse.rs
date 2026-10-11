@@ -325,11 +325,9 @@ fn incremental_native_events_reduce_to_the_independent_static_semantics() {
 #[test]
 fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
     use morphiecore::{
-        adapter::{Adapter, Dialect},
         execution::ResponseDelivery,
-        lowering::generation::GenerationRepresentationContract,
         protocol::{
-            openai::{Profile as ClientProfile, sse::Obfuscation},
+            openai::{Adapter, Dialect, Profile as ClientProfile, TargetCaps, sse::Obfuscation},
             replay_envelope,
         },
         semantic::task::generation::{Item, Outcome, ToolArguments},
@@ -345,7 +343,7 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
             let client = Adapter::new(profile, Dialect::MorphieCore, None);
             let mut delivery = ResponseDelivery::new(
                 client.clone(),
-                GenerationRepresentationContract::full(),
+                TargetCaps::full(),
                 "public",
                 SseLimits::default(),
                 morphiecore::semantic::context::StreamOptions {
@@ -457,7 +455,7 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
             let native = attempt.response().unwrap().clone();
             let mut json_delivery = ResponseDelivery::new(
                 client.clone(),
-                GenerationRepresentationContract::full(),
+                TargetCaps::full(),
                 "public",
                 SseLimits::default(),
                 Default::default(),

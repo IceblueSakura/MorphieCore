@@ -1,14 +1,12 @@
 //! Chat byte boundaries, explicit DONE lifecycle and independent static/event closure.
 use crate::chat_wire as wire;
 use morphiecore::{
-    lowering::generation::{
-        GenerationRepresentationContract as Contract, lower_request, lower_response,
-    },
     protocol::{
         fidelity::FidelityRecords,
         openai::{
-            Profile, chat, chat_envelope as envelope,
+            Profile, TargetCaps as Contract, chat, chat_envelope as envelope,
             chat_sse::{ChatSseDecoder, ChatSseEncoder},
+            lowering::{lower_request, lower_response},
             responses,
             sse::{Obfuscation, SseLimits},
         },

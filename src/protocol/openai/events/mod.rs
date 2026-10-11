@@ -4,7 +4,7 @@ mod chat;
 mod decode;
 mod encode;
 use super::{CodecError, Profile, ResponseMetadata, common::*};
-use crate::lowering::generation::GenerationRepresentationContract;
+use crate::protocol::openai::TargetCaps;
 use crate::{
     protocol::fidelity::FidelityRecords,
     semantic::{task::generation::*, value::ReplayOrigin},

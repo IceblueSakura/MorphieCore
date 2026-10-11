@@ -1,10 +1,11 @@
 //! Counting scope, basis and relationships remain explicit reported facts.
 use crate::events_support::{self as events, text};
 use morphiecore::{
-    lowering::generation::{
-        GenerationRepresentationContract as Contract, RepresentationError, lower_response,
+    lowering::generation::RepresentationError,
+    protocol::{
+        fidelity::FidelityRecords,
+        openai::{Profile, TargetCaps as Contract, lowering::lower_response},
     },
-    protocol::{fidelity::FidelityRecords, openai::Profile},
     semantic::task::generation::*,
 };
 fn message() -> (ItemId, Item) {

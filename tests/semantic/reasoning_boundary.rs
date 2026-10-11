@@ -1,10 +1,11 @@
 //! Readable-only and opaque reasoning have separate lifecycle/portability contracts.
 use morphiecore::{
-    adapter::{Adapter, Dialect},
-    lowering::generation::GenerationRepresentationContract as Contract,
     protocol::{
         fidelity::FidelityRecords,
-        openai::{DecodedResponse, Profile, events::EventEncoder},
+        openai::{
+            Adapter, DecodedResponse, Dialect, Profile, TargetCaps as Contract,
+            events::EventEncoder,
+        },
     },
     semantic::{
         task::generation::*,

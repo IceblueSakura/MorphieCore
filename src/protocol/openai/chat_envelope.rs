@@ -92,7 +92,7 @@ pub fn decode_request(v: &Value) -> Result<DecodedChatRequest, CodecError> {
 }
 pub(crate) fn decode_request_with(
     v: &Value,
-    adaptation: &crate::protocol::adaptation::Adaptation,
+    adaptation: &crate::protocol::openai::adaptation::Adaptation,
 ) -> Result<DecodedChatRequest, CodecError> {
     bounded(v)?;
     let mut normalized;

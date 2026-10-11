@@ -1,5 +1,5 @@
 //! Target-only assembly, never inferred native ownership.
-use super::{generation::RepresentationError, projection::LossRule};
+use super::{RepresentationError, projection::LossRule};
 use crate::{protocol::openai::Profile, semantic::task::generation::*};
 use std::collections::BTreeMap;
 

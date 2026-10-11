@@ -1,7 +1,9 @@
 //! A07/T06: overlapping groups borrow ordered members; no wire carrier is invented.
 use morphiecore::{
-    lowering::generation::{GenerationRepresentationContract as Contract, lower_request},
-    protocol::{fidelity::FidelityRecords, openai::Profile},
+    protocol::{
+        fidelity::FidelityRecords,
+        openai::{Profile, TargetCaps as Contract, lowering::lower_request},
+    },
     semantic::{task::generation::*, value::Text},
 };
 fn text(value: &str) -> Text {
@@ -233,7 +235,7 @@ fn normative_group_events_match_an_independent_static_declaration_and_cannot_reo
         let event = StreamEvent::ReplayGroup(group);
         for profile in [Profile::Chat, Profile::Responses] {
             assert!(
-                morphiecore::lowering::events::check_event(
+                morphiecore::protocol::openai::lowering::events::check_event(
                     &state,
                     &event,
                     profile,

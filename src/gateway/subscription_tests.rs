@@ -16,8 +16,12 @@ fn siwc_public_admission_does_not_invent_an_unsupported_output_token_limit() {
     public.contract.max_output_tokens = false;
     let entry = Arc::new(BoundEntry {
         public,
-        client: Adapter::new(Profile::Responses, crate::adapter::Dialect::Standard, None),
-        downstream: crate::lowering::generation::GenerationRepresentationContract::full(),
+        client: Adapter::new(
+            Profile::Responses,
+            crate::protocol::openai::Dialect::Standard,
+            None,
+        ),
+        downstream: crate::protocol::openai::TargetCaps::full(),
         policy: original.policy.clone(),
         candidates: original.candidates.clone(),
     });
@@ -40,12 +44,16 @@ fn siwc_public_admission_does_not_invent_an_unsupported_output_token_limit() {
         )
         .is_err()
     );
-    let adapter = Adapter::new(Profile::Responses, crate::adapter::Dialect::Siwc, None);
+    let adapter = Adapter::new(
+        Profile::Responses,
+        crate::protocol::openai::Dialect::Siwc,
+        None,
+    );
     let wire = adapter
         .encode_request(
             &request,
             "selected-slug",
-            &crate::lowering::generation::GenerationRepresentationContract::full(),
+            &crate::protocol::openai::TargetCaps::full(),
         )
         .unwrap();
     assert!(wire.get("max_output_tokens").is_none());
@@ -71,7 +79,7 @@ fn sse(complete: bool) -> Vec<u8> {
 }
 
 async fn consume(
-    dialect: crate::adapter::Dialect,
+    dialect: crate::protocol::openai::Dialect,
     media: &[&[u8]],
     bytes: Vec<u8>,
     stream: bool,
@@ -84,7 +92,7 @@ async fn consume(
     let mut endpoint = base.endpoint.clone();
     endpoint.protocol = crate::topology::ProtocolProfile::OpenAiResponses;
     endpoint.representation = adapter
-        .contract(&crate::lowering::generation::GenerationRepresentationContract::full())
+        .contract(&crate::protocol::openai::TargetCaps::full())
         .into();
     let candidate = Arc::new(BoundCandidate {
         endpoint,
@@ -97,10 +105,10 @@ async fn consume(
         public: original.public.clone(),
         client: Adapter::new(
             Profile::Responses,
-            crate::adapter::Dialect::MorphieCore,
+            crate::protocol::openai::Dialect::MorphieCore,
             None,
         ),
-        downstream: crate::lowering::generation::GenerationRepresentationContract::full(),
+        downstream: crate::protocol::openai::TargetCaps::full(),
         policy: original.policy.clone(),
         candidates: vec![candidate.clone()],
     });
@@ -166,8 +174,8 @@ async fn consume(
 #[tokio::test]
 async fn forced_sse_projects_json_and_rejects_conflicting_or_invalid_media() {
     for dialect in [
-        crate::adapter::Dialect::Codex,
-        crate::adapter::Dialect::Siwc,
+        crate::protocol::openai::Dialect::Codex,
+        crate::protocol::openai::Dialect::Siwc,
     ] {
         for (media, accepted) in [
             (vec![], true),
@@ -239,8 +247,8 @@ async fn missing_media_does_not_relax_sse_terminal_or_eof_validation() {
         serde_json::to_vec(&wire::response(2)).unwrap(),
     ];
     for dialect in [
-        crate::adapter::Dialect::Codex,
-        crate::adapter::Dialect::Siwc,
+        crate::protocol::openai::Dialect::Codex,
+        crate::protocol::openai::Dialect::Siwc,
     ] {
         for (index, bytes) in cases.iter().enumerate() {
             for stream in [false, true] {
@@ -256,9 +264,9 @@ async fn missing_media_does_not_relax_sse_terminal_or_eof_validation() {
 #[tokio::test]
 async fn missing_media_is_not_enabled_for_standard_or_other_responses_profiles() {
     for dialect in [
-        crate::adapter::Dialect::Standard,
-        crate::adapter::Dialect::MorphieCore,
-        crate::adapter::Dialect::Grok,
+        crate::protocol::openai::Dialect::Standard,
+        crate::protocol::openai::Dialect::MorphieCore,
+        crate::protocol::openai::Dialect::Grok,
     ] {
         for stream in [false, true] {
             assert!(consume(dialect, &[], sse(true), stream).await.is_none());
@@ -270,9 +278,13 @@ async fn missing_media_is_not_enabled_for_standard_or_other_responses_profiles()
         );
     }
     assert!(
-        !Adapter::new(Profile::Chat, crate::adapter::Dialect::Standard, None)
-            .adaptation
-            .rules
-            .responses_sse_without_content_type
+        !Adapter::new(
+            Profile::Chat,
+            crate::protocol::openai::Dialect::Standard,
+            None
+        )
+        .adaptation
+        .rules
+        .responses_sse_without_content_type
     );
 }

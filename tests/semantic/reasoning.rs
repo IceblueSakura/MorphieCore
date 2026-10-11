@@ -1,14 +1,12 @@
 //! Reasoning ownership, opaque replay, mixed tool continuation and resource failures.
 use crate::events_support::*;
 use morphiecore::{
-    lowering::generation::{
-        GenerationRepresentationContract as Contract, lower_request, lower_response,
-    },
     protocol::{
         fidelity::FidelityRecords,
         openai::{
-            Profile, chat,
+            Profile, TargetCaps as Contract, chat,
             events::{EventDecoder, EventEncoder},
+            lowering::{lower_request, lower_response},
             responses,
         },
     },
@@ -42,7 +40,7 @@ fn wire_part(output: usize, id: &str, index: usize, summary: bool, s: &str) -> V
 }
 #[test]
 fn reasoning_effort_defaults_do_not_create_an_independent_enable_switch() {
-    use morphiecore::adapter::{Adapter, Dialect};
+    use morphiecore::protocol::openai::{Adapter, Dialect};
     use morphiecore::semantic::value::Presence;
 
     let codec = Adapter::new(Profile::Responses, Dialect::Standard, None);
@@ -73,7 +71,7 @@ fn reasoning_effort_defaults_do_not_create_an_independent_enable_switch() {
 
 #[test]
 fn standard_summary_rejects_nonstandard_values_on_requests_echoes_and_events() {
-    use morphiecore::adapter::{Adapter, Dialect};
+    use morphiecore::protocol::openai::{Adapter, Dialect};
     for name in ["summary", "generate_summary"] {
         for value in [
             json!(false),

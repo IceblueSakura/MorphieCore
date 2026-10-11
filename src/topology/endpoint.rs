@@ -51,8 +51,11 @@ pub struct Endpoint {
 impl Endpoint {
     pub fn adapter(&self) -> Result<crate::adapter::UpstreamAdapter, crate::protocol::CodecError> {
         use crate::{
-            adapter::{Adapter, UpstreamAdapter},
-            protocol::{CodecError, openai::Profile},
+            adapter::UpstreamAdapter,
+            protocol::{
+                CodecError,
+                openai::{Adapter, Profile},
+            },
         };
         Ok(match (&self.protocol, &self.representation) {
             (ProtocolProfile::AnthropicMessages, TargetCaps::AnthropicMessages(caps)) => {

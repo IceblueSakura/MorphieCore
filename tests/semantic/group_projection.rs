@@ -1,18 +1,13 @@
 //! Standard Responses omits native container boundaries, never tool identity or outcome.
 use crate::events_support::{metadata, text};
 use morphiecore::{
-    lowering::{
-        events::check_event,
-        generation::{
-            GenerationRepresentationContract as Contract, RepresentationError, lower_request,
-            lower_response,
-        },
-    },
+    lowering::generation::RepresentationError,
     protocol::{
         fidelity::FidelityRecords,
         openai::{
-            Profile, chat,
+            Profile, TargetCaps as Contract, chat,
             events::{EventDecoder, EventEncoder},
+            lowering::{events::check_event, lower_request, lower_response},
             responses,
         },
     },
@@ -27,7 +22,7 @@ fn source(content: Value, finish: &str) -> Value {
 #[test]
 fn owner_only_encrypted_reasoning_survives_independent_message_envelope_projection() {
     use morphiecore::{
-        adapter::{Adapter, Dialect},
+        protocol::openai::{Adapter, Dialect},
         semantic::value::ReplayOrigin,
     };
     let origin = ReplayOrigin::new("synthetic-owner-scope").unwrap();
@@ -135,7 +130,7 @@ fn owner_only_encrypted_reasoning_survives_independent_message_envelope_projecti
 #[test]
 fn owner_only_replay_with_attached_calls_projects_incrementally_without_terminal_repair() {
     use morphiecore::{
-        adapter::{Adapter, Dialect},
+        protocol::openai::{Adapter, Dialect},
         semantic::value::ReplayOrigin,
     };
     let origin = ReplayOrigin::new("synthetic-owner-scope").unwrap();

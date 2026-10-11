@@ -1,13 +1,13 @@
 //! Final history owns call/result dependencies; no view authorizes another attempt.
 use crate::events_support::text;
 use morphiecore::{
-    adapter::{Adapter, Dialect},
-    lowering::generation::{
-        GenerationRepresentationContract as Contract, RepresentationError, lower_request,
-    },
+    lowering::generation::RepresentationError,
     protocol::{
         fidelity::FidelityRecords,
-        openai::{CodecError, Profile, responses},
+        openai::{
+            Adapter, CodecError, Dialect, Profile, TargetCaps as Contract, lowering::lower_request,
+            responses,
+        },
     },
     semantic::task::generation::*,
 };

@@ -1,13 +1,14 @@
 //! Independent oracles for the function-tool migration, without providers or production routing.
 use crate::events_support::{apply, close, created, encode, envelope, metadata, start, terminal};
 use morphiecore::{
-    lowering::generation::{
-        GenerationRepresentationContract as Contract, RepresentationError, lower_request,
-        lower_response,
-    },
+    lowering::generation::RepresentationError,
     protocol::{
         fidelity::FidelityRecords,
-        openai::{DecodedRequest, Profile, ResponseMetadata, chat, events, responses},
+        openai::{
+            DecodedRequest, Profile, ResponseMetadata, TargetCaps as Contract, chat, events,
+            lowering::{lower_request, lower_response},
+            responses,
+        },
     },
     semantic::{task::generation::*, value::Text},
 };

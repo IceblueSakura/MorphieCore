@@ -1,7 +1,10 @@
 //! Instruction authority, controls and deletion across independent protocol projections.
 use morphiecore::{
-    lowering::generation::{GenerationRepresentationContract as Contract, check, lower_request},
-    protocol::openai::{DecodedRequest, Profile, chat, responses},
+    protocol::openai::{
+        DecodedRequest, Profile, TargetCaps as Contract, chat,
+        lowering::{check, lower_request},
+        responses,
+    },
     semantic::task::generation::{GenerationRequirements, Item},
 };
 use serde_json::{Value, json};

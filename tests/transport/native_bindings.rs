@@ -1,12 +1,11 @@
 //! Operation binding and pure preparation; never opens a socket or reads a credential store.
 use morphiecore::{
-    adapter::{Adapter, Dialect, UpstreamAdapter},
+    adapter::UpstreamAdapter,
     execution::{Attempt, plan::representable, prepare, prepare_messages},
-    lowering::generation::GenerationRepresentationContract as Contract,
     protocol::{
         anthropic::Profile as NativeProfile,
         cache::CacheSession,
-        openai::{Profile, sse::SseLimits},
+        openai::{Adapter, Dialect, Profile, TargetCaps as Contract, sse::SseLimits},
     },
     provider::{
         AuthScheme, CredentialBindingId, CredentialKind, EndpointPath, GenerationOperation,

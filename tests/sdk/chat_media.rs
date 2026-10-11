@@ -8,10 +8,8 @@ use axum::{
     routing::post,
 };
 use morphiecore::{
-    adapter::{Adapter, Dialect},
-    lowering::generation::GenerationRepresentationContract as Contract,
     protocol::openai::{
-        Profile,
+        Adapter, Dialect, Profile, TargetCaps as Contract,
         chat_sse::ChatSseEncoder,
         sse::{Obfuscation, SseLimits},
     },

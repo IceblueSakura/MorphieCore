@@ -1,14 +1,12 @@
 //! Independent field and transformation contracts for stateless Responses text.
 use crate::wire;
 use morphiecore::{
-    lowering::generation::{
-        GenerationRepresentationContract as Contract, lower_request, lower_response,
-    },
     protocol::{
         fidelity::FidelityRecords,
         openai::{
-            DecodedRequest, Profile, chat, chat_envelope, envelope,
+            DecodedRequest, Profile, TargetCaps as Contract, chat, chat_envelope, envelope,
             events::{EventDecoder, EventEncoder},
+            lowering::{lower_request, lower_response},
             responses,
             sse::*,
         },

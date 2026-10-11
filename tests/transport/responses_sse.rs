@@ -2,11 +2,10 @@
 use crate::wire;
 
 use morphiecore::{
-    lowering::generation::GenerationRepresentationContract,
     protocol::{
         fidelity::FidelityRecords,
         openai::{
-            Profile,
+            Profile, TargetCaps,
             events::EventDecoder,
             sse::{Obfuscation, ResponsesSseDecoder, ResponsesSseEncoder, SseLimits, encode_frame},
         },
@@ -782,7 +781,7 @@ fn padding_encoder_respects_zero_budget_and_disabled_switch() {
         };
         let mut encoder = ResponsesSseEncoder::new(
             decoded.metadata().unwrap().clone(),
-            GenerationRepresentationContract::full(),
+            TargetCaps::full(),
             SseLimits {
                 max_obfuscation_bytes: 0,
                 ..SseLimits::default()
@@ -833,7 +832,7 @@ fn rejected_metadata_update_poisoned_stream_cannot_emit_success() {
     let metadata = decoder.metadata().unwrap().clone();
     let mut encoder = ResponsesSseEncoder::new(
         metadata.clone(),
-        GenerationRepresentationContract::full(),
+        TargetCaps::full(),
         SseLimits::default(),
         Obfuscation::Disabled,
     )
@@ -880,9 +879,8 @@ fn multiline_data_is_joined_and_an_invalid_json_record_poisons_the_stream() {
 #[test]
 fn empty_terminal_summary_requires_real_closed_items_and_exact_nonempty_snapshots() {
     use morphiecore::{
-        adapter::{Adapter, Dialect},
         execution::Attempt,
-        protocol::openai::{Profile, sse::SseLimits},
+        protocol::openai::{Adapter, Dialect, Profile, sse::SseLimits},
         semantic::value::ReplayOrigin,
     };
     let adapter = |dialect, scope| {
@@ -929,7 +927,7 @@ fn empty_terminal_summary_requires_real_closed_items_and_exact_nonempty_snapshot
 }
 #[test]
 fn nested_upstream_snapshot_fields_do_not_relax_request_admission() {
-    use morphiecore::adapter::{Adapter, Dialect};
+    use morphiecore::protocol::openai::{Adapter, Dialect};
     let client = Adapter::new(Profile::Responses, Dialect::Standard, None);
     let mut request = wire::request(false);
     request["tools"][0]["future_tool"] = json!({"ignored":"only on responses"});

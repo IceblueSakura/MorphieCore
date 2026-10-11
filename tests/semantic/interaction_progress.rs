@@ -1,12 +1,10 @@
 //! Reported progress never substitutes for operation outcome or execution permission.
 use crate::events_support::{self as events, text};
 use morphiecore::{
-    lowering::generation::{
-        GenerationRepresentationContract as Contract, RepresentationError, lower_response,
-    },
+    lowering::generation::RepresentationError,
     protocol::{
         fidelity::FidelityRecords,
-        openai::{Profile, responses},
+        openai::{Profile, TargetCaps as Contract, lowering::lower_response, responses},
     },
     semantic::task::generation::*,
 };

@@ -2,10 +2,11 @@
 use crate::events_support::text;
 use crate::resources_support as resources;
 use morphiecore::{
-    lowering::generation::{
-        GenerationRepresentationContract as Contract, RepresentationError, lower_request,
+    lowering::generation::RepresentationError,
+    protocol::{
+        fidelity::FidelityRecords,
+        openai::{Profile, TargetCaps as Contract, lowering::lower_request},
     },
-    protocol::{fidelity::FidelityRecords, openai::Profile},
     semantic::task::generation::*,
 };
 use serde_json::json;
@@ -499,7 +500,7 @@ fn tool_and_user_images_share_target_limits_and_edits_remove_media() {
 
 #[test]
 fn result_history_requires_payload_and_call_identity_but_preserves_explicit_empty_values() {
-    use morphiecore::adapter::{Adapter, Dialect};
+    use morphiecore::protocol::openai::{Adapter, Dialect};
     let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
     for custom in [false, true] {
         let call = if custom {

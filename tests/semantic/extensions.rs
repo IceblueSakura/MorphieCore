@@ -1,10 +1,7 @@
 //! Provider-scoped extension carriers: Codex header lifecycle and custom body sections.
-use morphiecore::{
-    lowering::generation::{GenerationRepresentationContract as Contract, lower_request},
-    protocol::{
-        extensions::{CodexHeaders, CustomSections, RoutingHint},
-        openai::{Profile, envelope},
-    },
+use morphiecore::protocol::{
+    extensions::{CodexHeaders, CustomSections, RoutingHint},
+    openai::{Profile, TargetCaps as Contract, envelope, lowering::lower_request},
 };
 use serde_json::{Map, Value, json};
 

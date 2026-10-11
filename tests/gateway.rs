@@ -23,10 +23,10 @@ use axum::{
     routing::post,
 };
 use morphiecore::{
-    adapter::{Adapter, Dialect},
     gateway::Limits,
-    lowering::generation::GenerationRepresentationContract,
-    protocol::openai::{DecodedResponse, Profile, sse::ResponsesSseDecoder},
+    protocol::openai::{
+        Adapter, DecodedResponse, Dialect, Profile, TargetCaps, sse::ResponsesSseDecoder,
+    },
     semantic::{
         task::generation::{Continuation, Outcome},
         value::ReplayOrigin,
@@ -590,9 +590,9 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
                     calls.iter().map(|c| c.call_id).collect::<Vec<_>>(),
                     ["c_sql", "c_lookup"]
                 );
-                let contract = GenerationRepresentationContract {
+                let contract = TargetCaps {
                     replay_origin: Some(ReplayOrigin::new("fixture").unwrap()),
-                    ..GenerationRepresentationContract::full()
+                    ..TargetCaps::full()
                 };
                 let projected = Adapter::new(Profile::Responses, Dialect::Standard, None)
                     .encode_response(&decoded, &contract)
@@ -678,9 +678,9 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         } else {
             let wire: Value = serde_json::from_slice(&bytes).unwrap();
             assert_eq!(wire["metadata"], json!({"provider":"reported"}));
-            morphiecore::adapter::Adapter::new(
+            morphiecore::protocol::openai::Adapter::new(
                 Profile::Chat,
-                morphiecore::adapter::Dialect::Standard,
+                morphiecore::protocol::openai::Dialect::Standard,
                 None,
             )
             .decode_response(&bytes)
@@ -750,9 +750,9 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
             assert_eq!(response.status(), 200);
             let bytes = response.bytes().await.unwrap();
             let decoded = if !stream {
-                morphiecore::adapter::Adapter::new(
+                morphiecore::protocol::openai::Adapter::new(
                     profile,
-                    morphiecore::adapter::Dialect::Standard,
+                    morphiecore::protocol::openai::Dialect::Standard,
                     None,
                 )
                 .decode_response(&bytes)
@@ -924,7 +924,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         let decoded = responses_delivery(&body, stream);
         assert_eq!(decoded.semantic.outcome(), Outcome::Completed);
         let encoded = Adapter::new(Profile::Responses, Dialect::Standard, None)
-            .encode_response(&decoded, &GenerationRepresentationContract::full())
+            .encode_response(&decoded, &TargetCaps::full())
             .unwrap();
         assert_eq!(encoded["output"][1]["call_id"], "call-local");
         assert_eq!(encoded["output"][1]["arguments"], "{\"n\":1}");

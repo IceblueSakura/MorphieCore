@@ -265,7 +265,7 @@ pub fn encode_response(target: &super::ResponseRepresentation<'_>) -> Result<Val
 /// The SDK-derived `output_text` view is ignored, never validated or restored.
 pub(crate) fn record_vendor_shapes(
     profile: Profile,
-    adaptation: &crate::protocol::adaptation::Adaptation,
+    adaptation: &crate::protocol::openai::adaptation::Adaptation,
     o: &Map<String, Value>,
     fidelity: &mut crate::protocol::fidelity::FidelityRecords,
     semantic: Option<&GenerationResponse>,
@@ -276,7 +276,7 @@ pub(crate) fn record_vendor_shapes(
 pub(crate) fn write_response_extras(
     fidelity: &crate::protocol::fidelity::FidelityRecords,
     profile: Profile,
-    adaptation: &crate::protocol::adaptation::Adaptation,
+    adaptation: &crate::protocol::openai::adaptation::Adaptation,
     semantic: &GenerationResponse,
     response_id: &str,
     o: &mut Map<String, Value>,
@@ -303,7 +303,7 @@ pub(crate) fn validate_response_snapshot(v: &Value) -> Result<(), CodecError> {
 }
 pub(crate) fn validate_response_snapshot_with(
     v: &Value,
-    adaptation: &crate::protocol::adaptation::Adaptation,
+    adaptation: &crate::protocol::openai::adaptation::Adaptation,
     direction: DecodeDirection,
 ) -> Result<(), CodecError> {
     // Complete-envelope validation sees the same explicit wire mapping as the
@@ -327,7 +327,7 @@ pub(super) fn validate_stream_payload(v: &Value) -> Result<(), CodecError> {
 }
 pub(super) fn validate_stream_payload_with(
     v: &Value,
-    adaptation: &crate::protocol::adaptation::Adaptation,
+    adaptation: &crate::protocol::openai::adaptation::Adaptation,
     direction: DecodeDirection,
 ) -> Result<(), CodecError> {
     // Every complete Responses SSE event carries the required integer sequence

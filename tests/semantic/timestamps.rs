@@ -1,9 +1,10 @@
 //! Independent timestamp admission and typed edits, without Provider or Gateway bindings.
 use morphiecore::{
-    lowering::generation::{
-        GenerationRepresentationContract as Contract, RepresentationError, lower_response,
+    lowering::generation::RepresentationError,
+    protocol::openai::{
+        Profile, TargetCaps as Contract, chat_envelope, envelope, events::EventEncoder,
+        lowering::lower_response,
     },
-    protocol::openai::{Profile, chat_envelope, envelope, events::EventEncoder},
     semantic::{
         task::generation::{StreamEvent, StreamTerminal, TerminalDetails},
         value::Presence,

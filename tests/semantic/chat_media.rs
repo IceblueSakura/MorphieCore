@@ -1,8 +1,6 @@
 //! Independent standard Chat media/citation oracles; never use a live credential or catalog.
 use morphiecore::{
-    adapter::{Adapter, Dialect},
-    lowering::generation::GenerationRepresentationContract as Contract,
-    protocol::openai::Profile,
+    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract},
     semantic::task::generation::*,
 };
 use serde_json::{Value, json};
@@ -129,8 +127,10 @@ fn input_audio_is_an_ordered_inline_resource_not_a_transcript_or_assistant_artif
 #[test]
 fn typed_audio_input_has_an_independent_ir_to_wire_expectation() {
     use morphiecore::{
-        lowering::generation::lower_request,
-        protocol::{fidelity::FidelityRecords, openai::chat},
+        protocol::{
+            fidelity::FidelityRecords,
+            openai::{chat, lowering::lower_request},
+        },
         semantic::value::Text,
     };
     let resources = ResourceTable::default()

@@ -1,10 +1,13 @@
 //! Independent value/proof, mutation and finality oracles for Responses encrypted reasoning.
 use crate::events_support::{contract, envelope, metadata, origin, text};
 use morphiecore::{
-    lowering::generation::{lower_request, lower_response},
     protocol::{
         fidelity::FidelityRecords,
-        openai::{Profile, responses},
+        openai::{
+            Profile,
+            lowering::{lower_request, lower_response},
+            responses,
+        },
     },
     semantic::task::generation::*,
 };
@@ -176,7 +179,7 @@ fn independently_authored_ir_encodes_only_its_typed_value() {
 
 #[test]
 fn token_only_edits_invalidate_extras_even_when_debug_is_identical() {
-    use morphiecore::adapter::{Adapter, Dialect};
+    use morphiecore::protocol::openai::{Adapter, Dialect};
     let adapter = Adapter::new(Profile::Responses, Dialect::DeepSeek, Some(origin()));
     let mut input = envelope(
         "completed",

@@ -1,8 +1,9 @@
 //! One bounded Router gate for exact prefixes, final handoff and both cache carriers.
 use super::*;
 use crate::{
-    adapter::Dialect, lowering::generation::GenerationRepresentationContract as Contract,
-    provider::*, topology::*,
+    protocol::openai::{Dialect, TargetCaps as Contract},
+    provider::*,
+    topology::*,
 };
 use axum::{
     Json, Router,

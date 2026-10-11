@@ -1,12 +1,10 @@
 //! Incremental projection and explicit I/O-owned commit. Encoding is not delivery.
 use crate::{
-    adapter::Adapter,
     execution::{Attempt, AttemptError, Lifecycle},
-    lowering::generation::GenerationRepresentationContract,
     protocol::{
         ResponseMetadata,
         openai::{
-            Profile,
+            Adapter, Profile, TargetCaps,
             chat_sse::ChatSseEncoder,
             sse::{Obfuscation, ResponsesSseEncoder, SseLimits},
         },
@@ -46,7 +44,7 @@ enum Encoder {
 
 pub struct ResponseDelivery {
     adapter: Adapter,
-    contract: GenerationRepresentationContract,
+    contract: TargetCaps,
     public_label: String,
     limits: SseLimits,
     options: StreamOptions,
@@ -58,12 +56,12 @@ pub struct ResponseDelivery {
     terminal: bool,
     rejected: bool,
     native_created: Option<serde_json::Number>,
-    native_projection: Option<crate::lowering::native_messages::EventProjection>,
+    native_projection: Option<crate::protocol::openai::lowering::native_messages::EventProjection>,
 }
 impl ResponseDelivery {
     pub fn new(
         adapter: Adapter,
-        contract: GenerationRepresentationContract,
+        contract: TargetCaps,
         public_label: &str,
         limits: SseLimits,
         options: StreamOptions,
@@ -141,7 +139,10 @@ impl ResponseDelivery {
         decoded.metadata = self.metadata(attempt)?;
         super::replay::seal_for_client(&mut decoded, &super::replay::CLIENT_ORIGIN)?;
         if attempt.is_native_messages() {
-            crate::lowering::native_messages::project(&mut decoded, self.adapter.protocol)?;
+            crate::protocol::openai::lowering::native_messages::project(
+                &mut decoded,
+                self.adapter.protocol,
+            )?;
         }
         if self.adapter.protocol == Profile::Responses || attempt.is_native_messages() {
             for (owner, _) in decoded.semantic.items() {
@@ -275,7 +276,9 @@ impl ResponseDelivery {
             projected = self
                 .native_projection
                 .get_or_insert_with(|| {
-                    crate::lowering::native_messages::EventProjection::new(self.adapter.protocol)
+                    crate::protocol::openai::lowering::native_messages::EventProjection::new(
+                        self.adapter.protocol,
+                    )
                 })
                 .project(events)?;
             projected.as_slice()

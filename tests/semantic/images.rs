@@ -1,9 +1,7 @@
 //! Independent image admission and projection oracles; no network or media decoder.
 use crate::resources_support as resources;
 use morphiecore::{
-    adapter::{Adapter, Dialect},
-    lowering::generation::GenerationRepresentationContract,
-    protocol::openai::Profile,
+    protocol::openai::{Adapter, Dialect, Profile, TargetCaps},
     semantic::task::generation::*,
 };
 use serde_json::{Value, json};
@@ -58,11 +56,7 @@ fn image_sources_detail_and_order_decode_then_project_independent_wire() {
         );
         for target in [Profile::Chat, Profile::Responses] {
             let encoded = adapter(target)
-                .encode_request(
-                    &request,
-                    "synthetic",
-                    &GenerationRepresentationContract::full(),
-                )
+                .encode_request(&request, "synthetic", &TargetCaps::full())
                 .unwrap();
             let field = if target == Profile::Chat {
                 "messages"
@@ -149,11 +143,7 @@ fn edits_delete_replace_insert_and_reorder_images_without_source_resurrection() 
         .unwrap();
     for target in [Profile::Chat, Profile::Responses] {
         let encoded = adapter(target)
-            .encode_request(
-                &request,
-                "synthetic",
-                &GenerationRepresentationContract::full(),
-            )
+            .encode_request(&request, "synthetic", &TargetCaps::full())
             .unwrap();
         let field = if target == Profile::Chat {
             "messages"
@@ -189,7 +179,7 @@ fn edits_delete_replace_insert_and_reorder_images_without_source_resurrection() 
         GenerationRequirements::derive(&request.task.semantic).image_inputs,
         0
     );
-    let mut contract = GenerationRepresentationContract::full();
+    let mut contract = TargetCaps::full();
     contract.semantics.image_input = false;
     assert!(
         adapter(Profile::Chat)
@@ -364,7 +354,7 @@ fn lowering_rejects_disabled_images_and_undeclared_detail_without_mutating_ir() 
         )
         .unwrap();
     let before = request.clone();
-    let mut contract = GenerationRepresentationContract::full();
+    let mut contract = TargetCaps::full();
     contract.semantics.image_input = false;
     assert!(
         adapter(Profile::Responses)
@@ -374,11 +364,7 @@ fn lowering_rejects_disabled_images_and_undeclared_detail_without_mutating_ir() 
     let xiaomi = Adapter::new(Profile::Responses, Dialect::Xiaomi, None);
     assert!(
         xiaomi
-            .encode_request(
-                &request,
-                "synthetic",
-                &GenerationRepresentationContract::full()
-            )
+            .encode_request(&request, "synthetic", &TargetCaps::full())
             .is_err()
     );
     assert_eq!(request, before);
@@ -391,20 +377,12 @@ fn lowering_rejects_disabled_images_and_undeclared_detail_without_mutating_ir() 
         .unwrap();
     assert!(
         adapter(Profile::Chat)
-            .encode_request(
-                &request,
-                "synthetic",
-                &GenerationRepresentationContract::full()
-            )
+            .encode_request(&request, "synthetic", &TargetCaps::full())
             .is_err()
     );
     assert!(
         Adapter::new(Profile::Chat, Dialect::DeepSeek, None)
-            .encode_request(
-                &request,
-                "synthetic",
-                &GenerationRepresentationContract::full()
-            )
+            .encode_request(&request, "synthetic", &TargetCaps::full())
             .is_ok()
     );
     let bmp = wire(
@@ -417,29 +395,17 @@ fn lowering_rejects_disabled_images_and_undeclared_detail_without_mutating_ir() 
     for profile in [Profile::Chat, Profile::Responses] {
         assert!(
             adapter(profile)
-                .encode_request(
-                    &request,
-                    "synthetic",
-                    &GenerationRepresentationContract::full()
-                )
+                .encode_request(&request, "synthetic", &TargetCaps::full())
                 .is_err()
         );
         assert!(
             Adapter::new(profile, Dialect::DeepSeek, None)
-                .encode_request(
-                    &request,
-                    "synthetic",
-                    &GenerationRepresentationContract::full()
-                )
+                .encode_request(&request, "synthetic", &TargetCaps::full())
                 .is_err()
         );
         assert!(
             Adapter::new(profile, Dialect::Xiaomi, None)
-                .encode_request(
-                    &request,
-                    "synthetic",
-                    &GenerationRepresentationContract::full()
-                )
+                .encode_request(&request, "synthetic", &TargetCaps::full())
                 .is_ok()
         );
     }

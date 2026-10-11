@@ -1,7 +1,6 @@
 //! Namespace expectations are independent of the encoder and provider catalog.
 use morphiecore::{
-    lowering::generation::{GenerationRepresentationContract as Contract, lower_request},
-    protocol::openai::{Profile, responses},
+    protocol::openai::{Profile, TargetCaps as Contract, lowering::lower_request, responses},
     semantic::{task::generation::*, value::Text},
 };
 use serde_json::json;

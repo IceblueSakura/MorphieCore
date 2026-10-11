@@ -725,7 +725,7 @@ impl EventEncoder {
             }
             StreamEvent::Terminal{..}=>{
                 let response=materialize(self.state()?)?;
-                let target=crate::lowering::generation::lower_response(&response,&self.fidelity,&self.metadata,Profile::Chat,self.contract.clone()).map_err(|_|CodecError::Unsupported("Chat terminal".into()))?;
+                let target=crate::protocol::openai::lowering::lower_response(&response,&self.fidelity,&self.metadata,Profile::Chat,self.contract.clone()).map_err(|_|CodecError::Unsupported("Chat terminal".into()))?;
                 let finish=super::super::terminal::chat_finish(&response)?;
                 let mut chunks=vec![self.chunk(json!({}),json!(finish))];
                 if let Some(usage)=target.semantic().usage(){
@@ -739,7 +739,7 @@ impl EventEncoder {
                 super::super::envelope::write_response_extras(&self.fidelity,Profile::Chat,&self.contract.adaptation,target.semantic(),&self.metadata.id,chunks.last_mut().expect("terminal chunk").as_object_mut().expect("object"));
                 let mut stages=target.projection().to_vec();
                 for stage in &mut stages {
-                    stage.direction=crate::lowering::projection::ProjectionDirection::Event;
+                    stage.direction=crate::protocol::openai::lowering::projection::ProjectionDirection::Event;
                 }
                 self.projection=stages;
                 chunks

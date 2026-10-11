@@ -1,10 +1,11 @@
 //! Raw/structured authority and execution reports are independent of wire carriers.
 use crate::events_support::text;
 use morphiecore::{
-    lowering::generation::{
-        GenerationRepresentationContract as Contract, RepresentationError, lower_request,
+    lowering::generation::RepresentationError,
+    protocol::{
+        fidelity::FidelityRecords,
+        openai::{Profile, TargetCaps as Contract, lowering::lower_request},
     },
-    protocol::{fidelity::FidelityRecords, openai::Profile},
     semantic::task::generation::*,
 };
 use serde_json::json;

@@ -1,8 +1,6 @@
 //! Independent wire fixtures for the selected hosted Chat adapter, not model inventory.
 use morphiecore::{
-    adapter::{Adapter, Dialect},
-    lowering::generation::GenerationRepresentationContract as Contract,
-    protocol::openai::Profile,
+    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract},
     semantic::value::ReplayOrigin,
 };
 use serde_json::{Value, json};

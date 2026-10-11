@@ -28,9 +28,9 @@ use axum::{
     routing::post,
 };
 use morphiecore::{
-    lowering::generation::{GenerationRepresentationContract, lower_request, lower_response},
     protocol::openai::{
-        Profile, envelope,
+        Profile, TargetCaps, envelope,
+        lowering::{lower_request, lower_response},
         sse::{Obfuscation, ResponsesSseDecoder, ResponsesSseEncoder, SseLimits, encode_frame},
     },
     semantic::{
@@ -49,8 +49,8 @@ fn origin() -> ReplayOrigin {
     ReplayOrigin::new("synthetic-loopback").unwrap()
 }
 
-fn contract() -> GenerationRepresentationContract {
-    let mut contract = GenerationRepresentationContract::full();
+fn contract() -> TargetCaps {
+    let mut contract = TargetCaps::full();
     contract.replay_origin = Some(origin());
     contract
 }

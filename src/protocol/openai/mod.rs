@@ -1,4 +1,10 @@
 //! Pure codecs for explicitly admitted OpenAI operations.
+pub mod adaptation;
+pub mod adapter;
+pub use adapter::{Adapter, Dialect};
+pub mod lowering;
+mod target;
+pub use target::TargetCaps;
 mod accounting_shapes;
 pub(crate) mod adapter_shapes;
 pub mod chat;
@@ -46,18 +52,18 @@ pub enum Profile {
 }
 /// Only lowering can construct an encoding input; codecs cannot bypass representability.
 pub struct RequestRepresentation<'a> {
-    pub(crate) adaptation: crate::protocol::adaptation::Adaptation,
+    pub(crate) adaptation: crate::protocol::openai::adaptation::Adaptation,
     pub(crate) semantic: std::borrow::Cow<'a, GenerationRequest>,
     pub(crate) fidelity: &'a FidelityRecords,
     pub(crate) profile: Profile,
-    pub(crate) projection: Vec<crate::lowering::projection::ProjectionStage>,
+    pub(crate) projection: Vec<crate::protocol::openai::lowering::projection::ProjectionStage>,
 }
 impl RequestRepresentation<'_> {
     /// Final candidate-local value; a changed input or target needs fresh lowering.
     pub fn semantic(&self) -> &GenerationRequest {
         &self.semantic
     }
-    pub fn projection(&self) -> &[crate::lowering::projection::ProjectionStage] {
+    pub fn projection(&self) -> &[crate::protocol::openai::lowering::projection::ProjectionStage] {
         &self.projection
     }
     pub fn profile(&self) -> Profile {
@@ -68,12 +74,12 @@ impl RequestRepresentation<'_> {
     }
 }
 pub struct ResponseRepresentation<'a> {
-    pub(crate) adaptation: crate::protocol::adaptation::Adaptation,
+    pub(crate) adaptation: crate::protocol::openai::adaptation::Adaptation,
     pub(crate) semantic: std::borrow::Cow<'a, GenerationResponse>,
     pub(crate) fidelity: &'a FidelityRecords,
     pub(crate) metadata: std::borrow::Cow<'a, ResponseMetadata>,
     pub(crate) profile: Profile,
-    pub(crate) projection: Vec<crate::lowering::projection::ProjectionStage>,
+    pub(crate) projection: Vec<crate::protocol::openai::lowering::projection::ProjectionStage>,
 }
 impl ResponseRepresentation<'_> {
     pub fn semantic(&self) -> &GenerationResponse {
@@ -82,7 +88,7 @@ impl ResponseRepresentation<'_> {
     pub fn metadata(&self) -> &ResponseMetadata {
         &self.metadata
     }
-    pub fn projection(&self) -> &[crate::lowering::projection::ProjectionStage] {
+    pub fn projection(&self) -> &[crate::protocol::openai::lowering::projection::ProjectionStage] {
         &self.projection
     }
     pub fn requirements(
@@ -95,9 +101,11 @@ impl ResponseRepresentation<'_> {
     pub fn reproject(
         &self,
         profile: Profile,
-        contract: crate::lowering::generation::GenerationRepresentationContract,
+        contract: crate::protocol::openai::TargetCaps,
     ) -> Result<ResponseRepresentation<'_>, crate::lowering::generation::RepresentationError> {
-        use crate::lowering::{generation, projection::MAX_PROJECTION_STAGES};
+        use crate::protocol::openai::lowering::{
+            self as generation, projection::MAX_PROJECTION_STAGES,
+        };
         if self.projection.len() >= MAX_PROJECTION_STAGES {
             return Err(generation::RepresentationError::ProjectionLimit);
         }

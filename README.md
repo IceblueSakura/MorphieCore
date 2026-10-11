@@ -22,8 +22,8 @@ cargo run --locked --offline --bin morphiecore-auth   # 凭据管理
 | 目录 | 内容 |
 |---|---|
 | `src/semantic` | IR：任务类型、校验、事件 reducer |
-| `src/protocol` | 各协议 wire 编解码与方言规则 |
-| `src/lowering`、`src/adapter` | 目标投影与请求/响应适配 |
+| `src/protocol` | 各协议 wire 编解码、能力声明、方言与协议专属投影 |
+| `src/lowering`、`src/adapter` | 跨协议能力分发、通用请求与错误；冻结任务的既有适配 |
 | `src/topology`、`src/provider` | 模型 → 路由 → 端点绑定，Provider 定义 |
 | `src/execution`、`src/transport` | 候选执行、HTTP/SSE |
 | `src/gateway` | HTTP 网关 |

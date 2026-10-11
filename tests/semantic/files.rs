@@ -1,9 +1,7 @@
 //! Independent inline-file wire oracles; no file parser, credentials or network.
 use crate::resources_support as resources;
 use morphiecore::{
-    adapter::{Adapter, Dialect},
-    lowering::generation::GenerationRepresentationContract as Contract,
-    protocol::openai::Profile,
+    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract},
     semantic::task::generation::*,
 };
 use serde_json::{Value, json};
@@ -229,7 +227,7 @@ fn encode_typed(
     contract: Contract,
 ) -> Result<Value, morphiecore::lowering::generation::RepresentationError> {
     let fidelity = morphiecore::protocol::fidelity::FidelityRecords::default();
-    let target = morphiecore::lowering::generation::lower_request(
+    let target = morphiecore::protocol::openai::lowering::lower_request(
         request,
         &fidelity,
         Profile::Responses,

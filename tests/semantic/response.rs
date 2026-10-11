@@ -1,10 +1,11 @@
 //! Refusal and non-success terminals for the text and function-call path.
 use morphiecore::{
-    lowering::generation::{
-        GenerationRepresentationContract as Contract, RepresentationError, lower_request,
-        lower_response,
+    lowering::generation::RepresentationError,
+    protocol::openai::{
+        Profile, ResponseMetadata, TargetCaps as Contract, chat,
+        lowering::{lower_request, lower_response},
+        responses,
     },
-    protocol::openai::{Profile, ResponseMetadata, chat, responses},
     semantic::task::generation::*,
 };
 use serde_json::{Value, json};
@@ -20,9 +21,9 @@ fn metadata() -> ResponseMetadata {
 }
 #[test]
 fn readable_reasoning_only_incomplete_is_valid_but_contradictory_reports_are_not() {
-    use morphiecore::{
-        adapter::{Adapter, Dialect},
-        protocol::CodecError,
+    use morphiecore::protocol::{
+        CodecError,
+        openai::{Adapter, Dialect},
     };
     let wire = json!({"id":"r","object":"response","created_at":0,"model":"synthetic",
         "status":"incomplete","error":null,"incomplete_details":{"reason":"max_output_tokens"},

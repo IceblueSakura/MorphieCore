@@ -101,11 +101,9 @@ fn client_managed_keeps_envelopes_not_just_chat_owners() {
 
 #[test]
 fn chat_output_to_standard_responses_and_back_keeps_tools_without_private_fields() {
-    use morphiecore::{
-        lowering::generation::{
-            GenerationRepresentationContract as Contract, lower_request, lower_response,
-        },
-        protocol::openai::{Profile, chat},
+    use morphiecore::protocol::openai::{
+        Profile, TargetCaps as Contract, chat,
+        lowering::{lower_request, lower_response},
     };
     let wire = json!({"id":"r","object":"chat.completion","created":0,"model":"synthetic",
         "choices":[{"index":0,"message":{"role":"assistant","content":"checking","tool_calls":[
@@ -321,12 +319,12 @@ fn envelope_dependencies_and_selection_do_not_reduce_to_call_ids() {
 #[test]
 fn regroup_and_usage_omission_share_the_projection_stage_budget() {
     use morphiecore::{
-        lowering::generation::{
-            GenerationRepresentationContract as Contract, RepresentationError, lower_response,
-        },
+        lowering::generation::RepresentationError,
         protocol::{
             fidelity::FidelityRecords,
-            openai::{Profile, ResponseRepresentation},
+            openai::{
+                Profile, ResponseRepresentation, TargetCaps as Contract, lowering::lower_response,
+            },
         },
     };
     let request = history();

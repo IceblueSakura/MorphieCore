@@ -1,7 +1,6 @@
 //! A named unreported-probability rule must not weaken complete SSE or fabricate facts.
 use morphiecore::{
-    adapter::{Adapter, Dialect},
-    protocol::openai::{Profile, events::EventEncoder, sse::ResponsesSseDecoder},
+    protocol::openai::{Adapter, Dialect, Profile, events::EventEncoder, sse::ResponsesSseDecoder},
     semantic::{task::generation::*, value::Presence},
 };
 use serde_json::{Value, json};

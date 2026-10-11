@@ -56,7 +56,7 @@ pub(super) fn metadata(
 pub(super) fn usage(
     value: Option<&Value>,
     profile: Profile,
-    adaptation: &crate::protocol::adaptation::Adaptation,
+    adaptation: &crate::protocol::openai::adaptation::Adaptation,
     fidelity: &mut crate::protocol::fidelity::FidelityRecords,
 ) -> Result<Option<Usage>, CodecError> {
     let Some(value) = value.filter(|value| !value.is_null()) else {
@@ -240,7 +240,7 @@ fn detail(
 pub(super) fn encode_usage(
     usage: Usage,
     profile: Profile,
-    rules: &crate::protocol::adaptation::WireRules,
+    rules: &crate::protocol::openai::adaptation::WireRules,
 ) -> Value {
     let mut value = match profile {
         Profile::Chat => json!({
@@ -366,7 +366,7 @@ pub fn decode_chat(v: &Value) -> Result<DecodedResponse, CodecError> {
 }
 pub(crate) fn decode_chat_with(
     v: &Value,
-    adaptation: &crate::protocol::adaptation::Adaptation,
+    adaptation: &crate::protocol::openai::adaptation::Adaptation,
 ) -> Result<DecodedResponse, CodecError> {
     let (v, extras) =
         super::adapter_shapes::decode(v, Profile::Chat, adaptation, DecodeDirection::Upstream)?;
@@ -468,7 +468,7 @@ pub fn decode_responses(v: &Value) -> Result<DecodedResponse, CodecError> {
 }
 pub(crate) fn decode_responses_with(
     v: &Value,
-    adaptation: &crate::protocol::adaptation::Adaptation,
+    adaptation: &crate::protocol::openai::adaptation::Adaptation,
 ) -> Result<DecodedResponse, CodecError> {
     let (v, extras) = super::adapter_shapes::decode(
         v,

@@ -1,8 +1,9 @@
 //! Explicit Chat dialect mappings over one semantic model.
 use morphiecore::{
-    adapter::{Adapter, Dialect},
-    lowering::generation::{GenerationRepresentationContract as Contract, lower_request},
-    protocol::openai::{Profile, chat, events::EventEncoder},
+    protocol::openai::{
+        Adapter, Dialect, Profile, TargetCaps as Contract, chat, events::EventEncoder,
+        lowering::lower_request,
+    },
     semantic::{
         task::generation::*,
         value::{Presence, Text},

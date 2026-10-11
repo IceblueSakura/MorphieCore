@@ -1,11 +1,10 @@
 //! Boundary-specific derived views, reported-fact policy and structural admission.
 use morphiecore::{
-    adapter::{Adapter, Dialect},
-    lowering::generation::{
-        GenerationRepresentationContract as Contract, ReportedFactPolicy, RepresentationError,
-        lower_response,
+    lowering::generation::{ReportedFactPolicy, RepresentationError},
+    protocol::openai::{
+        Adapter, Dialect, Profile, TargetCaps as Contract, envelope, events::EventDecoder,
+        lowering::lower_response,
     },
-    protocol::openai::{Profile, envelope, events::EventDecoder},
     semantic::{
         task::generation::{PartKind, StreamEvent},
         value::ReplayOrigin,

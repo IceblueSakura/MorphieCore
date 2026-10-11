@@ -89,12 +89,12 @@ fn cumulative_cache_reports_do_not_sum_snapshots_or_switch_relations() {
         morphiecore::protocol::openai::Profile::Responses,
     ] {
         assert!(matches!(
-            morphiecore::lowering::generation::lower_response(
+            morphiecore::protocol::openai::lowering::lower_response(
                 &response,
                 &Default::default(),
                 &crate::events_support::metadata(),
                 profile,
-                morphiecore::lowering::generation::GenerationRepresentationContract::full()
+                morphiecore::protocol::openai::TargetCaps::full()
             ),
             Err(morphiecore::lowering::generation::RepresentationError::UsageProjection)
         ));

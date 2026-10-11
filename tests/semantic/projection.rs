@@ -1,10 +1,9 @@
 //! Named Chat loss never changes the source or repairs invalid reports.
 use crate::events_support::{metadata, text};
 use morphiecore::{
-    lowering::generation::{GenerationRepresentationContract as Contract, lower_response},
     protocol::{
         fidelity::FidelityRecords,
-        openai::{Profile, chat},
+        openai::{Profile, TargetCaps as Contract, chat, lowering::lower_response},
     },
     semantic::task::generation::*,
 };
@@ -212,7 +211,7 @@ fn chat_omits_only_unrepresentable_image_accounting() {
         Contract::full(),
     )
     .unwrap();
-    use morphiecore::lowering::projection::{LossRule, ProjectionDirection};
+    use morphiecore::protocol::openai::lowering::projection::{LossRule, ProjectionDirection};
     assert_eq!(
         projected.projection()[0].loss,
         Some(LossRule::OmitChatInputImageTokens)
@@ -251,7 +250,7 @@ fn chat_omits_only_unrepresentable_image_accounting() {
 
 #[test]
 fn chained_loss_is_not_erased_and_candidates_start_from_the_source() {
-    use morphiecore::lowering::projection::LossRule;
+    use morphiecore::protocol::openai::lowering::projection::LossRule;
     let source = response();
     let fidelity = FidelityRecords::default();
     let metadata = metadata();
@@ -300,11 +299,11 @@ fn chained_loss_is_not_erased_and_candidates_start_from_the_source() {
 #[test]
 fn unknown_rules_and_stage_overflow_are_rejected() {
     use morphiecore::{
-        lowering::{
-            generation::RepresentationError,
-            projection::{LossRule, MAX_PROJECTION_STAGES},
+        lowering::generation::RepresentationError,
+        protocol::openai::{
+            ResponseRepresentation,
+            lowering::projection::{LossRule, MAX_PROJECTION_STAGES},
         },
-        protocol::openai::ResponseRepresentation,
     };
     assert_eq!(
         "chat.omit-input-image-tokens.v1"
@@ -356,9 +355,9 @@ fn text_events() -> Vec<StreamEvent> {
 #[test]
 fn event_projection_agrees_with_static_and_rejects_malformed_usage() {
     use crate::events_support::terminal;
-    use morphiecore::{
+    use morphiecore::protocol::openai::{
+        events::EventEncoder,
         lowering::projection::{LossRule, ProjectionDirection},
-        protocol::openai::events::EventEncoder,
     };
     let fidelity = FidelityRecords::default();
     for image in [None, Some(0), Some(7), Some(10)] {
@@ -420,7 +419,7 @@ fn event_projection_agrees_with_static_and_rejects_malformed_usage() {
 #[test]
 fn responses_detail_projection_validates_before_omission_and_keeps_zero_distinct() {
     use crate::events_support::terminal;
-    use morphiecore::{lowering::projection::LossRule, protocol::openai::events::EventEncoder};
+    use morphiecore::protocol::openai::{events::EventEncoder, lowering::projection::LossRule};
     let fidelity = FidelityRecords::default();
     for audio in [None, Some(0), Some(2)] {
         let mut encoder = EventEncoder::new(Profile::Responses, metadata()).unwrap();
@@ -587,7 +586,7 @@ fn accounting_loss_cannot_hide_group_phase_replay_or_resource_rejections() {
         let request =
             GenerationRequest::new(original.items().to_vec(), GenerationControls::default())
                 .unwrap();
-        let checked = morphiecore::lowering::generation::lower_request(
+        let checked = morphiecore::protocol::openai::lowering::lower_request(
             &request,
             &fidelity,
             profile,

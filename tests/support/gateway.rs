@@ -1,8 +1,7 @@
 //! Trusted synthetic topology shared by Router and explicit SDK gates.
 use morphiecore::{
     gateway::{Entry, Gateway, Limits},
-    lowering::generation::GenerationRepresentationContract as Contract,
-    protocol::openai::Profile,
+    protocol::openai::{Profile, TargetCaps as Contract},
     provider::{
         AuthScheme, CredentialBindingId, CredentialKind, EndpointPath, ProviderDefinition,
         ProviderId, SecretMaterial, TrustedOrigin,
@@ -66,12 +65,12 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool) -> Gateway {
         representation: Contract {
             // A synthetic upstream-only carrier must not leak through the
             // independently selected standard downstream adapter.
-            adaptation: morphiecore::protocol::adaptation::Adaptation {
+            adaptation: morphiecore::protocol::openai::adaptation::Adaptation {
                 cache: morphiecore::protocol::cache::CacheProjection {
                     key: true,
                     ..Default::default()
                 },
-                rules: morphiecore::protocol::adaptation::WireRules {
+                rules: morphiecore::protocol::openai::adaptation::WireRules {
                     responses_image_usage: protocol == ProtocolProfile::OpenAiResponses,
                     ..Default::default()
                 },

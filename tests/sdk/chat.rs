@@ -9,12 +9,10 @@ use axum::{
     response::Response,
 };
 use morphiecore::{
-    lowering::generation::{
-        GenerationRepresentationContract as Contract, lower_request, lower_response,
-    },
     protocol::openai::{
-        Profile, chat_envelope as envelope,
+        Profile, TargetCaps as Contract, chat_envelope as envelope,
         chat_sse::{ChatSseDecoder, ChatSseEncoder},
+        lowering::{lower_request, lower_response},
         sse::{Obfuscation, SseLimits},
     },
     semantic::{
@@ -158,7 +156,7 @@ pub(super) async fn handle(
         .unwrap();
         assert_eq!(
             projected.projection()[0].loss,
-            Some(morphiecore::lowering::projection::LossRule::OmitChatInputImageTokens)
+            Some(morphiecore::protocol::openai::lowering::projection::LossRule::OmitChatInputImageTokens)
         );
         let out = envelope::encode_response(&projected).unwrap();
         assert_eq!(d.semantic.usage(), Some(source_usage));

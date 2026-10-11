@@ -97,7 +97,7 @@ async fn same_provider_fallback_is_ordered_bounded_and_never_crosses_publication
             protocol: ProtocolProfile::OpenAiResponses,
             upstream_model: "upstream-model".into(),
             canonical_model: ModelId::new("canonical").unwrap(),
-            representation: GenerationRepresentationContract::full().into(),
+            representation: TargetCaps::full().into(),
             execution: ExecutionContract {
                 streaming: true,
                 retry_before_commit: false,

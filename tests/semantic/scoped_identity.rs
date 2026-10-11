@@ -1,7 +1,9 @@
 //! A03/T16: alias domains are explicit, independent of response coordinates.
 use morphiecore::{
-    lowering::generation::{GenerationRepresentationContract, lower_request},
-    protocol::{fidelity::FidelityRecords, openai::Profile},
+    protocol::{
+        fidelity::FidelityRecords,
+        openai::{Profile, TargetCaps, lowering::lower_request},
+    },
     semantic::{task::generation::*, value::Text},
 };
 fn text(value: &str) -> Text {
@@ -119,15 +121,7 @@ fn scoped_wire_ids_do_not_grant_a_carrier_for_ambiguous_target_aliases() {
             .is_err()
     );
     for profile in [Profile::Responses, Profile::Chat] {
-        assert!(
-            lower_request(
-                &request,
-                &fidelity,
-                profile,
-                GenerationRepresentationContract::full()
-            )
-            .is_err()
-        );
+        assert!(lower_request(&request, &fidelity, profile, TargetCaps::full()).is_err());
     }
 }
 
@@ -152,11 +146,11 @@ fn event_and_static_calls_share_domain_isolation_without_a_wire_projection() {
         };
         for profile in [Profile::Responses, Profile::Chat] {
             assert!(
-                morphiecore::lowering::events::check_event(
+                morphiecore::protocol::openai::lowering::events::check_event(
                     &state,
                     &start,
                     profile,
-                    &GenerationRepresentationContract::full()
+                    &TargetCaps::full()
                 )
                 .is_err()
             );
@@ -228,7 +222,7 @@ fn alias_lookup_binds_source_and_checks_its_independent_budget() {
 
 #[test]
 fn scoped_local_wire_labels_are_deterministic_and_target_collisions_fail_before_emission() {
-    use morphiecore::lowering::generation::lower_response;
+    use morphiecore::protocol::openai::lowering::lower_response;
     use morphiecore::protocol::{
         ResponseMetadata,
         openai::{envelope, events::EventEncoder},
@@ -258,7 +252,7 @@ fn scoped_local_wire_labels_are_deterministic_and_target_collisions_fail_before_
         &fidelity,
         &metadata,
         Profile::Responses,
-        GenerationRepresentationContract::full(),
+        TargetCaps::full(),
     )
     .unwrap();
     let wire = envelope::encode_response(&target).unwrap();
@@ -277,7 +271,7 @@ fn scoped_local_wire_labels_are_deterministic_and_target_collisions_fail_before_
             &fidelity,
             &metadata,
             Profile::Responses,
-            GenerationRepresentationContract::full()
+            TargetCaps::full()
         )
         .is_err()
     );

@@ -7,12 +7,12 @@ pub struct EventEncoder {
     pub(super) metadata: ResponseMetadata,
     pub(super) state: Option<StreamState>,
     pub(super) fidelity: FidelityRecords,
-    pub(super) contract: GenerationRepresentationContract,
+    pub(super) contract: TargetCaps,
     poisoned: bool,
     target_locked: bool,
     sequence: u64,
     pub(super) chat_audio_pending: Vec<u8>,
-    pub(super) projection: Vec<crate::lowering::projection::ProjectionStage>,
+    pub(super) projection: Vec<crate::protocol::openai::lowering::projection::ProjectionStage>,
 }
 impl EventEncoder {
     pub fn new(profile: Profile, metadata: ResponseMetadata) -> Result<Self, CodecError> {
@@ -23,7 +23,7 @@ impl EventEncoder {
             metadata,
             state: Some(StreamState::new()),
             fidelity: FidelityRecords::default(),
-            contract: GenerationRepresentationContract::full(),
+            contract: TargetCaps::full(),
             poisoned: false,
             target_locked: false,
             sequence: 0,
@@ -66,7 +66,7 @@ impl EventEncoder {
         }
         result
     }
-    pub fn with_contract(mut self, contract: GenerationRepresentationContract) -> Self {
+    pub fn with_contract(mut self, contract: TargetCaps) -> Self {
         if self.target_locked && self.contract != contract {
             self.poisoned = true;
             self.projection.clear();
@@ -85,7 +85,7 @@ impl EventEncoder {
         }
         self.target_locked = true;
         let result = (|| {
-            crate::lowering::events::check_event(
+            crate::protocol::openai::lowering::events::check_event(
                 self.state()?,
                 event,
                 self.profile,
@@ -176,7 +176,7 @@ impl EventEncoder {
         Ok(())
     }
     /// Only a successfully checked terminal supplies response projection evidence.
-    pub fn projection(&self) -> &[crate::lowering::projection::ProjectionStage] {
+    pub fn projection(&self) -> &[crate::protocol::openai::lowering::projection::ProjectionStage] {
         if self.poisoned { &[] } else { &self.projection }
     }
     pub(super) fn state(&self) -> Result<&StreamState, CodecError> {
@@ -448,7 +448,7 @@ impl EventEncoder {
             }
             StreamEvent::Terminal { terminal, .. } => {
                 let response = materialize(self.state()?)?;
-                let target = crate::lowering::generation::lower_response(
+                let target = crate::protocol::openai::lowering::lower_response(
                     &response,
                     &self.fidelity,
                     &self.metadata,
@@ -468,7 +468,8 @@ impl EventEncoder {
                 };
                 let mut stages = target.projection().to_vec();
                 for stage in &mut stages {
-                    stage.direction = crate::lowering::projection::ProjectionDirection::Event;
+                    stage.direction =
+                        crate::protocol::openai::lowering::projection::ProjectionDirection::Event;
                 }
                 self.projection = stages;
                 vec![json!({"type":kind,"response":v})]

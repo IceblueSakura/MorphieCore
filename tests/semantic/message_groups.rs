@@ -136,11 +136,11 @@ fn removing_or_crossing_an_owner_fails_instead_of_reattaching_calls() {
             let request = request.unwrap();
             assert!(request.message_groups().any(|group| !group.is_contiguous()));
             assert!(
-                morphiecore::lowering::generation::lower_request(
+                morphiecore::protocol::openai::lowering::lower_request(
                     &request,
                     &Default::default(),
                     Profile::Chat,
-                    morphiecore::lowering::generation::GenerationRepresentationContract::full()
+                    morphiecore::protocol::openai::TargetCaps::full()
                 )
                 .is_err()
             );

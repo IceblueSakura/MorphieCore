@@ -809,11 +809,11 @@ fn result_builders_reject_conflicting_headers_bad_json_and_unclosed_results() {
         morphiecore::protocol::openai::Profile::Responses,
     ] {
         assert!(
-            morphiecore::lowering::events::check_event(
+            morphiecore::protocol::openai::lowering::events::check_event(
                 &fresh(),
                 &start(header.clone()),
                 profile,
-                &morphiecore::lowering::generation::GenerationRepresentationContract::full()
+                &morphiecore::protocol::openai::TargetCaps::full()
             )
             .is_err()
         );
@@ -960,11 +960,9 @@ fn report_payload_execution_and_artifact_facts_are_independent_and_bounded() {
 #[test]
 fn no_standard_target_can_drop_provider_observations() {
     // No native branch is enabled by abstract observation support.
-    use morphiecore::{
-        lowering::generation::{
-            GenerationRepresentationContract as Contract, lower_request, lower_response,
-        },
-        protocol::openai::Profile,
+    use morphiecore::protocol::openai::{
+        Profile, TargetCaps as Contract,
+        lowering::{lower_request, lower_response},
     };
     let response = GenerationResponse::new(
         vec![(ItemId::new(1), Item::ProviderTool(operation()))],
@@ -1063,8 +1061,7 @@ fn provider_observations_are_not_implicitly_admitted_by_existing_product_contrac
     .unwrap();
     let request =
         GenerationRequest::new(response.items().to_vec(), GenerationControls::default()).unwrap();
-    let contract =
-        morphiecore::lowering::generation::GenerationRepresentationContract::full().semantics;
+    let contract = morphiecore::protocol::openai::TargetCaps::full().semantics;
     assert!(contract.check(&request).is_err());
     assert!(contract.check_response(&response).is_err());
 }
@@ -1084,11 +1081,11 @@ fn normative_observation_events_match_static_and_cannot_reopen_a_terminal() {
         morphiecore::protocol::openai::Profile::Responses,
     ] {
         assert!(
-            morphiecore::lowering::events::check_event(
+            morphiecore::protocol::openai::lowering::events::check_event(
                 &state,
                 &start,
                 profile,
-                &morphiecore::lowering::generation::GenerationRepresentationContract::full()
+                &morphiecore::protocol::openai::TargetCaps::full()
             )
             .is_err()
         );
@@ -1229,10 +1226,10 @@ fn stream_alias_conflicts_and_existing_call_capability_checks_remain_strict() {
         },
         replay: None,
     };
-    let mut contract = morphiecore::lowering::generation::GenerationRepresentationContract::full();
+    let mut contract = morphiecore::protocol::openai::TargetCaps::full();
     contract.semantics.tools = false;
     assert!(
-        morphiecore::lowering::events::check_event(
+        morphiecore::protocol::openai::lowering::events::check_event(
             &state,
             &call,
             morphiecore::protocol::openai::Profile::Chat,

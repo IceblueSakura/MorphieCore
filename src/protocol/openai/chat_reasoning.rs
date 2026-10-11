@@ -1,7 +1,7 @@
 //! Scoped Responses-format reasoning on a Chat carrier, not opaque JSON passthrough.
 use super::{CodecError, common::*};
 use crate::{
-    protocol::{adaptation::Adaptation, fidelity::FidelityRecords},
+    protocol::{fidelity::FidelityRecords, openai::adaptation::Adaptation},
     semantic::{task::generation::*, value::Text},
 };
 use serde_json::{Map, Value, json};

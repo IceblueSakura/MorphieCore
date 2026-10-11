@@ -169,11 +169,14 @@ mod tests {
             .unwrap();
             project(&mut client, profile).unwrap();
             client.metadata.created = Some(1.into());
-            let adapter =
-                crate::adapter::Adapter::new(profile, crate::adapter::Dialect::MorphieCore, None);
-            let contract = crate::lowering::generation::GenerationRepresentationContract {
+            let adapter = crate::protocol::openai::Adapter::new(
+                profile,
+                crate::protocol::openai::Dialect::MorphieCore,
+                None,
+            );
+            let contract = crate::protocol::openai::TargetCaps {
                 replay_origin: Some(crate::execution::replay::CLIENT_ORIGIN.clone()),
-                ..crate::lowering::generation::GenerationRepresentationContract::full()
+                ..crate::protocol::openai::TargetCaps::full()
             };
             let wire = adapter.encode_response(&client, &contract).unwrap();
             let args = if profile == Profile::Responses {

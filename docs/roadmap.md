@@ -13,7 +13,6 @@
 
 ## 当前焦点：阶段 1 — 协议边界与产品接入
 
-- 将仍位于通用 lowering / adapter 中的 OpenAI 表示检查与方言规则收回所属协议模块；继续收敛双向协议入口与 `TargetCaps`，保持跨协议交付投影的目标明确。
 - 核定 OpenAI 未知 SSE 事件类型的处理，不把忽略未知字段扩大为跳过未知内容或终态。冻结的媒体解码器不扩展。
 - 补默认 CLI 的原生 Messages 产品绑定及显式启用；先核实模型发布元数据，不虚构发布日期。现有 `MESSAGES_BINDINGS` 可用于显式编译拓扑，不能据此假定目录 bootstrap 已开放。
 - 上游 Chat `reasoning.text` 项的 `signature` 目前被忽略，需要建模；扩展多段 thinking、交错 message/block 的跨协议载体，以及工具错误的下游表达。

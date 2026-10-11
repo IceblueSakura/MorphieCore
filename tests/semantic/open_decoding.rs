@@ -1,9 +1,6 @@
 //! Upstream responses ignore unknown keys while known keys stay strict; requests stay closed.
 use crate::wire;
-use morphiecore::{
-    adapter::{Adapter, Dialect},
-    protocol::openai::Profile,
-};
+use morphiecore::protocol::openai::{Adapter, Dialect, Profile};
 use serde_json::{Value, json};
 
 #[path = "../support/chat_profile.rs"]

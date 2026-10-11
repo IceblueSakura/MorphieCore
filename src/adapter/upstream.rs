@@ -1,5 +1,6 @@
 //! Upstream wire dispatch, independent of the standard client's OpenAI profile.
-use super::{Adapter, AdapterError, Request};
+use super::{AdapterError, Request};
+use crate::protocol::openai::Adapter;
 use crate::{
     lowering::target::TargetCaps,
     protocol::{CodecError, DecodedResponse, anthropic},

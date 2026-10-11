@@ -1,5 +1,4 @@
 //! Wire protocol boundary for the shared semantic model.
-pub mod adaptation;
 pub mod aliyun_asr;
 pub mod aliyun_speech;
 pub mod anthropic;

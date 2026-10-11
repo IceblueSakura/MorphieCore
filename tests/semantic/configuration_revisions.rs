@@ -1,12 +1,13 @@
 //! Historical definitions and explicit configuration revisions are not execution grants.
 use morphiecore::{
-    lowering::{
-        events::check_event,
-        generation::{
-            GenerationRepresentationContract, RepresentationError, lower_request, lower_response,
+    lowering::generation::RepresentationError,
+    protocol::{
+        fidelity::FidelityRecords,
+        openai::{
+            Profile, TargetCaps,
+            lowering::{events::check_event, lower_request, lower_response},
         },
     },
-    protocol::{fidelity::FidelityRecords, openai::Profile},
     semantic::{
         task::generation::*,
         value::{Presence, Text},
@@ -602,7 +603,7 @@ fn configuration_has_no_private_or_silently_dropped_standard_carrier() {
         .unwrap();
     for profile in [Profile::Responses, Profile::Chat] {
         let fidelity = FidelityRecords::default();
-        let contract = GenerationRepresentationContract::full();
+        let contract = TargetCaps::full();
         assert!(lower_request(&plain, &fidelity, profile, contract.clone()).is_ok());
         assert_eq!(
             lower_request(&versioned, &fidelity, profile, contract.clone()).err(),

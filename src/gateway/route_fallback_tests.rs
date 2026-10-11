@@ -1,7 +1,7 @@
 //! One Router smoke exercises independent targets, request preservation and visibility.
 use super::*;
 use crate::{
-    lowering::generation::GenerationRepresentationContract as Representation,
+    protocol::openai::TargetCaps as Representation,
     provider::{
         AuthScheme, CredentialBindingId, CredentialKind, EndpointPath, ProviderId, TrustedOrigin,
     },
@@ -102,7 +102,7 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
                 upstream_model: format!("{id}-alias"),
                 representation: Adapter::new(
                     Profile::Responses,
-                    crate::adapter::Dialect::MorphieCore,
+                    crate::protocol::openai::Dialect::MorphieCore,
                     None,
                 )
                 .contract(&Representation::full())

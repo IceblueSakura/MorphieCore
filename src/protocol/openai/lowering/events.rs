@@ -1,12 +1,12 @@
 //! Incremental representability checks against one immutable output target.
-use super::generation::{GenerationRepresentationContract, RepresentationError};
+use super::{RepresentationError, TargetCaps};
 use crate::{protocol::openai::Profile, semantic::task::generation::*};
 
 pub fn check_event(
     state: &StreamState,
     event: &StreamEvent,
     profile: Profile,
-    contract: &GenerationRepresentationContract,
+    contract: &TargetCaps,
 ) -> Result<(), RepresentationError> {
     if matches!(event, StreamEvent::ItemStarted { replay: Some(replay), .. } | StreamEvent::ItemFinished { replay: Some(replay), .. }
         if replay.value.format() != ReplayFormat::ResponsesEncrypted)
@@ -82,7 +82,7 @@ pub fn check_event(
             } else {
                 super::projection::responses_usage(*usage, &contract.adaptation.rules)?.0
             };
-            super::generation::check_usage(projected, profile, &contract.adaptation.rules)?;
+            super::check_usage(projected, profile, &contract.adaptation.rules)?;
         }
         StreamEvent::ItemStarted { kind, replay, .. } => {
             if let ItemKind::ToolCall {
@@ -311,7 +311,7 @@ fn probability_target(
     part: PartId,
     logprobs: &[Logprob],
     profile: Profile,
-    contract: &GenerationRepresentationContract,
+    contract: &TargetCaps,
 ) -> Result<(), RepresentationError> {
     if !contract.semantics.logprobs
         || !contract.semantics.text_metadata

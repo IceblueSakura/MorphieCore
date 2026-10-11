@@ -1,9 +1,7 @@
 //! Response closure and pending tool results are independent; neither executes tools.
 use crate::events_support::{call_item, created, envelope};
 use morphiecore::{
-    adapter::{Adapter, Dialect},
-    lowering::generation::GenerationRepresentationContract as Contract,
-    protocol::openai::{Profile, events::EventDecoder},
+    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract, events::EventDecoder},
     semantic::task::generation::*,
 };
 use serde_json::{Value, json};

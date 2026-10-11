@@ -1,9 +1,7 @@
 //! Reported token details are typed facts, never inferred disjoint partitions.
 use morphiecore::{
-    adapter::{Adapter, Dialect},
-    lowering::generation::GenerationRepresentationContract as Contract,
     protocol::openai::{
-        Profile,
+        Adapter, Dialect, Profile, TargetCaps as Contract,
         chat_sse::{ChatSseDecoder, ChatSseEncoder},
         events::EventEncoder,
         sse::{Obfuscation, SseLimits},

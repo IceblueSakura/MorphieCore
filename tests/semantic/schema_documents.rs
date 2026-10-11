@@ -1,7 +1,9 @@
 //! Declared dialects and supplied reference graphs; no resolver I/O or schema rewriting.
 use morphiecore::{
-    lowering::generation::{GenerationRepresentationContract, lower_request},
-    protocol::{fidelity::FidelityRecords, openai::Profile},
+    protocol::{
+        fidelity::FidelityRecords,
+        openai::{Profile, TargetCaps, lowering::lower_request},
+    },
     semantic::{
         task::generation::*,
         value::{Presence, Text},
@@ -55,7 +57,7 @@ fn supplied_external_and_local_recursive_references_preserve_one_authority() {
                 &request,
                 &FidelityRecords::default(),
                 profile,
-                GenerationRepresentationContract::full()
+                TargetCaps::full()
             )
             .is_err()
         );
@@ -168,9 +170,7 @@ fn deleting_a_supplied_definition_invalidates_its_ref_without_a_cached_body() {
 
 #[test]
 fn function_parameter_and_output_dialects_cannot_be_erased_by_echo_or_event_codecs() {
-    use morphiecore::{
-        lowering::generation::lower_response, protocol::openai::events::EventEncoder,
-    };
+    use morphiecore::protocol::openai::{events::EventEncoder, lowering::lower_response};
     for output in [false, true] {
         let schema =
             SchemaDocument::new(SchemaDialect::Draft202012, json!({"type":"object"}), vec![])
@@ -193,13 +193,7 @@ fn function_parameter_and_output_dialects_cannot_be_erased_by_echo_or_event_code
         metadata.context.settings = Some(settings);
         let response = GenerationResponse::new(vec![], Outcome::Completed).unwrap();
         assert!(
-            lower_request(
-                &request,
-                &fidelity,
-                Profile::Responses,
-                GenerationRepresentationContract::full()
-            )
-            .is_err()
+            lower_request(&request, &fidelity, Profile::Responses, TargetCaps::full()).is_err()
         );
         assert!(
             lower_response(
@@ -207,7 +201,7 @@ fn function_parameter_and_output_dialects_cannot_be_erased_by_echo_or_event_code
                 &fidelity,
                 &metadata,
                 Profile::Responses,
-                GenerationRepresentationContract::full()
+                TargetCaps::full()
             )
             .is_err()
         );

@@ -114,11 +114,11 @@ fn shared_resource_has_independent_use_details_without_duplicating_its_source() 
     )
     .unwrap();
     let fidelity = morphiecore::protocol::fidelity::FidelityRecords::default();
-    let target = morphiecore::lowering::generation::lower_request(
+    let target = morphiecore::protocol::openai::lowering::lower_request(
         &request,
         &fidelity,
         morphiecore::protocol::openai::Profile::Responses,
-        morphiecore::lowering::generation::GenerationRepresentationContract::full(),
+        morphiecore::protocol::openai::TargetCaps::full(),
     )
     .unwrap();
     let wire = morphiecore::protocol::openai::responses::encode_generation(&target).unwrap();

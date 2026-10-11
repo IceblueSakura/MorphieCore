@@ -1,9 +1,7 @@
 //! Public protocol boundaries reject private attachments without weakening typed IR.
 use crate::{events_support as event, wire};
 use morphiecore::{
-    adapter::{Adapter, Dialect},
-    lowering::generation::GenerationRepresentationContract as Contract,
-    protocol::openai::{Profile, events::EventEncoder},
+    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract, events::EventEncoder},
     semantic::{task::generation::*, value::ReplayOrigin},
 };
 use serde_json::{Value, json};

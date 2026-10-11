@@ -471,11 +471,7 @@ pub(super) fn accept_status(o: &Map<String, Value>, expected: &str) -> Result<()
 #[cfg(test)]
 mod direction_tests {
     use super::*;
-    use crate::{
-        adapter::{Adapter, Dialect},
-        lowering::generation::GenerationRepresentationContract,
-        protocol::openai::envelope,
-    };
+    use crate::protocol::openai::{Adapter, Dialect, TargetCaps, envelope};
     use serde_json::json;
 
     #[test]
@@ -541,7 +537,7 @@ mod direction_tests {
                             .is_err()
                         );
                         let encoded = adapter
-                            .encode_response(&decoded, &GenerationRepresentationContract::full())
+                            .encode_response(&decoded, &TargetCaps::full())
                             .unwrap();
                         assert!(!encoded.to_string().contains("future_"));
                         let mut invalid = response.clone();

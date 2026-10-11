@@ -79,9 +79,9 @@ async fn client_body(response: reqwest::Response, profile: Profile, stream: bool
 }
 fn stream_body(wire: &str, profile: Profile) -> Value {
     assert!(!wire.contains("synthetic-native-signature"));
-    let client = morphiecore::adapter::Adapter::new(
+    let client = morphiecore::protocol::openai::Adapter::new(
         profile,
-        morphiecore::adapter::Dialect::MorphieCore,
+        morphiecore::protocol::openai::Dialect::MorphieCore,
         Some(morphiecore::execution::replay::CLIENT_ORIGIN.clone()),
     );
     let mut decoder = client.event_decoder();
@@ -96,9 +96,9 @@ fn stream_body(wire: &str, profile: Profile) -> Value {
     client
         .encode_response(
             &decoder.materialize().unwrap(),
-            &morphiecore::lowering::generation::GenerationRepresentationContract {
+            &morphiecore::protocol::openai::TargetCaps {
                 replay_origin: Some(morphiecore::execution::replay::CLIENT_ORIGIN.clone()),
-                ..morphiecore::lowering::generation::GenerationRepresentationContract::full()
+                ..morphiecore::protocol::openai::TargetCaps::full()
             },
         )
         .unwrap()

@@ -1,8 +1,6 @@
 //! Small ingress fixture independent of product registration and publication data.
 use crate::{
-    adapter::{Adapter, Dialect},
-    lowering::generation::GenerationRepresentationContract,
-    protocol::openai::Profile,
+    protocol::openai::{Adapter, Dialect, Profile, TargetCaps},
     provider::{
         AuthScheme, CredentialBindingId, CredentialKind, EndpointPath, ProviderDefinition,
         ProviderId, TrustedOrigin,
@@ -56,10 +54,10 @@ pub(crate) fn topology() -> CompiledTopology {
     .into_iter()
     .map(|(id, profile, protocol, limited)| {
         let scope = ReplayOrigin::new("synthetic-source").unwrap();
-        let mut representation = GenerationRepresentationContract {
+        let mut representation = TargetCaps {
             adaptation: Adapter::new(profile, Dialect::MorphieCore, Some(scope.clone())).adaptation,
             replay_origin: Some(scope),
-            ..GenerationRepresentationContract::full()
+            ..TargetCaps::full()
         };
         representation.semantics.temperature = !limited;
         Endpoint {

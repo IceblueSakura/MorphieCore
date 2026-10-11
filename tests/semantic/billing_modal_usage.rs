@@ -1,8 +1,6 @@
 //! Billing views must promote independent modality facts, never replay stale counters.
 use morphiecore::{
-    adapter::{Adapter, Dialect},
-    lowering::generation::GenerationRepresentationContract as Contract,
-    protocol::openai::{Profile, events::EventEncoder},
+    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract, events::EventEncoder},
     semantic::task::generation::Usage,
 };
 use serde_json::{Value, json};

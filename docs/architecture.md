@@ -30,9 +30,9 @@ MorphieCore 是以统一 IR 为核心的模型路由网关：下游接收标准�
 | 模块 | 职责 | 约束 |
 |---|---|---|
 | `semantic` | IR 类型、校验、requirements、事件 reducer | 不依赖 protocol / provider / execution |
-| `protocol` | 各协议的 wire 类型与编解码、方言规则 | 纯函数；不访问网络、凭据或 registry |
-| `lowering` | 判断最终 IR 能否由目标表达，应用具名损失规则 | 纯函数；只作用于候选私有副本 |
-| `adapter` | 组合协议 codec 与方言规则，生成请求/响应投影 | 规则由受信绑定选择，业务输入不能选择 |
+| `protocol` | 各协议的 wire 编解码、adapter、能力与方言；协议内 lowering 判断表示及具名损失 | 纯函数；投影只作用于候选私有副本，不访问网络、凭据或 registry |
+| `lowering` | 跨协议 `TargetCaps`、共享表示错误与报告策略；冻结任务的既有投影 | 能力分发不替代协议自身的表示检查 |
+| `adapter` | 通用请求、上下文与 replay 隔离、选定上游的分发；冻结任务的既有适配 | 规则由受信绑定选择，业务输入不能选择 |
 | `topology` | Public Model → Route → Endpoint 的静态编译 | Endpoint 绑定 origin/path/协议/上游模型/凭据域 |
 | `execution` | 候选计划、请求准备、增量 intake、交付状态 | 不解释业务语义 |
 | `transport` | HTTP I/O 与 SSE framing | 只接收已准备好的可信请求 |
@@ -41,7 +41,9 @@ MorphieCore 是以统一 IR 为核心的模型路由网关：下游接收标准�
 
 Endpoint 以 `lowering::target::TargetCaps` 区分 OpenAI 与原生 Messages 的能力声明；协议与能力族必须匹配。原生 Messages 的 profile、方言、语义上限、replay scope、缓存载体、请求投影与会话 header 策略由 `protocol::anthropic` 拥有，不通过构造 Chat adapter 或借用 OpenAI 开关来表达。
 
-**结构目标（阶段 1）**：每个协议一个双向模块（请求/响应编解码 + 上游 SSE → `StreamEvent` + `StreamEvent` → 下游 SSE），每个上游以数据声明 `TargetCaps`（可表达的 IR 特性与适用的损失规则）。OpenAI 分支仍使用通用目录中的 `GenerationRepresentationContract`、`openai::Profile` 表示检查与方言规则，后续收回所属协议模块；跨协议交付投影也保持目标明确，不预建通用插件框架。
+OpenAI 的规范入口为 `protocol::openai::{Adapter, Dialect, TargetCaps}`；方言数据由协议内 `adaptation` 拥有，表示检查、具名损失与流式检查位于 `protocol::openai::lowering`。将原生 Messages 观察交付为 OpenAI 的投影也属于这个目标模块，而不是通用 lowering。通用请求只保留当前客户端的来源元数据用于交付选项转换，不在通用层执行 OpenAI 表示分支。
+
+协议模块按实际需要提供双向编解码与流式接口。原生响应 intake 需要所选历史与 replay 目标，不能为统一方法签名省略上下文；尚未开放的下游协议按路线接入，不预建通用插件框架。独立媒体任务保持冻结，不随 Generation 的模块归属调整扩展功能。
 
 ## 3. IR 原则
 

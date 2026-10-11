@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 
 #[test]
 fn cancelled_is_a_static_outcome_not_a_standard_stream_event() {
-    use morphiecore::{lowering::generation::lower_response, protocol::openai::responses};
+    use morphiecore::protocol::openai::{lowering::lower_response, responses};
     let cancelled = envelope("cancelled", json!([]));
     let decoded = responses::decode_response(&cancelled).unwrap();
     assert_eq!(decoded.semantic.outcome(), Outcome::Cancelled);

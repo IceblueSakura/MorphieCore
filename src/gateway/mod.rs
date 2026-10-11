@@ -42,9 +42,7 @@ mod transcription_tests;
 #[cfg(test)]
 use crate::provider::SecretMaterial;
 use crate::{
-    adapter::Adapter,
-    lowering::generation::GenerationRepresentationContract,
-    protocol::openai::Profile,
+    protocol::openai::{Adapter, Profile, TargetCaps},
     provider::ProviderDefinition,
     topology::{Endpoint, PublicModel},
     transport::http::HttpTransport,
@@ -67,7 +65,7 @@ struct BoundCandidate {
 struct BoundEntry {
     public: PublicModel,
     client: Adapter,
-    downstream: GenerationRepresentationContract,
+    downstream: TargetCaps,
     policy: crate::topology::RoutePolicy,
     candidates: Vec<Arc<BoundCandidate>>,
 }

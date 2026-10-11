@@ -1,8 +1,6 @@
 //! Model identity does not authorize a Provider to erase unsupported media.
 use morphiecore::{
-    adapter::{Adapter, Dialect},
-    lowering::generation::GenerationRepresentationContract as Representation,
-    protocol::openai::Profile,
+    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Representation},
     semantic::task::generation::{GenerationSemanticContract, ImageDetail, ImageFormat},
 };
 use serde_json::json;

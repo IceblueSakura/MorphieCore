@@ -6,8 +6,7 @@ use super::{
     events::{EventDecoder, EventEncoder},
 };
 use crate::{
-    lowering::generation::GenerationRepresentationContract,
-    protocol::fidelity::FidelityRecords,
+    protocol::{fidelity::FidelityRecords, openai::TargetCaps},
     semantic::{
         task::generation::*,
         value::{ReplayOrigin, json_size},
@@ -244,7 +243,7 @@ pub struct ResponsesSseEncoder {
 impl ResponsesSseEncoder {
     pub fn new(
         metadata: ResponseMetadata,
-        contract: GenerationRepresentationContract,
+        contract: TargetCaps,
         limits: SseLimits,
         padding: Obfuscation,
     ) -> Result<Self, SseError> {

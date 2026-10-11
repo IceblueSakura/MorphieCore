@@ -1,9 +1,7 @@
 //! Startup-only resolution of immutable entry, contract and credential ownership.
 use super::{BoundCandidate, BoundEntry, Credentials, Gateway, Runtime, auth, family};
 use crate::{
-    adapter::{Adapter, Dialect},
-    lowering::generation::GenerationRepresentationContract,
-    protocol::openai::Profile,
+    protocol::openai::{Adapter, Dialect, Profile, TargetCaps},
     provider::SecretMaterial,
     semantic::value::ReplayOrigin,
     topology::{CompiledTopology, EndpointId},
@@ -354,10 +352,10 @@ impl Gateway {
                 let client = Adapter::new(entry.protocol, dialect, Some(client_scope.clone()));
                 // Model input admission must not filter facts reported on the client wire
                 // (e.g. empty logprobs or defaults a model cannot accept as controls).
-                let downstream = GenerationRepresentationContract {
+                let downstream = TargetCaps {
                     replay_origin: Some(client_scope),
                     reported_facts: public.reported_facts,
-                    ..GenerationRepresentationContract::full()
+                    ..TargetCaps::full()
                 };
                 let group = bound
                     .entry((family(entry.protocol), entry.model.clone()))

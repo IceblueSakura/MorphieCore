@@ -94,11 +94,11 @@ fn standard_codecs_cannot_silently_omit_an_error_report() {
         result.is_error = Some(false);
         decoded.semantic = decoded.semantic.with_items(items).unwrap();
         assert!(
-            morphiecore::lowering::generation::lower_request(
+            morphiecore::protocol::openai::lowering::lower_request(
                 &decoded.semantic,
                 &decoded.fidelity,
                 profile,
-                morphiecore::lowering::generation::GenerationRepresentationContract::full(),
+                morphiecore::protocol::openai::TargetCaps::full(),
             )
             .is_err()
         );

@@ -1,10 +1,11 @@
 //! Dependency proofs bind relationships and source values, not just surviving IDs.
 use crate::events_support::text;
 use morphiecore::{
-    lowering::generation::{
-        GenerationRepresentationContract as Contract, RepresentationError, lower_request,
+    lowering::generation::RepresentationError,
+    protocol::{
+        fidelity::FidelityRecords,
+        openai::{Profile, TargetCaps as Contract, lowering::lower_request},
     },
-    protocol::{fidelity::FidelityRecords, openai::Profile},
     semantic::{task::generation::*, value::ReplayOrigin},
 };
 fn message(id: u64, body: &str) -> (ItemId, Item) {

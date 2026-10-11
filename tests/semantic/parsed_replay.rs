@@ -1,9 +1,9 @@
 //! SDK derived `parsed` views are validated replay conveniences over the authoritative
 //! raw text; they are never IR state and never emitted.
 use morphiecore::{
-    lowering::generation::{GenerationRepresentationContract as Contract, lower_request},
     protocol::openai::{
-        CodecError, DecodedRequest, Profile, chat, chat_envelope, envelope, responses,
+        CodecError, DecodedRequest, Profile, TargetCaps as Contract, chat, chat_envelope, envelope,
+        lowering::lower_request, responses,
     },
     semantic::task::generation::*,
 };

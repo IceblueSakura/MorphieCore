@@ -1,6 +1,6 @@
 //! Deployment bindings, not model discovery. Aliases and profiles are explicit.
 use crate::{
-    adapter::Dialect,
+    protocol::openai::Dialect,
     provider::{ProviderDefinition, catalog},
     topology::ProtocolProfile,
 };

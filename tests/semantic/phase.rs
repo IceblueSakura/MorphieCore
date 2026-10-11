@@ -2,11 +2,11 @@
 use crate::events_support::*;
 use crate::wire;
 use morphiecore::{
-    lowering::generation::{
-        GenerationRepresentationContract as Contract, lower_request, lower_response,
-    },
     protocol::openai::{
-        CodecError, DecodedRequest, Profile, envelope, events::EventDecoder, responses,
+        CodecError, DecodedRequest, Profile, TargetCaps as Contract, envelope,
+        events::EventDecoder,
+        lowering::{lower_request, lower_response},
+        responses,
     },
     semantic::task::generation::*,
 };

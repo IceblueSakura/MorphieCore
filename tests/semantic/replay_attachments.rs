@@ -1,8 +1,10 @@
 //! Owner-local replay values and trusted bindings, without native Google/Anthropic codecs.
 use crate::resources_support as resources;
 use morphiecore::{
-    lowering::generation::{GenerationRepresentationContract, lower_request},
-    protocol::{fidelity::FidelityRecords, openai::Profile},
+    protocol::{
+        fidelity::FidelityRecords,
+        openai::{Profile, TargetCaps, lowering::lower_request},
+    },
     semantic::{
         task::generation::*,
         value::{ReplayOrigin, Text},
@@ -101,15 +103,7 @@ fn local_attachments_have_one_owner_and_no_existing_public_carrier() {
         ));
         assert!(!format!("{source:?}{fidelity:?}").contains("synthetic-private-token"));
         for profile in [Profile::Chat, Profile::Responses] {
-            assert!(
-                lower_request(
-                    &source,
-                    &fidelity,
-                    profile,
-                    GenerationRepresentationContract::full()
-                )
-                .is_err()
-            );
+            assert!(lower_request(&source, &fidelity, profile, TargetCaps::full()).is_err());
         }
         assert!(GenerationSemanticContract::full().check(&source).is_err());
     }
@@ -289,11 +283,11 @@ fn late_part_attachment_is_finalized_before_item_closure_and_matches_static() {
         assert!(reduce(state.clone(), event.clone()).is_err());
         for profile in [Profile::Chat, Profile::Responses] {
             assert!(
-                morphiecore::lowering::events::check_event(
+                morphiecore::protocol::openai::lowering::events::check_event(
                     &state,
                     &event,
                     profile,
-                    &GenerationRepresentationContract::full()
+                    &TargetCaps::full()
                 )
                 .is_err()
             );
@@ -711,13 +705,7 @@ fn cleared_call_attachments_do_not_return_from_fidelity() {
     c.context.replay = None;
     let cleared = source.with_items(items).unwrap();
     let output = responses::encode_generation(
-        &lower_request(
-            &cleared,
-            &fidelity,
-            Profile::Responses,
-            GenerationRepresentationContract::full(),
-        )
-        .unwrap(),
+        &lower_request(&cleared, &fidelity, Profile::Responses, TargetCaps::full()).unwrap(),
     )
     .unwrap();
     assert!(!output.to_string().contains("synthetic-private-token"));

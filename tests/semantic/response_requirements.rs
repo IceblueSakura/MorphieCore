@@ -1,9 +1,11 @@
 //! Output requirements do not manufacture a request or inherit request controls.
 use crate::events_support::{metadata, text};
 use morphiecore::{
-    lowering::generation::{GenerationRepresentationContract as Contract, lower_response},
-    protocol::ResponseMetadata,
-    protocol::{fidelity::FidelityRecords, openai::Profile},
+    protocol::{
+        ResponseMetadata,
+        fidelity::FidelityRecords,
+        openai::{Profile, TargetCaps as Contract, lowering::lower_response},
+    },
     semantic::task::generation::*,
 };
 #[test]

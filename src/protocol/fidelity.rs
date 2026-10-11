@@ -7,7 +7,7 @@ use crate::semantic::{
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
-use crate::protocol::{adaptation::Adaptation, openai::Profile};
+use crate::protocol::openai::{Profile, adaptation::Adaptation};
 const RESPONSE_EXTRAS_BUDGET: usize = 4096;
 /// Outgoing carrier identity, not an upstream-reported fact or persistent key.
 pub(crate) fn generated_item_id(owner: ItemId) -> String {

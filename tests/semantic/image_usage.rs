@@ -1,9 +1,5 @@
 //! Image-token reports are typed facts with explicit profile projections.
-use morphiecore::{
-    adapter::{Adapter, Dialect},
-    lowering::generation::GenerationRepresentationContract as Contract,
-    protocol::openai::Profile,
-};
+use morphiecore::protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract};
 use serde_json::{Value, json};
 fn response(count: Value) -> Value {
     json!({"id":"r","object":"chat.completion","created":1,"model":"m","choices":[{"index":0,"message":{"role":"assistant","content":"x"},"finish_reason":"stop"}],"usage":{

@@ -1,5 +1,5 @@
 //! Protocol-owned endpoint capabilities, not a client protocol or execution policy.
-use super::generation::GenerationRepresentationContract;
+use crate::protocol::openai::TargetCaps as OpenAiCaps;
 use crate::{
     protocol::{anthropic, cache::CacheProjection},
     semantic::{task::generation::GenerationSemanticContract, value::ReplayOrigin},
@@ -7,11 +7,11 @@ use crate::{
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TargetCaps {
-    OpenAi(Box<GenerationRepresentationContract>),
+    OpenAi(Box<OpenAiCaps>),
     AnthropicMessages(Box<anthropic::TargetCaps>),
 }
-impl From<GenerationRepresentationContract> for TargetCaps {
-    fn from(value: GenerationRepresentationContract) -> Self {
+impl From<OpenAiCaps> for TargetCaps {
+    fn from(value: OpenAiCaps) -> Self {
         Self::OpenAi(Box::new(value))
     }
 }
@@ -21,13 +21,13 @@ impl From<anthropic::TargetCaps> for TargetCaps {
     }
 }
 impl TargetCaps {
-    pub fn openai(&self) -> Option<&GenerationRepresentationContract> {
+    pub fn openai(&self) -> Option<&OpenAiCaps> {
         match self {
             Self::OpenAi(c) => Some(c),
             _ => None,
         }
     }
-    pub fn openai_mut(&mut self) -> Option<&mut GenerationRepresentationContract> {
+    pub fn openai_mut(&mut self) -> Option<&mut OpenAiCaps> {
         match self {
             Self::OpenAi(c) => Some(c),
             _ => None,

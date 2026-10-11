@@ -1,5 +1,5 @@
 //! Bounded, body-free evidence for the selected response projection rules.
-use super::generation::RepresentationError;
+use super::RepresentationError;
 use crate::{protocol::openai::Profile, semantic::task::generation::Usage};
 
 pub const MAX_PROJECTION_STAGES: usize = 16;
@@ -166,7 +166,7 @@ pub(crate) fn chat_usage(
 /// https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/responses/response_usage.py
 pub(crate) fn responses_usage(
     mut usage: Usage,
-    rules: &crate::protocol::adaptation::WireRules,
+    rules: &crate::protocol::openai::adaptation::WireRules,
 ) -> Result<(Usage, Vec<LossRule>), RepresentationError> {
     usage.validate()?;
     let mut losses = Vec::new();

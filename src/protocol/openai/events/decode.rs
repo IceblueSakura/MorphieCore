@@ -61,7 +61,7 @@ fn terminal_snapshot_difference(actual: &[Value], expected: &[Value]) -> &'stati
 
 pub struct EventDecoder {
     pub(super) profile: Profile,
-    pub(super) adaptation: crate::protocol::adaptation::Adaptation,
+    pub(super) adaptation: crate::protocol::openai::adaptation::Adaptation,
     pub(super) state: Option<StreamState>,
     pub(super) fidelity: FidelityRecords,
     pub(super) metadata: Option<ResponseMetadata>,
@@ -123,7 +123,7 @@ impl EventDecoder {
     }
     pub(crate) fn with_adaptation(
         mut self,
-        adaptation: crate::protocol::adaptation::Adaptation,
+        adaptation: crate::protocol::openai::adaptation::Adaptation,
     ) -> Self {
         self.adaptation = adaptation;
         self

@@ -27,7 +27,7 @@ pub fn decode_generation(v: &Value) -> Result<DecodedRequest, CodecError> {
 }
 pub(crate) fn decode_generation_with(
     v: &Value,
-    adaptation: &crate::protocol::adaptation::Adaptation,
+    adaptation: &crate::protocol::openai::adaptation::Adaptation,
 ) -> Result<DecodedRequest, CodecError> {
     bounded(v)?;
     let o = object(v)?;

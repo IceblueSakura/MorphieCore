@@ -13,8 +13,8 @@ mod transcription;
 pub use transcription::{TRANSCRIPTION_BINDINGS, TranscriptionBinding};
 mod subscriptions;
 use crate::{
-    adapter::Adapter,
-    lowering::generation::{GenerationRepresentationContract, ReportedFactPolicy},
+    lowering::generation::ReportedFactPolicy,
+    protocol::openai::{Adapter, TargetCaps},
     provider::{CredentialBindingId, CredentialKind, catalog},
     topology::*,
 };
@@ -51,7 +51,7 @@ impl ApiKeyBinding {
             ProtocolProfile::AnthropicMessages => return Err(TopologyError::ContractUnsatisfiable),
         };
         let scope = crate::protocol::replay_envelope::issuer(provider.id.as_str(), self.upstream);
-        let contract = GenerationRepresentationContract {
+        let contract = TargetCaps {
             semantics: self
                 .endpoint_slice
                 .apply(models::contract(self.canonical_model)),
@@ -59,7 +59,7 @@ impl ApiKeyBinding {
             cache: Adapter::new(family, self.dialect, None).adaptation.cache,
             identity_hints: false,
             standard_context: false,
-            ..GenerationRepresentationContract::full()
+            ..TargetCaps::full()
         };
         Ok(Endpoint {
             id: self.endpoint_id(protocol),
@@ -228,7 +228,7 @@ fn declared_topology_compiles() {
 #[cfg(test)]
 #[test]
 fn bailian_strict_tools_are_admitted_without_changing_schema_or_other_bindings() {
-    use crate::{adapter::Dialect, protocol::openai::Profile};
+    use crate::protocol::openai::{Dialect, Profile};
     use serde_json::json;
 
     let topology = default_topology().unwrap();

@@ -1,12 +1,9 @@
 //! Admission regressions for the existing text subset, not the whole SDK union.
 use crate::wire;
-use morphiecore::{
-    adapter::{Adapter, Dialect},
-    protocol::openai::{
-        Profile,
-        events::EventDecoder,
-        sse::{ResponsesSseDecoder, SseLimits, encode_frame},
-    },
+use morphiecore::protocol::openai::{
+    Adapter, Dialect, Profile,
+    events::EventDecoder,
+    sse::{ResponsesSseDecoder, SseLimits, encode_frame},
 };
 use serde_json::{Value, json};
 
@@ -40,7 +37,7 @@ fn function_dispatch_nonnullable_flags_do_not_accept_null_as_an_inactive_default
                 .encode_request(
                     &decoded,
                     "m",
-                    &morphiecore::lowering::generation::GenerationRepresentationContract::full(),
+                    &morphiecore::protocol::openai::TargetCaps::full(),
                 )
                 .unwrap();
             assert_eq!(
@@ -278,7 +275,7 @@ fn nullable_reasoning_effort_and_optional_function_headers_follow_their_own_sche
     let wire =
         json!({"model":"m","messages":[{"role":"user","content":"hi"}],"reasoning_effort":null});
     let decoded = adapter.decode_request(wire.to_string().as_bytes()).unwrap();
-    let contract = morphiecore::lowering::generation::GenerationRepresentationContract::full();
+    let contract = morphiecore::protocol::openai::TargetCaps::full();
     assert!(
         adapter
             .encode_request(&decoded, "m", &contract)
@@ -380,7 +377,7 @@ fn chat_reported_context_is_protocol_specific_and_never_guessed() {
         decoded.metadata.context.execution.metadata.value().unwrap()["trace"],
         "reported"
     );
-    let contract = morphiecore::lowering::generation::GenerationRepresentationContract::full();
+    let contract = morphiecore::protocol::openai::TargetCaps::full();
     assert_eq!(
         adapter.encode_response(&decoded, &contract).unwrap()["metadata"],
         wire["metadata"]

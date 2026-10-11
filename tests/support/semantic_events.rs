@@ -1,9 +1,8 @@
 //! Synthetic offline event builders, not wire or semantic oracles.
 use morphiecore::{
-    lowering::generation::GenerationRepresentationContract as Contract,
     protocol::{
         fidelity::FidelityRecords,
-        openai::{Profile, ResponseMetadata, events::EventEncoder},
+        openai::{Profile, ResponseMetadata, TargetCaps as Contract, events::EventEncoder},
     },
     semantic::{
         task::generation::*,

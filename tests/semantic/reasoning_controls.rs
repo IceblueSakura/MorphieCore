@@ -1,8 +1,10 @@
 //! Independent control intents, not generated facts or approximate wire mappings.
 use morphiecore::{
-    adapter::{Adapter, Dialect},
-    lowering::generation::{GenerationRepresentationContract, RepresentationError, lower_request},
-    protocol::{fidelity::FidelityRecords, openai::Profile},
+    lowering::generation::RepresentationError,
+    protocol::{
+        fidelity::FidelityRecords,
+        openai::{Adapter, Dialect, Profile, TargetCaps, lowering::lower_request},
+    },
     semantic::{
         task::generation::*,
         value::{Presence, Text},
@@ -38,7 +40,7 @@ fn adaptive_effort_budget_and_display_have_independent_authority() {
                 &request,
                 &FidelityRecords::default(),
                 profile,
-                GenerationRepresentationContract::full()
+                TargetCaps::full()
             )
             .err(),
             Some(RepresentationError::Reasoning)
@@ -146,9 +148,7 @@ fn adding_core_modes_does_not_expand_standard_request_admission() {
 
 #[test]
 fn each_new_control_independently_rejects_request_echo_and_stream_projection() {
-    use morphiecore::{
-        lowering::generation::lower_response, protocol::openai::events::EventEncoder,
-    };
+    use morphiecore::protocol::openai::{events::EventEncoder, lowering::lower_response};
     for dimension in 0..5 {
         let mut control = ReasoningRequest::present(Some(ReasoningEffort::High), None);
         match dimension {
@@ -180,24 +180,11 @@ fn each_new_control_independently_rejects_request_echo_and_stream_projection() {
         let fidelity = FidelityRecords::default();
         for profile in [Profile::Responses, Profile::Chat] {
             assert_eq!(
-                lower_request(
-                    &request,
-                    &fidelity,
-                    profile,
-                    GenerationRepresentationContract::full()
-                )
-                .err(),
+                lower_request(&request, &fidelity, profile, TargetCaps::full()).err(),
                 Some(RepresentationError::Reasoning)
             );
             assert_eq!(
-                lower_response(
-                    &response,
-                    &fidelity,
-                    &metadata,
-                    profile,
-                    GenerationRepresentationContract::full()
-                )
-                .err(),
+                lower_response(&response, &fidelity, &metadata, profile, TargetCaps::full()).err(),
                 Some(RepresentationError::Reasoning)
             );
         }

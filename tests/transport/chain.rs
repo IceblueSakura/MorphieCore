@@ -1,11 +1,10 @@
 //! Adapter/execution acceptance with independent wire and explicit I/O commit.
 use crate::{chat_wire, wire};
 use morphiecore::{
-    adapter::{Adapter, Dialect},
     execution::{Attempt, AttemptError, ResponseDelivery, admit, prepare},
-    lowering::generation::{GenerationRepresentationContract as Contract, ReportedFactPolicy},
+    lowering::generation::ReportedFactPolicy,
     protocol::openai::{
-        Profile,
+        Adapter, Dialect, Profile, TargetCaps as Contract,
         chat_sse::ChatSseDecoder,
         sse::{Obfuscation, ResponsesSseDecoder, SseLimits},
     },

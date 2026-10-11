@@ -88,9 +88,9 @@ fn message(id: u64, annotations: Vec<Annotation>) -> (ItemId, Item) {
 }
 #[test]
 fn source_coordinate_shapes_do_not_invent_document_extents_or_wire_carriers() {
-    use morphiecore::{
-        lowering::generation::{GenerationRepresentationContract, lower_response},
-        protocol::{fidelity::FidelityRecords, openai::Profile},
+    use morphiecore::protocol::{
+        fidelity::FidelityRecords,
+        openai::{Profile, TargetCaps, lowering::lower_response},
     };
     let table = ResourceTable::new(vec![(
         ResourceId::new(1),
@@ -129,7 +129,7 @@ fn source_coordinate_shapes_do_not_invent_document_extents_or_wire_carriers() {
             &FidelityRecords::default(),
             &metadata,
             Profile::Responses,
-            GenerationRepresentationContract::full()
+            TargetCaps::full()
         )
         .is_ok()
     );
@@ -171,7 +171,7 @@ fn source_coordinate_shapes_do_not_invent_document_extents_or_wire_carriers() {
                     .unwrap()
                     .metadata,
                     profile,
-                    GenerationRepresentationContract::full()
+                    TargetCaps::full()
                 )
                 .is_err()
             );
@@ -453,11 +453,10 @@ fn source_selection_edits_replay_cache_and_original_usage_share_one_dependency_o
             morphiecore::protocol::openai::Profile::Chat,
             morphiecore::protocol::openai::Profile::Responses,
         ] {
-            let mut contract =
-                morphiecore::lowering::generation::GenerationRepresentationContract::full();
+            let mut contract = morphiecore::protocol::openai::TargetCaps::full();
             contract.replay_origin = Some(origin.clone());
             assert!(
-                morphiecore::lowering::generation::lower_request(
+                morphiecore::protocol::openai::lowering::lower_request(
                     candidate, &fidelity, profile, contract
                 )
                 .is_err()
@@ -468,11 +467,7 @@ fn source_selection_edits_replay_cache_and_original_usage_share_one_dependency_o
 }
 #[test]
 fn native_file_reports_preserve_list_ordinals_and_namespaced_identity_without_fake_claims() {
-    use morphiecore::{
-        adapter::{Adapter, Dialect},
-        lowering::generation::GenerationRepresentationContract,
-        protocol::openai::Profile,
-    };
+    use morphiecore::protocol::openai::{Adapter, Dialect, Profile, TargetCaps};
     use serde_json::json;
     let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
     let mut wire = crate::wire::response(2);
@@ -508,7 +503,7 @@ fn native_file_reports_preserve_list_ordinals_and_namespaced_identity_without_fa
         if namespace.as_str()=="synthetic-container" && id.as_str()=="synthetic-file")
     );
     let encoded = adapter
-        .encode_response(&decoded, &GenerationRepresentationContract::full())
+        .encode_response(&decoded, &TargetCaps::full())
         .unwrap();
     assert_eq!(
         encoded["output"][0]["content"][0]["annotations"],
@@ -610,9 +605,9 @@ fn interleaved_source_declarations_and_early_annotations_match_independent_wire_
         terminal["response"]["output"]
     );
     // Provider facts must bind to the event-owned values after wire-equivalent local ID allocation.
-    let adapter = morphiecore::adapter::Adapter::new(
+    let adapter = morphiecore::protocol::openai::Adapter::new(
         Profile::Responses,
-        morphiecore::adapter::Dialect::Bailian,
+        morphiecore::protocol::openai::Dialect::Bailian,
         Some(morphiecore::semantic::value::ReplayOrigin::new("synthetic-citations").unwrap()),
     );
     let mut provider_decoder = adapter.event_decoder();
@@ -634,7 +629,7 @@ fn interleaved_source_declarations_and_early_annotations_match_independent_wire_
     let projected = adapter
         .encode_response(
             &observed,
-            &morphiecore::lowering::generation::GenerationRepresentationContract::full(),
+            &morphiecore::protocol::openai::TargetCaps::full(),
         )
         .unwrap();
     assert_eq!(projected["frequency_penalty"], json!(0.25));

@@ -1,9 +1,5 @@
 //! Cache affinity is Provider functionality, not gateway sessions or route selection.
-use morphiecore::{
-    adapter::{Adapter, Dialect},
-    lowering::generation::GenerationRepresentationContract as Contract,
-    protocol::openai::Profile,
-};
+use morphiecore::protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract};
 use serde_json::{Value, json};
 fn client(p: Profile) -> Adapter {
     Adapter::new(p, Dialect::MorphieCore, None)

@@ -1,8 +1,6 @@
 //! Independent Chat probability and context oracles against the pinned SDK contract.
 use morphiecore::{
-    adapter::{Adapter, Dialect},
-    lowering::generation::GenerationRepresentationContract as Contract,
-    protocol::openai::{Profile, events::EventEncoder},
+    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract, events::EventEncoder},
     semantic::{task::generation::*, value::Presence},
 };
 use serde_json::{Value, json};
@@ -381,7 +379,7 @@ fn independent_probability_owners_encode_and_text_edits_invalidate_only_their_fa
         });
         let response =
             GenerationResponse::new(vec![(ItemId::new(7), message)], Outcome::Completed).unwrap();
-        let lowered = morphiecore::lowering::generation::lower_response(
+        let lowered = morphiecore::protocol::openai::lowering::lower_response(
             &response,
             &fidelity,
             &metadata,
@@ -464,7 +462,7 @@ fn independent_probability_owners_encode_and_text_edits_invalidate_only_their_fa
             _ => unreachable!(),
         };
         let edited = response.with_items(items).unwrap();
-        let lowered = morphiecore::lowering::generation::lower_response(
+        let lowered = morphiecore::protocol::openai::lowering::lower_response(
             &edited,
             &fidelity,
             &metadata,

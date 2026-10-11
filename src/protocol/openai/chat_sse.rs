@@ -7,8 +7,7 @@ use super::{
 };
 use crate::semantic::context::StreamOptions;
 use crate::{
-    lowering::generation::GenerationRepresentationContract,
-    protocol::fidelity::FidelityRecords,
+    protocol::{fidelity::FidelityRecords, openai::TargetCaps},
     semantic::task::generation::{MAX_TOTAL_BYTES, StreamEvent},
     transport::sse::{SseDecoder, SseEvent},
 };
@@ -165,7 +164,7 @@ impl ChatSseEncoder {
     /// Enabled obfuscation requires a caller-supplied seed; no random/credential source is used here.
     pub fn new(
         metadata: ResponseMetadata,
-        contract: GenerationRepresentationContract,
+        contract: TargetCaps,
         limits: SseLimits,
         options: StreamOptions,
         padding: Obfuscation,

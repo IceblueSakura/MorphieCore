@@ -1,7 +1,6 @@
 //! Prefix stability is an explicit dependency check, not a cache hit or route choice.
 use morphiecore::{
-    adapter::{Adapter, Dialect},
-    protocol::openai::Profile,
+    protocol::openai::{Adapter, Dialect, Profile},
     semantic::{
         cache::{CachePrefixIntent, CachePrefixScope},
         task::generation::*,

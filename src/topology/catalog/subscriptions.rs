@@ -1,6 +1,6 @@
 //! Explicit subscription bindings. Account aliases remain deployment inputs.
 use super::{models, *};
-use crate::adapter::Dialect;
+use crate::protocol::openai::Dialect;
 pub struct SubscriptionBinding {
     pub profile: &'static str,
     pub model: &'static str,
@@ -62,13 +62,13 @@ impl SubscriptionBinding {
             self.dialect,
             Some(scope.clone()),
         );
-        let contract = GenerationRepresentationContract {
+        let contract = TargetCaps {
             semantics: self.contract(),
             replay_origin: Some(scope),
             cache: adapter.adaptation.cache,
             identity_hints: false,
             standard_context: false,
-            ..GenerationRepresentationContract::full()
+            ..TargetCaps::full()
         };
         Endpoint {
             id: self.endpoint_id(),

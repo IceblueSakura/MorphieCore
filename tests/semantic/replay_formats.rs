@@ -1,10 +1,11 @@
 //! Format identity and selected dependencies never prove issuer authenticity.
 use crate::events_support::{metadata, text};
 use morphiecore::{
-    lowering::generation::{
-        GenerationRepresentationContract as Contract, RepresentationError, lower_response,
+    lowering::generation::RepresentationError,
+    protocol::{
+        fidelity::FidelityRecords,
+        openai::{Profile, TargetCaps as Contract, lowering::lower_response},
     },
-    protocol::{fidelity::FidelityRecords, openai::Profile},
     semantic::{task::generation::*, value::ReplayOrigin},
 };
 fn reasoning(format: ReplayFormat) -> ReasoningItem {

@@ -1,11 +1,10 @@
 //! Schema order is asserted independently of Value equality, which ignores object order.
 use crate::wire;
 use morphiecore::{
-    lowering::generation::{
-        GenerationRepresentationContract as Contract, lower_request, lower_response,
-    },
     protocol::openai::{
-        Profile, chat, envelope, responses,
+        Profile, TargetCaps as Contract, chat, envelope,
+        lowering::{lower_request, lower_response},
+        responses,
         sse::{Obfuscation, ResponsesSseDecoder, ResponsesSseEncoder, SseLimits, encode_frame},
     },
     semantic::{

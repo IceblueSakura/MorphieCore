@@ -112,11 +112,11 @@ fn explicit_revision_preserves_source_and_does_not_synthesize_or_retarget_result
         morphiecore::protocol::openai::Profile::Responses,
     ] {
         assert!(
-            morphiecore::lowering::generation::lower_request(
+            morphiecore::protocol::openai::lowering::lower_request(
                 &edited,
                 &Default::default(),
                 profile,
-                morphiecore::lowering::generation::GenerationRepresentationContract::full(),
+                morphiecore::protocol::openai::TargetCaps::full(),
             )
             .is_err()
         );
