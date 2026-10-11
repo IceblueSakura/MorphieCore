@@ -88,6 +88,8 @@ BINDINGS = (
         None,
         ("chat",),
     ),
+    # Library-only, explicitly selected native gate; never an OpenAI/SDK default.
+    ("opencode-go", "claude-haiku-5-5", "opencode-go-api-key", None, ("messages",)),
     ("modelbest", "minicpm5-1b", "modelbest-api-key", None, ("chat",)),
     ("modelbest", "minicpm5-2b", "modelbest-api-key", None, ("chat",)),
     ("modelbest", "minicpm-v-4.6", "modelbest-api-key", None, ("chat",)),
@@ -130,7 +132,7 @@ def select_bindings(selection=None, *, models=None):
     ):
         raise RuntimeError("unknown, duplicate or paused provider selection")
     rows = [row for name in names for row in BINDINGS if row[0] == name
-            and (models is not None or row[1] != "gpt-audio-mini")]
+            and (models is not None or row[1] != "gpt-audio-mini" and row[4] != ("messages",))]
     if models is not None:
         admitted = {row[1] for row in rows}
         if (

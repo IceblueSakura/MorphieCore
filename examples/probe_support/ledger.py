@@ -71,6 +71,7 @@ NUMBERS = {
     "event_items", "event_reasoning_items", "event_parts", "event_deltas", "event_item_closures",
 }
 BOOLS = {
+    "native_consumed",
     "affinity_key_sent", "affinity_session_sent",
     "image_answer_format_ok", "image_color_order_ok",
     "sdk_consumed",
@@ -92,6 +93,9 @@ ENUMS = {
         "message_grouping", "unmigrated_semantic", "replay", "metadata", "system_fingerprint",
         "terminal", "other", "codec"},
     "decode_failure": {"invalid_sequence", "invalid_metadata", "invalid_item_snapshot",
+        "native_cache_creation", "native_output_tokens_details", "native_service_tier",
+        "native_inference_geo", "native_server_tool_use", "native_container",
+        "native_stop_details", "native_input_transformations",
         "metadata_id_changed", "metadata_model_changed", "metadata_created_changed",
         "invalid_json", "invalid_object", "invalid_chunk_object", "invalid_metadata_shape",
         "invalid_choices", "invalid_delta", "invalid_usage_tail", "invalid_early_usage", "invalid_after_finish",
@@ -126,6 +130,7 @@ ENUMS = {
         "unknown",
     },
     "terminal": {
+        "end_turn", "tool_use", "max_tokens",
         "stop",
         "image.complete",
         "tool_calls",

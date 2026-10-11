@@ -18,6 +18,8 @@ mod fallback_policy;
 mod framing;
 #[path = "transport/native_bindings.rs"]
 mod native_bindings;
+#[path = "transport/native_catalog.rs"]
+mod native_catalog;
 #[path = "transport/planning.rs"]
 mod planning;
 #[path = "transport/responses_sse.rs"]

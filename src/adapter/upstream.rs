@@ -47,6 +47,14 @@ impl UpstreamAdapter {
                 )?;
                 request.check_semantic(&contract.semantics)?;
                 request.check_semantic(&profile.semantic_contract())?;
+                if contract.adaptation.rules.reject_reasoning_controls
+                    && request.task.semantic.settings().reasoning != Default::default()
+                {
+                    return Err(CodecError::Unsupported(
+                        "unverified native reasoning controls".into(),
+                    )
+                    .into());
+                }
                 let origin = contract
                     .replay_origin
                     .as_ref()

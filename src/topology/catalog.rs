@@ -1,5 +1,7 @@
 //! Compile explicit model declarations and deployment bindings. No alias inference.
 mod bindings;
+mod messages;
+pub use messages::{MESSAGES_BINDINGS, MessagesBinding};
 mod embeddings;
 pub use embeddings::{EMBEDDING_BINDINGS, EmbeddingBinding};
 mod images;

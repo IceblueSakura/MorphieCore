@@ -51,6 +51,24 @@ uv run --project tests/sdk --locked --offline python examples/probe.py report te
 - 所有组在 I/O 前登记；未执行的请求显示 `not_run`，中断的 reservation/dispatched 不算通过。HTTP/传输/wire/配置错误停止该目标；工具链失败跳过其依赖轮次。只有计划明确 `--continue-oracle` 时，内容/预期终态失败后才继续独立组。不自动重复失败请求。
 - `source_fingerprint` 标记计划创建及各进程预留时的源码/锁文件状态，进程内检测源码变化后拒绝新预留。它不是对正在运行的 binary 的密码学证明；Rust 改动后必须按上述命令重新构建。
 
+<a id="native-messages-probe"></a>
+### 原生 Messages 库验证
+
+原生 Messages 使用现有 Rust `live_probe` 与共享账本，不启动 Gateway，也不调用 OpenAI SDK。必须显式选择 native 模型；它不进入默认 selection。`probe.py run` 拒绝该 native 计划，防止误走公开客户端路径。原生目标与有限矩阵归 [library binding](../src/topology/catalog/messages.rs) / [collector](../examples/support/native_messages_probe.rs)，不是资格或支持库存。
+
+```sh
+cargo build --locked --offline --example live_probe
+uv run --project tests/sdk --locked --offline python examples/probe.py plan \
+  testdata/runtime/my-native-run --providers "$PROVIDER_ID" --model "$PUBLIC_MODEL" \
+  --limit 14 --tokens 2048 --continue-oracle
+```
+
+运行时将 `MORPHIECORE_PROBE_RUN` 指向该计划，`MORPHIECORE_PROBE_MODEL` 指向精确 label，`MORPHIECORE_PROBE_PROTOCOL=messages`、`MORPHIECORE_PROBE_MAX_TOKENS` 与计划一致，显式设置按 STORE 规则选定的 `MORPHIECORE_PROBE_CREDENTIALS_DIR`，再设置 `MORPHIECORE_PROBE=1` 执行同一个 binary。`MORPHIECORE_PROBE_DRY_RUN=1` 只登记/展示有限矩阵，不读凭据、不启动服务、不联网；`MORPHIECORE_PROBE_CASE` 可缩小到 collector 声明的一组。执行另设有限外层截止，结束回读共享账本，不把进程输出当成完整验收。
+
+每请求先 reserve，凭据通过现有 loader 固定首成员借用，不能换账号/刷新或绕过失效绑定；实际 dispatch 前标记。完整实际 typed output 与 native signature 只在同一 Rust 进程内追加，synthetic 工具结果/拒绝由调用者明确提供，不执行模型脚本。Collector 验证 origin/path、头、原请求、JSON/SSE、严格 EOF、工具关联及 oracle，零 redirect/retry/fallback；首轮失败不执行其依赖。
+
+原生 stdout/账本只含封闭状态、计数及 HTTP/codec 分类，不输出正文、参数、signature 或 credential provenance。`native_consumed` 仅证明受控原生 typed intake 成立，不表示 SDK/pi/标准消费者通过；cache-read 未报告仍未知，未报告 signature 的分支不得宣称回传已覆盖。模型/协议失败停止目标，oracle 失败只在共享计划允许时继续独立组。
+
 ### 显式 Responses→Chat 验证
 
 对话 `plan --responses-via-chat` 必须显式指定模型，且目标在 probe catalog 声明 Chat；不要求有 native Responses，也不因此向原生 catalog 增加 Responses。计划的客户端协议固定为 Responses，与上游 Chat endpoint 声明分开。计划将选择绑定到不可变 hash；runner 在临时 Gateway 配置中设置 `responses_via_chat`，只走固定 Chat endpoint，不尝试 native Responses 或额外 fallback。创建和 dry-run 仍不读凭据或联网。

@@ -107,13 +107,14 @@ def main():
         return 0
     if args.command == "report":
         from probe_support.runtime import summary
-
         print(json.dumps(summary(ledger), indent=2))
         return 0
     models = args.model or ledger.plan["models"]
     require(
         all(model in ledger.plan["models"] for model in models), "selection", "setup"
     )
+    require(all("messages" not in ledger.protocols(model) for model in models),
+            "native_library_entry", "setup")
     cases = tuple((args.cases or ("image_generate" if ledger.is_images else "text,tool")).split(","))
     if args.dry_run:
         if ledger.is_images:

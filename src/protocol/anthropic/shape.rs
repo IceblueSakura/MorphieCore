@@ -26,8 +26,20 @@ pub(super) fn object<'a>(
     let o = v
         .as_object()
         .ok_or(CodecError::Invalid("Anthropic object"))?;
-    if o.keys().any(|k| !allowed.contains(&k.as_str())) {
-        return Err(CodecError::Unsupported("Anthropic field".into()));
+    if let Some(key) = o.keys().find(|k| !allowed.contains(&k.as_str())) {
+        // Closed schema categories only, never an arbitrary business key.
+        let category = match key.as_str() {
+            "cache_creation" => "Anthropic cache_creation",
+            "output_tokens_details" => "Anthropic output_tokens_details",
+            "service_tier" => "Anthropic service_tier",
+            "inference_geo" => "Anthropic inference_geo",
+            "server_tool_use" => "Anthropic server_tool_use",
+            "container" => "Anthropic container",
+            "stop_details" => "Anthropic stop_details",
+            "input_transformations" => "Anthropic input_transformations",
+            _ => "Anthropic field",
+        };
+        return Err(CodecError::Unsupported(category.into()));
     }
     Ok(o)
 }

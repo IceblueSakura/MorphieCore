@@ -251,7 +251,6 @@ pub fn compile(
                         .as_ref()
                         .map(|o| o.as_str())
                         != Some(endpoint.provider.as_str())
-                    || endpoint.execution.streaming
                     || model.standard_context
                 {
                     return Err(TopologyError::ContractUnsatisfiable);

@@ -30,6 +30,8 @@ Custom/grammar 包装、namespace、server/program tools、媒体、redacted thi
 
 有限 Public Model 合同只可声明 profile 实际实现的语义，native replay 的 Provider scope 必须与固定 endpoint 一致；不发布空壳能力。[Attempt::native_messages](../../src/execution/attempt.rs)只在已有显式原请求上下文时接收有界 JSON 或 SSE，严格 EOF 后才 materialize，完成/取消后释放原请求。Gateway/binary 激活仍未接线；库绑定不等于指定目标可用。
 
+[Messages 库绑定](../../src/topology/catalog/messages.rs)以显式独立 topology 提供固定 operation、路径/认证、有限语义及执行预算，不进入默认 OpenAI topology 或启动模型列表，也不提供伪造的发布时间。所选绑定保留缺省 thinking，拒绝未验证的显式 reasoning 控制而不删字段换取成功；更广能力与模型资格必须另取当前证据。真实操作只通过[受控原生入口](../probes.md#native-messages-probe)。
+
 ### 原生 SSE 责任边界
 
 [MessageSseDecoder](../../src/protocol/anthropic/sse.rs)复用现有 framer，每次只消费一个 frame，保留有界最终 Message 状态而非帧日志。Opening、连续 index 的 block start/delta/stop、累计 message delta、message stop 与严格 EOF 分开检查；error、错序、重复 closure、缺终态或尾随业务事件均 poison 并释放状态，ping 只允许在 message stop 前。EOF 不补事件分隔符。

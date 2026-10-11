@@ -62,10 +62,9 @@ Go 的固定路径/认证依据归[原生来源](../references/agent-protocol-ad
 
 ### E. 显式目标绑定与受控原生验证
 
-- 绑定指定目标、固定 origin/path、有限能力和单来源凭据；保持现有 loader 与凭据域。
-- 按第 3 节提供显式 session 和请求头；不通过公共客户端字段临时拼凑来源。
-- 扩展现有受控 probe 的原生选择与 collector，复用账本、预算、源码指纹、脱敏及清理。
-- 保持 raw capture 关闭，不以临时直连脚本绕过守卫；原生绑定不宣称 Gateway/binary 已激活。
+- 复用 [固定 library binding](../../src/topology/catalog/messages.rs)、[受控 native 入口](../probes.md#native-messages-probe)与现有 loader/凭据域，不启用 public Gateway 或默认矩阵。
+- 先定所选 schema 的 inactive nullable 与非空报告边界；未知字段仍拒绝，缺 typed owner 时报告结构选项，不借 HTTP 成功删除事实。
+- 以有限矩阵闭合所选文本、工具反馈与 signature 的真实交付/续轮；保持 raw capture 关闭，首轮失败不发送依赖轮次。
 
 退出条件：文本、工具成功/错误反馈、所选 thinking/signature 的原生交付与回传有对应证据。未报告 signature 只表示该回传分支未覆盖；该门槛不是实际 pi/OpenCode 或标准 Responses 消费者验收。
 

@@ -584,6 +584,8 @@ mod capture_tests {
     }
 }
 
+#[path = "support/native_messages_probe.rs"]
+mod native_messages_probe;
 #[path = "support/probe_control.rs"]
 mod probe_control;
 
@@ -1356,6 +1358,13 @@ async fn main() {
     if std::env::var("MORPHIECORE_PROBE").as_deref() != Ok("1") {
         eprintln!("live probe is an explicit paid gate; set MORPHIECORE_PROBE=1 to run");
         std::process::exit(2);
+    }
+    if std::env::var("MORPHIECORE_PROBE_PROTOCOL").as_deref() == Ok("messages") {
+        if let Err(reason) = native_messages_probe::run().await {
+            eprintln!("Native probe stopped: {reason}");
+            std::process::exit(1);
+        }
+        return;
     }
     let only = selection(
         "MORPHIECORE_PROBE_MODEL",
