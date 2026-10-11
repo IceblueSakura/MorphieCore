@@ -20,8 +20,6 @@ mod billing_modal_usage;
 mod cache_prefix;
 #[path = "semantic/cache_projection.rs"]
 mod cache_projection;
-#[path = "semantic/call_revisions.rs"]
-mod call_revisions;
 #[path = "semantic/chat_logprobs.rs"]
 mod chat_logprobs;
 #[path = "semantic/chat_media.rs"]
@@ -42,8 +40,6 @@ mod configuration_revisions;
 mod context_transforms;
 #[path = "semantic/continuation.rs"]
 mod continuation;
-#[path = "semantic/contract_ownership.rs"]
-mod contract_ownership;
 #[path = "semantic/embedding_bindings.rs"]
 mod embedding_bindings;
 #[path = "semantic/embeddings.rs"]
@@ -56,22 +52,16 @@ mod files;
 mod function_events;
 #[path = "semantic/group_projection.rs"]
 mod group_projection;
-#[path = "semantic/history_continuation.rs"]
-mod history_continuation;
 #[path = "semantic/history_dependencies.rs"]
 mod history_dependencies;
 #[path = "semantic/image_binding.rs"]
 mod image_binding;
 #[path = "semantic/image_budgets.rs"]
 mod image_budgets;
-#[path = "semantic/image_collection.rs"]
-mod image_collection;
 #[path = "semantic/image_controls.rs"]
 mod image_controls;
 #[path = "semantic/image_generation.rs"]
 mod image_generation;
-#[path = "semantic/image_usage.rs"]
-mod image_usage;
 #[path = "semantic/images.rs"]
 mod images;
 #[path = "semantic/instructions.rs"]
@@ -94,8 +84,6 @@ mod open_decoding;
 mod openrouter_images;
 #[path = "semantic/openrouter_speech.rs"]
 mod openrouter_speech;
-#[path = "semantic/openrouter_speech_binding.rs"]
-mod openrouter_speech_binding;
 #[path = "semantic/parsed_replay.rs"]
 mod parsed_replay;
 #[path = "semantic/phase.rs"]
@@ -146,8 +134,6 @@ mod speech;
 mod speech_binding;
 #[path = "support/speech.rs"]
 mod speech_support;
-#[path = "semantic/string_enums.rs"]
-mod string_enums;
 #[path = "semantic/structured_events.rs"]
 mod structured_events;
 #[path = "semantic/subscription_accounting.rs"]

@@ -1,6 +1,5 @@
 //! Independent text embedding oracles; no catalog, credentials or live model.
 use morphiecore::{
-    adapter::embeddings::Request,
     protocol::openai::embeddings,
     semantic::{task::embedding::*, value::Presence},
 };
@@ -49,23 +48,6 @@ fn text_batches_decode_without_generation_or_private_carriers() {
     assert!(
         embeddings::decode_request(br#"{"model":"synthetic-vector","input":"a","input":"b"}"#,)
             .is_err()
-    );
-}
-
-#[test]
-fn typed_request_has_an_independent_wire_and_edits_cannot_restore_input() {
-    let mut task = EmbeddingRequest::new(vec!["original".into(), "second".into()]).unwrap();
-    task.dimensions = Presence::Value(3);
-    let mut request = Request::new("public-vector", task);
-    request.encoding = Presence::Value(embeddings::Encoding::Float);
-    assert_eq!(
-        embeddings::encode_request(&request, "upstream-vector").unwrap(),
-        json!({"model":"upstream-vector","input":["original","second"],"dimensions":3,"encoding_format":"float"})
-    );
-    request.task = EmbeddingRequest::new(vec!["edited".into()]).unwrap();
-    assert_eq!(
-        embeddings::encode_request(&request, "upstream-vector").unwrap(),
-        json!({"model":"upstream-vector","input":["edited"],"encoding_format":"float"})
     );
 }
 

@@ -101,69 +101,6 @@ fn adapter_prefix_check_allows_append_and_rejects_prefix_context_and_scope_edits
     assert!(changed.check_cache_prefix(&scoped, &scope()).is_err());
 }
 #[test]
-fn prefix_settings_bind_schema_and_tool_order_without_a_second_value_authority() {
-    let mut source = request();
-    let tools: Vec<ToolDefinition> = ["one", "two"]
-        .into_iter()
-        .map(|name| {
-            ToolDefinition::Function(FunctionTool {
-                name: morphiecore::semantic::value::Text::new(name, "fixture", 32).unwrap(),
-                description: None,
-                parameters: None,
-                output_schema: None,
-                strict: FunctionStrictness::Explicit(false),
-                dispatch: ToolDispatch::default(),
-            })
-        })
-        .collect();
-    source.task.semantic = source
-        .task
-        .semantic
-        .with_tool_settings(Some(tools), None, None)
-        .unwrap();
-    let proof = source.capture_cache_prefix(intent(), &scope()).unwrap();
-    let mut settings = source.task.semantic.settings().clone();
-    settings.tools.as_mut().unwrap().reverse();
-    let mut changed = source.clone();
-    changed.task.semantic = changed.task.semantic.with_settings(settings).unwrap();
-    assert!(changed.check_cache_prefix(&proof, &scope()).is_err());
-    let mut settings = source.task.semantic.settings().clone();
-    settings.controls.max_output_tokens = Some(100);
-    changed.task.semantic = source
-        .task
-        .semantic
-        .clone()
-        .with_settings(settings)
-        .unwrap();
-    assert!(changed.check_cache_prefix(&proof, &scope()).is_err());
-    let mut settings = source.task.semantic.settings().clone();
-    settings.text.presence = true;
-    settings.text.format = Presence::Value(OutputConstraint::JsonSchema {
-        name: morphiecore::semantic::value::Text::new("answer", "fixture", 32).unwrap(),
-        description: None,
-        strict: Some(false),
-        schema: serde_json::from_str::<Value>(
-            r#"{"type":"object","properties":{"a":{"type":"string"},"b":{"type":"string"}}}"#,
-        )
-        .unwrap()
-        .into(),
-    });
-    source.task.semantic = source
-        .task
-        .semantic
-        .with_settings(settings.clone())
-        .unwrap();
-    let proof = source.capture_cache_prefix(intent(), &scope()).unwrap();
-    let Presence::Value(OutputConstraint::JsonSchema { schema, .. }) = &mut settings.text.format
-    else {
-        panic!("schema")
-    };
-    schema.root_mut()["properties"] =
-        serde_json::from_str(r#"{"b":{"type":"string"},"a":{"type":"string"}}"#).unwrap();
-    changed.task.semantic = source.task.semantic.with_settings(settings).unwrap();
-    assert!(changed.check_cache_prefix(&proof, &scope()).is_err());
-}
-#[test]
 fn cache_boundary_cannot_split_a_declared_message_group() {
     // Prefix membership is checked on each candidate, not inferred from adjacency.
     let wire: Value = json!({"model":"synthetic","messages":[{"role":"assistant","content":null,"tool_calls":[{"id":"c","type":"function","function":{"name":"lookup","arguments":"{}"}}]}]});

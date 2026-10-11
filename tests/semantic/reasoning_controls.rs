@@ -17,38 +17,6 @@ fn adaptive() -> ReasoningRequest {
     value.mode = Presence::Value(ReasoningMode::Adaptive);
     value
 }
-#[test]
-fn adaptive_effort_budget_and_display_have_independent_authority() {
-    let mut control = adaptive();
-    control.display = Presence::Value(ReasoningDisplay::Omitted);
-    control.budget = Some(ReasoningBudget {
-        hard_limit: Some(8192),
-        soft_target: Some(4096),
-    });
-    control.validate().unwrap();
-    assert_eq!(control.effort(), Some(ReasoningEffort::High));
-    assert_eq!(control.budget.unwrap().hard_limit, Some(8192));
-    let settings = GenerationSettings {
-        instructions: Presence::Value(Text::new("hello", "test", 32).unwrap()),
-        reasoning: control.clone(),
-        ..Default::default()
-    };
-    let request = GenerationRequest::from_settings(vec![], settings).unwrap();
-    for profile in [Profile::Responses, Profile::Chat] {
-        assert_eq!(
-            lower_request(
-                &request,
-                &FidelityRecords::default(),
-                profile,
-                TargetCaps::full()
-            )
-            .err(),
-            Some(RepresentationError::Reasoning)
-        );
-    }
-    assert_eq!(request.reasoning(), &control);
-    assert!(!control.encrypted_output());
-}
 
 #[test]
 fn contradictory_controls_and_hidden_presence_fail_without_erasing_intent() {

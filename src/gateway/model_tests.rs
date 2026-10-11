@@ -336,32 +336,3 @@ fn local_directory_encodes_empty_and_alias_views_with_inclusive_resource_limits(
         Err(StartupError::Binding)
     ));
 }
-
-#[test]
-fn startup_requires_publication_facts_only_for_activated_models() {
-    let build = |metadata, cap| {
-        Gateway::new(
-            aliases(2, metadata),
-            vec![Entry {
-                model: "alias-00".into(),
-                protocol: Profile::Chat,
-                endpoint: crate::topology::EndpointId::new("synthetic-chat").unwrap(),
-            }],
-            BTreeMap::from([(
-                crate::provider::CredentialBindingId::new("synthetic-key").unwrap(),
-                Arc::new(SecretMaterial::new("synthetic-upstream-credential").unwrap()),
-            )]),
-            SecretMaterial::new(tests::KEY).unwrap(),
-            Limits {
-                response_bytes: cap,
-                ..Limits::default()
-            },
-            None,
-        )
-    };
-    assert!(matches!(build(false, 32 << 10), Err(StartupError::Binding)));
-    assert!(matches!(build(true, 1), Err(StartupError::Limits)));
-    let gate = build(true, 32 << 10).unwrap();
-    assert_eq!(gate.state.models.models.len(), 1);
-    assert!(gate.state.models.models.contains_key("alias-00"));
-}

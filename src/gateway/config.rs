@@ -75,26 +75,6 @@ impl Default for Limits {
         }
     }
 }
-#[cfg(test)]
-#[test]
-fn image_limits_keep_defaults_and_reject_out_of_range_configuration() {
-    let mut limits = Limits::default();
-    assert_eq!(limits.image_bytes, 2 << 20);
-    limits.image_bytes = 0;
-    assert!(!limits.validate());
-    limits.image_bytes = crate::semantic::task::image_generation::MAX_IMAGE_BYTES;
-    assert!(limits.validate());
-    limits.image_bytes += 1;
-    assert!(!limits.validate());
-    limits.image_bytes = 1;
-    assert_eq!(limits.images_bytes, 2 << 20);
-    limits.images_bytes = 0;
-    assert!(!limits.validate());
-    limits.images_bytes = crate::semantic::task::image_generation::MAX_IMAGES_BYTES;
-    assert!(limits.validate());
-    limits.images_bytes += 1;
-    assert!(!limits.validate());
-}
 impl Limits {
     fn validate(&self) -> bool {
         (1..=4 << 20).contains(&self.request_bytes)

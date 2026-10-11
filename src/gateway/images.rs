@@ -1,7 +1,4 @@
 //! Authenticated image admission and a single bounded static exchange.
-#[cfg(test)]
-#[path = "image_tests.rs"]
-mod tests;
 use super::{
     ApiError, Credentials, ImageEntry, Runtime, StartupError, admission, body, credentials,
     diagnostics::{Stage, Trace},

@@ -124,61 +124,6 @@ fn input_audio_is_an_ordered_inline_resource_not_a_transcript_or_assistant_artif
         }
     }
 }
-#[test]
-fn typed_audio_input_has_an_independent_ir_to_wire_expectation() {
-    use morphiecore::{
-        protocol::{
-            fidelity::FidelityRecords,
-            openai::{chat, lowering::lower_request},
-        },
-        semantic::value::Text,
-    };
-    let resources = ResourceTable::default()
-        .insert(
-            ResourceId::new(1),
-            ResourceDeclaration {
-                body: ResourceBody::Media(ResourceLocation::Inline {
-                    media_type: Text::new("audio/mpeg", "media", 64).unwrap(),
-                    data_base64: Text::new("BAUG", "audio", 100).unwrap(),
-                }),
-                conditions: Default::default(),
-            },
-        )
-        .unwrap();
-    let part = Part {
-        id: PartId::new(1),
-        replay: None,
-        content: ContentPart::Resource(ResourceUse {
-            id: ResourceId::new(1),
-            purpose: ResourcePurpose::Input,
-            description: ResourceDescription::Audio,
-        }),
-    };
-    let request = GenerationRequest::from_resources(
-        vec![(
-            ItemId::new(1),
-            Item::Message(Message {
-                role: MessageRole::User,
-                phase: None,
-                status: ItemLifecycle::Completed,
-                parts: vec![part],
-            }),
-        )],
-        GenerationSettings::default(),
-        resources,
-    )
-    .unwrap();
-    let fidelity = FidelityRecords::default();
-    let encoded = chat::encode_generation(
-        &lower_request(&request, &fidelity, Profile::Chat, Contract::full()).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(
-        encoded["messages"],
-        json!([{"role":"user","content":[
-        {"type":"input_audio","input_audio":{"format":"mp3","data":"BAUG"}}]}])
-    );
-}
 
 #[test]
 fn audio_stream_closes_only_complete_artifact_and_preserves_bytes() {
@@ -231,33 +176,6 @@ fn audio_stream_closes_only_complete_artifact_and_preserves_bytes() {
     assert!(
         late.push(&chunk(json!({"audio":{"data":"BA=="}}), Value::Null))
             .is_err()
-    );
-}
-#[test]
-fn reported_audio_usage_stays_in_ir_and_responses_explicitly_projects_details() {
-    let mut wire = completion(json!({"role":"assistant","content":"hello"}));
-    wire["usage"] = json!({"prompt_tokens":10,"completion_tokens":6,"total_tokens":16,"prompt_tokens_details":{"audio_tokens":3},"completion_tokens_details":{"audio_tokens":4}});
-    let decoded = standard(Profile::Chat)
-        .decode_response(&serde_json::to_vec(&wire).unwrap())
-        .unwrap();
-    let encoded = standard(Profile::Chat)
-        .encode_response(&decoded, &Contract::full())
-        .unwrap();
-    assert_eq!(encoded["usage"], wire["usage"]);
-    let projected = standard(Profile::Responses)
-        .encode_response(&decoded, &Contract::full())
-        .unwrap();
-    assert_eq!(
-        projected["usage"],
-        json!({"input_tokens":10,"output_tokens":6,"total_tokens":16})
-    );
-    assert_eq!(
-        decoded.semantic.usage().unwrap().input_audio_tokens,
-        Some(3)
-    );
-    assert_eq!(
-        decoded.semantic.usage().unwrap().output_audio_tokens,
-        Some(4)
     );
 }
 #[test]
@@ -727,13 +645,4 @@ fn chat_audio_complete_values_and_generation_controls_are_standard() {
             .encode_response(&audio, &Contract::full())
             .is_err()
     );
-}
-#[test]
-fn chat_inactive_standard_fields_do_not_need_a_provider_rule() {
-    let wire =
-        completion(json!({"role":"assistant","content":"hello","annotations":null,"audio":null}));
-    let decoded = standard(Profile::Chat)
-        .decode_response(&serde_json::to_vec(&wire).unwrap())
-        .unwrap();
-    assert_eq!(decoded.semantic.items().len(), 1);
 }

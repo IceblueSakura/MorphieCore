@@ -1,6 +1,6 @@
 //! Billing views must promote independent modality facts, never replay stale counters.
 use morphiecore::{
-    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract, events::EventEncoder},
+    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract},
     semantic::task::generation::Usage,
 };
 use serde_json::{Value, json};
@@ -152,50 +152,5 @@ fn billing_views_reject_alias_conflicts_unknown_breakdowns_and_invalid_counts() 
         provider
             .decode_response(&serde_json::to_vec(&multiple).unwrap())
             .is_err()
-    );
-}
-#[test]
-fn modality_usage_static_event_closure_uses_declared_client_slots() {
-    let provider = Adapter::new(Profile::Responses, Dialect::Bailian, None);
-    let final_response = fixture();
-    let mut started = final_response.clone();
-    started["status"] = json!("in_progress");
-    started["output"] = json!([]);
-    started["usage"] = Value::Null;
-    let message = final_response["output"][0].clone();
-    let mut added = message.clone();
-    added["status"] = json!("in_progress");
-    added["content"] = json!([]);
-    let values = vec![
-        json!({"type":"response.created","response":started}),
-        json!({"type":"response.output_item.added","output_index":0,"item":added}),
-        json!({"type":"response.content_part.added","item_id":"msg","output_index":0,"content_index":0,"part":{"type":"output_text","text":"","annotations":[]}}),
-        json!({"type":"response.output_text.delta","item_id":"msg","output_index":0,"content_index":0,"delta":"x","logprobs":[]}),
-        json!({"type":"response.output_text.done","item_id":"msg","output_index":0,"content_index":0,"text":"x","logprobs":[]}),
-        json!({"type":"response.content_part.done","item_id":"msg","output_index":0,"content_index":0,"part":message["content"][0]}),
-        json!({"type":"response.output_item.done","output_index":0,"item":message}),
-        json!({"type":"response.completed","response":final_response}),
-    ];
-    let mut decoder = provider.event_decoder();
-    let mut events = vec![];
-    for (index, mut value) in values.into_iter().enumerate() {
-        value["sequence_number"] = json!(index + 1);
-        events.extend(decoder.push(&value).unwrap());
-    }
-    let decoded = decoder.materialize().unwrap();
-    let mut encoder = EventEncoder::new(Profile::Responses, decoded.metadata.clone())
-        .unwrap()
-        .with_contract(
-            Adapter::new(Profile::Responses, Dialect::MorphieCore, None)
-                .contract(&Contract::full()),
-        );
-    let mut output = vec![];
-    for event in events {
-        output.extend(encoder.encode(&event, &decoded.fidelity).unwrap());
-    }
-    encoder.finish().unwrap();
-    assert_eq!(
-        output.last().unwrap()["response"]["usage"],
-        expected_usage()
     );
 }

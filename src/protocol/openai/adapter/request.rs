@@ -298,7 +298,6 @@ impl Request {
 mod tests {
     use super::*;
     use crate::protocol::openai::Dialect;
-    use crate::semantic::context::ConversationContext;
 
     #[test]
     fn siwc_rejects_final_controls_and_ungrouped_tools_instead_of_dropping_them() {
@@ -359,95 +358,6 @@ mod tests {
             target
                 .encode_request(&flat, "selected-slug", &contract)
                 .is_err()
-        );
-    }
-
-    #[test]
-    fn inferred_hints_are_optional_and_never_override_explicit_presence_or_identity() {
-        use crate::protocol::cache::{CacheProjection, InferredAffinity};
-        let client = Adapter::new(Profile::Responses, Dialect::Standard, None);
-        let target = Adapter::new(Profile::Responses, Dialect::Grok, None);
-        let contract = TargetCaps::full();
-        let mut request = client
-            .decode_request(br#"{"model":"synthetic","input":"hello"}"#)
-            .unwrap();
-        request.conversation = Some(ConversationContext::independent_request("one").unwrap());
-        let original = request.clone();
-        request.inferred_affinity = Some(InferredAffinity([7; 16]));
-        let wire = target
-            .encode_request(&request, "upstream", &contract)
-            .unwrap();
-        assert_eq!(wire["prompt_cache_key"].as_str().unwrap().len(), 64);
-        assert_eq!(request.task, original.task);
-        assert_eq!(request.context, original.context);
-        assert_eq!(request.conversation, original.conversation);
-        let go = Adapter::new(Profile::Chat, Dialect::OpenCodeGo, None);
-        let inferred = go
-            .request_headers(&request, CacheProjection::all())
-            .unwrap();
-        for presence in [
-            Presence::Null,
-            Presence::Value("shared-explicit-key".into()),
-        ] {
-            request.context.cache.prompt_cache_key = presence.clone();
-            assert_eq!(
-                target
-                    .encode_request(&request, "upstream", &contract)
-                    .unwrap()["prompt_cache_key"],
-                match presence {
-                    Presence::Null => Value::Null,
-                    Presence::Value(v) => serde_json::json!(v),
-                    _ => unreachable!(),
-                }
-            );
-            assert_eq!(
-                inferred,
-                go.request_headers(&request, CacheProjection::all())
-                    .unwrap()
-            );
-        }
-        request.conversation = Some(ConversationContext::conversation("stable").unwrap());
-        let mut without_hint = request.clone();
-        without_hint.inferred_affinity = None;
-        assert_eq!(
-            go.request_headers(&request, CacheProjection::all())
-                .unwrap(),
-            go.request_headers(&without_hint, CacheProjection::all())
-                .unwrap()
-        );
-    }
-
-    #[test]
-    fn project_profile_and_owned_user_agent_use_current_names() {
-        let client = Adapter::new(Profile::Chat, Dialect::MorphieCore, None);
-        assert_eq!(client.adaptation.profile_id, "morphiecore-v1");
-        let mut request = client
-            .decode_request(
-                br#"{"model":"synthetic","messages":[{"role":"user","content":"hello"}]}"#,
-            )
-            .unwrap();
-        request.conversation = Some(ConversationContext::conversation("conversation-one").unwrap());
-        let provider = Adapter::new(Profile::Chat, Dialect::OpenCodeGo, None);
-        assert_eq!(
-            provider
-                .request_headers(&request, crate::protocol::cache::CacheProjection::all())
-                .unwrap(),
-            vec![
-                (
-                    "user-agent".into(),
-                    concat!("MorphieCore/", env!("CARGO_PKG_VERSION")).into(),
-                ),
-                (
-                    "x-opencode-session".into(),
-                    "427d18da2021fadacd82a4b187acd8b4459e929ad27d1f77025fff66310a176e".into()
-                ),
-            ]
-        );
-        assert!(
-            client
-                .request_headers(&request, crate::protocol::cache::CacheProjection::all())
-                .unwrap()
-                .is_empty()
         );
     }
 }

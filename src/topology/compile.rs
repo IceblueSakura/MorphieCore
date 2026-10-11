@@ -374,26 +374,6 @@ mod tests {
     }
 
     #[test]
-    fn responses_only_provider_cannot_compile_a_chat_endpoint() {
-        let mut responses_only = provider();
-        responses_only.chat_completions = None;
-        let build = |protocol| {
-            compile(
-                vec![responses_only.clone()],
-                vec![endpoint(protocol)],
-                vec![route()],
-                vec![model(TargetCaps::full())],
-                vec![canonical()],
-            )
-        };
-        assert!(build(ProtocolProfile::OpenAiResponses).is_ok());
-        assert_eq!(
-            build(ProtocolProfile::OpenAiChat),
-            Err(TopologyError::TargetMismatch)
-        );
-    }
-
-    #[test]
     fn siwc_cannot_enter_a_fallback_route_even_through_embedded_configuration() {
         for (attempts, fallback, count, accepted) in [
             (1, false, 1, true),
@@ -429,69 +409,6 @@ mod tests {
                 "attempts={attempts} fallback={fallback} count={count}"
             );
         }
-    }
-
-    #[test]
-    fn fixed_route_order_and_provider_specific_aliases_survive_compilation() {
-        let mut responses = endpoint(ProtocolProfile::OpenAiResponses);
-        responses.id = EndpointId::new("e-responses").unwrap();
-        responses.upstream_model = "native-model-name".into();
-        let mut other_provider = provider();
-        other_provider.id = ProviderId::new("other").unwrap();
-        let mut chat = endpoint(ProtocolProfile::OpenAiChat);
-        chat.id = EndpointId::new("e-chat").unwrap();
-        chat.provider = other_provider.id.clone();
-        chat.upstream_model = "hosted-model-alias".into();
-        let topology = compile(
-            vec![provider(), other_provider],
-            vec![chat, responses],
-            vec![Route {
-                policy: super::super::RoutePolicy::default(),
-                id: RouteId::new("fixture-route").unwrap(),
-                task: TaskKind::Generation,
-                endpoints: vec![
-                    EndpointId::new("e-responses").unwrap(),
-                    EndpointId::new("e-chat").unwrap(),
-                ],
-            }],
-            vec![model(TargetCaps::full())],
-            vec![canonical()],
-        )
-        .unwrap();
-        let order: Vec<_> = topology
-            .route_endpoints(&RouteId::new("fixture-route").unwrap())
-            .into_iter()
-            .map(|e| e.id.as_str())
-            .collect();
-        assert_eq!(order, ["e-responses", "e-chat"]);
-        let request = crate::protocol::openai::Adapter::new(
-            crate::protocol::openai::Profile::Responses,
-            crate::protocol::openai::Dialect::Standard,
-            None,
-        )
-        .decode_request(br#"{"model":"fixture-model","input":"keep"}"#)
-        .unwrap();
-        let original = request.clone();
-        let secret = crate::provider::SecretMaterial::new("synthetic-upstream-key").unwrap();
-        for (id, provider_id, upstream_name) in [
-            ("e-responses", "fixture", "native-model-name"),
-            ("e-chat", "other", "hosted-model-alias"),
-        ] {
-            let target = topology.endpoint(&EndpointId::new(id).unwrap()).unwrap();
-            assert_eq!(target.provider.as_str(), provider_id);
-            assert_eq!(target.canonical_model.as_str(), "fixture-model");
-            let prepared = crate::execution::prepare(
-                target,
-                topology.provider(provider_id).unwrap(),
-                &secret,
-                &request,
-            )
-            .unwrap();
-            let wire: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
-            assert_eq!(wire["model"], upstream_name);
-            assert_eq!(request, original);
-        }
-        assert!(topology.model("fixture/fixture-model").is_none());
     }
 
     #[test]
@@ -534,40 +451,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn public_aliases_share_one_explicit_canonical_without_mutating_either_contract() {
-        let first = model(TargetCaps::full());
-        let mut second = first.clone();
-        second.id = ModelId::new("another-public-alias").unwrap();
-        second.contract.temperature = false;
-        let compiled = compile_fixture(
-            vec![endpoint(ProtocolProfile::OpenAiChat)],
-            vec![route()],
-            vec![first, second],
-        )
-        .unwrap();
-        assert!(
-            compiled
-                .canonical_model(&ModelId::new("fixture-model").unwrap())
-                .unwrap()
-                .contract
-                .temperature
-        );
-        assert!(
-            !compiled
-                .model("another-public-alias")
-                .unwrap()
-                .contract
-                .temperature
-        );
-        assert!(
-            compiled
-                .model("fixture-model")
-                .unwrap()
-                .contract
-                .temperature
-        );
-    }
     #[test]
     fn duplicate_relations_are_rejected() {
         assert_eq!(

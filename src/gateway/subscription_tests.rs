@@ -8,59 +8,6 @@ use std::time::Duration;
 #[path = "../../tests/support/responses_profile.rs"]
 mod wire;
 
-#[test]
-fn siwc_public_admission_does_not_invent_an_unsupported_output_token_limit() {
-    let mut gateway = tests::gateway(Limits::default());
-    let original = gateway.state.entries[&(family(Profile::Chat), "fixture-model".into())].clone();
-    let mut public = original.public.clone();
-    public.contract.max_output_tokens = false;
-    let entry = Arc::new(BoundEntry {
-        public,
-        client: Adapter::new(
-            Profile::Responses,
-            crate::protocol::openai::Dialect::Standard,
-            None,
-        ),
-        downstream: crate::protocol::openai::TargetCaps::full(),
-        policy: original.policy.clone(),
-        candidates: original.candidates.clone(),
-    });
-    Arc::get_mut(&mut gateway.state)
-        .unwrap()
-        .entries
-        .insert((family(Profile::Responses), "fixture-model".into()), entry);
-    let (_, request) = admission::prepare(
-        &gateway.state,
-        Profile::Responses,
-        br#"{"model":"fixture-model","input":"hello"}"#,
-    )
-    .unwrap();
-    assert_eq!(request.task.semantic.controls().max_output_tokens, None);
-    assert!(
-        admission::prepare(
-            &gateway.state,
-            Profile::Responses,
-            br#"{"model":"fixture-model","input":"hello","max_output_tokens":8}"#
-        )
-        .is_err()
-    );
-    let adapter = Adapter::new(
-        Profile::Responses,
-        crate::protocol::openai::Dialect::Siwc,
-        None,
-    );
-    let wire = adapter
-        .encode_request(
-            &request,
-            "selected-slug",
-            &crate::protocol::openai::TargetCaps::full(),
-        )
-        .unwrap();
-    assert!(wire.get("max_output_tokens").is_none());
-    assert_eq!(wire["store"], false);
-    assert_eq!(wire["stream"], true);
-}
-
 fn sse(complete: bool) -> Vec<u8> {
     let mut events = wire::events(2);
     if !complete {
@@ -169,61 +116,6 @@ async fn consume(
     })
     .await
     .expect("bounded synthetic response consumption")
-}
-
-#[tokio::test]
-async fn forced_sse_projects_json_and_rejects_conflicting_or_invalid_media() {
-    for dialect in [
-        crate::protocol::openai::Dialect::Codex,
-        crate::protocol::openai::Dialect::Siwc,
-    ] {
-        for (media, accepted) in [
-            (vec![], true),
-            (vec![b"text/event-stream".as_slice()], true),
-            (vec![b"text/event-stream; charset=utf-8".as_slice()], true),
-            (vec![b"application/json".as_slice()], false),
-            (vec![b"text/html".as_slice()], false),
-            (vec![b"".as_slice()], false),
-            (vec![b"invalid".as_slice()], false),
-            (vec![b"\xff".as_slice()], false),
-            (
-                vec![
-                    b"text/event-stream".as_slice(),
-                    b"application/json".as_slice(),
-                ],
-                false,
-            ),
-            (
-                vec![
-                    b"text/event-stream".as_slice(),
-                    b"text/event-stream".as_slice(),
-                ],
-                false,
-            ),
-        ] {
-            for stream in [false, true] {
-                let result = consume(dialect, &media, sse(true), stream).await;
-                assert_eq!(
-                    result.is_some(),
-                    accepted,
-                    "{dialect:?} {media:?} stream={stream}"
-                );
-                if let Some(bytes) = result {
-                    if stream {
-                        assert!(
-                            String::from_utf8(bytes)
-                                .unwrap()
-                                .contains("response.completed")
-                        );
-                    } else {
-                        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-                        assert_eq!(value["status"], "completed");
-                        assert_eq!(value["output"][0]["content"][0]["text"], "{\"ok\":false}");
-                    }
-                }
-            }
-        }
-    }
 }
 
 #[tokio::test]

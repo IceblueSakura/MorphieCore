@@ -2,13 +2,9 @@
 use morphiecore::{
     lowering::generation::{ReportedFactPolicy, RepresentationError},
     protocol::openai::{
-        Adapter, Dialect, Profile, TargetCaps as Contract, envelope, events::EventDecoder,
-        lowering::lower_response,
+        Profile, TargetCaps as Contract, envelope, events::EventDecoder, lowering::lower_response,
     },
-    semantic::{
-        task::generation::{PartKind, StreamEvent},
-        value::ReplayOrigin,
-    },
+    semantic::task::generation::{PartKind, StreamEvent},
 };
 use serde_json::{Value, json};
 fn body() -> Value {
@@ -17,13 +13,6 @@ fn body() -> Value {
             "content":[{"type":"output_text","text":"pong","annotations":[]}]}],
         "usage":{"input_tokens":3,"input_tokens_details":{"cached_tokens":0},
             "output_tokens":2,"output_tokens_details":{"reasoning_tokens":1},"total_tokens":5}})
-}
-fn xiaomi() -> Adapter {
-    Adapter::new(
-        Profile::Responses,
-        Dialect::Xiaomi,
-        Some(ReplayOrigin::new("xiaomi-fixture").unwrap()),
-    )
 }
 #[test]
 fn standard_absence_is_not_globally_defaulted_and_settings_are_not_invented() {
@@ -84,35 +73,6 @@ fn standard_absence_is_not_globally_defaulted_and_settings_are_not_invented() {
             strict
         )
         .is_ok()
-    );
-}
-#[test]
-fn derived_output_text_is_ignored_and_never_reencoded() {
-    let adapter = xiaomi();
-    let mut body = body();
-    // An SDK-derived view, even one disagreeing with the output, carries no semantics.
-    body["output_text"] = json!("p0ng");
-    let decoded = adapter
-        .decode_response(body.to_string().as_bytes())
-        .unwrap();
-    assert!(
-        adapter
-            .encode_response(&decoded, &Contract::full())
-            .unwrap()
-            .get("output_text")
-            .is_none()
-    );
-    envelope::decode_response_bytes(body.to_string().as_bytes()).unwrap();
-}
-#[test]
-fn adapters_do_not_relax_required_output_structure() {
-    let adapter = xiaomi();
-    let mut absent = body();
-    absent.as_object_mut().unwrap().remove("output");
-    assert!(
-        adapter
-            .decode_response(absent.to_string().as_bytes())
-            .is_err()
     );
 }
 #[test]

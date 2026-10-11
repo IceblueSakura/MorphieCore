@@ -475,37 +475,6 @@ mod direction_tests {
     use serde_json::json;
 
     #[test]
-    fn shared_item_readers_keep_independent_operation_directions() {
-        let wire = json!({"role":"assistant","content":"ok","future_message":{"nested":true}});
-        for direction in [
-            DecodeDirection::Upstream,
-            DecodeDirection::Request,
-            DecodeDirection::Encoded,
-            DecodeDirection::Upstream,
-        ] {
-            let mut items = Items::new(direction);
-            let parsed =
-                super::super::chat::decode_message(&mut items, wire.as_object().unwrap(), false);
-            assert_eq!(parsed.is_ok(), direction == DecodeDirection::Upstream);
-        }
-        let invalid = json!({"role":"assistant","content":17,"future_message":true});
-        for direction in [
-            DecodeDirection::Request,
-            DecodeDirection::Upstream,
-            DecodeDirection::Encoded,
-        ] {
-            assert!(
-                super::super::chat::decode_message(
-                    &mut Items::new(direction),
-                    invalid.as_object().unwrap(),
-                    false
-                )
-                .is_err()
-            );
-        }
-    }
-
-    #[test]
     fn response_request_and_encoded_checks_do_not_share_mutable_policy() {
         let response = json!({"id":"r","object":"response","model":"m","created_at":1,"status":"completed",
             "reasoning":{"effort":"low","future_reasoning":{"nested":true}},

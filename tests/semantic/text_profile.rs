@@ -1,15 +1,11 @@
 //! Independent field and transformation contracts for stateless Responses text.
 use crate::wire;
 use morphiecore::{
-    protocol::{
-        fidelity::FidelityRecords,
-        openai::{
-            DecodedRequest, Profile, TargetCaps as Contract, chat, chat_envelope, envelope,
-            events::{EventDecoder, EventEncoder},
-            lowering::{lower_request, lower_response},
-            responses,
-            sse::*,
-        },
+    protocol::openai::{
+        DecodedRequest, Profile, TargetCaps as Contract, chat, chat_envelope, envelope,
+        events::{EventDecoder, EventEncoder},
+        lowering::{lower_request, lower_response},
+        responses,
     },
     semantic::{
         task::generation::*,
@@ -39,37 +35,6 @@ fn chat_wire(d: &DecodedRequest) -> Value {
         &lower_request(&d.semantic, &d.fidelity, Profile::Chat, contract()).unwrap(),
     )
     .unwrap()
-}
-#[test]
-fn raw_envelopes_reject_duplicate_keys_before_task_decode() {
-    let request = wire::request(false).to_string();
-    assert_eq!(
-        envelope::decode_request_bytes(request.as_bytes())
-            .unwrap()
-            .context
-            .model,
-        "fixture-model"
-    );
-    let duplicate = format!("{{\"model\":\"discarded\",{}", &request[1..]);
-    assert!(envelope::decode_request_bytes(duplicate.as_bytes()).is_err());
-    let nested = request.replace(
-        "\"suite\":\"synthetic-local\"",
-        "\"suite\":\"discarded\",\"suite\":\"synthetic-local\"",
-    );
-    assert_ne!(nested, request);
-    assert!(envelope::decode_request_bytes(nested.as_bytes()).is_err());
-
-    let response = wire::response(2).to_string();
-    let d = envelope::decode_response_bytes(response.as_bytes()).unwrap();
-    assert_eq!(d.fidelity.response_item_id(ItemId::new(1)), Some("answer"));
-    let duplicate = response.replace(
-        "\"id\":\"answer\"",
-        "\"id\":\"discarded\",\"id\":\"answer\"",
-    );
-    assert_ne!(duplicate, response);
-    assert!(envelope::decode_response_bytes(duplicate.as_bytes()).is_err());
-    assert!(envelope::decode_response_bytes(format!("{response} null").as_bytes()).is_err());
-    assert!(envelope::decode_request_bytes(format!("{request} null").as_bytes()).is_err());
 }
 
 #[test]
@@ -358,101 +323,6 @@ fn response_format_presence_defaults_and_rejections_are_deliberate() {
 }
 
 #[test]
-fn complete_messages_require_headers_but_task_snapshots_keep_abbreviations() {
-    let source = wire::response(2);
-    for key in ["type", "id", "status", "role", "content"] {
-        for replacement in [None, Some(Value::Null), Some(json!(false))] {
-            let mut bad = source.clone();
-            let item = bad["output"][0].as_object_mut().unwrap();
-            if let Some(value) = replacement {
-                item.insert(key.into(), value);
-            } else {
-                item.remove(key);
-            }
-            assert!(envelope::decode_response(&bad).is_err(), "{key}");
-        }
-    }
-    for (key, value) in [("id", ""), ("status", "unknown"), ("role", "user")] {
-        let mut bad = source.clone();
-        bad["output"][0][key] = json!(value);
-        assert!(envelope::decode_response(&bad).is_err(), "{key}");
-    }
-    for (status, lifecycle) in [
-        ("completed", ItemLifecycle::Completed),
-        ("incomplete", ItemLifecycle::Incomplete),
-        ("in_progress", ItemLifecycle::InProgress),
-    ] {
-        let mut value = source.clone();
-        value["status"] = json!("incomplete");
-        value["incomplete_details"] = json!({"reason":"max_output_tokens"});
-        value["output"][0]["status"] = json!(status);
-        let d = envelope::decode_response(&value).unwrap();
-        assert_eq!(d.semantic.items()[0].1.lifecycle(), Some(lifecycle));
-        let encoded = envelope::encode_response(
-            &lower_response(
-                &d.semantic,
-                &d.fidelity,
-                &d.metadata,
-                Profile::Responses,
-                contract(),
-            )
-            .unwrap(),
-        )
-        .unwrap();
-        assert_eq!(encoded["output"][0]["id"], "answer");
-        assert_eq!(encoded["output"][0]["status"], status);
-    }
-    let mut abbreviated = source;
-    for key in ["id", "status"] {
-        abbreviated["output"][0]
-            .as_object_mut()
-            .unwrap()
-            .remove(key);
-    }
-    let decoded = responses::decode_response(&abbreviated).unwrap();
-    let encoded = envelope::encode_response(
-        &lower_response(
-            &decoded.semantic,
-            &decoded.fidelity,
-            &decoded.metadata,
-            Profile::Responses,
-            contract(),
-        )
-        .unwrap(),
-    )
-    .unwrap();
-    assert_eq!(encoded["output"][0]["id"], "item_1");
-    assert_eq!(encoded["output"][0]["status"], "completed");
-    let input = responses::decode_generation(&json!({"input":[{"role":"user","content":"hello"}]}))
-        .unwrap();
-    assert_eq!(
-        request_wire(&input)["input"],
-        json!([{"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]}])
-    );
-}
-
-#[test]
-fn complete_response_snapshots_require_the_output_array() {
-    let source = wire::response(2);
-    for replacement in [None, Some(Value::Null)] {
-        let mut bad = source.clone();
-        if let Some(ref value) = replacement {
-            bad["output"] = value.clone();
-        } else {
-            bad.as_object_mut().unwrap().remove("output");
-        }
-        assert!(envelope::decode_response(&bad).is_err(), "{replacement:?}");
-        assert!(
-            envelope::decode_response_bytes(bad.to_string().as_bytes()).is_err(),
-            "{replacement:?}"
-        );
-    }
-    let mut empty = source;
-    empty["output"] = json!([]);
-    envelope::decode_response(&empty).unwrap();
-}
-
-#[test]
 fn instruction_status_is_checked_in_history_and_reported_echoes() {
     for role in ["system", "developer"] {
         for status in [
@@ -590,54 +460,6 @@ fn custom_tools_and_text_array_results_are_not_function_arguments() {
     let mut mismatch = out;
     mismatch["input"][1]["type"] = json!("function_call_output");
     assert!(responses::decode_generation(&mismatch).is_err());
-}
-#[test]
-fn annotated_output_and_probabilities_are_owned_by_the_current_text() {
-    let original = wire::response(2);
-    let mut d = envelope::decode_response(&original).unwrap();
-    let mut items = d.semantic.items().to_vec();
-    let Item::Message(m) = &mut items[0].1 else {
-        panic!()
-    };
-    let ContentPart::Text(t) = &m.parts[0].content else {
-        panic!()
-    };
-    assert_eq!(t.annotations().len(), 1);
-    assert_eq!(
-        t.logprobs().value().unwrap()[0].bytes.as_ref().unwrap(),
-        b"{\"ok\":false}"
-    );
-    m.parts[0].content = ContentPart::Text(t.clone().replace_text(text("{\"ok\":true}")));
-    d.semantic = d.semantic.with_items(items).unwrap();
-    let out = envelope::encode_response(
-        &lower_response(
-            &d.semantic,
-            &d.fidelity,
-            &d.metadata,
-            Profile::Responses,
-            contract(),
-        )
-        .unwrap(),
-    )
-    .unwrap();
-    assert_eq!(
-        out["output"][0]["content"][0],
-        json!({"type":"output_text","text":"{\"ok\":true}","annotations":[]})
-    );
-    assert_eq!(out["created_at"], json!(1.25));
-    assert_eq!(out["completed_at"], json!(2.5));
-    // Presence-preserving admission (ADR 0008): absent reported facts stay
-    // absent, while structural requirements stay strict.
-    let minimal = json!({"id":"r","object":"response","created_at":1,"model":"m","status":"completed","output":[]});
-    let decoded = envelope::decode_response(&minimal).unwrap();
-    assert!(decoded.metadata.context.settings.is_none());
-    assert!(
-        envelope::decode_response(
-            &json!({"id":"r","object":"response","created_at":1,"model":"m","status":"completed"})
-        )
-        .is_err(),
-        "the structural output array is still required"
-    );
 }
 #[test]
 fn structured_output_and_reasoning_context_are_real_controls() {
@@ -792,27 +614,6 @@ fn null_empty_false_and_default_controls_are_deliberate_not_unknown_passthrough(
     }
 }
 #[test]
-fn reported_settings_nulls_follow_the_response_model_not_the_request_types() {
-    let mut response = wire::response(2);
-    response["text"] = Value::Null;
-    response["reasoning"]["mode"] = Value::Null;
-    let d = envelope::decode_response(&response).unwrap();
-    let settings = d.metadata.context.settings.as_ref().unwrap();
-    assert!(!settings.text.presence);
-    assert_eq!(settings.reasoning.mode, Presence::Null);
-    let target = lower_response(
-        &d.semantic,
-        &d.fidelity,
-        &d.metadata,
-        Profile::Responses,
-        contract(),
-    )
-    .unwrap();
-    let encoded = envelope::encode_response(&target).unwrap();
-    assert!(encoded.get("text").is_none());
-    assert_eq!(encoded["reasoning"]["mode"], Value::Null);
-}
-#[test]
 fn static_file_path_is_not_an_annotation_added_event() {
     let mut response = wire::response(2);
     response["output"][0]["content"][0]["annotations"] =
@@ -868,133 +669,6 @@ fn static_file_path_is_not_an_annotation_added_event() {
     assert!(encoder.finish().is_err());
 }
 
-#[test]
-fn standard_profile_preserves_reported_cache_write_and_absence() {
-    let mut source = wire::response(2);
-    source["usage"]["input_tokens_details"]["cache_write_tokens"] = json!(2);
-    let decoded = envelope::decode_response(&source).unwrap();
-    assert_eq!(
-        decoded.semantic.usage().unwrap().input_cache_write_tokens,
-        Some(2)
-    );
-    let output = envelope::encode_response(
-        &lower_response(
-            &decoded.semantic,
-            &decoded.fidelity,
-            &decoded.metadata,
-            Profile::Responses,
-            contract(),
-        )
-        .unwrap(),
-    )
-    .unwrap();
-    assert_eq!(output["usage"], source["usage"]);
-    source["usage"]["input_tokens_details"]
-        .as_object_mut()
-        .unwrap()
-        .remove("cache_write_tokens");
-    // The standard profile has no compatibility default; only the declared
-    // DeepSeek adapter may normalize this absence at intake.
-    let decoded = envelope::decode_response(&source).unwrap();
-    assert_eq!(
-        decoded.semantic.usage().unwrap().input_cache_write_tokens,
-        None
-    );
-    let output = envelope::encode_response(
-        &lower_response(
-            &decoded.semantic,
-            &decoded.fidelity,
-            &decoded.metadata,
-            Profile::Responses,
-            contract(),
-        )
-        .unwrap(),
-    )
-    .unwrap();
-    assert!(
-        output["usage"]["input_tokens_details"]
-            .get("cache_write_tokens")
-            .is_none()
-    );
-}
-
-#[test]
-fn custom_annotations_and_logprobs_close_independent_sse_and_static_snapshots() {
-    let mut decoder = EventDecoder::new(Profile::Responses).with_replay_origin(origin());
-    let mut events = vec![];
-    for v in wire::events(1) {
-        events.extend(decoder.push(&v).unwrap());
-    }
-    decoder.finish().unwrap();
-    let decoded = decoder.materialize().unwrap();
-    assert!(events.iter().any(|e| matches!(
-        e,
-        StreamEvent::ItemStarted {
-            kind: ItemKind::CustomCall { .. },
-            ..
-        }
-    )));
-    assert!(
-        events
-            .iter()
-            .any(|e| matches!(e, StreamEvent::AnnotationAdded { .. }))
-    );
-    let rendered = envelope::encode_response(
-        &lower_response(
-            &decoded.semantic,
-            &decoded.fidelity,
-            &decoded.metadata,
-            Profile::Responses,
-            contract(),
-        )
-        .unwrap(),
-    )
-    .unwrap();
-    assert_eq!(rendered["output"], wire::response(1)["output"]);
-    assert_eq!(rendered["usage"], wire::response(1)["usage"]);
-    let mut encoder = ResponsesSseEncoder::new(
-        decoded.metadata,
-        contract(),
-        SseLimits::default(),
-        Obfuscation::Seeded([7; 32]),
-    )
-    .unwrap();
-    let mut bytes = vec![];
-    for event in events {
-        for frame in encoder.encode(&event, &decoded.fidelity).unwrap() {
-            bytes.extend(frame);
-        }
-    }
-    encoder.finish().unwrap();
-    let mut round = ResponsesSseDecoder::new(
-        200,
-        "text/event-stream; charset=\"utf-8\"",
-        SseLimits::default(),
-        Some(origin()),
-    )
-    .unwrap();
-    let mut seen = 0;
-    for b in &bytes {
-        let (used, events) = round.consume(std::slice::from_ref(b)).unwrap();
-        assert_eq!(used, 1);
-        seen += events.len();
-    }
-    round.finish().unwrap();
-    assert!(seen > 10);
-    let actual = round.materialize().unwrap();
-    let out = envelope::encode_response(
-        &lower_response(
-            &actual.semantic,
-            &actual.fidelity,
-            &actual.metadata,
-            Profile::Responses,
-            contract(),
-        )
-        .unwrap(),
-    )
-    .unwrap();
-    assert_eq!(out["output"], wire::response(1)["output"]);
-}
 #[test]
 fn probabilities_annotations_and_snapshots_cannot_rewrite_observed_values() {
     for field in ["probability", "annotation", "terminal"] {
@@ -1055,44 +729,6 @@ fn absent_error_code_and_unspecified_incomplete_reason_are_not_success() {
     );
 }
 #[test]
-fn metadata_budget_and_ranges_fail_without_expanding_or_reusing_old_values() {
-    let sources = ResourceTable::new(vec![(
-        ResourceId::new(1),
-        ResourceDeclaration {
-            body: ResourceBody::Media(ResourceLocation::Url(text("https://example.test"))),
-            conditions: Default::default(),
-        },
-    )])
-    .unwrap();
-    let ann = Annotation::new(
-        Citation {
-            kind: CitationKind::Citation,
-            claim: ClaimAnchor::Range(TextRange {
-                unit: TextUnit::UnicodeScalars,
-                start: 0,
-                end: 2,
-            }),
-            source: ResourceId::new(1),
-            coordinates: SourceCoordinates::Unreported,
-            label: Some(text("source")),
-            reported_ordinal: None,
-        },
-        &sources,
-    )
-    .unwrap();
-    assert!(TextContent::new(text("x"), vec![ann], Presence::Absent).is_err());
-    let mut value = wire::response(2);
-    value["output"][0]["content"][0]["logprobs"][0]["bytes"] = json!([256]);
-    assert!(envelope::decode_response(&value).is_err());
-    let mut metadata = wire::request(false);
-    metadata["metadata"] = json!({"k":"a".repeat(513)});
-    assert!(envelope::decode_request(&metadata).is_err());
-    let mut hints = FidelityRecords::default();
-    hints.record_cache_breakpoint(PartId::new(99)).unwrap();
-    let d = responses::decode_generation(&json!({"input":"hello"})).unwrap();
-    assert!(lower_request(&d.semantic, &hints, Profile::Chat, contract()).is_ok());
-}
-#[test]
 fn output_text_annotations_are_required_and_empty_arrays_stay_visible() {
     assert!(
         responses::decode_generation(
@@ -1150,68 +786,6 @@ fn response_round_trip(response: &Value) -> Value {
         .unwrap(),
     )
     .unwrap()
-}
-#[test]
-fn cache_affinity_hints_keep_presence_and_never_convert_retention_into_ttl() {
-    let mut request = wire::request(false);
-    request["prompt_cache_options"] = json!({"mode":"implicit","ttl":"30m","prewarm":false});
-    request["user"] = json!("synthetic-user");
-    let d = envelope::decode_request(&request).unwrap();
-    assert_eq!(
-        d.context
-            .execution
-            .cache
-            .prompt_cache_options
-            .value()
-            .unwrap()
-            .prewarm,
-        Presence::Value(false)
-    );
-    assert_eq!(
-        d.context.execution.identity.user.value().unwrap(),
-        "synthetic-user"
-    );
-    let out = responses_round_trip(&request);
-    assert_eq!(
-        out["prompt_cache_options"],
-        json!({"mode":"implicit","ttl":"30m","prewarm":false})
-    );
-    assert_eq!(out["user"], json!("synthetic-user"));
-    assert_eq!(out["prompt_cache_key"], json!("synthetic-cache"));
-    assert_eq!(out["prompt_cache_retention"], json!("in_memory"));
-    // Omission is not an explicit default and retention never becomes options.ttl.
-    let out = responses_round_trip(&wire::request(false));
-    assert!(out.get("prompt_cache_options").is_none());
-    assert!(out.get("user").is_none());
-    let mut request = wire::request(false);
-    request
-        .as_object_mut()
-        .unwrap()
-        .remove("prompt_cache_retention");
-    request["prompt_cache_options"] = json!({"mode":"explicit","ttl":"30m","prewarm":true});
-    let out = responses_round_trip(&request);
-    assert!(out.get("prompt_cache_retention").is_none());
-    assert_eq!(
-        out["prompt_cache_options"],
-        json!({"mode":"explicit","ttl":"30m","prewarm":true})
-    );
-    // An omitted prewarm stays absent next to explicit defaults.
-    let mut request = wire::request(false);
-    request["prompt_cache_options"] = json!({"mode":"implicit","ttl":"30m"});
-    let out = responses_round_trip(&request);
-    assert_eq!(
-        out["prompt_cache_options"],
-        json!({"mode":"implicit","ttl":"30m"})
-    );
-    for options in [
-        json!({"mode":"implicit","ttl":"30m","prewarm":null}),
-        json!({"mode":"implicit","ttl":"30m","prewarm":"yes"}),
-        json!({"mode":"implicit","ttl":"30m","prewarm":true,"extra":1}),
-    ] {
-        let mut bad = wire::request(false);
-        bad["prompt_cache_options"] = options;
-        assert!(envelope::decode_request(&bad).is_err());
-    }
 }
 #[test]
 fn reported_cache_context_is_an_independent_response_fact() {

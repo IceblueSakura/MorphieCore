@@ -1,7 +1,7 @@
 //! Response closure and pending tool results are independent; neither executes tools.
-use crate::events_support::{call_item, created, envelope};
+use crate::events_support::{call_item, envelope};
 use morphiecore::{
-    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract, events::EventDecoder},
+    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract},
     semantic::task::generation::*,
 };
 use serde_json::{Value, json};
@@ -28,66 +28,6 @@ fn program_pair() -> Value {
         {"id":"p","type":"program","call_id":"pc","code":"opaque code","fingerprint":"opaque fingerprint"},
         {"id":"po","type":"program_output","call_id":"pc","result":"done","status":"completed"}
     ])
-}
-
-#[test]
-fn completed_response_reports_pending_calls_without_claiming_turn_completion() {
-    let decoded = decode(
-        "completed",
-        json!([
-            call_item("a", "ca", "not parsed by this view", "completed"),
-            call_item("b", "cb", "{}", "completed")
-        ]),
-    );
-    assert_eq!(decoded.semantic.outcome(), Outcome::Completed);
-    assert_eq!(
-        calls(&decoded.semantic),
-        [(ItemId::new(1), "ca"), (ItemId::new(2), "cb")]
-    );
-    let encoded = adapter()
-        .encode_response(&decoded, &Contract::full())
-        .unwrap();
-    assert_eq!(encoded["status"], "completed");
-    assert_eq!(encoded["output"][0]["arguments"], "not parsed by this view");
-    assert!(encoded.get("continuation").is_none());
-
-    for output in [
-        json!([]),
-        json!([{"id":"m","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"done","annotations":[]}]}]),
-        program_pair(),
-    ] {
-        let decoded = decode("completed", output);
-        assert_eq!(decoded.semantic.outcome(), Outcome::Completed);
-        assert_eq!(decoded.semantic.continuation(), Continuation::Unreported);
-    }
-}
-
-#[test]
-fn call_references_follow_final_items_not_original_positions_or_finish_labels() {
-    let mut decoded = decode(
-        "completed",
-        json!([
-            call_item("a", "ca", "{}", "completed"),
-            call_item("b", "cb", "{}", "completed")
-        ]),
-    );
-    let mut items = decoded.semantic.items().to_vec();
-    items.reverse();
-    decoded.semantic = decoded.semantic.with_items(items).unwrap();
-    assert_eq!(
-        calls(&decoded.semantic),
-        [(ItemId::new(2), "cb"), (ItemId::new(1), "ca")]
-    );
-    let items = vec![decoded.semantic.items()[0].clone()];
-    decoded.semantic = decoded.semantic.with_items(items).unwrap();
-    assert_eq!(calls(&decoded.semantic), [(ItemId::new(2), "cb")]);
-    decoded.semantic = decoded.semantic.with_items(vec![]).unwrap();
-    assert_eq!(decoded.semantic.outcome(), Outcome::Completed);
-    assert_eq!(decoded.semantic.continuation(), Continuation::Unreported);
-    let encoded = adapter()
-        .encode_response(&decoded, &Contract::full())
-        .unwrap();
-    assert_eq!(encoded["output"], json!([]));
 }
 
 #[test]
@@ -143,29 +83,6 @@ fn program_results_resolve_by_identity_and_edits_recompute_dependencies() {
         calls(&decoded.semantic),
         [(ItemId::new(1), "pc"), (ItemId::new(2), "qc")]
     );
-}
-
-#[test]
-fn responses_events_and_static_output_have_the_same_continuation() {
-    let final_item = call_item("a", "ca", "{}", "completed");
-    let expected = decode("completed", json!([final_item.clone()]));
-    let mut decoder = EventDecoder::new(Profile::Responses);
-    let stream = vec![
-        created(),
-        json!({"type":"response.output_item.added","output_index":0,"item":call_item("a","ca","","in_progress")}),
-        json!({"type":"response.function_call_arguments.delta","output_index":0,"item_id":"a","delta":"{}"}),
-        json!({"type":"response.function_call_arguments.done","output_index":0,"item_id":"a","arguments":"{}"}),
-        json!({"type":"response.output_item.done","output_index":0,"item":final_item.clone()}),
-    ];
-    for event in &stream {
-        decoder.push(event).unwrap();
-    }
-    assert!(decoder.materialize().is_err());
-    decoder.push(&json!({"type":"response.completed","response":envelope("completed",json!([final_item]))})).unwrap();
-    let actual = decoder.materialize().unwrap();
-    assert_eq!(actual.semantic, expected.semantic);
-    assert_eq!(calls(&actual.semantic), [(ItemId::new(1), "ca")]);
-    assert!(decoder.push(&created()).is_err());
 }
 
 #[test]

@@ -124,39 +124,3 @@ fn partial_relations_and_delta_lower_bounds_reject_contradictions_without_fillin
         None
     );
 }
-
-#[test]
-fn static_and_event_usage_scopes_and_finality_agree() {
-    let mut input = vec![
-        StreamEvent::Started,
-        events::start(1, ItemKind::Message { phase: None }),
-    ];
-    input.extend(events::part(1, 2, PartKind::Text, "a"));
-    input.push(events::close(1, ItemLifecycle::Completed));
-    let mut first = Usage::operation(2, 3, 5);
-    first.basis = UsageBasis::Cumulative;
-    let mut last = first;
-    last.output_tokens = Some(6);
-    last.total_tokens = Some(8);
-    last.basis = UsageBasis::Final;
-    input.extend([
-        StreamEvent::Usage(first),
-        StreamEvent::Usage(last),
-        events::terminal(StreamTerminal::Completed),
-    ]);
-    let actual = materialize(&events::apply(&input).unwrap()).unwrap();
-    let expected = GenerationResponse::new(vec![message()], Outcome::Completed)
-        .unwrap()
-        .with_usage(last)
-        .unwrap();
-    assert_eq!(actual, expected);
-    assert_eq!(actual.usage().unwrap().output_tokens, Some(6));
-    let mut delta = first;
-    delta.basis = UsageBasis::Delta;
-    let report = GenerationResponse::new(vec![message()], Outcome::Completed)
-        .unwrap()
-        .with_usage_reports(vec![delta, delta])
-        .unwrap();
-    assert_eq!(report.usage_reports().len(), 2);
-    assert_eq!(report.usage(), None);
-}

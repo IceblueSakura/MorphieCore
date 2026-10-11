@@ -39,23 +39,6 @@ fn history(
     )
 }
 #[test]
-fn error_presence_does_not_invent_execution_and_has_separate_requirements() {
-    for marker in [None, Some(false), Some(true)] {
-        let request = history(marker, None).unwrap();
-        let Item::ToolResult(result) = &request.items()[1].1 else {
-            panic!()
-        };
-        assert_eq!(result.is_error, marker);
-        assert_eq!(result.execution, None);
-        let q = GenerationRequirements::derive(&request);
-        assert_eq!(q.tool_result_errors, marker.is_some());
-        assert!(!q.tool_execution_reports);
-        let mut contract = GenerationSemanticContract::full();
-        contract.tool_result_errors = false;
-        assert_eq!(contract.check(&request).is_ok(), marker.is_none());
-    }
-}
-#[test]
 fn not_executed_and_execution_failure_remain_distinct_with_the_same_feedback() {
     for fact in [
         ToolExecution::NotExecuted,

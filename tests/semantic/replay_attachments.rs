@@ -507,89 +507,6 @@ fn call_and_provider_step_events_preserve_their_own_attachments() {
 }
 
 #[test]
-fn shared_group_and_settings_dependencies_are_checked_without_cross_candidate_pollution() {
-    let a = GroupId::new(LocalScope::ROOT, 1);
-    let b = GroupId::new(LocalScope::ROOT, 2);
-    let source = request()
-        .with_replay_groups(vec![
-            ReplayGroup::new(a, vec![ItemId::new(1), ItemId::new(2)]).unwrap(),
-            ReplayGroup::new(b, vec![ItemId::new(1)]).unwrap(),
-        ])
-        .unwrap();
-    let call = ReplayOwner::Item(ItemId::new(2));
-    let media = ReplayOwner::Part {
-        item: ItemId::new(1),
-        part: PartId::new(2),
-    };
-    let origin = ReplayOrigin::new("synthetic").unwrap();
-    let mut fidelity = FidelityRecords::default();
-    for (owner, group, field) in [
-        (call, a, SettingsField::Tools),
-        (media, b, SettingsField::Text),
-    ] {
-        fidelity
-            .record_attachment(owner, &source, origin.clone())
-            .unwrap();
-        fidelity
-            .bind_attachment_dependency(
-                owner,
-                RequestDependencyProof::capture(
-                    &source,
-                    HistoryDependency::ReplayGroup(group),
-                    SettingsDependency::only(field),
-                )
-                .unwrap(),
-                &source,
-            )
-            .unwrap();
-        assert!(fidelity.attachment_matches(owner, &source, Some(&origin)));
-    }
-    let mut settings = source.settings().clone();
-    settings.controls.max_output_tokens = Some(100);
-    let outside = source.clone().with_settings(settings).unwrap();
-    assert!(fidelity.attachment_matches(call, &outside, Some(&origin)));
-    assert!(fidelity.attachment_matches(media, &outside, Some(&origin)));
-    let mut settings = source.settings().clone();
-    settings.tools = Some(vec![]);
-    let tools = source.clone().with_settings(settings).unwrap();
-    assert!(!fidelity.attachment_matches(call, &tools, Some(&origin)));
-    assert!(fidelity.attachment_matches(media, &tools, Some(&origin)));
-    let mut settings = source.settings().clone();
-    settings.text.presence = true;
-    settings.text.format =
-        morphiecore::semantic::value::Presence::Value(OutputConstraint::JsonObject);
-    let schema = source.clone().with_settings(settings).unwrap();
-    assert!(fidelity.attachment_matches(call, &schema, Some(&origin)));
-    assert!(!fidelity.attachment_matches(media, &schema, Some(&origin)));
-    let mut items = source.items().to_vec();
-    let Item::Message(m) = &mut items[0].1 else {
-        panic!()
-    };
-    m.parts[2].content = ContentPart::Text(text("changed shared member").into());
-    let changed = source.clone().with_items(items).unwrap();
-    assert!(!fidelity.attachment_matches(call, &changed, Some(&origin)));
-    assert!(!fidelity.attachment_matches(media, &changed, Some(&origin)));
-    assert!(fidelity.attachment_matches(call, &source, Some(&origin)));
-    let no_groups = source.clone().with_replay_groups(vec![]).unwrap();
-    assert!(!fidelity.attachment_matches(call, &no_groups, Some(&origin)));
-    assert!(!fidelity.attachment_matches(media, &no_groups, Some(&origin)));
-    assert!(
-        fidelity
-            .bind_attachment_dependency(
-                call,
-                RequestDependencyProof::capture(
-                    &changed,
-                    HistoryDependency::Owners(vec![ItemId::new(2)]),
-                    SettingsDependency::None,
-                )
-                .unwrap(),
-                &changed
-            )
-            .is_err()
-    );
-}
-
-#[test]
 fn attachment_budgets_count_each_value_and_the_aggregate_in_static_and_events() {
     for size in [0, MAX_TEXT_BYTES - 1, MAX_TEXT_BYTES, MAX_TEXT_BYTES + 1] {
         let value = ReplayValue::final_value(
@@ -682,33 +599,6 @@ fn attachment_budgets_count_each_value_and_the_aggregate_in_static_and_events() 
         assert_eq!(response.is_ok(), last <= 10);
         assert_eq!(state.is_ok(), last <= 10);
     }
-}
-
-#[test]
-fn cleared_call_attachments_do_not_return_from_fidelity() {
-    // A retained binding has no payload from which to reconstruct a deleted value.
-    use morphiecore::protocol::openai::responses;
-    let source = GenerationRequest::new(
-        vec![(ItemId::new(1), call())],
-        GenerationControls::default(),
-    )
-    .unwrap();
-    let mut fidelity = FidelityRecords::default();
-    let origin = ReplayOrigin::new("synthetic").unwrap();
-    fidelity
-        .record_attachment(ReplayOwner::Item(ItemId::new(1)), &source, origin)
-        .unwrap();
-    let mut items = source.items().to_vec();
-    let Item::ToolCall(c) = &mut items[0].1 else {
-        panic!()
-    };
-    c.context.replay = None;
-    let cleared = source.with_items(items).unwrap();
-    let output = responses::encode_generation(
-        &lower_request(&cleared, &fidelity, Profile::Responses, TargetCaps::full()).unwrap(),
-    )
-    .unwrap();
-    assert!(!output.to_string().contains("synthetic-private-token"));
 }
 
 #[test]

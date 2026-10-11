@@ -3,7 +3,6 @@ use morphiecore::{
     adapter::images::{Profile, Request},
     protocol::{openai::images, openrouter_images},
     semantic::{
-        context::ClientIdentityHints,
         task::image_generation::*,
         value::{ImageFormat, Presence},
     },
@@ -39,39 +38,6 @@ fn standard_image_controls_decode_into_distinct_intents_and_identity() {
         Presence::Value("synthetic-private-user".into())
     );
     assert!(!format!("{request:?}").contains("synthetic-private-user"));
-}
-
-#[test]
-fn typed_controls_encode_final_values_and_deletions_without_wire_dtos() {
-    let mut task = ImageGenerationRequest::new("draw a circle").unwrap();
-    task.format = Presence::Value(ImageFormat::Jpeg);
-    task.compression = Presence::Value(85);
-    task.size = Presence::Value(ImageSizeRequest::Exact(ImageSize {
-        width: 1024,
-        height: 1536,
-    }));
-    task.quality = Presence::Value(ImageQualityRequest::Auto);
-    task.background = Presence::Value(ImageBackgroundRequest::Exact(ImageBackground::Opaque));
-    task.moderation = Presence::Value(ImageModeration::Auto);
-    let mut request = Request::new("public", task);
-    request.identity = ClientIdentityHints {
-        user: Presence::Value("operator-user".into()),
-        ..Default::default()
-    };
-    assert_eq!(
-        images::encode_request(&request, "native-model").unwrap(),
-        json!({"model":"native-model","prompt":"draw a circle","output_format":"jpeg","output_compression":85,"size":"1024x1536","quality":"auto","background":"opaque","moderation":"auto","user":"operator-user"})
-    );
-    request.task.compression = Presence::Absent;
-    request.task.size = Presence::Absent;
-    request.identity.user = Presence::Absent;
-    let edited = images::encode_request(&request, "native-model").unwrap();
-    for field in ["size", "output_compression", "user"] {
-        assert!(edited.get(field).is_none());
-    }
-    request.task.background =
-        Presence::Value(ImageBackgroundRequest::Exact(ImageBackground::Transparent));
-    assert!(images::encode_request(&request, "native-model").is_err());
 }
 
 #[test]

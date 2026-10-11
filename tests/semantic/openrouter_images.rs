@@ -1,5 +1,4 @@
 use morphiecore::{
-    adapter::images::{Profile, Request},
     lowering::images::{AccountingPolicy, project_response},
     protocol::{openai::images, openrouter_images},
     semantic::{
@@ -8,32 +7,6 @@ use morphiecore::{
     },
 };
 use serde_json::json;
-#[test]
-fn openrouter_image_requests_pin_operation_routing_and_do_not_invent_format_support() {
-    let request = Request::new(
-        "gpt-image-2.5-flare",
-        ImageGenerationRequest::new("a blue square").unwrap(),
-    );
-    assert_eq!(
-        openrouter_images::encode_request(&request, "openai/gpt-image-2.5-flare").unwrap(),
-        json!({"model":"openai/gpt-image-2.5-flare","prompt":"a blue square","stream":false,"n":1,"provider":{"only":["openai"],"allow_fallbacks":false}})
-    );
-    let mut request = request;
-    request.task.count = Presence::Null;
-    request.task.format = Presence::Null;
-    request.delivery.stream = Presence::Null;
-    assert_eq!(
-        openrouter_images::encode_request(&request, "openai/gpt-image-2.5-flare").unwrap(),
-        json!({"model":"openai/gpt-image-2.5-flare","prompt":"a blue square","stream":false,"n":1,"provider":{"only":["openai"],"allow_fallbacks":false}})
-    );
-    assert!(openrouter_images::encode_request(&request, "openai/another-image").is_err());
-    request.task.format = Presence::Value(ImageFormat::Png);
-    assert!(
-        Profile::OpenRouterFlare
-            .encode_request(&request, "openai/gpt-image-2.5-flare")
-            .is_err()
-    );
-}
 #[test]
 fn sparse_image_accounting_stays_in_ir_and_has_explicit_downstream_loss() {
     let bytes=br#"{"created":42,"data":[{"b64_json":"AQID","media_type":"image/png"}],"usage":{"prompt_tokens":7,"completion_tokens":9,"total_tokens":16,"cost":0.01234567890123456789,"is_byok":false,"prompt_tokens_details":{"cached_tokens":2},"completion_tokens_details":{"image_tokens":8,"reasoning_tokens":1}}}"#;

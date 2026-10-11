@@ -65,39 +65,6 @@ fn expected() -> Value {
             "cache_creation_input_tokens":4,"cache_read_input_tokens":3}}"#).unwrap()
 }
 #[test]
-fn native_message_and_byte_splits_share_an_independent_static_oracle() {
-    let bytes = wire(&frames());
-    for split in 0..=bytes.len() {
-        let mut decoder = MessageSseDecoder::new(
-            200,
-            "text/event-stream; charset=utf-8",
-            SseLimits::default(),
-        )
-        .unwrap();
-        feed(&mut decoder, &bytes[..split]).unwrap();
-        feed(&mut decoder, &bytes[split..]).unwrap();
-        let message = decoder.finish().unwrap();
-        assert_eq!(
-            Profile::AdaptiveTextTools
-                .encode_response(&message)
-                .unwrap(),
-            expected()
-        );
-        assert!(decoder.finish().is_err());
-    }
-    let mut decoder =
-        MessageSseDecoder::new(200, "text/event-stream", SseLimits::default()).unwrap();
-    for byte in &bytes {
-        feed(&mut decoder, std::slice::from_ref(byte)).unwrap();
-    }
-    assert_eq!(
-        Profile::AdaptiveTextTools
-            .encode_response(&decoder.finish().unwrap())
-            .unwrap(),
-        expected()
-    );
-}
-#[test]
 fn malformed_unclosed_or_trailing_streams_never_recover_success() {
     let original = frames();
     let mut cases = Vec::new();

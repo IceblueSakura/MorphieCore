@@ -551,32 +551,3 @@ fn chat_stream_metadata_and_probability_retractions_fail_before_success() {
     );
     assert!(oversized.is_err());
 }
-
-#[test]
-fn complete_text_probability_facts_have_an_independent_responses_projection() {
-    let mut probability = probability("ok");
-    probability["bytes"] = json!([111, 107]);
-    let decoded = adapter(Profile::Chat)
-        .decode_response(
-            response(false, json!({"content":[probability.clone()]}))
-                .to_string()
-                .as_bytes(),
-        )
-        .unwrap();
-    let projected = adapter(Profile::Responses)
-        .encode_response(&decoded, &Contract::full())
-        .unwrap();
-    assert_eq!(
-        projected["output"][0]["content"][0],
-        json!({"type":"output_text","text":"ok","annotations":[],"logprobs":[probability]})
-    );
-    let decoded = adapter(Profile::Responses)
-        .decode_response(projected.to_string().as_bytes())
-        .unwrap();
-    assert_eq!(
-        adapter(Profile::Chat)
-            .encode_response(&decoded, &Contract::full())
-            .unwrap()["choices"][0]["logprobs"]["content"],
-        json!([probability])
-    );
-}

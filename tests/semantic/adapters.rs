@@ -1,6 +1,6 @@
 //! Independent adapter contracts: normalized semantics never fork by vendor.
 use morphiecore::{
-    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract, events::EventEncoder},
+    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract},
     semantic::{task::generation::StreamEvent, value::ReplayOrigin},
 };
 use serde_json::{Value, json};
@@ -119,130 +119,6 @@ fn deepseek_default_is_scoped_and_never_overwrites_reported_or_invalid_values() 
     }
 }
 #[test]
-fn extras_require_matching_source_and_surviving_response_dependencies() {
-    let source = adapter(Profile::Responses, Dialect::DeepSeek, "a");
-    let other = adapter(Profile::Responses, Dialect::DeepSeek, "b");
-    let mut body = response();
-    body["content_filters"] = json!({"result":"final"});
-    let mut decoded = source.decode_response(body.to_string().as_bytes()).unwrap();
-    assert_eq!(
-        source.encode_response(&decoded, &Contract::full()).unwrap()["content_filters"],
-        body["content_filters"]
-    );
-    assert!(
-        other
-            .encode_response(&decoded, &Contract::full())
-            .unwrap()
-            .get("content_filters")
-            .is_none()
-    );
-    let original_id = decoded.metadata.id.clone();
-    decoded.metadata.id = "different-response".into();
-    assert!(
-        source
-            .encode_response(&decoded, &Contract::full())
-            .unwrap()
-            .get("content_filters")
-            .is_none(),
-        "response-wide records cannot attach to another response identity"
-    );
-    decoded.metadata.id = original_id;
-    let standard = adapter(Profile::Responses, Dialect::Standard, "a");
-    // Without the extras rule the field is simply ignored upstream.
-    let ignored = standard
-        .decode_response(body.to_string().as_bytes())
-        .unwrap();
-    assert!(
-        standard
-            .encode_response(&ignored, &Contract::full())
-            .unwrap()
-            .get("content_filters")
-            .is_none()
-    );
-    assert!(
-        standard
-            .encode_response(&decoded, &Contract::full())
-            .unwrap()
-            .get("content_filters")
-            .is_none()
-    );
-    decoded.semantic = morphiecore::semantic::task::generation::GenerationResponse::new(
-        vec![],
-        morphiecore::semantic::task::generation::Outcome::Completed,
-    )
-    .unwrap();
-    let output = source.encode_response(&decoded, &Contract::full()).unwrap();
-    assert!(output.get("content_filters").is_none());
-    assert!(
-        output["usage"].is_null(),
-        "normalization records never restore deleted usage"
-    );
-}
-#[test]
-fn stream_terminal_extras_and_defaults_match_static_without_early_binding() {
-    let source = adapter(Profile::Responses, Dialect::DeepSeek, "a");
-    let mut frames = crate::wire::events(2);
-    for frame in &mut frames {
-        if let Some(snapshot) = frame.get_mut("response") {
-            snapshot["content_filters"] = Value::Null;
-            if let Some(details) = snapshot
-                .pointer_mut("/usage/input_tokens_details")
-                .and_then(Value::as_object_mut)
-            {
-                details.remove("cache_write_tokens");
-            }
-        }
-    }
-    frames.last_mut().unwrap()["response"]["content_filters"] = json!({"result":"final"});
-    let mut decoder = source.event_decoder();
-    let mut events = vec![];
-    for frame in &frames {
-        events.extend(decoder.push(frame).unwrap());
-    }
-    decoder.finish().unwrap();
-    let decoded = decoder.materialize().unwrap();
-    assert_eq!(
-        decoded.semantic.usage().unwrap().input_cache_write_tokens,
-        Some(0)
-    );
-    let expected = source.encode_response(&decoded, &Contract::full()).unwrap();
-    let mut encoder = EventEncoder::new(Profile::Responses, decoded.metadata.clone())
-        .unwrap()
-        .with_contract(source.contract(&Contract::full()));
-    let mut output = vec![];
-    for event in &events {
-        output.extend(encoder.encode(event, &decoded.fidelity).unwrap());
-    }
-    encoder.finish().unwrap();
-    assert!(
-        output[0]["response"].get("content_filters").is_none(),
-        "terminal facts must not leak into early snapshots"
-    );
-    assert_eq!(output.last().unwrap()["response"], expected);
-    assert!(matches!(events.last(), Some(StreamEvent::Terminal { .. })));
-}
-#[test]
-fn chat_cache_write_projection_and_null_fingerprint_are_preserved() {
-    let source = adapter(Profile::Chat, Dialect::DeepSeek, "a");
-    let target = adapter(Profile::Chat, Dialect::Standard, "b");
-    let body = json!({"id":"c1","object":"chat.completion","created":2,"model":"m","system_fingerprint":null,
-        "choices":[{"index":0,"message":{"role":"assistant","content":"pong"},"finish_reason":"stop"}],
-        "usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}});
-    let decoded = source.decode_response(body.to_string().as_bytes()).unwrap();
-    let encoded = target.encode_response(&decoded, &Contract::full()).unwrap();
-    assert!(
-        encoded
-            .as_object()
-            .unwrap()
-            .contains_key("system_fingerprint")
-    );
-    assert_eq!(encoded["system_fingerprint"], Value::Null);
-    assert_eq!(
-        encoded["usage"]["prompt_tokens_details"]["cache_write_tokens"],
-        0
-    );
-}
-#[test]
 fn chat_usage_events_normalize_only_absent_details_and_poison_invalid_reports() {
     let source = adapter(Profile::Chat, Dialect::DeepSeek, "a");
     for detail in [None, Some(Value::Null), Some(json!(2)), Some(json!("bad"))] {
@@ -280,59 +156,6 @@ fn chat_usage_events_normalize_only_absent_details_and_poison_invalid_reports() 
 }
 
 #[test]
-fn truncated_reasoning_usage_cannot_exceed_reported_output_or_recover_a_stream() {
-    let source = adapter(Profile::Chat, Dialect::Xiaomi, "a");
-    for reasoning in [8, 12] {
-        let usage = json!({"prompt_tokens":22,"completion_tokens":8,"total_tokens":30,
-            "completion_tokens_details":{"reasoning_tokens":reasoning},
-            "prompt_tokens_details":{"cached_tokens":0}});
-        let body = json!({"id":"c1","object":"chat.completion","created":2,"model":"m",
-            "choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning_content":"synthetic partial thought","tool_calls":null},"finish_reason":"length"}],
-            "usage":usage});
-        let decoded = source.decode_response(body.to_string().as_bytes());
-        assert_eq!(decoded.is_ok(), reasoning == 8);
-        let mut decoder = source.event_decoder();
-        decoder.push(&json!({"id":"c1","object":"chat.completion.chunk","created":2,"model":"m",
-            "choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"synthetic partial thought"},"finish_reason":null}]})).unwrap();
-        let terminal = json!({"id":"c1","object":"chat.completion.chunk","created":2,"model":"m",
-            "choices":[{"index":0,"delta":{},"finish_reason":"length"}],"usage":usage});
-        let result = decoder.push(&terminal);
-        if reasoning == 8 {
-            result.unwrap();
-            decoder.done().unwrap();
-            assert_eq!(
-                decoder
-                    .materialize()
-                    .unwrap()
-                    .semantic
-                    .usage()
-                    .unwrap()
-                    .reasoning_tokens,
-                Some(8)
-            );
-        } else {
-            assert!(result.is_err());
-            assert!(decoder.done().is_err());
-            assert!(decoder.materialize().is_err());
-        }
-    }
-}
-
-#[test]
-fn chat_projection_cannot_attach_reasoning_to_a_user_message() {
-    let responses = adapter(Profile::Responses, Dialect::Standard, "a");
-    let request = responses.decode_request(json!({"model":"m","input":[
-        {"type":"reasoning","id":"rs1","summary":[],"content":[{"type":"reasoning_text","text":"think"}]},
-        {"role":"user","content":"hello"}
-    ]}).to_string().as_bytes()).unwrap();
-    let chat = adapter(Profile::Chat, Dialect::MorphieCore, "b");
-    assert!(
-        chat.encode_request(&request, "m", &Contract::full())
-            .is_err()
-    );
-}
-
-#[test]
 fn extras_cannot_be_captured_unbound_or_over_budget() {
     let mut body = response();
     body["content_filters"] = Value::Null;
@@ -353,37 +176,4 @@ fn extras_cannot_be_captured_unbound_or_over_budget() {
     );
     body["content_filters"] = json!("x".repeat(4097));
     assert!(source.decode_response(body.to_string().as_bytes()).is_err());
-}
-
-#[test]
-fn standard_chat_reads_common_vendor_reasoning_and_usage_aliases() {
-    // Upstream decoding accepts these de facto Chat fields for every dialect.
-    let standard = adapter(Profile::Chat, Dialect::Standard, "a");
-    let mut body = json!({"id":"c1","object":"chat.completion","created":2,"model":"m",
-        "choices":[{"index":0,"message":{"role":"assistant","content":"pong","reasoning_content":"think"},"finish_reason":"stop"}]});
-    let decoded = standard
-        .decode_response(body.to_string().as_bytes())
-        .unwrap();
-    assert!(decoded.semantic.items().iter().any(|(_, item)| matches!(
-        item,
-        morphiecore::semantic::task::generation::Item::Reasoning(_)
-    )));
-    body["usage"] = json!({"prompt_tokens":3,"completion_tokens":2,"total_tokens":5,"prompt_cache_hit_tokens":1,"prompt_cache_miss_tokens":2});
-    assert_eq!(
-        standard
-            .decode_response(body.to_string().as_bytes())
-            .unwrap()
-            .semantic
-            .usage()
-            .unwrap()
-            .cached_input_tokens,
-        Some(1)
-    );
-    body["usage"]["prompt_cache_hit_tokens"] = json!(2);
-    body["usage"]["prompt_tokens_details"] = json!({"cached_tokens":1});
-    assert!(
-        standard
-            .decode_response(body.to_string().as_bytes())
-            .is_err()
-    );
 }

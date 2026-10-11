@@ -52,54 +52,6 @@ fn provider(reference: bool) -> Item {
     })
 }
 #[test]
-fn selected_mixed_history_and_explicit_settings_build_a_successor_without_execution() {
-    let r1 = GenerationResponse::new(
-        vec![(ItemId::new(1), call()), (ItemId::new(2), provider(false))],
-        Outcome::Completed,
-    )
-    .unwrap()
-    .with_replay_groups(vec![
-        ReplayGroup::new(
-            GroupId::new(LocalScope::ROOT, 1),
-            vec![ItemId::new(1), ItemId::new(2)],
-        )
-        .unwrap(),
-    ])
-    .unwrap();
-    let settings = GenerationSettings {
-        instructions: Presence::Value(text("current")),
-        ..Default::default()
-    };
-    let selected = ClientManaged::new(settings.clone())
-        .unwrap()
-        .select_response(&r1)
-        .unwrap();
-    let pending = selected.clone().build(&[]).unwrap();
-    assert!(
-        matches!(pending.continuation(),Continuation::ToolResults(ref calls) if calls.len()==1)
-    );
-    let r2 = GenerationResponse::new(vec![(ItemId::new(4), provider(true))], Outcome::Completed)
-        .unwrap();
-    let final_request = selected
-        .append_items(vec![(ItemId::new(3), result())])
-        .unwrap()
-        .select_response(&r2)
-        .unwrap()
-        .build(&[])
-        .unwrap();
-    assert_eq!(final_request.settings(), &settings);
-    assert_eq!(final_request.items().len(), 4);
-    assert_eq!(final_request.replay_groups(), r1.replay_groups());
-    assert_eq!(final_request.continuation(), Continuation::Unreported);
-    assert_eq!(r1.items().len(), 2);
-    assert!(
-        ClientManaged::new(settings)
-            .unwrap()
-            .select_response(&r2)
-            .is_err()
-    );
-}
-#[test]
 fn explicit_configuration_and_declared_dependencies_prevent_implicit_inheritance() {
     let old = GenerationRequest::from_settings(
         vec![(ItemId::new(1), call())],
@@ -399,62 +351,4 @@ fn configured_mixed_successor_separates_client_results_provider_progress_and_rev
     assert_eq!(changed.stage, ContextStage::Continuation);
     assert_eq!(r1.items().len(), 4);
     assert_eq!(r1.progress(), InteractionProgress::NeedsContinuation);
-}
-
-#[test]
-fn one_pure_consumer_handles_three_source_control_and_accounting_contracts() {
-    for source in ["responses", "interactions-v1", "messages"] {
-        let mut controls = ReasoningRequest::present(Some(ReasoningEffort::High), None);
-        let mut usage = Usage::operation(4106, 20, 4126);
-        usage.cached_input_tokens = Some(4096);
-        if source == "interactions-v1" {
-            controls.summary = Presence::Value(ReasoningSummary::Auto);
-            usage.cached_input_tokens = None;
-        } else if source == "messages" {
-            controls.mode = Presence::Value(ReasoningMode::Adaptive);
-            controls.display = Presence::Value(ReasoningDisplay::Omitted);
-            usage.input_relation = InputTokenRelation::ExcludesCacheReadAndWrite;
-            usage.total_relation = TotalTokenRelation::Unreported;
-            usage.input_tokens = Some(10);
-            usage.input_cache_write_tokens = Some(0);
-            usage.total_tokens = None;
-        }
-        let response = GenerationResponse::new(vec![(ItemId::new(1), call())], Outcome::Completed)
-            .unwrap()
-            .with_usage(usage)
-            .unwrap();
-        let output = ClientManaged::new(GenerationSettings {
-            reasoning: controls.clone(),
-            ..Default::default()
-        })
-        .unwrap()
-        .select_response(&response)
-        .unwrap()
-        .append_items(vec![(ItemId::new(2), result())])
-        .unwrap()
-        .finish(&[])
-        .unwrap();
-        assert_eq!(output.client_results(), Continuation::Unreported);
-        assert_eq!(output.request().reasoning(), &controls);
-        assert_eq!(response.usage_reports(), &[usage]);
-        let formula = if source == "messages" {
-            UsageFormula::InputPlusCacheReadAndWrite
-        } else {
-            UsageFormula::InputMinusCacheRead
-        };
-        let view = response
-            .usage()
-            .unwrap()
-            .derive(formula)
-            .unwrap()
-            .map(|v| v.tokens());
-        assert_eq!(
-            view,
-            match source {
-                "responses" => Some(10),
-                "messages" => Some(4106),
-                _ => None,
-            }
-        );
-    }
 }

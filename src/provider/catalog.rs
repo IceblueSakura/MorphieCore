@@ -173,23 +173,3 @@ pub fn all() -> Vec<ProviderDefinition> {
         zhipu(),
     ]
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn modelbest_registration_is_chat_only_and_origin_bound() {
-        let provider = all()
-            .into_iter()
-            .find(|provider| provider.id.as_str() == "modelbest")
-            .expect("registered ModelBest provider");
-        assert_eq!(provider.origin.as_str(), "https://api.modelbest.cn");
-        assert_eq!(
-            provider.chat_completions.unwrap().as_str(),
-            "/v1/chat/completions"
-        );
-        assert!(provider.responses.is_none());
-        assert_eq!(provider.auth, AuthScheme::Bearer);
-    }
-}

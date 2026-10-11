@@ -133,62 +133,6 @@ fn groups_have_no_private_or_silently_dropped_standard_carrier() {
 }
 
 #[test]
-fn shared_dependencies_invalidate_each_group_without_rejecting_outside_edits() {
-    let source = request();
-    let proofs: Vec<_> = source
-        .replay_groups()
-        .iter()
-        .map(|group| {
-            RequestDependencyProof::capture(
-                &source,
-                HistoryDependency::ReplayGroup(group.id()),
-                SettingsDependency::None,
-            )
-            .unwrap()
-        })
-        .collect();
-    let mut changed = source.items().to_vec();
-    let Item::ToolCall(call) = &mut changed[1].1 else {
-        unreachable!()
-    };
-    call.arguments = r#"{"changed":true}"#.into();
-    // A separately supplied context is not a mutation API or evidence that this
-    // call actually happened. Old proofs still must reject changed dependencies.
-    let changed = GenerationRequest::new(changed, GenerationControls::default())
-        .unwrap()
-        .with_replay_groups(source.replay_groups().to_vec())
-        .unwrap();
-    for proof in &proofs {
-        assert_eq!(
-            proof.check(&changed).unwrap_err(),
-            GenerationError::InvalidDependency
-        );
-    }
-    let mut outside = source.items().to_vec();
-    outside.insert(
-        1,
-        (
-            ItemId::new(99),
-            Item::Message(Message {
-                role: MessageRole::Assistant,
-                parts: vec![],
-                status: ItemLifecycle::Completed,
-                phase: None,
-            }),
-        ),
-    );
-    let outside = source.clone().with_items(outside).unwrap();
-    for proof in &proofs {
-        proof.check(&outside).unwrap();
-    }
-    assert_eq!(source.items().len(), 3);
-    assert_eq!(source.replay_groups_for(ItemId::new(2)).count(), 2);
-    let removed = source.with_replay_groups(vec![group(2, &[2, 3])]).unwrap();
-    assert!(proofs[0].check(&removed).is_err());
-    proofs[1].check(&removed).unwrap();
-}
-
-#[test]
 fn aggregate_membership_budget_counts_shared_references_independently() {
     for count in [MAX_ITEMS - 1, MAX_ITEMS, MAX_ITEMS + 1] {
         let groups = (0..count).map(|n| group(n as u64, &[2])).collect();

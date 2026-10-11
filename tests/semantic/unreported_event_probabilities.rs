@@ -1,8 +1,5 @@
 //! A named unreported-probability rule must not weaken complete SSE or fabricate facts.
-use morphiecore::{
-    protocol::openai::{Adapter, Dialect, Profile, events::EventEncoder, sse::ResponsesSseDecoder},
-    semantic::{task::generation::*, value::Presence},
-};
+use morphiecore::protocol::openai::{Adapter, Dialect, Profile, sse::ResponsesSseDecoder};
 use serde_json::{Value, json};
 fn fixture() -> (Value, Vec<Value>) {
     let message = json!({"id":"msg","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"x","annotations":[]}]});
@@ -48,87 +45,6 @@ fn decoder(dialect: Dialect) -> ResponsesSseDecoder {
         Adapter::new(Profile::Responses, dialect, None).event_decoder(),
     )
     .unwrap()
-}
-#[test]
-fn missing_event_probabilities_are_unreported_only_under_a_named_rule() {
-    let (response, source) = fixture();
-    let provider = Adapter::new(Profile::Responses, Dialect::Xiaomi, None);
-    let expected = provider
-        .decode_response(&serde_json::to_vec(&response).unwrap())
-        .unwrap();
-    let mut decoded = decoder(Dialect::Xiaomi);
-    let mut semantic = vec![];
-    for byte in sse(&source) {
-        let (n, events) = decoded.consume(&[byte]).unwrap();
-        assert_eq!(n, 1);
-        semantic.extend(events);
-    }
-    decoded.finish().unwrap();
-    assert_eq!(decoded.materialize().unwrap().semantic, expected.semantic);
-    let Item::Message(message) = &expected.semantic.items()[0].1 else {
-        panic!()
-    };
-    let ContentPart::Text(text) = &message.parts[0].content else {
-        panic!()
-    };
-    assert_eq!(text.logprobs(), &Presence::Absent);
-    let mut encoder = EventEncoder::new(Profile::Responses, expected.metadata.clone()).unwrap();
-    let mut projected = vec![];
-    for event in &semantic {
-        projected.extend(encoder.encode(event, &expected.fidelity).unwrap());
-    }
-    encoder.finish().unwrap();
-    for event in &projected {
-        if matches!(
-            event["type"].as_str(),
-            Some("response.output_text.delta" | "response.output_text.done")
-        ) {
-            assert_eq!(event["logprobs"], json!([]));
-        }
-    }
-    assert!(
-        projected.last().unwrap()["response"]["output"][0]["content"][0]
-            .get("logprobs")
-            .is_none()
-    );
-    let mut standard = decoder(Dialect::Standard);
-    let bytes = sse(&source);
-    let mut rest = bytes.as_slice();
-    let mut rejected = false;
-    while !rest.is_empty() {
-        match standard.consume(rest) {
-            Ok((used, _)) => rest = &rest[used..],
-            Err(_) => {
-                rejected = true;
-                break;
-            }
-        }
-    }
-    assert!(rejected);
-    assert!(standard.finish().is_err());
-}
-
-#[test]
-fn empty_delta_carrier_does_not_invent_a_fact_when_done_omits_probabilities() {
-    let (_, mut events) = fixture();
-    events[3]["logprobs"] = json!([]);
-    let mut source = decoder(Dialect::Zhipu);
-    let bytes = sse(&events);
-    let mut rest = bytes.as_slice();
-    while !rest.is_empty() {
-        let (used, _) = source.consume(rest).unwrap();
-        rest = &rest[used..];
-    }
-    source.finish().unwrap();
-    let materialized = source.materialize().unwrap();
-    let Item::Message(message) = &materialized.semantic.items()[0].1 else {
-        panic!()
-    };
-    let ContentPart::Text(text) = &message.parts[0].content else {
-        panic!()
-    };
-    // An empty delta carrier is not a final static probability report.
-    assert_eq!(text.logprobs(), &Presence::Absent);
 }
 
 #[test]

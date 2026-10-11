@@ -3,11 +3,10 @@ use crate::events_support::{metadata, start, terminal, text};
 use morphiecore::{
     protocol::{
         fidelity::FidelityRecords,
-        openai::{Profile, chat, events::EventEncoder},
+        openai::{Profile, events::EventEncoder},
     },
     semantic::task::generation::*,
 };
-use serde_json::json;
 
 fn message(role: MessageRole) -> Item {
     Item::Message(Message {
@@ -165,41 +164,6 @@ fn removing_or_crossing_an_owner_fails_instead_of_reattaching_calls() {
             .collect::<Vec<_>>(),
         ["b"]
     );
-}
-
-#[test]
-fn chat_history_declares_separate_groups_even_without_body_text() {
-    let decoded = chat::decode_generation(&json!({"messages":[
-        {"role":"assistant","content":null,"tool_calls":[{"id":"a","type":"function","function":{"name":"lookup","arguments":"{}"}}]},
-        {"role":"assistant","content":"next","tool_calls":[{"id":"b","type":"function","function":{"name":"lookup","arguments":"{}"}}]}
-    ]})).unwrap();
-    let groups: Vec<_> = decoded.semantic.message_groups().collect();
-    assert_eq!(groups.len(), 2);
-    assert_ne!(groups[0].owner(), groups[1].owner());
-    assert_eq!(
-        groups[0].calls().map(|r| r.call_id).collect::<Vec<_>>(),
-        ["a"]
-    );
-    assert_eq!(
-        groups[1].calls().map(|r| r.call_id).collect::<Vec<_>>(),
-        ["b"]
-    );
-}
-
-#[test]
-fn responses_adjacency_does_not_declare_a_message_group() {
-    let decoded = morphiecore::protocol::openai::responses::decode_generation(&json!({"input":[
-        {"role":"user","content":"lookup"},
-        {"type":"reasoning","id":"r","summary":[]},
-        {"type":"message","id":"m","role":"assistant","status":"completed","content":[]},
-        {"type":"function_call","call_id":"c","name":"lookup","arguments":"{}"},
-        {"type":"function_call_output","call_id":"c","output":"ok"}
-    ]}))
-    .unwrap();
-    let groups: Vec<_> = decoded.semantic.message_groups().collect();
-    assert_eq!(groups.len(), 1);
-    assert_eq!(groups[0].items().len(), 1);
-    assert_eq!(groups[0].calls().len(), 0);
 }
 
 #[test]

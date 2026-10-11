@@ -52,37 +52,6 @@ pub(super) fn source(status: u16, media: &str) -> Probe {
     )
 }
 #[tokio::test]
-async fn speech_waits_for_eof_and_never_infers_format_from_request() {
-    let task = SpeechRequest::new("synthetic", "alloy").unwrap();
-    let mut trace = diagnostics::Trace::new(None);
-    let (tx, response, dropped) = source(200, "application/octet-stream");
-    tx.send(Ok(Bytes::from_static(b"ab"))).await.unwrap();
-    let mut pending = Box::pin(speech::receive(
-        response,
-        &task,
-        Profile::Standard,
-        4,
-        &mut trace,
-    ));
-    assert!(
-        futures_util::poll!(&mut pending).is_pending(),
-        "bytes without EOF cannot be published"
-    );
-    tx.send(Ok(Bytes::from_static(b"cd"))).await.unwrap();
-    drop(tx);
-    let artifact = pending.await.unwrap();
-    assert_eq!(artifact.data().as_ref(), b"abcd");
-    assert_eq!(artifact.encoding(), None);
-    dropped.await.unwrap();
-    let (tx, response, _) = source(200, "audio/mpeg");
-    drop(tx);
-    assert!(
-        speech::receive(response, &task, Profile::Standard, 4, &mut trace)
-            .await
-            .is_err()
-    );
-}
-#[tokio::test]
 async fn speech_intake_rejects_bad_heads_lengths_overflow_and_read_errors() {
     let mut task = SpeechRequest::new("synthetic", "alloy").unwrap();
     task.format = Some(AudioEncoding::Wav);

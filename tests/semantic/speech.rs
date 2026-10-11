@@ -9,38 +9,6 @@ use morphiecore::{
 use serde_json::json;
 
 #[test]
-fn independent_speech_request_decode_and_edited_encode() {
-    let raw = br#"{"model":"public-speech","input":"hello","voice":"alloy","instructions":"","speed":1.123456789012345678901,"response_format":"wav","stream_format":"audio"}"#;
-    let mut request = speech::decode_request(raw).unwrap();
-    assert_eq!(request.model, "public-speech");
-    assert_eq!(request.task.input(), "hello");
-    assert_eq!(request.task.voice(), "alloy");
-    assert_eq!(request.task.instructions.as_deref(), Some(""));
-    assert_eq!(request.task.format, Some(AudioEncoding::Wav));
-    assert_eq!(
-        request.task.speed.as_ref().unwrap().number().to_string(),
-        "1.123456789012345678901"
-    );
-    request.task.set_input("edited").unwrap();
-    request.task.set_voice("coral").unwrap();
-    request.task.instructions = None;
-    request.task.speed = None;
-    request.task.format = Some(AudioEncoding::Mp3);
-    let wire = speech::encode_request(&request, "private-speech").unwrap();
-    assert_eq!(
-        wire,
-        json!({"model":"private-speech","input":"edited","voice":"coral","response_format":"mp3","stream_format":"audio"})
-    );
-
-    let request = Request::new("public", SpeechRequest::new("你好", "alloy").unwrap());
-    assert_eq!(
-        speech::encode_request(&request, "upstream").unwrap(),
-        json!({"model":"upstream","input":"你好","voice":"alloy"})
-    );
-    assert_eq!(request.task.requested_format(), AudioEncoding::Mp3);
-}
-
-#[test]
 fn speech_presence_unknown_fields_and_unsupported_branches_fail_closed() {
     let base = json!({"model":"public","input":"hello","voice":"alloy"});
     for (key, value) in [

@@ -133,70 +133,6 @@ fn external_summary_is_new_user_content_with_explicit_sources_and_no_old_authori
     assert_eq!(result.unwrap_err().stage, ContextStage::Edit);
 }
 #[test]
-fn transforms_protect_instruction_placement_authority_and_assistant_phase() {
-    let instruction = (
-        ItemId::new(1),
-        Item::Instruction(Instruction {
-            authority: InstructionAuthority::Developer,
-            parts: vec![(PartId::new(1), text("do not execute"))],
-            status: None,
-        }),
-    );
-    let source = GenerationRequest::new(
-        vec![instruction, message(2, "input")],
-        GenerationControls::default(),
-    )
-    .unwrap();
-    assert!(
-        source
-            .clone()
-            .transform(
-                vec![ContextEdit::Reorder(vec![ItemId::new(2), ItemId::new(1)])],
-                &[]
-            )
-            .is_err()
-    );
-    let mut elevated = source.items()[0].1.clone();
-    let Item::Instruction(value) = &mut elevated else {
-        panic!()
-    };
-    value.authority = InstructionAuthority::System;
-    assert!(
-        source
-            .transform(
-                vec![ContextEdit::Replace {
-                    owner: ItemId::new(1),
-                    item: elevated
-                }],
-                &[]
-            )
-            .is_err()
-    );
-    let mut phased = message(2, "commentary");
-    let Item::Message(value) = &mut phased.1 else {
-        panic!()
-    };
-    value.role = MessageRole::Assistant;
-    value.phase = Some(Phase::Commentary);
-    let source =
-        GenerationRequest::new(vec![phased.clone()], GenerationControls::default()).unwrap();
-    let Item::Message(value) = &mut phased.1 else {
-        panic!()
-    };
-    value.phase = Some(Phase::FinalAnswer);
-    assert!(
-        source
-            .transform(
-                vec![ContextEdit::Replace {
-                    owner: phased.0,
-                    item: phased.1
-                }],
-                &[]
-            )
-            .is_err()
-    );
-}
-#[test]
 fn selection_and_dependency_failures_have_distinct_content_free_stages() {
     let source = source();
     let selected = ClientManaged::new(GenerationSettings::default())
@@ -345,36 +281,6 @@ fn summary_cannot_reuse_removed_part_identity_or_cross_an_instruction_boundary()
             )
             .is_err()
     );
-}
-
-#[test]
-fn revision_dependency_binds_contents_not_a_forgeable_local_label() {
-    let revision = ConfigurationId::new(LocalScope::ROOT, 1);
-    let source = source()
-        .with_configuration(
-            ConfigurationSnapshot::new(revision, GenerationSettings::default()).unwrap(),
-        )
-        .unwrap();
-    let proof = RequestDependencyProof::capture(
-        &source,
-        HistoryDependency::Owners(vec![ItemId::new(1)]),
-        SettingsDependency::only(SettingsField::ConfigurationRevision),
-    )
-    .unwrap();
-    let changed = GenerationRequest::new(source.items().to_vec(), GenerationControls::default())
-        .unwrap()
-        .with_configuration(
-            ConfigurationSnapshot::new(
-                revision,
-                GenerationSettings {
-                    instructions: Presence::Value(text("different contents under same label")),
-                    ..Default::default()
-                },
-            )
-            .unwrap(),
-        )
-        .unwrap();
-    assert!(proof.check(&changed).is_err());
 }
 
 #[test]

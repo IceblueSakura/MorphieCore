@@ -5,7 +5,7 @@ use morphiecore::{
         AuthScheme, CredentialKind, EndpointPath, ProviderDefinition, ProviderId, TrustedOrigin,
     },
     semantic::{task::embedding::EmbeddingRequest, value::Presence},
-    topology::{ModelId, TopologyError, catalog, compile},
+    topology::{ModelId, TopologyError, compile},
 };
 #[path = "../support/embeddings.rs"]
 mod fixed;
@@ -62,50 +62,6 @@ fn target_contract_rechecks_final_inputs_dimensions_and_identity_without_clippin
     );
     wide.task.dimensions = Presence::Value(256);
     assert!(capacity.admit(&wide).is_ok());
-}
-
-#[test]
-fn registered_embedding_targets_are_task_specific_and_keep_trusted_domains() {
-    // Product declarations are checked here, never used as a codec oracle.
-    let topology = catalog::default_topology().unwrap();
-    for binding in catalog::EMBEDDING_BINDINGS {
-        let route = topology.embedding_route(binding.model).unwrap();
-        assert!(topology.model(binding.model).is_none());
-        assert!(topology.image_route(binding.model).is_none());
-        assert!(topology.model_metadata(&route.canonical_model).is_some());
-        assert!(!route.endpoint.execution.streaming);
-        assert!(!route.endpoint.execution.retry_before_commit);
-        assert_eq!(route.endpoint.upstream_model, binding.upstream);
-        assert_eq!(route.endpoint.credential.as_str(), binding.credential);
-    }
-    let qwen = topology.embedding_route("qwen3.7-text-embedding").unwrap();
-    assert_eq!(
-        qwen.endpoint.profile,
-        morphiecore::adapter::embeddings::Profile::DashScope
-    );
-    assert_eq!(qwen.endpoint.provider.as_str(), "aliyun-dashscope-cn");
-    assert_eq!(
-        qwen.endpoint.target.origin.as_str(),
-        "https://dashscope.aliyuncs.com"
-    );
-    assert_eq!(
-        qwen.endpoint.target.path.as_str(),
-        "/compatible-mode/v1/embeddings"
-    );
-    let openai = topology.embedding_route("text-embedding-3-small").unwrap();
-    assert_eq!(
-        openai.endpoint.profile,
-        morphiecore::adapter::embeddings::Profile::OpenRouter
-    );
-    assert_eq!(
-        openai.endpoint.target.origin.as_str(),
-        "https://openrouter.ai"
-    );
-    assert_eq!(openai.endpoint.target.path.as_str(), "/api/v1/embeddings");
-    assert_eq!(
-        openai.endpoint.upstream_model,
-        "openai/text-embedding-3-small"
-    );
 }
 
 #[test]

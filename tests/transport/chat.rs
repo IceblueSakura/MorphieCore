@@ -4,7 +4,7 @@ use morphiecore::{
     protocol::{
         fidelity::FidelityRecords,
         openai::{
-            Profile, TargetCaps as Contract, chat, chat_envelope as envelope,
+            Profile, TargetCaps as Contract, chat_envelope as envelope,
             chat_sse::{ChatSseDecoder, ChatSseEncoder},
             lowering::{lower_request, lower_response},
             responses,
@@ -42,44 +42,6 @@ fn options(usage: bool) -> StreamOptions {
     StreamOptions {
         include_usage: Presence::Value(usage),
         include_obfuscation: Presence::Value(false),
-    }
-}
-
-#[test]
-fn identical_text_deltas_are_real_content_not_duplicate_events() {
-    let mut bytes = vec![];
-    for (delta, finish) in [
-        (json!({"role":"assistant","content":"echo 🧪"}), Value::Null),
-        (json!({"content":"echo 🧪"}), Value::Null),
-        (json!({}), json!("stop")),
-    ] {
-        bytes.extend(frame(&json!({
-            "id":"r","object":"chat.completion.chunk","created":1,"model":"synthetic",
-            "choices":[{"index":0,"delta":delta,"finish_reason":finish}]
-        })));
-    }
-    bytes.extend(b"data: [DONE]\n\n");
-    let static_wire = json!({
-        "id":"r","object":"chat.completion","created":1,"model":"synthetic",
-        "choices":[{"index":0,"message":{"role":"assistant","content":"echo 🧪echo 🧪"},"finish_reason":"stop"}],
-        "usage":null
-    });
-    let expected =
-        envelope::decode_response_bytes(&serde_json::to_vec(&static_wire).unwrap()).unwrap();
-    for size in [1, bytes.len()] {
-        let mut parsed = decoder();
-        let events = consume(&mut parsed, &bytes, size);
-        parsed.finish().unwrap();
-        assert_eq!(parsed.materialize().unwrap().semantic, expected.semantic);
-        assert_eq!(
-            events
-                .iter()
-                .filter(
-                    |e| matches!(e, StreamEvent::Delta { fragment, .. } if fragment == "echo 🧪")
-                )
-                .count(),
-            2
-        );
     }
 }
 
@@ -148,32 +110,6 @@ fn complete_chat_envelope_separates_delivery_and_rejects_unsupported_admission()
     let mut bad = wire::response(2);
     bad["choices"][0]["message"]["role"] = json!("user");
     assert!(envelope::decode_response_bytes(&serde_json::to_vec(&bad).unwrap()).is_err());
-}
-
-#[test]
-fn fragmented_chat_stream_matches_static_and_done_is_not_finish_reason() {
-    for turn in [1, 2] {
-        let expected =
-            envelope::decode_response_bytes(&serde_json::to_vec(&wire::response(turn)).unwrap())
-                .unwrap();
-        for size in [1, 4096] {
-            let mut d = decoder();
-            for v in wire::events(turn) {
-                consume(&mut d, &frame(&v), size);
-            }
-            assert!(d.materialize().is_err());
-            let events = consume(&mut d, b"data: [DONE]\n\n", size);
-            assert!(matches!(
-                events.last(),
-                Some(StreamEvent::Terminal {
-                    terminal: StreamTerminal::Completed,
-                    ..
-                })
-            ));
-            d.finish().unwrap();
-            assert_eq!(d.materialize().unwrap().semantic, expected.semantic);
-        }
-    }
 }
 
 #[test]
@@ -434,87 +370,6 @@ fn chat_encoder_padding_limits_do_not_emit_done() {
 }
 
 #[test]
-fn requested_but_unreported_chat_usage_stays_null_without_fabricating_reports() {
-    for reason in ["stop", "length", "content_filter"] {
-        let mut values = wire::events(2);
-        values[3]["choices"][0]["finish_reason"] = json!(reason);
-        let mut d = decoder();
-        let mut events = vec![];
-        for value in values
-            .iter()
-            .filter(|value| !value["choices"].as_array().unwrap().is_empty())
-        {
-            events.extend(consume(&mut d, &frame(value), 1));
-        }
-        assert!(d.materialize().is_err());
-        events.extend(consume(&mut d, b"data: [DONE]\n\n", 1));
-        d.finish().unwrap();
-        let r = d.materialize().unwrap();
-        assert_eq!(r.semantic.usage(), None);
-        assert!(
-            !events
-                .iter()
-                .any(|event| matches!(event, StreamEvent::Usage(_)))
-        );
-        for include_usage in [false, true] {
-            let mut encoder = ChatSseEncoder::new(
-                r.metadata.clone(),
-                Contract::full(),
-                SseLimits::default(),
-                options(include_usage),
-                Obfuscation::Disabled,
-            )
-            .unwrap();
-            let mut bytes = vec![];
-            for event in &events {
-                for frame in encoder.encode(event, &r.fidelity).unwrap() {
-                    bytes.extend(frame);
-                }
-            }
-            encoder.finish().unwrap();
-            let text = std::str::from_utf8(&bytes).unwrap();
-            assert_eq!(text.matches("data: [DONE]\n\n").count(), 1);
-            let chunks: Vec<Value> = text
-                .lines()
-                .filter_map(|line| line.strip_prefix("data: "))
-                .filter(|line| *line != "[DONE]")
-                .map(|line| serde_json::from_str(line).unwrap())
-                .collect();
-            assert!(
-                chunks
-                    .iter()
-                    .all(|chunk| chunk.get("usage") == Some(&Value::Null))
-            );
-            assert_eq!(
-                chunks.last().unwrap()["choices"][0]["finish_reason"],
-                reason
-            );
-            let mut round = decoder();
-            consume(&mut round, &bytes, 1);
-            round.finish().unwrap();
-            assert_eq!(round.materialize().unwrap().semantic, r.semantic);
-        }
-        let mut incomplete = ChatSseEncoder::new(
-            r.metadata.clone(),
-            Contract::full(),
-            SseLimits::default(),
-            options(true),
-            Obfuscation::Disabled,
-        )
-        .unwrap();
-        for event in events
-            .iter()
-            .filter(|event| !matches!(event, StreamEvent::Terminal { .. }))
-        {
-            for frame in incomplete.encode(event, &r.fidelity).unwrap() {
-                assert_ne!(frame.as_ref(), b"data: [DONE]\n\n");
-            }
-        }
-        assert!(incomplete.finish().is_err());
-    }
-}
-
-#[test]
 fn invalid_chat_usage_cannot_fall_back_to_null_or_recover_at_done() {
     for usage in [
         json!({"prompt_tokens":1,"completion_tokens":2,"total_tokens":4}),
@@ -583,84 +438,6 @@ fn chat_budgets_and_padding_are_independent_of_chunks() {
     .unwrap();
     consume(&mut d, &first, 1);
     assert!(d.consume(&frame(&wire::events(2)[1])).is_err());
-}
-
-#[test]
-fn response_format_byte_entry_projects_both_ways_and_stays_a_request_fact() {
-    let schema = json!({"type":"object","properties":{"zeta":{"type":"string"}},"required":["zeta"],"additionalProperties":false});
-    let source = json!({"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"response_format":{"type":"json_schema","json_schema":{"name":"answer","strict":true,"schema":schema}}});
-    let d = envelope::decode_request_bytes(&serde_json::to_vec(&source).unwrap()).unwrap();
-    let out = envelope::encode_request(
-        &lower_request(
-            &d.task.semantic,
-            &d.task.fidelity,
-            Profile::Chat,
-            Contract::full(),
-        )
-        .unwrap(),
-        &d.context,
-    )
-    .unwrap();
-    assert_eq!(out["response_format"], source["response_format"]);
-    assert_eq!(
-        out["response_format"]["json_schema"]["schema"]["properties"]
-            .as_object()
-            .unwrap()
-            .keys()
-            .map(String::as_str)
-            .collect::<Vec<_>>(),
-        ["zeta"]
-    );
-    // The nested Chat shell projects to the flat Responses shell independently.
-    let projected = responses::encode_generation(
-        &lower_request(
-            &d.task.semantic,
-            &d.task.fidelity,
-            Profile::Responses,
-            Contract::full(),
-        )
-        .unwrap(),
-    )
-    .unwrap();
-    assert_eq!(
-        projected["text"]["format"],
-        json!({"type":"json_schema","name":"answer","strict":true,"schema":schema})
-    );
-    // And the flat shell projects back to the nested shell with its own wire shape.
-    let r = responses::decode_generation(&json!({"input":"hello","text":{"format":{"type":"json_schema","name":"answer","schema":{"type":"object"}}}})).unwrap();
-    let back = chat::encode_generation(
-        &lower_request(&r.semantic, &r.fidelity, Profile::Chat, Contract::full()).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(
-        back["response_format"],
-        json!({"type":"json_schema","json_schema":{"name":"answer","schema":{"type":"object"}}})
-    );
-    // Duplicate keys inside the shell die at raw-byte admission.
-    assert!(
-        envelope::decode_request_bytes(
-            br#"{"model":"m","messages":[{"role":"user","content":"x"}],"response_format":{"type":"json_schema","json_schema":{"name":"a","schema":{},"schema":{}}}}"#
-        )
-        .is_err()
-    );
-    // A request constraint is never echoed into the response or its chunks.
-    let response =
-        envelope::decode_response_bytes(&serde_json::to_vec(&wire::response(2)).unwrap()).unwrap();
-    let out = envelope::encode_response(
-        &lower_response(
-            &response.semantic,
-            &response.fidelity,
-            &response.metadata,
-            Profile::Chat,
-            Contract::full(),
-        )
-        .unwrap(),
-    )
-    .unwrap();
-    assert!(!out.to_string().contains("response_format"));
-    for value in wire::events(2) {
-        assert!(!value.to_string().contains("response_format"));
-    }
 }
 
 #[test]

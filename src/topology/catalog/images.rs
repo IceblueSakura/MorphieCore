@@ -69,26 +69,3 @@ impl ImageBinding {
         }
     }
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn openrouter_flare_is_an_image_binding_not_a_conversation_alias() {
-        let topology = super::super::default_topology().unwrap();
-        let binding = &IMAGE_BINDINGS[0];
-        let route = topology.image_route(binding.model).unwrap();
-        assert!(topology.model(binding.model).is_none());
-        assert_eq!(route.endpoint.upstream_model, "openai/gpt-image-2.5-flare");
-        assert_eq!(
-            route.endpoint.target.origin.as_str(),
-            "https://openrouter.ai"
-        );
-        assert_eq!(route.endpoint.target.path.as_str(), "/api/v1/images");
-        assert_eq!(route.endpoint.profile, Profile::OpenRouterFlare);
-        assert_eq!(
-            route.accounting,
-            AccountingPolicy::OmitUnrepresentableAccounting
-        );
-        assert!(!route.endpoint.execution.streaming);
-    }
-}

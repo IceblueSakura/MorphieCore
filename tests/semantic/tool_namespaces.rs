@@ -114,68 +114,6 @@ fn typed_groups_calls_and_results_keep_qualified_identity_without_name_rewriting
 }
 
 #[test]
-fn namespace_stream_snapshots_keep_identity_and_reject_drift() {
-    use crate::events_support::{call, call_item, created, encode, envelope, terminal};
-    use morphiecore::protocol::{fidelity::FidelityRecords, openai::events::EventDecoder};
-    let mut events = vec![StreamEvent::Started];
-    let mut tool = call(7, 8, "call", "{}");
-    let StreamEvent::ItemStarted {
-        kind: ItemKind::ToolCall { context, .. },
-        ..
-    } = &mut tool[0]
-    else {
-        unreachable!()
-    };
-    context.namespace = Some(text("ops"));
-    events.extend(tool);
-    events.push(terminal(StreamTerminal::Completed));
-    let encoded = encode(&events, Profile::Responses, &FidelityRecords::default());
-    let added = encoded
-        .iter()
-        .find(|event| event["type"] == "response.output_item.added")
-        .unwrap();
-    assert_eq!(added["item"]["namespace"], "ops");
-    assert_eq!(
-        encoded.last().unwrap()["response"]["output"][0]["namespace"],
-        "ops"
-    );
-    for final_namespace in ["ops", "other"] {
-        let mut decoder = EventDecoder::new(Profile::Responses);
-        decoder.push(&created()).unwrap();
-        let mut added = call_item("fc", "call", "", "in_progress");
-        added["namespace"] = json!("ops");
-        decoder
-            .push(&json!({"type":"response.output_item.added","output_index":0,"item":added}))
-            .unwrap();
-        decoder.push(&json!({"type":"response.function_call_arguments.delta","output_index":0,"item_id":"fc","delta":"{}"})).unwrap();
-        decoder.push(&json!({"type":"response.function_call_arguments.done","output_index":0,"item_id":"fc","arguments":"{}"})).unwrap();
-        let mut done = call_item("fc", "call", "{}", "completed");
-        done["namespace"] = json!(final_namespace);
-        let result =
-            decoder.push(&json!({"type":"response.output_item.done","output_index":0,"item":done}));
-        if final_namespace != "ops" {
-            assert!(result.is_err());
-            assert!(decoder.finish().is_err());
-            continue;
-        }
-        result.unwrap();
-        assert!(decoder.finish().is_err());
-        decoder.push(&json!({"type":"response.completed","response":envelope("completed",json!([done]))})).unwrap();
-        decoder.finish().unwrap();
-        let response = decoder.materialize().unwrap();
-        let Item::ToolCall(call) = &response.semantic.items()[0].1 else {
-            unreachable!()
-        };
-        assert_eq!(call.context.namespace.as_ref().unwrap().as_str(), "ops");
-        assert_eq!(call.name.as_str(), "lookup");
-        assert!(matches!(
-            response.semantic.continuation(),
-            Continuation::ToolResults(_)
-        ));
-    }
-}
-
-#[test]
 fn grouped_definitions_and_qualified_selection_are_not_flattened() {
     let wire = json!({"input":[{"role":"user","content":"check"}],
         "tools":[

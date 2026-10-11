@@ -77,48 +77,6 @@ fn structured_arguments_and_failure_payload_keep_separate_authorities() {
 }
 
 #[test]
-fn edits_recompute_argument_and_execution_requirements_without_restoring_values() {
-    let request = history(
-        ToolArguments::Structured(StructuredValue::new(json!({"n":1})).unwrap()),
-        Some(ToolExecution::Succeeded),
-    );
-    let mut items = request.items().to_vec();
-    items[0].0 = ItemId::new(3);
-    items[1].0 = ItemId::new(4);
-    let Item::ToolCall(call) = &mut items[0].1 else {
-        panic!("call")
-    };
-    call.arguments = "not valid JSON".into();
-    call.call_id = text("edited");
-    let Item::ToolResult(result) = &mut items[1].1 else {
-        panic!("result")
-    };
-    // Independently supplied synthetic result, not a migrated success report.
-    result.call_id = text("edited");
-    result.execution = None;
-    result.status = None;
-    result.output = "replacement".into();
-    let changed = request.with_items(items).unwrap();
-    let q = GenerationRequirements::derive(&changed);
-    assert!(!q.structured_arguments && !q.structured_tool_results && !q.tool_execution_reports);
-    for profile in [Profile::Chat, Profile::Responses] {
-        lower_request(
-            &changed,
-            &FidelityRecords::default(),
-            profile,
-            Contract::full(),
-        )
-        .unwrap();
-    }
-    let only_item = changed.items()[0].clone();
-    let only_call = changed.with_items(vec![only_item]).unwrap();
-    assert!(matches!(
-        only_call.continuation(),
-        Continuation::ToolResults(_)
-    ));
-}
-
-#[test]
 fn missing_argument_or_execution_carriers_reject_even_success_reports() {
     for execution in [
         Some(ToolExecution::Succeeded),

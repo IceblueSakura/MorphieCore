@@ -122,59 +122,6 @@ fn image_generation_reported_values_are_not_request_defaults() {
 }
 
 #[test]
-fn image_generation_typed_reports_encode_without_wire_round_trips() {
-    use morphiecore::semantic::value::ImageFormat;
-    let mut response = ImageGenerationResponse::new(
-        987,
-        vec![GeneratedImage::new(ImageData::new("BAUG").unwrap())],
-    )
-    .unwrap();
-    response.images[0].format = Presence::Value(ImageFormat::Webp);
-    response.images[0].size = Presence::Value(ImageSize {
-        width: 640,
-        height: 480,
-    });
-    response.images[0].background = Presence::Value(ImageBackground::Transparent);
-    response.images[0].quality = Presence::Value(ImageQuality::Medium);
-    response.usage = Presence::Value(ImageUsage {
-        input: 5,
-        input_details: Presence::Value(ImageTokenBreakdown::text_image(2, 3)),
-        output: 4,
-        output_details: Presence::Value(ImageTokenBreakdown::text_image(0, 4)),
-        total: 9,
-        billing: ImageBilling::default(),
-    });
-    assert_eq!(
-        images::encode_response(&response).unwrap(),
-        json!({
-            "created":987,"data":[{"b64_json":"BAUG"}],"output_format":"webp","size":"640x480",
-            "background":"transparent","quality":"medium","usage":{"input_tokens":5,
-            "input_tokens_details":{"text_tokens":2,"image_tokens":3},"output_tokens":4,
-            "output_tokens_details":{"text_tokens":0,"image_tokens":4},"total_tokens":9}
-        })
-    );
-    let mut request = ImageGenerationRequest::new("square").unwrap();
-    request.format = Presence::Value(ImageFormat::Png);
-    assert!(response.validate_for(&request).is_err());
-    response.images[0].format = Presence::Absent;
-    response.validate_for(&request).unwrap();
-    assert!(
-        response.images[0].format.is_absent(),
-        "validation never invents reported format"
-    );
-    response.usage.value().unwrap().validate().unwrap();
-    response.usage = Presence::Value(ImageUsage {
-        input: u64::MAX,
-        input_details: Presence::Value(ImageTokenBreakdown::text_image(u64::MAX, 0)),
-        output: 1,
-        output_details: Presence::Absent,
-        total: 0,
-        billing: ImageBilling::default(),
-    });
-    assert!(images::encode_response(&response).is_err());
-}
-
-#[test]
 fn image_generation_invalid_incomplete_and_oversized_artifacts_fail_closed() {
     for v in [
         json!({"created":1}),

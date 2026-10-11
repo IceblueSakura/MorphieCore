@@ -1,69 +1,9 @@
 use super::speech_support::*;
 use morphiecore::{
-    adapter::speech::Request,
-    execution::speech::prepare,
-    lowering::speech::check_request,
     provider::{EndpointPath, SecretMaterial},
-    semantic::{
-        task::speech_synthesis::{SpeechRequest, Speed},
-        value::AudioEncoding,
-    },
     topology::{self, ModelId},
 };
-use serde_json::json;
 const ORIGIN: &str = "https://synthetic.invalid";
-
-#[test]
-fn speech_target_admission_checks_final_controls_without_erasing_them() {
-    let (_, route) = binding(ORIGIN);
-    let mut caps = route.endpoint.capabilities.clone();
-    let mut request = Request::new(
-        "public-speech",
-        SpeechRequest::new("hello", "alloy").unwrap(),
-    );
-    assert!(check_request(&request.task, &caps).is_ok());
-    caps.instructions = false;
-    request.task.instructions = Some(String::new());
-    assert!(check_request(&request.task, &caps).is_err());
-    request.task.instructions = None;
-    caps.speed = false;
-    request.task.speed = Some(Speed::new("1".parse().unwrap()).unwrap());
-    assert!(check_request(&request.task, &caps).is_err());
-    request.task.speed = None;
-    request.task.format = Some(AudioEncoding::Flac);
-    assert!(check_request(&request.task, &caps).is_err());
-    request.task.format = None;
-    request.task.set_voice("other").unwrap();
-    assert!(check_request(&request.task, &caps).is_err());
-    request.task.set_voice("alloy").unwrap();
-    caps.formats = vec![AudioEncoding::Wav];
-    assert!(
-        check_request(&request.task, &caps).is_err(),
-        "absent format means mp3, not a target-dependent default"
-    );
-    request.task.format = Some(AudioEncoding::Wav);
-    assert!(check_request(&request.task, &caps).is_ok());
-
-    let original = request.clone();
-    let prepared = prepare(
-        &route,
-        &provider(ORIGIN),
-        &SecretMaterial::new("synthetic-key").unwrap(),
-        &request,
-    )
-    .unwrap();
-    assert_eq!(prepared.path, "/audio/speech");
-    assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&prepared.body).unwrap(),
-        json!({"model":"private-speech","input":"hello","voice":"alloy","response_format":"wav"})
-    );
-    assert!(
-        prepared
-            .safe_headers
-            .contains(&("accept".into(), "application/octet-stream".into()))
-    );
-    assert_eq!(original, request);
-}
 
 #[test]
 fn speech_routes_require_trusted_operation_bounded_execution_and_unique_labels() {

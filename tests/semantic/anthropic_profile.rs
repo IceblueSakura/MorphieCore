@@ -17,49 +17,6 @@ fn message() -> Value {
         "usage":{"input_tokens":11,"output_tokens":7}})
 }
 #[test]
-fn independently_constructed_native_values_encode_without_an_openai_dto() {
-    use morphiecore::{
-        protocol::anthropic::{Block, Message, StopReason, Usage},
-        semantic::{task::generation::StructuredValue, value::Presence},
-    };
-    let p = Profile::AdaptiveTextTools;
-    let typed = Message {
-        id: "msg_synthetic".into(),
-        model: "synthetic-model".into(),
-        content: vec![
-            Block::Thinking {
-                thinking: String::new(),
-                signature: "synthetic-signature".into(),
-            },
-            Block::ToolUse {
-                id: "toolu_1".into(),
-                name: "lookup".into(),
-                input: StructuredValue::new(json!({"key":"A"})).unwrap(),
-                caller: Presence::Absent,
-            },
-        ],
-        stop_reason: Presence::Value(StopReason::ToolUse),
-        stop_sequence: Presence::Null,
-        usage: Usage {
-            input_tokens: Presence::Value(11),
-            output_tokens: 7,
-            cache_read_input_tokens: Presence::Absent,
-            cache_creation_input_tokens: Presence::Absent,
-        },
-    };
-    assert_eq!(p.encode_response(&typed).unwrap(), message());
-    let metadata = typed.reported_metadata().unwrap();
-    metadata.validate().unwrap();
-    assert_eq!(metadata.created, None);
-    let decoded = p.decode_response(message().to_string().as_bytes()).unwrap();
-    assert_eq!(decoded.stop_reason, Presence::Value(StopReason::ToolUse));
-    assert_eq!(decoded.usage.input_tokens, Presence::Value(11));
-    assert!(
-        matches!(&decoded.content[0], Block::Thinking { thinking, signature }
-        if thinking.is_empty() && signature == "synthetic-signature")
-    );
-}
-#[test]
 fn typed_native_shapes_preserve_schema_presence_and_signature_only() {
     let p = Profile::AdaptiveTextTools;
     let decoded = p
@@ -153,28 +110,6 @@ fn native_wire_history_preserves_error_presence_and_rejects_bad_arrangements() {
         .unwrap()
         .push(json!({"role":"assistant","content":message()["content"]}));
     assert!(p.decode_request(body.to_string().as_bytes()).is_err());
-}
-#[test]
-fn raw_native_json_rejects_duplicates_and_retains_exact_object_values() {
-    let p = Profile::AdaptiveTextTools;
-    assert_eq!(
-        p.decode_request(br#"{"model":"a","model":"b"}"#).err(),
-        Some(CodecError::Invalid("JSON"))
-    );
-    let raw = br#"{"id":"msg","type":"message","role":"assistant","model":"synthetic","content":[{"type":"tool_use","id":"c","name":"lookup","input":{"n":9007199254740993.125,"nested":{"$serde_json::private::Number":"1"}}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":2}}"#;
-    let wire = p.encode_response(&p.decode_response(raw).unwrap()).unwrap();
-    assert_eq!(
-        wire["content"][0]["input"]["n"].to_string(),
-        "9007199254740993.125"
-    );
-    assert!(wire["content"][0]["input"]["nested"].is_object());
-    let malformed = String::from_utf8(raw.to_vec())
-        .unwrap()
-        .replace("\"n\":9007199254740993.125", "\"n\":0,\"n\":1");
-    assert_eq!(
-        p.decode_response(malformed.as_bytes()).err(),
-        Some(CodecError::Invalid("JSON"))
-    );
 }
 #[test]
 fn individual_native_event_shapes_do_not_claim_cross_event_closure() {

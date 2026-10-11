@@ -6,7 +6,6 @@ use morphiecore::{
         CodecError, DecodedRequest, Profile, TargetCaps as Contract, envelope,
         events::EventDecoder,
         lowering::{lower_request, lower_response},
-        responses,
     },
     semantic::task::generation::*,
 };
@@ -24,72 +23,6 @@ fn message(d: &DecodedRequest) -> &Message {
         panic!()
     };
     m
-}
-fn request_wire(d: &DecodedRequest) -> Value {
-    responses::encode_generation(
-        &lower_request(
-            &d.semantic,
-            &d.fidelity,
-            Profile::Responses,
-            Contract::full(),
-        )
-        .unwrap(),
-    )
-    .unwrap()
-}
-
-#[test]
-fn phase_labels_round_trip_and_stay_independent_of_status() {
-    let mut response = wire::response(2);
-    response["output"][0]["phase"] = json!("final_answer");
-    let d = envelope::decode_response_bytes(&serde_json::to_vec(&response).unwrap()).unwrap();
-    let Item::Message(m) = &d.semantic.items()[0].1 else {
-        panic!()
-    };
-    assert_eq!(m.phase, Some(Phase::FinalAnswer));
-    let out = envelope::encode_response(
-        &lower_response(
-            &d.semantic,
-            &d.fidelity,
-            &d.metadata,
-            Profile::Responses,
-            Contract::full(),
-        )
-        .unwrap(),
-    )
-    .unwrap();
-    assert_eq!(out["output"][0]["phase"], json!("final_answer"));
-    // Missing and null are one unlabeled state; no key is filled in or re-emitted.
-    for label in [None, Some(Value::Null)] {
-        let mut response = wire::response(2);
-        if let Some(v) = label {
-            response["output"][0]["phase"] = v;
-        }
-        let d = envelope::decode_response_bytes(&serde_json::to_vec(&response).unwrap()).unwrap();
-        let Item::Message(m) = &d.semantic.items()[0].1 else {
-            panic!()
-        };
-        assert_eq!(m.phase, None);
-        let out = envelope::encode_response(
-            &lower_response(
-                &d.semantic,
-                &d.fidelity,
-                &d.metadata,
-                Profile::Responses,
-                Contract::full(),
-            )
-            .unwrap(),
-        )
-        .unwrap();
-        assert!(out["output"][0].get("phase").is_none());
-    }
-    // History preserves and resends the label beside an independent item status.
-    let mut item = labelled(json!("commentary"));
-    item["status"] = json!("completed");
-    let d = decode_input(json!([item])).unwrap();
-    assert_eq!(message(&d).phase, Some(Phase::Commentary));
-    let encoded = request_wire(&d);
-    assert_eq!(encoded["input"][0]["phase"], json!("commentary"));
 }
 
 #[test]

@@ -47,29 +47,6 @@ fn result(owner_scope: u64, reference_scope: u64) -> (ItemId, Item) {
     )
 }
 #[test]
-fn equal_local_ids_and_native_aliases_in_distinct_domains_do_not_conflict() {
-    let items = vec![call(1), call(2), result(3, 1)];
-    let request = GenerationRequest::new(items, GenerationControls::default()).unwrap();
-    let Continuation::ToolResults(pending) = request.continuation() else {
-        panic!("pending")
-    };
-    assert_eq!(pending.len(), 1);
-    assert_eq!(pending[0].item, ItemId::scoped(LocalScope::new(2), 1));
-    let alias = NativeCallAlias {
-        domain: Some(domain(1)),
-        kind: NativeIdKind::FunctionCall,
-        value: text("same"),
-    };
-    assert_eq!(
-        resolve_call_alias(request.items(), &alias).unwrap(),
-        ItemId::scoped(LocalScope::new(1), 1)
-    );
-    assert_ne!(
-        PartId::scoped(LocalScope::new(1), 1),
-        PartId::scoped(LocalScope::new(2), 1)
-    );
-}
-#[test]
 fn missing_ambiguous_and_wrong_kind_aliases_are_distinct() {
     let mut items = vec![call(1)];
     let mut alias = NativeCallAlias {

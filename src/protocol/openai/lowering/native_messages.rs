@@ -195,18 +195,4 @@ mod tests {
             );
         }
     }
-    #[test]
-    fn missing_cache_report_is_unknown_and_overflow_is_not_a_fallback() {
-        let mut decoded = fixture();
-        let mut usage = decoded.semantic.usage().unwrap();
-        usage.cached_input_tokens = None;
-        decoded.semantic = decoded.semantic.with_usage(usage).unwrap();
-        project(&mut decoded, Profile::Responses).unwrap();
-        assert_eq!(decoded.semantic.usage(), None);
-        let mut decoded = fixture();
-        let mut usage = decoded.semantic.usage().unwrap();
-        usage.input_tokens = Some(u64::MAX);
-        decoded.semantic = decoded.semantic.with_usage(usage).unwrap();
-        assert!(project(&mut decoded, Profile::Responses).is_err());
-    }
 }

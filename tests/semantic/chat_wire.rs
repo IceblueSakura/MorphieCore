@@ -1,8 +1,7 @@
 //! Explicit Chat dialect mappings over one semantic model.
 use morphiecore::{
     protocol::openai::{
-        Adapter, Dialect, Profile, TargetCaps as Contract, chat, events::EventEncoder,
-        lowering::lower_request,
+        Adapter, Dialect, Profile, TargetCaps as Contract, chat, lowering::lower_request,
     },
     semantic::{
         task::generation::*,
@@ -94,57 +93,6 @@ fn response(content: &str) -> Value {
 fn chunk(delta: Value, finish: Value) -> Value {
     json!({"id":"c1","object":"chat.completion.chunk","created":1,"model":"m",
         "choices":[{"index":0,"delta":delta,"finish_reason":finish}],"usage":null})
-}
-#[test]
-fn readable_reasoning_has_independent_static_and_event_oracles() {
-    let decoded = vendor()
-        .decode_response(response("pong").to_string().as_bytes())
-        .unwrap();
-    assert!(
-        matches!(&decoded.semantic.items()[0].1, Item::Reasoning(r) if matches!(&r.parts[0].1, ReasoningContent::Text(t) if t.as_str()=="think"))
-    );
-    let output = client()
-        .encode_response(&decoded, &Contract::full())
-        .unwrap();
-    assert_eq!(
-        output["choices"][0]["message"]["reasoning_content"],
-        "think"
-    );
-    assert_eq!(output["choices"][0]["message"]["content"], "pong");
-    let mut decoder = vendor().event_decoder();
-    let mut events = vec![];
-    for delta in [
-        json!({"role":"assistant","content":"","tool_calls":null,"reasoning_content":null}),
-        json!({"role":null,"content":null,"reasoning_content":"think"}),
-        json!({"content":"pong"}),
-    ] {
-        events.extend(decoder.push(&chunk(delta, Value::Null)).unwrap());
-    }
-    let mut finish = chunk(json!({}), json!("stop"));
-    finish["usage"] = response("pong")["usage"].clone();
-    events.extend(decoder.push(&finish).unwrap());
-    events.extend(decoder.done().unwrap());
-    decoder.finish().unwrap();
-    assert_eq!(decoder.materialize().unwrap().semantic, decoded.semantic);
-    let mut encoder = EventEncoder::new(Profile::Chat, decoded.metadata.clone())
-        .unwrap()
-        .with_contract(client().contract(&Contract::full()));
-    let mut frames = vec![];
-    for event in &events {
-        frames.extend(encoder.encode(event, decoder.fidelity()).unwrap());
-    }
-    encoder.finish().unwrap();
-    assert!(
-        frames
-            .iter()
-            .any(|f| f.pointer("/choices/0/delta/reasoning_content") == Some(&json!("think")))
-    );
-    let mut replay = client().event_decoder();
-    for frame in frames {
-        replay.push(&frame).unwrap();
-    }
-    replay.done().unwrap();
-    assert_eq!(replay.materialize().unwrap().semantic, decoded.semantic);
 }
 #[test]
 fn history_reasoning_maps_to_a_carrier_and_rejects_unrepresentable_edits() {

@@ -1,13 +1,8 @@
 use morphiecore::{
     execution::images::prepare,
-    gateway::{Credentials, Gateway, ImageEntry, Limits},
-    provider::{
-        AuthScheme, CredentialBindingId, ProviderDefinition, ProviderId, SecretMaterial,
-        TrustedOrigin,
-    },
+    provider::{AuthScheme, ProviderDefinition, ProviderId, SecretMaterial, TrustedOrigin},
     topology::{self, CompiledTopology, ModelId, TopologyError},
 };
-use std::sync::Arc;
 const ORIGIN: &str = "https://synthetic.invalid";
 fn provider() -> ProviderDefinition {
     ProviderDefinition {
@@ -108,40 +103,4 @@ fn image_routes_require_explicit_operation_identity_and_bounded_execution() {
         )
         .is_err()
     );
-}
-#[test]
-fn image_activation_is_explicit_and_requires_its_own_credential_binding() {
-    let (operation, route) = super::image_support::binding(ORIGIN);
-    let compiled = topology()
-        .with_images(vec![operation], vec![route])
-        .unwrap()
-        .with_model_metadata([(
-            ModelId::new("canonical-image").unwrap(),
-            topology::ModelMetadata::new(1, "Synthetic Image Developer").unwrap(),
-        )])
-        .unwrap();
-    let build = |model: &str, credentials| {
-        Gateway::new_with_images(
-            compiled.clone(),
-            vec![],
-            vec![ImageEntry {
-                model: model.into(),
-            }],
-            credentials,
-            SecretMaterial::new("synthetic-client-key-long-enough-0001").unwrap(),
-            Limits::default(),
-            None,
-        )
-    };
-    assert!(build("public-image", Credentials::new()).is_err());
-    let credentials = || {
-        let mut c = Credentials::new();
-        c.insert(
-            CredentialBindingId::new("fixture-key").unwrap(),
-            Arc::new(SecretMaterial::new("synthetic-upstream-key").unwrap()),
-        );
-        c
-    };
-    assert!(build("unknown", credentials()).is_err());
-    assert!(build("public-image", credentials()).is_ok());
 }

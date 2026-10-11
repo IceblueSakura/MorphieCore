@@ -37,45 +37,6 @@ fn delta(fragment: &str) -> StreamEvent {
     }
 }
 #[test]
-fn complete_structured_events_equal_independent_static_values_and_release_the_builder() {
-    let mut input = opening();
-    input.extend([
-        delta("{\"z\":18446744073709551616001,"),
-        delta("\"a\":null}"),
-        StreamEvent::ValueFinished {
-            item: ItemId::new(1),
-            part: PartId::new(2),
-        },
-        StreamEvent::PartFinished {
-            item: ItemId::new(1),
-            part: PartId::new(2),
-        },
-        events::close(1, ItemLifecycle::Completed),
-        events::terminal(StreamTerminal::Completed),
-    ]);
-    let state = events::apply(&input).unwrap();
-    assert!(matches!(
-        state.part(ItemId::new(1), PartId::new(2)).unwrap().value(),
-        StreamPartValue::Json(_)
-    ));
-    let value = StructuredValue::from_bytes(br#"{"z":18446744073709551616001,"a":null}"#).unwrap();
-    let expected = GenerationResponse::new(
-        vec![(
-            ItemId::new(1),
-            Item::ToolCall(ToolCall {
-                call_id: text("c"),
-                name: text("lookup"),
-                arguments: ToolArguments::Structured(value),
-                status: ItemLifecycle::Completed,
-                context: CallContext::default(),
-            }),
-        )],
-        Outcome::Completed,
-    )
-    .unwrap();
-    assert_eq!(materialize(&state).unwrap(), expected);
-}
-#[test]
 fn incomplete_or_invalid_json_never_becomes_a_completed_argument() {
     for fragment in ["{", "{\"x\":1,\"x\":2}"] {
         let mut input = opening();

@@ -82,32 +82,6 @@ fn topology(policy: CandidatePolicy) -> CompiledTopology {
     )
     .unwrap()
 }
-#[test]
-fn forced_upstream_stream_is_rejected_before_attempt_preparation() {
-    use morphiecore::execution::plan::{RejectionReason, representable};
-    let compiled = topology(CandidatePolicy::SkipUnrepresentable);
-    let mut endpoint = compiled
-        .endpoint(&EndpointId::new("a").unwrap())
-        .unwrap()
-        .clone();
-    endpoint.execution.streaming = false;
-    let request = Adapter::new(Profile::Responses, Dialect::MorphieCore, None)
-        .decode_request(br#"{"model":"public","input":"hello","stream":false}"#)
-        .unwrap();
-    assert!(representable(&endpoint, &request).is_ok());
-    endpoint
-        .representation
-        .openai_mut()
-        .unwrap()
-        .adaptation
-        .rules
-        .responses_forced_stream = true;
-    assert_eq!(
-        representable(&endpoint, &request),
-        Err(RejectionReason::Streaming)
-    );
-    assert!(!request.delivery.streaming());
-}
 
 #[test]
 fn full_requests_are_filtered_without_mutation_or_reordering() {

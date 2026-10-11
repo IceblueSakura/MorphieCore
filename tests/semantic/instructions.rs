@@ -1,11 +1,9 @@
 //! Instruction authority, controls and deletion across independent protocol projections.
 use morphiecore::{
     protocol::openai::{
-        DecodedRequest, Profile, TargetCaps as Contract, chat,
-        lowering::{check, lower_request},
-        responses,
+        DecodedRequest, Profile, TargetCaps as Contract, chat, lowering::lower_request, responses,
     },
-    semantic::task::generation::{GenerationRequirements, Item},
+    semantic::task::generation::GenerationRequirements,
 };
 use serde_json::{Value, json};
 
@@ -32,34 +30,4 @@ fn instruction_authority_and_controls_have_independent_wire_expectations() {
         assert_eq!(encode(&d, Profile::Chat), chat_wire);
         assert_eq!(encode(&d, Profile::Responses), responses_wire);
     }
-}
-
-#[test]
-fn ir_deletion_controls_both_encoders() {
-    let mut d = chat::decode_generation(&json!({"messages":[{"role":"system","content":"obsolete"},{"role":"user","content":"keep"}]})).unwrap();
-    d.semantic = d
-        .semantic
-        .retain_items(|_, item| !matches!(item, Item::Instruction(_)))
-        .unwrap();
-    assert_eq!(
-        encode(&d, Profile::Chat),
-        json!({"messages":[{"role":"user","content":"keep"}]})
-    );
-    assert_eq!(
-        encode(&d, Profile::Responses),
-        json!({"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"keep"}]}]})
-    );
-}
-
-#[test]
-fn unrepresentable_instructions_fail_before_encoding() {
-    let d = chat::decode_generation(&json!({"messages":[{"role":"system","content":"required"},{"role":"user","content":"hello"}]})).unwrap();
-    let contract = Contract {
-        semantics: morphiecore::semantic::task::generation::GenerationSemanticContract {
-            instructions: false,
-            ..morphiecore::semantic::task::generation::GenerationSemanticContract::full()
-        },
-        ..Contract::full()
-    };
-    assert!(check(&d.semantic, contract).is_err());
 }

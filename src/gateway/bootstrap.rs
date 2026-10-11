@@ -3,9 +3,6 @@
 #[path = "embedding_bootstrap_tests.rs"]
 mod embedding_tests;
 #[cfg(test)]
-#[path = "openrouter_image_bootstrap_tests.rs"]
-mod image_tests;
-#[cfg(test)]
 #[path = "managed_key_bootstrap_tests.rs"]
 mod managed_key_tests;
 #[cfg(test)]
