@@ -198,6 +198,38 @@ pub struct Attempt {
     )>,
 }
 impl Attempt {
+    /// Native intake needs the exact selected history, not another candidate's IR.
+    pub fn for_request(
+        endpoint: &Endpoint,
+        request: &Request,
+        body_limit: usize,
+        limits: SseLimits,
+    ) -> Result<Self, AttemptError> {
+        let adapter = endpoint.adapter();
+        let mut attempt = Self::new(adapter.clone(), body_limit, limits);
+        if let UpstreamAdapter::AnthropicMessages(profile) = adapter {
+            use crate::semantic::task::generation::LocalScope;
+            let target = crate::protocol::anthropic::ReplayTarget::new(
+                endpoint.provider.as_str(),
+                &endpoint.upstream_model,
+            )?;
+            let wire = endpoint.adapter().encode_request(
+                request,
+                &endpoint.upstream_model,
+                &endpoint.representation,
+            )?;
+            let source = profile.decode_generation_request(
+                &serde_json::to_vec(&wire).map_err(|_| AttemptError::Protocol("native context"))?,
+                LocalScope::new(1),
+                &target,
+            )?;
+            attempt.native_source = Some((source, target, LocalScope::new(2)));
+        }
+        Ok(attempt)
+    }
+    pub(crate) fn is_native_messages(&self) -> bool {
+        matches!(self.adapter, UpstreamAdapter::AnthropicMessages(_))
+    }
     pub fn new(adapter: impl Into<UpstreamAdapter>, body_limit: usize, limits: SseLimits) -> Self {
         Self {
             identity: std::sync::Arc::new(()),

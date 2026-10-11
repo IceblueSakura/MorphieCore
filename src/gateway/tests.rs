@@ -209,17 +209,12 @@ async fn model_request_limits_do_not_suppress_client_reported_facts() {
 async fn diagnostics_only_record_authenticated_requests_and_never_expose_headers() {
     let directory = crate::test_files::private_directory();
     let path = directory.path().join("events.jsonl");
-    let gate = gateway(Limits::default())
-        .with_probe_diagnostics(&path)
-        .unwrap();
+    let gate = gateway(Limits::default()).with_diagnostics(&path).unwrap();
     for authenticated in [false, true] {
         let mut request = HttpRequest::builder()
             .method("POST")
             .uri("/v1/chat/completions")
-            .header(
-                "x-morphiecore-probe-id",
-                "00000000000000000000000000000001:1",
-            )
+            .header("x-private", "synthetic-private-header")
             .header("content-type", "application/json");
         if authenticated {
             request = request.header("authorization", format!("Bearer {KEY}"));
@@ -235,7 +230,7 @@ async fn diagnostics_only_record_authenticated_requests_and_never_expose_headers
             .unwrap();
         assert_eq!(response.status(), if authenticated { 400 } else { 401 });
     }
-    gate.flush_probe_diagnostics().await;
+    gate.flush_diagnostics().await;
     let text = std::fs::read_to_string(&path).unwrap();
     assert_eq!(text.lines().count(), 1);
     assert!(!text.contains(KEY));

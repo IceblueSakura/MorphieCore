@@ -11,28 +11,19 @@
 - 订阅凭据（SIWC、Grok）的新功能。
 - 有状态 Responses、文件服务、Realtime。
 
-## 当前焦点：阶段 0 — 减负
-
-| 项 | 状态 |
-|---|---|
-| `gateway::diagnostics` 的 probe 关联（`x-morphiecore-probe-id`）随 probe 移除一并清理 | 待做 |
-| 继续删减只为转发厂商诊断/计费字段的开关（`routing_extras`、`reported_request_id`、`chat_stop_diagnostics`、`response_extras`、`responses_inactive_*`、`chat_inference_response_shape` 的 null-only 部分）及对应 fidelity 记录 | 待评估 |
-| 可选：`morphiecore-auth` 并入主程序 `morphiecore auth …` | 待定 |
-
-开放解码的遗留边界：OpenAI 响应解码目前用线程局部作用域（`openai::upstream_shapes`）区分上游与请求，阶段 1 改为显式方向；OpenAI SSE 的未知事件类型仍拒绝；冻结的媒体解码器未改动。
-
-退出条件：离线基线全绿；被删测试覆盖的失败类型确认已有其他测试承担或已不再适用。
-
-## 后续阶段
-
-### 阶段 1 — 协议模块化，接通 Anthropic 上游
+## 当前焦点：阶段 1 — 协议模块化与原生增量交付
 
 - lowering / adapter 从 `openai::Profile` 解耦：每个协议一个双向模块，每个上游一份 `TargetCaps`；方言规则收进协议模块。
-- Anthropic Messages 上游进入 Gateway 执行链（请求头、响应解码、候选准备）。
+- 把 OpenAI 上游/请求解码方向改为显式参数，替代 `openai::upstream_shapes` 的线程局部作用域；核定未知 SSE 事件的处理。冻结的媒体解码器不扩展。
 - Anthropic SSE → `StreamEvent` 增量映射，替代先聚合后交付。
-- 将 Anthropic 原生 thinking 接入现有下游 reasoning 信封；上游 Chat `reasoning.text` 项的 `signature` 目前被忽略，需要建模，并验证跨协议的 message/block 顺序。
+- 补默认 CLI 的原生 Messages 产品绑定及显式启用；先核实模型发布元数据，不虚构发布日期。现有 `MESSAGES_BINDINGS` 可用于显式编译拓扑，不能据此假定目录 bootstrap 已开放。
+- 上游 Chat `reasoning.text` 项的 `signature` 目前被忽略，需要建模；扩展多段 thinking、交错 message/block 的跨协议载体，以及工具错误的下游表达。
+
+诊断/计费开关与 fidelity 记录的进一步删减随受影响模块评估，不作为接通功能的前置工程；`morphiecore-auth` 保持独立。
 
 退出条件：`Responses / Chat × Anthropic` 的 JSON 与 SSE 覆盖文本、工具往返、工具错误、thinking 回传、截断与上游错误，有 synthetic 测试，并用一次有界真实调用验证（opencode-go `claude-haiku-5-5` 或其他可用目标）。
+
+## 后续阶段
 
 ### 阶段 2 — 跨协议一致性矩阵
 

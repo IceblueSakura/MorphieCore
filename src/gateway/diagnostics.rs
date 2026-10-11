@@ -1,6 +1,5 @@
 //! Opt-in operator metadata. Never observes bodies, arbitrary headers or identities.
 //! Request paths only try-send to a bounded writer; failures cannot alter responses.
-use axum::http::HeaderMap;
 use serde::Serialize;
 use std::{fs::OpenOptions, io::Write, path::Path, sync::mpsc, time::Instant};
 
@@ -140,7 +139,6 @@ struct Record {
     affinity: AffinityObservation,
     #[serde(skip_serializing_if = "Option::is_none")]
     reported_cached_tokens: Option<u64>,
-    attempt: String,
     stage: Stage,
     outcome: Outcome,
     upstream_status: Option<u16>,
@@ -183,7 +181,7 @@ impl Sink {
         let mut file = options.open(path)?;
         let (tx, rx) = mpsc::sync_channel(64);
         std::thread::Builder::new()
-            .name("probe-metadata".into())
+            .name("gateway-metadata".into())
             .spawn(move || {
                 let mut used = 0;
                 for message in rx {
@@ -225,31 +223,12 @@ pub(super) struct Trace {
     candidate_start: Option<(usize, Instant, u64, u64)>,
 }
 impl Trace {
-    pub(super) fn new(sink: Option<&Sink>, headers: &HeaderMap) -> Self {
-        let mut ids = headers.get_all("x-morphiecore-probe-id").iter();
-        let id = ids
-            .next()
-            .and_then(|v| v.to_str().ok())
-            .filter(|v| {
-                let Some((run, seq)) = v.split_once(':') else {
-                    return false;
-                };
-                run.len() == 32
-                    && run
-                        .bytes()
-                        .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
-                    && !seq.is_empty()
-                    && seq.len() <= 6
-                    && !seq.starts_with('0')
-                    && seq.bytes().all(|b| b.is_ascii_digit())
-            })
-            .filter(|_| ids.next().is_none());
+    pub(super) fn new(sink: Option<&Sink>) -> Self {
         Self {
-            sink: sink.filter(|_| id.is_some()).cloned(),
+            sink: sink.cloned(),
             record: Record {
                 affinity: AffinityObservation::default(),
                 reported_cached_tokens: None,
-                attempt: id.unwrap_or_default().into(),
                 stage: Stage::Admission,
                 outcome: Outcome::Error,
                 upstream_status: None,
@@ -466,7 +445,6 @@ impl Drop for Trace {
             let placeholder = Record {
                 affinity: AffinityObservation::default(),
                 reported_cached_tokens: None,
-                attempt: String::new(),
                 stage: Stage::Complete,
                 outcome: Outcome::Complete,
                 upstream_status: None,
@@ -494,6 +472,7 @@ impl Drop for Trace {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::http::HeaderMap;
     #[test]
     fn image_accounting_observation_is_exact_opt_in_and_body_free() {
         use crate::{
@@ -505,13 +484,8 @@ mod tests {
             project_response(&response, AccountingPolicy::OmitUnrepresentableAccounting).unwrap();
         let (tx, _rx) = mpsc::sync_channel(1);
         let sink = Sink(tx);
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            "x-morphiecore-probe-id",
-            "00000000000000000000000000000001:1".parse().unwrap(),
-        );
         for enabled in [false, true] {
-            let mut trace = Trace::new(enabled.then_some(&sink), &headers);
+            let mut trace = Trace::new(enabled.then_some(&sink));
             trace.image_accounting(response.usage.value(), projected.loss);
             let value = serde_json::to_value(&trace.record).unwrap();
             assert!(!value.to_string().contains("AQID"));
@@ -528,12 +502,7 @@ mod tests {
     fn candidate_observations_do_not_mix_status_bytes_or_unbounded_identity() {
         let (tx, _rx) = mpsc::sync_channel(1);
         let sink = Sink(tx);
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            "x-morphiecore-probe-id",
-            "00000000000000000000000000000001:1".parse().unwrap(),
-        );
-        let mut trace = Trace::new(Some(&sink), &headers);
+        let mut trace = Trace::new(Some(&sink));
         trace.begin_candidate(1);
         trace.head(429, &HeaderMap::new());
         trace.received(7);
@@ -565,12 +534,7 @@ mod tests {
         };
         let (tx, _rx) = mpsc::sync_channel(1);
         let sink = Sink(tx);
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            "x-morphiecore-probe-id",
-            "00000000000000000000000000000001:1".parse().unwrap(),
-        );
-        let mut trace = Trace::new(Some(&sink), &headers);
+        let mut trace = Trace::new(Some(&sink));
         trace.events(&[StreamEvent::Delta {
             item: ItemId::new(1),
             part: PartId::new(1),
@@ -594,7 +558,7 @@ mod tests {
         };
         trace.reported_usage(usage);
         assert_eq!(trace.record.reported_usage_detail_mask, Some(18));
-        let mut disabled = Trace::new(None, &headers);
+        let mut disabled = Trace::new(None);
         disabled.reported_usage(usage);
         assert!(disabled.record.reported_usage_detail_mask.is_none());
         trace.decode_error(&AttemptError::Codec(CodecError::Unsupported(
@@ -635,13 +599,8 @@ mod tests {
     fn full_or_disconnected_sink_does_not_block_a_request() {
         let (tx, rx) = mpsc::sync_channel(1);
         let sink = Sink(tx);
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            "x-morphiecore-probe-id",
-            "00000000000000000000000000000001:1".parse().unwrap(),
-        );
-        drop(Trace::new(Some(&sink), &headers));
-        let trace = Trace::new(Some(&sink), &headers);
+        drop(Trace::new(Some(&sink)));
+        let trace = Trace::new(Some(&sink));
         let (done, completed) = mpsc::channel();
         let worker = std::thread::spawn(move || {
             drop(trace);
@@ -652,7 +611,7 @@ mod tests {
             .unwrap();
         worker.join().unwrap();
         drop(rx);
-        drop(Trace::new(Some(&sink), &headers));
+        drop(Trace::new(Some(&sink)));
     }
     #[tokio::test]
     async fn metadata_is_closed_bounded_and_never_replaces_existing_files() {
@@ -660,24 +619,14 @@ mod tests {
         let path = directory.path().join("events.jsonl");
         let sink = Sink::open(&path).unwrap();
         assert!(Sink::open(&path).is_err());
-        let mut headers = HeaderMap::new();
-        headers.insert("authorization", "Bearer synthetic-secret".parse().unwrap());
-        headers.insert(
-            "x-morphiecore-probe-id",
-            "00000000000000000000000000000001:1".parse().unwrap(),
-        );
-        let mut trace = Trace::new(Some(&sink), &headers);
+        let mut trace = Trace::new(Some(&sink));
         let mut upstream = reqwest::header::HeaderMap::new();
         upstream.insert("retry-after", "7".parse().unwrap());
         upstream.insert("x-private", "synthetic-private".parse().unwrap());
         trace.stage(Stage::ResponseHead);
         trace.head(429, &upstream);
         drop(trace);
-        headers.insert(
-            "x-morphiecore-probe-id",
-            "synthetic-secret".parse().unwrap(),
-        );
-        drop(Trace::new(Some(&sink), &headers));
+        drop(Trace::new(None));
         sink.flush().await;
         let text = std::fs::read_to_string(&path).unwrap();
         assert_eq!(text.lines().count(), 1);

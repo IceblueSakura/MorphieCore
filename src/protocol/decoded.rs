@@ -20,7 +20,8 @@ pub struct DecodedResponse {
 pub struct ResponseMetadata {
     pub id: String,
     pub model: String,
-    /// An upstream-reported timestamp; absence never implies zero or local time.
+    /// Decoders keep an unreported timestamp absent. Delivery may explicitly
+    /// assign its own creation time on a separate downstream envelope copy.
     pub created: Option<serde_json::Number>,
     pub context: crate::semantic::context::ResponseContext,
     /// Representation records for the independently owned instruction echo.

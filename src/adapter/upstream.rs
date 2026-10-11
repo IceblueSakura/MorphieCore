@@ -41,31 +41,35 @@ impl UpstreamAdapter {
         match self {
             Self::OpenAi(adapter) => adapter.encode_request(request, model, contract),
             Self::AnthropicMessages(profile) => {
+                let origin = contract
+                    .replay_origin
+                    .as_ref()
+                    .ok_or_else(|| CodecError::Unsupported("native replay scope".into()))?;
+                let target = anthropic::ReplayTarget::new(origin.as_str(), model)?;
+                let stripped = request.without_foreign_replay(Some(&target.origin()))?;
+                let request = stripped.as_ref().unwrap_or(request);
                 request.check_native_context(
                     contract.adaptation.rules.opencode_go_headers,
                     contract.cache,
                 )?;
                 request.check_semantic(&contract.semantics)?;
                 request.check_semantic(&profile.semantic_contract())?;
+                let mut semantic = profile.group_client_history(&request.task.semantic)?;
+                let mut settings = semantic.settings().clone();
+                // Native signatures are always returned; OpenAI's include flag
+                // selects the downstream carrier, not a native thinking control.
+                settings.reasoning = settings.reasoning.with_encrypted_output(false);
                 if contract.adaptation.rules.reject_reasoning_controls
-                    && request.task.semantic.settings().reasoning != Default::default()
+                    && settings.reasoning != Default::default()
                 {
                     return Err(CodecError::Unsupported(
                         "unverified native reasoning controls".into(),
                     )
                     .into());
                 }
-                let origin = contract
-                    .replay_origin
-                    .as_ref()
-                    .ok_or_else(|| CodecError::Unsupported("native replay scope".into()))?;
-                let target = anthropic::ReplayTarget::new(origin.as_str(), model)?;
+                semantic = semantic.with_settings(settings).map_err(CodecError::from)?;
                 let mut wire = profile
-                    .encode_generation_request(
-                        &request.task.semantic,
-                        &request.task.fidelity,
-                        &target,
-                    )?
+                    .encode_generation_request(&semantic, &request.task.fidelity, &target)?
                     .value;
                 if let Some(stream) = request.delivery.stream.value() {
                     wire["stream"] = serde_json::json!(stream);

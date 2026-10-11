@@ -70,7 +70,7 @@ pub(super) async fn handle(State(runtime): State<Arc<Runtime>>, request: Request
         .unwrap_or_else(IntoResponse::into_response)
 }
 async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, ApiError> {
-    let trace = Trace::new(runtime.diagnostics.as_ref(), request.headers());
+    let trace = Trace::new(runtime.diagnostics.as_ref());
     if runtime.shutdown.is_cancelled() {
         return Err(ApiError::shutdown());
     }

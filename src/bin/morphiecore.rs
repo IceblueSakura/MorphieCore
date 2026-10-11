@@ -68,7 +68,7 @@ async fn main() -> std::process::ExitCode {
     };
     let owner = bootstrap.gateway.clone();
     let result = bootstrap.gateway.serve(listener, shutdown).await;
-    owner.flush_probe_diagnostics().await;
+    owner.flush_diagnostics().await;
     match result {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(_) => {

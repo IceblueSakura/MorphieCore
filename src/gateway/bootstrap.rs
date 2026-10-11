@@ -45,7 +45,7 @@ struct Configuration {
     responses_via_chat: Vec<String>,
     #[serde(default = "enabled")]
     implicit_cache_affinity: bool,
-    /// Trusted global ceiling; probes set one to forbid hidden extra dispatches.
+    /// Trusted global ceiling across all route and credential candidates.
     #[serde(default)]
     max_attempts: Option<usize>,
 }
@@ -321,7 +321,7 @@ impl Bootstrap {
             }
         }
         let gateway = match configuration.diagnostics {
-            Some(path) => gateway.with_probe_diagnostics(&path)?,
+            Some(path) => gateway.with_diagnostics(&path)?,
             None => gateway,
         };
         Ok(Self {

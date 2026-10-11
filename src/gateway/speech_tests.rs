@@ -2,7 +2,7 @@
 use super::*;
 use crate::adapter::speech::Profile;
 use crate::semantic::{task::speech_synthesis::SpeechRequest, value::AudioEncoding};
-use axum::{body::Bytes, http::HeaderMap};
+use axum::body::Bytes;
 use futures_util::Stream;
 use std::{
     pin::Pin,
@@ -54,8 +54,7 @@ pub(super) fn source(status: u16, media: &str) -> Probe {
 #[tokio::test]
 async fn speech_waits_for_eof_and_never_infers_format_from_request() {
     let task = SpeechRequest::new("synthetic", "alloy").unwrap();
-    let headers = HeaderMap::new();
-    let mut trace = diagnostics::Trace::new(None, &headers);
+    let mut trace = diagnostics::Trace::new(None);
     let (tx, response, dropped) = source(200, "application/octet-stream");
     tx.send(Ok(Bytes::from_static(b"ab"))).await.unwrap();
     let mut pending = Box::pin(speech::receive(
@@ -88,8 +87,7 @@ async fn speech_intake_rejects_bad_heads_lengths_overflow_and_read_errors() {
     let mut task = SpeechRequest::new("synthetic", "alloy").unwrap();
     task.format = Some(AudioEncoding::Wav);
     for case in 0..10 {
-        let headers = HeaderMap::new();
-        let mut trace = diagnostics::Trace::new(None, &headers);
+        let mut trace = diagnostics::Trace::new(None);
         let (tx, mut response, dropped) = source(
             if case == 0 { 302 } else { 200 },
             if case == 1 {
@@ -150,8 +148,7 @@ async fn speech_intake_rejects_bad_heads_lengths_overflow_and_read_errors() {
         assert!(!format!("{error:?}").contains("private body"));
         dropped.await.unwrap();
     }
-    let headers = HeaderMap::new();
-    let mut trace = diagnostics::Trace::new(None, &headers);
+    let mut trace = diagnostics::Trace::new(None);
     let (tx, response, _) = source(200, "audio/wav");
     tx.send(Ok(Bytes::from_static(b"abcde"))).await.unwrap();
     drop(tx);
@@ -164,8 +161,7 @@ async fn speech_intake_rejects_bad_heads_lengths_overflow_and_read_errors() {
 #[tokio::test]
 async fn cancelling_binary_collection_drops_unfinished_upstream() {
     let task = SpeechRequest::new("synthetic", "alloy").unwrap();
-    let headers = HeaderMap::new();
-    let mut trace = diagnostics::Trace::new(None, &headers);
+    let mut trace = diagnostics::Trace::new(None);
     let (_tx, response, dropped) = source(200, "audio/mpeg");
     let mut pending = Box::pin(speech::receive(
         response,
@@ -199,8 +195,7 @@ fn native_sse() -> Vec<u8> {
 }
 #[tokio::test]
 async fn native_speech_uses_strict_sse_and_eof_not_just_stop() {
-    let headers = HeaderMap::new();
-    let mut trace = diagnostics::Trace::new(None, &headers);
+    let mut trace = diagnostics::Trace::new(None);
     let (tx, response, dropped) = source(200, "text/event-stream");
     tx.send(Ok(Bytes::from(native_sse()))).await.unwrap();
     let mut pending = Box::pin(aliyun_speech::receive(
@@ -252,8 +247,7 @@ async fn native_speech_uses_strict_sse_and_eof_not_just_stop() {
 }
 #[tokio::test]
 async fn cancelling_native_speech_intake_drops_source() {
-    let headers = HeaderMap::new();
-    let mut trace = diagnostics::Trace::new(None, &headers);
+    let mut trace = diagnostics::Trace::new(None);
     let (_tx, response, dropped) = source(200, "text/event-stream");
     let mut pending = Box::pin(aliyun_speech::receive(
         response, 64, 8192, 2048, 16, &mut trace,

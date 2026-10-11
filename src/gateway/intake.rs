@@ -140,7 +140,8 @@ pub(super) async fn produce_candidate(
         max_events: limits.max_events,
         max_obfuscation_bytes: (limit / 4).min(4 << 20),
     };
-    let mut attempt = Attempt::new(candidate.endpoint.adapter(), limit, sse);
+    let mut attempt = Attempt::for_request(&candidate.endpoint, request, limit, sse)
+        .map_err(|_| ApiError::upstream())?;
     attempt
         .begin(status, content_type)
         .map_err(|_| ApiError::upstream())?;

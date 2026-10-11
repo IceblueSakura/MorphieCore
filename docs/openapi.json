@@ -62,7 +62,7 @@
     "/v1/chat/completions": {
       "post": {
         "operationId": "chatCompletion",
-        "parameters": [{"$ref": "#/components/parameters/ProbeId"}, {"$ref": "#/components/parameters/ConversationId"}],
+        "parameters": [{"$ref": "#/components/parameters/ConversationId"}],
         "summary": "Generate text from admitted text or user image input through single-candidate Chat",
         "requestBody": {
           "required": true,
@@ -89,7 +89,6 @@
       "post": {
         "operationId": "createEmbedding",
         "summary": "Embed an ordered text batch through an explicitly activated fixed target",
-        "parameters": [{"$ref": "#/components/parameters/ProbeId"}],
         "requestBody": {
           "required": true,
           "content": {"application/json": {"schema": {"$ref": "#/components/schemas/EmbeddingRequest"}}}
@@ -119,11 +118,6 @@
       "post": {
         "operationId": "imageGeneration",
         "summary": "Generate an ordered inline image collection using the static GPT Image profile",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/ProbeId"
-          }
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -188,7 +182,6 @@
       "post": {
         "operationId": "createTranscription",
         "summary": "Transcribe one bounded WAV/MP3 upload through an explicitly activated binding",
-        "parameters": [{"$ref": "#/components/parameters/ProbeId"}],
         "requestBody": {
           "required": true,
           "content": {
@@ -223,7 +216,6 @@
       "post": {
         "operationId": "createSpeech",
         "summary": "Generate bounded binary audio through an explicitly activated Speech binding",
-        "parameters": [{"$ref": "#/components/parameters/ProbeId"}],
         "requestBody": {
           "required": true,
           "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SpeechRequest"}}}
@@ -263,7 +255,7 @@
     "/v1/responses": {
       "post": {
         "operationId": "response",
-        "parameters": [{"$ref": "#/components/parameters/ProbeId"}, {"$ref": "#/components/parameters/ConversationId"}],
+        "parameters": [{"$ref": "#/components/parameters/ConversationId"}],
         "summary": "Generate text from explicitly admitted text, image, inline or URL file input through stateless Responses",
         "requestBody": {
           "required": true,
@@ -293,11 +285,6 @@
         "in": "header", "name": "X-MorphieCore-Conversation-Id", "required": false,
         "schema": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[\\u0021-\\u002b\\u002d-\\u007e]+$"},
         "description": "Provider-neutral logical conversation ID, normally carried automatically by the client integration. Keep it stable across turns and model changes; use a new ID for a new or forked conversation. Duplicate values are rejected, even when equal. Absence creates only an independent request-local group, not stored history. Never forwarded verbatim, echoed, or used for authorization or replay permission."
-      },
-      "ProbeId": {
-        "in": "header", "name": "x-morphiecore-probe-id", "required": false,
-        "schema": {"type": "string"},
-        "description": "Operator correlation only when private probe diagnostics are enabled and authentication succeeds. Valid form: 32 lowercase hex run ID, colon, then decimal 1..999999. Invalid/duplicate values disable observation only, not business admission. Never forwarded upstream or echoed downstream. Not semantic request data."
       }
     },
     "securitySchemes": {"bearerAuth": {"type": "http", "scheme": "bearer", "description": "Exactly one Authorization header. Configured startup secret, not an upstream API key."}},

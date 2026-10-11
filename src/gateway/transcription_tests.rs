@@ -1,12 +1,10 @@
 use super::{diagnostics::Trace, speech_tests::source, transcription};
-use axum::http::HeaderMap;
 use bytes::Bytes;
 const RESULT: &[u8] =
     br#"{"request_id":"synthetic","output":{"text":"Hi."},"usage":{"duration":1}}"#;
 #[tokio::test]
 async fn transcription_json_requires_eof_and_rejects_bad_heads_and_reads() {
-    let headers = HeaderMap::new();
-    let mut trace = Trace::new(None, &headers);
+    let mut trace = Trace::new(None);
     let (tx, response, dropped) = source(200, "application/json");
     tx.send(Ok(Bytes::from_static(RESULT))).await.unwrap();
     let mut pending = Box::pin(transcription::receive(response, 4096, &mut trace));
@@ -58,8 +56,7 @@ async fn transcription_json_requires_eof_and_rejects_bad_heads_and_reads() {
 }
 #[tokio::test]
 async fn cancelled_transcription_releases_upstream() {
-    let headers = HeaderMap::new();
-    let mut trace = Trace::new(None, &headers);
+    let mut trace = Trace::new(None);
     let (_tx, response, dropped) = source(200, "application/json");
     let mut pending = Box::pin(transcription::receive(response, 4096, &mut trace));
     assert!(futures_util::poll!(&mut pending).is_pending());

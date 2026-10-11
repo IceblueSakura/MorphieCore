@@ -109,6 +109,13 @@ impl ResponseDelivery {
             .cloned()
             .ok_or(AttemptError::Protocol("missing response metadata"))?;
         metadata.model = self.public_label.clone();
+        if attempt.is_native_messages() {
+            // This is the Gateway envelope's creation time, not an upstream report.
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| AttemptError::Protocol("gateway clock"))?;
+            metadata.created = Some(now.as_secs().into());
+        }
         Ok(metadata)
     }
     fn ready(&self) -> Result<(), AttemptError> {
@@ -125,6 +132,9 @@ impl ResponseDelivery {
         let mut decoded = attempt.response()?.clone();
         decoded.metadata = self.metadata(attempt)?;
         super::replay::seal_for_client(&mut decoded, &super::replay::CLIENT_ORIGIN)?;
+        if attempt.is_native_messages() {
+            crate::lowering::native_messages::project(&mut decoded, self.adapter.protocol)?;
+        }
         if self.adapter.protocol == Profile::Responses {
             for (owner, _) in decoded.semantic.items() {
                 if decoded.fidelity.response_item_id(*owner).is_none() {

@@ -137,14 +137,14 @@ pub enum StartupError {
 }
 impl Gateway {
     /// Enable bounded metadata in a new private operator file, before sharing the gateway.
-    pub fn with_probe_diagnostics(mut self, path: &std::path::Path) -> Result<Self, StartupError> {
+    pub fn with_diagnostics(mut self, path: &std::path::Path) -> Result<Self, StartupError> {
         let state = Arc::get_mut(&mut self.state).ok_or(StartupError::Environment)?;
         state.diagnostics =
             Some(super::diagnostics::Sink::open(path).map_err(|_| StartupError::Environment)?);
         Ok(self)
     }
     /// Best-effort bounded drain, for an owner shutting down its test listener.
-    pub async fn flush_probe_diagnostics(&self) {
+    pub async fn flush_diagnostics(&self) {
         if let Some(sink) = &self.state.diagnostics {
             sink.flush().await;
         }
@@ -284,12 +284,6 @@ impl Gateway {
                 .endpoint(&entry.endpoint)
                 .ok_or(StartupError::Binding)?
                 .clone();
-            if !matches!(
-                endpoint.adapter(),
-                crate::adapter::UpstreamAdapter::OpenAi(_)
-            ) {
-                return Err(StartupError::Binding);
-            }
             let provider = topology
                 .provider(endpoint.provider.as_str())
                 .ok_or(StartupError::Binding)?
@@ -319,6 +313,10 @@ impl Gateway {
             for secret in binding.sources.iter().take(count) {
                 let secret = secret.clone();
                 let mut endpoint = endpoint.clone();
+                // Library SSE intake exists, but Gateway incremental delivery is a later slice.
+                if endpoint.protocol == crate::topology::ProtocolProfile::AnthropicMessages {
+                    endpoint.execution.streaming = false;
+                }
                 let provenance = secret.provenance();
                 // Length prefixes avoid ambiguous concatenation. Internal provenance
                 // is neither a credential locator nor attestation of token issuance.
@@ -345,7 +343,9 @@ impl Gateway {
                     &endpoint.upstream_model,
                 );
                 endpoint.representation.adaptation.scope = Some(scope.clone());
-                if endpoint.representation.replay_origin.is_some() {
+                if endpoint.protocol != crate::topology::ProtocolProfile::AnthropicMessages
+                    && endpoint.representation.replay_origin.is_some()
+                {
                     endpoint.representation.replay_origin = Some(scope.clone());
                 }
                 // Provider compatibility does not authorize private downstream

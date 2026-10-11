@@ -69,11 +69,6 @@ async fn response(
 ) -> Result<Response, ApiError> {
     let entry = gate.state.entries[&(family(Profile::Chat), "fixture-model".into())].clone();
     let request=entry.client.decode_request(serde_json::json!({"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"stream":stream,"stream_options":if stream {serde_json::json!({"include_usage":true,"include_obfuscation":false})}else{serde_json::Value::Null}}).to_string().as_bytes()).unwrap();
-    let mut diagnostic_headers = axum::http::HeaderMap::new();
-    diagnostic_headers.insert(
-        "x-morphiecore-probe-id",
-        "00000000000000000000000000000001:1".parse().unwrap(),
-    );
     let candidate = entry.candidates[0].clone();
     respond(
         entry,
@@ -84,7 +79,7 @@ async fn response(
         deadline,
         gate.state.shutdown.clone(),
         gate.state.permits.clone().acquire_owned().await.unwrap(),
-        super::Trace::new(gate.state.diagnostics.as_ref(), &diagnostic_headers),
+        super::Trace::new(gate.state.diagnostics.as_ref()),
     )
     .await
 }
@@ -92,9 +87,7 @@ async fn response(
 async fn diagnostic_status_and_final_intake_are_from_the_original_attempt() {
     let directory = crate::test_files::private_directory();
     let path = directory.path().join("events.jsonl");
-    let gate = gateway(Limits::default())
-        .with_probe_diagnostics(&path)
-        .unwrap();
+    let gate = gateway(Limits::default()).with_diagnostics(&path).unwrap();
     for status in [429, 503, 200] {
         let (tx, mut source, _, _) = upstream(status, "application/json");
         source
@@ -115,7 +108,7 @@ async fn diagnostic_status_and_final_intake_are_from_the_original_attempt() {
         .unwrap();
         assert_eq!(error.status.as_u16(), if status == 429 { 429 } else { 502 });
     }
-    gate.flush_probe_diagnostics().await;
+    gate.flush_diagnostics().await;
     let raw = std::fs::read_to_string(&path).unwrap();
     assert!(!raw.contains("synthetic-private"));
     let records: Vec<serde_json::Value> = raw

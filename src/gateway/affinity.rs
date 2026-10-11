@@ -226,7 +226,7 @@ mod tests {
         request
     }
     fn trace() -> super::super::diagnostics::Trace {
-        super::super::diagnostics::Trace::new(None, &axum::http::HeaderMap::new())
+        super::super::diagnostics::Trace::new(None)
     }
 
     #[test]

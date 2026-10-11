@@ -10,7 +10,7 @@ MorphieCore 是以统一 IR 为核心的模型路由网关：下游接收标准�
 | 下游 | OpenAI Chat Completions（兼容接口，允许声明的损失，可用扩展字段补充语义） | 已接入 |
 | 下游 | Anthropic Messages | Responses/Chat 稳定后开放 |
 | 上游 | OpenAI Responses、OpenAI Chat（含各兼容方言） | 已接入 |
-| 上游 | Anthropic Messages | 编解码已有，尚未接入 Gateway 执行链 |
+| 上游 | Anthropic Messages | 显式拓扑的 Gateway JSON 已接入；增量 SSE 与默认 CLI 产品绑定待接入 |
 | 上游 | Google generateContent、Google Interactions | 计划中 |
 
 独立的 Embeddings、Images、Speech、Transcription 已有标准下游入口，当前冻结，只做重构所需的维护。
@@ -101,6 +101,15 @@ Chat Completions 无法承载 reasoning 等语义时，参照 OpenRouter 的现�
 - 首次发布下游 frame 即冻结前移；body 交出视为提交；上游严格 EOF 且最终交出后才算完成。之后的错误只能中止 body，不拼接其他 attempt，不伪造成功终态。
 - 上游 SSE 与下游交付方式独立：下游要 JSON 时有界聚合到终态；要 SSE 时增量交付。
 - 所有 body、frame、事件数和时间都有上界；客户端断开、超时或关闭会取消上游请求。
+
+### 原生 Messages 的 OpenAI JSON 投影
+
+- 请求按有序 items 的角色组装原生 messages，保留 thinking / tool_use / tool_result 的相对顺序与 call ID；不依赖客户端保存原始容器边界。`store: false` 等无状态默认值不转成上游存储指令，`include: ["reasoning.encrypted_content"]` 只选择下游载体，不改变原生 thinking 模式。
+- 原生观察保持不变，只在交付副本中省略容器边界、把结构化工具参数精确序列化成 JSON 字符串，并用 OpenAI 的终态及工具调用表达轮次进度。
+- Chat 可承载“至多一个前置 thinking、随后文本、最后工具调用”的 JSON 输出；工具后的文本或交错的 thinking 目前拒绝，而不是悄悄改序。Responses 保留独立 items 顺序。
+- 仅在 input、cache-read、cache-write、output 均有报告时，为目标计算包含缓存的 input 与 total；缺少所需计量时输出 `usage: null`，不补零。原生计量与缺省状态仍保留在源观察中，计量非法或溢出仍失败。
+- 原生协议没有创建时间；OpenAI 交付副本的创建时间取 Gateway 组装该响应的时间，不当成上游报告。
+- 当前原生 Gateway 只接受 JSON。流式请求在发起上游 I/O 前拒绝；独立库级 SSE intake 仍保留。
 
 ## 6. 缓存亲和
 

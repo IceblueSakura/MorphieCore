@@ -1,14 +1,12 @@
 //! Synthetic body and activation checks at the embedding owner; no live egress.
 use super::{diagnostics::Trace, speech_tests::source};
 use crate::adapter::embeddings::Profile;
-use axum::http::HeaderMap;
 use bytes::Bytes;
 const RESULT: &[u8] = br#"{"object":"list","model":"synthetic","data":[{"object":"embedding","index":0,"embedding":[0.5,1]}],"usage":{"prompt_tokens":1,"total_tokens":1}}"#;
 
 #[tokio::test]
 async fn embedding_body_requires_eof_and_rejects_bad_heads_reads_and_limits() {
-    let headers = HeaderMap::new();
-    let mut trace = Trace::new(None, &headers);
+    let mut trace = Trace::new(None);
     let (tx, response, dropped) = source(200, "application/json");
     tx.send(Ok(Bytes::from_static(RESULT))).await.unwrap();
     let mut pending = Box::pin(super::embeddings::receive(
@@ -76,8 +74,7 @@ async fn embedding_body_requires_eof_and_rejects_bad_heads_reads_and_limits() {
 }
 #[tokio::test]
 async fn cancelled_embedding_intake_releases_its_body_without_a_result() {
-    let headers = HeaderMap::new();
-    let mut trace = Trace::new(None, &headers);
+    let mut trace = Trace::new(None);
     let (_tx, response, dropped) = source(200, "application/json");
     let mut pending = Box::pin(super::embeddings::receive(
         response,

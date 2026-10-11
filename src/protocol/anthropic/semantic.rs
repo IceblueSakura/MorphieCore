@@ -26,6 +26,54 @@ impl std::fmt::Debug for NativeProjection {
     }
 }
 impl Profile {
+    /// Assemble target messages from ordered items, without claiming source ownership.
+    pub(crate) fn group_client_history(
+        self,
+        request: &GenerationRequest,
+    ) -> Result<GenerationRequest, CodecError> {
+        let expected: Vec<_> = request
+            .items()
+            .iter()
+            .filter(|(_, item)| !matches!(item, Item::Instruction(_)))
+            .map(|(id, _)| *id)
+            .collect();
+        let actual: Vec<_> = request
+            .message_envelopes()
+            .iter()
+            .flat_map(|group| group.members().iter().copied())
+            .collect();
+        if actual == expected {
+            return Ok(request.clone());
+        }
+        let mut groups: Vec<(MessageEnvelopeRole, Vec<ItemId>)> = vec![];
+        for (id, item) in request.items() {
+            let role = match item {
+                Item::Instruction(_) => continue,
+                Item::Message(message) => match message.role {
+                    MessageRole::User => MessageEnvelopeRole::User,
+                    MessageRole::Assistant => MessageEnvelopeRole::Assistant,
+                },
+                Item::Reasoning(_) | Item::ToolCall(_) => MessageEnvelopeRole::Assistant,
+                Item::ToolResult(_) => MessageEnvelopeRole::User,
+                _ => return Err(unsupported()),
+            };
+            match groups.last_mut() {
+                Some((last, members)) if *last == role => members.push(*id),
+                _ => groups.push((role, vec![*id])),
+            }
+        }
+        let groups = groups
+            .into_iter()
+            .map(|(role, members)| {
+                MessageEnvelope::new(
+                    GroupId::new(members[0].scope(), members[0].get()),
+                    role,
+                    members,
+                )
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(request.clone().with_message_envelopes(groups)?)
+    }
     pub fn decode_generation_request(
         self,
         bytes: &[u8],

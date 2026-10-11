@@ -89,7 +89,7 @@ pub(super) async fn handle(
     profile: Profile,
     request: Request,
 ) -> Result<Response, ApiError> {
-    let trace = Trace::new(state.diagnostics.as_ref(), request.headers());
+    let trace = Trace::new(state.diagnostics.as_ref());
     if state.shutdown.is_cancelled() {
         return Err(ApiError::shutdown());
     }

@@ -61,6 +61,23 @@ impl Request {
         self.context.validate()?;
         let mut context = self.context.clone();
         cache.project(&mut context)?;
+        // Explicit stateless defaults do not ask the native Provider for storage.
+        if context.store == Presence::Value(false) {
+            context.store = Presence::Absent;
+        }
+        if context.background == Presence::Value(false) {
+            context.background = Presence::Absent;
+        }
+        for value in [
+            &mut context.previous_response_id,
+            &mut context.conversation,
+            &mut context.prompt,
+            &mut context.moderation,
+        ] {
+            if *value == Presence::Null {
+                *value = Presence::Absent;
+            }
+        }
         if go {
             cache.opencode_session(
                 self.conversation.as_ref(),
@@ -70,7 +87,7 @@ impl Request {
         }
         if context != ExecutionHints::default()
             || self.delivery.stream == Presence::Null
-            || !self.delivery.options.is_absent()
+            || self.delivery.options.value().is_some()
             || self.extensions != CustomSections::default()
             || self.n.value().is_some_and(|n| *n != 1)
             || !go && self.cache_session.is_some()
