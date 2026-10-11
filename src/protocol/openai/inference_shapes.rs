@@ -1,7 +1,7 @@
 //! Closed inference-server placeholders and reported usage aliases; no payload fidelity.
 use super::{
     CodecError,
-    common::{fields, object},
+    common::{DecodeDirection, object},
 };
 use serde_json::{Map, Value};
 
@@ -31,7 +31,10 @@ fn counter(object: &mut Map<String, Value>, name: &str, value: Value) -> Result<
     object.insert(name.into(), value);
     Ok(())
 }
-pub(super) fn decode(root: &mut Map<String, Value>) -> Result<(), CodecError> {
+pub(super) fn decode(
+    root: &mut Map<String, Value>,
+    direction: DecodeDirection,
+) -> Result<(), CodecError> {
     // These optional transport/debug fields have no semantic owner when null.
     // Active values still require a dedicated supported mapping.
     // https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/openai/chat_completion/protocol.py
@@ -72,7 +75,7 @@ pub(super) fn decode(root: &mut Map<String, Value>) -> Result<(), CodecError> {
             .filter(|v| !v.is_null())
         {
             let values = object(&value)?;
-            fields(values, &["image", "audio", "video"])?;
+            direction.fields(values, &["image", "audio", "video"])?;
             for name in ["audio", "video"] {
                 if values
                     .get(name)

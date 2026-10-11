@@ -31,7 +31,7 @@ pub(super) fn attach(
     let mut annotations = Vec::new();
     for row in rows {
         let row = object(row)?;
-        fields(row, &["type", "url_citation"])?;
+        items.direction.fields(row, &["type", "url_citation"])?;
         if string(row, "type")? != "url_citation" {
             return Err(CodecError::Unsupported("Chat annotation kind".into()));
         }
@@ -39,7 +39,9 @@ pub(super) fn attach(
             row.get("url_citation")
                 .ok_or(CodecError::Invalid("url citation"))?,
         )?;
-        fields(cite, &["start_index", "end_index", "title", "url"])?;
+        items
+            .direction
+            .fields(cite, &["start_index", "end_index", "title", "url"])?;
         let mut flat = cite.clone();
         flat.insert("type".into(), json!("url_citation"));
         annotations.push(super::citations::read(&Value::Object(flat), items)?);

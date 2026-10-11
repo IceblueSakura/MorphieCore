@@ -26,7 +26,7 @@ pub(super) fn metadata(
             .ok_or(CodecError::Invalid("created time"))?,
     )?;
     let (context, instruction_fidelity) = if profile == Profile::Responses {
-        crate::semantic::context::ResponseContext::read(o)?
+        crate::semantic::context::ResponseContext::read(o, DecodeDirection::Upstream)?
     } else {
         (
             crate::semantic::context::ResponseContext {
@@ -89,7 +89,7 @@ pub(super) fn usage(
     if profile == Profile::Chat && adaptation.rules.chat_reasoning_usage_alias {
         allowed.push("reasoning_tokens");
     }
-    fields(usage, &allowed)?;
+    DecodeDirection::Upstream.fields(usage, &allowed)?;
     let mut parsed = Usage {
         scope: crate::semantic::task::generation::UsageScope::Operation,
         basis: crate::semantic::task::generation::UsageBasis::Final,
@@ -227,7 +227,7 @@ fn detail(
                 "output_tokens_details" => &["reasoning_tokens", "text_tokens"],
                 _ => unreachable!("fixed usage detail schema"),
             };
-            fields(details, allowed)?;
+            DecodeDirection::Upstream.fields(details, allowed)?;
             match details.get(field) {
                 None | Some(Value::Null) => Ok(None),
                 Some(value) => Ok(Some(
@@ -362,16 +362,16 @@ pub(super) fn encode_usage(
     value
 }
 pub fn decode_chat(v: &Value) -> Result<DecodedResponse, CodecError> {
-    let _open = super::common::upstream_shapes();
     decode_chat_with(v, &Default::default())
 }
 pub(crate) fn decode_chat_with(
     v: &Value,
     adaptation: &crate::protocol::adaptation::Adaptation,
 ) -> Result<DecodedResponse, CodecError> {
-    let (v, extras) = super::adapter_shapes::decode(v, Profile::Chat, adaptation)?;
+    let (v, extras) =
+        super::adapter_shapes::decode(v, Profile::Chat, adaptation, DecodeDirection::Upstream)?;
     let o = object(&v)?;
-    fields(
+    DecodeDirection::Upstream.fields(
         o,
         &[
             "id",
@@ -394,7 +394,7 @@ pub(crate) fn decode_chat_with(
         .filter(|a| a.len() == 1)
         .ok_or(CodecError::Unsupported("candidate count".into()))?;
     let c = object(&choices[0])?;
-    fields(c, &["index", "message", "finish_reason", "logprobs"])?;
+    DecodeDirection::Upstream.fields(c, &["index", "message", "finish_reason", "logprobs"])?;
     if c.get("index").and_then(Value::as_u64) != Some(0) {
         return Err(CodecError::Unsupported("candidate index".into()));
     }
@@ -406,7 +406,7 @@ pub(crate) fn decode_chat_with(
         }
     };
     let message = object(c.get("message").ok_or(CodecError::Invalid("message"))?)?;
-    let mut b = Items::default();
+    let mut b = Items::new(DecodeDirection::Upstream);
     let message = super::chat_reasoning::decode_static(&mut b, message, adaptation)?;
     chat::decode_message(&mut b, &message, false)?;
     super::chat_logprobs::attach(&mut b.items, c.get("logprobs"))?;
@@ -464,14 +464,18 @@ pub(crate) fn decode_chat_with(
     })
 }
 pub fn decode_responses(v: &Value) -> Result<DecodedResponse, CodecError> {
-    let _open = super::common::upstream_shapes();
     decode_responses_with(v, &Default::default())
 }
 pub(crate) fn decode_responses_with(
     v: &Value,
     adaptation: &crate::protocol::adaptation::Adaptation,
 ) -> Result<DecodedResponse, CodecError> {
-    let (v, extras) = super::adapter_shapes::decode(v, Profile::Responses, adaptation)?;
+    let (v, extras) = super::adapter_shapes::decode(
+        v,
+        Profile::Responses,
+        adaptation,
+        DecodeDirection::Upstream,
+    )?;
     let o = object(&v)?;
     super::envelope::response_fields(o)?;
     if string(o, "object")? != "response" {
@@ -488,7 +492,7 @@ pub(crate) fn decode_responses_with(
         .get("output")
         .and_then(Value::as_array)
         .ok_or(CodecError::Invalid("output"))?;
-    let mut b = Items::default();
+    let mut b = Items::new(DecodeDirection::Upstream);
     let item_status = if outcome == Outcome::Completed {
         "completed"
     } else {

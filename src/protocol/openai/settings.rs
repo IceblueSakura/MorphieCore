@@ -24,6 +24,7 @@ pub(super) const FIELDS: &[&str] = &[
 pub(super) fn read(
     o: &Map<String, Value>,
     reported: bool,
+    direction: DecodeDirection,
 ) -> Result<GenerationSettings, CodecError> {
     let instructions = read_presence(o, "instructions", |v| {
         Text::allowing_empty(
@@ -36,7 +37,7 @@ pub(super) fn read(
     let mut s = GenerationSettings {
         instructions,
         controls: controls(o, "max_output_tokens")?,
-        reasoning: reasoning::request(o, reported)?,
+        reasoning: reasoning::request(o, reported, direction)?,
         ..Default::default()
     };
     if let Some(v) = o.get("top_p").filter(|v| !v.is_null()) {
@@ -75,9 +76,9 @@ pub(super) fn read(
     }
     if let Some(t) = o.get("text").filter(|v| !v.is_null()) {
         let t = object(t)?;
-        fields(t, &["format", "verbosity"])?;
+        direction.fields(t, &["format", "verbosity"])?;
         s.text.presence = true;
-        s.text.format = read_presence(t, "format", read_format)?;
+        s.text.format = read_presence(t, "format", |v| read_format(v, direction))?;
         s.text.verbosity = read_presence(t, "verbosity", |v| match v.as_str() {
             Some("low") => Ok(Verbosity::Low),
             Some("medium") => Ok(Verbosity::Medium),
@@ -85,23 +86,26 @@ pub(super) fn read(
             _ => Err(CodecError::Invalid("verbosity")),
         })?;
     }
-    function_tools::read_settings(o, Profile::Responses, &mut s)?;
+    function_tools::read_settings(o, Profile::Responses, &mut s, direction)?;
     s.validate()?;
     Ok(s)
 }
-pub(super) fn read_format(v: &Value) -> Result<OutputConstraint, CodecError> {
+pub(super) fn read_format(
+    v: &Value,
+    direction: DecodeDirection,
+) -> Result<OutputConstraint, CodecError> {
     let o = object(v)?;
     Ok(match string(o, "type")? {
         "text" => {
-            fields(o, &["type"])?;
+            direction.fields(o, &["type"])?;
             OutputConstraint::Text
         }
         "json_object" => {
-            fields(o, &["type"])?;
+            direction.fields(o, &["type"])?;
             OutputConstraint::JsonObject
         }
         "json_schema" => {
-            fields(o, &["type", "name", "description", "schema", "strict"])?;
+            direction.fields(o, &["type", "name", "description", "schema", "strict"])?;
             read_schema_body(o)?
         }
         _ => return Err(CodecError::Unsupported("text format".into())),

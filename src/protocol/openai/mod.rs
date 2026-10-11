@@ -21,7 +21,7 @@ mod inference_shapes;
 pub(crate) mod input_audio;
 pub(crate) mod json;
 mod reasoning;
-pub(crate) use common::{open_shapes, upstream_shapes};
+pub(crate) use common::DecodeDirection;
 pub mod responses;
 mod settings;
 pub mod speech;

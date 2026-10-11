@@ -144,9 +144,6 @@ pub struct Adaptation {
 impl Adaptation {
     /// Request-side gate only; upstream responses ignore keys the dialect does not model.
     pub(crate) fn validate_message(&self, message: &Map<String, Value>) -> Result<(), CodecError> {
-        if crate::protocol::openai::open_shapes() {
-            return Ok(());
-        }
         if message.contains_key("reasoning_content") && !self.rules.readable_reasoning {
             return Err(CodecError::Unsupported("reasoning_content".into()));
         }

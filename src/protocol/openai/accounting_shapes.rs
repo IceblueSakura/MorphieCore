@@ -3,7 +3,7 @@
 use super::{
     CodecError,
     adapter_shapes::Extras,
-    common::{fields, object},
+    common::{DecodeDirection, object},
 };
 use serde_json::{Map, Value, json};
 fn take(o: &mut Map<String, Value>, key: &str, path: &str, extras: &mut Extras) {
@@ -11,10 +11,14 @@ fn take(o: &mut Map<String, Value>, key: &str, path: &str, extras: &mut Extras) 
         extras.insert(path.into(), value);
     }
 }
-pub(super) fn programs(o: &mut Map<String, Value>, extras: &mut Extras) -> Result<(), CodecError> {
+pub(super) fn programs(
+    o: &mut Map<String, Value>,
+    extras: &mut Extras,
+    direction: DecodeDirection,
+) -> Result<(), CodecError> {
     if let Some(value) = o.get("access_programs") {
         let programs = object(value)?;
-        fields(programs, &["cyber"])?;
+        direction.fields(programs, &["cyber"])?;
         if programs.get("cyber").is_some_and(|v| {
             !v.as_str().is_some_and(|s| {
                 !s.is_empty()
@@ -52,20 +56,25 @@ fn null_moderation(o: &mut Map<String, Value>, extras: &mut Extras) -> Result<()
     }
     Ok(())
 }
-pub(super) fn product(o: &mut Map<String, Value>, extras: &mut Extras) -> Result<(), CodecError> {
-    programs(o, extras)?;
+pub(super) fn product(
+    o: &mut Map<String, Value>,
+    extras: &mut Extras,
+    direction: DecodeDirection,
+) -> Result<(), CodecError> {
+    programs(o, extras, direction)?;
     null_moderation(o, extras)?;
     zero_tools(o, extras)?;
-    usage_attribution(o, extras)
+    usage_attribution(o, extras, direction)
 }
 pub(super) fn usage_attribution(
     o: &mut Map<String, Value>,
     extras: &mut Extras,
+    direction: DecodeDirection,
 ) -> Result<(), CodecError> {
     if let Some(usage) = o.get_mut("usage").and_then(Value::as_object_mut)
         && let Some(value) = usage.get("attribution")
     {
-        attribution(value)?;
+        attribution(value, direction)?;
         take(usage, "attribution", "/usage/attribution", extras);
     }
     Ok(())
@@ -87,9 +96,9 @@ pub(super) fn zero_tools(
 // Attribution uses upstream input/output coordinates, not local ItemId. Keep
 // the entire closed view source-bound; never attach it to a new semantic owner
 // or sum it into billed totals (context and billing can account differently).
-fn attribution(value: &Value) -> Result<(), CodecError> {
+fn attribution(value: &Value, direction: DecodeDirection) -> Result<(), CodecError> {
     let attribution = object(value)?;
-    fields(attribution, &["items", "request_fields"])?;
+    direction.fields(attribution, &["items", "request_fields"])?;
     let items = object(
         attribution
             .get("items")
@@ -110,7 +119,7 @@ fn attribution(value: &Value) -> Result<(), CodecError> {
         if item {
             allowed.push("content");
         }
-        fields(value, &allowed)?;
+        direction.fields(value, &allowed)?;
         if keys
             .iter()
             .any(|key| value.get(*key).and_then(Value::as_u64).is_none())
@@ -139,7 +148,7 @@ fn attribution(value: &Value) -> Result<(), CodecError> {
     }
     if let Some(request_fields) = attribution.get("request_fields") {
         let request_fields = object(request_fields)?;
-        fields(request_fields, &["tools"])?;
+        direction.fields(request_fields, &["tools"])?;
         for value in request_fields.values() {
             counts(value, false)?;
         }
@@ -149,7 +158,11 @@ fn attribution(value: &Value) -> Result<(), CodecError> {
 /// Billing ticks and context-window counters are not per-call billed token
 /// counts. Retain exact integers in scoped fidelity; never sum or relabel them.
 /// Source: https://docs.x.ai/developers/rest-api-reference/inference/responses
-pub(super) fn context(o: &mut Map<String, Value>, extras: &mut Extras) -> Result<(), CodecError> {
+pub(super) fn context(
+    o: &mut Map<String, Value>,
+    extras: &mut Extras,
+    direction: DecodeDirection,
+) -> Result<(), CodecError> {
     let Some(usage) = o.get_mut("usage").and_then(Value::as_object_mut) else {
         return Ok(());
     };
@@ -174,7 +187,7 @@ pub(super) fn context(o: &mut Map<String, Value>, extras: &mut Extras) -> Result
     }
     if let Some(value) = usage.get("context_details") {
         let details = object(value)?;
-        fields(details, &["input_tokens", "output_tokens"])?;
+        direction.fields(details, &["input_tokens", "output_tokens"])?;
         if details.values().any(|v| v.as_u64().is_none()) {
             return Err(CodecError::Invalid("context accounting"));
         }

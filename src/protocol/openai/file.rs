@@ -4,8 +4,11 @@ use super::{CodecError, common::*};
 use crate::semantic::{task::generation::*, value::Text};
 use serde_json::{Map, Value, json};
 
-pub(super) fn read(part: &Map<String, Value>) -> Result<Resource, CodecError> {
-    fields(
+pub(super) fn read(
+    part: &Map<String, Value>,
+    direction: DecodeDirection,
+) -> Result<Resource, CodecError> {
+    direction.fields(
         part,
         &["type", "file_data", "file_url", "filename", "detail"],
     )?;

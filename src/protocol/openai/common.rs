@@ -55,29 +55,24 @@ pub(super) fn put_presence<T>(
 pub(super) fn object(v: &Value) -> Result<&Map<String, Value>, CodecError> {
     v.as_object().ok_or(CodecError::Invalid("object"))
 }
-thread_local! {
-    static UPSTREAM: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+/// Operation-local parsing policy. Payload contents never select this direction.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum DecodeDirection {
+    #[default]
+    Request,
+    Upstream,
+    Encoded,
 }
-/// Scope for decoding an upstream response or event: unknown keys are ignored so new
-/// Provider fields cannot fail a response, while known keys stay strictly validated.
-/// Request decoding and self-checks of encoded output keep closed shapes. Decoding is
-/// synchronous, so the scope cannot leak across an await point.
-pub(crate) struct UpstreamShapes(bool);
-pub(crate) fn upstream_shapes() -> UpstreamShapes {
-    UpstreamShapes(UPSTREAM.replace(true))
-}
-impl Drop for UpstreamShapes {
-    fn drop(&mut self) {
-        UPSTREAM.set(self.0);
+impl DecodeDirection {
+    pub(crate) fn fields(self, o: &Map<String, Value>, allowed: &[&str]) -> Result<(), CodecError> {
+        if self == Self::Upstream {
+            return Ok(());
+        }
+        fields(o, allowed)
     }
 }
-pub(crate) fn open_shapes() -> bool {
-    UPSTREAM.get()
-}
+/// Closed request shape; shared readers use their explicitly supplied direction.
 pub(super) fn fields(o: &Map<String, Value>, allowed: &[&str]) -> Result<(), CodecError> {
-    if open_shapes() {
-        return Ok(());
-    }
     if let Some(key) = o.keys().find(|key| !allowed.contains(&key.as_str())) {
         return Err(CodecError::Unsupported(key.clone()));
     }
@@ -158,6 +153,7 @@ pub(super) fn write_control_values(c: &GenerationControls, o: &mut Map<String, V
 }
 #[derive(Default)]
 pub(super) struct Items {
+    pub direction: DecodeDirection,
     pub items: Vec<(ItemId, Item)>,
     pub resources: ResourceTable,
     pub message_owners: Vec<(ItemId, ItemId)>,
@@ -167,6 +163,12 @@ pub(super) struct Items {
     next_resource: u64,
 }
 impl Items {
+    pub fn new(direction: DecodeDirection) -> Self {
+        Self {
+            direction,
+            ..Default::default()
+        }
+    }
     pub fn resource(
         &mut self,
         value: Resource,
@@ -183,10 +185,11 @@ impl Items {
             description,
         })
     }
-    pub fn from_resources(resources: ResourceTable) -> Self {
+    pub fn from_resources(resources: ResourceTable, direction: DecodeDirection) -> Self {
         let next_resource = resources.iter().map(|(id, _)| id.get()).max().unwrap_or(0);
         Self {
             resources,
+            direction,
             next_resource,
             ..Default::default()
         }
@@ -266,15 +269,16 @@ pub(super) fn tool_call(
     profile: Profile,
     item_status: Option<&str>,
     replay: bool,
+    direction: DecodeDirection,
 ) -> Result<ToolCall, CodecError> {
     let (f, id) = match profile {
         Profile::Chat => {
-            fields(o, &["id", "type", "function", "index"])?;
+            direction.fields(o, &["id", "type", "function", "index"])?;
             if string(o, "type")? != "function" {
                 return Err(CodecError::Unsupported("tool kind".into()));
             }
             let f = object(o.get("function").ok_or(CodecError::Invalid("function"))?)?;
-            fields(
+            direction.fields(
                 f,
                 if replay {
                     &["name", "arguments", "parsed_arguments"]
@@ -285,7 +289,7 @@ pub(super) fn tool_call(
             (f, string(o, "id")?)
         }
         Profile::Responses => {
-            fields(
+            direction.fields(
                 o,
                 if replay {
                     &[
@@ -340,7 +344,7 @@ pub(super) fn tool_call(
         arguments: raw_string(f, "arguments")?.into(),
         status,
         context: if profile == Profile::Responses {
-            super::responses::call_context(o)?
+            super::responses::call_context(o, direction)?
         } else {
             CallContext::default()
         },
@@ -463,4 +467,98 @@ pub(super) fn accept_status(o: &Map<String, Value>, expected: &str) -> Result<()
         return Err(CodecError::Unsupported("non-completed item".into()));
     }
     Ok(())
+}
+#[cfg(test)]
+mod direction_tests {
+    use super::*;
+    use crate::{
+        adapter::{Adapter, Dialect},
+        lowering::generation::GenerationRepresentationContract,
+        protocol::openai::envelope,
+    };
+    use serde_json::json;
+
+    #[test]
+    fn shared_item_readers_keep_independent_operation_directions() {
+        let wire = json!({"role":"assistant","content":"ok","future_message":{"nested":true}});
+        for direction in [
+            DecodeDirection::Upstream,
+            DecodeDirection::Request,
+            DecodeDirection::Encoded,
+            DecodeDirection::Upstream,
+        ] {
+            let mut items = Items::new(direction);
+            let parsed =
+                super::super::chat::decode_message(&mut items, wire.as_object().unwrap(), false);
+            assert_eq!(parsed.is_ok(), direction == DecodeDirection::Upstream);
+        }
+        let invalid = json!({"role":"assistant","content":17,"future_message":true});
+        for direction in [
+            DecodeDirection::Request,
+            DecodeDirection::Upstream,
+            DecodeDirection::Encoded,
+        ] {
+            assert!(
+                super::super::chat::decode_message(
+                    &mut Items::new(direction),
+                    invalid.as_object().unwrap(),
+                    false
+                )
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn response_request_and_encoded_checks_do_not_share_mutable_policy() {
+        let response = json!({"id":"r","object":"response","model":"m","created_at":1,"status":"completed",
+            "reasoning":{"effort":"low","future_reasoning":{"nested":true}},
+            "output":[{"id":"msg","type":"message","role":"assistant","status":"completed",
+                "content":[{"type":"output_text","text":"ok","annotations":[],"future_part":true}]}]});
+        let request =
+            json!({"model":"m","input":[{"role":"user","content":"ok","future_message":true}]});
+        std::thread::scope(|scope| {
+            for _ in 0..4 {
+                let response = &response;
+                let request = &request;
+                scope.spawn(move || {
+                    let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+                    for _ in 0..8 {
+                        let decoded = adapter
+                            .decode_response(response.to_string().as_bytes())
+                            .unwrap();
+                        assert!(
+                            adapter
+                                .decode_request(request.to_string().as_bytes())
+                                .is_err()
+                        );
+                        assert!(
+                            envelope::validate_response_snapshot_with(
+                                response,
+                                &Default::default(),
+                                DecodeDirection::Encoded
+                            )
+                            .is_err()
+                        );
+                        let encoded = adapter
+                            .encode_response(&decoded, &GenerationRepresentationContract::full())
+                            .unwrap();
+                        assert!(!encoded.to_string().contains("future_"));
+                        let mut invalid = response.clone();
+                        invalid["reasoning"]["effort"] = json!(17);
+                        assert!(
+                            adapter
+                                .decode_response(invalid.to_string().as_bytes())
+                                .is_err()
+                        );
+                        assert!(
+                            adapter
+                                .decode_request(request.to_string().as_bytes())
+                                .is_err()
+                        );
+                    }
+                });
+            }
+        });
+    }
 }

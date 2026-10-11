@@ -304,7 +304,6 @@ impl Adapter {
         result
     }
     pub fn decode_response(&self, bytes: &[u8]) -> Result<DecodedResponse, CodecError> {
-        let _open = openai::upstream_shapes();
         let value = openai::json::decode(bytes)?;
         let mut decoded = match self.protocol {
             Profile::Chat => {
@@ -312,7 +311,11 @@ impl Adapter {
                 openai::static_response::decode_chat_with(&value, &self.adaptation)?
             }
             Profile::Responses => {
-                openai::envelope::validate_response_snapshot_with(&value, &self.adaptation)?;
+                openai::envelope::validate_response_snapshot_with(
+                    &value,
+                    &self.adaptation,
+                    openai::DecodeDirection::Upstream,
+                )?;
                 openai::static_response::decode_responses_with(&value, &self.adaptation)?
             }
         };

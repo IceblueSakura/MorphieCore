@@ -14,7 +14,7 @@
 ## 当前焦点：阶段 1 — 协议边界与产品接入
 
 - lowering / adapter 从 `openai::Profile` 解耦：每个协议一个双向模块，每个上游一份 `TargetCaps`；方言规则收进协议模块。
-- 把 OpenAI 上游/请求解码方向改为显式参数，替代 `openai::upstream_shapes` 的线程局部作用域；核定未知 SSE 事件的处理。冻结的媒体解码器不扩展。
+- 核定 OpenAI 未知 SSE 事件类型的处理，不把忽略未知字段扩大为跳过未知内容或终态。冻结的媒体解码器不扩展。
 - 补默认 CLI 的原生 Messages 产品绑定及显式启用；先核实模型发布元数据，不虚构发布日期。现有 `MESSAGES_BINDINGS` 可用于显式编译拓扑，不能据此假定目录 bootstrap 已开放。
 - 上游 Chat `reasoning.text` 项的 `signature` 目前被忽略，需要建模；扩展多段 thinking、交错 message/block 的跨协议载体，以及工具错误的下游表达。
 

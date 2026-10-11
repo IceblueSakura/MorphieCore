@@ -44,16 +44,20 @@ pub(super) fn write_settings(s: &GenerationSettings, o: &mut Map<String, Value>)
         |v| json!({"format":v.format.label(),"voice":v.voice.as_str()}),
     );
 }
-pub(super) fn read(value: &Value, history: bool) -> Result<ContentPart, CodecError> {
+pub(super) fn read(
+    value: &Value,
+    history: bool,
+    direction: DecodeDirection,
+) -> Result<ContentPart, CodecError> {
     let o = object(value)?;
     if history && o.len() == 1 {
-        fields(o, &["id"])?;
+        direction.fields(o, &["id"])?;
         return Ok(ContentPart::AudioReference(AudioReference::new(
             text(string(o, "id")?, "audio id", 256)?,
             None,
         )?));
     }
-    fields(o, &["id", "data", "expires_at", "transcript"])?;
+    direction.fields(o, &["id", "data", "expires_at", "transcript"])?;
     let reference = AudioReference::new(
         text(string(o, "id")?, "audio id", 256)?,
         Some(
@@ -101,7 +105,7 @@ pub(super) fn read_update(
     bytes: &mut ChunkBytes,
 ) -> Result<AudioUpdate, CodecError> {
     let o = object(value)?;
-    fields(o, &["id", "data", "transcript", "expires_at"])?;
+    DecodeDirection::Upstream.fields(o, &["id", "data", "transcript", "expires_at"])?;
     let mut update = AudioUpdate::default();
     if let Some(id) = o.get("id") {
         update.id = Some(text(

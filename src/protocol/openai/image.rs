@@ -3,19 +3,23 @@ use super::{CodecError, Profile, common::*};
 use crate::semantic::{task::generation::*, value::Text};
 use serde_json::{Map, Value, json};
 
-pub(super) fn read(part: &Map<String, Value>, profile: Profile) -> Result<Resource, CodecError> {
+pub(super) fn read(
+    part: &Map<String, Value>,
+    profile: Profile,
+    direction: DecodeDirection,
+) -> Result<Resource, CodecError> {
     let image = match profile {
         Profile::Responses => {
-            fields(part, &["type", "image_url", "detail"])?;
+            direction.fields(part, &["type", "image_url", "detail"])?;
             part
         }
         Profile::Chat => {
-            fields(part, &["type", "image_url"])?;
+            direction.fields(part, &["type", "image_url"])?;
             let image = object(
                 part.get("image_url")
                     .ok_or(CodecError::Invalid("image_url"))?,
             )?;
-            fields(image, &["url", "detail"])?;
+            direction.fields(image, &["url", "detail"])?;
             image
         }
     };

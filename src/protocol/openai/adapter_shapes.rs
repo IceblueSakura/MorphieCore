@@ -1,5 +1,6 @@
 //! Named wire mappings and classified router facts. No provider identity branches.
-//! Task values are decoded by the shared codecs; unknown fields remain errors.
+//! Shared readers receive an explicit direction; modeled values remain strict.
+use super::DecodeDirection;
 use super::{CodecError, Profile, common::bounded};
 use crate::protocol::adaptation::Adaptation;
 use serde_json::{Map, Value};
@@ -109,7 +110,10 @@ fn extract(o: &mut Map<String, Value>, profile: Profile) -> Result<Extras, Codec
 /// Validate one response_api row and promote its explicitly reported modality facts.
 /// Source: <https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-responses>.
 /// No raw row survives: every encoder must use the final typed Usage.
-fn response_billing_view(o: &mut Map<String, Value>) -> Result<(), CodecError> {
+fn response_billing_view(
+    o: &mut Map<String, Value>,
+    direction: DecodeDirection,
+) -> Result<(), CodecError> {
     let Some(usage) = o.get_mut("usage").and_then(Value::as_object_mut) else {
         return Ok(());
     };
@@ -121,7 +125,7 @@ fn response_billing_view(o: &mut Map<String, Value>) -> Result<(), CodecError> {
         .filter(|rows| rows.len() == 1)
         .and_then(|rows| rows[0].as_object())
         .ok_or(CodecError::Invalid("billing usage view"))?;
-    super::common::fields(
+    direction.fields(
         row,
         &[
             "x_billing_type",
@@ -173,12 +177,19 @@ fn response_billing_view(o: &mut Map<String, Value>) -> Result<(), CodecError> {
                     .as_object()
                     .ok_or(CodecError::Invalid("billing usage details"))?,
                 allowed,
+                direction,
             )?;
         }
     }
     if let Some(images) = row.get("image_tokens") {
         let detail = Map::from_iter([("image_tokens".into(), images.clone())]);
-        merge_usage_detail(usage, "input_tokens_details", &detail, &["image_tokens"])?;
+        merge_usage_detail(
+            usage,
+            "input_tokens_details",
+            &detail,
+            &["image_tokens"],
+            direction,
+        )?;
     }
     Ok(())
 }
@@ -187,8 +198,9 @@ fn merge_usage_detail(
     key: &str,
     values: &Map<String, Value>,
     allowed: &[&str],
+    direction: DecodeDirection,
 ) -> Result<(), CodecError> {
-    super::common::fields(values, allowed)?;
+    direction.fields(values, allowed)?;
     let detail = usage.entry(key).or_insert_with(|| serde_json::json!({}));
     if detail.is_null() {
         *detail = serde_json::json!({});
@@ -276,6 +288,7 @@ pub(crate) fn decode<'a>(
     value: &'a Value,
     profile: Profile,
     adaptation: &Adaptation,
+    direction: DecodeDirection,
 ) -> Result<(Cow<'a, Value>, Extras), CodecError> {
     bounded(value)?;
     if !adaptation.rules.routing_extras
@@ -318,7 +331,7 @@ pub(crate) fn decode<'a>(
         format.insert("schema".into(), schema);
     }
     if profile == Profile::Chat && adaptation.rules.chat_inference_response_shape {
-        super::inference_shapes::decode(o)?;
+        super::inference_shapes::decode(o, direction)?;
     }
     if profile == Profile::Responses && adaptation.rules.responses_inactive_state {
         if o.get("previous_response_id").and_then(Value::as_str) == Some("") {
@@ -334,7 +347,7 @@ pub(crate) fn decode<'a>(
         }
     }
     if profile == Profile::Responses && adaptation.rules.responses_billing_view {
-        response_billing_view(o)?;
+        response_billing_view(o, direction)?;
     }
     let mut extras = if adaptation.rules.routing_extras {
         extract(o, profile)?
@@ -343,9 +356,9 @@ pub(crate) fn decode<'a>(
     };
     if profile == Profile::Responses {
         if adaptation.rules.responses_product_accounting {
-            super::accounting_shapes::product(o, &mut extras)?;
+            super::accounting_shapes::product(o, &mut extras, direction)?;
         } else if adaptation.rules.responses_access_programs {
-            super::accounting_shapes::programs(o, &mut extras)?;
+            super::accounting_shapes::programs(o, &mut extras, direction)?;
         }
         if !adaptation.rules.responses_product_accounting
             && adaptation.rules.responses_zero_tool_accounting
@@ -353,7 +366,7 @@ pub(crate) fn decode<'a>(
             super::accounting_shapes::zero_tools(o, &mut extras)?;
         }
         if adaptation.rules.responses_context_accounting {
-            super::accounting_shapes::context(o, &mut extras)?;
+            super::accounting_shapes::context(o, &mut extras, direction)?;
         }
         if adaptation.rules.responses_inactive_reports {
             super::accounting_shapes::inactive_reports(o, &mut extras)?;
@@ -361,7 +374,7 @@ pub(crate) fn decode<'a>(
         if !adaptation.rules.responses_product_accounting
             && adaptation.rules.responses_usage_attribution
         {
-            super::accounting_shapes::usage_attribution(o, &mut extras)?;
+            super::accounting_shapes::usage_attribution(o, &mut extras, direction)?;
         }
         check_budget(&extras)?;
     }

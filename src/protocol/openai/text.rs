@@ -18,7 +18,7 @@ pub(super) fn read_existing(
     items: &mut Items,
     existing: &[Annotation],
 ) -> Result<TextContent, CodecError> {
-    fields(
+    items.direction.fields(
         o,
         if replay {
             &["type", "text", "annotations", "logprobs", "parsed"]

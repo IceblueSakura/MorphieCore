@@ -3,7 +3,7 @@ use super::*;
 use serde_json::json;
 impl EventDecoder {
     pub(super) fn chat(&mut self, o: &Map<String, Value>) -> Result<Vec<StreamEvent>, CodecError> {
-        fields(
+        DecodeDirection::Upstream.fields(
             o,
             &[
                 "id",
@@ -34,7 +34,8 @@ impl EventDecoder {
                     return Err(CodecError::Invalid("chunk after finish"));
                 }
                 let choice = object(&choices[0])?;
-                fields(choice, &["index", "delta", "finish_reason", "logprobs"])?;
+                DecodeDirection::Upstream
+                    .fields(choice, &["index", "delta", "finish_reason", "logprobs"])?;
                 if choice.get("index").and_then(Value::as_u64) != Some(0)
                     || choice.get("finish_reason").and_then(Value::as_str)
                         != self.chat_finish_reason.as_deref()
@@ -43,7 +44,7 @@ impl EventDecoder {
                     return Err(CodecError::Invalid("repeated finish"));
                 }
                 let delta = object(choice.get("delta").ok_or(CodecError::Invalid("delta"))?)?;
-                fields(delta, &["role", "content"])?;
+                DecodeDirection::Upstream.fields(delta, &["role", "content"])?;
                 // Explicit, not via `fields`: upstream decoding ignores unknown keys, but
                 // late content after the finish must still fail rather than be dropped.
                 if [
@@ -83,7 +84,8 @@ impl EventDecoder {
             return Err(CodecError::Unsupported("candidate count".into()));
         }
         let choice = object(&choices[0])?;
-        fields(choice, &["index", "delta", "finish_reason", "logprobs"])?;
+        DecodeDirection::Upstream
+            .fields(choice, &["index", "delta", "finish_reason", "logprobs"])?;
         // Usage belongs to the terminal: either this finish chunk or a trailing
         // empty-choices chunk. Anything earlier is rejected, never guessed.
         let terminal_usage = o.get("usage").filter(|v| !v.is_null());
@@ -100,7 +102,7 @@ impl EventDecoder {
         }
         let probabilities = super::super::chat_logprobs::read(choice.get("logprobs"))?;
         let delta = object(choice.get("delta").ok_or(CodecError::Invalid("delta"))?)?;
-        fields(
+        DecodeDirection::Upstream.fields(
             delta,
             &[
                 "role",
@@ -127,7 +129,12 @@ impl EventDecoder {
                 .first()
                 .map(|p| p.kind)
         });
-        let details = super::super::chat_reasoning::parse(delta, &self.adaptation, prior)?;
+        let details = super::super::chat_reasoning::parse(
+            delta,
+            &self.adaptation,
+            prior,
+            DecodeDirection::Upstream,
+        )?;
         if details.is_none() && delta.contains_key("reasoning") {
             return Err(CodecError::Unsupported("reasoning alias".into()));
         }
@@ -405,7 +412,7 @@ impl EventDecoder {
         if let Some(calls) = delta.get("tool_calls").filter(|v| !v.is_null()) {
             for call in calls.as_array().ok_or(CodecError::Invalid("tool calls"))? {
                 let call = object(call)?;
-                fields(call, &["index", "id", "type", "function"])?;
+                DecodeDirection::Upstream.fields(call, &["index", "id", "type", "function"])?;
                 let n = index(call, "index")?;
                 match call.get("type") {
                     None | Some(Value::Null) => {}
@@ -417,7 +424,7 @@ impl EventDecoder {
                     None | Some(Value::Null) => &empty,
                     Some(value) => object(value)?,
                 };
-                fields(f, &["name", "arguments"])?;
+                DecodeDirection::Upstream.fields(f, &["name", "arguments"])?;
                 let established = n < self.chat_calls.len();
                 let item = if n == self.chat_calls.len() {
                     let item = self.allocate_item()?;

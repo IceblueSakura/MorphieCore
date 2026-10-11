@@ -174,12 +174,13 @@ pub fn encode_request(
 impl ResponseContext {
     pub(super) fn read(
         o: &Map<String, Value>,
+        direction: DecodeDirection,
     ) -> Result<(Self, crate::protocol::fidelity::FidelityRecords), CodecError> {
         let mut controls = o.clone();
         let mut fidelity = crate::protocol::fidelity::FidelityRecords::default();
         let instruction_messages = if let Some(Value::Array(values)) = o.get("instructions") {
             controls.remove("instructions");
-            let mut items = Items::default();
+            let mut items = Items::new(direction);
             super::responses::decode_items(&mut items, values, false, "completed")?;
             fidelity = items.fidelity;
             Some(items.items)
@@ -187,7 +188,7 @@ impl ResponseContext {
             None
         };
         let s = if settings::FIELDS.iter().any(|k| o.contains_key(*k)) {
-            Some(settings::read(&controls, true)?)
+            Some(settings::read(&controls, true, direction)?)
         } else {
             None
         };
@@ -250,7 +251,6 @@ pub fn decode_response_bytes(bytes: &[u8]) -> Result<super::DecodedResponse, Cod
 /// Full envelope validation, unlike the lower-level task snapshot codec.
 /// A pre-parsed value cannot prove original JSON syntax, duplicate-key or raw-byte validity.
 pub fn decode_response(v: &Value) -> Result<super::DecodedResponse, CodecError> {
-    let _open = super::common::upstream_shapes();
     bounded(v)?;
     validate_response_snapshot(v)?;
     super::responses::decode_response(v)
@@ -258,7 +258,7 @@ pub fn decode_response(v: &Value) -> Result<super::DecodedResponse, CodecError> 
 pub fn encode_response(target: &super::ResponseRepresentation<'_>) -> Result<Value, CodecError> {
     target.metadata.context.validate()?;
     let v = super::responses::encode_response(target)?;
-    validate_response_snapshot_with(&v, &target.adaptation)?;
+    validate_response_snapshot_with(&v, &target.adaptation, DecodeDirection::Encoded)?;
     Ok(v)
 }
 /// Record classified response extras into fidelity for same-origin re-encode.
@@ -299,17 +299,18 @@ pub(crate) fn write_response_extras(
 /// Structural snapshot validation (ADR 0008): reported facts are presence-preserving
 /// and typed by the task codec; this layer keeps the structural requirements.
 pub(crate) fn validate_response_snapshot(v: &Value) -> Result<(), CodecError> {
-    validate_response_snapshot_with(v, &Default::default())
+    validate_response_snapshot_with(v, &Default::default(), DecodeDirection::Upstream)
 }
 pub(crate) fn validate_response_snapshot_with(
     v: &Value,
     adaptation: &crate::protocol::adaptation::Adaptation,
+    direction: DecodeDirection,
 ) -> Result<(), CodecError> {
     // Complete-envelope validation sees the same explicit wire mapping as the
     // task codec. Required identity, items and state rejection remain intact.
-    let (v, _) = super::adapter_shapes::decode(v, Profile::Responses, adaptation)?;
+    let (v, _) = super::adapter_shapes::decode(v, Profile::Responses, adaptation, direction)?;
     let o = object(&v)?;
-    ResponseContext::read(o)?.0.validate()?;
+    ResponseContext::read(o, direction)?.0.validate()?;
     // A complete Response snapshot requires the output array; an absent value is
     // never the explicit empty array and no lower layer may backfill it.
     for item in o
@@ -322,11 +323,12 @@ pub(crate) fn validate_response_snapshot_with(
     Ok(())
 }
 pub(super) fn validate_stream_payload(v: &Value) -> Result<(), CodecError> {
-    validate_stream_payload_with(v, &Default::default())
+    validate_stream_payload_with(v, &Default::default(), DecodeDirection::Encoded)
 }
 pub(super) fn validate_stream_payload_with(
     v: &Value,
     adaptation: &crate::protocol::adaptation::Adaptation,
+    direction: DecodeDirection,
 ) -> Result<(), CodecError> {
     // Every complete Responses SSE event carries the required integer sequence
     // number; event ordering never substitutes for its presence.
@@ -338,7 +340,7 @@ pub(super) fn validate_stream_payload_with(
         return Err(CodecError::Invalid("sequence"));
     }
     if let Some(response) = v.get("response") {
-        validate_response_snapshot_with(response, adaptation)?;
+        validate_response_snapshot_with(response, adaptation, direction)?;
     }
     if let Some(item) = v.get("item") {
         validate_item_snapshot(item)?;
@@ -431,7 +433,7 @@ pub(super) fn response_fields(o: &Map<String, Value>) -> Result<(), CodecError> 
                 .copied(),
         )
         .collect();
-    fields(o, &allowed)
+    DecodeDirection::Upstream.fields(o, &allowed)
 }
 pub(super) fn write_metadata(
     metadata: &ResponseMetadata,

@@ -112,7 +112,11 @@ impl EventDecoder {
         self.profile == Profile::Responses && self.adaptation.rules.responses_done_marker
     }
     pub(crate) fn validate_stream_payload(&self, value: &Value) -> Result<(), CodecError> {
-        super::super::envelope::validate_stream_payload_with(value, &self.adaptation)
+        super::super::envelope::validate_stream_payload_with(
+            value,
+            &self.adaptation,
+            DecodeDirection::Upstream,
+        )
     }
     pub(crate) fn profile(&self) -> Profile {
         self.profile
@@ -129,7 +133,6 @@ impl EventDecoder {
         self
     }
     pub fn push(&mut self, payload: &Value) -> Result<Vec<StreamEvent>, CodecError> {
-        let _open = super::super::common::upstream_shapes();
         if self.poisoned || self.state.as_ref().is_none_or(|s| s.terminal().is_some()) {
             return Err(CodecError::Invalid("event after terminal or rejection"));
         }
@@ -156,6 +159,7 @@ impl EventDecoder {
                         snapshot,
                         self.profile,
                         &self.adaptation,
+                        DecodeDirection::Upstream,
                     )?;
                     let mut mapped = payload.clone();
                     mapped["response"] = snapshot.into_owned();
@@ -178,7 +182,12 @@ impl EventDecoder {
                     (std::borrow::Cow::Borrowed(payload), Default::default())
                 }
             } else {
-                super::super::adapter_shapes::decode(payload, self.profile, &self.adaptation)?
+                super::super::adapter_shapes::decode(
+                    payload,
+                    self.profile,
+                    &self.adaptation,
+                    DecodeDirection::Upstream,
+                )?
             };
             let o = object(&normalized)?;
             if let Some(padding) = o.get("obfuscation")
@@ -512,7 +521,8 @@ impl EventDecoder {
         }
         let kind = match string(v, "type")? {
             "message" => {
-                fields(v, &["type", "id", "role", "status", "content", "phase"])?;
+                DecodeDirection::Upstream
+                    .fields(v, &["type", "id", "role", "status", "content", "phase"])?;
                 if string(v, "role")? != "assistant"
                     || !v
                         .get("content")
@@ -526,7 +536,7 @@ impl EventDecoder {
                 }
             }
             "reasoning" => {
-                fields(
+                DecodeDirection::Upstream.fields(
                     v,
                     &[
                         "type",
@@ -549,7 +559,7 @@ impl EventDecoder {
                 ItemKind::Reasoning
             }
             "custom_tool_call" => {
-                fields(
+                DecodeDirection::Upstream.fields(
                     v,
                     &[
                         "type",
@@ -565,17 +575,22 @@ impl EventDecoder {
                 ItemKind::CustomCall {
                     call_id: text(string(v, "call_id")?, "call id", 256)?,
                     name: text(string(v, "name")?, "custom name", 128)?,
-                    context: super::super::responses::call_context(v)?,
+                    context: super::super::responses::call_context(v, DecodeDirection::Upstream)?,
                 }
             }
             "configuration_update" => {
-                fields(v, &["type", "id", "reasoning"])?;
+                DecodeDirection::Upstream.fields(v, &["type", "id", "reasoning"])?;
                 ItemKind::ConfigurationUpdate {
-                    effort: super::super::responses::configuration_effort(v, true)?,
+                    effort: super::super::responses::configuration_effort(
+                        v,
+                        true,
+                        DecodeDirection::Upstream,
+                    )?,
                 }
             }
             "program" => {
-                fields(v, &["type", "id", "call_id", "code", "fingerprint"])?;
+                DecodeDirection::Upstream
+                    .fields(v, &["type", "id", "call_id", "code", "fingerprint"])?;
                 ItemKind::Program {
                     call_id: text(string(v, "call_id")?, "call id", 256)?,
                     code: raw_string(v, "code")?,
@@ -583,7 +598,8 @@ impl EventDecoder {
                 }
             }
             "program_output" => {
-                fields(v, &["type", "id", "call_id", "result", "status"])?;
+                DecodeDirection::Upstream
+                    .fields(v, &["type", "id", "call_id", "result", "status"])?;
                 if v.get("status").filter(|v| !v.is_null()).is_some() {
                     // The done snapshot owns the terminal status; added is initial.
                     return Err(CodecError::Invalid("program output status"));
@@ -594,7 +610,7 @@ impl EventDecoder {
                 }
             }
             "function_call" => {
-                fields(
+                DecodeDirection::Upstream.fields(
                     v,
                     &[
                         "type",
@@ -613,7 +629,7 @@ impl EventDecoder {
                     call_id: text(string(v, "call_id")?, "call id", 256)?,
                     name: text(string(v, "name")?, "tool name", 128)?,
                     message: None,
-                    context: super::super::responses::call_context(v)?,
+                    context: super::super::responses::call_context(v, DecodeDirection::Upstream)?,
                 }
             }
             _ => return Err(CodecError::Unsupported("item kind".into())),
@@ -749,7 +765,8 @@ impl EventDecoder {
         let v = o
             .get("annotation")
             .ok_or(CodecError::Invalid("annotation"))?;
-        let mut sources = Items::from_resources(self.state()?.resources().clone());
+        let mut sources =
+            Items::from_resources(self.state()?.resources().clone(), DecodeDirection::Upstream);
         let annotation = super::super::citations::read(v, &mut sources)?;
         self.declare_sources(&sources.resources, out)?;
         if annotation.value().kind == CitationKind::ArtifactReference {
@@ -812,7 +829,8 @@ impl EventDecoder {
             return Err(CodecError::Invalid("initial part"));
         }
         if kind == PartKind::Text {
-            let text = super::super::text::read(p, false, &mut Items::default())?;
+            let text =
+                super::super::text::read(p, false, &mut Items::new(DecodeDirection::Upstream))?;
             if !text.annotations().is_empty()
                 || text.logprobs().value().is_some_and(|v| !v.is_empty())
             {
@@ -1090,7 +1108,8 @@ impl EventDecoder {
             return Err(CodecError::Invalid("part snapshot"));
         }
         if kind == PartKind::Text {
-            let mut sources = Items::from_resources(self.state()?.resources().clone());
+            let mut sources =
+                Items::from_resources(self.state()?.resources().clone(), DecodeDirection::Upstream);
             let t = super::super::text::read_existing(
                 p,
                 false,

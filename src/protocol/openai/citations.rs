@@ -59,7 +59,7 @@ fn known_fields(kind: &str) -> &'static [&'static str] {
 pub(super) fn read(value: &Value, items: &mut Items) -> Result<Annotation, CodecError> {
     let o = object(value)?;
     let kind = o.get("type").and_then(Value::as_str).unwrap_or_default();
-    fields(o, known_fields(kind))?;
+    items.direction.fields(o, known_fields(kind))?;
     let wire: WireAnnotation =
         serde_json::from_value(value.clone()).map_err(|_| CodecError::Invalid("annotation"))?;
     let (location, claim, name, ordinal, kind) = match wire {

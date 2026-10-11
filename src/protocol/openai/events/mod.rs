@@ -14,15 +14,7 @@ pub use encode::EventEncoder;
 use serde_json::{Map, Value};
 
 fn event_fields(o: &Map<String, Value>, allowed: &[&str]) -> Result<(), CodecError> {
-    if open_shapes() {
-        return Ok(());
-    }
-    if let Some(key) = o.keys().find(|k| {
-        !matches!(k.as_str(), "sequence_number" | "obfuscation") && !allowed.contains(&k.as_str())
-    }) {
-        return Err(CodecError::Unsupported(key.clone()));
-    }
-    Ok(())
+    DecodeDirection::Upstream.fields(o, allowed)
 }
 fn index(o: &Map<String, Value>, key: &'static str) -> Result<usize, CodecError> {
     o.get(key)
@@ -84,7 +76,7 @@ fn part_kind(part: &Map<String, Value>) -> Result<PartKind, CodecError> {
     }
 }
 fn part_text(part: &Map<String, Value>, kind: PartKind) -> Result<&str, CodecError> {
-    fields(
+    DecodeDirection::Upstream.fields(
         part,
         if kind == PartKind::Refusal {
             &["type", "refusal"]

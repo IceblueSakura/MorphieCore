@@ -4,13 +4,16 @@ use super::{CodecError, common::*};
 use crate::semantic::{task::generation::*, value::Text};
 use serde_json::{Map, Value, json};
 
-pub(super) fn read(part: &Map<String, Value>) -> Result<Resource, CodecError> {
-    fields(part, &["type", "input_audio"])?;
+pub(super) fn read(
+    part: &Map<String, Value>,
+    direction: DecodeDirection,
+) -> Result<Resource, CodecError> {
+    direction.fields(part, &["type", "input_audio"])?;
     let audio = object(
         part.get("input_audio")
             .ok_or(CodecError::Invalid("input_audio"))?,
     )?;
-    fields(audio, &["data", "format"])?;
+    direction.fields(audio, &["data", "format"])?;
     let mime = match string(audio, "format")? {
         "wav" => "audio/wav",
         "mp3" => "audio/mpeg",

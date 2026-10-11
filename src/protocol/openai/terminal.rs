@@ -8,7 +8,7 @@ pub(super) fn decode_details(o: &Map<String, Value>) -> Result<TerminalDetails, 
         .filter(|v| !v.is_null())
         .map(|v| {
             let e = object(v)?;
-            fields(e, &["code", "message", "param"])?;
+            DecodeDirection::Upstream.fields(e, &["code", "message", "param"])?;
             Ok::<_, CodecError>(ResponseError {
                 code: e
                     .get("code")
@@ -46,7 +46,7 @@ pub(super) fn decode_details(o: &Map<String, Value>) -> Result<TerminalDetails, 
         .filter(|v| !v.is_null())
         .map(|v| {
             let d = object(v)?;
-            fields(d, &["reason"])?;
+            DecodeDirection::Upstream.fields(d, &["reason"])?;
             if d.get("reason").is_none_or(|v| v.is_null()) {
                 return Ok(IncompleteReason::Unspecified);
             }

@@ -129,14 +129,14 @@ fn write_response_format(f: &OutputConstraint) -> Result<Value, CodecError> {
 }
 /// Request-only text arrays preserve ordered part ownership; canonical single parts
 /// encode as strings. This does not admit response arrays or media placeholders.
-fn request_text_parts(value: &Value) -> Result<Vec<&str>, CodecError> {
+fn request_text_parts(value: &Value, direction: DecodeDirection) -> Result<Vec<&str>, CodecError> {
     match value {
         Value::String(text) => Ok(vec![text]),
         Value::Array(parts) if !parts.is_empty() => parts
             .iter()
             .map(|part| {
                 let part = object(part)?;
-                fields(part, &["type", "text"])?;
+                direction.fields(part, &["type", "text"])?;
                 if string(part, "type")? != "text" {
                     return Err(CodecError::Unsupported("message content part".into()));
                 }
@@ -151,6 +151,7 @@ pub(super) fn decode_message(
     m: &Map<String, Value>,
     replay: bool,
 ) -> Result<(), CodecError> {
+    let direction = b.direction;
     let role = string(m, "role")?;
     // A shared field superset would silently erase assistant-only values on
     // instruction/tool messages. Validate the role's shell before normalization.
@@ -178,7 +179,7 @@ pub(super) fn decode_message(
         "system" | "developer" | "user" => &["role", "content"],
         _ => return Err(CodecError::Unsupported("message role".into())),
     };
-    fields(m, allowed)?;
+    direction.fields(m, allowed)?;
     if replay && role != "assistant" && m.contains_key("parsed") {
         // The pinned SDK attaches its parsed view to assistant messages only.
         return Err(CodecError::Invalid("parsed"));
@@ -221,7 +222,7 @@ pub(super) fn decode_message(
                     let texts = if parts.is_empty() {
                         vec![]
                     } else {
-                        request_text_parts(v)?
+                        request_text_parts(v, direction)?
                     };
                     let mut parts = Vec::new();
                     for value in texts {
@@ -258,8 +259,10 @@ pub(super) fn decode_message(
                 return Err(CodecError::Invalid("instruction tool fields"));
             }
             let mut parts = Vec::new();
-            for text in request_text_parts(m.get("content").ok_or(CodecError::Invalid("content"))?)?
-            {
+            for text in request_text_parts(
+                m.get("content").ok_or(CodecError::Invalid("content"))?,
+                direction,
+            )? {
                 parts.push((
                     b.part_id()?,
                     crate::semantic::value::Text::allowing_empty(
@@ -331,14 +334,14 @@ pub(super) fn decode_message(
                         let part = object(value)?;
                         match string(part, "type")? {
                             "text" => {
-                                fields(part, &["type", "text"])?;
+                                direction.fields(part, &["type", "text"])?;
                                 parts.push(b.part(string(part, "text")?)?);
                             }
                             "image_url" => parts.push(Part {
                                 replay: None,
                                 id: b.part_id()?,
                                 content: ContentPart::Resource(b.resource(
-                                    super::image::read(part, Profile::Chat)?,
+                                    super::image::read(part, Profile::Chat, direction)?,
                                     ResourcePurpose::Input,
                                 )?),
                             }),
@@ -346,7 +349,7 @@ pub(super) fn decode_message(
                                 replay: None,
                                 id: b.part_id()?,
                                 content: ContentPart::Resource(b.resource(
-                                    super::input_audio::read(part)?,
+                                    super::input_audio::read(part, direction)?,
                                     ResourcePurpose::Input,
                                 )?),
                             }),
@@ -355,10 +358,12 @@ pub(super) fn decode_message(
                     }
                     parts
                 }
-                (Some(value @ Value::Array(_)), None) if replay => request_text_parts(value)?
-                    .into_iter()
-                    .map(|text| b.part(text))
-                    .collect::<Result<Vec<_>, _>>()?,
+                (Some(value @ Value::Array(_)), None) if replay => {
+                    request_text_parts(value, direction)?
+                        .into_iter()
+                        .map(|text| b.part(text))
+                        .collect::<Result<Vec<_>, _>>()?
+                }
                 (None | Some(Value::Null), None) if role == "assistant" => Vec::new(),
                 _ => return Err(CodecError::Unsupported("message content".into())),
             };
@@ -373,7 +378,7 @@ pub(super) fn decode_message(
                 parts.push(Part {
                     replay: None,
                     id: b.part_id()?,
-                    content: super::chat_audio::read(audio, replay)?,
+                    content: super::chat_audio::read(audio, replay, direction)?,
                 });
             }
             b.items.push((
@@ -400,7 +405,7 @@ pub(super) fn decode_message(
                         Some(v) if v.as_u64() == Some(position as u64) => {}
                         _ => return Err(CodecError::Invalid("tool index")),
                     }
-                    let call = tool_call(call, Profile::Chat, None, replay)?;
+                    let call = tool_call(call, Profile::Chat, None, replay, direction)?;
                     let cid = b.id()?;
                     b.message_owners.push((cid, id));
                     b.items.push((cid, Item::ToolCall(call)));

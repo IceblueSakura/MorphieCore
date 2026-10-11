@@ -21,7 +21,7 @@ pub(super) fn read(value: Option<&Value>) -> Result<Vec<(PartKind, Vec<Logprob>)
         return Ok(vec![]);
     };
     let o = object(value)?;
-    fields(o, &["content", "refusal"])?;
+    DecodeDirection::Upstream.fields(o, &["content", "refusal"])?;
     let mut result = Vec::new();
     for (key, kind) in [("content", PartKind::Text), ("refusal", PartKind::Refusal)] {
         if let Some(value) = o.get(key).filter(|v| !v.is_null()) {

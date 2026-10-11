@@ -16,6 +16,7 @@ pub(super) fn parse(
     m: &Map<String, Value>,
     a: &Adaptation,
     prior: Option<PartKind>,
+    direction: DecodeDirection,
 ) -> Result<Option<Details>, CodecError> {
     let Some(value) = m.get("reasoning_details") else {
         return Ok(None);
@@ -58,7 +59,7 @@ pub(super) fn parse(
                 } else {
                     "text"
                 };
-                fields(o, &["type", "format", "index", field])?;
+                direction.fields(o, &["type", "format", "index", field])?;
                 let part_kind = if kind == "reasoning.summary" {
                     PartKind::Summary
                 } else {
@@ -78,7 +79,7 @@ pub(super) fn parse(
                 result.part = Some((part_kind, text.into()));
             }
             "reasoning.encrypted" => {
-                fields(o, &["type", "format", "index", "id", "data"])?;
+                direction.fields(o, &["type", "format", "index", "id", "data"])?;
                 let expected = u64::from(prior.is_some() || result.part.is_some());
                 if result.responses_encrypted.is_some()
                     || o.get("index").and_then(Value::as_u64) != Some(expected)
@@ -111,7 +112,7 @@ pub(super) fn decode_static(
         return Err(CodecError::Invalid("reasoning owner"));
     }
     let mut clean = m.clone();
-    if let Some(details) = parse(m, a, None)? {
+    if let Some(details) = parse(m, a, None, b.direction)? {
         if string(m, "role")? != "assistant" {
             return Err(CodecError::Invalid("reasoning owner"));
         }

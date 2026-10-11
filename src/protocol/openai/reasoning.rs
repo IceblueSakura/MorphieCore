@@ -1,7 +1,7 @@
 //! Responses reasoning object and readable reasoning items.
 use super::{
     CodecError, Profile,
-    common::{fields, object, put_presence, read_presence, string, text},
+    common::{DecodeDirection, object, put_presence, read_presence, string, text},
 };
 use crate::semantic::task::generation::{
     ItemLifecycle, MAX_TEXT_BYTES, PartId, ReasoningContent, ReasoningContext, ReasoningEffort,
@@ -15,6 +15,7 @@ use serde_json::{Map, Value, json};
 pub(super) fn request(
     o: &Map<String, Value>,
     reported: bool,
+    direction: DecodeDirection,
 ) -> Result<ReasoningRequest, CodecError> {
     let encrypted = match o.get("include") {
         None | Some(Value::Null) => false,
@@ -39,7 +40,7 @@ pub(super) fn request(
         return Ok(r);
     }
     let reasoning = object(value)?;
-    fields(
+    direction.fields(
         reasoning,
         &["effort", "summary", "generate_summary", "context", "mode"],
     )?;
@@ -138,8 +139,9 @@ pub(super) fn decode_item(
     o: &Map<String, Value>,
     next_part: &mut impl FnMut() -> Result<PartId, CodecError>,
     allow_incomplete: bool,
+    direction: DecodeDirection,
 ) -> Result<ReasoningItem, CodecError> {
-    fields(
+    direction.fields(
         o,
         &[
             "id",
@@ -168,7 +170,7 @@ pub(super) fn decode_item(
         .ok_or(CodecError::Invalid("reasoning summary"))?
     {
         let part = object(part)?;
-        fields(part, &["type", "text"])?;
+        direction.fields(part, &["type", "text"])?;
         if string(part, "type")? != "summary_text" {
             return Err(CodecError::Unsupported("summary part".into()));
         }
@@ -190,7 +192,7 @@ pub(super) fn decode_item(
             .ok_or(CodecError::Invalid("reasoning content"))?
         {
             let part = object(part)?;
-            fields(part, &["type", "text"])?;
+            direction.fields(part, &["type", "text"])?;
             if string(part, "type")? != "reasoning_text" {
                 return Err(CodecError::Unsupported("reasoning text".into()));
             }

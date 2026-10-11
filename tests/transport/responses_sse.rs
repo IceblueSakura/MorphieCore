@@ -927,3 +927,56 @@ fn empty_terminal_summary_requires_real_closed_items_and_exact_nonempty_snapshot
         assert_eq!(valid, accepted, "{dialect:?} finished={finished}");
     }
 }
+#[test]
+fn nested_upstream_snapshot_fields_do_not_relax_request_admission() {
+    use morphiecore::adapter::{Adapter, Dialect};
+    let client = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    let mut request = wire::request(false);
+    request["tools"][0]["future_tool"] = json!({"ignored":"only on responses"});
+    let mut events = wire::events(2);
+    for event in &mut events {
+        if let Some(response) = event.get_mut("response") {
+            response["tools"][0]["future_tool"] = json!({"nested":[1,2]});
+            response["text"]["format"]["future_format"] = json!(true);
+            response["reasoning"]["future_reasoning"] = json!({"opaque":"not a replay"});
+        }
+    }
+    let bytes = events
+        .iter()
+        .map(|e| format!("event: {}\ndata: {e}\n\n", e["type"].as_str().unwrap()))
+        .collect::<String>()
+        .into_bytes();
+    for chunk in [1, 13, 4096] {
+        assert!(
+            client
+                .decode_request(request.to_string().as_bytes())
+                .is_err()
+        );
+        let mut actual = decoder(SseLimits::default());
+        consume_all(&mut actual, &bytes, chunk);
+        actual.finish().unwrap();
+        assert_eq!(
+            actual
+                .materialize()
+                .unwrap()
+                .semantic
+                .usage()
+                .unwrap()
+                .total_tokens,
+            Some(8)
+        );
+        assert!(
+            client
+                .decode_request(request.to_string().as_bytes())
+                .is_err()
+        );
+    }
+    let mut bad = wire::response(2);
+    bad["tools"][0]["strict"] = json!("not a boolean");
+    assert!(client.decode_response(bad.to_string().as_bytes()).is_err());
+    assert!(
+        client
+            .decode_request(request.to_string().as_bytes())
+            .is_err()
+    );
+}

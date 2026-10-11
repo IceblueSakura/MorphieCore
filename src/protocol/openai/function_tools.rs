@@ -65,6 +65,7 @@ pub(super) fn read_settings(
     o: &Map<String, Value>,
     profile: Profile,
     settings: &mut GenerationSettings,
+    direction: DecodeDirection,
 ) -> Result<(), CodecError> {
     // The pinned create types mark the tool containers non-nullable, and the
     // Chat create type marks parallel_tool_calls non-nullable too: an explicit
@@ -86,14 +87,14 @@ pub(super) fn read_settings(
                 return Err(CodecError::Limit);
             }
             a.iter()
-                .map(|v| read_tool(object(v)?, profile))
+                .map(|v| read_tool(object(v)?, profile, direction))
                 .collect::<Result<Vec<_>, CodecError>>()
         })
         .transpose()?;
     settings.tool_choice = o
         .get("tool_choice")
         .filter(|v| !v.is_null())
-        .map(|v| read_choice(v, profile))
+        .map(|v| read_choice(v, profile, direction))
         .transpose()?;
     settings.parallel_tool_calls = nullable_bool(o, "parallel_tool_calls")?;
     settings.validate()?;
@@ -102,9 +103,10 @@ pub(super) fn read_settings(
 pub(super) fn read_tool(
     o: &Map<String, Value>,
     profile: Profile,
+    direction: DecodeDirection,
 ) -> Result<ToolDefinition, CodecError> {
     if string(o, "type")? == "namespace" && profile == Profile::Responses {
-        fields(o, &["type", "name", "description", "tools"])?;
+        direction.fields(o, &["type", "name", "description", "tools"])?;
         let tools = o
             .get("tools")
             .and_then(Value::as_array)
@@ -118,7 +120,7 @@ pub(super) fn read_tool(
             if !matches!(string(tool, "type")?, "function" | "custom") {
                 return Err(CodecError::Unsupported("namespace leaf".into()));
             }
-            leaves.push(read_tool(tool, profile)?);
+            leaves.push(read_tool(tool, profile, direction)?);
         }
         return Ok(ToolDefinition::Namespace(ToolNamespace {
             name: text(string(o, "name")?, "namespace", 128)?,
@@ -127,7 +129,7 @@ pub(super) fn read_tool(
         }));
     }
     if string(o, "type")? == "custom" && profile == Profile::Responses {
-        fields(
+        direction.fields(
             o,
             &[
                 "type",
@@ -146,11 +148,11 @@ pub(super) fn read_tool(
                 let f = object(v)?;
                 Ok::<_, CodecError>(match string(f, "type")? {
                     "text" => {
-                        fields(f, &["type"])?;
+                        direction.fields(f, &["type"])?;
                         CustomFormat::Text
                     }
                     "grammar" => {
-                        fields(f, &["type", "syntax", "definition"])?;
+                        direction.fields(f, &["type", "syntax", "definition"])?;
                         CustomFormat::Grammar {
                             syntax: match string(f, "syntax")? {
                                 "lark" => GrammarSyntax::Lark,
@@ -179,12 +181,12 @@ pub(super) fn read_tool(
         return Err(CodecError::Unsupported("tool kind".into()));
     }
     let f = if profile == Profile::Chat {
-        fields(o, &["type", "function"])?;
+        direction.fields(o, &["type", "function"])?;
         object(o.get("function").ok_or(CodecError::Invalid("function"))?)?
     } else {
         o
     };
-    fields(
+    direction.fields(
         f,
         if profile == Profile::Chat {
             &["name", "description", "parameters", "strict"]
@@ -227,10 +229,14 @@ pub(super) fn read_tool(
         dispatch,
     }))
 }
-fn reference(v: &Value, profile: Profile) -> Result<ToolReference, CodecError> {
+fn reference(
+    v: &Value,
+    profile: Profile,
+    direction: DecodeDirection,
+) -> Result<ToolReference, CodecError> {
     let o = object(v)?;
     if profile == Profile::Chat {
-        fields(o, &["type", "function"])?;
+        direction.fields(o, &["type", "function"])?;
         if string(o, "type")? != "function" {
             return Err(CodecError::Unsupported("tool reference".into()));
         }
@@ -238,14 +244,14 @@ fn reference(v: &Value, profile: Profile) -> Result<ToolReference, CodecError> {
             o.get("function")
                 .ok_or(CodecError::Invalid("function reference"))?,
         )?;
-        fields(f, &["name"])?;
+        direction.fields(f, &["name"])?;
         return Ok(ToolReference {
             kind: ToolKind::Function,
             name: text(string(f, "name")?, "tool reference", 128)?,
             namespace: None,
         });
     }
-    fields(o, &["type", "name"])?;
+    direction.fields(o, &["type", "name"])?;
     Ok(ToolReference {
         kind: match string(o, "type")? {
             "function" => ToolKind::Function,
@@ -256,7 +262,11 @@ fn reference(v: &Value, profile: Profile) -> Result<ToolReference, CodecError> {
         namespace: None,
     })
 }
-fn read_choice(v: &Value, profile: Profile) -> Result<ToolChoice, CodecError> {
+fn read_choice(
+    v: &Value,
+    profile: Profile,
+    direction: DecodeDirection,
+) -> Result<ToolChoice, CodecError> {
     Ok(match v.as_str() {
         Some("auto") => ToolChoice::Auto,
         Some("none") => ToolChoice::None,
@@ -266,15 +276,15 @@ fn read_choice(v: &Value, profile: Profile) -> Result<ToolChoice, CodecError> {
             let o = object(v)?;
             if string(o, "type")? == "allowed_tools" {
                 let allowed = if profile == Profile::Chat {
-                    fields(o, &["type", "allowed_tools"])?;
+                    direction.fields(o, &["type", "allowed_tools"])?;
                     let allowed = object(
                         o.get("allowed_tools")
                             .ok_or(CodecError::Invalid("allowed tools"))?,
                     )?;
-                    fields(allowed, &["mode", "tools"])?;
+                    direction.fields(allowed, &["mode", "tools"])?;
                     allowed
                 } else {
-                    fields(o, &["type", "mode", "tools"])?;
+                    direction.fields(o, &["type", "mode", "tools"])?;
                     o
                 };
                 let required = match string(allowed, "mode")? {
@@ -293,11 +303,11 @@ fn read_choice(v: &Value, profile: Profile) -> Result<ToolChoice, CodecError> {
                     required,
                     tools: a
                         .iter()
-                        .map(|v| reference(v, profile))
+                        .map(|v| reference(v, profile, direction))
                         .collect::<Result<_, _>>()?,
                 }
             } else {
-                let r = reference(v, profile)?;
+                let r = reference(v, profile, direction)?;
                 match r.kind {
                     ToolKind::Function => ToolChoice::Specific(r.name),
                     ToolKind::Custom => ToolChoice::Custom(r.name),
@@ -312,7 +322,7 @@ pub(super) fn decode(
     profile: Profile,
 ) -> Result<GenerationRequest, CodecError> {
     let mut s = r.settings().clone();
-    read_settings(o, profile, &mut s)?;
+    read_settings(o, profile, &mut s, DecodeDirection::Request)?;
     Ok(r.with_settings(s)?)
 }
 pub(super) fn encode(

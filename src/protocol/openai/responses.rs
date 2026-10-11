@@ -32,8 +32,11 @@ pub fn decode_generation(v: &Value) -> Result<DecodedRequest, CodecError> {
         None if o.get("instructions").is_some_and(Value::is_string) => {}
         _ => return Err(CodecError::Invalid("input")),
     }
-    let semantic =
-        GenerationRequest::from_resources(b.items, settings::read(o, false)?, b.resources)?;
+    let semantic = GenerationRequest::from_resources(
+        b.items,
+        settings::read(o, false, DecodeDirection::Request)?,
+        b.resources,
+    )?;
     validate_program_history(&semantic)?;
     Ok(DecodedRequest {
         semantic,
@@ -94,7 +97,10 @@ pub(super) fn status_label(s: ItemLifecycle) -> &'static str {
         ItemLifecycle::InProgress => "in_progress",
     }
 }
-pub(super) fn call_context(o: &Map<String, Value>) -> Result<CallContext, CodecError> {
+pub(super) fn call_context(
+    o: &Map<String, Value>,
+    direction: DecodeDirection,
+) -> Result<CallContext, CodecError> {
     let namespace = match o.get("namespace") {
         None | Some(Value::Null) => None,
         Some(Value::String(s)) if s.is_empty() => None,
@@ -110,7 +116,7 @@ pub(super) fn call_context(o: &Map<String, Value>) -> Result<CallContext, CodecE
         None | Some(Value::Null) => None,
         Some(value) => {
             let caller = object(value)?;
-            fields(caller, &["type", "caller_id"])?;
+            direction.fields(caller, &["type", "caller_id"])?;
             match string(caller, "type")? {
                 "direct" => {
                     if caller.contains_key("caller_id") {
@@ -149,6 +155,7 @@ pub(super) fn write_call_context(context: &CallContext, o: &mut Map<String, Valu
     }
 }
 fn output(b: &mut Items, v: &Value) -> Result<ToolOutput, CodecError> {
+    let direction = b.direction;
     if let Some(s) = v.as_str() {
         if s.len() > MAX_TEXT_BYTES {
             return Err(CodecError::Limit);
@@ -164,7 +171,7 @@ fn output(b: &mut Items, v: &Value) -> Result<ToolOutput, CodecError> {
         let o = object(v)?;
         let part = match string(o, "type")? {
             "input_text" => {
-                fields(o, &["type", "text", "prompt_cache_breakpoint"])?;
+                direction.fields(o, &["type", "text", "prompt_cache_breakpoint"])?;
                 let id = b.part_id()?;
                 record_input_form(b, id, o)?;
                 (
@@ -181,7 +188,7 @@ fn output(b: &mut Items, v: &Value) -> Result<ToolOutput, CodecError> {
             "input_image" => (
                 b.part_id()?,
                 ToolResultPart::Resource(b.resource(
-                    super::image::read(o, Profile::Responses)?,
+                    super::image::read(o, Profile::Responses, direction)?,
                     ResourcePurpose::ToolResult,
                 )?),
             ),
@@ -211,6 +218,7 @@ fn input_part(id: PartId, text: &str, fidelity: &FidelityRecords) -> Value {
 pub(super) fn configuration_effort(
     o: &Map<String, Value>,
     response: bool,
+    direction: DecodeDirection,
 ) -> Result<Option<ReasoningEffort>, CodecError> {
     match o.get("reasoning") {
         None => Ok(None),
@@ -218,7 +226,7 @@ pub(super) fn configuration_effort(
         Some(Value::Null) => Err(CodecError::Invalid("configuration reasoning")),
         Some(value) => {
             let reasoning = object(value)?;
-            fields(reasoning, &["effort"])?;
+            direction.fields(reasoning, &["effort"])?;
             match reasoning.get("effort") {
                 None | Some(Value::Null) => Ok(None),
                 Some(value) => Ok(Some(super::reasoning::effort(
@@ -236,6 +244,7 @@ pub(super) fn decode_items(
     response: bool,
     item_status: &str,
 ) -> Result<(), CodecError> {
+    let direction = b.direction;
     for value in input {
         let o = object(value)?;
         let id = b.id()?;
@@ -249,9 +258,10 @@ pub(super) fn decode_items(
                 Profile::Responses,
                 response.then_some(item_status),
                 !response,
+                direction,
             )?),
             Some("custom_tool_call") => {
-                fields(
+                direction.fields(
                     o,
                     &[
                         "type",
@@ -268,11 +278,11 @@ pub(super) fn decode_items(
                     call_id: text(string(o, "call_id")?, "call id", 256)?,
                     name: text(string(o, "name")?, "custom name", 128)?,
                     input: raw_string(o, "input")?,
-                    context: call_context(o)?,
+                    context: call_context(o, direction)?,
                 })
             }
             Some("function_call_output" | "custom_tool_call_output") if !response => {
-                fields(
+                direction.fields(
                     o,
                     &[
                         "type",
@@ -285,7 +295,7 @@ pub(super) fn decode_items(
                         "caller",
                     ],
                 )?;
-                let context = call_context(o)?;
+                let context = call_context(o, direction)?;
                 let call_id = string(o, "call_id")?;
                 if let Some(name) = o.get("name").filter(|v| !v.is_null()) {
                     let expected = b.items.iter().find_map(|(_, i)| match i {
@@ -324,7 +334,7 @@ pub(super) fn decode_items(
                 }
             }
             Some("configuration_update") => {
-                fields(o, &["type", "id", "reasoning"])?;
+                direction.fields(o, &["type", "id", "reasoning"])?;
                 if response {
                     text(string(o, "id")?, "configuration update id", 256)?;
                 } else if o
@@ -334,11 +344,11 @@ pub(super) fn decode_items(
                     return Err(CodecError::Invalid("configuration update id"));
                 }
                 Item::ConfigurationUpdate(ConfigurationUpdate {
-                    effort: configuration_effort(o, response)?,
+                    effort: configuration_effort(o, response, direction)?,
                 })
             }
             Some("program") => {
-                fields(o, &["type", "id", "call_id", "code", "fingerprint"])?;
+                direction.fields(o, &["type", "id", "call_id", "code", "fingerprint"])?;
                 text(string(o, "id")?, "program id", 256)?;
                 Item::Program(Program {
                     call_id: text(string(o, "call_id")?, "call id", 256)?,
@@ -347,7 +357,7 @@ pub(super) fn decode_items(
                 })
             }
             Some("program_output") => {
-                fields(o, &["type", "id", "call_id", "result", "status"])?;
+                direction.fields(o, &["type", "id", "call_id", "result", "status"])?;
                 text(string(o, "id")?, "program output id", 256)?;
                 if response {
                     accept_status(o, item_status)?;
@@ -369,12 +379,13 @@ pub(super) fn decode_items(
                     o,
                     &mut || b.part_id(),
                     !response || item_status != "completed",
+                    direction,
                 )?;
                 b.fidelity.record_replay(id, &r, None)?;
                 Item::Reasoning(r)
             }
             Some("message") | None => {
-                fields(
+                direction.fields(
                     o,
                     if typ.is_none() {
                         &["role", "content", "phase"]
@@ -424,7 +435,7 @@ pub(super) fn decode_items(
                     let mut parts = vec![];
                     for v in &values {
                         let p = object(v)?;
-                        fields(p, &["type", "text", "prompt_cache_breakpoint"])?;
+                        direction.fields(p, &["type", "text", "prompt_cache_breakpoint"])?;
                         if string(p, "type")? != "input_text" {
                             return Err(CodecError::Invalid("instruction part"));
                         }
@@ -457,7 +468,7 @@ pub(super) fn decode_items(
                         let kind = string(p, "type")?;
                         let content = match kind {
                             "refusal" if role == MessageRole::Assistant => {
-                                fields(p, &["type", "refusal"])?;
+                                direction.fields(p, &["type", "refusal"])?;
                                 ContentPart::Refusal(
                                     Text::allowing_empty(
                                         string(p, "refusal")?,
@@ -469,7 +480,8 @@ pub(super) fn decode_items(
                                 )
                             }
                             "input_text" if !response => {
-                                fields(p, &["type", "text", "prompt_cache_breakpoint"])?;
+                                direction
+                                    .fields(p, &["type", "text", "prompt_cache_breakpoint"])?;
                                 ContentPart::Text(
                                     Text::allowing_empty(
                                         string(p, "text")?,
@@ -482,14 +494,15 @@ pub(super) fn decode_items(
                             }
                             "input_image" if !response && role == MessageRole::User => {
                                 ContentPart::Resource(b.resource(
-                                    super::image::read(p, Profile::Responses)?,
+                                    super::image::read(p, Profile::Responses, direction)?,
                                     ResourcePurpose::Input,
                                 )?)
                             }
                             "input_file" if !response && role == MessageRole::User => {
-                                ContentPart::Resource(
-                                    b.resource(super::file::read(p)?, ResourcePurpose::Input)?,
-                                )
+                                ContentPart::Resource(b.resource(
+                                    super::file::read(p, direction)?,
+                                    ResourcePurpose::Input,
+                                )?)
                             }
                             "output_text" if role == MessageRole::Assistant => {
                                 ContentPart::Text(super::text::read(p, !response, b)?)
