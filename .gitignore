@@ -25,7 +25,7 @@ config/chatgpt/*
 /tests/sdk/.venv/
 **/__pycache__/
 
-# JetBrains IDE：仅共享项目词典。
+# JetBrains IDE: share only the project dictionary.
 /.idea/*
 !/.idea/dictionaries/
 /.idea/dictionaries/*

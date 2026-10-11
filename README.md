@@ -1,42 +1,42 @@
 # MorphieCore
 
-以统一 IR 为核心的模型路由网关：下游提供标准 OpenAI Responses（主接口）与 Chat Completions（兼容接口），上游连接 OpenAI 兼容、Anthropic Messages 与 Google Gemini 等不同协议的 Provider。项目处于核心设计与验证阶段。
+A model-routing gateway built on one unified IR. Clients speak OpenAI Responses (primary) or Chat Completions; upstream Providers speak OpenAI-compatible, Anthropic Messages and, later, Google protocols. The project is in core design and validation.
 
-## 状态
+## Status
 
-- 已接入：下游 Responses / Chat（JSON 与 SSE，文本、工具、reasoning、图片与部分文件输入）；上游 OpenAI Responses / Chat 及多家兼容方言；文件凭据与有序池；Provider 原生缓存亲和。
-- 冻结：独立 Embeddings、Images、Speech、Transcription 入口，以及新 Provider 扩展。
-- 进行中：协议层重构、Anthropic 上游接入，随后是 Google generateContent / Interactions 与下游 Anthropic Messages。详见[路线](docs/roadmap.md)。
+- **Working:** downstream Responses and Chat (JSON and SSE; text, tools, reasoning, images and some file inputs); upstream OpenAI Responses and Chat with several compatible dialects; Anthropic Messages upstream through explicitly compiled topology; file credentials with ordered pools; Provider-native cache affinity.
+- **Frozen:** the standalone Embeddings, Images, Speech and Transcription endpoints, and new Providers.
+- **Next:** default Anthropic product bindings, then Google generateContent and Interactions, then downstream Anthropic Messages. See the [roadmap](docs/roadmap.md).
 
-## 快速开始
+## Quick start
 
 ```sh
-cargo run --locked --offline --bin morphiecore        # 网关
-cargo run --locked --offline --bin morphiecore-auth   # 凭据管理
+cargo run --locked --offline --bin morphiecore        # gateway
+cargo run --locked --offline --bin morphiecore-auth   # credential management
 ```
 
-配置、接口与凭据操作见[使用](docs/usage.md)。
+Configuration, endpoints and credentials: [usage](docs/usage.md).
 
-## 代码结构
+## Layout
 
-| 目录 | 内容 |
+| Path | Contents |
 |---|---|
-| `src/semantic` | IR：任务类型、校验、事件 reducer |
-| `src/protocol` | 各协议 wire 编解码、能力声明、方言与协议专属投影 |
-| `src/lowering`、`src/adapter` | 跨协议能力分发、通用请求与错误；冻结任务的既有适配 |
-| `src/topology`、`src/provider` | 模型 → 路由 → 端点绑定，Provider 定义 |
-| `src/execution`、`src/transport` | 候选执行、HTTP/SSE |
-| `src/gateway` | HTTP 网关 |
-| `src/credential` | 凭据 store、API key、OAuth |
-| `tests/` | 离线测试与 SDK loopback gate |
+| `src/semantic` | IR: task types, validation, event reducer |
+| `src/protocol` | Wire codecs, capabilities, dialects and protocol-specific projections |
+| `src/lowering`, `src/adapter` | Cross-protocol capability dispatch, generic requests and errors; legacy adapters for frozen tasks |
+| `src/topology`, `src/provider` | Model → Route → Endpoint bindings; Provider definitions |
+| `src/execution`, `src/transport` | Candidate execution; HTTP and SSE |
+| `src/gateway` | HTTP gateway |
+| `src/credential` | Credential store, API keys, OAuth |
+| `tests/` | Offline tests and the SDK loopback gate |
 
-## 文档
+## Documentation
 
-- [架构](docs/architecture.md)：设计原则与已定决策
-- [路线](docs/roadmap.md)：阶段、冻结范围与当前焦点
-- [使用](docs/usage.md)：启动、配置、HTTP 接口、凭据
-- [开发](docs/development.md)：环境、检查、测试布局
-- [参考来源](docs/references.md)：固定版本与协议文档
-- 贡献规则：[AGENTS.md](AGENTS.md)
+- [Architecture](docs/architecture.md): principles and settled decisions
+- [Roadmap](docs/roadmap.md): phases, frozen scope, current focus
+- [Usage](docs/usage.md): startup, configuration, HTTP API, credentials
+- [Development](docs/development.md): environment, checks, tests
+- [References](docs/references.md): pinned sources and protocol docs
+- Contribution rules: [AGENTS.md](AGENTS.md)
 
-原创代码与文档采用 [MIT License](LICENSE)；外部材料保留其来源与许可。
+Original code and docs are under the [MIT License](LICENSE); external material keeps its source and license.

@@ -27,7 +27,7 @@
 - **Parsing**: upstream responses are strict on known fields and ignore unknown ones. Downstream requests reject critical semantics they cannot express; degradable fields are removed by named rules and recorded (architecture §4).
 - **Keep it simple**: no prebuilt generic frameworks, extra defensive layers or speculative abstractions. Delete code that is no longer needed instead of keeping old paths. Every new check or limit needs a concrete failure scenario.
 - **Process**: for behavior changes, first state the goal and exit condition in the roadmap's current focus, then write tests first. Dependency changes update `Cargo.lock` and are verified with `--locked`.
-- Rust comments and Python docstrings use concise English and explain only non-obvious reasons, with source URLs when useful.
+- Docs, code comments, docstrings and commit messages use concise English. Comments explain only non-obvious reasons, with source URLs when useful. Non-ASCII test inputs are data, not prose.
 - Never inspect or edit `target/`, `.venv/` or `__pycache__/` by hand; never commit `testdata/{generated,reports,dist,runtime}/`.
 
 ## Tests

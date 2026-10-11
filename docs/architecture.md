@@ -1,146 +1,143 @@
-# 架构
+# Architecture
 
-MorphieCore 是以统一 IR 为核心的模型路由网关：下游接收标准客户端协议，上游连接不同 Provider 协议，中间只经过一份类型化语义表示。本页记录设计原则和已定决策；行为细节以代码与测试为准，推进顺序见[路线](roadmap.md)。
+MorphieCore accepts standard client protocols downstream, calls different Provider protocols upstream, and passes everything through one typed semantic representation in between. This page records principles and settled decisions; code and tests define behavior, and the [roadmap](roadmap.md) sets the order of work.
 
-## 1. 目标协议
+## 1. Target protocols
 
-| 方向 | 协议 | 状态 |
+| Direction | Protocol | Status |
 |---|---|---|
-| 下游 | OpenAI Responses（主接口） | 已接入 |
-| 下游 | OpenAI Chat Completions（兼容接口，允许声明的损失，可用扩展字段补充语义） | 已接入 |
-| 下游 | Anthropic Messages | Responses/Chat 稳定后开放 |
-| 上游 | OpenAI Responses、OpenAI Chat（含各兼容方言） | 已接入 |
-| 上游 | Anthropic Messages | 显式拓扑的 Gateway JSON / SSE 已接入；默认 CLI 产品绑定待接入 |
-| 上游 | Google generateContent、Google Interactions | 计划中 |
+| Downstream | OpenAI Responses (primary) | Live |
+| Downstream | OpenAI Chat Completions (compatible; declared losses, extension fields for missing semantics) | Live |
+| Downstream | Anthropic Messages | After Responses and Chat stabilize |
+| Upstream | OpenAI Responses and Chat, including compatible dialects | Live |
+| Upstream | Anthropic Messages | JSON and SSE live through explicit topology; default CLI binding pending |
+| Upstream | Google generateContent, Google Interactions | Planned |
 
-独立的 Embeddings、Images、Speech、Transcription 已有标准下游入口，当前冻结，只做重构所需的维护。
+The standalone Embeddings, Images, Speech and Transcription endpoints exist but are frozen: maintenance only, as refactors require.
 
-## 2. 分层与数据流
+## 2. Layers and data flow
 
 ```text
-下游 HTTP（鉴权、有界收集）
-  → 下游 codec：wire → IR 请求
-  → 校验 / requirements
-  → 固定 Route 的每个候选：lowering（按目标能力投影）→ 上游 codec：IR → wire
-  → transport（受信 origin、认证、超时）
-  → 上游 codec：JSON / SSE → IR 响应或 StreamEvent
-  → 下游 codec：IR → JSON / SSE → body 交付
+downstream HTTP (auth, bounded collection)
+  → downstream codec: wire → IR request
+  → validation / requirements
+  → for each candidate of the fixed Route: lowering (project to target caps) → upstream codec: IR → wire
+  → transport (trusted origin, auth, timeouts)
+  → upstream codec: JSON / SSE → IR response or StreamEvent
+  → downstream codec: IR → JSON / SSE → body delivery
 ```
 
-| 模块 | 职责 | 约束 |
+| Module | Role | Constraint |
 |---|---|---|
-| `semantic` | IR 类型、校验、requirements、事件 reducer | 不依赖 protocol / provider / execution |
-| `protocol` | 各协议的 wire 编解码、adapter、能力与方言；协议内 lowering 判断表示及具名损失 | 纯函数；投影只作用于候选私有副本，不访问网络、凭据或 registry |
-| `lowering` | 跨协议 `TargetCaps`、共享表示错误与报告策略；冻结任务的既有投影 | 能力分发不替代协议自身的表示检查 |
-| `adapter` | 通用请求、上下文与 replay 隔离、选定上游的分发；冻结任务的既有适配 | 规则由受信绑定选择，业务输入不能选择 |
-| `topology` | Public Model → Route → Endpoint 的静态编译 | Endpoint 绑定 origin/path/协议/上游模型/凭据域 |
-| `execution` | 候选计划、请求准备、增量 intake、交付状态 | 不解释业务语义 |
-| `transport` | HTTP I/O 与 SSE framing | 只接收已准备好的可信请求 |
-| `credential` | 文件凭据 store、API key、OAuth driver、有序池 | 凭据不进入 IR |
-| `gateway` | 鉴权、准入、预算、body 发布与取消 | 只监听 loopback |
+| `semantic` | IR types, validation, requirements, event reducer | No dependency on protocol, provider or execution |
+| `protocol` | Per-protocol codecs, adapters, capabilities and dialects; protocol-owned representation checks and named losses | Pure; projections touch only the candidate's private copy, never network, credentials or registry |
+| `lowering` | Cross-protocol `TargetCaps`, shared representation errors and reporting; legacy projections for frozen tasks | Dispatch never replaces the protocol's own checks |
+| `adapter` | Generic request, context and replay isolation, dispatch to the selected upstream; legacy adapters for frozen tasks | Rules are chosen by trusted bindings, never by business input |
+| `topology` | Static compilation of Public Model → Route → Endpoint | An Endpoint fixes origin, path, protocol, upstream model and credential scope |
+| `execution` | Candidate planning, request preparation, incremental intake, delivery state | Does not interpret business semantics |
+| `transport` | HTTP I/O and SSE framing | Accepts only prepared, trusted requests |
+| `credential` | File store, API keys, OAuth drivers, ordered pools | Credentials never enter the IR |
+| `gateway` | Auth, admission, budgets, body publication and cancellation | Loopback only |
 
-Endpoint 以 `lowering::target::TargetCaps` 区分 OpenAI 与原生 Messages 的能力声明；协议与能力族必须匹配。原生 Messages 的 profile、方言、语义上限、缓存载体、请求投影与会话 header 策略由 `protocol::anthropic` 拥有，不通过构造 Chat adapter 或借用 OpenAI 开关来表达；其 replay 标签直接由 Endpoint 的 Provider 与上游模型派生，不另设可配置字段。
+`lowering::target::TargetCaps` separates OpenAI targets from native Messages targets; protocol and capability family must match. `protocol::openai::{Adapter, Dialect, TargetCaps}` is the OpenAI entry point, with dialect data in `adaptation` and representation checks, named losses and stream checks in `protocol::openai::lowering`. The projection of native Messages observations onto OpenAI delivery also lives there. `protocol::anthropic` owns the Messages profile, dialect, limits, cache carriers, request projection and session headers; it never borrows the Chat adapter or OpenAI switches. Its replay target derives from the Endpoint's Provider and upstream model, with no extra configuration.
 
-OpenAI 的规范入口为 `protocol::openai::{Adapter, Dialect, TargetCaps}`；方言数据由协议内 `adaptation` 拥有，表示检查、具名损失与流式检查位于 `protocol::openai::lowering`。将原生 Messages 观察交付为 OpenAI 的投影也属于这个目标模块，而不是通用 lowering。通用请求只保留当前客户端的来源元数据用于交付选项转换，不在通用层执行 OpenAI 表示分支。
+Protocol modules expose only the codec and stream interfaces they need. Native response intake takes the selected history and replay target explicitly. Downstream protocols are added per the roadmap; there is no prebuilt plugin framework.
 
-协议模块按实际需要提供双向编解码与流式接口。原生响应 intake 需要所选历史与 replay 目标，不能为统一方法签名省略上下文；尚未开放的下游协议按路线接入，不预建通用插件框架。独立媒体任务保持冻结，不随 Generation 的模块归属调整扩展功能。
+## 3. IR principles
 
-## 3. IR 原则
+Long-lived invariants:
 
-以下是长期有效的不变量：
+- **Ordered heterogeneous items.** Generation history is an ordered list of items (instructions, messages, tool calls and results, reasoning, Provider tool observations). A Message is one container among them. Calls and results link by call ID, never by position or name.
+- **Separate identities.** Local item/part IDs, wire IDs, call IDs and stream indexes are distinct; unreported identities are never presented as upstream-reported.
+- **Exact JSON.** Tool arguments and schemas keep numeric precision and key order. Raw parsing rejects duplicate keys and bounds depth, nodes and bytes.
+- **Presence where it matters.** Absent, null, empty and default are distinguished where meanings differ (tool arguments, schemas, usage), not mechanically for every field.
+- **Layered reasoning.** Readable content (summary, text) is separate from opaque continuation payloads. Effort, budget and display are controls, not output.
+- **Honest usage.** Unreported values are not zero-filled, cumulative snapshots are not summed, derived values are not stored as reported.
+- **Honest terminals.** Response closure, artifact completeness and turn progress (awaiting tool results or done) are separate. Failure, truncation and cancellation never become success.
+- **No runtime state.** Selected targets, credentials, retries and commit state stay out of the IR.
+- **Context mode.** Clients currently resend the full history each turn (ClientManaged). Gateway-managed, time-limited `previous_response_id` history is the end goal; it will materialize the same full IR and use the same pipeline.
 
-- **有序异构 items**：Generation 历史是有序 items（指令、消息、工具调用/结果、reasoning、Provider 工具观察等），Message 只是其中一种容器。调用与结果通过 call ID 显式关联，不靠相邻位置或名称猜测。
-- **身份分离**：本地 item/part ID、wire ID、call ID、流索引各自独立；未报告的身份不伪造成上游报告。
-- **精确 JSON**：工具参数与 Schema 保留数值精度和键顺序；原始字节解析时拒绝重复键并限制深度、节点和字节数。
-- **按需区分 presence**：在含义不同的地方区分缺省、null、空值和默认值（例如工具参数、Schema、计量）；不为每个字段机械套用。
-- **reasoning 分层**：可读内容（摘要/文本）与 opaque 续轮载荷分开；effort/预算/显示是控制，不等于实际产出。
-- **计量诚实**：未报告不补零，累计快照不相加，派生值不另存成上游报告。
-- **终态诚实**：响应闭合、产物完整、轮次进度（等待工具结果 / 结束）分开表达；失败、截断、取消不能变成成功。
-- **无运行时状态**：已选目标、凭据、重试和提交状态不进入 IR。
-- **上下文模式**：当前为客户端每次提交完整历史（ClientManaged）；网关自管的限时 `previous_response_id` 历史是终期目标，届时物化为同样的完整 IR 再走同一链路。
+The IR is neither a protocol DTO nor a union of fields. When it cannot express a concept, first present a minimal counterexample and structural options, then decide; never work around it with private adapter fields.
 
-IR 不是任一协议的 DTO，也不是字段并集。发现 IR 无法表达的概念时，先给出最小反例和结构选项，再决定实现；不在 adapter 里用私有字段绕过。
+## 4. Adaptation rules
 
-## 4. 协议适配规则
+### Field tiers
 
-### 字段三级策略
-
-| 级别 | 范围 | 处理 |
+| Tier | Scope | Handling |
 |---|---|---|
-| 必须保真 | 指令、消息顺序、工具定义、参数、call ID 与结果关联、必要的 opaque 续轮、stop 原因与核心计量 | 目标无法表达时拒绝请求 |
-| 可声明降级 | 目标不支持的采样参数、`metadata`、`service_tier`、`logprobs`、附属计量明细等 | 按具名规则从候选副本移除并记录到诊断 |
-| 未知字段 | 上游响应中未登记的字段 | 忽略；已登记字段照常严格校验 |
+| Must preserve | Instructions, message order, tool definitions, arguments, call IDs and result links, required opaque continuations, stop reasons, core usage | Reject when the target cannot express it |
+| Degradable | Unsupported sampling parameters, `metadata`, `service_tier`, `logprobs`, usage detail and similar | Remove from the candidate copy by a named rule and record in diagnostics |
+| Unknown | Unregistered fields in upstream responses | Ignore; registered fields stay strict |
 
-- **上游响应**：已知字段严格（类型、取值、关系），未知字段忽略。上游新增字段不能让网关失败。
-- **下游请求**：标准中能表达的字段按上表处理；无法表达的关键语义返回 400，不静默丢弃。
-- **解析方向显式传递**：OpenAI 共享 reader 区分请求、上游报告与编码自检；嵌套 items 保持当前解析对象的方向，SSE 快照预校验也属于上游入口。未知字段策略不使用线程局部或其他环境状态，错误及交错调用不会改变另一解析操作的准入规则。
-- 损失只作用于每个候选的私有投影，原 IR 不变；静态与流式使用同一规则。
+- **Upstream responses:** strict on known fields (type, value, relations), ignore unknown ones. New upstream fields must not break the gateway.
+- **Downstream requests:** expressible fields follow the table; critical semantics the target cannot express return 400 and are never silently dropped.
+- **Explicit parse direction:** the shared OpenAI reader distinguishes requests, upstream reports and encoder self-checks. Nested items inherit the direction of their parent; SSE snapshot pre-validation counts as upstream. The policy uses no thread-local or ambient state.
+- Losses apply only to each candidate's private projection; the source IR is unchanged. Static and streaming paths share the same rules.
 
-### Opaque reasoning 续轮
+### Opaque reasoning replay
 
-所有上游签发的 opaque 值（OpenAI `encrypted_content`、Anthropic thinking `signature`、Gemini `thoughtSignature`、Interactions step signature）在下游统一使用**带标签的信封**：
+Every upstream-issued opaque value (OpenAI `encrypted_content`, Anthropic thinking `signature`, Gemini `thoughtSignature`, Interactions step signatures) reaches clients in one **tagged envelope**:
 
 ```text
-{版本, 上游 Provider, 上游模型, 格式, 原始载荷}
+{version, upstream Provider, upstream model, format, raw payload}
 ```
 
-- 交付给下游时编码进对应载体（Responses reasoning item 的 `encrypted_content`；Chat 见下节）。
-- 回传时：Provider 与模型都与本次目标一致才还原原生载荷；否则丢弃该 opaque 值，并移除因此变空的 reasoning item。
-- 当前载体为 `mc1.` 加 base64url JSON，包含 Provider/上游模型的稳定指纹、原生格式和载荷；公共模型别名、凭据和入口密钥不参与兼容性指纹。裸值、损坏或未知版本信封不回传上游。
-- 信封不加密、不附加 HMAC、不做本地前缀证明：来源标签只是兼容性提示，不是身份认证；标签不能选择路由、地址或凭据。签名合法性由上游签发方校验，被篡改或不匹配时由上游拒绝并作为错误返回。
-- 同目标没有相应载体时仍拒绝，不把必要 opaque 当成异目标值静默丢弃。调用方显式使用的历史依赖检查、owner 关联与缓存前缀工具独立保留。
-- 当前接线覆盖 reasoning item 的 Responses `encrypted_content` 与 Chat `reasoning.encrypted.data`，原生 Anthropic thinking 复用同一载体，静态和流式相同。Google 接入及 part/call 级签名仍按路线推进。
+- The envelope is `mc1.` plus base64url JSON carrying stable Provider/model fingerprints, the native format and the payload. Public model aliases, credentials and ingress keys are not part of the fingerprint.
+- On replay, the native payload is restored only when both Provider and model match the current target. Otherwise the value is dropped, along with any reasoning item left empty. Bare, corrupt or unknown-version envelopes never go upstream.
+- No encryption, HMAC or local prefix proof: the tag is a compatibility hint, not authentication, and cannot select route, origin or credential. The issuing upstream validates signatures and rejects tampering.
+- A same-target value without a matching carrier is still rejected, not silently dropped.
+- Carriers today: Responses reasoning `encrypted_content` and Chat `reasoning.encrypted` `data`, static and streaming; native Anthropic thinking reuses the same envelope. Google and part/call-level signatures follow the roadmap.
 
-### Chat 扩展字段
+### Chat extension fields
 
-Chat Completions 无法承载 reasoning 等语义时，参照 OpenRouter 的现有形状增加扩展字段，而不是自创格式：
+When Chat Completions cannot carry a semantic such as reasoning, MorphieCore follows OpenRouter's existing shapes instead of inventing its own:
 
-- assistant 消息（`message`）与流式 `delta` 上的 `reasoning`（可读文本）与 `reasoning_details`（有序数组）。数组元素的 `type` 为 `reasoning.text`（`text` + 可选 `signature`）、`reasoning.summary`（`summary`）或 `reasoning.encrypted`（`data`），共有 `id`、`format`、`index`。
-- 签名与加密载荷使用上节的信封编码；客户端须原样回传整段 `reasoning_details`，网关按上节规则还原或丢弃。
-- 其他扩展字段按需逐个加入并在此登记；不恢复旧的 `_openbridge` attachment。
+- `reasoning` (readable text) and `reasoning_details` (ordered array) on the assistant `message` and stream `delta`. Elements have `type` `reasoning.text` (`text`, optional `signature`), `reasoning.summary` (`summary`) or `reasoning.encrypted` (`data`), plus shared `id`, `format` and `index`.
+- Signatures and encrypted payloads use the envelope above. Clients must return `reasoning_details` unchanged; the gateway restores or drops values by the rules above.
+- Further extension fields are added one at a time and registered here. The old `_openbridge` attachment does not return.
 
-## 5. 执行与交付
+## 5. Execution and delivery
 
-- 启动时编译 Public Model → Route → 有序 Endpoint；请求不能创建或重排候选。每个候选都从同一不可变 IR 独立投影。
-- Fallback 必须显式开启，只在首次向下游发布内容之前发生，且只针对可前移的失败（连接/传输失败、超时、5xx、本地凭据不可用）。401/403、协议/投影错误不前移。
-- 首次发布下游 frame 即冻结前移；body 交出视为提交；上游严格 EOF 且最终交出后才算完成。之后的错误只能中止 body，不拼接其他 attempt，不伪造成功终态。
-- 上游 SSE 与下游交付方式独立：下游要 JSON 时有界聚合到终态；要 SSE 时增量交付。
-- 所有 body、frame、事件数和时间都有上界；客户端断开、超时或关闭会取消上游请求。
+- Startup compiles Public Model → Route → ordered Endpoints. Requests cannot create or reorder candidates; each candidate projects independently from the same immutable IR.
+- Fallback is opt-in, happens only before anything is published downstream, and only for advanceable failures: connect/transport errors, timeouts, 5xx, locally unavailable credentials. 401/403 and protocol or projection errors do not advance.
+- Publishing the first downstream frame freezes the candidate; handing over the body commits; completion requires strict upstream EOF and the final hand-off. Later errors can only abort the body: no splicing another attempt, no fabricated success terminal.
+- Upstream SSE and downstream delivery are independent: JSON clients get a bounded aggregate, SSE clients get incremental delivery.
+- Bodies, frames, event counts and time are bounded. Client disconnect, timeout or shutdown cancels the upstream request.
 
-### 原生 Messages 的 OpenAI 客户端投影
+### Native Messages delivered to OpenAI clients
 
-- 请求按有序 items 的角色组装原生 messages，保留 thinking / tool_use / tool_result 的相对顺序与 call ID；不依赖客户端保存原始容器边界。`store: false` 等无状态默认值不转成上游存储指令，`include: ["reasoning.encrypted_content"]` 只选择下游载体，不改变原生 thinking 模式。
-- 原生观察保持不变，只在交付副本中省略容器边界、把结构化工具参数精确序列化成 JSON 字符串，并用 OpenAI 的终态及工具调用表达轮次进度。
-- Chat 可承载“至多一个前置 thinking、随后文本、最后工具调用”的 JSON 输出；工具后的文本或交错的 thinking 目前拒绝，而不是悄悄改序。Responses 保留独立 items 顺序。
-- 仅在 input、cache-read、cache-write、output 均有报告时，为目标计算包含缓存的 input 与 total；缺少所需计量时输出 `usage: null`，不补零。原生计量与缺省状态仍保留在源观察中，计量非法或溢出仍失败。
-- 原生协议没有创建时间；OpenAI 交付副本的创建时间在 Gateway 创建交付对象时固定，同一流的所有帧一致，不当成上游报告。
-- 原生 SSE 逐帧映射为 `StreamEvent`，复用静态的 stop/usage 语义和目标投影；文本、thinking 与工具参数增量交付，签名片段不透传，只在 block 闭合并验证后封装完整载荷。
-- `message_stop` 不等于传输 EOF。成功终态仍等严格 EOF，Chat 的普通 item 状态在此时按最终 stop 原因闭合；已经闭合的 reasoning 签名保持独立。截断的传输只中止 body，不伪造 completed/DONE，也不回退重放。SSE intake 仍可聚合成 JSON 交付。
+- Requests are assembled into native messages by item role, preserving the relative order of thinking, `tool_use` and `tool_result` and their call IDs. Stateless defaults such as `store: false` are not sent upstream; `include: ["reasoning.encrypted_content"]` selects the downstream carrier only and does not change native thinking.
+- Native observations stay unchanged. Only the delivery copy drops container boundaries, serializes structured tool arguments to exact JSON strings, and expresses turn progress with OpenAI terminals and tool calls.
+- Chat JSON carries at most one leading thinking block, then text, then tool calls. Text after tools or interleaved thinking is rejected rather than reordered. Responses keeps independent item order.
+- Cache-inclusive input and total are computed only when input, cache-read, cache-write and output are all reported; otherwise `usage` is `null`. Invalid or overflowing usage still fails.
+- The native protocol has no creation time. The OpenAI delivery copy fixes one when the gateway creates the delivery object, shared by all frames, and does not present it as upstream-reported.
+- Native SSE maps frame by frame to `StreamEvent`, reusing static stop/usage semantics and the target projection. Text, thinking and tool argument deltas stream; signature fragments do not, and the full payload is enveloped once the block closes and validates.
+- `message_stop` is not transport EOF. The success terminal waits for strict EOF, where Chat closes ordinary item state with the final stop reason. A truncated transport aborts the body with no fabricated `completed` or `[DONE]` and no replay. SSE intake can still aggregate into JSON delivery.
 
-## 6. 缓存亲和
+## 6. Cache affinity
 
-- 下游可选 `X-MorphieCore-Conversation-Id` 表达 Provider 无关的逻辑会话；网关在内部派生各上游的 session/cache 载体，客户端不需要了解 Provider 参数。
-- 标准 `prompt_cache_key` 是独立的缓存分组意图。
-- 无会话标识时，网关可用短 TTL 的前缀摘要索引尽力复用缓存分组；索引可随时丢弃，未命中只损失缓存机会，不改变请求合法性。它不是历史存储，也不参与 replay 判断。
-- 隐式缓存范围仍隔离入口密钥、凭据来源与公共模型；不复用 replay 的 Provider/模型兼容性指纹。
+- The optional `X-MorphieCore-Conversation-Id` header names a Provider-neutral logical conversation; the gateway derives each upstream's session or cache carriers from it.
+- Standard `prompt_cache_key` is a separate cache-grouping intent.
+- Without a conversation ID, a short-TTL prefix-digest index reuses cache groups on a best-effort basis. It can be dropped at any time, misses only lose cache hits, and it is neither history storage nor part of replay decisions. Histories with opaque reasoning are excluded.
+- Implicit cache scope stays isolated by ingress key, credential source and public model; it does not reuse the replay fingerprint.
 
-## 7. 凭据
+## 7. Credentials
 
-- 凭据只来自应用自有的文件 store；不读取环境变量中的 key，不读取第三方 auth cache。
-- API key 与 OAuth（Grok、ChatGPT 订阅 SIWC）由统一 manager 管理；推理使用显式配置的有序池，按固定 identity 借用短期 access 视图。
-- 普通请求不触发登录或刷新；凭据、locator 与上游 origin 不下发给客户端。
+- Credentials come only from the application's own file store: no keys from environment variables, no third-party auth caches.
+- One manager owns API keys and OAuth (Grok, ChatGPT subscription SIWC). Inference uses explicitly configured ordered pools and borrows short-lived access views per fixed identity.
+- Requests never trigger login or refresh. Credentials, locators and upstream origins never reach clients.
 
-## 8. 已定决策
+## 8. Settled decisions
 
-| 决策 | 要点 |
+| Decision | Summary |
 |---|---|
-| 统一语义核心 | 一个 IR 服务 Gateway 与未来的 Agent 库调用；Agent 规划、记忆、工具执行属于调用方 |
-| 独立任务 | Generation、Embedding、Images、Speech、Transcription 各有任务合同，不共用万能消息容器 |
-| 纯 codec / lowering | 不访问网络、凭据、registry；编码基于最终 IR，不在编码后改 JSON |
-| 能力分层 | 语义能力、wire 表示、执行属性、对下游承诺分开声明；公共能力不取候选并集 |
-| 固定候选与提交前 fallback | 见第 5 节 |
-| 最小 HTTP 网关 | loopback 监听、单一 Bearer 入口鉴权、入站 header 不透传 |
-| 上游开放解码 | 已知字段严格、未知字段忽略 |
-| Opaque 信封 | 不加密、不做本地前缀证明；同 Provider+模型还原，否则丢弃 |
-| Chat 扩展 | 参照 OpenRouter 形状承载 Chat 无法表达的语义 |
-| 文件凭据与有序池 | 授权生命周期与推理借用分离；无自动刷新/负载均衡 |
+| One semantic core | One IR serves the gateway and a future Agent library; planning, memory and tool execution belong to the caller |
+| Separate tasks | Generation, Embedding, Images, Speech and Transcription each have their own contract, not a universal message container |
+| Pure codecs and lowering | No network, credentials or registry; encode from the final IR, never patch JSON afterwards |
+| Layered capabilities | Semantic capability, wire representation, execution properties and downstream promises are declared separately; public capability is not the union of candidates |
+| Fixed candidates, pre-commit fallback | See §5 |
+| Minimal HTTP gateway | Loopback listener, single Bearer ingress auth, no inbound header pass-through |
+| Open upstream decoding | Strict on known fields, ignore unknown ones |
+| Opaque envelope | No encryption or local proof; restore on same Provider and model, otherwise drop |
+| Chat extensions | OpenRouter shapes for semantics Chat cannot express |
+| File credentials and ordered pools | Authorization lifecycle is separate from inference borrowing; no automatic refresh or load balancing |
