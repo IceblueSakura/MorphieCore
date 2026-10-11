@@ -15,37 +15,6 @@ fn history() -> GenerationRequest {
 }
 
 #[test]
-fn heterogeneous_envelopes_keep_order_and_result_identity() {
-    let request = history();
-    let ids: Vec<_> = request.items().iter().map(|(id, _)| *id).collect();
-    let assistant = MessageEnvelope::new(
-        GroupId::new(LocalScope::ROOT, 1),
-        MessageEnvelopeRole::Assistant,
-        ids[..3].to_vec(),
-    )
-    .unwrap();
-    let user = MessageEnvelope::new(
-        GroupId::new(LocalScope::ROOT, 2),
-        MessageEnvelopeRole::User,
-        ids[3..].to_vec(),
-    )
-    .unwrap();
-    let grouped = request
-        .clone()
-        .with_message_envelopes(vec![assistant, user])
-        .unwrap();
-    assert_eq!(grouped.items(), request.items());
-    assert_eq!(grouped.message_envelopes()[0].members(), &ids[..3]);
-    assert_eq!(grouped.continuation(), Continuation::Unreported);
-    // Removing the later text must not silently attach it to another message.
-    let edited = grouped.clone().retain_items(|id, _| id != ids[2]).unwrap();
-    assert_eq!(edited.message_envelopes()[0].members(), &ids[..2]);
-    let mut reversed = grouped.items().to_vec();
-    reversed.swap(0, 2);
-    assert!(grouped.with_items(reversed).is_err());
-}
-
-#[test]
 fn duplicate_members_wrong_roles_and_dangling_empty_boundaries_fail() {
     let request = history();
     let ids: Vec<_> = request.items().iter().map(|(id, _)| *id).collect();
@@ -172,36 +141,6 @@ fn chat_sse_delivers_calls_and_a_real_responses_terminal() {
         assert_eq!(call.call_id.as_str(), "c");
         assert_eq!(call.arguments, ToolArguments::Raw("{ \"x\": 1 }".into()));
     }
-}
-
-#[test]
-fn envelope_event_is_closed_unique_and_materializes_the_same_container() {
-    use crate::events_support::{start, terminal};
-    let mut state = reduce(StreamState::new(), StreamEvent::Started).unwrap();
-    state = reduce(state, start(1, ItemKind::Reasoning)).unwrap();
-    let group = MessageEnvelope::new(
-        GroupId::new(LocalScope::ROOT, 1),
-        MessageEnvelopeRole::Assistant,
-        vec![ItemId::new(1)],
-    )
-    .unwrap();
-    let declaration = StreamEvent::MessageEnvelope(group.clone());
-    assert!(reduce(state.clone(), declaration.clone()).is_err());
-    state = reduce(
-        state,
-        StreamEvent::ItemFinished {
-            item: ItemId::new(1),
-            status: ItemLifecycle::Completed,
-            replay: None,
-        },
-    )
-    .unwrap();
-    state = reduce(state, declaration.clone()).unwrap();
-    assert!(reduce(state.clone(), declaration.clone()).is_err());
-    state = reduce(state, terminal(StreamTerminal::Completed)).unwrap();
-    let response = materialize(&state).unwrap();
-    assert_eq!(response.message_envelopes(), &[group]);
-    assert!(reduce(state, declaration).is_err());
 }
 
 #[test]

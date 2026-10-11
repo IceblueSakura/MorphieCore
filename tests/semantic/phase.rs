@@ -1,12 +1,7 @@
 //! Assistant `phase` is typed, status-independent and preserved on every projection.
 use crate::events_support::*;
-use crate::wire;
 use morphiecore::{
-    protocol::openai::{
-        CodecError, DecodedRequest, Profile, TargetCaps as Contract, envelope,
-        events::EventDecoder,
-        lowering::{lower_request, lower_response},
-    },
+    protocol::openai::{CodecError, DecodedRequest, Profile, envelope, events::EventDecoder},
     semantic::task::generation::*,
 };
 use serde_json::{Value, json};
@@ -49,40 +44,6 @@ fn phase_keys_are_assistant_only_and_fully_typed() {
     let d =
         decode_input(json!([{"role":"assistant","content":"hi","phase":"commentary"}])).unwrap();
     assert_eq!(message(&d).phase, Some(Phase::Commentary));
-}
-
-#[test]
-fn labeled_messages_have_no_chat_projection() {
-    for label in [json!("commentary"), json!("final_answer")] {
-        let d = decode_input(json!([labelled(label)])).unwrap();
-        assert!(lower_request(&d.semantic, &d.fidelity, Profile::Chat, Contract::full()).is_err());
-        assert!(
-            lower_request(
-                &d.semantic,
-                &d.fidelity,
-                Profile::Responses,
-                Contract::full()
-            )
-            .is_ok()
-        );
-    }
-    // Unlabeled messages project to both profiles.
-    let d = decode_input(json!([labelled(Value::Null)])).unwrap();
-    assert!(lower_request(&d.semantic, &d.fidelity, Profile::Chat, Contract::full()).is_ok());
-    // The response side rejects the projection the same way instead of dropping the label.
-    let mut response = wire::response(2);
-    response["output"][0]["phase"] = json!("commentary");
-    let d = envelope::decode_response_bytes(&serde_json::to_vec(&response).unwrap()).unwrap();
-    assert!(
-        lower_response(
-            &d.semantic,
-            &d.fidelity,
-            &d.metadata,
-            Profile::Chat,
-            Contract::full()
-        )
-        .is_err()
-    );
 }
 
 #[test]

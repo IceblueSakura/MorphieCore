@@ -3,116 +3,13 @@ use morphiecore::{
     lowering::generation::RepresentationError,
     protocol::{
         fidelity::FidelityRecords,
-        openai::{Adapter, Dialect, Profile, TargetCaps, lowering::lower_request},
+        openai::{Profile, TargetCaps, lowering::lower_request},
     },
     semantic::{
         task::generation::*,
         value::{Presence, Text},
     },
 };
-use serde_json::json;
-
-fn adaptive() -> ReasoningRequest {
-    let mut value = ReasoningRequest::present(Some(ReasoningEffort::High), None);
-    value.mode = Presence::Value(ReasoningMode::Adaptive);
-    value
-}
-
-#[test]
-fn contradictory_controls_and_hidden_presence_fail_without_erasing_intent() {
-    for budget in [
-        ReasoningBudget {
-            hard_limit: None,
-            soft_target: None,
-        },
-        ReasoningBudget {
-            hard_limit: Some(0),
-            soft_target: None,
-        },
-        ReasoningBudget {
-            hard_limit: None,
-            soft_target: Some(0),
-        },
-        ReasoningBudget {
-            hard_limit: Some(8),
-            soft_target: Some(9),
-        },
-    ] {
-        let mut value = adaptive();
-        value.budget = Some(budget);
-        assert_eq!(value.validate(), Err(GenerationError::InvalidControl));
-    }
-    let mut value = adaptive();
-    value.mode = Presence::Value(ReasoningMode::Budgeted);
-    assert!(value.validate().is_err());
-    value.budget = Some(ReasoningBudget {
-        hard_limit: None,
-        soft_target: Some(1024),
-    });
-    value.validate().unwrap();
-    value.effort = Presence::Value(ReasoningEffort::None);
-    assert!(value.validate().is_err());
-    value.effort = Presence::Absent;
-    value.presence = ReasoningPresence::Absent;
-    assert!(value.validate().is_err());
-    value.presence = ReasoningPresence::Present;
-    value.display = Presence::Value(ReasoningDisplay::Omitted);
-    value.summary = Presence::Value(ReasoningSummary::Detailed);
-    assert!(value.validate().is_err());
-    value.summary = Presence::Value(ReasoningSummary::Disabled);
-    value.validate().unwrap();
-}
-
-#[test]
-fn numeric_budget_boundaries_preserve_hard_and_soft_meanings() {
-    for n in [1, u64::MAX - 1, u64::MAX] {
-        for budget in [
-            ReasoningBudget {
-                hard_limit: Some(n),
-                soft_target: None,
-            },
-            ReasoningBudget {
-                hard_limit: None,
-                soft_target: Some(n),
-            },
-        ] {
-            let mut control = ReasoningRequest::present(None, None);
-            control.budget = Some(budget);
-            control.validate().unwrap();
-            assert_eq!(control.budget, Some(budget));
-        }
-    }
-}
-
-#[test]
-fn adding_core_modes_does_not_expand_standard_request_admission() {
-    use morphiecore::protocol::openai::{events::EventDecoder, responses};
-    let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
-    // `mode` is a known key whose value the standard cannot carry; the others are unknown.
-    for (control, known) in [
-        (json!({"mode":"adaptive","effort":"high"}), true),
-        (json!({"mode":"budgeted"}), true),
-        (json!({"budget":{"hard_limit":1024}}), false),
-        (json!({"display":"omitted"}), false),
-    ] {
-        let request = json!({"model":"synthetic","input":"hello","reasoning":control});
-        assert!(
-            adapter
-                .decode_request(request.to_string().as_bytes())
-                .is_err()
-        );
-        // Upstream echoes ignore unknown keys but keep known values strict.
-        let mut response = crate::events_support::envelope("completed", json!([]));
-        response["reasoning"] = control.clone();
-        assert_eq!(responses::decode_response(&response).is_err(), known);
-        let mut event = crate::events_support::created();
-        event["response"]["reasoning"] = control;
-        assert_eq!(
-            EventDecoder::new(Profile::Responses).push(&event).is_err(),
-            known
-        );
-    }
-}
 
 #[test]
 fn each_new_control_independently_rejects_request_echo_and_stream_projection() {

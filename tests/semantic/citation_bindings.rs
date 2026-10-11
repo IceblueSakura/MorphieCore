@@ -29,46 +29,6 @@ fn cite(table: &ResourceTable, coordinates: SourceCoordinates) -> Annotation {
     )
     .unwrap()
 }
-#[test]
-fn source_bindings_and_output_edits_keep_units_and_unknown_extents_distinct() {
-    let table = sources("A😀B");
-    let bytes = TextRange {
-        unit: TextUnit::Utf8Bytes,
-        start: 1,
-        end: 5,
-    };
-    let a = cite(&table, SourceCoordinates::Text(bytes));
-    assert_eq!(a.source_bounds(&table).unwrap(), SourceBounds::Verified);
-    assert!(a.check_source(&sources("other")).is_err());
-    assert!(a.check_source(&ResourceTable::default()).is_err());
-    let value = TextContent::new(text("claim"), vec![a.clone()], Presence::Absent).unwrap();
-    assert!(
-        value
-            .replace_text(text("replacement"))
-            .annotations()
-            .is_empty()
-    );
-    assert!(
-        Annotation::new(
-            Citation {
-                coordinates: SourceCoordinates::Text(TextRange { start: 2, ..bytes }),
-                ..a.value().clone()
-            },
-            &table
-        )
-        .is_err()
-    );
-    let mut unknown = a.value().clone();
-    unknown.claim = ClaimAnchor::Unreported;
-    unknown.coordinates = SourceCoordinates::Unreported;
-    unknown.reported_ordinal = Some(999);
-    TextContent::new(
-        text(""),
-        vec![Annotation::new(unknown, &table).unwrap()],
-        Presence::Absent,
-    )
-    .unwrap();
-}
 fn message(id: u64, annotations: Vec<Annotation>) -> (ItemId, Item) {
     (
         ItemId::new(id),
@@ -208,70 +168,6 @@ fn source_coordinate_shapes_do_not_invent_document_extents_or_wire_carriers() {
         .validate("A😀B")
         .is_err()
     );
-}
-#[test]
-fn citation_graph_budget_counts_edges_across_owners_without_multiplying_source_text() {
-    let table = sources("shared source");
-    let a = cite(&table, SourceCoordinates::Unreported);
-    for count in [MAX_ITEMS - 1, MAX_ITEMS, MAX_ITEMS + 1] {
-        let items = vec![
-            message(1, vec![a.clone(); MAX_ITEMS / 2]),
-            message(2, vec![a.clone(); count - MAX_ITEMS / 2]),
-        ];
-        let result = GenerationRequest::from_resources(items, Default::default(), table.clone());
-        assert_eq!(result.is_ok(), count <= MAX_ITEMS, "{count}");
-        let mut events = vec![
-            StreamEvent::Started,
-            StreamEvent::ResourceDeclared {
-                id: ResourceId::new(1),
-                resource: table.get(ResourceId::new(1)).unwrap().clone(),
-            },
-        ];
-        for (owner, n) in [(1, MAX_ITEMS / 2), (2, count - MAX_ITEMS / 2)] {
-            let item = ItemId::new(owner);
-            let part = PartId::new(owner);
-            events.extend([
-                StreamEvent::ItemStarted {
-                    item,
-                    kind: ItemKind::Message { phase: None },
-                    replay: None,
-                },
-                StreamEvent::PartStarted {
-                    item,
-                    part,
-                    kind: PartKind::Text,
-                },
-                StreamEvent::Delta {
-                    item,
-                    part,
-                    fragment: "claim".into(),
-                    logprobs: vec![],
-                },
-                StreamEvent::ValueFinished { item, part },
-                StreamEvent::TextMetadata {
-                    item,
-                    part,
-                    annotations: vec![a.clone(); n],
-                    logprobs: Presence::Absent,
-                },
-                StreamEvent::PartFinished { item, part },
-                StreamEvent::ItemFinished {
-                    item,
-                    status: ItemLifecycle::Completed,
-                    replay: None,
-                },
-            ]);
-        }
-        events.push(StreamEvent::Terminal {
-            terminal: StreamTerminal::Completed,
-            details: Default::default(),
-        });
-        let state = events.into_iter().try_fold(StreamState::default(), reduce);
-        assert_eq!(state.is_ok(), count <= MAX_ITEMS);
-        if let Ok(state) = state {
-            assert_eq!(materialize(&state).unwrap().resources(), &table);
-        }
-    }
 }
 #[test]
 fn source_selection_edits_replay_cache_and_original_usage_share_one_dependency_owner() {

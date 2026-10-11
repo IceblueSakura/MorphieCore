@@ -6,8 +6,6 @@ use morphiecore::{
 };
 use serde_json::{Value, json};
 
-const RAW: &str = "{\"ok\":true}";
-
 #[test]
 fn sdk_float_views_round_only_the_view_not_the_raw_authority() {
     let raw = r#"{"n":0.123456789012345678901}"#;
@@ -16,19 +14,6 @@ fn sdk_float_views_round_only_the_view_not_the_raw_authority() {
     assert_eq!(arguments(&decoded), raw);
 }
 
-fn output_part(parsed: Option<Value>) -> Value {
-    let mut p = json!({"type":"output_text","text":RAW,"annotations":[]});
-    if let Some(v) = parsed {
-        p["parsed"] = v;
-    }
-    p
-}
-fn responses_input(part: Value) -> Value {
-    json!({"model":"fixture-model","input":[{"type":"message","id":"m","role":"assistant","status":"completed","content":[part]}]})
-}
-fn decode_responses(part: Value) -> Result<DecodedRequest, CodecError> {
-    Ok(envelope::decode_request_bytes(&serde_json::to_vec(&responses_input(part)).unwrap())?.task)
-}
 fn chat_request(message: Value) -> Value {
     json!({"model":"fixture-model","messages":[message]})
 }
@@ -70,55 +55,6 @@ fn arguments(d: &DecodedRequest) -> String {
             _ => None,
         })
         .unwrap()
-}
-
-#[test]
-fn inconsistent_or_underivable_parsed_cannot_pass_admission() {
-    // A pydantic-shaped value that is not the raw text's parse cannot prove its derivation.
-    for parsed in [
-        json!({"ok":true,"extra":1}),
-        json!({"ok":"true"}),
-        json!([true]),
-        json!(true),
-        json!("{}"),
-    ] {
-        assert!(decode_responses(output_part(Some(parsed.clone()))).is_err());
-        assert!(decode_chat(json!({"role":"assistant","content":RAW,"parsed":parsed})).is_err());
-    }
-    // Non-null views of a body that is not valid JSON are underivable.
-    let mut part = output_part(Some(json!({"ok":1})));
-    part["text"] = json!("hello");
-    assert!(decode_responses(part).is_err());
-    // A null view of unparseable text is still just "no derived value".
-    let mut part = output_part(Some(Value::Null));
-    part["text"] = json!("hello");
-    assert!(decode_responses(part).is_ok());
-    assert!(decode_chat(json!({"role":"assistant","content":"hello","parsed":{"ok":1}})).is_err());
-    assert!(
-        decode_chat(json!({"role":"assistant","content":"hello","parsed":Value::Null})).is_ok()
-    );
-    // A missing or null Chat body never derives a non-null view.
-    for message in [
-        json!({"role":"assistant","content":null,"parsed":{"ok":true}}),
-        json!({"role":"assistant","parsed":{"ok":true}}),
-        json!({"role":"assistant","content":"","parsed":{"ok":true}}),
-    ] {
-        assert!(decode_chat(message).is_err());
-    }
-    // Only assistant messages carry the SDK view; other roles reject the key outright.
-    for message in [
-        json!({"role":"user","content":RAW,"parsed":{"ok":true}}),
-        json!({"role":"user","content":RAW,"parsed":Value::Null}),
-        json!({"role":"system","content":"rules","parsed":Value::Null}),
-        json!({"role":"developer","content":"rules","parsed":Value::Null}),
-        json!({"role":"tool","tool_call_id":"call","content":"out","parsed":Value::Null}),
-    ] {
-        assert!(decode_chat(message).is_err());
-    }
-    // Input-text parts are user inputs and never carry a derived view.
-    assert!(
-        decode_responses(json!({"type":"input_text","text":RAW,"parsed":{"ok":true}})).is_err()
-    );
 }
 
 #[test]

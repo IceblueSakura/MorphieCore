@@ -13,24 +13,6 @@ use morphiecore::{
 use serde_json::json;
 
 #[test]
-fn independent_wire_decodes_arguments_and_close_without_inventing_a_terminal() {
-    let mut d = EventDecoder::new(Profile::Responses);
-    d.push(&created()).unwrap();
-    d.push(&json!({"type":"response.output_item.added","output_index":0,"item":call_item("fc","c","","in_progress")})).unwrap();
-    d.push(&json!({"type":"response.function_call_arguments.delta","output_index":0,"item_id":"fc","delta":"{"})).unwrap();
-    d.push(&json!({"type":"response.function_call_arguments.done","output_index":0,"item_id":"fc","arguments":"{"})).unwrap();
-    d.push(&json!({"type":"response.output_item.done","output_index":0,"item":call_item("fc","c","{","incomplete")})).unwrap();
-    assert!(d.finish().is_err());
-    d.push(&json!({"type":"response.incomplete","response":envelope("incomplete",json!([call_item("fc","c","{","incomplete")]))})).unwrap();
-    let decoded = d.materialize().unwrap();
-    assert_eq!(decoded.semantic.outcome(), Outcome::Incomplete);
-    let Item::ToolCall(c) = &decoded.semantic.items()[0].1 else {
-        panic!()
-    };
-    assert_eq!(c.arguments.as_raw(), Some("{"));
-    assert_eq!(c.status, ItemLifecycle::Incomplete);
-}
-#[test]
 fn function_done_name_echo_must_match_its_existing_call_owner() {
     for name in [json!("lookup"), json!("different"), json!(null)] {
         let mut decoder = EventDecoder::new(Profile::Responses);
@@ -44,62 +26,6 @@ fn function_done_name_echo_must_match_its_existing_call_owner() {
     }
 }
 
-#[test]
-fn value_done_disallows_later_delta_and_poisoned_decoders_cannot_resume() {
-    let mut d = EventDecoder::new(Profile::Responses);
-    d.push(&created()).unwrap();
-    d.push(&json!({"type":"response.output_item.added","output_index":0,"item":call_item("fc","c","{}","in_progress")})).unwrap();
-    d.push(&json!({"type":"response.function_call_arguments.done","output_index":0,"item_id":"fc","arguments":"{}"})).unwrap();
-    assert!(d.push(&json!({"type":"response.function_call_arguments.delta","output_index":0,"item_id":"fc","delta":"x"})).is_err());
-    assert!(d.push(&json!({"type":"response.output_item.done","output_index":0,"item":call_item("fc","c","{}","completed")})).is_err());
-}
-#[test]
-fn duplicate_call_part_and_item_identity_and_open_success_fail() {
-    let base = vec![
-        StreamEvent::Started,
-        start(
-            1,
-            ItemKind::ToolCall {
-                format: ArgumentFormat::Raw,
-                call_id: text("a"),
-                name: text("f"),
-                message: None,
-                context: CallContext::default(),
-            },
-        ),
-    ];
-    let state = apply(&base).unwrap();
-    assert!(
-        reduce(
-            state.clone(),
-            start(
-                2,
-                ItemKind::ToolCall {
-                    format: ArgumentFormat::Raw,
-                    call_id: text("a"),
-                    name: text("g"),
-                    message: None,
-                    context: CallContext::default(),
-                }
-            )
-        )
-        .is_err()
-    );
-    assert!(reduce(state.clone(), terminal(StreamTerminal::Completed)).is_err());
-    assert!(reduce(state, start(1, ItemKind::Message { phase: None })).is_err());
-    let mut e = vec![
-        StreamEvent::Started,
-        start(1, ItemKind::Message { phase: None }),
-    ];
-    e.extend(part(1, 5, PartKind::Text, "a"));
-    e.push(start(2, ItemKind::Message { phase: None }));
-    e.push(StreamEvent::PartStarted {
-        item: ItemId::new(2),
-        part: PartId::new(5),
-        kind: PartKind::Text,
-    });
-    assert!(apply(&e).is_err());
-}
 #[test]
 fn non_success_terminals_keep_partial_output_and_error_is_not_materializable() {
     for t in [

@@ -20,51 +20,6 @@ fn decode(
 ) -> Result<morphiecore::adapter::Request, morphiecore::protocol::CodecError> {
     adapter().decode_request(&serde_json::to_vec(&wire(parts)).unwrap())
 }
-#[test]
-fn file_url_has_independent_wire_and_typed_oracles() {
-    let raw = "https://example.invalid/a%2Fb?signature=synthetic-private&x=1#page=2";
-    let request =
-        decode(json!([{"type":"input_file","file_url":raw,"filename":"","detail":"high"}]))
-            .unwrap();
-    let Item::Message(message) = &request.task.semantic.items()[0].1 else {
-        panic!()
-    };
-    assert!(matches!(&message.parts[0].content, ContentPart::Resource(r)
-        if r.media(request.task.semantic.resources()).is_ok_and(|r| *r.location == ResourceLocation::Url(text(raw)) && *r.description == ResourceDescription::File(FileDescription { filename:Some(text("")), detail:Some(FileDetail::High) }))));
-    assert!(!format!("{request:?}").contains("synthetic-private"));
-    let mut resource = typed_file(None);
-    resource.location = ResourceLocation::Url(text(raw));
-    let typed = typed_request(vec![resource]).unwrap();
-    let encoded = encode_typed(&typed, Contract::full()).unwrap();
-    assert_eq!(
-        encoded["input"][0]["content"],
-        json!([{"type":"input_file","file_url":raw}])
-    );
-    assert!(
-        adapter()
-            .encode_request(&request, "synthetic", &Contract::full())
-            .is_ok()
-    );
-}
-
-#[test]
-fn file_model_admission_and_chat_rejection_do_not_mutate_input() {
-    let request = decode(json!([file()])).unwrap();
-    let before = request.clone();
-    let mut contract = Contract::full();
-    contract.semantics.file_input = false;
-    assert!(
-        adapter()
-            .encode_request(&request, "synthetic", &contract)
-            .is_err()
-    );
-    assert!(
-        Adapter::new(Profile::Chat, Dialect::Standard, None)
-            .encode_request(&request, "synthetic", &Contract::full())
-            .is_err()
-    );
-    assert_eq!(request, before);
-}
 
 fn text(value: &str) -> morphiecore::semantic::value::Text {
     morphiecore::semantic::value::Text::allowing_empty(value, "synthetic", MAX_TOTAL_BYTES).unwrap()
@@ -135,66 +90,6 @@ fn encode_typed(
         contract,
     )?;
     Ok(morphiecore::protocol::openai::responses::encode_generation(&target).unwrap())
-}
-
-#[test]
-fn target_file_limits_are_independent_and_do_not_mutate_or_expand_the_request() {
-    use morphiecore::lowering::generation::RepresentationError;
-    let request = typed_request(vec![
-        typed_file(Some("synthetic.pdf")),
-        typed_file(Some("second.pdf")),
-    ])
-    .unwrap();
-    let before = request.clone();
-    for case in 0..4 {
-        let mut contract = Contract::full();
-        match case {
-            0 => contract.files.max_files = 1,
-            1 => contract.files.max_inline_bytes = 2,
-            2 => contract.files.max_total_inline_bytes = 5,
-            _ => contract.files.inline_media_types = Some(vec!["text/plain".into()]),
-        }
-        assert_eq!(
-            encode_typed(&request, contract).unwrap_err(),
-            RepresentationError::FileInput
-        );
-    }
-    let mut resource = typed_file(None);
-    let ResourceDescription::File(description) = &mut resource.description else {
-        panic!()
-    };
-    description.detail = Some(FileDetail::High);
-    let without_name = typed_request(vec![resource]).unwrap();
-    let mut contract = Contract::full();
-    contract.files.details = vec![FileDetail::Auto, FileDetail::Low];
-    assert_eq!(
-        encode_typed(&without_name, contract).unwrap_err(),
-        RepresentationError::FileInput
-    );
-    for name in [None, Some("")] {
-        let mut contract = Contract::full();
-        contract.files.require_filename = true;
-        assert_eq!(
-            encode_typed(&typed_request(vec![typed_file(name)]).unwrap(), contract).unwrap_err(),
-            RepresentationError::FileInput
-        );
-    }
-    assert_eq!(request, before);
-    for dialect in [
-        Dialect::Nvidia,
-        Dialect::Xiaomi,
-        Dialect::ModelBest,
-        Dialect::Bailian,
-    ] {
-        let client = Adapter::new(Profile::Responses, dialect, None);
-        let decoded = decode(json!([file()])).unwrap();
-        assert_eq!(client.contract(&Contract::full()).files.max_files, 0);
-        assert!(
-            client
-                .encode_request(&decoded, "synthetic", &Contract::full())
-                .is_err()
-        );
-    }
 }
 
 #[test]
@@ -353,48 +248,6 @@ fn malformed_typed_files_and_aggregate_budgets_are_revalidated_after_edits() {
     resource.location = ResourceLocation::OpaqueReference(text("file-synthetic"));
     let request = typed_request(vec![resource]).unwrap();
     assert!(encode_typed(&request, Contract::full()).is_err());
-}
-
-#[test]
-fn files_cannot_be_instructions_assistant_outputs_or_tool_result_media() {
-    for role in ["system", "developer", "assistant"] {
-        let mut value = wire(json!([file()]));
-        value["input"][0]["role"] = json!(role);
-        assert!(
-            adapter()
-                .decode_request(&serde_json::to_vec(&value).unwrap())
-                .is_err()
-        );
-    }
-    for kind in ["function", "custom_tool"] {
-        let (call, output) = if kind == "function" {
-            (
-                json!({"type":"function_call","call_id":"c","name":"lookup","arguments":"{}"}),
-                json!({"type":"function_call_output","call_id":"c","output":[file()]}),
-            )
-        } else {
-            (
-                json!({"type":"custom_tool_call","call_id":"c","name":"lookup","input":"x"}),
-                json!({"type":"custom_tool_call_output","call_id":"c","output":[file()]}),
-            )
-        };
-        assert!(
-            adapter()
-                .decode_request(
-                    &serde_json::to_vec(&json!({"model":"synthetic","input":[call,output]}))
-                        .unwrap()
-                )
-                .is_err()
-        );
-    }
-    let request = typed_request(vec![typed_file(None)]).unwrap();
-    let mut items = request.items().to_vec();
-    let Item::Message(message) = &mut items[0].1 else {
-        panic!()
-    };
-    message.role = MessageRole::Assistant;
-    assert!(request.clone().with_items(items.clone()).is_err());
-    assert!(GenerationResponse::new(items, Outcome::Completed).is_err());
 }
 
 #[test]

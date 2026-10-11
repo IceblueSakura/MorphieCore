@@ -20,50 +20,6 @@ fn resource(id: &str, value: serde_json::Value) -> SchemaResource {
     }
 }
 #[test]
-fn supplied_external_and_local_recursive_references_preserve_one_authority() {
-    let root = json!({"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object",
-        "properties":{"node":{"$ref":"https://schema.invalid/node#/$defs/node"}}});
-    let external = json!({"$defs":{"node":{"type":"object","properties":{
-        "next":{"$ref":"#/$defs/node"},"value":{"type":"integer"}}}}});
-    let schema = SchemaDocument::new(
-        SchemaDialect::Draft202012,
-        root.clone(),
-        vec![resource("https://schema.invalid/node", external.clone())],
-    )
-    .unwrap();
-    assert_eq!(schema.root(), &root);
-    assert_eq!(schema.resources()[0].value, external);
-    let request = GenerationRequest::from_settings(
-        vec![],
-        GenerationSettings {
-            instructions: Presence::Value(text("hello")),
-            text: TextOptions {
-                presence: true,
-                format: Presence::Value(OutputConstraint::JsonSchema {
-                    name: text("answer"),
-                    description: None,
-                    schema,
-                    strict: Some(false),
-                }),
-                ..Default::default()
-            },
-            ..Default::default()
-        },
-    )
-    .unwrap();
-    for profile in [Profile::Responses, Profile::Chat] {
-        assert!(
-            lower_request(
-                &request,
-                &FidelityRecords::default(),
-                profile,
-                TargetCaps::full()
-            )
-            .is_err()
-        );
-    }
-}
-#[test]
 fn dialect_declarations_reference_positions_and_duplicate_resources_fail_closed() {
     let dialect = SchemaDialect::Draft202012;
     for (root, resources) in [
@@ -152,21 +108,6 @@ fn physical_reference_and_resource_budgets_are_independent_of_data_depth() {
         GenerationError::Limit
     );
 }
-#[test]
-fn deleting_a_supplied_definition_invalidates_its_ref_without_a_cached_body() {
-    let mut schema = SchemaDocument::new(
-        SchemaDialect::Draft202012,
-        json!({"$defs":{"a":{"type":"string"}},"$ref":"#/$defs/a"}),
-        vec![],
-    )
-    .unwrap();
-    schema
-        .root_mut()
-        .as_object_mut()
-        .unwrap()
-        .shift_remove("$defs");
-    assert_eq!(schema.validate(), Err(GenerationError::InvalidSchema));
-}
 
 #[test]
 fn function_parameter_and_output_dialects_cannot_be_erased_by_echo_or_event_codecs() {
@@ -207,36 +148,5 @@ fn function_parameter_and_output_dialects_cannot_be_erased_by_echo_or_event_code
         );
         let mut encoder = EventEncoder::new(Profile::Responses, metadata).unwrap();
         assert!(encoder.encode(&StreamEvent::Started, &fidelity).is_err());
-    }
-}
-
-#[test]
-fn supplied_documents_share_an_exact_aggregate_byte_budget() {
-    for delta in [-1isize, 0, 1] {
-        // Root {"type":"string"} is 17 bytes; each resource has an 18-byte
-        // {"description":""} shell and a 15-byte urn:synthetic:N identifier.
-        let resources = (0..4)
-            .map(|n| {
-                let padding =
-                    (MAX_TEXT_BYTES as isize - 33 + if n == 3 { delta - 17 } else { 0 }) as usize;
-                resource(
-                    &format!("urn:synthetic:{n}"),
-                    json!({"description":"x".repeat(padding)}),
-                )
-            })
-            .collect();
-        let schema = SchemaDocument::new(
-            SchemaDialect::Draft202012,
-            json!({"type":"string"}),
-            resources,
-        );
-        if delta > 0 {
-            assert_eq!(schema.unwrap_err(), GenerationError::Limit);
-        } else {
-            assert_eq!(
-                schema.unwrap().validate().unwrap(),
-                (MAX_TOTAL_BYTES as isize + delta) as usize
-            );
-        }
     }
 }

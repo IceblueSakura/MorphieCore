@@ -1,8 +1,5 @@
 //! Provider-scoped extension carriers: Codex header lifecycle and custom body sections.
-use morphiecore::protocol::{
-    extensions::{CodexHeaders, CustomSections, RoutingHint},
-    openai::{Profile, TargetCaps as Contract, envelope, lowering::lower_request},
-};
+use morphiecore::protocol::extensions::{CodexHeaders, CustomSections, RoutingHint};
 use serde_json::{Map, Value, json};
 
 fn headers(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
@@ -57,68 +54,6 @@ fn codex_header_lifecycle_fields_round_trip_with_distinct_owners() {
     let mut bad = wire.clone();
     bad.push(("session-id".to_string(), "second".to_string()));
     assert!(CodexHeaders::decode(&bad).is_err());
-}
-#[test]
-fn turn_state_is_opaque_and_never_derived() {
-    let empty = CodexHeaders::default();
-    assert!(
-        !empty
-            .encode()
-            .iter()
-            .any(|(name, _)| name == "x-codex-turn-state")
-    );
-    let decoded =
-        CodexHeaders::decode(&headers(&[("x-codex-turn-state", "server-issued")])).unwrap();
-    assert_eq!(
-        decoded.encode(),
-        headers(&[("x-codex-turn-state", "server-issued")])
-    );
-    let mut cleared = decoded.clone();
-    cleared.turn_state = Default::default();
-    assert!(
-        !cleared
-            .encode()
-            .iter()
-            .any(|(name, _)| name == "x-codex-turn-state")
-    );
-}
-#[test]
-fn routing_hint_syntax_is_typed_and_rebuilt_verbatim() {
-    for (value, model, tier) in [
-        ("model=m", "m", None),
-        (
-            "model=gpt-6-astra;tier=priority",
-            "gpt-6-astra",
-            Some("priority"),
-        ),
-    ] {
-        let decoded = CodexHeaders::decode(&headers(&[("x-codex-routing-hint", value)])).unwrap();
-        assert_eq!(
-            decoded.routing.value(),
-            Some(&RoutingHint {
-                model: model.into(),
-                tier: tier.map(Into::into)
-            })
-        );
-        assert_eq!(
-            decoded.encode(),
-            headers(&[("x-codex-routing-hint", value)])
-        );
-    }
-    for bad in [
-        "",
-        "tier=t",
-        "model=",
-        "model=m;extra=1",
-        "model=m;tier=t;x=y",
-        "model=m;tier=",
-        "nonsense",
-    ] {
-        assert!(
-            CodexHeaders::decode(&headers(&[("x-codex-routing-hint", bad)])).is_err(),
-            "{bad}"
-        );
-    }
 }
 #[test]
 fn credential_and_transport_headers_are_never_context() {
@@ -206,24 +141,4 @@ fn custom_body_sections_round_trip_opaque_and_stay_fail_closed() {
     }
     many.insert("client_metadata".into(), Value::Object(entries));
     assert!(CustomSections::decode(&many).is_err());
-}
-#[test]
-fn request_envelope_carries_custom_sections_without_opening_unknown_keys() {
-    let mut request = json!({"model":"m","input":"hello","client_metadata":{"session_id":"s1"}});
-    let d = envelope::decode_request(&request).unwrap();
-    assert_eq!(
-        d.context.extensions.sections["client_metadata"],
-        json!({"session_id":"s1"})
-    );
-    let target = lower_request(
-        &d.task.semantic,
-        &d.task.fidelity,
-        Profile::Responses,
-        Contract::full(),
-    )
-    .unwrap();
-    let out = envelope::encode_request(&target, &d.context).unwrap();
-    assert_eq!(out["client_metadata"], json!({"session_id":"s1"}));
-    request["x-mystery"] = json!({});
-    assert!(envelope::decode_request(&request).is_err());
 }

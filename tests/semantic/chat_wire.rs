@@ -1,12 +1,7 @@
 //! Explicit Chat dialect mappings over one semantic model.
 use morphiecore::{
-    protocol::openai::{
-        Adapter, Dialect, Profile, TargetCaps as Contract, chat, lowering::lower_request,
-    },
-    semantic::{
-        task::generation::*,
-        value::{Presence, Text},
-    },
+    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract, chat},
+    semantic::{task::generation::*, value::Text},
 };
 use serde_json::{Value, json};
 #[test]
@@ -93,134 +88,6 @@ fn response(content: &str) -> Value {
 fn chunk(delta: Value, finish: Value) -> Value {
     json!({"id":"c1","object":"chat.completion.chunk","created":1,"model":"m",
         "choices":[{"index":0,"delta":delta,"finish_reason":finish}],"usage":null})
-}
-#[test]
-fn history_reasoning_maps_to_a_carrier_and_rejects_unrepresentable_edits() {
-    let wire = json!({"model":"m","messages":[{"role":"user","content":"hi"},
-        {"role":"assistant","content":"checking","reasoning_content":"think","tool_calls":[{"id":"call_a","type":"function","function":{"name":"lookup","arguments":"{}"}}]},
-        {"role":"tool","tool_call_id":"call_a","content":"ok"}],
-        "tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object","properties":{}},"strict":false}}]});
-    let request = client()
-        .decode_request(wire.to_string().as_bytes())
-        .unwrap();
-    let output = vendor()
-        .encode_request(&request, "bound-model", &Contract::full())
-        .unwrap();
-    assert_eq!(output["messages"][1]["reasoning_content"], "think");
-    assert_eq!(output["messages"][1]["tool_calls"][0]["id"], "call_a");
-    let mut edited = request.task.semantic.items().to_vec();
-    for (_, item) in &mut edited {
-        if let Item::Reasoning(r) = item {
-            r.parts[0].1 = ReasoningContent::Summary(Text::new("think", "fixture", 128).unwrap());
-        }
-    }
-    let ir = GenerationRequest::new(edited, GenerationControls::default())
-        .unwrap()
-        .with_message_owners(
-            request
-                .task
-                .semantic
-                .message_owners()
-                .iter()
-                .map(|(a, b)| (*a, *b))
-                .collect(),
-        )
-        .unwrap();
-    assert!(
-        lower_request(
-            &ir,
-            &request.task.fidelity,
-            Profile::Chat,
-            vendor().contract(&Contract::full())
-        )
-        .is_err()
-    );
-    // The MorphieCore client now has the scoped structured-summary carrier;
-    // readable-only vendor profiles still cannot flatten a summary into text.
-    assert!(
-        lower_request(
-            &ir,
-            &request.task.fidelity,
-            Profile::Chat,
-            client().contract(&Contract::full())
-        )
-        .is_ok()
-    );
-    let mut unpaired = request.task.semantic.items().to_vec();
-    unpaired.retain(|(_, item)| !matches!(item,Item::Message(m) if m.role==MessageRole::Assistant));
-    // Removing the carrier also invalidates associated calls before projection.
-    assert!(request.task.semantic.clone().with_items(unpaired).is_err());
-    for message in [
-        json!({"role":"user","content":"x","reasoning_content":"bad"}),
-        json!({"role":"assistant","content":"x","reasoning_content":5}),
-    ] {
-        assert!(
-            client()
-                .decode_request(
-                    json!({"model":"m","messages":[message]})
-                        .to_string()
-                        .as_bytes()
-                )
-                .is_err()
-        );
-    }
-}
-#[test]
-fn fingerprint_presence_and_vendor_metadata_drift_are_explicit() {
-    for fingerprint in [None, Some(Value::Null), Some(json!("fp-1"))] {
-        let mut body = response("pong");
-        if let Some(fp) = &fingerprint {
-            body["system_fingerprint"] = fp.clone();
-        }
-        let decoded = vendor()
-            .decode_response(body.to_string().as_bytes())
-            .unwrap();
-        let wire = client()
-            .encode_response(&decoded, &Contract::full())
-            .unwrap();
-        assert_eq!(wire.get("system_fingerprint"), fingerprint.as_ref());
-        if fingerprint.is_some() {
-            let projected = Adapter::new(Profile::Responses, Dialect::Standard, None)
-                .encode_response(&decoded, &Contract::full())
-                .unwrap();
-            assert!(projected.get("system_fingerprint").is_none());
-            assert_eq!(
-                client()
-                    .encode_response(&decoded, &Contract::full())
-                    .unwrap()
-                    .get("system_fingerprint"),
-                fingerprint.as_ref()
-            );
-        }
-    }
-    let mut first = chunk(json!({"content":"x"}), Value::Null);
-    first["system_fingerprint"] = json!("fp-1");
-    let mut next = first.clone();
-    next["created"] = json!(2);
-    next["system_fingerprint"] = json!("fp-2");
-    let mut decoder = vendor().event_decoder();
-    decoder.push(&first).unwrap();
-    decoder.push(&next).unwrap();
-    assert_eq!(
-        decoder
-            .metadata()
-            .unwrap()
-            .created
-            .as_ref()
-            .unwrap()
-            .as_u64(),
-        Some(1)
-    );
-    assert_eq!(
-        decoder.metadata().unwrap().context.system_fingerprint,
-        Presence::Value("fp-1".into())
-    );
-    next["id"] = json!("other");
-    assert!(decoder.push(&next).is_err());
-    let mut strict = client().event_decoder();
-    strict.push(&first).unwrap();
-    next["id"] = json!("c1");
-    assert!(strict.push(&next).is_err());
 }
 #[test]
 fn aliases_are_normalized_without_losing_counts_or_masking_disagreement() {

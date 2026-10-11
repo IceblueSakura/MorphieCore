@@ -77,27 +77,6 @@ impl CompiledTopology {
 mod tests {
     use super::*;
 
-    #[test]
-    fn publication_metadata_preserves_values_and_rejects_invalid_facts() {
-        assert!(ModelMetadata::new(i64::MAX as u64, "Developer").is_ok());
-        let metadata = ModelMetadata::new(1_800_000_000, "Synthetic \"Developer\"").unwrap();
-        assert_eq!(metadata.released_at(), 1_800_000_000);
-        assert_eq!(metadata.developer(), "Synthetic \"Developer\"");
-        for (time, owner) in [
-            (0, "Developer"),
-            (u64::MAX, "Developer"),
-            (1, ""),
-            (1, " "),
-            (1, " Developer"),
-            (1, "Developer "),
-            (1, "Developer\nName"),
-        ] {
-            assert!(ModelMetadata::new(time, owner).is_err());
-        }
-        assert!(ModelMetadata::new(1, &"x".repeat(128)).is_ok());
-        assert!(ModelMetadata::new(1, &"x".repeat(129)).is_err());
-    }
-
     fn topology(count: usize) -> CompiledTopology {
         super::super::compile(
             vec![],

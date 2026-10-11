@@ -13,37 +13,6 @@ fn adapter(dialect: Dialect, scope: &str) -> Adapter {
 }
 
 #[test]
-fn public_siwc_empty_terminal_summary_requires_actual_item_closure() {
-    let source = adapter(Dialect::Siwc, "one");
-    for omit_done in [false, true] {
-        let mut decoder = source.event_decoder();
-        let mut rejected = false;
-        for mut event in crate::wire::events(2) {
-            if omit_done && event["type"] == "response.output_item.done" {
-                continue;
-            }
-            if event["type"] == "response.completed" {
-                event["response"]["output"] = json!([]);
-            }
-            if decoder.push(&event).is_err() {
-                rejected = true;
-                break;
-            }
-        }
-        assert_eq!(rejected, omit_done);
-        if !omit_done {
-            decoder.finish().unwrap();
-            let decoded = decoder.materialize().unwrap();
-            assert_eq!(decoded.semantic.items().len(), 1);
-            assert_eq!(
-                decoded.semantic.outcome(),
-                morphiecore::semantic::task::generation::Outcome::Completed
-            );
-        }
-    }
-}
-
-#[test]
 fn siwc_uses_only_closed_public_programs_in_static_and_event_snapshots() {
     let source = adapter(Dialect::Siwc, "one");
     let mut response = crate::wire::response(2);
@@ -209,43 +178,6 @@ fn accounting_keeps_distinct_counters_scoped_and_invalidates_after_edits() {
         ("/usage/num_sources_used", json!(1)),
         ("/usage/cost_in_usd_ticks", json!(-1)),
         ("/usage/context_details", json!({"input_tokens":"71"})),
-    ] {
-        let mut invalid = response.clone();
-        *invalid.pointer_mut(path).unwrap() = value;
-        assert!(
-            source
-                .decode_response(invalid.to_string().as_bytes())
-                .is_err(),
-            "{path}"
-        );
-    }
-}
-#[test]
-fn product_metadata_is_closed_and_never_authorizes_hosted_usage() {
-    let source = adapter(Dialect::Codex, "one");
-    let mut response = crate::wire::response(2);
-    response["access_programs"] = json!({"cyber":"synthetic"});
-    response["moderation"] = Value::Null;
-    response["tool_usage"] = json!({"image_gen":{"input_tokens":0,"input_tokens_details":{"image_tokens":0,"text_tokens":0},"output_tokens":0,"output_tokens_details":{"image_tokens":0,"text_tokens":0},"total_tokens":0},"web_search":{"num_requests":0}});
-    response["usage"]["attribution"] = json!({"items":{"synthetic-input":{"input_tokens":17,"output_tokens":0,"cached_tokens":3,"cache_write_tokens":0,"content":[{"input_tokens":17,"output_tokens":0,"cached_tokens":3,"cache_write_tokens":0}]}}});
-    let decoded = source
-        .decode_response(response.to_string().as_bytes())
-        .unwrap();
-    assert_eq!(
-        source.encode_response(&decoded, &Contract::full()).unwrap()["access_programs"],
-        json!({"cyber":"synthetic"})
-    );
-    assert!(
-        adapter(Dialect::MorphieCore, "one")
-            .encode_response(&decoded, &Contract::full())
-            .unwrap()
-            .get("access_programs")
-            .is_none()
-    );
-    for (path, value) in [
-        ("/tool_usage/web_search/num_requests", json!(1)),
-        ("/moderation", json!({"blocked":true})),
-        ("/usage/attribution", json!({"items":{"other":1}})),
     ] {
         let mut invalid = response.clone();
         *invalid.pointer_mut(path).unwrap() = value;

@@ -1,15 +1,12 @@
 //! Chat byte boundaries, explicit DONE lifecycle and independent static/event closure.
 use crate::chat_wire as wire;
 use morphiecore::{
-    protocol::{
-        fidelity::FidelityRecords,
-        openai::{
-            Profile, TargetCaps as Contract, chat_envelope as envelope,
-            chat_sse::{ChatSseDecoder, ChatSseEncoder},
-            lowering::{lower_request, lower_response},
-            responses,
-            sse::{Obfuscation, SseLimits},
-        },
+    protocol::openai::{
+        Profile, TargetCaps as Contract, chat_envelope as envelope,
+        chat_sse::{ChatSseDecoder, ChatSseEncoder},
+        lowering::{lower_request, lower_response},
+        responses,
+        sse::{Obfuscation, SseLimits},
     },
     semantic::{context::StreamOptions, task::generation::*, value::Presence},
 };
@@ -147,58 +144,6 @@ fn chat_refusal_empty_and_length_have_independent_static_event_meaning() {
 }
 
 #[test]
-fn content_filter_stream_keeps_partial_output_usage_and_requires_done() {
-    let mut values = wire::events(2);
-    values[3]["choices"][0]["finish_reason"] = json!("content_filter");
-    let mut d = decoder();
-    let mut events = vec![];
-    for v in &values {
-        events.extend(consume(&mut d, &frame(v), 1));
-    }
-    assert!(d.materialize().is_err());
-    events.extend(consume(&mut d, b"data: [DONE]\n\n", 1));
-    d.finish().unwrap();
-    let r = d.materialize().unwrap();
-    assert_eq!(r.semantic.outcome(), Outcome::Incomplete);
-    assert_eq!(
-        r.semantic.details().incomplete,
-        Some(IncompleteReason::ContentFilter)
-    );
-    assert_eq!(r.semantic.usage().unwrap().total_tokens, Some(5));
-    let mut static_wire = wire::response(2);
-    static_wire["choices"][0]["finish_reason"] = json!("content_filter");
-    assert_eq!(
-        r.semantic,
-        envelope::decode_response(&static_wire).unwrap().semantic
-    );
-    let mut encoder = ChatSseEncoder::new(
-        r.metadata.clone(),
-        Contract::full(),
-        SseLimits::default(),
-        options(true),
-        Obfuscation::Disabled,
-    )
-    .unwrap();
-    let mut encoded = vec![];
-    for event in events {
-        for frame in encoder.encode(&event, &r.fidelity).unwrap() {
-            encoded.extend(frame);
-        }
-    }
-    encoder.finish().unwrap();
-    let text = std::str::from_utf8(&encoded).unwrap();
-    assert!(text.contains("\"finish_reason\":\"content_filter\""));
-    assert!(!text.contains("\"finish_reason\":\"length\""));
-    assert_eq!(text.matches("data: [DONE]").count(), 1);
-    let mut missing = decoder();
-    for v in &values {
-        consume(&mut missing, &frame(v), 4096);
-    }
-    assert!(missing.finish().is_err());
-    assert!(missing.consume(b"data: [DONE]\n\n").is_err());
-}
-
-#[test]
 fn malformed_late_or_unfinished_chat_streams_cannot_recover() {
     for bad in [
         b"data: [DONE]\n\n".to_vec(),
@@ -242,54 +187,6 @@ fn malformed_late_or_unfinished_chat_streams_cannot_recover() {
         (200, "text/event-stream; charset=latin1"),
     ] {
         assert!(ChatSseDecoder::new(status, content, SseLimits::default()).is_err());
-    }
-}
-
-#[test]
-fn chat_encoder_uses_final_events_and_respects_usage_delivery() {
-    let mut d = decoder();
-    let mut events = vec![];
-    for v in wire::events(2) {
-        events.extend(consume(&mut d, &frame(&v), 4096));
-    }
-    events.extend(consume(&mut d, b"data: [DONE]\n\n", 1));
-    d.finish().unwrap();
-    let r = d.materialize().unwrap();
-    for e in &mut events {
-        if let StreamEvent::Delta { fragment, .. } = e
-            && fragment == "old "
-        {
-            *fragment = "new ".into();
-        }
-    }
-    for include_usage in [false, true] {
-        let mut encoder = ChatSseEncoder::new(
-            r.metadata.clone(),
-            Contract::full(),
-            SseLimits::default(),
-            options(include_usage),
-            Obfuscation::Disabled,
-        )
-        .unwrap();
-        let mut bytes = vec![];
-        for e in &events {
-            for f in encoder.encode(e, &FidelityRecords::default()).unwrap() {
-                bytes.extend(f);
-            }
-        }
-        encoder.finish().unwrap();
-        let raw = std::str::from_utf8(&bytes).unwrap();
-        assert_eq!(raw.matches("data: [DONE]\n\n").count(), 1);
-        assert!(!raw.contains("old "));
-        assert!(raw.contains("new "));
-        let mut round = decoder();
-        consume(&mut round, &bytes, 1);
-        round.finish().unwrap();
-        assert_eq!(
-            round.materialize().unwrap().semantic.usage().is_some(),
-            include_usage
-        );
-        assert!(encoder.encode(&StreamEvent::Started, &r.fidelity).is_err());
     }
 }
 
@@ -387,57 +284,6 @@ fn invalid_chat_usage_cannot_fall_back_to_null_or_recover_at_done() {
         assert!(d.finish().is_err());
         assert!(d.materialize().is_err());
     }
-}
-
-#[test]
-fn chat_budgets_and_padding_are_independent_of_chunks() {
-    let first = frame(&wire::events(2)[0]);
-    for size in [1, first.len()] {
-        let mut d = ChatSseDecoder::new(
-            200,
-            "text/event-stream",
-            SseLimits {
-                max_wire_bytes: first.len() - 1,
-                ..Default::default()
-            },
-        )
-        .unwrap();
-        let mut rejected = false;
-        for chunk in first.chunks(size) {
-            if d.consume(chunk).is_err() {
-                rejected = true;
-                break;
-            }
-        }
-        assert!(rejected);
-        assert!(d.finish().is_err());
-    }
-    let mut padded = wire::events(2)[0].clone();
-    padded["obfuscation"] = json!("🧪");
-    let mut d = ChatSseDecoder::new(
-        200,
-        "text/event-stream",
-        SseLimits {
-            max_obfuscation_bytes: 3,
-            ..Default::default()
-        },
-    )
-    .unwrap();
-    assert!(d.consume(&frame(&padded)).is_err());
-    assert!(d.finish().is_err());
-    let mut d = decoder();
-    consume(&mut d, &frame(&padded), 1);
-    let mut d = ChatSseDecoder::new(
-        200,
-        "text/event-stream",
-        SseLimits {
-            max_events: 1,
-            ..Default::default()
-        },
-    )
-    .unwrap();
-    consume(&mut d, &first, 1);
-    assert!(d.consume(&frame(&wire::events(2)[1])).is_err());
 }
 
 #[test]

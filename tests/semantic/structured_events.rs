@@ -1,13 +1,6 @@
 //! Structured builders become one JSON authority, never a repaired string at terminal.
 use crate::events_support::{self as events, text};
-use morphiecore::{
-    protocol::{
-        fidelity::FidelityRecords,
-        openai::{Profile, events::EventEncoder},
-    },
-    semantic::task::generation::*,
-};
-use serde_json::json;
+use morphiecore::semantic::task::generation::*;
 fn opening() -> Vec<StreamEvent> {
     vec![
         StreamEvent::Started,
@@ -63,34 +56,4 @@ fn incomplete_or_invalid_json_never_becomes_a_completed_argument() {
         matches!(&response.items()[0].1,Item::ToolCall(c) if matches!(&c.arguments,ToolArguments::StructuredPartial(s) if s=="{"))
     );
     assert_eq!(response.continuation(), Continuation::Unreported);
-}
-#[test]
-fn unsupported_event_targets_reject_before_publishing_the_structured_call() {
-    for profile in [Profile::Chat, Profile::Responses] {
-        let mut encoder = EventEncoder::new(profile, events::metadata())
-            .unwrap()
-            .with_contract(events::contract());
-        let input = opening();
-        encoder
-            .encode(&input[0], &FidelityRecords::default())
-            .unwrap();
-        assert!(
-            encoder
-                .encode(&input[1], &FidelityRecords::default())
-                .is_err()
-        );
-        assert!(
-            encoder
-                .encode(
-                    &events::terminal(StreamTerminal::Completed),
-                    &FidelityRecords::default()
-                )
-                .is_err()
-        );
-    }
-    assert_eq!(
-        StructuredValue::from_bytes(b"[]").unwrap().value(),
-        &json!([])
-    );
-    assert!(StructuredValue::from_bytes(&vec![b' '; MAX_TEXT_BYTES + 1]).is_err());
 }

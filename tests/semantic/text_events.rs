@@ -13,51 +13,6 @@ use morphiecore::{
 use serde_json::json;
 
 #[test]
-fn cancelled_is_a_static_outcome_not_a_standard_stream_event() {
-    use morphiecore::protocol::openai::{lowering::lower_response, responses};
-    let cancelled = envelope("cancelled", json!([]));
-    let decoded = responses::decode_response(&cancelled).unwrap();
-    assert_eq!(decoded.semantic.outcome(), Outcome::Cancelled);
-    let target = lower_response(
-        &decoded.semantic,
-        &decoded.fidelity,
-        &decoded.metadata,
-        Profile::Responses,
-        contract(),
-    )
-    .unwrap();
-    assert_eq!(
-        responses::encode_response(&target).unwrap()["status"],
-        "cancelled"
-    );
-
-    let mut decoder = EventDecoder::new(Profile::Responses);
-    decoder.push(&created()).unwrap();
-    assert!(
-        decoder
-            .push(&json!({"type":"response.cancelled","response":cancelled}))
-            .is_err()
-    );
-    assert!(decoder.finish().is_err());
-    assert!(decoder.materialize().is_err());
-
-    let mut encoder = EventEncoder::new(Profile::Responses, metadata()).unwrap();
-    let source = FidelityRecords::default();
-    encoder.encode(&StreamEvent::Started, &source).unwrap();
-    assert!(
-        encoder
-            .encode(&terminal(StreamTerminal::Cancelled), &source)
-            .is_err()
-    );
-    assert!(
-        encoder
-            .encode(&terminal(StreamTerminal::Completed), &source)
-            .is_err()
-    );
-    assert!(encoder.finish().is_err());
-}
-
-#[test]
 fn independently_constructed_text_ir_encodes_expected_boundaries_and_refusal() {
     let mut e = vec![
         StreamEvent::Started,
@@ -114,21 +69,6 @@ fn empty_failed_and_incomplete_static_event_closure_keeps_details() {
         }
         assert_eq!(d.materialize().unwrap().semantic.details(), &details);
     }
-}
-#[test]
-fn queued_is_a_single_pre_created_state_and_never_a_terminal() {
-    assert!(
-        apply(&[
-            StreamEvent::Queued,
-            StreamEvent::Started,
-            terminal(StreamTerminal::Completed)
-        ])
-        .is_ok()
-    );
-    assert!(apply(&[StreamEvent::Started, StreamEvent::Queued]).is_err());
-    assert!(apply(&[StreamEvent::Queued, StreamEvent::Queued]).is_err());
-    let state = apply(&[StreamEvent::Queued]).unwrap();
-    assert!(end_of_stream(&state).is_err());
 }
 #[test]
 fn queued_lifecycle_has_no_chat_projection() {

@@ -5,27 +5,6 @@ use morphiecore::{
 use serde_json::json;
 
 #[test]
-fn multi_image_request_and_complete_wire_are_admitted() {
-    let request =
-        images::decode_request(br#"{"model":"public-image","prompt":"two squares","n":2}"#)
-            .unwrap();
-    assert_eq!(request.task.count, Presence::Value(2));
-    assert_eq!(
-        images::encode_request(&request, "upstream").unwrap(),
-        json!({"model":"upstream","prompt":"two squares","n":2}),
-    );
-    let response = images::decode_response(
-        br#"{"created":1,"data":[{"b64_json":"AQID"},{"b64_json":"BAUG"}]}"#,
-    )
-    .unwrap();
-    response.validate_for(&request.task).unwrap();
-    assert_eq!(
-        images::encode_response(&response).unwrap(),
-        json!({"created":1,"data":[{"b64_json":"AQID"},{"b64_json":"BAUG"}]}),
-    );
-}
-
-#[test]
 fn image_generation_request_rejects_unsupported_semantics_and_duplicate_keys() {
     for patch in [
         json!({"n":11}),

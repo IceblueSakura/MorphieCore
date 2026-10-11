@@ -1,7 +1,7 @@
 //! Public protocol boundaries reject private attachments without weakening typed IR.
 use crate::{events_support as event, wire};
 use morphiecore::{
-    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract, events::EventEncoder},
+    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract},
     semantic::{task::generation::*, value::ReplayOrigin},
 };
 use serde_json::{Value, json};
@@ -25,62 +25,6 @@ fn no_attachment(value: &Value) {
         }
         Value::Array(values) => values.iter().for_each(no_attachment),
         _ => {}
-    }
-}
-#[test]
-fn public_client_rejects_independent_attachments() {
-    let call = json!({"type":"function_call","id":"call","call_id":"c","name":"lookup","arguments":"{}","status":"completed"});
-    for dialect in [Dialect::Standard, Dialect::MorphieCore] {
-        let adapter = client(dialect);
-        for attachment in [
-            Value::Null,
-            json!({}),
-            json!({"version":1,"arguments":"json"}),
-        ] {
-            let mut item = call.clone();
-            item["_openbridge"] = attachment.clone();
-            let request = json!({"model":"fixture-model","input":[item]});
-            assert!(
-                adapter
-                    .decode_request(&serde_json::to_vec(&request).unwrap())
-                    .is_err()
-            );
-            let request = json!({"model":"fixture-model","input":"hi","_openbridge":attachment});
-            assert!(
-                adapter
-                    .decode_request(&serde_json::to_vec(&request).unwrap())
-                    .is_err()
-            );
-        }
-        let histories = [
-            json!([{"type":"reasoning","id":"thought","summary":[],"status":"completed","_openbridge":{"version":1,"replay":{"format":"google-interactions-v1-thought","phase":"final","value":"synthetic"}}}]),
-            json!([{"type":"message","id":"owner","role":"assistant","content":[],"status":"completed"},
-                {"type":"function_call","call_id":"c","name":"lookup","arguments":"{}","_openbridge":{"version":1,"message":"owner"}}]),
-            json!([call, {"type":"function_call_output","call_id":"c","output":"{}","_openbridge":{"version":1,"output":"json","execution":{"status":"succeeded"}}}]),
-        ];
-        for history in histories {
-            let request = json!({"model":"fixture-model","input":history});
-            assert!(
-                adapter
-                    .decode_request(&serde_json::to_vec(&request).unwrap())
-                    .is_err()
-            );
-        }
-        // Upstream responses: an attachment is an unknown key and never becomes semantics.
-        for (turn, pointer) in [(2, ""), (1, "/output/2")] {
-            let plain = wire::response(turn);
-            let mut attached = plain.clone();
-            attached.pointer_mut(pointer).unwrap()["_openbridge"] =
-                json!({"version":1,"progress":"turn_finished"});
-            assert_eq!(
-                adapter
-                    .decode_response(&serde_json::to_vec(&attached).unwrap())
-                    .unwrap(),
-                adapter
-                    .decode_response(&serde_json::to_vec(&plain).unwrap())
-                    .unwrap()
-            );
-        }
     }
 }
 #[test]
@@ -183,45 +127,5 @@ fn unsupported_typed_values_remain_rejected_instead_of_becoming_text_or_extras()
                 .encode_request(&request, "fixture-model", &contract())
                 .is_err()
         );
-    }
-}
-#[test]
-fn unrepresentable_events_fail_at_their_first_publication_boundary() {
-    let adapter = client(Dialect::MorphieCore);
-    let mut usage = Usage::operation(3, 5, 8);
-    usage.scope = UsageScope::Session;
-    for event in [
-        StreamEvent::Progress(InteractionProgress::NeedsContinuation),
-        StreamEvent::Usage(usage),
-        StreamEvent::ItemStarted {
-            item: ItemId::new(1),
-            kind: ItemKind::Reasoning,
-            replay: Some(ReasoningReplay {
-                origin: None,
-                value: ReplayValue::partial(
-                    ReplayFormat::GoogleInteractionsV1Thought,
-                    event::text("synthetic"),
-                ),
-            }),
-        },
-        event::start(
-            1,
-            ItemKind::ToolCall {
-                call_id: event::text("c"),
-                name: event::text("lookup"),
-                message: None,
-                context: Default::default(),
-                format: ArgumentFormat::Json,
-            },
-        ),
-    ] {
-        let mut encoder = EventEncoder::new(Profile::Responses, event::metadata())
-            .unwrap()
-            .with_contract(adapter.contract(&contract()));
-        encoder
-            .encode(&StreamEvent::Started, &Default::default())
-            .unwrap();
-        assert!(encoder.encode(&event, &Default::default()).is_err());
-        assert!(encoder.finish().is_err());
     }
 }

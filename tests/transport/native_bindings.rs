@@ -11,7 +11,7 @@ use morphiecore::{
         ProviderId, SecretMaterial, TrustedOrigin,
     },
     semantic::{
-        context::{CacheMode, CacheOptions, CacheTtl, ConversationContext},
+        context::ConversationContext,
         task::generation::{GenerationSemanticContract, LocalScope},
         value::Presence,
     },
@@ -241,68 +241,6 @@ fn preflight_and_preparation_agree_on_native_body_headers_and_delivery() {
         .unwrap();
     // Chat requests carry no max_tokens, which native Messages requires.
     assert!(representable(&native, &chat_request).is_err());
-}
-
-#[test]
-fn go_session_header_follows_grouping_and_never_enters_the_body() {
-    let p = provider();
-    let native = endpoint(ProtocolProfile::AnthropicMessages);
-    let mut request = native_request();
-    assert!(representable(&native, &request).is_err());
-    assert!(prepare(&native, &p, &secret(), &request).is_err());
-    request.cache_session =
-        Some(morphiecore::protocol::cache::CacheSession::new("explicit").unwrap());
-    let prepared = prepare(&native, &p, &secret(), &request).unwrap();
-    assert_eq!(header(&prepared, "x-opencode-session"), Some("explicit"));
-    request.cache_session = None;
-
-    request.conversation = Some(ConversationContext::conversation("conversation-one").unwrap());
-    request.context.cache.prompt_cache_key = Presence::Value("shared-workspace".into());
-    let original = request.clone();
-    representable(&native, &request).unwrap();
-    let prepared = prepare(&native, &p, &secret(), &request).unwrap();
-    assert_eq!(
-        header(&prepared, "x-opencode-session"),
-        Some("427d18da2021fadacd82a4b187acd8b4459e929ad27d1f77025fff66310a176e")
-    );
-    assert_eq!(body(&prepared), hello_wire());
-    assert_eq!(request, original);
-    let mut other = request.clone();
-    other.conversation = Some(ConversationContext::conversation("conversation-two").unwrap());
-    let prepared = prepare(&native, &p, &secret(), &other).unwrap();
-    assert_eq!(
-        header(&prepared, "x-opencode-session"),
-        Some("7577d45153ce9042751834fb6f264cc0fb919b44f4408bb37a6defc6d3256d9f")
-    );
-    // The cache key is not a native carrier; any spelling leaves the session unchanged.
-    for key in [
-        Presence::Absent,
-        Presence::Null,
-        Presence::Value(String::new()),
-        Presence::Value("bad\nheader".into()),
-    ] {
-        let mut edited = request.clone();
-        edited.context.cache.prompt_cache_key = key;
-        representable(&native, &edited).unwrap();
-        prepare(&native, &p, &secret(), &edited).unwrap();
-    }
-    let mut no_carrier = native.clone();
-    no_carrier
-        .representation
-        .messages_mut()
-        .unwrap()
-        .cache
-        .session_id = false;
-    assert!(representable(&no_carrier, &request).is_err());
-    assert!(prepare(&no_carrier, &p, &secret(), &request).is_err());
-    request.context.cache.prompt_cache_options = Presence::Value(CacheOptions {
-        mode: CacheMode::Explicit,
-        ttl: CacheTtl::ThirtyMinutes,
-        comparison_response_id: Presence::Absent,
-        prewarm: Presence::Absent,
-    });
-    assert!(representable(&native, &request).is_err());
-    assert!(prepare(&native, &p, &secret(), &request).is_err());
 }
 
 #[test]

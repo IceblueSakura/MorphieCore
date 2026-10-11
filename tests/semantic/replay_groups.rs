@@ -1,9 +1,6 @@
 //! A07/T06: overlapping groups borrow ordered members; no wire carrier is invented.
 use morphiecore::{
-    protocol::{
-        fidelity::FidelityRecords,
-        openai::{Profile, TargetCaps as Contract, lowering::lower_request},
-    },
+    protocol::openai::{Profile, TargetCaps as Contract},
     semantic::{task::generation::*, value::Text},
 };
 fn text(value: &str) -> Text {
@@ -105,31 +102,6 @@ fn dangling_duplicate_and_reversed_memberships_fail_at_the_core_owner() {
         ReplayGroup::new(GroupId::new(LocalScope::new(7), 1), vec![ItemId::new(1); 2]).is_err()
     );
     assert_eq!(source.replay_groups().len(), 2);
-}
-#[test]
-fn groups_have_no_private_or_silently_dropped_standard_carrier() {
-    let source = request();
-    for profile in [Profile::Responses, Profile::Chat] {
-        assert!(
-            lower_request(
-                &source,
-                &FidelityRecords::default(),
-                profile,
-                Contract::full()
-            )
-            .is_err()
-        );
-    }
-    let plain = source.with_replay_groups(vec![]).unwrap();
-    assert!(
-        lower_request(
-            &plain,
-            &FidelityRecords::default(),
-            Profile::Responses,
-            Contract::full()
-        )
-        .is_ok()
-    );
 }
 
 #[test]

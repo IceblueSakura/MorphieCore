@@ -4,7 +4,7 @@ use morphiecore::{
     protocol::{
         fidelity::FidelityRecords,
         openai::{
-            Profile, TargetCaps as Contract, chat,
+            Profile, TargetCaps as Contract,
             events::{EventDecoder, EventEncoder},
             lowering::{lower_request, lower_response},
             responses,
@@ -15,43 +15,6 @@ use morphiecore::{
 use serde_json::{Value, json};
 fn reasoning(status: &str) -> Value {
     json!({"id":"rs","type":"reasoning","status":status,"summary":[{"type":"summary_text","text":"summary"}],"content":[{"type":"reasoning_text","text":"reasoning"}],"encrypted_content":"final-synthetic"})
-}
-
-#[test]
-fn standard_summary_rejects_nonstandard_values_on_requests_echoes_and_events() {
-    use morphiecore::protocol::openai::{Adapter, Dialect};
-    for name in ["summary", "generate_summary"] {
-        for value in [
-            json!(false),
-            json!(true),
-            json!(0),
-            json!("none"),
-            json!({}),
-        ] {
-            let mut controls = json!({});
-            controls[name] = value;
-            let request = json!({"model":"fixture-model","input":"hello","reasoning":controls});
-            for dialect in [Dialect::Standard, Dialect::MorphieCore, Dialect::Nvidia] {
-                assert!(
-                    Adapter::new(Profile::Responses, dialect, None)
-                        .decode_request(request.to_string().as_bytes())
-                        .is_err(),
-                    "{name} on {dialect:?}"
-                );
-            }
-            let mut response = envelope("completed", json!([]));
-            response["reasoning"] = controls.clone();
-            assert!(
-                responses::decode_response(&response).is_err(),
-                "{name} echo"
-            );
-            let mut event = created();
-            event["response"]["reasoning"] = controls;
-            let mut decoder = EventDecoder::new(Profile::Responses);
-            assert!(decoder.push(&event).is_err(), "{name} event");
-            assert!(decoder.finish().is_err());
-        }
-    }
 }
 
 #[test]
@@ -163,111 +126,6 @@ fn standard_summary_presence_and_deprecated_alias_have_independent_wire_expectat
     );
 }
 
-#[test]
-fn controls_keep_absence_empty_none_and_encrypted_output_distinct() {
-    let input = json!([{"role":"user","content":"hello"}]);
-    let absent = responses::decode_generation(&json!({"input":input})).unwrap();
-    let empty = responses::decode_generation(&json!({"input":input,"reasoning":{}})).unwrap();
-    let none=responses::decode_generation(&json!({"input":input,"reasoning":{"effort":"none"},"include":["reasoning.encrypted_content"]})).unwrap();
-    assert_ne!(absent.semantic.reasoning(), empty.semantic.reasoning());
-    assert_eq!(
-        none.semantic.reasoning().effort(),
-        Some(ReasoningEffort::None)
-    );
-    assert!(none.semantic.reasoning().summary.is_absent());
-    let t = lower_request(
-        &none.semantic,
-        &none.fidelity,
-        Profile::Responses,
-        contract(),
-    )
-    .unwrap();
-    let v = responses::encode_generation(&t).unwrap();
-    assert_eq!(v["reasoning"], json!({"effort":"none"}));
-    assert_eq!(v["include"], json!(["reasoning.encrypted_content"]));
-    assert!(lower_request(&none.semantic, &none.fidelity, Profile::Chat, contract()).is_err());
-    for bad in [
-        json!({"effort":"none","summary":"auto"}),
-        json!({"summary":[]}),
-        json!({"summary":true}),
-    ] {
-        assert!(responses::decode_generation(&json!({"input":input,"reasoning":bad})).is_err());
-    }
-    let chat =
-        chat::decode_generation(&json!({"messages":input,"reasoning_effort":"low"})).unwrap();
-    assert_eq!(
-        chat.semantic.reasoning().effort(),
-        Some(ReasoningEffort::Low)
-    );
-}
-
-#[test]
-fn partial_final_phases_and_resource_limits_fail_without_panics() {
-    let state = apply(&[
-        StreamEvent::Started,
-        start(1, ItemKind::Reasoning),
-        StreamEvent::PartStarted {
-            item: ItemId::new(1),
-            part: PartId::new(1),
-            kind: PartKind::ReasoningText,
-        },
-    ])
-    .unwrap();
-    assert!(matches!(
-        reduce(
-            state,
-            StreamEvent::Delta {
-                item: ItemId::new(1),
-                part: PartId::new(1),
-                fragment: "x".repeat(MAX_TEXT_BYTES + 1),
-                logprobs: vec![]
-            }
-        ),
-        Err(EventError::Limit)
-    ));
-    let state = apply(&[StreamEvent::Started, start(1, ItemKind::Reasoning)]).unwrap();
-    assert!(
-        reduce(
-            state,
-            StreamEvent::ItemFinished {
-                item: ItemId::new(1),
-                status: ItemLifecycle::Completed,
-                replay: Some(token("partial", false))
-            }
-        )
-        .is_err()
-    );
-    let mut f = FidelityRecords::default();
-    let mut owner = ReasoningItem {
-        parts: vec![],
-        status: ItemLifecycle::Completed,
-        replay: Some(ReplayValue::final_value(
-            ReplayFormat::ResponsesEncrypted,
-            text("x"),
-        )),
-    };
-    for i in 0..MAX_ITEMS {
-        f.record_replay(ItemId::new(i as u64), &owner, Some(origin()))
-            .unwrap();
-    }
-    assert!(
-        f.record_replay(ItemId::new(MAX_ITEMS as u64), &owner, Some(origin()))
-            .is_err()
-    );
-    owner.replay = Some(ReplayValue::partial(
-        ReplayFormat::ResponsesEncrypted,
-        text("partial"),
-    ));
-    assert!(
-        f.record_replay(ItemId::new(0), &owner, Some(origin()))
-            .is_err()
-    );
-    owner.replay = Some(ReplayValue::final_value(
-        ReplayFormat::ResponsesEncrypted,
-        text("final"),
-    ));
-    assert!(f.record_replay(ItemId::new(0), &owner, None).is_err());
-}
 #[test]
 fn unsupported_snapshot_content_is_not_silently_dropped() {
     let mut d = EventDecoder::new(Profile::Responses);

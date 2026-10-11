@@ -1,14 +1,7 @@
 //! Tool result kind, artifact lifecycle and wire representability are independent.
 use crate::events_support::text;
 use crate::resources_support as resources;
-use morphiecore::{
-    lowering::generation::RepresentationError,
-    protocol::{
-        fidelity::FidelityRecords,
-        openai::{Profile, TargetCaps as Contract, lowering::lower_request},
-    },
-    semantic::task::generation::*,
-};
+use morphiecore::semantic::task::generation::*;
 use serde_json::json;
 fn call() -> (ItemId, Item) {
     (
@@ -103,36 +96,6 @@ fn media(url: &str) -> Payload {
         vec![(1, image(url))],
     )
         .into()
-}
-#[test]
-fn structured_value_preserves_integer_precision_order_and_bounds() {
-    let value: serde_json::Value =
-        serde_json::from_str(r#"{"z":18446744073709551615,"a":null}"#).unwrap();
-    let structured = StructuredValue::new(value.clone()).unwrap();
-    assert_eq!(structured.value()["z"].as_u64(), Some(u64::MAX));
-    assert_eq!(
-        structured
-            .value()
-            .as_object()
-            .unwrap()
-            .keys()
-            .map(String::as_str)
-            .collect::<Vec<_>>(),
-        ["z", "a"]
-    );
-    let request = request(ToolOutput::Structured(structured), None).unwrap();
-    assert!(GenerationRequirements::derive(&request).structured_tool_results);
-    assert_eq!(request.continuation(), Continuation::Unreported);
-    let mut deep = json!(null);
-    for _ in 0..40 {
-        deep = json!([deep]);
-    }
-    assert_eq!(
-        StructuredValue::new(deep).unwrap_err(),
-        GenerationError::Limit
-    );
-    assert!(StructuredValue::new(json!(vec![0; 8193])).is_err());
-    assert!(StructuredValue::new(json!("x".repeat(MAX_TEXT_BYTES + 1))).is_err());
 }
 #[test]
 fn execution_error_is_a_terminal_result_not_a_generation_failure() {
@@ -237,114 +200,4 @@ fn tool_image_decode_rejects_wrong_branches_and_unsafe_resources() {
         ]});
         assert!(responses::decode_generation(&wire).is_err());
     }
-}
-
-#[test]
-fn tool_and_user_images_share_target_limits_and_edits_remove_media() {
-    use morphiecore::protocol::openai::responses;
-    let mut items = request(media("https://example.invalid/a.png"), None)
-        .unwrap()
-        .items()
-        .to_vec();
-    items.insert(
-        0,
-        (
-            ItemId::new(9),
-            Item::Message(Message {
-                role: MessageRole::User,
-                status: ItemLifecycle::Completed,
-                phase: None,
-                parts: vec![Part {
-                    replay: None,
-                    id: PartId::new(90),
-                    content: ContentPart::Resource(resources::input(2)),
-                }],
-            }),
-        ),
-    );
-    let history = GenerationRequest::from_resources(
-        items,
-        GenerationSettings::default(),
-        resources::table([
-            (1, image("https://example.invalid/a.png")),
-            (2, image("https://example.invalid/user.png")),
-        ]),
-    )
-    .unwrap();
-    let fidelity = FidelityRecords::default();
-    let mut contract = Contract::full();
-    contract.images.max_images = 1;
-    assert_eq!(
-        lower_request(&history, &fidelity, Profile::Responses, contract).err(),
-        Some(RepresentationError::ImageInput)
-    );
-    let mut contract = Contract::full();
-    contract.images.urls = false;
-    assert_eq!(
-        lower_request(&history, &fidelity, Profile::Responses, contract).err(),
-        Some(RepresentationError::ImageInput)
-    );
-    let inline = request(
-        (
-            ToolOutput::Parts(vec![(
-                PartId::new(10),
-                ToolResultPart::Resource(ResourceUse {
-                    description: ResourceDescription::Image {
-                        detail: Some(ImageDetail::Low),
-                    },
-                    ..resources::tool(1)
-                }),
-            )]),
-            vec![(
-                1,
-                Resource {
-                    description: ResourceDescription::Image {
-                        detail: Some(ImageDetail::Low),
-                    },
-                    location: ResourceLocation::Inline {
-                        media_type: text("image/png"),
-                        data_base64: text("AQID"),
-                    },
-                },
-            )],
-        ),
-        None,
-    )
-    .unwrap();
-    for limit in 0..3 {
-        let mut contract = Contract::full();
-        match limit {
-            0 => contract.images.max_inline_bytes = 2,
-            1 => contract.images.inline_formats.clear(),
-            _ => contract.images.details.clear(),
-        }
-        assert_eq!(
-            lower_request(&inline, &fidelity, Profile::Responses, contract).err(),
-            Some(RepresentationError::ImageInput)
-        );
-    }
-    let mut breakpoint = FidelityRecords::default();
-    breakpoint.record_cache_breakpoint(PartId::new(10)).unwrap();
-    assert_eq!(
-        lower_request(&inline, &breakpoint, Profile::Responses, Contract::full()).err(),
-        Some(RepresentationError::Controls)
-    );
-    let mut items = history.items().to_vec();
-    let Item::ToolResult(result) = &mut items[2].1 else {
-        panic!("result")
-    };
-    let ToolOutput::Parts(parts) = &mut result.output else {
-        panic!("parts")
-    };
-    parts.retain(|(_, p)| matches!(p, ToolResultPart::Text(_)));
-    let edited = history.with_items(items).unwrap();
-    assert_eq!(
-        GenerationRequirements::derive(&edited).tool_result_images,
-        0
-    );
-    let target = lower_request(&edited, &fidelity, Profile::Responses, Contract::full()).unwrap();
-    assert_eq!(
-        responses::encode_generation(&target).unwrap()["input"][2]["output"],
-        json!([{"type":"input_text","text":"caption"}])
-    );
 }

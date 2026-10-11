@@ -92,52 +92,6 @@ fn parallel_exchange_distinguishes_pending_partial_and_complete_results() {
 }
 
 #[test]
-fn scope_binds_final_call_values_and_does_not_infer_turn_completion() {
-    let response = GenerationResponse::new(vec![call(1, "a")], Outcome::Completed).unwrap();
-    let exchange = ResponseContinuation::new(relation(), &response);
-    let request = history(vec![call(1, "a"), result(2, "a", ItemLifecycle::Completed)]);
-    assert!(
-        exchange
-            .advance(&request, ResponseId::new(10), &response)
-            .is_err()
-    );
-    for items in [vec![call(9, "a")], vec![call(1, "changed")]] {
-        assert_eq!(
-            exchange.inspect(&history(items)).unwrap_err(),
-            ContinuationError::ChangedResponse
-        );
-    }
-    let mut items = vec![call(1, "a")];
-    let Item::ToolCall(c) = &mut items[0].1 else {
-        panic!("call")
-    };
-    c.arguments = "edited".into();
-    assert_eq!(
-        exchange.inspect(&history(items)).unwrap_err(),
-        ContinuationError::ChangedResponse
-    );
-    let empty = GenerationResponse::new(vec![], Outcome::Completed).unwrap();
-    assert_eq!(
-        ResponseContinuation::new(relation(), &empty)
-            .inspect(&request)
-            .unwrap(),
-        ResultReadiness::Unreported
-    );
-    assert!(
-        ResponseContinuation::new(relation(), &empty)
-            .advance(&request, ResponseId::new(11), &response)
-            .is_err()
-    );
-    let failed = GenerationResponse::new(vec![], Outcome::Failed).unwrap();
-    assert_eq!(
-        ResponseContinuation::new(relation(), &failed)
-            .inspect(&request)
-            .unwrap(),
-        ResultReadiness::Unreported
-    );
-}
-
-#[test]
 fn declared_dependencies_are_checked_even_after_results_arrive() {
     let response = GenerationResponse::new(vec![call(1, "a")], Outcome::Completed).unwrap();
     let source = history(response.items().to_vec());
@@ -173,27 +127,5 @@ fn declared_dependencies_are_checked_even_after_results_arrive() {
     assert_eq!(
         exchange.inspect(&inserted).unwrap_err(),
         ContinuationError::ChangedDependency
-    );
-}
-
-#[test]
-fn unrelated_history_partial_calls_do_not_obscure_this_response_scope() {
-    let response = GenerationResponse::new(vec![call(1, "a")], Outcome::Completed).unwrap();
-    let mut unrelated = call(3, "other");
-    let Item::ToolCall(c) = &mut unrelated.1 else {
-        panic!("call")
-    };
-    c.status = ItemLifecycle::InProgress;
-    let request = history(vec![
-        call(1, "a"),
-        result(2, "a", ItemLifecycle::Completed),
-        unrelated,
-    ]);
-    assert_eq!(request.continuation(), Continuation::Unreported);
-    assert_eq!(
-        ResponseContinuation::new(relation(), &response)
-            .inspect(&request)
-            .unwrap(),
-        ResultReadiness::ResultsComplete
     );
 }

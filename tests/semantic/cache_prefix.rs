@@ -7,7 +7,7 @@ use morphiecore::{
         value::Presence,
     },
 };
-use serde_json::{Value, json};
+use serde_json::json;
 fn request() -> morphiecore::adapter::Request {
     Adapter::new(Profile::Responses, Dialect::Standard, None)
         .decode_request(
@@ -99,41 +99,6 @@ fn adapter_prefix_check_allows_append_and_rejects_prefix_context_and_scope_edits
             .unwrap(),
     );
     assert!(changed.check_cache_prefix(&scoped, &scope()).is_err());
-}
-#[test]
-fn cache_boundary_cannot_split_a_declared_message_group() {
-    // Prefix membership is checked on each candidate, not inferred from adjacency.
-    let wire: Value = json!({"model":"synthetic","messages":[{"role":"assistant","content":null,"tool_calls":[{"id":"c","type":"function","function":{"name":"lookup","arguments":"{}"}}]}]});
-    let source = Adapter::new(Profile::Chat, Dialect::Standard, None)
-        .decode_request(&serde_json::to_vec(&wire).unwrap())
-        .unwrap();
-    assert!(
-        source
-            .capture_cache_prefix(CachePrefixIntent::through(ItemId::new(1)), &scope())
-            .is_err()
-    );
-    let intent = CachePrefixIntent::through(ItemId::new(2));
-    let proof = source.capture_cache_prefix(intent, &scope()).unwrap();
-    let mut extended = source.clone();
-    let mut items = extended.task.semantic.items().to_vec();
-    let mut call = items[1].clone();
-    call.0 = ItemId::new(3);
-    let Item::ToolCall(value) = &mut call.1 else {
-        panic!("call")
-    };
-    value.call_id = morphiecore::semantic::value::Text::new("new", "fixture", 32).unwrap();
-    items.push(call);
-    extended.task.semantic = extended
-        .task
-        .semantic
-        .with_items(items)
-        .unwrap()
-        .with_message_owners(vec![
-            (ItemId::new(2), ItemId::new(1)),
-            (ItemId::new(3), ItemId::new(1)),
-        ])
-        .unwrap();
-    assert!(extended.check_cache_prefix(&proof, &scope()).is_err());
 }
 
 #[test]

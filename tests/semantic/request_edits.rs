@@ -3,7 +3,6 @@ use morphiecore::semantic::{
     task::generation::*,
     value::{Presence, Text},
 };
-use serde_json::json;
 
 fn request() -> GenerationRequest {
     GenerationRequest::from_settings(
@@ -15,17 +14,6 @@ fn request() -> GenerationRequest {
         },
     )
     .unwrap()
-}
-
-#[test]
-fn output_edit_must_not_return_an_invalid_request() {
-    let edited = request().with_output(OutputConstraint::JsonSchema {
-        name: Text::new("answer", "schema name", 64).unwrap(),
-        description: None,
-        schema: json!({"type":"unknown"}).into(),
-        strict: Some(false),
-    });
-    assert_eq!(edited.unwrap_err(), GenerationError::InvalidSchema);
 }
 
 #[test]

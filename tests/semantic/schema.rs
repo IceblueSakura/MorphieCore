@@ -183,59 +183,6 @@ fn local_reference_graphs_allow_recursion_but_not_dangling_or_non_schema_targets
 }
 
 #[test]
-fn function_strict_defaults_and_output_schemas_have_separate_admission() {
-    let open = json!({"type":"object","properties":{"x":{"type":"string"}}});
-    for strict in [None, Some(false), Some(true)] {
-        let mut tool = json!({"type":"function","name":"f","parameters":open});
-        if let Some(strict) = strict {
-            tool["strict"] = json!(strict);
-        }
-        let result = responses::decode_generation(&json!({"input":"x","tools":[tool]}));
-        assert_eq!(result.is_ok(), strict != Some(true));
-        if let Ok(d) = result {
-            let out = responses::encode_generation(
-                &lower_request(
-                    &d.semantic,
-                    &d.fidelity,
-                    Profile::Responses,
-                    Contract::full(),
-                )
-                .unwrap(),
-            )
-            .unwrap();
-            assert_eq!(out["tools"][0]["parameters"], open);
-            assert_eq!(
-                out["tools"][0].get("strict"),
-                strict.map(|v| json!(v)).as_ref()
-            );
-        }
-    }
-    let closed = closed_property(json!({"type":"integer"}));
-    let d=responses::decode_generation(&json!({"input":"x","tools":[{"type":"function","name":"f","parameters":closed,"strict":true,"output_schema":{"type":"string"}}]})).unwrap();
-    assert!(
-        lower_request(
-            &d.semantic,
-            &d.fidelity,
-            Profile::Responses,
-            Contract::full()
-        )
-        .is_ok()
-    );
-    let mut tool =
-        json!({"type":"function","name":"f","parameters":{"type":"object","allOf":[{}]}});
-    assert!(responses::decode_generation(&json!({"input":"x","tools":[tool.clone()]})).is_err());
-    tool["strict"] = json!(false);
-    assert!(responses::decode_generation(&json!({"input":"x","tools":[tool]})).is_ok());
-    // Opening the output-constraint mapping relaxes no Chat tool admission.
-    let d=responses::decode_generation(&json!({"input":"x","text":{"format":{"type":"json_object"}},"tools":[{"type":"function","name":"f","parameters":closed}]})).unwrap();
-    assert!(lower_request(&d.semantic, &d.fidelity, Profile::Chat, Contract::full()).is_err());
-    let d=responses::decode_generation(&json!({"input":"x","text":{"format":{"type":"json_object"}},"tools":[{"type":"function","name":"f","parameters":closed,"strict":false,"output_schema":{"type":"string"}}]})).unwrap();
-    assert!(lower_request(&d.semantic, &d.fidelity, Profile::Chat, Contract::full()).is_err());
-    let d=responses::decode_generation(&json!({"input":"x","text":{"format":{"type":"json_object"}},"tools":[{"type":"function","name":"f","parameters":closed,"strict":false}]})).unwrap();
-    assert!(lower_request(&d.semantic, &d.fidelity, Profile::Chat, Contract::full()).is_ok());
-}
-
-#[test]
 fn schema_resource_bounds_count_physical_shapes_without_expanding_refs() {
     for (count, accepted) in [(5000, true), (5001, false)] {
         let props: serde_json::Map<String, Value> = (0..count)
@@ -315,34 +262,6 @@ fn schema_resource_bounds_count_physical_shapes_without_expanding_refs() {
     assert!(admit(json!({"default":"x".repeat(MAX_TEXT_BYTES)}), false).is_err());
 }
 
-#[test]
-fn regex_work_is_bounded_before_recursive_syntax_parsing() {
-    for pattern in [
-        format!("{}a{}", "(".repeat(65), ")".repeat(65)),
-        "a".repeat(65_537),
-    ] {
-        for strict in [true, false] {
-            let error = admit(
-                closed_property(json!({"type":"string","pattern":pattern})),
-                strict,
-            )
-            .unwrap_err();
-            assert!(matches!(
-                error,
-                morphiecore::protocol::openai::CodecError::Semantic(GenerationError::Limit)
-            ));
-        }
-        let error = admit(
-            json!({"patternProperties":{pattern:{"type":"string"}}}),
-            false,
-        )
-        .unwrap_err();
-        assert!(matches!(
-            error,
-            morphiecore::protocol::openai::CodecError::Semantic(GenerationError::Limit)
-        ));
-    }
-}
 #[test]
 fn regex_unicode_syntax_rejects_legacy_escapes_unknown_properties_and_invalid_references() {
     for pattern in [

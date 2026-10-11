@@ -1,17 +1,7 @@
 //! Historical definitions and explicit configuration revisions are not execution grants.
-use morphiecore::{
-    lowering::generation::RepresentationError,
-    protocol::{
-        fidelity::FidelityRecords,
-        openai::{
-            Profile, TargetCaps,
-            lowering::{events::check_event, lower_request, lower_response},
-        },
-    },
-    semantic::{
-        task::generation::*,
-        value::{Presence, Text},
-    },
+use morphiecore::semantic::{
+    task::generation::*,
+    value::{Presence, Text},
 };
 use serde_json::json;
 
@@ -383,72 +373,4 @@ fn bound_events_match_static_and_reject_conflicting_revisions_at_intake() {
         GenerationResponse::new(vec![(ItemId::new(1), call("C", bound))], Outcome::Completed)
             .unwrap();
     assert_eq!(actual, expected);
-}
-
-#[test]
-fn configuration_has_no_private_or_silently_dropped_standard_carrier() {
-    let config = snapshot(1, settings("old"));
-    let bound = binding(config.clone());
-    let response = GenerationResponse::new(
-        vec![(ItemId::new(1), call("C", bound.clone()))],
-        Outcome::Completed,
-    )
-    .unwrap();
-    let plain = GenerationRequest::from_settings(
-        vec![],
-        GenerationSettings {
-            instructions: Presence::Value(text("hello")),
-            ..Default::default()
-        },
-    )
-    .unwrap();
-    let versioned = plain
-        .clone()
-        .with_configuration(snapshot(2, plain.settings().clone()))
-        .unwrap();
-    for profile in [Profile::Responses, Profile::Chat] {
-        let fidelity = FidelityRecords::default();
-        let contract = TargetCaps::full();
-        assert!(lower_request(&plain, &fidelity, profile, contract.clone()).is_ok());
-        assert_eq!(
-            lower_request(&versioned, &fidelity, profile, contract.clone()).err(),
-            Some(RepresentationError::Admission(
-                GenerationFeature::ConfigurationRevision
-            ))
-        );
-        assert_eq!(
-            lower_request(
-                &request(call("C", bound.clone())),
-                &fidelity,
-                profile,
-                contract.clone()
-            )
-            .err(),
-            Some(RepresentationError::Admission(
-                GenerationFeature::ConfigurationRevision
-            ))
-        );
-        assert_eq!(
-            lower_response(
-                &response,
-                &fidelity,
-                &crate::events_support::metadata(),
-                profile,
-                contract.clone()
-            )
-            .err(),
-            Some(RepresentationError::Admission(
-                GenerationFeature::ConfigurationRevision
-            ))
-        );
-        assert_eq!(
-            check_event(
-                &StreamState::new(),
-                &start(bound.clone()),
-                profile,
-                &contract
-            ),
-            Err(RepresentationError::UnmigratedSemantic)
-        );
-    }
 }

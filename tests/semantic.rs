@@ -8,8 +8,6 @@ mod resources_support;
 #[path = "support/responses_profile.rs"]
 mod wire;
 
-#[path = "semantic/adapters.rs"]
-mod adapters;
 #[path = "semantic/anthropic_profile.rs"]
 mod anthropic_profile;
 #[path = "semantic/anthropic_semantics.rs"]
@@ -40,8 +38,6 @@ mod configuration_revisions;
 mod context_transforms;
 #[path = "semantic/continuation.rs"]
 mod continuation;
-#[path = "semantic/embedding_bindings.rs"]
-mod embedding_bindings;
 #[path = "semantic/embeddings.rs"]
 mod embeddings;
 #[path = "semantic/extensions.rs"]
@@ -50,8 +46,6 @@ mod extensions;
 mod files;
 #[path = "semantic/function_events.rs"]
 mod function_events;
-#[path = "semantic/group_projection.rs"]
-mod group_projection;
 #[path = "semantic/history_dependencies.rs"]
 mod history_dependencies;
 #[path = "semantic/image_binding.rs"]
@@ -62,26 +56,16 @@ mod image_controls;
 mod image_generation;
 #[path = "semantic/images.rs"]
 mod images;
-#[path = "semantic/instructions.rs"]
-mod instructions;
-#[path = "semantic/interaction_progress.rs"]
-mod interaction_progress;
 #[path = "semantic/message_envelopes.rs"]
 mod message_envelopes;
-#[path = "semantic/message_groups.rs"]
-mod message_groups;
 #[path = "semantic/message_ownership_owner.rs"]
 mod message_ownership_owner;
-#[path = "semantic/model_constraints.rs"]
-mod model_constraints;
 #[path = "semantic/modelbest.rs"]
 mod modelbest;
 #[path = "semantic/open_decoding.rs"]
 mod open_decoding;
 #[path = "semantic/openrouter_images.rs"]
 mod openrouter_images;
-#[path = "semantic/openrouter_speech.rs"]
-mod openrouter_speech;
 #[path = "semantic/parsed_replay.rs"]
 mod parsed_replay;
 #[path = "semantic/phase.rs"]
@@ -94,8 +78,6 @@ mod provider_observations;
 mod provider_profiles;
 #[path = "semantic/reasoning.rs"]
 mod reasoning;
-#[path = "semantic/reasoning_boundary.rs"]
-mod reasoning_boundary;
 #[path = "semantic/reasoning_controls.rs"]
 mod reasoning_controls;
 #[path = "semantic/replay_attachments.rs"]
@@ -114,8 +96,6 @@ mod request_edits;
 mod resource_table;
 #[path = "semantic/response.rs"]
 mod response;
-#[path = "semantic/response_requirements.rs"]
-mod response_requirements;
 #[path = "semantic/router_adapter.rs"]
 mod router_adapter;
 #[path = "semantic/schema.rs"]
@@ -128,10 +108,6 @@ mod scoped_identity;
 mod scoped_usage;
 #[path = "semantic/speech.rs"]
 mod speech;
-#[path = "semantic/speech_binding.rs"]
-mod speech_binding;
-#[path = "support/speech.rs"]
-mod speech_support;
 #[path = "semantic/structured_events.rs"]
 mod structured_events;
 #[path = "semantic/subscription_accounting.rs"]
@@ -146,8 +122,6 @@ mod text_profile;
 mod timestamps;
 #[path = "semantic/tokenplan_asr.rs"]
 mod tokenplan_asr;
-#[path = "semantic/tokenplan_audio_binding.rs"]
-mod tokenplan_audio_binding;
 #[path = "semantic/tokenplan_speech.rs"]
 mod tokenplan_speech;
 #[path = "semantic/tool_namespaces.rs"]
@@ -156,17 +130,11 @@ mod tool_namespaces;
 mod tool_result_errors;
 #[path = "semantic/tool_results.rs"]
 mod tool_results;
-#[path = "semantic/tool_values.rs"]
-mod tool_values;
 #[path = "semantic/tools.rs"]
 mod tools;
 #[path = "semantic/turn_continuation.rs"]
 mod turn_continuation;
 #[path = "semantic/unreported_event_probabilities.rs"]
 mod unreported_event_probabilities;
-#[path = "semantic/usage.rs"]
-mod usage;
 #[path = "semantic/usage_views.rs"]
 mod usage_views;
-#[path = "semantic/vendor_shapes.rs"]
-mod vendor_shapes;

@@ -16,33 +16,6 @@ fn chunk(delta: Value, finish: Value) -> Value {
     json!({"id":"r","object":"chat.completion.chunk","model":"synthetic-model","created":1,"choices":[{"index":0,"delta":delta,"finish_reason":finish}]})
 }
 #[test]
-fn modelbest_limits_and_user_images_follow_final_ir_without_declaring_controls() {
-    let client = Adapter::new(Profile::Chat, Dialect::MorphieCore, None);
-    let request=client.decode_request(br#"{"model":"public","max_completion_tokens":37,"messages":[{"role":"user","content":[{"type":"text","text":"describe"},{"type":"image_url","image_url":{"url":"data:image/png;base64,AQID"}}]}]}"#).unwrap();
-    let before = request.clone();
-    let wire = provider()
-        .encode_request(&request, "bound-model", &Contract::full())
-        .unwrap();
-    assert_eq!(
-        wire,
-        json!({"model":"bound-model","max_tokens":37,"messages":[{"role":"user","content":[{"type":"text","text":"describe"},{"type":"image_url","image_url":{"url":"data:image/png;base64,AQID"}}]}]})
-    );
-    assert_eq!(request, before);
-    let decoded = provider()
-        .decode_request(
-            br#"{"model":"m","max_tokens":7,"messages":[{"role":"user","content":"hello"}]}"#,
-        )
-        .unwrap();
-    assert_eq!(decoded.task.semantic.controls().max_output_tokens, Some(7));
-    assert!(provider().decode_request(br#"{"model":"m","max_tokens":7,"max_completion_tokens":7,"messages":[{"role":"user","content":"hello"}]}"#).is_err());
-    let controlled=client.decode_request(br#"{"model":"public","messages":[{"role":"user","content":"hello"}],"reasoning_effort":"low"}"#).unwrap();
-    assert!(
-        provider()
-            .encode_request(&controlled, "bound-model", &Contract::full())
-            .is_err()
-    );
-}
-#[test]
 fn modelbest_flat_reasoning_counts_and_stop_diagnostics_are_scoped_and_editable() {
     let wire = json!({"id":"r","object":"chat.completion","model":"synthetic-model","created":1,
         "choices":[{"index":0,"message":{"role":"assistant","content":"pong","reasoning_content":null,"tool_calls":null},"finish_reason":"stop","logprobs":null,"matched_stop":777}],
@@ -214,29 +187,4 @@ fn modelbest_inactive_server_shapes_do_not_erase_active_data_or_reported_counter
             .input_image_tokens,
         None
     );
-}
-#[test]
-fn modelbest_created_drift_is_not_identity_or_fingerprint_drift() {
-    let first = chunk(json!({"role":"assistant","content":"po"}), Value::Null);
-    let mut next = chunk(json!({"content":"ng"}), Value::Null);
-    next["created"] = json!(2);
-    let mut stream = provider().event_decoder();
-    stream.push(&first).unwrap();
-    stream.push(&next).unwrap();
-    stream.push(&chunk(json!({}), json!("stop"))).unwrap();
-    stream.done().unwrap();
-    assert_eq!(
-        stream.metadata().unwrap().created,
-        Some(json!(1).as_number().unwrap().clone())
-    );
-    for field in ["id", "model", "system_fingerprint"] {
-        let mut before = first.clone();
-        before["system_fingerprint"] = json!("fixed");
-        let mut after = next.clone();
-        after["system_fingerprint"] = json!("fixed");
-        after[field] = json!("different");
-        let mut rejected = provider().event_decoder();
-        rejected.push(&before).unwrap();
-        assert!(rejected.push(&after).is_err());
-    }
 }

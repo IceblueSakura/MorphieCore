@@ -75,21 +75,6 @@ pub fn part(item: u64, part: u64, kind: PartKind, s: &str) -> Vec<StreamEvent> {
         StreamEvent::PartFinished { item, part },
     ]
 }
-pub fn call(item: u64, part_id: u64, id: &str, s: &str) -> Vec<StreamEvent> {
-    let mut events = vec![start(
-        item,
-        ItemKind::ToolCall {
-            format: ArgumentFormat::Raw,
-            call_id: text(id),
-            name: text("lookup"),
-            message: None,
-            context: CallContext::default(),
-        },
-    )];
-    events.extend(part(item, part_id, PartKind::Arguments, s));
-    events.push(close(item, ItemLifecycle::Completed));
-    events
-}
 pub fn apply(events: &[StreamEvent]) -> Result<StreamState, EventError> {
     events.iter().cloned().try_fold(StreamState::new(), reduce)
 }
