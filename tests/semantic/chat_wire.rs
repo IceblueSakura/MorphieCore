@@ -298,7 +298,6 @@ fn aliases_are_normalized_without_losing_counts_or_masking_disagreement() {
     for (key, value) in [
         ("prompt_cache_hit_tokens", 0),
         ("prompt_cache_miss_tokens", 9),
-        ("mystery_tokens", 1),
     ] {
         let mut invalid = body.clone();
         invalid["usage"][key] = json!(value);

@@ -24,7 +24,7 @@ impl TextContent {
             list(v)?
                 .iter()
                 .map(|v| {
-                    let o = object(v, &["type", "text"])?;
+                    let o = closed(v, &["type", "text"])?;
                     if required(o, "type")?.as_str() != Some("text") {
                         return Err(CodecError::Unsupported("Anthropic text content".into()));
                     }
@@ -95,7 +95,7 @@ pub struct InputMessage {
 }
 impl InputMessage {
     fn read(v: &Value) -> Result<Self, CodecError> {
-        let o = object(v, &["role", "content"])?;
+        let o = closed(v, &["role", "content"])?;
         let content = required(o, "content")?;
         Ok(Self {
             role: Role::read(required(o, "role")?)?,
@@ -148,7 +148,7 @@ pub struct Tool {
 }
 impl Tool {
     fn read(v: &Value) -> Result<Self, CodecError> {
-        let o = object(v, &["name", "description", "input_schema", "strict"])?;
+        let o = closed(v, &["name", "description", "input_schema", "strict"])?;
         Ok(Self {
             name: string(required(o, "name")?)?,
             description: presence(o, "description", string)?,
@@ -197,7 +197,7 @@ pub struct ToolChoice {
 }
 impl ToolChoice {
     fn read(v: &Value) -> Result<Self, CodecError> {
-        let o = object(v, &["type", "name", "disable_parallel_tool_use"])?;
+        let o = closed(v, &["type", "name", "disable_parallel_tool_use"])?;
         let selection = match required(o, "type")?.as_str() {
             Some("tool") => Selection::Tool(string(required(o, "name")?)?),
             Some("auto") => Selection::Auto,
@@ -240,7 +240,7 @@ pub struct Thinking {
 }
 impl Thinking {
     fn read(v: &Value) -> Result<Self, CodecError> {
-        let o = object(v, &["type", "display"])?;
+        let o = closed(v, &["type", "display"])?;
         if required(o, "type")?.as_str() != Some("adaptive") {
             return Err(CodecError::Unsupported("Anthropic thinking mode".into()));
         }
@@ -276,7 +276,7 @@ pub enum Effort {
 }
 impl Effort {
     fn read(v: &Value) -> Result<Self, CodecError> {
-        let o = object(v, &["effort"])?;
+        let o = closed(v, &["effort"])?;
         match required(o, "effort")?.as_str() {
             Some("low") => Ok(Self::Low),
             Some("medium") => Ok(Self::Medium),
@@ -307,7 +307,7 @@ impl std::fmt::Debug for Request {
 }
 impl Request {
     pub(super) fn read(v: &Value) -> Result<Self, CodecError> {
-        let o = object(
+        let o = closed(
             v,
             &[
                 "model",

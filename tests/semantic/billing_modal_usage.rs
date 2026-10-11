@@ -144,13 +144,6 @@ fn billing_views_reject_alias_conflicts_unknown_breakdowns_and_invalid_counts() 
                 .is_err()
         );
     }
-    let mut unknown = fixture();
-    unknown["usage"]["x_details"][0]["plugins"] = json!({});
-    assert!(
-        provider
-            .decode_response(&serde_json::to_vec(&unknown).unwrap())
-            .is_err()
-    );
     let mut multiple = fixture();
     let row = multiple["usage"]["x_details"][0].clone();
     multiple["usage"]["x_details"]

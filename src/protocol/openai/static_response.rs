@@ -63,13 +63,6 @@ pub(super) fn usage(
         return Ok(None);
     };
     let usage = object(value)?;
-    if !adaptation.rules.usage_aliases || profile != Profile::Chat {
-        for key in ["prompt_cache_hit_tokens", "prompt_cache_miss_tokens"] {
-            if usage.contains_key(key) {
-                return Err(CodecError::Unsupported(key.into()));
-            }
-        }
-    }
     let (input_key, output_key, input_details, output_details) = match profile {
         Profile::Chat => (
             "prompt_tokens",
@@ -97,29 +90,6 @@ pub(super) fn usage(
         allowed.push("reasoning_tokens");
     }
     fields(usage, &allowed)?;
-    let image_usage = match profile {
-        Profile::Chat => adaptation.rules.chat_image_usage,
-        Profile::Responses => adaptation.rules.responses_image_usage,
-    };
-    if !image_usage
-        && usage
-            .get(input_details)
-            .and_then(Value::as_object)
-            .is_some_and(|details| details.contains_key("image_tokens"))
-    {
-        return Err(CodecError::Unsupported("image_tokens".into()));
-    }
-    if profile == Profile::Responses
-        && !adaptation.rules.responses_text_usage
-        && [input_details, output_details].iter().any(|key| {
-            usage
-                .get(*key)
-                .and_then(Value::as_object)
-                .is_some_and(|d| d.contains_key("text_tokens"))
-        })
-    {
-        return Err(CodecError::Unsupported("text_tokens".into()));
-    }
     let mut parsed = Usage {
         scope: crate::semantic::task::generation::UsageScope::Operation,
         basis: crate::semantic::task::generation::UsageBasis::Final,
@@ -392,6 +362,7 @@ pub(super) fn encode_usage(
     value
 }
 pub fn decode_chat(v: &Value) -> Result<DecodedResponse, CodecError> {
+    let _open = super::common::upstream_shapes();
     decode_chat_with(v, &Default::default())
 }
 pub(crate) fn decode_chat_with(
@@ -400,7 +371,6 @@ pub(crate) fn decode_chat_with(
 ) -> Result<DecodedResponse, CodecError> {
     let (v, extras) = super::adapter_shapes::decode(v, Profile::Chat, adaptation)?;
     let o = object(&v)?;
-    adaptation.validate_response(Profile::Chat, o)?;
     fields(
         o,
         &[
@@ -494,6 +464,7 @@ pub(crate) fn decode_chat_with(
     })
 }
 pub fn decode_responses(v: &Value) -> Result<DecodedResponse, CodecError> {
+    let _open = super::common::upstream_shapes();
     decode_responses_with(v, &Default::default())
 }
 pub(crate) fn decode_responses_with(
@@ -502,7 +473,6 @@ pub(crate) fn decode_responses_with(
 ) -> Result<DecodedResponse, CodecError> {
     let (v, extras) = super::adapter_shapes::decode(v, Profile::Responses, adaptation)?;
     let o = object(&v)?;
-    adaptation.validate_response(Profile::Responses, o)?;
     super::envelope::response_fields(o)?;
     if string(o, "object")? != "response" {
         return Err(CodecError::Invalid("response object"));

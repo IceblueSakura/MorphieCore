@@ -100,22 +100,24 @@ fn explicit_native_library_binding_is_not_openai_activation_or_a_default_model()
     assert!(error.is_err());
 }
 #[test]
-fn native_unknown_field_diagnostics_are_closed_without_accepting_null_or_leaking_keys() {
+fn native_unknown_response_fields_are_ignored_and_request_errors_do_not_leak_keys() {
     let p = Profile::AdaptiveTextTools;
     let base = serde_json::json!({"id":"msg","type":"message","role":"assistant","model":"synthetic-model",
         "content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn",
         "usage":{"input_tokens":1,"output_tokens":1}});
-    for (key, category) in [
-        ("stop_details", "Anthropic stop_details"),
-        ("private-business-key", "Anthropic field"),
-    ] {
+    let expected = p.decode_response(base.to_string().as_bytes()).unwrap();
+    for key in ["stop_details", "private-business-key"] {
         let mut wire = base.clone();
         wire[key] = serde_json::Value::Null;
-        let error = p.decode_response(wire.to_string().as_bytes()).unwrap_err();
         assert_eq!(
-            error,
-            morphiecore::protocol::CodecError::Unsupported(category.into())
+            p.decode_response(wire.to_string().as_bytes()).unwrap(),
+            expected
         );
-        assert!(!error.to_string().contains("private-business-key"));
     }
+    let request = serde_json::json!({"model":"m","max_tokens":8,
+        "messages":[{"role":"user","content":"hi"}],"private-business-key":null});
+    let error = p
+        .decode_request(request.to_string().as_bytes())
+        .unwrap_err();
+    assert!(!error.to_string().contains("private-business-key"));
 }

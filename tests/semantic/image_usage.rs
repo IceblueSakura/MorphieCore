@@ -50,11 +50,6 @@ fn named_image_usage_mapping_preserves_counts_and_standard_chat_projects_detail(
             );
         }
     }
-    assert!(
-        Adapter::new(Profile::Chat, Dialect::Standard, None)
-            .decode_response(&serde_json::to_vec(&source).unwrap())
-            .is_err()
-    );
     assert_eq!(
         decoded.semantic.usage().unwrap().input_image_tokens,
         Some(7)

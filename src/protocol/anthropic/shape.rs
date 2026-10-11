@@ -19,27 +19,18 @@ pub(super) fn bounded(value: &Value) -> Result<(), CodecError> {
         .map(|_| ())
         .map_err(|_| CodecError::Limit)
 }
-pub(super) fn object<'a>(
+/// Upstream shape: unknown keys are ignored so new Provider fields cannot fail a response.
+pub(super) fn object(v: &Value) -> Result<&Map<String, Value>, CodecError> {
+    v.as_object().ok_or(CodecError::Invalid("Anthropic object"))
+}
+/// Request shape: unmodeled keys are rejected so no request control is silently dropped.
+pub(super) fn closed<'a>(
     v: &'a Value,
     allowed: &[&str],
 ) -> Result<&'a Map<String, Value>, CodecError> {
-    let o = v
-        .as_object()
-        .ok_or(CodecError::Invalid("Anthropic object"))?;
-    if let Some(key) = o.keys().find(|k| !allowed.contains(&k.as_str())) {
-        // Closed schema categories only, never an arbitrary business key.
-        let category = match key.as_str() {
-            "cache_creation" => "Anthropic cache_creation",
-            "output_tokens_details" => "Anthropic output_tokens_details",
-            "service_tier" => "Anthropic service_tier",
-            "inference_geo" => "Anthropic inference_geo",
-            "server_tool_use" => "Anthropic server_tool_use",
-            "container" => "Anthropic container",
-            "stop_details" => "Anthropic stop_details",
-            "input_transformations" => "Anthropic input_transformations",
-            _ => "Anthropic field",
-        };
-        return Err(CodecError::Unsupported(category.into()));
+    let o = object(v)?;
+    if o.keys().any(|k| !allowed.contains(&k.as_str())) {
+        return Err(CodecError::Unsupported("Anthropic field".into()));
     }
     Ok(o)
 }

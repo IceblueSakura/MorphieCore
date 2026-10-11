@@ -116,12 +116,6 @@ fn modelbest_flat_reasoning_counts_and_stop_diagnostics_are_scoped_and_editable(
             .reasoning_tokens,
         None
     );
-    let standard = Adapter::new(Profile::Chat, Dialect::Standard, None);
-    assert!(
-        standard
-            .decode_response(&serde_json::to_vec(&wire).unwrap())
-            .is_err()
-    );
     let mut stream = provider().event_decoder();
     for event in [
         chunk(json!({"role":"assistant","content":"pong"}), Value::Null),
@@ -179,12 +173,6 @@ fn modelbest_inactive_server_shapes_do_not_erase_active_data_or_reported_counter
             image.map(|v| json!(v)).as_ref()
         );
     }
-    let standard = Adapter::new(Profile::Chat, Dialect::Standard, None);
-    assert!(
-        standard
-            .decode_response(&serde_json::to_vec(&wire).unwrap())
-            .is_err()
-    );
     for path in [
         "/prompt_logprobs",
         "/prompt_token_ids",
@@ -197,7 +185,6 @@ fn modelbest_inactive_server_shapes_do_not_erase_active_data_or_reported_counter
         "/choices/0/routed_experts",
         "/choices/0/message/annotations",
         "/choices/0/message/audio",
-        "/choices/0/message/function_call",
     ] {
         let mut active = wire.clone();
         *active.pointer_mut(path).unwrap() = json!("active");
@@ -298,12 +285,6 @@ fn modelbest_readable_reasoning_static_and_events_agree_without_terminal_repair(
     assert!(
         provider()
             .decode_response(&serde_json::to_vec(&conflicting).unwrap())
-            .is_err()
-    );
-    let standard = Adapter::new(Profile::Chat, Dialect::Standard, None);
-    assert!(
-        standard
-            .decode_response(&serde_json::to_vec(&wire).unwrap())
             .is_err()
     );
 }

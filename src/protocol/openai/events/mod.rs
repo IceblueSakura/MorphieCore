@@ -14,6 +14,9 @@ pub use encode::EventEncoder;
 use serde_json::{Map, Value};
 
 fn event_fields(o: &Map<String, Value>, allowed: &[&str]) -> Result<(), CodecError> {
+    if open_shapes() {
+        return Ok(());
+    }
     if let Some(key) = o.keys().find(|k| {
         !matches!(k.as_str(), "sequence_number" | "obfuscation") && !allowed.contains(&k.as_str())
     }) {

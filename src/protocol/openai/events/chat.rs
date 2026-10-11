@@ -44,6 +44,21 @@ impl EventDecoder {
                 }
                 let delta = object(choice.get("delta").ok_or(CodecError::Invalid("delta"))?)?;
                 fields(delta, &["role", "content"])?;
+                // Explicit, not via `fields`: upstream decoding ignores unknown keys, but
+                // late content after the finish must still fail rather than be dropped.
+                if [
+                    "refusal",
+                    "tool_calls",
+                    "reasoning_content",
+                    "reasoning",
+                    "reasoning_details",
+                    "audio",
+                ]
+                .iter()
+                .any(|key| delta.get(*key).is_some_and(|v| !v.is_null()))
+                {
+                    return Err(CodecError::Invalid("content after finish"));
+                }
                 if delta
                     .get("role")
                     .is_some_and(|v| !v.is_null() && v.as_str() != Some("assistant"))

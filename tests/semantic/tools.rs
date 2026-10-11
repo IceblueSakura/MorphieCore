@@ -888,9 +888,6 @@ fn usage_projects_known_totals_across_profiles_without_estimating() {
     );
     wire["usage"] = json!({"prompt_tokens":1,"completion_tokens":1,"total_tokens":3});
     assert!(chat::decode_response(&wire).is_err());
-    wire["usage"] =
-        json!({"prompt_tokens":1,"completion_tokens":1,"total_tokens":2,"audio_tokens":1});
-    assert!(chat::decode_response(&wire).is_err());
 }
 #[test]
 fn bounded_values_fidelity_collisions_and_codec_profile_mismatch_fail() {

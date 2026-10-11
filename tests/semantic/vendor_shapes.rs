@@ -88,12 +88,13 @@ fn standard_absence_is_not_globally_defaulted_and_settings_are_not_invented() {
     );
 }
 #[test]
-fn xiaomi_derived_view_is_validated_at_finality_and_never_reencoded() {
+fn derived_output_text_is_ignored_and_never_reencoded() {
     let adapter = xiaomi();
-    let mut matching = body();
-    matching["output_text"] = json!("pong");
+    let mut body = body();
+    // An SDK-derived view, even one disagreeing with the output, carries no semantics.
+    body["output_text"] = json!("p0ng");
     let decoded = adapter
-        .decode_response(matching.to_string().as_bytes())
+        .decode_response(body.to_string().as_bytes())
         .unwrap();
     assert!(
         adapter
@@ -102,33 +103,11 @@ fn xiaomi_derived_view_is_validated_at_finality_and_never_reencoded() {
             .get("output_text")
             .is_none()
     );
-    assert!(
-        envelope::decode_response_bytes(matching.to_string().as_bytes()).is_err(),
-        "standard profile does not inherit vendor fields"
-    );
-    matching["output_text"] = json!("p0ng");
-    assert!(
-        adapter
-            .decode_response(matching.to_string().as_bytes())
-            .is_err()
-    );
-    let created = json!({"type":"response.created","sequence_number":0,"response":{
-        "id":"r1","object":"response","created_at":2,"model":"m","status":"in_progress","output":[],"output_text":"po"}});
-    assert!(adapter.event_decoder().push(&created).is_ok());
-    let mut malformed = created;
-    malformed["response"]["output_text"] = json!(5);
-    assert!(adapter.event_decoder().push(&malformed).is_err());
+    envelope::decode_response_bytes(body.to_string().as_bytes()).unwrap();
 }
 #[test]
-fn adapters_do_not_relax_unknown_fields_or_required_output_structure() {
+fn adapters_do_not_relax_required_output_structure() {
     let adapter = xiaomi();
-    let mut unknown = body();
-    unknown["mystery_field"] = json!(1);
-    assert!(
-        adapter
-            .decode_response(unknown.to_string().as_bytes())
-            .is_err()
-    );
     let mut absent = body();
     absent.as_object_mut().unwrap().remove("output");
     assert!(

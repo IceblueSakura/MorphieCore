@@ -150,10 +150,16 @@ fn extras_require_matching_source_and_surviving_response_dependencies() {
     );
     decoded.metadata.id = original_id;
     let standard = adapter(Profile::Responses, Dialect::Standard, "a");
+    // Without the extras rule the field is simply ignored upstream.
+    let ignored = standard
+        .decode_response(body.to_string().as_bytes())
+        .unwrap();
     assert!(
         standard
-            .decode_response(body.to_string().as_bytes())
-            .is_err()
+            .encode_response(&ignored, &Contract::full())
+            .unwrap()
+            .get("content_filters")
+            .is_none()
     );
     assert!(
         standard
@@ -352,29 +358,21 @@ fn extras_cannot_be_captured_unbound_or_over_budget() {
 }
 
 #[test]
-fn standard_chat_does_not_inherit_vendor_reasoning_or_usage_aliases() {
+fn standard_chat_reads_common_vendor_reasoning_and_usage_aliases() {
+    // Upstream decoding accepts these de facto Chat fields for every dialect.
     let standard = adapter(Profile::Chat, Dialect::Standard, "a");
-    let vendor = adapter(Profile::Chat, Dialect::DeepSeek, "a");
     let mut body = json!({"id":"c1","object":"chat.completion","created":2,"model":"m",
         "choices":[{"index":0,"message":{"role":"assistant","content":"pong","reasoning_content":"think"},"finish_reason":"stop"}]});
-    assert!(
-        standard
-            .decode_response(body.to_string().as_bytes())
-            .is_err()
-    );
-    assert!(vendor.decode_response(body.to_string().as_bytes()).is_ok());
-    body["choices"][0]["message"]
-        .as_object_mut()
-        .unwrap()
-        .remove("reasoning_content");
+    let decoded = standard
+        .decode_response(body.to_string().as_bytes())
+        .unwrap();
+    assert!(decoded.semantic.items().iter().any(|(_, item)| matches!(
+        item,
+        morphiecore::semantic::task::generation::Item::Reasoning(_)
+    )));
     body["usage"] = json!({"prompt_tokens":3,"completion_tokens":2,"total_tokens":5,"prompt_cache_hit_tokens":1,"prompt_cache_miss_tokens":2});
-    assert!(
-        standard
-            .decode_response(body.to_string().as_bytes())
-            .is_err()
-    );
     assert_eq!(
-        vendor
+        standard
             .decode_response(body.to_string().as_bytes())
             .unwrap()
             .semantic
@@ -382,5 +380,12 @@ fn standard_chat_does_not_inherit_vendor_reasoning_or_usage_aliases() {
             .unwrap()
             .cached_input_tokens,
         Some(1)
+    );
+    body["usage"]["prompt_cache_hit_tokens"] = json!(2);
+    body["usage"]["prompt_tokens_details"] = json!({"cached_tokens":1});
+    assert!(
+        standard
+            .decode_response(body.to_string().as_bytes())
+            .is_err()
     );
 }

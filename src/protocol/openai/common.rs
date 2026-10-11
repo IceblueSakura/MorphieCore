@@ -55,7 +55,29 @@ pub(super) fn put_presence<T>(
 pub(super) fn object(v: &Value) -> Result<&Map<String, Value>, CodecError> {
     v.as_object().ok_or(CodecError::Invalid("object"))
 }
+thread_local! {
+    static UPSTREAM: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+/// Scope for decoding an upstream response or event: unknown keys are ignored so new
+/// Provider fields cannot fail a response, while known keys stay strictly validated.
+/// Request decoding and self-checks of encoded output keep closed shapes. Decoding is
+/// synchronous, so the scope cannot leak across an await point.
+pub(crate) struct UpstreamShapes(bool);
+pub(crate) fn upstream_shapes() -> UpstreamShapes {
+    UpstreamShapes(UPSTREAM.replace(true))
+}
+impl Drop for UpstreamShapes {
+    fn drop(&mut self) {
+        UPSTREAM.set(self.0);
+    }
+}
+pub(crate) fn open_shapes() -> bool {
+    UPSTREAM.get()
+}
 pub(super) fn fields(o: &Map<String, Value>, allowed: &[&str]) -> Result<(), CodecError> {
+    if open_shapes() {
+        return Ok(());
+    }
     if let Some(key) = o.keys().find(|key| !allowed.contains(&key.as_str())) {
         return Err(CodecError::Unsupported(key.clone()));
     }

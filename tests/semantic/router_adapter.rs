@@ -164,9 +164,6 @@ fn router_rejects_unknown_or_unowned_shapes_and_never_masks_invalid_usage() {
         );
     }
     let mut body = chat();
-    body["unknown_router_field"] = json!(true);
-    assert!(source.decode_response(body.to_string().as_bytes()).is_err());
-    body.as_object_mut().unwrap().remove("unknown_router_field");
     body["choices"][0]["message"]["reasoning_content"] = json!("conflict");
     assert!(source.decode_response(body.to_string().as_bytes()).is_err());
     assert!(

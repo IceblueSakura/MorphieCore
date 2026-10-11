@@ -1,12 +1,9 @@
 //! SDK derived `parsed` views are validated replay conveniences over the authoritative
-//! raw text; they are never IR state, never emitted, and never admitted as wire facts.
-use crate::events_support::*;
-use crate::wire;
+//! raw text; they are never IR state and never emitted.
 use morphiecore::{
     lowering::generation::{GenerationRepresentationContract as Contract, lower_request},
     protocol::openai::{
-        CodecError, DecodedRequest, Profile, chat, chat_envelope, envelope, events::EventDecoder,
-        responses,
+        CodecError, DecodedRequest, Profile, chat, chat_envelope, envelope, responses,
     },
     semantic::task::generation::*,
 };
@@ -208,47 +205,6 @@ fn inconsistent_or_underivable_parsed_cannot_pass_admission() {
 }
 
 #[test]
-fn static_responses_stream_records_and_chat_terminals_reject_parsed_views() {
-    // A static upstream response never carries client-side views.
-    let mut response = wire::response(2);
-    response["output"][0]["content"][0]["parsed"] = json!({"ok":false});
-    assert!(envelope::decode_response_bytes(&serde_json::to_vec(&response).unwrap()).is_err());
-    // The SDK's typed text-done wrapper adds `parsed`; the wire record never has it.
-    let mut d = EventDecoder::new(Profile::Responses);
-    d.push(&created()).unwrap();
-    d.push(&json!({"type":"response.output_item.added","output_index":0,"item":{"id":"m","type":"message","role":"assistant","status":"in_progress","content":[]}})).unwrap();
-    d.push(&json!({"type":"response.content_part.added","output_index":0,"item_id":"m","content_index":0,"part":{"type":"output_text","text":"","annotations":[]}})).unwrap();
-    d.push(&json!({"type":"response.output_text.delta","output_index":0,"item_id":"m","content_index":0,"delta":RAW,"logprobs":[]})).unwrap();
-    assert!(
-        d.push(&json!({"type":"response.output_text.done","output_index":0,"item_id":"m","content_index":0,"text":RAW,"logprobs":[],"parsed":{"ok":true}}))
-            .is_err()
-    );
-    // Part snapshots are wire facts; a dumped parsed view poisons them too.
-    let mut d = EventDecoder::new(Profile::Responses);
-    d.push(&created()).unwrap();
-    d.push(&json!({"type":"response.output_item.added","output_index":0,"item":{"id":"m","type":"message","role":"assistant","status":"in_progress","content":[]}})).unwrap();
-    d.push(&json!({"type":"response.content_part.added","output_index":0,"item_id":"m","content_index":0,"part":{"type":"output_text","text":"","annotations":[]}})).unwrap();
-    d.push(&json!({"type":"response.output_text.delta","output_index":0,"item_id":"m","content_index":0,"delta":RAW,"logprobs":[]})).unwrap();
-    d.push(&json!({"type":"response.output_text.done","output_index":0,"item_id":"m","content_index":0,"text":RAW,"logprobs":[]})).unwrap();
-    assert!(
-        d.push(&json!({"type":"response.content_part.done","output_index":0,"item_id":"m","content_index":0,"part":{"type":"output_text","text":RAW,"annotations":[],"parsed":{"ok":true}}}))
-            .is_err()
-    );
-    // The Chat static message and its chunks never echo a derived view either.
-    assert!(
-        chat_envelope::decode_response_bytes(
-            &serde_json::to_vec(&json!({"id":"c","object":"chat.completion","created":1,"model":"fixture-model","choices":[{"index":0,"message":{"role":"assistant","content":RAW,"parsed":{"ok":true}},"finish_reason":"stop"}]})).unwrap()
-        )
-        .is_err()
-    );
-    let mut d = EventDecoder::new(Profile::Chat);
-    assert!(
-        d.push(&json!({"id":"c","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"role":"assistant","content":null,"refusal":null,"tool_calls":null,"parsed":{"ok":true}},"finish_reason":null}],"usage":null}))
-            .is_err()
-    );
-}
-
-#[test]
 fn replaced_text_cannot_resurrect_a_parsed_value() {
     let d = decode_responses(output_part(Some(json!({"ok":true})))).unwrap();
     let items: Vec<_> = d
@@ -355,28 +311,6 @@ fn underivable_or_inconsistent_function_views_cannot_pass_admission() {
 }
 
 #[test]
-fn wire_positions_never_carry_function_derived_views() {
-    // Even a consistent view is not upstream wire: static Chat messages and chunks reject it.
-    let message = chat_tool_call(fn_view("{\"n\":1}", Some(json!({"n":1}))));
-    assert!(
-        chat_envelope::decode_response_bytes(
-            &serde_json::to_vec(&json!({"id":"c","object":"chat.completion","created":1,"model":"fixture-model","choices":[{"index":0,"message":message,"finish_reason":"tool_calls"}]})).unwrap()
-        )
-        .is_err()
-    );
-    let mut d = EventDecoder::new(Profile::Chat);
-    d.push(&json!({"id":"c","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"role":"assistant","content":null,"refusal":null,"tool_calls":null},"finish_reason":null}],"usage":null})).unwrap();
-    assert!(
-        d.push(&json!({"id":"c","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call","type":"function","function":{"name":"lookup","arguments":"{","parsed_arguments":{"n":1}}}]}}],"usage":null}))
-            .is_err()
-    );
-    // Responses static output rejects it too.
-    let mut response = wire::response(1);
-    response["output"][2]["parsed_arguments"] = json!({"n":1});
-    assert!(envelope::decode_response_bytes(&serde_json::to_vec(&response).unwrap()).is_err());
-}
-
-#[test]
 fn dumped_sdk_views_replay_through_the_full_envelope_and_never_leak_into_wire() {
     let source = json!({"model":"fixture-model","messages":[
         {"role":"user","content":"hello"},
@@ -445,7 +379,4 @@ fn stream_accumulation_index_artifacts_stay_position_consistent_on_replay() {
     ] {
         assert!(decode_chat(message(entries)).is_err());
     }
-    // Static upstream messages never carry the artifact.
-    let response = json!({"id":"c","object":"chat.completion","created":1,"model":"fixture-model","choices":[{"index":0,"message":message(vec![entry("call", Some(json!(0)))]),"finish_reason":"tool_calls"}]});
-    assert!(chat_envelope::decode_response_bytes(&serde_json::to_vec(&response).unwrap()).is_err());
 }

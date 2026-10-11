@@ -90,6 +90,8 @@ mod message_ownership_owner;
 mod model_constraints;
 #[path = "semantic/modelbest.rs"]
 mod modelbest;
+#[path = "semantic/open_decoding.rs"]
+mod open_decoding;
 #[path = "semantic/openrouter_images.rs"]
 mod openrouter_images;
 #[path = "semantic/openrouter_speech.rs"]

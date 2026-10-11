@@ -194,6 +194,7 @@ pub fn decode_response_bytes(bytes: &[u8]) -> Result<DecodedResponse, CodecError
 }
 /// Validate a complete single-candidate response, not a permissive message-history abbreviation.
 pub fn decode_response(v: &Value) -> Result<DecodedResponse, CodecError> {
+    let _open = super::common::upstream_shapes();
     bounded(v)?;
     validate_response(v)?;
     chat::decode_response(v)

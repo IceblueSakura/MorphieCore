@@ -92,10 +92,11 @@ impl MessageSseDecoder {
         if self.events > self.limits.max_events {
             return Err(SseError::Limit);
         }
-        let event = Profile::AdaptiveTextTools.decode_event(
-            frame.event().ok_or(SseError::EventType)?,
-            frame.data().as_bytes(),
-        )?;
+        let name = frame.event().ok_or(SseError::EventType)?;
+        if !Event::KNOWN.contains(&name) {
+            return Ok(());
+        }
+        let event = Profile::AdaptiveTextTools.decode_event(name, frame.data().as_bytes())?;
         self.event(event)
     }
     fn charge(&mut self, bytes: usize) -> Result<(), SseError> {

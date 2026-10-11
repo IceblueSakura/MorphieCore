@@ -172,13 +172,6 @@ fn opencode_go_unversioned_readable_views_are_closed_and_never_restore_deleted_r
                 .is_err()
         );
     }
-    let mut invalid = source.clone();
-    invalid["choices"][0]["message"]["reasoning_details"][0]["data"] = json!("synthetic-opaque");
-    assert!(
-        provider
-            .decode_response(invalid.to_string().as_bytes())
-            .is_err()
-    );
     let chunk = |delta: Value, finish: Value| json!({"id":"c1","object":"chat.completion.chunk","model":"m","created":1,"choices":[{"index":0,"delta":delta,"finish_reason":finish}]});
     let mut stream = provider.event_decoder();
     stream
@@ -287,21 +280,16 @@ fn transport_markers_and_stop_diagnostics_do_not_replace_semantic_terminals() {
     let mut provider = adapter(Dialect::Standard);
     provider.adaptation.rules.readable_reasoning = true;
     provider.adaptation.rules.chat_stop_diagnostics = true;
-    provider.adaptation.rules.zero_usage_details = true;
     provider.adaptation.rules.chunk_created_drift = true;
     let mut value = body();
     value["lastOne"] = json!(false);
     value["choices"][0]["delta"] = Value::Null;
     value["choices"][0]["matched_stop"] = json!(2);
-    value["usage"]["prompt_tokens_details"] = json!({"cached_tokens":0,"text_tokens":0,"image_tokens":0,"audio_tokens":0,"video_tokens":0});
+    value["usage"]["prompt_tokens_details"] =
+        json!({"cached_tokens":0,"text_tokens":0,"audio_tokens":0});
     let decoded = provider
         .decode_response(value.to_string().as_bytes())
         .unwrap();
-    assert!(
-        adapter(Dialect::Standard)
-            .decode_response(value.to_string().as_bytes())
-            .is_err()
-    );
     let same = provider
         .encode_response(&decoded, &Contract::full())
         .unwrap();
@@ -336,13 +324,6 @@ fn transport_markers_and_stop_diagnostics_do_not_replace_semantic_terminals() {
             .unwrap()["choices"][0]["matched_stop"],
         2
     );
-    value["usage"]["prompt_tokens_details"]["image_tokens"] = json!(1);
-    assert!(
-        provider
-            .decode_response(value.to_string().as_bytes())
-            .is_err()
-    );
-    value["usage"]["prompt_tokens_details"]["image_tokens"] = json!(0);
     value["lastOne"] = json!("true");
     assert!(
         provider
@@ -366,18 +347,11 @@ fn documented_inactive_message_fields_do_not_admit_media_or_legacy_calls() {
         .unwrap();
     assert_eq!(output["choices"][0]["message"]["content"], "pong");
     assert!(output["choices"][0]["message"].get("audio").is_none());
-    for field in ["audio", "function_call"] {
-        let mut invalid = value.clone();
-        invalid["choices"][0]["message"][field] = json!({"unsupported":"active"});
-        assert!(
-            provider
-                .decode_response(invalid.to_string().as_bytes())
-                .is_err()
-        );
-    }
+    let mut invalid = value.clone();
+    invalid["choices"][0]["message"]["audio"] = json!({"unsupported":"active"});
     assert!(
-        adapter(Dialect::Nvidia)
-            .decode_response(value.to_string().as_bytes())
+        provider
+            .decode_response(invalid.to_string().as_bytes())
             .is_err()
     );
 }
@@ -442,48 +416,6 @@ fn reported_text_usage_is_typed_even_when_a_view_equals_the_total() {
             assert!(result.is_err());
             assert!(decoder.done().is_err());
         }
-    }
-}
-
-#[test]
-fn responses_undeclared_usage_aliases_are_rejected_in_static_and_events() {
-    let provider = Adapter::new(Profile::Responses, Dialect::Standard, None);
-    let mut value = crate::wire::response(2);
-    value["usage"]["prompt_tokens_details"] = value["usage"]["input_tokens_details"].clone();
-    assert!(
-        Adapter::new(Profile::Responses, Dialect::Standard, None)
-            .decode_response(value.to_string().as_bytes())
-            .is_err()
-    );
-    for invalid in [json!({"cached_tokens":99}), Value::Null, json!([])] {
-        let mut bad = value.clone();
-        bad["usage"]["prompt_tokens_details"] = invalid;
-        assert!(
-            provider
-                .decode_response(bad.to_string().as_bytes())
-                .is_err()
-        );
-    }
-    for conflict in [false, true] {
-        let mut decoder = provider.event_decoder();
-        for mut event in crate::wire::events(2) {
-            let terminal = event["type"] == "response.completed";
-            if terminal {
-                event["response"]["usage"]["prompt_tokens_details"] =
-                    event["response"]["usage"]["input_tokens_details"].clone();
-                if conflict {
-                    event["response"]["usage"]["prompt_tokens_details"]["cached_tokens"] =
-                        json!(99);
-                }
-            }
-            let result = decoder.push(&event);
-            if terminal {
-                assert!(result.is_err());
-            } else {
-                result.unwrap();
-            }
-        }
-        assert!(decoder.finish().is_err());
     }
 }
 
@@ -748,7 +680,7 @@ fn inactive_response_state_placeholders_do_not_enable_remote_state() {
 }
 
 #[test]
-fn null_billing_placeholder_does_not_admit_active_billing_or_usage_views() {
+fn unmodeled_billing_is_ignored_while_scoped_extras_round_trip() {
     use morphiecore::protocol::openai::sse::{ResponsesSseDecoder, SseLimits};
     let provider = Adapter::new(
         Profile::Responses,
@@ -756,7 +688,7 @@ fn null_billing_placeholder_does_not_admit_active_billing_or_usage_views() {
         Some(ReplayOrigin::new("a").unwrap()),
     );
     let mut value = crate::wire::response(2);
-    value["billing"] = Value::Null;
+    value["billing"] = json!({"payer":"synthetic"});
     value["frequency_penalty"] = json!(0.25);
     let decoded = provider
         .decode_response(value.to_string().as_bytes())
@@ -779,35 +711,6 @@ fn null_billing_placeholder_does_not_admit_active_billing_or_usage_views() {
             .get("frequency_penalty")
             .is_none()
     );
-    for dialect in [Dialect::Standard, Dialect::MorphieCore] {
-        assert!(
-            Adapter::new(Profile::Responses, dialect, None)
-                .decode_response(value.to_string().as_bytes())
-                .is_err()
-        );
-    }
-    for billing in [
-        json!({}),
-        json!({"payer":"synthetic"}),
-        json!(false),
-        json!(0),
-        json!(""),
-    ] {
-        let mut bad = value.clone();
-        bad["billing"] = billing;
-        assert!(
-            provider
-                .decode_response(bad.to_string().as_bytes())
-                .is_err()
-        );
-    }
-    let mut bad = value.clone();
-    bad["usage"]["x_details"] = json!([{"x_billing_type":"response_api","input_tokens":3,"output_tokens":5,"total_tokens":8}]);
-    assert!(
-        provider
-            .decode_response(bad.to_string().as_bytes())
-            .is_err()
-    );
     let mut bad = value.clone();
     bad.as_object_mut().unwrap().shift_remove("output");
     assert!(
@@ -815,47 +718,30 @@ fn null_billing_placeholder_does_not_admit_active_billing_or_usage_views() {
             .decode_response(bad.to_string().as_bytes())
             .is_err()
     );
-    for conflict in [false, true] {
-        let mut decoder = ResponsesSseDecoder::with_decoder(
-            200,
-            "text/event-stream",
-            SseLimits::default(),
-            provider.event_decoder(),
-        )
-        .unwrap();
-        for mut event in crate::wire::events(2) {
-            let terminal = event["type"] == "response.completed";
-            if let Some(snapshot) = event.get_mut("response") {
-                snapshot["billing"] = if terminal && conflict {
-                    json!({})
-                } else {
-                    Value::Null
-                };
-                snapshot["frequency_penalty"] = json!(0.25);
-            }
-            let bytes = format!("data: {event}\n\n");
-            let result = decoder.consume(bytes.as_bytes());
-            if terminal && conflict {
-                assert!(result.is_err());
-            } else {
-                assert_eq!(result.unwrap().0, bytes.len());
-            }
+    let mut decoder = ResponsesSseDecoder::with_decoder(
+        200,
+        "text/event-stream",
+        SseLimits::default(),
+        provider.event_decoder(),
+    )
+    .unwrap();
+    for mut event in crate::wire::events(2) {
+        if let Some(snapshot) = event.get_mut("response") {
+            snapshot["billing"] = json!({});
+            snapshot["frequency_penalty"] = json!(0.25);
         }
-        if conflict {
-            assert!(decoder.finish().is_err());
-            assert!(decoder.materialize().is_err());
-        } else {
-            decoder.finish().unwrap();
-            let actual = decoder.materialize().unwrap();
-            assert_eq!(actual.semantic, decoded.semantic);
-            assert_eq!(
-                provider
-                    .encode_response(&actual, &Contract::full())
-                    .unwrap()["frequency_penalty"],
-                0.25
-            );
-        }
+        let bytes = format!("data: {event}\n\n");
+        assert_eq!(decoder.consume(bytes.as_bytes()).unwrap().0, bytes.len());
     }
+    decoder.finish().unwrap();
+    let actual = decoder.materialize().unwrap();
+    assert_eq!(actual.semantic, decoded.semantic);
+    assert_eq!(
+        provider
+            .encode_response(&actual, &Contract::full())
+            .unwrap()["frequency_penalty"],
+        0.25
+    );
 }
 
 fn terminal_reasoning_fixture() -> (Value, Vec<Value>) {
@@ -1048,7 +934,9 @@ fn response_billing_view_is_checked_not_a_second_usage_authority() {
             dialect,
             Some(ReplayOrigin::new("a").unwrap()),
         );
-        assert!(other.decode_response(value.to_string().as_bytes()).is_err());
+        // Other dialects ignore the vendor billing view instead of failing.
+        let ignored = other.decode_response(value.to_string().as_bytes()).unwrap();
+        assert_eq!(ignored.semantic.usage().unwrap().total_tokens, Some(8));
         let projection = other.encode_response(&decoded, &Contract::full()).unwrap();
         assert!(projection.get("frequency_penalty").is_none());
         assert!(projection["usage"].get("x_details").is_none());
@@ -1098,8 +986,6 @@ fn response_billing_view_rejects_independent_or_conflicting_information() {
     let mut value = crate::wire::response(2);
     billing_view(&mut value);
     for (pointer, invalid) in [
-        ("/billing", json!({"payer":"synthetic"})),
-        ("/billing", json!({})),
         ("/usage/x_details", Value::Null),
         ("/usage/x_details", json!([])),
         (
@@ -1140,15 +1026,6 @@ fn response_billing_view_rejects_independent_or_conflicting_information() {
         reported.semantic.usage().unwrap().input_image_tokens,
         Some(0)
     );
-    for field in ["plugins", "unknown"] {
-        let mut bad = value.clone();
-        bad["usage"]["x_details"][0][field] = json!(0);
-        assert!(
-            provider
-                .decode_response(bad.to_string().as_bytes())
-                .is_err()
-        );
-    }
     for field in ["input_tokens", "output_tokens", "total_tokens"] {
         let mut bad = value.clone();
         bad["usage"]["x_details"][0]
@@ -1526,7 +1403,6 @@ fn token_plan_schema_alias_is_response_only_and_rejects_ambiguity() {
         ("schema_", Value::Null),
         ("schema_", json!(42)),
         ("type", json!("json_object")),
-        ("unknown", json!(true)),
     ] {
         let mut invalid = source.clone();
         invalid["text"]["format"][key] = value;
@@ -1536,11 +1412,4 @@ fn token_plan_schema_alias_is_response_only_and_rejects_ambiguity() {
                 .is_err()
         );
     }
-    let chat = Adapter::new(Profile::Chat, Dialect::BailianTokenPlan, None);
-    let mut chat_wire = body();
-    chat_wire["response_format"] = source["text"]["format"].clone();
-    assert!(
-        chat.decode_response(chat_wire.to_string().as_bytes())
-            .is_err()
-    );
 }

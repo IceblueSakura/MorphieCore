@@ -115,14 +115,15 @@ fn numeric_budget_boundaries_preserve_hard_and_soft_meanings() {
 }
 
 #[test]
-fn adding_core_modes_does_not_expand_standard_request_echo_or_event_admission() {
+fn adding_core_modes_does_not_expand_standard_request_admission() {
     use morphiecore::protocol::openai::{events::EventDecoder, responses};
     let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
-    for control in [
-        json!({"mode":"adaptive","effort":"high"}),
-        json!({"mode":"budgeted"}),
-        json!({"budget":{"hard_limit":1024}}),
-        json!({"display":"omitted"}),
+    // `mode` is a known key whose value the standard cannot carry; the others are unknown.
+    for (control, known) in [
+        (json!({"mode":"adaptive","effort":"high"}), true),
+        (json!({"mode":"budgeted"}), true),
+        (json!({"budget":{"hard_limit":1024}}), false),
+        (json!({"display":"omitted"}), false),
     ] {
         let request = json!({"model":"synthetic","input":"hello","reasoning":control});
         assert!(
@@ -130,12 +131,16 @@ fn adding_core_modes_does_not_expand_standard_request_echo_or_event_admission() 
                 .decode_request(request.to_string().as_bytes())
                 .is_err()
         );
+        // Upstream echoes ignore unknown keys but keep known values strict.
         let mut response = crate::events_support::envelope("completed", json!([]));
         response["reasoning"] = control.clone();
-        assert!(responses::decode_response(&response).is_err());
+        assert_eq!(responses::decode_response(&response).is_err(), known);
         let mut event = crate::events_support::created();
         event["response"]["reasoning"] = control;
-        assert!(EventDecoder::new(Profile::Responses).push(&event).is_err());
+        assert_eq!(
+            EventDecoder::new(Profile::Responses).push(&event).is_err(),
+            known
+        );
     }
 }
 

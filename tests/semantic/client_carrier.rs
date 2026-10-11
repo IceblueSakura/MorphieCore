@@ -68,75 +68,44 @@ fn public_client_rejects_independent_attachments() {
                     .is_err()
             );
         }
-        for attachment in [
-            Value::Null,
-            json!({}),
-            json!({"version":1,"progress":"turn_finished"}),
-            json!({"version":1,"usage":[{"scope":"session","basis":"cumulative","input_tokens":3}]}),
-        ] {
-            let mut response = wire::response(2);
-            response["_openbridge"] = attachment;
-            assert!(
+        // Upstream responses: an attachment is an unknown key and never becomes semantics.
+        for (turn, pointer) in [(2, ""), (1, "/output/2")] {
+            let plain = wire::response(turn);
+            let mut attached = plain.clone();
+            attached.pointer_mut(pointer).unwrap()["_openbridge"] =
+                json!({"version":1,"progress":"turn_finished"});
+            assert_eq!(
                 adapter
-                    .decode_response(&serde_json::to_vec(&response).unwrap())
-                    .is_err()
+                    .decode_response(&serde_json::to_vec(&attached).unwrap())
+                    .unwrap(),
+                adapter
+                    .decode_response(&serde_json::to_vec(&plain).unwrap())
+                    .unwrap()
             );
         }
-        let mut response = wire::response(1);
-        response["output"][2]["_openbridge"] = json!({"version":1,"arguments":"json"});
-        assert!(
-            adapter
-                .decode_response(&serde_json::to_vec(&response).unwrap())
-                .is_err()
-        );
     }
 }
 #[test]
-fn attachment_at_any_snapshot_boundary_poisons_the_stream() {
+fn upstream_stream_attachments_are_ignored() {
     let original = wire::events(1);
-    let opening = original
-        .iter()
-        .position(|v| v["type"] == "response.output_item.added")
-        .unwrap();
-    let done = original
-        .iter()
-        .position(|v| v["type"] == "response.output_item.done")
-        .unwrap();
-    for dialect in [Dialect::Standard, Dialect::MorphieCore] {
-        for (index, pointer, attachment) in [
-            (
-                0,
-                "/response",
-                json!({"version":1,"progress":"needs_continuation"}),
-            ),
-            (
-                opening,
-                "/item",
-                json!({"version":1,"replay":{"format":"google-interactions-v1-thought","phase":"partial","value":"synthetic"}}),
-            ),
-            (done, "/item", Value::Null),
-            (
-                original.len() - 1,
-                "/response",
-                json!({"version":1,"progress":"turn_finished"}),
-            ),
-            (
-                original.len() - 1,
-                "/response/output/2",
-                json!({"version":1,"arguments":"json"}),
-            ),
-        ] {
-            let mut decoder = client(dialect).event_decoder();
-            for event in &original[..index] {
-                decoder.push(event).unwrap();
+    let stream = |frames: &[Value]| {
+        let mut decoder = client(Dialect::Standard).event_decoder();
+        let mut events = vec![];
+        for frame in frames {
+            events.extend(decoder.push(frame).unwrap());
+        }
+        decoder.finish().unwrap();
+        events
+    };
+    let mut attached = original.clone();
+    for frame in &mut attached {
+        for key in ["response", "item"] {
+            if let Some(value) = frame.get_mut(key).and_then(Value::as_object_mut) {
+                value.insert("_openbridge".into(), json!({"version":1}));
             }
-            let mut value = original[index].clone();
-            value.pointer_mut(pointer).unwrap()["_openbridge"] = attachment;
-            assert!(decoder.push(&value).is_err(), "boundary {index}");
-            assert!(decoder.push(&original[index]).is_err());
-            assert!(decoder.finish().is_err());
         }
     }
+    assert_eq!(stream(&attached), stream(&original));
 }
 #[test]
 fn standard_values_and_native_replay_do_not_need_an_attachment() {

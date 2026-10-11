@@ -129,6 +129,7 @@ impl EventDecoder {
         self
     }
     pub fn push(&mut self, payload: &Value) -> Result<Vec<StreamEvent>, CodecError> {
+        let _open = super::super::common::upstream_shapes();
         if self.poisoned || self.state.as_ref().is_none_or(|s| s.terminal().is_some()) {
             return Err(CodecError::Invalid("event after terminal or rejection"));
         }
@@ -148,7 +149,6 @@ impl EventDecoder {
                         || self.adaptation.rules.responses_inactive_reports
                         || self.adaptation.rules.responses_usage_attribution
                         || self.adaptation.rules.responses_context_accounting
-                        || self.adaptation.rules.null_response_billing
                         || self.adaptation.rules.responses_inactive_state
                         || self.adaptation.rules.responses_reasoning_text_shorthand)
                 {
@@ -181,9 +181,6 @@ impl EventDecoder {
                 super::super::adapter_shapes::decode(payload, self.profile, &self.adaptation)?
             };
             let o = object(&normalized)?;
-            if self.profile == Profile::Chat {
-                self.adaptation.validate_response(self.profile, o)?;
-            }
             if let Some(padding) = o.get("obfuscation")
                 && (self.profile != Profile::Responses
                     || !string(o, "type")?.ends_with(".delta")

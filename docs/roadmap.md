@@ -15,12 +15,12 @@
 
 | 项 | 状态 |
 |---|---|
-| 文档收敛为 README / architecture / roadmap / usage / development / references，精简 AGENTS.md | 完成 |
-| 移除 probe 框架（Python/TS 工具、live 示例），保留 SDK loopback gate | 完成 |
-| 上游响应改为开放解码：已知字段严格、未知字段忽略；删除随之多余的方言开关 | 下一步 |
-| Opaque reasoning 改用带标签信封；删除 AEAD 载荷、前缀 receipts 与依赖证明 | 待做 |
+| Opaque reasoning 改用带标签信封；删除 AEAD 载荷、前缀 receipts 与依赖证明 | 下一步 |
 | `gateway::diagnostics` 的 probe 关联（`x-morphiecore-probe-id`）随 probe 移除一并清理 | 待做 |
+| 继续删减只为转发厂商诊断/计费字段的开关（`routing_extras`、`reported_request_id`、`chat_stop_diagnostics`、`response_extras`、`responses_inactive_*`、`chat_inference_response_shape` 的 null-only 部分）及对应 fidelity 记录 | 待评估 |
 | 可选：`morphiecore-auth` 并入主程序 `morphiecore auth …` | 待定 |
+
+开放解码的遗留边界：OpenAI 响应解码目前用线程局部作用域（`openai::upstream_shapes`）区分上游与请求，阶段 1 改为显式方向；OpenAI SSE 的未知事件类型仍拒绝；冻结的媒体解码器未改动。
 
 退出条件：离线基线全绿；被删测试覆盖的失败类型确认已有其他测试承担或已不再适用。
 
@@ -31,7 +31,7 @@
 - lowering / adapter 从 `openai::Profile` 解耦：每个协议一个双向模块，每个上游一份 `TargetCaps`；方言规则收进协议模块。
 - Anthropic Messages 上游进入 Gateway 执行链（请求头、响应解码、候选准备）。
 - Anthropic SSE → `StreamEvent` 增量映射，替代先聚合后交付。
-- Chat 下游的 `reasoning` / `reasoning_details` 扩展字段与 opaque 信封接通。
+- Chat 下游的 `reasoning` / `reasoning_details` 扩展字段与 opaque 信封接通；上游 `reasoning.text` 项的 `signature` 目前被忽略，需要建模。
 
 退出条件：`Responses / Chat × Anthropic` 的 JSON 与 SSE 覆盖文本、工具往返、工具错误、thinking 回传、截断与上游错误，有 synthetic 测试，并用一次有界真实调用验证（opencode-go `claude-haiku-5-5` 或其他可用目标）。
 

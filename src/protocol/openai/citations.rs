@@ -5,7 +5,7 @@ use crate::semantic::{task::generation::*, value::Text};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 #[derive(Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "type", rename_all = "snake_case")]
 enum WireAnnotation {
     UrlCitation {
         start_index: usize,
@@ -40,7 +40,26 @@ fn span(start: usize, end: usize) -> ClaimAnchor {
         end,
     })
 }
+fn known_fields(kind: &str) -> &'static [&'static str] {
+    match kind {
+        "url_citation" => &["type", "start_index", "end_index", "title", "url"],
+        "file_citation" => &["type", "file_id", "filename", "index"],
+        "container_file_citation" => &[
+            "type",
+            "container_id",
+            "file_id",
+            "filename",
+            "start_index",
+            "end_index",
+        ],
+        "file_path" => &["type", "file_id", "index"],
+        _ => &[],
+    }
+}
 pub(super) fn read(value: &Value, items: &mut Items) -> Result<Annotation, CodecError> {
+    let o = object(value)?;
+    let kind = o.get("type").and_then(Value::as_str).unwrap_or_default();
+    fields(o, known_fields(kind))?;
     let wire: WireAnnotation =
         serde_json::from_value(value.clone()).map_err(|_| CodecError::Invalid("annotation"))?;
     let (location, claim, name, ordinal, kind) = match wire {

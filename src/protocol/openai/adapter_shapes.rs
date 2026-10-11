@@ -284,11 +284,8 @@ pub(crate) fn decode<'a>(
         && !adaptation.rules.responses_reasoning_text_shorthand
         && !adaptation.rules.chat_stop_diagnostics
         && !adaptation.rules.reported_request_id
-        && !adaptation.rules.zero_usage_details
-        && !adaptation.rules.inactive_chat_fields
         && !adaptation.rules.chat_inference_response_shape
         && !adaptation.rules.responses_billing_view
-        && !adaptation.rules.null_response_billing
         && !adaptation.rules.responses_inactive_state
         && !adaptation.rules.responses_reported_schema_alias
         && !adaptation.rules.responses_product_accounting
@@ -322,13 +319,6 @@ pub(crate) fn decode<'a>(
     }
     if profile == Profile::Chat && adaptation.rules.chat_inference_response_shape {
         super::inference_shapes::decode(o)?;
-    }
-    if profile == Profile::Responses
-        && adaptation.rules.null_response_billing
-        && let Some(billing) = o.shift_remove("billing")
-        && !billing.is_null()
-    {
-        return Err(CodecError::Unsupported("active response billing".into()));
     }
     if profile == Profile::Responses && adaptation.rules.responses_inactive_state {
         if o.get("previous_response_id").and_then(Value::as_str) == Some("") {
@@ -376,25 +366,6 @@ pub(crate) fn decode<'a>(
         check_budget(&extras)?;
     }
     if profile == Profile::Chat {
-        if adaptation.rules.inactive_chat_fields
-            && let Some(choices) = o.get_mut("choices").and_then(Value::as_array_mut)
-        {
-            for choice in choices {
-                for field in ["message", "delta"] {
-                    if let Some(message) = choice.get_mut(field).and_then(Value::as_object_mut) {
-                        for name in ["function_call"] {
-                            if let Some(value) = message.shift_remove(name)
-                                && !value.is_null()
-                            {
-                                return Err(CodecError::Unsupported(
-                                    "active message extension".into(),
-                                ));
-                            }
-                        }
-                    }
-                }
-            }
-        }
         if adaptation.rules.reported_request_id {
             if o.get("request_id")
                 .is_some_and(|v| !v.is_null() && !v.as_str().is_some_and(|s| !s.is_empty()))
@@ -432,21 +403,6 @@ pub(crate) fn decode<'a>(
                     && !delta.is_null()
                 {
                     return Err(CodecError::Unsupported("static delta".into()));
-                }
-            }
-        }
-        if adaptation.rules.zero_usage_details
-            && let Some(usage) = o.get_mut("usage").and_then(Value::as_object_mut)
-        {
-            for name in ["prompt_tokens_details", "completion_tokens_details"] {
-                if let Some(details) = usage.get_mut(name).and_then(Value::as_object_mut) {
-                    for name in ["image_tokens", "video_tokens"] {
-                        if let Some(value) = details.shift_remove(name)
-                            && value.as_u64() != Some(0)
-                        {
-                            return Err(CodecError::Unsupported("nonzero unmapped usage".into()));
-                        }
-                    }
                 }
             }
         }

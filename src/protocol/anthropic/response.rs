@@ -45,18 +45,18 @@ impl Block {
             .ok_or(CodecError::Invalid("Anthropic block type"))?;
         Ok(match kind {
             "text" => {
-                let o = object(v, &["type", "text"])?;
+                let o = object(v)?;
                 Self::Text(string(required(o, "text")?)?)
             }
             "thinking" => {
-                let o = object(v, &["type", "thinking", "signature"])?;
+                let o = object(v)?;
                 Self::Thinking {
                     thinking: string(required(o, "thinking")?)?,
                     signature: string(required(o, "signature")?)?,
                 }
             }
             "tool_use" => {
-                let o = object(v, &["type", "id", "name", "input", "caller"])?;
+                let o = object(v)?;
                 let input = required(o, "input")?;
                 if !input.is_object() {
                     return Err(CodecError::Invalid("Anthropic tool input object"));
@@ -66,7 +66,7 @@ impl Block {
                     name: string(required(o, "name")?)?,
                     input: StructuredValue::new(input.clone())?,
                     caller: presence(o, "caller", |v| {
-                        let o = object(v, &["type"])?;
+                        let o = object(v)?;
                         if required(o, "type")?.as_str() != Some("direct") {
                             return Err(CodecError::Unsupported("Anthropic caller".into()));
                         }
@@ -75,7 +75,7 @@ impl Block {
                 }
             }
             "tool_result" => {
-                let o = object(v, &["type", "tool_use_id", "content", "is_error"])?;
+                let o = object(v)?;
                 Self::ToolResult {
                     tool_use_id: string(required(o, "tool_use_id")?)?,
                     content: TextContent::read(required(o, "content")?)?,
@@ -220,15 +220,7 @@ pub struct Usage {
 }
 impl Usage {
     fn read(v: &Value) -> Result<Self, CodecError> {
-        let o = object(
-            v,
-            &[
-                "input_tokens",
-                "output_tokens",
-                "cache_creation_input_tokens",
-                "cache_read_input_tokens",
-            ],
-        )?;
+        let o = object(v)?;
         Ok(Self {
             input_tokens: presence(o, "input_tokens", uint)?,
             output_tokens: uint(required(o, "output_tokens")?)?,
@@ -271,19 +263,7 @@ impl std::fmt::Debug for Message {
 }
 impl Message {
     pub(super) fn read(v: &Value, opening: bool) -> Result<Self, CodecError> {
-        let o = object(
-            v,
-            &[
-                "id",
-                "type",
-                "role",
-                "model",
-                "content",
-                "stop_reason",
-                "stop_sequence",
-                "usage",
-            ],
-        )?;
+        let o = object(v)?;
         if required(o, "type")?.as_str() != Some("message")
             || required(o, "role")?.as_str() != Some("assistant")
         {
@@ -384,7 +364,7 @@ impl Delta {
             "input_json_delta" => ("partial_json", Self::InputJson),
             _ => return Err(CodecError::Unsupported("Anthropic delta type".into())),
         };
-        let o = object(v, &["type", key])?;
+        let o = object(v)?;
         Ok(constructor(string(required(
             o,
             match key {
@@ -441,22 +421,27 @@ impl std::fmt::Debug for Event {
     }
 }
 impl Event {
+    /// Event types with modeled content. Others are skipped by stream intake, as the
+    /// Messages streaming guide asks clients to tolerate new event types.
+    pub const KNOWN: &[&str] = &[
+        "message_start",
+        "content_block_start",
+        "content_block_delta",
+        "content_block_stop",
+        "message_delta",
+        "message_stop",
+        "ping",
+        "error",
+    ];
     pub(super) fn read(v: &Value) -> Result<Self, CodecError> {
         let kind = v
             .get("type")
             .and_then(Value::as_str)
             .ok_or(CodecError::Invalid("Anthropic event type"))?;
-        let allowed: &[&str] = match kind {
-            "message_start" => &["type", "message"],
-            "content_block_start" => &["type", "index", "content_block"],
-            "content_block_delta" => &["type", "index", "delta"],
-            "content_block_stop" => &["type", "index"],
-            "message_delta" => &["type", "delta", "usage"],
-            "message_stop" | "ping" => &["type"],
-            "error" => &["type", "error"],
-            _ => return Err(CodecError::Unsupported("Anthropic event type".into())),
-        };
-        let o = object(v, allowed)?;
+        if !Self::KNOWN.contains(&kind) {
+            return Err(CodecError::Unsupported("Anthropic event type".into()));
+        }
+        let o = object(v)?;
         let e = match kind {
             "message_start" => Self::MessageStart(Message::read(required(o, "message")?, true)?),
             "content_block_start" => Self::BlockStart {
@@ -471,7 +456,7 @@ impl Event {
                 index: uint(required(o, "index")?)?,
             },
             "message_delta" => {
-                let d = object(required(o, "delta")?, &["stop_reason", "stop_sequence"])?;
+                let d = object(required(o, "delta")?)?;
                 Self::MessageDelta {
                     stop_reason: presence(d, "stop_reason", StopReason::read)?,
                     stop_sequence: presence(d, "stop_sequence", string)?,
@@ -481,13 +466,13 @@ impl Event {
             "message_stop" => Self::MessageStop,
             "ping" => Self::Ping,
             "error" => {
-                let d = object(required(o, "error")?, &["type", "message"])?;
+                let d = object(required(o, "error")?)?;
                 Self::Error {
                     kind: string(required(d, "type")?)?,
                     message: string(required(d, "message")?)?,
                 }
             }
-            _ => unreachable!("closed event grammar"),
+            _ => unreachable!("checked against KNOWN"),
         };
         e.validate()?;
         Ok(e)
@@ -513,19 +498,7 @@ impl Event {
                 }
             }
             Self::Error { kind, message } => {
-                if ![
-                    "invalid_request_error",
-                    "authentication_error",
-                    "permission_error",
-                    "not_found_error",
-                    "rate_limit_error",
-                    "api_error",
-                    "overloaded_error",
-                ]
-                .contains(&kind.as_str())
-                {
-                    return Err(CodecError::Unsupported("Anthropic error type".into()));
-                }
+                text(kind)?;
                 text(message)?;
             }
             Self::MessageStop | Self::Ping => {}

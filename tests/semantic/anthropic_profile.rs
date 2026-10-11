@@ -71,9 +71,14 @@ fn typed_native_shapes_preserve_schema_presence_and_signature_only() {
         .unwrap();
     assert_eq!(p.encode_response(&decoded).unwrap(), message());
     assert!(!format!("{decoded:?}").contains("synthetic-signature"));
+    // Unknown upstream fields are ignored; known ones are re-encoded unchanged.
     let mut unknown = message();
     unknown["created_at"] = json!(0);
-    assert!(p.decode_response(unknown.to_string().as_bytes()).is_err());
+    unknown["usage"]["service_tier"] = json!("standard");
+    unknown["usage"]["cache_creation"] = json!({"ephemeral_5m_input_tokens":0});
+    unknown["content"][1]["extra"] = json!(null);
+    let decoded = p.decode_response(unknown.to_string().as_bytes()).unwrap();
+    assert_eq!(p.encode_response(&decoded).unwrap(), message());
     let mut edited = p.decode_request(request().to_string().as_bytes()).unwrap();
     edited.max_tokens = 0;
     assert!(p.encode_request(&edited).is_err());
@@ -197,10 +202,20 @@ fn individual_native_event_shapes_do_not_claim_cross_event_closure() {
                 .is_err()
         );
     }
+    let extra = json!({"type":"message_stop","extra":false});
+    let event = p
+        .decode_event("message_stop", extra.to_string().as_bytes())
+        .unwrap();
+    assert_eq!(
+        p.encode_event(&event).unwrap(),
+        json!({"type":"message_stop"})
+    );
+    let billing = json!({"type":"error","error":{"type":"billing_error","message":"synthetic"}});
+    p.decode_event("error", billing.to_string().as_bytes())
+        .unwrap();
     for wire in [
         json!({"type":"content_block_delta","index":1024,"delta":{"type":"text_delta","text":"x"}}),
         json!({"type":"content_block_delta","index":0,"delta":{"type":"citations_delta","citation":{}}}),
-        json!({"type":"message_stop","extra":false}),
     ] {
         assert!(
             p.decode_event(wire["type"].as_str().unwrap(), wire.to_string().as_bytes())

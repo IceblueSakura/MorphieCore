@@ -94,7 +94,6 @@ impl Dialect {
                 WireRules {
                     readable_reasoning: true,
                     chat_original_image_detail: true,
-                    usage_aliases: true,
                     default_cache_write: true,
                     response_extras: true,
                     chunk_metadata_drift: true,
@@ -123,7 +122,6 @@ impl Dialect {
                     reject_reasoning_controls: true,
                     reasoning_alias: true,
                     unversioned_chat_reasoning_view: true,
-                    zero_usage_details: true,
                     repeated_finish_usage: true,
                     legacy_max_tokens: true,
                     opencode_go_headers: true,
@@ -141,7 +139,6 @@ impl Dialect {
                     chat_stop_diagnostics: true,
                     chat_reasoning_usage_alias: true,
                     chunk_created_drift: true,
-                    inactive_chat_fields: true,
                     chat_inference_response_shape: true,
                     chat_image_usage: true,
                     legacy_max_tokens: true,
@@ -155,7 +152,6 @@ impl Dialect {
                     readable_reasoning: true,
                     legacy_max_tokens: true,
                     response_extras: true,
-                    null_response_billing: true,
                     responses_reasoning_text_shorthand: true,
                     responses_terminal_reasoning: true,
                     responses_done_marker: true,
@@ -175,12 +171,10 @@ impl Dialect {
                     responses_reported_schema_alias: self == Self::BailianTokenPlan,
                     readable_reasoning: true,
                     legacy_max_tokens: true,
-                    inactive_chat_fields: true,
                     response_extras: true,
                     responses_billing_view: true,
                     responses_text_usage: true,
                     responses_image_usage: true,
-                    null_response_billing: true,
                     responses_queued_creation: true,
                     responses_summary_text_alias: true,
                     // Modality counters are reported facts, never inferred from images.
@@ -208,7 +202,6 @@ impl Dialect {
                     readable_reasoning: true,
                     responses_unreported_text_logprobs: true,
                     chat_image_usage: true,
-                    derived_output_text: true,
                     chunk_metadata_drift: true,
                     ..Default::default()
                 },
@@ -311,6 +304,7 @@ impl Adapter {
         result
     }
     pub fn decode_response(&self, bytes: &[u8]) -> Result<DecodedResponse, CodecError> {
+        let _open = openai::upstream_shapes();
         let value = openai::json::decode(bytes)?;
         let mut decoded = match self.protocol {
             Profile::Chat => {

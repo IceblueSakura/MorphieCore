@@ -250,6 +250,7 @@ pub fn decode_response_bytes(bytes: &[u8]) -> Result<super::DecodedResponse, Cod
 /// Full envelope validation, unlike the lower-level task snapshot codec.
 /// A pre-parsed value cannot prove original JSON syntax, duplicate-key or raw-byte validity.
 pub fn decode_response(v: &Value) -> Result<super::DecodedResponse, CodecError> {
+    let _open = super::common::upstream_shapes();
     bounded(v)?;
     validate_response_snapshot(v)?;
     super::responses::decode_response(v)
@@ -260,8 +261,8 @@ pub fn encode_response(target: &super::ResponseRepresentation<'_>) -> Result<Val
     validate_response_snapshot_with(&v, &target.adaptation)?;
     Ok(v)
 }
-/// Vendor adaptation (ADR 0008): validate-then-drop derived views, then record
-/// classified response extras into fidelity for same-origin re-encode.
+/// Record classified response extras into fidelity for same-origin re-encode.
+/// The SDK-derived `output_text` view is ignored, never validated or restored.
 pub(crate) fn record_vendor_shapes(
     profile: Profile,
     adaptation: &crate::protocol::adaptation::Adaptation,
@@ -269,38 +270,6 @@ pub(crate) fn record_vendor_shapes(
     fidelity: &mut crate::protocol::fidelity::FidelityRecords,
     semantic: Option<&GenerationResponse>,
 ) -> Result<(), CodecError> {
-    adaptation.validate_response(profile, o)?;
-    if let Some(view) = o.get("output_text").filter(|v| !v.is_null()) {
-        let view = view.as_str().ok_or(CodecError::Invalid("output_text"))?;
-        // The equality rule applies where the snapshot claims finality: a
-        // non-terminal snapshot may report a partial view while items stream.
-        let terminal = o
-            .get("status")
-            .and_then(Value::as_str)
-            .is_some_and(|s| matches!(s, "completed" | "incomplete" | "failed" | "cancelled"));
-        if terminal {
-            let mut authoritative = String::new();
-            if let Some(items) = o.get("output").and_then(Value::as_array) {
-                for item in items {
-                    if item.get("type").and_then(Value::as_str) != Some("message") {
-                        continue;
-                    }
-                    if let Some(parts) = item.get("content").and_then(Value::as_array) {
-                        for part in parts {
-                            if part.get("type").and_then(Value::as_str) == Some("output_text")
-                                && let Some(text) = part.get("text").and_then(Value::as_str)
-                            {
-                                authoritative.push_str(text);
-                            }
-                        }
-                    }
-                }
-            }
-            if view != authoritative {
-                return Err(CodecError::Invalid("output_text"));
-            }
-        }
-    }
     fidelity.capture_response_extras(profile, adaptation, o, semantic)
 }
 /// Same-origin re-encode of classified vendor extras; never standard semantics.

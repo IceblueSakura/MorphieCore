@@ -206,3 +206,45 @@ fn limits_http_and_attempt_cancellation_are_independent_boundaries() {
     assert!(a.push(&bytes).is_err());
     assert!(a.finish().is_err());
 }
+#[test]
+fn unknown_upstream_fields_and_event_types_are_ignored() {
+    let mut frames = frames();
+    // Fields Anthropic reports today but the gateway does not model.
+    frames[0]["message"]["usage"]["cache_creation"] =
+        json!({"ephemeral_5m_input_tokens":4,"ephemeral_1h_input_tokens":0});
+    frames[0]["message"]["usage"]["service_tier"] = json!("standard");
+    frames[0]["message"]["container"] = Value::Null;
+    frames[2]["content_block"]["extra"] = json!({"nested":true});
+    frames[15]["usage"]["server_tool_use"] = json!({"web_search_requests":0});
+    frames[16]["future_field"] = json!(1);
+    // Unknown event types carry no modeled content and are skipped.
+    frames.insert(
+        7,
+        json!({"type":"synthetic_future_event","payload":{"anything":[1,2]}}),
+    );
+    let mut decoder =
+        MessageSseDecoder::new(200, "text/event-stream", SseLimits::default()).unwrap();
+    feed(&mut decoder, &wire(&frames)).unwrap();
+    let message = decoder.finish().unwrap();
+    assert_eq!(
+        Profile::AdaptiveTextTools
+            .encode_response(&message)
+            .unwrap(),
+        expected()
+    );
+}
+#[test]
+fn known_upstream_fields_stay_strict() {
+    for edit in [
+        |f: &mut Vec<Value>| f[15]["usage"]["output_tokens"] = json!("9"),
+        |f: &mut Vec<Value>| f[15]["delta"]["stop_reason"] = json!(7),
+        |f: &mut Vec<Value>| f[3]["delta"]["type"] = json!("citations_delta"),
+        |f: &mut Vec<Value>| f[2]["content_block"]["type"] = json!("redacted_thinking"),
+    ] {
+        let mut frames = frames();
+        edit(&mut frames);
+        let mut decoder =
+            MessageSseDecoder::new(200, "text/event-stream", SseLimits::default()).unwrap();
+        assert!(feed(&mut decoder, &wire(&frames)).is_err());
+    }
+}
