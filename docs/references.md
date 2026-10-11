@@ -11,6 +11,7 @@ Primary sources used in design, with pinned revisions and licenses. Web pages ar
 | Anthropic Python SDK | [`b4b7916`](https://github.com/anthropics/anthropic-sdk-python/tree/b4b7916deaf4e5570cd627b1ae7ee4394a4de39f) (1.13.0) | MIT | Message, event, thinking and tool types |
 | pi | [`d1230ea`](https://github.com/earendil-works/pi/tree/d1230ea2000d876b479a69b8b061f9d670f262f5) | MIT | Tool constraints and execution layering, history transforms (`transform-messages.ts`), Anthropic/Responses codecs |
 | OpenCode | [`055d95b`](https://github.com/anomalyco/opencode/tree/055d95bb7e278c94baf06235a52cac79dd13ba67) | MIT | Tool error feedback, history projection, Go Messages routing (`x-api-key`, `anthropic-version: 2023-06-01`) |
+| Magpie | [`5104263`](https://github.com/yetone/magpie/tree/51042630ecf44ab639cece917f7da7923d79fbf4) | MIT | Consumer stream counterexamples, publication before content, cache breakpoints, failure scope, cooldown and target affinity; design reference, not ported |
 | new-api / RelayKit | [`1d4328e`](https://github.com/QuantumNous/new-api/tree/1d4328e97417a043a161a0dd30a5b129be3ace49/relaykit) | **AGPL-3.0** | Field-mapping ideas only; never port code into this MIT project |
 
 The SDK loopback gate uses the versions locked in `tests/sdk/uv.lock`, independent of the research revisions above.
