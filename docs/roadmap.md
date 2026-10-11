@@ -20,10 +20,9 @@ Goal: OpenAI clients reach a native Messages upstream through the normal CLI sta
 1. **Upstream stream tolerance.** Responses intake rejects any unregistered event `type`; decide which unknown events may be skipped. Ignoring unknown fields must not widen into skipping unknown content or terminals. Known vendor shapes in Chat streams fail today: a continuation `function.name: ""` (rejected as a changed identity), `finish_reason: ""` (unsupported), `tool_calls: []` (opens the message owner early), and `finish_reason: "stop"` beside tool calls from relays (unsupported; Magpie reads it as a tool turn). Each becomes a named dialect rule, mirroring `empty_continuation_call_id`, only when a bound upstream emits it. Native Messages accepts only `end_turn`, `tool_use` and `max_tokens`; map the remaining documented stop reasons, with `refusal` as an honest refusal outcome. Frozen media decoders are not extended.
 2. **Activate the native Messages binding.** `MESSAGES_BINDINGS` compiles only an explicit topology, and directory bootstrap rejects the `AnthropicMessages` protocol. Activate it only when listed in `models`, never by default. Verify model release metadata first; never invent dates.
 3. **Chat reasoning carriers.** Model the `signature` of Chat `reasoning.text` details (currently rejected) through the envelope. Carry multiple thinking blocks and interleaved thinking/text/tool order instead of rejecting them where the Chat shape allows it. Stop emitting the empty `reasoning_content: ""` opener downstream; consumers treat each reasoning delta as a block boundary.
-4. **Tool errors.** Neither OpenAI downstream protocol has an error flag on tool results, so `is_error` is rejected there. Decide whether a Chat/Responses extension carrier is needed (open question below) before implementing; a failed tool reported as plain text already round-trips.
-5. **Downstream unknown fields.** Ignore unregistered request fields at any depth and record their names in diagnostics; keep rejecting unknown `type`/`role` discriminators and keep known fields strict. Update `docs/openapi.json`, which closes request objects today.
-6. **Cross-target thinking.** A mismatched target rejects readable reasoning today. Pass current-turn readable reasoning (after the last user message) as assistant text and drop earlier turns' by a named rule; record both as losses. First verify how Anthropic treats a tool-loop assistant message without a signed thinking block when thinking is enabled (error, or thinking disabled for the request), and check the text shape in pi's `transform-messages.ts` so the model does not imitate delimiters.
-7. **Messages cache breakpoints.** Native Messages requests carry no `cache_control`, so OpenAI clients get no prompt caching on that upstream. Project breakpoints in the Anthropic module: the stable prefix (system, or the last tool definition when there is no system) and the last non-thinking block of the final message, never on thinking, within the breakpoint limit. Recheck the current Anthropic caching docs first.
+4. **Downstream unknown fields.** Ignore unregistered request fields at any depth and record their names in diagnostics; keep rejecting unknown `type`/`role` discriminators and keep known fields strict. Update `docs/openapi.json`, which closes request objects today.
+5. **Cross-target thinking.** A mismatched target rejects readable reasoning today. Pass current-turn readable reasoning (after the last user message) as assistant text and drop earlier turns' by a named rule; record both as losses. First verify how Anthropic treats a tool-loop assistant message without a signed thinking block when thinking is enabled (error, or thinking disabled for the request), and check the text shape in pi's `transform-messages.ts` so the model does not imitate delimiters.
+6. **Messages cache breakpoints.** Native Messages requests carry no `cache_control`, so OpenAI clients get no prompt caching on that upstream. Project breakpoints in the Anthropic module: the stable prefix (system, or the last tool definition when there is no system) and the last non-thinking block of the final message, never on thinking, within the breakpoint limit. Recheck the current Anthropic caching docs first.
 
 Further trimming of diagnostics/billing switches and fidelity records is assessed with the affected modules, not as a prerequisite. `morphiecore-auth` stays independent.
 
@@ -85,12 +84,8 @@ Submit full history statelessly, without server-side storage; reuse the opaque e
 
 ### Phase 6 — downstream Anthropic Messages
 
-Reuse the Anthropic module from Phase 1; add request decoding and response/SSE encoding. Native `is_error`, thinking signatures and block order map directly.
+Reuse the Anthropic module from Phase 1; add request decoding and response/SSE encoding. Native `is_error`, thinking signatures and block order map directly. OpenAI targets have no tool error flag: keep the result text and drop the flag by a named lossy rule. Chat/Responses get no tool error extension until a client needs one.
 
 ### After that
 
 Stateful Responses (gateway-managed, time-limited history), file services, resumed media work, Realtime.
-
-## Open questions
-
-- Tool errors and refusal details in Chat/Responses: add extension carriers (following existing OpenRouter-style shapes where one exists), or keep failures as plain tool output? Gates Phase 1 item 4.
