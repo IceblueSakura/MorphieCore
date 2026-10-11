@@ -2,7 +2,6 @@
 use crate::{
     protocol::anthropic::{Dialect, Profile, TargetCaps},
     provider::{CredentialBindingId, CredentialKind, ProviderDefinition, catalog},
-    semantic::value::ReplayOrigin,
     topology::*,
 };
 pub struct MessagesBinding {
@@ -23,11 +22,7 @@ impl MessagesBinding {
     }
     pub fn endpoint(&self) -> Endpoint {
         let provider = self.provider();
-        let representation = TargetCaps::new(
-            Profile::AdaptiveTextTools,
-            Dialect::OpenCodeGo,
-            ReplayOrigin::new(provider.id.as_str()).expect("static scope"),
-        );
+        let representation = TargetCaps::new(Profile::AdaptiveTextTools, Dialect::OpenCodeGo);
         Endpoint {
             id: EndpointId::new("opencode-go-haiku-messages").expect("static id"),
             provider: provider.id,

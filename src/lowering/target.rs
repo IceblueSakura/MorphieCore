@@ -2,7 +2,7 @@
 use crate::protocol::openai::TargetCaps as OpenAiCaps;
 use crate::{
     protocol::{anthropic, cache::CacheProjection},
-    semantic::{task::generation::GenerationSemanticContract, value::ReplayOrigin},
+    semantic::task::generation::GenerationSemanticContract,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -49,12 +49,6 @@ impl TargetCaps {
         match self {
             Self::OpenAi(c) => &c.semantics,
             Self::AnthropicMessages(c) => &c.semantics,
-        }
-    }
-    pub fn replay_origin(&self) -> Option<&ReplayOrigin> {
-        match self {
-            Self::OpenAi(c) => c.replay_origin.as_ref(),
-            Self::AnthropicMessages(c) => c.replay_origin.as_ref(),
         }
     }
     pub fn cache(&self) -> CacheProjection {

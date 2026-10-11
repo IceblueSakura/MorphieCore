@@ -39,7 +39,7 @@ MorphieCore 是以统一 IR 为核心的模型路由网关：下游接收标准�
 | `credential` | 文件凭据 store、API key、OAuth driver、有序池 | 凭据不进入 IR |
 | `gateway` | 鉴权、准入、预算、body 发布与取消 | 只监听 loopback |
 
-Endpoint 以 `lowering::target::TargetCaps` 区分 OpenAI 与原生 Messages 的能力声明；协议与能力族必须匹配。原生 Messages 的 profile、方言、语义上限、replay scope、缓存载体、请求投影与会话 header 策略由 `protocol::anthropic` 拥有，不通过构造 Chat adapter 或借用 OpenAI 开关来表达。
+Endpoint 以 `lowering::target::TargetCaps` 区分 OpenAI 与原生 Messages 的能力声明；协议与能力族必须匹配。原生 Messages 的 profile、方言、语义上限、缓存载体、请求投影与会话 header 策略由 `protocol::anthropic` 拥有，不通过构造 Chat adapter 或借用 OpenAI 开关来表达；其 replay 标签直接由 Endpoint 的 Provider 与上游模型派生，不另设可配置字段。
 
 OpenAI 的规范入口为 `protocol::openai::{Adapter, Dialect, TargetCaps}`；方言数据由协议内 `adaptation` 拥有，表示检查、具名损失与流式检查位于 `protocol::openai::lowering`。将原生 Messages 观察交付为 OpenAI 的投影也属于这个目标模块，而不是通用 lowering。通用请求只保留当前客户端的来源元数据用于交付选项转换，不在通用层执行 OpenAI 表示分支。
 

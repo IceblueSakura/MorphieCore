@@ -106,15 +106,8 @@ fn target_prefixes(
     candidate: &super::BoundCandidate,
     request: &crate::adapter::Request,
 ) -> Option<Vec<Digest>> {
-    let adapter = candidate.endpoint.adapter().ok()?;
-    let profile = adapter.openai().ok()?.protocol;
-    let wire = adapter
-        .encode_request(
-            request,
-            &candidate.endpoint.upstream_model,
-            &candidate.endpoint.representation,
-        )
-        .ok()?;
+    let profile = candidate.endpoint.adapter().ok()?.openai().ok()?.protocol;
+    let wire = candidate.endpoint.encode_request(request).ok()?;
     crate::protocol::cache_affinity::prefixes(&wire, profile)
 }
 pub(super) fn choose(
@@ -280,16 +273,7 @@ mod tests {
             credential_fallback: candidate.credential_fallback,
             cache_scope: candidate.cache_scope.clone(),
         };
-        let original = other
-            .endpoint
-            .adapter()
-            .unwrap()
-            .encode_request(
-                &first,
-                &other.endpoint.upstream_model,
-                &other.endpoint.representation,
-            )
-            .unwrap();
+        let original = other.endpoint.encode_request(&first).unwrap();
         other.endpoint.execution.request_body_limit =
             crate::semantic::value::json_size(&original, 256 << 10).unwrap();
         assert!(crate::execution::plan::representable(&other.endpoint, &first).is_ok());

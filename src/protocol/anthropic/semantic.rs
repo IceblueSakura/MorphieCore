@@ -181,20 +181,17 @@ impl Profile {
         self,
         bytes: &[u8],
         scope: LocalScope,
-        source: &DecodedRequest,
         target: &ReplayTarget,
     ) -> Result<DecodedResponse, CodecError> {
         let wire = self.decode_response(bytes)?;
-        self.decode_generation_message(wire, scope, source, target)
+        self.decode_generation_message(wire, scope, target)
     }
     pub(crate) fn decode_generation_message(
         self,
         wire: super::Message,
         scope: LocalScope,
-        source: &DecodedRequest,
         target: &ReplayTarget,
     ) -> Result<DecodedResponse, CodecError> {
-        source.semantic.validate()?;
         wire.validate(false)?;
         if wire.model != target.model() {
             return Err(CodecError::Invalid("native model binding"));
@@ -209,7 +206,7 @@ impl Profile {
             .with_progress(progress)?
             .with_details(details)?
             .with_usage(usage)?;
-        let mut fidelity = source.fidelity.clone();
+        let mut fidelity = FidelityRecords::default();
         bind(&mut fidelity, semantic.items(), target)?;
         Ok(DecodedResponse {
             semantic,

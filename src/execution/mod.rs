@@ -6,7 +6,7 @@
 //! after the first visible semantic output.
 //!
 //! Network I/O stays with the caller: this module exchanges typed request parts
-//! and byte chunks so tests and the authorized probe entry drive the same chain.
+//! and byte chunks so tests and the Gateway drive the same chain.
 
 pub mod attempt;
 pub mod delivery;
@@ -14,8 +14,6 @@ pub mod embeddings;
 pub mod fallback;
 pub mod images;
 pub mod lifecycle;
-mod messages;
-pub use messages::prepare_messages;
 pub mod plan;
 pub mod replay;
 pub mod speech;

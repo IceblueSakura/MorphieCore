@@ -66,7 +66,7 @@ fn native_intake_keeps_independent_error_execution_progress_and_signature_owners
         .decode_generation_request(request(), LocalScope::new(1), &target())
         .unwrap();
     let observed = p
-        .decode_generation_response(response(), LocalScope::new(2), &source, &target())
+        .decode_generation_response(response(), LocalScope::new(2), &target())
         .unwrap();
     assert_eq!(observed.metadata.created, None);
     assert_eq!(
@@ -98,7 +98,7 @@ fn saved_observation_and_appended_error_encode_the_independent_native_history() 
         .decode_generation_request(request(), LocalScope::new(1), &target())
         .unwrap();
     let observed = p
-        .decode_generation_response(response(), LocalScope::new(2), &source, &target())
+        .decode_generation_response(response(), LocalScope::new(2), &target())
         .unwrap();
     for (execution, marker) in [
         (ToolExecution::NotExecuted, Some(true)),
@@ -153,7 +153,7 @@ fn prefix_edits_are_left_to_the_issuer_but_owner_and_target_stay_checked() {
         .decode_generation_request(request(), LocalScope::new(1), &target())
         .unwrap();
     let observed = p
-        .decode_generation_response(response(), LocalScope::new(2), &source, &target())
+        .decode_generation_response(response(), LocalScope::new(2), &target())
         .unwrap();
     let next = feedback(&source, &observed, ToolExecution::NotExecuted);
     let mut settings = next.settings().clone();

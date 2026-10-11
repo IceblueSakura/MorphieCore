@@ -1,20 +1,26 @@
 //! Operation binding and pure preparation; never opens a socket or reads a credential store.
 use morphiecore::{
-    adapter::UpstreamAdapter,
-    execution::{Attempt, plan::representable, prepare, prepare_messages},
+    adapter::{Request, UpstreamAdapter},
+    execution::{Attempt, UpstreamRequest, plan::representable, prepare},
     protocol::{
-        anthropic::Profile as NativeProfile,
-        cache::CacheSession,
+        anthropic::{Dialect as NativeDialect, Profile as NativeProfile, ReplayTarget, TargetCaps},
         openai::{Adapter, Dialect, Profile, TargetCaps as Contract, sse::SseLimits},
     },
     provider::{
-        AuthScheme, CredentialBindingId, CredentialKind, EndpointPath, GenerationOperation,
-        ProviderDefinition, ProviderId, SecretMaterial, TrustedOrigin,
+        AuthScheme, CredentialBindingId, CredentialKind, EndpointPath, ProviderDefinition,
+        ProviderId, SecretMaterial, TrustedOrigin,
     },
-    semantic::task::generation::GenerationSemanticContract,
+    semantic::{
+        context::{CacheMode, CacheOptions, CacheTtl, ConversationContext},
+        task::generation::{GenerationSemanticContract, LocalScope},
+        value::Presence,
+    },
     topology::*,
 };
-use serde_json::json;
+use serde_json::{Value, json};
+
+const HELLO: &[u8] =
+    br#"{"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":"hello"}]}"#;
 
 fn provider() -> ProviderDefinition {
     ProviderDefinition {
@@ -28,17 +34,13 @@ fn provider() -> ProviderDefinition {
 }
 fn endpoint(protocol: ProtocolProfile) -> Endpoint {
     let p = provider();
+    let chat = protocol == ProtocolProfile::OpenAiChat;
     Endpoint {
-        id: EndpointId::new(if protocol == ProtocolProfile::OpenAiChat {
-            "chat"
-        } else {
-            "messages"
-        })
-        .unwrap(),
+        id: EndpointId::new(if chat { "chat" } else { "messages" }).unwrap(),
         provider: p.id.clone(),
         target: EndpointTarget {
             origin: p.origin,
-            path: EndpointPath::new(if protocol == ProtocolProfile::OpenAiChat {
+            path: EndpointPath::new(if chat {
                 "/chat/completions"
             } else {
                 "/messages"
@@ -49,17 +51,12 @@ fn endpoint(protocol: ProtocolProfile) -> Endpoint {
         protocol,
         upstream_model: "synthetic-model".into(),
         canonical_model: ModelId::new("synthetic-model").unwrap(),
-        representation: if protocol == ProtocolProfile::AnthropicMessages {
-            morphiecore::protocol::anthropic::TargetCaps::new(
-                NativeProfile::AdaptiveTextTools,
-                morphiecore::protocol::anthropic::Dialect::OpenCodeGo,
-                morphiecore::semantic::value::ReplayOrigin::new("synthetic").unwrap(),
-            )
-            .into()
-        } else {
+        representation: if chat {
             Adapter::new(Profile::Chat, Dialect::OpenCodeGo, None)
                 .contract(&Contract::full())
                 .into()
+        } else {
+            TargetCaps::new(NativeProfile::AdaptiveTextTools, NativeDialect::OpenCodeGo).into()
         },
         execution: ExecutionContract {
             streaming: false,
@@ -71,6 +68,12 @@ fn endpoint(protocol: ProtocolProfile) -> Endpoint {
         },
         credential: CredentialBindingId::new("synthetic-key").unwrap(),
     }
+}
+fn standard_native() -> Endpoint {
+    let mut native = endpoint(ProtocolProfile::AnthropicMessages);
+    native.representation =
+        TargetCaps::new(NativeProfile::AdaptiveTextTools, NativeDialect::Standard).into();
+    native
 }
 fn compile_endpoints(
     p: ProviderDefinition,
@@ -88,348 +91,75 @@ fn compile_endpoints(
         }],
     )
 }
+fn native_request() -> Request {
+    let target = ReplayTarget::new("synthetic", "synthetic-model").unwrap();
+    let decoded = NativeProfile::AdaptiveTextTools
+        .decode_generation_request(HELLO, LocalScope::new(1), &target)
+        .unwrap();
+    Request::from_generation(decoded, "public").unwrap()
+}
+fn secret() -> SecretMaterial {
+    SecretMaterial::new("synthetic-secret").unwrap()
+}
+fn body(prepared: &UpstreamRequest) -> Value {
+    serde_json::from_slice(&prepared.body).unwrap()
+}
+fn header<'a>(prepared: &'a UpstreamRequest, name: &str) -> Option<&'a str> {
+    prepared
+        .safe_headers
+        .iter()
+        .find(|(key, _)| key == name)
+        .map(|(_, value)| value.as_str())
+}
+fn hello_wire() -> Value {
+    json!({"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]})
+}
+
 #[test]
-fn wire_declaration_cannot_publish_unimplemented_native_capabilities() {
+fn compilation_rejects_contracts_the_native_slice_cannot_keep() {
     let native = endpoint(ProtocolProfile::AnthropicMessages);
-    let canonical = ModelId::new("synthetic-model").unwrap();
     let route = Route {
         id: RouteId::new("synthetic-route").unwrap(),
         task: TaskKind::Generation,
         endpoints: vec![native.id.clone()],
         policy: RoutePolicy::default(),
     };
-    let model = PublicModel::new(
-        ModelId::new("public-native").unwrap(),
-        canonical.clone(),
-        TaskKind::Generation,
-        route.id.clone(),
-        GenerationSemanticContract::text_images(),
-    );
-    assert_eq!(
+    let public = |contract| {
+        PublicModel::new(
+            ModelId::new("public-native").unwrap(),
+            native.canonical_model.clone(),
+            TaskKind::Generation,
+            route.id.clone(),
+            contract,
+        )
+    };
+    let compile_with = |model: PublicModel| {
         compile(
             vec![provider()],
-            vec![native],
-            vec![route],
+            vec![native.clone()],
+            vec![route.clone()],
             vec![model],
             vec![CanonicalModel {
-                id: canonical,
+                id: native.canonical_model.clone(),
                 task: TaskKind::Generation,
-                contract: GenerationSemanticContract::full()
-            }]
+                contract: GenerationSemanticContract::full(),
+            }],
         )
-        .unwrap_err(),
-        TopologyError::ContractUnsatisfiable,
-    );
-}
-#[test]
-fn typed_native_requests_use_the_same_admission_preflight_and_preparation() {
-    use morphiecore::semantic::{task::generation::LocalScope, value::ReplayOrigin};
-    let p = provider();
-    let mut native = endpoint(ProtocolProfile::AnthropicMessages);
-    native.representation.messages_mut().unwrap().semantics =
-        NativeProfile::AdaptiveTextTools.semantic_contract();
-    native.representation.messages_mut().unwrap().replay_origin =
-        Some(ReplayOrigin::new("synthetic").unwrap());
-    let route = Route {
-        id: RouteId::new("native-route").unwrap(),
-        task: TaskKind::Generation,
-        endpoints: vec![native.id.clone()],
-        policy: RoutePolicy::default(),
     };
-    let mut model = PublicModel::new(
-        ModelId::new("native-public").unwrap(),
-        native.canonical_model.clone(),
-        TaskKind::Generation,
-        route.id.clone(),
-        native.representation.semantics().clone(),
+    assert_eq!(
+        compile_with(public(GenerationSemanticContract::text_images())).unwrap_err(),
+        TopologyError::ContractUnsatisfiable
     );
+    // Native targets do not carry standard OpenAI execution context.
+    assert_eq!(
+        compile_with(public(NativeProfile::AdaptiveTextTools.semantic_contract())).unwrap_err(),
+        TopologyError::ContractUnsatisfiable
+    );
+    let mut model = public(NativeProfile::AdaptiveTextTools.semantic_contract());
     model.standard_context = false;
-    compile(
-        vec![p.clone()],
-        vec![native.clone()],
-        vec![route],
-        vec![model],
-        vec![CanonicalModel {
-            id: native.canonical_model.clone(),
-            task: TaskKind::Generation,
-            contract: NativeProfile::AdaptiveTextTools.semantic_contract(),
-        }],
-    )
-    .unwrap();
-    let target =
-        morphiecore::protocol::anthropic::ReplayTarget::new("synthetic", "synthetic-model")
-            .unwrap();
-    let decoded = NativeProfile::AdaptiveTextTools.decode_generation_request(
-        br#"{"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":"hello"}]}"#,
-        LocalScope::new(1),&target).unwrap();
-    let mut request =
-        morphiecore::adapter::Request::from_generation(decoded, "native-public").unwrap();
-    request.cache_session = Some(CacheSession::new("synthetic-session").unwrap());
-    representable(&native, &request).unwrap();
-    let mut wrong_scope = native.clone();
-    wrong_scope
-        .representation
-        .messages_mut()
-        .unwrap()
-        .replay_origin = Some(ReplayOrigin::new("other-provider").unwrap());
-    assert!(representable(&wrong_scope, &request).is_err());
-    assert!(
-        prepare(
-            &wrong_scope,
-            &p,
-            &SecretMaterial::new("synthetic-secret").unwrap(),
-            &request
-        )
-        .is_err()
-    );
-    let wire = prepare(
-        &native,
-        &p,
-        &SecretMaterial::new("synthetic-secret").unwrap(),
-        &request,
-    )
-    .unwrap();
-    assert_eq!(
-        wire.auth_header,
-        ("x-api-key".into(), "synthetic-secret".into())
-    );
-    assert!(
-        wire.safe_headers
-            .contains(&("anthropic-version".into(), "2023-06-01".into()))
-    );
-    assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&wire.body).unwrap(),
-        json!({"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]})
-    );
-    request.delivery.stream = morphiecore::semantic::value::Presence::Value(true);
-    assert!(representable(&native, &request).is_err());
-    native.execution.streaming = true;
-    representable(&native, &request).unwrap();
-    let streaming = prepare(
-        &native,
-        &p,
-        &SecretMaterial::new("synthetic-secret").unwrap(),
-        &request,
-    )
-    .unwrap();
-    assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&streaming.body).unwrap()["stream"],
-        true
-    );
-    assert!(
-        streaming
-            .safe_headers
-            .contains(&("accept".into(), "text/event-stream".into()))
-    );
-    request.delivery.stream = morphiecore::semantic::value::Presence::Null;
-    assert!(representable(&native, &request).is_err());
-}
-#[test]
-fn native_go_cache_projection_agrees_between_preflight_and_prepare() {
-    use morphiecore::semantic::{
-        context::{CacheMode, CacheOptions, CacheRetention, CacheTtl, ConversationContext},
-        task::generation::LocalScope,
-        value::{Presence, ReplayOrigin},
-    };
-    let p = provider();
-    let mut native = endpoint(ProtocolProfile::AnthropicMessages);
-    native.representation.messages_mut().unwrap().semantics =
-        NativeProfile::AdaptiveTextTools.semantic_contract();
-    native.representation.messages_mut().unwrap().replay_origin =
-        Some(ReplayOrigin::new("synthetic").unwrap());
-    let target =
-        morphiecore::protocol::anthropic::ReplayTarget::new("synthetic", "synthetic-model")
-            .unwrap();
-    let decoded = NativeProfile::AdaptiveTextTools.decode_generation_request(
-        br#"{"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":"hello"}]}"#,
-        LocalScope::new(1), &target,
-    ).unwrap();
-    let mut request = morphiecore::adapter::Request::from_generation(decoded, "public").unwrap();
-    request.conversation = Some(ConversationContext::conversation("conversation-one").unwrap());
-    request.context.cache.prompt_cache_key = Presence::Value("shared-workspace".into());
-    request.context.cache.prompt_cache_retention = Presence::Value(CacheRetention::InMemory);
-    let original = request.clone();
-    let secret = SecretMaterial::new("synthetic-key").unwrap();
-    representable(&native, &request).unwrap();
-    let prepared = prepare(&native, &p, &secret, &request).unwrap();
-    assert!(prepared.safe_headers.contains(&(
-        "x-opencode-session".into(),
-        "427d18da2021fadacd82a4b187acd8b4459e929ad27d1f77025fff66310a176e".into()
-    )));
-    assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&prepared.body).unwrap(),
-        json!({"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]})
-    );
-    assert_eq!(request, original);
-    assert!(request.cache_session.is_none());
-    let mut independent = request.clone();
-    independent.conversation = Some(ConversationContext::conversation("conversation-two").unwrap());
-    independent.context.cache.prompt_cache_key = Presence::Value("shared-workspace".into());
-    representable(&native, &independent).unwrap();
-    let prepared = prepare(&native, &p, &secret, &independent).unwrap();
-    assert!(prepared.safe_headers.contains(&(
-        "x-opencode-session".into(),
-        "7577d45153ce9042751834fb6f264cc0fb919b44f4408bb37a6defc6d3256d9f".into()
-    )));
-    for key in [
-        Presence::Absent,
-        Presence::Null,
-        Presence::Value(String::new()),
-        Presence::Value("bad\nheader".into()),
-        Presence::Value("中文".into()),
-    ] {
-        let mut edited = request.clone();
-        edited.context.cache.prompt_cache_key = key;
-        representable(&native, &edited).unwrap();
-        prepare(&native, &p, &secret, &edited).unwrap();
-    }
-    let mut missing = request.clone();
-    missing.conversation = None;
-    assert!(representable(&native, &missing).is_err());
-    assert!(prepare(&native, &p, &secret, &missing).is_err());
-    let mut no_carrier = native.clone();
-    no_carrier
-        .representation
-        .messages_mut()
-        .unwrap()
-        .cache
-        .session_id = false;
-    assert!(representable(&no_carrier, &request).is_err());
-    assert!(prepare(&no_carrier, &p, &secret, &request).is_err());
-    request.context.cache.prompt_cache_options = Presence::Value(CacheOptions {
-        mode: CacheMode::Explicit,
-        ttl: CacheTtl::ThirtyMinutes,
-        comparison_response_id: Presence::Absent,
-        prewarm: Presence::Absent,
-    });
-    assert!(representable(&native, &request).is_err());
-    assert!(prepare(&native, &p, &secret, &request).is_err());
-}
-#[test]
-fn one_provider_keeps_operation_paths_auth_and_credential_domain_separate() {
-    let p = provider();
-    let chat = endpoint(ProtocolProfile::OpenAiChat);
-    let native = endpoint(ProtocolProfile::AnthropicMessages);
-    compile_endpoints(p.clone(), vec![chat.clone(), native.clone()]).unwrap();
-    assert_eq!(
-        p.generation_entry(GenerationOperation::ChatCompletions)
-            .unwrap()
-            .auth,
-        AuthScheme::Bearer
-    );
-    assert_eq!(
-        p.generation_entry(GenerationOperation::AnthropicMessages)
-            .unwrap()
-            .auth,
-        AuthScheme::ApiKeyHeader("x-api-key")
-    );
-    let secret = SecretMaterial::new("synthetic-secret").unwrap();
-    let mut request = Adapter::new(Profile::Chat, Dialect::Standard, None)
-        .decode_request(br#"{"model":"public","messages":[{"role":"user","content":"hello"}]}"#)
-        .unwrap();
-    request.conversation = Some(
-        morphiecore::semantic::context::ConversationContext::conversation("synthetic-conversation")
-            .unwrap(),
-    );
-    assert_eq!(
-        prepare(&chat, &p, &secret, &request).unwrap().auth_header,
-        ("authorization".into(), "Bearer synthetic-secret".into())
-    );
-    let request = NativeProfile::AdaptiveTextTools.decode_request(
-        br#"{"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":"hello"}]}"#).unwrap();
-    let before = request.clone();
-    let session = CacheSession::new("synthetic-session").unwrap();
-    let wire = prepare_messages(&native, &p, &secret, &request, Some(&session)).unwrap();
-    assert_eq!(wire.path, "/messages");
-    assert_eq!(
-        wire.auth_header,
-        ("x-api-key".into(), "synthetic-secret".into())
-    );
-    assert!(
-        wire.safe_headers
-            .contains(&("anthropic-version".into(), "2023-06-01".into()))
-    );
-    assert!(
-        wire.safe_headers
-            .contains(&("x-opencode-session".into(), "synthetic-session".into()))
-    );
-    assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&wire.body).unwrap(),
-        json!({"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":"hello"}]})
-    );
-    assert_eq!(request, before);
-    assert!(!format!("{wire:?}").contains("synthetic-secret"));
-    assert!(prepare_messages(&native, &p, &secret, &request, None).is_err());
-    assert!(
-        prepare_messages(
-            &native,
-            &p,
-            &secret,
-            &request,
-            Some(&CacheSession::new("中文").unwrap())
-        )
-        .is_err()
-    );
-}
-#[test]
-fn native_binding_mismatches_and_unwired_semantic_paths_fail_closed() {
-    let p = provider();
-    let native = endpoint(ProtocolProfile::AnthropicMessages);
-    assert!(matches!(
-        native.adapter().unwrap(),
-        UpstreamAdapter::AnthropicMessages(_)
-    ));
-    let chat_request = Adapter::new(Profile::Chat, Dialect::Standard, None)
-        .decode_request(br#"{"model":"public","messages":[{"role":"user","content":"hello"}]}"#)
-        .unwrap();
-    assert!(representable(&native, &chat_request).is_err());
-    let mut attempt = Attempt::new(native.adapter().unwrap(), 4096, SseLimits::default());
-    assert!(attempt.begin(200, "application/json").is_err());
-    assert!(attempt.finish().is_err());
+    compile_with(model).unwrap();
 
-    let target =
-        morphiecore::protocol::anthropic::ReplayTarget::new("synthetic", "synthetic-model")
-            .unwrap();
-    let source = NativeProfile::AdaptiveTextTools.decode_generation_request(
-        br#"{"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":"hello"}]}"#,
-        morphiecore::semantic::task::generation::LocalScope::new(1),&target).unwrap();
-    let body = br#"{"id":"r","type":"message","role":"assistant","model":"synthetic-model","content":[{"type":"text","text":"answer"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":2}}"#;
-    for fragment in [1, 7, body.len()] {
-        let mut attempt = Attempt::native_messages(
-            source.clone(),
-            target.clone(),
-            morphiecore::semantic::task::generation::LocalScope::new(2),
-            4096,
-        )
-        .unwrap();
-        attempt.begin(200, "application/json").unwrap();
-        for chunk in body.chunks(fragment) {
-            assert!(attempt.push(chunk).unwrap().1.is_empty());
-        }
-        assert!(attempt.response().is_err());
-        assert_eq!(attempt.finish().unwrap().metadata.created, None);
-    }
-    let mut attempt = Attempt::native_messages(
-        source.clone(),
-        target.clone(),
-        morphiecore::semantic::task::generation::LocalScope::new(2),
-        4096,
-    )
-    .unwrap();
-    attempt.begin(200, "application/json").unwrap();
-    attempt.push(body).unwrap();
-    attempt.push(b"x").unwrap();
-    assert!(attempt.finish().is_err());
-    assert!(attempt.begin(200, "application/json").is_err());
-    let mut attempt = Attempt::native_messages(
-        source,
-        target,
-        morphiecore::semantic::task::generation::LocalScope::new(2),
-        4096,
-    )
-    .unwrap();
-    attempt.begin(200, "text/event-stream").unwrap();
-    assert!(attempt.finish().is_err());
+    let p = provider();
     for change in 0..3 {
         let mut bad = native.clone();
         match change {
@@ -442,93 +172,186 @@ fn native_binding_mismatches_and_unwired_semantic_paths_fail_closed() {
             TopologyError::TargetMismatch
         );
     }
-    let mut bad = p.clone();
-    bad.messages = None;
+    let mut missing_path = p.clone();
+    missing_path.messages = None;
     assert_eq!(
-        compile_endpoints(bad, vec![native.clone()]).unwrap_err(),
+        compile_endpoints(missing_path, vec![native.clone()]).unwrap_err(),
         TopologyError::TargetMismatch
     );
-    let secret = SecretMaterial::new("synthetic-secret").unwrap();
-    let mut request=NativeProfile::AdaptiveTextTools.decode_request(
-        br#"{"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":"hello"}]}"#).unwrap();
-    let session = CacheSession::new("synthetic-session").unwrap();
-    request.model = "other-model".into();
-    assert!(prepare_messages(&native, &p, &secret, &request, Some(&session)).is_err());
-    request.model = "synthetic-model".into();
-    request.stream = morphiecore::semantic::value::Presence::Value(true);
-    assert!(prepare_messages(&native, &p, &secret, &request, Some(&session)).is_err());
-}
-#[test]
-fn protocol_owned_caps_gate_compilation_preflight_and_preparation() {
-    use morphiecore::{
-        lowering::target::TargetCaps,
-        protocol::anthropic::{Dialect as NativeDialect, ReplayTarget},
-        semantic::{task::generation::LocalScope, value::ReplayOrigin},
-    };
-    let p = provider();
-    let native = endpoint(ProtocolProfile::AnthropicMessages);
-    assert!(native.representation.openai().is_none());
-    let source=NativeProfile::AdaptiveTextTools.decode_generation_request(
-        br#"{"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":"hello"}]}"#,
-        LocalScope::new(1),&ReplayTarget::new("synthetic","synthetic-model").unwrap()).unwrap();
-    let request = morphiecore::adapter::Request::from_generation(source, "public").unwrap();
-    let original = request.clone();
-    let secret = SecretMaterial::new("synthetic-key").unwrap();
-    let mut standard = native.clone();
-    standard.representation = morphiecore::protocol::anthropic::TargetCaps::new(
-        NativeProfile::AdaptiveTextTools,
-        NativeDialect::Standard,
-        ReplayOrigin::new("synthetic").unwrap(),
-    )
-    .into();
-    representable(&standard, &request).unwrap();
-    let prepared = prepare(&standard, &p, &secret, &request).unwrap();
+    let mut foreign_caps = native.clone();
+    foreign_caps.representation = Contract::full().into();
+    assert!(foreign_caps.adapter().is_err());
     assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&prepared.body).unwrap(),
-        json!({"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]})
+        compile_endpoints(p.clone(), vec![foreign_caps.clone()]).unwrap_err(),
+        TopologyError::ContractUnsatisfiable
     );
-    assert!(
-        !prepared
-            .safe_headers
-            .iter()
-            .any(|(key, _)| key == "x-opencode-session")
+    let mut foreign_protocol = native;
+    foreign_protocol.protocol = ProtocolProfile::OpenAiChat;
+    assert!(compile_endpoints(p.clone(), vec![foreign_protocol.clone()]).is_err());
+    let request = native_request();
+    for wrong in [foreign_caps, foreign_protocol] {
+        assert!(representable(&wrong, &request).is_err());
+        assert!(prepare(&wrong, &p, &secret(), &request).is_err());
+    }
+}
+
+#[test]
+fn preflight_and_preparation_agree_on_native_body_headers_and_delivery() {
+    let p = provider();
+    let mut native = standard_native();
+    let mut request = native_request();
+    let original = request.clone();
+    representable(&native, &request).unwrap();
+    let prepared = prepare(&native, &p, &secret(), &request).unwrap();
+    assert_eq!(prepared.path, "/messages");
+    assert_eq!(
+        prepared.auth_header,
+        ("x-api-key".into(), "synthetic-secret".into())
     );
-    assert!(
-        prepared
-            .safe_headers
-            .contains(&("anthropic-version".into(), "2023-06-01".into()))
-    );
-    // The Go dialect requires its own session carrier; Standard does not.
+    assert!(!format!("{prepared:?}").contains("synthetic-secret"));
+    assert_eq!(header(&prepared, "anthropic-version"), Some("2023-06-01"));
+    assert!(header(&prepared, "user-agent").is_some_and(|v| v.starts_with("MorphieCore/")));
+    assert_eq!(header(&prepared, "x-opencode-session"), None);
+    assert_eq!(body(&prepared), hello_wire());
+    assert_eq!(request, original);
+
+    request.delivery.stream = Presence::Value(true);
     assert!(representable(&native, &request).is_err());
-    let mut restricted = standard.clone();
+    assert!(prepare(&native, &p, &secret(), &request).is_err());
+    native.execution.streaming = true;
+    representable(&native, &request).unwrap();
+    let streaming = prepare(&native, &p, &secret(), &request).unwrap();
+    assert_eq!(body(&streaming)["stream"], true);
+    assert_eq!(header(&streaming, "accept"), Some("text/event-stream"));
+    request.delivery.stream = Presence::Null;
+    assert!(representable(&native, &request).is_err());
+
+    let mut restricted = standard_native();
     restricted
         .representation
         .messages_mut()
         .unwrap()
         .semantics
         .max_output_tokens = false;
+    let request = native_request();
     assert!(representable(&restricted, &request).is_err());
-    assert!(prepare(&restricted, &p, &secret, &request).is_err());
-    let foreign: TargetCaps = Contract::full().into();
-    assert!(
-        native
-            .adapter()
-            .unwrap()
-            .encode_request(&request, "synthetic-model", &foreign)
-            .is_err()
-    );
-    let mut wrong = standard.clone();
-    wrong.representation = foreign;
-    assert!(wrong.adapter().is_err());
+    assert!(prepare(&restricted, &p, &secret(), &request).is_err());
+    let chat_request = Adapter::new(Profile::Chat, Dialect::Standard, None)
+        .decode_request(br#"{"model":"public","messages":[{"role":"user","content":"hello"}]}"#)
+        .unwrap();
+    // Chat requests carry no max_tokens, which native Messages requires.
+    assert!(representable(&native, &chat_request).is_err());
+}
+
+#[test]
+fn go_session_header_follows_grouping_and_never_enters_the_body() {
+    let p = provider();
+    let native = endpoint(ProtocolProfile::AnthropicMessages);
+    let mut request = native_request();
+    assert!(representable(&native, &request).is_err());
+    assert!(prepare(&native, &p, &secret(), &request).is_err());
+    request.cache_session =
+        Some(morphiecore::protocol::cache::CacheSession::new("explicit").unwrap());
+    let prepared = prepare(&native, &p, &secret(), &request).unwrap();
+    assert_eq!(header(&prepared, "x-opencode-session"), Some("explicit"));
+    request.cache_session = None;
+
+    request.conversation = Some(ConversationContext::conversation("conversation-one").unwrap());
+    request.context.cache.prompt_cache_key = Presence::Value("shared-workspace".into());
+    let original = request.clone();
+    representable(&native, &request).unwrap();
+    let prepared = prepare(&native, &p, &secret(), &request).unwrap();
     assert_eq!(
-        compile_endpoints(p.clone(), vec![wrong.clone()]).unwrap_err(),
-        TopologyError::ContractUnsatisfiable
+        header(&prepared, "x-opencode-session"),
+        Some("427d18da2021fadacd82a4b187acd8b4459e929ad27d1f77025fff66310a176e")
     );
-    assert!(representable(&wrong, &request).is_err());
-    assert!(prepare(&wrong, &p, &secret, &request).is_err());
-    let mut wrong = standard;
-    wrong.protocol = ProtocolProfile::OpenAiChat;
-    assert!(compile_endpoints(p.clone(), vec![wrong.clone()]).is_err());
-    assert!(prepare(&wrong, &p, &secret, &request).is_err());
+    assert_eq!(body(&prepared), hello_wire());
     assert_eq!(request, original);
+    let mut other = request.clone();
+    other.conversation = Some(ConversationContext::conversation("conversation-two").unwrap());
+    let prepared = prepare(&native, &p, &secret(), &other).unwrap();
+    assert_eq!(
+        header(&prepared, "x-opencode-session"),
+        Some("7577d45153ce9042751834fb6f264cc0fb919b44f4408bb37a6defc6d3256d9f")
+    );
+    // The cache key is not a native carrier; any spelling leaves the session unchanged.
+    for key in [
+        Presence::Absent,
+        Presence::Null,
+        Presence::Value(String::new()),
+        Presence::Value("bad\nheader".into()),
+    ] {
+        let mut edited = request.clone();
+        edited.context.cache.prompt_cache_key = key;
+        representable(&native, &edited).unwrap();
+        prepare(&native, &p, &secret(), &edited).unwrap();
+    }
+    let mut no_carrier = native.clone();
+    no_carrier
+        .representation
+        .messages_mut()
+        .unwrap()
+        .cache
+        .session_id = false;
+    assert!(representable(&no_carrier, &request).is_err());
+    assert!(prepare(&no_carrier, &p, &secret(), &request).is_err());
+    request.context.cache.prompt_cache_options = Presence::Value(CacheOptions {
+        mode: CacheMode::Explicit,
+        ttl: CacheTtl::ThirtyMinutes,
+        comparison_response_id: Presence::Absent,
+        prewarm: Presence::Absent,
+    });
+    assert!(representable(&native, &request).is_err());
+    assert!(prepare(&native, &p, &secret(), &request).is_err());
+}
+
+#[test]
+fn one_provider_keeps_operation_paths_and_auth_separate() {
+    let p = provider();
+    let chat = endpoint(ProtocolProfile::OpenAiChat);
+    let native = standard_native();
+    compile_endpoints(p.clone(), vec![chat.clone(), native.clone()]).unwrap();
+    let mut request = Adapter::new(Profile::Chat, Dialect::Standard, None)
+        .decode_request(br#"{"model":"public","messages":[{"role":"user","content":"hello"}]}"#)
+        .unwrap();
+    request.conversation = Some(ConversationContext::conversation("synthetic").unwrap());
+    let prepared = prepare(&chat, &p, &secret(), &request).unwrap();
+    assert_eq!(prepared.path, "/chat/completions");
+    assert_eq!(
+        prepared.auth_header,
+        ("authorization".into(), "Bearer synthetic-secret".into())
+    );
+    let prepared = prepare(&native, &p, &secret(), &native_request()).unwrap();
+    assert_eq!(prepared.path, "/messages");
+    assert_eq!(prepared.auth_header.0, "x-api-key");
+}
+
+#[test]
+fn native_static_intake_waits_for_the_complete_body() {
+    let native = standard_native();
+    assert!(matches!(
+        native.adapter().unwrap(),
+        UpstreamAdapter::AnthropicMessages { .. }
+    ));
+    let body = br#"{"id":"r","type":"message","role":"assistant","model":"synthetic-model","content":[{"type":"text","text":"answer"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":2}}"#;
+    let attempt = || Attempt::new(native.adapter().unwrap(), 4096, SseLimits::default());
+    for fragment in [1, 7, body.len()] {
+        let mut attempt = attempt();
+        attempt.begin(200, "application/json").unwrap();
+        for chunk in body.chunks(fragment) {
+            assert!(attempt.push(chunk).unwrap().1.is_empty());
+        }
+        assert!(attempt.response().is_err());
+        assert_eq!(attempt.finish().unwrap().metadata.created, None);
+    }
+    let mut trailing = attempt();
+    trailing.begin(200, "application/json").unwrap();
+    trailing.push(body).unwrap();
+    trailing.push(b"x").unwrap();
+    assert!(trailing.finish().is_err());
+    assert!(trailing.begin(200, "application/json").is_err());
+    let mut empty_stream = attempt();
+    empty_stream.begin(200, "text/event-stream").unwrap();
+    assert!(empty_stream.finish().is_err());
+    assert!(attempt().begin(200, "text/plain").is_err());
 }

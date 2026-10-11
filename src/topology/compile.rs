@@ -244,8 +244,6 @@ pub fn compile(
                     crate::protocol::anthropic::Profile::AdaptiveTextTools.semantic_contract();
                 if !native.supports(endpoint.representation.semantics())
                     || !native.supports(&model.contract)
-                    || endpoint.representation.replay_origin().map(|o| o.as_str())
-                        != Some(endpoint.provider.as_str())
                     || model.standard_context
                 {
                     return Err(TopologyError::ContractUnsatisfiable);

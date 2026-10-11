@@ -144,16 +144,9 @@ mod tests {
     fn fixture() -> DecodedResponse {
         let profile = anthropic::Profile::AdaptiveTextTools;
         let target = anthropic::ReplayTarget::new("provider", "model").unwrap();
-        let source = profile
-            .decode_generation_request(
-                br#"{"model":"model","max_tokens":64,"messages":[{"role":"user","content":"go"}]}"#,
-                LocalScope::new(1),
-                &target,
-            )
-            .unwrap();
         profile.decode_generation_response(
             br#"{"id":"native","type":"message","role":"assistant","model":"model","content":[{"type":"thinking","thinking":"plan","signature":"synthetic-signature"},{"type":"tool_use","id":"c","name":"lookup","input":{"n":9007199254740993.125}}],"stop_reason":"tool_use","usage":{"input_tokens":11,"cache_read_input_tokens":3,"cache_creation_input_tokens":2,"output_tokens":7}}"#,
-            LocalScope::new(3), &source, &target,
+            LocalScope::new(3), &target,
         ).unwrap()
     }
     #[test]

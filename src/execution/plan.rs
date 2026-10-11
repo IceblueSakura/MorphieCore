@@ -74,36 +74,24 @@ pub fn representable(
     endpoint: &Endpoint,
     request: &crate::adapter::Request,
 ) -> Result<(), RejectionReason> {
-    if endpoint.protocol == crate::topology::ProtocolProfile::AnthropicMessages
-        && endpoint.representation.replay_origin().map(|o| o.as_str())
-            != Some(endpoint.provider.as_str())
-    {
-        return Err(RejectionReason::ReplayScope);
-    }
     if (request.delivery.streaming() || endpoint.representation.forced_stream())
         && !endpoint.execution.streaming
     {
         return Err(RejectionReason::Streaming);
     }
-    let value = endpoint
-        .adapter()
-        .map_err(|_| RejectionReason::Representation)?
-        .encode_request(request, &endpoint.upstream_model, &endpoint.representation)
-        .map_err(|error| {
-            use crate::{adapter::AdapterError, lowering::generation::RepresentationError};
-            match error {
-                AdapterError::Representation(RepresentationError::Admission(feature)) => {
-                    RejectionReason::Semantic(feature)
-                }
-                AdapterError::Representation(RepresentationError::ImageInput) => {
-                    RejectionReason::Image
-                }
-                AdapterError::Representation(RepresentationError::ReplayOrigin) => {
-                    RejectionReason::ReplayScope
-                }
-                _ => RejectionReason::Representation,
+    let value = endpoint.encode_request(request).map_err(|error| {
+        use crate::{adapter::AdapterError, lowering::generation::RepresentationError};
+        match error {
+            AdapterError::Representation(RepresentationError::Admission(feature)) => {
+                RejectionReason::Semantic(feature)
             }
-        })?;
+            AdapterError::Representation(RepresentationError::ImageInput) => RejectionReason::Image,
+            AdapterError::Representation(RepresentationError::ReplayOrigin) => {
+                RejectionReason::ReplayScope
+            }
+            _ => RejectionReason::Representation,
+        }
+    })?;
     crate::semantic::value::json_size(&value, endpoint.execution.request_body_limit)
         .map_err(|_| RejectionReason::BodyLimit)?;
     Ok(())

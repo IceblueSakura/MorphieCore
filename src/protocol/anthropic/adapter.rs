@@ -2,15 +2,9 @@
 use super::{Profile, ReplayTarget};
 use crate::{
     adapter::{AdapterError, Request},
-    protocol::{
-        CodecError,
-        cache::{CacheProjection, CacheSession},
-        extensions::CustomSections,
-    },
+    protocol::{CodecError, cache::CacheProjection, extensions::CustomSections},
     semantic::{
-        context::ExecutionHints,
-        task::generation::GenerationSemanticContract,
-        value::{Presence, ReplayOrigin},
+        context::ExecutionHints, task::generation::GenerationSemanticContract, value::Presence,
     },
 };
 use serde_json::Value;
@@ -26,17 +20,14 @@ pub struct TargetCaps {
     pub profile: Profile,
     pub dialect: Dialect,
     pub semantics: GenerationSemanticContract,
-    /// Native replay scope includes the selected model through ReplayTarget.
-    pub replay_origin: Option<ReplayOrigin>,
     pub cache: CacheProjection,
 }
 impl TargetCaps {
-    pub fn new(profile: Profile, dialect: Dialect, origin: ReplayOrigin) -> Self {
+    pub fn new(profile: Profile, dialect: Dialect) -> Self {
         Self {
             profile,
             dialect,
             semantics: profile.semantic_contract(),
-            replay_origin: Some(origin),
             cache: CacheProjection {
                 session_id: dialect == Dialect::OpenCodeGo,
                 ..Default::default()
@@ -84,16 +75,12 @@ impl TargetCaps {
         }
         Ok(())
     }
+    /// The target labels come from the trusted endpoint binding, never the request.
     pub(crate) fn encode_request(
         &self,
         request: &Request,
-        model: &str,
+        target: &ReplayTarget,
     ) -> Result<Value, AdapterError> {
-        let origin = self
-            .replay_origin
-            .as_ref()
-            .ok_or_else(|| CodecError::Unsupported("native replay scope".into()))?;
-        let target = ReplayTarget::new(origin.as_str(), model)?;
         let stripped = request.without_foreign_replay(Some(&target.origin()))?;
         let request = stripped.as_ref().unwrap_or(request);
         self.check_context(request)?;
@@ -111,7 +98,7 @@ impl TargetCaps {
         semantic = semantic.with_settings(settings).map_err(CodecError::from)?;
         let mut wire = self
             .profile
-            .encode_generation_request(&semantic, &request.task.fidelity, &target)?
+            .encode_generation_request(&semantic, &request.task.fidelity, target)?
             .value;
         if let Some(stream) = request.delivery.stream.value() {
             wire["stream"] = serde_json::json!(stream);
@@ -122,25 +109,6 @@ impl TargetCaps {
         &self,
         request: &Request,
     ) -> Result<Vec<(String, String)>, CodecError> {
-        let session = if self.dialect == Dialect::OpenCodeGo {
-            Some(self.cache.opencode_session(
-                request.conversation.as_ref(),
-                request.cache_session.as_ref(),
-                request.inferred_affinity,
-            )?)
-        } else {
-            None
-        };
-        self.headers(session.as_deref())
-    }
-    pub(crate) fn headers(
-        &self,
-        session: Option<&str>,
-    ) -> Result<Vec<(String, String)>, CodecError> {
-        let go = self.dialect == Dialect::OpenCodeGo;
-        if go != session.is_some() {
-            return Err(CodecError::Invalid("native session carrier"));
-        }
         let mut headers = vec![
             ("anthropic-version".into(), "2023-06-01".into()),
             (
@@ -148,14 +116,13 @@ impl TargetCaps {
                 concat!("MorphieCore/", env!("CARGO_PKG_VERSION")).into(),
             ),
         ];
-        if let Some(session) = session {
-            if !self.cache.session_id {
-                return Err(CodecError::Invalid("native session header"));
-            }
-            headers.push((
-                "x-opencode-session".into(),
-                CacheSession::new(session)?.header_value()?.into(),
-            ));
+        if self.dialect == Dialect::OpenCodeGo {
+            let session = self.cache.opencode_session(
+                request.conversation.as_ref(),
+                request.cache_session.as_ref(),
+                request.inferred_affinity,
+            )?;
+            headers.push(("x-opencode-session".into(), session));
         }
         Ok(headers)
     }

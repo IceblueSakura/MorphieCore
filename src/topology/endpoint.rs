@@ -53,13 +53,19 @@ impl Endpoint {
         use crate::{
             adapter::UpstreamAdapter,
             protocol::{
-                CodecError,
+                CodecError, anthropic,
                 openai::{Adapter, Profile},
             },
         };
         Ok(match (&self.protocol, &self.representation) {
             (ProtocolProfile::AnthropicMessages, TargetCaps::AnthropicMessages(caps)) => {
-                UpstreamAdapter::AnthropicMessages(caps.profile)
+                UpstreamAdapter::AnthropicMessages {
+                    profile: caps.profile,
+                    target: anthropic::ReplayTarget::new(
+                        self.provider.as_str(),
+                        &self.upstream_model,
+                    )?,
+                }
             }
             (
                 ProtocolProfile::OpenAiChat | ProtocolProfile::OpenAiResponses,
@@ -74,6 +80,36 @@ impl Endpoint {
             })),
             _ => return Err(CodecError::ProfileMismatch),
         })
+    }
+    /// Candidate-private upstream body for this binding's protocol and model.
+    pub fn encode_request(
+        &self,
+        request: &crate::adapter::Request,
+    ) -> Result<serde_json::Value, crate::adapter::AdapterError> {
+        use crate::adapter::UpstreamAdapter;
+        match (self.adapter()?, &self.representation) {
+            (UpstreamAdapter::OpenAi(adapter), TargetCaps::OpenAi(caps)) => {
+                adapter.encode_request(request, &self.upstream_model, caps)
+            }
+            (
+                UpstreamAdapter::AnthropicMessages { target, .. },
+                TargetCaps::AnthropicMessages(caps),
+            ) => caps.encode_request(request, &target),
+            _ => Err(crate::protocol::CodecError::ProfileMismatch.into()),
+        }
+    }
+    /// Closed Provider header projection; no inbound header map or runtime target selection.
+    pub(crate) fn request_headers(
+        &self,
+        request: &crate::adapter::Request,
+    ) -> Result<Vec<(String, String)>, crate::protocol::CodecError> {
+        match &self.representation {
+            TargetCaps::OpenAi(caps) => self
+                .adapter()?
+                .openai()?
+                .request_headers(request, caps.cache),
+            TargetCaps::AnthropicMessages(caps) => caps.request_headers(request),
+        }
     }
     pub fn validate(&self) -> Result<(), crate::topology::TopologyError> {
         use crate::topology::TopologyError;
