@@ -56,19 +56,49 @@ pub(super) fn object(v: &Value) -> Result<&Map<String, Value>, CodecError> {
     v.as_object().ok_or(CodecError::Invalid("object"))
 }
 /// Operation-local parsing policy. Payload contents never select this direction.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) enum DecodeDirection {
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) enum DecodeDirection<'a> {
+    /// Closed shape, for gateway-built requests.
     #[default]
     Request,
+    /// Downstream client request: unregistered fields are ignored and their names
+    /// recorded. Discriminators (`type`, `role`) are values and stay strict.
+    Client(&'a IgnoredFields),
     Upstream,
     Encoded,
 }
-impl DecodeDirection {
+impl DecodeDirection<'_> {
     pub(crate) fn fields(self, o: &Map<String, Value>, allowed: &[&str]) -> Result<(), CodecError> {
-        if self == Self::Upstream {
-            return Ok(());
+        match self {
+            Self::Upstream => Ok(()),
+            Self::Client(ignored) => {
+                for key in o.keys().filter(|key| !allowed.contains(&key.as_str())) {
+                    ignored.record(key);
+                }
+                Ok(())
+            }
+            Self::Request | Self::Encoded => fields(o, allowed),
         }
-        fields(o, allowed)
+    }
+}
+/// Names of ignored client request fields, deduplicated and bounded; values are never kept.
+#[derive(Debug, Default)]
+pub struct IgnoredFields(std::cell::RefCell<std::collections::BTreeSet<String>>);
+impl IgnoredFields {
+    const MAX_NAMES: usize = 32;
+    const MAX_NAME_BYTES: usize = 64;
+    fn record(&self, name: &str) {
+        let mut names = self.0.borrow_mut();
+        if names.len() < Self::MAX_NAMES {
+            let mut end = name.len().min(Self::MAX_NAME_BYTES);
+            while !name.is_char_boundary(end) {
+                end -= 1;
+            }
+            names.insert(name[..end].to_owned());
+        }
+    }
+    pub fn into_names(self) -> Vec<String> {
+        self.0.into_inner().into_iter().collect()
     }
 }
 /// Closed request shape; shared readers use their explicitly supplied direction.
@@ -152,8 +182,8 @@ pub(super) fn write_control_values(c: &GenerationControls, o: &mut Map<String, V
     }
 }
 #[derive(Default)]
-pub(super) struct Items {
-    pub direction: DecodeDirection,
+pub(super) struct Items<'a> {
+    pub direction: DecodeDirection<'a>,
     pub items: Vec<(ItemId, Item)>,
     pub resources: ResourceTable,
     pub message_owners: Vec<(ItemId, ItemId)>,
@@ -162,8 +192,8 @@ pub(super) struct Items {
     next_part: u64,
     next_resource: u64,
 }
-impl Items {
-    pub fn new(direction: DecodeDirection) -> Self {
+impl<'a> Items<'a> {
+    pub fn new(direction: DecodeDirection<'a>) -> Self {
         Self {
             direction,
             ..Default::default()
@@ -185,7 +215,7 @@ impl Items {
             description,
         })
     }
-    pub fn from_resources(resources: ResourceTable, direction: DecodeDirection) -> Self {
+    pub fn from_resources(resources: ResourceTable, direction: DecodeDirection<'a>) -> Self {
         let next_resource = resources.iter().map(|(id, _)| id.get()).max().unwrap_or(0);
         Self {
             resources,

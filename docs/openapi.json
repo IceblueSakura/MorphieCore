@@ -3,7 +3,7 @@
   "info": {
     "title": "MorphieCore minimal model interaction gateway",
     "version": "0.1.0",
-    "description": "Current envelope-level HTTP contract, not complete standard conformance. Responses uses the Standard adapter; Chat retains the explicit MorphieCore compatibility profile. Provider-specific rules cannot authorize private Responses carriers or silent loss. The independent _openbridge attachment is rejected on protocol envelopes/items and never emitted. Text/float Embeddings, static Images, binary Speech and file Transcription are independent tasks with explicit single-source API-key activation, never inferred from conversation bindings. Binary task entries require explicit model selection and the matching single-source, non-fallback credential pool; embedded callers also activate entries explicitly. Named ancillary audio-report projections preserve full IR reports while emitting standard audio/JSON. Models exposes only activated public labels; fine-tuned model deletion is not authorized. No stateful resources, URL fetching or implicit local retry/fallback. Realtime and downstream audio SSE are not admitted."
+    "description": "Current envelope-level HTTP contract, not complete standard conformance. Responses uses the Standard adapter; Chat retains the explicit MorphieCore compatibility profile. Provider-specific rules cannot authorize private Responses carriers or silent loss. Unregistered generation request fields are ignored at any depth and only their names reach diagnostics; unknown type and role values are rejected. The old _openbridge attachment is never emitted. Text/float Embeddings, static Images, binary Speech and file Transcription are independent tasks with explicit single-source API-key activation, never inferred from conversation bindings. Binary task entries require explicit model selection and the matching single-source, non-fallback credential pool; embedded callers also activate entries explicitly. Named ancillary audio-report projections preserve full IR reports while emitting standard audio/JSON. Models exposes only activated public labels; fine-tuned model deletion is not authorized. No stateful resources, URL fetching or implicit local retry/fallback. Realtime and downstream audio SSE are not admitted."
   },
   "servers": [{"url": "http://127.0.0.1:8080"}],
   "security": [{"bearerAuth": []}],
@@ -694,13 +694,13 @@
       },
       "ChatRequest": {
         "type": "object", "required": ["model", "messages"],
-        "not": {"anyOf": [{"required": ["provider"]}, {"required": ["_openbridge"]}, {"required": ["session_id"]}]},
+        "not": {"required": ["session_id"]},
         "properties": {
           "model": {"$ref": "#/components/schemas/PublicModelLabel"},
           "prompt_cache_key": {"type": ["string", "null"], "maxLength": 256, "description": "Optional cache grouping intent, independent of logical conversation and allowed to be shared across conversations. Absence allows internal defaults; null is not filled from conversation context. Neither value guarantees a cache hit or disables automatic caching. No Provider session parameter is required from the client."},
           "messages": {"type": "array", "items": {"type": "object", "not": {"required": ["_openbridge"]}}, "description": "User/assistant and system/developer content accepts a string or nonempty ordered plain-text part array. Tool result content accepts a string or ordered plain-text part array, including an empty array; single tool-result parts remain arrays. User content additionally admits ordered text/image_url parts and inline input_audio WAV/MP3 parts only when public and endpoint contracts permit the corresponding input modality; one resource remains an array. Audio uses Base64 data plus explicit wav/mp3 format, not URL/transcript substitution. HTTP(S) URL and Base64 image data URL only; file IDs, other roles' input media and tool-result media remain rejected. Assistant audio history has separate library admission and trusted source/expiry requirements in the Chat media profile; unbound audio IDs and existing text/image-only product bindings reject it."},
           "modalities": {"type": ["array", "null"], "items": {"enum": ["text", "audio"]}, "minItems": 1, "maxItems": 2, "uniqueItems": true, "description": "Library output intent; audio requires matching audio options and explicit public/endpoint audio_output admission. Existing text/image bindings do not gain audio admission."},
-          "audio": {"type": ["object", "null"], "required": ["format", "voice"], "additionalProperties": false, "properties": {"format": {"enum": ["wav", "aac", "mp3", "flac", "opus", "pcm16"]}, "voice": {"type": "string", "minLength": 1, "maxLength": 128}}, "description": "Named-voice output options, not voice/account management. Requires audio modality; streaming requires pcm16. No audio model is activated by this schema."},
+          "audio": {"type": ["object", "null"], "required": ["format", "voice"], "properties": {"format": {"enum": ["wav", "aac", "mp3", "flac", "opus", "pcm16"]}, "voice": {"type": "string", "minLength": 1, "maxLength": 128}}, "description": "Named-voice output options, not voice/account management. Requires audio modality; streaming requires pcm16. No audio model is activated by this schema."},
           "stream": {"type": ["boolean", "null"], "default": false},
           "max_completion_tokens": {"type": ["integer", "null"], "minimum": 1, "description": "Bootstrap defaults absent/null to 1024 only when the public contract admits this control, and rejects values above 16384 after semantic decode. Targets without output-token control do not receive a fabricated cap."},
           "metadata": {"type": ["object", "null"], "maxProperties": 16, "propertyNames": {"maxLength": 64}, "additionalProperties": {"type": "string", "maxLength": 512}, "description": "Typed request hint, never copied into reported response metadata."},
@@ -736,12 +736,11 @@
           "description": {"type": "string"},
           "tools": {"type": "array", "minItems": 1, "maxItems": 127, "items": {"$ref": "#/components/schemas/ResponsesLeafTool"}}
         },
-        "additionalProperties": false,
         "description": "Ordered non-nested group. Same-kind names are unique within a group; different groups may reuse names. Total definitions plus groups share the tool budget. Calls carry namespace; results refer to call_id."
       },
       "ResponsesRequest": {
         "type": "object", "required": ["model"],
-        "not": {"anyOf": [{"required": ["provider"]}, {"required": ["_openbridge"]}, {"required": ["session_id"]}]},
+        "not": {"required": ["session_id"]},
         "properties": {
           "model": {"$ref": "#/components/schemas/PublicModelLabel"},
           "prompt_cache_key": {"type": ["string", "null"], "maxLength": 256, "description": "Optional cache grouping intent, independent of logical conversation and allowed to be shared across conversations. Absence allows internal defaults; null is not filled from conversation context. Neither value guarantees a cache hit or disables automatic caching. Cache echoes/usage remain upstream-reported facts."},

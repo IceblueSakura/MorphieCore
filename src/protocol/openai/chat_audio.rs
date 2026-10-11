@@ -6,6 +6,7 @@ use serde_json::{Map, Value, json};
 pub(super) fn settings(
     o: &Map<String, Value>,
     s: &mut GenerationSettings,
+    direction: DecodeDirection<'_>,
 ) -> Result<(), CodecError> {
     s.output_modalities = read_presence(o, "modalities", |v| {
         let v = v.as_array().ok_or(CodecError::Invalid("modalities"))?;
@@ -23,7 +24,7 @@ pub(super) fn settings(
     })?;
     s.audio = read_presence(o, "audio", |v| {
         let o = object(v)?;
-        fields(o, &["format", "voice"])?;
+        direction.fields(o, &["format", "voice"])?;
         Ok(AudioOutputOptions {
             format: string(o, "format")?
                 .parse()

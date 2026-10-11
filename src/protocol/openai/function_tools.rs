@@ -320,9 +320,10 @@ pub(super) fn decode(
     r: GenerationRequest,
     o: &Map<String, Value>,
     profile: Profile,
+    direction: DecodeDirection<'_>,
 ) -> Result<GenerationRequest, CodecError> {
     let mut s = r.settings().clone();
-    read_settings(o, profile, &mut s, DecodeDirection::Request)?;
+    read_settings(o, profile, &mut s, direction)?;
     Ok(r.with_settings(s)?)
 }
 pub(super) fn encode(

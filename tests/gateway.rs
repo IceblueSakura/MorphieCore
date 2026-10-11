@@ -580,7 +580,20 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         .send()
         .await
         .unwrap();
-    assert_eq!(response.status(), 400);
+    // Unregistered fields are ignored, never forwarded and never select an origin.
+    assert_eq!(response.status(), 200);
+    assert_eq!(observed.0.lock().unwrap().len(), before + 1);
+    assert!(
+        !observed
+            .0
+            .lock()
+            .unwrap()
+            .last()
+            .unwrap()
+            .to_string()
+            .contains("untrusted.invalid")
+    );
+    let before = before + 1;
     let response = client
         .post(format!("{url}/v1/responses"))
         .bearer_auth(support::CLIENT_KEY)

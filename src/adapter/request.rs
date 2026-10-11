@@ -20,6 +20,8 @@ pub struct Request {
     pub cache_session: Option<crate::protocol::cache::CacheSession>,
     pub(crate) source: Option<Profile>,
     pub(crate) n: Presence<u64>,
+    /// Ignored client request field names, for diagnostics only; never encoded.
+    pub(crate) ignored_fields: Vec<String>,
 }
 impl Request {
     /// Pure typed entry; model is a public label, not an origin or runtime target.
@@ -43,6 +45,7 @@ impl Request {
             conversation: None,
             cache_session: None,
             inferred_affinity: None,
+            ignored_fields: vec![],
             source: None,
             n: Presence::Absent,
         })

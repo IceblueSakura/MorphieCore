@@ -89,7 +89,7 @@ pub(super) async fn handle(
     profile: Profile,
     request: Request,
 ) -> Result<Response, ApiError> {
-    let trace = Trace::new(state.diagnostics.as_ref());
+    let mut trace = Trace::new(state.diagnostics.as_ref());
     if state.shutdown.is_cancelled() {
         return Err(ApiError::shutdown());
     }
@@ -107,6 +107,7 @@ pub(super) async fn handle(
     };
     let (entry, mut semantic) = admission::prepare(&state, profile, &bytes)?;
     semantic.conversation = Some(conversation);
+    trace.ignored_fields(std::mem::take(&mut semantic.ignored_fields));
     let deadline = tokio::time::Instant::now() + state.limits.exchange_timeout;
     exchange::run(state, entry, semantic, deadline, permit, trace).await
 }

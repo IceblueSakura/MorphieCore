@@ -287,7 +287,7 @@ async fn identity_budget_and_scope_are_owned_by_trusted_ingress() {
     )
     .unwrap();
     assert_eq!(request.task.semantic.controls().max_output_tokens, Some(32));
-    for wire in [br#"{"model":"fixture-model","model":"missing","messages":[]}"#.as_slice(),br#"{"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"max_completion_tokens":65}"#,br#"{"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"upstream_url":"https://untrusted.invalid"}"#] {assert_eq!(admission::prepare(&gate.state,Profile::Chat,wire).err().unwrap().status,400);}
+    for wire in [br#"{"model":"fixture-model","model":"missing","messages":[]}"#.as_slice(),br#"{"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"max_completion_tokens":65}"#] {assert_eq!(admission::prepare(&gate.state,Profile::Chat,wire).err().unwrap().status,400);}
     // Public identity resolves before task contents, not by guessing a Provider.
     assert_eq!(
         admission::prepare(
@@ -347,30 +347,57 @@ fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
         } else {
             serde_json::json!({"model":"fixture-model","input":"hi"})
         };
+        let (base, admitted) = admission::prepare(
+            &gate.state,
+            profile,
+            &serde_json::to_vec(&original).unwrap(),
+        )
+        .unwrap();
+        // Unregistered selectors are ignored by name and never reach the request.
+        for (field, value) in [
+            ("provider", serde_json::json!("other")),
+            ("provider", serde_json::json!({"order":["fixture"]})),
+            (
+                "upstream_url",
+                serde_json::json!("https://untrusted.invalid"),
+            ),
+        ] {
+            let mut wire = original.clone();
+            wire[field] = value;
+            let (entry, request) =
+                admission::prepare(&gate.state, profile, &serde_json::to_vec(&wire).unwrap())
+                    .unwrap();
+            assert_eq!(request.ignored_fields, [field]);
+            assert_eq!(request.task, admitted.task);
+            assert_eq!(
+                entry.candidates[0].endpoint.id,
+                base.candidates[0].endpoint.id
+            );
+        }
+        let (nested, unknown_kind) = if profile == Profile::Chat {
+            (
+                serde_json::json!({"model":"fixture-model","messages":[{"role":"user","content":"hi","x_trace":1}]}),
+                serde_json::json!({"model":"fixture-model","messages":[{"role":"critic","content":"hi"}]}),
+            )
+        } else {
+            (
+                serde_json::json!({"model":"fixture-model","input":[{"type":"message","role":"user","content":"hi","x_trace":1}]}),
+                serde_json::json!({"model":"fixture-model","input":[{"type":"future_item","content":"hi"}]}),
+            )
+        };
+        let (_, request) =
+            admission::prepare(&gate.state, profile, &serde_json::to_vec(&nested).unwrap())
+                .unwrap();
+        assert_eq!(request.ignored_fields, ["x_trace"]);
+        // Discriminators are values; ignoring an unknown kind would drop content.
         assert!(
             admission::prepare(
                 &gate.state,
                 profile,
-                &serde_json::to_vec(&original).unwrap()
+                &serde_json::to_vec(&unknown_kind).unwrap()
             )
-            .is_ok()
+            .is_err()
         );
-        for provider in [
-            serde_json::json!("fixture"),
-            serde_json::json!("other"),
-            serde_json::json!({"order":["fixture"]}),
-            serde_json::Value::Null,
-        ] {
-            let mut wire = original.clone();
-            wire["provider"] = provider;
-            assert_eq!(
-                admission::prepare(&gate.state, profile, &serde_json::to_vec(&wire).unwrap())
-                    .err()
-                    .unwrap()
-                    .status,
-                400
-            );
-        }
         let mut wire = original;
         wire["model"] = serde_json::json!("fixture/fixture-model");
         assert_eq!(

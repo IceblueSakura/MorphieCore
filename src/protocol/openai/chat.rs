@@ -23,20 +23,21 @@ pub(super) const FIELDS: &[&str] = &[
     "modalities",
 ];
 pub fn decode_generation(v: &Value) -> Result<DecodedRequest, CodecError> {
-    decode_generation_with(v, &Default::default())
+    decode_generation_with(v, &Default::default(), DecodeDirection::Request)
 }
 pub(crate) fn decode_generation_with(
     v: &Value,
     adaptation: &crate::protocol::openai::adaptation::Adaptation,
+    direction: DecodeDirection<'_>,
 ) -> Result<DecodedRequest, CodecError> {
     bounded(v)?;
     let o = object(v)?;
-    fields(o, FIELDS)?;
+    direction.fields(o, FIELDS)?;
     let messages = o
         .get("messages")
         .and_then(Value::as_array)
         .ok_or(CodecError::Invalid("messages"))?;
-    let mut b = Items::default();
+    let mut b = Items::new(direction);
     for message in messages {
         adaptation.validate_message(object(message)?)?;
         let message = super::chat_reasoning::decode_static(&mut b, object(message)?, adaptation)?;
@@ -62,7 +63,7 @@ pub(crate) fn decode_generation_with(
     if controls.top_logprobs.is_some() && controls.logprobs != Presence::Value(true) {
         return Err(CodecError::Invalid("top_logprobs without logprobs"));
     }
-    let format = read_presence(o, "response_format", read_response_format)?;
+    let format = read_presence(o, "response_format", |v| read_response_format(v, direction))?;
     let mut settings = GenerationSettings {
         controls,
         text: TextOptions {
@@ -73,33 +74,36 @@ pub(crate) fn decode_generation_with(
         reasoning: super::reasoning::chat_request(o)?,
         ..Default::default()
     };
-    super::chat_audio::settings(o, &mut settings)?;
+    super::chat_audio::settings(o, &mut settings, direction)?;
     let r = GenerationRequest::from_resources(b.items, settings, b.resources)?
         .with_message_owners(b.message_owners)?;
     Ok(DecodedRequest {
-        semantic: function_tools::decode(r, o, Profile::Chat)?,
+        semantic: function_tools::decode(r, o, Profile::Chat, direction)?,
         fidelity: b.fidelity,
     })
 }
 /// Chat nests the json_schema body under `json_schema`; the flat Responses shell is parsed apart.
-fn read_response_format(v: &Value) -> Result<OutputConstraint, CodecError> {
+fn read_response_format(
+    v: &Value,
+    direction: DecodeDirection<'_>,
+) -> Result<OutputConstraint, CodecError> {
     let o = object(v)?;
     Ok(match string(o, "type")? {
         "text" => {
-            fields(o, &["type"])?;
+            direction.fields(o, &["type"])?;
             OutputConstraint::Text
         }
         "json_object" => {
-            fields(o, &["type"])?;
+            direction.fields(o, &["type"])?;
             OutputConstraint::JsonObject
         }
         "json_schema" => {
-            fields(o, &["type", "json_schema"])?;
+            direction.fields(o, &["type", "json_schema"])?;
             let body = object(
                 o.get("json_schema")
                     .ok_or(CodecError::Invalid("json_schema"))?,
             )?;
-            fields(body, &["name", "description", "schema", "strict"])?;
+            direction.fields(body, &["name", "description", "schema", "strict"])?;
             super::settings::read_schema_body(body)?
         }
         _ => return Err(CodecError::Unsupported("response format".into())),
@@ -129,7 +133,10 @@ fn write_response_format(f: &OutputConstraint) -> Result<Value, CodecError> {
 }
 /// Request-only text arrays preserve ordered part ownership; canonical single parts
 /// encode as strings. This does not admit response arrays or media placeholders.
-fn request_text_parts(value: &Value, direction: DecodeDirection) -> Result<Vec<&str>, CodecError> {
+fn request_text_parts<'a>(
+    value: &'a Value,
+    direction: DecodeDirection<'_>,
+) -> Result<Vec<&'a str>, CodecError> {
     match value {
         Value::String(text) => Ok(vec![text]),
         Value::Array(parts) if !parts.is_empty() => parts

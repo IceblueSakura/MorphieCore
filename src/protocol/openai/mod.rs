@@ -28,6 +28,7 @@ pub(crate) mod input_audio;
 pub(crate) mod json;
 mod reasoning;
 pub(crate) use common::DecodeDirection;
+pub use common::IgnoredFields;
 pub mod responses;
 mod settings;
 pub mod speech;

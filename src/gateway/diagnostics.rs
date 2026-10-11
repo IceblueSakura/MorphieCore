@@ -161,6 +161,9 @@ struct Record {
     /// input/output audio, in that bit order. Never count values or response text.
     #[serde(skip_serializing_if = "Option::is_none")]
     reported_usage_detail_mask: Option<u8>,
+    /// Ignored client request field names (bounded); values never escape.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    ignored_request_fields: Vec<String>,
     /// Count of skipped unregistered upstream event types; names never escape.
     #[serde(skip_serializing_if = "is_zero")]
     ignored_upstream_events: u64,
@@ -252,6 +255,7 @@ impl Trace {
                 decode_failure: None,
                 projection_failure: None,
                 reported_usage_detail_mask: None,
+                ignored_request_fields: vec![],
                 ignored_upstream_events: 0,
                 events: EventCounts::default(),
                 image: ImageAccountingObservation::default(),
@@ -294,6 +298,11 @@ impl Trace {
                 advanced,
                 request_rules: std::mem::take(&mut self.request_rules),
             });
+        }
+    }
+    pub(super) fn ignored_fields(&mut self, names: Vec<String>) {
+        if self.sink.is_some() {
+            self.record.ignored_request_fields = names;
         }
     }
     pub(super) fn ignored_events(&mut self, count: usize) {
@@ -480,6 +489,7 @@ impl Drop for Trace {
                 decode_failure: None,
                 projection_failure: None,
                 reported_usage_detail_mask: None,
+                ignored_request_fields: vec![],
                 ignored_upstream_events: 0,
                 events: EventCounts::default(),
                 image: ImageAccountingObservation::default(),

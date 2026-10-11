@@ -116,6 +116,12 @@ pub fn decode_request_bytes(bytes: &[u8]) -> Result<DecodedResponsesRequest, Cod
 }
 /// Decode a pre-parsed value; original duplicate keys and raw byte size cannot be checked here.
 pub fn decode_request(v: &Value) -> Result<DecodedResponsesRequest, CodecError> {
+    decode_request_in(v, DecodeDirection::Request)
+}
+pub(crate) fn decode_request_in(
+    v: &Value,
+    direction: DecodeDirection<'_>,
+) -> Result<DecodedResponsesRequest, CodecError> {
     bounded(v)?;
     let o = object(v)?;
     let allowed: Vec<_> = settings::FIELDS
@@ -126,7 +132,7 @@ pub fn decode_request(v: &Value) -> Result<DecodedResponsesRequest, CodecError> 
         .chain(["input", "model", "stream", "stream_options"])
         .chain(crate::protocol::extensions::SECTION_NAMES.iter().copied())
         .collect();
-    fields(o, &allowed)?;
+    direction.fields(o, &allowed)?;
     let context = RequestContext {
         model: string(o, "model")?.into(),
         delivery: Delivery {
@@ -147,7 +153,7 @@ pub fn decode_request(v: &Value) -> Result<DecodedResponsesRequest, CodecError> 
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     Ok(DecodedResponsesRequest {
-        task: super::responses::decode_generation(&Value::Object(task))?,
+        task: super::responses::decode_generation_in(&Value::Object(task), direction)?,
         context,
     })
 }

@@ -5,7 +5,8 @@ use crate::{
     protocol::{
         extensions::CustomSections,
         openai::{
-            self, CodecError, Profile, TargetCaps, chat_envelope, envelope, lowering::lower_request,
+            self, CodecError, DecodeDirection, IgnoredFields, Profile, TargetCaps, chat_envelope,
+            envelope, lowering::lower_request,
         },
     },
     semantic::{
@@ -15,7 +16,23 @@ use crate::{
 };
 use serde_json::Value;
 impl Adapter {
+    /// Closed decode: every field must be registered.
     pub fn decode_request(&self, bytes: &[u8]) -> Result<Request, CodecError> {
+        self.decode_in(bytes, DecodeDirection::Request)
+    }
+    /// Downstream client decode: unregistered fields are ignored and their names
+    /// kept for diagnostics; nothing unregistered reaches the IR.
+    pub fn decode_client_request(&self, bytes: &[u8]) -> Result<Request, CodecError> {
+        let ignored = IgnoredFields::default();
+        let mut request = self.decode_in(bytes, DecodeDirection::Client(&ignored))?;
+        request.ignored_fields = ignored.into_names();
+        Ok(request)
+    }
+    fn decode_in(
+        &self,
+        bytes: &[u8],
+        direction: DecodeDirection<'_>,
+    ) -> Result<Request, CodecError> {
         let mut value = openai::json::decode(bytes)?;
         let cache_session = if let Some(session) = value
             .as_object_mut()
@@ -32,7 +49,8 @@ impl Adapter {
         };
         let mut request = match self.protocol {
             Profile::Chat => {
-                let decoded = chat_envelope::decode_request_with(&value, &self.adaptation)?;
+                let decoded =
+                    chat_envelope::decode_request_with(&value, &self.adaptation, direction)?;
                 Request {
                     task: decoded.task,
                     model: decoded.context.model,
@@ -52,11 +70,12 @@ impl Adapter {
                     conversation: None,
                     cache_session,
                     inferred_affinity: None,
+                    ignored_fields: vec![],
                     n: decoded.context.n,
                 }
             }
             Profile::Responses => {
-                let decoded = envelope::decode_request(&value)?;
+                let decoded = envelope::decode_request_in(&value, direction)?;
                 let options = match decoded.context.delivery.options {
                     Presence::Absent => Presence::Absent,
                     Presence::Null => Presence::Null,
@@ -78,6 +97,7 @@ impl Adapter {
                     conversation: None,
                     cache_session,
                     inferred_affinity: None,
+                    ignored_fields: vec![],
                     n: Presence::Absent,
                 }
             }

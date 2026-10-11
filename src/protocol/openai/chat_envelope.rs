@@ -10,9 +10,9 @@ use crate::semantic::{
 use serde_json::{Map, Value, json};
 
 impl StreamOptions {
-    fn read(v: &Value) -> Result<Self, CodecError> {
+    fn read(v: &Value, direction: DecodeDirection<'_>) -> Result<Self, CodecError> {
         let o = object(v)?;
-        fields(o, &["include_usage", "include_obfuscation"])?;
+        direction.fields(o, &["include_usage", "include_obfuscation"])?;
         let boolean = |v: &Value| v.as_bool().ok_or(CodecError::Invalid("Chat stream option"));
         let s = Self {
             include_usage: read_presence(o, "include_usage", boolean)?,
@@ -88,11 +88,12 @@ pub fn decode_request_bytes(bytes: &[u8]) -> Result<DecodedChatRequest, CodecErr
 }
 /// Pre-parsed values cannot prove original raw-byte or duplicate-key validity.
 pub fn decode_request(v: &Value) -> Result<DecodedChatRequest, CodecError> {
-    decode_request_with(v, &Default::default())
+    decode_request_with(v, &Default::default(), DecodeDirection::Request)
 }
 pub(crate) fn decode_request_with(
     v: &Value,
     adaptation: &crate::protocol::openai::adaptation::Adaptation,
+    direction: DecodeDirection<'_>,
 ) -> Result<DecodedChatRequest, CodecError> {
     bounded(v)?;
     let mut normalized;
@@ -124,7 +125,7 @@ pub(crate) fn decode_request_with(
             "service_tier",
         ])
         .collect();
-    fields(o, &allowed)?;
+    direction.fields(o, &allowed)?;
     let hints = ExecutionHints::read(o)?;
     let context = RequestContext {
         model: string(o, "model")?.into(),
@@ -132,7 +133,7 @@ pub(crate) fn decode_request_with(
         stream: read_presence(o, "stream", |v| {
             v.as_bool().ok_or(CodecError::Invalid("stream"))
         })?,
-        stream_options: read_presence(o, "stream_options", StreamOptions::read)?,
+        stream_options: read_presence(o, "stream_options", |v| StreamOptions::read(v, direction))?,
         cache: hints.cache,
         identity: hints.identity,
         metadata: hints.metadata,
@@ -145,7 +146,7 @@ pub(crate) fn decode_request_with(
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     Ok(DecodedChatRequest {
-        task: chat::decode_generation_with(&Value::Object(task), adaptation)?,
+        task: chat::decode_generation_with(&Value::Object(task), adaptation, direction)?,
         context,
     })
 }

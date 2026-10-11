@@ -9,11 +9,17 @@ use crate::{
 };
 use serde_json::{Map, Value, json};
 pub fn decode_generation(v: &Value) -> Result<DecodedRequest, CodecError> {
+    decode_generation_in(v, DecodeDirection::Request)
+}
+pub(crate) fn decode_generation_in(
+    v: &Value,
+    direction: DecodeDirection<'_>,
+) -> Result<DecodedRequest, CodecError> {
     bounded(v)?;
     let o = object(v)?;
     let allowed: Vec<_> = settings::FIELDS.iter().copied().chain(["input"]).collect();
-    fields(o, &allowed)?;
-    let mut b = Items::default();
+    direction.fields(o, &allowed)?;
+    let mut b = Items::new(direction);
     match o.get("input") {
         Some(Value::String(s)) => {
             let id = b.id()?;
@@ -34,7 +40,7 @@ pub fn decode_generation(v: &Value) -> Result<DecodedRequest, CodecError> {
     }
     let semantic = GenerationRequest::from_resources(
         b.items,
-        settings::read(o, false, DecodeDirection::Request)?,
+        settings::read(o, false, direction)?,
         b.resources,
     )?;
     validate_program_history(&semantic)?;

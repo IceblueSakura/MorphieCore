@@ -110,7 +110,7 @@ pub(super) fn prepare(
     }
     let mut request = entry
         .client
-        .decode_request(bytes)
+        .decode_client_request(bytes)
         .map_err(|_| ApiError::invalid())?;
     crate::execution::replay::open_from_client(&mut request).map_err(|_| ApiError::invalid())?;
     let mut settings = request.task.semantic.settings().clone();
