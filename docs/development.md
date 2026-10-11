@@ -34,7 +34,19 @@ git diff --check
 | `tests/gateway` | 真实 Router → synthetic Provider 冒烟（含原生 Messages），以及隔离环境的 binary 启动 |
 | `tests/sdk_loopback` | 显式 ignored：固定版本 OpenAI Python SDK 对 Gateway 的消费与续轮 |
 
-编写协议映射测试时，wire→IR 与 IR→wire 的预期分别独立手写，不用被测 encoder 生成 oracle；round trip 只能作补充。共享的 synthetic builder 放在 `tests/support/`。每个契约保留一个正例和一个反例；新增用例前先确认同层没有已覆盖的断言，冻结任务只保留契约冒烟。
+编写协议映射测试时，wire→IR 与 IR→wire 的预期分别独立手写，不用被测 encoder 生成 oracle；round trip 只能作补充。共享的 synthetic builder 放在 `tests/support/`。用例取舍遵循 [AGENTS.md](../AGENTS.md#tests) 的精简策略。
+
+## 覆盖率与测试精简
+
+`cargo-llvm-cov` 需要与 rustc 同版本的 LLVM 工具（以 `rustc -vV` 的 LLVM 主版本为准），用作用域内的 Nix 工具，不全局安装：
+
+```sh
+nix shell --inputs-from . nixpkgs#cargo-llvm-cov nixpkgs#llvmPackages_21.llvm --command bash -c '
+  export LLVM_COV=$(command -v llvm-cov) LLVM_PROFDATA=$(command -v llvm-profdata)
+  cargo llvm-cov --locked --offline --lcov --output-path <out>.lcov'
+```
+
+精简时先比较删减前后 `src/` 的行覆盖，未覆盖的行逐一判断；需要按单个测试定位冗余时，用 `cargo llvm-cov show-env` 构建一次插桩产物，再逐个以 `--exact` 运行测试并分别导出覆盖。清除 binary 启动测试遗留在仓库根目录的 `default_*.profraw`。覆盖率只说明代码被执行，不说明被断言；安全不变量测试不因覆盖冗余而删除。
 
 ## SDK loopback gate
 
@@ -54,4 +66,4 @@ uv run --project tests/sdk --locked --offline python -m unittest discover -s tes
 
 ## 文档
 
-文档集合与维护规则见 [AGENTS.md](../AGENTS.md#文档)。只改 Markdown 时检查链接并运行 `git diff --check`。
+文档集合与维护规则见 [AGENTS.md](../AGENTS.md#documentation)。只改 Markdown 时检查链接并运行 `git diff --check`。

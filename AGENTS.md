@@ -1,44 +1,54 @@
 # MorphieCore Agent Instructions
 
-## 项目与权威来源
+## Project and sources of truth
 
-- 基于统一 IR 的模型路由网关。下游先完善 OpenAI Responses（主）与 Chat Completions（兼容），之后开放 Anthropic Messages；上游覆盖 OpenAI Responses/Chat、Anthropic Messages、Google generateContent 与 Interactions。
-- 设计原则与已定决策：[docs/architecture.md](docs/architecture.md)。方向、冻结范围与当前切片：[docs/roadmap.md](docs/roadmap.md)。
-- 代码与测试是行为的权威；文档只记录概念、决策与方向。可用的 Provider / 模型 / 绑定直接查 `src/provider/catalog.rs`、`src/topology/catalog*`、`src/gateway/bootstrap.rs`，不在文档或记忆中维护清单。
+- A model-routing gateway built on one unified IR. Downstream: OpenAI Responses (primary) and Chat Completions (compatible) first, Anthropic Messages later. Upstream: OpenAI Responses/Chat, Anthropic Messages, Google generateContent and Interactions.
+- Design principles and settled decisions: [docs/architecture.md](docs/architecture.md). Direction, frozen scope and the current slice: [docs/roadmap.md](docs/roadmap.md).
+- Code and tests define behavior; docs record only concepts, decisions and direction. For available Providers, models and bindings read `src/provider/catalog.rs`, `src/topology/catalog*` and `src/gateway/bootstrap.rs`; never keep lists in docs or memory.
 
-## 授权
+## Authorization
 
-- 编辑前查看分支、`git status` 与目标 diff；保留他人修改，与外部修改重叠时停下。
-- 直接在 `main` 上工作。每个通过离线基线的切片自动提交并推送到 `origin/main`（常设授权）。未经明确授权不部署、不发布到其他位置，不执行凭据生命周期操作（登录、刷新、撤销、迁移）。
-- 当前开发任务所需的真实 Provider 调用已获授权，无需逐次确认、无金额上限。每次运行须事先界定目标、请求数、输出上限与超时，串行执行、无隐藏重试，只经项目凭据 loader 取凭据，只输出脱敏的状态与计数。
-- 在 roadmap 已批准的阶段内允许大范围删除和破坏性重写，不保留兼容 shim。冻结范围只做重构所需的维护。
+- Before editing, check the branch, `git status` and the target diff. Preserve others' changes; stop if they overlap yours.
+- Work directly on `main`. Commit and push every slice that passes the offline baseline to `origin/main` (standing authorization). Without explicit approval: no deployment, no publishing elsewhere, no credential lifecycle operations (login, refresh, revoke, migrate).
+- Real Provider calls needed for current development are authorized without per-call confirmation or a spending cap. Before each run, fix the target, request count, output cap and timeout; run serially with no hidden retries; obtain credentials only through the project loader; print only redacted status and counts.
+- Within a roadmap-approved phase, large deletions and breaking rewrites are allowed; keep no compatibility shims. Frozen scope gets only the maintenance a refactor requires.
 
-## 安全
+## Security
 
-- 凭据只通过项目 loader 访问（默认 store 见 `src/credential/directory.rs`）。不读取 `.env`、私有 `config/`、OAuth 文件或第三方 auth cache 作为调查或测试输入。
-- 真实密钥、私有配置、敏感正文与 opaque 值不得出现在源码、fixture、日志或工具输出中；不打印环境变量值。
-- 入口只监听 loopback 且鉴权 fail-closed；业务数据不能选择上游 origin、凭据或认证/代理 header；凭据 locator 与受信 origin 不下发给客户端。
-- 内存、帧、事件与时间都有上界；取消必须释放上游；提交后不重放、不伪造成功终态。
+- Access credentials only through the project loader (default store: `src/credential/directory.rs`). Never use `.env`, private `config/`, OAuth files or third-party auth caches as investigation or test input.
+- Real secrets, private config, sensitive bodies and opaque values never appear in source, fixtures, logs or tool output. Never print environment variable values.
+- Ingress listens on loopback only and authentication fails closed. Business data cannot select an upstream origin, credential, or auth/proxy header. Credential locators and trusted origins never reach clients.
+- Memory, frames, events and time are all bounded. Cancellation releases the upstream. After commit: no replay, no fabricated success terminal.
 
-## 工程原则
+## Engineering
 
-- **一个 IR**：`src/semantic` 不依赖协议、Provider 或执行层；codec 与 lowering 是纯函数，不访问网络、凭据或 registry。运行时目标、凭据、重试状态不进入 IR。
-- **协议差异留在协议模块**：不给 IR 加 Provider 专属字段，不引入 raw JSON 请求袋。发现 IR 无法表达的概念时，先向用户说明最小反例和结构选项，再实现。
-- **解析策略**：上游响应已知字段严格、未知字段忽略；下游请求中无法表达的关键语义拒绝，可降级字段按具名规则移除并记录（见架构文档第 4 节）。
-- **保持简单**：不预建通用框架、多余防御层或推测性抽象；删除不再需要的代码，而不是保留旧路径。新增检查和上限应有具体失败场景支撑。
-- **流程**：行为变更先在 roadmap 当前焦点写明目标与退出条件，测试先行。依赖变更同步 `Cargo.lock` 并用 `--locked` 验证。
-- Rust 注释与 Python docstring 使用简洁英文，只解释非显然的原因，必要时附来源 URL。
-- 不手动查看或编辑 `target/`、`.venv/`、`__pycache__/`；不提交 `testdata/{generated,reports,dist,runtime}/`。
+- **One IR**: `src/semantic` does not depend on protocols, Providers or execution. Codecs and lowering are pure: no network, credentials or registry. Runtime targets, credentials and retry state stay out of the IR.
+- **Protocol differences stay in protocol modules**: no Provider-specific IR fields, no raw JSON request bags. When the IR cannot express a concept, first show the user a minimal counterexample and structural options, then implement.
+- **Parsing**: upstream responses are strict on known fields and ignore unknown ones. Downstream requests reject critical semantics they cannot express; degradable fields are removed by named rules and recorded (architecture §4).
+- **Keep it simple**: no prebuilt generic frameworks, extra defensive layers or speculative abstractions. Delete code that is no longer needed instead of keeping old paths. Every new check or limit needs a concrete failure scenario.
+- **Process**: for behavior changes, first state the goal and exit condition in the roadmap's current focus, then write tests first. Dependency changes update `Cargo.lock` and are verified with `--locked`.
+- Rust comments and Python docstrings use concise English and explain only non-obvious reasons, with source URLs when useful.
+- Never inspect or edit `target/`, `.venv/` or `__pycache__/` by hand; never commit `testdata/{generated,reports,dist,runtime}/`.
 
-## 验证
+## Tests
 
-- 默认检查离线、只用 synthetic 数据（命令见 [docs/development.md](docs/development.md)）：先跑受影响的目标，再跑完整基线 `cargo test`、`cargo clippy --all-targets -D warnings`、`cargo fmt --check`、`git diff --check`。
-- 协议映射需要独立手写的 wire→IR 与 IR→wire 预期；round trip 不能单独作为证据。测试放在最低负责层，不按 Provider 或模型数量堆叠重复用例。
-- SDK loopback gate 与真实 Provider 调用是独立的显式步骤，补充而不替代离线回归。
-- 汇报实际执行的检查、失败与未覆盖的层；编译或 synthetic 通过不代表真实 Provider、SDK 或生产可用。
+The suite is deliberately lean. Keep it that way; do not regrow it.
 
-## 文档
+- One positive and one negative case per contract, at the lowest responsible layer. No variant matrices, exhaustive presence combinations, or per-Provider/per-model duplicates.
+- Before adding a test, check that no same-layer test already asserts it; extend or replace an existing test rather than adding a near-copy.
+- Protocol mappings need independently hand-written wire→IR and IR→wire expectations; a round trip alone is not evidence.
+- Frozen tasks keep contract smoke only: one wire oracle, binding preparation and cancellation per task.
+- Always keep safety-invariant tests, whose value is in their assertions rather than line coverage: credentials, ingress auth, body lifecycle and cancellation, transport bounds, origin checks, strict JSON, replay isolation, terminal honesty.
+- When code is deleted, delete its tests and any helpers left unused. To prune, use per-test coverage (procedure in [docs/development.md](docs/development.md)) and report the coverage change.
 
-- 文档集合固定为：`README.md`、`AGENTS.md`、`docs/architecture.md`、`docs/roadmap.md`、`docs/usage.md`、`docs/development.md`、`docs/references.md`、`docs/openapi.json`。不新增分析页、执行报告或历史记录（历史查 Git）。
-- 完成的切片从 roadmap 删除；新决策写进架构文档的决策表。
-- 只改 Markdown 时检查链接并运行 `git diff --check`。
+## Verification
+
+- Default checks are offline and synthetic-only (commands in [docs/development.md](docs/development.md)): run the affected targets first, then the full baseline: `cargo test`, `cargo clippy --all-targets -D warnings`, `cargo fmt --check`, `git diff --check`.
+- The SDK loopback gate and real Provider calls are separate explicit steps; they supplement, never replace, offline regression.
+- Report the checks actually run, failures and uncovered layers. Passing compilation or synthetic tests does not prove real Provider, SDK or production behavior.
+
+## Documentation
+
+- The doc set is fixed: `README.md`, `AGENTS.md`, `docs/architecture.md`, `docs/roadmap.md`, `docs/usage.md`, `docs/development.md`, `docs/references.md`, `docs/openapi.json`. No analysis pages, run reports or history (use Git).
+- Remove finished slices from the roadmap; record new decisions in the architecture decision table.
+- For Markdown-only changes, check links and run `git diff --check`.
