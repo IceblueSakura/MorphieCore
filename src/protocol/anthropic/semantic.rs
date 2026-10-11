@@ -2,7 +2,7 @@
 use super::{
     Block, MessageContent, Profile, Role, Selection, TextContent as WireText,
     semantic_intake::{Intake, bind, text},
-    semantic_request::{item_blocks, project, unsupported},
+    semantic_request::{RequestRule, item_blocks, project, unsupported},
     target::ReplayTarget,
 };
 use crate::{
@@ -15,6 +15,7 @@ pub struct NativeProjection {
     pub value: Value,
     pub normalized_arguments: Vec<ItemId>,
     pub omitted_execution: Vec<ItemId>,
+    pub rules: Vec<RequestRule>,
 }
 impl std::fmt::Debug for NativeProjection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -22,6 +23,7 @@ impl std::fmt::Debug for NativeProjection {
             .field("body", &"[redacted]")
             .field("normalized_arguments", &self.normalized_arguments)
             .field("omitted_execution", &self.omitted_execution)
+            .field("rules", &self.rules)
             .finish()
     }
 }
@@ -160,6 +162,8 @@ impl Profile {
                 super::Effort::Low => ReasoningEffort::Low,
                 super::Effort::Medium => ReasoningEffort::Medium,
                 super::Effort::High => ReasoningEffort::High,
+                super::Effort::XHigh => ReasoningEffort::XHigh,
+                super::Effort::Max => ReasoningEffort::Max,
             });
         }
         for message in &wire.messages {
@@ -224,12 +228,21 @@ impl Profile {
         fidelity.require_reasoning_replay(request, &target.origin())?;
         let mut normalized = vec![];
         let mut omitted = vec![];
-        let wire = project(request, fidelity, target, &mut normalized, &mut omitted)?;
+        let mut rules = Default::default();
+        let wire = project(
+            request,
+            fidelity,
+            target,
+            &mut normalized,
+            &mut omitted,
+            &mut rules,
+        )?;
         let value = self.encode_request(&wire)?;
         Ok(NativeProjection {
             value,
             normalized_arguments: normalized,
             omitted_execution: omitted,
+            rules: rules.into_iter().collect(),
         })
     }
     pub fn encode_generation_response(

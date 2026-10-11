@@ -80,7 +80,7 @@ impl TargetCaps {
         &self,
         request: &Request,
         target: &ReplayTarget,
-    ) -> Result<Value, AdapterError> {
+    ) -> Result<(Value, Vec<&'static str>), AdapterError> {
         let stripped = request.without_foreign_replay(Some(&target.origin()))?;
         let request = stripped.as_ref().unwrap_or(request);
         self.check_context(request)?;
@@ -90,20 +90,15 @@ impl TargetCaps {
         let mut settings = semantic.settings().clone();
         // Include selects the downstream opaque carrier, not a native control.
         settings.reasoning = settings.reasoning.with_encrypted_output(false);
-        if self.dialect == Dialect::OpenCodeGo && settings.reasoning != Default::default() {
-            return Err(
-                CodecError::Unsupported("unverified native reasoning controls".into()).into(),
-            );
-        }
         semantic = semantic.with_settings(settings).map_err(CodecError::from)?;
-        let mut wire = self
-            .profile
-            .encode_generation_request(&semantic, &request.task.fidelity, target)?
-            .value;
+        let projection =
+            self.profile
+                .encode_generation_request(&semantic, &request.task.fidelity, target)?;
+        let mut wire = projection.value;
         if let Some(stream) = request.delivery.stream.value() {
             wire["stream"] = serde_json::json!(stream);
         }
-        Ok(wire)
+        Ok((wire, projection.rules.iter().map(|r| r.name()).collect()))
     }
     pub(crate) fn request_headers(
         &self,

@@ -86,13 +86,14 @@ pub(super) async fn produce_chain(
                         trace.affinity("unavailable", false, false);
                     }
                 }
-                let mut prepared = crate::execution::prepare(
+                let (mut prepared, rules) = crate::execution::prepare_with_rules(
                     &candidate.endpoint,
                     &candidate.provider,
                     &secret,
                     &local,
                 )
                 .map_err(|_| ApiError::invalid())?;
+                trace.request_rules(rules);
                 if let Some(grant) = grant {
                     prepared.safe_headers.extend(
                         crate::provider::subscription::headers(candidate.provider.auth, &grant)

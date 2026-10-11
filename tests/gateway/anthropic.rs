@@ -338,7 +338,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 let mut tool = function.clone();
                 tool["type"] = json!("function");
                 json!({"model":binding.model,"max_output_tokens":64,"store":false,"background":false,
-                "previous_response_id":null,"include":["reasoning.encrypted_content"],
+                "previous_response_id":null,"include":["reasoning.encrypted_content"],"temperature":0.375,
                 "input":[{"role":"user","content":"lookup"}],"tools":[tool]})
             } else {
                 json!({"model":binding.model,"max_completion_tokens":64,"messages":[{"role":"user","content":"lookup"}],
@@ -561,4 +561,8 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
         }
     }
     assert_eq!(seen.lock().unwrap().len(), 26);
+    diagnostic_owner.flush_diagnostics().await;
+    let records = std::fs::read_to_string(&diagnostics).unwrap();
+    assert!(records.contains(r#""request_rules":["messages.omit-sampling.v1"]"#));
+    assert!(!records.contains("0.375"));
 }

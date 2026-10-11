@@ -7,9 +7,45 @@ use crate::{
     protocol::{CodecError, fidelity::FidelityRecords},
     semantic::{task::generation::*, value::Presence},
 };
+use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 pub(super) fn unsupported() -> CodecError {
     CodecError::Unsupported("native semantic carrier".into())
+}
+/// Named degradable rules applied to one candidate's request copy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum RequestRule {
+    /// `none` and `minimal` have no Messages level; `low` is the least effort.
+    LowerEffort,
+    /// Messages has one summarized display, without concise or detailed variants.
+    SummarizeReasoning,
+    OmitReasoningContext,
+    /// Claude 5.x models reject non-default `temperature` and `top_p`.
+    OmitSampling,
+    ProjectCallIds,
+}
+impl RequestRule {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::LowerEffort => "messages.lower-effort.v1",
+            Self::SummarizeReasoning => "messages.summarize-reasoning.v1",
+            Self::OmitReasoningContext => "messages.omit-reasoning-context.v1",
+            Self::OmitSampling => "messages.omit-sampling.v1",
+            Self::ProjectCallIds => "messages.project-call-ids.v1",
+        }
+    }
+}
+/// Messages call IDs must match `^[a-zA-Z0-9_-]{1,64}$`. Other IDs map to a stable digest,
+/// so earlier turns project identically; a digest equal to a client ID fails validation as
+/// a duplicate call instead of merging links.
+fn call_id(id: &str, rules: &mut BTreeSet<RequestRule>) -> String {
+    if super::shape::name(id, 64).is_ok() {
+        return id.into();
+    }
+    rules.insert(RequestRule::ProjectCallIds);
+    let digest = Sha256::digest(id.as_bytes());
+    let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+    format!("mc_{}", &hex[..40])
 }
 pub(super) fn project(
     request: &GenerationRequest,
@@ -17,11 +53,13 @@ pub(super) fn project(
     target: &ReplayTarget,
     normalized: &mut Vec<ItemId>,
     omitted: &mut Vec<ItemId>,
+    rules: &mut BTreeSet<RequestRule>,
 ) -> Result<super::Request, CodecError> {
     let s = request.settings();
-    if s.controls.temperature().is_some()
-        || s.controls.top_p().is_some()
-        || s.controls.top_logprobs.is_some()
+    if s.controls.temperature().is_some() || s.controls.top_p().is_some() {
+        rules.insert(RequestRule::OmitSampling);
+    }
+    if s.controls.top_logprobs.is_some()
         || !s.controls.logprobs.is_absent()
         || s.controls.truncation.is_some()
         || s.text != TextOptions::default()
@@ -100,35 +138,52 @@ pub(super) fn project(
     };
     let reasoning = &s.reasoning;
     if reasoning.budget.is_some()
-        || !reasoning.summary.is_absent()
-        || !reasoning.context.is_absent()
         || reasoning.encrypted_output()
         || reasoning.presence == ReasoningPresence::Null
+        || !reasoning.display.is_absent() && !reasoning.summary.is_absent()
     {
         return Err(unsupported());
     }
+    if !reasoning.context.is_absent() {
+        rules.insert(RequestRule::OmitReasoningContext);
+    }
+    // An OpenAI summary request selects the display; without one the field stays absent,
+    // which equals the 5.x default (`omitted`).
+    let display = match (&reasoning.display, &reasoning.summary) {
+        (Presence::Value(ReasoningDisplay::Summary), _)
+        | (Presence::Absent, Presence::Value(ReasoningSummary::Auto)) => {
+            Presence::Value(super::Display::Summarized)
+        }
+        (Presence::Absent, Presence::Value(ReasoningSummary::Concise))
+        | (Presence::Absent, Presence::Value(ReasoningSummary::Detailed)) => {
+            rules.insert(RequestRule::SummarizeReasoning);
+            Presence::Value(super::Display::Summarized)
+        }
+        (Presence::Value(ReasoningDisplay::Omitted), _)
+        | (Presence::Absent, Presence::Value(ReasoningSummary::Disabled))
+        | (Presence::Absent, Presence::Null) => Presence::Value(super::Display::Omitted),
+        (Presence::Null, _) => Presence::Null,
+        (Presence::Absent, Presence::Absent) => Presence::Absent,
+    };
     let thinking = match reasoning.mode {
-        Presence::Absent if reasoning.display.is_absent() => Presence::Absent,
-        Presence::Value(ReasoningMode::Adaptive) => Presence::Value(super::Thinking {
-            display: match reasoning.display {
-                Presence::Absent => Presence::Absent,
-                Presence::Null => Presence::Null,
-                Presence::Value(ReasoningDisplay::Summary) => {
-                    Presence::Value(super::Display::Summarized)
-                }
-                Presence::Value(ReasoningDisplay::Omitted) => {
-                    Presence::Value(super::Display::Omitted)
-                }
-            },
-        }),
+        Presence::Absent if display.is_absent() => Presence::Absent,
+        Presence::Absent | Presence::Value(ReasoningMode::Adaptive) => {
+            Presence::Value(super::Thinking { display })
+        }
         _ => return Err(unsupported()),
     };
     let output_config = match reasoning.effort {
         Presence::Absent => Presence::Absent,
+        Presence::Value(ReasoningEffort::None | ReasoningEffort::Minimal) => {
+            rules.insert(RequestRule::LowerEffort);
+            Presence::Value(super::Effort::Low)
+        }
         Presence::Value(ReasoningEffort::Low) => Presence::Value(super::Effort::Low),
         Presence::Value(ReasoningEffort::Medium) => Presence::Value(super::Effort::Medium),
         Presence::Value(ReasoningEffort::High) => Presence::Value(super::Effort::High),
-        _ => return Err(unsupported()),
+        Presence::Value(ReasoningEffort::XHigh) => Presence::Value(super::Effort::XHigh),
+        Presence::Value(ReasoningEffort::Max) => Presence::Value(super::Effort::Max),
+        Presence::Null => return Err(unsupported()),
     };
     if reasoning.presence == ReasoningPresence::Present
         && thinking.is_absent()
@@ -158,9 +213,33 @@ pub(super) fn project(
                 .find(|(id, _)| id == owner)
                 .ok_or_else(unsupported)?
                 .1;
-            blocks.extend(item_blocks(
-                *owner, item, request, fidelity, target, normalized, omitted,
-            )?);
+            blocks.extend(
+                item_blocks(*owner, item, request, fidelity, target, normalized, omitted)?
+                    .into_iter()
+                    .map(|block| match block {
+                        Block::ToolUse {
+                            id,
+                            name,
+                            input,
+                            caller,
+                        } => Block::ToolUse {
+                            id: call_id(&id, rules),
+                            name,
+                            input,
+                            caller,
+                        },
+                        Block::ToolResult {
+                            tool_use_id,
+                            content,
+                            is_error,
+                        } => Block::ToolResult {
+                            tool_use_id: call_id(&tool_use_id, rules),
+                            content,
+                            is_error,
+                        },
+                        other => other,
+                    }),
+            );
         }
         messages.push(InputMessage {
             role,

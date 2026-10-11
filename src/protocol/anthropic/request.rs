@@ -273,6 +273,8 @@ pub enum Effort {
     Low,
     Medium,
     High,
+    XHigh,
+    Max,
 }
 impl Effort {
     fn read(v: &Value) -> Result<Self, CodecError> {
@@ -281,11 +283,20 @@ impl Effort {
             Some("low") => Ok(Self::Low),
             Some("medium") => Ok(Self::Medium),
             Some("high") => Ok(Self::High),
+            Some("xhigh") => Ok(Self::XHigh),
+            Some("max") => Ok(Self::Max),
             _ => Err(CodecError::Unsupported("Anthropic effort".into())),
         }
     }
     fn wire(self) -> Value {
-        json!({"effort":match self { Self::Low => "low", Self::Medium => "medium", Self::High => "high" }})
+        let effort = match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::XHigh => "xhigh",
+            Self::Max => "max",
+        };
+        json!({ "effort": effort })
     }
 }
 #[derive(Clone, Eq, PartialEq)]

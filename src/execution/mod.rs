@@ -19,7 +19,7 @@ pub mod replay;
 pub mod speech;
 pub mod transcription;
 
-pub use attempt::{Attempt, AttemptError, UpstreamRequest, admit, prepare};
+pub use attempt::{Attempt, AttemptError, UpstreamRequest, admit, prepare, prepare_with_rules};
 pub use delivery::ResponseDelivery;
 pub use lifecycle::{DeliveryState, Lifecycle, LifecycleError};
 pub use plan::{Delivery, ExecutionPlan, PlanError};

@@ -98,12 +98,22 @@ pub fn prepare(
     secret: &SecretMaterial,
     request: &Request,
 ) -> Result<UpstreamRequest, AttemptError> {
+    prepare_with_rules(endpoint, provider, secret, request).map(|(prepared, _)| prepared)
+}
+
+/// Also names the degradable rules applied to this candidate's body, for diagnostics.
+pub fn prepare_with_rules(
+    endpoint: &Endpoint,
+    provider: &ProviderDefinition,
+    secret: &SecretMaterial,
+    request: &Request,
+) -> Result<(UpstreamRequest, Vec<&'static str>), AttemptError> {
     let auth = operation_auth(endpoint, provider)?;
     let streaming = request.delivery.streaming() || endpoint.representation.forced_stream();
     if streaming && !endpoint.execution.streaming {
         return Err(AttemptError::Delivery("endpoint cannot stream"));
     }
-    let value = endpoint.encode_request(request)?;
+    let (value, rules) = endpoint.encode_request_with_rules(request)?;
     let body =
         serde_json::to_vec(&value).map_err(|_| AttemptError::Protocol("body serialization"))?;
     if body.len() > endpoint.execution.request_body_limit {
@@ -122,14 +132,17 @@ pub fn prepare(
         ),
     ];
     safe_headers.extend(endpoint.request_headers(request)?);
-    Ok(UpstreamRequest {
-        origin: endpoint.target.origin.as_str().into(),
-        method: "POST",
-        path: endpoint.target.path.as_str().into(),
-        safe_headers,
-        auth_header: auth.auth_header(secret),
-        body,
-    })
+    Ok((
+        UpstreamRequest {
+            origin: endpoint.target.origin.as_str().into(),
+            method: "POST",
+            path: endpoint.target.path.as_str().into(),
+            safe_headers,
+            auth_header: auth.auth_header(secret),
+            body,
+        },
+        rules,
+    ))
 }
 
 enum Intake {

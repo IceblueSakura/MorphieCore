@@ -119,6 +119,9 @@ struct CandidateRecord {
     elapsed_ms: u64,
     error_code: Option<&'static str>,
     advanced: bool,
+    /// Degradable rule names applied to this candidate's request, never field values.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    request_rules: Vec<&'static str>,
 }
 #[derive(Default, Serialize)]
 struct ImageAccountingObservation {
@@ -221,6 +224,7 @@ pub(super) struct Trace {
     record: Record,
     start: Instant,
     candidate_start: Option<(usize, Instant, u64, u64)>,
+    request_rules: Vec<&'static str>,
 }
 impl Trace {
     pub(super) fn new(sink: Option<&Sink>) -> Self {
@@ -247,6 +251,7 @@ impl Trace {
             },
             start: Instant::now(),
             candidate_start: None,
+            request_rules: vec![],
         }
     }
     pub(super) fn begin_candidate(&mut self, ordinal: usize) {
@@ -255,6 +260,7 @@ impl Trace {
         self.record.upstream_status = None;
         self.record.retry_after_seconds = None;
         self.record.upstream_head_ms = None;
+        self.request_rules.clear();
         if self.sink.is_some() && ordinal <= crate::topology::route::MAX_ROUTE_CANDIDATES {
             self.candidate_start = Some((
                 ordinal,
@@ -279,7 +285,13 @@ impl Trace {
                 elapsed_ms: start.elapsed().as_millis().min(u64::MAX as u128) as u64,
                 error_code,
                 advanced,
+                request_rules: std::mem::take(&mut self.request_rules),
             });
+        }
+    }
+    pub(super) fn request_rules(&mut self, rules: Vec<&'static str>) {
+        if self.sink.is_some() {
+            self.request_rules = rules;
         }
     }
     pub(super) fn stage(&mut self, stage: Stage) {

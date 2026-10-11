@@ -347,3 +347,95 @@ fn native_messages_binding_activates_only_when_listed() {
         assert_eq!(endpoint.target.path.as_str(), "/zen/go/v1/messages");
     }
 }
+
+#[test]
+fn codex_reasoning_controls_reach_the_native_binding_by_named_rules() {
+    let boot = Fixture::from_lookup(|name| {
+        Ok(match name {
+            "client_key" => Some("synthetic-gateway-client-token-0001".into()),
+            "opencode-go-api-key" => Some("synthetic-upstream-only".into()),
+            "models" => Some(r#"["claude-haiku-5-5"]"#.into()),
+            _ => None,
+        })
+    })
+    .unwrap();
+    let call = |id: &str, output: &str| {
+        [
+            serde_json::json!({"type":"function_call","call_id":id,"name":"lookup","arguments":"{}"}),
+            serde_json::json!({"type":"function_call_output","call_id":id,"output":output}),
+        ]
+    };
+    let mut input = vec![serde_json::json!({"role":"user","content":"go"})];
+    input.extend(call("call:1", "found"));
+    input.extend(call("call_2", "again"));
+    let body = |reasoning: serde_json::Value, input: &[serde_json::Value]| {
+        serde_json::json!({"model":"claude-haiku-5-5","instructions":"brief","max_output_tokens":64,
+        "temperature":0.2,"store":false,"include":["reasoning.encrypted_content"],"reasoning":reasoning,
+        "tools":[{"type":"function","name":"lookup","parameters":{"type":"object","properties":{}},"strict":false}],
+        "input":input})
+    };
+    let prepare = |reasoning, input: &[serde_json::Value]| {
+        let (entry, mut request) = super::super::admission::prepare(
+            &boot.gateway.state,
+            Profile::Responses,
+            &serde_json::to_vec(&body(reasoning, input)).unwrap(),
+        )
+        .unwrap();
+        request.conversation =
+            Some(crate::semantic::context::ConversationContext::conversation("synthetic").unwrap());
+        let candidate = &entry.candidates[0];
+        let (prepared, rules) = crate::execution::prepare_with_rules(
+            &candidate.endpoint,
+            &candidate.provider,
+            &candidate.secret.resolve().unwrap().0,
+            &request,
+        )?;
+        Ok::<_, crate::execution::AttemptError>((
+            serde_json::from_slice::<serde_json::Value>(&prepared.body).unwrap(),
+            rules,
+        ))
+    };
+    let (wire, rules) = prepare(
+        serde_json::json!({"effort":"minimal","summary":"detailed","context":"all_turns"}),
+        &input,
+    )
+    .unwrap();
+    let projected = "mc_0af6315558b41599b4a0fbfa5d31d4431b2e5c81";
+    assert_eq!(
+        wire,
+        serde_json::json!({"model":"claude-haiku-5-5","max_tokens":64,"system":"brief",
+        "tools":[{"name":"lookup","input_schema":{"type":"object","properties":{}},"strict":false}],
+        "thinking":{"type":"adaptive","display":"summarized"},"output_config":{"effort":"low"},
+        "messages":[
+            {"role":"user","content":[{"type":"text","text":"go"}]},
+            {"role":"assistant","content":[{"type":"tool_use","id":projected,"name":"lookup","input":{}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":projected,"content":"found"}]},
+            {"role":"assistant","content":[{"type":"tool_use","id":"call_2","name":"lookup","input":{}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"call_2","content":"again"}]}
+        ]})
+    );
+    assert_eq!(
+        rules,
+        [
+            "messages.lower-effort.v1",
+            "messages.summarize-reasoning.v1",
+            "messages.omit-reasoning-context.v1",
+            "messages.omit-sampling.v1",
+            "messages.project-call-ids.v1",
+        ]
+    );
+    let (wire, _) = prepare(serde_json::json!({"effort":"xhigh"}), &input).unwrap();
+    assert_eq!(wire["output_config"], serde_json::json!({"effort":"xhigh"}));
+    assert!(wire.get("thinking").is_none());
+    let (wire, _) = prepare(serde_json::json!({"summary":"auto"}), &input).unwrap();
+    assert_eq!(
+        wire["thinking"],
+        serde_json::json!({"type":"adaptive","display":"summarized"})
+    );
+    assert!(wire.get("output_config").is_none());
+    // A client ID equal to a projected digest fails instead of merging two calls.
+    input.truncate(3);
+    input.extend(call(projected, "again"));
+    let error = prepare(serde_json::json!({"effort":"low"}), &input).unwrap_err();
+    assert!(format!("{error:?}").contains("duplicate call"), "{error:?}");
+}

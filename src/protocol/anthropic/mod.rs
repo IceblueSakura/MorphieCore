@@ -16,6 +16,7 @@ use crate::protocol::CodecError;
 pub use request::*;
 pub use response::*;
 pub use semantic::NativeProjection;
+pub use semantic_request::RequestRule;
 use serde_json::Value;
 pub use target::ReplayTarget;
 
@@ -31,7 +32,8 @@ impl Profile {
         use crate::semantic::task::generation::GenerationSemanticContract;
         GenerationSemanticContract {
             instructions: true,
-            temperature: false,
+            // Accepted, then dropped by `RequestRule::OmitSampling`.
+            temperature: true,
             max_output_tokens: true,
             tools: true,
             custom_tools: false,
@@ -41,7 +43,7 @@ impl Profile {
             tool_result_errors: true,
             tool_result_images: false,
             text_metadata: false,
-            top_p: false,
+            top_p: true,
             logprobs: false,
             verbosity: false,
             truncation: false,

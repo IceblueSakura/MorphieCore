@@ -364,8 +364,11 @@ mod native_catalog {
         let mut settings = controlled.task.semantic.settings().clone();
         settings.reasoning =
             morphiecore::semantic::task::generation::ReasoningRequest::present(None, None);
-        settings.reasoning.effort =
-            Presence::Value(morphiecore::semantic::task::generation::ReasoningEffort::Low);
+        settings.reasoning.budget =
+            Some(morphiecore::semantic::task::generation::ReasoningBudget {
+                hard_limit: Some(1024),
+                soft_target: None,
+            });
         controlled.task.semantic = controlled.task.semantic.with_settings(settings).unwrap();
         assert!(representable(&endpoint, &controlled).is_err());
         assert!(
