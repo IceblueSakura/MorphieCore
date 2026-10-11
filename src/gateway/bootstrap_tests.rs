@@ -316,3 +316,34 @@ fn responses_chat_bridge_is_explicit_and_replaces_not_falls_back_to_native_respo
         .is_err()
     );
 }
+
+#[test]
+fn native_messages_binding_activates_only_when_listed() {
+    let settings = |models: Option<&'static str>| {
+        move |name: &str| {
+            Ok(match name {
+                "client_key" => Some("synthetic-gateway-client-token-0001".into()),
+                "opencode-go-api-key" => Some("synthetic-upstream-only".into()),
+                "models" => models.map(Into::into),
+                _ => None,
+            })
+        }
+    };
+    let haiku = "claude-haiku-5-5";
+    let boot = Fixture::from_lookup(settings(None)).unwrap();
+    for protocol in [Profile::Chat, Profile::Responses] {
+        let key = (super::super::family(protocol), haiku.into());
+        assert!(!boot.gateway.state.entries.contains_key(&key));
+    }
+    let boot = Fixture::from_lookup(settings(Some(r#"["claude-haiku-5-5"]"#))).unwrap();
+    assert_eq!(boot.gateway.state.entries.len(), 2);
+    for protocol in [Profile::Chat, Profile::Responses] {
+        let entry = &boot.gateway.state.entries[&(super::super::family(protocol), haiku.into())];
+        let endpoint = &entry.candidates[0].endpoint;
+        assert_eq!(
+            endpoint.protocol,
+            crate::topology::ProtocolProfile::AnthropicMessages
+        );
+        assert_eq!(endpoint.target.path.as_str(), "/zen/go/v1/messages");
+    }
+}

@@ -28,7 +28,7 @@ cargo run --locked --offline --bin morphiecore -- --credentials-dir /path/to/sto
 | `client_key` | Downstream Bearer token; unrelated to upstream keys |
 | `bind` | Loopback address, default `127.0.0.1:8080` |
 | `proxy` | Outbound proxy |
-| `models` | Public models to enable. If omitted, the default chat bindings with configured pools are enabled; media, Embedding and audio-input models must be listed explicitly |
+| `models` | Public models to enable. If omitted, the default chat bindings with configured pools are enabled; media, Embedding, audio-input and native Messages models must be listed explicitly |
 | `max_attempts` | Global attempt ceiling (1–64) |
 | `responses_via_chat` | Subset of `models` whose Responses entry uses the model's Chat upstream instead |
 | `implicit_cache_affinity` | Implicit cache-affinity index, default `true` |

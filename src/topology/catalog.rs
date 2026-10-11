@@ -138,12 +138,19 @@ pub fn default_topology() -> Result<CompiledTopology, TopologyError> {
         endpoints.push(binding.endpoint());
         public_models.push(public);
     }
+    let mut canonical_models = models::canonical_models();
+    for binding in MESSAGES_BINDINGS {
+        endpoints.push(binding.endpoint());
+        routes.push(binding.route());
+        public_models.push(binding.public_model());
+        canonical_models.push(binding.canonical_model());
+    }
     compile(
         catalog::all(),
         endpoints,
         routes,
         public_models,
-        models::canonical_models(),
+        canonical_models,
     )?
     .with_images(
         IMAGE_BINDINGS.iter().map(|b| b.operation()).collect(),
@@ -173,6 +180,12 @@ pub fn default_topology() -> Result<CompiledTopology, TopologyError> {
                     ModelMetadata::new(m.released_at, m.developer).expect("static publication"),
                 )
             })
+            .chain(MESSAGES_BINDINGS.iter().map(|b| {
+                (
+                    ModelId::new(b.model).expect("static messages id"),
+                    b.metadata(),
+                )
+            }))
             .chain(IMAGE_BINDINGS.iter().map(|b| {
                 (
                     ModelId::new(b.model).expect("static image id"),

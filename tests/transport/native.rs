@@ -303,24 +303,15 @@ mod native_catalog {
     use morphiecore::{
         adapter::Request,
         execution::{admit, plan::representable, prepare},
-        protocol::{
-            anthropic::{Profile, ReplayTarget},
-            openai::Profile as ClientProfile,
-        },
+        protocol::anthropic::{Profile, ReplayTarget},
         provider::SecretMaterial,
         semantic::{task::generation::LocalScope, value::Presence},
         topology::catalog,
     };
     #[test]
-    fn explicit_native_library_binding_is_not_openai_activation_or_a_default_model() {
+    fn declared_native_binding_prepares_the_messages_wire() {
         let binding = &catalog::MESSAGES_BINDINGS[0];
-        let topology = binding.topology().unwrap();
-        assert!(
-            catalog::default_topology()
-                .unwrap()
-                .model(binding.model)
-                .is_none()
-        );
+        let topology = catalog::default_topology().unwrap();
         let endpoint = binding.endpoint();
         let provider = binding.provider();
         let target = ReplayTarget::new(provider.id.as_str(), binding.upstream).unwrap();
@@ -386,19 +377,6 @@ mod native_catalog {
             )
             .is_err()
         );
-        let error = morphiecore::gateway::Gateway::new(
-            topology,
-            vec![morphiecore::gateway::Entry {
-                model: binding.model.into(),
-                protocol: ClientProfile::Responses,
-                endpoint: endpoint.id,
-            }],
-            std::collections::BTreeMap::new(),
-            SecretMaterial::new("synthetic-ingress-token-000001").unwrap(),
-            morphiecore::gateway::Limits::default(),
-            None,
-        );
-        assert!(error.is_err());
     }
     #[test]
     fn native_unknown_response_fields_are_ignored_and_request_errors_do_not_leak_keys() {

@@ -10,7 +10,7 @@ MorphieCore accepts standard client protocols downstream, calls different Provid
 | Downstream | OpenAI Chat Completions (compatible; declared losses, extension fields for missing semantics) | Live |
 | Downstream | Anthropic Messages | After Responses and Chat stabilize |
 | Upstream | OpenAI Responses and Chat, including compatible dialects | Live |
-| Upstream | Anthropic Messages | JSON and SSE live through explicit topology; CLI activation through `models` pending |
+| Upstream | Anthropic Messages | JSON and SSE; directory bootstrap activates a binding only when `models` lists it |
 | Upstream | Google generateContent, Google Interactions | Planned |
 
 The standalone Embeddings, Images, Speech and Transcription endpoints exist but are frozen: maintenance only, as refactors require.
