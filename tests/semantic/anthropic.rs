@@ -390,7 +390,7 @@ mod anthropic_semantics {
     #[test]
     fn ordered_system_blocks_and_adaptive_controls_have_independent_semantic_owners() {
         let p = Profile::AdaptiveTextTools;
-        let raw = br#"{"model":"synthetic-model","max_tokens":32,"system":[{"type":"text","text":"one"},{"type":"text","text":"two"}],"thinking":{"type":"adaptive","display":"omitted"},"output_config":{"effort":"low"},"messages":[{"role":"user","content":"go"}]}"#;
+        let raw = br#"{"model":"synthetic-model","max_tokens":32,"system":[{"type":"text","text":"one"},{"type":"text","text":"two"}],"thinking":{"type":"adaptive","display":"omitted"},"output_config":{"effort":"low"},"cache_control":{"type":"ephemeral"},"messages":[{"role":"user","content":"go"}]}"#;
         let decoded = p
             .decode_generation_request(raw, LocalScope::new(1), &target())
             .unwrap();
@@ -415,5 +415,14 @@ mod anthropic_semantics {
             json!({"type":"adaptive","display":"omitted"})
         );
         assert_eq!(encoded.value["output_config"], json!({"effort":"low"}));
+        assert_eq!(encoded.value["cache_control"], json!({"type":"ephemeral"}));
+        let ttl = std::str::from_utf8(raw).unwrap().replace(
+            r#"{"type":"ephemeral"}"#,
+            r#"{"type":"ephemeral","ttl":"1h"}"#,
+        );
+        assert!(
+            p.decode_generation_request(ttl.as_bytes(), LocalScope::new(1), &target())
+                .is_err()
+        );
     }
 }

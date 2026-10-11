@@ -294,6 +294,9 @@ pub(super) fn project(
         tool_choice,
         thinking,
         output_config,
+        // Always requested, like OpenAI's implicit caching; below the model's minimum
+        // prompt length nothing is cached or charged.
+        cache_control: Presence::Value(super::CacheControl::Ephemeral),
         messages,
         stream: Presence::Absent,
     })

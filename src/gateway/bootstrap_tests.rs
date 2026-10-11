@@ -406,7 +406,7 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
         serde_json::json!({"model":"claude-haiku-5-5","max_tokens":64,"system":"brief",
         "tools":[{"name":"lookup","input_schema":{"type":"object","properties":{}},"strict":false}],
         "thinking":{"type":"adaptive","display":"summarized"},"output_config":{"effort":"low"},
-        "messages":[
+        "cache_control":{"type":"ephemeral"},"messages":[
             {"role":"user","content":[{"type":"text","text":"go"}]},
             {"role":"assistant","content":[{"type":"tool_use","id":projected,"name":"lookup","input":{}}]},
             {"role":"user","content":[{"type":"tool_result","tool_use_id":projected,"content":"found"}]},

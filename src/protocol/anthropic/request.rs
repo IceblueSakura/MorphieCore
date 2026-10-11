@@ -299,6 +299,24 @@ impl Effort {
         json!({ "effort": effort })
     }
 }
+/// Top-level automatic caching: the API places and advances the breakpoint.
+/// Source: https://platform.claude.com/docs/en/build-with-claude/prompt-caching
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CacheControl {
+    Ephemeral,
+}
+impl CacheControl {
+    fn read(v: &Value) -> Result<Self, CodecError> {
+        let o = closed(v, &["type"])?;
+        match required(o, "type")?.as_str() {
+            Some("ephemeral") => Ok(Self::Ephemeral),
+            _ => Err(CodecError::Unsupported("Anthropic cache control".into())),
+        }
+    }
+    fn wire(self) -> Value {
+        json!({"type":"ephemeral"})
+    }
+}
 #[derive(Clone, Eq, PartialEq)]
 pub struct Request {
     pub model: String,
@@ -309,6 +327,7 @@ pub struct Request {
     pub tool_choice: Presence<ToolChoice>,
     pub thinking: Presence<Thinking>,
     pub output_config: Presence<Effort>,
+    pub cache_control: Presence<CacheControl>,
     pub stream: Presence<bool>,
 }
 impl std::fmt::Debug for Request {
@@ -329,6 +348,7 @@ impl Request {
                 "tool_choice",
                 "thinking",
                 "output_config",
+                "cache_control",
                 "stream",
             ],
         )?;
@@ -346,6 +366,7 @@ impl Request {
             tool_choice: presence(o, "tool_choice", ToolChoice::read)?,
             thinking: presence(o, "thinking", Thinking::read)?,
             output_config: presence(o, "output_config", Effort::read)?,
+            cache_control: presence(o, "cache_control", CacheControl::read)?,
             stream: presence(o, "stream", boolean)?,
         };
         r.validate()?;
@@ -367,6 +388,7 @@ impl Request {
         nonnull(&self.tool_choice)?;
         nonnull(&self.thinking)?;
         nonnull(&self.output_config)?;
+        nonnull(&self.cache_control)?;
         nonnull(&self.stream)?;
         let mut bytes = self.model.len();
         // Conservative fixed-shape overhead bounds allocation before building wire Values.
@@ -471,6 +493,7 @@ impl Request {
         put(o, "tool_choice", &self.tool_choice, ToolChoice::wire);
         put(o, "thinking", &self.thinking, Thinking::wire);
         put(o, "output_config", &self.output_config, |e| e.wire());
+        put(o, "cache_control", &self.cache_control, |c| c.wire());
         put(o, "stream", &self.stream, |b| json!(b));
         v
     }

@@ -116,7 +116,8 @@ mod native_bindings {
             .map(|(_, value)| value.as_str())
     }
     fn hello_wire() -> Value {
-        json!({"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]})
+        json!({"model":"synthetic-model","max_tokens":32,"cache_control":{"type":"ephemeral"},
+            "messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]})
     }
 
     #[test]
