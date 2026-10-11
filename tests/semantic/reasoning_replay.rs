@@ -883,13 +883,26 @@ mod replay_carrier {
             .unwrap();
         open_from_client(&mut request).unwrap();
         let before = request.clone();
-        let wire = upstream("other/model-b")
-            .encode_request(&request, "model-b", &contract("other/model-b"))
+        let (wire, rules) = upstream("other/model-b")
+            .encode_request_with_rules(&request, "model-b", &contract("other/model-b"))
             .unwrap();
-        assert!(!wire.to_string().contains("encrypted_content"));
-        assert!(!wire.to_string().contains("synthetic-final-token"));
-        // The readable summary still reaches the new target; the shared request is unchanged.
-        assert!(wire.to_string().contains("Plan"));
+        // The readable summary reaches the new target as assistant text without the
+        // issuer's item ID; the shared request is unchanged.
+        assert_eq!(
+            wire["input"],
+            json!([
+                {"type":"message","role":"user","content":[{"type":"input_text","text":"first"}]},
+                {"type":"message","role":"assistant","content":[{"type":"output_text","text":"Plan 🧪","annotations":[]}]},
+                {"type":"message","role":"user","content":[{"type":"input_text","text":"next"}]},
+            ])
+        );
+        assert_eq!(
+            rules,
+            [
+                "responses.omit-foreign-replay.v1",
+                "responses.reasoning-as-text.v1"
+            ]
+        );
         assert_eq!(request, before);
     }
 

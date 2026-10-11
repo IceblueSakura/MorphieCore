@@ -7,6 +7,8 @@ pub struct LocalScope(u64);
 impl LocalScope {
     /// Deterministic scope for a single standalone intake, not a global allocator.
     pub const ROOT: Self = Self(0);
+    /// Items a candidate copy derives under a new kind; no intake allocates here.
+    pub const DERIVED: Self = Self(u64::MAX);
     pub const fn new(value: u64) -> Self {
         Self(value)
     }

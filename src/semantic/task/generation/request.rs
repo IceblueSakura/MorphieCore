@@ -524,6 +524,48 @@ impl GenerationRequest {
         context_transform::check_protected_edits(&source, &self.items)?;
         Ok(self)
     }
+    /// Candidate copy: listed reasoning becomes assistant text under a fresh derived ID,
+    /// since an item's kind is protected under its ID; envelope membership follows the
+    /// new ID. Listed reasoning without non-blank text is removed.
+    pub fn with_reasoning_as_text(mut self, owners: &[ItemId]) -> Result<Self, GenerationError> {
+        let mut items = Vec::with_capacity(self.items.len());
+        for (position, (id, item)) in self.items.iter().enumerate() {
+            let reasoning = match item {
+                Item::Reasoning(reasoning) if owners.contains(id) => reasoning,
+                _ => {
+                    items.push((*id, item.clone()));
+                    continue;
+                }
+            };
+            let parts: Vec<_> = reasoning
+                .parts
+                .iter()
+                .filter_map(|(part, content)| {
+                    let (ReasoningContent::Summary(text) | ReasoningContent::Text(text)) = content;
+                    (!text.as_str().trim().is_empty()).then(|| Part {
+                        id: *part,
+                        content: ContentPart::Text(text.clone().into()),
+                        replay: None,
+                    })
+                })
+                .collect();
+            if parts.is_empty() {
+                continue;
+            }
+            let fresh = ItemId::scoped(LocalScope::DERIVED, position as u64);
+            self.message_owners.revise(*id, fresh);
+            items.push((
+                fresh,
+                Item::Message(Message {
+                    role: MessageRole::Assistant,
+                    parts,
+                    status: ItemLifecycle::Completed,
+                    phase: None,
+                }),
+            ));
+        }
+        self.with_items(items)
+    }
     pub fn retain_items(
         self,
         mut keep: impl FnMut(ItemId, &Item) -> bool,

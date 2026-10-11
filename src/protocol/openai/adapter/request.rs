@@ -155,14 +155,42 @@ impl Adapter {
         model: &str,
         contract: &TargetCaps,
     ) -> Result<Value, AdapterError> {
+        self.encode_request_with_rules(request, model, contract)
+            .map(|(value, _)| value)
+    }
+    /// The body plus the names of the degradable rules applied to it.
+    pub fn encode_request_with_rules(
+        &self,
+        request: &Request,
+        model: &str,
+        contract: &TargetCaps,
+    ) -> Result<(Value, Vec<&'static str>), AdapterError> {
         // Compatibility and carrier support are separate: a same-issuer value
         // without a target carrier must fail lowering, not disappear silently.
         let issuer = contract
             .replay_origin
             .as_ref()
             .or(self.adaptation.scope.as_ref());
-        let stripped = request.without_foreign_replay(issuer)?;
-        let request = stripped.as_ref().unwrap_or(request);
+        // Another target's readable reasoning travels as assistant text: a reasoning
+        // item would keep the issuer's ID, which a stateless upstream may reject.
+        let stripped = request.without_foreign_replay(issuer, true)?;
+        let mut rules = vec![];
+        if let Some((_, converted)) = &stripped {
+            let chat = self.protocol == Profile::Chat;
+            rules.push(if chat {
+                "chat.omit-foreign-replay.v1"
+            } else {
+                "responses.omit-foreign-replay.v1"
+            });
+            if *converted {
+                rules.push(if chat {
+                    "chat.reasoning-as-text.v1"
+                } else {
+                    "responses.reasoning-as-text.v1"
+                });
+            }
+        }
+        let request = stripped.as_ref().map_or(request, |(copy, _)| copy);
         request.check_context(contract.standard_context)?;
         if self.adaptation.rules.responses_siwc {
             if self.protocol != Profile::Responses {
@@ -297,7 +325,7 @@ impl Adapter {
             crate::semantic::task::generation::MAX_TOTAL_BYTES,
         )
         .map_err(|_| CodecError::Limit)?;
-        Ok(value)
+        Ok((value, rules))
     }
 }
 

@@ -48,6 +48,59 @@ mod message_envelopes {
     }
 
     #[test]
+    fn reasoning_as_text_takes_a_derived_id_inside_its_envelope() {
+        let source = responses::decode_generation(&json!({"input":[
+            {"type":"reasoning","id":"rs","summary":[
+                {"type":"summary_text","text":"Plan"},{"type":"summary_text","text":" "}]},
+            {"type":"function_call","call_id":"c","name":"lookup","arguments":"{}"},
+            {"type":"function_call_output","call_id":"c","output":"result"}
+        ]}))
+        .unwrap()
+        .semantic;
+        let ids: Vec<_> = source.items().iter().map(|(id, _)| *id).collect();
+        let Item::Reasoning(reasoning) = &source.items()[0].1 else {
+            panic!("reasoning");
+        };
+        let part = reasoning.parts[0].0;
+        let source = source
+            .with_message_envelopes(vec![
+                MessageEnvelope::new(
+                    GroupId::new(LocalScope::ROOT, 1),
+                    MessageEnvelopeRole::Assistant,
+                    ids[..2].to_vec(),
+                )
+                .unwrap(),
+            ])
+            .unwrap();
+        let converted = source.with_reasoning_as_text(&[ids[0]]).unwrap();
+        let derived = ItemId::scoped(LocalScope::DERIVED, 0);
+        assert_eq!(
+            converted.items()[0],
+            (
+                derived,
+                Item::Message(Message {
+                    role: MessageRole::Assistant,
+                    parts: vec![Part {
+                        id: part,
+                        content: ContentPart::Text(
+                            morphiecore::semantic::value::Text::new("Plan", "synthetic", 64)
+                                .unwrap()
+                                .into()
+                        ),
+                        replay: None,
+                    }],
+                    status: ItemLifecycle::Completed,
+                    phase: None,
+                })
+            )
+        );
+        assert_eq!(
+            converted.message_envelopes()[0].members(),
+            &[derived, ids[1]]
+        );
+    }
+
+    #[test]
     fn chat_sse_delivers_calls_and_a_real_responses_terminal() {
         use morphiecore::protocol::openai::{
             Profile,

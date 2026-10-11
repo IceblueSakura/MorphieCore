@@ -111,12 +111,14 @@ impl Request {
 }
 impl Request {
     /// Candidate-private copy without opaque reasoning issued for another target.
-    /// Reasoning items left with neither readable content nor replay are removed.
-    /// `None` means the request needs no change for this target.
+    /// Reasoning items left with neither readable content nor replay are removed;
+    /// with `as_text` the readable rest becomes assistant text. The flag reports
+    /// that conversion. `None` means the request needs no change for this target.
     pub(crate) fn without_foreign_replay(
         &self,
         target: Option<&crate::semantic::value::ReplayOrigin>,
-    ) -> Result<Option<Request>, CodecError> {
+        as_text: bool,
+    ) -> Result<Option<(Request, bool)>, CodecError> {
         use crate::semantic::task::generation::Item;
         let fidelity = &self.task.fidelity;
         let foreign: Vec<_> = self
@@ -148,20 +150,25 @@ impl Request {
                 (id, item)
             })
             .collect();
+        let readable = stripped.iter().any(|(id, item)| {
+            foreign.contains(id) && matches!(item, Item::Reasoning(r) if !r.parts.is_empty())
+        });
         let without_empty: Vec<_> = stripped
-            .iter()
+            .into_iter()
             .filter(|(id, item)| {
                 !(foreign.contains(id) && matches!(item, Item::Reasoning(r) if r.parts.is_empty()))
             })
-            .cloned()
             .collect();
-        let semantic = self.task.semantic.clone().with_items(without_empty)?;
+        let mut semantic = self.task.semantic.clone().with_items(without_empty)?;
+        if as_text && readable {
+            semantic = semantic.with_reasoning_as_text(&foreign)?;
+        }
         let mut copy = self.clone();
         for id in &foreign {
             copy.task.fidelity.remove_replay(*id);
         }
         copy.task.fidelity.retain_owners(semantic.items());
         copy.task.semantic = semantic;
-        Ok(Some(copy))
+        Ok(Some((copy, as_text && readable)))
     }
 }

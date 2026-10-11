@@ -96,9 +96,9 @@ impl Endpoint {
     ) -> Result<(serde_json::Value, Vec<&'static str>), crate::adapter::AdapterError> {
         use crate::adapter::UpstreamAdapter;
         match (self.adapter()?, &self.representation) {
-            (UpstreamAdapter::OpenAi(adapter), TargetCaps::OpenAi(caps)) => adapter
-                .encode_request(request, &self.upstream_model, caps)
-                .map(|value| (value, vec![])),
+            (UpstreamAdapter::OpenAi(adapter), TargetCaps::OpenAi(caps)) => {
+                adapter.encode_request_with_rules(request, &self.upstream_model, caps)
+            }
             (
                 UpstreamAdapter::AnthropicMessages { target, .. },
                 TargetCaps::AnthropicMessages(caps),

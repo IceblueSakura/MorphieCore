@@ -81,7 +81,10 @@ impl TargetCaps {
         request: &Request,
         target: &ReplayTarget,
     ) -> Result<(Value, Vec<&'static str>), AdapterError> {
-        let stripped = request.without_foreign_replay(Some(&target.origin()))?;
+        // Native projection converts unsigned reasoning itself, inside the assistant turn.
+        let stripped = request
+            .without_foreign_replay(Some(&target.origin()), false)?
+            .map(|(copy, _)| copy);
         let foreign = stripped.is_some();
         let request = stripped.as_ref().unwrap_or(request);
         self.check_context(request)?;
