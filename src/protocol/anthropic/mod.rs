@@ -7,6 +7,8 @@ mod semantic_request;
 mod shape;
 mod sse;
 pub use sse::MessageSseDecoder;
+mod events;
+pub use events::GenerationSseDecoder;
 mod target;
 use crate::protocol::CodecError;
 pub use request::*;

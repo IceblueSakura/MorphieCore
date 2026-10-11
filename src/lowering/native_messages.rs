@@ -3,6 +3,25 @@ use crate::{
     protocol::{CodecError, DecodedResponse, openai::Profile},
     semantic::task::generation::*,
 };
+mod events;
+pub(crate) use events::EventProjection;
+
+fn client_usage(usage: Usage) -> Result<Option<Usage>, CodecError> {
+    let derived = usage.derive(UsageFormula::InputPlusCacheReadAndWrite)?;
+    Ok(
+        if let (Some(input), Some(output)) = (derived, usage.output_tokens) {
+            let input = input.tokens();
+            let total = input.checked_add(output).ok_or(CodecError::Limit)?;
+            Some(Usage {
+                cached_input_tokens: usage.cached_input_tokens,
+                input_cache_write_tokens: usage.input_cache_write_tokens,
+                ..Usage::operation(input, output, total)
+            })
+        } else {
+            None
+        },
+    )
+}
 
 /// The caller supplies a private delivery copy; the native observation stays intact.
 /// Container boundaries are omitted, object arguments are serialized exactly, and
@@ -38,18 +57,7 @@ pub(crate) fn project(decoded: &mut DecodedResponse, profile: Profile) -> Result
             .with_usage_reports(source.usage_reports().to_vec())?;
     if let Some(usage) = source.usage() {
         // Derivation requires all disjoint input categories. Missing is not zero.
-        let derived = usage.derive(UsageFormula::InputPlusCacheReadAndWrite)?;
-        let reports = if let (Some(input), Some(output)) = (derived, usage.output_tokens) {
-            let input = input.tokens();
-            let total = input.checked_add(output).ok_or(CodecError::Limit)?;
-            vec![Usage {
-                cached_input_tokens: usage.cached_input_tokens,
-                input_cache_write_tokens: usage.input_cache_write_tokens,
-                ..Usage::operation(input, output, total)
-            }]
-        } else {
-            vec![]
-        };
+        let reports = client_usage(usage)?.into_iter().collect();
         projected = projected.with_usage_reports(reports)?;
     }
     if profile == Profile::Chat {

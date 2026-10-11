@@ -1,4 +1,4 @@
-//! Bounded native aggregation. No semantic output or replay is complete before strict EOF.
+//! Shared native wire reducer; only strict EOF exposes the complete aggregated message.
 use super::{Block, Delta, Event, Message, Profile};
 use crate::{
     protocol::{
@@ -63,6 +63,13 @@ impl MessageSseDecoder {
     }
     /// Consume at most one frame. The caller owns and revisits the unconsumed suffix.
     pub fn consume(&mut self, chunk: &[u8]) -> Result<usize, SseError> {
+        self.consume_event(chunk).map(|(used, _)| used)
+    }
+    /// Expose only an event accepted by the native ordering/closure reducer.
+    pub(super) fn consume_event(
+        &mut self,
+        chunk: &[u8],
+    ) -> Result<(usize, Option<Event>), SseError> {
         if self.closed || self.rejected {
             return Err(SseError::Closed);
         }
@@ -74,17 +81,15 @@ impl MessageSseDecoder {
             if self.wire_bytes > self.limits.max_wire_bytes {
                 return Err(SseError::Limit);
             }
-            if let Some(frame) = frame {
-                self.frame(frame)?;
-            }
-            Ok(used)
+            let event = frame.map(|frame| self.frame(frame)).transpose()?.flatten();
+            Ok((used, event))
         })();
         if result.is_err() {
             self.reject();
         }
         result
     }
-    fn frame(&mut self, frame: SseEvent) -> Result<(), SseError> {
+    fn frame(&mut self, frame: SseEvent) -> Result<Option<Event>, SseError> {
         if self.stopped {
             return Err(SseError::Closed);
         }
@@ -94,10 +99,14 @@ impl MessageSseDecoder {
         }
         let name = frame.event().ok_or(SseError::EventType)?;
         if !Event::KNOWN.contains(&name) {
-            return Ok(());
+            return Ok(None);
         }
         let event = Profile::AdaptiveTextTools.decode_event(name, frame.data().as_bytes())?;
-        self.event(event)
+        self.event(event.clone())?;
+        Ok(Some(event))
+    }
+    pub(super) fn message(&self) -> Option<&Message> {
+        self.message.as_ref()
     }
     fn charge(&mut self, bytes: usize) -> Result<(), SseError> {
         self.state_bytes = self.state_bytes.checked_add(bytes).ok_or(SseError::Limit)?;

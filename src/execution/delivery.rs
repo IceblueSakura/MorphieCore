@@ -57,6 +57,8 @@ pub struct ResponseDelivery {
     rendered: bool,
     terminal: bool,
     rejected: bool,
+    native_created: Option<serde_json::Number>,
+    native_projection: Option<crate::lowering::native_messages::EventProjection>,
 }
 impl ResponseDelivery {
     pub fn new(
@@ -84,6 +86,11 @@ impl ResponseDelivery {
             rendered: false,
             terminal: false,
             rejected: false,
+            native_created: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .map(|time| time.as_secs().into()),
+            native_projection: None,
         }
     }
     pub fn lifecycle(&self) -> &Lifecycle {
@@ -111,10 +118,11 @@ impl ResponseDelivery {
         metadata.model = self.public_label.clone();
         if attempt.is_native_messages() {
             // This is the Gateway envelope's creation time, not an upstream report.
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_err(|_| AttemptError::Protocol("gateway clock"))?;
-            metadata.created = Some(now.as_secs().into());
+            metadata.created = Some(
+                self.native_created
+                    .clone()
+                    .ok_or(AttemptError::Protocol("gateway clock"))?,
+            );
         }
         Ok(metadata)
     }
@@ -135,7 +143,7 @@ impl ResponseDelivery {
         if attempt.is_native_messages() {
             crate::lowering::native_messages::project(&mut decoded, self.adapter.protocol)?;
         }
-        if self.adapter.protocol == Profile::Responses {
+        if self.adapter.protocol == Profile::Responses || attempt.is_native_messages() {
             for (owner, _) in decoded.semantic.items() {
                 if decoded.fidelity.response_item_id(*owner).is_none() {
                     decoded.fidelity.record_response_item_id(
@@ -262,6 +270,18 @@ impl ResponseDelivery {
         events: &[StreamEvent],
     ) -> Result<Vec<Bytes>, AttemptError> {
         self.bind(attempt)?;
+        let projected;
+        let events = if attempt.is_native_messages() {
+            projected = self
+                .native_projection
+                .get_or_insert_with(|| {
+                    crate::lowering::native_messages::EventProjection::new(self.adapter.protocol)
+                })
+                .project(events)?;
+            projected.as_slice()
+        } else {
+            events
+        };
         let metadata = self.metadata(attempt)?;
         if self.encoder.is_none() {
             let contract = self.adapter.contract(&self.contract);
@@ -289,7 +309,7 @@ impl ResponseDelivery {
             .fidelity()
             .ok_or(AttemptError::Protocol("missing response fidelity"))?;
         let mut source = std::borrow::Cow::Borrowed(source);
-        if self.adapter.protocol == Profile::Responses {
+        if self.adapter.protocol == Profile::Responses || attempt.is_native_messages() {
             for event in events {
                 if let StreamEvent::ItemStarted { item, .. } = event
                     && source.response_item_id(*item).is_none()

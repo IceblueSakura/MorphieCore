@@ -313,10 +313,6 @@ impl Gateway {
             for secret in binding.sources.iter().take(count) {
                 let secret = secret.clone();
                 let mut endpoint = endpoint.clone();
-                // Library SSE intake exists, but Gateway incremental delivery is a later slice.
-                if endpoint.protocol == crate::topology::ProtocolProfile::AnthropicMessages {
-                    endpoint.execution.streaming = false;
-                }
                 let provenance = secret.provenance();
                 // Length prefixes avoid ambiguous concatenation. Internal provenance
                 // is neither a credential locator nor attestation of token issuance.

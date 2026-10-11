@@ -184,11 +184,21 @@ fn limits_http_and_attempt_cancellation_are_independent_boundaries() {
             .unwrap();
     a.begin(200, "text/event-stream").unwrap();
     let mut offset = 0;
+    let mut incremental = vec![];
     while offset < bytes.len() {
         let (n, events) = a.push(&bytes[offset..]).unwrap();
-        assert!(events.is_empty());
+        incremental.extend(events);
         offset += n;
     }
+    assert!(matches!(
+        incremental.first(),
+        Some(morphiecore::semantic::task::generation::StreamEvent::Started)
+    ));
+    assert!(incremental.iter().any(|e| matches!(e, morphiecore::semantic::task::generation::StreamEvent::Delta {fragment,..} if fragment == "ok")));
+    assert!(!incremental.iter().any(|e| matches!(
+        e,
+        morphiecore::semantic::task::generation::StreamEvent::Terminal { .. }
+    )));
     assert!(a.response().is_err());
     let expected = p
         .decode_generation_response(
@@ -246,5 +256,226 @@ fn known_upstream_fields_stay_strict() {
         let mut decoder =
             MessageSseDecoder::new(200, "text/event-stream", SseLimits::default()).unwrap();
         assert!(feed(&mut decoder, &wire(&frames)).is_err());
+    }
+}
+
+#[test]
+fn incremental_native_events_reduce_to_the_independent_static_semantics() {
+    use morphiecore::protocol::anthropic::GenerationSseDecoder;
+    use morphiecore::semantic::task::generation::{StreamState, materialize, reduce};
+    let target = ReplayTarget::new("synthetic-provider", "synthetic-model").unwrap();
+    let source=Profile::AdaptiveTextTools.decode_generation_request(
+        br#"{"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":"go"}]}"#,
+        LocalScope::new(1),&target).unwrap();
+    for variant in 0..4 {
+        let mut native = frames();
+        let mut final_wire = expected();
+        match variant {
+            1 => {
+                native[3]["delta"]["thinking"] = json!("");
+                final_wire["content"][0]["thinking"] = json!("");
+            }
+            2 => {
+                native.remove(12);
+                native.remove(11);
+                final_wire["content"][2]["input"] = json!({});
+            }
+            3 => {
+                native[7]["content_block"]["text"] = json!("start ");
+                final_wire["content"][1]["text"] = json!("start ok");
+            }
+            _ => {}
+        }
+        let expected = Profile::AdaptiveTextTools
+            .decode_generation_response(
+                final_wire.to_string().as_bytes(),
+                LocalScope::new(2),
+                &source,
+                &target,
+            )
+            .unwrap();
+        for chunk_size in [1, 13, 4096] {
+            let mut decoder = GenerationSseDecoder::new(
+                200,
+                "text/event-stream",
+                SseLimits::default(),
+                LocalScope::new(2),
+                target.clone(),
+            )
+            .unwrap();
+            let mut state = StreamState::new();
+            for chunk in wire(&native).chunks(chunk_size) {
+                let mut rest = chunk;
+                while !rest.is_empty() {
+                    let (used, events) = decoder.consume(rest).unwrap();
+                    assert!(used > 0);
+                    rest = &rest[used..];
+                    for event in events {
+                        state = reduce(state, event).unwrap();
+                    }
+                }
+            }
+            decoder.finish().unwrap();
+            assert_eq!(materialize(&state).unwrap(), expected.semantic);
+            assert_eq!(decoder.metadata().unwrap(), &expected.metadata);
+        }
+    }
+}
+
+#[test]
+fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
+    use morphiecore::{
+        adapter::{Adapter, Dialect},
+        execution::ResponseDelivery,
+        lowering::generation::GenerationRepresentationContract,
+        protocol::{
+            openai::{Profile as ClientProfile, sse::Obfuscation},
+            replay_envelope,
+        },
+        semantic::task::generation::{Item, Outcome, ToolArguments},
+    };
+    for profile in [ClientProfile::Responses, ClientProfile::Chat] {
+        for incomplete in [false, true] {
+            let target = ReplayTarget::new("synthetic-provider", "synthetic-model").unwrap();
+            let source=Profile::AdaptiveTextTools.decode_generation_request(
+                br#"{"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":"go"}]}"#,
+                LocalScope::new(1),&target).unwrap();
+            let mut attempt =
+                Attempt::native_messages(source, target, LocalScope::new(2), 2 << 20).unwrap();
+            let client = Adapter::new(profile, Dialect::MorphieCore, None);
+            let mut delivery = ResponseDelivery::new(
+                client.clone(),
+                GenerationRepresentationContract::full(),
+                "public",
+                SseLimits::default(),
+                morphiecore::semantic::context::StreamOptions {
+                    include_usage: morphiecore::semantic::value::Presence::Value(true),
+                    include_obfuscation: morphiecore::semantic::value::Presence::Value(false),
+                },
+                Obfuscation::Disabled,
+            );
+            attempt.begin(200, "text/event-stream").unwrap();
+            let mut native = frames();
+            if incomplete {
+                native[15]["delta"]["stop_reason"] = json!("max_tokens");
+            }
+            let mut output = vec![];
+            for (n, frame) in native.iter().enumerate() {
+                let bytes = wire(std::slice::from_ref(frame));
+                let mut rest = bytes.as_slice();
+                while !rest.is_empty() {
+                    let (used, events) = attempt.push(rest).unwrap();
+                    rest = &rest[used..];
+                    let produced = delivery.encode_events(&attempt, &events).unwrap();
+                    if !produced.is_empty() && delivery.lifecycle().may_retry_or_fallback() {
+                        delivery.commit().unwrap();
+                    }
+                    output.extend(produced.into_iter().flatten());
+                }
+                if n == 8 {
+                    assert!(String::from_utf8_lossy(&output).contains("ok"));
+                    assert!(attempt.response().is_err());
+                    assert!(!delivery.lifecycle().may_retry_or_fallback());
+                }
+            }
+            let early = String::from_utf8_lossy(&output);
+            assert!(
+                !early.contains("response.completed")
+                    && !early.contains("response.incomplete")
+                    && !early.contains("[DONE]")
+            );
+            attempt.finish().unwrap();
+            output.extend(
+                delivery
+                    .finish_stream(&attempt)
+                    .unwrap()
+                    .into_iter()
+                    .flatten(),
+            );
+            delivery.complete(&attempt).unwrap();
+            let wire = String::from_utf8(output).unwrap();
+            assert!(!wire.contains("sig-tail"));
+            let mut decoder = client.event_decoder();
+            let mut times = std::collections::BTreeSet::new();
+            for data in wire.lines().filter_map(|line| line.strip_prefix("data: ")) {
+                if data == "[DONE]" {
+                    decoder.done().unwrap();
+                    continue;
+                }
+                let value: Value = serde_json::from_str(data).unwrap();
+                if let Some(t) = value
+                    .get("created")
+                    .or_else(|| value.pointer("/response/created_at"))
+                {
+                    times.insert(t.to_string());
+                }
+                decoder.push(&value).unwrap();
+            }
+            decoder.finish().unwrap();
+            let decoded = decoder.materialize().unwrap();
+            assert_eq!(times.len(), 1);
+            assert_eq!(
+                decoded.semantic.outcome(),
+                if incomplete {
+                    Outcome::Incomplete
+                } else {
+                    Outcome::Completed
+                }
+            );
+            assert_eq!(decoded.semantic.usage().unwrap().total_tokens, Some(27));
+            let Item::Reasoning(reasoning) = &decoded.semantic.items()[0].1 else {
+                panic!("reasoning");
+            };
+            let (issuer, format, token) =
+                replay_envelope::open(reasoning.replay.as_ref().unwrap().as_str()).unwrap();
+            assert_eq!(
+                issuer,
+                replay_envelope::issuer("synthetic-provider", "synthetic-model")
+            );
+            assert_eq!(
+                format,
+                morphiecore::semantic::task::generation::ReplayFormat::AnthropicMessagesThinking
+            );
+            assert_eq!(token.as_str(), "sig-tail");
+            let call = decoded
+                .semantic
+                .items()
+                .iter()
+                .find_map(|(_, item)| match item {
+                    Item::ToolCall(call) => Some(call),
+                    _ => None,
+                })
+                .unwrap();
+            let ToolArguments::Raw(arguments) = &call.arguments else {
+                panic!("raw target arguments");
+            };
+            assert_eq!(
+                serde_json::from_str::<Value>(arguments).unwrap(),
+                expected()["content"][2]["input"]
+            );
+            // The same native SSE intake can also supply a non-streaming client.
+            let native = attempt.response().unwrap().clone();
+            let mut json_delivery = ResponseDelivery::new(
+                client.clone(),
+                GenerationRepresentationContract::full(),
+                "public",
+                SseLimits::default(),
+                Default::default(),
+                Obfuscation::Disabled,
+            );
+            let body: Value =
+                serde_json::from_slice(&json_delivery.encode_json(&attempt).unwrap()).unwrap();
+            assert_eq!(body["usage"]["total_tokens"], 27);
+            let args = if profile == ClientProfile::Responses {
+                &body["output"][2]["arguments"]
+            } else {
+                &body["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
+            };
+            assert_eq!(
+                serde_json::from_str::<Value>(args.as_str().unwrap()).unwrap(),
+                expected()["content"][2]["input"]
+            );
+            assert_eq!(attempt.response().unwrap(), &native);
+        }
     }
 }

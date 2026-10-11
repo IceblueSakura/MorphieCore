@@ -59,6 +59,7 @@ impl Request {
     ) -> Result<(), CodecError> {
         self.check_grouping()?;
         self.context.validate()?;
+        self.delivery.validate()?;
         let mut context = self.context.clone();
         cache.project(&mut context)?;
         // Explicit stateless defaults do not ask the native Provider for storage.
@@ -87,7 +88,6 @@ impl Request {
         }
         if context != ExecutionHints::default()
             || self.delivery.stream == Presence::Null
-            || self.delivery.options.value().is_some()
             || self.extensions != CustomSections::default()
             || self.n.value().is_some_and(|n| *n != 1)
             || !go && self.cache_session.is_some()

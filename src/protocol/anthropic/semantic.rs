@@ -201,34 +201,9 @@ impl Profile {
         }
         let mut intake = Intake::new(scope);
         intake.message(Role::Assistant, &wire.content)?;
-        let (outcome, progress, details) = match wire.stop_reason.value().expect("validated stop") {
-            super::StopReason::EndTurn => (
-                Outcome::Completed,
-                InteractionProgress::TurnFinished,
-                TerminalDetails::default(),
-            ),
-            super::StopReason::ToolUse => (
-                Outcome::Completed,
-                InteractionProgress::AwaitingToolResults,
-                TerminalDetails::default(),
-            ),
-            super::StopReason::MaxTokens => (
-                Outcome::Incomplete,
-                InteractionProgress::Unreported,
-                TerminalDetails {
-                    incomplete: Some(IncompleteReason::MaxOutputTokens),
-                    error: None,
-                },
-            ),
-        };
-        let mut usage = Usage::operation(0, 0, 0);
-        usage.input_tokens = wire.usage.input_tokens.value().copied();
-        usage.output_tokens = Some(wire.usage.output_tokens);
-        usage.total_tokens = None;
-        usage.input_relation = InputTokenRelation::ExcludesCacheReadAndWrite;
-        usage.total_relation = TotalTokenRelation::Unreported;
-        usage.cached_input_tokens = wire.usage.cache_read_input_tokens.value().copied();
-        usage.input_cache_write_tokens = wire.usage.cache_creation_input_tokens.value().copied();
+        let (outcome, progress, details) =
+            outcome(*wire.stop_reason.value().expect("validated stop"));
+        let usage = usage(&wire.usage);
         let semantic = GenerationResponse::new(intake.items, outcome)?
             .with_message_envelopes(intake.groups)?
             .with_progress(progress)?
@@ -355,4 +330,37 @@ impl Profile {
             },
         })
     }
+}
+pub(super) fn outcome(stop: super::StopReason) -> (Outcome, InteractionProgress, TerminalDetails) {
+    match stop {
+        super::StopReason::EndTurn => (
+            Outcome::Completed,
+            InteractionProgress::TurnFinished,
+            TerminalDetails::default(),
+        ),
+        super::StopReason::ToolUse => (
+            Outcome::Completed,
+            InteractionProgress::AwaitingToolResults,
+            TerminalDetails::default(),
+        ),
+        super::StopReason::MaxTokens => (
+            Outcome::Incomplete,
+            InteractionProgress::Unreported,
+            TerminalDetails {
+                incomplete: Some(IncompleteReason::MaxOutputTokens),
+                error: None,
+            },
+        ),
+    }
+}
+pub(super) fn usage(wire: &super::Usage) -> Usage {
+    let mut usage = Usage::operation(0, 0, 0);
+    usage.input_tokens = wire.input_tokens.value().copied();
+    usage.output_tokens = Some(wire.output_tokens);
+    usage.total_tokens = None;
+    usage.input_relation = InputTokenRelation::ExcludesCacheReadAndWrite;
+    usage.total_relation = TotalTokenRelation::Unreported;
+    usage.cached_input_tokens = wire.cache_read_input_tokens.value().copied();
+    usage.input_cache_write_tokens = wire.cache_creation_input_tokens.value().copied();
+    usage
 }

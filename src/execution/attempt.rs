@@ -176,7 +176,7 @@ enum Intake {
     Static(Vec<u8>),
     Responses(ResponsesSseDecoder),
     Chat(ChatSseDecoder),
-    Messages(crate::protocol::anthropic::MessageSseDecoder),
+    Messages(crate::protocol::anthropic::GenerationSseDecoder),
     Closed,
 }
 
@@ -218,6 +218,12 @@ impl Attempt {
                 &endpoint.upstream_model,
                 &endpoint.representation,
             )?;
+            // Delivery is not source-history semantics; the same history is used
+            // for JSON and SSE response mapping.
+            let mut wire = wire;
+            wire.as_object_mut()
+                .ok_or(AttemptError::Protocol("native context"))?
+                .remove("stream");
             let source = profile.decode_generation_request(
                 &serde_json::to_vec(&wire).map_err(|_| AttemptError::Protocol("native context"))?,
                 LocalScope::new(1),
@@ -279,8 +285,12 @@ impl Attempt {
                     return Err(AttemptError::Protocol("missing native request context"));
                 }
                 if media == "text/event-stream" {
+                    let (_, target, scope) = self
+                        .native_source
+                        .as_ref()
+                        .ok_or(AttemptError::Protocol("missing native request context"))?;
                     self.intake =
-                        Intake::Messages(crate::protocol::anthropic::MessageSseDecoder::new(
+                        Intake::Messages(crate::protocol::anthropic::GenerationSseDecoder::new(
                             status,
                             content_type,
                             SseLimits {
@@ -288,6 +298,8 @@ impl Attempt {
                                 max_event_bytes: self.limits.max_event_bytes.min(self.body_limit),
                                 ..self.limits
                             },
+                            *scope,
+                            target.clone(),
                         )?);
                     return Ok(());
                 }
@@ -346,7 +358,7 @@ impl Attempt {
                 }
                 Intake::Responses(decoder) => decoder.consume(chunk)?,
                 Intake::Chat(decoder) => decoder.consume(chunk)?,
-                Intake::Messages(decoder) => (decoder.consume(chunk)?, vec![]),
+                Intake::Messages(decoder) => decoder.consume(chunk)?,
                 _ => return Err(AttemptError::Protocol("attempt is closed")),
             };
             if matches!(events.last(), Some(StreamEvent::Terminal { .. })) {
@@ -369,6 +381,7 @@ impl Attempt {
         match &self.intake {
             Intake::Responses(d) => d.metadata(),
             Intake::Chat(d) => d.metadata(),
+            Intake::Messages(d) => d.metadata(),
             _ => None,
         }
     }
@@ -379,6 +392,7 @@ impl Attempt {
         match &self.intake {
             Intake::Responses(d) => Some(d.fidelity()),
             Intake::Chat(d) => Some(d.fidelity()),
+            Intake::Messages(d) => Some(d.fidelity()),
             _ => None,
         }
     }

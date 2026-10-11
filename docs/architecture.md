@@ -10,7 +10,7 @@ MorphieCore 是以统一 IR 为核心的模型路由网关：下游接收标准�
 | 下游 | OpenAI Chat Completions（兼容接口，允许声明的损失，可用扩展字段补充语义） | 已接入 |
 | 下游 | Anthropic Messages | Responses/Chat 稳定后开放 |
 | 上游 | OpenAI Responses、OpenAI Chat（含各兼容方言） | 已接入 |
-| 上游 | Anthropic Messages | 显式拓扑的 Gateway JSON 已接入；增量 SSE 与默认 CLI 产品绑定待接入 |
+| 上游 | Anthropic Messages | 显式拓扑的 Gateway JSON / SSE 已接入；默认 CLI 产品绑定待接入 |
 | 上游 | Google generateContent、Google Interactions | 计划中 |
 
 独立的 Embeddings、Images、Speech、Transcription 已有标准下游入口，当前冻结，只做重构所需的维护。
@@ -84,7 +84,7 @@ IR 不是任一协议的 DTO，也不是字段并集。发现 IR 无法表达的
 - 当前载体为 `mc1.` 加 base64url JSON，包含 Provider/上游模型的稳定指纹、原生格式和载荷；公共模型别名、凭据和入口密钥不参与兼容性指纹。裸值、损坏或未知版本信封不回传上游。
 - 信封不加密、不附加 HMAC、不做本地前缀证明：来源标签只是兼容性提示，不是身份认证；标签不能选择路由、地址或凭据。签名合法性由上游签发方校验，被篡改或不匹配时由上游拒绝并作为错误返回。
 - 同目标没有相应载体时仍拒绝，不把必要 opaque 当成异目标值静默丢弃。调用方显式使用的历史依赖检查、owner 关联与缓存前缀工具独立保留。
-- 当前接线覆盖 reasoning item 的 Responses `encrypted_content` 与 Chat `reasoning.encrypted.data`，静态和流式相同。原生 Anthropic/Google 接入及 part/call 级签名仍按路线推进。
+- 当前接线覆盖 reasoning item 的 Responses `encrypted_content` 与 Chat `reasoning.encrypted.data`，原生 Anthropic thinking 复用同一载体，静态和流式相同。Google 接入及 part/call 级签名仍按路线推进。
 
 ### Chat 扩展字段
 
@@ -102,14 +102,15 @@ Chat Completions 无法承载 reasoning 等语义时，参照 OpenRouter 的现�
 - 上游 SSE 与下游交付方式独立：下游要 JSON 时有界聚合到终态；要 SSE 时增量交付。
 - 所有 body、frame、事件数和时间都有上界；客户端断开、超时或关闭会取消上游请求。
 
-### 原生 Messages 的 OpenAI JSON 投影
+### 原生 Messages 的 OpenAI 客户端投影
 
 - 请求按有序 items 的角色组装原生 messages，保留 thinking / tool_use / tool_result 的相对顺序与 call ID；不依赖客户端保存原始容器边界。`store: false` 等无状态默认值不转成上游存储指令，`include: ["reasoning.encrypted_content"]` 只选择下游载体，不改变原生 thinking 模式。
 - 原生观察保持不变，只在交付副本中省略容器边界、把结构化工具参数精确序列化成 JSON 字符串，并用 OpenAI 的终态及工具调用表达轮次进度。
 - Chat 可承载“至多一个前置 thinking、随后文本、最后工具调用”的 JSON 输出；工具后的文本或交错的 thinking 目前拒绝，而不是悄悄改序。Responses 保留独立 items 顺序。
 - 仅在 input、cache-read、cache-write、output 均有报告时，为目标计算包含缓存的 input 与 total；缺少所需计量时输出 `usage: null`，不补零。原生计量与缺省状态仍保留在源观察中，计量非法或溢出仍失败。
-- 原生协议没有创建时间；OpenAI 交付副本的创建时间取 Gateway 组装该响应的时间，不当成上游报告。
-- 当前原生 Gateway 只接受 JSON。流式请求在发起上游 I/O 前拒绝；独立库级 SSE intake 仍保留。
+- 原生协议没有创建时间；OpenAI 交付副本的创建时间在 Gateway 创建交付对象时固定，同一流的所有帧一致，不当成上游报告。
+- 原生 SSE 逐帧映射为 `StreamEvent`，复用静态的 stop/usage 语义和目标投影；文本、thinking 与工具参数增量交付，签名片段不透传，只在 block 闭合并验证后封装完整载荷。
+- `message_stop` 不等于传输 EOF。成功终态仍等严格 EOF，Chat 的普通 item 状态在此时按最终 stop 原因闭合；已经闭合的 reasoning 签名保持独立。截断的传输只中止 body，不伪造 completed/DONE，也不回退重放。SSE intake 仍可聚合成 JSON 交付。
 
 ## 6. 缓存亲和
 

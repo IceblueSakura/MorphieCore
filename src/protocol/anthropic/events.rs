@@ -1,0 +1,267 @@
+//! Incremental native semantic mapping over the same strict wire reducer as aggregation.
+use super::{Block, Delta, Event, Message, MessageSseDecoder, ReplayTarget};
+use crate::{
+    protocol::{
+        CodecError, ResponseMetadata,
+        fidelity::FidelityRecords,
+        openai::sse::{SseError, SseLimits},
+    },
+    semantic::{task::generation::*, value::Text},
+};
+
+pub struct GenerationSseDecoder {
+    wire: MessageSseDecoder,
+    scope: LocalScope,
+    target: ReplayTarget,
+    metadata: Option<ResponseMetadata>,
+    fidelity: FidelityRecords,
+    part_started: bool,
+    json_delta: bool,
+    rejected: bool,
+}
+impl GenerationSseDecoder {
+    pub fn new(
+        status: u16,
+        media: &str,
+        limits: SseLimits,
+        scope: LocalScope,
+        target: ReplayTarget,
+    ) -> Result<Self, SseError> {
+        Ok(Self {
+            wire: MessageSseDecoder::new(status, media, limits)?,
+            scope,
+            target,
+            metadata: None,
+            fidelity: Default::default(),
+            part_started: false,
+            json_delta: false,
+            rejected: false,
+        })
+    }
+    pub fn metadata(&self) -> Option<&ResponseMetadata> {
+        self.metadata.as_ref()
+    }
+    pub fn fidelity(&self) -> &FidelityRecords {
+        &self.fidelity
+    }
+    fn ids(&self, index: u64) -> (ItemId, PartId) {
+        (
+            ItemId::scoped(self.scope, index + 1),
+            PartId::scoped(self.scope, (index + 1) * (MAX_ITEMS as u64 + 1)),
+        )
+    }
+    pub fn consume(&mut self, bytes: &[u8]) -> Result<(usize, Vec<StreamEvent>), SseError> {
+        if self.rejected {
+            return Err(SseError::Closed);
+        }
+        let result = (|| {
+            let (used, event) = self.wire.consume_event(bytes)?;
+            let events = match event {
+                Some(event) => self.map(event)?,
+                None => vec![],
+            };
+            Ok((used, events))
+        })();
+        if result.is_err() {
+            self.rejected = true;
+        }
+        result
+    }
+    fn map(&mut self, event: Event) -> Result<Vec<StreamEvent>, SseError> {
+        let mut out = vec![];
+        match event {
+            Event::MessageStart(message) => {
+                if message.model != self.target.model() {
+                    return Err(CodecError::Invalid("native model binding").into());
+                }
+                self.metadata = Some(ResponseMetadata {
+                    id: message.id,
+                    model: message.model,
+                    created: None,
+                    context: Default::default(),
+                    instruction_fidelity: Default::default(),
+                });
+                out.push(StreamEvent::Started);
+            }
+            Event::BlockStart { index, block } => {
+                let (item, part) = self.ids(index);
+                self.part_started = false;
+                self.json_delta = false;
+                let (kind, part_kind, initial) = match block {
+                    Block::Text(value) => (
+                        ItemKind::Message { phase: None },
+                        Some(PartKind::Text),
+                        value,
+                    ),
+                    Block::Thinking { thinking, .. } => (
+                        ItemKind::Reasoning,
+                        (!thinking.is_empty()).then_some(PartKind::Summary),
+                        thinking,
+                    ),
+                    Block::ToolUse { id, name, .. } => (
+                        ItemKind::ToolCall {
+                            format: ArgumentFormat::Json,
+                            call_id: text(&id)?,
+                            name: text(&name)?,
+                            message: None,
+                            context: Default::default(),
+                        },
+                        Some(PartKind::StructuredArguments),
+                        String::new(),
+                    ),
+                    _ => return Err(CodecError::Invalid("native output block").into()),
+                };
+                out.push(StreamEvent::ItemStarted {
+                    item,
+                    kind,
+                    replay: None,
+                });
+                if let Some(kind) = part_kind {
+                    out.push(StreamEvent::PartStarted { item, part, kind });
+                    self.part_started = true;
+                }
+                if !initial.is_empty() {
+                    out.push(StreamEvent::Delta {
+                        item,
+                        part,
+                        fragment: initial,
+                        logprobs: vec![],
+                    });
+                }
+            }
+            Event::BlockDelta { index, delta } => {
+                let (item, part) = self.ids(index);
+                let fragment = match delta {
+                    Delta::Signature(_) => return Ok(out),
+                    Delta::Thinking(value) => {
+                        if value.is_empty() {
+                            return Ok(out);
+                        }
+                        if !self.part_started {
+                            out.push(StreamEvent::PartStarted {
+                                item,
+                                part,
+                                kind: PartKind::Summary,
+                            });
+                            self.part_started = true;
+                        }
+                        value
+                    }
+                    Delta::InputJson(value) => {
+                        self.json_delta = true;
+                        value
+                    }
+                    Delta::Text(value) => value,
+                };
+                out.push(StreamEvent::Delta {
+                    item,
+                    part,
+                    fragment,
+                    logprobs: vec![],
+                });
+            }
+            Event::BlockStop { index } => {
+                let (item, part) = self.ids(index);
+                let block = &self
+                    .wire
+                    .message()
+                    .ok_or(CodecError::Invalid("native stream"))?
+                    .content[index as usize];
+                if matches!(block, Block::ToolUse { .. }) && !self.json_delta {
+                    out.push(StreamEvent::Delta {
+                        item,
+                        part,
+                        fragment: "{}".into(),
+                        logprobs: vec![],
+                    });
+                }
+                if self.part_started {
+                    out.push(StreamEvent::ValueFinished { item, part });
+                    out.push(StreamEvent::PartFinished { item, part });
+                }
+                let replay = if let Block::Thinking {
+                    thinking,
+                    signature,
+                } = block
+                {
+                    let replay = ReplayValue::final_value(
+                        ReplayFormat::AnthropicMessagesThinking,
+                        text(signature)?,
+                    );
+                    let reasoning = ReasoningItem {
+                        parts: if thinking.is_empty() {
+                            vec![]
+                        } else {
+                            vec![(part, ReasoningContent::Summary(text(thinking)?))]
+                        },
+                        status: ItemLifecycle::Completed,
+                        replay: Some(replay.clone()),
+                    };
+                    self.fidelity
+                        .record_replay(item, &reasoning, Some(self.target.origin()))?;
+                    Some(ReasoningReplay {
+                        value: replay,
+                        origin: Some(self.target.origin()),
+                    })
+                } else {
+                    None
+                };
+                out.push(StreamEvent::ItemFinished {
+                    item,
+                    status: ItemLifecycle::Completed,
+                    replay,
+                });
+            }
+            Event::MessageStop => {
+                let message = self
+                    .wire
+                    .message()
+                    .ok_or(CodecError::Invalid("native stream"))?;
+                let members: Vec<_> = (0..message.content.len())
+                    .map(|n| self.ids(n as u64).0)
+                    .collect();
+                let group_id = GroupId::new(self.scope, 1);
+                let group = if members.is_empty() {
+                    MessageEnvelope::empty(group_id, MessageEnvelopeRole::Assistant, None)
+                } else {
+                    MessageEnvelope::new(group_id, MessageEnvelopeRole::Assistant, members)
+                        .map_err(CodecError::from)?
+                };
+                out.push(StreamEvent::MessageEnvelope(group));
+                out.push(StreamEvent::Usage(super::semantic::usage(&message.usage)));
+                let (outcome, progress, details) = super::semantic::outcome(
+                    *message
+                        .stop_reason
+                        .value()
+                        .ok_or(CodecError::Invalid("native stop"))?,
+                );
+                out.push(StreamEvent::Progress(progress));
+                out.push(StreamEvent::Terminal {
+                    terminal: if outcome == Outcome::Incomplete {
+                        StreamTerminal::Incomplete
+                    } else {
+                        StreamTerminal::Completed
+                    },
+                    details,
+                });
+            }
+            Event::Ping | Event::MessageDelta { .. } => {}
+            Event::Error { .. } => return Err(CodecError::Invalid("native stream error").into()),
+        }
+        Ok(out)
+    }
+    /// The attempt withholds the terminal returned by consume until this succeeds.
+    pub fn finish(&mut self) -> Result<Message, SseError> {
+        if self.rejected {
+            return Err(SseError::Closed);
+        }
+        let result = self.wire.finish();
+        if result.is_err() {
+            self.rejected = true;
+        }
+        result
+    }
+}
+fn text(value: &str) -> Result<Text, CodecError> {
+    Text::allowing_empty(value, "native event text", MAX_TEXT_BYTES).map_err(|_| CodecError::Limit)
+}
