@@ -21,11 +21,13 @@ Goal: OpenAI clients reach a native Messages upstream through the normal CLI sta
 2. **Activate the native Messages binding.** `MESSAGES_BINDINGS` compiles only an explicit topology, and directory bootstrap rejects the `AnthropicMessages` protocol. Activate it only when listed in `models`, never by default. Verify model release metadata first; never invent dates.
 3. **Chat reasoning carriers.** Model the `signature` of Chat `reasoning.text` details (currently rejected) through the envelope. Carry multiple thinking blocks and interleaved thinking/text/tool order instead of rejecting them where the Chat shape allows it. Stop emitting the empty `reasoning_content: ""` opener downstream; consumers treat each reasoning delta as a block boundary.
 4. **Tool errors.** Neither OpenAI downstream protocol has an error flag on tool results, so `is_error` is rejected there. Decide whether a Chat/Responses extension carrier is needed (open question below) before implementing; a failed tool reported as plain text already round-trips.
-5. **Messages cache breakpoints.** Native Messages requests carry no `cache_control`, so OpenAI clients get no prompt caching on that upstream. Project breakpoints in the Anthropic module: the stable prefix (system, or the last tool definition when there is no system) and the last non-thinking block of the final message, never on thinking, within the breakpoint limit. Recheck the current Anthropic caching docs first.
+5. **Downstream unknown fields.** Ignore unregistered request fields at any depth and record their names in diagnostics; keep rejecting unknown `type`/`role` discriminators and keep known fields strict. Update `docs/openapi.json`, which closes request objects today.
+6. **Cross-target thinking.** A mismatched target rejects readable reasoning today. Pass current-turn readable reasoning (after the last user message) as assistant text and drop earlier turns' by a named rule; record both as losses. First verify how Anthropic treats a tool-loop assistant message without a signed thinking block when thinking is enabled (error, or thinking disabled for the request), and check the text shape in pi's `transform-messages.ts` so the model does not imitate delimiters.
+7. **Messages cache breakpoints.** Native Messages requests carry no `cache_control`, so OpenAI clients get no prompt caching on that upstream. Project breakpoints in the Anthropic module: the stable prefix (system, or the last tool definition when there is no system) and the last non-thinking block of the final message, never on thinking, within the breakpoint limit. Recheck the current Anthropic caching docs first.
 
 Further trimming of diagnostics/billing switches and fidelity records is assessed with the affected modules, not as a prerequisite. `morphiecore-auth` stays independent.
 
-Exit: `Responses / Chat × Anthropic`, JSON and SSE, covers text, tool round trips, tool failures, thinking replay, truncation, upstream errors and breakpoint placement, with synthetic tests and one bounded real call (opencode-go `claude-haiku-5-5` or another available target) through the CLI-started gateway. A reported cache read is an observation, not an exit condition.
+Exit: `Responses / Chat × Anthropic`, JSON and SSE, covers text, tool round trips, tool failures, thinking replay, a mid-loop Provider switch, ignored request fields, truncation, upstream errors and breakpoint placement, with synthetic tests and one bounded real call (opencode-go `claude-haiku-5-5` or another available target) through the CLI-started gateway. A reported cache read is an observation, not an exit condition.
 
 ## Later phases
 
@@ -92,5 +94,3 @@ Stateful Responses (gateway-managed, time-limited history), file services, resum
 ## Open questions
 
 - Tool errors and refusal details in Chat/Responses: add extension carriers (following existing OpenRouter-style shapes where one exists), or keep failures as plain tool output? Gates Phase 1 item 4.
-- Unknown fields in downstream requests are currently rejected (closed request shapes). Keep that, or ignore and record standard fields that are not implemented, so newer SDK parameters do not fail?
-- When switching Provider or model, should visible thinking be passed to the new target as assistant text?

@@ -67,10 +67,10 @@ The IR is neither a protocol DTO nor a union of fields. When it cannot express a
 |---|---|---|
 | Must preserve | Instructions, message order, tool definitions, arguments, call IDs and result links, required opaque continuations, stop reasons, core usage | Reject when the target cannot express it |
 | Degradable | Unsupported sampling parameters, `metadata`, `service_tier`, `logprobs`, usage detail and similar | Remove from the candidate copy by a named rule and record in diagnostics |
-| Unknown | Unregistered fields in upstream responses | Ignore; registered fields stay strict |
+| Unknown | Unregistered fields in upstream responses and downstream requests | Ignore; registered fields stay strict. Ignored request field names (never values) are recorded, and nothing unregistered is forwarded. Unknown discriminators (`type`, `role`) are rejected, since ignoring them drops content |
 
 - **Upstream responses:** strict on known fields (type, value, relations), ignore unknown ones. New upstream fields must not break the gateway.
-- **Downstream requests:** expressible fields follow the table; critical semantics the target cannot express return 400 and are never silently dropped.
+- **Downstream requests:** expressible fields follow the table; critical semantics the target cannot express return 400 and are never silently dropped. Trusted configuration (`gateway.json`) stays closed. Ignoring unknown request fields lands in roadmap Phase 1; today they are rejected.
 - **Explicit parse direction:** the shared OpenAI reader distinguishes requests, upstream reports and encoder self-checks. Nested items inherit the direction of their parent; SSE snapshot pre-validation counts as upstream. The policy uses no thread-local or ambient state.
 - Losses apply only to each candidate's private projection; the source IR is unchanged. Static and streaming paths share the same rules.
 
@@ -83,7 +83,7 @@ Every upstream-issued opaque value (OpenAI `encrypted_content`, Anthropic thinki
 ```
 
 - The envelope is `mc1.` plus base64url JSON carrying stable Provider/model fingerprints, the native format and the payload. Public model aliases, credentials and ingress keys are not part of the fingerprint.
-- On replay, the native payload is restored only when both Provider and model match the current target. Otherwise the value is dropped, along with any reasoning item left empty. Bare, corrupt or unknown-version envelopes never go upstream.
+- On replay, the native payload is restored only when both Provider and model match the current target. Otherwise the value is dropped, along with any reasoning item left empty. Readable reasoning of the current turn (after the last user message) passes to a different target as assistant text by a named lossy rule; readable reasoning of earlier turns is dropped by a named rule (roadmap Phase 1; today a mismatched target rejects it). Bare, corrupt or unknown-version envelopes never go upstream.
 - No encryption, HMAC or local prefix proof: the tag is a compatibility hint, not authentication, and cannot select route, origin or credential. The issuing upstream validates signatures and rejects tampering.
 - A same-target value without a matching carrier is still rejected, not silently dropped.
 - Carriers today: Responses reasoning `encrypted_content` and Chat `reasoning.encrypted` `data`, static and streaming; native Anthropic thinking reuses the same envelope. Google and part/call-level signatures follow the roadmap.
@@ -137,6 +137,8 @@ When Chat Completions cannot carry a semantic such as reasoning, MorphieCore fol
 | Layered capabilities | Semantic capability, wire representation, execution properties and downstream promises are declared separately; public capability is not the union of candidates |
 | Legal candidates, pre-content fallback | Compiled order by default; trusted runtime ordering within the legal set; see §5 |
 | Held streams | Follow the structure of Magpie's user-validated held-stream design: while another candidate could answer, hold until first content, keep clients alive with SSE comments, advance on pre-content errors. Decide on typed stream events and trusted bindings, not model-name or byte heuristics |
+| Lenient downstream fields | Unknown request fields are ignored and recorded; unknown discriminators are rejected |
+| Cross-target thinking as text | On a Provider or model switch, current-turn readable reasoning becomes assistant text; opaque values never cross |
 | Refusals are answers | A safety refusal is delivered at any point and never retried on another credential or model |
 | Non-API 2xx is a failure | Classified like a 5xx before content is published |
 | Target affinity binds the exact credential | The binding names Endpoint, credential identity and upstream model; a different credential is a different cache domain. API keys are identified by binding plus an in-memory material fingerprint, OAuth by verified principal, so key rotation drops the binding and token refresh keeps it |
