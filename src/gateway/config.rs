@@ -338,11 +338,11 @@ impl Gateway {
                     provider.id.as_str(),
                     &endpoint.upstream_model,
                 );
-                endpoint.representation.adaptation.scope = Some(scope.clone());
-                if endpoint.protocol != crate::topology::ProtocolProfile::AnthropicMessages
-                    && endpoint.representation.replay_origin.is_some()
-                {
-                    endpoint.representation.replay_origin = Some(scope.clone());
+                if let Some(caps) = endpoint.representation.openai_mut() {
+                    caps.adaptation.scope = Some(scope.clone());
+                    if caps.replay_origin.is_some() {
+                        caps.replay_origin = Some(scope.clone());
+                    }
                 }
                 // Provider compatibility does not authorize private downstream
                 // Responses carriers. Chat retains its explicit compatibility profile.

@@ -7,3 +7,4 @@ mod message_groups;
 pub(crate) mod native_messages;
 pub mod projection;
 pub mod speech;
+pub mod target;

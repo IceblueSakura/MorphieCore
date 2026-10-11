@@ -24,7 +24,7 @@ pub struct Request {
     pub(crate) inferred_affinity: Option<crate::protocol::cache::InferredAffinity>,
     pub cache_session: Option<crate::protocol::cache::CacheSession>,
     source: Option<Profile>,
-    n: Presence<u64>,
+    pub(crate) n: Presence<u64>,
 }
 impl Request {
     /// Pure typed entry; model is a public label, not an origin or runtime target.
@@ -51,50 +51,6 @@ impl Request {
             source: None,
             n: Presence::Absent,
         })
-    }
-    pub(crate) fn check_native_context(
-        &self,
-        go: bool,
-        cache: crate::protocol::cache::CacheProjection,
-    ) -> Result<(), CodecError> {
-        self.check_grouping()?;
-        self.context.validate()?;
-        self.delivery.validate()?;
-        let mut context = self.context.clone();
-        cache.project(&mut context)?;
-        // Explicit stateless defaults do not ask the native Provider for storage.
-        if context.store == Presence::Value(false) {
-            context.store = Presence::Absent;
-        }
-        if context.background == Presence::Value(false) {
-            context.background = Presence::Absent;
-        }
-        for value in [
-            &mut context.previous_response_id,
-            &mut context.conversation,
-            &mut context.prompt,
-            &mut context.moderation,
-        ] {
-            if *value == Presence::Null {
-                *value = Presence::Absent;
-            }
-        }
-        if go {
-            cache.opencode_session(
-                self.conversation.as_ref(),
-                self.cache_session.as_ref(),
-                self.inferred_affinity,
-            )?;
-        }
-        if context != ExecutionHints::default()
-            || self.delivery.stream == Presence::Null
-            || self.extensions != CustomSections::default()
-            || self.n.value().is_some_and(|n| *n != 1)
-            || !go && self.cache_session.is_some()
-        {
-            return Err(CodecError::Unsupported("native request context".into()));
-        }
-        Ok(())
     }
     /// Optional caller-owned stability check, never a cache directive or hit claim.
     pub fn capture_cache_prefix(
@@ -148,7 +104,7 @@ impl Request {
         }
         Ok(())
     }
-    fn check_grouping(&self) -> Result<(), CodecError> {
+    pub(crate) fn check_grouping(&self) -> Result<(), CodecError> {
         if self.conversation.is_some() && self.cache_session.is_some() {
             return Err(CodecError::Invalid("ambiguous request grouping"));
         }

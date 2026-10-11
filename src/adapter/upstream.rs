@@ -1,7 +1,7 @@
 //! Upstream wire dispatch, independent of the standard client's OpenAI profile.
 use super::{Adapter, AdapterError, Request};
 use crate::{
-    lowering::generation::GenerationRepresentationContract,
+    lowering::target::TargetCaps,
     protocol::{CodecError, DecodedResponse, anthropic},
 };
 use serde_json::Value;
@@ -36,54 +36,36 @@ impl UpstreamAdapter {
         &self,
         request: &Request,
         model: &str,
-        contract: &GenerationRepresentationContract,
+        contract: &TargetCaps,
     ) -> Result<Value, AdapterError> {
-        match self {
-            Self::OpenAi(adapter) => adapter.encode_request(request, model, contract),
-            Self::AnthropicMessages(profile) => {
-                let origin = contract
-                    .replay_origin
-                    .as_ref()
-                    .ok_or_else(|| CodecError::Unsupported("native replay scope".into()))?;
-                let target = anthropic::ReplayTarget::new(origin.as_str(), model)?;
-                let stripped = request.without_foreign_replay(Some(&target.origin()))?;
-                let request = stripped.as_ref().unwrap_or(request);
-                request.check_native_context(
-                    contract.adaptation.rules.opencode_go_headers,
-                    contract.cache,
-                )?;
-                request.check_semantic(&contract.semantics)?;
-                request.check_semantic(&profile.semantic_contract())?;
-                let mut semantic = profile.group_client_history(&request.task.semantic)?;
-                let mut settings = semantic.settings().clone();
-                // Native signatures are always returned; OpenAI's include flag
-                // selects the downstream carrier, not a native thinking control.
-                settings.reasoning = settings.reasoning.with_encrypted_output(false);
-                if contract.adaptation.rules.reject_reasoning_controls
-                    && settings.reasoning != Default::default()
-                {
-                    return Err(CodecError::Unsupported(
-                        "unverified native reasoning controls".into(),
-                    )
-                    .into());
-                }
-                semantic = semantic.with_settings(settings).map_err(CodecError::from)?;
-                let mut wire = profile
-                    .encode_generation_request(&semantic, &request.task.fidelity, &target)?
-                    .value;
-                if let Some(stream) = request.delivery.stream.value() {
-                    wire["stream"] = serde_json::json!(stream);
-                }
-                Ok(wire)
+        match (self, contract) {
+            (Self::OpenAi(adapter), TargetCaps::OpenAi(caps)) => {
+                adapter.encode_request(request, model, caps)
             }
+            (Self::AnthropicMessages(profile), TargetCaps::AnthropicMessages(caps))
+                if *profile == caps.profile =>
+            {
+                caps.encode_request(request, model)
+            }
+            _ => Err(CodecError::ProfileMismatch.into()),
         }
     }
     pub(crate) fn request_headers(
         &self,
         request: &Request,
-        cache: crate::protocol::cache::CacheProjection,
+        caps: &TargetCaps,
     ) -> Result<Vec<(String, String)>, CodecError> {
-        self.openai()?.request_headers(request, cache)
+        match (self, caps) {
+            (Self::OpenAi(adapter), TargetCaps::OpenAi(caps)) => {
+                adapter.request_headers(request, caps.cache)
+            }
+            (Self::AnthropicMessages(profile), TargetCaps::AnthropicMessages(caps))
+                if *profile == caps.profile =>
+            {
+                caps.request_headers(request)
+            }
+            _ => Err(CodecError::ProfileMismatch),
+        }
     }
     pub fn decode_response(&self, bytes: &[u8]) -> Result<DecodedResponse, CodecError> {
         self.openai()?.decode_response(bytes)

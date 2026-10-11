@@ -81,7 +81,7 @@ impl SubscriptionBinding {
             task: TaskKind::Generation,
             protocol: ProtocolProfile::OpenAiResponses,
             upstream_model: self.upstream.into(),
-            representation: adapter.contract(&contract),
+            representation: adapter.contract(&contract).into(),
             execution: ExecutionContract {
                 streaming: true,
                 retry_before_commit: false,

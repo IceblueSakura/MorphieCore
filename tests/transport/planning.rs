@@ -43,7 +43,7 @@ fn topology(policy: CandidatePolicy) -> CompiledTopology {
             task: TaskKind::Generation,
             protocol: ProtocolProfile::OpenAiResponses,
             upstream_model: format!("{id}-alias"),
-            representation,
+            representation: representation.into(),
             execution: ExecutionContract {
                 streaming: true,
                 retry_before_commit: false,
@@ -99,6 +99,8 @@ fn forced_upstream_stream_is_rejected_before_attempt_preparation() {
     assert!(representable(&endpoint, &request).is_ok());
     endpoint
         .representation
+        .openai_mut()
+        .unwrap()
         .adaptation
         .rules
         .responses_forced_stream = true;

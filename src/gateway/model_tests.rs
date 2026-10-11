@@ -233,7 +233,7 @@ fn aliases(count: usize, metadata: bool) -> crate::topology::CompiledTopology {
         task: TaskKind::Generation,
         protocol: ProtocolProfile::OpenAiChat,
         upstream_model: "private-synthetic-model".into(),
-        representation: GenerationRepresentationContract::full(),
+        representation: GenerationRepresentationContract::full().into(),
         execution: ExecutionContract {
             streaming: true,
             retry_before_commit: false,

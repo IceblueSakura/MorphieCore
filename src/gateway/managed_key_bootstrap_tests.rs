@@ -236,8 +236,20 @@ fn bootstrap_loads_selected_key_and_requires_reactivation_after_rotation() {
     );
     assert_ne!(candidate.cache_scope, next.candidates[0].cache_scope);
     assert_eq!(
-        candidate.endpoint.representation.adaptation.scope,
-        next.candidates[0].endpoint.representation.adaptation.scope
+        candidate
+            .endpoint
+            .representation
+            .openai()
+            .unwrap()
+            .adaptation
+            .scope,
+        next.candidates[0]
+            .endpoint
+            .representation
+            .openai()
+            .unwrap()
+            .adaptation
+            .scope
     );
 }
 #[test]
@@ -333,8 +345,20 @@ fn pool_candidates_have_distinct_ordinals_and_share_provider_model_replay() {
     );
     assert_ne!(candidates[0].cache_scope, candidates[1].cache_scope);
     assert_eq!(
-        candidates[0].endpoint.representation.adaptation.scope,
-        candidates[1].endpoint.representation.adaptation.scope
+        candidates[0]
+            .endpoint
+            .representation
+            .openai()
+            .unwrap()
+            .adaptation
+            .scope,
+        candidates[1]
+            .endpoint
+            .representation
+            .openai()
+            .unwrap()
+            .adaptation
+            .scope
     );
     let request = entry.client.decode_request(br#"{"model":"deepseek-flash","input":"test","include":["reasoning.encrypted_content"]}"#).unwrap();
     assert_eq!(entry.eligible(&request).unwrap().len(), 2);

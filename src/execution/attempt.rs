@@ -100,25 +100,15 @@ pub fn prepare(
 ) -> Result<UpstreamRequest, AttemptError> {
     let auth = operation_auth(endpoint, provider)?;
     if endpoint.protocol == crate::topology::ProtocolProfile::AnthropicMessages
-        && endpoint
-            .representation
-            .replay_origin
-            .as_ref()
-            .map(|o| o.as_str())
-            != Some(provider.id.as_str())
+        && endpoint.representation.replay_origin().map(|o| o.as_str()) != Some(provider.id.as_str())
     {
         return Err(AttemptError::Protocol("native provider replay scope"));
     }
-    let streaming = request.delivery.streaming()
-        || endpoint
-            .representation
-            .adaptation
-            .rules
-            .responses_forced_stream;
+    let streaming = request.delivery.streaming() || endpoint.representation.forced_stream();
     if streaming && !endpoint.execution.streaming {
         return Err(AttemptError::Delivery("endpoint cannot stream"));
     }
-    let value = endpoint.adapter().encode_request(
+    let value = endpoint.adapter()?.encode_request(
         request,
         &endpoint.upstream_model,
         &endpoint.representation,
@@ -140,27 +130,11 @@ pub fn prepare(
             .into(),
         ),
     ];
-    if matches!(endpoint.adapter(), UpstreamAdapter::AnthropicMessages(_)) {
-        let session = if endpoint.representation.adaptation.rules.opencode_go_headers {
-            Some(endpoint.representation.cache.opencode_session(
-                request.conversation.as_ref(),
-                request.cache_session.as_ref(),
-                request.inferred_affinity,
-            )?)
-        } else {
-            None
-        };
-        safe_headers.extend(super::messages::native_headers(
-            endpoint,
-            session.as_deref(),
-        )?);
-    } else {
-        safe_headers.extend(
-            endpoint
-                .adapter()
-                .request_headers(request, endpoint.representation.cache)?,
-        );
-    }
+    safe_headers.extend(
+        endpoint
+            .adapter()?
+            .request_headers(request, &endpoint.representation)?,
+    );
     Ok(UpstreamRequest {
         origin: endpoint.target.origin.as_str().into(),
         method: "POST",
@@ -205,7 +179,7 @@ impl Attempt {
         body_limit: usize,
         limits: SseLimits,
     ) -> Result<Self, AttemptError> {
-        let adapter = endpoint.adapter();
+        let adapter = endpoint.adapter()?;
         let mut attempt = Self::new(adapter.clone(), body_limit, limits);
         if let UpstreamAdapter::AnthropicMessages(profile) = adapter {
             use crate::semantic::task::generation::LocalScope;
@@ -213,7 +187,7 @@ impl Attempt {
                 endpoint.provider.as_str(),
                 &endpoint.upstream_model,
             )?;
-            let wire = endpoint.adapter().encode_request(
+            let wire = endpoint.adapter()?.encode_request(
                 request,
                 &endpoint.upstream_model,
                 &endpoint.representation,

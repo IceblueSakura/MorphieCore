@@ -1,8 +1,6 @@
 //! Explicit native library bindings; never activate the public OpenAI bootstrap.
 use crate::{
-    adapter::{Adapter, Dialect},
-    lowering::generation::GenerationRepresentationContract,
-    protocol::{anthropic::Profile, openai},
+    protocol::anthropic::{Dialect, Profile, TargetCaps},
     provider::{CredentialBindingId, CredentialKind, ProviderDefinition, catalog},
     semantic::value::ReplayOrigin,
     topology::*,
@@ -25,16 +23,11 @@ impl MessagesBinding {
     }
     pub fn endpoint(&self) -> Endpoint {
         let provider = self.provider();
-        let mut representation = Adapter::new(openai::Profile::Chat, Dialect::OpenCodeGo, None)
-            .contract(&GenerationRepresentationContract {
-                semantics: Profile::AdaptiveTextTools.semantic_contract(),
-                replay_origin: Some(ReplayOrigin::new(provider.id.as_str()).expect("static scope")),
-                standard_context: false,
-                identity_hints: false,
-                ..GenerationRepresentationContract::full()
-            });
-        representation.adaptation.profile_id = "opencode-go-messages-v1";
-        representation.adaptation.rules.reject_reasoning_controls = true;
+        let representation = TargetCaps::new(
+            Profile::AdaptiveTextTools,
+            Dialect::OpenCodeGo,
+            ReplayOrigin::new(provider.id.as_str()).expect("static scope"),
+        );
         Endpoint {
             id: EndpointId::new("opencode-go-haiku-messages").expect("static id"),
             provider: provider.id,
@@ -46,7 +39,7 @@ impl MessagesBinding {
             protocol: ProtocolProfile::AnthropicMessages,
             upstream_model: self.upstream.into(),
             canonical_model: ModelId::new(self.model).expect("static model"),
-            representation,
+            representation: representation.into(),
             execution: ExecutionContract {
                 streaming: true,
                 retry_before_commit: false,

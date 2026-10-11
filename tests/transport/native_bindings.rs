@@ -50,8 +50,18 @@ fn endpoint(protocol: ProtocolProfile) -> Endpoint {
         protocol,
         upstream_model: "synthetic-model".into(),
         canonical_model: ModelId::new("synthetic-model").unwrap(),
-        representation: Adapter::new(Profile::Chat, Dialect::OpenCodeGo, None)
-            .contract(&Contract::full()),
+        representation: if protocol == ProtocolProfile::AnthropicMessages {
+            morphiecore::protocol::anthropic::TargetCaps::new(
+                NativeProfile::AdaptiveTextTools,
+                morphiecore::protocol::anthropic::Dialect::OpenCodeGo,
+                morphiecore::semantic::value::ReplayOrigin::new("synthetic").unwrap(),
+            )
+            .into()
+        } else {
+            Adapter::new(Profile::Chat, Dialect::OpenCodeGo, None)
+                .contract(&Contract::full())
+                .into()
+        },
         execution: ExecutionContract {
             streaming: false,
             retry_before_commit: false,
@@ -117,9 +127,10 @@ fn typed_native_requests_use_the_same_admission_preflight_and_preparation() {
     use morphiecore::semantic::{task::generation::LocalScope, value::ReplayOrigin};
     let p = provider();
     let mut native = endpoint(ProtocolProfile::AnthropicMessages);
-    native.representation.semantics = NativeProfile::AdaptiveTextTools.semantic_contract();
-    native.representation.replay_origin = Some(ReplayOrigin::new("synthetic").unwrap());
-    native.representation.standard_context = false;
+    native.representation.messages_mut().unwrap().semantics =
+        NativeProfile::AdaptiveTextTools.semantic_contract();
+    native.representation.messages_mut().unwrap().replay_origin =
+        Some(ReplayOrigin::new("synthetic").unwrap());
     let route = Route {
         id: RouteId::new("native-route").unwrap(),
         task: TaskKind::Generation,
@@ -131,7 +142,7 @@ fn typed_native_requests_use_the_same_admission_preflight_and_preparation() {
         native.canonical_model.clone(),
         TaskKind::Generation,
         route.id.clone(),
-        native.representation.semantics.clone(),
+        native.representation.semantics().clone(),
     );
     model.standard_context = false;
     compile(
@@ -157,7 +168,11 @@ fn typed_native_requests_use_the_same_admission_preflight_and_preparation() {
     request.cache_session = Some(CacheSession::new("synthetic-session").unwrap());
     representable(&native, &request).unwrap();
     let mut wrong_scope = native.clone();
-    wrong_scope.representation.replay_origin = Some(ReplayOrigin::new("other-provider").unwrap());
+    wrong_scope
+        .representation
+        .messages_mut()
+        .unwrap()
+        .replay_origin = Some(ReplayOrigin::new("other-provider").unwrap());
     assert!(representable(&wrong_scope, &request).is_err());
     assert!(
         prepare(
@@ -219,8 +234,10 @@ fn native_go_cache_projection_agrees_between_preflight_and_prepare() {
     };
     let p = provider();
     let mut native = endpoint(ProtocolProfile::AnthropicMessages);
-    native.representation.semantics = NativeProfile::AdaptiveTextTools.semantic_contract();
-    native.representation.replay_origin = Some(ReplayOrigin::new("synthetic").unwrap());
+    native.representation.messages_mut().unwrap().semantics =
+        NativeProfile::AdaptiveTextTools.semantic_contract();
+    native.representation.messages_mut().unwrap().replay_origin =
+        Some(ReplayOrigin::new("synthetic").unwrap());
     let target =
         morphiecore::protocol::anthropic::ReplayTarget::new("synthetic", "synthetic-model")
             .unwrap();
@@ -272,7 +289,12 @@ fn native_go_cache_projection_agrees_between_preflight_and_prepare() {
     assert!(representable(&native, &missing).is_err());
     assert!(prepare(&native, &p, &secret, &missing).is_err());
     let mut no_carrier = native.clone();
-    no_carrier.representation.cache.session_id = false;
+    no_carrier
+        .representation
+        .messages_mut()
+        .unwrap()
+        .cache
+        .session_id = false;
     assert!(representable(&no_carrier, &request).is_err());
     assert!(prepare(&no_carrier, &p, &secret, &request).is_err());
     request.context.cache.prompt_cache_options = Presence::Value(CacheOptions {
@@ -355,14 +377,14 @@ fn native_binding_mismatches_and_unwired_semantic_paths_fail_closed() {
     let p = provider();
     let native = endpoint(ProtocolProfile::AnthropicMessages);
     assert!(matches!(
-        native.adapter(),
+        native.adapter().unwrap(),
         UpstreamAdapter::AnthropicMessages(_)
     ));
     let chat_request = Adapter::new(Profile::Chat, Dialect::Standard, None)
         .decode_request(br#"{"model":"public","messages":[{"role":"user","content":"hello"}]}"#)
         .unwrap();
     assert!(representable(&native, &chat_request).is_err());
-    let mut attempt = Attempt::new(native.adapter(), 4096, SseLimits::default());
+    let mut attempt = Attempt::new(native.adapter().unwrap(), 4096, SseLimits::default());
     assert!(attempt.begin(200, "application/json").is_err());
     assert!(attempt.finish().is_err());
 
@@ -436,4 +458,78 @@ fn native_binding_mismatches_and_unwired_semantic_paths_fail_closed() {
     request.model = "synthetic-model".into();
     request.stream = morphiecore::semantic::value::Presence::Value(true);
     assert!(prepare_messages(&native, &p, &secret, &request, Some(&session)).is_err());
+}
+#[test]
+fn protocol_owned_caps_gate_compilation_preflight_and_preparation() {
+    use morphiecore::{
+        lowering::target::TargetCaps,
+        protocol::anthropic::{Dialect as NativeDialect, ReplayTarget},
+        semantic::{task::generation::LocalScope, value::ReplayOrigin},
+    };
+    let p = provider();
+    let native = endpoint(ProtocolProfile::AnthropicMessages);
+    assert!(native.representation.openai().is_none());
+    let source=NativeProfile::AdaptiveTextTools.decode_generation_request(
+        br#"{"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":"hello"}]}"#,
+        LocalScope::new(1),&ReplayTarget::new("synthetic","synthetic-model").unwrap()).unwrap();
+    let request = morphiecore::adapter::Request::from_generation(source, "public").unwrap();
+    let original = request.clone();
+    let secret = SecretMaterial::new("synthetic-key").unwrap();
+    let mut standard = native.clone();
+    standard.representation = morphiecore::protocol::anthropic::TargetCaps::new(
+        NativeProfile::AdaptiveTextTools,
+        NativeDialect::Standard,
+        ReplayOrigin::new("synthetic").unwrap(),
+    )
+    .into();
+    representable(&standard, &request).unwrap();
+    let prepared = prepare(&standard, &p, &secret, &request).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&prepared.body).unwrap(),
+        json!({"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]})
+    );
+    assert!(
+        !prepared
+            .safe_headers
+            .iter()
+            .any(|(key, _)| key == "x-opencode-session")
+    );
+    assert!(
+        prepared
+            .safe_headers
+            .contains(&("anthropic-version".into(), "2023-06-01".into()))
+    );
+    // The Go dialect requires its own session carrier; Standard does not.
+    assert!(representable(&native, &request).is_err());
+    let mut restricted = standard.clone();
+    restricted
+        .representation
+        .messages_mut()
+        .unwrap()
+        .semantics
+        .max_output_tokens = false;
+    assert!(representable(&restricted, &request).is_err());
+    assert!(prepare(&restricted, &p, &secret, &request).is_err());
+    let foreign: TargetCaps = Contract::full().into();
+    assert!(
+        native
+            .adapter()
+            .unwrap()
+            .encode_request(&request, "synthetic-model", &foreign)
+            .is_err()
+    );
+    let mut wrong = standard.clone();
+    wrong.representation = foreign;
+    assert!(wrong.adapter().is_err());
+    assert_eq!(
+        compile_endpoints(p.clone(), vec![wrong.clone()]).unwrap_err(),
+        TopologyError::ContractUnsatisfiable
+    );
+    assert!(representable(&wrong, &request).is_err());
+    assert!(prepare(&wrong, &p, &secret, &request).is_err());
+    let mut wrong = standard;
+    wrong.protocol = ProtocolProfile::OpenAiChat;
+    assert!(compile_endpoints(p.clone(), vec![wrong.clone()]).is_err());
+    assert!(prepare(&wrong, &p, &secret, &request).is_err());
+    assert_eq!(request, original);
 }

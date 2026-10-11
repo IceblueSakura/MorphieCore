@@ -269,11 +269,15 @@ fn subscription_and_metered_entries_never_exchange_credentials_or_origins() {
                 subscription_entry.candidates[0]
                     .endpoint
                     .representation
+                    .openai()
+                    .unwrap()
                     .adaptation
                     .scope,
                 metered_entry.candidates[0]
                     .endpoint
                     .representation
+                    .openai()
+                    .unwrap()
                     .adaptation
                     .scope
             );

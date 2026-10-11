@@ -669,7 +669,13 @@ fn openrouter_luna_pdf_is_bounded_responses_with_strict_replay() {
     let client = Adapter::new(
         Profile::Responses,
         Dialect::MorphieCore,
-        endpoint.representation.adaptation.scope.clone(),
+        endpoint
+            .representation
+            .openai()
+            .unwrap()
+            .adaptation
+            .scope
+            .clone(),
     );
     let body = json!({"model":"gpt-6-luna","input":[{"role":"user","content":[
         {"type":"input_text","text":"Read."},
@@ -704,10 +710,15 @@ fn openrouter_luna_pdf_is_bounded_responses_with_strict_replay() {
     assert_eq!(prepared_url.origin, "https://openrouter.ai");
     assert!(!format!("{prepared_url:?}").contains("synthetic-private"));
     let mut disabled = endpoint.clone();
-    disabled.representation.files.urls = false;
+    disabled.representation.openai_mut().unwrap().files.urls = false;
     assert!(prepare(&disabled, &providers::openrouter(), &secret, &url_request).is_err());
     assert_eq!(
-        endpoint.representation.files.max_total_inline_bytes,
+        endpoint
+            .representation
+            .openai()
+            .unwrap()
+            .files
+            .max_total_inline_bytes,
         128 * 1024
     );
     let mut invalid = body.clone();
@@ -939,14 +950,20 @@ fn opaque_replay_reaches_prepared_body_only_for_its_bound_origin() {
         let client = Adapter::new(
             profile,
             Dialect::MorphieCore,
-            endpoint.representation.adaptation.scope.clone(),
+            endpoint
+                .representation
+                .openai()
+                .unwrap()
+                .adaptation
+                .scope
+                .clone(),
         );
         let request = client.decode_request(body.to_string().as_bytes()).unwrap();
         let prepared = prepare(endpoint, &providers::openrouter(), &secret, &request).unwrap();
         let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
         assert_eq!(wire.pointer(pointer), Some(&json!("synthetic-cipher")));
         let mut wrong = endpoint.clone();
-        wrong.representation.replay_origin = Some(
+        wrong.representation.openai_mut().unwrap().replay_origin = Some(
             morphiecore::semantic::value::ReplayOrigin::new("other-credential-owner").unwrap(),
         );
         let foreign = prepare(&wrong, &providers::openrouter(), &secret, &request).unwrap();
@@ -1024,7 +1041,7 @@ async fn synthetic_http_chain_uses_prepared_request_and_adapter_response() {
         .await
         .unwrap();
     let body = response.bytes().await.unwrap();
-    let mut intake = Attempt::new(endpoint.adapter(), 4096, SseLimits::default());
+    let mut intake = Attempt::new(endpoint.adapter().unwrap(), 4096, SseLimits::default());
     intake.begin(200, "application/json").unwrap();
     intake.push(&body).unwrap();
     intake.finish().unwrap();

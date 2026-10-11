@@ -77,7 +77,7 @@ pub(crate) fn topology() -> CompiledTopology {
             protocol,
             upstream_model: "private-fixture".into(),
             canonical_model: canonical.clone(),
-            representation,
+            representation: representation.into(),
             execution: execution.clone(),
             credential: CredentialBindingId::new("fixture-key").unwrap(),
         }

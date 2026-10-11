@@ -107,9 +107,8 @@ pub(super) async fn produce_candidate(
             if candidate
                 .endpoint
                 .representation
-                .adaptation
-                .rules
-                .responses_sse_without_content_type =>
+                .openai()
+                .is_some_and(|caps| caps.adaptation.rules.responses_sse_without_content_type) =>
         {
             "text/event-stream"
         }
@@ -121,13 +120,7 @@ pub(super) async fn produce_candidate(
     let is_stream = media.type_() == mime::TEXT && media.subtype() == "event-stream";
     let is_json = media.type_() == mime::APPLICATION
         && (media.subtype() == mime::JSON || media.suffix() == Some(mime::JSON));
-    let upstream_stream = stream
-        || candidate
-            .endpoint
-            .representation
-            .adaptation
-            .rules
-            .responses_forced_stream;
+    let upstream_stream = stream || candidate.endpoint.representation.forced_stream();
     if (upstream_stream && !is_stream) || (!upstream_stream && !is_json) {
         return Err(ApiError::upstream());
     }

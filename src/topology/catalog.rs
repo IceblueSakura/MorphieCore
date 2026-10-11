@@ -72,7 +72,9 @@ impl ApiKeyBinding {
             task: TaskKind::Generation,
             protocol,
             upstream_model: self.upstream.into(),
-            representation: Adapter::new(family, self.dialect, Some(scope)).contract(&contract),
+            representation: Adapter::new(family, self.dialect, Some(scope))
+                .contract(&contract)
+                .into(),
             execution: ExecutionContract {
                 streaming: true,
                 retry_before_commit: false,
@@ -241,7 +243,7 @@ fn bailian_strict_tools_are_admitted_without_changing_schema_or_other_bindings()
         assert_eq!(public.contract.strict_tools, expected);
         for &protocol in binding.protocols {
             let endpoint = binding.endpoint(protocol).unwrap();
-            assert_eq!(endpoint.representation.semantics.strict_tools, expected);
+            assert_eq!(endpoint.representation.semantics().strict_tools, expected);
         }
     }
     let binding = API_KEY_BINDINGS
@@ -274,7 +276,11 @@ fn bailian_strict_tools_are_admitted_without_changing_schema_or_other_bindings()
             .unwrap();
         let endpoint = binding.endpoint(protocol).unwrap();
         let wire = Adapter::new(profile, binding.dialect, None)
-            .encode_request(&request, binding.upstream, &endpoint.representation)
+            .encode_request(
+                &request,
+                binding.upstream,
+                endpoint.representation.openai().unwrap(),
+            )
             .unwrap();
         assert_eq!(wire["tools"], body["tools"]);
         assert_eq!(request, before);
@@ -312,13 +318,20 @@ fn siwc_registration_is_public_responses_only_and_does_not_reuse_product_binding
         .unwrap();
     assert_eq!(endpoint.credential.as_str(), "openai-oauth");
     assert_eq!(
-        endpoint.representation.adaptation.profile_id,
+        endpoint
+            .representation
+            .openai()
+            .unwrap()
+            .adaptation
+            .profile_id,
         "openai-responses"
     );
-    assert!(!endpoint.representation.semantics.max_output_tokens);
+    assert!(!endpoint.representation.semantics().max_output_tokens);
     assert!(
         endpoint
             .representation
+            .openai()
+            .unwrap()
             .adaptation
             .rules
             .responses_forced_stream
@@ -326,6 +339,8 @@ fn siwc_registration_is_public_responses_only_and_does_not_reuse_product_binding
     assert!(
         endpoint
             .representation
+            .openai()
+            .unwrap()
             .adaptation
             .rules
             .responses_sse_without_content_type
@@ -333,6 +348,8 @@ fn siwc_registration_is_public_responses_only_and_does_not_reuse_product_binding
     assert!(
         !endpoint
             .representation
+            .openai()
+            .unwrap()
             .adaptation
             .rules
             .responses_product_accounting

@@ -130,7 +130,9 @@ fn gateway(origin: &str, profile: Profile, dialect: Dialect) -> Gateway {
         },
         upstream_model: "upstream".into(),
         canonical_model: ModelId::new("canonical").unwrap(),
-        representation: Adapter::new(profile, dialect, None).contract(&Contract::full()),
+        representation: Adapter::new(profile, dialect, None)
+            .contract(&Contract::full())
+            .into(),
         execution: ExecutionContract {
             streaming: true,
             retry_before_commit: false,

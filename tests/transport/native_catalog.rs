@@ -121,3 +121,12 @@ fn native_unknown_response_fields_are_ignored_and_request_errors_do_not_leak_key
         .unwrap_err();
     assert!(!error.to_string().contains("private-business-key"));
 }
+#[test]
+fn native_caps_cannot_be_reinterpreted_as_an_openai_endpoint() {
+    let mut endpoint = catalog::MESSAGES_BINDINGS[0].endpoint();
+    endpoint.validate().unwrap();
+    endpoint.protocol = morphiecore::topology::ProtocolProfile::OpenAiChat;
+    assert!(endpoint.validate().is_err());
+    endpoint.protocol = morphiecore::topology::ProtocolProfile::OpenAiResponses;
+    assert!(endpoint.validate().is_err());
+}

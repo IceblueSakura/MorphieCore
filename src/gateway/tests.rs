@@ -177,7 +177,11 @@ async fn model_request_limits_do_not_suppress_client_reported_facts() {
             .encode_request(
                 &request,
                 "synthetic",
-                &entry.candidates[0].endpoint.representation
+                entry.candidates[0]
+                    .endpoint
+                    .representation
+                    .openai()
+                    .unwrap()
             )
             .is_err()
     );
@@ -186,6 +190,8 @@ async fn model_request_limits_do_not_suppress_client_reported_facts() {
         adaptation: entry.candidates[0]
             .endpoint
             .representation
+            .openai()
+            .unwrap()
             .adaptation
             .clone(),
     };

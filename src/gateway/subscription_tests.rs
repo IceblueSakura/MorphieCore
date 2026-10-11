@@ -83,8 +83,9 @@ async fn consume(
     let adapter = Adapter::new(Profile::Responses, dialect, None);
     let mut endpoint = base.endpoint.clone();
     endpoint.protocol = crate::topology::ProtocolProfile::OpenAiResponses;
-    endpoint.representation =
-        adapter.contract(&crate::lowering::generation::GenerationRepresentationContract::full());
+    endpoint.representation = adapter
+        .contract(&crate::lowering::generation::GenerationRepresentationContract::full())
+        .into();
     let candidate = Arc::new(BoundCandidate {
         endpoint,
         provider: base.provider.clone(),

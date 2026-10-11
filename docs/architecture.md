@@ -39,7 +39,9 @@ MorphieCore 是以统一 IR 为核心的模型路由网关：下游接收标准�
 | `credential` | 文件凭据 store、API key、OAuth driver、有序池 | 凭据不进入 IR |
 | `gateway` | 鉴权、准入、预算、body 发布与取消 | 只监听 loopback |
 
-**结构目标（阶段 1）**：lowering 与 adapter 现在以 `openai::Profile` 为键，Anthropic 只是旁挂分支。目标是每个协议一个双向模块（请求/响应编解码 + 上游 SSE → `StreamEvent` + `StreamEvent` → 下游 SSE），每个上游以数据声明 `TargetCaps`（可表达的 IR 特性与适用的损失规则）；方言差异收进所属协议模块的小结构，替代全局布尔开关集合。
+Endpoint 以 `lowering::target::TargetCaps` 区分 OpenAI 与原生 Messages 的能力声明；协议与能力族必须匹配。原生 Messages 的 profile、方言、语义上限、replay scope、缓存载体、请求投影与会话 header 策略由 `protocol::anthropic` 拥有，不通过构造 Chat adapter 或借用 OpenAI 开关来表达。
+
+**结构目标（阶段 1）**：每个协议一个双向模块（请求/响应编解码 + 上游 SSE → `StreamEvent` + `StreamEvent` → 下游 SSE），每个上游以数据声明 `TargetCaps`（可表达的 IR 特性与适用的损失规则）。OpenAI 分支仍使用通用目录中的 `GenerationRepresentationContract`、`openai::Profile` 表示检查与方言规则，后续收回所属协议模块；跨协议交付投影也保持目标明确，不预建通用插件框架。
 
 ## 3. IR 原则
 

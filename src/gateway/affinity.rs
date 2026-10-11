@@ -106,7 +106,7 @@ fn target_prefixes(
     candidate: &super::BoundCandidate,
     request: &crate::adapter::Request,
 ) -> Option<Vec<Digest>> {
-    let adapter = candidate.endpoint.adapter();
+    let adapter = candidate.endpoint.adapter().ok()?;
     let profile = adapter.openai().ok()?.protocol;
     let wire = adapter
         .encode_request(
@@ -134,9 +134,9 @@ pub(super) fn choose(
         return None;
     }
     let endpoint = &candidate.endpoint;
-    let adapter = endpoint.adapter();
+    let adapter = endpoint.adapter().ok()?;
     let adapter = adapter.openai().ok()?;
-    let mut cache = endpoint.representation.cache;
+    let mut cache = endpoint.representation.cache();
     cache.intersect(adapter.adaptation.cache);
     if !cache.key && !adapter.adaptation.rules.opencode_go_headers
         || cache.key
@@ -283,6 +283,7 @@ mod tests {
         let original = other
             .endpoint
             .adapter()
+            .unwrap()
             .encode_request(
                 &first,
                 &other.endpoint.upstream_model,
@@ -312,7 +313,13 @@ mod tests {
             selection.hint
         );
         other.endpoint = candidate.endpoint.clone();
-        other.endpoint.representation.adaptation.profile_id = "projection-v2";
+        other
+            .endpoint
+            .representation
+            .openai_mut()
+            .unwrap()
+            .adaptation
+            .profile_id = "projection-v2";
         assert_ne!(
             choose(&gate.state.affinity, &other, &second, &mut trace())
                 .unwrap()

@@ -16,10 +16,10 @@ fn native_audio_binding_is_explicit_chat_input_with_text_only_output() {
     assert_eq!(binding.upstream, "openai/gpt-audio-mini");
     assert_eq!(binding.protocols, &[ProtocolProfile::OpenAiChat]);
     let endpoint = binding.endpoint(ProtocolProfile::OpenAiChat).unwrap();
-    assert!(endpoint.representation.semantics.audio_input);
-    assert!(!endpoint.representation.semantics.audio_output);
-    assert!(!endpoint.representation.semantics.audio_history);
-    assert!(!endpoint.representation.semantics.reasoning);
+    assert!(endpoint.representation.semantics().audio_input);
+    assert!(!endpoint.representation.semantics().audio_output);
+    assert!(!endpoint.representation.semantics().audio_history);
+    assert!(!endpoint.representation.semantics().reasoning);
     let client = Adapter::new(Profile::Chat, Dialect::Standard, None);
     let body = json!({"model":"gpt-audio-mini","modalities":["text"],"messages":[
         {"role":"user","content":[{"type":"input_audio","input_audio":{"format":"wav","data":"AQID"}}]}]});
@@ -33,7 +33,11 @@ fn native_audio_binding_is_explicit_chat_input_with_text_only_output() {
     );
     let upstream = Adapter::new(Profile::Chat, binding.dialect, None);
     let sent = upstream
-        .encode_request(&input, binding.upstream, &endpoint.representation)
+        .encode_request(
+            &input,
+            binding.upstream,
+            endpoint.representation.openai().unwrap(),
+        )
         .unwrap();
     assert_eq!(sent["messages"], body["messages"]);
     assert_eq!(sent["modalities"], json!(["text"]));
@@ -118,11 +122,15 @@ fn grok_image_input_and_opaque_include_reach_the_fixed_responses_endpoint() {
     request
         .check_semantic(&binding.public_model().contract)
         .unwrap();
-    assert!(endpoint.representation.semantics.image_input);
-    assert!(!endpoint.representation.semantics.file_input);
-    assert!(!endpoint.representation.semantics.tool_result_images);
+    assert!(endpoint.representation.semantics().image_input);
+    assert!(!endpoint.representation.semantics().file_input);
+    assert!(!endpoint.representation.semantics().tool_result_images);
     let upstream = Adapter::new(Profile::Responses, binding.dialect, None)
-        .encode_request(&request, binding.upstream, &endpoint.representation)
+        .encode_request(
+            &request,
+            binding.upstream,
+            endpoint.representation.openai().unwrap(),
+        )
         .unwrap();
     assert_eq!(
         upstream["input"],
@@ -160,10 +168,10 @@ fn selected_production_contracts_do_not_infer_tool_images_from_user_images() {
         assert!(!public.contract.tool_result_images);
         assert!(tool_image.check_semantic(&public.contract).is_err());
         for endpoint in topology.route_endpoints(&public.route) {
-            assert!(!endpoint.representation.semantics.tool_result_images);
+            assert!(!endpoint.representation.semantics().tool_result_images);
             assert!(
                 tool_image
-                    .check_semantic(&endpoint.representation.semantics)
+                    .check_semantic(endpoint.representation.semantics())
                     .is_err()
             );
         }

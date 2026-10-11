@@ -83,7 +83,8 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool) -> Gateway {
                 None
             },
             ..Contract::full()
-        },
+        }
+        .into(),
         execution: ExecutionContract {
             streaming: true,
             retry_before_commit: false,

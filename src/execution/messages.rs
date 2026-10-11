@@ -14,7 +14,7 @@ pub fn prepare_messages(
     session: Option<&CacheSession>,
 ) -> Result<UpstreamRequest, AttemptError> {
     let auth = super::attempt::operation_auth(endpoint, provider)?;
-    let profile = endpoint.adapter().messages()?;
+    let profile = endpoint.adapter()?.messages()?;
     if request.model != endpoint.upstream_model {
         return Err(AttemptError::Protocol("native model binding mismatch"));
     }
@@ -46,23 +46,10 @@ pub(super) fn native_headers(
     endpoint: &Endpoint,
     session: Option<&str>,
 ) -> Result<Vec<(String, String)>, AttemptError> {
-    let go = endpoint.representation.adaptation.rules.opencode_go_headers;
-    if go && session.is_none() || !go && session.is_some() {
-        return Err(AttemptError::Protocol("native session carrier"));
-    }
-    let mut safe_headers = vec![
-        ("anthropic-version".into(), "2023-06-01".into()),
-        (
-            "user-agent".into(),
-            concat!("MorphieCore/", env!("CARGO_PKG_VERSION")).into(),
-        ),
-    ];
-    if let Some(session) = session {
-        if !endpoint.representation.cache.session_id {
-            return Err(AttemptError::Protocol("native session header"));
-        }
-        let session = CacheSession::new(session)?;
-        safe_headers.push(("x-opencode-session".into(), session.header_value()?.into()));
-    }
-    Ok(safe_headers)
+    endpoint
+        .representation
+        .messages()
+        .ok_or(crate::protocol::CodecError::ProfileMismatch)?
+        .headers(session)
+        .map_err(Into::into)
 }

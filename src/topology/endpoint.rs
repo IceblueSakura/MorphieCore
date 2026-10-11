@@ -2,7 +2,7 @@
 //! protocol profile and upstream model binding.
 
 use crate::{
-    lowering::generation::GenerationRepresentationContract,
+    lowering::target::TargetCaps,
     provider::{
         EndpointPath, ProviderId, TrustedOrigin, auth::CredentialBindingId, auth::CredentialKind,
     },
@@ -43,33 +43,39 @@ pub struct Endpoint {
     pub upstream_model: String,
     /// Shared semantic identity; neither a public label nor a Provider selector.
     pub canonical_model: super::ModelId,
-    pub representation: GenerationRepresentationContract,
+    pub representation: TargetCaps,
     pub execution: ExecutionContract,
     pub credential: CredentialBindingId,
 }
 
 impl Endpoint {
-    pub fn adapter(&self) -> crate::adapter::UpstreamAdapter {
-        use crate::adapter::{Adapter, UpstreamAdapter};
-        use crate::protocol::{anthropic, openai::Profile};
-        match self.protocol {
-            ProtocolProfile::AnthropicMessages => {
-                UpstreamAdapter::AnthropicMessages(anthropic::Profile::AdaptiveTextTools)
+    pub fn adapter(&self) -> Result<crate::adapter::UpstreamAdapter, crate::protocol::CodecError> {
+        use crate::{
+            adapter::{Adapter, UpstreamAdapter},
+            protocol::{CodecError, openai::Profile},
+        };
+        Ok(match (&self.protocol, &self.representation) {
+            (ProtocolProfile::AnthropicMessages, TargetCaps::AnthropicMessages(caps)) => {
+                UpstreamAdapter::AnthropicMessages(caps.profile)
             }
-            ProtocolProfile::OpenAiChat | ProtocolProfile::OpenAiResponses => {
-                UpstreamAdapter::OpenAi(Box::new(Adapter {
-                    protocol: if self.protocol == ProtocolProfile::OpenAiChat {
-                        Profile::Chat
-                    } else {
-                        Profile::Responses
-                    },
-                    adaptation: self.representation.adaptation.clone(),
-                }))
-            }
-        }
+            (
+                ProtocolProfile::OpenAiChat | ProtocolProfile::OpenAiResponses,
+                TargetCaps::OpenAi(caps),
+            ) => UpstreamAdapter::OpenAi(Box::new(Adapter {
+                protocol: if self.protocol == ProtocolProfile::OpenAiChat {
+                    Profile::Chat
+                } else {
+                    Profile::Responses
+                },
+                adaptation: caps.adaptation.clone(),
+            })),
+            _ => return Err(CodecError::ProfileMismatch),
+        })
     }
     pub fn validate(&self) -> Result<(), crate::topology::TopologyError> {
         use crate::topology::TopologyError;
+        self.adapter()
+            .map_err(|_| TopologyError::ContractUnsatisfiable)?;
         if self.upstream_model.is_empty()
             || self.upstream_model.len() > 256
             || self

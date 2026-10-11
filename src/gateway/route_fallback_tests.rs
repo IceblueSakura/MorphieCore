@@ -105,7 +105,8 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
                     crate::adapter::Dialect::MorphieCore,
                     None,
                 )
-                .contract(&Representation::full()),
+                .contract(&Representation::full())
+                .into(),
                 execution: ExecutionContract {
                     streaming: true,
                     retry_before_commit: false,

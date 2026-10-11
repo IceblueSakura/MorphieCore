@@ -1,7 +1,6 @@
 //! Compile trusted topology input into one immutable relation set.
 
 use crate::{
-    lowering::generation::GenerationRepresentationContract,
     provider::ProviderDefinition,
     topology::{
         CanonicalModel, Endpoint, EndpointId, GenerationSemanticContract, PublicModel, Route,
@@ -60,9 +59,9 @@ pub enum TopologyError {
 /// is published is a route policy decision made in trusted configuration.
 fn promised(
     semantic: &GenerationSemanticContract,
-    endpoint: &GenerationRepresentationContract,
+    endpoint: &crate::lowering::target::TargetCaps,
 ) -> bool {
-    endpoint.semantics.supports(semantic)
+    endpoint.semantics().supports(semantic)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -243,13 +242,9 @@ pub fn compile(
             if endpoint.protocol == super::ProtocolProfile::AnthropicMessages {
                 let native =
                     crate::protocol::anthropic::Profile::AdaptiveTextTools.semantic_contract();
-                if !native.supports(&endpoint.representation.semantics)
+                if !native.supports(endpoint.representation.semantics())
                     || !native.supports(&model.contract)
-                    || endpoint
-                        .representation
-                        .replay_origin
-                        .as_ref()
-                        .map(|o| o.as_str())
+                    || endpoint.representation.replay_origin().map(|o| o.as_str())
                         != Some(endpoint.provider.as_str())
                     || model.standard_context
                 {
@@ -258,7 +253,7 @@ pub fn compile(
             }
             if route.policy.candidates == super::CandidatePolicy::RequireAll
                 && (!promised(&model.contract, &endpoint.representation)
-                    || model.standard_context && !endpoint.representation.standard_context)
+                    || model.standard_context && !endpoint.representation.standard_context())
             {
                 return Err(TopologyError::ContractUnsatisfiable);
             }
@@ -327,7 +322,7 @@ mod tests {
             protocol,
             upstream_model: "fixture-model".into(),
             canonical_model: ModelId::new("fixture-model").unwrap(),
-            representation: GenerationRepresentationContract::full(),
+            representation: GenerationRepresentationContract::full().into(),
             execution: ExecutionContract {
                 streaming: true,
                 retry_before_commit: false,
@@ -730,7 +725,7 @@ mod tests {
         assert_eq!(
             compile_fixture(
                 vec![Endpoint {
-                    representation: candidate,
+                    representation: candidate.into(),
                     ..endpoint(ProtocolProfile::OpenAiChat)
                 }],
                 vec![route()],

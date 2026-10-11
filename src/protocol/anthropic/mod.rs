@@ -1,4 +1,6 @@
 //! Selected native wire types, not a second semantic model or an execution API.
+mod adapter;
+pub use adapter::{Dialect, TargetCaps};
 mod request;
 mod response;
 mod semantic;
