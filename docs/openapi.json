@@ -790,7 +790,7 @@
     },
     "responses": {
       "Generation": {
-        "description": "Current profile-specific JSON response or incremental SSE, retaining the public model label. Typed output, usage and dependencies must be representable by the selected client contract; unrepresentable facts are not silently dropped. No independent _openbridge attachment is emitted. Other named profile differences still prevent a full standard-conformance claim. Exact text, tool, usage, grouping and replay admission belongs to docs/architecture/responses-text-profile.md, chat-text-profile.md and client-generation-profile.md. Chat audio/citations have separate library scope in chat-media-profile.md, not automatic product activation. HTTP 200 does not prove semantic completion, stream closure or output adherence. Late failures abort the body without a fabricated successful terminal.",
+        "description": "Current profile-specific JSON response or incremental SSE, retaining the public model label. Typed output, usage and dependencies must be representable by the selected client contract; unrepresentable facts are not silently dropped. No independent _openbridge attachment is emitted. Other named profile differences still prevent a full standard-conformance claim. Mapping rules are described in docs/architecture.md; exact admission belongs to the codecs. HTTP 200 does not prove semantic completion, stream closure or output adherence. Late failures abort the body without a fabricated successful terminal.",
         "headers": {"Cache-Control": {"schema": {"type": "string", "const": "no-store"}}},
         "content": {"application/json": {"schema": {"type": "object", "not": {"required": ["_openbridge"]}}}, "text/event-stream": {"schema": {"type": "string"}}}
       },

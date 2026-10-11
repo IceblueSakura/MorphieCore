@@ -3,7 +3,7 @@
 #[path = "credential/api_keys.rs"]
 mod api_keys;
 #[cfg(unix)]
-#[path = "../examples/support/child_process.rs"]
+#[path = "support/child_process.rs"]
 mod child_process;
 #[cfg(unix)]
 #[path = "support/filesystem.rs"]

@@ -36,7 +36,7 @@ pub fn xiaomi() -> ProviderDefinition {
 
 /// Go operation entries are separate from model admission and the Zen balance API.
 /// Source: <https://opencode.ai/docs/go/#endpoints> and the pinned Messages route
-/// in `docs/references/agent-protocol-adaptation.md`.
+/// in `docs/references.md`.
 pub fn opencode_go() -> ProviderDefinition {
     let mut provider = chat_provider(
         "opencode-go",

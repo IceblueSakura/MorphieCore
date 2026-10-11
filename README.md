@@ -1,36 +1,42 @@
 # MorphieCore
 
-MorphieCore 是 Gateway 与未来 Agent 共用的模型交互 Semantic Model / IR，通过标准 API 连接不同 Provider。Generation 以 OpenAI Responses 为主接口，Chat Completions 为具名有损兼容路径；独立媒体 operation 使用各自 task。
+以统一 IR 为核心的模型路由网关：下游提供标准 OpenAI Responses（主接口）与 Chat Completions（兼容接口），上游连接 OpenAI 兼容、Anthropic Messages 与 Google Gemini 等不同协议的 Provider。项目处于核心设计与验证阶段。
 
-项目处于开发阶段。设计权威见[语义架构](docs/architecture/README.md)，当前接线见[架构](docs/architecture.md)，未完成方向见[后续计划](docs/implementation-plans/next-goal.md)。
+## 状态
 
-当前以客户端每次提交完整历史的无状态 API 为主，缓存优化只求尽力而为，显式会话标识提供稳定分组；网关自管限时历史的有状态 Responses API 是[确定的终期目标](docs/implementation-plans/next-goal.md#api-context-goals)，不是当前已实现能力。
+- 已接入：下游 Responses / Chat（JSON 与 SSE，文本、工具、reasoning、图片与部分文件输入）；上游 OpenAI Responses / Chat 及多家兼容方言；文件凭据与有序池；Provider 原生缓存亲和。
+- 冻结：独立 Embeddings、Images、Speech、Transcription 入口，以及新 Provider 扩展。
+- 进行中：协议层重构、Anthropic 上游接入，随后是 Google generateContent / Interactions 与下游 Anthropic Messages。详见[路线](docs/roadmap.md)。
 
-## 当前范围
-
-- 共享 Rust 语义库与认证 loopback Gateway；Chat/Responses 的文本、工具、reasoning 与图片输入按具体 profile 和目标准入。
-- Responses 支持选定文件输入；标准 Chat 支持 WAV/MP3 语音输入→文本，范围见[音频输入 profile](docs/architecture/chat-input-audio-profile.md)。
-- 独立 Images、Speech、Transcription 接口与只读 Models 目录。API 用法和显式激活见[HTTP 指南](docs/http-gateway.md)。
-- 独立标准 Embeddings 文本/float 分支，按目标显式激活；范围见[Embedding profile](docs/architecture/embedding-profile.md)。
-- 同协议与跨协议共用 validation/lowering；允许的损失见[投影合同](docs/architecture/protocol-and-lowering.md#semantic-loss)。
-- 自有文件凭据与显式有序池；Provider 原生缓存亲和。Agent orchestration、会话服务与动态路由不属于当前实现。
-
-当前 Provider/model 与实例准入查源码和 [AGENTS 查询方法](AGENTS.md#current-provider-model-and-compatibility-information)，不在文档维护库存。
-
-## 启动入口
-
-主程序为 `morphiecore`，凭据 CLI 为 `morphiecore-auth`，开发变量使用 `MORPHIECORE_` 前缀。先按[HTTP 指南](docs/http-gateway.md)准备入口，凭据路径与管理见[凭据指南](docs/credentials.md)。
+## 快速开始
 
 ```sh
-cargo run --locked --offline --bin morphiecore
+cargo run --locked --offline --bin morphiecore        # 网关
+cargo run --locked --offline --bin morphiecore-auth   # 凭据管理
 ```
 
-## 验证
+配置、接口与凭据操作见[使用](docs/usage.md)。
 
-检查方法统一见[开发指南](docs/development.md)。默认检查使用 synthetic 数据；固定 SDK loopback 是独立显式 gate，真实 Provider 使用[受控 probe](docs/probes.md)。授权与安全规则归 [AGENTS.md](AGENTS.md)。
+## 代码结构
+
+| 目录 | 内容 |
+|---|---|
+| `src/semantic` | IR：任务类型、校验、事件 reducer |
+| `src/protocol` | 各协议 wire 编解码与方言规则 |
+| `src/lowering`、`src/adapter` | 目标投影与请求/响应适配 |
+| `src/topology`、`src/provider` | 模型 → 路由 → 端点绑定，Provider 定义 |
+| `src/execution`、`src/transport` | 候选执行、HTTP/SSE |
+| `src/gateway` | HTTP 网关 |
+| `src/credential` | 凭据 store、API key、OAuth |
+| `tests/` | 离线测试与 SDK loopback gate |
 
 ## 文档
 
-[文档索引](docs/README.md)导航当前合同、最终 ADR、未完成计划和固定来源。实现细节归源码与独立测试，执行结果在当次交付中报告，决策过程查 Git。
+- [架构](docs/architecture.md)：设计原则与已定决策
+- [路线](docs/roadmap.md)：阶段、冻结范围与当前焦点
+- [使用](docs/usage.md)：启动、配置、HTTP 接口、凭据
+- [开发](docs/development.md)：环境、检查、测试布局
+- [参考来源](docs/references.md)：固定版本与协议文档
+- 贡献规则：[AGENTS.md](AGENTS.md)
 
-原创代码和文档采用 [MIT License](LICENSE)；外部材料保留其来源与许可。
+原创代码与文档采用 [MIT License](LICENSE)；外部材料保留其来源与许可。

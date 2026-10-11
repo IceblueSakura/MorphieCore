@@ -5,7 +5,7 @@
 mod chat_wire;
 #[path = "support/child_line.rs"]
 mod child_line;
-#[path = "../examples/support/child_process.rs"]
+#[path = "support/child_process.rs"]
 mod child_process;
 #[path = "support/tokenplan_audio.rs"]
 mod native_audio;

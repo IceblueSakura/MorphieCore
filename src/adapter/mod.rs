@@ -2,7 +2,7 @@
 //! No registry lookup, credentials, network or arbitrary JSON body hooks live here.
 //! This module owns profile-to-rule selection; rule semantics live in `WireRules`
 //! and owning codecs. Dialect existence alone does not register or enable a model.
-//! Official lookup sources: `docs/references/providers/README.md`.
+//! Official lookup sources: `docs/references.md`.
 use crate::{
     lowering::generation::{GenerationRepresentationContract, RepresentationError, lower_response},
     protocol::{

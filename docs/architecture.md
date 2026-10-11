@@ -1,59 +1,127 @@
-# 当前架构
+# 架构
 
-MorphieCore 将共享语义库接入最小认证 loopback 网关。这里说明跨模块职责；字段映射、默认值、预算和失败分支由 owning code、注释与独立测试维护。设计理由见 [ADRs](architecture/README.md#架构决策)，未闭合范围见[实施缺口](implementation-status/generation.md)。
+MorphieCore 是以统一 IR 为核心的模型路由网关：下游接收标准客户端协议，上游连接不同 Provider 协议，中间只经过一份类型化语义表示。本页记录设计原则和已定决策；行为细节以代码与测试为准，推进顺序见[路线](roadmap.md)。
+
+## 1. 目标协议
+
+| 方向 | 协议 | 状态 |
+|---|---|---|
+| 下游 | OpenAI Responses（主接口） | 已接入 |
+| 下游 | OpenAI Chat Completions（兼容接口，允许声明的损失，可用扩展字段补充语义） | 已接入 |
+| 下游 | Anthropic Messages | Responses/Chat 稳定后开放 |
+| 上游 | OpenAI Responses、OpenAI Chat（含各兼容方言） | 已接入 |
+| 上游 | Anthropic Messages | 编解码已有，尚未接入 Gateway 执行链 |
+| 上游 | Google generateContent、Google Interactions | 计划中 |
+
+独立的 Embeddings、Images、Speech、Transcription 已有标准下游入口，当前冻结，只做重构所需的维护。
+
+## 2. 分层与数据流
 
 ```text
-Authenticated bounded HTTP input
- → fixed Public Model/task lookup
- → Client Adapter.decode_request
- → task semantics + context/delivery + scoped carriers/fidelity
- → trusted transform / public admission / requirements
- → fixed candidate projection → prepared request/auth → HTTP transport
- → Provider Adapter JSON/SSE/binary decode → task result/Event IR
- → Client Adapter projection → downstream body handoff / commit / complete
+下游 HTTP（鉴权、有界收集）
+  → 下游 codec：wire → IR 请求
+  → 校验 / requirements
+  → 固定 Route 的每个候选：lowering（按目标能力投影）→ 上游 codec：IR → wire
+  → transport（受信 origin、认证、超时）
+  → 上游 codec：JSON / SSE → IR 响应或 StreamEvent
+  → 下游 codec：IR → JSON / SSE → body 交付
 ```
 
-## 模块所有权
+| 模块 | 职责 | 约束 |
+|---|---|---|
+| `semantic` | IR 类型、校验、requirements、事件 reducer | 不依赖 protocol / provider / execution |
+| `protocol` | 各协议的 wire 类型与编解码、方言规则 | 纯函数；不访问网络、凭据或 registry |
+| `lowering` | 判断最终 IR 能否由目标表达，应用具名损失规则 | 纯函数；只作用于候选私有副本 |
+| `adapter` | 组合协议 codec 与方言规则，生成请求/响应投影 | 规则由受信绑定选择，业务输入不能选择 |
+| `topology` | Public Model → Route → Endpoint 的静态编译 | Endpoint 绑定 origin/path/协议/上游模型/凭据域 |
+| `execution` | 候选计划、请求准备、增量 intake、交付状态 | 不解释业务语义 |
+| `transport` | HTTP I/O 与 SSE framing | 只接收已准备好的可信请求 |
+| `credential` | 文件凭据 store、API key、OAuth driver、有序池 | 凭据不进入 IR |
+| `gateway` | 鉴权、准入、预算、body 发布与取消 | 只监听 loopback |
 
-| Owner | 责任 |
+**结构目标（阶段 1）**：lowering 与 adapter 现在以 `openai::Profile` 为键，Anthropic 只是旁挂分支。目标是每个协议一个双向模块（请求/响应编解码 + 上游 SSE → `StreamEvent` + `StreamEvent` → 下游 SSE），每个上游以数据声明 `TargetCaps`（可表达的 IR 特性与适用的损失规则）；方言差异收进所属协议模块的小结构，替代全局布尔开关集合。
+
+## 3. IR 原则
+
+以下是长期有效的不变量：
+
+- **有序异构 items**：Generation 历史是有序 items（指令、消息、工具调用/结果、reasoning、Provider 工具观察等），Message 只是其中一种容器。调用与结果通过 call ID 显式关联，不靠相邻位置或名称猜测。
+- **身份分离**：本地 item/part ID、wire ID、call ID、流索引各自独立；未报告的身份不伪造成上游报告。
+- **精确 JSON**：工具参数与 Schema 保留数值精度和键顺序；原始字节解析时拒绝重复键并限制深度、节点和字节数。
+- **按需区分 presence**：在含义不同的地方区分缺省、null、空值和默认值（例如工具参数、Schema、计量）；不为每个字段机械套用。
+- **reasoning 分层**：可读内容（摘要/文本）与 opaque 续轮载荷分开；effort/预算/显示是控制，不等于实际产出。
+- **计量诚实**：未报告不补零，累计快照不相加，派生值不另存成上游报告。
+- **终态诚实**：响应闭合、产物完整、轮次进度（等待工具结果 / 结束）分开表达；失败、截断、取消不能变成成功。
+- **无运行时状态**：已选目标、凭据、重试和提交状态不进入 IR。
+- **上下文模式**：当前为客户端每次提交完整历史（ClientManaged）；网关自管的限时 `previous_response_id` 历史是终期目标，届时物化为同样的完整 IR 再走同一链路。
+
+IR 不是任一协议的 DTO，也不是字段并集。发现 IR 无法表达的概念时，先给出最小反例和结构选项，再决定实现；不在 adapter 里用私有字段绕过。
+
+## 4. 协议适配规则
+
+### 字段三级策略
+
+| 级别 | 范围 | 处理 |
+|---|---|---|
+| 必须保真 | 指令、消息顺序、工具定义、参数、call ID 与结果关联、必要的 opaque 续轮、stop 原因与核心计量 | 目标无法表达时拒绝请求 |
+| 可声明降级 | 目标不支持的采样参数、`metadata`、`service_tier`、`logprobs`、附属计量明细等 | 按具名规则从候选副本移除并记录到诊断 |
+| 未知字段 | 上游响应中未登记的字段 | 忽略；已登记字段照常严格校验 |
+
+- **上游响应**：已知字段严格（类型、取值、关系），未知字段忽略。上游新增字段不能让网关失败。
+- **下游请求**：标准中能表达的字段按上表处理；无法表达的关键语义返回 400，不静默丢弃。
+- 损失只作用于每个候选的私有投影，原 IR 不变；静态与流式使用同一规则。
+
+### Opaque reasoning 续轮
+
+所有上游签发的 opaque 值（OpenAI `encrypted_content`、Anthropic thinking `signature`、Gemini `thoughtSignature`、Interactions step signature）在下游统一使用**带标签的信封**：
+
+```text
+{版本, 上游 Provider, 上游模型, 格式, 原始载荷}
+```
+
+- 交付给下游时编码进对应载体（Responses reasoning item 的 `encrypted_content`；Chat 见下节）。
+- 回传时：Provider 与模型都与本次目标一致才还原原生载荷；否则丢弃该 opaque 值，并移除因此变空的 reasoning item。
+- 信封不加密、不做本地前缀证明：签名合法性由上游签发方校验，被篡改或不匹配时由上游拒绝并作为错误返回。是否附加 HMAC 防止伪造来源标签，在实现时按实际需要决定。
+
+### Chat 扩展字段
+
+Chat Completions 无法承载 reasoning 等语义时，参照 OpenRouter 的现有形状增加扩展字段，而不是自创格式：
+
+- assistant 消息（`message`）与流式 `delta` 上的 `reasoning`（可读文本）与 `reasoning_details`（有序数组）。数组元素的 `type` 为 `reasoning.text`（`text` + 可选 `signature`）、`reasoning.summary`（`summary`）或 `reasoning.encrypted`（`data`），共有 `id`、`format`、`index`。
+- 签名与加密载荷使用上节的信封编码；客户端须原样回传整段 `reasoning_details`，网关按上节规则还原或丢弃。
+- 其他扩展字段按需逐个加入并在此登记；不恢复旧的 `_openbridge` attachment。
+
+## 5. 执行与交付
+
+- 启动时编译 Public Model → Route → 有序 Endpoint；请求不能创建或重排候选。每个候选都从同一不可变 IR 独立投影。
+- Fallback 必须显式开启，只在首次向下游发布内容之前发生，且只针对可前移的失败（连接/传输失败、超时、5xx、本地凭据不可用）。401/403、协议/投影错误不前移。
+- 首次发布下游 frame 即冻结前移；body 交出视为提交；上游严格 EOF 且最终交出后才算完成。之后的错误只能中止 body，不拼接其他 attempt，不伪造成功终态。
+- 上游 SSE 与下游交付方式独立：下游要 JSON 时有界聚合到终态；要 SSE 时增量交付。
+- 所有 body、frame、事件数和时间都有上界；客户端断开、超时或关闭会取消上游请求。
+
+## 6. 缓存亲和
+
+- 下游可选 `X-MorphieCore-Conversation-Id` 表达 Provider 无关的逻辑会话；网关在内部派生各上游的 session/cache 载体，客户端不需要了解 Provider 参数。
+- 标准 `prompt_cache_key` 是独立的缓存分组意图。
+- 无会话标识时，网关可用短 TTL 的前缀摘要索引尽力复用缓存分组；索引可随时丢弃，未命中只损失缓存机会，不改变请求合法性。它不是历史存储，也不参与 replay 判断。
+
+## 7. 凭据
+
+- 凭据只来自应用自有的文件 store；不读取环境变量中的 key，不读取第三方 auth cache。
+- API key 与 OAuth（Grok、ChatGPT 订阅 SIWC）由统一 manager 管理；推理使用显式配置的有序池，按固定 identity 借用短期 access 视图。
+- 普通请求不触发登录或刷新；凭据、locator 与上游 origin 不下发给客户端。
+
+## 8. 已定决策
+
+| 决策 | 要点 |
 |---|---|
-| [semantic](../src/semantic/mod.rs) | task 类型、验证、requirements、reducer；标准 context/delivery，不依赖 protocol/provider/execution |
-| [adapter](../src/adapter/mod.rs) | 可信双向 profile 选择、统一 request 与目标投影；不访问网络或凭据 |
-| [protocol](../src/protocol/mod.rs) | 共用语法、envelope/event codecs、strict JSON、具名适配和来源保真 |
-| [lowering](../src/lowering/generation.rs) | 最终不可变语义的目标可表示性；不选择 Provider、不恢复删除值 |
-| [provider](../src/provider/mod.rs) | 可信 origin/path、认证材料和 HTTP 错误分类 |
-| [credential](../src/credential/mod.rs) | 统一 API key / OAuth manager 与安全文件 store；API key 按认证域和 epoch 绑定，OAuth drivers 管理各自授权合同；提供有序池与短生命周期借用；执行层按显式策略前移，不自动刷新或负载均衡 |
-| [topology](../src/topology/mod.rs) | canonical/public model、Route、Endpoint 的固定关系与编译 |
-| [execution](../src/execution/mod.rs) | 候选计划、请求准备、增量 intake、响应投影和显式交付生命周期 |
-| [SSE transport](../src/transport/sse.rs) / [HTTP transport](../src/transport/http.rs) | 有界 framing / 对已准备可信请求执行 I/O；不解释或改写 IR |
-| [gateway](../src/gateway/mod.rs) | 认证、启动准入、预算和实际 HTTP body 所有权 |
-| [binary](../src/bin/morphiecore.rs) | 显式私有文件 bootstrap 与 loopback listener |
-
-Generation 的 [Endpoint.adapter](../src/topology/endpoint.rs)返回独立 [UpstreamAdapter](../src/adapter/upstream.rs)，客户端 Adapter 继续使用标准 Chat/Responses Profile。Provider 的 [generation_entry](../src/provider/definition.rs)拥有 operation path/auth；topology 编译与 attempt 准备都检查该固定关系和 credential domain，不由业务字段选择认证。原生 Messages 的 wire 类型、低层准备及未接线拒绝边界归 [Messages profile](architecture/anthropic-messages-profile.md#纯-wire-接口与接线边界)，不是另一个 Agent API 或可用模型声明。
-
-独立静态图片生成采用 [ImageGeneration task](../src/semantic/task/image_generation.rs)、[类型化请求入口](../src/adapter/images.rs) 与 [Images codec](../src/protocol/openai/images.rs)。[图片 binding](../src/topology/images.rs)在同一 CompiledTopology 中显式声明 public label、canonical identity、单 endpoint 与 Provider operation 路径，不给 Generation 合同填占位字段；有序产物集合共享一次执行和响应级计量，目标 profile 与计量投影策略分别显式选择。Gateway 的 [Images intake](../src/gateway/images.rs)共享认证、受信 transport 和上述 body publication/handoff 生命周期，不增加重试或资源服务。产品绑定归[图片 catalog](../src/topology/catalog/images.rs)，binary 仅激活明确选定的图片标签，不从已有凭据池推定媒体授权。
-
-[Models 目录](../src/gateway/models.rs)从启动激活的各 task 标签构建有界只读视图；[publication metadata](../src/topology/model_metadata.rs)归 topology canonical identity，不进入 task IR 或依赖具体推理 Provider。它复用认证但不经过生成执行链，也不访问上游目录或操作凭据；公开合同归[模型发现](http-gateway.md#标准模型发现)。
-
-独立 Speech 使用 [SpeechSynthesis task](../src/semantic/task/speech_synthesis.rs)、[标准 codec](../src/protocol/openai/speech.rs)、[目标准入/报告投影](../src/lowering/speech.rs)与[显式绑定](../src/topology/speech.rs)。[Speech adapter](../src/adapter/speech.rs)选择标准、[OpenRouter MP3](../src/protocol/openrouter_speech.rs)或[原生 MP3](../src/protocol/aliyun_speech.rs)映射；产品 ID、voice 与 metadata 归 [Speech catalog](../src/topology/catalog/speech.rs)。[Speech intake](../src/gateway/speech.rs)按可信 profile 收集二进制或聚合原生 SSE，沿用 transport、publication/handoff 和取消 owner；binary 显式激活归 [HTTP 指南](http-gateway.md#独立语音生成)。
-
-独立识别使用 [SpeechRecognition task](../src/semantic/task/speech_recognition.rs)、[标准 multipart/JSON codec](../src/protocol/openai/transcription.rs)和[原生 ASR 映射](../src/protocol/aliyun_asr.rs)。[绑定](../src/topology/transcription.rs)与[Gateway intake](../src/gateway/transcription.rs)不创建 Generation 消息、文件服务或 URL 获取器；[Transcription profile](architecture/transcription-profile.md)拥有报告 scope 与投影边界，显式激活归 [HTTP 指南](http-gateway.md#独立语音识别)。
-
-独立文本 Embedding 使用 [task](../src/semantic/task/embedding.rs)、[envelope](../src/adapter/embeddings.rs)、[标准 float codec](../src/protocol/openai/embeddings.rs)与[目标准入](../src/lowering/embeddings.rs)。[固定绑定](../src/topology/embeddings.rs)和 [Gateway intake](../src/gateway/embeddings.rs)复用受信 transport、严格 EOF、取消及共享 handoff，不创建 Generation items、文件服务、输出 token cap 或 retry/fallback。具体范围和显式激活归 [Embedding profile](architecture/embedding-profile.md)。
-
-## 容易混淆的边界
-
-- **注册不等于启用**：catalog 声明与 bootstrap 激活分开。Public Model 的语义准入也不是响应 reported facts 的白名单。现场查询方法见 [AGENTS](../AGENTS.md#current-provider-model-and-compatibility-information)。
-- **适配不等于第二份语义**：[WireRules](../src/protocol/adaptation.rs) 声明受信规则，[fidelity](../src/protocol/fidelity.rs) 只保存有界来源/依赖记录。它们不能覆盖最终 IR。
-- **策略不拥有 I/O**：[selector](../src/execution/plan.rs) 与 [fallback policy](../src/execution/fallback.rs) 是纯策略；[exchange](../src/gateway/exchange.rs) 协调候选/预算，[intake](../src/gateway/intake.rs) 拥有一个上游 body 的解码/投影，[body](../src/gateway/body.rs) 拥有 publication、acknowledgement 和取消。
-- **编码、发布、提交、完成不同**：发布先冻结候选前移，body handoff 确认 commit，严格上游关闭与最终 handoff 决定完成；后续失败只能中止，不能伪造成功或拼接另一 attempt。具体状态转换和竞态处理留在对应实现。
-- **缓存不是会话管理**：[cache projection](../src/protocol/cache.rs) 投影显式 Provider carrier；标准 identity hints 与 cache hints 独立。无网关回答缓存、负载均衡或跨请求粘性路由。
-- **探测不是产品合同**：[probe tooling](../examples/probe_support/) 拥有计划、共享预算与脱敏结果，[diagnostics](../src/gateway/diagnostics.rs) 提供有界元数据。工具可选项、执行历史和 sink 状态不能决定产品准入。
-
-## 依赖与复用边界
-
-`semantic` 是任务值、validation、requirements 与 reducer 的唯一 owner，不依赖 protocol/provider/topology/execution。Codec、lowering 与 adapter 保持纯映射；协议共同类型不放入某家 Provider IR。Gateway、未来 Agent 的类型化入口都消费同一语义模型；Agent runtime 与恢复属于[项目非目标](architecture/semantic-ir.md#1-语义权威与消费者)，不作为待实现能力。
-
-模块按职责拆分，保留必要公共路径的显式 re-export，不复制 SDK 目录、预建未实现 task 模块或引入万能 raw-JSON 请求。当前保持一个 crate；独立 SDK/crate 与持久化格式仅在有明确消费者后定稿。各目标只采用[已定稿的具名投影](architecture/protocol-and-lowering.md#semantic-loss)，实际准入查 owning lowering/codec；不能从设计推定所有目标均已接线或实例启用，也不改变共享输入或运行时权限。
-
-启动和公共 HTTP 用法见[网关指南](http-gateway.md)，检查命令见[开发指南](development.md)，真实调用的授权与预算见[Probe 指南](probes.md)。
+| 统一语义核心 | 一个 IR 服务 Gateway 与未来的 Agent 库调用；Agent 规划、记忆、工具执行属于调用方 |
+| 独立任务 | Generation、Embedding、Images、Speech、Transcription 各有任务合同，不共用万能消息容器 |
+| 纯 codec / lowering | 不访问网络、凭据、registry；编码基于最终 IR，不在编码后改 JSON |
+| 能力分层 | 语义能力、wire 表示、执行属性、对下游承诺分开声明；公共能力不取候选并集 |
+| 固定候选与提交前 fallback | 见第 5 节 |
+| 最小 HTTP 网关 | loopback 监听、单一 Bearer 入口鉴权、入站 header 不透传 |
+| 上游开放解码 | 已知字段严格、未知字段忽略 |
+| Opaque 信封 | 不加密、不做本地前缀证明；同 Provider+模型还原，否则丢弃 |
+| Chat 扩展 | 参照 OpenRouter 形状承载 Chat 无法表达的语义 |
+| 文件凭据与有序池 | 授权生命周期与推理借用分离；无自动刷新/负载均衡 |

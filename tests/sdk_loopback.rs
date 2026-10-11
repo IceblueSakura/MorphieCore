@@ -4,7 +4,7 @@
 mod chat_media_sdk;
 #[path = "sdk/chat.rs"]
 mod chat_sdk;
-#[path = "../examples/support/child_process.rs"]
+#[path = "support/child_process.rs"]
 mod child_process;
 #[path = "sdk/gateway.rs"]
 mod gateway_sdk;
