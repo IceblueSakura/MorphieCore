@@ -1,19 +1,13 @@
 //! Explicit private files only. Neither upstream secrets nor account selectors come from env.
 #[cfg(test)]
-#[path = "embedding_bootstrap_tests.rs"]
-mod embedding_tests;
-#[cfg(test)]
 #[path = "managed_key_bootstrap_tests.rs"]
 mod managed_key_tests;
 #[cfg(test)]
-#[path = "openrouter_speech_bootstrap_tests.rs"]
-mod speech_tests;
+#[path = "media_bootstrap_tests.rs"]
+mod media_tests;
 #[cfg(test)]
 #[path = "bootstrap_tests.rs"]
 mod tests;
-#[cfg(test)]
-#[path = "tokenplan_audio_bootstrap_tests.rs"]
-mod tokenplan_audio_tests;
 use super::{
     Credentials, EmbeddingEntry, Entry, Gateway, ImageEntry, Limits, SpeechEntry, StartupError,
     TranscriptionEntry,

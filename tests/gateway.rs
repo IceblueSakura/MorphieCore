@@ -14,6 +14,9 @@ mod native_audio;
 mod responses_wire;
 #[path = "support/gateway.rs"]
 mod support;
+
+#[path = "gateway/anthropic.rs"]
+mod anthropic;
 use axum::{
     Router,
     body::Body,

@@ -21,20 +21,20 @@ cargo fmt -- --check
 git diff --check
 ```
 
-先跑受影响的目标，例如 `cargo test --locked --offline --test semantic reasoning::`，再跑完整基线。默认检查只用 synthetic 数据，不访问真实 Provider，不读取私有配置。
+先跑受影响的目标，例如 `cargo test --locked --offline --test semantic reasoning_replay::`，再跑完整基线。默认检查只用 synthetic 数据，不访问真实 Provider，不读取私有配置。
 
 ## 测试布局
 
 | Target | 范围 |
 |---|---|
 | `src/**` 单元测试 | 模块内部逻辑：凭据 manager/store/driver、gateway 各入口、affinity 等 |
-| `tests/semantic` | IR、codec、lowering、replay、编辑失效 |
-| `tests/transport` | SSE framing、各协议流解码、body 生命周期 |
+| `tests/semantic` | IR、codec、lowering、replay、编辑失效；按主题分文件（`tool_calls`、`reasoning_replay`、`history`、`text`、`media` 等） |
+| `tests/transport` | SSE framing、各协议流解码、候选规划与原生绑定、body 生命周期 |
 | `tests/credential` | `morphiecore-auth` 黑盒（synthetic 文件与 authority） |
-| `tests/gateway` | 真实 Router → synthetic Provider 冒烟，以及隔离环境的 binary 启动 |
+| `tests/gateway` | 真实 Router → synthetic Provider 冒烟（含原生 Messages），以及隔离环境的 binary 启动 |
 | `tests/sdk_loopback` | 显式 ignored：固定版本 OpenAI Python SDK 对 Gateway 的消费与续轮 |
 
-编写协议映射测试时，wire→IR 与 IR→wire 的预期分别独立手写，不用被测 encoder 生成 oracle；round trip 只能作补充。共享的 synthetic builder 放在 `tests/support/`。
+编写协议映射测试时，wire→IR 与 IR→wire 的预期分别独立手写，不用被测 encoder 生成 oracle；round trip 只能作补充。共享的 synthetic builder 放在 `tests/support/`。每个契约保留一个正例和一个反例；新增用例前先确认同层没有已覆盖的断言，冻结任务只保留契约冒烟。
 
 ## SDK loopback gate
 

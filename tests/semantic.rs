@@ -1,4 +1,6 @@
 //! Offline semantic ownership, codec projection and failure contracts, grouped by domain.
+#[path = "support/chat_profile.rs"]
+mod chat_wire;
 #[path = "support/semantic_events.rs"]
 mod events_support;
 #[path = "support/image_generation.rs"]
@@ -8,133 +10,25 @@ mod resources_support;
 #[path = "support/responses_profile.rs"]
 mod wire;
 
-#[path = "semantic/anthropic_profile.rs"]
-mod anthropic_profile;
-#[path = "semantic/anthropic_semantics.rs"]
-mod anthropic_semantics;
-#[path = "semantic/billing_modal_usage.rs"]
-mod billing_modal_usage;
-#[path = "semantic/cache_prefix.rs"]
-mod cache_prefix;
-#[path = "semantic/cache_projection.rs"]
-mod cache_projection;
-#[path = "semantic/chat_logprobs.rs"]
-mod chat_logprobs;
-#[path = "semantic/chat_media.rs"]
-mod chat_media;
-#[path = "semantic/chat_wire.rs"]
-mod chat_wire;
-#[path = "semantic/citation_bindings.rs"]
-mod citation_bindings;
-#[path = "semantic/client_carrier.rs"]
-mod client_carrier;
-#[path = "semantic/client_managed.rs"]
-mod client_managed;
-#[path = "semantic/client_managed_composition.rs"]
-mod client_managed_composition;
-#[path = "semantic/configuration_revisions.rs"]
-mod configuration_revisions;
-#[path = "semantic/context_transforms.rs"]
-mod context_transforms;
-#[path = "semantic/continuation.rs"]
-mod continuation;
-#[path = "semantic/embeddings.rs"]
-mod embeddings;
-#[path = "semantic/extensions.rs"]
-mod extensions;
-#[path = "semantic/files.rs"]
-mod files;
-#[path = "semantic/function_events.rs"]
-mod function_events;
-#[path = "semantic/history_dependencies.rs"]
-mod history_dependencies;
-#[path = "semantic/image_binding.rs"]
-mod image_binding;
-#[path = "semantic/image_controls.rs"]
-mod image_controls;
-#[path = "semantic/image_generation.rs"]
-mod image_generation;
-#[path = "semantic/images.rs"]
-mod images;
-#[path = "semantic/message_envelopes.rs"]
-mod message_envelopes;
-#[path = "semantic/message_ownership_owner.rs"]
-mod message_ownership_owner;
-#[path = "semantic/modelbest.rs"]
-mod modelbest;
-#[path = "semantic/open_decoding.rs"]
-mod open_decoding;
-#[path = "semantic/openrouter_images.rs"]
-mod openrouter_images;
-#[path = "semantic/parsed_replay.rs"]
-mod parsed_replay;
-#[path = "semantic/phase.rs"]
-mod phase;
-#[path = "semantic/projection.rs"]
-mod projection;
-#[path = "semantic/provider_observations.rs"]
-mod provider_observations;
-#[path = "semantic/provider_profiles.rs"]
-mod provider_profiles;
-#[path = "semantic/reasoning.rs"]
-mod reasoning;
-#[path = "semantic/reasoning_controls.rs"]
-mod reasoning_controls;
-#[path = "semantic/replay_attachments.rs"]
-mod replay_attachments;
-#[path = "semantic/replay_carrier.rs"]
-mod replay_carrier;
-#[path = "semantic/replay_formats.rs"]
-mod replay_formats;
-#[path = "semantic/replay_groups.rs"]
-mod replay_groups;
-#[path = "semantic/replay_ownership.rs"]
-mod replay_ownership;
-#[path = "semantic/request_edits.rs"]
-mod request_edits;
-#[path = "semantic/resource_table.rs"]
-mod resource_table;
-#[path = "semantic/response.rs"]
-mod response;
-#[path = "semantic/router_adapter.rs"]
-mod router_adapter;
+#[path = "semantic/anthropic.rs"]
+mod anthropic;
+#[path = "semantic/chat.rs"]
+mod chat;
+#[path = "semantic/history.rs"]
+mod history;
+#[path = "semantic/media.rs"]
+mod media;
+#[path = "semantic/messages.rs"]
+mod messages;
+#[path = "semantic/providers.rs"]
+mod providers;
+#[path = "semantic/reasoning_replay.rs"]
+mod reasoning_replay;
 #[path = "semantic/schema.rs"]
 mod schema;
-#[path = "semantic/schema_documents.rs"]
-mod schema_documents;
-#[path = "semantic/scoped_identity.rs"]
-mod scoped_identity;
-#[path = "semantic/scoped_usage.rs"]
-mod scoped_usage;
-#[path = "semantic/speech.rs"]
-mod speech;
-#[path = "semantic/structured_events.rs"]
-mod structured_events;
-#[path = "semantic/subscription_accounting.rs"]
-mod subscription_accounting;
-#[path = "semantic/text_admission.rs"]
-mod text_admission;
-#[path = "semantic/text_events.rs"]
-mod text_events;
-#[path = "semantic/text_profile.rs"]
-mod text_profile;
-#[path = "semantic/timestamps.rs"]
-mod timestamps;
-#[path = "semantic/tokenplan_asr.rs"]
-mod tokenplan_asr;
-#[path = "semantic/tokenplan_speech.rs"]
-mod tokenplan_speech;
-#[path = "semantic/tool_namespaces.rs"]
-mod tool_namespaces;
-#[path = "semantic/tool_result_errors.rs"]
-mod tool_result_errors;
-#[path = "semantic/tool_results.rs"]
-mod tool_results;
-#[path = "semantic/tools.rs"]
-mod tools;
-#[path = "semantic/turn_continuation.rs"]
-mod turn_continuation;
-#[path = "semantic/unreported_event_probabilities.rs"]
-mod unreported_event_probabilities;
-#[path = "semantic/usage_views.rs"]
-mod usage_views;
+#[path = "semantic/text.rs"]
+mod text;
+#[path = "semantic/tool_calls.rs"]
+mod tool_calls;
+#[path = "semantic/usage.rs"]
+mod usage;

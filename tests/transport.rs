@@ -12,14 +12,10 @@ mod body_lifecycle;
 mod chain;
 #[path = "transport/chat.rs"]
 mod chat;
-#[path = "transport/fallback_policy.rs"]
-mod fallback_policy;
 #[path = "transport/framing.rs"]
 mod framing;
-#[path = "transport/native_bindings.rs"]
-mod native_bindings;
-#[path = "transport/native_catalog.rs"]
-mod native_catalog;
+#[path = "transport/native.rs"]
+mod native;
 #[path = "transport/planning.rs"]
 mod planning;
 #[path = "transport/responses_sse.rs"]
