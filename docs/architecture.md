@@ -136,7 +136,8 @@ When Chat Completions cannot carry a semantic such as reasoning, MorphieCore fol
 | Pure codecs and lowering | No network, credentials or registry; encode from the final IR, never patch JSON afterwards |
 | Layered capabilities | Semantic capability, wire representation, execution properties and downstream promises are declared separately; public capability is not the union of candidates |
 | Legal candidates, pre-content fallback | Compiled order by default; trusted runtime ordering within the legal set; see §5 |
-| Held streams | Follow Magpie's user-validated held-stream design: hold until first content, keep clients alive with SSE comments, advance on pre-content errors and refusals |
+| Held streams | Follow the structure of Magpie's user-validated held-stream design: while another candidate could answer, hold until first content, keep clients alive with SSE comments, advance on pre-content errors. Decide on typed stream events and trusted bindings, not model-name or byte heuristics |
+| Refusals are answers | A safety refusal is delivered at any point and never retried on another credential or model |
 | Non-API 2xx is a failure | Classified like a 5xx before content is published |
 | Target affinity binds the exact credential | The binding names Endpoint, credential identity and upstream model; a different credential is a different cache domain. API keys are identified by binding plus an in-memory material fingerprint, OAuth by verified principal, so key rotation drops the binding and token refresh keeps it |
 | Minimal HTTP gateway | Loopback listener, single Bearer ingress auth, no inbound header pass-through |
