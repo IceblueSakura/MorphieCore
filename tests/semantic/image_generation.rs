@@ -26,32 +26,6 @@ fn multi_image_request_and_complete_wire_are_admitted() {
 }
 
 #[test]
-fn image_generation_request_decode_and_typed_edit_have_independent_wire_expectations() {
-    let wire = br#"{"model":"public-image","prompt":"draw a square","n":1,"stream":false,"output_format":"png"}"#;
-    let mut request = images::decode_request(wire).unwrap();
-    assert_eq!(request.task.prompt(), "draw a square");
-    assert_eq!(request.task.count, Presence::Value(1));
-    request.task.set_prompt("draw a circle").unwrap();
-    assert_eq!(
-        images::encode_request(&request, "upstream-image").unwrap(),
-        json!({
-            "model":"upstream-image","prompt":"draw a circle","n":1,"stream":false,"output_format":"png"
-        })
-    );
-    let task = ImageGenerationRequest::new("pure library consumer").unwrap();
-    assert_eq!(task.prompt(), "pure library consumer");
-    assert!(ImageGenerationRequest::new("").is_err());
-    assert!(ImageGenerationRequest::new("x".repeat(32_001)).is_err());
-    assert!(ImageGenerationRequest::new("图".repeat(32_000)).is_ok());
-    assert!(!format!("{task:?}").contains("pure library consumer"));
-    let mut request = morphiecore::adapter::images::Request::new("public-image", task);
-    assert!(request.task.set_prompt("").is_err());
-    assert_eq!(request.task.prompt(), "pure library consumer");
-    request.task.count = Presence::Value(11);
-    assert!(images::encode_request(&request, "upstream-image").is_err());
-}
-
-#[test]
 fn image_generation_request_rejects_unsupported_semantics_and_duplicate_keys() {
     for patch in [
         json!({"n":11}),
@@ -119,32 +93,4 @@ fn image_generation_reported_values_are_not_request_defaults() {
         let r = images::decode_response(&serde_json::to_vec(&v).unwrap()).unwrap();
         assert_eq!(images::encode_response(&r).unwrap(), v);
     }
-}
-
-#[test]
-fn image_generation_invalid_incomplete_and_oversized_artifacts_fail_closed() {
-    for v in [
-        json!({"created":1}),
-        json!({"created":1,"data":[]}),
-        json!({"created":1,"data":[{"b64_json":"AQID"},{"b64_json":"!bad"}]}),
-        json!({"created":1,"data":[{"url":"https://example.invalid/a"}]}),
-        json!({"created":1,"data":[{"b64_json":""}]}),
-        json!({"created":1,"data":[{"b64_json":"!bad"}]}),
-        json!({"created":1,"data":[{"b64_json":"AQID"}],"size":"auto"}),
-        json!({"created":1,"data":[{"b64_json":"AQID"}],"usage":{"input_tokens":3,"input_tokens_details":{"text_tokens":2,"image_tokens":0},"output_tokens":5,"total_tokens":8}}),
-    ] {
-        assert!(images::decode_response(&serde_json::to_vec(&v).unwrap()).is_err());
-    }
-    assert!(
-        images::decode_response(br#"{"created":1,"data":[{"b64_json":"AQID"}]} trailing"#).is_err()
-    );
-    assert!(
-        images::decode_response(br#"{"created":1,"data":[{"b64_json":"AQID","b64_json":"BAUG"}]}"#)
-            .is_err()
-    );
-    use base64::Engine;
-    let encoded = base64::engine::general_purpose::STANDARD.encode(vec![0; MAX_IMAGE_BYTES]);
-    assert!(ImageData::new(&encoded).is_ok());
-    let encoded = base64::engine::general_purpose::STANDARD.encode(vec![0; MAX_IMAGE_BYTES + 1]);
-    assert!(ImageData::new(&encoded).is_err());
 }

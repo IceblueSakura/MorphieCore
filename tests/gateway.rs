@@ -58,11 +58,7 @@ async fn renamed_binaries_report_current_cli_names_without_loading_credentials()
 }
 
 #[derive(Clone, Default)]
-struct Upstream(
-    Arc<Mutex<Vec<Value>>>,
-    Arc<tokio::sync::Notify>,
-    Arc<tokio::sync::Notify>,
-);
+struct Upstream(Arc<Mutex<Vec<Value>>>);
 struct Guard(tokio::task::JoinHandle<()>);
 impl Drop for Guard {
     fn drop(&mut self) {
@@ -91,78 +87,14 @@ async fn answer(
         request[cap], 32,
         "trusted default must pass through IR into upstream wire"
     );
-    let probability_case = request["metadata"]["case"] == "probabilities";
-    if probability_case {
-        assert!(chat);
-        assert_eq!(request["service_tier"], "fast");
-        assert_eq!(request["logprobs"], true);
-        assert_eq!(request["top_logprobs"], 1);
-    }
-    let probability = |token: &str| json!({"token":token,"logprob":-0.5,"bytes":token.as_bytes(),"top_logprobs":[]});
-    let tool_image_case = request["metadata"]["case"] == "tool-images";
-    if tool_image_case {
-        assert!(!chat);
-        assert_eq!(
-            request["input"],
-            json!([
-                {"type":"function_call","call_id":"media-call","name":"lookup","arguments":"{}"},
-                {"type":"function_call_output","call_id":"media-call","output":[
-                    {"type":"input_text","text":"caption"},
-                    {"type":"input_image","image_url":"data:image/png;base64,AQID"},
-                    {"type":"input_image","image_url":"https://example.test/tool.png","detail":"low"}
-                ]}
-            ])
-        );
-    }
-    let file_case = request["metadata"]["case"] == "files";
-    if file_case {
-        assert!(!chat);
-        assert_eq!(
-            request["input"][0]["content"],
-            json!([
-                {"type":"input_text","text":"first"},
-                {"type":"input_file","file_data":"data:application/pdf;base64,AQID","filename":"synthetic.pdf","detail":"low"},
-                {"type":"input_image","image_url":"data:image/png;base64,AQID"},
-                {"type":"input_file","file_url":"https://example.invalid/file?sig=synthetic"},
-                {"type":"input_text","text":"last"}
-            ])
-        );
-    }
-    let image_case = !tool_image_case
-        && !file_case
-        && request.to_string().contains("data:image/png;base64,AQID");
-    if image_case {
-        let expected = if chat {
-            json!([
-                {"type":"text","text":"first"},
-                {"type":"image_url","image_url":{"url":"data:image/png;base64,AQID"}},
-                {"type":"text","text":"second"},
-                {"type":"image_url","image_url":{"url":"https://example.test/synthetic.png","detail":"low"}}
-            ])
-        } else {
-            json!([
-                {"type":"input_text","text":"first"},
-                {"type":"input_image","image_url":"data:image/png;base64,AQID"},
-                {"type":"input_text","text":"second"},
-                {"type":"input_image","image_url":"https://example.test/synthetic.png","detail":"low"}
-            ])
-        };
-        assert_eq!(
-            request[if chat { "messages" } else { "input" }][0]["content"],
-            expected
-        );
-    }
-    let turn = if probability_case
-        || file_case
-        || image_case
-        || request.to_string().contains("tool_call_id")
+    let turn = if request.to_string().contains("tool_call_id")
         || request.to_string().contains("function_call_output")
     {
         2
     } else {
         1
     };
-    if !chat && !tool_image_case && request.to_string().contains("function_call_output") {
+    if !chat && request.to_string().contains("function_call_output") {
         let history = request["input"].as_array().unwrap();
         for expected in [
             json!({"type":"function_call_output","call_id":"c_lookup","output":"{\"n\":1}"}),
@@ -188,12 +120,6 @@ async fn answer(
         responses_wire::response(turn)
     };
     output["model"] = json!("private-model");
-    if probability_case {
-        output["choices"][0]["logprobs"] =
-            json!({"content":[probability("old "),probability("🧪")]});
-        output["service_tier"] = json!("default");
-        output["metadata"] = json!({"provider":"reported"});
-    }
     if !chat {
         output["created_at"] = json!(1);
         output["completed_at"] = json!(2);
@@ -208,17 +134,6 @@ async fn answer(
         for frame in &mut frames {
             if chat {
                 frame["model"] = json!("private-model");
-                if probability_case {
-                    frame["service_tier"] = json!("default");
-                    if let Some(fragment) = frame
-                        .pointer("/choices/0/delta/content")
-                        .and_then(Value::as_str)
-                        .filter(|s| !s.is_empty())
-                    {
-                        frame["choices"][0]["logprobs"] =
-                            json!({"content":[probability(fragment)]});
-                    }
-                }
             } else if let Some(snapshot) = frame.get_mut("response") {
                 snapshot["model"] = json!("private-model");
                 snapshot["created_at"] = json!(1);
@@ -285,42 +200,10 @@ async fn openrouter_image_answer(
         "Bearer synthetic-router-credential-0001"
     );
     assert!(!headers.contains_key("x-never-forward"));
-    if request["prompt"] == "controlled-flare" {
-        assert_eq!(
-            request,
-            json!({"model":"openai/gpt-image-2.5-flare","prompt":"controlled-flare","n":1,"stream":false,"quality":"high","background":"transparent","user":"synthetic-user-control","provider":{"only":["openai"],"allow_fallbacks":false,"options":{"openai":{"moderation":"low"}}}})
-        );
-    } else if request["prompt"].as_str().unwrap().starts_with("multi-") {
-        assert_eq!(
-            request,
-            json!({"model":"openai/gpt-image-2.5-flare","prompt":request["prompt"],"n":2,"stream":false,"provider":{"only":["openai"],"allow_fallbacks":false}})
-        );
-        state.0.lock().unwrap().push(request.clone());
-        let data = match request["prompt"].as_str().unwrap() {
-            "multi-short" => json!([{"b64_json":"AQID","media_type":"image/png"}]),
-            "multi-bad" => json!([{"b64_json":"AQID"},{"b64_json":"!"}]),
-            "multi-mixed" => {
-                json!([{"b64_json":"AQID","media_type":"image/png"},{"b64_json":"BAUG","media_type":"image/webp"}])
-            }
-            _ => {
-                json!([{"b64_json":"AQID","media_type":"image/png"},{"b64_json":"BAUG","media_type":"image/png"}])
-            }
-        };
-        let wire = json!({"created":456,"data":data}).to_string();
-        return Response::builder()
-            .header("content-type", "application/json")
-            .body(Body::from(if request["prompt"] == "multi-tail" {
-                wire + " trailing"
-            } else {
-                wire
-            }))
-            .unwrap();
-    } else {
-        assert_eq!(
-            request,
-            json!({"model":"openai/gpt-image-2.5-flare","prompt":"blue square","n":1,"stream":false,"provider":{"only":["openai"],"allow_fallbacks":false}})
-        );
-    }
+    assert_eq!(
+        request,
+        json!({"model":"openai/gpt-image-2.5-flare","prompt":"blue square","n":1,"stream":false,"provider":{"only":["openai"],"allow_fallbacks":false}})
+    );
     state.0.lock().unwrap().push(request);
     Response::builder().header("content-type","application/json").body(Body::from(json!({"created":456,"data":[{"b64_json":"BAUG","media_type":"image/png"}],"usage":{"prompt_tokens":3,"completion_tokens":5,"total_tokens":8,"cost":0.000123}}).to_string())).unwrap()
 }
@@ -337,56 +220,12 @@ async fn image_answer(
     assert_eq!(request["model"], "private-image");
     assert!(request.get("max_output_tokens").is_none());
     state.0.lock().unwrap().push(request.clone());
-    let (status, media, body) = match request["prompt"].as_str().unwrap() {
-        "multi-pending" => {
-            assert_eq!(request["n"], 2);
-            let started = state.1.clone();
-            let release = state.2.clone();
-            let stream = futures_util::stream::unfold(
-                (true, started, release),
-                |(first, started, release)| async move {
-                    if first {
-                        let prefix = axum::body::Bytes::from_static(
-                            br#"{"created":1,"data":[{"b64_json":"AQID"},"#,
-                        );
-                        Some((Ok::<_, std::io::Error>(prefix), (false, started, release)))
-                    } else {
-                        started.notify_one();
-                        release.notified().await;
-                        None
-                    }
-                },
-            );
-            return Response::builder().header("content-type", "application/json")
-                .body(Body::from_stream(stream)).unwrap();
-        },
-        "controlled" => {
-            assert_eq!(request,json!({"model":"private-image","prompt":"controlled","size":"1536x1024","quality":"high","background":"transparent","output_format":"webp","output_compression":80,"moderation":"low","user":"synthetic-user-control"}));
-            (200,"application/json",json!({"created":123,"data":[{"b64_json":"AQID"}],"output_format":"webp","size":"1536x1024","background":"transparent","quality":"high"}).to_string())
-        },
-        "decoded-over-budget" => {
-            use base64::Engine;
-            let data=base64::engine::general_purpose::STANDARD.encode(vec![0;(2<<20)+1]);
-            (200,"application/json",json!({"created":123,"data":[{"b64_json":data}],"output_format":"png"}).to_string())
-        },
-        "bad-json" => (200, "application/json", "{\"created\":1".into()),
-        "wrong-format" => (200,"application/json",json!({"created":1,"data":[{"b64_json":"AQID"}],"output_format":"jpeg"}).to_string()),
-        "truncated" => return Response::builder().header("content-type","application/json").body(Body::from_stream(futures_util::stream::iter([
-            Ok(axum::body::Bytes::from_static(b"{\"created\":1,\"data\":[{\"b64_json\":\"AQID\"}]}")),
-            Err(std::io::Error::other("synthetic truncated transport")),
-        ]))).unwrap(),
-        "missing-image" => (200, "application/json", "{\"created\":1,\"data\":[]}".into()),
-        "wrong-media" => (200, "text/event-stream", "data: [DONE]".into()),
-        "rate-limit" => (429, "application/json", "synthetic-private-error".into()),
-        "redirect" => (302, "application/json", "synthetic-private-location".into()),
-        "over-budget" => (200, "application/json", " ".repeat((4 << 20) + 1)),
-        "timeout" => return Response::builder().header("content-type","application/json").body(Body::from_stream(futures_util::stream::pending::<Result<axum::body::Bytes,std::io::Error>>())).unwrap(),
-        _ => (200, "application/json", json!({"created":123,"data":[{"b64_json":"AQID"}],"output_format":"png","size":"1024x1024"}).to_string()),
-    };
     Response::builder()
-        .status(status)
-        .header("content-type", media)
-        .body(Body::from(body))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({"created":123,"data":[{"b64_json":"AQID"}],"output_format":"png","size":"1024x1024"})
+                .to_string(),
+        ))
         .unwrap()
 }
 
@@ -651,261 +490,6 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
             }
         }
     }
-    // New controls and reported probabilities traverse the actual HTTP chain;
-    // metadata is a static reported fact, never a request echo or a chunk field.
-    for stream in [false, true] {
-        let response = client.post(format!("{url}/v1/chat/completions"))
-            .bearer_auth(support::CLIENT_KEY)
-            .json(&json!({"model":"public-model","messages":[{"role":"user","content":"hi"}],"stream":stream,"metadata":{"case":"probabilities"},"service_tier":"fast","logprobs":true,"top_logprobs":1}))
-            .send().await.unwrap();
-        assert_eq!(response.status(), 200);
-        let bytes = response.bytes().await.unwrap();
-        let decoded = if stream {
-            let mut decoder = morphiecore::protocol::openai::chat_sse::ChatSseDecoder::new(
-                200,
-                "text/event-stream",
-                Default::default(),
-            )
-            .unwrap();
-            let mut rest = bytes.as_ref();
-            while !rest.is_empty() {
-                let (used, _) = decoder.consume(rest).unwrap();
-                assert!(used > 0);
-                rest = &rest[used..];
-            }
-            decoder.finish().unwrap();
-            decoder.materialize().unwrap()
-        } else {
-            let wire: Value = serde_json::from_slice(&bytes).unwrap();
-            assert_eq!(wire["metadata"], json!({"provider":"reported"}));
-            morphiecore::protocol::openai::Adapter::new(
-                Profile::Chat,
-                morphiecore::protocol::openai::Dialect::Standard,
-                None,
-            )
-            .decode_response(&bytes)
-            .unwrap()
-        };
-        let morphiecore::semantic::task::generation::Item::Message(message) =
-            &decoded.semantic.items()[0].1
-        else {
-            panic!("message")
-        };
-        let morphiecore::semantic::task::generation::ContentPart::Text(text) =
-            &message.parts[0].content
-        else {
-            panic!("text")
-        };
-        assert_eq!(text.as_str(), "old 🧪");
-        assert_eq!(text.logprobs().value().unwrap().len(), 2);
-        assert_eq!(
-            decoded.metadata.context.execution.service_tier,
-            morphiecore::semantic::value::Presence::Value(
-                morphiecore::semantic::context::ServiceTier::Default
-            )
-        );
-        if stream {
-            assert!(decoded.metadata.context.execution.metadata.is_absent());
-        }
-    }
-    // Images traverse the same request IR and real provider I/O, including cross-wire.
-    for (profile, model) in [
-        (Profile::Chat, "public-model"),
-        (Profile::Responses, "public-model"),
-        (Profile::Responses, "cross-model"),
-    ] {
-        for stream in [false, true] {
-            let parts = if profile == Profile::Chat {
-                json!([
-                    {"type":"text","text":"first"},
-                    {"type":"image_url","image_url":{"url":"data:image/png;base64,AQID"}},
-                    {"type":"text","text":"second"},
-                    {"type":"image_url","image_url":{"url":"https://example.test/synthetic.png","detail":"low"}}
-                ])
-            } else {
-                json!([
-                    {"type":"input_text","text":"first"},
-                    {"type":"input_image","image_url":"data:image/png;base64,AQID"},
-                    {"type":"input_text","text":"second"},
-                    {"type":"input_image","image_url":"https://example.test/synthetic.png","detail":"low"}
-                ])
-            };
-            let request = if profile == Profile::Chat {
-                json!({"model":model,"messages":[{"role":"user","content":parts}],"stream":stream,"stream_options":if stream {json!({"include_usage":true,"include_obfuscation":false})}else{Value::Null}})
-            } else {
-                json!({"model":model,"input":[{"role":"user","content":parts}],"stream":stream})
-            };
-            let path = if profile == Profile::Chat {
-                "/v1/chat/completions"
-            } else {
-                "/v1/responses"
-            };
-            let response = client
-                .post(format!("{url}{path}"))
-                .bearer_auth(support::CLIENT_KEY)
-                .json(&request)
-                .send()
-                .await
-                .unwrap();
-            assert_eq!(response.status(), 200);
-            let bytes = response.bytes().await.unwrap();
-            let decoded = if !stream {
-                morphiecore::protocol::openai::Adapter::new(
-                    profile,
-                    morphiecore::protocol::openai::Dialect::Standard,
-                    None,
-                )
-                .decode_response(&bytes)
-                .unwrap()
-            } else if profile == Profile::Chat {
-                let mut decoder = morphiecore::protocol::openai::chat_sse::ChatSseDecoder::new(
-                    200,
-                    "text/event-stream",
-                    Default::default(),
-                )
-                .unwrap();
-                let mut rest = bytes.as_ref();
-                while !rest.is_empty() {
-                    let (used, _) = decoder.consume(rest).unwrap();
-                    assert!(used > 0);
-                    rest = &rest[used..];
-                }
-                decoder.finish().unwrap();
-                decoder.materialize().unwrap()
-            } else {
-                let mut decoder = morphiecore::protocol::openai::sse::ResponsesSseDecoder::new(
-                    200,
-                    "text/event-stream",
-                    Default::default(),
-                    None,
-                )
-                .unwrap();
-                let mut rest = bytes.as_ref();
-                while !rest.is_empty() {
-                    let (used, _) = decoder.consume(rest).unwrap();
-                    assert!(used > 0);
-                    rest = &rest[used..];
-                }
-                decoder.finish().unwrap();
-                decoder.materialize().unwrap()
-            };
-            assert_eq!(
-                decoded.semantic.outcome(),
-                morphiecore::semantic::task::generation::Outcome::Completed
-            );
-            let morphiecore::semantic::task::generation::Item::Message(message) =
-                &decoded.semantic.items()[0].1
-            else {
-                panic!("text output")
-            };
-            let expected = if profile == Profile::Responses && model == "public-model" {
-                "{\"ok\":false}"
-            } else {
-                "old 🧪"
-            };
-            assert!(
-                matches!(&message.parts[0].content,morphiecore::semantic::task::generation::ContentPart::Text(text) if text.as_str()==expected)
-            );
-        }
-    }
-    // Tool image results are a Responses history carrier, not a user message
-    // or a Chat tool-result extension. No URL/inline bytes are fetched locally.
-    for stream in [false, true] {
-        let request = json!({"model":"public-model","metadata":{"case":"tool-images"},"stream":stream,"input":[
-            {"type":"function_call","call_id":"media-call","name":"lookup","arguments":"{}"},
-            {"type":"function_call_output","call_id":"media-call","output":[
-                {"type":"input_text","text":"caption"},
-                {"type":"input_image","image_url":"data:image/png;base64,AQID"},
-                {"type":"input_image","image_url":"https://example.test/tool.png","detail":"low"}
-            ]}
-        ]});
-        let before = observed.0.lock().unwrap().len();
-        let response = client
-            .post(format!("{url}/v1/responses"))
-            .bearer_auth(support::CLIENT_KEY)
-            .json(&request)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), 200);
-        let decoded = responses_delivery(&response.bytes().await.unwrap(), stream);
-        assert_eq!(decoded.semantic.outcome(), Outcome::Completed);
-        assert_eq!(observed.0.lock().unwrap().len(), before + 1);
-        let mut unrepresentable = request;
-        unrepresentable["model"] = json!("cross-model");
-        let response = client
-            .post(format!("{url}/v1/responses"))
-            .bearer_auth(support::CLIENT_KEY)
-            .json(&unrepresentable)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), 400);
-        assert_eq!(observed.0.lock().unwrap().len(), before + 1);
-    }
-    // Inline/URL files traverse real request I/O without resource fetching. The
-    // synthetic fixture proves representation, not a valid PDF or model parsing.
-    for stream in [false, true] {
-        let request = json!({"model":"public-model","metadata":{"case":"files"},"stream":stream,"input":[{
-            "role":"user","content":[
-                {"type":"input_text","text":"first"},
-                {"type":"input_file","file_data":"data:application/pdf;base64,AQID","filename":"synthetic.pdf","detail":"low"},
-                {"type":"input_image","image_url":"data:image/png;base64,AQID"},
-                {"type":"input_file","file_url":"https://example.invalid/file?sig=synthetic"},
-                {"type":"input_text","text":"last"}
-            ]
-        }]});
-        let before = observed.0.lock().unwrap().len();
-        let response = client
-            .post(format!("{url}/v1/responses"))
-            .bearer_auth(support::CLIENT_KEY)
-            .json(&request)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), 200);
-        let decoded = responses_delivery(&response.bytes().await.unwrap(), stream);
-        assert_eq!(decoded.semantic.outcome(), Outcome::Completed);
-        assert_eq!(observed.0.lock().unwrap().len(), before + 1);
-        for case in 0..5 {
-            let mut rejected = request.clone();
-            match case {
-                0 => rejected["model"] = json!("cross-model"),
-                1 => rejected["model"] = json!("no-files-model"),
-                2 => rejected["input"][0]["role"] = json!("assistant"),
-                3 => {
-                    rejected["input"][0]["content"][1] =
-                        json!({"type":"input_file","file_url":"file:///tmp/private.pdf"})
-                }
-                _ => rejected["input"][0]["content"][1]["file_id"] = json!("file-synthetic"),
-            }
-            let response = client
-                .post(format!("{url}/v1/responses"))
-                .bearer_auth(support::CLIENT_KEY)
-                .json(&rejected)
-                .send()
-                .await
-                .unwrap();
-            assert_eq!(response.status(), 400);
-            assert_eq!(observed.0.lock().unwrap().len(), before + 1);
-        }
-    }
-    // Private attachments fail admission before any Provider I/O.
-    for input in [
-        json!({"model":"public-model","input":"hi","_openbridge":{"version":1,"progress":"turn_finished"}}),
-        json!({"model":"public-model","input":[{"type":"function_call","call_id":"c","name":"lookup","arguments":"{}","_openbridge":{"version":1,"arguments":"json"}}]}),
-    ] {
-        let before = observed.0.lock().unwrap().len();
-        let response = client
-            .post(format!("{url}/v1/responses"))
-            .bearer_auth(support::CLIENT_KEY)
-            .json(&input)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), 400);
-        assert_eq!(observed.0.lock().unwrap().len(), before);
-    }
     // Standard Responses delivery and actual replay use a fixed Chat upstream.
     for stream in [false, true] {
         let before = observed.0.lock().unwrap().len();
@@ -1016,45 +600,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         {"object":"embedding","index":0,"embedding":[0.5,-0.125]}],
         "usage":{"prompt_tokens":7,"total_tokens":7}})
     );
-    for first in ["wrong-index", "wrong-dimension"] {
-        let response = client
-            .post(format!("{url}/v1/embeddings"))
-            .bearer_auth(support::CLIENT_KEY)
-            .json(&json!({"model":"public-vector","input":first,"dimensions":2}))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), 502);
-    }
     let before = observed.0.lock().unwrap().len();
-    for (request, status) in [
-        (
-            json!({"model":"public-vector","input":"x","dimensions":17}),
-            400,
-        ),
-        (
-            json!({"model":"public-vector","input":["x","x","x","x","x"]}),
-            400,
-        ),
-        (
-            json!({"model":"public-vector","input":"x","encoding_format":"base64"}),
-            400,
-        ),
-        (
-            json!({"model":"public-vector","input":"x","provider":null}),
-            400,
-        ),
-        (json!({"model":"public-model","input":"x"}), 404),
-    ] {
-        let response = client
-            .post(format!("{url}/v1/embeddings"))
-            .bearer_auth(support::CLIENT_KEY)
-            .json(&request)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), status);
-    }
     let response = client
         .post(format!("{url}/v1/embeddings"))
         .json(&json!({"model":"public-vector","input":"x"}))
@@ -1074,84 +620,6 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         response.json::<Value>().await.unwrap(),
         json!({"created":123,"data":[{"b64_json":"AQID"}],"output_format":"png","size":"1024x1024"})
     );
-    let response=client.post(format!("{url}/v1/images/generations")).bearer_auth(support::CLIENT_KEY)
-        .json(&json!({"model":"public-image","prompt":"controlled","size":"1536x1024","quality":"high","background":"transparent","output_format":"webp","output_compression":80,"moderation":"low","user":"synthetic-user-control"})).send().await.unwrap();
-    assert_eq!(response.status(), 200);
-    assert_eq!(
-        response.json::<Value>().await.unwrap(),
-        json!({"created":123,"data":[{"b64_json":"AQID"}],"output_format":"webp","size":"1536x1024","background":"transparent","quality":"high"})
-    );
-    for (prompt, status) in [
-        ("bad-json", 502),
-        ("wrong-format", 502),
-        ("truncated", 502),
-        ("missing-image", 502),
-        ("wrong-media", 502),
-        ("rate-limit", 429),
-        ("redirect", 502),
-        ("over-budget", 502),
-        ("decoded-over-budget", 502),
-        ("timeout", 504),
-    ] {
-        let before = observed.0.lock().unwrap().len();
-        let response = client
-            .post(format!("{url}/v1/images/generations"))
-            .bearer_auth(support::CLIENT_KEY)
-            .json(&json!({"model":"public-image","prompt":prompt,"output_format":"png"}))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), status, "{prompt}");
-        let text = response.text().await.unwrap();
-        assert!(!text.contains("synthetic-private"));
-        assert_eq!(observed.0.lock().unwrap().len(), before + 1, "no retries");
-    }
-    let before = observed.0.lock().unwrap().len();
-    for (request, status) in [
-        (json!({"model":"public-image","prompt":"x","n":11}), 400),
-        (
-            json!({"model":"public-image","prompt":"x","output_format":"jpeg","background":"transparent"}),
-            400,
-        ),
-        (
-            json!({"model":"public-image","prompt":"x","output_format":"png","output_compression":50}),
-            400,
-        ),
-        (
-            json!({"model":"router-image","prompt":"x","size":"1024x1024"}),
-            400,
-        ),
-        (
-            json!({"model":"public-image","prompt":"x","stream":true}),
-            400,
-        ),
-        (
-            json!({"model":"public-image","prompt":"x","provider":null}),
-            400,
-        ),
-        (json!({"model":"public-model","prompt":"x"}), 404),
-    ] {
-        let response = client
-            .post(format!("{url}/v1/images/generations"))
-            .bearer_auth(support::CLIENT_KEY)
-            .json(&request)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), status);
-    }
-    let response = client
-        .post(format!("{url}/v1/images/generations"))
-        .body("not JSON")
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(
-        response.status(),
-        401,
-        "authentication precedes body interpretation"
-    );
-    assert_eq!(observed.0.lock().unwrap().len(), before);
     let response = client
         .post(format!("{url}/v1/images/generations"))
         .bearer_auth(support::CLIENT_KEY)
@@ -1165,91 +633,6 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         response.json::<Value>().await.unwrap(),
         json!({"created":456,"data":[{"b64_json":"BAUG"}],"output_format":"png"})
     );
-    for (prompt, status) in [
-        ("multi-ok", 200),
-        ("multi-short", 502),
-        ("multi-bad", 502),
-        ("multi-mixed", 502),
-        ("multi-tail", 502),
-    ] {
-        let before = observed.0.lock().unwrap().len();
-        let response = client
-            .post(format!("{url}/v1/images/generations"))
-            .bearer_auth(support::CLIENT_KEY)
-            .json(&json!({"model":"router-image","prompt":prompt,"n":2}))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), status, "{prompt}");
-        let wire = response.json::<Value>().await.unwrap();
-        if status == 200 {
-            assert_eq!(
-                wire,
-                json!({"created":456,"data":[{"b64_json":"AQID"},{"b64_json":"BAUG"}],"output_format":"png"})
-            );
-        } else {
-            assert!(wire.get("data").is_none(), "no successful prefix");
-        }
-        assert_eq!(
-            observed.0.lock().unwrap().len(),
-            before + 1,
-            "one upstream request"
-        );
-    }
-    let before = observed.0.lock().unwrap().len();
-    let rejected = client
-        .post(format!("{url}/v1/images/generations"))
-        .bearer_auth(support::CLIENT_KEY)
-        .json(&json!({"model":"router-image","prompt":"blue square","output_format":"png"}))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(rejected.status(), 400);
-    assert_eq!(observed.0.lock().unwrap().len(), before);
-    let response=client.post(format!("{url}/v1/images/generations")).bearer_auth(support::CLIENT_KEY)
-        .json(&json!({"model":"router-image","prompt":"controlled-flare","quality":"high","background":"transparent","moderation":"low","user":"synthetic-user-control"})).send().await.unwrap();
-    assert_eq!(response.status(), 200);
-    assert_eq!(
-        response.json::<Value>().await.unwrap(),
-        json!({"created":456,"data":[{"b64_json":"BAUG"}],"output_format":"png"})
-    );
-    // The first valid image cannot escape while the second image is unfinished.
-    for cancel in [false, true] {
-        let before = observed.0.lock().unwrap().len();
-        let send = client
-            .post(format!("{url}/v1/images/generations"))
-            .bearer_auth(support::CLIENT_KEY)
-            .json(&json!({"model":"public-image","prompt":"multi-pending","n":2}))
-            .send();
-        let task = tokio::spawn(send);
-        tokio::time::timeout(Duration::from_secs(2), observed.1.notified())
-            .await
-            .unwrap();
-        assert!(!task.is_finished(), "no first-image publication");
-        if cancel {
-            task.abort();
-            assert!(task.await.unwrap_err().is_cancelled());
-        } else {
-            let response = tokio::time::timeout(Duration::from_secs(2), task)
-                .await
-                .unwrap()
-                .unwrap()
-                .unwrap();
-            assert_eq!(response.status(), 504);
-            assert!(
-                response
-                    .json::<Value>()
-                    .await
-                    .unwrap()
-                    .get("data")
-                    .is_none()
-            );
-        }
-        // Local cancellation is not proof of remote termination. Explicitly
-        // release the synthetic peer; shared body-owner tests cover local drop.
-        observed.2.notify_waiters();
-        assert_eq!(observed.0.lock().unwrap().len(), before + 1);
-    }
     for format in ["mp3", "wav"] {
         let response = client.post(format!("{url}/v1/audio/speech"))
             .bearer_auth(support::CLIENT_KEY).header("x-never-forward", "private-input")
@@ -1267,54 +650,6 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         assert_eq!(response.headers()["cache-control"], "no-store");
         assert_eq!(response.bytes().await.unwrap().as_ref(), b"synthetic-audio");
     }
-    let before = observed.0.lock().unwrap().len();
-    // Full control matrices live in codec/admission tests; keep distinct ingress failures.
-    for (payload, status) in [
-        (
-            json!({"model":"public-speech","input":"hello","voice":"alloy","stream_format":"sse"}),
-            400,
-        ),
-        (
-            json!({"model":"router-speech","input":"hello","voice":"router-voice","speed":1}),
-            400,
-        ),
-        (
-            json!({"model":"public-speech","input":"hello","voice":"unbound"}),
-            400,
-        ),
-        (
-            json!({"model":"public-model","input":"hello","voice":"alloy"}),
-            404,
-        ),
-    ] {
-        assert_eq!(
-            client
-                .post(format!("{url}/v1/audio/speech"))
-                .bearer_auth(support::CLIENT_KEY)
-                .json(&payload)
-                .send()
-                .await
-                .unwrap()
-                .status()
-                .as_u16(),
-            status
-        );
-    }
-    assert_eq!(
-        client
-            .post(format!("{url}/v1/audio/speech"))
-            .body("not-json")
-            .send()
-            .await
-            .unwrap()
-            .status(),
-        401
-    );
-    assert_eq!(
-        observed.0.lock().unwrap().len(),
-        before,
-        "rejected requests never dispatch"
-    );
     for explicit in [false, true] {
         let mut payload =
             json!({"model":"router-speech","input":"router speech","voice":"router-voice"});

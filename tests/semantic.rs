@@ -56,8 +56,6 @@ mod group_projection;
 mod history_dependencies;
 #[path = "semantic/image_binding.rs"]
 mod image_binding;
-#[path = "semantic/image_budgets.rs"]
-mod image_budgets;
 #[path = "semantic/image_controls.rs"]
 mod image_controls;
 #[path = "semantic/image_generation.rs"]

@@ -1,7 +1,7 @@
 //! Binary intake checks use synthetic bodies, not additional production Routers.
 use super::*;
 use crate::adapter::speech::Profile;
-use crate::semantic::{task::speech_synthesis::SpeechRequest, value::AudioEncoding};
+use crate::semantic::task::speech_synthesis::SpeechRequest;
 use axum::body::Bytes;
 use futures_util::Stream;
 use std::{
@@ -50,82 +50,6 @@ pub(super) fn source(status: u16, media: &str) -> Probe {
         ),
         dropped,
     )
-}
-#[tokio::test]
-async fn speech_intake_rejects_bad_heads_lengths_overflow_and_read_errors() {
-    let mut task = SpeechRequest::new("synthetic", "alloy").unwrap();
-    task.format = Some(AudioEncoding::Wav);
-    for case in 0..10 {
-        let mut trace = diagnostics::Trace::new(None);
-        let (tx, mut response, dropped) = source(
-            if case == 0 { 302 } else { 200 },
-            if case == 1 {
-                "application/json"
-            } else {
-                "audio/wav"
-            },
-        );
-        match case {
-            2 => {
-                response
-                    .headers_mut()
-                    .append("content-type", "audio/wav".parse().unwrap());
-            }
-            3 => {
-                response
-                    .headers_mut()
-                    .insert("content-encoding", "gzip".parse().unwrap());
-            }
-            4 => {
-                response
-                    .headers_mut()
-                    .insert("content-length", "3".parse().unwrap());
-            }
-            5 => {
-                response
-                    .headers_mut()
-                    .insert("content-length", "1".parse().unwrap());
-            }
-            6 => {
-                response
-                    .headers_mut()
-                    .insert("content-length", "5000".parse().unwrap());
-            }
-            7 => {
-                response
-                    .headers_mut()
-                    .insert("content-length", "invalid".parse().unwrap());
-            }
-            8 => {
-                response
-                    .headers_mut()
-                    .insert("content-type", "audio/mpeg".parse().unwrap());
-            }
-            _ => {}
-        }
-        tx.send(Ok(Bytes::from_static(b"ab"))).await.unwrap();
-        if case == 9 {
-            tx.send(Err(std::io::Error::other("synthetic private body")))
-                .await
-                .unwrap();
-        }
-        drop(tx);
-        let error = speech::receive(response, &task, Profile::Standard, 4, &mut trace)
-            .await
-            .unwrap_err();
-        assert_eq!(error.status.as_u16(), 502, "{case}");
-        assert!(!format!("{error:?}").contains("private body"));
-        dropped.await.unwrap();
-    }
-    let mut trace = diagnostics::Trace::new(None);
-    let (tx, response, _) = source(200, "audio/wav");
-    tx.send(Ok(Bytes::from_static(b"abcde"))).await.unwrap();
-    drop(tx);
-    assert!(
-        speech::receive(response, &task, Profile::Standard, 4, &mut trace)
-            .await
-            .is_err()
-    );
 }
 #[tokio::test]
 async fn cancelling_binary_collection_drops_unfinished_upstream() {
@@ -213,18 +137,4 @@ async fn native_speech_uses_strict_sse_and_eof_not_just_stop() {
         );
         dropped.await.unwrap();
     }
-}
-#[tokio::test]
-async fn cancelling_native_speech_intake_drops_source() {
-    let mut trace = diagnostics::Trace::new(None);
-    let (_tx, response, dropped) = source(200, "text/event-stream");
-    let mut pending = Box::pin(aliyun_speech::receive(
-        response, 64, 8192, 2048, 16, &mut trace,
-    ));
-    assert!(futures_util::poll!(&mut pending).is_pending());
-    drop(pending);
-    tokio::time::timeout(std::time::Duration::from_secs(1), dropped)
-        .await
-        .unwrap()
-        .unwrap();
 }

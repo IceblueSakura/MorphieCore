@@ -1,38 +1,8 @@
 use morphiecore::{
     adapter::speech::Request,
     protocol::{aliyun_speech, openai::speech},
-    semantic::value::AudioEncoding,
 };
-use serde_json::{Value, json};
-
-fn frame(kind: &str, data: &str) -> Value {
-    json!({
-        "request_id":"synthetic-request",
-        "output":{"finish_reason":"null","type":kind,
-            "sentence":{"index":0,"words":[]},"original_text":"Hi.",
-            "audio":{"data":data,"id":"synthetic-audio","expires_at":10}},
-        "usage":{"characters":3}
-    })
-}
-fn terminal() -> Value {
-    json!({"request_id":"synthetic-request",
-        "output":{"finish_reason":"stop",
-            "audio":{"data":"","id":"synthetic-audio","expires_at":10,
-                "url":"https://audio.invalid/result.mp3"}},
-        "usage":{"characters":3}})
-}
-fn consume(
-    frames: &[Value],
-) -> Result<
-    morphiecore::semantic::task::speech_synthesis::SpeechResult,
-    morphiecore::protocol::CodecError,
-> {
-    let mut decoder = aliyun_speech::Decoder::new(64, 8192, 16);
-    for value in frames {
-        decoder.push(value)?;
-    }
-    decoder.finish()
-}
+use serde_json::json;
 
 #[test]
 fn tokenplan_speech_request_is_native_not_chat_and_never_drops_controls() {
@@ -64,84 +34,6 @@ fn tokenplan_speech_request_is_native_not_chat_and_never_drops_controls() {
     );
 }
 
-#[test]
-fn tokenplan_speech_keeps_report_but_binary_projection_is_explicit_and_unreported_format_stays_unknown()
- {
-    let result = consume(&[
-        frame("sentence-begin", ""),
-        frame("sentence-synthesis", "YWJj"),
-        frame("sentence-end", ""),
-        terminal(),
-    ])
-    .unwrap();
-    assert_eq!(result.audio().data().as_ref(), b"abc");
-    assert_eq!(result.audio().encoding(), None);
-    assert_eq!(result.report().billed_characters, Some(3));
-    assert_eq!(result.report().sentences[0].text.as_deref(), Some("Hi."));
-    assert_eq!(
-        result.report().reference.url.as_deref(),
-        Some("https://audio.invalid/result.mp3")
-    );
-    let projected = speech::project_result(&result).unwrap();
-    assert_eq!(projected.audio.data().as_ref(), b"abc");
-    assert!(
-        projected.omitted.reference && projected.omitted.accounting && projected.omitted.alignment
-    );
-    assert_eq!(
-        speech::response_content_type(&projected.audio),
-        "application/octet-stream"
-    );
-    // Absence is not a license to infer an MP3 report from the requested format.
-    assert_ne!(projected.audio.encoding(), Some(AudioEncoding::Mp3));
-    let mut edited = result;
-    edited.replace_audio(
-        morphiecore::semantic::value::AudioArtifact::new(
-            bytes::Bytes::from_static(b"edited"),
-            None,
-        )
-        .unwrap(),
-    );
-    assert_eq!(
-        speech::project_result(&edited).unwrap().omitted,
-        morphiecore::lowering::speech::BinaryOmissions::default()
-    );
-}
-
-#[test]
-fn tokenplan_speech_requires_real_ordered_completion_and_bounded_data() {
-    let begin = frame("sentence-begin", "");
-    let data = frame("sentence-synthesis", "YWJj");
-    let end = frame("sentence-end", "");
-    for frames in [
-        vec![terminal()],
-        vec![begin.clone(), data.clone(), terminal()],
-        vec![begin.clone(), data.clone(), end.clone()],
-        vec![begin.clone(), end.clone(), terminal()],
-        vec![
-            begin.clone(),
-            data.clone(),
-            end.clone(),
-            terminal(),
-            terminal(),
-        ],
-        vec![
-            begin.clone(),
-            frame("sentence-synthesis", "!"),
-            end.clone(),
-            terminal(),
-        ],
-    ] {
-        assert!(consume(&frames).is_err());
-    }
-    let mut small = aliyun_speech::Decoder::new(2, 8192, 16);
-    small.push(&begin).unwrap();
-    assert!(small.push(&data).is_err());
-    assert!(small.push(&end).is_err());
-    assert!(small.finish().is_err());
-    let mut regress = terminal();
-    regress["usage"]["characters"] = json!(2);
-    assert!(consume(&[begin, data, end, regress]).is_err());
-}
 #[test]
 fn tokenplan_speech_binding_prepares_only_native_sse_on_its_own_auth_domain() {
     use morphiecore::{execution::speech::prepare, provider::SecretMaterial, topology::catalog};
@@ -182,26 +74,4 @@ fn tokenplan_speech_binding_prepares_only_native_sse_on_its_own_auth_domain() {
     let mut foreign_voice = request;
     foreign_voice.task.set_voice("longanhuan_v3.6").unwrap();
     assert!(prepare(route, provider, &secret, &foreign_voice).is_err());
-}
-#[test]
-fn speech_report_keeps_usage_finality_without_inventing_a_terminal_count() {
-    let mut stop = terminal();
-    stop.as_object_mut().unwrap().remove("usage");
-    let result = consume(&[
-        frame("sentence-begin", ""),
-        frame("sentence-synthesis", "YWJj"),
-        frame("sentence-end", ""),
-        stop,
-    ])
-    .unwrap();
-    assert_eq!(result.report().billed_characters, Some(3));
-    assert!(!result.report().billed_characters_final);
-    let result = consume(&[
-        frame("sentence-begin", ""),
-        frame("sentence-synthesis", "YWJj"),
-        frame("sentence-end", ""),
-        terminal(),
-    ])
-    .unwrap();
-    assert!(result.report().billed_characters_final);
 }

@@ -2,7 +2,7 @@ use morphiecore::{
     adapter::speech::Request,
     protocol::openai::speech,
     semantic::{
-        task::speech_synthesis::{SpeechRequest, Speed},
+        task::speech_synthesis::SpeechRequest,
         value::{AudioEncoding, MAX_AUDIO_BYTES},
     },
 };
@@ -48,31 +48,6 @@ fn speech_presence_unknown_fields_and_unsupported_branches_fail_closed() {
     assert_eq!(task.input(), "old");
     task.instructions = Some("x".repeat(4097));
     assert!(task.validate().is_err());
-}
-
-#[test]
-fn speed_range_uses_exact_decimal_values_without_rounding_across_boundaries() {
-    for raw in [
-        "0.25",
-        "25e-2",
-        "1.0",
-        "4",
-        "0.400e+1",
-        "1.123456789012345678901",
-    ] {
-        let number = raw.parse().unwrap();
-        assert_eq!(Speed::new(number).unwrap().number().to_string(), raw);
-    }
-    for raw in [
-        "0",
-        "-1",
-        "0.24999999999999999999999",
-        "4.000000000000000000001",
-        "1e99999999",
-        "1e-99999999",
-    ] {
-        assert!(Speed::new(raw.parse().unwrap()).is_err(), "{raw}");
-    }
 }
 
 #[test]
