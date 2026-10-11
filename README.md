@@ -6,7 +6,7 @@ A model-routing gateway built on one unified IR. Clients speak OpenAI Responses 
 
 - **Working:** downstream Responses and Chat (JSON and SSE; text, tools, reasoning, images and some file inputs); upstream OpenAI Responses and Chat with several compatible dialects; Anthropic Messages upstream through explicitly compiled topology; file credentials with ordered pools; Provider-native cache affinity.
 - **Frozen:** the standalone Embeddings, Images, Speech and Transcription endpoints, and new Providers.
-- **Next:** default Anthropic product bindings, then Google generateContent and Interactions, then downstream Anthropic Messages. See the [roadmap](docs/roadmap.md).
+- **Next:** OpenAI clients on the native Messages binding, then held streams with pre-content fallback, then routing with cooldown and target affinity, then Google generateContent and Interactions, then downstream Anthropic Messages. See the [roadmap](docs/roadmap.md).
 
 ## Quick start
 
