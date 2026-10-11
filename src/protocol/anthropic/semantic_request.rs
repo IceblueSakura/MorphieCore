@@ -23,6 +23,10 @@ pub enum RequestRule {
     /// Claude 5.x models reject non-default `temperature` and `top_p`.
     OmitSampling,
     ProjectCallIds,
+    /// Opaque reasoning issued for another target is dropped.
+    OmitForeignReplay,
+    /// Reasoning without this target's signature is sent as assistant text, as pi does.
+    ReasoningAsText,
 }
 impl RequestRule {
     pub const fn name(self) -> &'static str {
@@ -32,6 +36,8 @@ impl RequestRule {
             Self::OmitReasoningContext => "messages.omit-reasoning-context.v1",
             Self::OmitSampling => "messages.omit-sampling.v1",
             Self::ProjectCallIds => "messages.project-call-ids.v1",
+            Self::OmitForeignReplay => "messages.omit-foreign-replay.v1",
+            Self::ReasoningAsText => "messages.reasoning-as-text.v1",
         }
     }
 }
@@ -213,6 +219,19 @@ pub(super) fn project(
                 .find(|(id, _)| id == owner)
                 .ok_or_else(unsupported)?
                 .1;
+            // Every turn converts alike, keeping the projection append-only.
+            if let Item::Reasoning(r) = item
+                && r.replay.is_none()
+            {
+                for (_, part) in &r.parts {
+                    let (ReasoningContent::Summary(t) | ReasoningContent::Text(t)) = part;
+                    if !t.as_str().trim().is_empty() {
+                        rules.insert(RequestRule::ReasoningAsText);
+                        blocks.push(Block::Text(t.as_str().into()));
+                    }
+                }
+                continue;
+            }
             blocks.extend(
                 item_blocks(*owner, item, request, fidelity, target, normalized, omitted)?
                     .into_iter()

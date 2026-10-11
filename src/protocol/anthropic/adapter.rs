@@ -82,6 +82,7 @@ impl TargetCaps {
         target: &ReplayTarget,
     ) -> Result<(Value, Vec<&'static str>), AdapterError> {
         let stripped = request.without_foreign_replay(Some(&target.origin()))?;
+        let foreign = stripped.is_some();
         let request = stripped.as_ref().unwrap_or(request);
         self.check_context(request)?;
         request.check_semantic(&self.semantics)?;
@@ -98,7 +99,12 @@ impl TargetCaps {
         if let Some(stream) = request.delivery.stream.value() {
             wire["stream"] = serde_json::json!(stream);
         }
-        Ok((wire, projection.rules.iter().map(|r| r.name()).collect()))
+        let mut rules = projection.rules;
+        if foreign {
+            rules.push(super::RequestRule::OmitForeignReplay);
+        }
+        rules.sort();
+        Ok((wire, rules.iter().map(|r| r.name()).collect()))
     }
     pub(crate) fn request_headers(
         &self,

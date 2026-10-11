@@ -349,7 +349,7 @@ fn native_messages_binding_activates_only_when_listed() {
 }
 
 #[test]
-fn codex_reasoning_controls_reach_the_native_binding_by_named_rules() {
+fn codex_history_reaches_the_native_binding_by_named_rules() {
     let boot = Fixture::from_lookup(|name| {
         Ok(match name {
             "client_key" => Some("synthetic-gateway-client-token-0001".into()),
@@ -433,6 +433,47 @@ fn codex_reasoning_controls_reach_the_native_binding_by_named_rules() {
         serde_json::json!({"type":"adaptive","display":"summarized"})
     );
     assert!(wire.get("output_config").is_none());
+    // Foreign opaque values are dropped; readable reasoning without this target's
+    // signature becomes assistant text in every turn.
+    let foreign = crate::protocol::replay_envelope::seal(
+        &crate::protocol::replay_envelope::issuer("openai", "gpt-6.1-sol"),
+        crate::semantic::task::generation::ReplayFormat::ResponsesEncrypted,
+        "synthetic-foreign-token",
+    )
+    .unwrap();
+    let reasoning = |id: &str, summary: &[&str], sealed: Option<&str>| {
+        let mut item = serde_json::json!({"type":"reasoning","id":id,"summary":summary
+            .iter().map(|text| serde_json::json!({"type":"summary_text","text":text})).collect::<Vec<_>>()});
+        if let Some(sealed) = sealed {
+            item["encrypted_content"] = serde_json::json!(sealed);
+        }
+        item
+    };
+    let mut history = vec![
+        serde_json::json!({"role":"user","content":"go"}),
+        reasoning("rs_1", &["Plan A"], Some(foreign.as_str())),
+        reasoning("rs_2", &[], Some(foreign.as_str())),
+        reasoning("rs_3", &["Plan B"], None),
+    ];
+    history.extend(call("call_2", "again"));
+    let (wire, rules) = prepare(serde_json::json!({"effort":"low"}), &history).unwrap();
+    assert_eq!(
+        wire["messages"],
+        serde_json::json!([
+            {"role":"user","content":[{"type":"text","text":"go"}]},
+            {"role":"assistant","content":[{"type":"text","text":"Plan A"},{"type":"text","text":"Plan B"},
+                {"type":"tool_use","id":"call_2","name":"lookup","input":{}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"call_2","content":"again"}]}
+        ])
+    );
+    assert_eq!(
+        rules,
+        [
+            "messages.omit-sampling.v1",
+            "messages.omit-foreign-replay.v1",
+            "messages.reasoning-as-text.v1",
+        ]
+    );
     // A client ID equal to a projected digest fails instead of merging two calls.
     input.truncate(3);
     input.extend(call(projected, "again"));
