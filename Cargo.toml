@@ -2,7 +2,7 @@
 name = "morphiecore"
 version = "0.1.0"
 edition = "2024"
-description = "分布式Agent Runtime的测试性路由网关"
+description = "Experimental routing gateway for a distributed Agent Runtime"
 license = "MIT"
 
 [dependencies]

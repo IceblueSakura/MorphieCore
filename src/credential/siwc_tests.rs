@@ -164,7 +164,7 @@ fn builtin_siwc_is_a_dynamic_browser_profile() {
     assert_eq!(siwc::APPLICATION_NAME, "MorphieCore");
     assert_eq!(
         siwc::APPLICATION_DESCRIPTION,
-        "分布式Agent Runtime的测试性路由网关"
+        "Experimental routing gateway for a distributed Agent Runtime"
     );
     let drivers = builtin_drivers(None).unwrap();
     assert!(
