@@ -98,9 +98,9 @@ When Chat Completions cannot carry a semantic such as reasoning, MorphieCore fol
 
 ## 5. Execution and delivery
 
-- Startup compiles Public Model → Route → ordered Endpoints. Requests cannot create or reorder candidates; each candidate projects independently from the same immutable IR.
-- Fallback is opt-in, happens only before anything is published downstream, and only for advanceable failures: connect/transport errors, timeouts, 5xx, locally unavailable credentials. 401/403 and protocol or projection errors do not advance.
-- Publishing the first downstream frame freezes the candidate; handing over the body commits; completion requires strict upstream EOF and the final hand-off. Later errors can only abort the body: no splicing another attempt, no fabricated success terminal.
+- Startup compiles Public Model → Route → the legal Endpoints. Business input cannot create candidates or name one; each candidate projects independently from the same immutable IR. Compiled order is the default; trusted runtime policy (cooldown, target affinity on gateway-observed executors) may reorder within the legal set. Fixed order once served cache affinity; it is not an invariant.
+- Fallback is opt-in, happens only before content is published downstream, and only for advanceable failures: connect/transport errors, timeouts, 5xx, locally unavailable credentials, and a 2xx whose body is not an API reply (an HTML page, an empty body, non-JSON under a JSON type). 401/403 and protocol or projection errors do not advance. The content boundary and the non-API 2xx rule land in roadmap Phase 2; today any published frame freezes and a non-API 2xx is a protocol error.
+- Publishing the first content frame freezes the candidate; handing over the body commits; completion requires strict upstream EOF and the final hand-off. Later errors can only abort the body: no splicing another attempt, no fabricated success terminal. Response headers, lifecycle-only frames and SSE comment keep-alives do not freeze the candidate.
 - Upstream SSE and downstream delivery are independent: JSON clients get a bounded aggregate, SSE clients get incremental delivery.
 - Bodies, frames, event counts and time are bounded. Client disconnect, timeout or shutdown cancels the upstream request.
 
@@ -135,7 +135,10 @@ When Chat Completions cannot carry a semantic such as reasoning, MorphieCore fol
 | Separate tasks | Generation, Embedding, Images, Speech and Transcription each have their own contract, not a universal message container |
 | Pure codecs and lowering | No network, credentials or registry; encode from the final IR, never patch JSON afterwards |
 | Layered capabilities | Semantic capability, wire representation, execution properties and downstream promises are declared separately; public capability is not the union of candidates |
-| Fixed candidates, pre-commit fallback | See §5 |
+| Legal candidates, pre-content fallback | Compiled order by default; trusted runtime ordering within the legal set; see §5 |
+| Held streams | Follow Magpie's user-validated held-stream design: hold until first content, keep clients alive with SSE comments, advance on pre-content errors and refusals |
+| Non-API 2xx is a failure | Classified like a 5xx before content is published |
+| Target affinity binds the exact credential | The binding names Endpoint, credential identity and upstream model; a different credential is a different cache domain |
 | Minimal HTTP gateway | Loopback listener, single Bearer ingress auth, no inbound header pass-through |
 | Open upstream decoding | Strict on known fields, ignore unknown ones |
 | Opaque envelope | No encryption or local proof; restore on same Provider and model, otherwise drop |
