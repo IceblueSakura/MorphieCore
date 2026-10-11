@@ -69,7 +69,7 @@ The IR is neither a protocol DTO nor a union of fields. When it cannot express a
 | Degradable | Unsupported sampling parameters, `metadata`, `service_tier`, `logprobs`, usage detail and similar | Remove from the candidate copy by a named rule and record in diagnostics |
 | Unknown | Unregistered fields in upstream responses and downstream requests | Ignore; registered fields stay strict. Ignored request field names (never values) are recorded, and nothing unregistered is forwarded. Unknown discriminators (`type`, `role`) are rejected, since ignoring them drops content |
 
-- **Upstream responses:** strict on known fields (type, value, relations), ignore unknown ones. New upstream fields must not break the gateway.
+- **Upstream responses:** strict on known fields (type, value, relations), ignore unknown ones. New upstream fields must not break the gateway. Unregistered Responses stream event types are skipped, as Codex does, and only their count reaches diagnostics; registered content and terminal events stay strict.
 - **Downstream requests:** expressible fields follow the table; critical semantics the target cannot express return 400 and are never silently dropped. Trusted configuration (`gateway.json`) stays closed. Ignoring unknown request fields lands in roadmap Phase 1; today they are rejected.
 - **Explicit parse direction:** the shared OpenAI reader distinguishes requests, upstream reports and encoder self-checks. Nested items inherit the direction of their parent; SSE snapshot pre-validation counts as upstream. The policy uses no thread-local or ambient state.
 - Losses apply only to each candidate's private projection; the source IR is unchanged. Static and streaming paths share the same rules.

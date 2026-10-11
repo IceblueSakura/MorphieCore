@@ -285,6 +285,13 @@ impl Attempt {
     pub(crate) fn identity(&self) -> &std::sync::Arc<()> {
         &self.identity
     }
+    /// Unregistered upstream event types skipped so far.
+    pub fn ignored_events(&self) -> usize {
+        match &self.intake {
+            Intake::Responses(d) => d.ignored_events(),
+            _ => 0,
+        }
+    }
     pub fn metadata(&self) -> Option<&ResponseMetadata> {
         if let Some(decoded) = &self.decoded {
             return Some(&decoded.metadata);

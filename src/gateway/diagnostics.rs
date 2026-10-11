@@ -32,6 +32,9 @@ pub(super) enum Outcome {
     Shutdown,
     Complete,
 }
+fn is_zero(n: &u64) -> bool {
+    *n == 0
+}
 #[derive(Default, Serialize)]
 struct EventCounts {
     event_items: u64,
@@ -158,6 +161,9 @@ struct Record {
     /// input/output audio, in that bit order. Never count values or response text.
     #[serde(skip_serializing_if = "Option::is_none")]
     reported_usage_detail_mask: Option<u8>,
+    /// Count of skipped unregistered upstream event types; names never escape.
+    #[serde(skip_serializing_if = "is_zero")]
+    ignored_upstream_events: u64,
     #[serde(flatten)]
     events: EventCounts,
     #[serde(flatten)]
@@ -246,6 +252,7 @@ impl Trace {
                 decode_failure: None,
                 projection_failure: None,
                 reported_usage_detail_mask: None,
+                ignored_upstream_events: 0,
                 events: EventCounts::default(),
                 image: ImageAccountingObservation::default(),
             },
@@ -288,6 +295,9 @@ impl Trace {
                 request_rules: std::mem::take(&mut self.request_rules),
             });
         }
+    }
+    pub(super) fn ignored_events(&mut self, count: usize) {
+        self.record.ignored_upstream_events = count as u64;
     }
     pub(super) fn request_rules(&mut self, rules: Vec<&'static str>) {
         if self.sink.is_some() {
@@ -470,6 +480,7 @@ impl Drop for Trace {
                 decode_failure: None,
                 projection_failure: None,
                 reported_usage_detail_mask: None,
+                ignored_upstream_events: 0,
                 events: EventCounts::default(),
                 image: ImageAccountingObservation::default(),
             };

@@ -119,20 +119,20 @@ fn opaque_replay_cannot_be_promoted_by_missing_done_conflicting_terminal_or_eof(
 
 #[test]
 fn malformed_http_event_identity_eof_and_post_terminal_fail_closed() {
-    let initial = encode_frame(&wire::events(2)[0], SseLimits::default().max_event_bytes).unwrap();
-    let future =
-        b"event: response.future\ndata: {\"type\":\"response.future\",\"sequence_number\":1}\n\n";
+    // Unregistered event types are skipped and counted, as Codex does.
+    let mut events = wire::events(2);
+    events.insert(
+        1,
+        json!({"type":"response.future","item":{"type":"future"}}),
+    );
     let mut unknown = decoder(SseLimits::default());
-    consume_all(&mut unknown, &initial, 1);
-    assert!(matches!(
-        unknown.consume(future),
-        Err(morphiecore::protocol::openai::sse::SseError::Codec(
-            morphiecore::protocol::openai::CodecError::Unsupported(_)
-        ))
-    ));
-    assert!(unknown.consume(&wire_events()).is_err());
-    assert!(unknown.finish().is_err());
-    assert!(unknown.materialize().is_err());
+    for (n, event) in events.iter_mut().enumerate() {
+        event["sequence_number"] = json!(n);
+        let frame = encode_frame(event, SseLimits::default().max_event_bytes).unwrap();
+        consume_all(&mut unknown, &frame, 7);
+    }
+    assert_eq!(unknown.ignored_events(), 1);
+    unknown.finish().unwrap();
     for (status, content_type) in [
         (201, "text/event-stream"),
         (200, "application/json"),

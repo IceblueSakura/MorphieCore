@@ -71,6 +71,7 @@ pub struct EventDecoder {
     pub(super) poisoned: bool,
     sequence: Option<u64>,
     events: usize,
+    ignored: usize,
     queued_creation_pending: bool,
     pub(super) chat_pending: Option<(StreamTerminal, TerminalDetails)>,
     pub(super) chat_finish_reason: Option<String>,
@@ -96,6 +97,7 @@ impl EventDecoder {
             poisoned: false,
             sequence: None,
             events: 0,
+            ignored: 0,
             queued_creation_pending: false,
             chat_pending: None,
             chat_finish_reason: None,
@@ -107,6 +109,10 @@ impl EventDecoder {
             chat_pending_part: None,
             chat_audio_bytes: Default::default(),
         }
+    }
+    /// Unregistered Responses event types skipped so far; names are never kept.
+    pub fn ignored_events(&self) -> usize {
+        self.ignored
     }
     pub(crate) fn permits_responses_done(&self) -> bool {
         self.profile == Profile::Responses && self.adaptation.rules.responses_done_marker
@@ -499,7 +505,9 @@ impl EventDecoder {
             "response.completed" | "response.incomplete" | "response.failed" => {
                 self.terminal(o, &mut out)?
             }
-            _ => return Err(CodecError::Unsupported(typ.into())),
+            // Unregistered types are skipped, as Codex does; registered content and
+            // terminal events above stay strict.
+            _ => self.ignored += 1,
         }
         Ok(out)
     }

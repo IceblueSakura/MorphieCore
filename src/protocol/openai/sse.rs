@@ -199,6 +199,9 @@ impl ResponsesSseDecoder {
     pub fn metadata(&self) -> Option<&ResponseMetadata> {
         self.codec.metadata()
     }
+    pub fn ignored_events(&self) -> usize {
+        self.codec.ignored_events()
+    }
     pub fn fidelity(&self) -> &FidelityRecords {
         self.codec.fidelity()
     }

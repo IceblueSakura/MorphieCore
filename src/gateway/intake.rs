@@ -40,6 +40,7 @@ async fn produce(
                 ApiError::upstream()
             })?;
             trace.events(&events);
+            trace.ignored_events(attempt.ignored_events());
             if used == 0 {
                 return Err(ApiError::upstream());
             }
