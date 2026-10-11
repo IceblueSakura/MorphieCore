@@ -17,6 +17,7 @@ pub mod lifecycle;
 mod messages;
 pub use messages::prepare_messages;
 pub mod plan;
+pub mod replay;
 pub mod speech;
 pub mod transcription;
 

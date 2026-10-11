@@ -112,6 +112,7 @@ pub(super) fn prepare(
         .client
         .decode_request(bytes)
         .map_err(|_| ApiError::invalid())?;
+    crate::execution::replay::open_from_client(&mut request).map_err(|_| ApiError::invalid())?;
     let mut settings = request.task.semantic.settings().clone();
     match settings.controls.max_output_tokens {
         Some(n) if n > state.limits.max_output_tokens => {

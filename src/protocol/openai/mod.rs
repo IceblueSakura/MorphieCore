@@ -22,7 +22,6 @@ pub(crate) mod input_audio;
 pub(crate) mod json;
 mod reasoning;
 pub(crate) use common::{open_shapes, upstream_shapes};
-pub(crate) use reasoning::encode_item as encode_reasoning_item;
 pub mod responses;
 mod settings;
 pub mod speech;

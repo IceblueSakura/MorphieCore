@@ -62,6 +62,7 @@ struct BoundCandidate {
     provider: ProviderDefinition,
     secret: credentials::Source,
     credential_fallback: bool,
+    cache_scope: crate::semantic::value::ReplayOrigin,
 }
 struct BoundEntry {
     public: PublicModel,
@@ -75,18 +76,6 @@ impl BoundEntry {
         &self,
         request: &crate::adapter::Request,
     ) -> Result<Vec<Arc<BoundCandidate>>, ApiError> {
-        // No shared model scope can authorize another issuer's opaque continuation.
-        if self.candidates.len() > 1
-            && (request.task.semantic.reasoning().encrypted_output()
-                || request
-                    .task
-                    .semantic
-                    .items()
-                    .iter()
-                    .any(|(_, item)| matches!(item, crate::semantic::task::generation::Item::Reasoning(r) if r.replay.is_some())))
-        {
-            return Err(ApiError::invalid());
-        }
         let selected = crate::execution::plan::select_candidates(
             request,
             self.policy.candidates,

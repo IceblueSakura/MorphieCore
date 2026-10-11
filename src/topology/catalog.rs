@@ -16,7 +16,6 @@ use crate::{
     adapter::Adapter,
     lowering::generation::{GenerationRepresentationContract, ReportedFactPolicy},
     provider::{CredentialBindingId, CredentialKind, catalog},
-    semantic::value::ReplayOrigin,
     topology::*,
 };
 pub use bindings::{API_KEY_BINDINGS, ApiKeyBinding};
@@ -51,7 +50,7 @@ impl ApiKeyBinding {
             ),
             ProtocolProfile::AnthropicMessages => return Err(TopologyError::ContractUnsatisfiable),
         };
-        let scope = ReplayOrigin::new(provider.id.as_str()).expect("static scope");
+        let scope = crate::protocol::replay_envelope::issuer(provider.id.as_str(), self.upstream);
         let contract = GenerationRepresentationContract {
             semantics: self
                 .endpoint_slice

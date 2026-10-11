@@ -67,6 +67,10 @@ impl ResponseDelivery {
         options: StreamOptions,
         padding: Obfuscation,
     ) -> Self {
+        let mut adapter = adapter;
+        let mut contract = contract;
+        adapter.adaptation.scope = Some(super::replay::CLIENT_ORIGIN.clone());
+        contract.replay_origin = Some(super::replay::CLIENT_ORIGIN.clone());
         Self {
             adapter,
             contract,
@@ -120,6 +124,7 @@ impl ResponseDelivery {
     ) -> Result<crate::protocol::DecodedResponse, AttemptError> {
         let mut decoded = attempt.response()?.clone();
         decoded.metadata = self.metadata(attempt)?;
+        super::replay::seal_for_client(&mut decoded, &super::replay::CLIENT_ORIGIN)?;
         if self.adapter.protocol == Profile::Responses {
             for (owner, _) in decoded.semantic.items() {
                 if decoded.fidelity.response_item_id(*owner).is_none() {
@@ -143,6 +148,9 @@ impl ResponseDelivery {
             || self.lifecycle.state() != crate::execution::DeliveryState::Terminal
             || attempt.response().ok()?.semantic.outcome()
                 != crate::semantic::task::generation::Outcome::Completed
+            || request.task.semantic.items().iter().any(|(_, item)| {
+                matches!(item, crate::semantic::task::generation::Item::Reasoning(r) if r.replay.is_some())
+            })
         {
             return None;
         }
@@ -167,9 +175,12 @@ impl ResponseDelivery {
         input.get_mut(field)?.as_array_mut()?.extend(items);
         prefixes(&input, self.adapter.protocol)?;
         crate::semantic::value::json_size(&input, MAX_PROMPT_BYTES).ok()?;
-        self.adapter
+        let mut successor = self
+            .adapter
             .decode_request(&serde_json::to_vec(&input).ok()?)
-            .ok()
+            .ok()?;
+        super::replay::open_from_client(&mut successor).ok()?;
+        Some(successor)
     }
     pub fn encode_json(&mut self, attempt: &Attempt) -> Result<Vec<u8>, AttemptError> {
         let result = (|| {
@@ -285,13 +296,17 @@ impl ResponseDelivery {
             Encoder::Responses(encoder) => {
                 encoder.update_metadata(metadata)?;
                 for event in events {
-                    frames.extend(encoder.encode(event, &source)?);
+                    let event =
+                        super::replay::seal_event(event.clone(), &super::replay::CLIENT_ORIGIN)?;
+                    frames.extend(encoder.encode(&event, &source)?);
                 }
             }
             Encoder::Chat(encoder) => {
                 encoder.update_metadata(metadata)?;
                 for event in events {
-                    frames.extend(encoder.encode(event, &source)?);
+                    let event =
+                        super::replay::seal_event(event.clone(), &super::replay::CLIENT_ORIGIN)?;
+                    frames.extend(encoder.encode(&event, &source)?);
                 }
             }
         }

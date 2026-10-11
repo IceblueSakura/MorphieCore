@@ -56,7 +56,7 @@ impl SubscriptionBinding {
     }
     pub fn endpoint(&self) -> Endpoint {
         let provider = (self.provider)();
-        let scope = ReplayOrigin::new(self.profile).unwrap();
+        let scope = crate::protocol::replay_envelope::issuer(provider.id.as_str(), self.upstream);
         let adapter = Adapter::new(
             crate::protocol::openai::Profile::Responses,
             self.dialect,

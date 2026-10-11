@@ -597,6 +597,18 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
                 let projected = Adapter::new(Profile::Responses, Dialect::Standard, None)
                     .encode_response(&decoded, &contract)
                     .unwrap();
+                let token = projected["output"][0]["encrypted_content"]
+                    .as_str()
+                    .unwrap();
+                assert!(token.starts_with("mc1."));
+                assert!(!String::from_utf8_lossy(&body).contains("synthetic-final-token"));
+                let (_, format, payload) =
+                    morphiecore::protocol::replay_envelope::open(token).unwrap();
+                assert_eq!(
+                    format,
+                    morphiecore::semantic::task::generation::ReplayFormat::ResponsesEncrypted
+                );
+                assert_eq!(payload.as_str(), "synthetic-final-token");
                 let mut history = vec![json!({"role":"user","content":"lookup"})];
                 history.extend(projected["output"].as_array().unwrap().iter().cloned());
                 for call in calls {

@@ -147,7 +147,7 @@ fn saved_observation_and_appended_error_encode_the_independent_native_history() 
     }
 }
 #[test]
-fn edited_prefix_deleted_signature_and_different_target_cannot_reuse_native_binding() {
+fn prefix_edits_are_left_to_the_issuer_but_owner_and_target_stay_checked() {
     let p = Profile::AdaptiveTextTools;
     let source = p
         .decode_generation_request(request(), LocalScope::new(1), &target())
@@ -160,13 +160,17 @@ fn edited_prefix_deleted_signature_and_different_target_cannot_reuse_native_bind
     settings.instructions = morphiecore::semantic::value::Presence::Value(
         Text::new("edited", "instructions", 256).unwrap(),
     );
-    assert!(
-        p.encode_generation_request(
+    let edited = p
+        .encode_generation_request(
             &next.clone().with_settings(settings).unwrap(),
             &observed.fidelity,
-            &target()
+            &target(),
         )
-        .is_err()
+        .unwrap();
+    assert_eq!(edited.value["system"], "edited");
+    assert_eq!(
+        edited.value["messages"][1]["content"][0]["type"],
+        "thinking"
     );
     for changed in [
         ReplayTarget::new("other-provider", "synthetic-model").unwrap(),

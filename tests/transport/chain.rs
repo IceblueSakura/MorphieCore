@@ -318,7 +318,7 @@ fn strict_completeness_can_fail_late_without_fabricating_a_terminal() {
     assert!(!output.lifecycle().may_retry_or_fallback());
 }
 #[test]
-fn static_delivery_scope_is_owned_by_the_target_and_commit_is_explicit() {
+fn static_delivery_wraps_the_issuer_value_and_commit_is_explicit() {
     let scope = ReplayOrigin::new("scope-a").unwrap();
     let source = Adapter::new(Profile::Responses, Dialect::Standard, Some(scope.clone()));
     let mut body = wire::response(2);
@@ -327,24 +327,100 @@ fn static_delivery_scope_is_owned_by_the_target_and_commit_is_explicit() {
     intake.begin(200, "application/json").unwrap();
     intake.push(body.to_string().as_bytes()).unwrap();
     intake.finish().unwrap();
-    let mut denied = delivery(standard(Profile::Responses), Contract::full());
-    assert!(denied.encode_json(&intake).is_err());
-    assert!(denied.lifecycle().may_retry_or_fallback());
     let mut permitted = delivery(
         source,
         Contract {
-            replay_origin: Some(scope),
+            replay_origin: Some(scope.clone()),
             ..Contract::full()
         },
     );
     let encoded: Value = serde_json::from_slice(&permitted.encode_json(&intake).unwrap()).unwrap();
     assert_eq!(encoded["model"], "public-model");
-    assert_eq!(encoded["output"][0]["encrypted_content"], "synthetic-token");
+    let (issuer, format, payload) = morphiecore::protocol::replay_envelope::open(
+        encoded["output"][0]["encrypted_content"].as_str().unwrap(),
+    )
+    .unwrap();
+    assert_eq!(issuer, scope);
+    assert_eq!(format, ReplayFormat::ResponsesEncrypted);
+    assert_eq!(payload.as_str(), "synthetic-token");
     assert!(permitted.lifecycle().may_retry_or_fallback());
     permitted.commit().unwrap();
     permitted.complete(&intake).unwrap();
     assert!(permitted.encode_json(&intake).is_err());
 }
+#[test]
+fn streaming_carrier_seals_opaque_for_both_downstream_protocols() {
+    let scope = morphiecore::protocol::replay_envelope::issuer("provider", "model");
+    let reasoning = json!({"id":"rs","type":"reasoning","status":"completed",
+        "summary":[],"encrypted_content":"synthetic-stream-token"});
+    let message = json!({"id":"msg","type":"message","role":"assistant","status":"completed",
+        "content":[{"type":"output_text","text":"answer","annotations":[],"logprobs":[]}]});
+    let completed = json!({"object":"response","id":"r","model":"m","created_at":1,
+        "status":"completed","output":[reasoning, message]});
+    let mut initial = completed.clone();
+    initial["status"] = json!("in_progress");
+    initial["output"] = json!([]);
+    initial["usage"] = Value::Null;
+    initial["completed_at"] = Value::Null;
+    let events = [
+        json!({"type":"response.created","response":initial}),
+        json!({"type":"response.output_item.added","output_index":0,
+            "item":{"id":"rs","type":"reasoning","status":"in_progress","summary":[]}}),
+        json!({"type":"response.output_item.done","output_index":0,"item":reasoning}),
+        json!({"type":"response.output_item.added","output_index":1,
+            "item":{"id":"msg","type":"message","role":"assistant","status":"in_progress","content":[]}}),
+        json!({"type":"response.content_part.added","output_index":1,"item_id":"msg","content_index":0,
+            "part":{"type":"output_text","text":"","annotations":[]}}),
+        json!({"type":"response.output_text.delta","output_index":1,"item_id":"msg","content_index":0,"delta":"answer","logprobs":[]}),
+        json!({"type":"response.output_text.done","output_index":1,"item_id":"msg","content_index":0,"text":"answer","logprobs":[]}),
+        json!({"type":"response.content_part.done","output_index":1,"item_id":"msg","content_index":0,"part":message["content"][0]}),
+        json!({"type":"response.output_item.done","output_index":1,"item":message}),
+        json!({"type":"response.completed","response":completed}),
+    ];
+    let body: Vec<u8> = events
+        .into_iter()
+        .enumerate()
+        .flat_map(|(n, mut event)| {
+            event["sequence_number"] = json!(n);
+            morphiecore::protocol::openai::sse::encode_frame(&event, 1 << 20).unwrap()
+        })
+        .collect();
+    for profile in [Profile::Chat, Profile::Responses] {
+        let source = Adapter::new(Profile::Responses, Dialect::Standard, Some(scope.clone()));
+        let mut intake = Attempt::new(source, 1 << 20, SseLimits::default());
+        let target = Adapter::new(profile, Dialect::MorphieCore, None);
+        let mut output = delivery(target.clone(), Contract::full());
+        intake.begin(200, "text/event-stream").unwrap();
+        let mut bytes = consume(&mut intake, &mut output, &body).unwrap();
+        assert!(!bytes.is_empty());
+        output.commit().unwrap();
+        intake.finish().unwrap();
+        bytes.extend(output.finish_stream(&intake).unwrap().into_iter().flatten());
+        output.complete(&intake).unwrap();
+        let text = String::from_utf8(bytes).unwrap();
+        assert!(!text.contains("synthetic-stream-token"));
+        let mut decoder = target.event_decoder();
+        for line in text.lines().filter_map(|line| line.strip_prefix("data: ")) {
+            if line == "[DONE]" {
+                decoder.done().unwrap();
+            } else {
+                decoder.push(&serde_json::from_str(line).unwrap()).unwrap();
+            }
+        }
+        decoder.finish().unwrap();
+        let decoded = decoder.materialize().unwrap();
+        let Item::Reasoning(r) = &decoded.semantic.items()[0].1 else {
+            panic!("reasoning")
+        };
+        let (issuer, format, payload) =
+            morphiecore::protocol::replay_envelope::open(r.replay.as_ref().unwrap().as_str())
+                .unwrap();
+        assert_eq!(issuer, scope);
+        assert_eq!(format, ReplayFormat::ResponsesEncrypted);
+        assert_eq!(payload.as_str(), "synthetic-stream-token");
+    }
+}
+
 #[test]
 fn intake_errors_are_classified_bounded_and_irrecoverable() {
     let mut rejected = Attempt::new(standard(Profile::Chat), 16, SseLimits::default());
@@ -873,7 +949,10 @@ fn opaque_replay_reaches_prepared_body_only_for_its_bound_origin() {
         wrong.representation.replay_origin = Some(
             morphiecore::semantic::value::ReplayOrigin::new("other-credential-owner").unwrap(),
         );
-        assert!(prepare(&wrong, &providers::openrouter(), &secret, &request).is_err());
+        let foreign = prepare(&wrong, &providers::openrouter(), &secret, &request).unwrap();
+        let foreign: Value = serde_json::from_slice(&foreign.body).unwrap();
+        assert!(foreign.pointer(pointer).is_none());
+        assert!(!foreign.to_string().contains("synthetic-cipher"));
     }
 }
 

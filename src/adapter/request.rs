@@ -239,6 +239,64 @@ impl Adapter {
         }
         Ok(request)
     }
+}
+impl Request {
+    /// Candidate-private copy without opaque reasoning issued for another target.
+    /// Reasoning items left with neither readable content nor replay are removed.
+    /// `None` means the request needs no change for this target.
+    pub(crate) fn without_foreign_replay(
+        &self,
+        target: Option<&crate::semantic::value::ReplayOrigin>,
+    ) -> Result<Option<Request>, CodecError> {
+        use crate::semantic::task::generation::Item;
+        let fidelity = &self.task.fidelity;
+        let foreign: Vec<_> = self
+            .task
+            .semantic
+            .items()
+            .iter()
+            .filter(|(id, item)| {
+                matches!(item, Item::Reasoning(r) if r.replay.is_some())
+                    && (target.is_none() || fidelity.replay_origin(*id) != target)
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        if foreign.is_empty() {
+            return Ok(None);
+        }
+        let stripped: Vec<_> = self
+            .task
+            .semantic
+            .items()
+            .iter()
+            .cloned()
+            .map(|(id, mut item)| {
+                if let Item::Reasoning(r) = &mut item
+                    && foreign.contains(&id)
+                {
+                    r.replay = None;
+                }
+                (id, item)
+            })
+            .collect();
+        let without_empty: Vec<_> = stripped
+            .iter()
+            .filter(|(id, item)| {
+                !(foreign.contains(id) && matches!(item, Item::Reasoning(r) if r.parts.is_empty()))
+            })
+            .cloned()
+            .collect();
+        let semantic = self.task.semantic.clone().with_items(without_empty)?;
+        let mut copy = self.clone();
+        for id in &foreign {
+            copy.task.fidelity.remove_replay(*id);
+        }
+        copy.task.fidelity.retain_owners(semantic.items());
+        copy.task.semantic = semantic;
+        Ok(Some(copy))
+    }
+}
+impl Adapter {
     /// Closed Provider header projection; no inbound header map or runtime target selection.
     pub(crate) fn request_headers(
         &self,
@@ -267,6 +325,14 @@ impl Adapter {
         model: &str,
         contract: &GenerationRepresentationContract,
     ) -> Result<Value, AdapterError> {
+        // Compatibility and carrier support are separate: a same-issuer value
+        // without a target carrier must fail lowering, not disappear silently.
+        let issuer = contract
+            .replay_origin
+            .as_ref()
+            .or(self.adaptation.scope.as_ref());
+        let stripped = request.without_foreign_replay(issuer)?;
+        let request = stripped.as_ref().unwrap_or(request);
         request.check_context(contract.standard_context)?;
         if self.adaptation.rules.responses_siwc {
             if self.protocol != Profile::Responses {

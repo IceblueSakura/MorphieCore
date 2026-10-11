@@ -338,8 +338,12 @@ impl Gateway {
                     .iter()
                     .map(|byte| format!("{byte:02x}"))
                     .collect();
-                let scope = ReplayOrigin::new(&format!("gateway-{digest}"))
+                let cache_scope = ReplayOrigin::new(&format!("gateway-{digest}"))
                     .map_err(|_| StartupError::Binding)?;
+                let scope = crate::protocol::replay_envelope::issuer(
+                    provider.id.as_str(),
+                    &endpoint.upstream_model,
+                );
                 endpoint.representation.adaptation.scope = Some(scope.clone());
                 if endpoint.representation.replay_origin.is_some() {
                     endpoint.representation.replay_origin = Some(scope.clone());
@@ -350,11 +354,12 @@ impl Gateway {
                     Profile::Responses => Dialect::Standard,
                     Profile::Chat => Dialect::MorphieCore,
                 };
-                let client = Adapter::new(entry.protocol, dialect, Some(scope.clone()));
+                let client_scope = crate::execution::replay::CLIENT_ORIGIN.clone();
+                let client = Adapter::new(entry.protocol, dialect, Some(client_scope.clone()));
                 // Model input admission must not filter facts reported on the client wire
                 // (e.g. empty logprobs or defaults a model cannot accept as controls).
                 let downstream = GenerationRepresentationContract {
-                    replay_origin: Some(scope),
+                    replay_origin: Some(client_scope),
                     reported_facts: public.reported_facts,
                     ..GenerationRepresentationContract::full()
                 };
@@ -375,6 +380,7 @@ impl Gateway {
                     provider: provider.clone(),
                     secret,
                     credential_fallback: binding.fallback,
+                    cache_scope,
                 }));
             }
         }
@@ -398,10 +404,6 @@ impl Gateway {
                     .position(|id| id == &c.endpoint.id)
                     .expect("validated member")
             });
-            if group.candidates.len() > 1 {
-                group.client.adaptation.scope = None;
-                group.downstream.replay_origin = None;
-            }
             activated.insert(key, Arc::new(group));
         }
         let shutdown = CancellationToken::new();

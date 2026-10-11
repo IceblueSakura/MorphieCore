@@ -209,6 +209,8 @@ fn router_live_shapes_map_typed_tier_zero_media_and_reasoning_replay() {
         replay["messages"][0]["reasoning_details"][1]["data"],
         "synthetic-replay"
     );
+    // The same issuer cannot silently discard necessary replay when its
+    // selected representation contract has no replay carrier.
     assert!(
         source
             .encode_request(&request, "m", &Contract::full())

@@ -390,6 +390,10 @@ impl FidelityRecords {
         binding.history = Some(proof);
         Ok(())
     }
+    /// Compatibility label associated at intake, not proof of issuer authenticity.
+    pub fn replay_origin(&self, owner: ItemId) -> Option<&ReplayOrigin> {
+        self.reasoning_replay.get(&owner)?.origin.as_ref()
+    }
     pub fn remove_replay(&mut self, owner: ItemId) {
         self.reasoning_replay.remove(&owner);
     }

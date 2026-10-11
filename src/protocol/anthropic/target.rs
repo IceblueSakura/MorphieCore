@@ -25,17 +25,6 @@ impl ReplayTarget {
         self.model.as_str()
     }
     pub(crate) fn origin(&self) -> ReplayOrigin {
-        use sha2::{Digest, Sha256};
-        let mut hash = Sha256::new();
-        for s in [self.provider(), self.model()] {
-            hash.update((s.len() as u64).to_le_bytes());
-            hash.update(s.as_bytes());
-        }
-        let label = hash
-            .finalize()
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect::<String>();
-        ReplayOrigin::new(&format!("anthropic:{label}")).expect("bounded digest")
+        crate::protocol::replay_envelope::issuer(self.provider(), self.model())
     }
 }

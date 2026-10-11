@@ -90,6 +90,7 @@ async fn consume(
         provider: base.provider.clone(),
         secret: base.secret.clone(),
         credential_fallback: false,
+        cache_scope: base.cache_scope.clone(),
     });
     let entry = Arc::new(BoundEntry {
         public: original.public.clone(),

@@ -12,7 +12,6 @@ use crate::protocol::CodecError;
 pub use request::*;
 pub use response::*;
 pub use semantic::NativeProjection;
-pub(crate) use semantic_request::prefix_digest;
 use serde_json::Value;
 pub use target::ReplayTarget;
 

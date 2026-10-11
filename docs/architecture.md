@@ -81,7 +81,10 @@ IR 不是任一协议的 DTO，也不是字段并集。发现 IR 无法表达的
 
 - 交付给下游时编码进对应载体（Responses reasoning item 的 `encrypted_content`；Chat 见下节）。
 - 回传时：Provider 与模型都与本次目标一致才还原原生载荷；否则丢弃该 opaque 值，并移除因此变空的 reasoning item。
-- 信封不加密、不做本地前缀证明：签名合法性由上游签发方校验，被篡改或不匹配时由上游拒绝并作为错误返回。是否附加 HMAC 防止伪造来源标签，在实现时按实际需要决定。
+- 当前载体为 `mc1.` 加 base64url JSON，包含 Provider/上游模型的稳定指纹、原生格式和载荷；公共模型别名、凭据和入口密钥不参与兼容性指纹。裸值、损坏或未知版本信封不回传上游。
+- 信封不加密、不附加 HMAC、不做本地前缀证明：来源标签只是兼容性提示，不是身份认证；标签不能选择路由、地址或凭据。签名合法性由上游签发方校验，被篡改或不匹配时由上游拒绝并作为错误返回。
+- 同目标没有相应载体时仍拒绝，不把必要 opaque 当成异目标值静默丢弃。调用方显式使用的历史依赖检查、owner 关联与缓存前缀工具独立保留。
+- 当前接线覆盖 reasoning item 的 Responses `encrypted_content` 与 Chat `reasoning.encrypted.data`，静态和流式相同。原生 Anthropic/Google 接入及 part/call 级签名仍按路线推进。
 
 ### Chat 扩展字段
 
@@ -104,6 +107,7 @@ Chat Completions 无法承载 reasoning 等语义时，参照 OpenRouter 的现�
 - 下游可选 `X-MorphieCore-Conversation-Id` 表达 Provider 无关的逻辑会话；网关在内部派生各上游的 session/cache 载体，客户端不需要了解 Provider 参数。
 - 标准 `prompt_cache_key` 是独立的缓存分组意图。
 - 无会话标识时，网关可用短 TTL 的前缀摘要索引尽力复用缓存分组；索引可随时丢弃，未命中只损失缓存机会，不改变请求合法性。它不是历史存储，也不参与 replay 判断。
+- 隐式缓存范围仍隔离入口密钥、凭据来源与公共模型；不复用 replay 的 Provider/模型兼容性指纹。
 
 ## 7. 凭据
 

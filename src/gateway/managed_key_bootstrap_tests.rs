@@ -230,9 +230,14 @@ fn bootstrap_loads_selected_key_and_requires_reactivation_after_rotation() {
         super::super::family(Profile::Responses),
         "deepseek-flash".into(),
     )];
-    assert_ne!(
+    assert_eq!(
         entry.downstream.replay_origin,
         next.downstream.replay_origin
+    );
+    assert_ne!(candidate.cache_scope, next.candidates[0].cache_scope);
+    assert_eq!(
+        candidate.endpoint.representation.adaptation.scope,
+        next.candidates[0].endpoint.representation.adaptation.scope
     );
 }
 #[test]
@@ -274,7 +279,7 @@ fn file_pools_reject_unknown_bindings_repeated_members_and_invalid_attempt_limit
     assert!(Bootstrap::from_directory(dir.path()).is_err());
 }
 #[test]
-fn pool_candidates_have_distinct_ordinals_and_reject_opaque_replay_without_affinity() {
+fn pool_candidates_have_distinct_ordinals_and_share_provider_model_replay() {
     let (dir, manager) = setup();
     manager
         .add_api_key(
@@ -322,9 +327,17 @@ fn pool_candidates_have_distinct_ordinals_and_reject_opaque_replay_without_affin
         candidates[1].secret.resolve().unwrap().0.expose(),
         "synthetic-managed-key"
     );
-    assert!(entry.client.adaptation.scope.is_none());
+    assert_eq!(
+        entry.client.adaptation.scope.as_ref(),
+        Some(&*crate::execution::replay::CLIENT_ORIGIN)
+    );
+    assert_ne!(candidates[0].cache_scope, candidates[1].cache_scope);
+    assert_eq!(
+        candidates[0].endpoint.representation.adaptation.scope,
+        candidates[1].endpoint.representation.adaptation.scope
+    );
     let request = entry.client.decode_request(br#"{"model":"deepseek-flash","input":"test","include":["reasoning.encrypted_content"]}"#).unwrap();
-    assert!(entry.eligible(&request).is_err());
+    assert_eq!(entry.eligible(&request).unwrap().len(), 2);
     manager.write_gateway_config_for_test(&serde_json::json!({"client_key":"synthetic-gateway-key-at-least-32-bytes","max_attempts":1}));
     let capped = Bootstrap::from_directory(dir.path()).unwrap();
     assert_eq!(

@@ -32,7 +32,7 @@ pub(super) fn gateway(limits: Limits) -> Gateway {
     .unwrap()
 }
 #[tokio::test]
-async fn activated_members_keep_route_order_and_never_share_an_opaque_issuer_scope() {
+async fn activated_members_keep_route_order_with_a_shared_client_carrier() {
     let entries = ["fixture-chat", "fixture-responses"]
         .into_iter()
         .map(|id| Entry {
@@ -54,7 +54,10 @@ async fn activated_members_keep_route_order_and_never_share_an_opaque_issuer_sco
     )
     .unwrap();
     let entry = &gate.state.entries[&(family(Profile::Responses), "fixture-model".into())];
-    assert!(entry.client.adaptation.scope.is_none());
+    assert_eq!(
+        entry.client.adaptation.scope.as_ref(),
+        Some(&*crate::execution::replay::CLIENT_ORIGIN)
+    );
     let request = entry
         .client
         .decode_request(br#"{"model":"fixture-model","input":"x"}"#)
@@ -74,7 +77,69 @@ async fn activated_members_keep_route_order_and_never_share_an_opaque_issuer_sco
             br#"{"model":"fixture-model","input":"x","include":["reasoning.encrypted_content"]}"#,
         )
         .unwrap();
+    // RequireAll still rejects controls unsupported by the Chat candidate.
     assert!(entry.eligible(&opaque).is_err());
+}
+
+#[test]
+fn ingress_unwraps_only_the_candidate_compatible_opaque_and_never_selects_a_target() {
+    use crate::{protocol::replay_envelope, semantic::task::generation::ReplayFormat};
+    use serde_json::json;
+    let gate = Gateway::new(
+        topology(),
+        vec![Entry {
+            model: "fixture-model".into(),
+            protocol: Profile::Responses,
+            endpoint: EndpointId::new("fixture-responses").unwrap(),
+        }],
+        BTreeMap::from([(
+            CredentialBindingId::new("fixture-key").unwrap(),
+            Arc::new(SecretMaterial::new("synthetic-upstream-credential-0001").unwrap()),
+        )]),
+        SecretMaterial::new(KEY).unwrap(),
+        Limits::default(),
+        None,
+    )
+    .unwrap();
+    for (provider, model, matches) in [
+        ("fixture", "private-fixture", true),
+        ("other", "private-fixture", false),
+        ("fixture", "other", false),
+    ] {
+        let token = replay_envelope::seal(
+            &replay_envelope::issuer(provider, model),
+            ReplayFormat::ResponsesEncrypted,
+            "synthetic-client-payload",
+        )
+        .unwrap();
+        let body = json!({"model":"fixture-model","input":[
+            {"type":"reasoning","id":"rs","summary":[],"encrypted_content":token.as_str()},
+            {"role":"user","content":"next"}
+        ]});
+        let (entry, request) =
+            admission::prepare(&gate.state, Profile::Responses, body.to_string().as_bytes())
+                .unwrap();
+        let before = request.clone();
+        let candidates = entry.eligible(&request).unwrap();
+        assert_eq!(candidates.len(), 1);
+        let candidate = &candidates[0];
+        let secret = candidate.secret.resolve().unwrap().0;
+        let prepared =
+            crate::execution::prepare(&candidate.endpoint, &candidate.provider, &secret, &request)
+                .unwrap();
+        let wire: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
+        assert_eq!(wire["model"], "private-fixture");
+        assert_eq!(
+            wire["input"].as_array().unwrap().len(),
+            if matches { 2 } else { 1 }
+        );
+        assert_eq!(
+            wire.to_string().contains("synthetic-client-payload"),
+            matches
+        );
+        assert!(!wire.to_string().contains("mc1."));
+        assert_eq!(request, before);
+    }
 }
 
 #[tokio::test]
@@ -379,15 +444,8 @@ fn entries_cannot_escape_compiled_route_or_credential_ownership() {
     );
     assert!(matches!(result, Err(StartupError::Binding)));
     let gate = gateway(Limits::default());
-    let scope = gate
-        .state
-        .entries
-        .values()
-        .next()
-        .unwrap()
-        .client
-        .adaptation
-        .scope
+    let scope = gate.state.entries.values().next().unwrap().candidates[0]
+        .cache_scope
         .clone();
     let other = Gateway::new(
         topology(),
@@ -407,14 +465,6 @@ fn entries_cannot_escape_compiled_route_or_credential_ownership() {
     .unwrap();
     assert_ne!(
         scope,
-        other
-            .state
-            .entries
-            .values()
-            .next()
-            .unwrap()
-            .client
-            .adaptation
-            .scope
+        other.state.entries.values().next().unwrap().candidates[0].cache_scope
     );
 }

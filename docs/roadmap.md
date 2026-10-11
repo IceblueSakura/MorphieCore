@@ -15,7 +15,6 @@
 
 | 项 | 状态 |
 |---|---|
-| Opaque reasoning 改用带标签信封；删除 AEAD 载荷、前缀 receipts 与依赖证明 | 下一步 |
 | `gateway::diagnostics` 的 probe 关联（`x-morphiecore-probe-id`）随 probe 移除一并清理 | 待做 |
 | 继续删减只为转发厂商诊断/计费字段的开关（`routing_extras`、`reported_request_id`、`chat_stop_diagnostics`、`response_extras`、`responses_inactive_*`、`chat_inference_response_shape` 的 null-only 部分）及对应 fidelity 记录 | 待评估 |
 | 可选：`morphiecore-auth` 并入主程序 `morphiecore auth …` | 待定 |
@@ -31,7 +30,7 @@
 - lowering / adapter 从 `openai::Profile` 解耦：每个协议一个双向模块，每个上游一份 `TargetCaps`；方言规则收进协议模块。
 - Anthropic Messages 上游进入 Gateway 执行链（请求头、响应解码、候选准备）。
 - Anthropic SSE → `StreamEvent` 增量映射，替代先聚合后交付。
-- Chat 下游的 `reasoning` / `reasoning_details` 扩展字段与 opaque 信封接通；上游 `reasoning.text` 项的 `signature` 目前被忽略，需要建模。
+- 将 Anthropic 原生 thinking 接入现有下游 reasoning 信封；上游 Chat `reasoning.text` 项的 `signature` 目前被忽略，需要建模，并验证跨协议的 message/block 顺序。
 
 退出条件：`Responses / Chat × Anthropic` 的 JSON 与 SSE 覆盖文本、工具往返、工具错误、thinking 回传、截断与上游错误，有 synthetic 测试，并用一次有界真实调用验证（opencode-go `claude-haiku-5-5` 或其他可用目标）。
 
@@ -65,5 +64,4 @@
 
 - Chat 扩展字段的完整列表：除 reasoning 外，工具错误、refusal 细节等是否需要扩展载体。
 - 下游请求中未知字段的处理：忽略并记录，还是对标准中存在但未实现的字段拒绝。
-- Opaque 信封是否附加 HMAC。
 - 切换 Provider/模型时，可见 thinking 是否转为 assistant 文本继续提供给新目标。

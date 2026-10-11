@@ -293,7 +293,12 @@ fn chat_replay_edits_deletion_and_origin_are_checked_independently_of_plain_text
         .unwrap();
     let mut other = contract();
     other.replay_origin = Some(ReplayOrigin::new("different-issuer").unwrap());
-    assert!(source.encode_request(&request, "m", &other).is_err());
+    let foreign = source.encode_request(&request, "m", &other).unwrap();
+    assert!(!foreign.to_string().contains("synthetic-final"));
+    assert_eq!(
+        foreign["messages"][0]["reasoning_details"][0]["summary"],
+        "summary"
+    );
     let mut items = request.task.semantic.items().to_vec();
     let Item::Reasoning(reason) = &mut items[0].1 else {
         panic!("reasoning owner")

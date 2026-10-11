@@ -125,10 +125,10 @@ impl Profile {
         let semantic = GenerationRequest::from_settings(intake.items, settings)?
             .with_message_envelopes(intake.groups)?;
         let mut fidelity = FidelityRecords::default();
-        bind(&mut fidelity, &semantic, semantic.items(), target)?;
+        bind(&mut fidelity, semantic.items(), target)?;
         Ok(DecodedRequest { semantic, fidelity })
     }
-    /// Capture dependencies while the actual request and complete native output are available.
+    /// Decode complete native output using the selected Provider/model label.
     pub fn decode_generation_response(
         self,
         bytes: &[u8],
@@ -186,12 +186,8 @@ impl Profile {
             .with_progress(progress)?
             .with_details(details)?
             .with_usage(usage)?;
-        let joined = ClientManaged::new(source.semantic.settings().clone())?
-            .select_request(&source.semantic)?
-            .select_response(&semantic)?
-            .build(&[])?;
         let mut fidelity = source.fidelity.clone();
-        bind(&mut fidelity, &joined, semantic.items(), target)?;
+        bind(&mut fidelity, semantic.items(), target)?;
         Ok(DecodedResponse {
             semantic,
             fidelity,
@@ -208,14 +204,7 @@ impl Profile {
         fidelity.require_reasoning_replay(request, &target.origin())?;
         let mut normalized = vec![];
         let mut omitted = vec![];
-        let wire = project(
-            request,
-            fidelity,
-            target,
-            &mut normalized,
-            &mut omitted,
-            None,
-        )?;
+        let wire = project(request, fidelity, target, &mut normalized, &mut omitted)?;
         let value = self.encode_request(&wire)?;
         Ok(NativeProjection {
             value,

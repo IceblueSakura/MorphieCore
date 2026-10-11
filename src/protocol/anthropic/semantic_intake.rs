@@ -1,4 +1,4 @@
-//! Explicit block/container intake and trusted in-process dependency association.
+//! Explicit block/container intake and Provider/model compatibility association.
 use super::{Block, Role, TextContent as WireText, target::ReplayTarget};
 use crate::{
     protocol::{CodecError, fidelity::FidelityRecords},
@@ -123,20 +123,12 @@ impl Intake {
 }
 pub(super) fn bind(
     fidelity: &mut FidelityRecords,
-    request: &GenerationRequest,
     owners: &[(ItemId, Item)],
     target: &ReplayTarget,
 ) -> Result<(), CodecError> {
     for (id, item) in owners {
         if let Item::Reasoning(r) = item {
             fidelity.record_replay(*id, r, Some(target.origin()))?;
-            let proof = RequestDependencyProof::capture(
-                request,
-                HistoryDependency::PrefixThrough(*id),
-                SettingsDependency::only(SettingsField::Instructions)
-                    .union(SettingsDependency::only(SettingsField::Tools)),
-            )?;
-            fidelity.bind_replay_dependency(*id, proof, request)?;
         }
     }
     Ok(())

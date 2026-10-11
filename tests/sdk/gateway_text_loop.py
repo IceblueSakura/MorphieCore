@@ -1,4 +1,5 @@
 """Exercise the production gateway Router against a synthetic HTTP Provider only."""
+import base64
 import ipaddress
 import json
 import sys
@@ -125,7 +126,14 @@ def run(base_url: str) -> None:
                           == [("c_lookup", "lookup", '{"n":1}'),
                               ("c_lookup_large", "lookup", ' { "n": 9007199254740993 } ')])
                     check(functions[1]["parsed_arguments"] == {"n": 9007199254740993})
-                    check(any(item.get("encrypted_content") == "synthetic-final-token" for item in dumped))
+                    tokens = [item["encrypted_content"] for item in dumped
+                              if item.get("encrypted_content")]
+                    check(len(tokens) == 1 and tokens[0].startswith("mc1."))
+                    envelope = json.loads(base64.urlsafe_b64decode(
+                        tokens[0][4:] + "=" * (-len(tokens[0][4:]) % 4)))
+                    check(envelope["f"] == "openai-responses"
+                          and envelope["d"] == "synthetic-final-token"
+                          and envelope["o"].startswith("issuer-"))
                     history.extend(dumped)
                     history.extend([
                         {"type": "function_call_output", "call_id": "c_lookup_large", "output": '{"n":9007199254740993}'},

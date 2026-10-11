@@ -146,7 +146,7 @@ pub(super) fn choose(
         trace.affinity("explicit_or_unmapped", false, false);
         return None;
     }
-    let scope = endpoint.representation.adaptation.scope.as_ref()?;
+    let scope = &candidate.cache_scope;
     let mut hash = Sha256::new();
     hash.update(b"MorphieCore.cache-scope.v1\0");
     for value in [
@@ -278,6 +278,7 @@ mod tests {
             provider: candidate.provider.clone(),
             secret: candidate.secret.clone(),
             credential_fallback: candidate.credential_fallback,
+            cache_scope: candidate.cache_scope.clone(),
         };
         let original = other
             .endpoint
@@ -293,9 +294,8 @@ mod tests {
         assert!(crate::execution::plan::representable(&other.endpoint, &first).is_ok());
         assert!(selection.project(&other, &first).is_none());
         other.endpoint = candidate.endpoint.clone();
-        other.endpoint.representation.adaptation.scope = Some(
-            crate::semantic::value::ReplayOrigin::new("other-principal-or-key-epoch").unwrap(),
-        );
+        other.cache_scope =
+            crate::semantic::value::ReplayOrigin::new("other-principal-or-key-epoch").unwrap();
         assert_ne!(
             choose(&gate.state.affinity, &other, &second, &mut trace())
                 .unwrap()
@@ -303,6 +303,7 @@ mod tests {
             selection.hint
         );
         other.endpoint = candidate.endpoint.clone();
+        other.cache_scope = candidate.cache_scope.clone();
         other.endpoint.upstream_model = "other-model".into();
         assert_ne!(
             choose(&gate.state.affinity, &other, &second, &mut trace())

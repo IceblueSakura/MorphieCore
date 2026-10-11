@@ -1,4 +1,4 @@
-//! Candidate-local native request/history projection and stable prefix encoding.
+//! Candidate-local native request/history projection.
 use super::{
     Block, InputMessage, MessageContent, Role, Selection, TextContent as WireText,
     target::ReplayTarget,
@@ -7,7 +7,6 @@ use crate::{
     protocol::{CodecError, fidelity::FidelityRecords},
     semantic::{task::generation::*, value::Presence},
 };
-use serde_json::Value;
 use std::collections::BTreeSet;
 pub(super) fn unsupported() -> CodecError {
     CodecError::Unsupported("native semantic carrier".into())
@@ -18,7 +17,6 @@ pub(super) fn project(
     target: &ReplayTarget,
     normalized: &mut Vec<ItemId>,
     omitted: &mut Vec<ItemId>,
-    until: Option<ItemId>,
 ) -> Result<super::Request, CodecError> {
     let s = request.settings();
     if s.controls.temperature().is_some()
@@ -140,7 +138,6 @@ pub(super) fn project(
     }
     let mut included = BTreeSet::new();
     let mut messages = vec![];
-    let mut stopped = false;
     for group in request.message_envelopes() {
         if group.members().is_empty() {
             return Err(unsupported());
@@ -152,10 +149,6 @@ pub(super) fn project(
         };
         let mut blocks = vec![];
         for owner in group.members() {
-            if Some(*owner) == until {
-                stopped = true;
-                break;
-            }
             if !included.insert(*owner) {
                 return Err(unsupported());
             }
@@ -173,14 +166,10 @@ pub(super) fn project(
             role,
             content: MessageContent::Blocks(blocks),
         });
-        if stopped {
-            break;
-        }
     }
     let expected = request
         .items()
         .iter()
-        .take_while(|(id, _)| Some(*id) != until)
         .filter(|(_, item)| !matches!(item, Item::Instruction(_)))
         .map(|(id, _)| *id)
         .collect::<Vec<_>>();
@@ -188,7 +177,6 @@ pub(super) fn project(
         .message_envelopes()
         .iter()
         .flat_map(|g| g.members())
-        .take_while(|id| Some(**id) != until)
         .copied()
         .collect::<Vec<_>>();
     if actual != expected
@@ -199,9 +187,6 @@ pub(super) fn project(
             .any(|(_, i)| matches!(i, Item::Instruction(_)))
     {
         return Err(unsupported());
-    }
-    if until.is_some() && !stopped {
-        return Err(CodecError::Invalid("native replay owner"));
     }
     Ok(super::Request {
         model: target.model().into(),
@@ -214,39 +199,6 @@ pub(super) fn project(
         messages,
         stream: Presence::Absent,
     })
-}
-/// Version-one prefix encoding excludes local IDs and unrelated sampling controls.
-/// This is a stable selected wire projection, not Rust Debug or a serialized IR.
-pub(crate) fn prefix_digest(
-    request: &GenerationRequest,
-    owner: ItemId,
-    fidelity: &FidelityRecords,
-    target: &ReplayTarget,
-) -> Result<[u8; 32], CodecError> {
-    use sha2::{Digest, Sha256};
-    request.validate()?;
-    let wire = project(
-        request,
-        fidelity,
-        target,
-        &mut vec![],
-        &mut vec![],
-        Some(owner),
-    )?;
-    let value = wire.wire();
-    let mut prefix = serde_json::Map::new();
-    prefix.insert("version".into(), serde_json::json!(1));
-    for field in ["system", "tools", "messages"] {
-        if let Some(value) = value.get(field) {
-            prefix.insert(field.into(), value.clone());
-        }
-    }
-    let value = Value::Object(prefix);
-    super::shape::bounded(&value)?;
-    Ok(Sha256::digest(
-        serde_json::to_vec(&value).map_err(|_| CodecError::Invalid("native prefix"))?,
-    )
-    .into())
 }
 pub(super) fn item_blocks(
     id: ItemId,

@@ -54,8 +54,6 @@ mod extensions;
 mod files;
 #[path = "semantic/function_events.rs"]
 mod function_events;
-#[path = "semantic/gateway_replay.rs"]
-mod gateway_replay;
 #[path = "semantic/group_projection.rs"]
 mod group_projection;
 #[path = "semantic/history_continuation.rs"]
@@ -116,6 +114,8 @@ mod reasoning_boundary;
 mod reasoning_controls;
 #[path = "semantic/replay_attachments.rs"]
 mod replay_attachments;
+#[path = "semantic/replay_carrier.rs"]
+mod replay_carrier;
 #[path = "semantic/replay_formats.rs"]
 mod replay_formats;
 #[path = "semantic/replay_groups.rs"]
