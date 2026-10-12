@@ -11,7 +11,6 @@ Research notes on how each protocol carries image, audio, video and document inp
 - [Generated media](#generated-media)
 - [Client behavior](#client-behavior)
 - [Consequences for MorphieCore](#consequences-for-morphiecore)
-- [Open questions](#open-questions)
 
 ## Sources
 
@@ -105,11 +104,3 @@ Responses has a standard Provider-tool image carrier, not a generic assistant-im
 5. Without a gateway file service, large media are limited to inline data within the gateway body and IR budgets, or public URLs.
 6. Detail, resolution, filename, title, fps and similar per-use options do not translate across protocols. Targets without the option drop it through a named rule; inbound options with no IR slot that change visible content are rejected.
 7. Generated media stays out of scope until its semantic contract and selected client carrier are implemented. Do not relabel a native assistant image as a Provider tool call.
-
-## Open questions
-
-Each needs one bounded real call before it is relied on:
-
-1. Gemini `fileData` with a public HTTPS URL and no `mimeType`.
-2. Interactions v1 `uri` with a public HTTPS URL. Files API URIs remain out of scope and are rejected.
-3. Gemini 3 `functionResponse.parts` without `displayName` or `$ref`.

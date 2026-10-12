@@ -114,6 +114,8 @@ The gateway CLI loads `gateway.json` and pools through the project loader. A tes
 
 Local byte, event and deadline limits do not prove bounded upstream charges when a target has no output-token control. Real checks supplement synthetic regression; they do not replace it.
 
+For tool-result image checks, first obtain a real tool call from the selected model, then return a synthetic valid image with the complete reported history. Preserve thinking and opaque replay carriers unchanged. A hand-written call without model-issued continuation values is not a valid replay oracle for thinking models.
+
 ## pi acceptance
 
 Use pi's real binary against the CLI gateway, not a wrapper that sources private environment.
@@ -136,6 +138,8 @@ pi -p --mode json --offline --no-session --no-extensions --no-skills \
 7. Remove the test-owned scratch directory after the run.
 
 pi's `--offline` flag does not make an upstream gateway request synthetic. This remains a real-client gate when the gateway calls a real Provider.
+
+For the image gate, use a synthetic PNG and declare image input in the scratch model. Set a fixed output cap, disable compaction, and verify a completed `read`, an image in the next tool-result request and an honest final answer. Bound actual upstream requests; do not rely only on client retry settings.
 
 ## opencode acceptance
 
@@ -163,6 +167,10 @@ opencode run --standalone --format json --title '<title>' \
 7. Remove the test-owned scratch directory after the run.
 
 `--standalone` keeps the server inside the run instead of a background service. A title avoids an extra title-generation request.
+
+For the image gate, set the scratch model's `limit.output` and image-input capability. Verify the completed `read`, the tool-result image on the wire and the final assistant stop in the scratch database (`session_message.type` is the role; `data.finish` is the finish reason). Also check `session_v2.idle_outcome` is `succeeded`.
+
+Some installed clients omit the wire cap despite `limit.output`. Set the fixed cap through `providers.<id>.body.max_output_tokens` for a Responses gate and check the actual request. A loopback admission guard may reject absent or over-cap, duplicate or excess requests without rewriting their bodies.
 
 ## Documentation checks
 
