@@ -4,7 +4,9 @@ This page owns direction and current scope. Code and tests define behavior; [Arc
 
 ## Current focus
 
-No feature slice is selected. The next planned work is the [coverage pass](#deferred-acceptance), now including the multimodal carriers. Deferred acceptance work stays deferred until the user reopens it. [Pending decisions](#pending-decisions) stay as described until the user decides them.
+Complete image input and tool-result image delivery. Reject credential-owned Google file URIs disguised as public URLs, enforce protocol-local image restrictions, and preserve the image across a tool round trip and later full-history requests.
+
+Exit conditions: independent mapping and safety assertions, a synthetic gateway tool-image loop, the offline baseline, SDK loopback, and bounded pi/opencode and Provider image checks. Image-specific acceptance is reopened; unrelated coverage and acceptance work stays deferred. File services, generated image output and [Chat tool-media projection](#pending-decisions) stay out of scope.
 
 ## Target clients
 

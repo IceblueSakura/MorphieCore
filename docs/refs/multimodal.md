@@ -19,11 +19,13 @@ Research notes on how each protocol carries image, audio, video and document inp
 |---|---|---|
 | Gemini API discovery (`generativelanguage.googleapis.com/$discovery/rest?version=v1beta`) | revision `20261010` | `Part`, `Blob`, `FileData`, `FunctionResponse`, `File` schemas |
 | [Gemini file input methods](https://ai.google.dev/gemini-api/docs/file-input-methods), [Files](https://ai.google.dev/gemini-api/docs/files), [Video understanding](https://ai.google.dev/gemini-api/docs/video-understanding), [Thought signatures](https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures) | unversioned | Limits, URL rules, retention |
+| [Gemini image understanding](https://ai.google.dev/gemini-api/docs/image-understanding), [generateContent function calling](https://ai.google.dev/gemini-api/docs/generate-content/function-calling) | unversioned | User-image and tool-image format restrictions |
 | [Interactions API v1](https://ai.google.dev/api/interactions-api-v1), [v1beta](https://ai.google.dev/api/interactions-api) | unversioned | Content and step unions |
 | anthropic-sdk-python | [`b4b7916`](https://github.com/anthropics/anthropic-sdk-python/tree/b4b7916deaf4e5570cd627b1ae7ee4394a4de39f) (1.13.0) | Block and source types |
 | [Anthropic Files API](https://platform.claude.com/docs/en/build-with-claude/files), [Vision](https://platform.claude.com/docs/en/build-with-claude/vision), [PDF support](https://platform.claude.com/docs/en/build-with-claude/pdf-support) | unversioned | Limits, scope, retention |
 | openai-python | [`5e7a23e`](https://github.com/openai/openai-python/tree/5e7a23e) (3.29.0) | Chat and Responses content types, Files types |
 | [OpenAI file inputs](https://developers.openai.com/api/docs/guides/file-inputs), [Images and vision](https://developers.openai.com/api/docs/guides/images-vision), [Files create](https://developers.openai.com/api/reference/resources/files/methods/create) | unversioned | Limits and per-API methods |
+| [MiMo Responses](https://mimo.mi.com/docs/zh-CN/api/chat/responses) | unversioned | Only documented parameters are handled; image detail has no declared target slot |
 | Open Responses | [`7078a8f`](https://github.com/openresponses/openresponses/tree/7078a8f) | `input_video` placement |
 | [OpenRouter video](https://openrouter.ai/docs/guides/overview/multimodal/videos), [audio](https://openrouter.ai/docs/guides/overview/multimodal/audio) | unversioned | Chat and Responses extensions |
 | [DashScope Chat](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions), [Zhipu Chat](https://docs.bigmodel.cn/api-reference/%E6%A8%A1%E5%9E%8B-api/%E5%AF%B9%E8%AF%9D%E8%A1%A5%E5%85%A8), [vLLM multimodal inputs](https://docs.vllm.ai/en/latest/features/multimodal_inputs.html) | unversioned | Chat-compatible extensions |
@@ -36,8 +38,8 @@ Research notes on how each protocol carries image, audio, video and document inp
 |---|---|---|---|---|---|
 | OpenAI Chat | `image_url` with URL or data URL; `detail` `auto/low/high/original` | `input_audio` base64, `format` `wav` or `mp3` | None | `file`: PDF only, `file_data` data URL or `file_id`; no `file_url` | Image URLs |
 | OpenAI Responses | `input_image`: `image_url` or `file_id`, `detail` | None (`input_audio` exists only in evals types) | None | `input_file`: PDF, text, office and spreadsheet types; `file_data`, `file_url` or `file_id`; `filename`, `detail` (PDF only); 50 MB per request | Image and file URLs |
-| Anthropic Messages | `image`: `image/jpeg/png/gif/webp`, source `base64`, `url` or `file`; 10 MB base64, 8000 px | None | None | `document`: PDF via `base64`, `url` or `file`; `text` source (`text/plain`); `content` source (blocks); optional `title`, `context`, `citations` | Anthropic fetches `url` sources |
-| Gemini generateContent | `inlineData` (`mimeType`, `data`) for any supported type | Same, `audio/*` | Same, `video/*`; per-part `videoMetadata` (fps, offsets) and `mediaProcessing` | Same; PDF and text types | `fileData` (`fileUri` required, `mimeType` optional): Files URI, `gs://`, public HTTPS ≤15 MB (not Gemini 2.0), YouTube |
+| Anthropic Messages | `image`: `image/jpeg/png/gif/webp`, source `base64`, `url` or `file`; direct API: 10 MB base64 and 600 images per request; dimension limits also apply | None | None | `document`: PDF via `base64`, `url` or `file`; `text` source (`text/plain`); `content` source (blocks); optional `title`, `context`, `citations` | Anthropic fetches `url` sources |
+| Gemini generateContent | `inlineData` (`mimeType`, `data`); image guide lists png, jpeg, webp, heic, heif | Same, `audio/*` | Same, `video/*`; per-part `videoMetadata` (fps, offsets) and `mediaProcessing` | Same; PDF and text types | `fileData` (`fileUri` required, `mimeType` optional): Files URI, `gs://`, public HTTPS ≤15 MB (not Gemini 2.0), YouTube |
 | Interactions v1 | `image`: png, jpeg, webp, heic, heif, gif, bmp, tiff; `resolution` | `audio`: 13 MIME types, `channels`, `sample_rate` | **None** (v1beta has `video`) | `document`: `application/pdf`, `text/csv` | `data` or `uri`; `mime_type` optional |
 
 Gemini inline data is limited to 100 MB per request (50 MB for PDFs). The video guide also says inline requests should stay under 20 MB.
@@ -62,7 +64,7 @@ Anthropic Messages has no audio or video carrier. OpenRouter's Messages endpoint
 | OpenAI Chat | None. `role: tool` content is text parts only |
 | OpenAI Responses | `function_call_output.output` array: `input_text`, `input_image`, `input_file`. Open Responses adds `input_video` here (not in user messages) |
 | Anthropic Messages | `tool_result.content`: `text`, `image`, `document`, `search_result` |
-| Gemini generateContent | `functionResponse.parts[].inlineData` only (no `fileData`); Gemini 3 models. The description refers to `$ref` and `inline_data.display_name`, but `FunctionResponseBlob` has no `displayName` field |
+| Gemini generateContent | `functionResponse.parts[].inlineData` only (no `fileData`); Gemini 3 models. The guide lists png, jpeg, webp, PDF and plain text. A unique `displayName` is required when the structured `response` references the part through `$ref`; the pinned discovery schema does not expose that field |
 | Interactions v1 | `function_result.result` array: `text` and `image` only |
 
 ## Provider file APIs
@@ -80,12 +82,12 @@ A Provider file reference names data owned by the credential's workspace or proj
 | Protocol | Output carrier |
 |---|---|
 | OpenAI Chat | `message.audio` (already in the IR as generated audio) |
-| OpenAI Responses | `image_generation_call` items (a Provider tool), no image message part |
+| OpenAI Responses | `image_generation_call` items (a Provider tool), including completed base64 results and partial-image events; no generic image message part |
 | Anthropic Messages | None; Claude does not generate images |
 | Gemini generateContent | `responseModalities` `TEXT`/`IMAGE`/`AUDIO`; candidate parts carry `inlineData`. The final part, including `inlineData`, may carry a `thoughtSignature` that the API does not enforce |
 | Interactions v1 | `model_output` content `image`/`audio`/`document`; streamed as `image`/`audio` deltas; `response_format` for image, audio and video output |
 
-None of the downstream protocols has a standard carrier for generated images in an assistant message.
+Responses has a standard Provider-tool image carrier, not a generic assistant-image carrier. Chat and Messages have no standard assistant-image carrier. MorphieCore does not implement these generation outputs.
 
 ## Client behavior
 
@@ -102,12 +104,12 @@ None of the downstream protocols has a standard carrier for generated images in 
 4. Client-supplied Provider file IDs and file URIs are rejected. Forwarding one would read the gateway credential's workspace or project.
 5. Without a gateway file service, large media are limited to inline data within the gateway body and IR budgets, or public URLs.
 6. Detail, resolution, filename, title, fps and similar per-use options do not translate across protocols. Targets without the option drop it through a named rule; inbound options with no IR slot that change visible content are rejected.
-7. Generated media stays out of scope until a downstream carrier exists.
+7. Generated media stays out of scope until its semantic contract and selected client carrier are implemented. Do not relabel a native assistant image as a Provider tool call.
 
 ## Open questions
 
 Each needs one bounded real call before it is relied on:
 
 1. Gemini `fileData` with a public HTTPS URL and no `mimeType`.
-2. Interactions v1 `uri` with a public HTTPS URL or a Files API URI.
+2. Interactions v1 `uri` with a public HTTPS URL. Files API URIs remain out of scope and are rejected.
 3. Gemini 3 `functionResponse.parts` without `displayName` or `$ref`.

@@ -433,7 +433,10 @@ fn media(
             }
             Ok(json!({"type":kind,"data":data_base64.as_str(),"mime_type":media_type.as_str()}))
         }
-        ResourceLocation::Url(url) => Ok(json!({"type":kind,"uri":url.as_str()})),
+        ResourceLocation::Url(url) => {
+            crate::protocol::google::check_public_media_url(url.as_str())?;
+            Ok(json!({"type":kind,"uri":url.as_str()}))
+        }
         _ => Err(unsupported()),
     }
 }

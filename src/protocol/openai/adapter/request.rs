@@ -12,6 +12,47 @@ use crate::{
     },
 };
 use serde_json::Value;
+
+fn without_image_detail(request: &Request) -> Result<Option<Request>, CodecError> {
+    use crate::semantic::task::generation::{
+        ContentPart, Item, ResourceDescription, ResourceUse, ToolOutput, ToolResultPart,
+    };
+    let mut items = request.task.semantic.items().to_vec();
+    let mut changed = false;
+    let mut omit = |resource: &mut ResourceUse| {
+        if let ResourceDescription::Image { detail } = &mut resource.description {
+            changed |= detail.take().is_some();
+        }
+    };
+    for (_, item) in &mut items {
+        match item {
+            Item::Message(message) => {
+                for part in &mut message.parts {
+                    if let ContentPart::Resource(resource) = &mut part.content {
+                        omit(resource);
+                    }
+                }
+            }
+            Item::ToolResult(result) | Item::CustomResult(result) => {
+                if let ToolOutput::Parts(parts) = &mut result.output {
+                    for (_, part) in parts {
+                        if let ToolResultPart::Resource(resource) = part {
+                            omit(resource);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    if !changed {
+        return Ok(None);
+    }
+    let mut copy = request.clone();
+    copy.task.semantic = copy.task.semantic.with_items(items)?;
+    Ok(Some(copy))
+}
+
 impl Adapter {
     /// Closed decode: every field must be registered.
     pub fn decode_request(&self, bytes: &[u8]) -> Result<Request, CodecError> {
@@ -216,6 +257,15 @@ impl Adapter {
             });
         }
         let request = leveled.as_ref().unwrap_or(request);
+        let media = if self.adaptation.rules.omit_image_detail {
+            without_image_detail(request)?
+        } else {
+            None
+        };
+        if media.is_some() {
+            rules.push("openai.omit-image-detail.v1");
+        }
+        let request = media.as_ref().unwrap_or(request);
         request.check_context(contract.standard_context)?;
         if self.adaptation.rules.responses_siwc {
             if self.protocol != Profile::Responses {

@@ -199,6 +199,7 @@ impl Dialect {
             Self::Xiaomi => (
                 "xiaomi-v1",
                 WireRules {
+                    omit_image_detail: true,
                     readable_reasoning: true,
                     responses_unreported_text_logprobs: true,
                     chat_image_usage: true,

@@ -476,9 +476,28 @@ fn media(
         ResourceLocation::Inline {
             media_type,
             data_base64,
-        } => Ok(json!({"inlineData": {
-            "mimeType": media_type.as_str(), "data": data_base64.as_str()}})),
-        ResourceLocation::Url(url) if !tool => Ok(json!({"fileData": {"fileUri": url.as_str()}})),
+        } => {
+            // User images and function-response images have different format sets.
+            // https://ai.google.dev/gemini-api/docs/image-understanding
+            // https://ai.google.dev/gemini-api/docs/generate-content/function-calling
+            if media_type
+                .as_str()
+                .to_ascii_lowercase()
+                .starts_with("image/")
+                && !(matches!(
+                    media_type.as_str(),
+                    "image/png" | "image/jpeg" | "image/webp"
+                ) || !tool && matches!(media_type.as_str(), "image/heic" | "image/heif"))
+            {
+                return Err(unsupported());
+            }
+            Ok(json!({"inlineData": {
+                "mimeType": media_type.as_str(), "data": data_base64.as_str()}}))
+        }
+        ResourceLocation::Url(url) if !tool => {
+            super::check_public_media_url(url.as_str())?;
+            Ok(json!({"fileData": {"fileUri": url.as_str()}}))
+        }
         _ => Err(unsupported()),
     }
 }

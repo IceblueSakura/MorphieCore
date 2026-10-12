@@ -102,7 +102,9 @@ async fn answer(
     if !chat && request.to_string().contains("function_call_output") {
         let history = request["input"].as_array().unwrap();
         for expected in [
-            json!({"type":"function_call_output","call_id":"c_lookup","output":"{\"n\":1}"}),
+            json!({"type":"function_call_output","call_id":"c_lookup","output":[
+                {"type":"input_text","text":"{\"n\":1}"},
+                {"type":"input_image","image_url":"data:image/png;base64,AQID","detail":"auto"}]}),
             json!({"type":"custom_tool_call_output","call_id":"c_sql","output":"1"}),
         ] {
             assert!(history.contains(&expected));
@@ -162,6 +164,15 @@ async fn answer(
     } else {
         serde_json::to_vec(&output).unwrap()
     };
+    let body = if stream {
+        let chunks = bytes
+            .chunks(7)
+            .map(|c| Ok::<_, std::convert::Infallible>(bytes::Bytes::copy_from_slice(c)))
+            .collect::<Vec<_>>();
+        Body::from_stream(futures_util::stream::iter(chunks))
+    } else {
+        Body::from(bytes)
+    };
     Response::builder()
         .status(StatusCode::OK)
         .header(
@@ -172,7 +183,7 @@ async fn answer(
                 "application/json"
             },
         )
-        .body(Body::from(bytes))
+        .body(body)
         .unwrap()
 }
 fn responses_delivery(body: &[u8], streaming: bool) -> DecodedResponse {
@@ -454,7 +465,9 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
                     // Synthetic results only; call arguments never execute code.
                     history.push(match call.call_id {
                         "c_sql" => json!({"type":"custom_tool_call_output","call_id":call.call_id,"output":"1"}),
-                        "c_lookup" => json!({"type":"function_call_output","call_id":call.call_id,"output":"{\"n\":1}"}),
+                        "c_lookup" => json!({"type":"function_call_output","call_id":call.call_id,"output":[
+                            {"type":"input_text","text":"{\"n\":1}"},
+                            {"type":"input_image","image_url":"data:image/png;base64,AQID","detail":"auto"}]}),
                         _ => panic!("unexpected call identity"),
                     });
                 }
@@ -475,6 +488,28 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
                 assert_eq!(finished.semantic.outcome(), Outcome::Completed);
                 assert_eq!(finished.semantic.continuation(), Continuation::Unreported);
                 assert_eq!(finished.semantic.usage().unwrap().total_tokens, Some(8));
+
+                let mut later = history.clone();
+                let completed = Adapter::new(Profile::Responses, Dialect::Standard, None)
+                    .encode_response(&finished, &contract)
+                    .unwrap();
+                later.extend(completed["output"].as_array().unwrap().iter().cloned());
+                later.push(json!({"role":"user","content":"Continue."}));
+                let replayed = client
+                    .post(format!("{url}{path}"))
+                    .bearer_auth(support::CLIENT_KEY)
+                    .json(&json!({"model":"public-model","input":later,
+                        "max_output_tokens":32,"stream":stream}))
+                    .send()
+                    .await
+                    .unwrap();
+                assert_eq!(replayed.status(), 200);
+                assert_eq!(
+                    responses_delivery(&replayed.bytes().await.unwrap(), stream)
+                        .semantic
+                        .outcome(),
+                    Outcome::Completed
+                );
 
                 let before = observed.0.lock().unwrap().len();
                 history.last_mut().unwrap()["call_id"] = json!("unmatched-call");

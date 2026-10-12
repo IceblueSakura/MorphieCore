@@ -230,6 +230,7 @@ fn user_media_become_inline_or_file_data_parts() {
         Profile::Chat,
         json!({"model":"gemini","messages":[{"role":"user","content":[
             {"type":"image_url","image_url":{"url":"https://example.invalid/a.png"}},
+            {"type":"image_url","image_url":{"url":"data:image/png;base64,BwgJ"}},
             {"type":"input_audio","input_audio":{"data":"AQID","format":"wav"}},
             {"type":"video_url","video_url":{"url":"data:video/mp4;base64,BAUG"}},
             {"type":"text","text":"Describe."}]}]}),
@@ -241,11 +242,26 @@ fn user_media_become_inline_or_file_data_parts() {
         body["contents"],
         json!([{"role":"user","parts":[
             {"fileData":{"fileUri":"https://example.invalid/a.png"}},
+            {"inlineData":{"mimeType":"image/png","data":"BwgJ"}},
             {"inlineData":{"mimeType":"audio/wav","data":"AQID"}},
             {"inlineData":{"mimeType":"video/mp4","data":"BAUG"}},
             {"text":"Describe."}]}])
     );
     assert!(rules.is_empty());
+    for url in [
+        "https://GENERATIVELANGUAGE.GOOGLEAPIS.COM./v1beta/%66iles/synthetic",
+        "data:image/gif;base64,AQID",
+    ] {
+        let invalid = client(
+            Profile::Chat,
+            json!({"model":"gemini","messages":[{"role":"user","content":[
+                {"type":"image_url","image_url":{"url":url}}]}]}),
+        );
+        assert!(
+            encode_generation_request(&invalid.task.semantic, &invalid.task.fidelity, &target())
+                .is_err()
+        );
+    }
 }
 
 #[test]
@@ -276,5 +292,14 @@ fn tool_media_ride_inline_in_the_function_response() {
     let remote = client(Profile::Responses, input("https://example.invalid/a.png"));
     assert!(
         encode_generation_request(&remote.task.semantic, &remote.task.fidelity, &target()).is_err()
+    );
+    let unsupported = client(Profile::Responses, input("data:image/gif;base64,AQID"));
+    assert!(
+        encode_generation_request(
+            &unsupported.task.semantic,
+            &unsupported.task.fidelity,
+            &target()
+        )
+        .is_err()
     );
 }

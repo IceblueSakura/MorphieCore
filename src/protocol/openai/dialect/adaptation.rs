@@ -32,6 +32,9 @@ pub struct WireRules {
     /// Chat standard has auto/low/high; this profile additionally represents original.
     /// Source: <https://api-docs.deepseek.com/guides/vision>.
     pub chat_original_image_detail: bool,
+    /// This target has no image-detail carrier; omit the per-use option by name.
+    /// https://mimo.mi.com/docs/zh-CN/api/chat/responses
+    pub omit_image_detail: bool,
     /// Typed image-token fact in Chat input details, not an opaque vendor Usage.
     /// Source: <https://mimo.mi.com/docs/zh-CN/api/chat/openai-api>.
     pub chat_image_usage: bool,

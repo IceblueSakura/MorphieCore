@@ -438,6 +438,59 @@ mod anthropic_semantics {
 }
 mod anthropic_media {
     //! Independent native image/document oracles; inert sources, no fetch or file API.
+    #[test]
+    fn native_image_count_includes_tool_result_images() {
+        use morphiecore::protocol::anthropic::Profile;
+        use serde_json::json;
+        let image = json!({"type":"image","source":{
+            "type":"base64","media_type":"image/png","data":"AQID"}});
+        let mut wire = json!({"model":"synthetic","max_tokens":32,"messages":[
+            {"role":"user","content":vec![image.clone();599]},
+            {"role":"assistant","content":[
+                {"type":"tool_use","id":"c","name":"read","input":{}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"c",
+                "content":[image.clone()]}]}]});
+        let profile = Profile::AdaptiveTextTools;
+        let request = profile.decode_request(wire.to_string().as_bytes()).unwrap();
+        assert!(profile.encode_request(&request).is_ok());
+        wire["messages"][2]["content"][0]["content"]
+            .as_array_mut()
+            .unwrap()
+            .push(image);
+        assert!(profile.decode_request(wire.to_string().as_bytes()).is_err());
+    }
+
+    #[test]
+    fn native_image_size_counts_encoded_base64_bytes() {
+        use morphiecore::protocol::anthropic::{Block, Media, MessageContent, Profile, Source};
+        use serde_json::json;
+        let profile = Profile::AdaptiveTextTools;
+        let mut request = profile
+            .decode_request(
+                json!({"model":"synthetic","max_tokens":32,"messages":[
+                {"role":"user","content":[{"type":"image","source":{
+                    "type":"base64","media_type":"image/png","data":"AQID"}}]}]})
+                .to_string()
+                .as_bytes(),
+            )
+            .unwrap();
+        let MessageContent::Blocks(blocks) = &mut request.messages[0].content else {
+            panic!("image blocks")
+        };
+        blocks[0] = Block::Media(Media::Image(Source::Base64 {
+            media_type: "image/png".into(),
+            data: "AAAA".repeat(10_000_000 / 4),
+        }));
+        assert!(profile.encode_request(&request).is_ok());
+        let MessageContent::Blocks(blocks) = &mut request.messages[0].content else {
+            unreachable!()
+        };
+        let Block::Media(Media::Image(Source::Base64 { data, .. })) = &mut blocks[0] else {
+            unreachable!()
+        };
+        data.push_str("AAAA");
+        assert!(profile.encode_request(&request).is_err());
+    }
     use morphiecore::{
         protocol::{anthropic::Profile, native::ReplayTarget},
         semantic::task::generation::*,

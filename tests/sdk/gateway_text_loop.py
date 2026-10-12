@@ -137,7 +137,11 @@ def run(base_url: str) -> None:
                     history.extend(dumped)
                     history.extend([
                         {"type": "function_call_output", "call_id": "c_lookup_large", "output": '{"n":9007199254740993}'},
-                        {"type": "function_call_output", "call_id": "c_lookup", "output": '{"n":1}'},
+                        {"type": "function_call_output", "call_id": "c_lookup", "output": [
+                            {"type": "input_text", "text": '{"n":1}'},
+                            {"type": "input_image", "image_url": "data:image/png;base64,AQID",
+                             "detail": "auto"},
+                        ]},
                         {"type": "custom_tool_call_output", "call_id": "c_sql", "output": "1"},
                     ])
                 else:

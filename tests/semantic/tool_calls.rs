@@ -596,6 +596,41 @@ mod tool_results {
     }
     #[test]
     fn ordered_media_has_unique_parts_and_distinct_requirements() {
+        use morphiecore::protocol::{
+            fidelity::FidelityRecords,
+            openai::{Profile, TargetCaps, lowering::lower_request, responses},
+        };
+        let oracle = json!({"input":[
+            {"type":"function_call","call_id":"c","name":"lookup","arguments":"{}"},
+            {"type":"function_call_output","call_id":"c","output":[
+                {"type":"input_text","text":"caption"},
+                {"type":"input_image","image_url":"https://example.invalid/a.png"}]}]});
+        let decoded = responses::decode_generation(&oracle).unwrap();
+        let Item::ToolResult(result) = &decoded.semantic.items()[1].1 else {
+            panic!("tool result")
+        };
+        let ToolOutput::Parts(parts) = &result.output else {
+            panic!("parts")
+        };
+        assert_eq!(result.call_id.as_str(), "c");
+        assert!(matches!(&parts[0].1, ToolResultPart::Text(t) if t.as_str() == "caption"));
+        let ToolResultPart::Resource(resource) = &parts[1].1 else {
+            panic!("image")
+        };
+        let view = resource.media(decoded.semantic.resources()).unwrap();
+        assert_eq!(view.kind(), ResourceKind::Image);
+        assert!(
+            matches!(view.location, ResourceLocation::Url(u) if u.as_str() == "https://example.invalid/a.png")
+        );
+        // Encode independently built IR, not the decoded request.
+        let outbound = request(media("https://example.invalid/a.png"), None).unwrap();
+        let fidelity = FidelityRecords::default();
+        let target =
+            lower_request(&outbound, &fidelity, Profile::Responses, TargetCaps::full()).unwrap();
+        assert_eq!(
+            responses::encode_generation(&target).unwrap()["input"],
+            oracle["input"]
+        );
         let history = request(
             media("https://example.invalid/a.png"),
             Some(ItemLifecycle::Incomplete),

@@ -1,5 +1,9 @@
 //! Native request representation; validation never executes tools or rewrites schemas.
-use super::{response::Block, shape::*};
+use super::{
+    media::{MAX_IMAGES, Media, ResultBlock, ResultContent},
+    response::Block,
+    shape::*,
+};
 use crate::{
     protocol::CodecError,
     semantic::{
@@ -431,6 +435,7 @@ impl Request {
         let mut seen = BTreeSet::new();
         let mut pending = BTreeSet::new();
         let mut block_count = 0;
+        let mut image_count = 0;
         for message in &self.messages {
             charge(&mut bytes, message.bytes()?)?;
             node_charge(&mut nodes, 8)?;
@@ -440,6 +445,20 @@ impl Request {
                 block_count += blocks.len();
                 count(block_count)?;
                 for block in blocks {
+                    image_count += match block {
+                        Block::Media(Media::Image(_)) => 1,
+                        Block::ToolResult {
+                            content: ResultContent::Blocks(parts),
+                            ..
+                        } => parts
+                            .iter()
+                            .filter(|p| matches!(p, ResultBlock::Media(Media::Image(_))))
+                            .count(),
+                        _ => 0,
+                    };
+                    if image_count > MAX_IMAGES {
+                        return Err(CodecError::Limit);
+                    }
                     node_charge(&mut nodes, block.nodes()?)?;
                     match block {
                         Block::ToolUse { id, .. } => {

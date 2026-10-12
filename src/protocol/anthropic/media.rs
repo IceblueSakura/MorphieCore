@@ -11,6 +11,10 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 
 const IMAGE_TYPES: &[&str] = &["image/jpeg", "image/png", "image/gif", "image/webp"];
+// Direct Messages limits count encoded data, including tool-result images.
+// https://platform.claude.com/docs/en/build-with-claude/vision
+const MAX_IMAGE_BASE64_BYTES: usize = 10_000_000;
+pub(super) const MAX_IMAGES: usize = 600;
 const PDF: &str = "application/pdf";
 const PLAIN_TEXT: &str = "text/plain";
 
@@ -63,6 +67,9 @@ impl Media {
     }
     fn validate(&self) -> Result<(), CodecError> {
         match self {
+            Self::Image(Source::Base64 { data, .. }) if data.len() > MAX_IMAGE_BASE64_BYTES => {
+                Err(CodecError::Limit)
+            }
             Self::Image(Source::Base64 { media_type, .. })
                 if !IMAGE_TYPES.contains(&&**media_type) =>
             {
@@ -167,11 +174,13 @@ impl Media {
             },
             _ => return Err(unsupported()),
         };
-        match resource.kind() {
-            ResourceKind::Image => Ok(Self::Image(source)),
-            ResourceKind::File => Ok(Self::Document(source)),
-            ResourceKind::Audio | ResourceKind::Video => Err(unsupported()),
-        }
+        let media = match resource.kind() {
+            ResourceKind::Image => Self::Image(source),
+            ResourceKind::File => Self::Document(source),
+            ResourceKind::Audio | ResourceKind::Video => return Err(unsupported()),
+        };
+        media.validate()?;
+        Ok(media)
     }
 }
 /// `tool_result.content`: a string or text, image and document blocks.

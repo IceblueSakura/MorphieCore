@@ -227,15 +227,10 @@ async fn provider(
                     .collect::<Vec<_>>(),
                 [
                     json!({"type":"function_call_output","call_id":"c_lookup_large","output":"{\"n\":9007199254740993}"}),
-                    json!({"type":"function_call_output","call_id":"c_lookup","output":"{\"n\":1}"})
+                    json!({"type":"function_call_output","call_id":"c_lookup","output":[
+                        {"type":"input_text","text":"{\"n\":1}"},
+                        {"type":"input_image","image_url":"data:image/png;base64,AQID","detail":"auto"}]})
                 ]
-            );
-            assert!(
-                history
-                    .iter()
-                    .any(|item| item["type"] == "function_call_output"
-                        && item["call_id"] == "c_lookup"
-                        && item["output"] == "{\"n\":1}")
             );
             assert!(history.iter().any(
                 |item| item["type"] == "custom_tool_call_output" && item["call_id"] == "c_sql"

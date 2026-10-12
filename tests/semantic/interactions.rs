@@ -332,4 +332,21 @@ fn media_become_v1_content_and_video_has_no_carrier() {
     assert!(
         encode_generation_request(&video.task.semantic, &video.task.fidelity, &target).is_err()
     );
+    for tool in [false, true] {
+        let uri = "https://generativelanguage.googleapis.com/v1beta/files/synthetic";
+        let input = if tool {
+            json!([
+                {"type":"function_call","call_id":"c1","name":"shot","arguments":"{}"},
+                {"type":"function_call_output","call_id":"c1","output":[
+                    {"type":"input_image","image_url":uri}]}
+            ])
+        } else {
+            json!([{"role":"user","content":[{"type":"input_image","image_url":uri}]}])
+        };
+        let private = decode(Profile::Responses, json!({"model":"public","input":input}));
+        assert!(
+            encode_generation_request(&private.task.semantic, &private.task.fidelity, &target)
+                .is_err()
+        );
+    }
 }
