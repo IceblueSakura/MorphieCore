@@ -19,21 +19,17 @@ pi and opencode first; Codex and Claude Code second. A known client's observed b
 
 Vendor stream shapes are a standing rule, not a phase: a Chat shape seen from a bound upstream (a continuation `function.name: ""`, `finish_reason: ""`, `tool_calls: []` opening the message owner early, `finish_reason: "stop"` beside tool calls) becomes a named dialect rule, like `empty_continuation_call_id`, once that upstream emits it. Likewise an OpenAI-compatible upstream's in-stream error (a Chat error chunk, a Responses `response.failed`) is classified like Anthropic `error` events once a bound upstream emits one. Frozen media decoders are not extended.
 
-## Current focus: Phase 3 — failover routing with cache affinity
+## Open from Phase 3
 
-A public model may have several bindings (Provider × upstream model × credential pool). The compiled order is the failover order; runtime policy only skips unhealthy executors and keeps a conversation where its cache and its account-bound thinking live. No load balancing.
-
-- **Alternative bindings.** Add one only where a target agent's model needs it; the first is `glm-5.3` via OpenRouter beside Zhipu.
-
-Exit: synthetic two-binding routes show failover on 5xx, rate limit and a pre-content stream error; a conversation staying on its executor across turns and tool round trips, and on the new one after a failover; cooldown expiry; removed or disabled targets not revived; no binding reuse after a key change; no sharing across ingress keys for one conversation ID; state released on concurrent first requests and cancellation; compiled order kept without affinity. One bounded real failover run with two credentials or Providers for one model.
+Failover routing is done (architecture §5). Not accepted: one bounded real failover run with two credentials or Providers for one model; it needs a reproducible advanceable failure, such as a zero-credit or exhausted key in a scratch credential store.
 
 Deferred until a real need: SSE keep-alive comments while frames are held (the hold stays far below Codex's 300 s idle timeout), executor affinity from the prefix index for requests without a declared conversation (all target agents declare one), an opt-in first-content timeout, per-message effort to keep the cache when clients change effort mid-conversation.
 
-## Later phases
-
-### Phase 4 — downstream Anthropic Messages for Claude Code
+## Current focus: Phase 4 — downstream Anthropic Messages for Claude Code
 
 Reuse the Anthropic module from Phase 1; add request decoding and response/SSE encoding. Native `is_error`, thinking signatures and block order map directly. Toward OpenAI targets, keep tool result text and drop `is_error` by a named lossy rule. Claude Code's request shapes and error handling are the acceptance oracle.
+
+## Later phases
 
 ### Phase 5 — Google generateContent upstream
 
