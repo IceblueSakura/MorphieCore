@@ -29,21 +29,26 @@ Not current work; each returns only when the user reopens it.
 
 Until a real need: SSE keep-alive comments while frames are held (the hold stays far below Codex's 300 s idle timeout), executor affinity from the prefix index for requests without a declared conversation (all target agents declare one), an opt-in first-content timeout.
 
+## Current focus: Phases 5 and 6 — Google upstreams
+
+Target: `gemini-3.8-flash` on Google AI Studio (`generativelanguage.googleapis.com`, `x-goog-api-key`), one public model with two bindings in failover order: generateContent first, Interactions v1 second. Gemini 3 only, so `functionCall.id` is always present; a missing ID is a protocol error and the gateway mints none. Real runs wait for the user's Google key; offline work does not.
+
+Phase 5 — generateContent:
+
+- Always `:streamGenerateContent?alt=sse` upstream; JSON clients get the aggregate.
+- Each `thoughtSignature` becomes a reasoning item whose `GoogleGenerateContentPart` value names its anchor: the function call ID, its own thought part, or the content's tail. The encoder restores it by anchor, so existing downstream reasoning carriers return it and downstream reordering (Chat puts reasoning first) cannot misplace it. Thought parts always carry such a value, so the same target gets them back as thoughts while other targets get readable text.
+- Effort maps to `thinkingLevel` `low`/`medium`/`high`; `none` and `minimal` become `low` by a named rule (3.8 Flash rejects `minimal`). Tool schemas go as `parametersJsonSchema`; tool results as `functionResponse` with the call ID.
+- Finish reasons, `usageMetadata` (`thoughtsTokenCount`, `cachedContentTokenCount`) and Google error bodies map onto the existing stop, usage and error classes.
+
+Phase 6 — Interactions v1:
+
+- Stateless: `store: false`, no `previous_interaction_id`, full history as steps, always streamed.
+- `thought` steps map to reasoning items with `GoogleInteractionsV1Thought` values; `function_call` and `function_result` steps to calls and results.
+- The two Google formats are separate replay domains: a value of the other format is dropped as foreign, so failover between the bindings loses reasoning instead of failing.
+
+Exit: hand-written wire→IR and IR→wire tests for both codecs, gateway tests against a synthetic upstream for JSON and SSE delivery, then pi acceptance through all three of its providers on each binding: a read-tool loop with thinking where the second turn replays the signature without a 400. Afterwards delete the IR's part- and call-level replay slots if nothing uses them.
+
 ## Later phases
-
-### Phase 5 — Google generateContent upstream
-
-Only when a target agent needs a Gemini model. IR questions to settle first:
-
-- `thoughtSignature` attaches to parts (including `functionCall`); confirm `Part.replay` and `CallContext.replay` carry it directly.
-- `functionCall.id` may be missing: the gateway must mint call IDs and map back by name and order. Check whether `NativeCallAlias` suffices; if not, report the IR gap with options first.
-- Streaming returns `GenerateContentResponse` fragments, close to Chat chunks.
-- More `finishReason` values (SAFETY, MALFORMED_FUNCTION_CALL, …) and usage details (`thoughtsTokenCount`, `cachedContentTokenCount`).
-- Schemas use the OpenAPI subset or `parametersJsonSchema`.
-
-### Phase 6 — Google Interactions upstream
-
-Submit full history statelessly, without server-side storage; reuse the opaque envelope. Pin the official API version before starting.
 
 ### After that
 

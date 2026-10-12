@@ -11,7 +11,7 @@ MorphieCore is a central gateway for a few agents (pi and opencode first, Codex 
 | Downstream | Anthropic Messages | JSON and SSE, for Claude Code. Uses each model's Chat candidates; `is_error` is dropped by name when a non-native target may serve |
 | Upstream | OpenAI Responses and Chat, including compatible dialects | Live |
 | Upstream | Anthropic Messages | JSON and SSE; directory bootstrap activates a binding only when `models` lists it |
-| Upstream | Google generateContent, Google Interactions | Planned |
+| Upstream | Google generateContent, Google Interactions | In progress ([roadmap](roadmap.md)) |
 
 The standalone Embeddings, Images, Speech and Transcription endpoints exist but are frozen: maintenance only, as refactors require.
 
@@ -155,6 +155,7 @@ When Chat Completions cannot carry a semantic such as reasoning, MorphieCore fol
 | Target affinity binds the exact credential | The binding names Endpoint, credential identity and upstream model; a different credential is a different cache domain. API keys are identified by binding plus an in-memory material fingerprint, OAuth by verified principal, so key rotation drops the binding and token refresh keeps it |
 | Minimal HTTP gateway | Loopback listener, single Bearer ingress auth, no inbound header pass-through |
 | Open upstream decoding | Strict on known fields, ignore unknown ones |
+| Gemini signatures as reasoning | A generateContent `thoughtSignature` travels as a reasoning item whose value names its anchor part (call ID, thought, or tail), so every downstream reasoning carrier returns it and the encoder restores it by anchor, not by position |
 | Opaque envelope | No encryption or local proof; restore on same Provider and model, otherwise drop |
 | Chat extensions | OpenRouter shapes for semantics Chat cannot express |
 | File credentials and ordered pools | Authorization lifecycle is separate from inference borrowing; no automatic refresh or load balancing |
