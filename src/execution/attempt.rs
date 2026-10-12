@@ -385,7 +385,7 @@ impl Attempt {
                         UpstreamAdapter::OpenAi(adapter) => adapter.decode_response(body)?,
                         UpstreamAdapter::GoogleGenerateContent { .. }
                         | UpstreamAdapter::GoogleInteractions { .. } => {
-                            return Err(AttemptError::Protocol("Gemini intake requires SSE"));
+                            return Err(AttemptError::Protocol("Google intake requires SSE"));
                         }
                     },
                     Intake::Responses(d) => {

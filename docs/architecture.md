@@ -131,7 +131,15 @@ The envelope is not encryption, authentication or local proof. It cannot choose 
 
 Some native thinking is account-bound. Exact-credential affinity helps preserve it, but Provider/model compatibility alone cannot guarantee replay after credential fallback.
 
-Carriers include Responses `encrypted_content`, Chat encrypted reasoning details, Anthropic thinking signatures, Gemini `thoughtSignature` and Interactions signatures. Gemini signatures carry semantic anchors, not positional guesses. generateContent and Interactions formats are not translated into each other.
+Carriers include Responses `encrypted_content`, Chat encrypted reasoning details, Anthropic thinking signatures, Gemini `thoughtSignature` and Interactions signatures.
+
+Google signatures travel as reasoning items. The IR has no part- or call-level replay slots; Provider-tool replay stays separate.
+
+- A generateContent value names its anchor: call ID, thought or tail. The encoder restores it by anchor, not position.
+- An Interactions value is a thought signature or a call-ID-anchored signature.
+- Signature-only items trail the response, so a message stays contiguous with its calls. Chat carries them ahead of the message.
+- Preserve every signature, even when an upstream sample accepts an omitted one.
+- generateContent and Interactions are separate formats. A value of the other format is dropped as foreign, not translated, so failover between the two bindings loses reasoning instead of failing.
 
 ## Chat reasoning extensions
 
@@ -265,7 +273,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Honest delivery | Publication forbids advancement; success requires validated EOF and handoff |
 | Agent-shaped failures | Sanitized error classes match pinned client behavior; refusals are not retries |
 | Delivery-local identity | Generated client IDs/timestamps are not upstream facts or history keys |
-| Stateless Google Interactions | Full history, no stored interaction ID; signatures retain their native formats |
+| Stateless Google Interactions | `store: false` and full history; no `previous_interaction_id` or revision header. Signatures keep their native formats |
 | Separate credential lifecycle | Private file store and ordered pools; no inference-triggered login or refresh |
 
 Pinned clients and protocol sources are in [References](references.md). Observed client behavior is an oracle, not permission to weaken security or fabricate semantics.
