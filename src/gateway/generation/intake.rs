@@ -7,7 +7,7 @@ use crate::gateway::{
 use crate::{
     adapter::Request,
     execution::{Attempt, ResponseDelivery},
-    protocol::openai::sse::{Obfuscation, SseLimits},
+    protocol::{openai::stream::Obfuscation, stream::SseLimits},
 };
 use bytes::Bytes;
 /// While another candidate could still answer, lifecycle-only frames wait for the

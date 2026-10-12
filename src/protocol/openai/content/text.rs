@@ -1,18 +1,18 @@
 //! Typed text metadata; no unknown annotation/probability object is retained.
-use super::{CodecError, common::*};
+use crate::protocol::openai::{CodecError, common::*};
 use crate::semantic::{
     task::generation::*,
     value::{Presence, Text},
 };
 use serde_json::{Map, Value, json};
-pub(super) fn read(
+pub(in crate::protocol::openai) fn read(
     o: &Map<String, Value>,
     replay: bool,
     items: &mut Items,
 ) -> Result<TextContent, CodecError> {
     read_existing(o, replay, items, &[])
 }
-pub(super) fn read_existing(
+pub(in crate::protocol::openai) fn read_existing(
     o: &Map<String, Value>,
     replay: bool,
     items: &mut Items,
@@ -39,7 +39,7 @@ pub(super) fn read_existing(
     let logprobs = read_presence(o, "logprobs", read_logprobs)?;
     Ok(TextContent::new(text, annotations, logprobs)?)
 }
-pub(super) fn read_annotations(
+pub(in crate::protocol::openai) fn read_annotations(
     v: &Value,
     items: &mut Items,
     existing: &[Annotation],
@@ -55,17 +55,19 @@ pub(super) fn read_annotations(
         .enumerate()
         .map(|(index, value)| {
             if let Some(known) = existing.get(index) {
-                if super::citations::write(known, &items.resources)? != *value {
+                if crate::protocol::openai::content::citations::write(known, &items.resources)?
+                    != *value
+                {
                     return Err(CodecError::Invalid("annotation snapshot"));
                 }
                 Ok(known.clone())
             } else {
-                super::citations::read(value, items)
+                crate::protocol::openai::content::citations::read(value, items)
             }
         })
         .collect()
 }
-pub(super) fn read_logprobs(v: &Value) -> Result<Vec<Logprob>, CodecError> {
+pub(in crate::protocol::openai) fn read_logprobs(v: &Value) -> Result<Vec<Logprob>, CodecError> {
     let a = v.as_array().ok_or(CodecError::Invalid("logprobs"))?;
     if a.len() > MAX_ITEMS {
         return Err(CodecError::Limit);
@@ -75,7 +77,7 @@ pub(super) fn read_logprobs(v: &Value) -> Result<Vec<Logprob>, CodecError> {
     validate_logprobs(&p)?;
     Ok(p)
 }
-pub(super) fn event_logprobs(probs: &[Logprob]) -> Value {
+pub(in crate::protocol::openai) fn event_logprobs(probs: &[Logprob]) -> Value {
     json!(
         probs
             .iter()
@@ -102,13 +104,20 @@ pub(super) fn event_logprobs(probs: &[Logprob]) -> Value {
             .collect::<Vec<_>>()
     )
 }
-pub(super) fn write(t: &TextContent, kind: &str, resources: &ResourceTable) -> Value {
+pub(in crate::protocol::openai) fn write(
+    t: &TextContent,
+    kind: &str,
+    resources: &ResourceTable,
+) -> Value {
     let mut v = json!({"type":kind,"text":t.as_str()});
     if kind == "output_text" || !t.annotations().is_empty() {
         v["annotations"] = json!(
             t.annotations()
                 .iter()
-                .map(|a| super::citations::write(a, resources).expect("checked citation"))
+                .map(
+                    |a| crate::protocol::openai::content::citations::write(a, resources)
+                        .expect("checked citation")
+                )
                 .collect::<Vec<_>>()
         );
     }

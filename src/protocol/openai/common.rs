@@ -1,4 +1,4 @@
-use super::{CodecError, Profile};
+use crate::protocol::openai::{CodecError, Profile};
 use crate::{
     protocol::fidelity::FidelityRecords,
     semantic::{task::generation::*, value::Text},
@@ -367,7 +367,7 @@ pub(super) fn tool_call(
     let status = if o.get("status").is_some_and(Value::is_null) {
         ItemLifecycle::Completed
     } else {
-        super::responses::status(o, ItemLifecycle::Completed)?
+        crate::protocol::openai::responses::status(o, ItemLifecycle::Completed)?
     };
     Ok(ToolCall {
         call_id: text(id, "call_id", 256)?,
@@ -375,7 +375,7 @@ pub(super) fn tool_call(
         arguments: raw_string(f, "arguments")?.into(),
         status,
         context: if profile == Profile::Responses {
-            super::responses::call_context(o, direction)?
+            crate::protocol::openai::responses::call_context(o, direction)?
         } else {
             CallContext::default()
         },

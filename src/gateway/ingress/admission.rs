@@ -140,7 +140,7 @@ fn prepare_in(
 ) -> Result<(Arc<BoundEntry>, Request), ApiError> {
     // Only envelope identity is inspected here; semantic interpretation starts
     // after resolving the trusted Public Model/task. Duplicate keys remain errors.
-    let value = crate::protocol::openai::json::decode(bytes).map_err(|_| ApiError::invalid())?;
+    let value = crate::protocol::json::decode(bytes).map_err(|_| ApiError::invalid())?;
     let model = value
         .get("model")
         .and_then(serde_json::Value::as_str)

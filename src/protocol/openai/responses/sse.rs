@@ -1,9 +1,13 @@
 //! Pure HTTP/SSE boundary for the stateless Responses profile.
 //! Socket I/O, authentication, cancellation and commit remain caller responsibilities.
 //! One consume call yields at most one framed payload; it never buffers a whole wire stream.
-use super::{
+use crate::protocol::openai::{
     CodecError, DecodedResponse, Profile, ResponseMetadata,
     events::{EventDecoder, EventEncoder},
+};
+use crate::protocol::{
+    openai::stream::{Obfuscation, charge_padding, pad_payload},
+    stream::{SseError, SseLimits, validate_http},
 };
 use crate::{
     protocol::{fidelity::FidelityRecords, openai::TargetCaps},
@@ -11,66 +15,10 @@ use crate::{
         task::generation::*,
         value::{ReplayOrigin, json_size},
     },
-    transport::sse::{SseDecodeError, SseDecoder, SseEvent},
+    transport::sse::{SseDecoder, SseEvent},
 };
 use bytes::Bytes;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
-#[derive(Clone, Copy, Debug)]
-pub struct SseLimits {
-    pub max_event_bytes: usize,
-    pub max_wire_bytes: usize,
-    pub max_events: usize,
-    /// Aggregate decoded UTF-8 padding bytes; independent of wire and semantic budgets.
-    /// Zero forbids nonempty padding without disabling unpadded streams.
-    pub max_obfuscation_bytes: usize,
-}
-impl Default for SseLimits {
-    fn default() -> Self {
-        Self {
-            max_event_bytes: MAX_TOTAL_BYTES + 256,
-            max_wire_bytes: 64 << 20,
-            max_events: 1_000_000,
-            max_obfuscation_bytes: 4 << 20,
-        }
-    }
-}
-impl SseLimits {
-    pub(crate) fn validate(self) -> Result<(), SseError> {
-        if self.max_event_bytes == 0 || self.max_wire_bytes == 0 || self.max_events == 0 {
-            return Err(SseError::Limit);
-        }
-        Ok(())
-    }
-}
-pub(crate) fn validate_http(status: u16, content_type: &str) -> Result<(), SseError> {
-    let media: mime::Mime = content_type.parse().map_err(|_| SseError::Http)?;
-    if status != 200
-        || media.type_() != mime::TEXT
-        || media.subtype() != "event-stream"
-        || media
-            .params()
-            .any(|(k, v)| k == mime::CHARSET && v != mime::UTF_8)
-    {
-        return Err(SseError::Http);
-    }
-    Ok(())
-}
-#[derive(Debug, thiserror::Error)]
-pub enum SseError {
-    #[error("invalid SSE HTTP status or content type")]
-    Http,
-    #[error("SSE budget exceeded")]
-    Limit,
-    #[error("SSE event and JSON type disagree")]
-    EventType,
-    #[error("SSE decoder is closed or rejected")]
-    Closed,
-    #[error(transparent)]
-    Framing(#[from] SseDecodeError),
-    #[error(transparent)]
-    Codec(#[from] CodecError),
-}
 pub struct ResponsesSseDecoder {
     framing: SseDecoder,
     codec: EventDecoder,
@@ -169,7 +117,7 @@ impl ResponsesSseDecoder {
             self.done_marker = true;
             return Ok(vec![]);
         }
-        let mut payload = super::json::decode(frame.data().as_bytes())?;
+        let mut payload = crate::protocol::json::decode(frame.data().as_bytes())?;
         let object = payload
             .as_object_mut()
             .ok_or(CodecError::Invalid("SSE payload"))?;
@@ -227,12 +175,6 @@ impl ResponsesSseDecoder {
         }
         Ok(self.codec.materialize()?)
     }
-}
-/// Supply an unpredictable per-response seed from the trusted I/O boundary in non-test use.
-/// The codec itself uses no random source, clock, filesystem, credential or network client.
-pub enum Obfuscation {
-    Disabled,
-    Seeded([u8; 32]),
 }
 pub struct ResponsesSseEncoder {
     codec: EventEncoder,
@@ -307,7 +249,7 @@ impl ResponsesSseEncoder {
                         self.limits.max_obfuscation_bytes,
                     )?;
                 }
-                super::envelope::validate_stream_payload(&value)?;
+                crate::protocol::openai::responses::envelope::validate_stream_payload(&value)?;
                 let frame = encode_frame(&value, self.limits.max_event_bytes)?;
                 self.wire_bytes = self
                     .wire_bytes
@@ -332,52 +274,6 @@ impl ResponsesSseEncoder {
         Ok(self.codec.finish()?)
     }
 }
-pub(super) fn pad_payload(
-    value: &mut Value,
-    seed: &[u8; 32],
-    ordinal: usize,
-    limit: usize,
-    charged: &mut usize,
-    maximum: usize,
-) -> Result<(), SseError> {
-    value["obfuscation"] = json!("");
-    let size = json_size(value, MAX_TOTAL_BYTES).map_err(|_| SseError::Limit)?;
-    if size > limit {
-        return Err(SseError::Limit);
-    }
-    let n = (size.saturating_add(1023) / 1024 * 1024).min(limit) - size;
-    // Charge before allocation; never silently disable requested padding on exhaustion.
-    charge_padding(charged, n, maximum)?;
-    let mut pad = String::with_capacity(n);
-    let mut block = 0u64;
-    while pad.len() < n {
-        let mut hash = Sha256::new();
-        hash.update(seed);
-        hash.update((ordinal as u64).to_le_bytes());
-        hash.update(block.to_le_bytes());
-        for b in hash.finalize() {
-            use std::fmt::Write;
-            write!(&mut pad, "{b:02x}").expect("String formatting");
-        }
-        block += 1;
-    }
-    pad.truncate(n);
-    value["obfuscation"] = json!(pad);
-    Ok(())
-}
-pub(super) fn charge_padding(
-    total: &mut usize,
-    bytes: usize,
-    maximum: usize,
-) -> Result<(), SseError> {
-    let next = total.checked_add(bytes).ok_or(SseError::Limit)?;
-    if next > maximum {
-        return Err(SseError::Limit);
-    }
-    *total = next;
-    Ok(())
-}
-
 /// Encode exactly one payload with a matching event name and a complete LF delimiter.
 pub fn encode_frame(payload: &Value, max_bytes: usize) -> Result<Bytes, SseError> {
     let typ = payload

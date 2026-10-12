@@ -86,7 +86,7 @@ pub(in crate::gateway) async fn receive(
                 if event.data().is_empty() {
                     return Err(ApiError::upstream());
                 }
-                let value = crate::protocol::openai::json::decode(event.data().as_bytes())
+                let value = crate::protocol::json::decode(event.data().as_bytes())
                     .map_err(|_| ApiError::upstream())?;
                 decoder.push(&value).map_err(|_| ApiError::upstream())?;
             }

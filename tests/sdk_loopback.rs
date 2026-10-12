@@ -28,10 +28,17 @@ use axum::{
     routing::post,
 };
 use morphiecore::{
-    protocol::openai::{
-        Profile, TargetCaps, envelope,
-        lowering::{lower_request, lower_response},
-        sse::{Obfuscation, ResponsesSseDecoder, ResponsesSseEncoder, SseLimits, encode_frame},
+    protocol::{
+        openai::{
+            Profile, TargetCaps,
+            lowering::{lower_request, lower_response},
+            responses::{
+                envelope,
+                sse::{ResponsesSseDecoder, ResponsesSseEncoder, encode_frame},
+            },
+            stream::Obfuscation,
+        },
+        stream::SseLimits,
     },
     semantic::{
         task::generation::{

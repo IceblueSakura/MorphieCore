@@ -278,7 +278,8 @@ async fn provider(
                 output.extend_from_slice(format!("data: {value}\n\n").as_bytes());
             } else {
                 output.extend_from_slice(
-                    &morphiecore::protocol::openai::sse::encode_frame(&value, 1 << 20).unwrap(),
+                    &morphiecore::protocol::openai::responses::sse::encode_frame(&value, 1 << 20)
+                        .unwrap(),
                 );
             }
         }

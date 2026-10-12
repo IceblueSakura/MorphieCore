@@ -143,7 +143,7 @@ fn usage(value: &Value) -> Result<ImageUsage, CodecError> {
     Ok(usage)
 }
 pub fn decode_response(bytes: &[u8]) -> Result<ImageGenerationResponse, CodecError> {
-    let value = super::openai::json::decode_image_response(bytes)?;
+    let value = super::json::decode_image_response(bytes)?;
     let map = object(&value, &["created", "data", "usage"])?;
     let data = required(map, "data")?.as_array().ok_or_else(invalid)?;
     if !(1..=usize::from(MAX_IMAGE_COUNT)).contains(&data.len()) {

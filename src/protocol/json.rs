@@ -1,5 +1,5 @@
 //! Protocol error translation over the shared strict JSON value parser.
-use super::CodecError;
+use crate::protocol::CodecError;
 use crate::semantic::value::{JsonError, JsonLimits, parse_json};
 
 pub(crate) fn decode(input: &[u8]) -> Result<serde_json::Value, CodecError> {

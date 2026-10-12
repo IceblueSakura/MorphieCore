@@ -1,5 +1,5 @@
 //! Responses reasoning object and readable reasoning items.
-use super::{
+use crate::protocol::openai::{
     CodecError, Profile,
     common::{DecodeDirection, object, put_presence, read_presence, string, text},
 };

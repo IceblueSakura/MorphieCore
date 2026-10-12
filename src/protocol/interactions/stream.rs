@@ -6,7 +6,7 @@ use crate::{
         CodecError, DecodedResponse, ResponseMetadata,
         fidelity::FidelityRecords,
         native::ReplayTarget,
-        openai::sse::{SseError, SseLimits},
+        stream::{SseError, SseLimits},
     },
     semantic::{
         task::generation::*,
@@ -102,7 +102,7 @@ impl GenerationSseDecoder {
         target: ReplayTarget,
     ) -> Result<Self, SseError> {
         limits.validate()?;
-        crate::protocol::openai::sse::validate_http(status, media)?;
+        crate::protocol::stream::validate_http(status, media)?;
         Ok(Self {
             framing: SseDecoder::new(limits.max_event_bytes),
             limits,

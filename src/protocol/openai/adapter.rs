@@ -7,7 +7,7 @@ use crate::{
         CodecError, DecodedResponse,
         openai::{
             self, Profile, TargetCaps,
-            adaptation::{Adaptation, WireRules},
+            dialect::adaptation::{Adaptation, WireRules},
             events::EventDecoder,
             lowering::lower_response,
         },
@@ -289,14 +289,14 @@ impl Adapter {
         result
     }
     pub fn decode_response(&self, bytes: &[u8]) -> Result<DecodedResponse, CodecError> {
-        let value = openai::json::decode(bytes)?;
+        let value = crate::protocol::json::decode(bytes)?;
         let mut decoded = match self.protocol {
             Profile::Chat => {
-                openai::chat_envelope::validate_response(&value)?;
+                openai::chat::envelope::validate_response(&value)?;
                 openai::static_response::decode_chat_with(&value, &self.adaptation)?
             }
             Profile::Responses => {
-                openai::envelope::validate_response_snapshot_with(
+                openai::responses::envelope::validate_response_snapshot_with(
                     &value,
                     &self.adaptation,
                     openai::DecodeDirection::Upstream,
@@ -339,8 +339,8 @@ impl Adapter {
             self.contract(contract),
         )?;
         Ok(match self.protocol {
-            Profile::Chat => openai::chat_envelope::encode_response(&target)?,
-            Profile::Responses => openai::envelope::encode_response(&target)?,
+            Profile::Chat => openai::chat::envelope::encode_response(&target)?,
+            Profile::Responses => openai::responses::envelope::encode_response(&target)?,
         })
     }
     pub fn event_decoder(&self) -> EventDecoder {

@@ -1,5 +1,5 @@
 //! Complete stateless Responses envelopes. Execution hints never become task instructions.
-use super::{
+use crate::protocol::openai::{
     CodecError, DecodedRequest, Profile, RequestRepresentation, ResponseMetadata, common::*,
     settings,
 };
@@ -10,7 +10,7 @@ use crate::semantic::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value, json};
-pub(super) const CACHE_FIELDS: &[&str] = &[
+pub(in crate::protocol::openai) const CACHE_FIELDS: &[&str] = &[
     "prompt_cache_key",
     "prompt_cache_retention",
     "prompt_cache_options",
@@ -18,7 +18,10 @@ pub(super) const CACHE_FIELDS: &[&str] = &[
     "user",
 ];
 impl CacheHints {
-    pub(super) fn write(&self, o: &mut Map<String, Value>) -> Result<(), CodecError> {
+    pub(in crate::protocol::openai) fn write(
+        &self,
+        o: &mut Map<String, Value>,
+    ) -> Result<(), CodecError> {
         self.validate()?;
         let Value::Object(v) =
             serde_json::to_value(self).map_err(|_| CodecError::Invalid("cache hints"))?
@@ -29,7 +32,7 @@ impl CacheHints {
         Ok(())
     }
 }
-pub(super) const EXEC_FIELDS: &[&str] = &[
+pub(in crate::protocol::openai) const EXEC_FIELDS: &[&str] = &[
     "metadata",
     "service_tier",
     "max_tool_calls",
@@ -42,7 +45,7 @@ pub(super) const EXEC_FIELDS: &[&str] = &[
     "context_management",
 ];
 impl ExecutionHints {
-    pub(super) fn read(o: &Map<String, Value>) -> Result<Self, CodecError> {
+    pub(in crate::protocol::openai) fn read(o: &Map<String, Value>) -> Result<Self, CodecError> {
         let fields: Map<_, _> = o
             .iter()
             .filter(|(k, _)| {
@@ -55,7 +58,10 @@ impl ExecutionHints {
         hints.validate()?;
         Ok(hints)
     }
-    pub(super) fn write(&self, o: &mut Map<String, Value>) -> Result<(), CodecError> {
+    pub(in crate::protocol::openai) fn write(
+        &self,
+        o: &mut Map<String, Value>,
+    ) -> Result<(), CodecError> {
         self.validate()?;
         let Value::Object(v) =
             serde_json::to_value(self).map_err(|_| CodecError::Invalid("execution hints"))?
@@ -110,7 +116,7 @@ impl RequestContext {
 /// Decode a bounded raw JSON request, rejecting duplicate keys before constructing IR.
 /// Callers must separately bound body collection; this function receives an existing slice.
 pub fn decode_request_bytes(bytes: &[u8]) -> Result<DecodedResponsesRequest, CodecError> {
-    decode_request(&super::json::decode(bytes)?)
+    decode_request(&crate::protocol::json::decode(bytes)?)
 }
 /// Decode a pre-parsed value; original duplicate keys and raw byte size cannot be checked here.
 pub fn decode_request(v: &Value) -> Result<DecodedResponsesRequest, CodecError> {
@@ -149,7 +155,10 @@ pub(crate) fn decode_request_in(
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     Ok(DecodedResponsesRequest {
-        task: super::responses::decode_generation_in(&Value::Object(task), direction)?,
+        task: crate::protocol::openai::responses::decode_generation_in(
+            &Value::Object(task),
+            direction,
+        )?,
         context,
     })
 }
@@ -162,7 +171,7 @@ pub fn encode_request(
     if target.profile != Profile::Responses {
         return Err(CodecError::ProfileMismatch);
     }
-    let mut v = super::responses::encode_generation(target)?;
+    let mut v = crate::protocol::openai::responses::encode_generation(target)?;
     let o = v.as_object_mut().expect("object");
     context.execution.write(o)?;
     o.insert("store".into(), json!(false));
@@ -173,7 +182,7 @@ pub fn encode_request(
     Ok(v)
 }
 impl ResponseContext {
-    pub(super) fn read(
+    pub(in crate::protocol::openai) fn read(
         o: &Map<String, Value>,
         direction: DecodeDirection,
     ) -> Result<(Self, crate::protocol::fidelity::FidelityRecords), CodecError> {
@@ -182,7 +191,12 @@ impl ResponseContext {
         let instruction_messages = if let Some(Value::Array(values)) = o.get("instructions") {
             controls.remove("instructions");
             let mut items = Items::new(direction);
-            super::responses::decode_items(&mut items, values, false, "completed")?;
+            crate::protocol::openai::responses::decode_items(
+                &mut items,
+                values,
+                false,
+                "completed",
+            )?;
             fidelity = items.fidelity;
             Some(items.items)
         } else {
@@ -209,7 +223,7 @@ impl ResponseContext {
         value.validate()?;
         Ok((value, fidelity))
     }
-    pub(super) fn write(
+    pub(in crate::protocol::openai) fn write(
         &self,
         fidelity: &crate::protocol::fidelity::FidelityRecords,
         o: &mut Map<String, Value>,
@@ -223,7 +237,7 @@ impl ResponseContext {
         if let Some(messages) = &self.instruction_messages {
             o.insert(
                 "instructions".into(),
-                json!(super::responses::encode_items(
+                json!(crate::protocol::openai::responses::encode_items(
                     messages,
                     fidelity,
                     false,
@@ -246,19 +260,23 @@ impl ResponseContext {
     }
 }
 /// Decode a bounded raw JSON response with strict syntax and complete envelope validation.
-pub fn decode_response_bytes(bytes: &[u8]) -> Result<super::DecodedResponse, CodecError> {
-    decode_response(&super::json::decode(bytes)?)
+pub fn decode_response_bytes(
+    bytes: &[u8],
+) -> Result<crate::protocol::openai::DecodedResponse, CodecError> {
+    decode_response(&crate::protocol::json::decode(bytes)?)
 }
 /// Full envelope validation, unlike the lower-level task snapshot codec.
 /// A pre-parsed value cannot prove original JSON syntax, duplicate-key or raw-byte validity.
-pub fn decode_response(v: &Value) -> Result<super::DecodedResponse, CodecError> {
+pub fn decode_response(v: &Value) -> Result<crate::protocol::openai::DecodedResponse, CodecError> {
     bounded(v)?;
     validate_response_snapshot(v)?;
-    super::responses::decode_response(v)
+    crate::protocol::openai::responses::decode_response(v)
 }
-pub fn encode_response(target: &super::ResponseRepresentation<'_>) -> Result<Value, CodecError> {
+pub fn encode_response(
+    target: &crate::protocol::openai::ResponseRepresentation<'_>,
+) -> Result<Value, CodecError> {
     target.metadata.context.validate()?;
-    let v = super::responses::encode_response(target)?;
+    let v = crate::protocol::openai::responses::encode_response(target)?;
     validate_response_snapshot_with(&v, &target.adaptation, DecodeDirection::Encoded)?;
     Ok(v)
 }
@@ -266,7 +284,7 @@ pub fn encode_response(target: &super::ResponseRepresentation<'_>) -> Result<Val
 /// The SDK-derived `output_text` view is ignored, never validated or restored.
 pub(crate) fn record_vendor_shapes(
     profile: Profile,
-    adaptation: &crate::protocol::openai::adaptation::Adaptation,
+    adaptation: &crate::protocol::openai::dialect::adaptation::Adaptation,
     o: &Map<String, Value>,
     fidelity: &mut crate::protocol::fidelity::FidelityRecords,
     semantic: Option<&GenerationResponse>,
@@ -277,7 +295,7 @@ pub(crate) fn record_vendor_shapes(
 pub(crate) fn write_response_extras(
     fidelity: &crate::protocol::fidelity::FidelityRecords,
     profile: Profile,
-    adaptation: &crate::protocol::openai::adaptation::Adaptation,
+    adaptation: &crate::protocol::openai::dialect::adaptation::Adaptation,
     semantic: &GenerationResponse,
     response_id: &str,
     o: &mut Map<String, Value>,
@@ -294,7 +312,7 @@ pub(crate) fn write_response_extras(
     if let Some(extras) =
         fidelity.projected_routing_extras(profile, adaptation, semantic, response_id)
     {
-        super::adapter_shapes::write_extras(o, extras);
+        crate::protocol::openai::dialect::adapter_shapes::write_extras(o, extras);
     }
 }
 /// Structural snapshot validation (ADR 0008): reported facts are presence-preserving
@@ -304,12 +322,17 @@ pub(crate) fn validate_response_snapshot(v: &Value) -> Result<(), CodecError> {
 }
 pub(crate) fn validate_response_snapshot_with(
     v: &Value,
-    adaptation: &crate::protocol::openai::adaptation::Adaptation,
+    adaptation: &crate::protocol::openai::dialect::adaptation::Adaptation,
     direction: DecodeDirection,
 ) -> Result<(), CodecError> {
     // Complete-envelope validation sees the same explicit wire mapping as the
     // task codec. Required identity, items and state rejection remain intact.
-    let (v, _) = super::adapter_shapes::decode(v, Profile::Responses, adaptation, direction)?;
+    let (v, _) = crate::protocol::openai::dialect::adapter_shapes::decode(
+        v,
+        Profile::Responses,
+        adaptation,
+        direction,
+    )?;
     let o = object(&v)?;
     ResponseContext::read(o, direction)?.0.validate()?;
     // A complete Response snapshot requires the output array; an absent value is
@@ -323,12 +346,12 @@ pub(crate) fn validate_response_snapshot_with(
     }
     Ok(())
 }
-pub(super) fn validate_stream_payload(v: &Value) -> Result<(), CodecError> {
+pub(in crate::protocol::openai) fn validate_stream_payload(v: &Value) -> Result<(), CodecError> {
     validate_stream_payload_with(v, &Default::default(), DecodeDirection::Encoded)
 }
-pub(super) fn validate_stream_payload_with(
+pub(in crate::protocol::openai) fn validate_stream_payload_with(
     v: &Value,
-    adaptation: &crate::protocol::openai::adaptation::Adaptation,
+    adaptation: &crate::protocol::openai::dialect::adaptation::Adaptation,
     direction: DecodeDirection,
 ) -> Result<(), CodecError> {
     // Every complete Responses SSE event carries the required integer sequence
@@ -356,7 +379,7 @@ pub(super) fn validate_stream_payload_with(
     }
     Ok(())
 }
-pub(super) fn validate_item_snapshot(v: &Value) -> Result<(), CodecError> {
+pub(in crate::protocol::openai) fn validate_item_snapshot(v: &Value) -> Result<(), CodecError> {
     let o = object(v)?;
     if string(o, "type")? == "message" {
         // Full wire snapshots report identity/lifecycle; only task codecs allow defaults.
@@ -364,7 +387,7 @@ pub(super) fn validate_item_snapshot(v: &Value) -> Result<(), CodecError> {
         if string(o, "role")? != "assistant" || !o.contains_key("status") {
             return Err(CodecError::Invalid("output message headers"));
         }
-        super::responses::status(o, ItemLifecycle::Completed)?;
+        crate::protocol::openai::responses::status(o, ItemLifecycle::Completed)?;
         let parts = o
             .get("content")
             .and_then(Value::as_array)
@@ -378,7 +401,7 @@ pub(super) fn validate_item_snapshot(v: &Value) -> Result<(), CodecError> {
     }
     Ok(())
 }
-pub(super) fn validate_part_snapshot(v: &Value) -> Result<(), CodecError> {
+pub(in crate::protocol::openai) fn validate_part_snapshot(v: &Value) -> Result<(), CodecError> {
     if v.get("type").and_then(Value::as_str) == Some("output_text") {
         let annotations = v.get("annotations").filter(|a| !a.is_null());
         if !annotations.is_some_and(Value::is_array) {
@@ -388,7 +411,7 @@ pub(super) fn validate_part_snapshot(v: &Value) -> Result<(), CodecError> {
     if v.get("type").and_then(Value::as_str) == Some("output_text")
         && let Some(probs) = v.get("logprobs").filter(|v| !v.is_null())
     {
-        for p in super::text::read_logprobs(probs)? {
+        for p in crate::protocol::openai::content::text::read_logprobs(probs)? {
             if p.bytes.is_none()
                 || p.top_logprobs.as_ref().is_none_or(|v| {
                     v.iter()
@@ -401,13 +424,15 @@ pub(super) fn validate_part_snapshot(v: &Value) -> Result<(), CodecError> {
     }
     Ok(())
 }
-pub(super) fn timestamp(v: &Value) -> Result<Number, CodecError> {
+pub(in crate::protocol::openai) fn timestamp(v: &Value) -> Result<Number, CodecError> {
     match v {
         Value::Number(n) if crate::semantic::value::valid_timestamp(n) => Ok(n.clone()),
         _ => Err(CodecError::Invalid("timestamp")),
     }
 }
-pub(super) fn response_fields(o: &Map<String, Value>) -> Result<(), CodecError> {
+pub(in crate::protocol::openai) fn response_fields(
+    o: &Map<String, Value>,
+) -> Result<(), CodecError> {
     let allowed: Vec<_> = settings::FIELDS
         .iter()
         .chain(EXEC_FIELDS)
@@ -436,7 +461,7 @@ pub(super) fn response_fields(o: &Map<String, Value>) -> Result<(), CodecError> 
         .collect();
     DecodeDirection::Upstream.fields(o, &allowed)
 }
-pub(super) fn write_metadata(
+pub(in crate::protocol::openai) fn write_metadata(
     metadata: &ResponseMetadata,
     o: &mut Map<String, Value>,
     completed: bool,

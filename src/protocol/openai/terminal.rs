@@ -1,5 +1,5 @@
 //! Typed terminal details, shared by static and event codecs.
-use super::{CodecError, common::*};
+use crate::protocol::openai::{CodecError, common::*};
 use crate::semantic::task::generation::*;
 use serde_json::{Map, Value, json};
 pub(super) fn decode_details(o: &Map<String, Value>) -> Result<TerminalDetails, CodecError> {

@@ -1,5 +1,5 @@
 //! Responses payload grammar over the shared semantic reducer.
-use super::*;
+use crate::protocol::openai::events::*;
 use serde_json::json;
 
 // Fixed structural failure labels only; never include IDs, text or ciphertext.
@@ -61,7 +61,7 @@ fn terminal_snapshot_difference(actual: &[Value], expected: &[Value]) -> &'stati
 
 pub struct EventDecoder {
     pub(super) profile: Profile,
-    pub(super) adaptation: crate::protocol::openai::adaptation::Adaptation,
+    pub(super) adaptation: crate::protocol::openai::dialect::adaptation::Adaptation,
     pub(super) state: Option<StreamState>,
     pub(super) fidelity: FidelityRecords,
     pub(super) metadata: Option<ResponseMetadata>,
@@ -75,13 +75,13 @@ pub struct EventDecoder {
     queued_creation_pending: bool,
     pub(super) chat_pending: Option<(StreamTerminal, TerminalDetails)>,
     pub(super) chat_finish_reason: Option<String>,
-    chat_extras: super::super::adapter_shapes::Extras,
+    chat_extras: crate::protocol::openai::dialect::adapter_shapes::Extras,
     pub(super) chat_owner: Option<ItemId>,
     pub(super) chat_calls: Vec<ItemId>,
     pub(super) chat_reasoning: Option<ItemId>,
     pub(super) chat_replay: Option<ReasoningReplay>,
     pub(super) chat_pending_part: Option<PartKind>,
-    pub(super) chat_audio_bytes: super::super::chat_audio::ChunkBytes,
+    pub(super) chat_audio_bytes: crate::protocol::openai::chat::audio::ChunkBytes,
 }
 impl EventDecoder {
     pub fn new(profile: Profile) -> Self {
@@ -118,7 +118,7 @@ impl EventDecoder {
         self.profile == Profile::Responses && self.adaptation.rules.responses_done_marker
     }
     pub(crate) fn validate_stream_payload(&self, value: &Value) -> Result<(), CodecError> {
-        super::super::envelope::validate_stream_payload_with(
+        crate::protocol::openai::responses::envelope::validate_stream_payload_with(
             value,
             &self.adaptation,
             DecodeDirection::Upstream,
@@ -129,7 +129,7 @@ impl EventDecoder {
     }
     pub(crate) fn with_adaptation(
         mut self,
-        adaptation: crate::protocol::openai::adaptation::Adaptation,
+        adaptation: crate::protocol::openai::dialect::adaptation::Adaptation,
     ) -> Self {
         self.adaptation = adaptation;
         self
@@ -161,12 +161,13 @@ impl EventDecoder {
                         || self.adaptation.rules.responses_inactive_state
                         || self.adaptation.rules.responses_reasoning_text_shorthand)
                 {
-                    let (snapshot, extras) = super::super::adapter_shapes::decode(
-                        snapshot,
-                        self.profile,
-                        &self.adaptation,
-                        DecodeDirection::Upstream,
-                    )?;
+                    let (snapshot, extras) =
+                        crate::protocol::openai::dialect::adapter_shapes::decode(
+                            snapshot,
+                            self.profile,
+                            &self.adaptation,
+                            DecodeDirection::Upstream,
+                        )?;
                     let mut mapped = payload.clone();
                     mapped["response"] = snapshot.into_owned();
                     (std::borrow::Cow::Owned(mapped), extras)
@@ -176,10 +177,12 @@ impl EventDecoder {
                 {
                     let mut mapped = payload.clone();
                     if self.adaptation.rules.responses_reasoning_format {
-                        super::super::adapter_shapes::reasoning_marker(&mut mapped["item"])?;
+                        crate::protocol::openai::dialect::adapter_shapes::reasoning_marker(
+                            &mut mapped["item"],
+                        )?;
                     }
                     if self.adaptation.rules.responses_reasoning_text_shorthand {
-                        super::super::adapter_shapes::reasoning_text_shorthand(
+                        crate::protocol::openai::dialect::adapter_shapes::reasoning_text_shorthand(
                             &mut mapped["item"],
                         )?;
                     }
@@ -188,7 +191,7 @@ impl EventDecoder {
                     (std::borrow::Cow::Borrowed(payload), Default::default())
                 }
             } else {
-                super::super::adapter_shapes::decode(
+                crate::protocol::openai::dialect::adapter_shapes::decode(
                     payload,
                     self.profile,
                     &self.adaptation,
@@ -217,7 +220,7 @@ impl EventDecoder {
             };
             if self.profile == Profile::Chat && self.chat_pending.is_some() {
                 self.chat_extras.extend(extras);
-                super::super::adapter_shapes::check_budget(&self.chat_extras)?;
+                crate::protocol::openai::dialect::adapter_shapes::check_budget(&self.chat_extras)?;
             } else if self.profile == Profile::Responses
                 && !extras.is_empty()
                 && self
@@ -298,9 +301,9 @@ impl EventDecoder {
         }
         result
     }
-    pub fn materialize(&self) -> Result<super::super::DecodedResponse, CodecError> {
+    pub fn materialize(&self) -> Result<crate::protocol::openai::DecodedResponse, CodecError> {
         self.finish()?;
-        Ok(super::super::DecodedResponse {
+        Ok(crate::protocol::openai::DecodedResponse {
             semantic: materialize(self.state.as_ref().ok_or(CodecError::Invalid("state"))?)?,
             fidelity: self.fidelity.clone(),
             metadata: self
@@ -358,7 +361,7 @@ impl EventDecoder {
         Ok(PartId::new(self.next_part))
     }
     pub(super) fn observe_metadata(&mut self, o: &Map<String, Value>) -> Result<(), CodecError> {
-        let mut m = super::super::static_response::metadata(o, self.profile)?;
+        let mut m = crate::protocol::openai::static_response::metadata(o, self.profile)?;
         if let Some(old) = &self.metadata {
             // Response identity is strict; providers re-stamp scalar facts such
             // as `created` and `system_fingerprint` per chunk, so the first
@@ -398,7 +401,7 @@ impl EventDecoder {
         self.metadata = Some(m);
         // Vendor adaptation (ADR 0008) also covers response snapshots in streams.
         let profile = self.profile;
-        super::super::envelope::record_vendor_shapes(
+        crate::protocol::openai::responses::envelope::record_vendor_shapes(
             profile,
             &self.adaptation,
             o,
@@ -416,7 +419,7 @@ impl EventDecoder {
                 let mut e = o.clone();
                 e.remove("type");
                 e.remove("sequence_number");
-                let details = super::super::terminal::decode_details(
+                let details = crate::protocol::openai::terminal::decode_details(
                     &serde_json::from_value(json!({"error":e}))
                         .map_err(|_| CodecError::Invalid("error"))?,
                 )?;
@@ -431,7 +434,7 @@ impl EventDecoder {
             "response.queued" | "response.created" | "response.in_progress" => {
                 event_fields(o, &["type", "response"])?;
                 let r = object(o.get("response").ok_or(CodecError::Invalid("response"))?)?;
-                super::super::envelope::response_fields(r)?;
+                crate::protocol::openai::responses::envelope::response_fields(r)?;
                 let queued_creation = self.adaptation.rules.responses_queued_creation
                     && typ == "response.created"
                     && r.get("status").and_then(Value::as_str) == Some("queued");
@@ -540,7 +543,7 @@ impl EventDecoder {
                     return Err(CodecError::Invalid("initial message"));
                 }
                 ItemKind::Message {
-                    phase: super::super::responses::read_phase(v)?,
+                    phase: crate::protocol::openai::responses::read_phase(v)?,
                 }
             }
             "reasoning" => {
@@ -583,13 +586,16 @@ impl EventDecoder {
                 ItemKind::CustomCall {
                     call_id: text(string(v, "call_id")?, "call id", 256)?,
                     name: text(string(v, "name")?, "custom name", 128)?,
-                    context: super::super::responses::call_context(v, DecodeDirection::Upstream)?,
+                    context: crate::protocol::openai::responses::call_context(
+                        v,
+                        DecodeDirection::Upstream,
+                    )?,
                 }
             }
             "configuration_update" => {
                 DecodeDirection::Upstream.fields(v, &["type", "id", "reasoning"])?;
                 ItemKind::ConfigurationUpdate {
-                    effort: super::super::responses::configuration_effort(
+                    effort: crate::protocol::openai::responses::configuration_effort(
                         v,
                         true,
                         DecodeDirection::Upstream,
@@ -637,7 +643,10 @@ impl EventDecoder {
                     call_id: text(string(v, "call_id")?, "call id", 256)?,
                     name: text(string(v, "name")?, "tool name", 128)?,
                     message: None,
-                    context: super::super::responses::call_context(v, DecodeDirection::Upstream)?,
+                    context: crate::protocol::openai::responses::call_context(
+                        v,
+                        DecodeDirection::Upstream,
+                    )?,
                 }
             }
             _ => return Err(CodecError::Unsupported("item kind".into())),
@@ -775,7 +784,7 @@ impl EventDecoder {
             .ok_or(CodecError::Invalid("annotation"))?;
         let mut sources =
             Items::from_resources(self.state()?.resources().clone(), DecodeDirection::Upstream);
-        let annotation = super::super::citations::read(v, &mut sources)?;
+        let annotation = crate::protocol::openai::content::citations::read(v, &mut sources)?;
         self.declare_sources(&sources.resources, out)?;
         if annotation.value().kind == CitationKind::ArtifactReference {
             return Err(CodecError::Unsupported("file_path annotation event".into()));
@@ -837,8 +846,11 @@ impl EventDecoder {
             return Err(CodecError::Invalid("initial part"));
         }
         if kind == PartKind::Text {
-            let text =
-                super::super::text::read(p, false, &mut Items::new(DecodeDirection::Upstream))?;
+            let text = crate::protocol::openai::content::text::read(
+                p,
+                false,
+                &mut Items::new(DecodeDirection::Upstream),
+            )?;
             if !text.annotations().is_empty()
                 || text.logprobs().value().is_some_and(|v| !v.is_empty())
             {
@@ -951,7 +963,7 @@ impl EventDecoder {
         // https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/responses/response_text_delta_event.py
         let logprobs = if kind == PartKind::Text {
             match o.get("logprobs") {
-                Some(value) => super::super::text::read_logprobs(value)?,
+                Some(value) => crate::protocol::openai::content::text::read_logprobs(value)?,
                 None if self.adaptation.rules.responses_unreported_text_logprobs => vec![],
                 None => return Err(CodecError::Invalid("logprobs")),
             }
@@ -1054,7 +1066,7 @@ impl EventDecoder {
             if kind != PartKind::Text {
                 return Err(CodecError::Invalid("logprob owner"));
             }
-            let probabilities = super::super::text::read_logprobs(v)?;
+            let probabilities = crate::protocol::openai::content::text::read_logprobs(v)?;
             // The required empty event array is not an optional static report.
             // A later content-part snapshot owns explicit empty probability presence.
             if !probabilities.is_empty()
@@ -1139,7 +1151,7 @@ impl EventDecoder {
         if kind == PartKind::Text {
             let mut sources =
                 Items::from_resources(self.state()?.resources().clone(), DecodeDirection::Upstream);
-            let t = super::super::text::read_existing(
+            let t = crate::protocol::openai::content::text::read_existing(
                 p,
                 false,
                 &mut sources,
@@ -1206,9 +1218,11 @@ impl EventDecoder {
         )?;
         let expected = item_wire(self.state()?, item, &self.fidelity)?;
         let wrapper = json!({"id":"snapshot","object":"response","created_at":0,"model":"snapshot","status":"incomplete","output":[v]});
-        let decoded =
-            super::super::static_response::decode_responses_with(&wrapper, &self.adaptation)?;
-        let normalized = super::super::responses::encode_items(
+        let decoded = crate::protocol::openai::static_response::decode_responses_with(
+            &wrapper,
+            &self.adaptation,
+        )?;
+        let normalized = crate::protocol::openai::responses::encode_items(
             decoded.semantic.items(),
             &decoded.fidelity,
             true,
@@ -1313,7 +1327,7 @@ impl EventDecoder {
             // Real item.done snapshots already checked every value and owner.
             // Missing/null/nonempty conflicting terminal output never uses this rule.
             summary = r.clone();
-            summary["output"] = json!(super::super::responses::encode_items(
+            summary["output"] = json!(crate::protocol::openai::responses::encode_items(
                 &snapshot_items(self.state()?)?,
                 &self.fidelity,
                 true,
@@ -1335,7 +1349,8 @@ impl EventDecoder {
             _ => return Err(CodecError::Invalid("terminal")),
         };
         self.observe_metadata(p)?;
-        let decoded = super::super::static_response::decode_responses_with(r, &self.adaptation)?;
+        let decoded =
+            crate::protocol::openai::static_response::decode_responses_with(r, &self.adaptation)?;
         if self.adaptation.rules.responses_terminal_reasoning
             && terminal == StreamTerminal::Completed
         {
@@ -1346,13 +1361,13 @@ impl EventDecoder {
             &mut self.fidelity,
             None,
         )?;
-        let expected = super::super::responses::encode_items(
+        let expected = crate::protocol::openai::responses::encode_items(
             &snapshot_items(self.state()?)?,
             &self.fidelity,
             true,
             self.state()?.resources(),
         );
-        let actual = super::super::responses::encode_items(
+        let actual = crate::protocol::openai::responses::encode_items(
             decoded.semantic.items(),
             &decoded.fidelity,
             true,

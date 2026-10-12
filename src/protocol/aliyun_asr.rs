@@ -65,7 +65,7 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
     Ok(result)
 }
 pub fn decode_response(bytes: &[u8]) -> Result<RecognitionResult, CodecError> {
-    let value = super::openai::json::decode(bytes)?;
+    let value = super::json::decode(bytes)?;
     let root = object(&value, &["request_id", "output", "usage"])?;
     let raw_output = required(root, "output")?;
     let output = object(

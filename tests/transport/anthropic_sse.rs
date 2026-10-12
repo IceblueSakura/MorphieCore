@@ -5,7 +5,7 @@ use morphiecore::{
     protocol::{
         anthropic::{MessageSseDecoder, Profile},
         native::ReplayTarget,
-        openai::sse::{SseError, SseLimits},
+        stream::{SseError, SseLimits},
     },
     semantic::task::generation::LocalScope,
 };
@@ -298,7 +298,7 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
     use morphiecore::{
         execution::ResponseDelivery,
         protocol::{
-            openai::{Adapter, Dialect, Profile as ClientProfile, TargetCaps, sse::Obfuscation},
+            openai::{Adapter, Dialect, Profile as ClientProfile, TargetCaps, stream::Obfuscation},
             replay_envelope,
         },
         semantic::task::generation::{Item, Outcome, ToolArguments},

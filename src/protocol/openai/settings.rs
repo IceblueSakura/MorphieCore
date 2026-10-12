@@ -1,5 +1,5 @@
 //! Task settings shared by request parsing and provider-reported response echoes.
-use super::{CodecError, Profile, common::*, function_tools, reasoning};
+use crate::protocol::openai::{CodecError, Profile, common::*, function_tools, reasoning};
 use crate::semantic::{
     task::generation::*,
     value::{Presence, Text},

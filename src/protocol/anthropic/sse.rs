@@ -3,7 +3,7 @@ use super::{Block, Delta, Event, Message, Profile};
 use crate::{
     protocol::{
         CodecError,
-        openai::sse::{SseError, SseLimits},
+        stream::{SseError, SseLimits},
     },
     semantic::{
         task::generation::{MAX_ITEMS, MAX_TEXT_BYTES, MAX_TOTAL_BYTES, StructuredValue},
@@ -61,7 +61,7 @@ fn append(target: &mut String, value: &str) -> Result<(), SseError> {
 impl MessageSseDecoder {
     pub fn new(status: u16, content_type: &str, limits: SseLimits) -> Result<Self, SseError> {
         limits.validate()?;
-        crate::protocol::openai::sse::validate_http(status, content_type)?;
+        crate::protocol::stream::validate_http(status, content_type)?;
         Ok(Self {
             framing: SseDecoder::new(limits.max_event_bytes),
             limits,

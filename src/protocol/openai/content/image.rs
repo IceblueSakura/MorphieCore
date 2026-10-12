@@ -1,9 +1,9 @@
 //! Standard input image values. File IDs need issuer/resource ownership before admission.
-use super::{CodecError, Profile, common::*};
+use crate::protocol::openai::{CodecError, Profile, common::*};
 use crate::semantic::{task::generation::*, value::Text};
 use serde_json::{Map, Value, json};
 
-pub(super) fn read(
+pub(in crate::protocol::openai) fn read(
     part: &Map<String, Value>,
     profile: Profile,
     direction: DecodeDirection,
@@ -67,7 +67,7 @@ pub(super) fn read(
     resource.validate()?;
     Ok(resource)
 }
-pub(super) fn write(resource: ResourceView<'_>, profile: Profile) -> Value {
+pub(in crate::protocol::openai) fn write(resource: ResourceView<'_>, profile: Profile) -> Value {
     let url = match &resource.location {
         ResourceLocation::Url(url) => url.as_str().to_owned(),
         ResourceLocation::Inline {

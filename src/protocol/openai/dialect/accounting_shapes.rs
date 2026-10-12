@@ -1,9 +1,9 @@
 //! Closed, source-bound accounting views, not substitutes for Generation usage.
 //! Product response metadata is not authority to invoke programs or hosted tools.
-use super::{
+use crate::protocol::openai::{
     CodecError,
-    adapter_shapes::Extras,
     common::{DecodeDirection, object},
+    dialect::adapter_shapes::Extras,
 };
 use serde_json::{Map, Value, json};
 fn take(o: &mut Map<String, Value>, key: &str, path: &str, extras: &mut Extras) {
@@ -11,7 +11,7 @@ fn take(o: &mut Map<String, Value>, key: &str, path: &str, extras: &mut Extras) 
         extras.insert(path.into(), value);
     }
 }
-pub(super) fn programs(
+pub(in crate::protocol::openai) fn programs(
     o: &mut Map<String, Value>,
     extras: &mut Extras,
     direction: DecodeDirection,
@@ -33,7 +33,7 @@ pub(super) fn programs(
     }
     Ok(())
 }
-pub(super) fn inactive_reports(
+pub(in crate::protocol::openai) fn inactive_reports(
     o: &mut Map<String, Value>,
     extras: &mut Extras,
 ) -> Result<(), CodecError> {
@@ -56,7 +56,7 @@ fn null_moderation(o: &mut Map<String, Value>, extras: &mut Extras) -> Result<()
     }
     Ok(())
 }
-pub(super) fn product(
+pub(in crate::protocol::openai) fn product(
     o: &mut Map<String, Value>,
     extras: &mut Extras,
     direction: DecodeDirection,
@@ -66,7 +66,7 @@ pub(super) fn product(
     zero_tools(o, extras)?;
     usage_attribution(o, extras, direction)
 }
-pub(super) fn usage_attribution(
+pub(in crate::protocol::openai) fn usage_attribution(
     o: &mut Map<String, Value>,
     extras: &mut Extras,
     direction: DecodeDirection,
@@ -79,7 +79,7 @@ pub(super) fn usage_attribution(
     }
     Ok(())
 }
-pub(super) fn zero_tools(
+pub(in crate::protocol::openai) fn zero_tools(
     o: &mut Map<String, Value>,
     extras: &mut Extras,
 ) -> Result<(), CodecError> {
@@ -158,7 +158,7 @@ fn attribution(value: &Value, direction: DecodeDirection) -> Result<(), CodecErr
 /// Billing ticks and context-window counters are not per-call billed token
 /// counts. Retain exact integers in scoped fidelity; never sum or relabel them.
 /// Source: https://docs.x.ai/developers/rest-api-reference/inference/responses
-pub(super) fn context(
+pub(in crate::protocol::openai) fn context(
     o: &mut Map<String, Value>,
     extras: &mut Extras,
     direction: DecodeDirection,

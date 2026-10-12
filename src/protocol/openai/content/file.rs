@@ -1,10 +1,10 @@
 //! Standard inline/URL file input. No file I/O, fetching or issuer-bound IDs.
 //! Source: https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/responses/response_input_file_param.py
-use super::{CodecError, common::*};
+use crate::protocol::openai::{CodecError, common::*};
 use crate::semantic::{task::generation::*, value::Text};
 use serde_json::{Map, Value, json};
 
-pub(super) fn read(
+pub(in crate::protocol::openai) fn read(
     part: &Map<String, Value>,
     direction: DecodeDirection,
 ) -> Result<Resource, CodecError> {
@@ -61,7 +61,7 @@ pub(super) fn read(
     resource.validate()?;
     Ok(resource)
 }
-pub(super) fn write(resource: ResourceView<'_>) -> Value {
+pub(in crate::protocol::openai) fn write(resource: ResourceView<'_>) -> Value {
     let ResourceDescription::File(file) = &resource.description else {
         unreachable!("file lowering requires a file description")
     };

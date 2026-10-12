@@ -1,5 +1,5 @@
 //! Final typed SIWC admission, before cache projection or wire encoding.
-use super::Request;
+use crate::protocol::openai::adapter::Request;
 use crate::{
     protocol::CodecError,
     semantic::task::generation::{InstructionAuthority, Item, ToolDefinition},

@@ -1,5 +1,5 @@
 //! Chat chunks use a single candidate and an explicit framing-level DONE boundary.
-use super::*;
+use crate::protocol::openai::events::*;
 use serde_json::json;
 impl EventDecoder {
     pub(super) fn chat(&mut self, o: &Map<String, Value>) -> Result<Vec<StreamEvent>, CodecError> {
@@ -70,7 +70,7 @@ impl EventDecoder {
                     return Err(CodecError::Invalid("content after finish"));
                 }
             }
-            let usage = super::super::static_response::usage(
+            let usage = crate::protocol::openai::static_response::usage(
                 o.get("usage"),
                 Profile::Chat,
                 &self.adaptation,
@@ -100,7 +100,7 @@ impl EventDecoder {
         if choice.get("index").and_then(Value::as_u64) != Some(0) {
             return Err(CodecError::Unsupported("candidate".into()));
         }
-        let probabilities = super::super::chat_logprobs::read(choice.get("logprobs"))?;
+        let probabilities = crate::protocol::openai::chat::logprobs::read(choice.get("logprobs"))?;
         let delta = object(choice.get("delta").ok_or(CodecError::Invalid("delta"))?)?;
         DecodeDirection::Upstream.fields(
             delta,
@@ -129,7 +129,7 @@ impl EventDecoder {
                 .first()
                 .map(|p| p.kind)
         });
-        let details = super::super::chat_reasoning::parse(
+        let details = crate::protocol::openai::chat::reasoning::parse(
             delta,
             &self.adaptation,
             prior,
@@ -337,7 +337,10 @@ impl EventDecoder {
                 )?;
                 part
             };
-            let update = super::super::chat_audio::read_update(audio, &mut self.chat_audio_bytes)?;
+            let update = crate::protocol::openai::chat::audio::read_update(
+                audio,
+                &mut self.chat_audio_bytes,
+            )?;
             self.emit(StreamEvent::AudioDelta { item, part, update }, &mut out)?;
         }
         for (kind, probs) in probabilities {
@@ -597,7 +600,7 @@ impl EventDecoder {
                 },
             ));
             if let Some(value) = terminal_usage {
-                let usage = super::super::static_response::usage(
+                let usage = crate::protocol::openai::static_response::usage(
                     Some(value),
                     Profile::Chat,
                     &self.adaptation,
@@ -632,7 +635,7 @@ impl EventDecoder {
 impl EventEncoder {
     fn chunk(&self, mut delta: Value, finish: Value) -> Value {
         if self.contract.adaptation.rules.reasoning_alias {
-            super::super::adapter_shapes::encode_message(&mut delta);
+            crate::protocol::openai::dialect::adapter_shapes::encode_message(&mut delta);
         }
         let created = self
             .metadata
@@ -700,7 +703,7 @@ impl EventEncoder {
         {
             return Ok(None);
         }
-        super::super::chat_logprobs::carrier(p.kind, &probs)
+        crate::protocol::openai::chat::logprobs::carrier(p.kind, &probs)
     }
     /// Position of a reasoning detail in the message: earlier items' parts and replay
     /// values, then this item's parts before `part`, or all of them for its replay.
@@ -733,7 +736,7 @@ impl EventEncoder {
         let structured = self.contract.adaptation.rules.structured_chat_reasoning;
         let mut chunks = match event {
             StreamEvent::Started=>vec![self.chunk(json!({"role":"assistant"}),Value::Null)],
-            StreamEvent::AudioDelta{update,..}=>super::super::chat_audio::write_update(update,&mut self.chat_audio_pending).into_iter().map(|v|self.chunk(json!({"audio":v}),Value::Null)).collect(),
+            StreamEvent::AudioDelta{update,..}=>crate::protocol::openai::chat::audio::write_update(update,&mut self.chat_audio_pending).into_iter().map(|v|self.chunk(json!({"audio":v}),Value::Null)).collect(),
             StreamEvent::ItemStarted{item,kind:ItemKind::ToolCall{call_id,name,..},..}=>vec![self.chunk(json!({"tool_calls":[{"index":self.call_index(*item)?,"id":call_id.as_str(),"type":"function","function":{"name":name.as_str(),"arguments":""}}]}),Value::Null)],
             StreamEvent::PartStarted{kind:PartKind::Text,..}=>vec![self.chunk(json!({"content":""}),Value::Null)],
             StreamEvent::PartStarted{kind:PartKind::Refusal,..}=>vec![self.chunk(json!({"refusal":""}),Value::Null)],
@@ -752,7 +755,7 @@ impl EventEncoder {
             StreamEvent::Terminal{..}=>{
                 let response=materialize(self.state()?)?;
                 let target=crate::protocol::openai::lowering::lower_response(&response,&self.fidelity,&self.metadata,Profile::Chat,self.contract.clone()).map_err(|_|CodecError::Unsupported("Chat terminal".into()))?;
-                let finish=super::super::terminal::chat_finish(&response)?;
+                let finish=crate::protocol::openai::terminal::chat_finish(&response)?;
                 let mut chunks=vec![self.chunk(json!({}),json!(finish))];
                 if let Some(usage)=target.semantic().usage(){
                     let mut v=if self.contract.adaptation.rules.repeated_finish_usage {
@@ -760,9 +763,9 @@ impl EventEncoder {
                     } else {
                         let mut v=self.chunk(json!({}),Value::Null);v["choices"]=json!([]);v
                     };
-                    v["usage"]=super::super::static_response::encode_usage(usage,Profile::Chat,&self.contract.adaptation.rules);chunks.push(v);
+                    v["usage"]=crate::protocol::openai::static_response::encode_usage(usage,Profile::Chat,&self.contract.adaptation.rules);chunks.push(v);
                 }
-                super::super::envelope::write_response_extras(&self.fidelity,Profile::Chat,&self.contract.adaptation,target.semantic(),self.metadata.required_id()?,chunks.last_mut().expect("terminal chunk").as_object_mut().expect("object"));
+                crate::protocol::openai::responses::envelope::write_response_extras(&self.fidelity,Profile::Chat,&self.contract.adaptation,target.semantic(),self.metadata.required_id()?,chunks.last_mut().expect("terminal chunk").as_object_mut().expect("object"));
                 let mut stages=target.projection().to_vec();
                 for stage in &mut stages {
                     stage.direction=crate::protocol::openai::lowering::projection::ProjectionDirection::Event;

@@ -1,6 +1,6 @@
 //! Native annotation syntax stays outside the semantic model.
 //! https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/responses/response_output_text.py
-use super::{CodecError, Profile, common::*};
+use crate::protocol::openai::{CodecError, Profile, common::*};
 use crate::semantic::{task::generation::*, value::Text};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -56,7 +56,10 @@ fn known_fields(kind: &str) -> &'static [&'static str] {
         _ => &[],
     }
 }
-pub(super) fn read(value: &Value, items: &mut Items) -> Result<Annotation, CodecError> {
+pub(in crate::protocol::openai) fn read(
+    value: &Value,
+    items: &mut Items,
+) -> Result<Annotation, CodecError> {
     let o = object(value)?;
     let kind = o.get("type").and_then(Value::as_str).unwrap_or_default();
     items.direction.fields(o, known_fields(kind))?;
@@ -201,7 +204,7 @@ fn wire(annotation: &Annotation, resources: &ResourceTable) -> Result<WireAnnota
         _ => Err(CodecError::Unsupported("citation carrier".into())),
     }
 }
-pub(super) fn write(
+pub(in crate::protocol::openai) fn write(
     annotation: &Annotation,
     resources: &ResourceTable,
 ) -> Result<Value, CodecError> {

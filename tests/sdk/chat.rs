@@ -9,11 +9,17 @@ use axum::{
     response::Response,
 };
 use morphiecore::{
-    protocol::openai::{
-        Profile, TargetCaps as Contract, chat_envelope as envelope,
-        chat_sse::{ChatSseDecoder, ChatSseEncoder},
-        lowering::{lower_request, lower_response},
-        sse::{Obfuscation, SseLimits},
+    protocol::{
+        openai::{
+            Profile, TargetCaps as Contract,
+            chat::{
+                envelope,
+                sse::{ChatSseDecoder, ChatSseEncoder},
+            },
+            lowering::{lower_request, lower_response},
+            stream::Obfuscation,
+        },
+        stream::SseLimits,
     },
     semantic::{
         task::generation::{

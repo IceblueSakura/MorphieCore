@@ -5,6 +5,8 @@ pub mod anthropic;
 pub mod cache;
 pub(crate) mod cache_affinity;
 mod decoded;
+pub(crate) mod json;
+pub mod stream;
 pub use decoded::{CodecError, DecodedRequest, DecodedResponse, ResponseMetadata};
 pub mod extensions;
 pub mod fidelity;

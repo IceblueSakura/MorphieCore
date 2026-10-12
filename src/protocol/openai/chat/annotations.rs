@@ -1,10 +1,10 @@
 //! Standard Chat nests URL citations; the shared text owner uses a flat typed value.
 //! https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/chat/chat_completion_message.py
-use super::{CodecError, common::*};
+use crate::protocol::openai::{CodecError, common::*};
 use crate::semantic::{task::generation::*, value::Text};
 use serde_json::{Value, json};
 
-pub(super) fn attach(
+pub(in crate::protocol::openai) fn attach(
     parts: &mut [Part],
     value: Option<&Value>,
     items: &mut Items,
@@ -44,7 +44,10 @@ pub(super) fn attach(
             .fields(cite, &["start_index", "end_index", "title", "url"])?;
         let mut flat = cite.clone();
         flat.insert("type".into(), json!("url_citation"));
-        annotations.push(super::citations::read(&Value::Object(flat), items)?);
+        annotations.push(crate::protocol::openai::content::citations::read(
+            &Value::Object(flat),
+            items,
+        )?);
     }
     *text = TextContent::new(
         Text::allowing_empty(text.as_str(), "text", MAX_TEXT_BYTES)
@@ -54,12 +57,16 @@ pub(super) fn attach(
     )?;
     Ok(())
 }
-pub(super) fn write(annotations: &[Annotation], resources: &ResourceTable) -> Value {
+pub(in crate::protocol::openai) fn write(
+    annotations: &[Annotation],
+    resources: &ResourceTable,
+) -> Value {
     json!(
         annotations
             .iter()
             .map(|a| {
-                let mut v = super::citations::write(a, resources).expect("checked citation");
+                let mut v = crate::protocol::openai::content::citations::write(a, resources)
+                    .expect("checked citation");
                 v.as_object_mut()
                     .expect("citation object")
                     .shift_remove("type");

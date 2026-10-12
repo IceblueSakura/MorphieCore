@@ -3,8 +3,8 @@
 mod chat;
 mod decode;
 mod encode;
-use super::{CodecError, Profile, ResponseMetadata, common::*};
 use crate::protocol::openai::TargetCaps;
+use crate::protocol::openai::{CodecError, Profile, ResponseMetadata, common::*};
 use crate::{
     protocol::fidelity::FidelityRecords,
     semantic::{task::generation::*, value::ReplayOrigin},

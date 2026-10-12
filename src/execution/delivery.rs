@@ -4,10 +4,10 @@ use crate::{
     protocol::{
         ResponseMetadata,
         openai::{
-            Adapter, Profile, TargetCaps,
-            chat_sse::ChatSseEncoder,
-            sse::{Obfuscation, ResponsesSseEncoder, SseLimits},
+            Adapter, Profile, TargetCaps, chat::sse::ChatSseEncoder,
+            responses::sse::ResponsesSseEncoder, stream::Obfuscation,
         },
+        stream::SseLimits,
     },
     semantic::{context::StreamOptions, task::generation::StreamEvent},
 };

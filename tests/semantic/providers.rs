@@ -291,7 +291,9 @@ mod provider_profiles {
             }
         }
         for conflict in [false, true] {
-            use morphiecore::protocol::openai::sse::{ResponsesSseDecoder, SseLimits};
+            use morphiecore::protocol::{
+                openai::responses::sse::ResponsesSseDecoder, stream::SseLimits,
+            };
             let mut decoder = ResponsesSseDecoder::with_decoder(
                 200,
                 "text/event-stream",
@@ -1217,11 +1219,14 @@ mod provider_observations {
 mod router_adapter {
     //! Synthetic router wire shapes; no account, network or model-quality oracle.
     use morphiecore::{
-        protocol::openai::{
-            Adapter, Dialect, Profile, TargetCaps as Contract,
-            chat_sse::{ChatSseDecoder, ChatSseEncoder},
-            events::EventEncoder,
-            sse::{Obfuscation, SseLimits},
+        protocol::{
+            openai::{
+                Adapter, Dialect, Profile, TargetCaps as Contract,
+                chat::sse::{ChatSseDecoder, ChatSseEncoder},
+                events::EventEncoder,
+                stream::Obfuscation,
+            },
+            stream::SseLimits,
         },
         semantic::{
             context::StreamOptions,
@@ -1277,7 +1282,7 @@ mod router_adapter {
 
     #[test]
     fn responses_done_trailer_requires_a_real_terminal_and_cannot_repeat() {
-        use morphiecore::protocol::openai::sse::ResponsesSseDecoder;
+        use morphiecore::protocol::openai::responses::sse::ResponsesSseDecoder;
         let frames = crate::wire::events(2);
         let body = frames
             .iter()

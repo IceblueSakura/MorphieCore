@@ -30,7 +30,7 @@ use axum::{
 use morphiecore::{
     gateway::Limits,
     protocol::openai::{
-        Adapter, DecodedResponse, Dialect, Profile, TargetCaps, sse::ResponsesSseDecoder,
+        Adapter, DecodedResponse, Dialect, Profile, TargetCaps, responses::sse::ResponsesSseDecoder,
     },
     semantic::{
         task::generation::{Continuation, Outcome},
@@ -150,7 +150,8 @@ async fn answer(
                 bytes.extend_from_slice(format!("data: {frame}\n\n").as_bytes());
             } else {
                 bytes.extend_from_slice(
-                    &morphiecore::protocol::openai::sse::encode_frame(frame, 1 << 20).unwrap(),
+                    &morphiecore::protocol::openai::responses::sse::encode_frame(frame, 1 << 20)
+                        .unwrap(),
                 );
             }
         }

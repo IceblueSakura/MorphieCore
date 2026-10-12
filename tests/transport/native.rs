@@ -7,7 +7,8 @@ mod native_bindings {
         protocol::{
             anthropic::{Dialect as NativeDialect, Profile as NativeProfile, TargetCaps},
             native::ReplayTarget,
-            openai::{Adapter, Dialect, Profile, TargetCaps as Contract, sse::SseLimits},
+            openai::{Adapter, Dialect, Profile, TargetCaps as Contract},
+            stream::SseLimits,
         },
         provider::{
             AuthScheme, CredentialBindingId, CredentialKind, EndpointPath, ProviderDefinition,

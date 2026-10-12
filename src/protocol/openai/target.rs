@@ -5,7 +5,7 @@ use crate::{
 };
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TargetCaps {
-    pub adaptation: crate::protocol::openai::adaptation::Adaptation,
+    pub adaptation: crate::protocol::openai::dialect::adaptation::Adaptation,
     pub replay_origin: Option<crate::semantic::value::ReplayOrigin>,
     /// Caller-supplied clock for checking a reported remote-resource expiry.
     pub resource_time: Option<u64>,

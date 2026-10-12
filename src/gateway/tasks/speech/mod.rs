@@ -95,8 +95,7 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
         result = tokio::time::timeout(runtime.limits.body_timeout, admission::collect(request.into_body(), runtime.limits.request_bytes)) =>
             result.map_err(|_| ApiError::new(StatusCode::REQUEST_TIMEOUT, "request_timeout"))??,
     };
-    let envelope =
-        crate::protocol::openai::json::decode(&bytes).map_err(|_| ApiError::invalid())?;
+    let envelope = crate::protocol::json::decode(&bytes).map_err(|_| ApiError::invalid())?;
     let model = envelope
         .get("model")
         .and_then(serde_json::Value::as_str)

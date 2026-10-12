@@ -1,5 +1,5 @@
 //! Single-candidate text and function response closure, including non-success terminals.
-use super::{
+use crate::protocol::openai::{
     CodecError, DecodedResponse, Profile, ResponseMetadata, ResponseRepresentation, chat,
     common::*, responses, terminal::*,
 };
@@ -21,7 +21,7 @@ pub(super) fn metadata(
     let model = text(string(o, "model")?, "response model", 256)?
         .as_str()
         .to_owned();
-    let created = super::envelope::timestamp(
+    let created = crate::protocol::openai::responses::envelope::timestamp(
         o.get(created_key)
             .ok_or(CodecError::Invalid("created time"))?,
     )?;
@@ -43,7 +43,7 @@ pub(super) fn metadata(
     };
     context.validate()?;
     if profile == Profile::Chat {
-        super::chat_envelope::validate_context(&context.execution)?;
+        crate::protocol::openai::chat::envelope::validate_context(&context.execution)?;
     }
     Ok(ResponseMetadata {
         id: Some(id),
@@ -56,7 +56,7 @@ pub(super) fn metadata(
 pub(super) fn usage(
     value: Option<&Value>,
     profile: Profile,
-    adaptation: &crate::protocol::openai::adaptation::Adaptation,
+    adaptation: &crate::protocol::openai::dialect::adaptation::Adaptation,
     fidelity: &mut crate::protocol::fidelity::FidelityRecords,
 ) -> Result<Option<Usage>, CodecError> {
     let Some(value) = value.filter(|value| !value.is_null()) else {
@@ -240,7 +240,7 @@ fn detail(
 pub(super) fn encode_usage(
     usage: Usage,
     profile: Profile,
-    rules: &crate::protocol::openai::adaptation::WireRules,
+    rules: &crate::protocol::openai::dialect::adaptation::WireRules,
 ) -> Value {
     let mut value = match profile {
         Profile::Chat => json!({
@@ -357,7 +357,7 @@ pub(super) fn encode_usage(
             || usage.input_text_tokens.is_some()
             || usage.output_text_tokens.is_some())
     {
-        super::adapter_shapes::encode_billing_usage(&mut value);
+        crate::protocol::openai::dialect::adapter_shapes::encode_billing_usage(&mut value);
     }
     value
 }
@@ -366,10 +366,14 @@ pub fn decode_chat(v: &Value) -> Result<DecodedResponse, CodecError> {
 }
 pub(crate) fn decode_chat_with(
     v: &Value,
-    adaptation: &crate::protocol::openai::adaptation::Adaptation,
+    adaptation: &crate::protocol::openai::dialect::adaptation::Adaptation,
 ) -> Result<DecodedResponse, CodecError> {
-    let (v, extras) =
-        super::adapter_shapes::decode(v, Profile::Chat, adaptation, DecodeDirection::Upstream)?;
+    let (v, extras) = crate::protocol::openai::dialect::adapter_shapes::decode(
+        v,
+        Profile::Chat,
+        adaptation,
+        DecodeDirection::Upstream,
+    )?;
     let o = object(&v)?;
     DecodeDirection::Upstream.fields(
         o,
@@ -407,9 +411,10 @@ pub(crate) fn decode_chat_with(
     };
     let message = object(c.get("message").ok_or(CodecError::Invalid("message"))?)?;
     let mut b = Items::new(DecodeDirection::Upstream);
-    let message = super::chat_reasoning::decode_static(&mut b, message, adaptation)?;
+    let message =
+        crate::protocol::openai::chat::reasoning::decode_static(&mut b, message, adaptation)?;
     chat::decode_message(&mut b, &message, false)?;
-    super::chat_logprobs::attach(&mut b.items, c.get("logprobs"))?;
+    crate::protocol::openai::chat::logprobs::attach(&mut b.items, c.get("logprobs"))?;
     if matches!(outcome, Outcome::Incomplete) {
         for (_, item) in &mut b.items {
             match item {
@@ -468,16 +473,16 @@ pub fn decode_responses(v: &Value) -> Result<DecodedResponse, CodecError> {
 }
 pub(crate) fn decode_responses_with(
     v: &Value,
-    adaptation: &crate::protocol::openai::adaptation::Adaptation,
+    adaptation: &crate::protocol::openai::dialect::adaptation::Adaptation,
 ) -> Result<DecodedResponse, CodecError> {
-    let (v, extras) = super::adapter_shapes::decode(
+    let (v, extras) = crate::protocol::openai::dialect::adapter_shapes::decode(
         v,
         Profile::Responses,
         adaptation,
         DecodeDirection::Upstream,
     )?;
     let o = object(&v)?;
-    super::envelope::response_fields(o)?;
+    crate::protocol::openai::responses::envelope::response_fields(o)?;
     if string(o, "object")? != "response" {
         return Err(CodecError::Invalid("response object"));
     }
@@ -507,7 +512,7 @@ pub(crate) fn decode_responses_with(
     )?;
     let semantic = response_with_usage(b.items, outcome, usage, b.resources)?
         .with_details(decode_details(o)?)?;
-    super::envelope::record_vendor_shapes(
+    crate::protocol::openai::responses::envelope::record_vendor_shapes(
         Profile::Responses,
         adaptation,
         o,
@@ -545,7 +550,7 @@ pub fn encode_chat(target: &ResponseRepresentation<'_>) -> Result<Value, CodecEr
         return Err(CodecError::ProfileMismatch);
     }
     check_response_carriers(&target.semantic)?;
-    super::citations::check_items(
+    crate::protocol::openai::content::citations::check_items(
         target.semantic.items(),
         target.semantic.resources(),
         target.profile,
@@ -571,7 +576,7 @@ pub fn encode_chat(target: &ResponseRepresentation<'_>) -> Result<Value, CodecEr
     );
     if target.adaptation.rules.reasoning_alias {
         for message in &mut messages {
-            super::adapter_shapes::encode_message(message);
+            crate::protocol::openai::dialect::adapter_shapes::encode_message(message);
         }
     }
     let message = messages
@@ -585,7 +590,9 @@ pub fn encode_chat(target: &ResponseRepresentation<'_>) -> Result<Value, CodecEr
     let mut value = json!({"id":m.id,"object":"chat.completion","created":created,"model":m.model,
         "choices":[{"index":0,"message":message,"finish_reason":finish}],
         "usage":target.semantic.usage().map(|usage| encode_usage(usage, Profile::Chat, &target.adaptation.rules))});
-    if let Some(probabilities) = super::chat_logprobs::choice(target.semantic.items())? {
+    if let Some(probabilities) =
+        crate::protocol::openai::chat::logprobs::choice(target.semantic.items())?
+    {
         value["choices"][0]["logprobs"] = probabilities;
     }
     put_presence(
@@ -606,7 +613,7 @@ pub fn encode_chat(target: &ResponseRepresentation<'_>) -> Result<Value, CodecEr
         &m.context.execution.service_tier,
         |v| json!(v),
     );
-    super::envelope::write_response_extras(
+    crate::protocol::openai::responses::envelope::write_response_extras(
         target.fidelity,
         target.profile,
         &target.adaptation,
@@ -625,7 +632,7 @@ pub fn encode_responses(target: &ResponseRepresentation<'_>) -> Result<Value, Co
         return Err(CodecError::Unsupported("unprojected fingerprint".into()));
     }
     check_response_carriers(&target.semantic)?;
-    super::citations::check_items(
+    crate::protocol::openai::content::citations::check_items(
         target.semantic.items(),
         target.semantic.resources(),
         target.profile,
@@ -659,12 +666,12 @@ pub fn encode_responses(target: &ResponseRepresentation<'_>) -> Result<Value, Co
         .ok_or(CodecError::Invalid("created time"))?;
     let mut value = json!({"id":m.id,"object":"response","created_at":created,"model":m.model,"status":status,
         "output":output,"usage":target.semantic.usage().map(|usage| encode_usage(usage, Profile::Responses, &target.adaptation.rules))});
-    super::envelope::write_metadata(
+    crate::protocol::openai::responses::envelope::write_metadata(
         m,
         value.as_object_mut().expect("object"),
         status == "completed",
     )?;
-    super::envelope::write_response_extras(
+    crate::protocol::openai::responses::envelope::write_response_extras(
         target.fidelity,
         target.profile,
         &target.adaptation,

@@ -6,11 +6,8 @@ use crate::{
     protocol::{
         CodecError, DecodedResponse, ResponseMetadata,
         fidelity::FidelityRecords,
-        openai::{
-            Profile,
-            chat_sse::ChatSseDecoder,
-            sse::{ResponsesSseDecoder, SseError, SseLimits},
-        },
+        openai::{Profile, chat::sse::ChatSseDecoder, responses::sse::ResponsesSseDecoder},
+        stream::{SseError, SseLimits},
     },
     provider::{ErrorClass, ProviderDefinition, SecretMaterial, StatusClass, classify_status},
     semantic::task::generation::{GenerationRequirements, LocalScope, StreamEvent},
@@ -458,7 +455,7 @@ mod identity_tests {
         execution::ResponseDelivery,
         protocol::{
             native::ReplayTarget,
-            openai::{Adapter, Dialect, TargetCaps, sse::Obfuscation},
+            openai::{Adapter, Dialect, TargetCaps, stream::Obfuscation},
         },
         semantic::context::StreamOptions,
     };

@@ -1,7 +1,7 @@
 //! Chat choice probabilities are owned by the matching text/refusal part.
 //! Missing/null carriers mean unreported; a reported empty array is still a fact.
 //! Pinned shapes: https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/chat/chat_completion_token_logprob.py
-use super::{CodecError, common::*};
+use crate::protocol::openai::{CodecError, common::*};
 use crate::semantic::{task::generation::*, value::Presence};
 use serde_json::{Value, json};
 
@@ -16,7 +16,9 @@ pub(crate) fn validate(probs: &[Logprob]) -> Result<(), CodecError> {
     }
     Ok(())
 }
-pub(super) fn read(value: Option<&Value>) -> Result<Vec<(PartKind, Vec<Logprob>)>, CodecError> {
+pub(in crate::protocol::openai) fn read(
+    value: Option<&Value>,
+) -> Result<Vec<(PartKind, Vec<Logprob>)>, CodecError> {
     let Some(value) = value.filter(|v| !v.is_null()) else {
         return Ok(vec![]);
     };
@@ -25,7 +27,7 @@ pub(super) fn read(value: Option<&Value>) -> Result<Vec<(PartKind, Vec<Logprob>)
     let mut result = Vec::new();
     for (key, kind) in [("content", PartKind::Text), ("refusal", PartKind::Refusal)] {
         if let Some(value) = o.get(key).filter(|v| !v.is_null()) {
-            let probs = super::text::read_logprobs(value)?;
+            let probs = crate::protocol::openai::content::text::read_logprobs(value)?;
             validate(&probs)?;
             result.push((kind, probs));
         }
@@ -33,12 +35,12 @@ pub(super) fn read(value: Option<&Value>) -> Result<Vec<(PartKind, Vec<Logprob>)
     Ok(result)
 }
 /// Byte representations are optional in Chat; never infer them from token strings.
-pub(super) fn write(probs: &[Logprob]) -> Value {
+pub(in crate::protocol::openai) fn write(probs: &[Logprob]) -> Value {
     json!(probs.iter().map(|p| json!({"token":p.token,"logprob":p.logprob,"bytes":p.bytes,
         "top_logprobs":p.top_logprobs.as_deref().expect("validated Chat probabilities").iter().map(|p|json!({"token":p.token,"logprob":p.logprob,"bytes":p.bytes})).collect::<Vec<_>>()
     })).collect::<Vec<_>>())
 }
-pub(super) fn carrier(
+pub(in crate::protocol::openai) fn carrier(
     kind: PartKind,
     probs: &Presence<Vec<Logprob>>,
 ) -> Result<Option<Value>, CodecError> {
@@ -56,7 +58,7 @@ pub(super) fn carrier(
         }
     })
 }
-pub(super) fn attach(
+pub(in crate::protocol::openai) fn attach(
     items: &mut [(ItemId, Item)],
     value: Option<&Value>,
 ) -> Result<(), CodecError> {
@@ -89,7 +91,9 @@ pub(super) fn attach(
     }
     Ok(())
 }
-pub(super) fn choice(items: &[(ItemId, Item)]) -> Result<Option<Value>, CodecError> {
+pub(in crate::protocol::openai) fn choice(
+    items: &[(ItemId, Item)],
+) -> Result<Option<Value>, CodecError> {
     let mut result = None;
     for (_, item) in items {
         if let Item::Message(message) = item {

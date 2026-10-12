@@ -359,7 +359,9 @@ mod phase {
     //! Assistant `phase` is typed, status-independent and preserved on every projection.
     use crate::events_support::*;
     use morphiecore::{
-        protocol::openai::{CodecError, DecodedRequest, Profile, envelope, events::EventDecoder},
+        protocol::openai::{
+            CodecError, DecodedRequest, Profile, events::EventDecoder, responses::envelope,
+        },
         semantic::task::generation::*,
     };
     use serde_json::{Value, json};

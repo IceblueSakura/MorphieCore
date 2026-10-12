@@ -1,8 +1,12 @@
 //! Responses task payload codec. HTTP request bindings are owned by `envelope`.
-pub use super::static_response::{
+pub mod envelope;
+pub mod sse;
+pub use crate::protocol::openai::static_response::{
     decode_responses as decode_response, encode_responses as encode_response,
 };
-use super::{CodecError, DecodedRequest, Profile, RequestRepresentation, common::*, settings};
+use crate::protocol::openai::{
+    CodecError, DecodedRequest, Profile, RequestRepresentation, common::*, settings,
+};
 use crate::{
     protocol::fidelity::FidelityRecords,
     semantic::{task::generation::*, value::Text},
@@ -193,7 +197,11 @@ fn output(b: &mut Items, v: &Value) -> Result<ToolOutput, CodecError> {
             "input_image" => (
                 b.part_id()?,
                 ToolResultPart::Resource(b.resource(
-                    super::image::read(o, Profile::Responses, direction)?,
+                    crate::protocol::openai::content::image::read(
+                        o,
+                        Profile::Responses,
+                        direction,
+                    )?,
                     ResourcePurpose::ToolResult,
                 )?),
             ),
@@ -234,7 +242,7 @@ pub(super) fn configuration_effort(
             direction.fields(reasoning, &["effort"])?;
             match reasoning.get("effort") {
                 None | Some(Value::Null) => Ok(None),
-                Some(value) => Ok(Some(super::reasoning::effort(
+                Some(value) => Ok(Some(crate::protocol::openai::reasoning::effort(
                     value
                         .as_str()
                         .ok_or(CodecError::Invalid("configuration effort"))?,
@@ -380,7 +388,7 @@ pub(super) fn decode_items(
             Some("reasoning") => {
                 // Wire reasoning items carry required identity; it is never invented.
                 text(string(o, "id")?, "reasoning id", 256)?;
-                let r = super::reasoning::decode_item(
+                let r = crate::protocol::openai::reasoning::decode_item(
                     o,
                     &mut || b.part_id(),
                     !response || item_status != "completed",
@@ -499,19 +507,23 @@ pub(super) fn decode_items(
                             }
                             "input_image" if !response && role == MessageRole::User => {
                                 ContentPart::Resource(b.resource(
-                                    super::image::read(p, Profile::Responses, direction)?,
+                                    crate::protocol::openai::content::image::read(
+                                        p,
+                                        Profile::Responses,
+                                        direction,
+                                    )?,
                                     ResourcePurpose::Input,
                                 )?)
                             }
                             "input_file" if !response && role == MessageRole::User => {
                                 ContentPart::Resource(b.resource(
-                                    super::file::read(p, direction)?,
+                                    crate::protocol::openai::content::file::read(p, direction)?,
                                     ResourcePurpose::Input,
                                 )?)
                             }
-                            "output_text" if role == MessageRole::Assistant => {
-                                ContentPart::Text(super::text::read(p, !response, b)?)
-                            }
+                            "output_text" if role == MessageRole::Assistant => ContentPart::Text(
+                                crate::protocol::openai::content::text::read(p, !response, b)?,
+                            ),
                             _ => return Err(CodecError::Unsupported("content part".into())),
                         };
                         let part_id = b.part_id()?;
@@ -568,7 +580,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     }
     check_item_carriers(target.semantic.items())?;
     check_resource_carriers(target.semantic.resources())?;
-    super::citations::check_items(
+    crate::protocol::openai::content::citations::check_items(
         target.semantic.items(),
         target.semantic.resources(),
         Profile::Responses,
@@ -597,10 +609,11 @@ fn output_wire(o: &ToolOutput, fidelity: &FidelityRecords, resources: &ResourceT
             p.iter()
                 .map(|(id, part)| match part {
                     ToolResultPart::Text(text) => input_part(*id, text.as_str(), fidelity),
-                    ToolResultPart::Resource(resource) => super::image::write(
-                        resource.media(resources).expect("validated resource"),
-                        Profile::Responses
-                    ),
+                    ToolResultPart::Resource(resource) =>
+                        crate::protocol::openai::content::image::write(
+                            resource.media(resources).expect("validated resource"),
+                            Profile::Responses
+                        ),
                 })
                 .collect::<Vec<_>>()
         ),
@@ -629,7 +642,7 @@ pub(super) fn encode_items(
             // Empty owners still carry identity, phase and lifecycle. Omitting
             // one here would also contradict its already emitted SSE item.
             Item::Message(m) => {
-                let mut v = json!({"type":"message","role":if m.role==MessageRole::User{"user"}else{"assistant"},"content":m.parts.iter().map(|p|match &p.content{ContentPart::Text(t)=>if !response && (m.role==MessageRole::User || fidelity.input_text_form(p.id) && t.is_plain()){input_part(p.id,t.as_str(),fidelity)}else{super::text::write(t,"output_text",resources)},ContentPart::Refusal(t)=>json!({"type":"refusal","refusal":t.as_str()}),ContentPart::Resource(value)=>{let resource=value.media(resources).expect("validated resource");match resource.kind(){ResourceKind::Image=>super::image::write(resource,Profile::Responses),ResourceKind::File=>super::file::write(resource),ResourceKind::Audio=>unreachable!("lowering rejects audio resources without a Responses carrier")}},ContentPart::Audio(_)|ContentPart::AudioReference(_)=>unreachable!("lowering rejects audio without a Responses carrier")}).collect::<Vec<_>>()});
+                let mut v = json!({"type":"message","role":if m.role==MessageRole::User{"user"}else{"assistant"},"content":m.parts.iter().map(|p|match &p.content{ContentPart::Text(t)=>if !response && (m.role==MessageRole::User || fidelity.input_text_form(p.id) && t.is_plain()){input_part(p.id,t.as_str(),fidelity)}else{crate::protocol::openai::content::text::write(t,"output_text",resources)},ContentPart::Refusal(t)=>json!({"type":"refusal","refusal":t.as_str()}),ContentPart::Resource(value)=>{let resource=value.media(resources).expect("validated resource");match resource.kind(){ResourceKind::Image=>crate::protocol::openai::content::image::write(resource,Profile::Responses),ResourceKind::File=>crate::protocol::openai::content::file::write(resource),ResourceKind::Audio=>unreachable!("lowering rejects audio resources without a Responses carrier")}},ContentPart::Audio(_)|ContentPart::AudioReference(_)=>unreachable!("lowering rejects audio without a Responses carrier")}).collect::<Vec<_>>()});
                 if let Some(p) = m.phase {
                     v["phase"] = json!(p.label());
                 }
@@ -656,7 +669,8 @@ pub(super) fn encode_items(
             Item::ConfigurationUpdate(update) => {
                 let mut v = json!({"type":"configuration_update"});
                 if let Some(effort) = update.effort {
-                    v["reasoning"] = json!({"effort": super::reasoning::effort_label(effort)});
+                    v["reasoning"] =
+                        json!({"effort": crate::protocol::openai::reasoning::effort_label(effort)});
                 }
                 v
             }
@@ -666,7 +680,7 @@ pub(super) fn encode_items(
             Item::ProgramOutput(o) => {
                 json!({"type":"program_output","call_id":o.call_id.as_str(),"result":o.result,"status":status_label(o.status)})
             }
-            Item::Reasoning(r) => super::reasoning::encode_item(r, response),
+            Item::Reasoning(r) => crate::protocol::openai::reasoning::encode_item(r, response),
             Item::ProviderTool(_) => unreachable!("checked Provider carrier"),
         };
         if response {

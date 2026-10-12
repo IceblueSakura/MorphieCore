@@ -682,7 +682,7 @@ mod tool_results {
 mod tool_result_errors {
     //! Error reports and execution facts have independent presence and admission.
     use morphiecore::{
-        protocol::openai::{Profile, chat_envelope, envelope},
+        protocol::openai::{Profile, chat::envelope as chat_envelope, responses::envelope},
         semantic::{task::generation::*, value::Text},
     };
 

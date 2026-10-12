@@ -1,7 +1,7 @@
 //! Selected standard text/float Embeddings profile; exact numeric reports remain authoritative.
 //! https://developers.openai.com/api/reference/resources/embeddings/methods/create
-use super::images::{number, object, required, string};
 pub use crate::adapter::embeddings::Encoding;
+use crate::protocol::openai::images::{number, object, required, string};
 use crate::{
     adapter::embeddings::{Profile, Request, Response},
     protocol::CodecError,
@@ -18,7 +18,7 @@ fn valid_model(model: &str) -> bool {
         && !model.chars().any(|c| c.is_control() || c.is_whitespace())
 }
 pub fn decode_request(bytes: &[u8]) -> Result<Request, CodecError> {
-    let value = super::json::decode(bytes)?;
+    let value = crate::protocol::json::decode(bytes)?;
     let map = object(
         &value,
         &["model", "input", "dimensions", "encoding_format", "user"],
@@ -88,7 +88,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, CodecError> {
     decode_response_with(bytes, Profile::Standard)
 }
 pub(crate) fn decode_response_with(bytes: &[u8], profile: Profile) -> Result<Response, CodecError> {
-    let value = super::json::decode(bytes)?;
+    let value = crate::protocol::json::decode(bytes)?;
     let fields: &[&str] = if profile == Profile::Standard {
         &["object", "model", "data", "usage"]
     } else {

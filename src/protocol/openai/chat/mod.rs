@@ -1,6 +1,14 @@
 //! Chat request mapping, including explicit assistant message ownership for tool calls.
-pub use super::static_response::{decode_chat as decode_response, encode_chat as encode_response};
-use super::{
+pub(in crate::protocol::openai) mod annotations;
+pub(in crate::protocol::openai) mod audio;
+pub mod envelope;
+pub(crate) mod logprobs;
+pub(in crate::protocol::openai) mod reasoning;
+pub mod sse;
+pub use crate::protocol::openai::static_response::{
+    decode_chat as decode_response, encode_chat as encode_response,
+};
+use crate::protocol::openai::{
     CodecError, DecodedRequest, Profile, RequestRepresentation, common::*, function_tools,
 };
 use crate::semantic::task::generation::*;
@@ -27,7 +35,7 @@ pub fn decode_generation(v: &Value) -> Result<DecodedRequest, CodecError> {
 }
 pub(crate) fn decode_generation_with(
     v: &Value,
-    adaptation: &crate::protocol::openai::adaptation::Adaptation,
+    adaptation: &crate::protocol::openai::dialect::adaptation::Adaptation,
     direction: DecodeDirection<'_>,
 ) -> Result<DecodedRequest, CodecError> {
     bounded(v)?;
@@ -40,7 +48,11 @@ pub(crate) fn decode_generation_with(
     let mut b = Items::new(direction);
     for message in messages {
         adaptation.validate_message(object(message)?)?;
-        let message = super::chat_reasoning::decode_static(&mut b, object(message)?, adaptation)?;
+        let message = crate::protocol::openai::chat::reasoning::decode_static(
+            &mut b,
+            object(message)?,
+            adaptation,
+        )?;
         decode_message(&mut b, &message, true)?;
     }
     let mut controls = controls(o, "max_completion_tokens")?;
@@ -71,10 +83,10 @@ pub(crate) fn decode_generation_with(
             format,
             verbosity: Presence::Absent,
         },
-        reasoning: super::reasoning::chat_request(o)?,
+        reasoning: crate::protocol::openai::reasoning::chat_request(o)?,
         ..Default::default()
     };
-    super::chat_audio::settings(o, &mut settings, direction)?;
+    crate::protocol::openai::chat::audio::settings(o, &mut settings, direction)?;
     let r = GenerationRequest::from_resources(b.items, settings, b.resources)?
         .with_message_owners(b.message_owners)?;
     Ok(DecodedRequest {
@@ -104,7 +116,7 @@ fn read_response_format(
                     .ok_or(CodecError::Invalid("json_schema"))?,
             )?;
             direction.fields(body, &["name", "description", "schema", "strict"])?;
-            super::settings::read_schema_body(body)?
+            crate::protocol::openai::settings::read_schema_body(body)?
         }
         _ => return Err(CodecError::Unsupported("response format".into())),
     })
@@ -120,7 +132,7 @@ fn write_response_format(f: &OutputConstraint) -> Result<Value, CodecError> {
             strict,
         } => {
             let mut body = Map::new();
-            super::settings::write_schema_body(
+            crate::protocol::openai::settings::write_schema_body(
                 &mut body,
                 name,
                 description.as_ref(),
@@ -298,7 +310,7 @@ pub(super) fn decode_message(
                 return Err(CodecError::Invalid("message tool fields"));
             }
             if replay {
-                super::common::admit_parsed(
+                crate::protocol::openai::common::admit_parsed(
                     "parsed",
                     m.get("parsed"),
                     match m.get("content") {
@@ -347,14 +359,20 @@ pub(super) fn decode_message(
                             "image_url" => parts.push(Part {
                                 id: b.part_id()?,
                                 content: ContentPart::Resource(b.resource(
-                                    super::image::read(part, Profile::Chat, direction)?,
+                                    crate::protocol::openai::content::image::read(
+                                        part,
+                                        Profile::Chat,
+                                        direction,
+                                    )?,
                                     ResourcePurpose::Input,
                                 )?),
                             }),
                             "input_audio" => parts.push(Part {
                                 id: b.part_id()?,
                                 content: ContentPart::Resource(b.resource(
-                                    super::input_audio::read(part, direction)?,
+                                    crate::protocol::openai::content::input_audio::read(
+                                        part, direction,
+                                    )?,
                                     ResourcePurpose::Input,
                                 )?),
                             }),
@@ -372,7 +390,11 @@ pub(super) fn decode_message(
                 (None | Some(Value::Null), None) if role == "assistant" => Vec::new(),
                 _ => return Err(CodecError::Unsupported("message content".into())),
             };
-            super::chat_annotations::attach(&mut parts, m.get("annotations"), b)?;
+            crate::protocol::openai::chat::annotations::attach(
+                &mut parts,
+                m.get("annotations"),
+                b,
+            )?;
             if let Some(audio) = m.get("audio").filter(|v| !v.is_null()) {
                 if parts
                     .iter()
@@ -382,7 +404,7 @@ pub(super) fn decode_message(
                 }
                 parts.push(Part {
                     id: b.part_id()?,
-                    content: super::chat_audio::read(audio, replay, direction)?,
+                    content: crate::protocol::openai::chat::audio::read(audio, replay, direction)?,
                 });
             }
             b.items.push((
@@ -438,7 +460,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     )?;
     check_item_carriers(target.semantic.items())?;
     check_resource_carriers(target.semantic.resources())?;
-    super::citations::check_items(
+    crate::protocol::openai::content::citations::check_items(
         target.semantic.items(),
         target.semantic.resources(),
         Profile::Chat,
@@ -489,9 +511,13 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
             o.insert("response_format".into(), write_response_format(format)?);
         }
     }
-    super::chat_audio::write_settings(target.semantic.settings(), o);
+    crate::protocol::openai::chat::audio::write_settings(target.semantic.settings(), o);
     function_tools::encode(&target.semantic, Profile::Chat, o)?;
-    super::reasoning::write_request(target.semantic.reasoning(), o, Profile::Chat)?;
+    crate::protocol::openai::reasoning::write_request(
+        target.semantic.reasoning(),
+        o,
+        Profile::Chat,
+    )?;
     bounded(&v)?;
     Ok(v)
 }
@@ -534,7 +560,7 @@ pub(super) fn encode_items_with(
                 standalone_calls = false;
                 let mut message =
                     json!({"role":if m.role == MessageRole::User { "user" } else { "assistant" }});
-                super::chat_reasoning::write_carrier(
+                crate::protocol::openai::chat::reasoning::write_carrier(
                     &mut message,
                     &std::mem::take(&mut reasoning),
                     fidelity,
@@ -554,7 +580,7 @@ pub(super) fn encode_items_with(
                     match &p.content {
                         ContentPart::Audio(audio) => {
                             message["audio"] = if response {
-                                super::chat_audio::write(audio)
+                                crate::protocol::openai::chat::audio::write(audio)
                             } else {
                                 json!({"id":audio.reference().id()})
                             }
@@ -572,7 +598,10 @@ pub(super) fn encode_items_with(
                             message["content"] = json!(t.as_str());
                             if !t.annotations().is_empty() {
                                 message["annotations"] =
-                                    super::chat_annotations::write(t.annotations(), resources);
+                                    crate::protocol::openai::chat::annotations::write(
+                                        t.annotations(),
+                                        resources,
+                                    );
                             }
                         }
                         ContentPart::Refusal(t) => {
@@ -609,7 +638,7 @@ pub(super) fn encode_items_with(
             Item::ToolCall(c) => {
                 if !owners.contains_key(id) && !standalone_calls {
                     let mut message = json!({"role":"assistant","content":null});
-                    super::chat_reasoning::write_carrier(
+                    crate::protocol::openai::chat::reasoning::write_carrier(
                         &mut message,
                         &std::mem::take(&mut reasoning),
                         fidelity,
@@ -653,8 +682,10 @@ pub(super) fn encode_items_with(
 
 fn write_input_resource(resource: ResourceView<'_>) -> Value {
     match resource.kind() {
-        ResourceKind::Audio => super::input_audio::write(resource),
-        ResourceKind::Image => super::image::write(resource, Profile::Chat),
+        ResourceKind::Audio => crate::protocol::openai::content::input_audio::write(resource),
+        ResourceKind::Image => {
+            crate::protocol::openai::content::image::write(resource, Profile::Chat)
+        }
         ResourceKind::File => unreachable!("lowering rejects Chat files"),
     }
 }

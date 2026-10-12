@@ -88,7 +88,7 @@ fn valid_model(model: &str) -> bool {
         && !model.chars().any(|c| c.is_control() || c.is_whitespace())
 }
 pub fn decode_request(bytes: &[u8]) -> Result<Request, CodecError> {
-    let value = super::json::decode(bytes)?;
+    let value = crate::protocol::json::decode(bytes)?;
     let map = object(
         &value,
         &[
@@ -258,7 +258,7 @@ fn usage(value: &Value) -> Result<ImageUsage, CodecError> {
     Ok(usage)
 }
 pub fn decode_response(bytes: &[u8]) -> Result<ImageGenerationResponse, CodecError> {
-    let value = super::json::decode_image_response(bytes)?;
+    let value = crate::protocol::json::decode_image_response(bytes)?;
     let map = object(
         &value,
         &[

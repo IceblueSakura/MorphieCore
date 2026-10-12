@@ -1472,7 +1472,9 @@ mod parsed_replay {
     //! SDK derived `parsed` views are validated replay conveniences over the authoritative
     //! raw text; they are never IR state and never emitted.
     use morphiecore::{
-        protocol::openai::{CodecError, DecodedRequest, chat_envelope, envelope},
+        protocol::openai::{
+            CodecError, DecodedRequest, chat::envelope as chat_envelope, responses::envelope,
+        },
         semantic::task::generation::*,
     };
     use serde_json::{Value, json};

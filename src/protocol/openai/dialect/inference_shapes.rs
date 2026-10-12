@@ -1,5 +1,5 @@
 //! Closed inference-server placeholders and reported usage aliases; no payload fidelity.
-use super::{
+use crate::protocol::openai::{
     CodecError,
     common::{DecodeDirection, object},
 };
@@ -31,7 +31,7 @@ fn counter(object: &mut Map<String, Value>, name: &str, value: Value) -> Result<
     object.insert(name.into(), value);
     Ok(())
 }
-pub(super) fn decode(
+pub(in crate::protocol::openai) fn decode(
     root: &mut Map<String, Value>,
     direction: DecodeDirection,
 ) -> Result<(), CodecError> {

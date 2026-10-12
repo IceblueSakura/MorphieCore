@@ -3,10 +3,12 @@ use crate::{chat_wire, wire};
 use morphiecore::{
     execution::{Attempt, AttemptError, ResponseDelivery, admit, prepare},
     lowering::generation::ReportedFactPolicy,
-    protocol::openai::{
-        Adapter, Dialect, Profile, TargetCaps as Contract,
-        chat_sse::ChatSseDecoder,
-        sse::{Obfuscation, ResponsesSseDecoder, SseLimits},
+    protocol::{
+        openai::{
+            Adapter, Dialect, Profile, TargetCaps as Contract, chat::sse::ChatSseDecoder,
+            responses::sse::ResponsesSseDecoder, stream::Obfuscation,
+        },
+        stream::SseLimits,
     },
     provider::{ErrorClass, SecretMaterial, catalog as providers},
     semantic::{
@@ -50,7 +52,7 @@ fn bytes(profile: Profile) -> Vec<u8> {
         Profile::Responses => wire::events(2)
             .iter()
             .flat_map(|v| {
-                morphiecore::protocol::openai::sse::encode_frame(
+                morphiecore::protocol::openai::responses::sse::encode_frame(
                     v,
                     SseLimits::default().max_event_bytes,
                 )
@@ -238,7 +240,7 @@ fn strict_completeness_can_fail_late_without_fabricating_a_terminal() {
     let body: Vec<u8> = frames
         .iter()
         .flat_map(|v| {
-            morphiecore::protocol::openai::sse::encode_frame(
+            morphiecore::protocol::openai::responses::sse::encode_frame(
                 v,
                 SseLimits::default().max_event_bytes,
             )
@@ -317,7 +319,7 @@ fn streaming_carrier_seals_opaque_for_both_downstream_protocols() {
         .enumerate()
         .flat_map(|(n, mut event)| {
             event["sequence_number"] = json!(n);
-            morphiecore::protocol::openai::sse::encode_frame(&event, 1 << 20).unwrap()
+            morphiecore::protocol::openai::responses::sse::encode_frame(&event, 1 << 20).unwrap()
         })
         .collect();
     for profile in [Profile::Chat, Profile::Responses] {

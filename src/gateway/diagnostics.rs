@@ -47,7 +47,7 @@ struct EventCounts {
 fn decode_failure(error: &crate::execution::AttemptError) -> &'static str {
     use crate::{
         execution::AttemptError,
-        protocol::{CodecError, openai::sse::SseError},
+        protocol::{CodecError, stream::SseError},
         semantic::task::generation::EventError,
     };
     let codec = match error {

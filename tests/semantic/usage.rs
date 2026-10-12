@@ -346,7 +346,9 @@ mod billing_modal_usage {
 }
 mod unreported_event_probabilities {
     //! A named unreported-probability rule must not weaken complete SSE or fabricate facts.
-    use morphiecore::protocol::openai::{Adapter, Dialect, Profile, sse::ResponsesSseDecoder};
+    use morphiecore::protocol::openai::{
+        Adapter, Dialect, Profile, responses::sse::ResponsesSseDecoder,
+    };
     use serde_json::{Value, json};
     fn fixture() -> (Value, Vec<Value>) {
         let message = json!({"id":"msg","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"x","annotations":[]}]});

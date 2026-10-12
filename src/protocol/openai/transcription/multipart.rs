@@ -106,7 +106,7 @@ pub async fn decode_request(content_type: &str, bytes: Bytes) -> Result<Request,
         }
     }
     let model = fields.remove("model").ok_or_else(invalid)?;
-    if !super::super::speech::valid_model(&model)
+    if !crate::protocol::openai::speech::valid_model(&model)
         || fields.get("response_format").is_some_and(|s| s != "json")
         || fields.get("stream").is_some_and(|s| s != "false")
     {

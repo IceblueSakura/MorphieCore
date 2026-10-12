@@ -1,5 +1,5 @@
 //! Event rendering uses only validated semantic state and owner-bound wire identities.
-use super::*;
+use crate::protocol::openai::events::*;
 use serde_json::json;
 
 pub struct EventEncoder {
@@ -221,7 +221,7 @@ impl EventEncoder {
             .as_ref()
             .ok_or(CodecError::Invalid("created time"))?;
         let mut v = json!({"id":self.metadata.id,"object":"response","created_at":created,"model":self.metadata.model,"status":status,"output":output});
-        super::super::envelope::write_metadata(
+        crate::protocol::openai::responses::envelope::write_metadata(
             &self.metadata,
             v.as_object_mut().expect("object"),
             status == "completed",
@@ -259,7 +259,7 @@ impl EventEncoder {
                         context,
                     } => {
                         let mut v = json!({"id":id,"type":"custom_tool_call","call_id":call_id.as_str(),"name":name.as_str(),"input":""});
-                        super::super::responses::write_call_context(
+                        crate::protocol::openai::responses::write_call_context(
                             context,
                             v.as_object_mut().expect("object"),
                         );
@@ -271,8 +271,7 @@ impl EventEncoder {
                     ItemKind::ConfigurationUpdate { effort } => {
                         let mut v = json!({"id":id,"type":"configuration_update"});
                         if let Some(effort) = effort {
-                            v["reasoning"] =
-                                json!({"effort": super::super::reasoning::effort_label(*effort)});
+                            v["reasoning"] = json!({"effort": crate::protocol::openai::reasoning::effort_label(*effort)});
                         }
                         v
                     }
@@ -298,7 +297,7 @@ impl EventEncoder {
                         ..
                     } => {
                         let mut v = json!({"id":id,"type":"function_call","call_id":call_id.as_str(),"name":name.as_str(),"arguments":"","status":"in_progress"});
-                        super::super::responses::write_call_context(
+                        crate::protocol::openai::responses::write_call_context(
                             context,
                             v.as_object_mut().expect("object"),
                         );
@@ -345,7 +344,8 @@ impl EventEncoder {
                 v["type"] = json!(format!("response.{}.delta", event_stem(kind)));
                 v["delta"] = json!(fragment);
                 if kind == PartKind::Text {
-                    v["logprobs"] = super::super::text::event_logprobs(logprobs);
+                    v["logprobs"] =
+                        crate::protocol::openai::content::text::event_logprobs(logprobs);
                 }
                 vec![v]
             }
@@ -360,7 +360,7 @@ impl EventEncoder {
                     _ => "text",
                 }] = json!(p.value().wire_text());
                 if p.kind == PartKind::Text {
-                    v["logprobs"] = super::super::text::event_logprobs(
+                    v["logprobs"] = crate::protocol::openai::content::text::event_logprobs(
                         p.logprobs.value().map(Vec::as_slice).unwrap_or_default(),
                     );
                 }
@@ -391,7 +391,7 @@ impl EventEncoder {
                             MAX_TEXT_BYTES,
                         )
                         .map_err(|_| CodecError::Limit)?;
-                        super::super::text::write(
+                        crate::protocol::openai::content::text::write(
                             &TextContent::new(text, p.annotations.clone(), p.logprobs.clone())?,
                             "output_text",
                             self.state()?.resources(),
@@ -421,8 +421,10 @@ impl EventEncoder {
                 v["type"] = json!("response.output_text.annotation.added");
                 v["annotation_index"] =
                     json!(self.state()?.part(*item, *part)?.annotations.len() - 1);
-                v["annotation"] =
-                    super::super::citations::write(annotation, self.state()?.resources())?;
+                v["annotation"] = crate::protocol::openai::content::citations::write(
+                    annotation,
+                    self.state()?.resources(),
+                )?;
                 vec![v]
             }
             StreamEvent::ResourceDeclared { .. } | StreamEvent::MessageEnvelope(_) => vec![],
@@ -439,7 +441,7 @@ impl EventEncoder {
                 terminal: StreamTerminal::Error,
                 details,
             } => {
-                let mut v = super::super::terminal::encode_error(details.error.as_ref());
+                let mut v = crate::protocol::openai::terminal::encode_error(details.error.as_ref());
                 if !v.is_object() {
                     return Err(CodecError::Invalid("error details"));
                 }
@@ -456,7 +458,7 @@ impl EventEncoder {
                     self.contract.clone(),
                 )
                 .map_err(|_| CodecError::Unsupported("terminal representation".into()))?;
-                let v = super::super::responses::encode_response(&target)?;
+                let v = crate::protocol::openai::responses::encode_response(&target)?;
                 let kind = match terminal {
                     StreamTerminal::Completed => "response.completed",
                     StreamTerminal::Incomplete => "response.incomplete",
@@ -485,7 +487,7 @@ fn validate_metadata(profile: Profile, metadata: &ResponseMetadata) -> Result<()
         .as_ref()
         .ok_or(CodecError::Invalid("created time"))?;
     if profile == Profile::Chat {
-        super::super::chat_envelope::validate_context(&metadata.context.execution)?;
+        crate::protocol::openai::chat::envelope::validate_context(&metadata.context.execution)?;
         if created.as_u64().is_none() || !metadata.context.execution.metadata.is_absent() {
             // Chat chunks have no metadata slot; never silently discard a static fact.
             return Err(CodecError::Unsupported("Chat stream metadata".into()));

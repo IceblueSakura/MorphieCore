@@ -1,5 +1,5 @@
 //! Encoding guards also protect crate-internal callers from forged representations.
-use super::*;
+use crate::protocol::openai::*;
 use crate::semantic::{task::generation::*, value::Text};
 
 #[test]

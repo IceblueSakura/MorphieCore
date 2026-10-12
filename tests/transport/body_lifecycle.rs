@@ -7,7 +7,10 @@ use axum::{
     routing::get,
 };
 use futures_util::stream;
-use morphiecore::protocol::openai::sse::{ResponsesSseDecoder, SseLimits, encode_frame};
+use morphiecore::protocol::{
+    openai::responses::sse::{ResponsesSseDecoder, encode_frame},
+    stream::SseLimits,
+};
 use std::{convert::Infallible, time::Duration};
 use tokio::{net::TcpListener, sync::mpsc};
 

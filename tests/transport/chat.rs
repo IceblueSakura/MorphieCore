@@ -1,12 +1,18 @@
 //! Chat byte boundaries, explicit DONE lifecycle and independent static/event closure.
 use crate::chat_wire as wire;
 use morphiecore::{
-    protocol::openai::{
-        Profile, TargetCaps as Contract, chat_envelope as envelope,
-        chat_sse::{ChatSseDecoder, ChatSseEncoder},
-        lowering::{lower_request, lower_response},
-        responses,
-        sse::{Obfuscation, SseLimits},
+    protocol::{
+        openai::{
+            Profile, TargetCaps as Contract,
+            chat::{
+                envelope,
+                sse::{ChatSseDecoder, ChatSseEncoder},
+            },
+            lowering::{lower_request, lower_response},
+            responses,
+            stream::Obfuscation,
+        },
+        stream::SseLimits,
     },
     semantic::{context::StreamOptions, task::generation::*, value::Presence},
 };

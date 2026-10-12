@@ -1,10 +1,10 @@
 //! Standard user input audio: inline WAV/MP3 only, never a transcript or a URL.
 //! https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create
-use super::{CodecError, common::*};
+use crate::protocol::openai::{CodecError, common::*};
 use crate::semantic::{task::generation::*, value::Text};
 use serde_json::{Map, Value, json};
 
-pub(super) fn read(
+pub(in crate::protocol::openai) fn read(
     part: &Map<String, Value>,
     direction: DecodeDirection,
 ) -> Result<Resource, CodecError> {
@@ -37,7 +37,7 @@ pub(crate) fn representable(resource: ResourceView<'_>) -> bool {
         ResourceLocation::Inline{media_type,..} if matches!(media_type.as_str(),"audio/wav"|"audio/mpeg"))
 }
 
-pub(super) fn write(resource: ResourceView<'_>) -> Value {
+pub(in crate::protocol::openai) fn write(resource: ResourceView<'_>) -> Value {
     let ResourceLocation::Inline {
         media_type,
         data_base64,

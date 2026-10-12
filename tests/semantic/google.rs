@@ -5,7 +5,8 @@ use morphiecore::{
         DecodedResponse,
         google::{GenerationSseDecoder, encode_generation_request},
         native::ReplayTarget,
-        openai::{Adapter, Dialect, Profile, sse::SseLimits},
+        openai::{Adapter, Dialect, Profile},
+        stream::SseLimits,
     },
     semantic::{task::generation::*, value::Text},
 };

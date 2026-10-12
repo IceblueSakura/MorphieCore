@@ -3,8 +3,8 @@ pub mod events;
 mod message_groups;
 pub(crate) mod native_messages;
 pub mod projection;
-pub use super::TargetCaps;
 pub use crate::lowering::generation::{ReportedFactPolicy, RepresentationError};
+pub use crate::protocol::openai::TargetCaps;
 use crate::{
     protocol::{
         ResponseMetadata,
@@ -245,7 +245,7 @@ pub fn require_reported_facts(
 pub(super) fn check_usage(
     usage: Usage,
     profile: Profile,
-    rules: &crate::protocol::openai::adaptation::WireRules,
+    rules: &crate::protocol::openai::dialect::adaptation::WireRules,
 ) -> Result<(), RepresentationError> {
     usage.validate()?;
     if usage.scope != UsageScope::Operation
@@ -485,7 +485,7 @@ fn validate_response(
         return Err(RepresentationError::Terminal);
     }
     if profile == Profile::Chat
-        && crate::protocol::openai::chat_envelope::validate_context(&metadata.context.execution)
+        && crate::protocol::openai::chat::envelope::validate_context(&metadata.context.execution)
             .is_err()
     {
         return Err(RepresentationError::Metadata);
@@ -530,7 +530,7 @@ fn represent_reasoning(
     fidelity: &FidelityRecords,
     profile: Profile,
     origin: Option<&crate::semantic::value::ReplayOrigin>,
-    adaptation: &crate::protocol::openai::adaptation::Adaptation,
+    adaptation: &crate::protocol::openai::dialect::adaptation::Adaptation,
     history: Option<&GenerationRequest>,
 ) -> Result<(), RepresentationError> {
     let structured_chat = adaptation.rules.structured_chat_reasoning;
@@ -609,7 +609,7 @@ fn text_items(
     request: bool,
     resources: &ResourceTable,
 ) -> Result<(), RepresentationError> {
-    crate::protocol::openai::citations::check_items(items, resources, profile)
+    crate::protocol::openai::content::citations::check_items(items, resources, profile)
         .map_err(|_| RepresentationError::TextMetadata)?;
     if resources
         .iter()
@@ -674,7 +674,7 @@ fn text_items(
                         ContentPart::Text(t) => {
                             (request && !t.is_plain())
                                 || t.annotations().iter().any(|a| {
-                                    crate::protocol::openai::citations::check(
+                                    crate::protocol::openai::content::citations::check(
                                         a,
                                         resources,
                                         Profile::Chat,
@@ -706,7 +706,7 @@ fn text_items(
                 if profile == Profile::Chat
                     && let Some(probs) = probs.value()
                 {
-                    crate::protocol::openai::chat_logprobs::validate(probs)
+                    crate::protocol::openai::chat::logprobs::validate(probs)
                         .map_err(|_| RepresentationError::TextMetadata)?;
                 }
             }
@@ -739,7 +739,7 @@ fn text_items(
                             ResourceKind::Audio => {
                                 profile != Profile::Chat
                                     || m.role != MessageRole::User
-                                    || !crate::protocol::openai::input_audio::representable(
+                                    || !crate::protocol::openai::content::input_audio::representable(
                                         resource,
                                     )
                             }

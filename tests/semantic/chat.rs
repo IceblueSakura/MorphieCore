@@ -733,10 +733,11 @@ mod citation_bindings {
             label: Some(text("document")),
             reported_ordinal: Some(0),
         };
-        let metadata =
-            morphiecore::protocol::openai::envelope::decode_response(&crate::wire::response(2))
-                .unwrap()
-                .metadata;
+        let metadata = morphiecore::protocol::openai::responses::envelope::decode_response(
+            &crate::wire::response(2),
+        )
+        .unwrap()
+        .metadata;
         let positive = GenerationResponse::from_resources(
             vec![message(
                 1,
@@ -788,7 +789,7 @@ mod citation_bindings {
                     lower_response(
                         &response,
                         &FidelityRecords::default(),
-                        &morphiecore::protocol::openai::envelope::decode_response(
+                        &morphiecore::protocol::openai::responses::envelope::decode_response(
                             &crate::wire::response(2)
                         )
                         .unwrap()

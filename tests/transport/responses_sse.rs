@@ -7,8 +7,10 @@ use morphiecore::{
         openai::{
             Profile, TargetCaps,
             events::EventDecoder,
-            sse::{Obfuscation, ResponsesSseDecoder, ResponsesSseEncoder, SseLimits, encode_frame},
+            responses::sse::{ResponsesSseDecoder, ResponsesSseEncoder, encode_frame},
+            stream::Obfuscation,
         },
+        stream::SseLimits,
     },
     semantic::{task::generation::StreamEvent, value::ReplayOrigin},
 };
@@ -93,7 +95,7 @@ fn opaque_replay_cannot_be_promoted_by_missing_done_conflicting_terminal_or_eof(
                             if failure == "conflicting_token" {
                                 assert!(matches!(
                                     error,
-                                    morphiecore::protocol::openai::sse::SseError::Codec(
+                                    morphiecore::protocol::stream::SseError::Codec(
                                         morphiecore::protocol::CodecError::Invalid(
                                             "terminal snapshot replay changed"
                                         )
@@ -265,7 +267,10 @@ fn rejected_metadata_update_poisoned_stream_cannot_emit_success() {
 fn empty_terminal_summary_requires_real_closed_items_and_exact_nonempty_snapshots() {
     use morphiecore::{
         execution::Attempt,
-        protocol::openai::{Adapter, Dialect, Profile, sse::SseLimits},
+        protocol::{
+            openai::{Adapter, Dialect, Profile},
+            stream::SseLimits,
+        },
         semantic::value::ReplayOrigin,
     };
     let adapter = |dialect, scope| {

@@ -1,41 +1,26 @@
 //! Pure codecs for explicitly admitted OpenAI operations.
-pub mod adaptation;
 pub mod adapter;
 pub use adapter::{Adapter, Dialect};
+pub mod chat;
+pub(crate) mod content;
+pub mod dialect;
+pub mod events;
 pub mod lowering;
+pub mod responses;
 mod target;
 pub use target::TargetCaps;
-mod accounting_shapes;
-pub(crate) mod adapter_shapes;
-pub mod chat;
-mod chat_annotations;
-mod chat_audio;
-pub mod chat_envelope;
-pub(crate) mod chat_logprobs;
-mod chat_reasoning;
-pub mod chat_sse;
-pub(crate) mod citations;
 mod common;
-pub mod embeddings;
-pub mod envelope;
-pub mod events;
-mod file;
-mod function_tools;
-mod image;
-pub mod images;
-mod inference_shapes;
-pub(crate) mod input_audio;
-pub(crate) mod json;
-mod reasoning;
 pub(crate) use common::DecodeDirection;
 pub use common::IgnoredFields;
-pub mod responses;
+pub mod embeddings;
+mod function_tools;
+pub mod images;
+mod reasoning;
 mod settings;
 pub mod speech;
-pub mod sse;
 pub(crate) mod static_response;
+pub mod stream;
 mod terminal;
-mod text;
 #[cfg(test)]
 mod tool_results_test;
 pub mod transcription;
@@ -53,7 +38,7 @@ pub enum Profile {
 }
 /// Only lowering can construct an encoding input; codecs cannot bypass representability.
 pub struct RequestRepresentation<'a> {
-    pub(crate) adaptation: crate::protocol::openai::adaptation::Adaptation,
+    pub(crate) adaptation: crate::protocol::openai::dialect::adaptation::Adaptation,
     pub(crate) semantic: std::borrow::Cow<'a, GenerationRequest>,
     pub(crate) fidelity: &'a FidelityRecords,
     pub(crate) profile: Profile,
@@ -75,7 +60,7 @@ impl RequestRepresentation<'_> {
     }
 }
 pub struct ResponseRepresentation<'a> {
-    pub(crate) adaptation: crate::protocol::openai::adaptation::Adaptation,
+    pub(crate) adaptation: crate::protocol::openai::dialect::adaptation::Adaptation,
     pub(crate) semantic: std::borrow::Cow<'a, GenerationResponse>,
     pub(crate) fidelity: &'a FidelityRecords,
     pub(crate) metadata: std::borrow::Cow<'a, ResponseMetadata>,

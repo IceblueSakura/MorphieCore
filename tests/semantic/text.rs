@@ -4,10 +4,10 @@ mod text_profile {
     use crate::wire;
     use morphiecore::{
         protocol::openai::{
-            DecodedRequest, Profile, TargetCaps as Contract, chat, envelope,
+            DecodedRequest, Profile, TargetCaps as Contract, chat,
             events::EventDecoder,
             lowering::{lower_request, lower_response},
-            responses,
+            responses::{self, envelope},
         },
         semantic::{
             task::generation::*,
@@ -689,8 +689,8 @@ mod timestamps {
     use morphiecore::{
         lowering::generation::RepresentationError,
         protocol::openai::{
-            Profile, TargetCaps as Contract, envelope, events::EventEncoder,
-            lowering::lower_response,
+            Profile, TargetCaps as Contract, events::EventEncoder, lowering::lower_response,
+            responses::envelope,
         },
         semantic::value::Presence,
     };

@@ -1,10 +1,10 @@
 //! OpenAI request envelopes, controls and header projection.
-use super::{Adapter, AdapterError, Request};
+use crate::protocol::openai::adapter::{Adapter, AdapterError, Request};
 use crate::{
     lowering::generation::RepresentationError,
     protocol::openai::{
-        self, CodecError, DecodeDirection, IgnoredFields, Profile, TargetCaps, chat_envelope,
-        envelope, lowering::lower_request,
+        self, CodecError, DecodeDirection, IgnoredFields, Profile, TargetCaps,
+        chat::envelope as chat_envelope, lowering::lower_request, responses::envelope,
     },
     semantic::{
         context::{DeliveryIntent, ExecutionHints, StreamOptions},
@@ -30,7 +30,7 @@ impl Adapter {
         bytes: &[u8],
         direction: DecodeDirection<'_>,
     ) -> Result<Request, CodecError> {
-        let mut value = openai::json::decode(bytes)?;
+        let mut value = crate::protocol::json::decode(bytes)?;
         let cache_session = if let Some(session) = value
             .as_object_mut()
             .and_then(|o| o.shift_remove("session_id"))
@@ -332,7 +332,7 @@ impl Adapter {
             && let Some(messages) = value.get_mut("messages").and_then(Value::as_array_mut)
         {
             for message in messages {
-                openai::adapter_shapes::encode_message(message);
+                openai::dialect::adapter_shapes::encode_message(message);
             }
         }
         if let Some(session) = &request.cache_session

@@ -1,5 +1,5 @@
 //! Complete single-candidate Chat envelopes; task mapping stays in `chat`.
-use super::{
+use crate::protocol::openai::{
     CodecError, DecodedRequest, DecodedResponse, RequestRepresentation, ResponseRepresentation,
     chat, common::*,
 };
@@ -84,7 +84,7 @@ pub struct DecodedChatRequest {
 }
 /// Strict raw JSON admission; body collection must be bounded separately by the caller.
 pub fn decode_request_bytes(bytes: &[u8]) -> Result<DecodedChatRequest, CodecError> {
-    decode_request(&super::json::decode(bytes)?)
+    decode_request(&crate::protocol::json::decode(bytes)?)
 }
 /// Pre-parsed values cannot prove original raw-byte or duplicate-key validity.
 pub fn decode_request(v: &Value) -> Result<DecodedChatRequest, CodecError> {
@@ -92,7 +92,7 @@ pub fn decode_request(v: &Value) -> Result<DecodedChatRequest, CodecError> {
 }
 pub(crate) fn decode_request_with(
     v: &Value,
-    adaptation: &crate::protocol::openai::adaptation::Adaptation,
+    adaptation: &crate::protocol::openai::dialect::adaptation::Adaptation,
     direction: DecodeDirection<'_>,
 ) -> Result<DecodedChatRequest, CodecError> {
     bounded(v)?;
@@ -115,7 +115,11 @@ pub(crate) fn decode_request_with(
     let allowed: Vec<_> = chat::FIELDS
         .iter()
         .copied()
-        .chain(super::envelope::CACHE_FIELDS.iter().copied())
+        .chain(
+            crate::protocol::openai::responses::envelope::CACHE_FIELDS
+                .iter()
+                .copied(),
+        )
         .chain([
             "model",
             "n",
@@ -191,7 +195,7 @@ pub fn encode_request(
     Ok(v)
 }
 pub fn decode_response_bytes(bytes: &[u8]) -> Result<DecodedResponse, CodecError> {
-    decode_response(&super::json::decode(bytes)?)
+    decode_response(&crate::protocol::json::decode(bytes)?)
 }
 /// Validate a complete single-candidate response, not a permissive message-history abbreviation.
 pub fn decode_response(v: &Value) -> Result<DecodedResponse, CodecError> {
@@ -216,7 +220,7 @@ pub(crate) fn validate_response(v: &Value) -> Result<(), CodecError> {
     }
     Ok(())
 }
-pub(super) fn headers(v: &Value, kind: &str) -> Result<(), CodecError> {
+pub(in crate::protocol::openai) fn headers(v: &Value, kind: &str) -> Result<(), CodecError> {
     let o = object(v)?;
     // Field admission belongs to the selected static/event codec, after its
     // named adapter mappings. Structural identity remains strict here.

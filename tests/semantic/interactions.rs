@@ -31,7 +31,7 @@ fn decode_interaction(
     frames: &[serde_json::Value],
     done: bool,
 ) -> Result<morphiecore::protocol::DecodedResponse, String> {
-    use morphiecore::protocol::{interactions::GenerationSseDecoder, openai::sse::SseLimits};
+    use morphiecore::protocol::{interactions::GenerationSseDecoder, stream::SseLimits};
     let mut d = GenerationSseDecoder::new(
         200,
         "text/event-stream",

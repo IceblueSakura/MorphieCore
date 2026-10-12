@@ -1,8 +1,8 @@
 //! Named wire mappings and classified router facts. No provider identity branches.
 //! Shared readers receive an explicit direction; modeled values remain strict.
-use super::DecodeDirection;
-use super::{CodecError, Profile, common::bounded};
-use crate::protocol::openai::adaptation::Adaptation;
+use crate::protocol::openai::DecodeDirection;
+use crate::protocol::openai::dialect::adaptation::Adaptation;
+use crate::protocol::openai::{CodecError, Profile, common::bounded};
 use serde_json::{Map, Value};
 use std::{borrow::Cow, collections::BTreeMap};
 
@@ -331,7 +331,7 @@ pub(crate) fn decode<'a>(
         format.insert("schema".into(), schema);
     }
     if profile == Profile::Chat && adaptation.rules.chat_inference_response_shape {
-        super::inference_shapes::decode(o, direction)?;
+        crate::protocol::openai::dialect::inference_shapes::decode(o, direction)?;
     }
     if profile == Profile::Responses && adaptation.rules.responses_inactive_state {
         if o.get("previous_response_id").and_then(Value::as_str) == Some("") {
@@ -356,25 +356,41 @@ pub(crate) fn decode<'a>(
     };
     if profile == Profile::Responses {
         if adaptation.rules.responses_product_accounting {
-            super::accounting_shapes::product(o, &mut extras, direction)?;
+            crate::protocol::openai::dialect::accounting_shapes::product(
+                o,
+                &mut extras,
+                direction,
+            )?;
         } else if adaptation.rules.responses_access_programs {
-            super::accounting_shapes::programs(o, &mut extras, direction)?;
+            crate::protocol::openai::dialect::accounting_shapes::programs(
+                o,
+                &mut extras,
+                direction,
+            )?;
         }
         if !adaptation.rules.responses_product_accounting
             && adaptation.rules.responses_zero_tool_accounting
         {
-            super::accounting_shapes::zero_tools(o, &mut extras)?;
+            crate::protocol::openai::dialect::accounting_shapes::zero_tools(o, &mut extras)?;
         }
         if adaptation.rules.responses_context_accounting {
-            super::accounting_shapes::context(o, &mut extras, direction)?;
+            crate::protocol::openai::dialect::accounting_shapes::context(
+                o,
+                &mut extras,
+                direction,
+            )?;
         }
         if adaptation.rules.responses_inactive_reports {
-            super::accounting_shapes::inactive_reports(o, &mut extras)?;
+            crate::protocol::openai::dialect::accounting_shapes::inactive_reports(o, &mut extras)?;
         }
         if !adaptation.rules.responses_product_accounting
             && adaptation.rules.responses_usage_attribution
         {
-            super::accounting_shapes::usage_attribution(o, &mut extras, direction)?;
+            crate::protocol::openai::dialect::accounting_shapes::usage_attribution(
+                o,
+                &mut extras,
+                direction,
+            )?;
         }
         check_budget(&extras)?;
     }

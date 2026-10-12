@@ -1,9 +1,9 @@
 //! Standard Chat audio request/complete-message mappings, with no format inference.
 //! https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/chat/chat_completion_audio.py
-use super::{CodecError, common::*};
+use crate::protocol::openai::{CodecError, common::*};
 use crate::semantic::{task::generation::*, value::Text};
 use serde_json::{Map, Value, json};
-pub(super) fn settings(
+pub(in crate::protocol::openai) fn settings(
     o: &Map<String, Value>,
     s: &mut GenerationSettings,
     direction: DecodeDirection<'_>,
@@ -34,7 +34,10 @@ pub(super) fn settings(
     })?;
     Ok(())
 }
-pub(super) fn write_settings(s: &GenerationSettings, o: &mut Map<String, Value>) {
+pub(in crate::protocol::openai) fn write_settings(
+    s: &GenerationSettings,
+    o: &mut Map<String, Value>,
+) {
     put_presence(o, "modalities", &s.output_modalities, |v| {
         json!(v.iter().map(|v| v.label()).collect::<Vec<_>>())
     });
@@ -45,7 +48,7 @@ pub(super) fn write_settings(s: &GenerationSettings, o: &mut Map<String, Value>)
         |v| json!({"format":v.format.label(),"voice":v.voice.as_str()}),
     );
 }
-pub(super) fn read(
+pub(in crate::protocol::openai) fn read(
     value: &Value,
     history: bool,
     direction: DecodeDirection,
@@ -77,7 +80,7 @@ pub(super) fn read(
 // Fixed official helper concatenates base64 text, not independently padded chunks.
 // https://github.com/openai/openai-node/blob/5ee5d86/src/lib/ChatCompletionStream.ts
 #[derive(Default)]
-pub(super) struct ChunkBytes {
+pub(in crate::protocol::openai) struct ChunkBytes {
     pending: String,
     padded: bool,
 }
@@ -101,7 +104,7 @@ impl ChunkBytes {
         Ok(bytes)
     }
 }
-pub(super) fn read_update(
+pub(in crate::protocol::openai) fn read_update(
     value: &Value,
     bytes: &mut ChunkBytes,
 ) -> Result<AudioUpdate, CodecError> {
@@ -142,7 +145,10 @@ pub(super) fn read_update(
     }
     Ok(update)
 }
-pub(super) fn write_update(update: &AudioUpdate, pending: &mut Vec<u8>) -> Vec<Value> {
+pub(in crate::protocol::openai) fn write_update(
+    update: &AudioUpdate,
+    pending: &mut Vec<u8>,
+) -> Vec<Value> {
     use base64::Engine;
     let mut o = Map::new();
     if let Some(id) = &update.id {
@@ -176,6 +182,6 @@ pub(super) fn write_update(update: &AudioUpdate, pending: &mut Vec<u8>) -> Vec<V
     }
     values
 }
-pub(super) fn write(audio: &GeneratedAudio) -> Value {
+pub(in crate::protocol::openai) fn write(audio: &GeneratedAudio) -> Value {
     json!({"id":audio.reference().id(),"data":audio.data_base64(),"transcript":audio.transcript(),"expires_at":audio.reference().expires_at()})
 }

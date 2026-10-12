@@ -1,5 +1,5 @@
 //! Closed function/custom tool syntax; active orchestration features are outside this profile.
-use super::{CodecError, Profile, common::*};
+use crate::protocol::openai::{CodecError, Profile, common::*};
 use crate::semantic::task::generation::*;
 use serde_json::{Map, Value, json};
 fn dispatch(o: &Map<String, Value>) -> Result<ToolDispatch, CodecError> {

@@ -1,5 +1,5 @@
 //! Incremental representability checks against one immutable output target.
-use super::{RepresentationError, TargetCaps};
+use crate::protocol::openai::lowering::{RepresentationError, TargetCaps};
 use crate::{protocol::openai::Profile, semantic::task::generation::*};
 
 pub fn check_event(
@@ -19,12 +19,16 @@ pub fn check_event(
     }
     match event {
         StreamEvent::AnnotationAdded { annotation, .. } => {
-            crate::protocol::openai::citations::check(annotation, state.resources(), profile)
-                .map_err(|_| RepresentationError::TextMetadata)?;
+            crate::protocol::openai::content::citations::check(
+                annotation,
+                state.resources(),
+                profile,
+            )
+            .map_err(|_| RepresentationError::TextMetadata)?;
         }
         StreamEvent::TextMetadata { annotations, .. } => {
             for a in annotations {
-                crate::protocol::openai::citations::check(a, state.resources(), profile)
+                crate::protocol::openai::content::citations::check(a, state.resources(), profile)
                     .map_err(|_| RepresentationError::TextMetadata)?;
             }
         }
@@ -32,7 +36,7 @@ pub fn check_event(
     }
     match event {
         StreamEvent::ResourceDeclared { resource, .. } => {
-            if !crate::protocol::openai::citations::context(resource) {
+            if !crate::protocol::openai::content::citations::context(resource) {
                 return Err(RepresentationError::UnmigratedSemantic);
             }
         }
@@ -318,7 +322,7 @@ fn probability_target(
         return Err(RepresentationError::TextMetadata);
     }
     if profile == Profile::Chat {
-        crate::protocol::openai::chat_logprobs::validate(logprobs)
+        crate::protocol::openai::chat::logprobs::validate(logprobs)
             .map_err(|_| RepresentationError::TextMetadata)?;
     }
     Ok(())

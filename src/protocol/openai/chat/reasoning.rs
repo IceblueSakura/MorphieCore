@@ -1,18 +1,18 @@
 //! Scoped Responses-format reasoning on a Chat carrier, not opaque JSON passthrough.
-use super::{CodecError, common::*};
+use crate::protocol::openai::{CodecError, common::*};
 use crate::{
-    protocol::{fidelity::FidelityRecords, openai::adaptation::Adaptation},
+    protocol::{fidelity::FidelityRecords, openai::dialect::adaptation::Adaptation},
     semantic::{task::generation::*, value::Text},
 };
 use serde_json::{Map, Value, json};
 
-pub(super) struct Details {
+pub(in crate::protocol::openai) struct Details {
     pub part: Option<(PartKind, String)>,
     pub responses_encrypted: Option<(String, String)>,
 }
 /// One stream delta: one ordered readable part plus an optional final encrypted
 /// token. Fragment indices belong to the carrier, not to invented semantic items.
-pub(super) fn parse(
+pub(in crate::protocol::openai) fn parse(
     m: &Map<String, Value>,
     a: &Adaptation,
     prior: Option<PartKind>,
@@ -213,7 +213,7 @@ fn readable(o: &Map<String, Value>, field: &'static str) -> Result<String, Codec
     }
     Ok(text.into())
 }
-pub(super) fn decode_static(
+pub(in crate::protocol::openai) fn decode_static(
     b: &mut Items,
     m: &Map<String, Value>,
     a: &Adaptation,
@@ -266,14 +266,14 @@ pub(super) fn decode_static(
         clean.shift_remove("reasoning_details");
     }
     if a.rules.unversioned_chat_reasoning_view && a.rules.reasoning_alias {
-        super::adapter_shapes::decode_message(&mut clean)?;
+        crate::protocol::openai::dialect::adapter_shapes::decode_message(&mut clean)?;
     }
     Ok(clean)
 }
 /// Fields for the reasoning items ahead of one Chat carrier message. The view is the
 /// concatenation of readable parts. Details keep item boundaries: each replay value
 /// closes its item, and indices are positions in the message.
-pub(super) fn write_carrier(
+pub(in crate::protocol::openai) fn write_carrier(
     message: &mut Value,
     items: &[(ItemId, &ReasoningItem)],
     fidelity: &FidelityRecords,

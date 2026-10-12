@@ -7,7 +7,7 @@ use crate::semantic::{
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
-use crate::protocol::openai::{Profile, adaptation::Adaptation};
+use crate::protocol::openai::{Profile, dialect::adaptation::Adaptation};
 const RESPONSE_EXTRAS_BUDGET: usize = 4096;
 /// Outgoing carrier identity, not an upstream-reported fact or persistent key.
 pub(crate) fn generated_item_id(owner: ItemId) -> String {
@@ -481,11 +481,11 @@ impl FidelityRecords {
         &mut self,
         protocol: Profile,
         adaptation: &Adaptation,
-        values: crate::protocol::openai::adapter_shapes::Extras,
+        values: crate::protocol::openai::dialect::adapter_shapes::Extras,
         semantic: &GenerationResponse,
         response_id: &str,
     ) -> Result<(), CodecError> {
-        crate::protocol::openai::adapter_shapes::check_budget(&values)?;
+        crate::protocol::openai::dialect::adapter_shapes::check_budget(&values)?;
         self.routing_extras = if values.is_empty() {
             None
         } else {

@@ -1,9 +1,13 @@
 //! Chat data-only SSE over shared bounded framing, strict JSON and Generation event codecs.
 //! EOF is not DONE. Body I/O, cancellation and downstream commit belong to the caller.
-use super::{
-    CodecError, DecodedResponse, Profile, ResponseMetadata, chat_envelope,
-    events::{EventDecoder, EventEncoder},
-    sse::{Obfuscation, SseError, SseLimits, charge_padding, pad_payload, validate_http},
+use crate::protocol::{
+    openai::{
+        CodecError, DecodedResponse, Profile, ResponseMetadata,
+        chat::envelope as chat_envelope,
+        events::{EventDecoder, EventEncoder},
+        stream::{Obfuscation, charge_padding, pad_payload},
+    },
+    stream::{SseError, SseLimits, validate_http},
 };
 use crate::semantic::context::StreamOptions;
 use crate::{
@@ -106,7 +110,7 @@ impl ChatSseDecoder {
             self.done = true;
             return Ok(events);
         }
-        let mut payload = super::json::decode(frame.data().as_bytes())?;
+        let mut payload = crate::protocol::json::decode(frame.data().as_bytes())?;
         let object = payload
             .as_object_mut()
             .ok_or(CodecError::Invalid("Chat SSE payload"))?;

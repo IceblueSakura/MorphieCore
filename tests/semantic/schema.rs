@@ -4,7 +4,9 @@ mod schema_order {
     use crate::wire;
     use morphiecore::{
         protocol::openai::{
-            Profile, TargetCaps as Contract, envelope, lowering::lower_request, responses,
+            Profile, TargetCaps as Contract,
+            lowering::lower_request,
+            responses::{self, envelope},
         },
         semantic::{
             task::generation::*,

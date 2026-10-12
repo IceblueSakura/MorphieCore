@@ -5,7 +5,7 @@ use crate::{
         CodecError, ResponseMetadata,
         fidelity::FidelityRecords,
         native::ReplayTarget,
-        openai::sse::{SseError, SseLimits},
+        stream::{SseError, SseLimits},
     },
     semantic::{task::generation::*, value::Text},
 };

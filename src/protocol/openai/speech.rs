@@ -42,7 +42,7 @@ fn format_label(format: AudioEncoding) -> &'static str {
     }
 }
 pub fn decode_request(bytes: &[u8]) -> Result<Request, CodecError> {
-    let value = super::json::decode(bytes)?;
+    let value = crate::protocol::json::decode(bytes)?;
     let map = value.as_object().ok_or_else(invalid)?;
     if map.keys().any(|k| {
         ![
