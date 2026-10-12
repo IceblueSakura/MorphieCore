@@ -73,6 +73,7 @@ impl Dialect {
             Self::MorphieCore => (
                 "morphiecore-v1",
                 WireRules {
+                    chat_video_url: true,
                     readable_reasoning: true,
                     structured_chat_reasoning: true,
                     chat_image_usage: true,
@@ -95,6 +96,7 @@ impl Dialect {
             Self::OpenRouter => (
                 "openrouter-v1",
                 WireRules {
+                    chat_video_url: true,
                     readable_reasoning: true,
                     routing_extras: true,
                     response_extras: true,
@@ -128,6 +130,7 @@ impl Dialect {
             Self::ModelBest => (
                 "modelbest-v1",
                 WireRules {
+                    chat_video_url: true,
                     readable_reasoning: true,
                     reasoning_alias: true,
                     chat_stop_diagnostics: true,
@@ -159,6 +162,7 @@ impl Dialect {
                     "bailian-v1"
                 },
                 WireRules {
+                    chat_video_url: true,
                     // Scope timestamp normalization to the plan's Chat carrier.
                     chunk_created_drift: self == Self::BailianTokenPlan,
                     empty_continuation_call_id: self == Self::BailianTokenPlan,
@@ -180,6 +184,7 @@ impl Dialect {
             Self::Zhipu => (
                 "zhipu-v1",
                 WireRules {
+                    chat_video_url: true,
                     readable_reasoning: true,
                     low_high_max_effort: true,
                     legacy_max_tokens: true,

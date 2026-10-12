@@ -61,6 +61,33 @@ pub(in crate::protocol::openai) fn read(
     resource.validate()?;
     Ok(resource)
 }
+/// Chat `file` part: an inline data URL and optional filename. `file_id` names state
+/// owned by the target's credential, so a client value is never forwarded.
+pub(in crate::protocol::openai) fn read_chat(
+    part: &Map<String, Value>,
+    direction: DecodeDirection,
+) -> Result<Resource, CodecError> {
+    direction.fields(part, &["type", "file"])?;
+    let file = object(part.get("file").ok_or(CodecError::Invalid("file"))?)?;
+    direction.fields(file, &["file_data", "file_id", "filename"])?;
+    if file.contains_key("file_id") {
+        return Err(CodecError::Unsupported("Chat file_id".into()));
+    }
+    // Only Chat's own fields reach the shared reader; ignored keys stay ignored.
+    let mut value: Map<String, Value> = ["file_data", "filename"]
+        .into_iter()
+        .filter_map(|k| file.get(k).map(|v| (k.to_owned(), v.clone())))
+        .collect();
+    value.insert("type".into(), "input_file".into());
+    read(&value, direction)
+}
+/// Lowering admits only inline files without detail for Chat.
+pub(in crate::protocol::openai) fn write_chat(resource: ResourceView<'_>) -> Value {
+    let mut value = write(resource);
+    let file = value.as_object_mut().expect("file object");
+    file.remove("type");
+    json!({"type":"file","file":file})
+}
 pub(in crate::protocol::openai) fn write(resource: ResourceView<'_>) -> Value {
     let ResourceDescription::File(file) = &resource.description else {
         unreachable!("file lowering requires a file description")

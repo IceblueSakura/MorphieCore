@@ -367,6 +367,22 @@ pub(super) fn decode_message(
                                     ResourcePurpose::Input,
                                 )?),
                             }),
+                            "video_url" => parts.push(Part {
+                                id: b.part_id()?,
+                                content: ContentPart::Resource(b.resource(
+                                    crate::protocol::openai::content::video::read(part, direction)?,
+                                    ResourcePurpose::Input,
+                                )?),
+                            }),
+                            "file" => parts.push(Part {
+                                id: b.part_id()?,
+                                content: ContentPart::Resource(b.resource(
+                                    crate::protocol::openai::content::file::read_chat(
+                                        part, direction,
+                                    )?,
+                                    ResourcePurpose::Input,
+                                )?),
+                            }),
                             "input_audio" => parts.push(Part {
                                 id: b.part_id()?,
                                 content: ContentPart::Resource(b.resource(
@@ -686,6 +702,7 @@ fn write_input_resource(resource: ResourceView<'_>) -> Value {
         ResourceKind::Image => {
             crate::protocol::openai::content::image::write(resource, Profile::Chat)
         }
-        ResourceKind::File => unreachable!("lowering rejects Chat files"),
+        ResourceKind::Video => crate::protocol::openai::content::video::write(resource),
+        ResourceKind::File => crate::protocol::openai::content::file::write_chat(resource),
     }
 }

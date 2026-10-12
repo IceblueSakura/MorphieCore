@@ -28,6 +28,7 @@ impl ImageDetail {
 pub enum ResourceKind {
     Image,
     Audio,
+    Video,
     File,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, strum::EnumString, strum::IntoStaticStr)]
@@ -61,6 +62,7 @@ impl std::fmt::Debug for FileDescription {
 pub enum ResourceDescription {
     Image { detail: Option<ImageDetail> },
     Audio,
+    Video,
     File(FileDescription),
 }
 #[derive(Clone, Eq, PartialEq)]
@@ -136,6 +138,7 @@ impl ResourceView<'_> {
         match self.description {
             ResourceDescription::Image { .. } => ResourceKind::Image,
             ResourceDescription::Audio => ResourceKind::Audio,
+            ResourceDescription::Video => ResourceKind::Video,
             ResourceDescription::File(_) => ResourceKind::File,
         }
     }
@@ -165,7 +168,7 @@ impl ResourceView<'_> {
     pub fn validate(&self) -> Result<usize, GenerationError> {
         let description_bytes = match &self.description {
             ResourceDescription::Image { detail } => detail.map_or(0, |d| d.label().len()),
-            ResourceDescription::Audio => 0,
+            ResourceDescription::Audio | ResourceDescription::Video => 0,
             ResourceDescription::File(file) => {
                 let filename_bytes = file.filename.as_ref().map_or(0, |n| n.as_str().len());
                 if filename_bytes > MAX_FILE_NAME_BYTES {
@@ -215,12 +218,21 @@ impl ResourceView<'_> {
                 {
                     return Err(GenerationError::InvalidResource);
                 }
-                if self.kind() == ResourceKind::File {
+                if self.kind() != ResourceKind::Image {
                     let mime = media_type
                         .as_str()
                         .parse::<mime::Mime>()
                         .map_err(|_| GenerationError::InvalidResource)?;
-                    if mime.type_() == mime::STAR || mime.subtype() == mime::STAR {
+                    // Targets dispatch audio and video by MIME, so the declared kind must agree.
+                    let family = match self.kind() {
+                        ResourceKind::Audio => Some(mime::AUDIO),
+                        ResourceKind::Video => Some(mime::VIDEO),
+                        _ => None,
+                    };
+                    if mime.type_() == mime::STAR
+                        || mime.subtype() == mime::STAR
+                        || family.is_some_and(|f| mime.type_() != f)
+                    {
                         return Err(GenerationError::InvalidResource);
                     }
                 }
@@ -233,7 +245,9 @@ impl ResourceView<'_> {
                     .ok_or(GenerationError::InvalidResource)?;
                 let limit = match self.kind() {
                     ResourceKind::File => MAX_FILE_DECODED_BYTES,
-                    ResourceKind::Image | ResourceKind::Audio => MAX_IMAGE_DECODED_BYTES,
+                    ResourceKind::Image | ResourceKind::Audio | ResourceKind::Video => {
+                        MAX_IMAGE_DECODED_BYTES
+                    }
                 };
                 if decoded > limit {
                     return Err(GenerationError::Limit);

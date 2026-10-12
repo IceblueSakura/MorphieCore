@@ -11,6 +11,7 @@ pub struct GenerationRequirements {
     pub resource_count: usize,
     pub image_inputs: usize,
     pub audio_inputs: usize,
+    pub video_inputs: usize,
     pub audio_output: bool,
     pub audio_history: bool,
     pub file_inputs: usize,
@@ -92,6 +93,7 @@ impl GenerationRequirements {
                                     {
                                         ResourceKind::Image => x.image_inputs += 1,
                                         ResourceKind::Audio => x.audio_inputs += 1,
+                                        ResourceKind::Video => x.video_inputs += 1,
                                         ResourceKind::File => x.file_inputs += 1,
                                     }
                                 }

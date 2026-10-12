@@ -131,6 +131,9 @@ pub struct WireRules {
     /// Active unsupported values fail; no defaults or modality estimates are added.
     /// Source: https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/openai/chat_completion/protocol.py
     pub chat_inference_response_shape: bool,
+    /// User video as `{"type":"video_url","video_url":{"url":…}}`, URL or data URL.
+    /// Source: docs/refs/multimodal.md.
+    pub chat_video_url: bool,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

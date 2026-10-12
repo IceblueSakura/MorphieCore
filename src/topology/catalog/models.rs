@@ -170,6 +170,8 @@ pub fn contract(id: &str) -> GenerationSemanticContract {
         image_input: definition.images,
         file_input: definition.files,
         audio_input: id == "gpt-audio-mini",
+        // Sources: MiniCPM-V docs/api.md and the Zhipu Chat reference (docs/refs/multimodal.md).
+        video_input: matches!(id, "minicpm-v-4.6" | "glm-5.3-flash"),
         strict_tools: definition.strict_tools,
         ..GenerationSemanticContract::text_images()
     }

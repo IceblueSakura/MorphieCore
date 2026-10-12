@@ -4,3 +4,4 @@ pub(in crate::protocol::openai) mod file;
 pub(in crate::protocol::openai) mod image;
 pub(crate) mod input_audio;
 pub(in crate::protocol::openai) mod text;
+pub(in crate::protocol::openai) mod video;

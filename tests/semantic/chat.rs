@@ -431,6 +431,58 @@ mod chat_media {
     fn standard(profile: Profile) -> Adapter {
         Adapter::new(profile, Dialect::Standard, None)
     }
+    #[test]
+    fn video_url_is_a_video_resource_only_for_declaring_chat_dialects() {
+        let wire = json!({"model":"synthetic-model","messages":[{"role":"user","content":[
+            {"type":"video_url","video_url":{"url":"https://example.invalid/clip.mp4"}},
+            {"type":"video_url","video_url":{"url":"data:video/mp4;base64,AQID"}},
+            {"type":"text","text":"Describe both."}]}]});
+        let decoded = standard(Profile::Chat)
+            .decode_request(&serde_json::to_vec(&wire).unwrap())
+            .unwrap();
+        let semantic = &decoded.task.semantic;
+        assert_eq!(GenerationRequirements::derive(semantic).video_inputs, 2);
+        let Item::Message(message) = &semantic.items()[0].1 else {
+            panic!("message")
+        };
+        let views: Vec<_> = message.parts[..2]
+            .iter()
+            .map(|p| {
+                let ContentPart::Resource(r) = &p.content else {
+                    panic!("resource")
+                };
+                r.media(semantic.resources()).unwrap()
+            })
+            .collect();
+        assert!(views.iter().all(|v| v.kind() == ResourceKind::Video));
+        assert!(
+            matches!(views[0].location, ResourceLocation::Url(u) if u.as_str()=="https://example.invalid/clip.mp4")
+        );
+        assert!(
+            matches!(views[1].location, ResourceLocation::Inline{media_type,data_base64}
+                if media_type.as_str()=="video/mp4" && data_base64.as_str()=="AQID")
+        );
+        let modelbest = Adapter::new(Profile::Chat, Dialect::ModelBest, None);
+        let output = modelbest
+            .encode_request(&decoded, "synthetic-model", &Contract::full())
+            .unwrap();
+        assert_eq!(output["messages"], wire["messages"]);
+        for adapter in [standard(Profile::Chat), standard(Profile::Responses)] {
+            assert!(
+                adapter
+                    .encode_request(&decoded, "synthetic-model", &Contract::full())
+                    .is_err()
+            );
+        }
+        let mut mislabeled = wire.clone();
+        mislabeled["messages"][0]["content"][1]["video_url"]["url"] =
+            json!("data:image/png;base64,AQID");
+        assert!(
+            standard(Profile::Chat)
+                .decode_request(&serde_json::to_vec(&mislabeled).unwrap())
+                .is_err()
+        );
+    }
     fn completion(message: Value) -> Value {
         json!({"id":"synthetic-response","object":"chat.completion","created":1,"model":"synthetic-model","choices":[{"index":0,"message":message,"finish_reason":"stop"}]})
     }
@@ -1134,6 +1186,46 @@ mod files {
         Ok(morphiecore::protocol::openai::responses::encode_generation(&target).unwrap())
     }
 
+    #[test]
+    fn chat_file_part_is_an_inline_pdf_without_detail_or_provider_id() {
+        let chat = Adapter::new(Profile::Chat, Dialect::Standard, None);
+        let chat_wire = json!({"model":"synthetic","messages":[{"role":"user","content":[
+            {"type":"file","file":{"file_data":"data:application/pdf;base64,AQID","filename":"synthetic.pdf"}},
+            {"type":"text","text":"Summarize."}]}]});
+        let decoded = chat
+            .decode_request(&serde_json::to_vec(&chat_wire).unwrap())
+            .unwrap();
+        let semantic = &decoded.task.semantic;
+        assert_eq!(GenerationRequirements::derive(semantic).file_inputs, 1);
+        let Item::Message(message) = &semantic.items()[0].1 else {
+            panic!("message")
+        };
+        let ContentPart::Resource(pdf) = &message.parts[0].content else {
+            panic!("file")
+        };
+        assert_eq!(
+            pdf.media(semantic.resources()).unwrap().to_owned(),
+            typed_file(Some("synthetic.pdf"))
+        );
+        let output = chat
+            .encode_request(&decoded, "synthetic", &Contract::full())
+            .unwrap();
+        assert_eq!(output["messages"], chat_wire["messages"]);
+        // Responses carries the same file natively; detail has no Chat slot.
+        let responses = adapter()
+            .decode_request(&serde_json::to_vec(&wire(json!([file()]))).unwrap())
+            .unwrap();
+        assert!(
+            chat.encode_request(&responses, "synthetic", &Contract::full())
+                .is_err()
+        );
+        let mut by_id = chat_wire.clone();
+        by_id["messages"][0]["content"][0]["file"] = json!({"file_id":"file-synthetic"});
+        assert!(
+            chat.decode_request(&serde_json::to_vec(&by_id).unwrap())
+                .is_err()
+        );
+    }
     #[test]
     fn file_url_limits_intersections_and_edits_do_not_claim_remote_bytes() {
         let mut remote = typed_file(None);

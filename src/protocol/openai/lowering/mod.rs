@@ -120,6 +120,10 @@ pub fn lower_request<'a>(
     c.files
         .check(r)
         .map_err(|_| RepresentationError::FileInput)?;
+    // Video has no standard OpenAI carrier; only declared Chat extensions receive it.
+    if q.video_inputs > 0 && !(profile == Profile::Chat && c.adaptation.rules.chat_video_url) {
+        return Err(RepresentationError::UnmigratedSemantic);
+    }
     for (_, item) in r.items() {
         if let Item::Message(message) = item {
             for part in &message.parts {
@@ -728,8 +732,28 @@ fn text_items(
                                         | ResourceLocation::NamespacedReference { .. }
                                 )
                             }
-                            ResourceKind::File => {
-                                profile != Profile::Responses
+                            // Chat files are inline PDFs only and have no detail slot.
+                            // https://developers.openai.com/api/docs/guides/file-inputs
+                            ResourceKind::File => match profile {
+                                Profile::Responses => matches!(
+                                    resource.location,
+                                    ResourceLocation::OpaqueReference(_)
+                                        | ResourceLocation::NamespacedReference { .. }
+                                ),
+                                Profile::Chat => {
+                                    m.role != MessageRole::User
+                                        || !matches!(
+                                            resource.location,
+                                            ResourceLocation::Inline { media_type, .. }
+                                                if media_type.as_str() == "application/pdf"
+                                        )
+                                        || matches!(resource.description,
+                                            ResourceDescription::File(f) if f.detail.is_some())
+                                }
+                            },
+                            ResourceKind::Video => {
+                                profile != Profile::Chat
+                                    || m.role != MessageRole::User
                                     || matches!(
                                         resource.location,
                                         ResourceLocation::OpaqueReference(_)

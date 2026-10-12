@@ -51,6 +51,7 @@ impl Profile {
             reasoning: true,
             image_input: false,
             audio_input: false,
+            video_input: false,
             audio_output: false,
             audio_history: false,
             file_input: false,
