@@ -88,6 +88,8 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
                     calls.lock().unwrap().push(id);
                     if id=="a" && status<=1 { return std::future::pending::<axum::response::Response>().await; }
                     if id=="a" && status==2 { return ([("content-type","text/html")],"<html>").into_response(); }
+                    // The rate limit resets at once, so its cooldown has already expired.
+                    if id=="a" && status==429 {return (StatusCode::TOO_MANY_REQUESTS,[("retry-after","0")]).into_response();}
                     if id=="a" && status!=200 {return StatusCode::from_u16(status).unwrap().into_response();}
                     if stream {
                         let initial=json!({"type":"response.created","sequence_number":1,"response":{"object":"response","id":"a-r","model":"a-alias","created_at":1,"status":"in_progress","output":[]}});
@@ -238,11 +240,11 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
         }
         assert_eq!(*calls.lock().unwrap(), expected_calls);
         if expected_calls == ["a", "b"] && !stream {
-            // A rate-limited or exhausted executor cools down for every request;
-            // a server error or timeout does not.
+            // An exhausted executor cools down for every request; an expired
+            // cooldown, a server error or a timeout does not hold one back.
             calls.lock().unwrap().clear();
             assert_eq!(send(false).await.unwrap().unwrap().status(), 200);
-            let cooled = matches!(status, 429 | 402);
+            let cooled = status == 402;
             assert_eq!(
                 *calls.lock().unwrap(),
                 if cooled { vec!["b"] } else { vec!["a", "b"] }
