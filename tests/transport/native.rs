@@ -371,16 +371,18 @@ mod native_catalog {
                 soft_target: None,
             });
         controlled.task.semantic = controlled.task.semantic.with_settings(settings).unwrap();
-        assert!(representable(&endpoint, &controlled).is_err());
-        assert!(
-            prepare(
-                &endpoint,
-                &provider,
-                &SecretMaterial::new("synthetic-key").unwrap(),
-                &controlled
-            )
-            .is_err()
-        );
+        // Claude 5.x has no token budget: it becomes the nearest effort.
+        assert!(representable(&endpoint, &controlled).is_ok());
+        let prepared = prepare(
+            &endpoint,
+            &provider,
+            &SecretMaterial::new("synthetic-key").unwrap(),
+            &controlled,
+        )
+        .unwrap();
+        let wire: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
+        assert_eq!(wire["output_config"], serde_json::json!({"effort":"low"}));
+        assert!(!prepared.body.windows(13).any(|w| w == b"budget_tokens"));
     }
     #[test]
     fn native_unknown_response_fields_are_ignored_and_request_errors_do_not_leak_keys() {

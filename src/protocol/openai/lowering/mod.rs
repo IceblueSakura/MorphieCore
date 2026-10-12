@@ -508,11 +508,18 @@ fn chat_reasoning_shape(items: &[(ItemId, Item)]) -> bool {
         .iter()
         .enumerate()
         .all(|(index, (_, item))| match item {
+            // Messages thinking is a summary and often precedes a call without text;
+            // either way it rides the next assistant message as its readable view.
             Item::Reasoning(reasoning) => {
                 matches!(
                     reasoning.parts.as_slice(),
-                    [(_, ReasoningContent::Text(text))] if !text.as_str().is_empty()
-                ) && matches!(items.get(index + 1), Some((_, Item::Message(message))) if message.role == MessageRole::Assistant)
+                    [(_, ReasoningContent::Text(text) | ReasoningContent::Summary(text))]
+                        if !text.as_str().is_empty()
+                ) && matches!(items.get(index + 1),
+                    Some((_, Item::Message(message))) if message.role == MessageRole::Assistant)
+                    || matches!(items.get(index + 1), Some((_, Item::ToolCall(_))))
+                        && !reasoning.parts.is_empty()
+                        && reasoning.replay.is_none()
             }
             _ => true,
         })
@@ -578,6 +585,7 @@ fn represent_reasoning(
                     && match items.get(n+1) {
                         Some((_,Item::Reasoning(_))) => true,
                         Some((_,Item::Message(m))) => m.role==MessageRole::Assistant,
+                        Some((_,Item::ToolCall(_))) => true,
                         _ => false,
                     },
                 _ => true,

@@ -186,6 +186,36 @@ impl Adapter {
             }
         }
         let request = stripped.as_ref().map_or(request, |(copy, _)| copy);
+        let thinking = request.without_extended_reasoning()?;
+        if let Some((_, mapped)) = &thinking {
+            let chat = self.protocol == Profile::Chat;
+            rules.push(if chat {
+                "chat.omit-thinking-mode.v1"
+            } else {
+                "responses.omit-thinking-mode.v1"
+            });
+            if *mapped {
+                rules.push(if chat {
+                    "chat.budget-as-effort.v1"
+                } else {
+                    "responses.budget-as-effort.v1"
+                });
+            }
+        }
+        let request = thinking.as_ref().map_or(request, |(copy, _)| copy);
+        let leveled = if self.adaptation.rules.low_high_max_effort {
+            request.with_effort_levels()?
+        } else {
+            None
+        };
+        if leveled.is_some() {
+            rules.push(if self.protocol == Profile::Chat {
+                "chat.zhipu-effort-levels.v1"
+            } else {
+                "responses.zhipu-effort-levels.v1"
+            });
+        }
+        let request = leveled.as_ref().unwrap_or(request);
         request.check_context(contract.standard_context)?;
         if self.adaptation.rules.responses_siwc {
             if self.protocol != Profile::Responses {

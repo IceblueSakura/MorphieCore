@@ -152,6 +152,16 @@ impl ReasoningRequest {
         Ok(())
     }
     /// No current Responses/Chat carrier can preserve these independent intents.
+    /// A token budget as the nearest effort, for targets without budgets (Claude
+    /// Code's "think", "think hard" and "ultrathink" are about 4k, 10k and 32k).
+    pub fn budget_as_effort(&self) -> Option<ReasoningEffort> {
+        let budget = self.budget?;
+        Some(match budget.hard_limit.or(budget.soft_target)? {
+            0..8192 => ReasoningEffort::Low,
+            8192..24576 => ReasoningEffort::Medium,
+            _ => ReasoningEffort::High,
+        })
+    }
     pub fn requires_extended_controls(&self) -> bool {
         self.budget.is_some()
             || !self.display.is_absent()

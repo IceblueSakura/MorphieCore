@@ -584,6 +584,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
     // A Messages client (Claude Code) runs the same tool loop with thinking replay.
     for stream in [false, true] {
         let mut input = json!({"model":binding.model,"max_tokens":64,"stream":stream,
+        "thinking":{"type":"enabled","budget_tokens":10000},
         "metadata":{"user_id":"synthetic-user"},
         "system":[{"type":"text","text":"Be brief.","cache_control":{"type":"ephemeral"}}],
         "tools":[{"name":"lookup","strict":false,"cache_control":{"type":"ephemeral"},
@@ -865,5 +866,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
     let records = std::fs::read_to_string(&diagnostics).unwrap();
     assert!(records.contains(r#""request_rules":["messages.omit-sampling.v1"]"#));
     assert!(records.contains(r#""ignored_request_fields":["client_metadata"]"#));
+    // Claude 5.x thinks adaptively: Claude Code's token budget becomes an effort.
+    assert!(records.contains("messages.budget-as-effort.v1"));
     assert!(!records.contains("0.375"));
 }

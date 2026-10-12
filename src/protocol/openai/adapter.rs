@@ -181,6 +181,7 @@ impl Dialect {
                 "zhipu-v1",
                 WireRules {
                     readable_reasoning: true,
+                    low_high_max_effort: true,
                     legacy_max_tokens: true,
                     reported_request_id: true,
                     responses_inactive_state: true,

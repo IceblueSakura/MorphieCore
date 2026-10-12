@@ -247,14 +247,28 @@ async fn messages_clients_get_anthropic_shapes_from_an_openai_target() {
     let entry =
         gate.state.entries[&(crate::gateway::MESSAGES_FAMILY, "fixture-model".into())].clone();
     // A failed tool result keeps its text toward an OpenAI target; the flag is named.
-    let body = serde_json::json!({"model":"fixture-model","max_tokens":32,"messages":[
+    // A thinking budget becomes an effort toward an OpenAI target.
+    let body = serde_json::json!({"model":"fixture-model","max_tokens":32,
+        "thinking":{"type":"enabled","budget_tokens":10000},
+        "tools":[{"name":"lookup","input_schema":{"type":"object","properties":{}}}],"messages":[
         {"role":"user","content":"q"},
-        {"role":"assistant","content":[{"type":"tool_use","id":"call-local","name":"lookup","input":{}}]},
+        {"role":"assistant","content":[{"type":"thinking","thinking":"plan","signature":""},
+            {"type":"tool_use","id":"call-local","name":"lookup","input":{}}]},
         {"role":"user","content":[{"type":"tool_result","tool_use_id":"call-local","content":"boom","is_error":true}]}]});
     let (_, request) =
         crate::gateway::admission::prepare_messages(&gate.state, body.to_string().as_bytes())
             .unwrap();
     assert_eq!(request.ignored_fields, ["tool_result.is_error"]);
+    // Messages turns regroup as Chat messages for an OpenAI target.
+    let chat = entry.candidates[0]
+        .endpoint
+        .encode_request(&request)
+        .unwrap();
+    assert_eq!(
+        chat["messages"][1],
+        serde_json::json!({"role":"assistant","content":null,"reasoning_content":"plan",
+            "reasoning_details":[{"type":"reasoning.summary","summary":"plan","format":"openai-responses-v1","index":0}],"tool_calls":[{"id":"call-local","type":"function","function":{"name":"lookup","arguments":"{}"}}]})
+    );
     for (turn, expected) in [
         (
             0,

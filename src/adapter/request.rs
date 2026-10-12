@@ -99,6 +99,43 @@ impl Request {
         }
         Ok(())
     }
+    /// OpenAI reasoning has an effort only: Messages' thinking mode, display and
+    /// budget are dropped, and a budget becomes the nearest effort when none is
+    /// given. The bool says whether a budget was mapped.
+    pub(crate) fn without_extended_reasoning(&self) -> Result<Option<(Self, bool)>, CodecError> {
+        let settings = self.task.semantic.settings();
+        let reasoning = &settings.reasoning;
+        if !reasoning.requires_extended_controls() {
+            return Ok(None);
+        }
+        let mut settings = settings.clone();
+        let mapped = reasoning.effort.is_absent() && reasoning.budget_as_effort().is_some();
+        if let (true, Some(effort)) = (mapped, reasoning.budget_as_effort()) {
+            settings.reasoning.effort = Presence::Value(effort);
+        }
+        settings.reasoning.mode = Presence::Absent;
+        settings.reasoning.display = Presence::Absent;
+        settings.reasoning.budget = None;
+        let mut copy = self.clone();
+        copy.task.semantic = copy.task.semantic.with_settings(settings)?;
+        Ok(Some((copy, mapped)))
+    }
+    /// Efforts other than `low`, `high` and `max` move to the nearest of those.
+    pub(crate) fn with_effort_levels(&self) -> Result<Option<Self>, CodecError> {
+        use crate::semantic::task::generation::ReasoningEffort as E;
+        let settings = self.task.semantic.settings();
+        let leveled = match settings.reasoning.effort.value() {
+            Some(E::None | E::Minimal) => E::Low,
+            Some(E::Medium) => E::High,
+            Some(E::XHigh) => E::Max,
+            _ => return Ok(None),
+        };
+        let mut settings = settings.clone();
+        settings.reasoning.effort = Presence::Value(leveled);
+        let mut copy = self.clone();
+        copy.task.semantic = copy.task.semantic.with_settings(settings)?;
+        Ok(Some(copy))
+    }
     /// Clear tool result error flags; true when any was set.
     pub(crate) fn drop_tool_error_flags(&mut self) -> Result<bool, CodecError> {
         use crate::semantic::task::generation::Item;

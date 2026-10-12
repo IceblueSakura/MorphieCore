@@ -223,8 +223,28 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         };
         intake.message(role, &parsed)?;
     }
-    let semantic = GenerationRequest::from_settings(intake.items, settings)?
-        .with_message_envelopes(intake.groups)?;
+    // Messages turns are not kept as envelopes: each target regroups items its own
+    // way (native by role, Chat by assistant text and calls).
+    // Calls carry their input as raw JSON text, as every client protocol's calls do.
+    let items = intake
+        .items
+        .into_iter()
+        .map(|(id, mut item)| {
+            if let Item::ToolCall(call) = &mut item
+                && let ToolArguments::Structured(input) = &call.arguments
+            {
+                call.arguments = ToolArguments::Raw(input.value().to_string());
+            }
+            // Thinking from a target without opaque values comes back unsigned.
+            if let Item::Reasoning(r) = &mut item
+                && r.replay.as_ref().is_some_and(|v| v.as_str().is_empty())
+            {
+                r.replay = None;
+            }
+            (id, item)
+        })
+        .collect();
+    let semantic = GenerationRequest::from_settings(items, settings)?;
     let mut fidelity = FidelityRecords::default();
     fidelity.bind_replay_origin(&crate::execution::replay::CLIENT_ORIGIN)?;
     let mut request = Request::from_generation(DecodedRequest { semantic, fidelity }, &model)?;

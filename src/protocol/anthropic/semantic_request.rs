@@ -27,6 +27,8 @@ pub enum RequestRule {
     OmitForeignReplay,
     /// Reasoning without this target's signature is sent as assistant text, as pi does.
     ReasoningAsText,
+    /// Claude 5.x thinks adaptively; a token budget becomes the nearest effort.
+    BudgetAsEffort,
 }
 impl RequestRule {
     pub const fn name(self) -> &'static str {
@@ -38,6 +40,7 @@ impl RequestRule {
             Self::ProjectCallIds => "messages.project-call-ids.v1",
             Self::OmitForeignReplay => "messages.omit-foreign-replay.v1",
             Self::ReasoningAsText => "messages.reasoning-as-text.v1",
+            Self::BudgetAsEffort => "messages.budget-as-effort.v1",
         }
     }
 }
@@ -147,8 +150,7 @@ pub(super) fn project(
         }
     };
     let reasoning = &s.reasoning;
-    if reasoning.budget.is_some()
-        || reasoning.encrypted_output()
+    if reasoning.encrypted_output()
         || reasoning.presence == ReasoningPresence::Null
         || !reasoning.display.is_absent() && !reasoning.summary.is_absent()
     {
@@ -180,9 +182,17 @@ pub(super) fn project(
         Presence::Absent | Presence::Value(ReasoningMode::Adaptive) => {
             Presence::Value(super::Thinking { display })
         }
+        Presence::Value(ReasoningMode::Budgeted) => {
+            rules.insert(RequestRule::BudgetAsEffort);
+            Presence::Value(super::Thinking { display })
+        }
         _ => return Err(unsupported()),
     };
-    let output_config = match reasoning.effort {
+    let effort = match (reasoning.effort.clone(), reasoning.budget_as_effort()) {
+        (Presence::Absent, Some(effort)) => Presence::Value(effort),
+        (effort, _) => effort,
+    };
+    let output_config = match effort {
         Presence::Absent => Presence::Absent,
         Presence::Value(ReasoningEffort::None | ReasoningEffort::Minimal) => {
             rules.insert(RequestRule::LowerEffort);
