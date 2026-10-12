@@ -11,6 +11,7 @@ pub mod fidelity;
 pub mod file_constraints;
 pub mod google;
 pub mod image_constraints;
+pub mod interactions;
 pub mod native;
 pub mod openai;
 pub mod openrouter_images;

@@ -18,6 +18,8 @@ mod chat;
 mod google;
 #[path = "semantic/history.rs"]
 mod history;
+#[path = "semantic/interactions.rs"]
+mod interactions;
 #[path = "semantic/media.rs"]
 mod media;
 #[path = "semantic/messages.rs"]
