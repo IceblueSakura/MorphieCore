@@ -47,11 +47,28 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
             200,
         ),
         (1, false, FallbackPolicy::BeforeCommit, 2, vec!["a"], 504),
+        // A 200 that is not an API reply (an HTML page) fails over like a 5xx.
+        (
+            2,
+            false,
+            FallbackPolicy::BeforeCommit,
+            2,
+            vec!["a", "b"],
+            200,
+        ),
         (302, false, FallbackPolicy::BeforeCommit, 2, vec!["a"], 502),
         (403, false, FallbackPolicy::BeforeCommit, 2, vec!["a"], 502),
         (429, false, FallbackPolicy::Disabled, 2, vec!["a"], 429),
         (429, false, FallbackPolicy::BeforeCommit, 1, vec!["a"], 429),
-        (200, true, FallbackPolicy::BeforeCommit, 2, vec!["a"], 200),
+        // Only `response.created` before the cut: held, so the next candidate answers.
+        (
+            200,
+            true,
+            FallbackPolicy::BeforeCommit,
+            2,
+            vec!["a", "b"],
+            200,
+        ),
     ] {
         let calls = Arc::new(Mutex::new(Vec::<&str>::new()));
         let upstream_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -70,6 +87,7 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
                     assert_eq!(body["input"][0]["content"],json!([{"type":"input_text","text":"keep"},{"type":"input_image","image_url":"data:image/png;base64,AQ==","detail":"auto"}]));
                     calls.lock().unwrap().push(id);
                     if id=="a" && status<=1 { return std::future::pending::<axum::response::Response>().await; }
+                    if id=="a" && status==2 { return ([("content-type","text/html")],"<html>").into_response(); }
                     if id=="a" && status!=200 {return StatusCode::from_u16(status).unwrap().into_response();}
                     if stream {
                         let initial=json!({"type":"response.created","sequence_number":1,"response":{"object":"response","id":"a-r","model":"a-alias","created_at":1,"status":"in_progress","output":[]}});
@@ -219,7 +237,7 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
             assert_eq!(value["output"][0]["content"][0]["text"], "ok");
         }
         assert_eq!(*calls.lock().unwrap(), expected_calls);
-        if expected_calls == ["a", "b"] {
+        if expected_calls == ["a", "b"] && !stream {
             // A rate-limited or exhausted executor cools down for every request;
             // a server error or timeout does not.
             calls.lock().unwrap().clear();

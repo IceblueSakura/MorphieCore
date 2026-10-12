@@ -133,9 +133,19 @@ pub(super) async fn produce_chain(
                 trace.affinity_carriers(key_sent, session_sent);
                 response
             };
-            let successor =
-                intake::produce_candidate(entry, candidate, &local, upstream, limits, &lane, trace)
-                    .await?;
+            // Hold only while another candidate could still answer.
+            let hold = candidates
+                .get(index + 1)
+                .filter(|_| index + 1 < entry.policy.max_attempts)
+                .is_some_and(|next| {
+                    entry.policy.fallback == crate::topology::FallbackPolicy::BeforeCommit
+                        || next.endpoint.id == candidate.endpoint.id
+                            && candidate.credential_fallback
+                });
+            let successor = intake::produce_candidate(
+                entry, candidate, &local, upstream, limits, &lane, hold, trace,
+            )
+            .await?;
             if let (Some(selection), Some(successor), Some(runtime)) =
                 (affinity, successor, &runtime)
             {

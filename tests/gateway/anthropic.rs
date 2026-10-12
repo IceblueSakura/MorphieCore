@@ -196,7 +196,7 @@ async fn answer(
         )
             .into_response();
     }
-    if prompt == "overloaded" {
+    if matches!(prompt, "overloaded" | "overloaded-early") {
         let overloaded =
             json!({"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}});
         if body["stream"] != true {
@@ -211,7 +211,12 @@ async fn answer(
             "content":[{"type":"text","text":"partial"}],"stop_reason":"end_turn",
             "usage":{"input_tokens":1,"output_tokens":1}});
         let prefix = native_stream_body(&message)
-            .split_once("event: content_block_stop")
+            .split_once(if prompt == "overloaded" {
+                "event: content_block_stop"
+            } else {
+                // Overload before any content: only `message_start` precedes it.
+                "event: content_block_start"
+            })
             .unwrap()
             .0
             .to_owned();
@@ -492,7 +497,13 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 assert_eq!(status, expected, "{profile:?} {prompt}: {body}");
                 assert_eq!(
                     seen.lock().unwrap().len(),
-                    count + if prompt == "upstream-error" { 2 } else { 1 }
+                    // An unusable reply fails over like a server error.
+                    count
+                        + if matches!(prompt, "upstream-error" | "malformed" | "bad-signature") {
+                            2
+                        } else {
+                            1
+                        }
                 );
                 assert!(!body.to_string().contains("synthetic-private"));
                 if expected == 200 {
@@ -512,7 +523,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             }
         }
     }
-    assert_eq!(seen.lock().unwrap().len(), 22);
+    assert_eq!(seen.lock().unwrap().len(), 26);
     for profile in [Profile::Responses, Profile::Chat] {
         let responses = profile == Profile::Responses;
         let path = if responses {
@@ -605,13 +616,13 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             );
         }
     }
-    assert_eq!(seen.lock().unwrap().len(), 28);
+    assert_eq!(seen.lock().unwrap().len(), 32);
     // Error classes: Codex reads overflow only from a streamed `response.failed`;
     // a failure after headers ends the stream with its class instead of a cut.
     for profile in [Profile::Responses, Profile::Chat] {
         let responses = profile == Profile::Responses;
         for stream in [false, true] {
-            for prompt in ["overflow", "overloaded"] {
+            for prompt in ["overflow", "overloaded", "overloaded-early"] {
                 let function = json!({"name":"lookup","parameters":{"type":"object","properties":{"key":{"type":"string"}}},"strict":false});
                 let input = if responses {
                     let mut tool = function.clone();
@@ -649,10 +660,11 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 } else {
                     ("server_is_overloaded", stream)
                 };
-                let calls = if prompt == "overloaded" && !stream {
-                    2
-                } else {
-                    1
+                // A stream that fails before content is held, so it still fails over.
+                let calls = match prompt {
+                    "overflow" => 1,
+                    "overloaded" if stream => 1,
+                    _ => 2,
                 };
                 assert_eq!(
                     seen.lock().unwrap().len(),
@@ -685,7 +697,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             }
         }
     }
-    assert_eq!(seen.lock().unwrap().len(), 38);
+    assert_eq!(seen.lock().unwrap().len(), 50);
     diagnostic_owner.flush_diagnostics().await;
     let records = std::fs::read_to_string(&diagnostics).unwrap();
     assert!(records.contains(r#""request_rules":["messages.omit-sampling.v1"]"#));

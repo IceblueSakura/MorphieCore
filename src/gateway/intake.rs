@@ -10,15 +10,37 @@ use crate::{
     protocol::openai::sse::{Obfuscation, SseLimits},
 };
 use bytes::Bytes;
+/// While another candidate could still answer, lifecycle-only frames wait for the
+/// first content so a pre-content upstream failure can fail over unseen.
+const HOLD_BYTES: usize = 64 << 10;
+const HOLD_TIME: std::time::Duration = std::time::Duration::from_secs(20);
+fn lifecycle_only(event: &crate::semantic::task::generation::StreamEvent) -> bool {
+    use crate::semantic::task::generation::{ItemKind, StreamEvent};
+    match event {
+        StreamEvent::Started
+        | StreamEvent::Queued
+        | StreamEvent::PartStarted { .. }
+        | StreamEvent::MessageEnvelope(_) => true,
+        // A started tool call already names its tool: that is content.
+        StreamEvent::ItemStarted { kind, .. } => {
+            matches!(kind, ItemKind::Message { .. } | ItemKind::Reasoning)
+        }
+        _ => false,
+    }
+}
+#[allow(clippy::too_many_arguments)]
 async fn produce(
     mut upstream: reqwest::Response,
     attempt: &mut Attempt,
     delivery: &mut ResponseDelivery,
     lane: &Lane<'_>,
     stream: bool,
+    hold: bool,
     limit: usize,
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
+    let started = std::time::Instant::now();
+    let mut held: Option<Vec<Bytes>> = (stream && hold).then(Vec::new);
     let mut used_bytes = 0usize;
     while let Some(chunk) = upstream.chunk().await.map_err(|e| {
         ApiError::transport(if e.is_timeout() {
@@ -39,8 +61,9 @@ async fn produce(
                 Ok(pushed) => pushed,
                 Err(error) => {
                     trace.decode_error(&error);
+                    // An invalid or truncated upstream reply may fail over while unpublished.
                     let Some(status) = error.stream_failure() else {
-                        return Err(ApiError::upstream());
+                        return Err(ApiError::transport(crate::provider::ErrorClass::Upstream));
                     };
                     let failure = ApiError::failure(status, b"", None);
                     // After headers the class still reaches the client, as a failure frame.
@@ -70,7 +93,18 @@ async fn produce(
                     trace.projection_error(&error);
                     ApiError::upstream()
                 })?;
-                send_frames(lane, delivery, frames, trace).await?;
+                if let Some(buffer) = held.as_mut()
+                    && events.iter().all(lifecycle_only)
+                    && buffer.iter().chain(&frames).map(Bytes::len).sum::<usize>() <= HOLD_BYTES
+                    && started.elapsed() < HOLD_TIME
+                {
+                    buffer.extend(frames);
+                } else {
+                    if let Some(buffer) = held.take() {
+                        send_frames(lane, delivery, buffer, trace).await?;
+                    }
+                    send_frames(lane, delivery, frames, trace).await?;
+                }
                 trace.stage(Stage::Intake);
             }
         }
@@ -78,7 +112,7 @@ async fn produce(
     trace.stage(Stage::Terminal);
     attempt.finish().map_err(|error| {
         trace.decode_error(&error);
-        ApiError::upstream()
+        ApiError::transport(crate::provider::ErrorClass::Upstream)
     })?;
     trace.stage(Stage::Projection);
     let frames = if stream {
@@ -99,6 +133,9 @@ async fn produce(
         }
         vec![Bytes::from(bytes)]
     };
+    if let Some(buffer) = held.take() {
+        send_frames(lane, delivery, buffer, trace).await?;
+    }
     send_frames(lane, delivery, frames, trace).await?;
     delivery
         .complete(attempt)
@@ -117,6 +154,7 @@ async fn error_body(mut upstream: reqwest::Response) -> Vec<u8> {
     }
     body
 }
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn produce_candidate(
     entry: &BoundEntry,
     candidate: &BoundCandidate,
@@ -124,6 +162,7 @@ pub(super) async fn produce_candidate(
     upstream: reqwest::Response,
     limits: &Limits,
     lane: &Lane<'_>,
+    hold: bool,
     trace: &mut Trace,
 ) -> Result<Option<Request>, ApiError> {
     trace.stage(Stage::ResponseHead);
@@ -140,6 +179,9 @@ pub(super) async fn produce_candidate(
             retry_after,
         ));
     }
+    // A 2xx that is not an API reply (an HTML page, a missing or foreign type)
+    // fails over like a 5xx.
+    let not_api = || ApiError::transport(crate::provider::ErrorClass::Upstream);
     let mut content_types = upstream.headers().get_all("content-type").iter();
     let content_type = match (content_types.next(), content_types.next()) {
         // Only true absence may use the trusted SSE-only contract.
@@ -152,17 +194,17 @@ pub(super) async fn produce_candidate(
         {
             "text/event-stream"
         }
-        (Some(value), None) => value.to_str().map_err(|_| ApiError::upstream())?,
-        _ => return Err(ApiError::upstream()),
+        (Some(value), None) => value.to_str().map_err(|_| not_api())?,
+        _ => return Err(not_api()),
     };
-    let media: mime::Mime = content_type.parse().map_err(|_| ApiError::upstream())?;
+    let media: mime::Mime = content_type.parse().map_err(|_| not_api())?;
     let stream = request.delivery.streaming();
     let is_stream = media.type_() == mime::TEXT && media.subtype() == "event-stream";
     let is_json = media.type_() == mime::APPLICATION
         && (media.subtype() == mime::JSON || media.suffix() == Some(mime::JSON));
     let upstream_stream = stream || candidate.endpoint.representation.forced_stream();
     if (upstream_stream && !is_stream) || (!upstream_stream && !is_json) {
-        return Err(ApiError::upstream());
+        return Err(not_api());
     }
     let limit = limits
         .response_bytes
@@ -213,6 +255,7 @@ pub(super) async fn produce_candidate(
         &mut delivery,
         lane,
         stream,
+        hold,
         limit,
         trace,
     )
