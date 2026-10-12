@@ -50,7 +50,7 @@ impl GenerationRequirements {
             top_p: r.controls().top_p().is_some(),
             logprobs: r.controls().logprobs == crate::semantic::value::Presence::Value(true) || r.controls().top_logprobs.is_some(),
             truncation: r.controls().truncation.is_some(),
-            strict_function_tools: r.tools().iter().flat_map(super::ToolDefinition::leaves).any(|t| matches!(t,super::ToolDefinition::Function(t) if matches!(t.strict,super::FunctionStrictness::Explicit(true)|super::FunctionStrictness::Omitted(super::StrictDefault::NormalizeSchema)))),
+            strict_function_tools: r.tools().iter().flat_map(super::ToolDefinition::leaves).any(|t| matches!(t,super::ToolDefinition::Function(t) if matches!(t.strict,super::FunctionStrictness::Explicit(true)))),
             max_output_tokens: r.controls().max_output_tokens,
             temperature: r.controls().temperature().is_some(),
             tool_count: r.tools().iter().map(|t| t.leaves().len()).sum(),

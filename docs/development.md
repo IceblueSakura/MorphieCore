@@ -64,6 +64,10 @@ All listeners are temporary loopback ones with synthetic credentials; no environ
 
 Authorization is defined in [AGENTS.md](../AGENTS.md#authorization). There is no standing probe tool: when needed, write a minimal entry point under `examples/` that gets credentials through the project loader, fixes request count, output cap and timeout, runs serially with no hidden retries, prints only redacted status and counts, and never saves bodies or opaque values. Real calls supplement, never replace, synthetic regression.
 
+## pi acceptance
+
+Real-client acceptance uses pi, the simplest target agent. Start the CLI gateway with a scratch `--config` (a 0700 directory), then run pi's real binary (not a shell wrapper that sources private environment) with a clean environment: a scratch `HOME` and `PI_CODING_AGENT_DIR` holding `models.json` (one custom provider whose `api` is `anthropic-messages`, `openai-completions` or `openai-responses`, `baseUrl` the gateway, `apiKey` from an environment variable) and `settings.json` with `retry.enabled: false` and `cacheWarming: "off"`. Run `pi -p --offline --no-session --no-extensions --no-skills --no-context-files --no-mcp --tools read` on a synthetic file per model; check the answer and the diagnostics rules, then delete the scratch directory.
+
 ## Documentation
 
 The doc set and its rules are in [AGENTS.md](../AGENTS.md#documentation). For Markdown-only changes, check links and run `git diff --check`.

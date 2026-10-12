@@ -15,7 +15,7 @@ Not planned: raw wire passthrough or post-encoding JSON patches, weakening schem
 
 ## Target agents
 
-pi and opencode first; Codex and Claude Code second. A known client's observed behavior at a pinned revision is the acceptance oracle, beside the protocol schema: what it parses, merges, returns in history and classifies as retryable. pi's merged `reasoning_details` already shaped the Chat reasoning carrier.
+pi and opencode first; Codex and Claude Code second. Real-client acceptance runs use pi first. A known client's observed behavior at a pinned revision is the acceptance oracle, beside the protocol schema: what it parses, merges, returns in history and classifies as retryable. pi's merged `reasoning_details` already shaped the Chat reasoning carrier.
 
 Vendor stream shapes are a standing rule, not a phase: a Chat shape seen from a bound upstream (a continuation `function.name: ""`, `finish_reason: ""`, `tool_calls: []` opening the message owner early, `finish_reason: "stop"` beside tool calls) becomes a named dialect rule, like `empty_continuation_call_id`, once that upstream emits it. Likewise an OpenAI-compatible upstream's in-stream error (a Chat error chunk, a Responses `response.failed`) is classified like Anthropic `error` events once a bound upstream emits one. Frozen media decoders are not extended.
 
@@ -25,13 +25,9 @@ Failover routing is done (architecture §5). Not accepted: one bounded real fail
 
 Deferred until a real need: SSE keep-alive comments while frames are held (the hold stays far below Codex's 300 s idle timeout), executor affinity from the prefix index for requests without a declared conversation (all target agents declare one), an opt-in first-content timeout, per-message effort to keep the cache when clients change effort mid-conversation.
 
-## Current focus: Phase 4 — downstream Anthropic Messages for Claude Code
+## Current focus: Phase 4 acceptance
 
-Claude Code reaches any public model through `POST /v1/messages`; the model's candidates and failover are the ones its Chat clients use. Built from the public Messages API first; Claude Code's own request shapes are sampled later (not yet authorized) and adjust the details.
-
-- **Slice 3, Claude Code details** once sampled: `anthropic-beta`, `?beta=true`, `count_tokens`, `metadata.user_id` as a conversation hint.
-
-Exit: Claude Code drives a tool loop with thinking against the native binding and an OpenAI-compatible binding, in JSON and SSE, and reacts to each error class as it does against Anthropic.
+Downstream Anthropic Messages is done (architecture §1). pi acceptance (development.md) passed through all three of its providers (`anthropic-messages`, `openai-completions`, `openai-responses`) against the native binding (`claude-haiku-5-5`) and an OpenAI-compatible one (`glm-5.3`): a read-tool loop with thinking requested. Not yet observed: a real thinking signature replayed across turns; Haiku chose not to think on the synthetic task even at pi's `high` level (synthetic tests cover the replay). Phase 4 closes once a task that makes the model think passes the same run.
 
 ## Later phases
 
@@ -52,6 +48,10 @@ Submit full history statelessly, without server-side storage; reuse the opaque e
 ### Coverage pass (after the feature phases)
 
 Feature phases add functional tests only. Once they are done: one hand-written wire fixture per scenario per protocol, checked wire→IR and IR→wire against a synthetic upstream, each SSE fixture also fed in small fixed-size chunks, with consumer expectations from pi and opencode. Scenarios: text, single and parallel tools, tool errors, reasoning replay, usage, truncation, each error class; consumer shapes (a tool name only on the first fragment, no empty reasoning or tool-call deltas, null/empty/absent kept distinct).
+
+### Claude Code details (when Claude Code is accepted)
+
+Sample its request shapes first; then `anthropic-beta`, `?beta=true`, `count_tokens`, `metadata.user_id` as a conversation hint.
 
 ### After that
 

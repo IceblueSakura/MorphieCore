@@ -310,6 +310,46 @@ mod native_catalog {
         topology::catalog,
     };
     #[test]
+    fn pi_responses_requests_reach_the_native_binding_by_named_rules() {
+        use morphiecore::protocol::openai::{Adapter, Dialect, Profile as Client};
+        let binding = &catalog::MESSAGES_BINDINGS[0];
+        let topology = catalog::default_topology().unwrap();
+        // pi's shape: a developer prompt and a tool whose `strict` is omitted.
+        let client = Adapter::new(Client::Responses, Dialect::Standard, None);
+        let mut request = client
+            .decode_client_request(
+                br#"{"model":"claude-haiku-5-5","max_output_tokens":64,"store":false,
+                "input":[{"role":"developer","content":"Be brief."},{"role":"user","content":"hi"}],
+                "tools":[{"type":"function","name":"read","description":"Read a file.",
+                    "parameters":{"type":"object","properties":{"path":{"type":"string"}}}}]}"#,
+            )
+            .unwrap();
+        request.conversation = Some(
+            morphiecore::semantic::context::ConversationContext::conversation("synthetic").unwrap(),
+        );
+        admit(topology.model(binding.model).unwrap(), &request).unwrap();
+        let (prepared, rules) = morphiecore::execution::prepare_with_rules(
+            &binding.endpoint(),
+            &binding.provider(),
+            &SecretMaterial::new("synthetic-key").unwrap(),
+            &request,
+        )
+        .unwrap();
+        let wire: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
+        assert_eq!(
+            wire["system"],
+            serde_json::json!([{"type":"text","text":"Be brief."}])
+        );
+        assert!(wire["tools"][0].get("strict").is_none());
+        assert_eq!(
+            rules,
+            [
+                "messages.developer-as-system.v1",
+                "messages.default-strict-as-plain.v1"
+            ]
+        );
+    }
+    #[test]
     fn declared_native_binding_prepares_the_messages_wire() {
         let binding = &catalog::MESSAGES_BINDINGS[0];
         let topology = catalog::default_topology().unwrap();

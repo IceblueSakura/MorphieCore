@@ -29,6 +29,11 @@ pub enum RequestRule {
     ReasoningAsText,
     /// Claude 5.x thinks adaptively; a token budget becomes the nearest effort.
     BudgetAsEffort,
+    /// A leading developer instruction (pi, Codex) is the system prompt.
+    DeveloperAsSystem,
+    /// An omitted `strict` defaulting to schema normalization (Responses) is sent
+    /// as a plain tool; Messages has no strict tools.
+    DefaultStrictAsPlain,
 }
 impl RequestRule {
     pub const fn name(self) -> &'static str {
@@ -41,6 +46,8 @@ impl RequestRule {
             Self::OmitForeignReplay => "messages.omit-foreign-replay.v1",
             Self::ReasoningAsText => "messages.reasoning-as-text.v1",
             Self::BudgetAsEffort => "messages.budget-as-effort.v1",
+            Self::DeveloperAsSystem => "messages.developer-as-system.v1",
+            Self::DefaultStrictAsPlain => "messages.default-strict-as-plain.v1",
         }
     }
 }
@@ -85,9 +92,14 @@ pub(super) fn project(
         Presence::Null => return Err(unsupported()),
     };
     if let Some((_, Item::Instruction(i))) = request.items().first() {
-        if i.authority != InstructionAuthority::System || i.status.is_some() || !system.is_absent()
-        {
+        if i.status.is_some() || !system.is_absent() {
             return Err(unsupported());
+        }
+        match i.authority {
+            InstructionAuthority::System => {}
+            InstructionAuthority::Developer => {
+                rules.insert(RequestRule::DeveloperAsSystem);
+            }
         }
         system = Presence::Value(WireText::Blocks(
             i.parts.iter().map(|(_, t)| t.as_str().into()).collect(),
@@ -117,6 +129,10 @@ pub(super) fn project(
                                 Presence::Absent
                             }
                             FunctionStrictness::Explicit(false) => Presence::Value(false),
+                            FunctionStrictness::Omitted(StrictDefault::NormalizeSchema) => {
+                                rules.insert(RequestRule::DefaultStrictAsPlain);
+                                Presence::Absent
+                            }
                             _ => return Err(unsupported()),
                         },
                     })
