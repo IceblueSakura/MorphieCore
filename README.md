@@ -1,6 +1,6 @@
 # MorphieCore
 
-A model-routing gateway built on one unified IR. Clients speak OpenAI Responses (primary) or Chat Completions; upstream Providers speak OpenAI-compatible, Anthropic Messages and, later, Google protocols. The project is in core design and validation.
+A central gateway built on one unified IR that hides Provider differences from agent loops (pi and opencode first, then Codex and Claude Code). Clients speak OpenAI Chat Completions or Responses; upstream Providers speak OpenAI-compatible, Anthropic Messages and, later, Google protocols. The project is in core design and validation.
 
 ## Status
 

@@ -7,75 +7,73 @@ The single source for direction and the current slice. Delete finished items (Gi
 Maintenance only, as refactors require:
 
 - Standalone media and vector tasks: Images, Speech, Transcription, Embedding.
-- New Providers or model bindings, except during the Google phases. Activating an existing binding is not a new binding.
+- New Providers or model bindings, except alternative bindings of an existing public model in Phase 3 and the Google phases. Activating an existing binding is not a new binding.
 - New features for subscription credentials (SIWC, Grok).
 - Stateful Responses, file services, Realtime.
 
-Not planned: raw wire passthrough or post-encoding JSON patches, weakening schemas (`oneOf` → `anyOf`), synthesizing missing tool results or re-roling orphan results, first-message hashes as conversation identity, LLM intent classifiers for routing, plugin or middleware hosts, capabilities learned automatically from upstream errors.
+Not planned: raw wire passthrough or post-encoding JSON patches, weakening schemas (`oneOf` → `anyOf`), synthesizing missing tool results or re-roling orphan results, first-message hashes as conversation identity, LLM intent classifiers for routing, plugin or middleware hosts, capabilities learned automatically from upstream errors. Load balancing in any form (weights, round robin, least load), per-credential concurrency or RPM lanes, budget reservations, turn-start routing rules, and retrying a refusal on another model: routing is failover only (architecture §5).
+
+## Target agents
+
+pi and opencode first; Codex and Claude Code second. A known client's observed behavior at a pinned revision is the acceptance oracle, beside the protocol schema: what it parses, merges, returns in history and classifies as retryable. pi's merged `reasoning_details` already shaped the Chat reasoning carrier.
 
 ## Current focus: Phase 1 — protocol boundaries and product bindings
 
-Goal: OpenAI clients, Codex first, use the native Messages binding (activated by listing it in `models`), and the OpenAI boundaries accept known client and vendor shapes, with no silent loss of reasoning, tool or terminal semantics.
+Goal: OpenAI clients use the native Messages binding (activated by listing it in `models`), and the OpenAI boundaries accept known client and vendor shapes, with no silent loss of reasoning, tool or terminal semantics.
 
-Items in implementation order:
-
-1. **Chat vendor stream shapes.** Chat streams fail on known vendor shapes: a continuation `function.name: ""`, `finish_reason: ""`, `tool_calls: []` (opens the message owner early), and `finish_reason: "stop"` beside tool calls. Each becomes a named dialect rule, like `empty_continuation_call_id`, only when a bound upstream emits it. Frozen media decoders are not extended.
-
-Further trimming of diagnostics/billing switches and fidelity records is assessed with the affected modules, not as a prerequisite. `morphiecore-auth` stays independent.
+Remaining: check the exit list below against the tests and close the gaps. Chat vendor stream shapes (a continuation `function.name: ""`, `finish_reason: ""`, `tool_calls: []` opening the message owner early, `finish_reason: "stop"` beside tool calls) become a standing rule: each becomes a named dialect rule, like `empty_continuation_call_id`, once a bound upstream emits it. Frozen media decoders are not extended.
 
 Exit: `Responses / Chat × Anthropic`, JSON and SSE, covers text, tool round trips, tool failures, thinking replay, a mid-loop Provider switch, refusals, truncation, upstream errors, ignored request fields and the cache field, with synthetic tests. Bounded real calls through the CLI-started gateway (opencode-go `claude-haiku-5-5` or another available target): one Codex-shaped request with reasoning controls, then a second turn on the same prefix. The relay accepting the reasoning and cache fields is an exit check; a reported cache read is an observation.
 
 ## Later phases
 
-### Phase 2 — held streams and scenario fixtures
+### Phase 2 — agent loop semantics for pi and opencode
 
-Follow the structure of Magpie's held-stream design; its timings come from client reports and are starting points. Today the first upstream lifecycle event (`response.created`, the Chat role chunk, `message_start`) is published at once and freezes the candidate, so an upstream that opens a stream and then reports overload cannot fall back.
+An agent loop decides its next step from the error class, the terminal and its own history; the gateway makes those identical across Providers.
 
-- **Hold until content**, only while another candidate could still answer. Lifecycle-only frames are held; content is text, a tool call, reasoning or a terminal. A pre-content upstream error advances; the first content releases the held frames and freezes the candidate.
-- **Refusals** are delivered by default. A route may opt in to retrying a pre-content refusal on a different upstream model, never the same model on any credential. Reasoning is never held for this, so a refusal after content is an incomplete answer.
-- **Bounds.** A hold ends by releasing, never dropping: at first content, a byte cap or a time cap. The time cap is longer when the client can be kept alive. SSE comments do not reset Codex's 300 s idle timeout, so the total hold across candidates stays below it.
-- **Keep-alive.** Past a threshold, send headers and `: keepalive` comments; the next candidate continues in the same response. After headers, a final failure is the protocol's stream error: Responses sends a gateway `response.created` if none went out, then `response.failed` with codes Codex classifies (`server_is_overloaded`, `rate_limit_exceeded`, `insufficient_quota`, `context_length_exceeded`); Chat sends one `data: {"error": …}` chunk and closes without `[DONE]`. Quiet streams after content get comments up to a limit; waits before sending are kept alive the same way.
-- **Non-API 2xx** (HTML, empty, or non-JSON under a JSON type) is a 5xx-class failure decided from the first bytes; cooldown, when Phase 3 lands, is scoped to the Endpoint. Diagnostics name the reason without copying the body.
-- **First-content timeout**, opt-in per route: cancel and advance only if another candidate remains and nothing was published. Sequential, not hedged. Diagnostics record time to first content and to first text.
-- **Scenario fixtures.** One hand-written wire fixture per scenario per protocol, checked wire→IR and IR→wire against a synthetic upstream; pair-level tests only for pair-specific projection rules ([test rules](../AGENTS.md#tests)). Each SSE fixture is also fed in small fixed-size chunks. Scenarios:
-  - Text, single and parallel tools, tool errors, reasoning replay, usage, truncation, upstream errors.
+- **Error classes.** Today every upstream failure except 429 reaches clients as 502 `upstream_error` with a fixed message, so no agent can tell an oversized context from an outage. Classify upstream failures per protocol (status plus typed error fields; upstream bodies are read for classification only, never forwarded) into: context overflow, rate limit, quota or credit exhausted, overloaded, and other. Render each as the downstream protocol's canonical error with a gateway-authored message: context overflow is 400 `context_length_exceeded` with OpenAI's wording ("Your input exceeds the context window of this model"), which pi matches by message and Codex by code; rate limits are 429 with `Retry-After` when the upstream reported a reset; overload is retryable 5xx. The same classes reach SSE clients after headers (Responses `response.failed`, Chat error chunk). Silent overflow (truncated input, `model_context_window_exceeded` stops) stays a `length` terminal.
+- **Conversation identity from the agents.** pi sends `x-session-id` / `session_id` and `prompt_cache_key`; read the declared ones as conversation identity hints for cache grouping and Phase 3 affinity, bounded and scoped by ingress key, never as route or credential selectors. Check what opencode sends before adding a carrier.
+- **Known client losses.** opencode's Chat path (AI SDK `openai-compatible`) reads and returns only `reasoning_content`, so opaque thinking cannot survive a turn there; the cross-target text rule applies and diagnostics name it. Its Responses path keeps `encrypted_content`. Record such facts as fixture expectations, not as gateway shims.
+- **Scenario fixtures.** One hand-written wire fixture per scenario per protocol, checked wire→IR and IR→wire against a synthetic upstream; pair-level tests only for pair-specific projection rules ([test rules](../AGENTS.md#tests)). Each SSE fixture is also fed in small fixed-size chunks. Consumer expectations come from pi (`openai-completions`, `openai-responses`) and the AI SDK (`openai-compatible`, `openai`) at pinned revisions. Scenarios:
+  - Text, single and parallel tools, tool errors, reasoning replay, usage, truncation, each error class.
   - Tool arguments: deltas equal to done; done without deltas; done extending the deltas (emit the suffix); conflicting done (reject).
-  - Held delivery, after Magpie's tests: creation then overload advances with one visible creation (`TestSilentHeldStreamStillFailsOver`); a held stream is kept alive and answered (`TestSilentHeldStreamKeptAlive`); comments stop after the quiet limit (`TestQuietKeptAliveOnlySoLong`); a slow first content advances (`TestGroupFirstTokenFailsOver`); a non-API 2xx advances (`TestNotAnAPIReplyFailsOver`); an error after content aborts with no splice; refusals follow the rule above; post-commit transport loss.
   - Consumer shapes: a tool name only on the first fragment; no empty reasoning or tool-call deltas; null, empty and absent stay distinct.
 
-Exit: every scenario has an independent expectation per protocol, held delivery passes with synthetic upstreams, and the SDK loopback gate passes with keep-alive comments.
+Exit: each error class reaches pi and Codex as the class they act on, in JSON and SSE; every scenario has an independent expectation per protocol; the SDK loopback gate passes.
 
-### Phase 3 — routing: failure scope, cooldown and target affinity
+### Phase 3 — failover routing with cache affinity
 
-The compiled route stays the authority on legal targets; this phase adds trusted runtime ordering inside that set (architecture §5).
+A public model may have several bindings (Provider × upstream model × credential pool). The compiled order is the failover order; runtime policy only skips unhealthy executors and keeps a conversation where its cache and its account-bound thinking live. No load balancing.
 
+- **Alternative bindings.** Configuration lists a public model's bindings in failover order; adding a binding for an existing public model is allowed in this phase.
 - **Execution identity**: Endpoint × credential identity × upstream model. Credential identity is the binding plus an in-memory API key fingerprint (never logged), or the verified OAuth principal. Cooldown, affinity and diagnostics key on it, never on ordinals or display names.
-- **Failure scope and cooldown.** Separate short rate limits, quota windows, missing credit and authentication, including errors inside a held stream; scope each to the credential or credential × model. Cooldown demotes within the legal set and expires (Retry-After or reset, capped). Hard exclusions (disabled, unauthorized, unsupported by the request) are never revived. Refusals cause no cooldown. Unknown-scope 429s still do not rotate credentials.
-- **Target affinity**, opt-in per route, separate from the prefix cache index. Keyed by ingress principal, public model and conversation ID; bound to the exact executor. Ordered checks: executor no longer legal → drop; cooling down → skip; tool round trip (read from the IR) → keep the actual executor, even after a fallback; fell back after a refusal → keep the fallback model; new turn → keep only with a recent reported cache read, else base order. Feedback only from honest completed terminals; failure or abort clears the binding. In memory, bounded, disposable.
-- **Diagnostics**: inferred or explicit cache hint, legal candidates and exclusion reasons, the affinity decision, each physical attempt with its executor. Missing cache reports stay missing.
+- **Cooldown.** Rate limits, quota or credit exhaustion and authentication failures, including errors inside a held stream, demote the executor for its scope (credential or credential × model) until the reported reset, capped. Hard exclusions (disabled, unauthorized, unsupported by the request) are never revived. Refusals and context overflow cause no cooldown.
+- **Cache affinity first.** A conversation (Phase 2 identity, or the prefix index) binds to the executor that last completed honestly. Later turns and tool round trips go there while it is legal and not cooling down. After a failover the conversation stays on the new executor until that one fails; it does not drift back, since each move loses the cache and the account-bound thinking. Feedback only from honest completed terminals; in memory, bounded, disposable.
+- **Held streams.** Today the first lifecycle event (`response.created`, the Chat role chunk, `message_start`) is published at once and freezes the candidate, so an upstream that opens a stream and then reports overload cannot fail over. While another candidate could still answer, hold lifecycle-only frames until the first content (text, tool call, reasoning, terminal) or a byte or time cap, releasing rather than dropping. A pre-content upstream error advances. After headers, a final failure uses the Phase 2 error classes. Keep-alive comments only where a target agent needs them: they do not reset Codex's 300 s idle timeout, so the total hold stays below it. Follow the structure of Magpie's held-stream tests (`TestSilentHeldStreamStillFailsOver`, `TestSilentHeldStreamKeptAlive`, `TestQuietKeptAliveOnlySoLong`, `TestNotAnAPIReplyFailsOver`).
+- **Non-API 2xx** (HTML, empty, or non-JSON under a JSON type) is a 5xx-class failure decided from the first bytes; its cooldown scope is the Endpoint. Diagnostics name the reason without copying the body.
+- **Diagnostics**: the affinity decision, skipped executors and why, each physical attempt with its executor. Missing cache reports stay missing.
 
-Exit: synthetic multi-candidate routes show the executor kept across a tool round trip after fallback; a refusal fallback staying on its model; removed or disabled targets not revived; no binding reuse after a credential change; no sharing across ingress keys for one conversation ID; state released on concurrent first requests and cancellation; compiled order kept without affinity.
+Exit: synthetic two-binding routes show failover on 5xx, rate limit and a pre-content stream error; a conversation staying on its executor across turns and tool round trips, and on the new one after a failover; cooldown expiry; removed or disabled targets not revived; no binding reuse after a key change; no sharing across ingress keys for one conversation ID; state released on concurrent first requests and cancellation; compiled order kept without affinity. One bounded real failover run with two credentials or Providers for one model.
 
-Deferred until a real need: turn-start routing rules (token, image, effort conditions held across tool round trips), per-credential concurrency and RPM lanes counting physical attempts, budget reservations, per-message effort to keep the cache when clients change effort mid-conversation.
+Deferred until a real need: an opt-in first-content timeout, per-message effort to keep the cache when clients change effort mid-conversation.
 
-### Phase 4 — Google generateContent upstream
+### Phase 4 — downstream Anthropic Messages for Claude Code
 
-IR questions to settle first:
+Reuse the Anthropic module from Phase 1; add request decoding and response/SSE encoding. Native `is_error`, thinking signatures and block order map directly. Toward OpenAI targets, keep tool result text and drop `is_error` by a named lossy rule. Claude Code's request shapes and error handling are the acceptance oracle.
+
+### Phase 5 — Google generateContent upstream
+
+Only when a target agent needs a Gemini model. IR questions to settle first:
 
 - `thoughtSignature` attaches to parts (including `functionCall`); confirm `Part.replay` and `CallContext.replay` carry it directly.
 - `functionCall.id` may be missing: the gateway must mint call IDs and map back by name and order. Check whether `NativeCallAlias` suffices; if not, report the IR gap with options first.
 - Streaming returns `GenerateContentResponse` fragments, close to Chat chunks.
 - More `finishReason` values (SAFETY, MALFORMED_FUNCTION_CALL, …) and usage details (`thoughtsTokenCount`, `cachedContentTokenCount`).
 - Schemas use the OpenAPI subset or `parametersJsonSchema`.
-- Keep-alive comments: Magpie found a Gemini client that rejects them; recheck before enabling them for a Gemini downstream.
 
-### Phase 5 — Google Interactions upstream
+### Phase 6 — Google Interactions upstream
 
 Submit full history statelessly, without server-side storage; reuse the opaque envelope. Pin the official API version before starting.
-
-### Phase 6 — downstream Anthropic Messages
-
-Reuse the Anthropic module from Phase 1; add request decoding and response/SSE encoding. Native `is_error`, thinking signatures and block order map directly. Toward OpenAI targets, keep tool result text and drop `is_error` by a named lossy rule; Chat/Responses get no tool error extension until a client needs one.
 
 ### After that
 

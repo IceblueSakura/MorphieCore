@@ -1,14 +1,14 @@
 # Architecture
 
-MorphieCore accepts standard client protocols downstream, calls different Provider protocols upstream, and passes everything through one typed semantic representation in between. This page records principles and settled decisions; code and tests define behavior, and the [roadmap](roadmap.md) sets the order of work.
+MorphieCore is a central gateway for a few agents (pi and opencode first, Codex and Claude Code second) that hides Provider differences from their agent loops. It accepts standard client protocols downstream, calls different Provider protocols upstream, and passes everything through one typed semantic representation in between. This page records principles and settled decisions; code and tests define behavior, and the [roadmap](roadmap.md) sets the order of work.
 
 ## 1. Target protocols
 
 | Direction | Protocol | Status |
 |---|---|---|
-| Downstream | OpenAI Responses (primary) | Live |
-| Downstream | OpenAI Chat Completions (compatible; declared losses, extension fields for missing semantics) | Live |
-| Downstream | Anthropic Messages | After Responses and Chat stabilize |
+| Downstream | OpenAI Chat Completions (declared losses, extension fields for missing semantics) | Live; pi and opencode |
+| Downstream | OpenAI Responses | Live; pi, opencode and Codex |
+| Downstream | Anthropic Messages | Planned, for Claude Code |
 | Upstream | OpenAI Responses and Chat, including compatible dialects | Live |
 | Upstream | Anthropic Messages | JSON and SSE; directory bootstrap activates a binding only when `models` lists it |
 | Upstream | Google generateContent, Google Interactions | Planned |
@@ -102,7 +102,7 @@ When Chat Completions cannot carry a semantic such as reasoning, MorphieCore fol
 ## 5. Execution and delivery
 
 - Startup compiles Public Model → Route → the legal Endpoints. Business input cannot create candidates or name one; each candidate projects independently from the same immutable IR. Compiled order is the default; trusted runtime policy (cooldown, target affinity on gateway-observed executors) may reorder within the legal set. Fixed candidate order was an initial simplification, not an invariant. Message, tool and schema order inside a projection stays deterministic for cache hits; that order is an invariant.
-- Fallback is opt-in, happens only before content is published downstream, and only for advanceable failures: connect/transport errors, timeouts, 5xx, locally unavailable credentials, and a 2xx whose body is not an API reply (an HTML page, an empty body, non-JSON under a JSON type). 401/403 and protocol or projection errors do not advance. The content boundary and the non-API 2xx rule land in roadmap Phase 2; today any published frame freezes and a non-API 2xx is a protocol error.
+- Fallback is opt-in, happens only before content is published downstream, and only for advanceable failures: connect/transport errors, timeouts, 5xx, locally unavailable credentials, and a 2xx whose body is not an API reply (an HTML page, an empty body, non-JSON under a JSON type). From roadmap Phase 3, rate limits and exhausted quota advance too, with cooldown scoped to the credential. 401/403, context overflow, and protocol or projection errors do not advance. The content boundary and the non-API 2xx rule also land in Phase 3; today any published frame freezes and a non-API 2xx is a protocol error.
 - Publishing the first content frame freezes the candidate; handing over the body commits; completion requires strict upstream EOF and the final hand-off. Later errors can only abort the body: no splicing another attempt, no fabricated success terminal. Response headers, lifecycle-only frames and SSE comment keep-alives do not freeze the candidate.
 - Upstream SSE and downstream delivery are independent: JSON clients get a bounded aggregate, SSE clients get incremental delivery.
 - Bodies, frames, event counts and time are bounded. Client disconnect, timeout or shutdown cancels the upstream request.
@@ -142,11 +142,13 @@ When Chat Completions cannot carry a semantic such as reasoning, MorphieCore fol
 | Pure codecs and lowering | No network, credentials or registry; encode from the final IR, never patch JSON afterwards |
 | Layered capabilities | Semantic capability, wire representation, execution properties and downstream promises are declared separately; public capability is not the union of candidates |
 | Legal candidates, pre-content fallback | Compiled order by default; trusted runtime ordering within the legal set; see §5 |
+| Failover, not load balancing | A public model's bindings form a failover order. Runtime policy only skips cooling or excluded executors and keeps a conversation on its last honest executor for cache and account-bound thinking; no weights, rotation or load spreading |
+| Agents as oracles | Target agents' observed parsing, history and retry behavior at pinned revisions decide acceptance alongside the protocol schema |
 | Held streams | Follow the structure of Magpie's user-validated held-stream design: while another candidate could answer, hold until first content, keep clients alive with SSE comments, advance on pre-content errors. Decide on typed stream events and trusted bindings, not model-name or byte heuristics |
 | Lenient downstream fields | Unknown request fields are ignored and recorded; unknown discriminators are rejected |
 | Cross-target thinking as text | On a Provider or model switch, readable reasoning becomes plain assistant text in every turn; opaque values never cross |
 | Append-only projection | Earlier history projects byte-identically for a fixed target; see §4 |
-| Refusals are answers | A safety refusal is delivered by default and never retried on the same model or another credential of it. A route may opt in to retrying a pre-content refusal on a different model, which then stays sticky for the conversation, as Anthropic recommends. A refusal after content is an incomplete answer |
+| Refusals are answers | A safety refusal is delivered and never retried, on the same model or another; a refusal after content is an incomplete answer |
 | Non-API 2xx is a failure | Classified like a 5xx before content is published |
 | Target affinity binds the exact credential | The binding names Endpoint, credential identity and upstream model; a different credential is a different cache domain. API keys are identified by binding plus an in-memory material fingerprint, OAuth by verified principal, so key rotation drops the binding and token refresh keeps it |
 | Minimal HTTP gateway | Loopback listener, single Bearer ingress auth, no inbound header pass-through |
