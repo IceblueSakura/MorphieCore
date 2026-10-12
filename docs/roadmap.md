@@ -25,10 +25,6 @@ Failover routing is done (architecture §5). Not accepted: one bounded real fail
 
 Deferred until a real need: SSE keep-alive comments while frames are held (the hold stays far below Codex's 300 s idle timeout), executor affinity from the prefix index for requests without a declared conversation (all target agents declare one), an opt-in first-content timeout, per-message effort to keep the cache when clients change effort mid-conversation.
 
-## Current focus: Phase 4 acceptance
-
-Downstream Anthropic Messages is done (architecture §1). pi acceptance (development.md) passed through all three of its providers (`anthropic-messages`, `openai-completions`, `openai-responses`) against the native binding (`claude-haiku-5-5`) and an OpenAI-compatible one (`glm-5.3`): a read-tool loop with thinking requested. Not yet observed: a real thinking signature replayed across turns; Haiku chose not to think on the synthetic task even at pi's `high` level (synthetic tests cover the replay). Phase 4 closes once a task that makes the model think passes the same run.
-
 ## Later phases
 
 ### Phase 5 — Google generateContent upstream
