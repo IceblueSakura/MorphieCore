@@ -68,6 +68,9 @@ pub(crate) enum DecodeDirection<'a> {
     Encoded,
 }
 impl DecodeDirection<'_> {
+    pub(crate) fn client(self) -> bool {
+        matches!(self, Self::Client(_))
+    }
     pub(crate) fn fields(self, o: &Map<String, Value>, allowed: &[&str]) -> Result<(), CodecError> {
         match self {
             Self::Upstream => Ok(()),

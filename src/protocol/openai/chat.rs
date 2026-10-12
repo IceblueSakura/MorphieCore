@@ -511,27 +511,13 @@ pub(super) fn encode_items_with(
 ) -> Vec<Value> {
     let mut messages = Vec::<Value>::new();
     let mut standalone_calls = false;
-    let mut reasoning: Option<String> = None;
-    let mut details: Option<Vec<Value>> = None;
+    // Reasoning items wait for the message that carries them.
+    let mut reasoning: Vec<(ItemId, &ReasoningItem)> = vec![];
     for (id, item) in items {
         match item {
             Item::Reasoning(r) => {
-                // Chat carries readable reasoning text on its carrier message.
                 standalone_calls = false;
-                if structured
-                    && (r.replay.is_some()
-                        || r.parts
-                            .iter()
-                            .any(|(_, p)| matches!(p, ReasoningContent::Summary(_))))
-                {
-                    details = Some(super::chat_reasoning::wire(*id, r, fidelity));
-                    continue;
-                }
-                let text = match r.parts.as_slice() {
-                    [(_, ReasoningContent::Text(t))] if !t.as_str().is_empty() => t.as_str(),
-                    _ => unreachable!("lowering rejects non-Chat reasoning shapes"),
-                };
-                reasoning = Some(text.to_owned());
+                reasoning.push((*id, r));
             }
             Item::Instruction(i) => {
                 standalone_calls = false;
@@ -551,12 +537,12 @@ pub(super) fn encode_items_with(
                 standalone_calls = false;
                 let mut message =
                     json!({"role":if m.role == MessageRole::User { "user" } else { "assistant" }});
-                if let Some(text) = reasoning.take() {
-                    message["reasoning_content"] = json!(text);
-                }
-                if let Some(value) = details.take() {
-                    message["reasoning_details"] = json!(value);
-                }
+                super::chat_reasoning::write_carrier(
+                    &mut message,
+                    &std::mem::take(&mut reasoning),
+                    fidelity,
+                    structured,
+                );
                 let text_parts: Vec<_> = m
                     .parts
                     .iter()
@@ -626,9 +612,12 @@ pub(super) fn encode_items_with(
             Item::ToolCall(c) => {
                 if !owners.contains_key(id) && !standalone_calls {
                     let mut message = json!({"role":"assistant","content":null});
-                    if let Some(text) = reasoning.take() {
-                        message["reasoning_content"] = json!(text);
-                    }
+                    super::chat_reasoning::write_carrier(
+                        &mut message,
+                        &std::mem::take(&mut reasoning),
+                        fidelity,
+                        structured,
+                    );
                     messages.push(message);
                 }
                 let message = messages

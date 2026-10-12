@@ -702,26 +702,52 @@ impl EventEncoder {
         }
         super::super::chat_logprobs::carrier(p.kind, &probs)
     }
+    /// Position of a reasoning detail in the message: earlier items' parts and replay
+    /// values, then this item's parts before `part`, or all of them for its replay.
+    fn detail_index(&self, item: ItemId, part: Option<PartId>) -> Result<usize, CodecError> {
+        let mut index = 0;
+        for i in self.state()?.items() {
+            if !matches!(i.kind, ItemKind::Reasoning) {
+                continue;
+            }
+            if i.id == item {
+                return Ok(index
+                    + match part {
+                        Some(part) => i
+                            .parts
+                            .iter()
+                            .position(|p| p.id == part)
+                            .ok_or(CodecError::Invalid("part identity"))?,
+                        None => i.parts.len(),
+                    });
+            }
+            index += i.parts.len() + usize::from(i.replay.is_some());
+        }
+        Err(CodecError::Invalid("item identity"))
+    }
     pub(super) fn chat(
         &mut self,
         event: &StreamEvent,
         probabilities: Option<Value>,
     ) -> Result<Vec<Value>, CodecError> {
+        let structured = self.contract.adaptation.rules.structured_chat_reasoning;
         let mut chunks = match event {
             StreamEvent::Started=>vec![self.chunk(json!({"role":"assistant"}),Value::Null)],
             StreamEvent::AudioDelta{update,..}=>super::super::chat_audio::write_update(update,&mut self.chat_audio_pending).into_iter().map(|v|self.chunk(json!({"audio":v}),Value::Null)).collect(),
             StreamEvent::ItemStarted{item,kind:ItemKind::ToolCall{call_id,name,..},..}=>vec![self.chunk(json!({"tool_calls":[{"index":self.call_index(*item)?,"id":call_id.as_str(),"type":"function","function":{"name":name.as_str(),"arguments":""}}]}),Value::Null)],
             StreamEvent::PartStarted{kind:PartKind::Text,..}=>vec![self.chunk(json!({"content":""}),Value::Null)],
             StreamEvent::PartStarted{kind:PartKind::Refusal,..}=>vec![self.chunk(json!({"refusal":""}),Value::Null)],
-            StreamEvent::PartStarted{kind:PartKind::ReasoningText,..}=>vec![self.chunk(json!({"reasoning_content":""}),Value::Null)],
-            StreamEvent::PartStarted{kind:PartKind::Summary,..} if self.contract.adaptation.rules.structured_chat_reasoning => vec![self.chunk(json!({"reasoning_details":[{"type":"reasoning.summary","summary":"","format":"openai-responses-v1","index":0}]}),Value::Null)],
-            StreamEvent::ItemFinished{item,replay:Some(replay),..} if self.contract.adaptation.rules.structured_chat_reasoning => {
-                let state=self.state()?.item(*item)?;
+            // Some consumers open a reasoning block per delta, so no empty opener.
+            StreamEvent::ItemFinished{item,replay:Some(replay),..} if structured => {
                 let id=self.fidelity.response_item_id(*item).map(str::to_owned).unwrap_or_else(||crate::protocol::fidelity::generated_item_id(*item));
-                vec![self.chunk(json!({"reasoning_details":[{"type":"reasoning.encrypted","data":replay.value.as_str(),"format":"openai-responses-v1","index":state.parts.len(),"id":id}]}),Value::Null)]
+                vec![self.chunk(json!({"reasoning_details":[{"type":"reasoning.encrypted","data":replay.value.as_str(),"format":"openai-responses-v1","index":self.detail_index(*item,None)?,"id":id}]}),Value::Null)]
             }
             StreamEvent::Delta{item,part,fragment,..}=>{
-                let delta=match self.state()?.part(*item,*part)?.kind{PartKind::Text=>json!({"content":fragment}),PartKind::Refusal=>json!({"refusal":fragment}),PartKind::Arguments=>json!({"tool_calls":[{"index":self.call_index(*item)?,"function":{"arguments":fragment}}]}),PartKind::ReasoningText=>json!({"reasoning_content":fragment}),PartKind::Summary if self.contract.adaptation.rules.structured_chat_reasoning => json!({"reasoning_details":[{"type":"reasoning.summary","summary":fragment,"format":"openai-responses-v1","index":0}]}),_=>return Err(CodecError::Unsupported("Chat reasoning".into()))};vec![self.chunk(delta,Value::Null)]
+                // Readable deltas carry both the view and the detail, as the static message does.
+                let delta=match self.state()?.part(*item,*part)?.kind{PartKind::Text=>json!({"content":fragment}),PartKind::Refusal=>json!({"refusal":fragment}),PartKind::Arguments=>json!({"tool_calls":[{"index":self.call_index(*item)?,"function":{"arguments":fragment}}]}),
+                    PartKind::ReasoningText if !structured=>json!({"reasoning_content":fragment}),
+                    PartKind::ReasoningText=>json!({"reasoning_content":fragment,"reasoning_details":[{"type":"reasoning.text","text":fragment,"format":"openai-responses-v1","index":self.detail_index(*item,Some(*part))?}]}),
+                    PartKind::Summary if structured => json!({"reasoning_content":fragment,"reasoning_details":[{"type":"reasoning.summary","summary":fragment,"format":"openai-responses-v1","index":self.detail_index(*item,Some(*part))?}]}),_=>return Err(CodecError::Unsupported("Chat reasoning".into()))};vec![self.chunk(delta,Value::Null)]
             }
             StreamEvent::Terminal{..}=>{
                 let response=materialize(self.state()?)?;

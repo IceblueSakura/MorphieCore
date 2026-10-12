@@ -96,6 +96,7 @@ When Chat Completions cannot carry a semantic such as reasoning, MorphieCore fol
 
 - `reasoning` (readable text) and `reasoning_details` (ordered array) on the assistant `message` and stream `delta`. Elements have `type` `reasoning.text` (`text`, optional `signature`), `reasoning.summary` (`summary`) or `reasoning.encrypted` (`data`), plus shared `id`, `format` and `index`.
 - Signatures and encrypted payloads use the envelope above. Clients must return `reasoning_details` unchanged; the gateway restores or drops values by the rules above.
+- One assistant message carries the ordered reasoning items ahead of it. Each replay value closes its item, so adjacent items without values merge into one. Output indices are positions in the message; client input does not check index values or `format` labels, because pi merges streamed deltas of one type and keeps the first index. The readable view (`reasoning_content`) is the concatenation of the readable details, and each streamed readable delta carries both, with no empty opener.
 - Further extension fields are added one at a time and registered here. The old `_openbridge` attachment does not return.
 
 ## 5. Execution and delivery
@@ -113,7 +114,7 @@ When Chat Completions cannot carry a semantic such as reasoning, MorphieCore fol
 - Every native request carries top-level `cache_control: {"type": "ephemeral"}`, so the API places and advances the breakpoint, like OpenAI's implicit caching. Below the model's minimum prompt length nothing is cached. Breakpoints are placed by hand only if a relay rejects the field.
 - Stop reasons: `stop_sequence` completes the turn; `max_tokens` and `model_context_window_exceeded` are truncation; `refusal` is an incomplete answer with reason `content_filter`, so output before it is never presented as complete. `pause_turn` needs server tools and is rejected.
 - Native observations stay unchanged. Only the delivery copy drops container boundaries, serializes structured tool arguments to exact JSON strings, and expresses turn progress with OpenAI terminals and tool calls.
-- Chat JSON carries at most one leading thinking block, then text, then tool calls. Text after tools or interleaved thinking is rejected rather than reordered. Responses keeps independent item order.
+- Chat carries leading thinking blocks, then text, then tool calls. Text after tools or interleaved thinking is rejected rather than reordered. Responses keeps independent item order.
 - Cache-inclusive input and total are computed only when input, cache-read, cache-write and output are all reported; otherwise `usage` is `null`. Invalid or overflowing usage still fails.
 - The native protocol has no creation time. The OpenAI delivery copy fixes one when the gateway creates the delivery object, shared by all frames, and does not present it as upstream-reported.
 - Native SSE maps frame by frame to `StreamEvent`, reusing static stop/usage semantics and the target projection. Text, thinking and tool argument deltas stream; signature fragments do not, and the full payload is enveloped once the block closes and validates.

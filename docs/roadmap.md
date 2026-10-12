@@ -20,7 +20,6 @@ Goal: OpenAI clients, Codex first, use the native Messages binding (activated by
 Items in implementation order:
 
 1. **Chat vendor stream shapes.** Chat streams fail on known vendor shapes: a continuation `function.name: ""`, `finish_reason: ""`, `tool_calls: []` (opens the message owner early), and `finish_reason: "stop"` beside tool calls. Each becomes a named dialect rule, like `empty_continuation_call_id`, only when a bound upstream emits it. Frozen media decoders are not extended.
-2. **Chat reasoning carriers.** Model the `signature` of Chat `reasoning.text` details (rejected today) through the envelope. Carry multiple thinking blocks and interleaved thinking/text/tool order where the Chat shape allows it. Stop emitting the empty `reasoning_content: ""` opener; consumers treat each reasoning delta as a block boundary.
 
 Further trimming of diagnostics/billing switches and fidelity records is assessed with the affected modules, not as a prerequisite. `morphiecore-auth` stays independent.
 

@@ -710,7 +710,7 @@
         },
         "allOf": [{"if": {"required": ["top_logprobs"], "properties": {"top_logprobs": {"type": "integer"}}}, "then": {"required": ["logprobs"], "properties": {"logprobs": {"const": true}}}}],
         "additionalProperties": true,
-        "description": "Additional fields require admission by the Chat text profile and selected public contract; additionalProperties does not authorize arbitrary upstream parameters. Function-only tool_choice.allowed_tools uses the nested Chat shell. Named message-envelope projection may omit native container boundaries for standard Responses, preserving ordered items, raw arguments and call-result identity; necessary replay dependencies and unrepresentable values still fail before upstream I/O. MorphieCore's Chat extension admits scoped openai-responses-v1 reasoning_details on assistant history; preserve those actual output details for replay rather than treating them as ordinary assistant text."
+        "description": "Additional fields require admission by the Chat text profile and selected public contract; additionalProperties does not authorize arbitrary upstream parameters. Function-only tool_choice.allowed_tools uses the nested Chat shell. Named message-envelope projection may omit native container boundaries for standard Responses, preserving ordered items, raw arguments and call-result identity; necessary replay dependencies and unrepresentable values still fail before upstream I/O. MorphieCore's Chat extension admits OpenRouter-shaped reasoning_details on assistant history, including a signature on reasoning.text; return those details unchanged for replay rather than treating them as ordinary assistant text."
       },
       "ResponsesReasoningSummary": {
         "type": ["string", "null"],

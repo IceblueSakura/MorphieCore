@@ -569,12 +569,17 @@ fn represent_reasoning(
         && (controls.effort.is_absent() || !controls.summary.is_absent());
     if has_reasoning_items
         && profile != Profile::Responses
-        && !(profile == Profile::Chat && (chat_reasoning_shape(items)
+        && !(profile == Profile::Chat
+            && (chat_reasoning_shape(items)
+            // Structured details carry several items and parts ahead of one carrier.
             || structured_chat && items.iter().enumerate().all(|(n,(_,item))| match item {
-                Item::Reasoning(r) => r.parts.len() <= 1
-                    && !r.parts.iter().any(|(_,p)|matches!(p,ReasoningContent::Text(t) if t.as_str().is_empty()))
+                Item::Reasoning(r) => !r.parts.iter().any(|(_,p)|matches!(p,ReasoningContent::Text(t) if t.as_str().is_empty()))
                     && (!r.parts.is_empty() || r.replay.is_some())
-                    && matches!(items.get(n+1),Some((_,Item::Message(m))) if m.role==MessageRole::Assistant),
+                    && match items.get(n+1) {
+                        Some((_,Item::Reasoning(_))) => true,
+                        Some((_,Item::Message(m))) => m.role==MessageRole::Assistant,
+                        _ => false,
+                    },
                 _ => true,
             })))
     {
