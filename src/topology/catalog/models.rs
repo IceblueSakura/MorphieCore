@@ -173,6 +173,9 @@ pub fn contract(id: &str) -> GenerationSemanticContract {
         // Sources: MiniCPM-V docs/api.md and the Zhipu Chat reference (docs/refs/multimodal.md).
         video_input: matches!(id, "minicpm-v-4.6" | "glm-5.3-flash"),
         strict_tools: definition.strict_tools,
+        // Admission still needs the media kind's input. Only Responses carries tool
+        // media; Chat targets reject it until the roadmap's pending decision.
+        tool_result_media: true,
         ..GenerationSemanticContract::text_images()
     }
 }

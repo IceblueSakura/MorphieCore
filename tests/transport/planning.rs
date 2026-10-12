@@ -183,6 +183,39 @@ mod candidates {
             format!("google-{model}-interactions")
         );
     }
+    #[test]
+    fn responses_tool_images_need_an_image_model_and_a_responses_carrier() {
+        let topology = catalog::default_topology().unwrap();
+        let read = |model: &str| {
+            Adapter::new(Profile::Responses, Dialect::Standard, None)
+                .decode_client_request(
+                    &serde_json::to_vec(&json!({"model":model,
+                        "tools":[{"type":"function","name":"read","parameters":{"type":"object"}}],
+                        "input":[
+                            {"type":"function_call","call_id":"c","name":"read","arguments":"{}"},
+                            {"type":"function_call_output","call_id":"c","output":[
+                                {"type":"input_image","image_url":"data:image/png;base64,AQID"}]}]}))
+                    .unwrap(),
+                )
+                .unwrap()
+        };
+        let request = read("qwen3.8-max");
+        let public = topology.model("qwen3.8-max").unwrap();
+        morphiecore::execution::admit(public, &request).unwrap();
+        let representable = |protocol| {
+            topology
+                .route_endpoints(&public.route)
+                .into_iter()
+                .filter(|e| e.protocol == protocol)
+                .map(|e| morphiecore::execution::plan::representable(e, &request).is_ok())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(representable(ProtocolProfile::OpenAiResponses), [true]);
+        // Chat has no tool-result media carrier; see the roadmap's pending decisions.
+        assert_eq!(representable(ProtocolProfile::OpenAiChat), [false]);
+        let text_only = topology.model("qwen3.8-flash").unwrap();
+        assert!(morphiecore::execution::admit(text_only, &read("qwen3.8-flash")).is_err());
+    }
 }
 mod fallback_policy {
     //! Classification and commit/attempt budgets, not Provider quality, govern fallback.

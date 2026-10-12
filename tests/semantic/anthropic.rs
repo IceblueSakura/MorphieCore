@@ -487,7 +487,7 @@ mod anthropic_media {
                 needs.file_inputs,
                 needs.tool_result_media
             ),
-            (2, 2, 1)
+            (3, 2, 1)
         );
         let inputs: Vec<_> = semantic
             .items()

@@ -120,14 +120,13 @@ impl GenerationRequirements {
                                 };
                                 x.tool_result_media += 1;
                                 x.resource_count += 1;
-                                // Non-image tool media also needs the model's modality;
-                                // tool images predate this rule and need only the carrier.
+                                // Tool media also needs the model's input modality.
                                 match resource
                                     .media(r.resources())
                                     .expect("validated resource")
                                     .kind()
                                 {
-                                    ResourceKind::Image => {}
+                                    ResourceKind::Image => x.image_inputs += 1,
                                     ResourceKind::Audio => x.audio_inputs += 1,
                                     ResourceKind::Video => x.video_inputs += 1,
                                     ResourceKind::File => x.file_inputs += 1,

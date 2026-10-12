@@ -603,7 +603,13 @@ mod tool_results {
         .unwrap();
         let requirements = GenerationRequirements::derive(&history);
         assert_eq!(requirements.tool_result_media, 1);
-        assert_eq!(requirements.image_inputs, 0);
+        assert_eq!(requirements.image_inputs, 1);
+        let mut text_only = GenerationSemanticContract::full();
+        text_only.image_input = false;
+        assert_eq!(
+            text_only.check(&history),
+            Err(GenerationFeature::ImageInput)
+        );
         assert!(
             request(
                 ToolOutput::Parts(vec![
