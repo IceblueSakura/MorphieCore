@@ -883,6 +883,41 @@ mod function_events {
     }
 
     #[test]
+    fn function_done_supplies_missing_argument_suffix_but_never_rewrites() {
+        // Some Responses servers stream a call's arguments partly or not at all.
+        for (deltas, suffix) in [
+            (vec![], Some(r#"{"a":1}"#)),
+            (vec![r#"{"a":"#], Some("1}")),
+            (vec![r#"{"a":1}"#], None),
+            (vec!["{}"], None),
+        ] {
+            let mut decoder = EventDecoder::new(Profile::Responses);
+            decoder.push(&created()).unwrap();
+            decoder.push(&json!({"type":"response.output_item.added","output_index":0,"item":call_item("fc","c","","in_progress")})).unwrap();
+            for delta in &deltas {
+                decoder.push(&json!({"type":"response.function_call_arguments.delta","output_index":0,"item_id":"fc","delta":delta})).unwrap();
+            }
+            let done = decoder.push(&json!({"type":"response.function_call_arguments.done","output_index":0,"item_id":"fc","arguments":r#"{"a":1}"#}));
+            if deltas == ["{}"] {
+                assert!(done.is_err(), "a conflicting done is rejected");
+                continue;
+            }
+            let emitted: Vec<_> = done
+                .unwrap()
+                .into_iter()
+                .filter_map(|event| match event {
+                    StreamEvent::Delta { fragment, .. } => Some(fragment),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(
+                emitted,
+                suffix.into_iter().map(String::from).collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
     fn non_success_terminals_keep_partial_output_and_error_is_not_materializable() {
         for t in [
             StreamTerminal::Incomplete,

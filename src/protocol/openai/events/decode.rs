@@ -1007,12 +1007,33 @@ impl EventDecoder {
         {
             return Err(CodecError::Invalid("value domain"));
         }
-        let builder = self
+        let mut builder = self
             .state()?
             .part(item, part)?
             .value()
             .fragments()
-            .ok_or(CodecError::Invalid("value builder"))?;
+            .ok_or(CodecError::Invalid("value builder"))?
+            .to_owned();
+        // Some Responses servers stream a call's arguments partly or not at all
+        // and send them whole here; the missing suffix becomes the last delta.
+        // A done value that does not extend the deltas still conflicts.
+        if matches!(
+            kind,
+            PartKind::Arguments | PartKind::StructuredArguments | PartKind::CustomInput
+        ) && let Some(suffix) = string(o, key)?.strip_prefix(builder.as_str())
+            && !suffix.is_empty()
+        {
+            self.emit(
+                StreamEvent::Delta {
+                    item,
+                    part,
+                    fragment: suffix.into(),
+                    logprobs: vec![],
+                },
+                out,
+            )?;
+            builder = string(o, key)?.to_owned();
+        }
         let matches = if kind == PartKind::StructuredArguments {
             StructuredValue::from_bytes(string(o, key)?.as_bytes())?
                 == StructuredValue::from_bytes(builder.as_bytes())?

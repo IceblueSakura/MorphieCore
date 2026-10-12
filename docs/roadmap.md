@@ -25,7 +25,6 @@ An agent loop decides its next step from the error class, the terminal and its o
 
 - **Scenario fixtures.** One hand-written wire fixture per scenario per protocol, checked wire→IR and IR→wire against a synthetic upstream; pair-level tests only for pair-specific projection rules ([test rules](../AGENTS.md#tests)). Each SSE fixture is also fed in small fixed-size chunks. Consumer expectations come from pi (`openai-completions`, `openai-responses`) and opencode's own `@opencode/ai` protocols (`openai-chat`, `open-responses`; it no longer uses the AI SDK) at the revisions in [references](references.md). Scenarios:
   - Text, single and parallel tools, tool errors, reasoning replay, usage, truncation, each error class.
-  - Tool arguments: deltas equal to done; done without deltas; done extending the deltas (emit the suffix); conflicting done (reject).
   - Consumer shapes: a tool name only on the first fragment; no empty reasoning or tool-call deltas; null, empty and absent stay distinct.
 
 Exit: each error class reaches pi and Codex as the class they act on, in JSON and SSE; every scenario has an independent expectation per protocol; the SDK loopback gate passes.
