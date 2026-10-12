@@ -251,9 +251,12 @@ pub fn compile(
                 }
                 _ => None,
             };
+            // A skippable candidate may be narrower than the public contract: requests it
+            // cannot represent skip it, reducing failover rather than admission.
             if let Some(native) = native
                 && (!native.supports(endpoint.representation.semantics())
-                    || !native.supports(&model.contract)
+                    || route.policy.candidates == super::CandidatePolicy::RequireAll
+                        && !native.supports(&model.contract)
                     || model.standard_context)
             {
                 return Err(TopologyError::ContractUnsatisfiable);

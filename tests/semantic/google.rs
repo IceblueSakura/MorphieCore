@@ -217,3 +217,64 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
     let other = ReplayTarget::new("synthetic-google", "gemini-other").unwrap();
     assert!(encode_generation_request(&request, &observed.fidelity, &other).is_err());
 }
+
+fn client(profile: Profile, body: Value) -> Request {
+    Adapter::new(profile, Dialect::Standard, None)
+        .decode_request(body.to_string().as_bytes())
+        .unwrap()
+}
+
+#[test]
+fn user_media_become_inline_or_file_data_parts() {
+    let request = client(
+        Profile::Chat,
+        json!({"model":"gemini","messages":[{"role":"user","content":[
+            {"type":"image_url","image_url":{"url":"https://example.invalid/a.png"}},
+            {"type":"input_audio","input_audio":{"data":"AQID","format":"wav"}},
+            {"type":"video_url","video_url":{"url":"data:video/mp4;base64,BAUG"}},
+            {"type":"text","text":"Describe."}]}]}),
+    );
+    let (body, rules) =
+        encode_generation_request(&request.task.semantic, &request.task.fidelity, &target())
+            .unwrap();
+    assert_eq!(
+        body["contents"],
+        json!([{"role":"user","parts":[
+            {"fileData":{"fileUri":"https://example.invalid/a.png"}},
+            {"inlineData":{"mimeType":"audio/wav","data":"AQID"}},
+            {"inlineData":{"mimeType":"video/mp4","data":"BAUG"}},
+            {"text":"Describe."}]}])
+    );
+    assert!(rules.is_empty());
+}
+
+#[test]
+fn tool_media_ride_inline_in_the_function_response() {
+    let input = |image: &str| {
+        json!({"model":"gemini","input":[
+            {"type":"function_call","call_id":"c1","name":"shot","arguments":"{}"},
+            {"type":"function_call_output","call_id":"c1","output":[
+                {"type":"input_text","text":"screen"},
+                {"type":"input_image","image_url":image,"detail":"auto"}]}],
+            "tools":[{"type":"function","name":"shot","strict":false,"parameters":{"type":"object"}}]})
+    };
+    let request = client(Profile::Responses, input("data:image/png;base64,AQID"));
+    let (body, rules) =
+        encode_generation_request(&request.task.semantic, &request.task.fidelity, &target())
+            .unwrap();
+    assert_eq!(
+        body["contents"][1],
+        json!({"role":"user","parts":[{"functionResponse":{"id":"c1","name":"shot",
+            "response":{"output":"screen"},
+            "parts":[{"inlineData":{"mimeType":"image/png","data":"AQID"}}]}}]})
+    );
+    assert_eq!(
+        rules.iter().map(|r| r.name()).collect::<Vec<_>>(),
+        ["gemini.omit-media-options.v1"]
+    );
+    // FunctionResponsePart has no fileData.
+    let remote = client(Profile::Responses, input("https://example.invalid/a.png"));
+    assert!(
+        encode_generation_request(&remote.task.semantic, &remote.task.fidelity, &target()).is_err()
+    );
+}

@@ -290,3 +290,46 @@ fn rejects_unrepresentable_critical_tool_semantics() {
         .is_err()
     );
 }
+
+#[test]
+fn media_become_v1_content_and_video_has_no_carrier() {
+    let decode = |profile, body: serde_json::Value| {
+        Adapter::new(profile, Dialect::Standard, None)
+            .decode_request(body.to_string().as_bytes())
+            .unwrap()
+    };
+    let target = ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap();
+    let request = decode(
+        Profile::Responses,
+        json!({"model":"public","tools":[{"type":"function","name":"shot","strict":false,"parameters":{"type":"object"}}],
+            "input":[{"role":"user","content":[
+                {"type":"input_image","image_url":"https://example.invalid/a.png"},
+                {"type":"input_file","file_data":"data:application/pdf;base64,AQID","filename":"a.pdf"},
+                {"type":"input_text","text":"Compare."}]},
+            {"type":"function_call","call_id":"c1","name":"shot","arguments":"{}"},
+            {"type":"function_call_output","call_id":"c1","output":[
+                {"type":"input_image","image_url":"data:image/png;base64,BAUG"}]}]}),
+    );
+    let (wire, rules) =
+        encode_generation_request(&request.task.semantic, &request.task.fidelity, &target).unwrap();
+    assert_eq!(
+        wire["input"],
+        json!([
+            {"type":"user_input","content":[
+                {"type":"image","uri":"https://example.invalid/a.png"},
+                {"type":"document","data":"AQID","mime_type":"application/pdf"},
+                {"type":"text","text":"Compare."}]},
+            {"type":"function_call","id":"c1","name":"shot","arguments":{}},
+            {"type":"function_result","call_id":"c1","name":"shot","result":[
+                {"type":"image","data":"BAUG","mime_type":"image/png"}]}])
+    );
+    assert_eq!(rules, [RequestRule::OmitMediaOptions]);
+    let video = decode(
+        Profile::Chat,
+        json!({"model":"public","messages":[{"role":"user","content":[
+            {"type":"video_url","video_url":{"url":"https://example.invalid/a.mp4"}}]}]}),
+    );
+    assert!(
+        encode_generation_request(&video.task.semantic, &video.task.fidelity, &target).is_err()
+    );
+}

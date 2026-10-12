@@ -9,7 +9,7 @@ mod candidates {
             TrustedOrigin,
         },
         semantic::task::generation::ImageFormat,
-        topology::*,
+        topology::{catalog, *},
     };
     use serde_json::json;
     fn provider(id: &str) -> ProviderDefinition {
@@ -155,6 +155,32 @@ mod candidates {
                 std::iter::repeat_n(endpoint, 65)
             ),
             Err(morphiecore::execution::PlanError::CandidateLimit)
+        );
+    }
+    #[test]
+    fn a_narrower_native_candidate_is_skipped_not_admitted() {
+        let topology = catalog::default_topology().unwrap();
+        let model = catalog::GOOGLE_BINDINGS[0].model;
+        let video = Adapter::new(Profile::Chat, Dialect::Standard, None)
+            .decode_client_request(
+                &serde_json::to_vec(&json!({"model":model,"messages":[{"role":"user","content":[
+                    {"type":"video_url","video_url":{"url":"data:video/mp4;base64,AQID"}}]}]}))
+                .unwrap(),
+            )
+            .unwrap();
+        let plan = ExecutionPlan::for_request(&topology, &video).unwrap();
+        let ids = |c: &[morphiecore::execution::plan::CandidatePlan]| {
+            c.iter()
+                .map(|c| c.endpoint_id.as_str().to_owned())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            ids(&plan.candidates),
+            [format!("google-{model}-generate-content")]
+        );
+        assert_eq!(
+            plan.rejections[0].endpoint_id.as_str(),
+            format!("google-{model}-interactions")
         );
     }
 }

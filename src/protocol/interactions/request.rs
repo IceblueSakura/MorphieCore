@@ -21,6 +21,8 @@ pub enum RequestRule {
     DeveloperAsSystem,
     DefaultStrictAsPlain,
     OmitCacheKey,
+    /// Image detail, file detail and filename have no Interactions slot.
+    OmitMediaOptions,
 }
 impl RequestRule {
     pub const fn name(self) -> &'static str {
@@ -35,6 +37,7 @@ impl RequestRule {
             Self::DeveloperAsSystem => "interactions.developer-as-system.v1",
             Self::DefaultStrictAsPlain => "interactions.default-strict-as-plain.v1",
             Self::OmitCacheKey => "interactions.omit-cache-key.v1",
+            Self::OmitMediaOptions => "interactions.omit-media-options.v1",
         }
     }
 }
@@ -248,14 +251,14 @@ fn steps(
                     let content = m
                         .parts
                         .iter()
-                        .map(|p| {
-                            let ContentPart::Text(t) = &p.content else {
-                                return Err(unsupported());
-                            };
-                            if !t.is_plain() {
-                                return Err(unsupported());
+                        .map(|p| match &p.content {
+                            ContentPart::Text(t) if t.is_plain() => {
+                                Ok(json!({"type":"text","text":t.as_str()}))
                             }
-                            Ok(json!({"type":"text","text":t.as_str()}))
+                            ContentPart::Resource(r) if m.role == MessageRole::User => {
+                                media(r.media(request.resources())?, false, rules)
+                            }
+                            _ => Err(unsupported()),
                         })
                         .collect::<Result<Vec<_>, _>>()?;
                     let kind = match m.role {
@@ -356,9 +359,19 @@ fn steps(
                     }
                     let result = match &r.output {
                         ToolOutput::Text(t) => json!(t),
-                        ToolOutput::Parts(parts) => Value::Array(parts.iter().map(|(_, p)| {
-                            Ok(json!({"type":"text","text":p.as_text().ok_or_else(unsupported)?}))
-                        }).collect::<Result<_, CodecError>>()?),
+                        ToolOutput::Parts(parts) => Value::Array(
+                            parts
+                                .iter()
+                                .map(|(_, p)| match p {
+                                    ToolResultPart::Text(t) => {
+                                        Ok(json!({"type":"text","text":t.as_str()}))
+                                    }
+                                    ToolResultPart::Resource(r) => {
+                                        media(r.media(request.resources())?, true, rules)
+                                    }
+                                })
+                                .collect::<Result<_, CodecError>>()?,
+                        ),
                         ToolOutput::Structured(_) => return Err(unsupported()),
                     };
                     let name = request
@@ -391,4 +404,40 @@ fn steps(
         }
     }
     Ok(steps.into())
+}
+
+/// One inert resource as v1 content. v1 has no video content, and `function_result`
+/// carries only text and images. Source: docs/refs/multimodal.md.
+fn media(
+    resource: ResourceView<'_>,
+    tool: bool,
+    rules: &mut BTreeSet<RequestRule>,
+) -> Result<Value, CodecError> {
+    let kind = match resource.kind() {
+        ResourceKind::Image => "image",
+        ResourceKind::Audio if !tool => "audio",
+        ResourceKind::File if !tool => "document",
+        _ => return Err(unsupported()),
+    };
+    if match resource.description {
+        ResourceDescription::Image { detail } => detail.is_some(),
+        ResourceDescription::File(file) => file.filename.is_some() || file.detail.is_some(),
+        _ => false,
+    } {
+        rules.insert(RequestRule::OmitMediaOptions);
+    }
+    match resource.location {
+        ResourceLocation::Inline {
+            media_type,
+            data_base64,
+        } => {
+            if kind == "document" && !matches!(media_type.as_str(), "application/pdf" | "text/csv")
+            {
+                return Err(unsupported());
+            }
+            Ok(json!({"type":kind,"data":data_base64.as_str(),"mime_type":media_type.as_str()}))
+        }
+        ResourceLocation::Url(url) => Ok(json!({"type":kind,"uri":url.as_str()})),
+        _ => Err(unsupported()),
+    }
 }

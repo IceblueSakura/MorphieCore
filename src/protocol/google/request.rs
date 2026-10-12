@@ -36,6 +36,8 @@ pub enum RequestRule {
     OmitCacheKey,
     /// `functionResponse.response` holds one string; text parts are concatenated.
     JoinResultParts,
+    /// Image detail, file detail and filename have no Gemini slot.
+    OmitMediaOptions,
 }
 impl RequestRule {
     pub const fn name(self) -> &'static str {
@@ -51,6 +53,7 @@ impl RequestRule {
             Self::DefaultStrictAsPlain => "gemini.default-strict-as-plain.v1",
             Self::OmitCacheKey => "gemini.omit-cache-key.v1",
             Self::JoinResultParts => "gemini.join-result-parts.v1",
+            Self::OmitMediaOptions => "gemini.omit-media-options.v1",
         }
     }
 }
@@ -315,13 +318,13 @@ fn item_parts(
                 return Err(unsupported());
             }
             for p in &m.parts {
-                let ContentPart::Text(t) = &p.content else {
-                    return Err(unsupported());
-                };
-                if !t.is_plain() {
-                    return Err(unsupported());
+                match &p.content {
+                    ContentPart::Text(t) if t.is_plain() => parts.push(json!({"text": t.as_str()})),
+                    ContentPart::Resource(r) if m.role == MessageRole::User => {
+                        parts.push(media(r.media(request.resources())?, false, rules)?)
+                    }
+                    _ => return Err(unsupported()),
                 }
-                parts.push(json!({"text": t.as_str()}));
             }
         }
         Item::Reasoning(r) => {
@@ -415,15 +418,23 @@ fn item_parts(
                     return Err(unsupported());
                 }
             }
+            let mut media_parts = vec![];
             let output = match &r.output {
                 ToolOutput::Text(s) => s.clone(),
                 ToolOutput::Parts(list) => {
-                    if list.len() > 1 {
+                    let mut text = vec![];
+                    for (_, part) in list {
+                        match part {
+                            ToolResultPart::Text(t) => text.push(t.as_str()),
+                            ToolResultPart::Resource(r) => {
+                                media_parts.push(media(r.media(request.resources())?, true, rules)?)
+                            }
+                        }
+                    }
+                    if text.len() > 1 {
                         rules.insert(RequestRule::JoinResultParts);
                     }
-                    list.iter()
-                        .map(|(_, part)| part.as_text().ok_or_else(unsupported))
-                        .collect::<Result<String, _>>()?
+                    text.concat()
                 }
                 ToolOutput::Structured(_) => return Err(unsupported()),
             };
@@ -441,12 +452,42 @@ fn item_parts(
             } else {
                 "output"
             };
-            parts.push(json!({"functionResponse": {
-                "id": r.call_id.as_str(), "name": name, "response": {key: output}}}));
+            let mut response = json!({
+                "id": r.call_id.as_str(), "name": name, "response": {key: output}});
+            if !media_parts.is_empty() {
+                response["parts"] = media_parts.into();
+            }
+            parts.push(json!({"functionResponse": response}));
         }
         _ => return Err(unsupported()),
     }
     Ok(())
+}
+
+/// One inert resource as `inlineData` or, outside tool results, `fileData`. Tool results
+/// carry only `inlineData` (`FunctionResponsePart`). `mimeType` is optional for `fileData`.
+/// Source: docs/refs/multimodal.md.
+fn media(
+    resource: ResourceView<'_>,
+    tool: bool,
+    rules: &mut BTreeSet<RequestRule>,
+) -> Result<Value, CodecError> {
+    if match resource.description {
+        ResourceDescription::Image { detail } => detail.is_some(),
+        ResourceDescription::File(file) => file.filename.is_some() || file.detail.is_some(),
+        _ => false,
+    } {
+        rules.insert(RequestRule::OmitMediaOptions);
+    }
+    match resource.location {
+        ResourceLocation::Inline {
+            media_type,
+            data_base64,
+        } => Ok(json!({"inlineData": {
+            "mimeType": media_type.as_str(), "data": data_base64.as_str()}})),
+        ResourceLocation::Url(url) if !tool => Ok(json!({"fileData": {"fileUri": url.as_str()}})),
+        _ => Err(unsupported()),
+    }
 }
 
 /// Restores a signature onto the part it was issued with, independent of item order.
