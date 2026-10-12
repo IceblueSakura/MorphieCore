@@ -359,7 +359,7 @@ mod chat_media {
         use morphiecore::{protocol::openai::events::EventEncoder, semantic::value::Text};
         let t = |s: &str| Text::new(s, "synthetic", 1024).unwrap();
         let meta = morphiecore::protocol::ResponseMetadata {
-            id: "r".into(),
+            id: Some("r".into()),
             model: "synthetic".into(),
             created: Some(1.into()),
             context: Default::default(),

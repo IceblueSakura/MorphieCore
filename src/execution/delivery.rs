@@ -43,6 +43,15 @@ enum Encoder {
     Messages(crate::protocol::anthropic::client_events::ClientEventEncoder),
 }
 
+fn response_id() -> Result<String, AttemptError> {
+    let mut bytes = [0; 16];
+    getrandom::fill(&mut bytes).map_err(|_| AttemptError::Protocol("entropy"))?;
+    Ok(format!(
+        "resp_{}",
+        bytes.iter().map(|b| format!("{b:02x}")).collect::<String>()
+    ))
+}
+
 pub struct ResponseDelivery {
     adapter: Adapter,
     contract: TargetCaps,
@@ -57,6 +66,8 @@ pub struct ResponseDelivery {
     terminal: bool,
     rejected: bool,
     native_created: Option<serde_json::Number>,
+    /// Request-local envelope identity, never stored as upstream metadata or history.
+    generated_id: Option<String>,
     native_projection: Option<crate::protocol::openai::lowering::native_messages::EventProjection>,
     /// Encode for an Anthropic Messages client instead of the OpenAI adapter.
     messages: bool,
@@ -92,6 +103,7 @@ impl ResponseDelivery {
                 .ok()
                 .map(|time| time.as_secs().into()),
             native_projection: None,
+            generated_id: None,
             messages: false,
         }
     }
@@ -118,6 +130,13 @@ impl ResponseDelivery {
             return Err(AttemptError::Delivery("attempt changed"));
         }
         self.source = Some(attempt.identity().clone());
+        if self.generated_id.is_none()
+            && attempt
+                .metadata()
+                .is_some_and(|metadata| metadata.id.is_none())
+        {
+            self.generated_id = Some(response_id()?);
+        }
         Ok(())
     }
     fn metadata(&self, attempt: &Attempt) -> Result<ResponseMetadata, AttemptError> {
@@ -126,6 +145,13 @@ impl ResponseDelivery {
             .cloned()
             .ok_or(AttemptError::Protocol("missing response metadata"))?;
         metadata.model = self.public_label.clone();
+        if metadata.id.is_none() {
+            metadata.id = Some(
+                self.generated_id
+                    .clone()
+                    .ok_or(AttemptError::Delivery("missing delivery identity"))?,
+            );
+        }
         if attempt.is_native() {
             // This is the Gateway envelope's creation time, not an upstream report.
             metadata.created = Some(
@@ -161,7 +187,11 @@ impl ResponseDelivery {
                 if decoded.fidelity.response_item_id(*owner).is_none() {
                     decoded.fidelity.record_response_item_id(
                         *owner,
-                        &delivery_item_id(&self.public_label, &decoded.metadata.id, *owner),
+                        &delivery_item_id(
+                            &self.public_label,
+                            decoded.metadata.required_id()?,
+                            *owner,
+                        ),
                     )?;
                 }
             }
@@ -294,13 +324,11 @@ impl ResponseDelivery {
         self.bind(attempt)?;
         if self.messages {
             let metadata = self.metadata(attempt)?;
+            let id = metadata.required_id()?;
             let label = self.public_label.clone();
             let Encoder::Messages(encoder) = self.encoder.get_or_insert_with(|| {
                 Encoder::Messages(
-                    crate::protocol::anthropic::client_events::ClientEventEncoder::new(
-                        &metadata.id,
-                        &label,
-                    ),
+                    crate::protocol::anthropic::client_events::ClientEventEncoder::new(id, &label),
                 )
             }) else {
                 return Err(AttemptError::Delivery("profile mismatch"));
@@ -362,7 +390,7 @@ impl ResponseDelivery {
                 {
                     source.to_mut().record_response_item_id(
                         *item,
-                        &delivery_item_id(&self.public_label, &metadata.id, *item),
+                        &delivery_item_id(&self.public_label, metadata.required_id()?, *item),
                     )?;
                 }
             }
@@ -432,13 +460,8 @@ impl ResponseDelivery {
             let frames = match self.encoder.as_mut() {
                 Some(Encoder::Responses(encoder)) => encoder.encode(&failed, &source)?,
                 None => {
-                    let mut id = [0; 16];
-                    getrandom::fill(&mut id).map_err(|_| AttemptError::Protocol("entropy"))?;
                     let metadata = ResponseMetadata {
-                        id: format!(
-                            "resp_{}",
-                            id.iter().map(|b| format!("{b:02x}")).collect::<String>()
-                        ),
+                        id: Some(response_id()?),
                         model: self.public_label.clone(),
                         created: self.native_created.clone(),
                         context: Default::default(),

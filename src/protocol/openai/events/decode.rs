@@ -226,11 +226,11 @@ impl EventDecoder {
                     .is_some_and(|t| t != StreamTerminal::Error)
             {
                 let semantic = materialize(self.state()?)?;
-                let id = &self
+                let id = self
                     .metadata
                     .as_ref()
                     .ok_or(CodecError::Invalid("metadata"))?
-                    .id;
+                    .required_id()?;
                 self.fidelity.capture_routing_extras(
                     self.profile,
                     &self.adaptation,
@@ -278,11 +278,11 @@ impl EventDecoder {
             self.emit(StreamEvent::Terminal { terminal, details }, &mut out)?;
             if !self.chat_extras.is_empty() {
                 let semantic = materialize(self.state()?)?;
-                let id = &self
+                let id = self
                     .metadata
                     .as_ref()
                     .ok_or(CodecError::Invalid("metadata"))?
-                    .id;
+                    .required_id()?;
                 self.fidelity.capture_routing_extras(
                     self.profile,
                     &self.adaptation,

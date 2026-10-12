@@ -33,7 +33,7 @@ Until a real need: SSE keep-alive comments while frames are held (the hold stays
 
 Target: `gemini-3.8-flash` on Google AI Studio gets Interactions v1 as a second binding, after generateContent in failover order. Gemini 3 only, so call IDs are always present; a missing ID is a protocol error and the gateway mints none.
 
-Next slice: bounded step-stream intake and binding integration. First resolve absent upstream response IDs: stateless recordings omit `interaction.id`, while `ResponseMetadata` currently requires one. Keep upstream identity distinct from the gateway's downstream envelope identity. Verify the versioned path, signature replay and truncation against the real upstream only after the minimal gateway path works; recordings are evidence, not proof of current service behavior.
+Next slice: bounded step-stream intake and binding integration. Verify the versioned path, signature replay and truncation against the real upstream only after the minimal gateway path works; recordings are evidence, not proof of current service behavior.
 
 - Stateless: `POST /v1/interactions` with `store: false`, no `previous_interaction_id`, full history as steps, always streamed.
 - `thought` steps map to reasoning items with `GoogleInteractionsV1Thought` values; `function_call` and `function_result` steps to calls and results.

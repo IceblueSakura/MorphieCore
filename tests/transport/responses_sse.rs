@@ -251,7 +251,7 @@ fn rejected_metadata_update_poisoned_stream_cannot_emit_success() {
     )
     .unwrap();
     let mut changed = metadata;
-    changed.id = "different-response".into();
+    changed.id = Some("different-response".into());
     assert!(encoder.update_metadata(changed).is_err());
     assert!(
         encoder

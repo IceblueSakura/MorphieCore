@@ -277,7 +277,7 @@ impl Profile {
             return Err(unsupported());
         }
         self.encode_response(&super::Message {
-            id: response.metadata.id.clone(),
+            id: response.metadata.required_id()?.into(),
             model: target.model().into(),
             content,
             stop_reason: Presence::Value(stop_reason),

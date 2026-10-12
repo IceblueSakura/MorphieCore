@@ -212,9 +212,11 @@ impl GenerationSseDecoder {
         }
         if self.metadata.is_none() {
             let metadata = ResponseMetadata {
-                id: string(o, "responseId")?
-                    .ok_or_else(|| invalid("responseId"))?
-                    .into(),
+                id: Some(
+                    string(o, "responseId")?
+                        .ok_or_else(|| invalid("responseId"))?
+                        .into(),
+                ),
                 model: string(o, "modelVersion")?
                     .ok_or_else(|| invalid("modelVersion"))?
                     .into(),

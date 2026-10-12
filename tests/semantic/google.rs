@@ -73,7 +73,7 @@ fn signature(item: &Item) -> Value {
 #[test]
 fn stream_maps_thoughts_text_calls_and_anchored_signatures() {
     let observed = decode(&wire(&frames())).unwrap();
-    assert_eq!(observed.metadata.id, "resp-1");
+    assert_eq!(observed.metadata.id.as_deref(), Some("resp-1"));
     assert_eq!(observed.metadata.created, None);
     let items = observed.semantic.items();
     assert_eq!(items.len(), 5);

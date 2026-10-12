@@ -312,7 +312,7 @@ pub fn encode_client_response(
         _ => return Err(CodecError::Unsupported("Messages terminal".into())),
     };
     let mut v = Map::new();
-    v.insert("id".into(), json!(response.metadata.id));
+    v.insert("id".into(), json!(response.metadata.required_id()?));
     v.insert("type".into(), json!("message"));
     v.insert("role".into(), json!("assistant"));
     v.insert("model".into(), json!(model));

@@ -46,7 +46,7 @@ pub(super) fn metadata(
         super::chat_envelope::validate_context(&context.execution)?;
     }
     Ok(ResponseMetadata {
-        id,
+        id: Some(id),
         model,
         created: Some(created),
         context,
@@ -455,7 +455,7 @@ pub(crate) fn decode_chat_with(
         adaptation,
         extras,
         &semantic,
-        &metadata.id,
+        metadata.required_id()?,
     )?;
     Ok(DecodedResponse {
         semantic,
@@ -520,7 +520,7 @@ pub(crate) fn decode_responses_with(
         adaptation,
         extras,
         &semantic,
-        &metadata.id,
+        metadata.required_id()?,
     )?;
     Ok(DecodedResponse {
         semantic,
@@ -611,7 +611,7 @@ pub fn encode_chat(target: &ResponseRepresentation<'_>) -> Result<Value, CodecEr
         target.profile,
         &target.adaptation,
         &target.semantic,
-        &target.metadata.id,
+        target.metadata.required_id()?,
         value.as_object_mut().expect("object"),
     );
     bounded(&value)?;
@@ -669,7 +669,7 @@ pub fn encode_responses(target: &ResponseRepresentation<'_>) -> Result<Value, Co
         target.profile,
         &target.adaptation,
         &target.semantic,
-        &target.metadata.id,
+        target.metadata.required_id()?,
         value.as_object_mut().expect("object"),
     );
     if target.semantic.details().error.is_some() {

@@ -342,7 +342,7 @@ impl Message {
     pub fn reported_metadata(&self) -> Result<crate::protocol::ResponseMetadata, CodecError> {
         self.validate(false)?;
         let metadata = crate::protocol::ResponseMetadata {
-            id: self.id.clone(),
+            id: Some(self.id.clone()),
             model: self.model.clone(),
             created: None,
             context: Default::default(),

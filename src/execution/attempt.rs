@@ -425,3 +425,100 @@ impl Attempt {
         self.terminal = None;
     }
 }
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+    use crate::{
+        execution::ResponseDelivery,
+        protocol::{
+            native::ReplayTarget,
+            openai::{Adapter, Dialect, TargetCaps, sse::Obfuscation},
+        },
+        semantic::context::StreamOptions,
+    };
+    use serde_json::{Value, json};
+
+    #[test]
+    fn absent_upstream_id_is_filled_only_on_the_stable_delivery_copy() {
+        let mut attempt = Attempt::new(
+            UpstreamAdapter::GoogleGenerateContent {
+                target: ReplayTarget::new("synthetic", "model").unwrap(),
+            },
+            4096,
+            SseLimits::default(),
+        );
+        attempt.begin(200, "text/event-stream").unwrap();
+        let wire = format!(
+            "data: {}\n\n",
+            json!({
+                "responseId":"reported","modelVersion":"model",
+                "candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}]
+            })
+        );
+        let (_, events) = attempt.push(wire.as_bytes()).unwrap();
+        attempt.finish().unwrap();
+        // Simulate a protocol that does not report response identity.
+        attempt.decoded.as_mut().unwrap().metadata.id = None;
+        let observed = attempt.response().unwrap().clone();
+        let delivery = || {
+            ResponseDelivery::new(
+                Adapter::new(Profile::Responses, Dialect::MorphieCore, None),
+                TargetCaps::full(),
+                "public",
+                SseLimits::default(),
+                StreamOptions::default(),
+                Obfuscation::Disabled,
+            )
+        };
+        let mut stream = delivery();
+        let mut frames = stream.encode_events(&attempt, &events).unwrap();
+        frames.extend(stream.finish_stream(&attempt).unwrap());
+        let wire = String::from_utf8(frames.into_iter().flatten().collect()).unwrap();
+        let responses: Vec<Value> = wire
+            .lines()
+            .filter_map(|line| {
+                line.strip_prefix("data: ")
+                    .and_then(|s| serde_json::from_str::<Value>(s).ok())
+                    .and_then(|v| v.get("response").cloned())
+            })
+            .collect();
+        assert!(responses.len() >= 2);
+        let id = responses[0]["id"].as_str().unwrap();
+        assert!(id.starts_with("resp_"));
+        assert!(responses.iter().all(|r| r["id"] == id));
+        let mut json_delivery = delivery();
+        let body: Value =
+            serde_json::from_slice(&json_delivery.encode_json(&attempt).unwrap()).unwrap();
+        assert!(body["id"].as_str().unwrap().starts_with("resp_"));
+        assert_ne!(body["id"], id);
+        assert_eq!(attempt.response().unwrap(), &observed);
+        assert!(observed.metadata.id.is_none());
+        assert!(observed.metadata.created.is_none());
+        observed.metadata.validate().unwrap();
+        let mut without_id = observed.metadata.clone();
+        without_id.created = Some(1.into());
+        assert!(
+            crate::protocol::openai::events::EventEncoder::new(Profile::Responses, without_id,)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn required_native_wire_id_is_not_repaired_by_delivery() {
+        let mut attempt = Attempt::new(
+            UpstreamAdapter::GoogleGenerateContent {
+                target: ReplayTarget::new("synthetic", "model").unwrap(),
+            },
+            4096,
+            SseLimits::default(),
+        );
+        attempt.begin(200, "text/event-stream").unwrap();
+        assert!(
+            attempt
+                .push(b"data: {\"modelVersion\":\"model\"}\n\n")
+                .is_err()
+        );
+        assert!(attempt.finish().is_err());
+    }
+}

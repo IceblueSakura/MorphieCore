@@ -762,7 +762,7 @@ impl EventEncoder {
                     };
                     v["usage"]=super::super::static_response::encode_usage(usage,Profile::Chat,&self.contract.adaptation.rules);chunks.push(v);
                 }
-                super::super::envelope::write_response_extras(&self.fidelity,Profile::Chat,&self.contract.adaptation,target.semantic(),&self.metadata.id,chunks.last_mut().expect("terminal chunk").as_object_mut().expect("object"));
+                super::super::envelope::write_response_extras(&self.fidelity,Profile::Chat,&self.contract.adaptation,target.semantic(),self.metadata.required_id()?,chunks.last_mut().expect("terminal chunk").as_object_mut().expect("object"));
                 let mut stages=target.projection().to_vec();
                 for stage in &mut stages {
                     stage.direction=crate::protocol::openai::lowering::projection::ProjectionDirection::Event;

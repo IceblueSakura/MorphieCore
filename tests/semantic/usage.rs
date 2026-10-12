@@ -702,7 +702,7 @@ mod projection {
             .unwrap();
             let wire = responses::encode_response(&projected).unwrap();
             assert!(wire.get("system_fingerprint").is_none());
-            assert_eq!(wire["id"], meta.id);
+            assert_eq!(wire["id"].as_str(), meta.id.as_deref());
             assert_eq!(meta, original);
             assert_eq!(
                 projected

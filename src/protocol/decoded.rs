@@ -18,7 +18,8 @@ pub struct DecodedResponse {
 /// Envelope identity is not a task instruction or a routing input.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ResponseMetadata {
-    pub id: String,
+    /// Unreported upstream identity stays absent. Delivery may fill its own copy.
+    pub id: Option<String>,
     pub model: String,
     /// Decoders keep an unreported timestamp absent. Delivery may explicitly
     /// assign its own creation time on a separate downstream envelope copy.
@@ -28,11 +29,20 @@ pub struct ResponseMetadata {
     pub instruction_fidelity: FidelityRecords,
 }
 impl ResponseMetadata {
+    /// Wire encoders require an identity; they never generate one.
+    pub(crate) fn required_id(&self) -> Result<&str, CodecError> {
+        self.id
+            .as_deref()
+            .filter(|id| !id.is_empty() && id.len() <= 256)
+            .ok_or(CodecError::Invalid("response id"))
+    }
     /// Validate shared facts without imposing a wire family's required fields.
     pub fn validate(&self) -> Result<(), CodecError> {
-        if self.id.is_empty()
+        if self
+            .id
+            .as_ref()
+            .is_some_and(|id| id.is_empty() || id.len() > 256)
             || self.model.is_empty()
-            || self.id.len() > 256
             || self.model.len() > 256
         {
             return Err(CodecError::Invalid("metadata"));

@@ -479,6 +479,7 @@ impl EventEncoder {
     }
 }
 fn validate_metadata(profile: Profile, metadata: &ResponseMetadata) -> Result<(), CodecError> {
+    metadata.required_id()?;
     let created = metadata
         .created
         .as_ref()
