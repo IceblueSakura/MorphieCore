@@ -86,6 +86,18 @@ async fn produce(
         .map_err(|_| ApiError::upstream())?;
     Ok(())
 }
+/// Error bodies are read for classification only, within the attempt deadline.
+async fn error_body(mut upstream: reqwest::Response) -> Vec<u8> {
+    const LIMIT: usize = 16 << 10;
+    let mut body = vec![];
+    while let Ok(Some(chunk)) = upstream.chunk().await {
+        if body.len() + chunk.len() > LIMIT {
+            return vec![];
+        }
+        body.extend_from_slice(&chunk);
+    }
+    body
+}
 pub(super) async fn produce_candidate(
     entry: &BoundEntry,
     candidate: &BoundCandidate,
@@ -99,7 +111,15 @@ pub(super) async fn produce_candidate(
     let status = upstream.status().as_u16();
     trace.head(status, upstream.headers());
     if !(200..300).contains(&status) {
-        return Err(ApiError::status(status));
+        if !(400..600).contains(&status) {
+            return Err(ApiError::status(status));
+        }
+        let retry_after = super::error::retry_after(upstream.headers());
+        return Err(ApiError::failure(
+            status,
+            &error_body(upstream).await,
+            retry_after,
+        ));
     }
     let mut content_types = upstream.headers().get_all("content-type").iter();
     let content_type = match (content_types.next(), content_types.next()) {

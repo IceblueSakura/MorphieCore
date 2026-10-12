@@ -19,8 +19,8 @@ async fn same_provider_fallback_is_ordered_bounded_and_never_crosses_publication
     for (status, stream, enabled, cap, expected_calls, expected_status) in [
         (503, false, true, 2, vec!["first", "second"], 200),
         (0, false, true, 2, vec!["second"], 200),
-        (503, false, false, 2, vec!["first"], 502),
-        (503, false, true, 1, vec!["first"], 502),
+        (503, false, false, 2, vec!["first"], 503),
+        (503, false, true, 1, vec!["first"], 503),
         (401, false, true, 2, vec!["first"], 502),
         (403, false, true, 2, vec!["first"], 502),
         (429, false, true, 2, vec!["first"], 429),

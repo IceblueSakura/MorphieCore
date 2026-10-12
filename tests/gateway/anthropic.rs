@@ -429,7 +429,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             }
             input["stream"] = json!(false);
             for (prompt, expected) in [
-                ("upstream-error", 502),
+                ("upstream-error", 503),
                 ("malformed", 502),
                 ("bad-signature", 502),
                 ("unknown-usage", 200),

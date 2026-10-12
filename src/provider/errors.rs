@@ -40,6 +40,72 @@ pub fn classify_status(status: u16) -> StatusClass {
     }
 }
 
+/// What an agent loop does next with a failed turn: compact, stop, wait or retry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FailureKind {
+    ContextOverflow,
+    Quota,
+    RateLimit,
+    Overloaded,
+    Other,
+}
+
+// Lowercase fragments of bound Providers' error codes, types and messages; the
+// same fragments pi (`utils/overflow.ts`, `utils/retry.ts`) and opencode match.
+const OVERFLOW: &[&str] = &[
+    "context_length_exceeded",
+    "context length exceeded",
+    "exceeds the context window",
+    "maximum context length",
+    "context window exceeds limit",
+    "model_context_window_exceeded",
+    "prompt is too long",
+    "prompt too long",
+    "request_too_large",
+    "input is too long",
+    "maximum prompt length",
+    "exceeded model token limit",
+    "range of input length should be",
+];
+const QUOTA: &[&str] = &[
+    "insufficient_quota",
+    "quota exceeded",
+    "billing",
+    "credit balance",
+    "insufficient balance",
+    // OpenCode Go and Zen subscription limits (`GoUsageLimitError`).
+    "usagelimiterror",
+];
+
+/// Classify a failed upstream reply from its status and the `code`, `type` and
+/// `message` of an OpenAI-compatible or Anthropic error body. Overflow wording
+/// counts only on request errors, so throttling text never reads as overflow.
+pub fn classify_failure(status: u16, body: &[u8]) -> FailureKind {
+    let value: serde_json::Value = serde_json::from_slice(body).unwrap_or_default();
+    let error = match value.get("error") {
+        Some(serde_json::Value::String(message)) => serde_json::json!({ "message": message }),
+        Some(error) => error.clone(),
+        // vLLM-style servers report the fields at the top level.
+        None => value,
+    };
+    let text = ["code", "type", "message"]
+        .iter()
+        .filter_map(|key| error.get(key).and_then(serde_json::Value::as_str))
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+    let has = |fragments: &[&str]| fragments.iter().any(|f| text.contains(f));
+    match status {
+        402 => FailureKind::Quota,
+        400..=499 if has(QUOTA) => FailureKind::Quota,
+        429 => FailureKind::RateLimit,
+        400 | 413 | 422 if has(OVERFLOW) => FailureKind::ContextOverflow,
+        503 | 529 => FailureKind::Overloaded,
+        500..=599 if has(&["overloaded"]) => FailureKind::Overloaded,
+        _ => FailureKind::Other,
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ProviderError {
     #[error("invalid provider identity")]

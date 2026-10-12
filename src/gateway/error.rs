@@ -11,6 +11,8 @@ pub(super) struct ApiError {
     pub code: &'static str,
     /// Execution-only classification; never part of the downstream error body.
     pub fallback: Option<crate::provider::ErrorClass>,
+    /// Upstream-reported reset in seconds, sent as `Retry-After` on rate limits.
+    pub retry_after: Option<u64>,
 }
 impl ApiError {
     pub const fn new(status: StatusCode, code: &'static str) -> Self {
@@ -18,6 +20,7 @@ impl ApiError {
             status,
             code,
             fallback: None,
+            retry_after: None,
         }
     }
     pub const fn invalid() -> Self {
@@ -45,10 +48,24 @@ impl ApiError {
         error
     }
     pub fn status(status: u16) -> Self {
-        let mut error = if status == 429 {
-            Self::new(StatusCode::TOO_MANY_REQUESTS, "upstream_rate_limit")
-        } else {
-            Self::upstream()
+        Self::failure(status, b"", None)
+    }
+    /// A failed upstream reply, rendered as the class agents act on (roadmap Phase 2).
+    pub fn failure(status: u16, body: &[u8], retry_after: Option<u64>) -> Self {
+        use crate::provider::FailureKind;
+        let mut error = match crate::provider::classify_failure(status, body) {
+            FailureKind::ContextOverflow => {
+                Self::new(StatusCode::BAD_REQUEST, "context_length_exceeded")
+            }
+            FailureKind::Quota => Self::new(StatusCode::TOO_MANY_REQUESTS, "insufficient_quota"),
+            FailureKind::RateLimit => Self {
+                retry_after,
+                ..Self::new(StatusCode::TOO_MANY_REQUESTS, "rate_limit_exceeded")
+            },
+            FailureKind::Overloaded => {
+                Self::new(StatusCode::SERVICE_UNAVAILABLE, "server_is_overloaded")
+            }
+            FailureKind::Other => Self::upstream(),
         };
         if let crate::provider::StatusClass::Failure(class) =
             crate::provider::classify_status(status)
@@ -60,12 +77,43 @@ impl ApiError {
 }
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        let kind = if self.status.is_client_error() {
-            "invalid_request_error"
-        } else {
-            "api_error"
+        // OpenAI's codes and wording; pi matches the message, opencode the body.
+        let (kind, message) = match self.code {
+            "context_length_exceeded" => (
+                "invalid_request_error",
+                "Your input exceeds the context window of this model. Please adjust your input and try again.".into(),
+            ),
+            "insufficient_quota" => (
+                "insufficient_quota",
+                "The upstream quota is exhausted; check the plan and billing details.".into(),
+            ),
+            "rate_limit_exceeded" => (
+                "rate_limit_error",
+                match self.retry_after {
+                    Some(seconds) => format!("Rate limit reached. Please try again in {seconds}s."),
+                    None => "Rate limit reached. Please try again later.".into(),
+                },
+            ),
+            "server_is_overloaded" => (
+                "server_error",
+                "The upstream is overloaded. Please retry your request.".into(),
+            ),
+            _ if self.status.is_client_error() => (
+                "invalid_request_error",
+                "The request could not be completed.".into(),
+            ),
+            _ => ("api_error", "The request could not be completed.".to_string()),
         };
-        let mut response=(self.status,Json(json!({"error":{"message":"The request could not be completed.","type":kind,"param":null,"code":self.code}}))).into_response();
+        let mut response = (
+            self.status,
+            Json(json!({"error":{"message":message,"type":kind,"param":null,"code":self.code}})),
+        )
+            .into_response();
+        if let Some(seconds) = self.retry_after {
+            response
+                .headers_mut()
+                .insert("retry-after", axum::http::HeaderValue::from(seconds));
+        }
         response.headers_mut().insert(
             "cache-control",
             axum::http::HeaderValue::from_static("no-store"),
@@ -78,4 +126,23 @@ impl IntoResponse for ApiError {
         }
         response
     }
+}
+/// Upstream `Retry-After` in seconds (delta or HTTP date), at most one day.
+pub(super) fn retry_after(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    headers
+        .get("retry-after")
+        .and_then(|v| v.to_str().ok())
+        .filter(|v| !v.is_empty() && v.len() <= 128)
+        .and_then(|v| {
+            if v.len() <= 5 && v.bytes().all(|b| b.is_ascii_digit()) {
+                v.parse::<u64>().ok()
+            } else {
+                httpdate::parse_http_date(v).ok().map(|date| {
+                    date.duration_since(std::time::SystemTime::now())
+                        .unwrap_or_default()
+                        .as_secs()
+                })
+            }
+        })
+        .filter(|n| *n <= 86400)
 }

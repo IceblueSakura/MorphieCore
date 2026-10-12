@@ -323,22 +323,7 @@ impl Trace {
         self.record.upstream_status = Some(status);
         self.record.upstream_head_ms =
             Some(self.start.elapsed().as_millis().min(u64::MAX as u128) as u64);
-        self.record.retry_after_seconds = headers
-            .get("retry-after")
-            .and_then(|v| v.to_str().ok())
-            .filter(|v| !v.is_empty() && v.len() <= 128)
-            .and_then(|v| {
-                if v.len() <= 5 && v.bytes().all(|b| b.is_ascii_digit()) {
-                    v.parse::<u64>().ok()
-                } else {
-                    httpdate::parse_http_date(v).ok().map(|date| {
-                        date.duration_since(std::time::SystemTime::now())
-                            .unwrap_or_default()
-                            .as_secs()
-                    })
-                }
-            })
-            .filter(|n| *n <= 86400);
+        self.record.retry_after_seconds = super::error::retry_after(headers);
     }
     pub(super) fn received(&mut self, n: usize) {
         if n > 0 && self.record.first_upstream_bytes_ms.is_none() {

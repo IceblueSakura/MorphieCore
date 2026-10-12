@@ -106,7 +106,10 @@ async fn diagnostic_status_and_final_intake_are_from_the_original_attempt() {
         .await
         .err()
         .unwrap();
-        assert_eq!(error.status.as_u16(), if status == 429 { 429 } else { 502 });
+        assert_eq!(
+            error.status.as_u16(),
+            if status == 200 { 502 } else { status }
+        );
     }
     gate.flush_diagnostics().await;
     let raw = std::fs::read_to_string(&path).unwrap();
@@ -127,6 +130,115 @@ async fn diagnostic_status_and_final_intake_are_from_the_original_attempt() {
                 "response_head"
             }
         );
+    }
+}
+#[tokio::test]
+async fn upstream_failures_reach_clients_as_agent_error_classes() {
+    use axum::response::IntoResponse;
+    let gate = gateway(Limits::default());
+    for (status, body, retry, expected, code) in [
+        // OpenAI-compatible and Anthropic overflow wording.
+        (
+            400,
+            r#"{"error":{"message":"This model's maximum context length is 131072 tokens. However, you requested 140000 tokens.","type":"invalid_request_error","param":null,"code":null}}"#,
+            None,
+            400,
+            "context_length_exceeded",
+        ),
+        (
+            400,
+            r#"{"type":"error","error":{"type":"invalid_request_error","message":"prompt is too long: 213462 tokens > 200000 maximum"}}"#,
+            None,
+            400,
+            "context_length_exceeded",
+        ),
+        // DeepSeek balance and OpenCode Go subscription limits.
+        (
+            402,
+            r#"{"error":{"message":"Insufficient Balance","type":"unknown_error","param":null,"code":"invalid_request_error"}}"#,
+            None,
+            429,
+            "insufficient_quota",
+        ),
+        (
+            429,
+            r#"{"type":"error","error":{"type":"GoUsageLimitError","message":"Monthly usage limit reached for 117 private"}}"#,
+            None,
+            429,
+            "insufficient_quota",
+        ),
+        (
+            429,
+            r#"{"error":{"message":"Rate limit reached for 117 private","type":"requests","code":"rate_limit_exceeded"}}"#,
+            Some("7"),
+            429,
+            "rate_limit_exceeded",
+        ),
+        (
+            529,
+            r#"{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#,
+            None,
+            503,
+            "server_is_overloaded",
+        ),
+        // Overflow wording only counts on request errors; other rejections stay generic.
+        (
+            500,
+            r#"{"error":{"message":"maximum context length is 117 tokens"}}"#,
+            None,
+            502,
+            "upstream_error",
+        ),
+        (
+            400,
+            r#"{"error":{"message":"Invalid schema for function 117"}}"#,
+            None,
+            502,
+            "upstream_error",
+        ),
+    ] {
+        let (tx, mut source, _, _) = upstream(status, "application/json");
+        if let Some(retry) = retry {
+            source
+                .headers_mut()
+                .insert("retry-after", retry.parse().unwrap());
+        }
+        tx.send(Ok(Bytes::from_static(body.as_bytes())))
+            .await
+            .unwrap();
+        drop(tx);
+        let error = response(
+            &gate,
+            source,
+            false,
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .err()
+        .unwrap();
+        let rendered = error.into_response();
+        assert_eq!(rendered.status().as_u16(), expected, "{body}");
+        assert_eq!(
+            rendered
+                .headers()
+                .get("retry-after")
+                .map(|v| v.to_str().unwrap()),
+            retry,
+        );
+        let bytes = axum::body::to_bytes(rendered.into_body(), 4096)
+            .await
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(value["error"]["code"], code, "{body}");
+        // Gateway-authored text only; agents match on these words.
+        let message = value["error"]["message"].as_str().unwrap();
+        assert!(!message.contains("117") && !message.contains("213462"));
+        match code {
+            "context_length_exceeded" => assert!(message.contains("exceeds the context window")),
+            "insufficient_quota" => assert!(message.contains("billing")),
+            "rate_limit_exceeded" => assert!(message.contains("try again in 7s")),
+            _ => {}
+        }
     }
 }
 async fn bounded<T>(future: impl std::future::Future<Output = T>) -> T {
@@ -267,10 +379,9 @@ async fn drop_deadline_and_shutdown_release_upstream_even_when_body_is_unpolled(
 }
 #[tokio::test]
 async fn invalid_heads_and_static_overflow_fail_without_exposing_provider_data() {
+    // Error bodies are read for classification; redirects and bad media are not.
     for (status, media) in [
         (302, "application/json"),
-        (401, "application/json"),
-        (503, "application/json"),
         (200, "text/plain"),
         (200, "text/event-stream"),
     ] {

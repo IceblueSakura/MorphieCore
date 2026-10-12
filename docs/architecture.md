@@ -148,6 +148,7 @@ When Chat Completions cannot carry a semantic such as reasoning, MorphieCore fol
 | Lenient downstream fields | Unknown request fields are ignored and recorded; unknown discriminators are rejected |
 | Cross-target thinking as text | On a Provider or model switch, readable reasoning becomes plain assistant text in every turn; opaque values never cross |
 | Append-only projection | Earlier history projects byte-identically for a fixed target; see §4 |
+| Agent error classes | Upstream failures reach clients as context overflow (400 `context_length_exceeded`), quota (429 `insufficient_quota`), rate limit (429 `rate_limit_exceeded`, `Retry-After`), overloaded (503 `server_is_overloaded`) or other (502), with OpenAI's codes and gateway-authored text that pi, opencode and Codex recognize. Upstream error bodies are read, bounded, for classification only |
 | Refusals are answers | A safety refusal is delivered and never retried, on the same model or another; a refusal after content is an incomplete answer |
 | Non-API 2xx is a failure | Classified like a 5xx before content is published |
 | Target affinity binds the exact credential | The binding names Endpoint, credential identity and upstream model; a different credential is a different cache domain. API keys are identified by binding plus an in-memory material fingerprint, OAuth by verified principal, so key rotation drops the binding and token refresh keeps it |
