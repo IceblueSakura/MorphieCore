@@ -1,0 +1,172 @@
+//! HTTP ingress owns authentication ordering, request deadlines and listener lifecycle.
+use crate::gateway::{
+    ApiError, Gateway, Runtime, diagnostics::Trace, generation::exchange, ingress::admission,
+};
+use crate::protocol::openai::Profile;
+use axum::{
+    Router,
+    extract::{Request, State},
+    http::StatusCode,
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
+    routing::{get, post},
+};
+use std::{future::Future, sync::Arc};
+use tokio::net::TcpListener;
+impl Gateway {
+    /// Embedding callers own listener security; `serve` enforces loopback itself.
+    pub fn router(&self) -> Router {
+        Router::new()
+            .route("/v1/models", get(crate::gateway::ingress::models::list))
+            .route(
+                "/v1/models/{model}",
+                get(crate::gateway::ingress::models::retrieve)
+                    .delete(crate::gateway::ingress::models::delete),
+            )
+            .route("/v1/chat/completions", post(chat))
+            .route("/v1/responses", post(responses))
+            .route("/v1/messages", post(messages))
+            .route(
+                "/v1/embeddings",
+                post(crate::gateway::tasks::embeddings::handle),
+            )
+            .route(
+                "/v1/images/generations",
+                post(crate::gateway::tasks::images::handle),
+            )
+            .route(
+                "/v1/audio/speech",
+                post(crate::gateway::tasks::speech::handle),
+            )
+            .route(
+                "/v1/audio/transcriptions",
+                post(crate::gateway::tasks::transcription::handle),
+            )
+            .fallback(|| async { ApiError::new(StatusCode::NOT_FOUND, "not_found") })
+            .method_not_allowed_fallback(|| async {
+                ApiError::new(StatusCode::METHOD_NOT_ALLOWED, "method_not_allowed")
+            })
+            .layer(middleware::from_fn_with_state(
+                self.state.clone(),
+                authenticate,
+            ))
+            .with_state(self.state.clone())
+    }
+    pub fn shutdown(&self) {
+        self.state.shutdown.cancel();
+    }
+    pub async fn serve(
+        self,
+        listener: TcpListener,
+        shutdown: impl Future<Output = ()> + Send + 'static,
+    ) -> std::io::Result<()> {
+        if !listener.local_addr()?.ip().is_loopback() {
+            return Err(std::io::Error::other("listener must be loopback"));
+        }
+        // Listener-future cancellation must also release detached body workers.
+        let _owner = self.state.shutdown.clone().drop_guard();
+        let router = self.router();
+        axum::serve(listener, router)
+            .with_graceful_shutdown(async move {
+                tokio::select! {
+                    _ = shutdown => {},
+                    _ = self.state.shutdown.cancelled() => {},
+                }
+                self.shutdown();
+            })
+            .await
+    }
+}
+pub(in crate::gateway) async fn authenticate(
+    State(state): State<Arc<Runtime>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    if !state.auth.accepts(request.headers()) {
+        return ApiError::new(StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+    next.run(request).await
+}
+async fn chat(State(state): State<Arc<Runtime>>, request: Request) -> Response {
+    handle(state, Profile::Chat, request)
+        .await
+        .unwrap_or_else(IntoResponse::into_response)
+}
+async fn responses(State(state): State<Arc<Runtime>>, request: Request) -> Response {
+    handle(state, Profile::Responses, request)
+        .await
+        .unwrap_or_else(IntoResponse::into_response)
+}
+/// Anthropic Messages clients (Claude Code); errors use Anthropic's envelope.
+async fn messages(State(state): State<Arc<Runtime>>, request: Request) -> Response {
+    handle_client(state, None, request)
+        .await
+        .unwrap_or_else(ApiError::into_messages_response)
+}
+pub(in crate::gateway) async fn handle(
+    state: Arc<Runtime>,
+    profile: Profile,
+    request: Request,
+) -> Result<Response, ApiError> {
+    handle_client(state, Some(profile), request).await
+}
+/// `None` is a Messages client.
+async fn handle_client(
+    state: Arc<Runtime>,
+    profile: Option<Profile>,
+    request: Request,
+) -> Result<Response, ApiError> {
+    let mut trace = Trace::new(state.diagnostics.as_ref());
+    if state.shutdown.is_cancelled() {
+        return Err(ApiError::shutdown());
+    }
+    let permit = state
+        .permits
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| ApiError::new(StatusCode::TOO_MANY_REQUESTS, "gateway_busy"))?;
+    admission::headers(request.headers(), state.limits.request_bytes)?;
+    let conversation = admission::conversation(request.headers())?;
+    let bytes = tokio::select! {
+        biased;
+        _=state.shutdown.cancelled()=>return Err(ApiError::shutdown()),
+        result=tokio::time::timeout(state.limits.body_timeout,admission::collect(request.into_body(),state.limits.request_bytes))=>result.map_err(|_|ApiError::new(StatusCode::REQUEST_TIMEOUT,"request_timeout"))??,
+    };
+    let (entry, mut semantic) = match profile {
+        Some(profile) => admission::prepare(&state, profile, &bytes)?,
+        None => admission::prepare_messages(&state, &bytes)?,
+    };
+    semantic.conversation = Some(conversation);
+    trace.ignored_fields(std::mem::take(&mut semantic.ignored_fields));
+    let deadline = tokio::time::Instant::now() + state.limits.exchange_timeout;
+    let failed = (profile == Some(Profile::Responses) && semantic.delivery.streaming())
+        .then(|| entry.clone());
+    match exchange::run(state, entry, semantic, deadline, permit, trace).await {
+        Err(error) if error.streams_as_failed() && failed.is_some() => {
+            failed_stream(&failed.expect("checked"), &error)
+        }
+        result => result,
+    }
+}
+/// A Responses stream that failed before its first frame still answers as a
+/// stream, ending in `response.failed`.
+fn failed_stream(
+    entry: &crate::gateway::BoundEntry,
+    error: &ApiError,
+) -> Result<Response, ApiError> {
+    let mut delivery = crate::execution::ResponseDelivery::new(
+        entry.client.clone(),
+        entry.downstream.clone(),
+        entry.public.id.as_str(),
+        Default::default(),
+        Default::default(),
+        crate::protocol::openai::sse::Obfuscation::Disabled,
+    );
+    let frames = delivery.fail_stream(&error.body()).map_err(|_| *error)?;
+    Response::builder()
+        .header("content-type", "text/event-stream")
+        .header("cache-control", "no-store")
+        .header("x-content-type-options", "nosniff")
+        .body(axum::body::Body::from(frames.concat()))
+        .map_err(|_| *error)
+}

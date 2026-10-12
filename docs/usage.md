@@ -35,7 +35,7 @@ cargo run --locked --offline --bin morphiecore -- --credentials-dir /path/to/sto
 | `implicit_cache_affinity` | Implicit cache-affinity index, default `true` |
 | `diagnostics` | Local diagnostics metadata file (must be new; never records bodies) |
 
-Unknown fields, unknown or duplicate models, and models without a matching pool all fail startup. Available models, protocols and upstream bindings are defined in `src/topology/catalog*` and `src/gateway/bootstrap.rs`.
+Unknown fields, unknown or duplicate models, and models without a matching pool all fail startup. Available models, protocols and upstream bindings are defined in `src/topology/catalog*` and `src/gateway/startup/bootstrap.rs`.
 
 ## HTTP API
 
@@ -82,7 +82,7 @@ Error bodies are `{"error":{"message","type","param","code"}}` and never echo up
 | 502 / 504 | Upstream status, protocol or projection failure / timeout |
 | 503 / 500 | Shutting down or credentials unavailable / local fault |
 
-Once a stream has sent its first frame, an error can only abort the connection; no success terminal is sent. Resource limits are in `Limits` in `src/gateway/config.rs`.
+Once a stream has sent its first frame, an error can only abort the connection; no success terminal is sent. Resource limits are in `Limits` in `src/gateway/startup/config.rs`.
 
 ## Credentials
 

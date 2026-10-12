@@ -343,7 +343,7 @@ impl Trace {
         self.record.upstream_status = Some(status);
         self.record.upstream_head_ms =
             Some(self.start.elapsed().as_millis().min(u64::MAX as u128) as u64);
-        self.record.retry_after_seconds = super::error::retry_after(headers);
+        self.record.retry_after_seconds = crate::gateway::error::retry_after(headers);
     }
     pub(super) fn received(&mut self, n: usize) {
         if n > 0 && self.record.first_upstream_bytes_ms.is_none() {

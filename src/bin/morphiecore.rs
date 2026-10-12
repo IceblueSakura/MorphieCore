@@ -1,7 +1,7 @@
 //! Minimal loopback bootstrap; startup never prints credential values.
 use clap::Parser;
 use morphiecore::credential::{CredentialError, resolve_store_directory};
-use morphiecore::gateway::bootstrap::Bootstrap;
+use morphiecore::gateway::startup::bootstrap::Bootstrap;
 #[derive(Parser)]
 struct Options {
     /// Override the default ~/.local/share/morphiecore/credentials directory.

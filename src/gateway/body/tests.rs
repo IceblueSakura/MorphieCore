@@ -1,0 +1,516 @@
+//! Delivery owner tests use an instrumented HTTP body, not a second Router.
+use super::*;
+use crate::{
+    gateway::{family, tests::support::gateway},
+    protocol::openai::Profile,
+};
+use futures_util::StreamExt;
+use std::{sync::atomic::AtomicUsize, time::Duration};
+#[allow(dead_code)]
+#[path = "../../../tests/support/chat_profile.rs"]
+mod wire;
+struct Tracked {
+    rx: mpsc::Receiver<Result<Bytes, std::io::Error>>,
+    reads: Arc<AtomicUsize>,
+    dropped: Option<oneshot::Sender<()>>,
+}
+impl Stream for Tracked {
+    type Item = Result<Bytes, std::io::Error>;
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let result = self.rx.poll_recv(cx);
+        if matches!(&result, Poll::Ready(Some(Ok(_)))) {
+            self.reads.fetch_add(1, Ordering::SeqCst);
+        }
+        result
+    }
+}
+impl Drop for Tracked {
+    fn drop(&mut self) {
+        if let Some(done) = self.dropped.take() {
+            let _ = done.send(());
+        }
+    }
+}
+type UpstreamProbe = (
+    mpsc::Sender<Result<Bytes, std::io::Error>>,
+    reqwest::Response,
+    oneshot::Receiver<()>,
+    Arc<AtomicUsize>,
+);
+fn upstream(status: u16, media: &str) -> UpstreamProbe {
+    let (tx, rx) = mpsc::channel(2);
+    let (done, dropped) = oneshot::channel();
+    let reads = Arc::new(AtomicUsize::new(0));
+    let body = reqwest::Body::wrap_stream(Tracked {
+        rx,
+        reads: reads.clone(),
+        dropped: Some(done),
+    });
+    let response = reqwest::Response::from(
+        axum::http::Response::builder()
+            .status(status)
+            .header("content-type", media)
+            .body(body)
+            .unwrap(),
+    );
+    (tx, response, dropped, reads)
+}
+fn frames() -> Vec<Bytes> {
+    wire::events(2)
+        .iter()
+        .map(|v| Bytes::from(format!("data: {v}\n\n")))
+        .collect()
+}
+async fn response(
+    gate: &crate::gateway::Gateway,
+    upstream: reqwest::Response,
+    stream: bool,
+    deadline: Instant,
+) -> Result<Response, ApiError> {
+    let entry = gate.state.entries[&(family(Profile::Chat), "fixture-model".into())].clone();
+    let request=entry.client.decode_request(serde_json::json!({"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"stream":stream,"stream_options":if stream {serde_json::json!({"include_usage":true,"include_obfuscation":false})}else{serde_json::Value::Null}}).to_string().as_bytes()).unwrap();
+    let candidate = entry.candidates[0].clone();
+    respond(
+        entry,
+        candidate,
+        request,
+        upstream,
+        &gate.state.limits,
+        deadline,
+        gate.state.shutdown.clone(),
+        gate.state.permits.clone().acquire_owned().await.unwrap(),
+        super::Trace::new(gate.state.diagnostics.as_ref()),
+    )
+    .await
+}
+#[tokio::test]
+async fn diagnostic_status_and_final_intake_are_from_the_original_attempt() {
+    let directory = crate::test_files::private_directory();
+    let path = directory.path().join("events.jsonl");
+    let gate = gateway(Limits::default()).with_diagnostics(&path).unwrap();
+    for status in [429, 503, 200] {
+        let (tx, mut source, _, _) = upstream(status, "application/json");
+        source
+            .headers_mut()
+            .insert("retry-after", "7".parse().unwrap());
+        tx.send(Ok(Bytes::from_static(b"synthetic-private-invalid-json")))
+            .await
+            .unwrap();
+        drop(tx);
+        let error = response(
+            &gate,
+            source,
+            false,
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .err()
+        .unwrap();
+        assert_eq!(
+            error.status.as_u16(),
+            if status == 200 { 502 } else { status }
+        );
+    }
+    gate.flush_diagnostics().await;
+    let raw = std::fs::read_to_string(&path).unwrap();
+    assert!(!raw.contains("synthetic-private"));
+    let records: Vec<serde_json::Value> = raw
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(records.len(), 3);
+    for (record, status) in records.iter().zip([429, 503, 200]) {
+        assert_eq!(record["upstream_status"], status);
+        assert_eq!(record["retry_after_seconds"], 7);
+        assert_eq!(
+            record["stage"],
+            if status == 200 {
+                "terminal"
+            } else {
+                "response_head"
+            }
+        );
+    }
+}
+#[tokio::test]
+async fn upstream_failures_reach_clients_as_agent_error_classes() {
+    use axum::response::IntoResponse;
+    let gate = gateway(Limits::default());
+    for (status, body, retry, expected, code) in [
+        // OpenAI-compatible and Anthropic overflow wording.
+        (
+            400,
+            r#"{"error":{"message":"This model's maximum context length is 131072 tokens. However, you requested 140000 tokens.","type":"invalid_request_error","param":null,"code":null}}"#,
+            None,
+            400,
+            "context_length_exceeded",
+        ),
+        (
+            400,
+            r#"{"type":"error","error":{"type":"invalid_request_error","message":"prompt is too long: 213462 tokens > 200000 maximum"}}"#,
+            None,
+            400,
+            "context_length_exceeded",
+        ),
+        // DeepSeek balance and OpenCode Go subscription limits.
+        (
+            402,
+            r#"{"error":{"message":"Insufficient Balance","type":"unknown_error","param":null,"code":"invalid_request_error"}}"#,
+            None,
+            429,
+            "insufficient_quota",
+        ),
+        (
+            429,
+            r#"{"type":"error","error":{"type":"GoUsageLimitError","message":"Monthly usage limit reached for 117 private"}}"#,
+            None,
+            429,
+            "insufficient_quota",
+        ),
+        (
+            429,
+            r#"{"error":{"message":"Rate limit reached for 117 private","type":"requests","code":"rate_limit_exceeded"}}"#,
+            Some("7"),
+            429,
+            "rate_limit_exceeded",
+        ),
+        (
+            529,
+            r#"{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#,
+            None,
+            503,
+            "server_is_overloaded",
+        ),
+        // Overflow wording only counts on request errors; other rejections stay generic.
+        (
+            500,
+            r#"{"error":{"message":"maximum context length is 117 tokens"}}"#,
+            None,
+            502,
+            "upstream_error",
+        ),
+        (
+            400,
+            r#"{"error":{"message":"Invalid schema for function 117"}}"#,
+            None,
+            502,
+            "upstream_error",
+        ),
+    ] {
+        let (tx, mut source, _, _) = upstream(status, "application/json");
+        if let Some(retry) = retry {
+            source
+                .headers_mut()
+                .insert("retry-after", retry.parse().unwrap());
+        }
+        tx.send(Ok(Bytes::from_static(body.as_bytes())))
+            .await
+            .unwrap();
+        drop(tx);
+        let error = response(
+            &gate,
+            source,
+            false,
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .err()
+        .unwrap();
+        let rendered = error.into_response();
+        assert_eq!(rendered.status().as_u16(), expected, "{body}");
+        assert_eq!(
+            rendered
+                .headers()
+                .get("retry-after")
+                .map(|v| v.to_str().unwrap()),
+            retry,
+        );
+        let bytes = axum::body::to_bytes(rendered.into_body(), 4096)
+            .await
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(value["error"]["code"], code, "{body}");
+        // Gateway-authored text only; agents match on these words.
+        let message = value["error"]["message"].as_str().unwrap();
+        assert!(!message.contains("117") && !message.contains("213462"));
+        match code {
+            "context_length_exceeded" => assert!(message.contains("exceeds the context window")),
+            "insufficient_quota" => assert!(message.contains("billing")),
+            "rate_limit_exceeded" => assert!(message.contains("try again in 7s")),
+            _ => {}
+        }
+    }
+}
+#[tokio::test]
+async fn messages_clients_get_anthropic_shapes_from_an_openai_target() {
+    let gate = gateway(Limits::default());
+    let entry =
+        gate.state.entries[&(crate::gateway::MESSAGES_FAMILY, "fixture-model".into())].clone();
+    // A failed tool result keeps its text toward an OpenAI target; the flag is named.
+    // A thinking budget becomes an effort toward an OpenAI target.
+    let body = serde_json::json!({"model":"fixture-model","max_tokens":32,
+        "thinking":{"type":"enabled","budget_tokens":10000},
+        "tools":[{"name":"lookup","input_schema":{"type":"object","properties":{}}}],"messages":[
+        {"role":"user","content":"q"},
+        {"role":"assistant","content":[{"type":"thinking","thinking":"plan","signature":""},
+            {"type":"tool_use","id":"call-local","name":"lookup","input":{}}]},
+        {"role":"user","content":[{"type":"tool_result","tool_use_id":"call-local","content":"boom","is_error":true}]}]});
+    let (_, request) = crate::gateway::ingress::admission::prepare_messages(
+        &gate.state,
+        body.to_string().as_bytes(),
+    )
+    .unwrap();
+    assert_eq!(request.ignored_fields, ["tool_result.is_error"]);
+    // Messages turns regroup as Chat messages for an OpenAI target.
+    let chat = entry.candidates[0]
+        .endpoint
+        .encode_request(&request)
+        .unwrap();
+    assert_eq!(
+        chat["messages"][1],
+        serde_json::json!({"role":"assistant","content":null,"reasoning_content":"plan",
+            "reasoning_details":[{"type":"reasoning.summary","summary":"plan","format":"openai-responses-v1","index":0}],"tool_calls":[{"id":"call-local","type":"function","function":{"name":"lookup","arguments":"{}"}}]})
+    );
+    for (turn, expected) in [
+        (
+            0,
+            serde_json::json!({"content":[{"type":"text","text":"old 🧪"}],"stop_reason":"end_turn"}),
+        ),
+        (
+            1,
+            serde_json::json!({"content":[{"type":"tool_use","id":"call-local","name":"lookup","input":{"n":1}}],
+                "stop_reason":"tool_use"}),
+        ),
+    ] {
+        let (tx, upstream, _, _) = upstream(200, "application/json");
+        tx.send(Ok(Bytes::from(wire::response(turn).to_string())))
+            .await
+            .unwrap();
+        drop(tx);
+        let response = respond(
+            entry.clone(),
+            entry.candidates[0].clone(),
+            request.clone(),
+            upstream,
+            &gate.state.limits,
+            Instant::now() + Duration::from_secs(2),
+            gate.state.shutdown.clone(),
+            gate.state.permits.clone().acquire_owned().await.unwrap(),
+            super::Trace::new(None),
+        )
+        .await
+        .unwrap();
+        let bytes = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(value["type"], "message");
+        assert_eq!(value["model"], "fixture-model");
+        assert_eq!(value["content"], expected["content"]);
+        assert_eq!(value["stop_reason"], expected["stop_reason"]);
+        assert_eq!(
+            value["usage"],
+            serde_json::json!({"input_tokens":3,"output_tokens":2})
+        );
+    }
+    // Errors use Anthropic's envelope with the wording Claude Code reacts to.
+    let error = ApiError::failure(
+        400,
+        br#"{"error":{"message":"maximum context length is 9 tokens"}}"#,
+        None,
+    )
+    .into_messages_response();
+    assert_eq!(error.status(), 400);
+    let bytes = axum::body::to_bytes(error.into_body(), 4096).await.unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(value["type"], "error");
+    assert_eq!(value["error"]["type"], "invalid_request_error");
+    assert!(
+        value["error"]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("prompt is too long")
+    );
+}
+async fn bounded<T>(future: impl std::future::Future<Output = T>) -> T {
+    tokio::time::timeout(Duration::from_secs(2), future)
+        .await
+        .expect("bounded owner check")
+}
+#[tokio::test]
+async fn first_frame_precedes_terminal_and_ack_gates_upstream_progress() {
+    let gate = gateway(Limits::default());
+    let (tx, upstream, dropped, reads) = upstream(200, "text/event-stream");
+    let frames = frames();
+    tx.send(Ok(Bytes::from(frames[..2].concat())))
+        .await
+        .unwrap();
+    let response = bounded(response(
+        &gate,
+        upstream,
+        true,
+        Instant::now() + Duration::from_secs(3),
+    ))
+    .await
+    .unwrap();
+    // The worker is waiting for HTTP-body acknowledgement, not collecting the stream.
+    tx.send(Ok(Bytes::from(
+        [frames[2..].concat(), b"data: [DONE]\n\n".to_vec()].concat(),
+    )))
+    .await
+    .unwrap();
+    drop(tx);
+    assert_eq!(reads.load(Ordering::SeqCst), 1);
+    let mut body = response.into_body().into_data_stream();
+    let first = bounded(body.next()).await.unwrap().unwrap();
+    assert!(!String::from_utf8_lossy(&first).contains("[DONE]"));
+    let mut all = first.to_vec();
+    bounded(async {
+        while let Some(chunk) = body.next().await {
+            all.extend_from_slice(&chunk.unwrap());
+        }
+    })
+    .await;
+    assert!(String::from_utf8_lossy(&all).contains("old "));
+    assert_eq!(String::from_utf8_lossy(&all).matches("[DONE]").count(), 1);
+    bounded(dropped).await.unwrap();
+}
+#[tokio::test]
+async fn late_truncation_and_trailing_payload_never_emit_success_terminal() {
+    for trailing in [false, true] {
+        let gate = gateway(Limits::default());
+        let (tx, upstream, _, _) = upstream(200, "text/event-stream");
+        let mut bytes = frames().concat();
+        if trailing {
+            bytes.extend_from_slice(b"data: [DONE]\n\ndata: {}\n\n");
+        }
+        tx.send(Ok(Bytes::from(bytes))).await.unwrap();
+        drop(tx);
+        let response = bounded(response(
+            &gate,
+            upstream,
+            true,
+            Instant::now() + Duration::from_secs(3),
+        ))
+        .await
+        .unwrap();
+        let mut body = response.into_body().into_data_stream();
+        let mut seen = Vec::new();
+        let mut failed = false;
+        bounded(async {
+            while let Some(next) = body.next().await {
+                match next {
+                    Ok(bytes) => seen.extend_from_slice(&bytes),
+                    Err(_) => {
+                        failed = true;
+                        break;
+                    }
+                }
+            }
+        })
+        .await;
+        assert!(failed);
+        assert!(String::from_utf8_lossy(&seen).contains("old "));
+        assert!(!String::from_utf8_lossy(&seen).contains("[DONE]"));
+    }
+}
+#[tokio::test]
+async fn drop_deadline_and_shutdown_release_upstream_even_when_body_is_unpolled() {
+    for mode in ["drop", "deadline", "shutdown", "server-drop"] {
+        let gate = gateway(Limits {
+            concurrency: 1,
+            ..Limits::default()
+        });
+        let (tx, upstream, dropped, _) = upstream(200, "text/event-stream");
+        tx.send(Ok(Bytes::from(frames()[..2].concat())))
+            .await
+            .unwrap();
+        let deadline = Instant::now()
+            + if mode == "deadline" {
+                Duration::from_millis(40)
+            } else {
+                Duration::from_secs(3)
+            };
+        let response = bounded(response(&gate, upstream, true, deadline))
+            .await
+            .unwrap();
+        if mode == "drop" {
+            drop(response);
+        } else {
+            if mode == "shutdown" {
+                gate.shutdown();
+            } else if mode == "server-drop" {
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let (ready, started) = oneshot::channel();
+                let serving = tokio::spawn(gate.clone().serve(listener, async {
+                    let _ = ready.send(());
+                    std::future::pending::<()>().await;
+                }));
+                bounded(started).await.unwrap();
+                serving.abort();
+                let _ = serving.await;
+            }
+            bounded(dropped).await.unwrap(); // No HTTP-body poll has occurred.
+            assert!(
+                bounded(response.into_body().into_data_stream().next())
+                    .await
+                    .unwrap()
+                    .is_err()
+            );
+            let _released = bounded(gate.state.permits.clone().acquire_owned())
+                .await
+                .unwrap();
+            continue;
+        }
+        bounded(dropped).await.unwrap();
+        let _released = bounded(gate.state.permits.clone().acquire_owned())
+            .await
+            .unwrap();
+    }
+}
+#[tokio::test]
+async fn invalid_heads_and_static_overflow_fail_without_exposing_provider_data() {
+    // Error bodies are read for classification; redirects and bad media are not.
+    for (status, media) in [
+        (302, "application/json"),
+        (200, "text/plain"),
+        (200, "text/event-stream"),
+    ] {
+        let gate = gateway(Limits::default());
+        let (_tx, upstream, _, reads) = upstream(status, media);
+        let error = bounded(response(
+            &gate,
+            upstream,
+            false,
+            Instant::now() + Duration::from_secs(1),
+        ))
+        .await
+        .unwrap_err();
+        assert_eq!(error.status, 502);
+        assert_eq!(reads.load(Ordering::SeqCst), 0);
+    }
+    let gate = gateway(Limits {
+        // Allow the startup discovery view while keeping the upstream body over budget.
+        response_bytes: 128,
+        ..Limits::default()
+    });
+    let (tx, upstream, _, _) = upstream(200, "application/json");
+    tx.send(Ok(Bytes::from(
+        "synthetic-private-upstream-detail".repeat(5),
+    )))
+    .await
+    .unwrap();
+    drop(tx);
+    assert_eq!(
+        bounded(response(
+            &gate,
+            upstream,
+            false,
+            Instant::now() + Duration::from_secs(1)
+        ))
+        .await
+        .unwrap_err()
+        .status,
+        502
+    );
+}

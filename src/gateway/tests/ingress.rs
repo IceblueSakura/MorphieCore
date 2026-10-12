@@ -1,0 +1,485 @@
+//! Lowest-owner ingress checks; no real Provider I/O.
+use crate::gateway::tests::{
+    support::{KEY, gateway},
+    topology::topology,
+};
+use crate::gateway::{
+    ingress::{
+        admission,
+        http::{authenticate, handle},
+    },
+    *,
+};
+use crate::{provider::CredentialBindingId, topology::EndpointId};
+use axum::{
+    Router,
+    http::{HeaderMap, Request as HttpRequest, StatusCode},
+    middleware,
+};
+use std::time::Duration;
+use tower::ServiceExt;
+#[tokio::test]
+async fn activated_members_keep_route_order_with_a_shared_client_carrier() {
+    let entries = ["fixture-chat", "fixture-responses"]
+        .into_iter()
+        .map(|id| Entry {
+            model: "fixture-model".into(),
+            protocol: Profile::Responses,
+            endpoint: EndpointId::new(id).unwrap(),
+        })
+        .collect();
+    let gate = Gateway::new(
+        topology(),
+        entries,
+        BTreeMap::from([(
+            CredentialBindingId::new("fixture-key").unwrap(),
+            Arc::new(SecretMaterial::new("synthetic-upstream-credential-0001").unwrap()),
+        )]),
+        SecretMaterial::new(KEY).unwrap(),
+        Limits::default(),
+        None,
+    )
+    .unwrap();
+    let entry = &gate.state.entries[&(family(Profile::Responses), "fixture-model".into())];
+    assert_eq!(
+        entry.client.adaptation.scope.as_ref(),
+        Some(&*crate::execution::replay::CLIENT_ORIGIN)
+    );
+    let request = entry
+        .client
+        .decode_request(br#"{"model":"fixture-model","input":"x"}"#)
+        .unwrap();
+    assert_eq!(
+        entry
+            .eligible(&request)
+            .unwrap()
+            .iter()
+            .map(|c| c.endpoint.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["fixture-responses", "fixture-chat"]
+    );
+    let opaque = entry
+        .client
+        .decode_request(
+            br#"{"model":"fixture-model","input":"x","include":["reasoning.encrypted_content"]}"#,
+        )
+        .unwrap();
+    // RequireAll still rejects controls unsupported by the Chat candidate.
+    assert!(entry.eligible(&opaque).is_err());
+}
+
+#[test]
+fn ingress_unwraps_only_the_candidate_compatible_opaque_and_never_selects_a_target() {
+    use crate::{protocol::replay_envelope, semantic::task::generation::ReplayFormat};
+    use serde_json::json;
+    let gate = Gateway::new(
+        topology(),
+        vec![Entry {
+            model: "fixture-model".into(),
+            protocol: Profile::Responses,
+            endpoint: EndpointId::new("fixture-responses").unwrap(),
+        }],
+        BTreeMap::from([(
+            CredentialBindingId::new("fixture-key").unwrap(),
+            Arc::new(SecretMaterial::new("synthetic-upstream-credential-0001").unwrap()),
+        )]),
+        SecretMaterial::new(KEY).unwrap(),
+        Limits::default(),
+        None,
+    )
+    .unwrap();
+    for (provider, model, matches) in [
+        ("fixture", "private-fixture", true),
+        ("other", "private-fixture", false),
+        ("fixture", "other", false),
+    ] {
+        let token = replay_envelope::seal(
+            &replay_envelope::issuer(provider, model),
+            ReplayFormat::ResponsesEncrypted,
+            "synthetic-client-payload",
+        )
+        .unwrap();
+        let body = json!({"model":"fixture-model","input":[
+            {"type":"reasoning","id":"rs","summary":[],"encrypted_content":token.as_str()},
+            {"role":"user","content":"next"}
+        ]});
+        let (entry, request) =
+            admission::prepare(&gate.state, Profile::Responses, body.to_string().as_bytes())
+                .unwrap();
+        let before = request.clone();
+        let candidates = entry.eligible(&request).unwrap();
+        assert_eq!(candidates.len(), 1);
+        let candidate = &candidates[0];
+        let secret = candidate.secret.resolve().unwrap().0;
+        let prepared =
+            crate::execution::prepare(&candidate.endpoint, &candidate.provider, &secret, &request)
+                .unwrap();
+        let wire: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
+        assert_eq!(wire["model"], "private-fixture");
+        assert_eq!(
+            wire["input"].as_array().unwrap().len(),
+            if matches { 2 } else { 1 }
+        );
+        assert_eq!(
+            wire.to_string().contains("synthetic-client-payload"),
+            matches
+        );
+        assert!(!wire.to_string().contains("mc1."));
+        assert_eq!(request, before);
+    }
+}
+
+#[tokio::test]
+async fn model_request_limits_do_not_suppress_client_reported_facts() {
+    use serde_json::json;
+    let gate = Gateway::new(
+        topology(),
+        vec![Entry {
+            model: "limited-model".into(),
+            protocol: Profile::Responses,
+            endpoint: EndpointId::new("limited-responses").unwrap(),
+        }],
+        BTreeMap::from([(
+            CredentialBindingId::new("fixture-key").unwrap(),
+            Arc::new(SecretMaterial::new("synthetic-upstream-credential-0001").unwrap()),
+        )]),
+        SecretMaterial::new(KEY).unwrap(),
+        Limits::default(),
+        None,
+    )
+    .unwrap();
+    let entry = &gate.state.entries[&(family(Profile::Responses), "limited-model".into())];
+    let request = entry
+        .client
+        .decode_request(
+            &serde_json::to_vec(&json!({
+                "model":"limited-model","input":"synthetic","temperature":0.5
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+    assert!(
+        entry
+            .client
+            .encode_request(
+                &request,
+                "synthetic",
+                entry.candidates[0]
+                    .endpoint
+                    .representation
+                    .openai()
+                    .unwrap()
+            )
+            .is_err()
+    );
+    let provider = Adapter {
+        protocol: Profile::Responses,
+        adaptation: entry.candidates[0]
+            .endpoint
+            .representation
+            .openai()
+            .unwrap()
+            .adaptation
+            .clone(),
+    };
+    let response = provider.decode_response(&serde_json::to_vec(&json!({
+        "object":"response","id":"r","model":"synthetic","created_at":1,"status":"completed",
+        "output":[{"type":"message","id":"msg","role":"assistant","status":"completed",
+            "content":[{"type":"output_text","text":"x","annotations":[],"logprobs":[]}]}],
+        "temperature":1,"top_p":1,"parallel_tool_calls":true
+    })).unwrap()).unwrap();
+    let encoded = entry
+        .client
+        .encode_response(&response, &entry.downstream)
+        .unwrap();
+    assert_eq!(encoded["output"][0]["content"][0]["logprobs"], json!([]));
+    assert_eq!(encoded["temperature"].as_f64(), Some(1.0));
+    assert_eq!(encoded["top_p"].as_f64(), Some(1.0));
+    assert_eq!(encoded["parallel_tool_calls"], true);
+}
+
+#[tokio::test]
+async fn diagnostics_only_record_authenticated_requests_and_never_expose_headers() {
+    let directory = crate::test_files::private_directory();
+    let path = directory.path().join("events.jsonl");
+    let gate = gateway(Limits::default()).with_diagnostics(&path).unwrap();
+    for authenticated in [false, true] {
+        let mut request = HttpRequest::builder()
+            .method("POST")
+            .uri("/v1/chat/completions")
+            .header("x-private", "synthetic-private-header")
+            .header("content-type", "application/json");
+        if authenticated {
+            request = request.header("authorization", format!("Bearer {KEY}"));
+        }
+        let response = gate
+            .router()
+            .oneshot(
+                request
+                    .body(axum::body::Body::from("invalid json"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), if authenticated { 400 } else { 401 });
+    }
+    gate.flush_diagnostics().await;
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(text.lines().count(), 1);
+    assert!(!text.contains(KEY));
+    assert!(!text.contains("invalid json"));
+    assert!(text.contains("admission"));
+}
+#[tokio::test]
+async fn authentication_runs_before_any_body_poll() {
+    let gate = gateway(Limits::default());
+    let app = Router::new()
+        .fallback(|| async {
+            panic!("unauthenticated handler ran");
+            #[allow(unreachable_code)]
+            StatusCode::OK
+        })
+        .layer(middleware::from_fn_with_state(
+            gate.state.clone(),
+            authenticate,
+        ));
+    let forbidden = futures_util::stream::poll_fn(
+        |_| -> std::task::Poll<Option<Result<bytes::Bytes, std::io::Error>>> {
+            panic!("unauthenticated body was polled")
+        },
+    );
+    let response = app
+        .oneshot(
+            HttpRequest::builder()
+                .uri("/test")
+                .body(axum::body::Body::from_stream(forbidden))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 401);
+    assert_eq!(response.headers()["www-authenticate"], "Bearer");
+}
+#[tokio::test]
+async fn identity_budget_and_scope_are_owned_by_trusted_ingress() {
+    let gate = gateway(Limits {
+        default_output_tokens: 32,
+        max_output_tokens: 64,
+        ..Limits::default()
+    });
+    let (_, request) = admission::prepare(
+        &gate.state,
+        Profile::Chat,
+        br#"{"model":"fixture-model","messages":[{"role":"user","content":"hello"}]}"#,
+    )
+    .unwrap();
+    assert_eq!(request.task.semantic.controls().max_output_tokens, Some(32));
+    for wire in [br#"{"model":"fixture-model","model":"missing","messages":[]}"#.as_slice(),br#"{"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"max_completion_tokens":65}"#] {assert_eq!(admission::prepare(&gate.state,Profile::Chat,wire).err().unwrap().status,400);}
+    // Public identity resolves before task contents, not by guessing a Provider.
+    assert_eq!(
+        admission::prepare(
+            &gate.state,
+            Profile::Chat,
+            br#"{"model":"missing","messages":null}"#
+        )
+        .err()
+        .unwrap()
+        .status,
+        404
+    );
+    let mut bad_headers = HeaderMap::new();
+    bad_headers.insert("content-type", "application/json".parse().unwrap());
+    bad_headers.insert("content-encoding", "gzip".parse().unwrap());
+    assert_eq!(
+        admission::headers(&bad_headers, 100).unwrap_err().status,
+        415
+    );
+    let chunks = futures_util::stream::iter([
+        Ok::<_, std::io::Error>(bytes::Bytes::from_static(b"123")),
+        Ok(bytes::Bytes::from_static(b"456")),
+    ]);
+    assert_eq!(
+        admission::collect(axum::body::Body::from_stream(chunks), 5)
+            .await
+            .unwrap_err()
+            .status,
+        413
+    );
+}
+#[test]
+fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
+    // Activate one Chat target for both client wire families without I/O.
+    let gate = Gateway::new(
+        topology(),
+        [Profile::Chat, Profile::Responses]
+            .into_iter()
+            .map(|protocol| Entry {
+                model: "fixture-model".into(),
+                protocol,
+                endpoint: EndpointId::new("fixture-chat").unwrap(),
+            })
+            .collect(),
+        BTreeMap::from([(
+            CredentialBindingId::new("fixture-key").unwrap(),
+            Arc::new(SecretMaterial::new("synthetic-upstream-credential-0001").unwrap()),
+        )]),
+        SecretMaterial::new(KEY).unwrap(),
+        Limits::default(),
+        None,
+    )
+    .unwrap();
+    for profile in [Profile::Chat, Profile::Responses] {
+        let original = if profile == Profile::Chat {
+            serde_json::json!({"model":"fixture-model","messages":[{"role":"user","content":"hi"}]})
+        } else {
+            serde_json::json!({"model":"fixture-model","input":"hi"})
+        };
+        let (base, admitted) = admission::prepare(
+            &gate.state,
+            profile,
+            &serde_json::to_vec(&original).unwrap(),
+        )
+        .unwrap();
+        // Unregistered selectors are ignored by name and never reach the request.
+        for (field, value) in [
+            ("provider", serde_json::json!("other")),
+            ("provider", serde_json::json!({"order":["fixture"]})),
+            (
+                "upstream_url",
+                serde_json::json!("https://untrusted.invalid"),
+            ),
+        ] {
+            let mut wire = original.clone();
+            wire[field] = value;
+            let (entry, request) =
+                admission::prepare(&gate.state, profile, &serde_json::to_vec(&wire).unwrap())
+                    .unwrap();
+            assert_eq!(request.ignored_fields, [field]);
+            assert_eq!(request.task, admitted.task);
+            assert_eq!(
+                entry.candidates[0].endpoint.id,
+                base.candidates[0].endpoint.id
+            );
+        }
+        let (nested, unknown_kind) = if profile == Profile::Chat {
+            (
+                serde_json::json!({"model":"fixture-model","messages":[{"role":"user","content":"hi","x_trace":1}]}),
+                serde_json::json!({"model":"fixture-model","messages":[{"role":"critic","content":"hi"}]}),
+            )
+        } else {
+            (
+                serde_json::json!({"model":"fixture-model","input":[{"type":"message","role":"user","content":"hi","x_trace":1}]}),
+                serde_json::json!({"model":"fixture-model","input":[{"type":"future_item","content":"hi"}]}),
+            )
+        };
+        let (_, request) =
+            admission::prepare(&gate.state, profile, &serde_json::to_vec(&nested).unwrap())
+                .unwrap();
+        assert_eq!(request.ignored_fields, ["x_trace"]);
+        // Discriminators are values; ignoring an unknown kind would drop content.
+        assert!(
+            admission::prepare(
+                &gate.state,
+                profile,
+                &serde_json::to_vec(&unknown_kind).unwrap()
+            )
+            .is_err()
+        );
+        let mut wire = original;
+        wire["model"] = serde_json::json!("fixture/fixture-model");
+        assert_eq!(
+            admission::prepare(&gate.state, profile, &serde_json::to_vec(&wire).unwrap())
+                .err()
+                .unwrap()
+                .status,
+            404
+        );
+    }
+}
+
+#[tokio::test]
+async fn concurrency_and_collection_timeout_fail_before_upstream() {
+    let gate = gateway(Limits {
+        concurrency: 1,
+        body_timeout: Duration::from_millis(20),
+        ..Limits::default()
+    });
+    let held = gate.state.permits.clone().acquire_owned().await.unwrap();
+    let request = || {
+        HttpRequest::builder()
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from_stream(
+                futures_util::stream::pending::<Result<bytes::Bytes, std::io::Error>>(),
+            ))
+            .unwrap()
+    };
+    assert_eq!(
+        handle(gate.state.clone(), Profile::Chat, request())
+            .await
+            .unwrap_err()
+            .status,
+        429
+    );
+    drop(held);
+    assert_eq!(
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            handle(gate.state.clone(), Profile::Chat, request())
+        )
+        .await
+        .unwrap()
+        .unwrap_err()
+        .status,
+        408
+    );
+    assert_eq!(gate.state.permits.available_permits(), 1);
+    gate.shutdown();
+    assert_eq!(
+        handle(gate.state.clone(), Profile::Chat, request())
+            .await
+            .unwrap_err()
+            .status,
+        503
+    );
+}
+#[test]
+fn entries_cannot_escape_compiled_route_or_credential_ownership() {
+    let topo = topology();
+    let result = Gateway::new(
+        topo,
+        vec![Entry {
+            model: "fixture-model".into(),
+            protocol: Profile::Chat,
+            endpoint: EndpointId::new("limited-responses").unwrap(),
+        }],
+        BTreeMap::new(),
+        SecretMaterial::new(KEY).unwrap(),
+        Limits::default(),
+        None,
+    );
+    assert!(matches!(result, Err(StartupError::Binding)));
+    let gate = gateway(Limits::default());
+    let scope = gate.state.entries.values().next().unwrap().candidates[0]
+        .cache_scope
+        .clone();
+    let other = Gateway::new(
+        topology(),
+        vec![Entry {
+            model: "fixture-model".into(),
+            protocol: Profile::Chat,
+            endpoint: EndpointId::new("fixture-chat").unwrap(),
+        }],
+        BTreeMap::from([(
+            CredentialBindingId::new("fixture-key").unwrap(),
+            Arc::new(SecretMaterial::new("different-synthetic-upstream-key").unwrap()),
+        )]),
+        SecretMaterial::new(KEY).unwrap(),
+        Limits::default(),
+        None,
+    )
+    .unwrap();
+    assert_ne!(
+        scope,
+        other.state.entries.values().next().unwrap().candidates[0].cache_scope
+    );
+}

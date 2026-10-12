@@ -1,14 +1,13 @@
 //! One acknowledged frame in flight. A chain owns one permit/deadline/trace;
 //! each candidate owns a fresh decoder/delivery, and visibility forbids advancement.
 #[cfg(test)]
-#[path = "body_tests.rs"]
 mod tests;
 #[cfg(test)]
-use super::BoundCandidate;
-use super::{
+use crate::gateway::BoundCandidate;
+use crate::gateway::{
     ApiError, BoundEntry, Limits,
     diagnostics::{Outcome, Stage, Trace},
-    exchange::{Upstreams, produce_chain},
+    generation::exchange::{Upstreams, produce_chain},
 };
 use crate::{adapter::Request, execution::ResponseDelivery};
 use axum::{
@@ -163,23 +162,23 @@ pub(super) enum Producer {
         source: Upstreams,
     },
     Image {
-        runtime: Arc<super::Runtime>,
-        entry: Arc<super::images::BoundImage>,
+        runtime: Arc<crate::gateway::Runtime>,
+        entry: Arc<crate::gateway::tasks::images::BoundImage>,
         request: crate::adapter::images::Request,
     },
     Speech {
-        runtime: Arc<super::Runtime>,
-        entry: Arc<super::speech::BoundSpeech>,
+        runtime: Arc<crate::gateway::Runtime>,
+        entry: Arc<crate::gateway::tasks::speech::BoundSpeech>,
         request: crate::adapter::speech::Request,
     },
     Transcription {
-        runtime: Arc<super::Runtime>,
-        entry: Arc<super::transcription::BoundTranscription>,
+        runtime: Arc<crate::gateway::Runtime>,
+        entry: Arc<crate::gateway::tasks::transcription::BoundTranscription>,
         request: crate::adapter::transcription::Request,
     },
     Embedding {
-        runtime: Arc<super::Runtime>,
-        entry: Arc<super::embeddings::BoundEmbedding>,
+        runtime: Arc<crate::gateway::Runtime>,
+        entry: Arc<crate::gateway::tasks::embeddings::BoundEmbedding>,
         request: crate::adapter::embeddings::Request,
     },
 }
@@ -203,7 +202,7 @@ impl Producer {
                 entry,
                 request,
             } => {
-                super::embeddings::produce(
+                crate::gateway::tasks::embeddings::produce(
                     runtime,
                     entry,
                     request,
@@ -218,7 +217,7 @@ impl Producer {
                 entry,
                 request,
             } => {
-                super::images::produce(
+                crate::gateway::tasks::images::produce(
                     runtime,
                     entry,
                     request,
@@ -233,7 +232,7 @@ impl Producer {
                 entry,
                 request,
             } => {
-                super::transcription::produce(
+                crate::gateway::tasks::transcription::produce(
                     runtime,
                     entry,
                     request,
@@ -248,7 +247,7 @@ impl Producer {
                 entry,
                 request,
             } => {
-                super::speech::produce(
+                crate::gateway::tasks::speech::produce(
                     runtime,
                     entry,
                     request,
