@@ -2,7 +2,7 @@
 use super::AdapterError;
 use crate::{
     lowering::generation::RepresentationError,
-    protocol::{CodecError, DecodedRequest, extensions::CustomSections, openai::Profile},
+    protocol::{CodecError, DecodedRequest, openai::Profile},
     semantic::{
         context::{ConversationContext, DeliveryIntent, ExecutionHints},
         value::Presence,
@@ -14,7 +14,6 @@ pub struct Request {
     pub model: String,
     pub context: ExecutionHints,
     pub delivery: DeliveryIntent,
-    pub extensions: CustomSections,
     pub conversation: Option<ConversationContext>,
     pub(crate) inferred_affinity: Option<crate::protocol::cache::InferredAffinity>,
     pub cache_session: Option<crate::protocol::cache::CacheSession>,
@@ -41,7 +40,6 @@ impl Request {
             model: model.into(),
             context: Default::default(),
             delivery: Default::default(),
-            extensions: Default::default(),
             conversation: None,
             cache_session: None,
             inferred_affinity: None,
@@ -92,11 +90,10 @@ impl Request {
         self.check_grouping()?;
         self.context.validate().map_err(CodecError::from)?;
         self.delivery.validate().map_err(CodecError::from)?;
-        if self.extensions != CustomSections::default()
-            || !standard_context
-                && (!self.context.metadata.is_absent()
-                    || !self.context.service_tier.is_absent()
-                    || !self.context.max_tool_calls.is_absent())
+        if !standard_context
+            && (!self.context.metadata.is_absent()
+                || !self.context.service_tier.is_absent()
+                || !self.context.max_tool_calls.is_absent())
         {
             return Err(RepresentationError::UnmigratedSemantic.into());
         }

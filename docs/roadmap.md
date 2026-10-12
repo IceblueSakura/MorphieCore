@@ -17,22 +17,14 @@ Not planned: raw wire passthrough or post-encoding JSON patches, weakening schem
 
 pi and opencode first; Codex and Claude Code second. A known client's observed behavior at a pinned revision is the acceptance oracle, beside the protocol schema: what it parses, merges, returns in history and classifies as retryable. pi's merged `reasoning_details` already shaped the Chat reasoning carrier.
 
-## Current focus: Phase 1 — protocol boundaries and product bindings
+Vendor stream shapes are a standing rule, not a phase: a Chat shape seen from a bound upstream (a continuation `function.name: ""`, `finish_reason: ""`, `tool_calls: []` opening the message owner early, `finish_reason: "stop"` beside tool calls) becomes a named dialect rule, like `empty_continuation_call_id`, once that upstream emits it. Frozen media decoders are not extended.
 
-Goal: OpenAI clients use the native Messages binding (activated by listing it in `models`), and the OpenAI boundaries accept known client and vendor shapes, with no silent loss of reasoning, tool or terminal semantics.
-
-Remaining: check the exit list below against the tests and close the gaps. Chat vendor stream shapes (a continuation `function.name: ""`, `finish_reason: ""`, `tool_calls: []` opening the message owner early, `finish_reason: "stop"` beside tool calls) become a standing rule: each becomes a named dialect rule, like `empty_continuation_call_id`, once a bound upstream emits it. Frozen media decoders are not extended.
-
-Exit: `Responses / Chat × Anthropic`, JSON and SSE, covers text, tool round trips, tool failures, thinking replay, a mid-loop Provider switch, refusals, truncation, upstream errors, ignored request fields and the cache field, with synthetic tests. Bounded real calls through the CLI-started gateway (opencode-go `claude-haiku-5-5` or another available target): one Codex-shaped request with reasoning controls, then a second turn on the same prefix. The relay accepting the reasoning and cache fields is an exit check; a reported cache read is an observation.
-
-## Later phases
-
-### Phase 2 — agent loop semantics for pi and opencode
+## Current focus: Phase 2 — agent loop semantics for pi and opencode
 
 An agent loop decides its next step from the error class, the terminal and its own history; the gateway makes those identical across Providers.
 
-- **Error classes.** Today every upstream failure except 429 reaches clients as 502 `upstream_error` with a fixed message, so no agent can tell an oversized context from an outage. Classify upstream failures per protocol (status plus typed error fields; upstream bodies are read for classification only, never forwarded) into: context overflow, rate limit, quota or credit exhausted, overloaded, and other. Render each as the downstream protocol's canonical error with a gateway-authored message: context overflow is 400 `context_length_exceeded` with OpenAI's wording ("Your input exceeds the context window of this model"), which pi matches by message and Codex by code; rate limits are 429 with `Retry-After` when the upstream reported a reset; overload is retryable 5xx. The same classes reach SSE clients after headers (Responses `response.failed`, Chat error chunk). Silent overflow (truncated input, `model_context_window_exceeded` stops) stays a `length` terminal.
-- **Conversation identity from the agents.** pi sends `x-session-id` / `session_id` and `prompt_cache_key`; read the declared ones as conversation identity hints for cache grouping and Phase 3 affinity, bounded and scoped by ingress key, never as route or credential selectors. Check what opencode sends before adding a carrier.
+- **Error classes.** Today every upstream failure except 429 reaches clients as 502 `upstream_error` with a fixed message, so no agent can tell an oversized context from an outage. Classify upstream failures per protocol (status plus typed error fields, including in-stream errors such as Anthropic `overloaded_error`; upstream bodies are read for classification only, never forwarded) into: context overflow, rate limit, quota or credit exhausted, overloaded, and other. Render each as the downstream protocol's canonical error with a gateway-authored message: context overflow is 400 `context_length_exceeded` with OpenAI's wording ("Your input exceeds the context window of this model"), which pi matches by message and Codex by code; rate limits are 429 with `Retry-After` when the upstream reported a reset; overload is retryable 5xx. The same classes reach SSE clients after headers (Responses `response.failed`, Chat error chunk). Silent overflow (truncated input, `model_context_window_exceeded` stops) stays a `length` terminal.
+- **Conversation identity from the agents.** pi sends `x-session-id` / `session_id` and `prompt_cache_key`; read the declared ones as conversation identity hints for cache grouping and Phase 3 affinity, bounded and scoped by ingress key, never as route or credential selectors. Check what opencode sends before adding a carrier. Codex sends its session and thread IDs in `client_metadata`, which is ignored today.
 - **Known client losses.** opencode's Chat path (AI SDK `openai-compatible`) reads and returns only `reasoning_content`, so opaque thinking cannot survive a turn there; the cross-target text rule applies and diagnostics name it. Its Responses path keeps `encrypted_content`. Record such facts as fixture expectations, not as gateway shims.
 - **Scenario fixtures.** One hand-written wire fixture per scenario per protocol, checked wire→IR and IR→wire against a synthetic upstream; pair-level tests only for pair-specific projection rules ([test rules](../AGENTS.md#tests)). Each SSE fixture is also fed in small fixed-size chunks. Consumer expectations come from pi (`openai-completions`, `openai-responses`) and the AI SDK (`openai-compatible`, `openai`) at pinned revisions. Scenarios:
   - Text, single and parallel tools, tool errors, reasoning replay, usage, truncation, each error class.
@@ -40,6 +32,8 @@ An agent loop decides its next step from the error class, the terminal and its o
   - Consumer shapes: a tool name only on the first fragment; no empty reasoning or tool-call deltas; null, empty and absent stay distinct.
 
 Exit: each error class reaches pi and Codex as the class they act on, in JSON and SSE; every scenario has an independent expectation per protocol; the SDK loopback gate passes.
+
+## Later phases
 
 ### Phase 3 — failover routing with cache affinity
 

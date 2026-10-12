@@ -2,7 +2,7 @@
 use super::{Profile, ReplayTarget};
 use crate::{
     adapter::{AdapterError, Request},
-    protocol::{CodecError, cache::CacheProjection, extensions::CustomSections},
+    protocol::{CodecError, cache::CacheProjection},
     semantic::{
         context::ExecutionHints, task::generation::GenerationSemanticContract, value::Presence,
     },
@@ -67,7 +67,6 @@ impl TargetCaps {
         }
         if context != ExecutionHints::default()
             || request.delivery.stream == Presence::Null
-            || request.extensions != CustomSections::default()
             || request.n.value().is_some_and(|n| *n != 1)
             || !go && request.cache_session.is_some()
         {

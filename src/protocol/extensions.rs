@@ -8,7 +8,6 @@
 //! only round-trips; nothing here derives or extends it.
 use super::openai::CodecError;
 use crate::semantic::value::Presence;
-use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_EXTRA_HEADERS: usize = 32;
@@ -16,9 +15,6 @@ const MAX_HEADER_NAME: usize = 64;
 const MAX_HEADER_VALUE: usize = 2048;
 const MAX_TURN_METADATA: usize = 8192;
 const MAX_FIELD: usize = 256;
-const MAX_SECTION_ENTRIES: usize = 32;
-const MAX_SECTION_KEY: usize = 64;
-const MAX_SECTION_BYTES: usize = 16 * 1024;
 
 /// Credentials, account locators and transport framing are never context metadata.
 const FORBIDDEN_HEADERS: &[&str] = &[
@@ -43,9 +39,6 @@ const FORBIDDEN_HEADERS: &[&str] = &[
     "trailer",
     "keep-alive",
 ];
-/// Body sections with explicit admission; other unknown body keys stay rejected.
-pub const SECTION_NAMES: &[&str] = &["client_metadata"];
-
 /// Typed routing hint (`model=<model>` or `model=<model>;tier=<tier>`), never sticky state.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RoutingHint {
@@ -251,58 +244,5 @@ impl CodexHeaders {
 fn push(out: &mut Vec<(String, String)>, name: &str, slot: &Presence<String>) {
     if let Presence::Value(v) = slot {
         out.push((name.to_string(), v.clone()));
-    }
-}
-
-/// Bounded opaque body sections (`client_metadata` today) that ride beside the
-/// standard envelope fields. Section values keep their source shape; the codec
-/// never interprets provider-private metadata schemas.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct CustomSections {
-    pub sections: Map<String, Value>,
-}
-impl CustomSections {
-    /// Strict standalone decode: every key must be an admitted section name.
-    pub fn decode(sections: &Map<String, Value>) -> Result<Self, CodecError> {
-        for (name, value) in sections {
-            if !SECTION_NAMES.contains(&name.as_str()) {
-                return Err(CodecError::Unsupported(format!("extension section {name}")));
-            }
-            let Value::Object(entries) = value else {
-                return Err(CodecError::Invalid("extension section"));
-            };
-            if entries.len() > MAX_SECTION_ENTRIES
-                || entries
-                    .keys()
-                    .any(|k| k.is_empty() || k.chars().count() > MAX_SECTION_KEY)
-            {
-                return Err(CodecError::Limit);
-            }
-            if crate::semantic::value::json_size(value, MAX_SECTION_BYTES).is_err() {
-                return Err(CodecError::Limit);
-            }
-        }
-        Ok(Self {
-            sections: sections.clone(),
-        })
-    }
-    /// Extract admitted sections from an envelope body; unknown keys stay the
-    /// envelope whitelist's responsibility.
-    pub fn read(body: &Map<String, Value>) -> Result<Self, CodecError> {
-        let picked: Map<_, _> = body
-            .iter()
-            .filter(|(k, _)| SECTION_NAMES.contains(&k.as_str()))
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        Self::decode(&picked)
-    }
-    pub fn write(&self, body: &mut Map<String, Value>) -> Result<(), CodecError> {
-        let mut probe = Map::new();
-        for (k, v) in &self.sections {
-            probe.insert(k.clone(), v.clone());
-        }
-        Self::decode(&probe)?;
-        body.extend(self.sections.clone());
-        Ok(())
     }
 }

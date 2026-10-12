@@ -177,6 +177,9 @@ async fn answer(
         json!({"type":"object","properties":{"key":{"type":"string"}}})
     );
     assert_eq!(body["tools"][0]["strict"], false);
+    // Messages has no cache key or retention; the gateway always requests caching.
+    assert_eq!(body["cache_control"], json!({"type":"ephemeral"}));
+    assert!(body.get("prompt_cache_key").is_none() && body.get("prompt_cache_retention").is_none());
     seen.lock().unwrap().push(body.clone());
     let prompt = body["messages"][0]["content"][0]["text"].as_str().unwrap();
     if matches!(prompt, "hold" | "cut" | "cancel") {
@@ -349,6 +352,10 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 "tools":[{"type":"function","function":function}]})
             };
             input["stream"] = json!(stream);
+            // pi's cache fields; Codex always sends `client_metadata`, which no target takes.
+            input["prompt_cache_key"] = json!("pi-session");
+            input["prompt_cache_retention"] = json!("24h");
+            input["client_metadata"] = json!({"session_id":"synthetic-session"});
             if stream && !responses {
                 input["stream_options"] = json!({"include_usage":true,"include_obfuscation":false});
             }
@@ -561,5 +568,6 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
     diagnostic_owner.flush_diagnostics().await;
     let records = std::fs::read_to_string(&diagnostics).unwrap();
     assert!(records.contains(r#""request_rules":["messages.omit-sampling.v1"]"#));
+    assert!(records.contains(r#""ignored_request_fields":["client_metadata"]"#));
     assert!(!records.contains("0.375"));
 }

@@ -441,27 +441,20 @@ fn unified_request_projection_keeps_targets_trusted_and_debug_redacted() {
         )
         .unwrap();
     assert!(admit(&no_temperature, &request).is_err());
-    for extra in [
-        json!({"service_tier":"auto"}),
-        json!({"client_metadata":{"trace":"opaque"}}),
-    ] {
-        let mut body = json!({"model":"deepseek-flash","input":"hello"});
-        body.as_object_mut()
-            .unwrap()
-            .extend(extra.as_object().unwrap().clone());
-        let request = client.decode_request(body.to_string().as_bytes()).unwrap();
-        assert!(
-            admit(
-                catalog::default_topology()
-                    .unwrap()
-                    .model("deepseek-flash")
-                    .unwrap(),
-                &request
-            )
-            .is_err()
-        );
-        assert!(prepare(endpoint, &providers::deepseek(), &secret, &request).is_err());
-    }
+    let request = client
+        .decode_request(br#"{"model":"deepseek-flash","input":"hello","service_tier":"auto"}"#)
+        .unwrap();
+    assert!(
+        admit(
+            catalog::default_topology()
+                .unwrap()
+                .model("deepseek-flash")
+                .unwrap(),
+            &request
+        )
+        .is_err()
+    );
+    assert!(prepare(endpoint, &providers::deepseek(), &secret, &request).is_err());
 }
 #[test]
 fn grok_public_binding_uses_the_responses_cache_carrier() {

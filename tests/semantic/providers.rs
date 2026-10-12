@@ -1625,9 +1625,8 @@ mod modelbest {
     }
 }
 mod extensions {
-    //! Provider-scoped extension carriers: Codex header lifecycle and custom body sections.
-    use morphiecore::protocol::extensions::{CodexHeaders, CustomSections, RoutingHint};
-    use serde_json::{Map, Value, json};
+    //! Provider-scoped extension carriers: Codex header lifecycle.
+    use morphiecore::protocol::extensions::{CodexHeaders, RoutingHint};
 
     fn headers(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
         pairs
@@ -1740,34 +1739,6 @@ mod extensions {
         let long = "x".repeat(5000);
         assert!(CodexHeaders::decode(&headers(&[("x-custom", &long)])).is_err());
         assert!(CodexHeaders::decode(&headers(&[("x-codex-turn-state", &long)])).is_err());
-    }
-    #[test]
-    fn custom_body_sections_round_trip_opaque_and_stay_fail_closed() {
-        let mut body = Map::new();
-        body.insert(
-            "client_metadata".into(),
-            json!({"session_id":"s1","x-codex-turn-metadata":{"turn_id":"t1"}}),
-        );
-        let decoded = CustomSections::decode(&body).unwrap();
-        let mut out = Map::new();
-        decoded.write(&mut out).unwrap();
-        assert_eq!(Value::Object(out), Value::Object(body.clone()));
-        let mut bad = Map::new();
-        bad.insert("x-mystery".into(), json!({}));
-        assert!(CustomSections::decode(&bad).is_err());
-        let mut bad = Map::new();
-        bad.insert("client_metadata".into(), json!("not-an-object"));
-        assert!(CustomSections::decode(&bad).is_err());
-        let mut big = Map::new();
-        big.insert("client_metadata".into(), json!({"k": "x".repeat(70000)}));
-        assert!(CustomSections::decode(&big).is_err());
-        let mut many = Map::new();
-        let mut entries = Map::new();
-        for i in 0..40 {
-            entries.insert(format!("k{i}"), json!("v"));
-        }
-        many.insert("client_metadata".into(), Value::Object(entries));
-        assert!(CustomSections::decode(&many).is_err());
     }
 }
 mod cache_projection {

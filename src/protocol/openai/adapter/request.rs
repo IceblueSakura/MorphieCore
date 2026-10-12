@@ -2,12 +2,9 @@
 use super::{Adapter, AdapterError, Request};
 use crate::{
     lowering::generation::RepresentationError,
-    protocol::{
-        extensions::CustomSections,
-        openai::{
-            self, CodecError, DecodeDirection, IgnoredFields, Profile, TargetCaps, chat_envelope,
-            envelope, lowering::lower_request,
-        },
+    protocol::openai::{
+        self, CodecError, DecodeDirection, IgnoredFields, Profile, TargetCaps, chat_envelope,
+        envelope, lowering::lower_request,
     },
     semantic::{
         context::{DeliveryIntent, ExecutionHints, StreamOptions},
@@ -65,7 +62,6 @@ impl Adapter {
                         stream: decoded.context.stream,
                         options: decoded.context.stream_options,
                     },
-                    extensions: CustomSections::default(),
                     source: Some(self.protocol),
                     conversation: None,
                     cache_session,
@@ -92,7 +88,6 @@ impl Adapter {
                         stream: decoded.context.delivery.stream,
                         options,
                     },
-                    extensions: decoded.context.extensions,
                     source: Some(self.protocol),
                     conversation: None,
                     cache_session,
@@ -288,7 +283,6 @@ impl Adapter {
                             stream: request.delivery.stream.clone(),
                             options,
                         },
-                        extensions: CustomSections::default(),
                     },
                 )?
             }

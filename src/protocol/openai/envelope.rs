@@ -93,8 +93,6 @@ pub struct RequestContext {
     pub model: String,
     pub delivery: Delivery,
     pub execution: ExecutionHints,
-    /// Provider-scoped body sections (`client_metadata`), never task semantics.
-    pub extensions: crate::protocol::extensions::CustomSections,
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct DecodedResponsesRequest {
@@ -130,7 +128,6 @@ pub(crate) fn decode_request_in(
         .chain(CACHE_FIELDS)
         .copied()
         .chain(["input", "model", "stream", "stream_options"])
-        .chain(crate::protocol::extensions::SECTION_NAMES.iter().copied())
         .collect();
     direction.fields(o, &allowed)?;
     let context = RequestContext {
@@ -144,7 +141,6 @@ pub(crate) fn decode_request_in(
             })?,
         },
         execution: ExecutionHints::read(o)?,
-        extensions: crate::protocol::extensions::CustomSections::read(o)?,
     };
     context.validate()?;
     let task: Map<_, _> = o
@@ -169,7 +165,6 @@ pub fn encode_request(
     let mut v = super::responses::encode_generation(target)?;
     let o = v.as_object_mut().expect("object");
     context.execution.write(o)?;
-    context.extensions.write(o)?;
     o.insert("store".into(), json!(false));
     o.insert("model".into(), json!(context.model));
     put_presence(o, "stream", &context.delivery.stream, |s| json!(s));
