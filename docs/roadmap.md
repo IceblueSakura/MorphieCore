@@ -11,7 +11,7 @@ Maintenance only, as refactors require:
 - New features for subscription credentials (SIWC, Grok).
 - Stateful Responses, file services, Realtime.
 
-Not planned: raw wire passthrough or post-encoding JSON patches, weakening schemas (`oneOf` → `anyOf`), synthesizing missing tool results or re-roling orphan results, first-message hashes as conversation identity, LLM intent classifiers for routing, plugin or middleware hosts, capabilities learned automatically from upstream errors. Load balancing in any form (weights, round robin, least load), per-credential concurrency or RPM lanes, budget reservations, turn-start routing rules, and retrying a refusal on another model: routing is failover only (architecture §5).
+Not planned: raw wire passthrough or post-encoding JSON patches, weakening schemas (`oneOf` → `anyOf`), synthesizing missing tool results or re-roling orphan results, first-message hashes as conversation identity, LLM intent classifiers for routing, plugin or middleware hosts, capabilities learned automatically from upstream errors. Load balancing in any form (weights, round robin, least load), per-credential concurrency or RPM lanes, budget reservations, and retrying a refusal on another model: routing is failover only (architecture §5). Routing units below the conversation: turn-boundary detection, branch or subtask identity, per-turn holds, rules or model switches, and per-message effort; the declared conversation is the routing unit (architecture §8).
 
 ## Target agents
 
@@ -19,11 +19,15 @@ pi and opencode first; Codex and Claude Code second. Real-client acceptance runs
 
 Vendor stream shapes are a standing rule, not a phase: a Chat shape seen from a bound upstream (a continuation `function.name: ""`, `finish_reason: ""`, `tool_calls: []` opening the message owner early, `finish_reason: "stop"` beside tool calls) becomes a named dialect rule, like `empty_continuation_call_id`, once that upstream emits it. Likewise an OpenAI-compatible upstream's in-stream error (a Chat error chunk, a Responses `response.failed`) is classified like Anthropic `error` events once a bound upstream emits one. Frozen media decoders are not extended.
 
-## Open from Phase 3
+## Deferred
 
-Failover routing is done (architecture §5). Not accepted: one bounded real failover run with two credentials or Providers for one model; it needs a reproducible advanceable failure, such as a zero-credit or exhausted key in a scratch credential store.
+Not current work; each returns only when the user reopens it.
 
-Deferred until a real need: SSE keep-alive comments while frames are held (the hold stays far below Codex's 300 s idle timeout), executor affinity from the prefix index for requests without a declared conversation (all target agents declare one), an opt-in first-content timeout, per-message effort to keep the cache when clients change effort mid-conversation.
+- **Real failover acceptance.** Failover routing is done (architecture §5); one bounded real run with two credentials or Providers for one model is not. It needs a reproducible advanceable failure, such as a zero-credit or exhausted key in a scratch credential store.
+- **Coverage pass.** Feature phases add functional tests only. The pass adds one hand-written wire fixture per scenario per protocol, checked wire→IR and IR→wire against a synthetic upstream, each SSE fixture also fed in small fixed-size chunks, with consumer expectations from pi and opencode. Scenarios: text, single and parallel tools, tool errors, reasoning replay, usage, truncation, each error class; consumer shapes (a tool name only on the first fragment, no empty reasoning or tool-call deltas, null/empty/absent kept distinct).
+- **Claude Code acceptance.** Downstream Messages is covered by functional tests and pi's `anthropic-messages` provider. When reopened: sample Claude Code's request shapes first; then `anthropic-beta`, `?beta=true`, `count_tokens`, `metadata.user_id` as a conversation hint.
+
+Until a real need: SSE keep-alive comments while frames are held (the hold stays far below Codex's 300 s idle timeout), executor affinity from the prefix index for requests without a declared conversation (all target agents declare one), an opt-in first-content timeout.
 
 ## Later phases
 
@@ -40,14 +44,6 @@ Only when a target agent needs a Gemini model. IR questions to settle first:
 ### Phase 6 — Google Interactions upstream
 
 Submit full history statelessly, without server-side storage; reuse the opaque envelope. Pin the official API version before starting.
-
-### Coverage pass (after the feature phases)
-
-Feature phases add functional tests only. Once they are done: one hand-written wire fixture per scenario per protocol, checked wire→IR and IR→wire against a synthetic upstream, each SSE fixture also fed in small fixed-size chunks, with consumer expectations from pi and opencode. Scenarios: text, single and parallel tools, tool errors, reasoning replay, usage, truncation, each error class; consumer shapes (a tool name only on the first fragment, no empty reasoning or tool-call deltas, null/empty/absent kept distinct).
-
-### Claude Code details (when Claude Code is accepted)
-
-Sample its request shapes first; then `anthropic-beta`, `?beta=true`, `count_tokens`, `metadata.user_id` as a conversation hint.
 
 ### After that
 

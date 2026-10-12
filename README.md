@@ -1,12 +1,12 @@
 # MorphieCore
 
-A central gateway built on one unified IR that hides Provider differences from agent loops (pi and opencode first, then Codex and Claude Code). Clients speak OpenAI Chat Completions or Responses; upstream Providers speak OpenAI-compatible, Anthropic Messages and, later, Google protocols. The project is in core design and validation.
+A central gateway built on one unified IR that hides Provider differences from agent loops (pi and opencode first, then Codex and Claude Code). Clients speak OpenAI Chat Completions, Responses or Anthropic Messages; upstream Providers speak OpenAI-compatible, Anthropic Messages and, later, Google protocols. The project is in core design and validation.
 
 ## Status
 
-- **Working:** downstream Responses and Chat (JSON and SSE; text, tools, reasoning, images and some file inputs); upstream OpenAI Responses and Chat with several compatible dialects; Anthropic Messages upstream through explicitly compiled topology; file credentials with ordered pools; Provider-native cache affinity.
+- **Working:** downstream Responses, Chat and Anthropic Messages (JSON and SSE; text, tools, reasoning, images and some file inputs); upstream OpenAI Responses and Chat with several compatible dialects and native Anthropic Messages; failover across a model's Providers and keys with held streams, cooldown and per-conversation affinity; file credentials with ordered pools; Provider-native cache affinity. pi passes real-client acceptance on all three downstream protocols.
 - **Frozen:** the standalone Embeddings, Images, Speech and Transcription endpoints, and new Providers.
-- **Next:** OpenAI clients on the native Messages binding, then held streams with pre-content fallback, then routing with cooldown and target affinity, then Google generateContent and Interactions, then downstream Anthropic Messages. See the [roadmap](docs/roadmap.md).
+- **Next:** Google generateContent and Interactions upstreams when a target agent needs Gemini. Real failover acceptance, the coverage pass and Claude Code acceptance are deferred. See the [roadmap](docs/roadmap.md).
 
 ## Quick start
 

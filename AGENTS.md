@@ -2,7 +2,7 @@
 
 ## Project and sources of truth
 
-- A central gateway built on one unified IR that hides Provider differences from a few agents' loops: pi and opencode first, Codex and Claude Code second. Downstream: OpenAI Chat Completions and Responses, Anthropic Messages later. Upstream: OpenAI Responses/Chat, Anthropic Messages, Google generateContent and Interactions. Routing is cache-affine failover across a model's Providers and keys, never load balancing.
+- A central gateway built on one unified IR that hides Provider differences from a few agents' loops: pi and opencode first, Codex and Claude Code second. Downstream: OpenAI Chat Completions and Responses, Anthropic Messages. Upstream: OpenAI Responses/Chat, Anthropic Messages, Google generateContent and Interactions. Routing is cache-affine failover across a model's Providers and keys, never load balancing.
 - Design principles and settled decisions: [docs/architecture.md](docs/architecture.md). Direction, frozen scope and the current slice: [docs/roadmap.md](docs/roadmap.md).
 - Code and tests define behavior; docs record only concepts, decisions and direction. For available Providers, models and bindings read `src/provider/catalog.rs`, `src/topology/catalog*` and `src/gateway/bootstrap.rs`; never keep lists in docs or memory.
 
