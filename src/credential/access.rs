@@ -1,5 +1,7 @@
 //! Short-lived inference snapshots. No refresh, account selection or authority I/O.
-use super::{CredentialError as Error, CredentialManager, Secret, VerifiedIdentity, model};
+use crate::credential::{
+    CredentialError as Error, CredentialManager, Secret, VerifiedIdentity, model,
+};
 use sha2::{Digest, Sha256};
 
 #[derive(Clone)]

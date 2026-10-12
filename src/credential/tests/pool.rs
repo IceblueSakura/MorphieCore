@@ -1,8 +1,9 @@
 //! Pool configuration is explicit, ordered and independent of remote credential validity.
+use crate::credential::tests::support as test_support;
 
 #[test]
 fn oauth_pool_borrows_distinct_principals_without_refresh_or_cross_profile_substitution() {
-    use super::model::{Account, AccountState};
+    use crate::credential::model::{Account, AccountState};
     let dir = test_support::Directory::new();
     let manager = CredentialManager::new(&dir.path, builtin_drivers(None).unwrap()).unwrap();
     for alias in ["first", "second"] {
@@ -76,7 +77,7 @@ fn oauth_pool_borrows_distinct_principals_without_refresh_or_cross_profile_subst
         .is_err()
     );
 }
-use super::*;
+use crate::credential::*;
 #[test]
 fn provider_pool_keeps_order_and_rejects_duplicates_stale_updates_or_missing_keys() {
     let dir = test_support::Directory::new();

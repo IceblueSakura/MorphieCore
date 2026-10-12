@@ -1,34 +1,23 @@
 //! Unified credential ownership; never imported by semantic codecs or lowering.
 mod api_key;
+pub mod drivers;
+mod oauth;
+mod storage;
+#[cfg(test)]
+pub(crate) mod tests;
 pub use api_key::{ApiKeyAccess, ApiKeyState, ApiKeyStatus};
 mod access;
 pub use access::{AccessBinding, AccessGrant};
-mod browser;
-mod callback;
-mod directory;
-pub use directory::resolve_store_directory;
-mod driver;
-mod grok;
-mod grok_metadata;
-mod http;
-mod jwt;
+pub use storage::directory::resolve_store_directory;
 mod manager;
 mod model;
-mod oauth;
 mod pool;
-mod profiles;
-pub mod siwc;
-#[cfg(test)]
-mod siwc_tests;
-mod storage_fs;
-#[cfg(windows)]
-mod storage_windows;
-mod store;
 pub use pool::{
     CredentialPool, CredentialRef, MAX_POOL_MEMBERS, PoolAccess, PoolMember, PoolStatus,
 };
 
-pub use driver::{
+pub use drivers::builtin_drivers;
+pub use drivers::driver::{
     AuthDriver, DriverFuture, LoginObserver, RegistrationContext, RegistrationObserver,
 };
 pub use manager::CredentialManager;
@@ -37,7 +26,6 @@ pub use model::{
     LoginMethod, LoginOptions, LoginPrompt, LogoutOutcome, PendingRenewal, Renewal, Secret,
     SecretBytes, VerifiedIdentity,
 };
-pub use profiles::builtin_drivers;
 
 /// Read one explicitly selected private file, never an environment value or auth cache.
 pub fn read_private_file(
@@ -58,7 +46,7 @@ pub fn read_private_file(
         .file_name()
         .and_then(|n| n.to_str())
         .ok_or(CredentialError::InvalidInput)?;
-    storage_fs::Directory::open(parent)?
+    storage::fs::Directory::open(parent)?
         .read(name, limit)?
         .ok_or(CredentialError::Storage)
 }
@@ -115,7 +103,7 @@ pub enum CredentialError {
     Denied,
     #[error("OpenAI login response rejected (stage={stage}, HTTP={status}, code={code}): {cause}")]
     SiwcLoginResponse {
-        stage: siwc::LoginStage,
+        stage: drivers::siwc::LoginStage,
         status: u16,
         code: &'static str,
         #[source]
@@ -136,18 +124,3 @@ pub enum CredentialError {
     #[error("OAuth grant was rejected; login required")]
     InvalidGrant,
 }
-
-#[cfg(test)]
-mod api_key_tests;
-#[cfg(test)]
-mod browser_tests;
-#[cfg(test)]
-mod manager_tests;
-#[cfg(test)]
-mod pool_tests;
-#[cfg(test)]
-mod storage_tests;
-#[cfg(test)]
-pub(crate) mod test_support;
-#[cfg(test)]
-mod tests;

@@ -1,5 +1,5 @@
 //! Fixed-profile OIDC policy over standard JOSE/JWK verification; no key discovery.
-use super::{CredentialError as Error, model::now};
+use crate::credential::{CredentialError as Error, model::now};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as B64};
 use jsonwebtoken::{
     DecodingKey, Validation,
@@ -9,7 +9,7 @@ use serde::Deserialize;
 use subtle::ConstantTimeEq;
 
 #[derive(Clone, Copy)]
-pub(super) enum Algorithm {
+pub(in crate::credential) enum Algorithm {
     Rs256,
     Es256,
 }
@@ -27,13 +27,13 @@ impl Algorithm {
         }
     }
 }
-pub(super) struct Policy<'a> {
+pub(in crate::credential) struct Policy<'a> {
     pub issuer: &'a str,
     pub client: &'a str,
     pub algorithm: Algorithm,
     pub nonce: Option<&'a str>,
 }
-pub(super) struct VerifiedClaims {
+pub(in crate::credential) struct VerifiedClaims {
     pub subject: String,
 }
 #[derive(Deserialize)]
@@ -72,7 +72,7 @@ fn parts(jwt: &str) -> Result<(&str, &str, &str), Error> {
     }
     Ok(result)
 }
-pub(super) fn verify(
+pub(in crate::credential) fn verify(
     jwt: &str,
     keys: &serde_json::Value,
     policy: Policy<'_>,
@@ -192,9 +192,9 @@ fn validate_claims(claims: &Claims, policy: &Policy<'_>, timestamp: u64) -> Resu
     }
     Ok(())
 }
-fn decode(value: &str) -> Result<super::SecretBytes, Error> {
+fn decode(value: &str) -> Result<crate::credential::SecretBytes, Error> {
     B64.decode(value)
-        .map(super::SecretBytes::new)
+        .map(crate::credential::SecretBytes::new)
         .map_err(|_| Error::Protocol)
 }
 #[cfg(test)]

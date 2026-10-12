@@ -221,7 +221,7 @@ impl Fixture {
     fn from_lookup(
         mut get: impl FnMut(&str) -> Result<Option<String>, StartupError>,
     ) -> Result<Self, StartupError> {
-        let directory = crate::credential::test_support::private_directory();
+        let directory = crate::credential::tests::support::private_directory();
         let manager = crate::credential::CredentialManager::new(directory.path(), vec![]).unwrap();
         let mut added = std::collections::BTreeSet::new();
         for binding in catalog::API_KEY_BINDINGS {

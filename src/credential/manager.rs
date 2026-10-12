@@ -1,11 +1,11 @@
 //! Profile-neutral lifecycle coordination; network waits never hold store transactions.
-use super::{
+use crate::credential::{
     AuthDriver, CredentialError as Error, LoginOptions, LoginPrompt,
     model::{
         AccessState, Account, AccountState, AccountStatus, Grant, LogoutOutcome, random_id,
         valid_alias, valid_client, valid_profile,
     },
-    store::{Loaded, Store, Transaction},
+    storage::store::{Loaded, Store, Transaction},
 };
 use std::{collections::BTreeMap, path::Path, sync::Arc};
 

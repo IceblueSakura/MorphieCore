@@ -1,4 +1,4 @@
-use super::{test_support::*, *};
+use crate::credential::{drivers::grok, storage::store, tests::support::*, *};
 use axum::{Router, body::Bytes, http::StatusCode, routing::post};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -24,7 +24,7 @@ fn token(access: &str, refresh: Option<&str>) -> Value {
     }
     body
 }
-pub(super) fn login_steps(subject: &str) -> Vec<Step> {
+pub(in crate::credential) fn login_steps(subject: &str) -> Vec<Step> {
     vec![
         device(),
         step(
@@ -43,7 +43,7 @@ pub(super) fn login_steps(subject: &str) -> Vec<Step> {
         ),
     ]
 }
-pub(super) async fn login(pool: &CredentialManager, account: &str) -> AccountStatus {
+pub(in crate::credential) async fn login(pool: &CredentialManager, account: &str) -> AccountStatus {
     pool.login_grok(account, "synthetic-client", |prompt| {
         assert_eq!(prompt.user_code, "ABCD-1234");
         assert_eq!(prompt.verification_uri, "https://accounts.x.ai/device");
@@ -349,14 +349,14 @@ async fn revocation_failure_still_clears_only_local_session() {
 fn store_rejects_symlinks_insecure_permissions_and_invalid_aliases() {
     use std::os::unix::fs::{PermissionsExt, symlink};
     let dir = Directory::new();
-    let pool = super::test_support::offline(&dir.path).unwrap();
+    let pool = crate::credential::tests::support::offline(&dir.path).unwrap();
     assert_eq!(
         pool.store.account_lock("grok", "../escape").unwrap_err(),
         CredentialError::InvalidInput
     );
     std::fs::set_permissions(&dir.path, std::fs::Permissions::from_mode(0o755)).unwrap();
     assert!(matches!(
-        super::test_support::offline(&dir.path),
+        crate::credential::tests::support::offline(&dir.path),
         Err(CredentialError::Storage)
     ));
     std::fs::set_permissions(&dir.path, std::fs::Permissions::from_mode(0o700)).unwrap();

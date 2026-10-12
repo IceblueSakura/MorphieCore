@@ -1,13 +1,16 @@
 //! Independent public SIWC driver; no Codex client, account header or auth-cache import.
 //! https://developers.openai.com/siwc/token-sharing-open-source/sign-in
-use super::{
+use crate::credential::{
     AuthDriver, Credential, CredentialError as Error, DriverFuture, Grant, LoginMethod,
     LoginObserver, LoginOptions, LoginPrompt, PendingRenewal, RegistrationContext, Renewal, Secret,
     VerifiedIdentity,
-    browser::{BrowserGrant, BrowserProfile},
-    http::{AuthHttp, REQUEST_TIMEOUT},
     model::now,
-    oauth::{self, present},
+    oauth::{
+        self,
+        browser::{BrowserGrant, BrowserProfile},
+        http::{AuthHttp, REQUEST_TIMEOUT},
+        present,
+    },
 };
 use serde::Deserialize;
 use std::time::Duration;
@@ -16,7 +19,7 @@ use tokio::time::Instant;
 pub const APPLICATION_NAME: &str = "MorphieCore";
 pub const APPLICATION_DESCRIPTION: &str = env!("CARGO_PKG_DESCRIPTION");
 pub const USER_AGENT: &str = concat!("MorphieCore/", env!("CARGO_PKG_VERSION"));
-pub(super) const BOOTSTRAP_CLIENT: &str = "dynamic_agent_client";
+pub(in crate::credential) const BOOTSTRAP_CLIENT: &str = "dynamic_agent_client";
 const ORIGIN: &str = "https://auth.openai.com";
 const RESOURCE: &str = "https://api.openai.com/v1";
 const TOKEN: &str = "/api/accounts/oauth/token";
@@ -38,7 +41,7 @@ impl std::fmt::Display for LoginStage {
     }
 }
 
-pub(super) struct SiwcAuthority {
+pub(in crate::credential) struct SiwcAuthority {
     http: AuthHttp,
 }
 #[derive(Deserialize)]
@@ -84,19 +87,19 @@ impl SiwcAuthority {
         verify_identity(token, &keys, client, nonce)
     }
 }
-pub(super) fn verify_identity(
+pub(in crate::credential) fn verify_identity(
     token: &str,
     keys: &serde_json::Value,
     client: &str,
     nonce: Option<&str>,
 ) -> Result<VerifiedIdentity, Error> {
-    let verified = super::jwt::verify(
+    let verified = crate::credential::oauth::jwt::verify(
         token,
         keys,
-        super::jwt::Policy {
+        crate::credential::oauth::jwt::Policy {
             issuer: ORIGIN,
             client,
-            algorithm: super::jwt::Algorithm::Rs256,
+            algorithm: crate::credential::oauth::jwt::Algorithm::Rs256,
             nonce,
         },
     )?;
@@ -180,7 +183,7 @@ impl AuthDriver for SiwcAuthority {
         identity: Option<&VerifiedIdentity>,
         credential: Option<&Credential>,
     ) -> Result<(), Error> {
-        super::model::valid_client(client)?;
+        crate::credential::model::valid_client(client)?;
         if client == BOOTSTRAP_CLIENT && (identity.is_some() || credential.is_some())
             || identity.is_some_and(|i| i.scope.is_some())
             || credential.is_some_and(|c| {
@@ -223,7 +226,7 @@ impl AuthDriver for SiwcAuthority {
     ) -> DriverFuture<'a, Grant> {
         Box::pin(async move {
             self.login_client(options)?;
-            if !super::store::valid_host_id(registration.host_id) {
+            if !crate::credential::storage::store::valid_host_id(registration.host_id) {
                 return Err(Error::InvalidInput);
             }
             let mut extra = vec![

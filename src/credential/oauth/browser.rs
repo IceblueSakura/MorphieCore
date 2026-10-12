@@ -1,15 +1,13 @@
 //! One owned OIDC browser transaction; product parameters and identity stay in drivers.
-use super::{
+use crate::credential::{
     BrowserPrompt, CredentialError as Error, Secret,
-    callback::Callback,
-    http::AuthHttp,
-    oauth::{self, CodeExchange},
+    oauth::{self, CodeExchange, callback::Callback, http::AuthHttp},
 };
 use oauth2::{AuthUrl, ClientId, CsrfToken, RedirectUrl, Scope, basic::BasicClient};
 use std::{collections::BTreeSet, time::Duration};
 use tokio::time::Instant;
 
-pub(super) struct BrowserProfile<'a> {
+pub(in crate::credential) struct BrowserProfile<'a> {
     pub authorize: &'static str,
     pub client: &'a str,
     pub scopes: &'static str,
@@ -17,7 +15,7 @@ pub(super) struct BrowserProfile<'a> {
     pub extra: &'a [(&'a str, &'a str)],
     pub timeout: Duration,
 }
-pub(super) struct BrowserGrant {
+pub(in crate::credential) struct BrowserGrant {
     pub prompt: BrowserPrompt,
     pub deadline: Instant,
     callback: Callback,
@@ -26,9 +24,9 @@ pub(super) struct BrowserGrant {
     nonce: Secret,
     client: String,
 }
-pub(super) struct BrowserResponse {
+pub(in crate::credential) struct BrowserResponse {
     pub status: u16,
-    pub body: super::SecretBytes,
+    pub body: crate::credential::SecretBytes,
     pub nonce: Secret,
     pub client: String,
 }
@@ -39,7 +37,7 @@ impl BrowserGrant {
         token_path: &str,
         resource: &str,
         bootstrap_client: &str,
-        registration: super::RegistrationContext<'_>,
+        registration: crate::credential::RegistrationContext<'_>,
     ) -> Result<BrowserResponse, Error> {
         let callback = self
             .callback

@@ -1,5 +1,5 @@
 //! A one-transaction, bounded loopback callback. No detached connection workers.
-use super::{CredentialError as Error, model::Secret};
+use crate::credential::{CredentialError as Error, model::Secret};
 use std::{collections::BTreeMap, net::SocketAddr, time::Duration};
 use subtle::ConstantTimeEq;
 use tokio::{
@@ -11,17 +11,17 @@ use tokio::{
 const HEADER_LIMIT: usize = 8192;
 const ATTEMPT_LIMIT: usize = 64;
 const READ_TIMEOUT: Duration = Duration::from_secs(2);
-pub(super) struct Callback {
+pub(in crate::credential) struct Callback {
     listener: TcpListener,
     address: SocketAddr,
     path: &'static str,
 }
-pub(super) enum CallbackDecision {
+pub(in crate::credential) enum CallbackDecision {
     Code(CallbackCode),
     Error(Error),
     Reject(u16),
 }
-pub(super) struct CallbackCode {
+pub(in crate::credential) struct CallbackCode {
     pub code: Secret,
     pub client_id: Option<String>,
 }
@@ -139,7 +139,7 @@ async fn read_request(stream: &mut TcpStream) -> Result<Vec<u8>, u16> {
         }
     }
 }
-pub(super) fn classify(
+pub(in crate::credential) fn classify(
     bytes: &[u8],
     address: SocketAddr,
     expected_state: &str,
@@ -216,7 +216,7 @@ pub(super) fn classify(
     let client_id = fields.get("client_id").map(|v| v.to_string());
     if client_id
         .as_deref()
-        .is_some_and(|v| super::model::valid_client(v).is_err())
+        .is_some_and(|v| crate::credential::model::valid_client(v).is_err())
     {
         return reject(400);
     }

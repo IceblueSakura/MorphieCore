@@ -1,5 +1,5 @@
 //! Trusted authorization adapter boundary; drivers never publish or select accounts.
-use super::{
+use crate::credential::{
     Credential, CredentialError as Error, Grant, LoginOptions, LoginPrompt, VerifiedIdentity,
 };
 use std::{future::Future, pin::Pin};
@@ -34,18 +34,18 @@ pub trait AuthDriver: Send + Sync {
         client: &'a str,
         identity: &'a VerifiedIdentity,
         previous: &'a Credential,
-    ) -> DriverFuture<'a, super::Renewal> {
+    ) -> DriverFuture<'a, crate::credential::Renewal> {
         Box::pin(async move {
             self.refresh(client, identity, previous)
                 .await
-                .map(super::Renewal::Verified)
+                .map(crate::credential::Renewal::Verified)
         })
     }
     fn verify_renewal<'a>(
         &'a self,
         _client: &'a str,
         _identity: &'a VerifiedIdentity,
-        _pending: &'a super::PendingRenewal,
+        _pending: &'a crate::credential::PendingRenewal,
     ) -> DriverFuture<'a, VerifiedIdentity> {
         Box::pin(async { Err(Error::Unsupported) })
     }

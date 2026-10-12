@@ -1,8 +1,8 @@
 //! Operator-provisioned keys, not OAuth grants or evidence of upstream validity.
-use super::{
+use crate::credential::{
     CredentialError as Error, CredentialManager, Secret,
     model::{random_id, valid_alias, valid_profile},
-    store::{StoredDocument, Transaction},
+    storage::store::{StoredDocument, Transaction},
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -266,7 +266,7 @@ impl CredentialManager {
         &self,
         domain: &str,
         alias: &str,
-    ) -> Result<super::storage_fs::FileLock, Error> {
+    ) -> Result<crate::credential::storage::fs::FileLock, Error> {
         {
             let tx = self.keys.transaction()?;
             let (record, recovery) = tx.load_document::<KeyRecord>(domain, alias)?;

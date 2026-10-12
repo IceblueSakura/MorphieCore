@@ -1,31 +1,34 @@
 //! Fixed xAI personal browser/device/refresh wire, not a selectable authority.
 //! Sources: https://auth.x.ai/.well-known/openid-configuration and
 //! https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-login/src/device_code.rs
-use super::http::{AuthHttp, REQUEST_TIMEOUT};
-use super::model::VerifiedIdentity;
-use super::{
+mod metadata;
+use crate::credential::{
     CredentialError as Error,
-    browser::{BrowserGrant, BrowserProfile},
-    grok_metadata::{CLIENT_ID, REFERRER, VERSION, device_surface, user_agent},
-    model::DevicePrompt,
-    model::{Credential, Secret, now},
-    oauth::{self, present},
+    drivers::grok::metadata::{CLIENT_ID, REFERRER, VERSION, device_surface, user_agent},
+    model::{Credential, DevicePrompt, Secret, VerifiedIdentity, now},
+    oauth::{
+        self,
+        browser::{BrowserGrant, BrowserProfile},
+        http::{AuthHttp, REQUEST_TIMEOUT},
+        present,
+    },
 };
 use serde::Deserialize;
 use std::{collections::BTreeSet, time::Duration};
 use tokio::time::Instant;
 
-pub(super) const SCOPES: &str = "openid profile email offline_access grok-cli:access api:access";
+pub(in crate::credential) const SCOPES: &str =
+    "openid profile email offline_access grok-cli:access api:access";
 const ORIGIN: &str = "https://auth.x.ai";
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(900);
 
 #[derive(Clone)]
-pub(super) struct GrokAuthority {
+pub(in crate::credential) struct GrokAuthority {
     http: AuthHttp,
     surface: &'static str,
 }
 #[derive(Debug)]
-pub(super) struct DeviceGrant {
+pub(in crate::credential) struct DeviceGrant {
     pub prompt: DevicePrompt,
     device_code: Secret,
     interval: Duration,
@@ -192,7 +195,7 @@ impl GrokAuthority {
     }
     pub async fn poll(&self, client: &str, mut device: DeviceGrant) -> Result<Credential, Error> {
         loop {
-            super::oauth::wait_for_poll(device.interval, device.deadline).await?;
+            crate::credential::oauth::wait_for_poll(device.interval, device.deadline).await?;
             let (status, body) = self
                 .http
                 .request_with_metadata(
@@ -310,7 +313,7 @@ impl GrokAuthority {
         }
     }
 }
-pub(super) fn verification_uri(raw: &str) -> Result<String, Error> {
+pub(in crate::credential) fn verification_uri(raw: &str) -> Result<String, Error> {
     if raw.len() > 2048 || raw.chars().any(char::is_control) {
         return Err(Error::Protocol);
     }
@@ -328,7 +331,7 @@ pub(super) fn verification_uri(raw: &str) -> Result<String, Error> {
     // Deliberately use the base URI, not verification_uri_complete with opaque query data.
     Ok(url.to_string())
 }
-pub(super) fn next_interval(interval: Duration) -> Result<Duration, Error> {
+pub(in crate::credential) fn next_interval(interval: Duration) -> Result<Duration, Error> {
     interval
         .checked_add(Duration::from_secs(5))
         .filter(|next| next.as_secs() <= 900)
@@ -370,19 +373,19 @@ fn parse_token(
         scopes: Some(scopes),
     })
 }
-pub(super) fn verify_identity(
+pub(in crate::credential) fn verify_identity(
     token: &str,
     keys: &serde_json::Value,
     client: &str,
     nonce: &str,
 ) -> Result<VerifiedIdentity, Error> {
-    let claims = super::jwt::verify(
+    let claims = crate::credential::oauth::jwt::verify(
         token,
         keys,
-        super::jwt::Policy {
+        crate::credential::oauth::jwt::Policy {
             issuer: ORIGIN,
             client,
-            algorithm: super::jwt::Algorithm::Es256,
+            algorithm: crate::credential::oauth::jwt::Algorithm::Es256,
             nonce: Some(nonce),
         },
     )?;
@@ -391,18 +394,19 @@ pub(super) fn verify_identity(
         scope: None,
     })
 }
-impl super::AuthDriver for GrokAuthority {
+impl crate::credential::AuthDriver for GrokAuthority {
     fn profile(&self) -> &'static str {
         "grok"
     }
-    fn login_client(&self, options: &super::LoginOptions) -> Result<String, Error> {
+    fn login_client(&self, options: &crate::credential::LoginOptions) -> Result<String, Error> {
         if options.consent
-            || (options.method != super::LoginMethod::Browser && options.callback_port.is_some())
+            || (options.method != crate::credential::LoginMethod::Browser
+                && options.callback_port.is_some())
         {
             return Err(Error::InvalidInput);
         }
         let client = options.client_id.as_deref().unwrap_or(CLIENT_ID);
-        super::model::valid_client(client)?;
+        crate::credential::model::valid_client(client)?;
         Ok(client.into())
     }
     fn validate(
@@ -411,7 +415,7 @@ impl super::AuthDriver for GrokAuthority {
         identity: Option<&VerifiedIdentity>,
         credential: Option<&Credential>,
     ) -> Result<(), Error> {
-        super::model::valid_client(client)?;
+        crate::credential::model::valid_client(client)?;
         if identity.is_some_and(|i| i.scope.is_some()) {
             return Err(Error::Protocol);
         }
@@ -426,25 +430,29 @@ impl super::AuthDriver for GrokAuthority {
     fn login<'a>(
         &'a self,
         client: &'a str,
-        options: &'a super::LoginOptions,
-        notify: super::LoginObserver<'a>,
-    ) -> super::DriverFuture<'a, super::Grant> {
+        options: &'a crate::credential::LoginOptions,
+        notify: crate::credential::LoginObserver<'a>,
+    ) -> crate::credential::DriverFuture<'a, crate::credential::Grant> {
         Box::pin(async move {
             let (credential, identity) = match options.method {
-                super::LoginMethod::Device => {
+                crate::credential::LoginMethod::Device => {
                     let grant = self.device(client).await?;
-                    notify(&super::LoginPrompt::Device(grant.prompt.clone()));
+                    notify(&crate::credential::LoginPrompt::Device(
+                        grant.prompt.clone(),
+                    ));
                     self.complete_device(client, grant).await?
                 }
-                super::LoginMethod::Browser => {
+                crate::credential::LoginMethod::Browser => {
                     let grant = self
                         .browser(client, options.callback_port.unwrap_or(0))
                         .await?;
-                    notify(&super::LoginPrompt::Browser(grant.prompt.clone()));
+                    notify(&crate::credential::LoginPrompt::Browser(
+                        grant.prompt.clone(),
+                    ));
                     self.complete_browser(grant).await?
                 }
             };
-            Ok(super::Grant {
+            Ok(crate::credential::Grant {
                 identity,
                 credential,
             })
@@ -458,7 +466,7 @@ impl super::AuthDriver for GrokAuthority {
         client: &'a str,
         _identity: &'a VerifiedIdentity,
         previous: &'a Credential,
-    ) -> super::DriverFuture<'a, super::Grant> {
+    ) -> crate::credential::DriverFuture<'a, crate::credential::Grant> {
         Box::pin(async move {
             let credential = self
                 .refresh(
@@ -474,7 +482,7 @@ impl super::AuthDriver for GrokAuthority {
             let subject = self
                 .identity(&credential, Instant::now() + REQUEST_TIMEOUT)
                 .await?;
-            Ok(super::Grant {
+            Ok(crate::credential::Grant {
                 identity: VerifiedIdentity {
                     subject,
                     scope: None,
@@ -487,7 +495,7 @@ impl super::AuthDriver for GrokAuthority {
         &'a self,
         client: &'a str,
         credential: &'a Credential,
-    ) -> super::DriverFuture<'a, ()> {
+    ) -> crate::credential::DriverFuture<'a, ()> {
         Box::pin(async move {
             self.revoke(
                 client,
@@ -501,7 +509,7 @@ impl super::AuthDriver for GrokAuthority {
         })
     }
 }
-pub(super) fn validate_scopes(scopes: &str) -> Result<(), Error> {
+pub(in crate::credential) fn validate_scopes(scopes: &str) -> Result<(), Error> {
     if scopes.len() > 1024 || !scopes.bytes().all(|c| (0x20..=0x7e).contains(&c)) {
         return Err(Error::Protocol);
     }

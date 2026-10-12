@@ -1,8 +1,8 @@
 //! Independent persistence fault boundaries; no authority traffic.
-use super::{
+use crate::credential::{
     model::{Account, AccountState},
-    store::{PublishStep, Store},
-    test_support::Directory,
+    storage::store::{PublishStep, Store},
+    tests::support::Directory,
     *,
 };
 fn active() -> Account {

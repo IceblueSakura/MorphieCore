@@ -7,7 +7,7 @@ use serde_json::json;
 fn embeddings_need_explicit_selection_and_a_single_nonfallback_key() {
     for binding in catalog::EMBEDDING_BINDINGS {
         let provider = (binding.provider)();
-        let dir = crate::credential::test_support::private_directory();
+        let dir = crate::credential::tests::support::private_directory();
         let manager = CredentialManager::new(dir.path(), vec![]).unwrap();
         manager
             .add_api_key(
@@ -92,7 +92,7 @@ fn tokenplan_audio_requires_explicit_selection_and_nonfallback_single_source() {
         (Some(vec!["qwen-audio-3.0-asr-flash"]), 1, true, false),
         (Some(vec!["qwen-audio-3.0-tts-plus"]), 1, true, false),
     ] {
-        let directory = crate::credential::test_support::private_directory();
+        let directory = crate::credential::tests::support::private_directory();
         let manager = CredentialManager::new(directory.path(), vec![]).unwrap();
         let mut config = json!({"client_key":"synthetic-entry-key-at-least-32-bytes"});
         if let Some(models) = &models {
@@ -163,7 +163,7 @@ fn openrouter_speech_requires_explicit_selection_and_single_nonfallback_pool() {
         (Some(vec!["qwen-audio-3.0-tts-flash"]), 1, true, false),
         (Some(vec!["qwen-audio-3.0-tts-flash"]), 2, false, false),
     ] {
-        let dir = crate::credential::test_support::private_directory();
+        let dir = crate::credential::tests::support::private_directory();
         let manager = CredentialManager::new(dir.path(), vec![]).unwrap();
         let mut config = json!({"client_key":"synthetic-gateway-key-at-least-32-bytes"});
         if let Some(models) = &selection {

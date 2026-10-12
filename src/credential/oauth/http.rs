@@ -1,14 +1,14 @@
 //! Bounded authority HTTP; explicit proxies override environment proxy selection.
-use super::{CredentialError as Error, SecretBytes};
+use crate::credential::{CredentialError as Error, SecretBytes};
 use futures_util::StreamExt;
 use reqwest::{Client, Method, header::HeaderValue};
 use std::time::Duration;
 use tokio::time::Instant;
 
-pub(super) const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+pub(in crate::credential) const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const BODY_LIMIT: usize = 65536;
 #[derive(Clone)]
-pub(super) struct AuthHttp {
+pub(in crate::credential) struct AuthHttp {
     client: Client,
     origin: String,
 }
@@ -196,7 +196,7 @@ mod tests {
     };
     #[tokio::test]
     async fn environment_proxy_selection_is_isolated_and_explicit_proxy_wins() {
-        proxy_environment::matrix("credential::http::tests::environment_proxy_child").await;
+        proxy_environment::matrix("credential::oauth::http::tests::environment_proxy_child").await;
     }
     #[tokio::test]
     #[ignore = "invoked only by the isolated proxy matrix"]

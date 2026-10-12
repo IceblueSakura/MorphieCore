@@ -1,5 +1,5 @@
 //! Private local files: fs-mistrust verifies paths; atomicwrites owns durable replacement.
-use super::{CredentialError as Error, SecretBytes};
+use crate::credential::{CredentialError as Error, SecretBytes};
 use fs_mistrust::{CheckedDir, Mistrust};
 use std::{
     fs::{File, OpenOptions, TryLockError},
@@ -7,7 +7,7 @@ use std::{
     path::Path,
 };
 
-pub(super) struct FileLock(File);
+pub(in crate::credential) struct FileLock(File);
 impl std::fmt::Debug for FileLock {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("FileLock([private])")
@@ -18,7 +18,7 @@ impl Drop for FileLock {
         let _ = self.0.unlock();
     }
 }
-pub(super) struct Directory {
+pub(in crate::credential) struct Directory {
     checked: CheckedDir,
     mistrust: Mistrust,
 }
@@ -56,7 +56,7 @@ impl Directory {
             .check(self.checked.as_path())
             .map_err(|_| Error::Storage)?;
         #[cfg(windows)]
-        super::storage_windows::check(self.checked.as_path())?;
+        crate::credential::storage::windows::check(self.checked.as_path())?;
         Ok(())
     }
     pub fn read(&self, name: &str, limit: u64) -> Result<Option<SecretBytes>, Error> {
@@ -100,7 +100,7 @@ impl Directory {
             .check(&path)
             .map_err(|_| Error::Storage)?;
         #[cfg(windows)]
-        super::storage_windows::check(&path)?;
+        crate::credential::storage::windows::check(&path)?;
         Ok(Some(metadata))
     }
     pub fn lock(&self, name: &str) -> Result<FileLock, Error> {

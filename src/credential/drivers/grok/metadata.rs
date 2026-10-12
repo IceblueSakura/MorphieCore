@@ -4,11 +4,11 @@
 //! The release version is independent of the source crates' development package versions.
 use std::io::IsTerminal;
 
-pub(super) const CLIENT_ID: &str = "b1a00492-073a-47ea-816f-4c329264a828";
-pub(super) const VERSION: &str = "1.0.46";
-pub(super) const REFERRER: &str = "grok-build";
+pub(in crate::credential) const CLIENT_ID: &str = "b1a00492-073a-47ea-816f-4c329264a828";
+pub(in crate::credential) const VERSION: &str = "1.0.46";
+pub(in crate::credential) const REFERRER: &str = "grok-build";
 
-pub(super) fn user_agent() -> String {
+pub(in crate::credential) fn user_agent() -> String {
     format_agent(std::env::consts::OS, std::env::consts::ARCH)
 }
 fn format_agent(os: &str, arch: &str) -> String {
@@ -16,7 +16,7 @@ fn format_agent(os: &str, arch: &str) -> String {
     let arch = if arch == "arm64" { "aarch64" } else { arch };
     format!("grok-shell/{VERSION} ({os}; {arch})")
 }
-pub(super) fn device_surface() -> &'static str {
+pub(in crate::credential) fn device_surface() -> &'static str {
     surface(std::io::stderr().is_terminal())
 }
 fn surface(stderr_is_tty: bool) -> &'static str {

@@ -1,6 +1,6 @@
 //! Closed execution metadata from trusted authorization, never inbound headers.
 use crate::{
-    credential::{AccessGrant, siwc},
+    credential::{AccessGrant, drivers::siwc},
     provider::AuthScheme,
 };
 pub(crate) fn headers(auth: AuthScheme, grant: &AccessGrant) -> Result<Vec<(String, String)>, ()> {

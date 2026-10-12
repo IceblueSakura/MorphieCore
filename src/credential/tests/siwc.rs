@@ -1,7 +1,14 @@
 //! SIWC login availability is independent of legacy product clients.
-use super::browser_tests::request;
-use super::test_support::{Authority, Directory, read_account, step};
-use super::*;
+use crate::credential::{
+    drivers::siwc,
+    storage::store,
+    tests::{
+        browser::request,
+        support as test_support,
+        support::{Authority, Directory, read_account, step},
+    },
+    *,
+};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as B64};
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, net::SocketAddr, sync::Mutex, time::Duration};
@@ -11,7 +18,7 @@ const CLIENT: &str = "oaiapp_synthetic";
 const SCOPES: &str =
     "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct";
 fn keys() -> Value {
-    json!({"keys":[serde_json::from_str::<Value>(include_str!("../../tests/fixtures/auth/codex-test-jwk.json")).unwrap()]})
+    json!({"keys":[serde_json::from_str::<Value>(include_str!("../../../tests/fixtures/auth/codex-test-jwk.json")).unwrap()]})
 }
 fn claims(nonce: &str) -> Value {
     json!({"iss":"https://auth.openai.com","aud":CLIENT,"sub":"person-a",
@@ -19,7 +26,7 @@ fn claims(nonce: &str) -> Value {
 }
 fn sign(header: Value, claims: Value) -> String {
     let pair = ring::signature::RsaKeyPair::from_pkcs8(include_bytes!(
-        "../../tests/fixtures/auth/codex-test-rsa.pk8"
+        "../../../tests/fixtures/auth/codex-test-rsa.pk8"
     ))
     .unwrap();
     let message = format!(

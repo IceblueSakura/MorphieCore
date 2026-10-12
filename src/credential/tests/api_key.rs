@@ -1,5 +1,5 @@
 //! Local key lifecycle and pinned replay identity; no authority or Gateway.
-use super::{store::PublishStep, test_support::Directory, *};
+use crate::credential::{storage::store::PublishStep, tests::support::Directory, *};
 
 fn secret(value: &str) -> Secret {
     Secret::new(value.into()).unwrap()

@@ -1,12 +1,12 @@
 //! Supplement fs-mistrust's documented lack of Windows ACL checks; no ACL mutation.
-use super::CredentialError as Error;
+use crate::credential::CredentialError as Error;
 use std::{os::windows::fs::MetadataExt, path::Path};
 use windows_permissions::{
     constants::{AceFlags, AceType, SeObjectType, SecurityInformation},
     utilities, wrappers,
 };
 
-pub(super) fn check(path: &Path) -> Result<(), Error> {
+pub(in crate::credential) fn check(path: &Path) -> Result<(), Error> {
     let current = utilities::current_process_sid().map_err(|_| Error::Storage)?;
     let system = wrappers::ConvertStringSidToSid("S-1-5-18").map_err(|_| Error::Storage)?;
     let admins = wrappers::ConvertStringSidToSid("S-1-5-32-544").map_err(|_| Error::Storage)?;

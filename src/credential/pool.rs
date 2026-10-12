@@ -1,5 +1,5 @@
 //! Ordered credential references and local availability; execution owns retries and I/O.
-use super::{
+use crate::credential::{
     AccessBinding, ApiKeyAccess, CredentialError as Error, CredentialManager, model::valid_alias,
 };
 use serde::{Deserialize, Serialize};

@@ -1,5 +1,5 @@
 //! Shared credential semantics, independent of product wire and filesystem layout.
-use super::CredentialError as Error;
+use crate::credential::CredentialError as Error;
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 pub type SecretBytes = zeroize::Zeroizing<Vec<u8>>;

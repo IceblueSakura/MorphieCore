@@ -1,5 +1,8 @@
 //! Synthetic owned files, authority wire oracles and manager fixtures shared by credential tests.
-use super::*;
+use crate::credential::{
+    drivers::{grok, siwc},
+    *,
+};
 use axum::{
     Router,
     http::StatusCode,
@@ -12,11 +15,16 @@ use std::{
 };
 use tokio::sync::Notify;
 
-pub(super) fn offline(path: &std::path::Path) -> Result<CredentialManager, CredentialError> {
+pub(in crate::credential) fn offline(
+    path: &std::path::Path,
+) -> Result<CredentialManager, CredentialError> {
     CredentialManager::new(path, builtin_drivers(None)?)
 }
 impl CredentialManager {
-    pub(super) fn synthetic(root: &std::path::Path, origin: &str) -> Result<Self, CredentialError> {
+    pub(in crate::credential) fn synthetic(
+        root: &std::path::Path,
+        origin: &str,
+    ) -> Result<Self, CredentialError> {
         Self::new(
             root,
             vec![
@@ -25,7 +33,7 @@ impl CredentialManager {
             ],
         )
     }
-    pub(super) async fn login_grok(
+    pub(in crate::credential) async fn login_grok(
         &self,
         alias: &str,
         client: &str,
@@ -48,7 +56,7 @@ impl CredentialManager {
         )
         .await
     }
-    pub(super) async fn login_grok_browser(
+    pub(in crate::credential) async fn login_grok_browser(
         &self,
         alias: &str,
         client: &str,
@@ -78,20 +86,24 @@ impl CredentialManager {
 
 pub(crate) use crate::test_files::{Directory, private_directory};
 
-pub(super) fn read_account(root: &std::path::Path, profile: &str, alias: &str) -> Value {
+pub(in crate::credential) fn read_account(
+    root: &std::path::Path,
+    profile: &str,
+    alias: &str,
+) -> Value {
     serde_json::from_slice::<Value>(&std::fs::read(root.join(format!("{profile}.json"))).unwrap())
         .unwrap()["oauth"][alias]
         .take()
 }
 
-pub(super) struct Step {
+pub(in crate::credential) struct Step {
     pub path: &'static str,
     pub expected: Vec<(&'static str, &'static str)>,
     pub status: StatusCode,
     pub body: Value,
     pub gate: Option<Arc<Notify>>,
 }
-pub(super) fn step(
+pub(in crate::credential) fn step(
     path: &'static str,
     expected: Vec<(&'static str, &'static str)>,
     body: Value,
@@ -104,11 +116,11 @@ pub(super) fn step(
         gate: None,
     }
 }
-pub(super) struct FormCall {
+pub(in crate::credential) struct FormCall {
     pub path: String,
     pub fields: std::collections::BTreeMap<String, String>,
 }
-pub(super) struct Authority {
+pub(in crate::credential) struct Authority {
     pub origin: String,
     pub steps: Arc<Mutex<VecDeque<Step>>>,
     pub entered: Arc<Notify>,

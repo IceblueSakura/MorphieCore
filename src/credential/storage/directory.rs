@@ -1,5 +1,5 @@
 //! CLI-only path selection; library constructors still require an explicit store.
-use super::CredentialError;
+use crate::credential::CredentialError;
 use std::{ffi::OsString, path::PathBuf};
 
 #[cfg(windows)]

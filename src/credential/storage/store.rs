@@ -1,9 +1,9 @@
 //! One structured document per provider namespace; short transactions merge records.
-use super::{
+use crate::credential::{
     CredentialError as Error,
     model::{Account, valid_alias, valid_profile},
     pool::PoolStatus,
-    storage_fs::{Directory, FileLock},
+    storage::fs::{Directory, FileLock},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -15,7 +15,9 @@ use std::{
 const DOCUMENT_BYTES: u64 = 8 * 1024 * 1024;
 const RECORDS: usize = 64;
 
-pub(super) trait StoredDocument: Serialize + serde::de::DeserializeOwned {
+pub(in crate::credential) trait StoredDocument:
+    Serialize + serde::de::DeserializeOwned
+{
     fn validate_binding(&self, namespace: &str, alias: &str) -> Result<(), Error>;
 }
 impl StoredDocument for Account {
@@ -25,7 +27,7 @@ impl StoredDocument for Account {
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct ProviderDocument {
+pub(in crate::credential) struct ProviderDocument {
     pub provider: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_id: Option<String>,
@@ -65,7 +67,7 @@ fn oauth_records<'de, D: serde::Deserializer<'de>>(
 fn key_records<'de, D: serde::Deserializer<'de>>(
     d: D,
 ) -> Result<BTreeMap<String, Value>, D::Error> {
-    typed_records::<D, super::api_key::KeyRecord>(d)
+    typed_records::<D, crate::credential::api_key::KeyRecord>(d)
 }
 impl ProviderDocument {
     fn empty(provider: &str) -> Self {
@@ -94,7 +96,7 @@ impl ProviderDocument {
             account.validate(provider, alias)?;
         }
         for (alias, value) in &self.api_keys {
-            let key: super::api_key::KeyRecord =
+            let key: crate::credential::api_key::KeyRecord =
                 serde_json::from_value(value.clone()).map_err(|_| Error::Storage)?;
             key.validate_binding(provider, alias)?;
         }
@@ -121,23 +123,23 @@ impl Partition {
         }
     }
 }
-pub(super) struct Store {
+pub(in crate::credential) struct Store {
     root: Arc<Directory>,
     partition: Partition,
     #[cfg(test)]
     fault: std::sync::atomic::AtomicU8,
 }
-pub(super) struct Transaction<'a> {
+pub(in crate::credential) struct Transaction<'a> {
     store: &'a Store,
     _lock: FileLock,
 }
-pub(super) struct Loaded {
+pub(in crate::credential) struct Loaded {
     pub account: Option<Account>,
     pub recovery: bool,
 }
 #[derive(Clone, Copy)]
 #[repr(u8)]
-pub(super) enum PublishStep {
+pub(in crate::credential) enum PublishStep {
     Write = 1,
     FileSync,
     Rename,
@@ -444,7 +446,7 @@ impl Transaction<'_> {
             return Err(Error::PoolFull);
         }
         document.revision = document.revision.checked_add(1).ok_or(Error::Storage)?;
-        let bytes = super::SecretBytes::new(
+        let bytes = crate::credential::SecretBytes::new(
             serde_json::to_vec_pretty(document).map_err(|_| Error::Storage)?,
         );
         if bytes.len() as u64 > DOCUMENT_BYTES {
@@ -457,7 +459,7 @@ impl Transaction<'_> {
         )
     }
 }
-pub(super) fn valid_host_id(id: &str) -> bool {
+pub(in crate::credential) fn valid_host_id(id: &str) -> bool {
     let Some(uuid) = id.strip_prefix("urn:uuid:") else {
         return false;
     };

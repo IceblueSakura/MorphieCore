@@ -1,5 +1,5 @@
 //! Profile-neutral lifecycle tests: the third driver has no product wire dependencies.
-use super::*;
+use crate::credential::{storage::store, tests::support as test_support, *};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::Notify;
 

@@ -1,18 +1,22 @@
 //! Small OAuth mechanisms, not product token defaults or a workflow engine.
-use super::{CredentialError as Error, Secret};
+pub(in crate::credential) mod browser;
+pub(in crate::credential) mod callback;
+pub(in crate::credential) mod http;
+pub(in crate::credential) mod jwt;
+use crate::credential::{CredentialError as Error, Secret};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as B64};
 use oauth2::{PkceCodeChallenge, PkceCodeVerifier};
 use serde::Deserialize;
 
 /// Missing may inherit by the owning grant's contract; explicit null is not missing.
-pub(super) fn present<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+pub(in crate::credential) fn present<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
     D: serde::Deserializer<'de>,
     T: Deserialize<'de>,
 {
     T::deserialize(deserializer).map(Some)
 }
-pub(super) fn challenge(verifier: &str) -> Result<PkceCodeChallenge, Error> {
+pub(in crate::credential) fn challenge(verifier: &str) -> Result<PkceCodeChallenge, Error> {
     // oauth2 asserts the RFC length; external verifier data must fail, not panic.
     if !(43..=128).contains(&verifier.len())
         || !verifier
@@ -25,7 +29,7 @@ pub(super) fn challenge(verifier: &str) -> Result<PkceCodeChallenge, Error> {
         &PkceCodeVerifier::new(verifier.into()),
     ))
 }
-pub(super) fn random_token() -> Result<Secret, Error> {
+pub(in crate::credential) fn random_token() -> Result<Secret, Error> {
     // Keep entropy failure fallible instead of using the library's infallible RNG.
     let mut bytes = zeroize::Zeroizing::new([0; 32]);
     getrandom::fill(&mut bytes[..]).map_err(|_| Error::Protocol)?;
@@ -33,19 +37,19 @@ pub(super) fn random_token() -> Result<Secret, Error> {
 }
 /// Shared RFC 6749 code exchange. Paths and registration come from the driver;
 /// token schema and error interpretation do not belong to this mechanism.
-pub(super) struct CodeExchange<'a> {
+pub(in crate::credential) struct CodeExchange<'a> {
     pub client: &'a str,
     pub code: &'a str,
     pub redirect: &'a str,
     pub verifier: &'a str,
 }
-pub(super) async fn exchange_code(
-    http: &super::http::AuthHttp,
+pub(in crate::credential) async fn exchange_code(
+    http: &crate::credential::oauth::http::AuthHttp,
     path: &str,
     exchange: CodeExchange<'_>,
     metadata: &[(&str, &str)],
     deadline: tokio::time::Instant,
-) -> Result<(u16, super::SecretBytes), Error> {
+) -> Result<(u16, crate::credential::SecretBytes), Error> {
     http.request_with_metadata(
         path,
         &[
@@ -62,7 +66,7 @@ pub(super) async fn exchange_code(
     .await
 }
 /// The caller decides whether the first poll waits and how wire errors change interval.
-pub(super) async fn wait_for_poll(
+pub(in crate::credential) async fn wait_for_poll(
     interval: std::time::Duration,
     deadline: tokio::time::Instant,
 ) -> Result<(), Error> {
@@ -76,7 +80,7 @@ pub(super) async fn wait_for_poll(
     Ok(())
 }
 /// One deadline covers human interaction, exchange and identity verification.
-pub(super) async fn login_deadline<T>(
+pub(in crate::credential) async fn login_deadline<T>(
     deadline: tokio::time::Instant,
     operation: impl std::future::Future<Output = Result<T, Error>>,
 ) -> Result<T, Error> {

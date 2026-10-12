@@ -1,8 +1,14 @@
 //! Independent callback and xAI browser boundaries. EC fixtures were generated
 //! locally with OpenSSL, contain no user/upstream key, and are public test assets.
-use super::callback::{Callback, CallbackDecision, classify};
-use super::test_support::{Authority, Directory, Step, step};
-use super::*;
+use crate::credential::{
+    drivers::{grok, siwc},
+    oauth::{
+        self,
+        callback::{Callback, CallbackDecision, classify},
+    },
+    tests::support::{Authority, Directory, Step, step},
+    *,
+};
 use axum::http::StatusCode;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as B64};
 use serde_json::{Value, json};
@@ -20,7 +26,7 @@ use tokio::{
 const CLIENT: &str = "synthetic-browser-client";
 const SCOPES: &str = "openid profile email offline_access grok-cli:access api:access";
 fn keys() -> Value {
-    json!({"keys":[serde_json::from_str::<Value>(include_str!("../../tests/fixtures/auth/grok-test-jwk.json")).unwrap()]})
+    json!({"keys":[serde_json::from_str::<Value>(include_str!("../../../tests/fixtures/auth/grok-test-jwk.json")).unwrap()]})
 }
 fn claims(nonce: &str) -> Value {
     let timestamp = SystemTime::now()
@@ -33,7 +39,7 @@ fn sign(header: Value, claims: Value) -> String {
     let random = ring::rand::SystemRandom::new();
     let pair = ring::signature::EcdsaKeyPair::from_pkcs8(
         &ring::signature::ECDSA_P256_SHA256_FIXED_SIGNING,
-        include_bytes!("../../tests/fixtures/auth/grok-test-p256.pk8"),
+        include_bytes!("../../../tests/fixtures/auth/grok-test-p256.pk8"),
         &random,
     )
     .unwrap();
@@ -71,7 +77,7 @@ fn browser_steps(subject: &str) -> Vec<Step> {
         ),
     ]
 }
-pub(super) async fn request(address: SocketAddr, target: &str) -> String {
+pub(in crate::credential) async fn request(address: SocketAddr, target: &str) -> String {
     let mut stream = TcpStream::connect(address).await.unwrap();
     let request = format!("GET {target} HTTP/1.1\r\nHost: {address}\r\n\r\n");
     stream.write_all(request.as_bytes()).await.unwrap();
@@ -420,12 +426,12 @@ async fn device_unavailable_zero_interval_and_identity_deadline_are_closed() {
     );
     authority.done();
 
-    let mut steps = super::tests::login_steps("person-a");
+    let mut steps = crate::credential::tests::lifecycle::login_steps("person-a");
     steps[0].body["interval"] = json!(0);
     let authority = Authority::new(steps).await;
     let dir = Directory::new();
     let pool = authority.pool(&dir);
-    super::tests::login(&pool, "personal").await;
+    crate::credential::tests::lifecycle::login(&pool, "personal").await;
     {
         let arrivals = authority.arrivals.lock().unwrap();
         assert!(arrivals[1].duration_since(arrivals[0]).as_secs() >= 1);
@@ -433,7 +439,7 @@ async fn device_unavailable_zero_interval_and_identity_deadline_are_closed() {
     authority.done();
 
     let gate = std::sync::Arc::new(tokio::sync::Notify::new());
-    let mut steps = super::tests::login_steps("person-a");
+    let mut steps = crate::credential::tests::lifecycle::login_steps("person-a");
     steps[0].body["expires_in"] = json!(2);
     steps[2].gate = Some(gate.clone());
     let authority = Authority::new(steps).await;
@@ -455,7 +461,7 @@ async fn device_unavailable_zero_interval_and_identity_deadline_are_closed() {
 
 #[tokio::test]
 async fn shared_browser_mechanism_rejects_overrides_and_never_falls_back_from_an_occupied_port() {
-    use super::browser::{BrowserGrant, BrowserProfile};
+    use crate::credential::oauth::browser::{BrowserGrant, BrowserProfile};
     let occupied = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = occupied.local_addr().unwrap().port();
     let profile = || BrowserProfile {
