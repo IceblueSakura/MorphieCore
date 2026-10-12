@@ -15,9 +15,9 @@ pub struct JsonLimits {
 }
 impl JsonLimits {
     pub const ENVELOPE: Self = Self {
-        bytes: 4 << 20,
+        bytes: 64 << 20,
         depth: 64,
-        nodes: 65_536,
+        nodes: 1 << 20,
     };
     /// Reserved for the image-response entry point; ordinary parse_json still caps at ENVELOPE.
     pub const IMAGE_RESPONSE: Self = Self {

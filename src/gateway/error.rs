@@ -165,10 +165,11 @@ impl ApiError {
                     400..=499 => "invalid_request_error",
                     _ => "api_error",
                 };
+                // The fixed class is the only diagnosis Messages clients can show.
                 (
                     self.status,
                     kind,
-                    "The request could not be completed.".into(),
+                    format!("The request could not be completed ({}).", self.code),
                 )
             }
         };

@@ -59,23 +59,23 @@ impl Default for Limits {
     fn default() -> Self {
         Self {
             implicit_cache_affinity: true,
-            request_bytes: 256 << 10,
-            response_bytes: 8 << 20,
+            request_bytes: 32 << 20,
+            response_bytes: 64 << 20,
             image_bytes: 2 << 20,
             images_bytes: 2 << 20,
             speech_bytes: 8 << 20,
             transcription_request_bytes: crate::protocol::openai::transcription::MAX_UPLOAD_BYTES,
-            event_bytes: 1 << 20,
-            max_events: 65_536,
+            event_bytes: 16 << 20,
+            max_events: 1_000_000,
             concurrency: 16,
-            body_timeout: Duration::from_secs(10),
-            exchange_timeout: Duration::from_secs(120),
+            body_timeout: Duration::from_secs(60),
+            exchange_timeout: Duration::from_secs(60 * 60),
         }
     }
 }
 impl Limits {
     fn validate(&self) -> bool {
-        (1..=4 << 20).contains(&self.request_bytes)
+        (1..=64 << 20).contains(&self.request_bytes)
             && (1..=64 << 20).contains(&self.response_bytes)
             && (1..=crate::semantic::task::image_generation::MAX_IMAGE_BYTES)
                 .contains(&self.image_bytes)
@@ -84,13 +84,13 @@ impl Limits {
             && (1..=crate::semantic::value::MAX_AUDIO_BYTES).contains(&self.speech_bytes)
             && (1..=crate::protocol::openai::transcription::MAX_UPLOAD_BYTES)
                 .contains(&self.transcription_request_bytes)
-            && (1..=4 << 20).contains(&self.event_bytes)
+            && (1..=64 << 20).contains(&self.event_bytes)
             && (1..=1_000_000).contains(&self.max_events)
             && (1..=256).contains(&self.concurrency)
             && !self.body_timeout.is_zero()
             && self.body_timeout <= Duration::from_secs(60)
             && !self.exchange_timeout.is_zero()
-            && self.exchange_timeout <= Duration::from_secs(300)
+            && self.exchange_timeout <= Duration::from_secs(24 * 60 * 60)
     }
 }
 #[derive(Clone, Copy, Debug, thiserror::Error)]

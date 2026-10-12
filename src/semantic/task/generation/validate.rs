@@ -1,9 +1,10 @@
 //! Pure validation and bounded accounting shared by construction, transforms and lowering.
 use crate::semantic::task::generation::*;
 use std::collections::{BTreeMap, BTreeSet};
-pub const MAX_ITEMS: usize = 1024;
-pub const MAX_TEXT_BYTES: usize = 1 << 20;
-pub const MAX_TOTAL_BYTES: usize = 4 << 20;
+// Sized for long agent sessions that resend whole histories with inline media.
+pub const MAX_ITEMS: usize = 65_536;
+pub const MAX_TEXT_BYTES: usize = 16 << 20;
+pub const MAX_TOTAL_BYTES: usize = 32 << 20;
 pub const MAX_TOOLS: usize = 128;
 fn add(total: &mut usize, value: &str) -> Result<(), GenerationError> {
     charge(total, value.len())

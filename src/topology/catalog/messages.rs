@@ -46,10 +46,10 @@ impl MessagesBinding {
             execution: ExecutionContract {
                 streaming: true,
                 retry_before_commit: false,
-                request_body_limit: 256 << 10,
-                response_body_limit: 2 << 20,
+                request_body_limit: super::GENERATION_REQUEST_BYTES,
+                response_body_limit: super::GENERATION_RESPONSE_BYTES,
                 credential_kind: CredentialKind::ApiKey,
-                timeout_ms: 120_000,
+                timeout_ms: super::GENERATION_TIMEOUT_MS,
             },
             credential: CredentialBindingId::new(self.credential).expect("static credential"),
         }

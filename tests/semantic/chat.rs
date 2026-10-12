@@ -1262,7 +1262,7 @@ mod files {
         let mut large = typed_file(None);
         large.location = ResourceLocation::Inline {
             media_type: text("application/pdf"),
-            data_base64: text(&STANDARD.encode(vec![0; 720 * 1024])),
+            data_base64: text(&STANDARD.encode(vec![0; MAX_TOTAL_FILE_DECODED_BYTES * 3 / 8])),
         };
         assert!(typed_request(vec![large.clone(), large.clone()]).is_ok());
         assert_eq!(

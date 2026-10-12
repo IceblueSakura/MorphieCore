@@ -254,7 +254,7 @@ mod schema_order {
             }
             assert_eq!(admit(deep, false).is_ok(), accepted, "raw depth");
         }
-        for (length, accepted) in [(1000, true), (5000, false)] {
+        for (length, accepted) in [(1000, true), (MAX_TOTAL_BYTES / 1000 + 1, false)] {
             let children: serde_json::Map<String, Value> = (0..1000)
                 .map(|i| (format!("p{i}"), json!({"type":"string"})))
                 .collect();

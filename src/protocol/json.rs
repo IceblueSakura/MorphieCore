@@ -17,7 +17,6 @@ pub(crate) fn decode_image_response(input: &[u8]) -> Result<serde_json::Value, C
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::semantic::task::generation::MAX_TOTAL_BYTES;
     use serde_json::{Value, json};
 
     #[test]
@@ -81,7 +80,7 @@ mod tests {
 
     #[test]
     fn raw_byte_budget_counts_whitespace_before_parsing() {
-        let mut input = vec![b' '; MAX_TOTAL_BYTES];
+        let mut input = vec![b' '; JsonLimits::ENVELOPE.bytes];
         input[..4].copy_from_slice(b"null");
         assert_eq!(decode(&input).unwrap(), Value::Null);
         input.push(b' ');
@@ -105,11 +104,12 @@ mod tests {
 
     #[test]
     fn node_budget_counts_values_and_object_keys() {
-        let input = format!("[{}]", vec!["0"; 65_535].join(","));
+        let nodes = JsonLimits::ENVELOPE.nodes;
+        let input = format!("[{}]", vec!["0"; nodes - 1].join(","));
         assert!(decode(input.as_bytes()).is_ok());
-        let input = format!("[{}]", vec!["0"; 65_536].join(","));
+        let input = format!("[{}]", vec!["0"; nodes].join(","));
         assert_eq!(decode(input.as_bytes()).err(), Some(CodecError::Limit));
-        for (entries, accepted) in [(32_767, true), (32_768, false)] {
+        for (entries, accepted) in [(nodes / 2 - 1, true), (nodes / 2, false)] {
             let input = format!(
                 "{{{}}}",
                 (0..entries)

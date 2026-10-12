@@ -6,9 +6,9 @@ use base64::engine::general_purpose::STANDARD;
 
 pub const MAX_RESOURCE_URL_BYTES: usize = 8192;
 pub const MAX_RESOURCE_MEDIA_TYPE_BYTES: usize = 256;
-pub const MAX_IMAGE_DECODED_BYTES: usize = 768 * 1024;
-pub const MAX_FILE_DECODED_BYTES: usize = 768 * 1024;
-pub const MAX_TOTAL_FILE_DECODED_BYTES: usize = 2 * 1024 * 1024;
+pub const MAX_IMAGE_DECODED_BYTES: usize = 12 << 20;
+pub const MAX_FILE_DECODED_BYTES: usize = 12 << 20;
+pub const MAX_TOTAL_FILE_DECODED_BYTES: usize = 24 << 20;
 pub const MAX_FILE_NAME_BYTES: usize = 1024;
 pub use crate::semantic::value::ImageFormat;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, strum::EnumString, strum::IntoStaticStr)]

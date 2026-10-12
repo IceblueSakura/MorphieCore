@@ -124,8 +124,11 @@ impl Block {
                 charge(&mut bytes, id.len() + tool.len())?;
                 charge(
                     &mut bytes,
-                    crate::semantic::value::json_size(input.value(), 1 << 20)
-                        .map_err(|_| CodecError::Limit)?,
+                    crate::semantic::value::json_size(
+                        input.value(),
+                        crate::semantic::task::generation::MAX_TEXT_BYTES,
+                    )
+                    .map_err(|_| CodecError::Limit)?,
                 )?;
             }
             Self::ToolResult {

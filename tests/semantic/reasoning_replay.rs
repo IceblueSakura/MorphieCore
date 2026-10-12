@@ -570,13 +570,8 @@ mod replay_attachments {
         }
         for last in [9, 10, 11] {
             // Each Provider-tool header reports two bytes besides its replay payload.
-            let sizes = [
-                MAX_TEXT_BYTES,
-                MAX_TEXT_BYTES,
-                MAX_TEXT_BYTES,
-                MAX_TEXT_BYTES - 20,
-                last,
-            ];
+            let quarter = MAX_TOTAL_BYTES / 4;
+            let sizes = [quarter, quarter, quarter, quarter - 20, last];
             let mut items = vec![];
             let mut state = Ok(reduce(StreamState::new(), StreamEvent::Started).unwrap());
             for (i, size) in sizes.into_iter().enumerate() {

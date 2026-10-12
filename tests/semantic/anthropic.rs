@@ -154,7 +154,7 @@ mod anthropic_profile {
             .unwrap();
         for wire in [
             json!({"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":"END"},"usage":{"output_tokens":9}}),
-            json!({"type":"content_block_delta","index":1024,"delta":{"type":"text_delta","text":"x"}}),
+            json!({"type":"content_block_delta","index":morphiecore::semantic::task::generation::MAX_ITEMS,"delta":{"type":"text_delta","text":"x"}}),
             json!({"type":"content_block_delta","index":0,"delta":{"type":"citations_delta","citation":{}}}),
         ] {
             assert!(
@@ -174,16 +174,20 @@ mod anthropic_profile {
         };
         let p = Profile::AdaptiveTextTools;
         let mut req = p.decode_request(request().to_string().as_bytes()).unwrap();
-        req.messages = vec![req.messages[0].clone(); 1025];
+        req.messages =
+            vec![req.messages[0].clone(); morphiecore::semantic::task::generation::MAX_ITEMS + 1];
         assert!(matches!(p.encode_request(&req), Err(CodecError::Limit)));
         let mut req = p.decode_request(request().to_string().as_bytes()).unwrap();
         req.system = morphiecore::semantic::value::Presence::Value(
-            morphiecore::protocol::anthropic::TextContent::Text("x".repeat((1 << 20) + 1)),
+            morphiecore::protocol::anthropic::TextContent::Text(
+                "x".repeat(morphiecore::semantic::task::generation::MAX_TEXT_BYTES + 1),
+            ),
         );
         assert!(matches!(p.encode_request(&req), Err(CodecError::Limit)));
         let mut response = p.decode_response(message().to_string().as_bytes()).unwrap();
         let input = StructuredValue::new(json!({"data":vec![Value::Null;4096]})).unwrap();
-        response.content = (0..16)
+        let blocks = morphiecore::semantic::value::JsonLimits::ENVELOPE.nodes / 4096 + 1;
+        response.content = (0..blocks)
             .map(|index| Block::ToolUse {
                 id: format!("c_{index}"),
                 name: "lookup".into(),

@@ -21,6 +21,11 @@ use crate::{
     topology::*,
 };
 pub use bindings::{API_KEY_BINDINGS, ApiKeyBinding};
+// Agent sessions resend whole histories and may stream long turns; these only
+// bound memory and time per exchange. Upstreams enforce their own maximums.
+const GENERATION_REQUEST_BYTES: usize = 32 << 20;
+const GENERATION_RESPONSE_BYTES: usize = 64 << 20;
+const GENERATION_TIMEOUT_MS: u64 = 60 * 60 * 1000;
 pub use subscriptions::{SUBSCRIPTION_BINDINGS, SubscriptionBinding};
 impl ApiKeyBinding {
     pub fn public_model(&self) -> PublicModel {
@@ -84,10 +89,10 @@ impl ApiKeyBinding {
             execution: ExecutionContract {
                 streaming: true,
                 retry_before_commit: false,
-                request_body_limit: 256 * 1024,
-                response_body_limit: 8 * 1024 * 1024,
+                request_body_limit: GENERATION_REQUEST_BYTES,
+                response_body_limit: GENERATION_RESPONSE_BYTES,
                 credential_kind: CredentialKind::ApiKey,
-                timeout_ms: 120_000,
+                timeout_ms: GENERATION_TIMEOUT_MS,
             },
             credential: CredentialBindingId::new(self.credential).expect("static binding"),
         })

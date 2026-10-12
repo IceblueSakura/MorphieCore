@@ -885,7 +885,7 @@ mod configuration_revisions {
         assert!(!format!("{:?}", retained.snapshot()).contains("private-definition"));
         assert!(
             GenerationResponse::new(
-                (0..3)
+                (0..(MAX_TOTAL_BYTES / MAX_TEXT_BYTES) as u64 - 1)
                     .map(|n| (ItemId::new(n), call(&n.to_string(), retained.clone())))
                     .collect(),
                 Outcome::Completed
@@ -894,7 +894,7 @@ mod configuration_revisions {
         );
         assert!(matches!(
             GenerationResponse::new(
-                (0..4)
+                (0..(MAX_TOTAL_BYTES / MAX_TEXT_BYTES) as u64)
                     .map(|n| (ItemId::new(n), call(&n.to_string(), retained.clone())))
                     .collect(),
                 Outcome::Completed

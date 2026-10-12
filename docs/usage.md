@@ -219,7 +219,7 @@ This ID groups routing and cache affinity; it does not store history. Body `sess
 
 ## Errors and limits
 
-OpenAI routes return `{"error":{"message","type","param","code"}}`. Messages handler errors use Anthropic's `{"type":"error","error":{"type","message"}}` envelope. Authentication fails before the handler and uses the OpenAI envelope on every route.
+OpenAI routes return `{"error":{"message","type","param","code"}}`. Messages handler errors use Anthropic's `{"type":"error","error":{"type","message"}}` envelope. Unclassified Messages errors put the OpenAI `code` in the message, for example `The request could not be completed (upstream_error).` Authentication fails before the handler and uses the OpenAI envelope on every route.
 
 | HTTP | Meaning |
 |---|---|
