@@ -96,6 +96,11 @@ fn signed_calls_after_content_reach_chat_and_responses_clients() {
             let body = deliver(&tool_turn(), profile, stream)
                 .unwrap_or_else(|e| panic!("{profile:?} stream={stream}: {e}"));
             let text = body.to_string();
+            // Gemini input already includes cache reads; its total passes through.
+            assert!(
+                text.contains("\"total_tokens\":18") || text.contains("\\\"total_tokens\\\":18"),
+                "{profile:?} stream={stream}: usage"
+            );
             match (profile, stream) {
                 (Profile::Chat, false) => {
                     let message = &body["choices"][0]["message"];

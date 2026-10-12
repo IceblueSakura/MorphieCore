@@ -7,6 +7,10 @@ mod events;
 pub(crate) use events::EventProjection;
 
 fn client_usage(usage: Usage) -> Result<Option<Usage>, CodecError> {
+    // Gemini already reports cache-inclusive input and its own total.
+    if usage.input_relation == InputTokenRelation::IncludesCache {
+        return Ok(Some(usage));
+    }
     let derived = usage.derive(UsageFormula::InputPlusCacheReadAndWrite)?;
     Ok(
         if let (Some(input), Some(output)) = (derived, usage.output_tokens) {

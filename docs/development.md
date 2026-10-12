@@ -62,17 +62,11 @@ All listeners are temporary loopback ones with synthetic credentials; no environ
 
 ## Real Provider checks
 
-Authorization is defined in [AGENTS.md](../AGENTS.md#authorization). `tests/live.rs` holds the real-Provider gateway checks, ignored by default:
-
-```sh
-cargo test --locked --offline --test live -- --ignored --nocapture
-```
-
-Each check starts the gateway in-process on loopback with the catalog topology and borrows its key from the default credential store through the project loader (the pool must exist, e.g. `google/google-api-key`); no `gateway.json` is read. It runs serially with a fixed request count, output cap and timeout and no retries, and prints only status, error codes and body-free diagnostics. Extend it rather than writing ad-hoc probes. Real calls supplement, never replace, synthetic regression.
+Authorization is defined in [AGENTS.md](../AGENTS.md#authorization). Real checks run the CLI gateway with its defaults: the store's pools and `gateway.json` inside it. If `gateway.json` is missing, create it there (0600, a random `client_key`, `models` listing the models under test; unfiltered startup fails while the store holds a pool no catalog binding uses). Read the client key from the file into a variable, never print it. Fix the target, request count, output cap and timeout before each run; run serially with no retries; print only status, counts and error codes (`jq` projections, not bodies). Real calls supplement, never replace, synthetic regression.
 
 ## pi acceptance
 
-Real-client acceptance uses pi, the simplest target agent. Start the CLI gateway with a scratch `--config` (a 0700 directory), then run pi's real binary (not a shell wrapper that sources private environment) with a clean environment: a scratch `HOME` and `PI_CODING_AGENT_DIR` holding `models.json` (one custom provider whose `api` is `anthropic-messages`, `openai-completions` or `openai-responses`, `baseUrl` the gateway, `apiKey` from an environment variable) and `settings.json` with `retry.enabled: false` and `cacheWarming: "off"`. Run `pi -p --offline --no-session --no-extensions --no-skills --no-context-files --no-mcp --tools read` on a synthetic file per model; check the answer and the diagnostics rules, then delete the scratch directory.
+Real-client acceptance uses pi, the simplest target agent, against that gateway. Run pi's real binary (not a shell wrapper that sources private environment) with `env -i`, a scratch `HOME` and a 0700 `PI_CODING_AGENT_DIR` holding `models.json` (one custom provider per `api`: `anthropic-messages` with the bare origin as `baseUrl`, `openai-completions` and `openai-responses` with `/v1`; `apiKey` as `$NAME` from the environment; the model with `reasoning: true`) and `settings.json` with `retry.enabled: false` and `cacheWarming: "off"`. Run `pi -p --mode json --offline --no-session --no-extensions --no-skills --no-context-files --no-mcp --tools read --thinking medium` on a synthetic file per provider; check from the `message_end` events that the tool turn and the final answer both succeed, then delete the scratch directory.
 
 ## Documentation
 

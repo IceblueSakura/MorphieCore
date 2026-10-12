@@ -11,7 +11,8 @@ MorphieCore is a central gateway for a few agents (pi and opencode first, Codex 
 | Downstream | Anthropic Messages | JSON and SSE, for Claude Code. Uses each model's Chat candidates; `is_error` is dropped by name when a non-native target may serve |
 | Upstream | OpenAI Responses and Chat, including compatible dialects | Live |
 | Upstream | Anthropic Messages | JSON and SSE; directory bootstrap activates a binding only when `models` lists it |
-| Upstream | Google generateContent, Google Interactions | In progress ([roadmap](roadmap.md)) |
+| Upstream | Google generateContent | Live; always streamed upstream |
+| Upstream | Google Interactions | In progress ([roadmap](roadmap.md)) |
 
 The standalone Embeddings, Images, Speech and Transcription endpoints exist but are frozen: maintenance only, as refactors require.
 
@@ -88,7 +89,7 @@ Every upstream-issued opaque value (OpenAI `encrypted_content`, Anthropic thinki
 - No encryption, HMAC or local prefix proof: the tag is a compatibility hint, not authentication, and cannot select route, origin or credential. The issuing upstream validates signatures and rejects tampering.
 - A same-target value without a matching carrier is still rejected, not silently dropped.
 - Thinking from Anthropic Sonnet 5.5 and Haiku 5.5 is also bound to the producing account; another account's request silently drops it. The envelope stays Provider and model only; target affinity on the exact credential keeps a conversation on its account, and a credential fallback loses that reasoning rather than failing.
-- Carriers today: Responses reasoning `encrypted_content` and Chat `reasoning.encrypted` `data`, static and streaming; native Anthropic thinking reuses the same envelope. Google and part/call-level signatures follow the roadmap.
+- Carriers today: Responses reasoning `encrypted_content` and Chat `reasoning.encrypted` `data`, static and streaming; native Anthropic thinking and Gemini `thoughtSignature` reuse the same envelope. Interactions signatures follow the roadmap.
 
 ### Chat extension fields
 
