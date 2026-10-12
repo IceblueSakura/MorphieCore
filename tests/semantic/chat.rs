@@ -1227,6 +1227,44 @@ mod files {
         );
     }
     #[test]
+    fn responses_tool_output_carries_files_and_needs_file_admission() {
+        let input = json!([
+            {"type":"function_call","call_id":"call_1","name":"read","arguments":"{}"},
+            {"type":"function_call_output","call_id":"call_1","output":[
+                {"type":"input_file","file_data":"data:application/pdf;base64,AQID","filename":"synthetic.pdf"}]}]);
+        let request = json!({"model":"synthetic","input":input,"tools":[{"type":"function","name":"read","parameters":{"type":"object"}}]});
+        let decoded = adapter()
+            .decode_request(&serde_json::to_vec(&request).unwrap())
+            .unwrap();
+        let semantic = &decoded.task.semantic;
+        let needs = GenerationRequirements::derive(semantic);
+        assert_eq!((needs.tool_result_media, needs.file_inputs), (1, 1));
+        let Item::ToolResult(result) = &semantic.items()[1].1 else {
+            panic!("tool result")
+        };
+        let ToolOutput::Parts(parts) = &result.output else {
+            panic!("parts")
+        };
+        let ToolResultPart::Resource(pdf) = &parts[0].1 else {
+            panic!("file part")
+        };
+        assert_eq!(
+            pdf.media(semantic.resources()).unwrap().to_owned(),
+            typed_file(Some("synthetic.pdf"))
+        );
+        let output = adapter()
+            .encode_request(&decoded, "synthetic", &Contract::full())
+            .unwrap();
+        assert_eq!(output["input"][1]["output"], input[1]["output"]);
+        let mut no_files = Contract::full();
+        no_files.semantics.file_input = false;
+        assert!(
+            adapter()
+                .encode_request(&decoded, "synthetic", &no_files)
+                .is_err()
+        );
+    }
+    #[test]
     fn file_url_limits_intersections_and_edits_do_not_claim_remote_bytes() {
         let mut remote = typed_file(None);
         remote.location =

@@ -50,7 +50,7 @@ pub fn semantic_contract() -> GenerationSemanticContract {
         structured_tool_results: false,
         tool_execution_reports: true,
         tool_result_errors: true,
-        tool_result_images: false,
+        tool_result_media: false,
         text_metadata: false,
         top_p: true,
         logprobs: false,

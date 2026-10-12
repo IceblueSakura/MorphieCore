@@ -610,7 +610,7 @@ mod tool_results {
         )
         .unwrap();
         let requirements = GenerationRequirements::derive(&history);
-        assert_eq!(requirements.tool_result_images, 1);
+        assert_eq!(requirements.tool_result_media, 1);
         assert_eq!(requirements.image_inputs, 0);
         let proof = RequestDependencyProof::capture(
             &history,

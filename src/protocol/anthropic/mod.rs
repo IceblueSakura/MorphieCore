@@ -12,8 +12,10 @@ mod shape;
 mod sse;
 pub use sse::MessageSseDecoder;
 mod events;
+mod media;
 use crate::protocol::CodecError;
 pub use events::GenerationSseDecoder;
+pub use media::{Media, ResultBlock, ResultContent, Source};
 pub use request::*;
 pub use response::*;
 pub use semantic::NativeProjection;
@@ -41,7 +43,7 @@ impl Profile {
             structured_tool_results: false,
             tool_execution_reports: true,
             tool_result_errors: true,
-            tool_result_images: false,
+            tool_result_media: true,
             text_metadata: false,
             top_p: true,
             logprobs: false,
@@ -49,12 +51,12 @@ impl Profile {
             truncation: false,
             structured_output: false,
             reasoning: true,
-            image_input: false,
+            image_input: true,
             audio_input: false,
             video_input: false,
             audio_output: false,
             audio_history: false,
-            file_input: false,
+            file_input: true,
             parallel_tool_calls: true,
             strict_tools: false,
         }

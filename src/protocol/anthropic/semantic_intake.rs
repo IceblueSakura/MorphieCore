@@ -1,5 +1,5 @@
 //! Explicit block/container intake and Provider/model compatibility association.
-use super::{Block, Role, TextContent as WireText};
+use super::{Block, Media, ResultBlock, ResultContent, Role};
 use crate::protocol::native::ReplayTarget;
 use crate::{
     protocol::{CodecError, fidelity::FidelityRecords},
@@ -12,6 +12,7 @@ pub(super) struct Intake {
     scope: LocalScope,
     pub(super) items: Vec<(ItemId, Item)>,
     pub(super) groups: Vec<MessageEnvelope>,
+    pub(super) resources: ResourceTable,
 }
 impl Intake {
     pub(super) fn new(scope: LocalScope) -> Self {
@@ -19,7 +20,28 @@ impl Intake {
             scope,
             items: vec![],
             groups: vec![],
+            resources: ResourceTable::default(),
         }
+    }
+    fn resource(
+        &mut self,
+        media: &Media,
+        purpose: ResourcePurpose,
+    ) -> Result<ResourceUse, CodecError> {
+        let resource = media.resource()?;
+        let id = ResourceId::scoped(self.scope, self.resources.iter().count() as u64 + 1);
+        self.resources = std::mem::take(&mut self.resources).insert(
+            id,
+            ResourceDeclaration {
+                body: ResourceBody::Media(resource.location),
+                conditions: Default::default(),
+            },
+        )?;
+        Ok(ResourceUse {
+            id,
+            purpose,
+            description: resource.description,
+        })
     }
     fn block(&mut self, block: &Block, role: Role) -> Result<ItemId, CodecError> {
         if self.items.len() >= MAX_ITEMS {
@@ -37,6 +59,18 @@ impl Intake {
                 parts: vec![Part {
                     id: part,
                     content: ContentPart::Text(text(s)?.into()),
+                }],
+                status: ItemLifecycle::Completed,
+                phase: None,
+            }),
+            Block::Media(_) if role != Role::User => {
+                return Err(CodecError::Invalid("Anthropic block role"));
+            }
+            Block::Media(media) => Item::Message(Message {
+                role: MessageRole::User,
+                parts: vec![Part {
+                    id: part,
+                    content: ContentPart::Resource(self.resource(media, ResourcePurpose::Input)?),
                 }],
                 status: ItemLifecycle::Completed,
                 phase: None,
@@ -75,18 +109,23 @@ impl Intake {
             } => Item::ToolResult(ToolResult {
                 call_id: text(tool_use_id)?,
                 output: match content {
-                    WireText::Text(s) => ToolOutput::Text(s.clone()),
-                    WireText::Blocks(parts) => {
+                    ResultContent::Text(s) => ToolOutput::Text(s.clone()),
+                    ResultContent::Blocks(parts) => {
                         // Parts occupy a separate scoped range, independent of item counters.
                         let base = (self.items.len() as u64 + 1) * (MAX_ITEMS as u64 + 1);
                         ToolOutput::Parts(
                             parts
                                 .iter()
                                 .enumerate()
-                                .map(|(i, s)| {
+                                .map(|(i, block)| {
                                     Ok((
                                         PartId::scoped(self.scope, base + i as u64),
-                                        ToolResultPart::Text(text(s)?),
+                                        match block {
+                                            ResultBlock::Text(s) => ToolResultPart::Text(text(s)?),
+                                            ResultBlock::Media(m) => ToolResultPart::Resource(
+                                                self.resource(m, ResourcePurpose::ToolResult)?,
+                                            ),
+                                        },
                                     ))
                                 })
                                 .collect::<Result<_, CodecError>>()?,

@@ -1,8 +1,5 @@
 //! Native blocks, envelopes and individual events. No stream reducer or IR mapping lives here.
-use super::{
-    request::{Role, TextContent},
-    shape::*,
-};
+use super::{request::Role, shape::*};
 use crate::{
     protocol::CodecError,
     semantic::{task::generation::StructuredValue, value::Presence},
@@ -28,9 +25,10 @@ pub enum Block {
     },
     ToolResult {
         tool_use_id: String,
-        content: TextContent,
+        content: super::ResultContent,
         is_error: Presence<bool>,
     },
+    Media(super::Media),
 }
 impl std::fmt::Debug for Block {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -78,10 +76,11 @@ impl Block {
                 let o = object(v)?;
                 Self::ToolResult {
                     tool_use_id: string(required(o, "tool_use_id")?)?,
-                    content: TextContent::read(required(o, "content")?)?,
+                    content: super::ResultContent::read(required(o, "content")?)?,
                     is_error: presence(o, "is_error", boolean)?,
                 }
             }
+            "image" | "document" => Self::Media(super::Media::read(kind, v)?),
             _ => return Err(CodecError::Unsupported("Anthropic block type".into())),
         })
     }
@@ -89,7 +88,7 @@ impl Block {
         matches!(
             (self, role),
             (Self::Text(_), _)
-                | (Self::ToolResult { .. }, Role::User)
+                | (Self::ToolResult { .. } | Self::Media(_), Role::User)
                 | (
                     Self::Thinking { .. } | Self::ToolUse { .. },
                     Role::Assistant
@@ -141,6 +140,7 @@ impl Block {
                 charge(&mut bytes, tool_use_id.len())?;
                 charge(&mut bytes, content.bytes()?)?;
             }
+            Self::Media(media) => charge(&mut bytes, media.bytes()?)?,
         }
         Ok(bytes)
     }
@@ -174,6 +174,7 @@ impl Block {
                 );
                 v
             }
+            Self::Media(media) => media.wire(),
             Self::ToolResult {
                 tool_use_id,
                 content,

@@ -46,6 +46,9 @@ fn block_fields(kind: Option<&str>) -> &'static [&'static str] {
         Some("thinking") => &["type", "thinking", "signature"],
         Some("tool_use") => &["type", "id", "name", "input"],
         Some("tool_result") => &["type", "tool_use_id", "content", "is_error"],
+        Some("image") => &["type", "source"],
+        // Kept so `Media::read` rejects them; they change model-visible content.
+        Some("document") => &["type", "source", "title", "context", "citations"],
         // Unknown block types stay closed and fail in `Block::read`.
         _ => &[
             "type",
@@ -244,7 +247,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
             (id, item)
         })
         .collect();
-    let semantic = GenerationRequest::from_settings(items, settings)?;
+    let semantic = GenerationRequest::from_resources(items, settings, intake.resources)?;
     let mut fidelity = FidelityRecords::default();
     fidelity.bind_replay_origin(&crate::execution::replay::CLIENT_ORIGIN)?;
     let mut request = Request::from_generation(DecodedRequest { semantic, fidelity }, &model)?;

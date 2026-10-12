@@ -1,5 +1,8 @@
 //! Candidate-local native request/history projection.
-use super::{Block, InputMessage, MessageContent, Role, Selection, TextContent as WireText};
+use super::{
+    Block, InputMessage, Media, MessageContent, ResultBlock, ResultContent, Role, Selection,
+    TextContent as WireText,
+};
 use crate::{
     protocol::{CodecError, fidelity::FidelityRecords, native::ReplayTarget},
     semantic::{task::generation::*, value::Presence},
@@ -34,6 +37,8 @@ pub enum RequestRule {
     /// An omitted `strict` defaulting to schema normalization (Responses) is sent
     /// as a plain tool; Messages has no strict tools.
     DefaultStrictAsPlain,
+    /// Image detail, file detail and filename have no Messages slot.
+    OmitMediaOptions,
 }
 impl RequestRule {
     pub const fn name(self) -> &'static str {
@@ -48,6 +53,7 @@ impl RequestRule {
             Self::BudgetAsEffort => "messages.budget-as-effort.v1",
             Self::DeveloperAsSystem => "messages.developer-as-system.v1",
             Self::DefaultStrictAsPlain => "messages.default-strict-as-plain.v1",
+            Self::OmitMediaOptions => "messages.omit-media-options.v1",
         }
     }
 }
@@ -263,31 +269,33 @@ pub(super) fn project(
                 continue;
             }
             blocks.extend(
-                item_blocks(*owner, item, request, fidelity, target, normalized, omitted)?
-                    .into_iter()
-                    .map(|block| match block {
-                        Block::ToolUse {
-                            id,
-                            name,
-                            input,
-                            caller,
-                        } => Block::ToolUse {
-                            id: call_id(&id, rules),
-                            name,
-                            input,
-                            caller,
-                        },
-                        Block::ToolResult {
-                            tool_use_id,
-                            content,
-                            is_error,
-                        } => Block::ToolResult {
-                            tool_use_id: call_id(&tool_use_id, rules),
-                            content,
-                            is_error,
-                        },
-                        other => other,
-                    }),
+                item_blocks(
+                    *owner, item, request, fidelity, target, normalized, omitted, rules,
+                )?
+                .into_iter()
+                .map(|block| match block {
+                    Block::ToolUse {
+                        id,
+                        name,
+                        input,
+                        caller,
+                    } => Block::ToolUse {
+                        id: call_id(&id, rules),
+                        name,
+                        input,
+                        caller,
+                    },
+                    Block::ToolResult {
+                        tool_use_id,
+                        content,
+                        is_error,
+                    } => Block::ToolResult {
+                        tool_use_id: call_id(&tool_use_id, rules),
+                        content,
+                        is_error,
+                    },
+                    other => other,
+                }),
             );
         }
         messages.push(InputMessage {
@@ -332,6 +340,7 @@ pub(super) fn project(
         stream: Presence::Absent,
     })
 }
+#[allow(clippy::too_many_arguments)]
 pub(super) fn item_blocks(
     id: ItemId,
     item: &Item,
@@ -340,7 +349,16 @@ pub(super) fn item_blocks(
     target: &ReplayTarget,
     normalized: &mut Vec<ItemId>,
     omitted: &mut Vec<ItemId>,
+    rules: &mut BTreeSet<RequestRule>,
 ) -> Result<Vec<Block>, CodecError> {
+    let mut media = |resource: &ResourceUse| {
+        let mut dropped = false;
+        let value = Media::from_resource(resource.media(request.resources())?, &mut dropped)?;
+        if dropped {
+            rules.insert(RequestRule::OmitMediaOptions);
+        }
+        Ok::<_, CodecError>(value)
+    };
     Ok(match item {
         Item::Message(m) => {
             if m.status != ItemLifecycle::Completed || m.phase.is_some() {
@@ -348,14 +366,12 @@ pub(super) fn item_blocks(
             }
             m.parts
                 .iter()
-                .map(|p| {
-                    let ContentPart::Text(t) = &p.content else {
-                        return Err(unsupported());
-                    };
-                    if !t.is_plain() {
-                        return Err(unsupported());
+                .map(|p| match &p.content {
+                    ContentPart::Text(t) if t.is_plain() => Ok(Block::Text(t.as_str().into())),
+                    ContentPart::Resource(r) if m.role == MessageRole::User => {
+                        Ok(Block::Media(media(r)?))
                     }
-                    Ok(Block::Text(t.as_str().into()))
+                    _ => Err(unsupported()),
                 })
                 .collect::<Result<_, _>>()?
         }
@@ -433,17 +449,17 @@ pub(super) fn item_blocks(
                 omitted.push(id);
             }
             let content = match &r.output {
-                ToolOutput::Text(s) => WireText::Text(s.clone()),
-                ToolOutput::Parts(parts) => WireText::Blocks(
+                ToolOutput::Text(s) => ResultContent::Text(s.clone()),
+                ToolOutput::Parts(parts) => ResultContent::Blocks(
                     parts
                         .iter()
                         .map(|(_, part)| {
-                            let ToolResultPart::Text(t) = part else {
-                                return Err(unsupported());
-                            };
-                            Ok(t.as_str().into())
+                            Ok(match part {
+                                ToolResultPart::Text(t) => ResultBlock::Text(t.as_str().into()),
+                                ToolResultPart::Resource(r) => ResultBlock::Media(media(r)?),
+                            })
                         })
-                        .collect::<Result<_, _>>()?,
+                        .collect::<Result<_, CodecError>>()?,
                 ),
                 _ => return Err(unsupported()),
             };

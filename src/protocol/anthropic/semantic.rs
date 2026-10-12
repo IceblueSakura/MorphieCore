@@ -128,7 +128,7 @@ impl Profile {
                 MessageContent::Blocks(blocks) => intake.message(message.role, blocks)?,
             }
         }
-        let semantic = GenerationRequest::from_settings(intake.items, settings)?
+        let semantic = GenerationRequest::from_resources(intake.items, settings, intake.resources)?
             .with_message_envelopes(intake.groups)?;
         let mut fidelity = FidelityRecords::default();
         bind(&mut fidelity, semantic.items(), target)?;
@@ -245,6 +245,7 @@ impl Profile {
                     target,
                     &mut vec![],
                     &mut vec![],
+                    &mut Default::default(),
                 )
             })
             .collect::<Result<Vec<_>, _>>()?

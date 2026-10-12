@@ -32,7 +32,7 @@ pub struct GenerationRequirements {
     pub structured_tool_results: bool,
     pub tool_execution_reports: bool,
     pub tool_result_errors: bool,
-    pub tool_result_images: usize,
+    pub tool_result_media: usize,
     pub structured_output: bool,
     pub reasoning: bool,
     pub reasoning_items: usize,
@@ -119,10 +119,25 @@ impl GenerationRequirements {
                         }
                         crate::semantic::task::generation::ToolOutput::Parts(parts) => {
                             for (_, part) in parts {
-                                if matches!(part, crate::semantic::task::generation::ToolResultPart::Resource(resource) if resource.media(r.resources()).is_ok_and(|r| r.kind() == ResourceKind::Image))
+                                let crate::semantic::task::generation::ToolResultPart::Resource(
+                                    resource,
+                                ) = part
+                                else {
+                                    continue;
+                                };
+                                x.tool_result_media += 1;
+                                x.resource_count += 1;
+                                // Non-image tool media also needs the model's modality;
+                                // tool images predate this rule and need only the carrier.
+                                match resource
+                                    .media(r.resources())
+                                    .expect("validated resource")
+                                    .kind()
                                 {
-                                    x.tool_result_images += 1;
-                                    x.resource_count += 1;
+                                    ResourceKind::Image => {}
+                                    ResourceKind::Audio => x.audio_inputs += 1,
+                                    ResourceKind::Video => x.video_inputs += 1,
+                                    ResourceKind::File => x.file_inputs += 1,
                                 }
                             }
                         }

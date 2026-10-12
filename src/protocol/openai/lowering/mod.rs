@@ -634,10 +634,13 @@ fn text_items(
         if matches!(i, Item::ToolCall(call) if !matches!(call.arguments, ToolArguments::Raw(_))) {
             return Err(RepresentationError::Tools);
         }
-        // Standard Responses admits image result parts in history; Chat does not.
+        // Standard Responses admits image and file result parts in history; Chat does not.
         if matches!(i, Item::ToolResult(result) | Item::CustomResult(result)
             if result.execution.is_some() || matches!(result.output, ToolOutput::Structured(_))
-                || (!request || profile == Profile::Chat) && !result.output.is_text_only())
+                || (!request || profile == Profile::Chat) && !result.output.is_text_only()
+                || matches!(&result.output, ToolOutput::Parts(parts) if parts.iter().any(|(_, part)|
+                    matches!(part, ToolResultPart::Resource(r) if r.media(resources).is_ok_and(|r|
+                        matches!(r.kind(), ResourceKind::Audio | ResourceKind::Video))))))
         {
             return Err(RepresentationError::Tools);
         }

@@ -436,3 +436,149 @@ mod anthropic_semantics {
         );
     }
 }
+mod anthropic_media {
+    //! Independent native image/document oracles; inert sources, no fetch or file API.
+    use morphiecore::{
+        protocol::{anthropic::Profile, native::ReplayTarget},
+        semantic::task::generation::*,
+        topology::catalog,
+    };
+    use serde_json::{Value, json};
+
+    fn target() -> ReplayTarget {
+        ReplayTarget::new("synthetic-provider", "synthetic-model").unwrap()
+    }
+    fn messages() -> Value {
+        json!([
+            {"role":"user","content":[
+                {"type":"image","source":{"type":"base64","media_type":"image/png","data":"AQID"}},
+                {"type":"image","source":{"type":"url","url":"https://example.invalid/a.jpg"}},
+                {"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"BAUG"}},
+                {"type":"document","source":{"type":"text","media_type":"text/plain","data":"notes"}},
+                {"type":"text","text":"Compare."}]},
+            {"role":"assistant","content":[
+                {"type":"tool_use","id":"toolu_1","name":"shot","input":{}}]},
+            {"role":"user","content":[
+                {"type":"tool_result","tool_use_id":"toolu_1","content":[
+                    {"type":"text","text":"screen"},
+                    {"type":"image","source":{"type":"base64","media_type":"image/webp","data":"BwgJ"}}]}]}
+        ])
+    }
+    fn view<'a>(request: &'a GenerationRequest, resource: &'a ResourceUse) -> ResourceView<'a> {
+        resource.media(request.resources()).unwrap()
+    }
+
+    #[test]
+    fn images_and_documents_map_to_inert_resources_and_back() {
+        let raw = json!({"model":"synthetic-model","max_tokens":64,"messages":messages()});
+        let p = Profile::AdaptiveTextTools;
+        let decoded = p
+            .decode_generation_request(
+                &serde_json::to_vec(&raw).unwrap(),
+                LocalScope::new(1),
+                &target(),
+            )
+            .unwrap();
+        let semantic = &decoded.semantic;
+        let needs = GenerationRequirements::derive(semantic);
+        assert_eq!(
+            (
+                needs.image_inputs,
+                needs.file_inputs,
+                needs.tool_result_media
+            ),
+            (2, 2, 1)
+        );
+        let inputs: Vec<_> = semantic
+            .items()
+            .iter()
+            .filter_map(|(_, item)| match item {
+                Item::Message(m) => match &m.parts[0].content {
+                    ContentPart::Resource(r) => Some(view(semantic, r)),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect();
+        let inline = |media: &str, data: &str| -> bool {
+            inputs.iter().any(|v| {
+                matches!(v.location, ResourceLocation::Inline { media_type, data_base64 }
+                    if media_type.as_str() == media && data_base64.as_str() == data)
+            })
+        };
+        assert_eq!(inputs.len(), 4);
+        assert_eq!(inputs[0].kind(), ResourceKind::Image);
+        assert!(inline("image/png", "AQID"));
+        assert!(
+            matches!(inputs[1].location, ResourceLocation::Url(u) if u.as_str() == "https://example.invalid/a.jpg")
+        );
+        assert_eq!(inputs[2].kind(), ResourceKind::File);
+        assert!(inline("application/pdf", "BAUG"));
+        // A text document is an inline text/plain file: base64("notes").
+        assert!(inline("text/plain", "bm90ZXM="));
+        let Item::ToolResult(result) = &semantic.items()[6].1 else {
+            panic!("tool result")
+        };
+        let ToolOutput::Parts(parts) = &result.output else {
+            panic!("parts")
+        };
+        let ToolResultPart::Resource(shot) = &parts[1].1 else {
+            panic!("tool image")
+        };
+        assert_eq!(view(semantic, shot).kind(), ResourceKind::Image);
+        let encoded = p
+            .encode_generation_request(semantic, &decoded.fidelity, &target())
+            .unwrap();
+        assert_eq!(encoded.value["messages"], messages());
+        assert!(encoded.rules.is_empty());
+    }
+
+    #[test]
+    fn unrepresentable_sources_fail_and_foreign_options_are_named_losses() {
+        for block in [
+            json!({"type":"image","source":{"type":"file","file_id":"file_synthetic"}}),
+            json!({"type":"document","source":{"type":"content","content":"x"}}),
+            json!({"type":"document","context":"private","source":{"type":"url","url":"https://example.invalid/a.pdf"}}),
+            json!({"type":"image","source":{"type":"base64","media_type":"image/bmp","data":"AQID"}}),
+        ] {
+            let raw =
+                json!({"model":"m","max_tokens":8,"messages":[{"role":"user","content":[block]}]});
+            assert!(
+                morphiecore::protocol::anthropic::client::decode_client_request(
+                    &serde_json::to_vec(&raw).unwrap()
+                )
+                .is_err()
+            );
+        }
+        use morphiecore::protocol::openai::{Adapter, Dialect, Profile as Client};
+        let endpoint = catalog::MESSAGES_BINDINGS[0].endpoint();
+        let chat = Adapter::new(Client::Chat, Dialect::Standard, None);
+        let decode = |content: Value| {
+            let mut request = chat
+                .decode_client_request(
+                    &serde_json::to_vec(
+                        &json!({"model":"m","messages":[{"role":"user","content":content}]}),
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+            // The Go binding needs a session grouping.
+            request.conversation = Some(
+                morphiecore::semantic::context::ConversationContext::conversation("synthetic")
+                    .unwrap(),
+            );
+            request
+        };
+        let request = decode(json!([
+            {"type":"image_url","image_url":{"url":"https://example.invalid/a.png","detail":"low"}}]));
+        let (wire, rules) = endpoint.encode_request_with_rules(&request).unwrap();
+        assert_eq!(
+            wire["messages"][0]["content"],
+            json!([{"type":"image","source":{"type":"url","url":"https://example.invalid/a.png"}}])
+        );
+        assert_eq!(rules, ["messages.omit-media-options.v1"]);
+        let audio =
+            decode(json!([{"type":"input_audio","input_audio":{"data":"AQID","format":"wav"}}]));
+        assert!(endpoint.encode_request_with_rules(&audio).is_err());
+    }
+}

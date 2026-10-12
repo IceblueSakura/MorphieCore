@@ -282,18 +282,26 @@ pub fn items(
                                         return Err(GenerationError::InvalidResource);
                                     }
                                     let resource = resource.media(resources)?;
-                                    // Selected tool media is inert URL/inline image content.
+                                    // Tool media is inert URL/inline content of any kind.
                                     // Opaque references need an issuer/lifecycle contract first.
-                                    if resource.kind() != ResourceKind::Image
-                                        || matches!(
-                                            resource.location,
-                                            ResourceLocation::OpaqueReference(_)
-                                                | ResourceLocation::NamespacedReference { .. }
-                                        )
-                                    {
+                                    if matches!(
+                                        resource.location,
+                                        ResourceLocation::OpaqueReference(_)
+                                            | ResourceLocation::NamespacedReference { .. }
+                                    ) {
                                         return Err(GenerationError::InvalidResource);
                                     }
                                     charge(&mut bytes, resource.validate()?)?;
+                                    if resource.kind() == ResourceKind::File {
+                                        file_decoded_bytes = file_decoded_bytes
+                                            .checked_add(
+                                                resource.inline_decoded_bytes()?.unwrap_or(0),
+                                            )
+                                            .ok_or(GenerationError::Limit)?;
+                                        if file_decoded_bytes > MAX_TOTAL_FILE_DECODED_BYTES {
+                                            return Err(GenerationError::Limit);
+                                        }
+                                    }
                                 }
                             }
                         }

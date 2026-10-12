@@ -205,6 +205,13 @@ fn output(b: &mut Items, v: &Value) -> Result<ToolOutput, CodecError> {
                     ResourcePurpose::ToolResult,
                 )?),
             ),
+            "input_file" => (
+                b.part_id()?,
+                ToolResultPart::Resource(b.resource(
+                    crate::protocol::openai::content::file::read(o, direction)?,
+                    ResourcePurpose::ToolResult,
+                )?),
+            ),
             _ => return Err(CodecError::Unsupported("tool result media".into())),
         };
         p.push(part);
@@ -609,11 +616,23 @@ fn output_wire(o: &ToolOutput, fidelity: &FidelityRecords, resources: &ResourceT
             p.iter()
                 .map(|(id, part)| match part {
                     ToolResultPart::Text(text) => input_part(*id, text.as_str(), fidelity),
-                    ToolResultPart::Resource(resource) =>
-                        crate::protocol::openai::content::image::write(
-                            resource.media(resources).expect("validated resource"),
-                            Profile::Responses
-                        ),
+                    ToolResultPart::Resource(resource) => {
+                        let resource = resource.media(resources).expect("validated resource");
+                        match resource.kind() {
+                            ResourceKind::Image => crate::protocol::openai::content::image::write(
+                                resource,
+                                Profile::Responses,
+                            ),
+                            ResourceKind::File => {
+                                crate::protocol::openai::content::file::write(resource)
+                            }
+                            ResourceKind::Audio | ResourceKind::Video => {
+                                unreachable!(
+                                    "lowering rejects tool media without a Responses carrier"
+                                )
+                            }
+                        }
+                    }
                 })
                 .collect::<Vec<_>>()
         ),
