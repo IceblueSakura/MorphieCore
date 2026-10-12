@@ -71,8 +71,8 @@ fn neutral_context_reads_agent_session_headers_but_never_provider_sessions() {
     assert!(!one.is_conversation_scoped());
     assert_ne!(one.id(), two.id());
     assert_eq!(one.id().len(), 32);
-    // pi declares its session as `session_id` or `x-session-id`.
-    for name in ["session_id", "x-session-id"] {
+    // Declared agent sessions: pi, opencode, Codex.
+    for name in ["session_id", "x-session-id", "session-id"] {
         headers.insert(name, HeaderValue::from_static("pi-session"));
         let group = admission::conversation(&headers).unwrap();
         assert!(group.is_conversation_scoped());

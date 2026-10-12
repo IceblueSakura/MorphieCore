@@ -50,7 +50,7 @@ Unknown fields, unknown or duplicate models, and models without a matching pool 
 
 - Auth: exactly one `Authorization: Bearer <client_key>`, checked before the body is collected.
 - `model` accepts only enabled public labels. Upstream origin, model and auth come from trusted bindings; inbound headers are not forwarded.
-- Optional `X-MorphieCore-Conversation-Id` (1–256 visible ASCII characters, no commas, at most one): keep it stable for one logical conversation, across model switches. The gateway derives upstream cache/session carriers from it. It does not mean the server stores history; send the full history every turn. Without it, pi's `x-session-id` or `session_id` header is read the same way.
+- Optional `X-MorphieCore-Conversation-Id` (1–256 visible ASCII characters, no commas, at most one): keep it stable for one logical conversation, across model switches. The gateway derives upstream cache/session carriers from it. It does not mean the server stores history; send the full history every turn. Without it, an agent's declared session header is read the same way: opencode `X-Session-Id`, pi `session_id` (pi's Chat API sends it only with `compat.sendSessionAffinityHeaders: true`), Codex `session-id`.
 - Provider `session_id` in the body is rejected; `prompt_cache_key` is kept as a separate cache group.
 - Public API summary: [openapi.json](openapi.json).
 

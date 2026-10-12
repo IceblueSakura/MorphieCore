@@ -96,7 +96,7 @@ When Chat Completions cannot carry a semantic such as reasoning, MorphieCore fol
 
 - `reasoning` (readable text) and `reasoning_details` (ordered array) on the assistant `message` and stream `delta`. Elements have `type` `reasoning.text` (`text`, optional `signature`), `reasoning.summary` (`summary`) or `reasoning.encrypted` (`data`), plus shared `id`, `format` and `index`.
 - Signatures and encrypted payloads use the envelope above. Clients must return `reasoning_details` unchanged; the gateway restores or drops values by the rules above.
-- One assistant message carries the ordered reasoning items ahead of it. Each replay value closes its item, so adjacent items without values merge into one. Output indices are positions in the message; client input does not check index values or `format` labels, because pi merges streamed deltas of one type and keeps the first index. The readable view (`reasoning_content`) is the concatenation of the readable details, and each streamed readable delta carries both, with no empty opener.
+- One assistant message carries the ordered reasoning items ahead of it. Each replay value closes its item, so adjacent items without values merge into one. Output indices are positions in the message; client input does not check index values or `format` labels, because pi and opencode merge streamed deltas of one type and keep the first index; opencode also returns the `reasoning_content` view, which must equal the details. The readable view (`reasoning_content`) is the concatenation of the readable details, and each streamed readable delta carries both, with no empty opener.
 - Further extension fields are added one at a time and registered here. The old `_openbridge` attachment does not return.
 
 ## 5. Execution and delivery
@@ -122,7 +122,7 @@ When Chat Completions cannot carry a semantic such as reasoning, MorphieCore fol
 
 ## 6. Cache affinity
 
-- The optional `X-MorphieCore-Conversation-Id` header, or else pi's declared session header (`x-session-id` or `session_id`), names a Provider-neutral logical conversation; the gateway derives each upstream's session or cache carriers from it. Provider session headers such as `x-opencode-session` are never read.
+- The optional `X-MorphieCore-Conversation-Id` header, or else an agent's declared session header (opencode `X-Session-Id`, pi `session_id`, Codex `session-id`), names a Provider-neutral logical conversation; the gateway derives each upstream's session or cache carriers from it. Provider session headers such as `x-opencode-session` are never read.
 - Standard `prompt_cache_key` is a separate cache-grouping intent.
 - Without a conversation ID, a short-TTL prefix-digest index reuses cache groups on a best-effort basis. It can be dropped at any time, misses only lose cache hits, and it is neither history storage nor part of replay decisions. Histories with opaque reasoning are excluded.
 - Implicit cache scope stays isolated by ingress key, credential source and public model; it does not reuse the replay fingerprint.

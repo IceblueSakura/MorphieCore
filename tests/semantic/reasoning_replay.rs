@@ -1107,7 +1107,7 @@ mod replay_carrier {
     }
 
     #[test]
-    fn chat_details_keep_item_boundaries_and_survive_a_pi_merged_replay() {
+    fn chat_details_keep_item_boundaries_and_survive_pi_and_opencode_replays() {
         use morphiecore::protocol::openai::events::EventEncoder;
         let issuer = upstream("openai/model-a");
         let client_contract = chat_client().contract(&contract(CLIENT_ORIGIN.as_str()));
@@ -1197,25 +1197,33 @@ mod replay_carrier {
                 _ => merged.push(detail),
             }
         }
-        let history = json!({"model":"m","messages":[
-            {"role":"user","content":"q"},
-            {"role":"assistant","content":"ok","reasoning_details":merged},
-            {"role":"user","content":"next"},
-        ]});
-        let mut request = chat_client()
-            .decode_client_request(history.to_string().as_bytes())
-            .unwrap();
-        open_from_client(&mut request).unwrap();
-        let wire = issuer
-            .encode_request(&request, "model-a", &contract("openai/model-a"))
-            .unwrap();
-        assert_eq!(
-            wire["input"].as_array().unwrap()[1..3],
-            [
-                json!({"type":"reasoning","id":"r1","summary":[{"type":"summary_text","text":"Aa"}],"encrypted_content":"tok-1"}),
-                json!({"type":"reasoning","id":"r2","summary":[],"content":[{"type":"reasoning_text","text":"B"}],"encrypted_content":"tok-2"}),
-            ]
-        );
+        // opencode (e5a557e) merges alike and also returns the concatenated view.
+        for view in [None, Some("AaB")] {
+            let mut assistant =
+                json!({"role":"assistant","content":"ok","reasoning_details":merged});
+            if let Some(view) = view {
+                assistant["reasoning_content"] = json!(view);
+            }
+            let history = json!({"model":"m","messages":[
+                {"role":"user","content":"q"},
+                assistant,
+                {"role":"user","content":"next"},
+            ]});
+            let mut request = chat_client()
+                .decode_client_request(history.to_string().as_bytes())
+                .unwrap();
+            open_from_client(&mut request).unwrap();
+            let wire = issuer
+                .encode_request(&request, "model-a", &contract("openai/model-a"))
+                .unwrap();
+            assert_eq!(
+                wire["input"].as_array().unwrap()[1..3],
+                [
+                    json!({"type":"reasoning","id":"r1","summary":[{"type":"summary_text","text":"Aa"}],"encrypted_content":"tok-1"}),
+                    json!({"type":"reasoning","id":"r2","summary":[],"content":[{"type":"reasoning_text","text":"B"}],"encrypted_content":"tok-2"}),
+                ]
+            );
+        }
     }
 
     #[test]
