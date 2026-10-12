@@ -40,6 +40,16 @@ pub enum AttemptError {
     #[error("delivery mismatch: {0}")]
     Delivery(&'static str),
 }
+impl AttemptError {
+    /// The HTTP status of an upstream error reported inside the stream.
+    pub fn stream_failure(&self) -> Option<u16> {
+        match self {
+            Self::Codec(CodecError::StreamFailure(status))
+            | Self::Sse(SseError::Codec(CodecError::StreamFailure(status))) => Some(*status),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct UpstreamRequest {

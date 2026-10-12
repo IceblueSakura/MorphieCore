@@ -346,6 +346,74 @@ impl ResponseDelivery {
         self.rendered |= !frames.is_empty();
         Ok(frames)
     }
+    /// End a stream with a classified failure (`{"error":{...}}`), never a success
+    /// terminal. Responses gets `response.failed`, opening the response when nothing
+    /// was sent, since Codex reads `context_length_exceeded` and `insufficient_quota`
+    /// only there; Chat gets an error chunk and no `[DONE]`, as OpenAI sends.
+    pub fn fail_stream(&mut self, error: &serde_json::Value) -> Result<Vec<Bytes>, AttemptError> {
+        use crate::semantic::{
+            task::generation::{ResponseError, StreamTerminal, TerminalDetails},
+            value::Text,
+        };
+        let result = (|| {
+            self.ready()?;
+            if self.adapter.protocol == Profile::Chat {
+                return Ok(vec![Bytes::from(format!("data: {error}\n\n"))]);
+            }
+            let field = |key: &str| {
+                error["error"][key]
+                    .as_str()
+                    .and_then(|v| Text::new(v, "error", 4096).ok())
+            };
+            let failed = StreamEvent::Terminal {
+                terminal: StreamTerminal::Failed,
+                details: TerminalDetails {
+                    error: Some(ResponseError {
+                        code: field("code"),
+                        message: field("message")
+                            .ok_or(AttemptError::Protocol("failure message"))?,
+                        param: None,
+                    }),
+                    incomplete: None,
+                },
+            };
+            // Wire identities of started items already live in the encoder.
+            let source = Default::default();
+            let frames = match self.encoder.as_mut() {
+                Some(Encoder::Responses(encoder)) => encoder.encode(&failed, &source)?,
+                None => {
+                    let mut id = [0; 16];
+                    getrandom::fill(&mut id).map_err(|_| AttemptError::Protocol("entropy"))?;
+                    let metadata = ResponseMetadata {
+                        id: format!(
+                            "resp_{}",
+                            id.iter().map(|b| format!("{b:02x}")).collect::<String>()
+                        ),
+                        model: self.public_label.clone(),
+                        created: self.native_created.clone(),
+                        context: Default::default(),
+                        instruction_fidelity: Default::default(),
+                    };
+                    let mut encoder = ResponsesSseEncoder::new(
+                        metadata,
+                        self.adapter.contract(&self.contract),
+                        self.limits,
+                        Obfuscation::Disabled,
+                    )?;
+                    let mut frames = encoder.encode(&StreamEvent::Started, &source)?;
+                    frames.extend(encoder.encode(&failed, &source)?);
+                    frames
+                }
+                Some(Encoder::Chat(_)) => return Err(AttemptError::Delivery("profile mismatch")),
+            };
+            self.terminal = true;
+            Ok(frames)
+        })();
+        if result.is_err() {
+            self.rejected = true;
+        }
+        result
+    }
     /// Call at the external visibility boundary, not when bytes are merely encoded.
     pub fn commit(&mut self) -> Result<(), AttemptError> {
         if self.rejected || !self.rendered {

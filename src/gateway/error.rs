@@ -75,8 +75,13 @@ impl ApiError {
         error
     }
 }
-impl IntoResponse for ApiError {
-    fn into_response(self) -> Response {
+impl ApiError {
+    /// Classes Codex reads only from a streamed Responses `response.failed`.
+    pub fn streams_as_failed(&self) -> bool {
+        matches!(self.code, "context_length_exceeded" | "insufficient_quota")
+    }
+    /// The OpenAI error envelope, for HTTP bodies and stream failure frames.
+    pub fn body(&self) -> serde_json::Value {
         // OpenAI's codes and wording; pi matches the message, opencode the body.
         let (kind, message) = match self.code {
             "context_length_exceeded" => (
@@ -104,11 +109,12 @@ impl IntoResponse for ApiError {
             ),
             _ => ("api_error", "The request could not be completed.".to_string()),
         };
-        let mut response = (
-            self.status,
-            Json(json!({"error":{"message":message,"type":kind,"param":null,"code":self.code}})),
-        )
-            .into_response();
+        json!({"error":{"message":message,"type":kind,"param":null,"code":self.code}})
+    }
+}
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        let mut response = (self.status, Json(self.body())).into_response();
         if let Some(seconds) = self.retry_after {
             response
                 .headers_mut()

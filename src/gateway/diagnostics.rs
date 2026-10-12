@@ -56,6 +56,7 @@ fn decode_failure(error: &crate::execution::AttemptError) -> &'static str {
         _ => return "other",
     };
     match codec {
+        CodecError::StreamFailure(_) => "upstream_stream_error",
         CodecError::Invalid(label) => match *label {
             "response id changed" => "metadata_id_changed",
             "response model changed" => "metadata_model_changed",

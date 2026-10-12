@@ -109,5 +109,31 @@ pub(super) async fn handle(
     semantic.conversation = Some(conversation);
     trace.ignored_fields(std::mem::take(&mut semantic.ignored_fields));
     let deadline = tokio::time::Instant::now() + state.limits.exchange_timeout;
-    exchange::run(state, entry, semantic, deadline, permit, trace).await
+    let failed =
+        (profile == Profile::Responses && semantic.delivery.streaming()).then(|| entry.clone());
+    match exchange::run(state, entry, semantic, deadline, permit, trace).await {
+        Err(error) if error.streams_as_failed() && failed.is_some() => {
+            failed_stream(&failed.expect("checked"), &error)
+        }
+        result => result,
+    }
+}
+/// A Responses stream that failed before its first frame still answers as a
+/// stream, ending in `response.failed`.
+fn failed_stream(entry: &super::BoundEntry, error: &ApiError) -> Result<Response, ApiError> {
+    let mut delivery = crate::execution::ResponseDelivery::new(
+        entry.client.clone(),
+        entry.downstream.clone(),
+        entry.public.id.as_str(),
+        Default::default(),
+        Default::default(),
+        crate::protocol::openai::sse::Obfuscation::Disabled,
+    );
+    let frames = delivery.fail_stream(&error.body()).map_err(|_| *error)?;
+    Response::builder()
+        .header("content-type", "text/event-stream")
+        .header("cache-control", "no-store")
+        .header("x-content-type-options", "nosniff")
+        .body(axum::body::Body::from(frames.concat()))
+        .map_err(|_| *error)
 }

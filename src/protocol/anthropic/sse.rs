@@ -29,6 +29,21 @@ pub struct MessageSseDecoder {
     closed: bool,
     rejected: bool,
 }
+/// Status of each documented error type
+/// (https://docs.anthropic.com/en/api/errors), for classification only.
+pub(super) fn error_status(kind: &str) -> u16 {
+    match kind {
+        "invalid_request_error" => 400,
+        "authentication_error" => 401,
+        "billing_error" => 402,
+        "permission_error" => 403,
+        "not_found_error" => 404,
+        "request_too_large" => 413,
+        "rate_limit_error" => 429,
+        "overloaded_error" => 529,
+        _ => 500,
+    }
+}
 fn invalid() -> SseError {
     CodecError::Invalid("Anthropic stream ordering or closure").into()
 }
@@ -118,7 +133,9 @@ impl MessageSseDecoder {
     fn event(&mut self, event: Event) -> Result<(), SseError> {
         match event {
             Event::Ping => {}
-            Event::Error { .. } => return Err(CodecError::Invalid("Anthropic stream error").into()),
+            Event::Error { kind, .. } => {
+                return Err(CodecError::StreamFailure(error_status(&kind)).into());
+            }
             Event::MessageStart(message) => {
                 if self.message.is_some() {
                     return Err(invalid());

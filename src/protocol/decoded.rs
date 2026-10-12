@@ -58,6 +58,9 @@ pub enum CodecError {
     Unsupported(String),
     #[error("codec input exceeds slice limits")]
     Limit,
+    /// An upstream error inside a stream, as the HTTP status its type documents.
+    #[error("upstream stream error (HTTP {0})")]
+    StreamFailure(u16),
     #[error("target representation belongs to another codec")]
     ProfileMismatch,
     #[error(transparent)]

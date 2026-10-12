@@ -35,10 +35,29 @@ async fn produce(
         }
         let mut rest = chunk.as_ref();
         while !rest.is_empty() {
-            let (used, events) = attempt.push(rest).map_err(|error| {
-                trace.decode_error(&error);
-                ApiError::upstream()
-            })?;
+            let (used, events) = match attempt.push(rest) {
+                Ok(pushed) => pushed,
+                Err(error) => {
+                    trace.decode_error(&error);
+                    let Some(status) = error.stream_failure() else {
+                        return Err(ApiError::upstream());
+                    };
+                    let failure = ApiError::failure(status, b"", None);
+                    // After headers the class still reaches the client, as a failure frame.
+                    if stream
+                        && lane
+                            .state
+                            .published
+                            .load(std::sync::atomic::Ordering::Acquire)
+                    {
+                        let frames = delivery.fail_stream(&failure.body()).map_err(|_| failure)?;
+                        for frame in frames {
+                            super::body::send_frame(lane, frame, trace).await?;
+                        }
+                    }
+                    return Err(failure);
+                }
+            };
             trace.events(&events);
             trace.ignored_events(attempt.ignored_events());
             if used == 0 {

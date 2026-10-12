@@ -186,6 +186,41 @@ async fn answer(
         assert_eq!(body["stream"], true);
         return controlled_response(prompt, control);
     }
+    if prompt == "overflow" {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(
+                json!({"type":"error","error":{"type":"invalid_request_error",
+                "message":"prompt is too long: 999999 tokens > 200000 maximum"}}),
+            ),
+        )
+            .into_response();
+    }
+    if prompt == "overloaded" {
+        let overloaded =
+            json!({"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}});
+        if body["stream"] != true {
+            return (
+                axum::http::StatusCode::from_u16(529).unwrap(),
+                Json(overloaded),
+            )
+                .into_response();
+        }
+        // Anthropic reports overload inside a started stream.
+        let message = json!({"id":"msg-overloaded","type":"message","role":"assistant","model":"claude-haiku-5-5",
+            "content":[{"type":"text","text":"partial"}],"stop_reason":"end_turn",
+            "usage":{"input_tokens":1,"output_tokens":1}});
+        let prefix = native_stream_body(&message)
+            .split_once("event: content_block_stop")
+            .unwrap()
+            .0
+            .to_owned();
+        return (
+            [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
+            format!("{prefix}event: error\ndata: {overloaded}\n\n"),
+        )
+            .into_response();
+    }
     if prompt == "upstream-error" {
         return (
             axum::http::StatusCode::SERVICE_UNAVAILABLE,
@@ -565,6 +600,86 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
         }
     }
     assert_eq!(seen.lock().unwrap().len(), 28);
+    // Error classes: Codex reads overflow only from a streamed `response.failed`;
+    // a failure after headers ends the stream with its class instead of a cut.
+    for profile in [Profile::Responses, Profile::Chat] {
+        let responses = profile == Profile::Responses;
+        for stream in [false, true] {
+            for prompt in ["overflow", "overloaded"] {
+                let function = json!({"name":"lookup","parameters":{"type":"object","properties":{"key":{"type":"string"}}},"strict":false});
+                let input = if responses {
+                    let mut tool = function.clone();
+                    tool["type"] = json!("function");
+                    json!({"model":binding.model,"max_output_tokens":64,"input":prompt,"stream":stream,"tools":[tool]})
+                } else {
+                    json!({"model":binding.model,"max_completion_tokens":64,"stream":stream,
+                        "messages":[{"role":"user","content":prompt}],
+                        "tools":[{"type":"function","function":function}]})
+                };
+                let count = seen.lock().unwrap().len();
+                let mut response = client
+                    .post(format!(
+                        "{base}/v1/{}",
+                        if responses {
+                            "responses"
+                        } else {
+                            "chat/completions"
+                        }
+                    ))
+                    .bearer_auth("synthetic-client-identity-00000001")
+                    .json(&input)
+                    .send()
+                    .await
+                    .unwrap();
+                let status = response.status().as_u16();
+                let mut wire = vec![];
+                while let Ok(Some(bytes)) = response.chunk().await {
+                    wire.extend_from_slice(&bytes);
+                }
+                let wire = String::from_utf8(wire).unwrap();
+                assert!(!wire.contains("999999") && !wire.contains("Overloaded"));
+                let (code, sse) = if prompt == "overflow" {
+                    ("context_length_exceeded", stream && responses)
+                } else {
+                    ("server_is_overloaded", stream)
+                };
+                let calls = if prompt == "overloaded" && !stream {
+                    2
+                } else {
+                    1
+                };
+                assert_eq!(
+                    seen.lock().unwrap().len(),
+                    count + calls,
+                    "{profile:?} {prompt}"
+                );
+                if !sse {
+                    let body: Value = serde_json::from_str(&wire).unwrap();
+                    assert_eq!(status, if prompt == "overflow" { 400 } else { 503 });
+                    assert_eq!(body["error"]["code"], code);
+                    continue;
+                }
+                assert_eq!(status, 200, "{profile:?} {prompt}");
+                assert!(!wire.contains("[DONE]") && !wire.contains("response.completed"));
+                assert_eq!(wire.contains("partial"), prompt == "overloaded");
+                let last: Value = serde_json::from_str(
+                    wire.lines()
+                        .filter_map(|l| l.strip_prefix("data: "))
+                        .next_back()
+                        .unwrap(),
+                )
+                .unwrap();
+                if responses {
+                    assert_eq!(last["type"], "response.failed");
+                    assert_eq!(last["response"]["status"], "failed");
+                    assert_eq!(last["response"]["error"]["code"], code);
+                } else {
+                    assert_eq!(last["error"]["code"], code);
+                }
+            }
+        }
+    }
+    assert_eq!(seen.lock().unwrap().len(), 38);
     diagnostic_owner.flush_diagnostics().await;
     let records = std::fs::read_to_string(&diagnostics).unwrap();
     assert!(records.contains(r#""request_rules":["messages.omit-sampling.v1"]"#));

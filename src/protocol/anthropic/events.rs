@@ -246,7 +246,9 @@ impl GenerationSseDecoder {
                 });
             }
             Event::Ping | Event::MessageDelta { .. } => {}
-            Event::Error { .. } => return Err(CodecError::Invalid("native stream error").into()),
+            Event::Error { kind, .. } => {
+                return Err(CodecError::StreamFailure(super::sse::error_status(&kind)).into());
+            }
         }
         Ok(out)
     }
