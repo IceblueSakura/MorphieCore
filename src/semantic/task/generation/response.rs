@@ -1,5 +1,7 @@
 //! Completed or partial Generation output, independent of transport success.
-use super::{GenerationError, Item, ItemId, ItemLifecycle, MAX_TEXT_BYTES, Usage};
+use crate::semantic::task::generation::{
+    GenerationError, Item, ItemId, ItemLifecycle, MAX_TEXT_BYTES, Usage,
+};
 use crate::semantic::value::Text;
 
 /// Result of one response, not completion of the logical turn or tool execution.
@@ -69,29 +71,36 @@ impl TerminalDetails {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GenerationResponse {
     items: Vec<(ItemId, Item)>,
-    resources: super::ResourceTable,
-    replay_groups: Vec<super::ReplayGroup>,
-    message_owners: super::envelope::MessageEnvelopes,
+    resources: crate::semantic::task::generation::ResourceTable,
+    replay_groups: Vec<crate::semantic::task::generation::ReplayGroup>,
+    message_owners: crate::semantic::task::generation::history::envelope::MessageEnvelopes,
     outcome: Outcome,
-    progress: super::InteractionProgress,
+    progress: crate::semantic::task::generation::InteractionProgress,
     usage: Vec<Usage>,
     details: TerminalDetails,
 }
 impl GenerationResponse {
     pub fn new(items: Vec<(ItemId, Item)>, outcome: Outcome) -> Result<Self, GenerationError> {
-        Self::from_resources(items, outcome, super::ResourceTable::default())
+        Self::from_resources(
+            items,
+            outcome,
+            crate::semantic::task::generation::ResourceTable::default(),
+        )
     }
     pub fn from_resources(
         items: Vec<(ItemId, Item)>,
         outcome: Outcome,
-        resources: super::ResourceTable,
+        resources: crate::semantic::task::generation::ResourceTable,
     ) -> Result<Self, GenerationError> {
         let mut item_bytes = 0;
         if !items.is_empty() {
-            item_bytes = super::validate::items(&items, true, &resources)?;
+            item_bytes =
+                crate::semantic::task::generation::validate::items(&items, true, &resources)?;
         }
         let resource_bytes = resources.uncharged_bytes(&items)?;
-        if item_bytes.saturating_add(resource_bytes) > super::MAX_TOTAL_BYTES {
+        if item_bytes.saturating_add(resource_bytes)
+            > crate::semantic::task::generation::MAX_TOTAL_BYTES
+        {
             return Err(GenerationError::Limit);
         }
         if outcome == Outcome::Completed
@@ -107,27 +116,27 @@ impl GenerationResponse {
             replay_groups: vec![],
             message_owners: Default::default(),
             outcome,
-            progress: super::InteractionProgress::Unreported,
+            progress: crate::semantic::task::generation::InteractionProgress::Unreported,
             usage: vec![],
             details: TerminalDetails::default(),
         })
     }
     pub fn with_progress(
         mut self,
-        progress: super::InteractionProgress,
+        progress: crate::semantic::task::generation::InteractionProgress,
     ) -> Result<Self, GenerationError> {
         progress.validate(self.outcome, &self.items)?;
         self.progress = progress;
         Ok(self)
     }
-    pub const fn progress(&self) -> super::InteractionProgress {
+    pub const fn progress(&self) -> crate::semantic::task::generation::InteractionProgress {
         self.progress
     }
     pub fn with_usage(self, usage: Usage) -> Result<Self, GenerationError> {
         self.with_usage_reports(vec![usage])
     }
     pub fn with_usage_reports(mut self, reports: Vec<Usage>) -> Result<Self, GenerationError> {
-        if reports.len() > super::MAX_ITEMS {
+        if reports.len() > crate::semantic::task::generation::MAX_ITEMS {
             return Err(GenerationError::Limit);
         }
         let mut values = Vec::new();
@@ -147,18 +156,20 @@ impl GenerationResponse {
         let bytes = if self.items.is_empty() {
             0
         } else {
-            super::validate::items(&self.items, true, &self.resources)?
+            crate::semantic::task::generation::validate::items(&self.items, true, &self.resources)?
         };
         if bytes
             .saturating_add(details.bytes())
             .saturating_add(self.resources.uncharged_bytes(&self.items)?)
             .saturating_add(self.usage.len() * std::mem::size_of::<Usage>())
-            .saturating_add(super::group::validate_replay_groups(
-                &self.items,
-                &self.replay_groups,
-            )?)
+            .saturating_add(
+                crate::semantic::task::generation::history::group::validate_replay_groups(
+                    &self.items,
+                    &self.replay_groups,
+                )?,
+            )
             .saturating_add(self.message_owners.validate(&self.items)?)
-            > super::MAX_TOTAL_BYTES
+            > crate::semantic::task::generation::MAX_TOTAL_BYTES
         {
             return Err(GenerationError::Limit);
         }
@@ -168,20 +179,24 @@ impl GenerationResponse {
     pub fn items(&self) -> &[(ItemId, Item)] {
         &self.items
     }
-    pub fn replay_groups(&self) -> &[super::ReplayGroup] {
+    pub fn replay_groups(&self) -> &[crate::semantic::task::generation::ReplayGroup] {
         &self.replay_groups
     }
     pub fn message_owners(&self) -> &std::collections::BTreeMap<ItemId, ItemId> {
         self.message_owners.chat()
     }
-    pub fn message_envelopes(&self) -> &[super::MessageEnvelope] {
+    pub fn message_envelopes(&self) -> &[crate::semantic::task::generation::MessageEnvelope] {
         self.message_owners.values()
     }
     pub fn with_message_envelopes(
         mut self,
-        groups: Vec<super::MessageEnvelope>,
+        groups: Vec<crate::semantic::task::generation::MessageEnvelope>,
     ) -> Result<Self, GenerationError> {
-        self.message_owners = super::envelope::MessageEnvelopes::new(&self.items, groups)?;
+        self.message_owners =
+            crate::semantic::task::generation::history::envelope::MessageEnvelopes::new(
+                &self.items,
+                groups,
+            )?;
         let details = self.details.clone();
         self.with_details(details)
     }
@@ -189,15 +204,22 @@ impl GenerationResponse {
         mut self,
         owners: Vec<(ItemId, ItemId)>,
     ) -> Result<Self, GenerationError> {
-        self.message_owners = super::envelope::MessageEnvelopes::from_chat(&self.items, owners)?;
+        self.message_owners =
+            crate::semantic::task::generation::history::envelope::MessageEnvelopes::from_chat(
+                &self.items,
+                owners,
+            )?;
         let details = self.details.clone();
         self.with_details(details)
     }
     pub fn with_replay_groups(
         mut self,
-        groups: Vec<super::ReplayGroup>,
+        groups: Vec<crate::semantic::task::generation::ReplayGroup>,
     ) -> Result<Self, GenerationError> {
-        super::group::validate_replay_groups(&self.items, &groups)?;
+        crate::semantic::task::generation::history::group::validate_replay_groups(
+            &self.items,
+            &groups,
+        )?;
         self.replay_groups = groups;
         let details = self.details.clone();
         self.with_details(details)
@@ -211,12 +233,12 @@ impl GenerationResponse {
     pub fn usage_reports(&self) -> &[Usage] {
         &self.usage
     }
-    pub fn resources(&self) -> &super::ResourceTable {
+    pub fn resources(&self) -> &crate::semantic::task::generation::ResourceTable {
         &self.resources
     }
     pub fn with_resources(
         mut self,
-        resources: super::ResourceTable,
+        resources: crate::semantic::task::generation::ResourceTable,
     ) -> Result<Self, GenerationError> {
         self.resources = resources;
         let details = self.details.clone();
@@ -227,7 +249,7 @@ impl GenerationResponse {
     }
     /// Editing content never changes response outcome or discards terminal details.
     pub fn with_items(self, items: Vec<(ItemId, Item)>) -> Result<Self, GenerationError> {
-        if items.len() > super::MAX_ITEMS {
+        if items.len() > crate::semantic::task::generation::MAX_ITEMS {
             return Err(GenerationError::Limit);
         }
         let groups = self.message_owners.edited(&items)?.values().to_vec();
@@ -236,8 +258,14 @@ impl GenerationResponse {
             .with_replay_groups(self.replay_groups)?
             .with_progress(self.progress)?
             .with_details(self.details)?;
-        super::identity::check_call_edits(&self.items, response.items())?;
-        super::request::context_transform::check_protected_edits(&self.items, response.items())?;
+        crate::semantic::task::generation::identity::check_call_edits(
+            &self.items,
+            response.items(),
+        )?;
+        crate::semantic::task::generation::request::context_transform::check_protected_edits(
+            &self.items,
+            response.items(),
+        )?;
         response = response.with_usage_reports(self.usage)?;
         Ok(response)
     }

@@ -138,6 +138,7 @@ When Chat Completions cannot carry a semantic such as reasoning, MorphieCore fol
 
 | Decision | Summary |
 |---|---|
+| Functional module ownership | Keep the architectural root boundaries; group internal code by domain and expose deliberate type and codec entry points. Directories follow the Rust module tree. Request transforms remain children of their private request owner; stream grammar, state, reduction and materialization share one stream boundary. No compatibility-only module aliases or generic plugin framework |
 | One semantic core | One IR serves the gateway and a future Agent library; planning, memory and tool execution belong to the caller |
 | Separate tasks | Generation, Embedding, Images, Speech and Transcription each have their own contract, not a universal message container |
 | Pure codecs and lowering | No network, credentials or registry; encode from the final IR, never patch JSON afterwards |

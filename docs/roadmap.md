@@ -2,10 +2,6 @@
 
 The single source for direction and the current slice. Delete finished items (Git keeps history). Principles and settled decisions live in [architecture](architecture.md); sources in [references](references.md).
 
-## Current focus
-
-Reorganize credential, gateway, OpenAI codecs and Generation IR by functional ownership within the existing architectural boundaries. Separate mechanical moves from shared SSE and IR responsibility splits. Preserve wire behavior, lifecycle rules, visibility boundaries and test assertions; introduce no framework or compatibility aliases. Exit when each affected target and the full offline baseline pass and the module tree matches the source directories.
-
 ## Frozen scope
 
 Maintenance only, as refactors require:

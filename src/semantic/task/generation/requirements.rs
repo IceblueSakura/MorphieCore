@@ -1,4 +1,4 @@
-use super::{
+use crate::semantic::task::generation::{
     ContentPart, GenerationRequest, GenerationResponse, Item, OutputConstraint, ResourceKind,
 };
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -21,7 +21,7 @@ pub struct GenerationRequirements {
     /// Requested output probabilities; reported history slots belong to text_metadata.
     pub logprobs: bool,
     pub truncation: bool,
-    pub tool_choice: Option<super::ToolChoice>,
+    pub tool_choice: Option<crate::semantic::task::generation::ToolChoice>,
     pub parallel_tool_calls: Option<bool>,
     pub strict_function_tools: bool,
     pub tool_history: bool,
@@ -46,23 +46,25 @@ impl GenerationRequirements {
             tool_choice: r.tool_choice().cloned(),
             parallel_tool_calls: r.parallel_tool_calls(),
             instruction_count: usize::from(r.instructions().value().is_some()),
-            custom_tools: r.tools().iter().flat_map(super::ToolDefinition::leaves).any(|t|matches!(t,super::ToolDefinition::Custom(_))),
+            custom_tools: r.tools().iter().flat_map(crate::semantic::task::generation::ToolDefinition::leaves).any(|t|matches!(t,crate::semantic::task::generation::ToolDefinition::Custom(_))),
             top_p: r.controls().top_p().is_some(),
             logprobs: r.controls().logprobs == crate::semantic::value::Presence::Value(true) || r.controls().top_logprobs.is_some(),
             truncation: r.controls().truncation.is_some(),
-            strict_function_tools: r.tools().iter().flat_map(super::ToolDefinition::leaves).any(|t| matches!(t,super::ToolDefinition::Function(t) if matches!(t.strict,super::FunctionStrictness::Explicit(true)))),
+            strict_function_tools: r.tools().iter().flat_map(crate::semantic::task::generation::ToolDefinition::leaves).any(|t| matches!(t,crate::semantic::task::generation::ToolDefinition::Function(t) if matches!(t.strict,crate::semantic::task::generation::FunctionStrictness::Explicit(true)))),
             max_output_tokens: r.controls().max_output_tokens,
             temperature: r.controls().temperature().is_some(),
             tool_count: r.tools().iter().map(|t| t.leaves().len()).sum(),
             structured_output: !matches!(r.output(), OutputConstraint::Text),
-            reasoning: r.reasoning().presence() == super::ReasoningPresence::Present
+            reasoning: r.reasoning().presence() == crate::semantic::task::generation::ReasoningPresence::Present
                 || r.reasoning().encrypted_output(),
             ..Self::default()
         };
         for (_, i) in r.items() {
             x.replay_attachments |= i.has_non_reasoning_replay();
             x.assistant_media |= i.has_assistant_media();
-            x.configuration_revisions |= super::configuration::item_binding(i).is_some();
+            x.configuration_revisions |=
+                crate::semantic::task::generation::history::configuration::item_binding(i)
+                    .is_some();
             match i {
                 Item::Instruction(_) => x.instruction_count += 1,
                 Item::Message(m) => {
@@ -82,7 +84,7 @@ impl GenerationRequirements {
                             }
                             ContentPart::Resource(resource) => {
                                 x.resource_count += 1;
-                                if m.role == super::MessageRole::User {
+                                if m.role == crate::semantic::task::generation::MessageRole::User {
                                     match resource
                                         .media(r.resources())
                                         .expect("validated resource")
@@ -99,8 +101,10 @@ impl GenerationRequirements {
                 }
                 Item::ToolCall(call) => {
                     x.tool_history = true;
-                    x.structured_arguments |=
-                        !matches!(call.arguments, super::ToolArguments::Raw(_));
+                    x.structured_arguments |= !matches!(
+                        call.arguments,
+                        crate::semantic::task::generation::ToolArguments::Raw(_)
+                    );
                 }
                 Item::ToolResult(result) | Item::CustomResult(result) => {
                     x.tool_history = true;
@@ -108,10 +112,12 @@ impl GenerationRequirements {
                     x.tool_execution_reports |= result.execution.is_some();
                     x.tool_result_errors |= result.is_error.is_some();
                     match &result.output {
-                        super::ToolOutput::Structured(_) => x.structured_tool_results = true,
-                        super::ToolOutput::Parts(parts) => {
+                        crate::semantic::task::generation::ToolOutput::Structured(_) => {
+                            x.structured_tool_results = true
+                        }
+                        crate::semantic::task::generation::ToolOutput::Parts(parts) => {
                             for (_, part) in parts {
-                                if matches!(part, super::ToolResultPart::Resource(resource) if resource.media(r.resources()).is_ok_and(|r| r.kind() == ResourceKind::Image))
+                                if matches!(part, crate::semantic::task::generation::ToolResultPart::Resource(resource) if resource.media(r.resources()).is_ok_and(|r| r.kind() == ResourceKind::Image))
                                 {
                                     x.tool_result_images += 1;
                                     x.resource_count += 1;
@@ -160,14 +166,18 @@ impl GenerationResponseRequirements {
         for (_, item) in response.items() {
             q.replay_attachments |= item.has_non_reasoning_replay();
             q.assistant_media |= item.has_assistant_media();
-            q.configuration_revisions |= super::configuration::item_binding(item).is_some();
+            q.configuration_revisions |=
+                crate::semantic::task::generation::history::configuration::item_binding(item)
+                    .is_some();
             match item {
                 Item::Instruction(_) => q.instructions = true,
                 Item::ProviderTool(_) => q.provider_observations = true,
                 Item::ToolCall(call) => {
                     q.tools = true;
-                    q.structured_arguments |=
-                        !matches!(call.arguments, super::ToolArguments::Raw(_));
+                    q.structured_arguments |= !matches!(
+                        call.arguments,
+                        crate::semantic::task::generation::ToolArguments::Raw(_)
+                    );
                 }
                 Item::CustomCall(_) => {
                     q.tools = true;

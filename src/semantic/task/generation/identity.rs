@@ -1,5 +1,5 @@
 //! Caller-owned local scopes and native reference domains, never authentication.
-use super::{Item, ItemId, MAX_ITEMS};
+use crate::semantic::task::generation::{Item, MAX_ITEMS};
 use crate::semantic::value::Text;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -102,8 +102,9 @@ pub(super) fn call_alias(item: &Item) -> Option<(Option<&NativeAliasDomain>, Nat
         )),
         Item::Program(call) => Some((None, NativeIdKind::ProgramCall, call.call_id.as_str())),
         Item::ProviderTool(observed) => match &observed.operation {
-            super::ProviderOperation::Reported {
-                alias: Some(alias), ..
+            crate::semantic::task::generation::ProviderOperation::Reported {
+                alias: Some(alias),
+                ..
             } => Some((
                 Some(&observed.source),
                 NativeIdKind::ProviderOperation,
@@ -115,7 +116,10 @@ pub(super) fn call_alias(item: &Item) -> Option<(Option<&NativeAliasDomain>, Nat
     }
 }
 
-fn same_call_context(a: &super::CallContext, b: &super::CallContext) -> bool {
+fn same_call_context(
+    a: &crate::semantic::task::generation::CallContext,
+    b: &crate::semantic::task::generation::CallContext,
+) -> bool {
     a.namespace == b.namespace
         && a.async_call == b.async_call
         && a.caller == b.caller
@@ -148,14 +152,14 @@ fn same_call_meaning(left: &Item, right: &Item) -> bool {
 pub(super) fn check_call_edits(
     source: &[(ItemId, Item)],
     edited: &[(ItemId, Item)],
-) -> Result<(), super::GenerationError> {
+) -> Result<(), crate::semantic::task::generation::GenerationError> {
     for (owner, old) in source.iter().filter(|(_, item)| item.is_operation()) {
         for (next, value) in edited {
             if (*owner == *next
                 || call_alias(old).is_some() && call_alias(old) == call_alias(value))
                 && !same_call_meaning(old, value)
             {
-                return Err(super::GenerationError::InvalidDependency);
+                return Err(crate::semantic::task::generation::GenerationError::InvalidDependency);
             }
         }
     }
@@ -166,7 +170,7 @@ pub(super) fn check_call_edits(
 pub(super) fn check_operation_revision(
     source: &Item,
     replacement: &Item,
-) -> Result<(), super::GenerationError> {
+) -> Result<(), crate::semantic::task::generation::GenerationError> {
     match (source, replacement) {
         (Item::ProviderTool(_), Item::ProviderTool(next))
             if (call_alias(source).is_none() || call_alias(source) != call_alias(replacement))
@@ -179,8 +183,47 @@ pub(super) fn check_operation_revision(
             Ok(())
         }
         (Item::ProviderTool(_), _) | (_, Item::ProviderTool(_)) => {
-            Err(super::GenerationError::InvalidDependency)
+            Err(crate::semantic::task::generation::GenerationError::InvalidDependency)
         }
         _ => Ok(()),
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ItemId {
+    scope: LocalScope,
+    value: u64,
+}
+impl ItemId {
+    pub const fn new(v: u64) -> Self {
+        Self::scoped(LocalScope::ROOT, v)
+    }
+    pub const fn scoped(scope: LocalScope, value: u64) -> Self {
+        Self { scope, value }
+    }
+    pub const fn scope(self) -> LocalScope {
+        self.scope
+    }
+    pub const fn get(self) -> u64 {
+        self.value
+    }
+}
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct PartId {
+    scope: LocalScope,
+    value: u64,
+}
+impl PartId {
+    pub const fn new(v: u64) -> Self {
+        Self::scoped(LocalScope::ROOT, v)
+    }
+    pub const fn scoped(scope: LocalScope, value: u64) -> Self {
+        Self { scope, value }
+    }
+    pub const fn scope(self) -> LocalScope {
+        self.scope
+    }
+    pub const fn get(self) -> u64 {
+        self.value
     }
 }

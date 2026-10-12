@@ -8,7 +8,7 @@ pub enum OutputConstraint {
     JsonSchema {
         name: Text,
         description: Option<Text>,
-        schema: super::SchemaDocument,
+        schema: crate::semantic::task::generation::SchemaDocument,
         strict: Option<bool>,
     },
 }

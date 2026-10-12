@@ -1,5 +1,5 @@
 //! Pure validation and bounded accounting shared by construction, transforms and lowering.
-use super::*;
+use crate::semantic::task::generation::*;
 use std::collections::{BTreeMap, BTreeSet};
 pub const MAX_ITEMS: usize = 1024;
 pub const MAX_TEXT_BYTES: usize = 1 << 20;
@@ -52,7 +52,8 @@ pub fn items(
     let mut calls = BTreeMap::new();
     let mut namespaces = BTreeMap::new();
     let mut results = BTreeSet::new();
-    let mut bytes = super::configuration::validate_bindings(items)?;
+    let mut bytes =
+        crate::semantic::task::generation::history::configuration::validate_bindings(items)?;
     let mut file_decoded_bytes = 0usize;
     let mut citations = 0usize;
     for (position, (id, item)) in items.iter().enumerate() {
@@ -535,11 +536,11 @@ pub fn output(value: &OutputConstraint) -> Result<usize, GenerationError> {
                 return Err(GenerationError::InvalidControl);
             }
             let mode = if *strict == Some(true) {
-                super::schema::Mode::Explicit
+                crate::semantic::task::generation::schema::Mode::Explicit
             } else {
-                super::schema::Mode::General
+                crate::semantic::task::generation::schema::Mode::General
             };
-            let mut bytes = super::schema::validate(s, mode)?;
+            let mut bytes = crate::semantic::task::generation::schema::validate(s, mode)?;
             add(&mut bytes, name.as_str())?;
             if let Some(d) = description {
                 add(&mut bytes, d.as_str())?;
@@ -602,18 +603,26 @@ pub fn tools(
                 }
                 if let Some(s) = &t.parameters {
                     let mode = match t.strict {
-                        FunctionStrictness::Explicit(true) => super::schema::Mode::Explicit,
-                        FunctionStrictness::Omitted(StrictDefault::NormalizeSchema) => {
-                            super::schema::Mode::Normalize
+                        FunctionStrictness::Explicit(true) => {
+                            crate::semantic::task::generation::schema::Mode::Explicit
                         }
-                        _ => super::schema::Mode::General,
+                        FunctionStrictness::Omitted(StrictDefault::NormalizeSchema) => {
+                            crate::semantic::task::generation::schema::Mode::Normalize
+                        }
+                        _ => crate::semantic::task::generation::schema::Mode::General,
                     };
-                    schema_bytes(&mut bytes, super::schema::validate(s, mode)?)?;
+                    schema_bytes(
+                        &mut bytes,
+                        crate::semantic::task::generation::schema::validate(s, mode)?,
+                    )?;
                 }
                 if let Some(s) = &t.output_schema {
                     schema_bytes(
                         &mut bytes,
-                        super::schema::validate(s, super::schema::Mode::General)?,
+                        crate::semantic::task::generation::schema::validate(
+                            s,
+                            crate::semantic::task::generation::schema::Mode::General,
+                        )?,
                     )?;
                 }
             }

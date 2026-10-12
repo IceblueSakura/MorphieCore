@@ -1,5 +1,5 @@
 //! Task admission vocabulary. No wire profiles, routing, credentials or cache policy.
-use super::{
+use crate::semantic::task::generation::{
     GenerationRequest, GenerationRequirements, GenerationResponse, GenerationResponseRequirements,
 };
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error, strum::Display)]
