@@ -52,9 +52,10 @@ pub(super) async fn produce_chain(
             runtime,
             mut candidates,
         } => {
-            runtime
+            let order = runtime
                 .executors
                 .order(model, conversation, &mut candidates);
+            trace.executor_order(order);
             (Some(runtime), candidates, None)
         }
         #[cfg(test)]
@@ -72,6 +73,7 @@ pub(super) async fn produce_chain(
             return Err(ApiError::timeout());
         }
         trace.begin_candidate(index + 1);
+        trace.executor(candidate.provider.id.as_str());
         let attempt_deadline = deadline
             .min(Instant::now() + Duration::from_millis(candidate.endpoint.execution.timeout_ms));
         let result = tokio::time::timeout_at(attempt_deadline, async {

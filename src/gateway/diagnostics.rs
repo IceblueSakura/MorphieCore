@@ -126,6 +126,9 @@ struct CandidateRecord {
     /// Degradable rule names applied to this candidate's request, never field values.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     request_rules: Vec<&'static str>,
+    /// The executor's catalog Provider ID; never a credential or key fingerprint.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    provider: Option<String>,
 }
 #[derive(Default, Serialize)]
 struct ImageAccountingObservation {
@@ -156,6 +159,9 @@ struct Record {
     upstream_head_ms: Option<u64>,
     first_upstream_bytes_ms: Option<u64>,
     candidates: Vec<CandidateRecord>,
+    /// Why candidates left compiled order: `affinity`, `cooling`, both, or `compiled`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    executor_order: Option<&'static str>,
     decode_failure: Option<&'static str>,
     projection_failure: Option<&'static str>,
     /// Presence only: input image/text, output text, accepted/rejected prediction,
@@ -235,6 +241,7 @@ pub(super) struct Trace {
     start: Instant,
     candidate_start: Option<(usize, Instant, u64, u64)>,
     request_rules: Vec<&'static str>,
+    provider: Option<String>,
 }
 impl Trace {
     pub(super) fn new(sink: Option<&Sink>) -> Self {
@@ -253,6 +260,7 @@ impl Trace {
                 upstream_head_ms: None,
                 first_upstream_bytes_ms: None,
                 candidates: vec![],
+                executor_order: None,
                 decode_failure: None,
                 projection_failure: None,
                 reported_usage_detail_mask: None,
@@ -264,6 +272,7 @@ impl Trace {
             start: Instant::now(),
             candidate_start: None,
             request_rules: vec![],
+            provider: None,
         }
     }
     pub(super) fn begin_candidate(&mut self, ordinal: usize) {
@@ -273,6 +282,7 @@ impl Trace {
         self.record.retry_after_seconds = None;
         self.record.upstream_head_ms = None;
         self.request_rules.clear();
+        self.provider = None;
         if self.sink.is_some() && ordinal <= crate::topology::route::MAX_ROUTE_CANDIDATES {
             self.candidate_start = Some((
                 ordinal,
@@ -298,7 +308,16 @@ impl Trace {
                 error_code,
                 advanced,
                 request_rules: std::mem::take(&mut self.request_rules),
+                provider: self.provider.take(),
             });
+        }
+    }
+    pub(super) fn executor_order(&mut self, label: &'static str) {
+        self.record.executor_order = Some(label);
+    }
+    pub(super) fn executor(&mut self, provider: &str) {
+        if self.sink.is_some() {
+            self.provider = Some(provider.into());
         }
     }
     pub(super) fn ignored_fields(&mut self, names: Vec<String>) {
@@ -472,6 +491,7 @@ impl Drop for Trace {
                 upstream_head_ms: None,
                 first_upstream_bytes_ms: None,
                 candidates: vec![],
+                executor_order: None,
                 decode_failure: None,
                 projection_failure: None,
                 reported_usage_detail_mask: None,
@@ -522,7 +542,9 @@ mod tests {
         let (tx, _rx) = mpsc::sync_channel(1);
         let sink = Sink(tx);
         let mut trace = Trace::new(Some(&sink));
+        trace.executor_order("affinity");
         trace.begin_candidate(1);
+        trace.executor("zhipu");
         trace.head(429, &HeaderMap::new());
         trace.received(7);
         trace.end_candidate(Some("upstream_rate_limit"), true);
@@ -540,6 +562,17 @@ mod tests {
         assert_eq!(trace.record.candidates.len(), 64);
         let wire = serde_json::to_value(&trace.record.candidates[0]).unwrap();
         assert_eq!(wire["ordinal"], 1);
+        assert_eq!(wire["provider"], "zhipu");
+        assert!(
+            serde_json::to_value(&trace.record.candidates[1])
+                .unwrap()
+                .get("provider")
+                .is_none()
+        );
+        assert_eq!(
+            serde_json::to_value(&trace.record).unwrap()["executor_order"],
+            "affinity"
+        );
         assert_eq!(wire["advanced"], true);
         assert!(wire.get("endpoint").is_none());
         assert!(wire.get("body").is_none());

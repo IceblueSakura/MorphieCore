@@ -39,7 +39,7 @@ impl Executors {
         model: &str,
         conversation: Option<&str>,
         candidates: &mut [Arc<BoundCandidate>],
-    ) {
+    ) -> &'static str {
         let now = Instant::now();
         let state = self.state.lock().expect("executor state");
         let preferred = conversation
@@ -47,7 +47,17 @@ impl Executors {
             .filter(|(_, at)| now.duration_since(*at) < AFFINITY_TTL)
             .map(|(id, _)| id.as_str());
         let cooling = |c: &BoundCandidate| state.cooling.get(identity(c)).is_some_and(|t| *t > now);
+        let affine = candidates
+            .iter()
+            .any(|c| !cooling(c) && Some(identity(c)) == preferred);
+        let cooled = candidates.iter().any(|c| cooling(c));
         candidates.sort_by_key(|c| (cooling(c), Some(identity(c)) != preferred));
+        match (affine, cooled) {
+            (true, true) => "affinity_cooling",
+            (true, false) => "affinity",
+            (false, true) => "cooling",
+            (false, false) => "compiled",
+        }
     }
     pub(super) fn completed(
         &self,

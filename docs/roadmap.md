@@ -24,7 +24,6 @@ Vendor stream shapes are a standing rule, not a phase: a Chat shape seen from a 
 A public model may have several bindings (Provider × upstream model × credential pool). The compiled order is the failover order; runtime policy only skips unhealthy executors and keeps a conversation where its cache and its account-bound thinking live. No load balancing.
 
 - **Alternative bindings.** Add one only where a target agent's model needs it; the first is `glm-5.3` via OpenRouter beside Zhipu.
-- **Diagnostics**: the affinity decision, skipped executors and why, each physical attempt with its executor. Missing cache reports stay missing.
 
 Exit: synthetic two-binding routes show failover on 5xx, rate limit and a pre-content stream error; a conversation staying on its executor across turns and tool round trips, and on the new one after a failover; cooldown expiry; removed or disabled targets not revived; no binding reuse after a key change; no sharing across ingress keys for one conversation ID; state released on concurrent first requests and cancellation; compiled order kept without affinity. One bounded real failover run with two credentials or Providers for one model.
 
