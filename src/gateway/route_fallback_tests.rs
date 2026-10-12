@@ -195,7 +195,16 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
                 .unwrap()
         });
         let client = reqwest::Client::builder().no_proxy().build().unwrap();
-        let response=tokio::time::timeout(std::time::Duration::from_secs(5),client.post(format!("http://{addr}/v1/responses")).bearer_auth(super::tests::KEY).json(&json!({"model":"public","prompt_cache_key":"synthetic-affinity","max_output_tokens":32,"stream":stream,"input":[{"role":"user","content":[{"type":"input_text","text":"keep"},{"type":"input_image","image_url":"data:image/png;base64,AQ==","detail":"auto"}]}]})).send()).await.unwrap().unwrap();
+        let send = |session: bool| {
+            let mut request = client
+                .post(format!("http://{addr}/v1/responses"))
+                .bearer_auth(super::tests::KEY);
+            if session {
+                request = request.header("x-session-id", "synthetic-conversation");
+            }
+            tokio::time::timeout(std::time::Duration::from_secs(5),request.json(&json!({"model":"public","prompt_cache_key":"synthetic-affinity","max_output_tokens":32,"stream":stream,"input":[{"role":"user","content":[{"type":"input_text","text":"keep"},{"type":"input_image","image_url":"data:image/png;base64,AQ==","detail":"auto"}]}]})).send())
+        };
+        let response = send(true).await.unwrap().unwrap();
         assert_eq!(response.status().as_u16(), expected_status);
         if stream {
             assert!(
@@ -210,6 +219,21 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
             assert_eq!(value["output"][0]["content"][0]["text"], "ok");
         }
         assert_eq!(*calls.lock().unwrap(), expected_calls);
+        if expected_calls == ["a", "b"] {
+            // A rate-limited or exhausted executor cools down for every request;
+            // a server error or timeout does not.
+            calls.lock().unwrap().clear();
+            assert_eq!(send(false).await.unwrap().unwrap().status(), 200);
+            let cooled = matches!(status, 429 | 402);
+            assert_eq!(
+                *calls.lock().unwrap(),
+                if cooled { vec!["b"] } else { vec!["a", "b"] }
+            );
+            // The conversation stays on the executor that answered it last.
+            calls.lock().unwrap().clear();
+            assert_eq!(send(true).await.unwrap().unwrap().status(), 200);
+            assert_eq!(*calls.lock().unwrap(), ["b"]);
+        }
         gateway.shutdown();
         serving.await.unwrap();
         upstream.abort();

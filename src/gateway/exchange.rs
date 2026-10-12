@@ -41,11 +41,22 @@ pub(super) async fn produce_chain(
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
     let lane = Lane { tx, state };
+    let model = entry.public.id.as_str();
+    let conversation = request
+        .conversation
+        .as_ref()
+        .filter(|c| c.is_conversation_scoped())
+        .map(|c| c.id());
     let (runtime, candidates, mut observed) = match source {
         Upstreams::Http {
             runtime,
-            candidates,
-        } => (Some(runtime), candidates, None),
+            mut candidates,
+        } => {
+            runtime
+                .executors
+                .order(model, conversation, &mut candidates);
+            (Some(runtime), candidates, None)
+        }
         #[cfg(test)]
         Upstreams::Observed {
             candidate,
@@ -136,10 +147,18 @@ pub(super) async fn produce_chain(
         .unwrap_or_else(|_| Err(ApiError::timeout()));
         match result {
             Ok(()) => {
+                if let Some(runtime) = &runtime {
+                    runtime.executors.completed(model, conversation, candidate);
+                }
                 trace.end_candidate(None, false);
                 return Ok(());
             }
             Err(error) => {
+                if let (Some(runtime), Some(class)) = (&runtime, error.fallback) {
+                    runtime
+                        .executors
+                        .failed(candidate, class, error.retry_after);
+                }
                 let visibility = if state.published.load(Ordering::Acquire) {
                     DeliveryState::Committed
                 } else {

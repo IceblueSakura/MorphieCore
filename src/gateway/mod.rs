@@ -19,6 +19,7 @@ mod embedding_tests;
 mod embeddings;
 mod error;
 mod exchange;
+mod executors;
 mod http;
 mod images;
 mod intake;
@@ -90,6 +91,7 @@ impl BoundEntry {
 struct Runtime {
     diagnostics: Option<diagnostics::Sink>,
     affinity: affinity::Index,
+    executors: executors::Executors,
     auth: auth::Auth,
     entries: BTreeMap<(u8, String), Arc<BoundEntry>>,
     images: BTreeMap<String, Arc<images::BoundImage>>,

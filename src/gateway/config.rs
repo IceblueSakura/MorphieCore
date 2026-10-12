@@ -397,6 +397,7 @@ impl Gateway {
             state: Arc::new(Runtime {
                 diagnostics: None,
                 affinity: super::affinity::Index::new(limits.implicit_cache_affinity),
+                executors: Default::default(),
                 auth,
                 entries: activated,
                 images,
