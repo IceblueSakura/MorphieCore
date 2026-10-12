@@ -178,7 +178,8 @@ impl Bootstrap {
                         crate::topology::ProtocolProfile::OpenAiChat => Profile::Chat,
                         crate::topology::ProtocolProfile::OpenAiResponses => Profile::Responses,
                         crate::topology::ProtocolProfile::AnthropicMessages
-                        | crate::topology::ProtocolProfile::GoogleGenerateContent => {
+                        | crate::topology::ProtocolProfile::GoogleGenerateContent
+                        | crate::topology::ProtocolProfile::GoogleInteractions => {
                             return Err(StartupError::Binding);
                         }
                     };
@@ -230,12 +231,13 @@ impl Bootstrap {
                 }
                 used = true;
                 activated.insert(binding.model.to_owned());
-                let endpoint = binding.endpoint().id;
-                entries.extend([Profile::Responses, Profile::Chat].map(|protocol| Entry {
-                    model: binding.model.into(),
-                    protocol,
-                    endpoint: endpoint.clone(),
-                }));
+                for endpoint in [binding.endpoint().id, binding.interactions_endpoint().id] {
+                    entries.extend([Profile::Responses, Profile::Chat].map(|protocol| Entry {
+                        model: binding.model.into(),
+                        protocol,
+                        endpoint: endpoint.clone(),
+                    }));
+                }
             }
             for binding in catalog::EMBEDDING_BINDINGS {
                 if binding.credential != id || (binding.provider)().id.as_str() != provider {

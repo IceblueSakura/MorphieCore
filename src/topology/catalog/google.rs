@@ -63,9 +63,22 @@ impl GoogleBinding {
         Route {
             id: RouteId::new(&format!("google-{}", self.model)).expect("static route"),
             task: TaskKind::Generation,
-            endpoints: vec![self.endpoint().id],
-            policy: RoutePolicy::default(),
+            endpoints: vec![self.endpoint().id, self.interactions_endpoint().id],
+            policy: RoutePolicy {
+                candidates: CandidatePolicy::SkipUnrepresentable,
+                fallback: FallbackPolicy::BeforeCommit,
+                ..RoutePolicy::default()
+            },
         }
+    }
+    pub fn interactions_endpoint(&self) -> Endpoint {
+        let mut endpoint = self.endpoint();
+        endpoint.id =
+            EndpointId::new(&format!("google-{}-interactions", self.model)).expect("static id");
+        endpoint.protocol = ProtocolProfile::GoogleInteractions;
+        endpoint.target.path = self.provider().interactions.expect("declared path");
+        endpoint.representation = crate::protocol::interactions::TargetCaps::default().into();
+        endpoint
     }
     pub fn public_model(&self) -> PublicModel {
         let model = ModelId::new(self.model).expect("static model");

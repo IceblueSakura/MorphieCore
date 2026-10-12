@@ -50,7 +50,9 @@ impl ApiKeyBinding {
                 provider.responses.clone().expect("declared entry"),
                 self.replay_responses,
             ),
-            ProtocolProfile::AnthropicMessages | ProtocolProfile::GoogleGenerateContent => {
+            ProtocolProfile::AnthropicMessages
+            | ProtocolProfile::GoogleGenerateContent
+            | ProtocolProfile::GoogleInteractions => {
                 return Err(TopologyError::ContractUnsatisfiable);
             }
         };
@@ -96,6 +98,7 @@ impl ApiKeyBinding {
             ProtocolProfile::OpenAiResponses => "responses",
             ProtocolProfile::AnthropicMessages => "messages",
             ProtocolProfile::GoogleGenerateContent => "generate-content",
+            ProtocolProfile::GoogleInteractions => "interactions",
         };
         EndpointId::new(&format!("{}-{suffix}", self.endpoint_prefix)).expect("static id")
     }
@@ -189,6 +192,7 @@ pub fn topology(
     }
     for binding in GOOGLE_BINDINGS {
         endpoints.push(binding.endpoint());
+        endpoints.push(binding.interactions_endpoint());
         routes.push(binding.route());
         public_models.push(binding.public_model());
         canonical_models.push(binding.canonical_model());

@@ -75,6 +75,14 @@ impl Endpoint {
                     )?,
                 }
             }
+            (ProtocolProfile::GoogleInteractions, TargetCaps::GoogleInteractions(_)) => {
+                UpstreamAdapter::GoogleInteractions {
+                    target: crate::protocol::native::ReplayTarget::new(
+                        self.provider.as_str(),
+                        &self.upstream_model,
+                    )?,
+                }
+            }
             (
                 ProtocolProfile::OpenAiChat | ProtocolProfile::OpenAiResponses,
                 TargetCaps::OpenAi(caps),
@@ -115,6 +123,10 @@ impl Endpoint {
                 UpstreamAdapter::GoogleGenerateContent { target },
                 TargetCaps::GoogleGenerateContent(caps),
             ) => caps.encode_request(request, &target),
+            (
+                UpstreamAdapter::GoogleInteractions { target },
+                TargetCaps::GoogleInteractions(caps),
+            ) => caps.encode_request(request, &target),
             _ => Err(crate::protocol::CodecError::ProfileMismatch.into()),
         }
     }
@@ -130,6 +142,7 @@ impl Endpoint {
                 .request_headers(request, caps.cache),
             TargetCaps::AnthropicMessages(caps) => caps.request_headers(request),
             TargetCaps::GoogleGenerateContent(caps) => Ok(caps.request_headers()),
+            TargetCaps::GoogleInteractions(caps) => Ok(caps.request_headers()),
         }
     }
     /// The target path the Provider's declared operation entry implies for this binding:

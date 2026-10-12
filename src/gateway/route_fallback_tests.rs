@@ -112,6 +112,7 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
                 responses: Some(EndpointPath::new(&format!("/{id}")).unwrap()),
                 messages: None,
                 generate_content: None,
+                interactions: None,
                 auth: AuthScheme::Bearer,
             };
             let credential = CredentialBindingId::new(&format!("{id}-key")).unwrap();

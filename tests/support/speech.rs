@@ -20,6 +20,7 @@ pub fn provider(origin: &str) -> ProviderDefinition {
         responses: None,
         messages: None,
         generate_content: None,
+        interactions: None,
         auth: AuthScheme::Bearer,
     }
 }

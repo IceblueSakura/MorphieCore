@@ -162,6 +162,7 @@ enum Intake {
     Chat(ChatSseDecoder),
     Messages(crate::protocol::anthropic::GenerationSseDecoder),
     Google(crate::protocol::google::GenerationSseDecoder),
+    Interactions(crate::protocol::interactions::GenerationSseDecoder),
     Closed,
 }
 
@@ -187,6 +188,7 @@ impl Attempt {
             self.adapter,
             UpstreamAdapter::AnthropicMessages { .. }
                 | UpstreamAdapter::GoogleGenerateContent { .. }
+                | UpstreamAdapter::GoogleInteractions { .. }
         )
     }
     pub fn new(adapter: impl Into<UpstreamAdapter>, body_limit: usize, limits: SseLimits) -> Self {
@@ -215,6 +217,24 @@ impl Attempt {
                 .unwrap_or_default()
                 .trim()
                 .to_ascii_lowercase();
+            if let UpstreamAdapter::GoogleInteractions { target } = &self.adapter {
+                if media != "text/event-stream" {
+                    return Err(AttemptError::Protocol("Interactions intake requires SSE"));
+                }
+                self.intake =
+                    Intake::Interactions(crate::protocol::interactions::GenerationSseDecoder::new(
+                        status,
+                        content_type,
+                        SseLimits {
+                            max_wire_bytes: self.limits.max_wire_bytes.min(self.body_limit),
+                            max_event_bytes: self.limits.max_event_bytes.min(self.body_limit),
+                            ..self.limits
+                        },
+                        NATIVE_SCOPE,
+                        target.clone(),
+                    )?);
+                return Ok(());
+            }
             if let UpstreamAdapter::GoogleGenerateContent { target } = &self.adapter {
                 if media != "text/event-stream" {
                     return Err(AttemptError::Protocol("Gemini intake requires SSE"));
@@ -305,6 +325,7 @@ impl Attempt {
                 Intake::Chat(decoder) => decoder.consume(chunk)?,
                 Intake::Messages(decoder) => decoder.consume(chunk)?,
                 Intake::Google(decoder) => decoder.consume(chunk)?,
+                Intake::Interactions(decoder) => decoder.consume(chunk)?,
                 _ => return Err(AttemptError::Protocol("attempt is closed")),
             };
             if matches!(events.last(), Some(StreamEvent::Terminal { .. })) {
@@ -336,6 +357,7 @@ impl Attempt {
             Intake::Chat(d) => d.metadata(),
             Intake::Messages(d) => d.metadata(),
             Intake::Google(d) => d.metadata(),
+            Intake::Interactions(d) => d.metadata(),
             _ => None,
         }
     }
@@ -348,6 +370,7 @@ impl Attempt {
             Intake::Chat(d) => Some(d.fidelity()),
             Intake::Messages(d) => Some(d.fidelity()),
             Intake::Google(d) => Some(d.fidelity()),
+            Intake::Interactions(d) => Some(d.fidelity()),
             _ => None,
         }
     }
@@ -363,7 +386,8 @@ impl Attempt {
                             profile.decode_generation_response(body, NATIVE_SCOPE, target)?
                         }
                         UpstreamAdapter::OpenAi(adapter) => adapter.decode_response(body)?,
-                        UpstreamAdapter::GoogleGenerateContent { .. } => {
+                        UpstreamAdapter::GoogleGenerateContent { .. }
+                        | UpstreamAdapter::GoogleInteractions { .. } => {
                             return Err(AttemptError::Protocol("Gemini intake requires SSE"));
                         }
                     },
@@ -383,6 +407,7 @@ impl Attempt {
                         profile.decode_generation_message(d.finish()?, NATIVE_SCOPE, target)?
                     }
                     Intake::Google(d) => d.finish()?,
+                    Intake::Interactions(d) => d.finish()?,
                     _ => return Err(AttemptError::Protocol("attempt is closed")),
                 })
             })();

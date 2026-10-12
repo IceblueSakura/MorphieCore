@@ -141,6 +141,7 @@ mod image_binding {
             responses: None,
             messages: None,
             generate_content: None,
+            interactions: None,
             auth: AuthScheme::Bearer,
         }
     }

@@ -12,7 +12,7 @@ MorphieCore is a central gateway for a few agents (pi and opencode first, Codex 
 | Upstream | OpenAI Responses and Chat, including compatible dialects | Live |
 | Upstream | Anthropic Messages | JSON and SSE; directory bootstrap activates a binding only when `models` lists it |
 | Upstream | Google generateContent | Live; always streamed upstream |
-| Upstream | Google Interactions | In progress ([roadmap](roadmap.md)) |
+| Upstream | Google Interactions | Live; stateless full-history steps, always streamed upstream |
 
 The standalone Embeddings, Images, Speech and Transcription endpoints exist but are frozen: maintenance only, as refactors require.
 
@@ -89,7 +89,7 @@ Every upstream-issued opaque value (OpenAI `encrypted_content`, Anthropic thinki
 - No encryption, HMAC or local prefix proof: the tag is a compatibility hint, not authentication, and cannot select route, origin or credential. The issuing upstream validates signatures and rejects tampering.
 - A same-target value without a matching carrier is still rejected, not silently dropped.
 - Thinking from Anthropic Sonnet 5.5 and Haiku 5.5 is also bound to the producing account; another account's request silently drops it. The envelope stays Provider and model only; target affinity on the exact credential keeps a conversation on its account, and a credential fallback loses that reasoning rather than failing.
-- Carriers today: Responses reasoning `encrypted_content` and Chat `reasoning.encrypted` `data`, static and streaming; native Anthropic thinking and Gemini `thoughtSignature` reuse the same envelope. Interactions signatures follow the roadmap.
+- Carriers today: Responses reasoning `encrypted_content` and Chat `reasoning.encrypted` `data`, static and streaming; native Anthropic thinking, Gemini `thoughtSignature` and Interactions step signatures reuse the same envelope.
 
 ### Chat extension fields
 
@@ -158,6 +158,7 @@ When Chat Completions cannot carry a semantic such as reasoning, MorphieCore fol
 | Minimal HTTP gateway | Loopback listener, single Bearer ingress auth, no inbound header pass-through |
 | Open upstream decoding | Strict on known fields, ignore unknown ones |
 | Gemini signatures as reasoning | A generateContent `thoughtSignature` travels as a reasoning item whose value names its anchor part (call ID, thought, or tail), so every downstream reasoning carrier returns it and the encoder restores it by anchor, not by position. Signature-only items trail the response, keeping a message contiguous with its calls; Chat carries them ahead of the message |
+| Stateless Interactions | `/v1/interactions`, `store: false`, full history, no `previous_interaction_id` or revision header. Thought signatures and call-ID-anchored signatures travel as reasoning items. Interactions and generateContent are separate replay formats; foreign values are dropped, not translated. Preserve both signatures even when an upstream sample accepts an omitted one. Stateless requests can use implicit caching |
 | Opaque envelope | No encryption or local proof; restore on same Provider and model, otherwise drop |
 | Chat extensions | OpenRouter shapes for semantics Chat cannot express |
 | File credentials and ordered pools | Authorization lifecycle is separate from inference borrowing; no automatic refresh or load balancing |

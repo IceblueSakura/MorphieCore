@@ -17,6 +17,8 @@ mod support;
 
 #[path = "gateway/anthropic.rs"]
 mod anthropic;
+#[path = "gateway/interactions.rs"]
+mod interactions;
 use axum::{
     Router,
     body::Body,

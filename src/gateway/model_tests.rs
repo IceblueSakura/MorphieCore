@@ -221,6 +221,7 @@ fn aliases(count: usize, metadata: bool) -> crate::topology::CompiledTopology {
         responses: None,
         messages: None,
         generate_content: None,
+        interactions: None,
         auth: AuthScheme::Bearer,
     };
     let endpoint = Endpoint {

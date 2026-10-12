@@ -10,6 +10,134 @@ use morphiecore::{
 };
 use serde_json::json;
 
+fn interaction_frames() -> Vec<serde_json::Value> {
+    vec![
+        json!({"event_type":"interaction.created","interaction":{"object":"interaction","model":"gemini-synthetic"}}),
+        json!({"event_type":"interaction.status_update","status":"in_progress"}),
+        json!({"event_type":"step.start","index":0,"step":{"type":"thought"}}),
+        json!({"event_type":"step.delta","index":0,"delta":{"type":"thought_summary","content":{"type":"text","text":"Plan"}}}),
+        json!({"event_type":"step.delta","index":0,"delta":{"type":"thought_signature","signature":"synthetic-thought"}}),
+        json!({"event_type":"step.stop","index":0}),
+        json!({"event_type":"step.start","index":1,"step":{"type":"function_call","id":"c1","name":"read","arguments":{},"signature":"synthetic-call"}}),
+        json!({"event_type":"step.delta","index":1,"delta":{"type":"arguments_delta","arguments":"{\"path\":"}}),
+        json!({"event_type":"step.delta","index":1,"delta":{"type":"arguments_delta","arguments":"\"a\"}"}}),
+        json!({"event_type":"step.stop","index":1}),
+        json!({"event_type":"interaction.completed","interaction":{"status":"requires_action","usage":{
+            "total_input_tokens":10,"total_cached_tokens":4,"total_output_tokens":5,
+            "total_thought_tokens":7,"total_tool_use_tokens":0,"total_tokens":22}}}),
+    ]
+}
+fn decode_interaction(
+    frames: &[serde_json::Value],
+    done: bool,
+) -> Result<morphiecore::protocol::DecodedResponse, String> {
+    use morphiecore::protocol::{interactions::GenerationSseDecoder, openai::sse::SseLimits};
+    let mut d = GenerationSseDecoder::new(
+        200,
+        "text/event-stream",
+        SseLimits::default(),
+        LocalScope::new(2),
+        ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap(),
+    )
+    .unwrap();
+    let mut wire = frames
+        .iter()
+        .map(|f| {
+            format!(
+                "event: {}\ndata: {f}\n\n",
+                f["event_type"].as_str().unwrap()
+            )
+        })
+        .collect::<String>();
+    if done {
+        wire.push_str("event: done\ndata: [DONE]\n\n");
+    }
+    for chunk in wire.as_bytes().chunks(7) {
+        let mut rest = chunk;
+        while !rest.is_empty() {
+            let (n, _) = d.consume(rest).map_err(|e| e.to_string())?;
+            rest = &rest[n..];
+        }
+    }
+    d.finish().map_err(|e| e.to_string())
+}
+
+#[test]
+fn step_stream_preserves_usage_call_arguments_and_both_signatures() {
+    let decoded = decode_interaction(&interaction_frames(), true).unwrap();
+    assert!(decoded.metadata.id.is_none());
+    assert_eq!(
+        decoded.semantic.progress(),
+        InteractionProgress::AwaitingToolResults
+    );
+    let items = decoded.semantic.items();
+    assert_eq!(items.len(), 3);
+    assert!(matches!(&items[0].1, Item::Reasoning(r)
+        if matches!(r.parts.as_slice(),[(_,ReasoningContent::Summary(t))] if t.as_str()=="Plan")));
+    assert!(matches!(&items[1].1, Item::ToolCall(c)
+        if c.call_id.as_str()=="c1" && c.arguments.as_structured().unwrap().value()==&json!({"path":"a"})));
+    for (index, expected) in [
+        (
+            0,
+            json!({"anchor":"thought","signature":"synthetic-thought"}),
+        ),
+        (
+            2,
+            json!({"anchor":"call","call":"c1","signature":"synthetic-call"}),
+        ),
+    ] {
+        let Item::Reasoning(r) = &items[index].1 else {
+            panic!()
+        };
+        let value = r.replay.as_ref().unwrap();
+        assert_eq!(value.format(), ReplayFormat::GoogleInteractionsV1Thought);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(value.replay_token().unwrap()).unwrap(),
+            expected
+        );
+    }
+    let usage = decoded.semantic.usage().unwrap();
+    assert_eq!(
+        (
+            usage.input_tokens,
+            usage.output_tokens,
+            usage.reasoning_tokens,
+            usage.cached_input_tokens,
+            usage.total_tokens
+        ),
+        (Some(10), Some(12), Some(7), Some(4), Some(22))
+    );
+}
+
+#[test]
+fn step_stream_rejects_missing_call_identity_and_unfinished_or_late_data() {
+    let truncated = vec![
+        json!({"event_type":"interaction.created","interaction":{"object":"interaction","model":"gemini-synthetic"}}),
+        json!({"event_type":"step.start","index":0,"step":{"type":"model_output"}}),
+        json!({"event_type":"step.stop","index":0}),
+        json!({"event_type":"interaction.completed","interaction":{"status":"incomplete"}}),
+    ];
+    let decoded = decode_interaction(&truncated, true).unwrap();
+    assert_eq!(decoded.semantic.outcome(), Outcome::Incomplete);
+    assert_eq!(
+        decoded.semantic.details().incomplete,
+        Some(IncompleteReason::MaxOutputTokens)
+    );
+    assert!(decoded.semantic.items().is_empty());
+    let mut missing = interaction_frames();
+    missing[6]["step"].as_object_mut().unwrap().remove("id");
+    assert!(decode_interaction(&missing, true).is_err());
+    let frames = interaction_frames();
+    assert!(decode_interaction(&frames, false).is_err());
+    assert!(decode_interaction(&frames[..9], true).is_err());
+    let mut late = frames.clone();
+    late.push(frames[1].clone());
+    assert!(decode_interaction(&late, true).is_err());
+    let mut malformed = frames;
+    malformed[3]["delta"]["content"]["text"] = json!(42);
+    assert!(decode_interaction(&malformed, true).is_err());
+}
+
 fn signed_history(call_anchor: &str, format: ReplayFormat) -> (GenerationRequest, FidelityRecords) {
     let source = Adapter::new(Profile::Responses, Dialect::Standard, None)
         .decode_request(

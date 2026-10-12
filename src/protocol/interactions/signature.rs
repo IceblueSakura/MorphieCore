@@ -10,6 +10,16 @@ pub(super) struct Signed {
     pub signature: Option<String>,
 }
 impl Signed {
+    pub fn encode(&self) -> String {
+        let mut value = match &self.call {
+            Some(call) => serde_json::json!({"anchor":"call","call":call}),
+            None => serde_json::json!({"anchor":"thought"}),
+        };
+        if let Some(signature) = &self.signature {
+            value["signature"] = signature.as_str().into();
+        }
+        value.to_string()
+    }
     pub fn decode(raw: &str) -> Result<Self, CodecError> {
         let invalid = || CodecError::Invalid("Interactions signature payload");
         let value = parse_json(raw.as_bytes(), JsonLimits::STRUCTURED).map_err(|_| invalid())?;

@@ -36,7 +36,10 @@ pub(super) fn anchored(item: &ReasoningItem) -> bool {
                 Some((_, sealed, _)) => sealed,
                 None => value.format(),
             };
-            format == ReplayFormat::GoogleGenerateContentPart
+            matches!(
+                format,
+                ReplayFormat::GoogleGenerateContentPart | ReplayFormat::GoogleInteractionsV1Thought
+            )
         })
 }
 

@@ -12,6 +12,9 @@ pub enum UpstreamAdapter {
     GoogleGenerateContent {
         target: crate::protocol::native::ReplayTarget,
     },
+    GoogleInteractions {
+        target: crate::protocol::native::ReplayTarget,
+    },
 }
 impl From<Adapter> for UpstreamAdapter {
     fn from(adapter: Adapter) -> Self {
@@ -22,9 +25,9 @@ impl UpstreamAdapter {
     pub fn openai(&self) -> Result<&Adapter, CodecError> {
         match self {
             Self::OpenAi(adapter) => Ok(adapter),
-            Self::AnthropicMessages { .. } | Self::GoogleGenerateContent { .. } => {
-                Err(CodecError::ProfileMismatch)
-            }
+            Self::AnthropicMessages { .. }
+            | Self::GoogleGenerateContent { .. }
+            | Self::GoogleInteractions { .. } => Err(CodecError::ProfileMismatch),
         }
     }
     pub fn decode_response(&self, bytes: &[u8]) -> Result<DecodedResponse, CodecError> {

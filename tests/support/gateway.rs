@@ -40,6 +40,7 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool) -> Gateway {
         responses: Some(EndpointPath::new("/responses").unwrap()),
         messages: None,
         generate_content: None,
+        interactions: None,
         auth: AuthScheme::Bearer,
     };
     let (embedding_operation, embedding_route) = embedding_support::binding(&provider);

@@ -1,12 +1,12 @@
 # MorphieCore
 
-A central gateway built on one unified IR that hides Provider differences from agent loops (pi and opencode first, then Codex and Claude Code). Clients speak OpenAI Chat Completions, Responses or Anthropic Messages; upstream Providers speak OpenAI-compatible, Anthropic Messages and Google generateContent. The project is in core design and validation.
+A central gateway built on one unified IR that hides Provider differences from agent loops (pi and opencode first, then Codex and Claude Code). Clients speak OpenAI Chat Completions, Responses or Anthropic Messages; upstream Providers speak OpenAI-compatible, Anthropic Messages, Google generateContent and Interactions. The project is in core design and validation.
 
 ## Status
 
-- **Working:** downstream Responses, Chat and Anthropic Messages (JSON and SSE; text, tools, reasoning, images and some file inputs); upstream OpenAI Responses and Chat with several compatible dialects native Anthropic Messages and Google generateContent; failover across a model's Providers and keys with held streams, cooldown and per-conversation affinity; file credentials with ordered pools; Provider-native cache affinity. pi passes real-client acceptance on all three downstream protocols.
+- **Working:** downstream Responses, Chat and Anthropic Messages (JSON and SSE; text, tools, reasoning, images and some file inputs); upstream OpenAI Responses and Chat with several compatible dialects, native Anthropic Messages, Google generateContent and stateless Interactions; failover across a model's Providers and keys with held streams, cooldown and per-conversation affinity; file credentials with ordered pools; Provider-native cache affinity. pi passes real-client acceptance on all three downstream protocols.
 - **Frozen:** the standalone Embeddings, Images, Speech and Transcription endpoints, and new Providers.
-- **Next:** the Google Interactions upstream as a second binding of `gemini-3.8-flash`. Real failover acceptance, the coverage pass and Claude Code acceptance are deferred. See the [roadmap](docs/roadmap.md).
+- **Next:** finish the Google replay representation cleanup. Real failover acceptance, the coverage pass and Claude Code acceptance are deferred. See the [roadmap](docs/roadmap.md).
 
 ## Quick start
 

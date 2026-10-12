@@ -115,6 +115,7 @@ fn gateway(origin: &str, profile: Profile, dialect: Dialect) -> Gateway {
         responses: Some(EndpointPath::new("/upstream").unwrap()),
         messages: None,
         generate_content: None,
+        interactions: None,
         auth: AuthScheme::Bearer,
     };
     let endpoint = Endpoint {

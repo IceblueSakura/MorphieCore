@@ -246,6 +246,9 @@ pub fn compile(
                 super::ProtocolProfile::GoogleGenerateContent => {
                     Some(crate::protocol::google::semantic_contract())
                 }
+                super::ProtocolProfile::GoogleInteractions => {
+                    Some(crate::protocol::interactions::semantic_contract())
+                }
                 _ => None,
             };
             if let Some(native) = native
@@ -305,6 +308,7 @@ mod tests {
             responses: Some(EndpointPath::new("/responses").unwrap()),
             messages: None,
             generate_content: None,
+            interactions: None,
             auth: AuthScheme::Bearer,
         }
     }

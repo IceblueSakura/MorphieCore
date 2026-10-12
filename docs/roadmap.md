@@ -29,17 +29,9 @@ Not current work; each returns only when the user reopens it.
 
 Until a real need: SSE keep-alive comments while frames are held (the hold stays far below Codex's 300 s idle timeout), executor affinity from the prefix index for requests without a declared conversation (all target agents declare one), an opt-in first-content timeout.
 
-## Current focus: Phase 6 — Google Interactions
+## Current focus: Phase 6 — replay representation cleanup
 
-Target: `gemini-3.8-flash` on Google AI Studio gets Interactions v1 as a second binding, after generateContent in failover order. Gemini 3 only, so call IDs are always present; a missing ID is a protocol error and the gateway mints none.
-
-Next slice: bounded step-stream intake and binding integration. Verify the versioned path, signature replay and truncation against the real upstream only after the minimal gateway path works; recordings are evidence, not proof of current service behavior.
-
-- Stateless: `POST /v1/interactions` with `store: false`, no `previous_interaction_id`, full history as steps, always streamed.
-- `thought` steps map to reasoning items with `GoogleInteractionsV1Thought` values; `function_call` and `function_result` steps to calls and results.
-- The two Google formats are separate replay domains: a value of the other format is dropped as foreign, so failover between the bindings loses reasoning instead of failing.
-
-Exit: hand-written wire→IR and IR→wire codec tests, gateway tests against a synthetic upstream for JSON and SSE delivery, then pi acceptance through all three of its providers with the Interactions binding serving: a read-tool loop with thinking where the second turn replays the signature without a 400. Afterwards delete the IR's part- and call-level replay slots if nothing uses them.
+Google signatures now use reasoning-item carriers. Remove part- and call-level replay slots with no runtime consumer, keeping Provider-tool replay and the safety assertions for surviving owners. Exit: affected tests and the full offline baseline pass, with the source coverage change reported. Protocol and real-client acceptance do not substitute for this cleanup.
 
 ## Later phases
 

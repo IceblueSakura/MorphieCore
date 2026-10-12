@@ -21,6 +21,7 @@ pub(crate) fn topology() -> CompiledTopology {
         responses: Some(EndpointPath::new("/responses").unwrap()),
         messages: None,
         generate_content: None,
+        interactions: None,
         auth: AuthScheme::Bearer,
     };
     let canonical = ModelId::new("fixture-canonical").unwrap();

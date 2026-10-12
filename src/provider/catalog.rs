@@ -18,6 +18,7 @@ pub fn deepseek() -> ProviderDefinition {
         responses: Some(EndpointPath::new("/responses").expect("static path")),
         messages: None,
         generate_content: None,
+        interactions: None,
         auth: AuthScheme::Bearer,
     }
 }
@@ -32,6 +33,7 @@ pub fn xiaomi() -> ProviderDefinition {
         responses: Some(EndpointPath::new("/v1/responses").expect("static path")),
         messages: None,
         generate_content: None,
+        interactions: None,
         auth: AuthScheme::Bearer,
     }
 }
@@ -58,6 +60,7 @@ pub fn openrouter() -> ProviderDefinition {
         responses: Some(EndpointPath::new("/api/v1/responses").expect("static path")),
         messages: None,
         generate_content: None,
+        interactions: None,
         auth: AuthScheme::Bearer,
     }
 }
@@ -70,6 +73,7 @@ fn chat_provider(id: &str, origin: &str, path: &str) -> ProviderDefinition {
         responses: None,
         messages: None,
         generate_content: None,
+        interactions: None,
         auth: AuthScheme::Bearer,
     }
 }
@@ -144,6 +148,7 @@ pub fn openai() -> ProviderDefinition {
     ProviderDefinition {
         messages: None,
         generate_content: None,
+        interactions: None,
         auth: AuthScheme::OAuthBearer("openai"),
         responses: Some(EndpointPath::new("/v1/responses").expect("static path")),
         id: ProviderId::new("openai").expect("static identity"),
@@ -157,6 +162,7 @@ pub fn grok() -> ProviderDefinition {
     ProviderDefinition {
         messages: None,
         generate_content: None,
+        interactions: None,
         auth: AuthScheme::OAuthBearer("grok"),
         responses: Some(EndpointPath::new("/v1/responses").expect("static path")),
         id: ProviderId::new("grok").expect("static identity"),
@@ -175,6 +181,7 @@ pub fn google() -> ProviderDefinition {
         responses: None,
         messages: None,
         generate_content: Some(EndpointPath::new("/v1beta/models").expect("static path")),
+        interactions: Some(EndpointPath::new("/v1/interactions").expect("static path")),
         auth: AuthScheme::ApiKeyHeader("x-goog-api-key"),
     }
 }

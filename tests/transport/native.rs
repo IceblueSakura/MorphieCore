@@ -33,6 +33,7 @@ mod native_bindings {
             responses: None,
             messages: Some(EndpointPath::new("/messages").unwrap()),
             generate_content: None,
+            interactions: None,
             auth: AuthScheme::Bearer,
         }
     }

@@ -10,6 +10,7 @@ pub enum TargetCaps {
     OpenAi(Box<OpenAiCaps>),
     AnthropicMessages(Box<anthropic::TargetCaps>),
     GoogleGenerateContent(Box<google::TargetCaps>),
+    GoogleInteractions(Box<crate::protocol::interactions::TargetCaps>),
 }
 impl From<OpenAiCaps> for TargetCaps {
     fn from(value: OpenAiCaps) -> Self {
@@ -24,6 +25,11 @@ impl From<anthropic::TargetCaps> for TargetCaps {
 impl From<google::TargetCaps> for TargetCaps {
     fn from(value: google::TargetCaps) -> Self {
         Self::GoogleGenerateContent(Box::new(value))
+    }
+}
+impl From<crate::protocol::interactions::TargetCaps> for TargetCaps {
+    fn from(value: crate::protocol::interactions::TargetCaps) -> Self {
+        Self::GoogleInteractions(Box::new(value))
     }
 }
 impl TargetCaps {
@@ -56,6 +62,7 @@ impl TargetCaps {
             Self::OpenAi(c) => &c.semantics,
             Self::AnthropicMessages(c) => &c.semantics,
             Self::GoogleGenerateContent(c) => &c.semantics,
+            Self::GoogleInteractions(c) => &c.semantics,
         }
     }
     pub fn cache(&self) -> CacheProjection {
@@ -63,20 +70,23 @@ impl TargetCaps {
             Self::OpenAi(c) => c.cache,
             Self::AnthropicMessages(c) => c.cache,
             Self::GoogleGenerateContent(c) => c.cache,
+            Self::GoogleInteractions(c) => c.cache,
         }
     }
     pub fn standard_context(&self) -> bool {
         match self {
             Self::OpenAi(c) => c.standard_context,
-            Self::AnthropicMessages(_) | Self::GoogleGenerateContent(_) => false,
+            Self::AnthropicMessages(_)
+            | Self::GoogleGenerateContent(_)
+            | Self::GoogleInteractions(_) => false,
         }
     }
     pub fn forced_stream(&self) -> bool {
         match self {
             Self::OpenAi(c) => c.adaptation.rules.responses_forced_stream,
             Self::AnthropicMessages(_) => false,
-            // Only `streamGenerateContent` is bound; JSON clients get the aggregate.
-            Self::GoogleGenerateContent(_) => true,
+            // Google bindings always stream; JSON clients get the aggregate.
+            Self::GoogleGenerateContent(_) | Self::GoogleInteractions(_) => true,
         }
     }
 }

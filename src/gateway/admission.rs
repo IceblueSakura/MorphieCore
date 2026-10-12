@@ -123,6 +123,7 @@ pub(super) fn prepare_messages(
                 c.endpoint.protocol,
                 crate::topology::ProtocolProfile::AnthropicMessages
                     | crate::topology::ProtocolProfile::GoogleGenerateContent
+                    | crate::topology::ProtocolProfile::GoogleInteractions
             )
         });
         if !native && request.drop_tool_error_flags()? {

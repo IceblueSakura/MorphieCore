@@ -20,6 +20,7 @@ pub enum RequestRule {
     ReasoningAsText,
     DeveloperAsSystem,
     DefaultStrictAsPlain,
+    OmitCacheKey,
 }
 impl RequestRule {
     pub const fn name(self) -> &'static str {
@@ -33,6 +34,7 @@ impl RequestRule {
             Self::ReasoningAsText => "interactions.reasoning-as-text.v1",
             Self::DeveloperAsSystem => "interactions.developer-as-system.v1",
             Self::DefaultStrictAsPlain => "interactions.default-strict-as-plain.v1",
+            Self::OmitCacheKey => "interactions.omit-cache-key.v1",
         }
     }
 }

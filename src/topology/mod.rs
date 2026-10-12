@@ -62,6 +62,7 @@ pub enum ProtocolProfile {
     OpenAiResponses,
     AnthropicMessages,
     GoogleGenerateContent,
+    GoogleInteractions,
 }
 impl ProtocolProfile {
     pub fn operation(self) -> crate::provider::GenerationOperation {
@@ -71,6 +72,7 @@ impl ProtocolProfile {
             Self::OpenAiResponses => GenerationOperation::Responses,
             Self::AnthropicMessages => GenerationOperation::AnthropicMessages,
             Self::GoogleGenerateContent => GenerationOperation::GoogleGenerateContent,
+            Self::GoogleInteractions => GenerationOperation::GoogleInteractions,
         }
     }
 }

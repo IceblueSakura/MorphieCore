@@ -20,6 +20,7 @@ mod candidates {
             responses: Some(EndpointPath::new("/responses").unwrap()),
             messages: None,
             generate_content: None,
+            interactions: None,
             auth: AuthScheme::Bearer,
         }
     }

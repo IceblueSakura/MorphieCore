@@ -19,6 +19,7 @@ fn provider(origin: &str, id: &str) -> ProviderDefinition {
         responses: None,
         messages: None,
         generate_content: None,
+        interactions: None,
         auth: AuthScheme::Bearer,
     }
 }
