@@ -223,6 +223,7 @@ Native requests preserve thinking, tool-use/result order and call IDs. Messages 
 - A leading developer instruction maps to the system prompt by name.
 - Call IDs outside the native grammar map to stable digests; collisions fail rather than merge calls.
 - Each native request uses top-level ephemeral cache control. Cache hits still depend on upstream thresholds.
+- A source without an output cap gets `max_tokens: 32000`, the default of opencode's Messages client, because Messages requires the field.
 - OpenAI stateless controls are not forwarded as native fields. Requesting an encrypted reasoning carrier selects delivery, not native thinking.
 
 Exact rules live in [semantic_request.rs](../src/protocol/anthropic/semantic_request.rs).
@@ -275,5 +276,6 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Delivery-local identity | Generated client IDs/timestamps are not upstream facts or history keys |
 | Stateless Google Interactions | `store: false` and full history; no `previous_interaction_id` or revision header. Signatures keep their native formats |
 | Separate credential lifecycle | Private file store and ordered pools; no inference-triggered login or refresh |
+| Client-owned output caps | The gateway neither caps nor invents `max_tokens`; the upstream enforces its model limit. Only a protocol that requires the field fills a fixed default |
 
 Pinned clients and protocol sources are in [References](references.md). Observed client behavior is an oracle, not permission to weaken security or fabricate semantics.

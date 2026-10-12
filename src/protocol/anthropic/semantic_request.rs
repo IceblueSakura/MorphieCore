@@ -6,6 +6,9 @@ use crate::{
 };
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
+/// The cap opencode's Messages client sends by default (`DEFAULT_MAX_TOKENS` in
+/// https://github.com/anomalyco/opencode/blob/e5a557efeee02c94486d391afc48f24a49ebc9a5/packages/ai/src/protocols/anthropic-messages.ts).
+const DEFAULT_MAX_TOKENS: u64 = 32_000;
 pub(super) fn unsupported() -> CodecError {
     CodecError::Unsupported("native semantic carrier".into())
 }
@@ -315,7 +318,8 @@ pub(super) fn project(
     }
     Ok(super::Request {
         model: target.model().into(),
-        max_tokens: s.controls.max_output_tokens.ok_or_else(unsupported)?,
+        // Messages requires max_tokens; other sources may leave the cap to the model.
+        max_tokens: s.controls.max_output_tokens.unwrap_or(DEFAULT_MAX_TOKENS),
         system,
         tools,
         tool_choice,

@@ -54,8 +54,6 @@ pub struct Limits {
     pub concurrency: usize,
     pub body_timeout: Duration,
     pub exchange_timeout: Duration,
-    pub default_output_tokens: u64,
-    pub max_output_tokens: u64,
 }
 impl Default for Limits {
     fn default() -> Self {
@@ -72,8 +70,6 @@ impl Default for Limits {
             concurrency: 16,
             body_timeout: Duration::from_secs(10),
             exchange_timeout: Duration::from_secs(120),
-            default_output_tokens: 1024,
-            max_output_tokens: 16384,
         }
     }
 }
@@ -95,9 +91,6 @@ impl Limits {
             && self.body_timeout <= Duration::from_secs(60)
             && !self.exchange_timeout.is_zero()
             && self.exchange_timeout <= Duration::from_secs(300)
-            && self.default_output_tokens > 0
-            && self.default_output_tokens <= self.max_output_tokens
-            && self.max_output_tokens <= 1_000_000
     }
 }
 #[derive(Clone, Copy, Debug, thiserror::Error)]

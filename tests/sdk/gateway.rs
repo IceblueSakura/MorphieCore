@@ -114,13 +114,15 @@ async fn provider(
             "SDK item validation uses a complete Responses envelope"
         );
     }
-    assert_eq!(
-        request[if chat {
-            "max_completion_tokens"
-        } else {
-            "max_output_tokens"
-        }],
-        32
+    // The gateway does not invent an output cap the client did not send.
+    assert!(
+        request
+            .get(if chat {
+                "max_completion_tokens"
+            } else {
+                "max_output_tokens"
+            })
+            .is_none()
     );
     if !chat && !owner_case && !nonstandard_usage {
         // The fixed SDK must keep file description and ordered source parts
@@ -440,13 +442,7 @@ async fn sdk_uses_gateway_for_both_protocols_and_deliveries() {
         .unwrap();
     });
     let _upstream = ServerGuard(upstream.abort_handle());
-    let gateway = support::gateway(
-        &origin,
-        Limits {
-            default_output_tokens: 32,
-            ..Limits::default()
-        },
-    );
+    let gateway = support::gateway(&origin, Limits::default());
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/v1", listener.local_addr().unwrap());
     let (stop, stopped) = oneshot::channel();

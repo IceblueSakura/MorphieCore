@@ -246,8 +246,10 @@ mod native_bindings {
         let chat_request = Adapter::new(Profile::Chat, Dialect::Standard, None)
             .decode_request(br#"{"model":"public","messages":[{"role":"user","content":"hello"}]}"#)
             .unwrap();
-        // Chat requests carry no max_tokens, which native Messages requires.
-        assert!(representable(&native, &chat_request).is_err());
+        // Messages requires max_tokens; an uncapped Chat request gets the fixed default.
+        representable(&native, &chat_request).unwrap();
+        let prepared = prepare(&native, &p, &secret(), &chat_request).unwrap();
+        assert_eq!(body(&prepared)["max_tokens"], 32_000);
     }
 
     #[test]

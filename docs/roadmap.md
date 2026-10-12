@@ -8,9 +8,9 @@ No feature slice is selected. Keep the core maintainable within the frozen scope
 
 ## Target clients
 
-pi and opencode first; Codex and Claude Code second. Use pi as the first real-client gate.
+pi and opencode first; Codex and Claude Code second. pi and opencode are the real-client gates.
 
-Pinned client behavior is an acceptance oracle alongside the protocol schema: parsing, stream merging, returned history and error classification. See [References](references.md) and [pi acceptance](development.md#pi-acceptance).
+Pinned client behavior is an acceptance oracle alongside the protocol schema: parsing, stream merging, returned history and error classification. See [References](references.md), [pi acceptance](development.md#pi-acceptance) and [opencode acceptance](development.md#opencode-acceptance).
 
 ## Frozen scope
 
@@ -45,9 +45,11 @@ Treat a bound upstream's in-stream error as a classified failure, not normal out
 |---|---|
 | Real failover | One bounded real run for a model with two credentials or Providers and a reproducible advanceable failure |
 | Coverage pass | Independent wire→IR and IR→wire fixtures, synthetic upstreams and chunked SSE intake |
-| Claude Code | Sample real request shapes, then verify beta headers/query, token counting and user metadata hints |
+| Claude Code (on hold) | Sample real request shapes, then verify beta headers/query, token counting and user metadata hints |
 
 The coverage pass covers text, tools, tool errors, reasoning replay, usage, truncation and error classes. It also checks client-facing fragment shapes and meaningful absent/null/empty distinctions. It does not authorize a variant matrix.
+
+Claude Code acceptance is on hold until the user schedules it: no runs or request sampling before then.
 
 Real failover needs a controlled failure source, such as an exhausted key in a scratch store. Functional tests and pi Messages acceptance do not prove Claude Code acceptance.
 

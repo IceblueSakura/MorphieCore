@@ -262,19 +262,33 @@ async fn authentication_runs_before_any_body_poll() {
 }
 #[tokio::test]
 async fn identity_budget_and_scope_are_owned_by_trusted_ingress() {
-    let gate = gateway(Limits {
-        default_output_tokens: 32,
-        max_output_tokens: 64,
-        ..Limits::default()
-    });
-    let (_, request) = admission::prepare(
-        &gate.state,
-        Profile::Chat,
-        br#"{"model":"fixture-model","messages":[{"role":"user","content":"hello"}]}"#,
-    )
-    .unwrap();
-    assert_eq!(request.task.semantic.controls().max_output_tokens, Some(32));
-    for wire in [br#"{"model":"fixture-model","model":"missing","messages":[]}"#.as_slice(),br#"{"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"max_completion_tokens":65}"#] {assert_eq!(admission::prepare(&gate.state,Profile::Chat,wire).err().unwrap().status,400);}
+    let gate = gateway(Limits::default());
+    // The output cap is the client's choice: absent stays absent, large values pass.
+    for (wire, cap) in [
+        (
+            br#"{"model":"fixture-model","messages":[{"role":"user","content":"hello"}]}"#
+                .as_slice(),
+            None,
+        ),
+        (
+            br#"{"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"max_completion_tokens":200000}"#,
+            Some(200_000),
+        ),
+    ] {
+        let (_, request) = admission::prepare(&gate.state, Profile::Chat, wire).unwrap();
+        assert_eq!(request.task.semantic.controls().max_output_tokens, cap);
+    }
+    assert_eq!(
+        admission::prepare(
+            &gate.state,
+            Profile::Chat,
+            br#"{"model":"fixture-model","model":"missing","messages":[]}"#
+        )
+        .err()
+        .unwrap()
+        .status,
+        400
+    );
     // Public identity resolves before task contents, not by guessing a Provider.
     assert_eq!(
         admission::prepare(

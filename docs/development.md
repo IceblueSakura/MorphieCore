@@ -11,6 +11,7 @@ Use offline, synthetic checks by default. SDK loopback and real-client checks ar
 - [SDK loopback gate](#sdk-loopback-gate)
 - [Real Provider checks](#real-provider-checks)
 - [pi acceptance](#pi-acceptance)
+- [opencode acceptance](#opencode-acceptance)
 - [Documentation checks](#documentation-checks)
 
 ## Environment
@@ -135,6 +136,33 @@ pi -p --mode json --offline --no-session --no-extensions --no-skills \
 7. Remove the test-owned scratch directory after the run.
 
 pi's `--offline` flag does not make an upstream gateway request synthetic. This remains a real-client gate when the gateway calls a real Provider.
+
+## opencode acceptance
+
+Use opencode's real binary against the CLI gateway, not a wrapper that sources private environment. The installed binary can lag the source pinned in [References](references.md); check `--version` before comparing behavior with source.
+
+1. Create a `0700` scratch directory with `HOME`, a work directory and a synthetic file.
+2. Run with `env -i`, scratch `HOME` and `XDG_*` directories, and only the required tool paths and ingress credential.
+3. Set `OPENCODE_CONFIG` to a scratch config and set `OPENCODE_DISABLE_AUTOUPDATE`, `OPENCODE_DISABLE_MODELS_FETCH` and `OPENCODE_DISABLE_PROJECT_CONFIG` to `1`.
+4. Under `providers`, add one entry for each API under test. Each sets `package`, `env` naming the ingress-credential variable, `settings.baseURL` set to the origin with `/v1`, and the model entry:
+
+| API | `package` |
+|---|---|
+| Chat Completions | `@opencode/ai/providers/openai-compatible` |
+| Responses | `@opencode/ai/providers/openai` |
+| Messages | `@opencode/ai/providers/anthropic` |
+
+5. From the work directory, ask opencode to read the synthetic file, then answer:
+
+```sh
+opencode run --standalone --format json --title '<title>' \
+  -m '<provider>/<model>#medium' '<synthetic prompt>'
+```
+
+6. Check for a completed `read` tool event and a final answer. The JSON stream can omit the last `step_finish`. Read each assistant `finish` (`tool-calls`, then `stop`) and the idle outcome from `session_message` in the scratch `opencode.db`. Report counts and status, not bodies.
+7. Remove the test-owned scratch directory after the run.
+
+`--standalone` keeps the server inside the run instead of a background service. A title avoids an extra title-generation request.
 
 ## Documentation checks
 

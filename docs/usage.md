@@ -223,7 +223,7 @@ OpenAI routes return `{"error":{"message","type","param","code"}}`. Messages han
 
 | HTTP | Meaning |
 |---|---|
-| 400 | Invalid or unrepresentable request, context overflow, output cap exceeded |
+| 400 | Invalid or unrepresentable request, context overflow |
 | 401 | Missing, wrong or ambiguous ingress credential |
 | 404 / 405 | Unknown model or route / unsupported method |
 | 408 / 413 / 415 | Body timeout / body too large / unsupported media type |

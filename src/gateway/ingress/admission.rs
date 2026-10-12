@@ -155,24 +155,6 @@ fn prepare_in(
     }
     let mut request = decode(&entry).map_err(|_| ApiError::invalid())?;
     crate::execution::replay::open_from_client(&mut request).map_err(|_| ApiError::invalid())?;
-    let mut settings = request.task.semantic.settings().clone();
-    match settings.controls.max_output_tokens {
-        Some(n) if n > state.limits.max_output_tokens => {
-            return Err(ApiError::new(
-                StatusCode::BAD_REQUEST,
-                "output_limit_exceeded",
-            ));
-        }
-        None if entry.public.contract.max_output_tokens => {
-            settings.controls.max_output_tokens = Some(state.limits.default_output_tokens);
-        }
-        _ => {}
-    }
-    request.task.semantic = request
-        .task
-        .semantic
-        .with_settings(settings)
-        .map_err(|_| ApiError::invalid())?;
     crate::execution::admit(&entry.public, &request).map_err(|_| ApiError::invalid())?;
     Ok((entry, request))
 }

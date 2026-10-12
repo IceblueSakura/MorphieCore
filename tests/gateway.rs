@@ -90,7 +90,7 @@ async fn answer(
     };
     assert_eq!(
         request[cap], 32,
-        "trusted default must pass through IR into upstream wire"
+        "the client cap must pass through IR into upstream wire"
     );
     let turn = if request.to_string().contains("tool_call_id")
         || request.to_string().contains("function_call_output")
@@ -348,13 +348,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
     let upstream_guard = Guard(tokio::spawn(async move {
         axum::serve(upstream, app).await.unwrap();
     }));
-    let gateway = support::gateway_with_embeddings(
-        &origin,
-        Limits {
-            default_output_tokens: 32,
-            ..Limits::default()
-        },
-    );
+    let gateway = support::gateway_with_embeddings(&origin, Limits::default());
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
     let (shutdown, stopped) = oneshot::channel();
@@ -374,9 +368,9 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
                 "/v1/responses"
             };
             let request = if profile == Profile::Chat {
-                json!({"model":"public-model","messages":[{"role":"user","content":"lookup"}],"stream":stream,"stream_options":if stream {json!({"include_usage":true,"include_obfuscation":false})}else{Value::Null}})
+                json!({"model":"public-model","messages":[{"role":"user","content":"lookup"}],"max_completion_tokens":32,"stream":stream,"stream_options":if stream {json!({"include_usage":true,"include_obfuscation":false})}else{Value::Null}})
             } else {
-                json!({"model":"public-model","input":"lookup","stream":stream})
+                json!({"model":"public-model","input":"lookup","max_output_tokens":32,"stream":stream})
             };
             let response = client
                 .post(format!("{url}{path}"))
@@ -468,7 +462,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
                     .post(format!("{url}{path}"))
                     .bearer_auth(support::CLIENT_KEY)
                     .header("X-MorphieCore-Conversation-Id", "conversation-one")
-                    .json(&json!({"model":"public-model","input":history,"stream":stream}))
+                    .json(&json!({"model":"public-model","input":history,"max_output_tokens":32,"stream":stream}))
                     .send()
                     .await
                     .unwrap();
@@ -487,7 +481,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
                 let rejected = client
                     .post(format!("{url}{path}"))
                     .bearer_auth(support::CLIENT_KEY)
-                    .json(&json!({"model":"public-model","input":history,"stream":stream}))
+                    .json(&json!({"model":"public-model","input":history,"max_output_tokens":32,"stream":stream}))
                     .send()
                     .await
                     .unwrap();
@@ -502,7 +496,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         let response = client
             .post(format!("{url}/v1/responses"))
             .bearer_auth(support::CLIENT_KEY)
-            .json(&json!({"model":"cross-model","input":"lookup","stream":stream}))
+            .json(&json!({"model":"cross-model","input":"lookup","max_output_tokens":32,"stream":stream}))
             .send()
             .await
             .unwrap();
@@ -527,7 +521,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         let response = client
             .post(format!("{url}/v1/responses"))
             .bearer_auth(support::CLIENT_KEY)
-            .json(&json!({"model":"cross-model","input":history,"stream":stream}))
+            .json(&json!({"model":"cross-model","input":history,"max_output_tokens":32,"stream":stream}))
             .send()
             .await
             .unwrap();
@@ -578,7 +572,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         .post(format!("{url}/v1/responses"))
         .bearer_auth(support::CLIENT_KEY)
         .json(
-            &json!({"model":"public-model","input":"hello","base_url":"https://untrusted.invalid"}),
+            &json!({"model":"public-model","input":"hello","max_output_tokens":32,"base_url":"https://untrusted.invalid"}),
         )
         .send()
         .await

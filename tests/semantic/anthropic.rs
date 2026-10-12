@@ -413,6 +413,15 @@ mod anthropic_semantics {
         );
         assert_eq!(encoded.value["output_config"], json!({"effort":"low"}));
         assert_eq!(encoded.value["cache_control"], json!({"type":"ephemeral"}));
+        assert_eq!(encoded.value["max_tokens"], 32);
+        // Messages requires max_tokens; a source without a cap gets the fixed default.
+        let mut settings = decoded.semantic.settings().clone();
+        settings.controls.max_output_tokens = None;
+        let uncapped = decoded.semantic.clone().with_settings(settings).unwrap();
+        let encoded = p
+            .encode_generation_request(&uncapped, &decoded.fidelity, &target())
+            .unwrap();
+        assert_eq!(encoded.value["max_tokens"], 32_000);
         let ttl = std::str::from_utf8(raw).unwrap().replace(
             r#"{"type":"ephemeral"}"#,
             r#"{"type":"ephemeral","ttl":"1h"}"#,
