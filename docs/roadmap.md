@@ -1,36 +1,65 @@
 # Roadmap
 
-The single source for direction and the current slice. Delete finished items (Git keeps history). Principles and settled decisions live in [architecture](architecture.md); sources in [references](references.md).
+This page owns direction and current scope. Code and tests define behavior; [Architecture](architecture.md) records design decisions. Remove completed slices here; Git keeps history.
+
+## Current focus
+
+No feature slice is selected. Keep the core maintainable within the frozen scope below. Deferred acceptance work stays deferred until the user reopens it.
+
+## Target clients
+
+pi and opencode first; Codex and Claude Code second. Use pi as the first real-client gate.
+
+Pinned client behavior is an acceptance oracle alongside the protocol schema: parsing, stream merging, returned history and error classification. See [References](references.md) and [pi acceptance](development.md#pi-acceptance).
 
 ## Frozen scope
 
-Maintenance only, as refactors require:
+Maintenance only, when a refactor requires it:
 
-- Standalone media and vector tasks: Images, Speech, Transcription, Embedding.
-- New Providers or model bindings, except alternative bindings of an existing public model in Phase 3 and the Google phases. Activating an existing binding is not a new binding.
-- New features for subscription credentials (SIWC, Grok).
-- Stateful Responses, file services, Realtime.
+- Standalone Images, Speech, Transcription and Embeddings.
+- New Providers and model bindings unless an approved slice reopens them. Alternative bindings for an existing public model belong to failover work; activating a registered binding is not adding one.
+- New subscription credential features.
+- Stateful Responses, file services and Realtime.
 
-Not planned: raw wire passthrough or post-encoding JSON patches, weakening schemas (`oneOf` → `anyOf`), synthesizing missing tool results or re-roling orphan results, first-message hashes as conversation identity, LLM intent classifiers for routing, plugin or middleware hosts, capabilities learned automatically from upstream errors. Load balancing in any form (weights, round robin, least load), per-credential concurrency or RPM lanes, budget reservations, and retrying a refusal on another model: routing is failover only (architecture §5). Routing units below the conversation: turn-boundary detection, branch or subtask identity, per-turn holds, rules or model switches, and per-message effort; the declared conversation is the routing unit (architecture §8).
+### Not planned
 
-## Target agents
+- Raw wire passthrough, post-encoding JSON patches or weakened schemas.
+- Invented tool results or changed roles for orphan results.
+- Message-content hashes as conversation identity, or LLM classifiers for routing.
+- Plugin hosts, middleware hosts or capabilities learned automatically from upstream errors.
+- Load balancing, credential concurrency/RPM lanes or budget reservations.
+- Retrying a refusal on another model.
+- Routing below the declared conversation: turn detection, branch/subtask keys, per-turn holds or model switches, and per-message effort.
 
-pi and opencode first; Codex and Claude Code second. Real-client acceptance runs use pi first. A known client's observed behavior at a pinned revision is the acceptance oracle, beside the protocol schema: what it parses, merges, returns in history and classifies as retryable. pi's merged `reasoning_details` already shaped the Chat reasoning carrier.
+These boundaries follow [Failover](architecture.md#failover) and [Settled decisions](architecture.md#settled-decisions).
 
-Vendor stream shapes are a standing rule, not a phase: a Chat shape seen from a bound upstream (a continuation `function.name: ""`, `finish_reason: ""`, `tool_calls: []` opening the message owner early, `finish_reason: "stop"` beside tool calls) becomes a named dialect rule, like `empty_continuation_call_id`, once that upstream emits it. Likewise an OpenAI-compatible upstream's in-stream error (a Chat error chunk, a Responses `response.failed`) is classified like Anthropic `error` events once a bound upstream emits one. Frozen media decoders are not extended.
+## Maintenance rules
 
-## Deferred
+Observed vendor stream shapes become named dialect rules only when a bound upstream emits them. Examples include empty continuation tool names or call IDs, empty finish reasons, and tool-call openers.
 
-Not current work; each returns only when the user reopens it.
+Treat a bound upstream's in-stream error as a classified failure, not normal output. Do not extend frozen media decoders as part of this work.
 
-- **Real failover acceptance.** Failover routing is done (architecture §5); one bounded real run with two credentials or Providers for one model is not. It needs a reproducible advanceable failure, such as a zero-credit or exhausted key in a scratch credential store.
-- **Coverage pass.** Feature phases add functional tests only. The pass adds one hand-written wire fixture per scenario per protocol, checked wire→IR and IR→wire against a synthetic upstream, each SSE fixture also fed in small fixed-size chunks, with consumer expectations from pi and opencode. Scenarios: text, single and parallel tools, tool errors, reasoning replay, usage, truncation, each error class; consumer shapes (a tool name only on the first fragment, no empty reasoning or tool-call deltas, null/empty/absent kept distinct).
-- **Claude Code acceptance.** Downstream Messages is covered by functional tests and pi's `anthropic-messages` provider. When reopened: sample Claude Code's request shapes first; then `anthropic-beta`, `?beta=true`, `count_tokens`, `metadata.user_id` as a conversation hint.
+## Deferred acceptance
 
-Until a real need: SSE keep-alive comments while frames are held (the hold stays far below Codex's 300 s idle timeout), executor affinity from the prefix index for requests without a declared conversation (all target agents declare one), an opt-in first-content timeout.
+| Work | Exit condition when reopened |
+|---|---|
+| Real failover | One bounded real run for a model with two credentials or Providers and a reproducible advanceable failure |
+| Coverage pass | Independent wire→IR and IR→wire fixtures, synthetic upstreams and chunked SSE intake |
+| Claude Code | Sample real request shapes, then verify beta headers/query, token counting and user metadata hints |
 
-## Later phases
+The coverage pass covers text, tools, tool errors, reasoning replay, usage, truncation and error classes. It also checks client-facing fragment shapes and meaningful absent/null/empty distinctions. It does not authorize a variant matrix.
 
-### After that
+Real failover needs a controlled failure source, such as an exhausted key in a scratch store. Functional tests and pi Messages acceptance do not prove Claude Code acceptance.
 
-Stateful Responses (gateway-managed, time-limited history), file services, resumed media work, Realtime.
+### Only if needed
+
+- SSE keep-alive comments while initial frames are held.
+- Prefix-derived executor affinity when no conversation is declared.
+- An opt-in first-content timeout.
+
+## Future work
+
+- Stateful Responses with gateway-managed, time-limited `previous_response_id` history.
+- File services.
+- Resumed standalone media work.
+- Realtime.

@@ -1,18 +1,104 @@
 # Usage
 
-## Startup
+This guide covers local setup and client requests. For the build environment, see [Development](development.md#environment).
+
+## Contents
+
+- [Prepare credentials](#prepare-credentials)
+- [Configure the gateway](#configure-the-gateway)
+- [Start the gateway](#start-the-gateway)
+- [Send a request](#send-a-request)
+- [HTTP API](#http-api)
+- [Conversation and cache affinity](#conversation-and-cache-affinity)
+- [Errors and limits](#errors-and-limits)
+
+## Prepare credentials
+
+The gateway and `morphiecore-auth` share a default store:
+
+- Unix: `$HOME/.local/share/morphiecore/credentials`
+- Windows: `%USERPROFILE%/.local/share/morphiecore/credentials`
+
+They do not discover credentials from the working directory, `XDG_DATA_HOME`, environment keys or third-party auth caches.
+
+On Unix, the store directory must be `0700` and private files must be `0600`. Unsafe permissions are rejected, not repaired. Never commit, print or hand-edit credential files while the service runs.
+
+Build the CLIs:
 
 ```sh
-cargo run --locked --offline --bin morphiecore
-cargo run --locked --offline --bin morphiecore -- --credentials-dir /path/to/store --config /path/to/gateway.json
+cargo build --locked --offline --bins
+install -d -m 700 "$HOME/.local/share/morphiecore/credentials"
 ```
 
-- The credential store defaults to `~/.local/share/morphiecore/credentials` (`USERPROFILE` on Windows); `--credentials-dir` overrides it. The current directory, `XDG_DATA_HOME` and keys in environment variables are never read.
-- The gateway config defaults to `gateway.json` inside the store; `--config` overrides it.
-- Outbound proxy precedence: `--proxy` > config `proxy` > environment (`HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`, `NO_PROXY`). A failing explicit proxy never falls back to a direct connection.
-- Listens on loopback only. Ctrl-C shuts down gracefully and cancels in-flight upstream requests.
+The examples below use `morphiecore-auth` as shorthand for `cargo run --locked --offline --bin morphiecore-auth --`. Replace placeholders with catalog identities. Provider definitions are in [src/provider/catalog.rs](../src/provider/catalog.rs); model and credential bindings are in [src/topology/catalog.rs](../src/topology/catalog.rs) and its modules.
 
-### gateway.json
+### Add an API key
+
+Read the key from a private file, not a command-line value:
+
+```sh
+morphiecore-auth api-key add --domain "$PROVIDER_ID" --alias "$ALIAS" --secret-file /path/to/private-key
+morphiecore-auth api-key list --domain "$PROVIDER_ID"
+```
+
+Updates require the current revision:
+
+```sh
+morphiecore-auth api-key replace --domain "$PROVIDER_ID" --alias "$ALIAS" --revision "$REV" --secret-file /path/to/private-key
+morphiecore-auth api-key disable --domain "$PROVIDER_ID" --alias "$ALIAS" --revision "$REV"
+```
+
+`enable` and `remove` use the same identity and revision arguments. Re-read the revision after every change. Removing a key deletes the local secret; it does not revoke the upstream key.
+
+Every subcommand accepts `--store /path/to/store`.
+
+### Create a pool
+
+Only credentials referenced by a pool are used for inference. A pool file contains references and policy, not secrets:
+
+```json
+{
+  "members": [{"kind": "api_key", "alias": "primary"}],
+  "fallback": false,
+  "max_attempts": 1
+}
+```
+
+Use revision `0` to create a new pool:
+
+```sh
+morphiecore-auth pool set --provider "$PROVIDER_ID" --binding "$BINDING_ID" --revision 0 --file /path/to/pool.json
+morphiecore-auth pool list
+```
+
+Members are ordered. To allow credential fallback, add members, set `fallback: true` and raise `max_attempts`. Exhausted quota, unavailable credentials, transport failures, timeouts and server failures may advance before publication. Authentication failures and rate limits of unknown scope do not rotate keys. See [Failover](architecture.md#failover).
+
+An OAuth member uses `{"kind":"oauth","profile":"openai","alias":"personal"}`. An `openai` subscription pool must have one member, no fallback and `max_attempts: 1`.
+
+### OAuth
+
+Login, refresh and revocation are explicit operator actions:
+
+```sh
+morphiecore-auth grok login --account personal
+morphiecore-auth openai login --account personal
+morphiecore-auth list
+morphiecore-auth openai refresh --account personal
+morphiecore-auth openai logout --account personal
+```
+
+- `openai` is the ChatGPT subscription profile (SIWC), not an OpenAI Platform API key.
+- Grok defaults to device login; `--method browser` selects browser login. SIWC supports browser login only.
+- `--consent` explicitly requests ChatGPT plan consent during login.
+- `--callback-port` sets the loopback callback port. Grok also accepts `--client-id`.
+- `logout --revoke` requests upstream revocation.
+- `login`, `refresh` and `logout` accept `--proxy`.
+
+Callbacks listen on `127.0.0.1`. Login checks issuer, client and subject. Inference never starts login or refresh.
+
+## Configure the gateway
+
+Create a private `gateway.json` in the store, or select a different file with `--config`. This example uses a synthetic ingress token; replace it with a private random token of 32–4096 bytes:
 
 ```json
 {
@@ -23,118 +109,130 @@ cargo run --locked --offline --bin morphiecore -- --credentials-dir /path/to/sto
 }
 ```
 
+Replace `configured-public-model` with a catalog label whose credential pool is configured.
+
 | Field | Meaning |
 |---|---|
-| `client_key` | Downstream Bearer token; unrelated to upstream keys |
-| `bind` | Loopback address, default `127.0.0.1:8080` |
+| `client_key` | Required ingress token, separate from upstream credentials |
+| `bind` | Loopback listener; default `127.0.0.1:8080` |
 | `proxy` | Outbound proxy |
-| `models` | Public models to enable. If omitted, the default chat bindings with configured pools are enabled; media, Embedding, audio-input and native Messages models must be listed explicitly |
-| `max_attempts` | Global attempt ceiling (1–64) |
-| `responses_via_chat` | Subset of `models` whose Responses entry uses the model's Chat upstream instead |
-| `failover` | Per listed model, its Providers in failover order, e.g. `{"glm-5.3": ["openrouter", "zhipu"]}`. Each needs a pool; unlisted Providers are not used. Without it, every Provider with a pool serves in catalog order |
-| `implicit_cache_affinity` | Implicit cache-affinity index, default `true` |
-| `diagnostics` | Local diagnostics metadata file (must be new; never records bodies) |
+| `models` | Public labels to activate |
+| `max_attempts` | Optional global attempt ceiling, 1–64 |
+| `responses_via_chat` | Listed models whose Responses entry uses their Chat endpoint |
+| `failover` | Map from a listed model to its ordered Provider IDs; each needs a pool |
+| `implicit_cache_affinity` | Best-effort prefix index; default `true` |
+| `diagnostics` | Path for a new private diagnostics file; no bodies are recorded |
 
-Unknown fields, unknown or duplicate models, and models without a matching pool all fail startup. Available models, protocols and upstream bindings are defined in `src/topology/catalog*` and `src/gateway/startup/bootstrap.rs`.
+Explicit `models` selection is recommended. If omitted, eligible generation bindings with pools are activated. Standalone media, Embeddings, audio-input and native Messages bindings require explicit selection.
 
-## HTTP API
+For models covered by `failover`, only the named Providers are used. Otherwise available bindings follow catalog order. Configuration is not an upstream parameter bag: unknown fields, duplicate or unknown models, and models without a matching pool fail startup.
 
-| Method and path | Purpose |
-|---|---|
-| `GET /v1/models`, `GET /v1/models/{model}` | Enabled public models; `DELETE` on an enabled model returns 403 |
-| `POST /v1/responses` | Responses, JSON or SSE |
-| `POST /v1/chat/completions` | Chat Completions, JSON or SSE |
-| `POST /v1/messages` | Anthropic Messages for Claude Code, JSON or SSE; any public model with a Chat entry. The key may come as `x-api-key`; errors use Anthropic's envelope |
-| `POST /v1/embeddings` | Text float vectors |
-| `POST /v1/images/generations` | Static image generation |
-| `POST /v1/audio/speech` | Text to speech, binary audio |
-| `POST /v1/audio/transcriptions` | WAV/MP3 multipart transcription |
+Exact activation rules are in [bootstrap.rs](../src/gateway/startup/bootstrap.rs).
 
-- Auth: exactly one `Authorization: Bearer <client_key>`, checked before the body is collected.
-- `model` accepts only enabled public labels. Upstream origin, model and auth come from trusted bindings; inbound headers are not forwarded.
-- Optional `X-MorphieCore-Conversation-Id` (1–256 visible ASCII characters, no commas, at most one): keep it stable for one logical conversation, across model switches. The gateway derives upstream cache/session carriers from it. It does not mean the server stores history; send the full history every turn. Without it, an agent's declared session header is read the same way: opencode `X-Session-Id`, pi `session_id` (pi's Chat API sends it only with `compat.sendSessionAffinityHeaders: true`), Codex `session-id`.
-- Provider `session_id` in the body is rejected; `prompt_cache_key` is kept as a separate cache group.
-- Public API summary: [openapi.json](openapi.json).
+## Start the gateway
 
-Minimal requests:
+```sh
+cargo run --locked --offline --bin morphiecore
+```
+
+Override paths or proxy when needed:
+
+```sh
+cargo run --locked --offline --bin morphiecore -- \
+  --credentials-dir /path/to/store \
+  --config /path/to/gateway.json \
+  --proxy http://127.0.0.1:7890
+```
+
+Proxy precedence is CLI → config → environment proxy settings. A failing explicit proxy does not fall back to a direct connection.
+
+Ctrl-C shuts down the listener and cancels in-flight upstream work.
+
+## Send a request
+
+Set the SDK `base_url` to `http://127.0.0.1:8080/v1` and `api_key` to the ingress `client_key`. Anthropic clients use the bare origin, `http://127.0.0.1:8080`.
+
+Send JSON with `Content-Type: application/json` and exactly one credential header:
+
+- `Authorization: Bearer <client_key>`, or
+- `x-api-key: <client_key>`.
+
+Both forms work at ingress. Repeated headers or both forms together are rejected, even if they carry the same token.
+
+### Responses
 
 ```json
 {"model":"configured-public-model","input":"Reply with exactly pong.","max_output_tokens":64}
 ```
 
+### Chat Completions
+
 ```json
 {"model":"configured-public-model","messages":[{"role":"user","content":"Reply with exactly pong."}],"max_completion_tokens":64}
 ```
 
-With an SDK, set `base_url` to `http://127.0.0.1:8080/v1` and `api_key` to `client_key`.
-
-### Errors
-
-Error bodies are `{"error":{"message","type","param","code"}}` and never echo upstream bodies, credentials or origins.
-
-| HTTP | Cause |
-|---|---|
-| 400 | Invalid request, semantics the target cannot express, duplicate JSON keys, output cap exceeded |
-| 401 | Ingress auth missing, wrong or repeated |
-| 404 / 405 | Model or route not available / method not allowed |
-| 408 / 413 / 415 | Body collection timeout / body too large / unsupported media type |
-| 429 | Concurrency full or upstream rate limit |
-| 502 / 504 | Upstream status, protocol or projection failure / timeout |
-| 503 / 500 | Shutting down or credentials unavailable / local fault |
-
-Once a stream has sent its first frame, an error can only abort the connection; no success terminal is sent. Resource limits are in `Limits` in `src/gateway/startup/config.rs`.
-
-## Credentials
-
-Manage credentials with `morphiecore-auth`. Store files contain secrets: never commit, print or hand-edit them while the service runs. On Unix the directory and files must be `0700`/`0600`; unsafe permissions are rejected, not repaired.
-
-```sh
-install -d -m 700 "$HOME/.local/share/morphiecore/credentials"
-cargo build --locked --offline --bin morphiecore-auth
-```
-
-### API keys
-
-Keys are read from private files, never from command-line arguments:
-
-```sh
-morphiecore-auth api-key add     --domain "$PROVIDER_ID" --alias "$ALIAS" --secret-file /path/to/key
-morphiecore-auth api-key list    --domain "$PROVIDER_ID"
-morphiecore-auth api-key replace --domain "$PROVIDER_ID" --alias "$ALIAS" --revision "$REV" --secret-file /path/to/key
-morphiecore-auth api-key disable|enable|remove --domain "$PROVIDER_ID" --alias "$ALIAS" --revision "$REV"
-```
-
-Re-read the revision after every change; stale revisions are rejected. `remove` deletes the local secret only and does not revoke the upstream key.
-
-### Pools
-
-Only credentials in a pool are used for inference. A pool file holds references and policy only:
+### Messages
 
 ```json
-{
-  "members": [{"kind": "api_key", "alias": "primary"}, {"kind": "api_key", "alias": "backup"}],
-  "fallback": true,
-  "max_attempts": 2
-}
+{"model":"configured-public-model","messages":[{"role":"user","content":"Reply with exactly pong."}],"max_tokens":64}
 ```
 
-```sh
-morphiecore-auth pool set --provider "$PROVIDER_ID" --binding "$BINDING_ID" --revision 0 --file /path/to/pool.json
-morphiecore-auth pool list
-```
+Use `"stream": true` for SSE. Send the full history each turn; the gateway does not store conversation history.
 
-OAuth members are `{"kind":"oauth","profile":"…","alias":"…"}`. `fallback` is off by default; when on, the next member is tried only for pre-commit connect failures, timeouts, 5xx or locally unavailable credentials. 401/403 and 429 of unknown scope do not advance.
+Return reasoning carriers unchanged in later history. Chat clients must preserve `reasoning_details`, not just readable text. See [Reasoning replay](architecture.md#reasoning-replay).
 
-### OAuth
+## HTTP API
 
-```sh
-morphiecore-auth grok login --account personal [--method browser]
-morphiecore-auth openai login --account personal [--consent]   # ChatGPT subscription (SIWC), not a Platform API key
-morphiecore-auth list
-morphiecore-auth openai refresh|logout --account personal [--revoke]
-```
+| Method and path | Purpose |
+|---|---|
+| `GET /v1/models` | List activated public models |
+| `GET /v1/models/{model}` | Retrieve an activated public model |
+| `DELETE /v1/models/{model}` | Denied: 403 for an activated model, 404 otherwise |
+| `POST /v1/responses` | Responses, JSON or SSE |
+| `POST /v1/chat/completions` | Chat Completions, JSON or SSE |
+| `POST /v1/messages` | Messages, JSON or SSE, using the model's Chat candidates |
 
-- Callbacks listen on `127.0.0.1` only; login results must pass issuer, client and subject checks.
-- Inference requests never log in or refresh; refresh and revocation are explicit.
-- Grok defaults to the device flow; SIWC supports browser only. `--callback-port` sets the callback port; Grok accepts `--client-id`.
-- Every subcommand accepts `--store` to override the default directory; `login`, `refresh` and `logout` accept `--proxy` to override environment proxies.
+Frozen endpoints require explicit model activation:
+
+| Method and path | Purpose |
+|---|---|
+| `POST /v1/embeddings` | Text input, float vectors |
+| `POST /v1/images/generations` | Static inline images |
+| `POST /v1/audio/speech` | Binary audio |
+| `POST /v1/audio/transcriptions` | One WAV/MP3 multipart upload |
+
+The [OpenAPI summary](openapi.json) describes envelopes and selected constraints, not full vendor API conformance. Codecs define exact admission. Business input cannot choose an upstream origin, credential or auth header; inbound headers are not forwarded.
+
+## Conversation and cache affinity
+
+Use `X-MorphieCore-Conversation-Id` for one logical conversation. Keep it stable across turns and model changes. Use a new ID for a new conversation.
+
+The ID must be 1–256 visible ASCII characters, without commas, in one header. If it is absent, ingress checks these agent headers in order:
+
+1. opencode: `X-Session-Id`
+2. pi: `session_id`
+3. Codex: `session-id`
+
+pi's Chat integration sends its session header only with `compat.sendSessionAffinityHeaders: true`.
+
+This ID groups routing and cache affinity; it does not store history. Body `session_id` is rejected. Standard `prompt_cache_key` is a separate cache-grouping intent. Without a declared conversation, the optional prefix index offers best-effort cache reuse, not executor affinity or replay permission.
+
+## Errors and limits
+
+OpenAI routes return `{"error":{"message","type","param","code"}}`. Messages handler errors use Anthropic's `{"type":"error","error":{"type","message"}}` envelope. Authentication fails before the handler and uses the OpenAI envelope on every route.
+
+| HTTP | Meaning |
+|---|---|
+| 400 | Invalid or unrepresentable request, context overflow, output cap exceeded |
+| 401 | Missing, wrong or ambiguous ingress credential |
+| 404 / 405 | Unknown model or route / unsupported method |
+| 408 / 413 / 415 | Body timeout / body too large / unsupported media type |
+| 429 | Gateway busy, upstream rate limit or exhausted quota |
+| 502 / 504 | Upstream or projection failure / upstream timeout |
+| 503 / 500 | Shutdown, unavailable credentials or upstream overload / local fault |
+
+Messages maps exhausted quota to 402 and upstream overload to 529. Reported rate-limit resets may appear as `Retry-After`.
+
+A Responses stream with classified context overflow or exhausted quota may return HTTP 200 with `response.failed`. HTTP 200 alone does not mean success. After body publication, errors can only report failure or abort delivery; no candidate replay or fabricated success terminal is allowed.
+
+Resource defaults and bounds are in [Limits](../src/gateway/startup/config.rs). Configuration fields above do not expose every embedded-library limit.

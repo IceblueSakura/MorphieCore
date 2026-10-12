@@ -1,165 +1,271 @@
 # Architecture
 
-MorphieCore is a central gateway for a few agents (pi and opencode first, Codex and Claude Code second) that hides Provider differences from their agent loops. It accepts standard client protocols downstream, calls different Provider protocols upstream, and passes everything through one typed semantic representation in between. This page records principles and settled decisions; code and tests define behavior, and the [roadmap](roadmap.md) sets the order of work.
+MorphieCore translates client and Provider protocols through one typed semantic IR. It is a gateway, not an agent loop: planning, memory and tool execution belong to the caller.
 
-## 1. Target protocols
+This page records design principles and settled decisions. Code and tests define behavior; [Roadmap](roadmap.md) sets scope and direction.
 
-| Direction | Protocol | Status |
-|---|---|---|
-| Downstream | OpenAI Chat Completions (declared losses, extension fields for missing semantics) | Live; pi and opencode |
-| Downstream | OpenAI Responses | Live; pi, opencode and Codex |
-| Downstream | Anthropic Messages | JSON and SSE, for Claude Code. Uses each model's Chat candidates; `is_error` is dropped by name when a non-native target may serve |
-| Upstream | OpenAI Responses and Chat, including compatible dialects | Live |
-| Upstream | Anthropic Messages | JSON and SSE; directory bootstrap activates a binding only when `models` lists it |
-| Upstream | Google generateContent | Live; always streamed upstream |
-| Upstream | Google Interactions | Live; stateless full-history steps, always streamed upstream |
+## Contents
 
-The standalone Embeddings, Images, Speech and Transcription endpoints exist but are frozen: maintenance only, as refactors require.
+- [Protocols](#protocols)
+- [Layers and data flow](#layers-and-data-flow)
+- [Semantic IR](#semantic-ir)
+- [Adaptation](#adaptation)
+- [Reasoning replay](#reasoning-replay)
+- [Chat reasoning extensions](#chat-reasoning-extensions)
+- [Failover](#failover)
+- [Streaming and delivery](#streaming-and-delivery)
+- [Native Messages projection](#native-messages-projection)
+- [Conversation and cache affinity](#conversation-and-cache-affinity)
+- [Credentials and security](#credentials-and-security)
+- [Settled decisions](#settled-decisions)
 
-## 2. Layers and data flow
+## Protocols
 
-```text
-downstream HTTP (auth, bounded collection)
-  → downstream codec: wire → IR request
-  → validation / requirements
-  → for each candidate of the fixed Route: lowering (project to target caps) → upstream codec: IR → wire
-  → transport (trusted origin, auth, timeouts)
-  → upstream codec: JSON / SSE → IR response or StreamEvent
-  → downstream codec: IR → JSON / SSE → body delivery
-```
-
-| Module | Role | Constraint |
-|---|---|---|
-| `semantic` | IR types, validation, requirements, event reducer | No dependency on protocol, provider or execution |
-| `protocol` | Per-protocol codecs, adapters, capabilities and dialects; protocol-owned representation checks and named losses | Pure; projections touch only the candidate's private copy, never network, credentials or registry |
-| `lowering` | Cross-protocol `TargetCaps`, shared representation errors and reporting; legacy projections for frozen tasks | Dispatch never replaces the protocol's own checks |
-| `adapter` | Generic request, context and replay isolation, dispatch to the selected upstream; legacy adapters for frozen tasks | Rules are chosen by trusted bindings, never by business input |
-| `topology` | Static compilation of Public Model → Route → Endpoint | An Endpoint fixes origin, path, protocol, upstream model and credential scope |
-| `execution` | Candidate planning, request preparation, incremental intake, delivery state | Does not interpret business semantics |
-| `transport` | HTTP I/O and SSE framing | Accepts only prepared, trusted requests |
-| `credential` | File store, API keys, OAuth drivers, ordered pools | Credentials never enter the IR |
-| `gateway` | Auth, admission, budgets, body publication and cancellation | Loopback only |
-
-`lowering::target::TargetCaps` separates OpenAI targets from native Messages targets; protocol and capability family must match. `protocol::openai::{Adapter, Dialect, TargetCaps}` is the OpenAI entry point, with dialect data in `dialect::adaptation` and representation checks, named losses and stream checks in `protocol::openai::lowering`. Chat and Responses each own their envelope and SSE codecs; content mappings and event state remain shared where their contracts require it. `protocol::stream` owns shared SSE limits and errors, while OpenAI owns its padding rules. The projection of native Messages observations onto OpenAI delivery also lives in OpenAI lowering. `protocol::anthropic` owns the Messages profile, dialect, limits, cache carriers, request projection and session headers; it never borrows the Chat adapter or OpenAI switches. Its replay target derives from the Endpoint's Provider and upstream model, with no extra configuration.
-
-Protocol modules expose only the codec and stream interfaces they need. Native response intake takes the selected history and replay target explicitly. Downstream protocols are added per the roadmap; there is no prebuilt plugin framework.
-
-## 3. IR principles
-
-Long-lived invariants:
-
-- **Ordered heterogeneous items.** Generation history is an ordered list of items (instructions, messages, tool calls and results, reasoning, Provider tool observations). A Message is one container among them. Calls and results link by call ID, never by position or name.
-- **Separate identities.** Local item/part IDs, wire IDs, call IDs and stream indexes are distinct; unreported identities are never presented as upstream-reported.
-- **Exact JSON.** Tool arguments and schemas keep numeric precision and key order. Raw parsing rejects duplicate keys and bounds depth, nodes and bytes.
-- **Presence where it matters.** Absent, null, empty and default are distinguished where meanings differ (tool arguments, schemas, usage), not mechanically for every field.
-- **Layered reasoning.** Readable content (summary, text) is separate from opaque continuation payloads. Effort, budget and display are controls, not output.
-- **Honest usage.** Unreported values are not zero-filled, cumulative snapshots are not summed, derived values are not stored as reported.
-- **Honest terminals.** Response closure, artifact completeness and turn progress (awaiting tool results or done) are separate. Failure, truncation and cancellation never become success.
-- **No runtime state.** Selected targets, credentials, retries and commit state stay out of the IR.
-- **Context mode.** Clients currently resend the full history each turn (ClientManaged). Gateway-managed, time-limited `previous_response_id` history is the end goal; it will materialize the same full IR and use the same pipeline.
-
-The IR is neither a protocol DTO nor a union of fields. When it cannot express a concept, first present a minimal counterexample and structural options, then decide; never work around it with private adapter fields.
-
-## 4. Adaptation rules
-
-### Field tiers
-
-| Tier | Scope | Handling |
-|---|---|---|
-| Must preserve | Instructions, message order, tool definitions, arguments, call IDs and result links, required opaque continuations, stop reasons, core usage | Reject when the target cannot express it |
-| Degradable | Unsupported sampling parameters, `metadata`, `service_tier`, `logprobs`, usage detail and similar | Remove from the candidate copy by a named rule and record in diagnostics |
-| Unknown | Unregistered fields in upstream responses and downstream requests | Ignore; registered fields stay strict. Ignored request field names (never values) are recorded, and nothing unregistered is forwarded. Unknown discriminators (`type`, `role`) are rejected, since ignoring them drops content |
-
-- **Upstream responses:** strict on known fields (type, value, relations), ignore unknown ones. New upstream fields must not break the gateway. Unregistered Responses stream event types are skipped, as Codex does, and only their count reaches diagnostics; registered content and terminal events stay strict.
-- **Downstream requests:** expressible fields follow the table; critical semantics the target cannot express return 400 and are never silently dropped. Trusted configuration (`gateway.json`) stays closed. Generation requests from clients decode in an explicit client direction that ignores unregistered fields at any depth and keeps up to 32 names for diagnostics; gateway-built requests and frozen media requests stay closed. Codex's `client_metadata` (installation, session and turn IDs) is such a field: no target receives it.
-- **Explicit parse direction:** the shared OpenAI reader distinguishes requests, upstream reports and encoder self-checks. Nested items inherit the direction of their parent; SSE snapshot pre-validation counts as upstream. The policy uses no thread-local or ambient state.
-- Losses apply only to each candidate's private projection; the source IR is unchanged. Static and streaming paths share the same rules.
-- **Append-only projection.** For a fixed target, the projection of earlier history is byte-identical from one request to the next and never depends on later turns; only cache markers may move. Cache hits need it, and Anthropic's preserved-thinking prefix check rejects (400) or drops every thinking block after any earlier edit. Rules keyed on "the current turn" or on request position are therefore not allowed for history.
-
-### Opaque reasoning replay
-
-Every upstream-issued opaque value (OpenAI `encrypted_content`, Anthropic thinking `signature`, Gemini `thoughtSignature`, Interactions step signatures) reaches clients in one **tagged envelope**:
-
-```text
-{version, upstream Provider, upstream model, format, raw payload}
-```
-
-- The envelope is `mc1.` plus base64url JSON carrying stable Provider/model fingerprints, the native format and the payload. Public model aliases, credentials and ingress keys are not part of the fingerprint.
-- On replay, the native payload is restored only when both Provider and model match the current target. Otherwise the value is dropped, along with any reasoning item left empty. Readable reasoning passes to a different target as plain assistant text in every turn, by a named lossy rule, as pi does. The native Messages target does this for any reasoning without its own signature. OpenAI targets do it for reasoning whose replay value was dropped, so no issuer item ID reaches them; reasoning that never carried a value keeps its kind, since it may be the target's own (DeepSeek `reasoning_content`). An item's kind is protected under its ID, so the candidate copy gives the text a fresh ID in a reserved derived scope and moves envelope membership to it. Bare, corrupt or unknown-version envelopes never go upstream.
-- No encryption, HMAC or local prefix proof: the tag is a compatibility hint, not authentication, and cannot select route, origin or credential. The issuing upstream validates signatures and rejects tampering.
-- A same-target value without a matching carrier is still rejected, not silently dropped.
-- Thinking from Anthropic Sonnet 5.5 and Haiku 5.5 is also bound to the producing account; another account's request silently drops it. The envelope stays Provider and model only; target affinity on the exact credential keeps a conversation on its account, and a credential fallback loses that reasoning rather than failing.
-- Carriers today: Responses reasoning `encrypted_content` and Chat `reasoning.encrypted` `data`, static and streaming; native Anthropic thinking, Gemini `thoughtSignature` and Interactions step signatures reuse the same envelope.
-
-### Chat extension fields
-
-When Chat Completions cannot carry a semantic such as reasoning, MorphieCore follows OpenRouter's existing shapes instead of inventing its own:
-
-- `reasoning` (readable text) and `reasoning_details` (ordered array) on the assistant `message` and stream `delta`. Elements have `type` `reasoning.text` (`text`, optional `signature`), `reasoning.summary` (`summary`) or `reasoning.encrypted` (`data`), plus shared `id`, `format` and `index`.
-- Signatures and encrypted payloads use the envelope above. Clients must return `reasoning_details` unchanged; the gateway restores or drops values by the rules above.
-- One assistant message carries the ordered reasoning items ahead of it. Each replay value closes its item, so adjacent items without values merge into one. Output indices are positions in the message; client input does not check index values or `format` labels, because pi and opencode merge streamed deltas of one type and keep the first index; opencode also returns the `reasoning_content` view, which must equal the details. The readable view (`reasoning_content`) is the concatenation of the readable details, and each streamed readable delta carries both, with no empty opener.
-- Further extension fields are added one at a time and registered here. The old `_openbridge` attachment does not return.
-
-## 5. Execution and delivery
-
-- Startup compiles Public Model → Route → the legal Endpoints. Business input cannot create candidates or name one; each candidate projects independently from the same immutable IR. Compiled order is the default; trusted runtime policy (cooldown, target affinity on gateway-observed executors) may reorder within the legal set. Fixed candidate order was an initial simplification, not an invariant. Message, tool and schema order inside a projection stays deterministic for cache hits; that order is an invariant.
-- Fallback is opt-in, happens only before content is published downstream, and only for advanceable failures: connect/transport errors, timeouts, 5xx, locally unavailable credentials, and a 2xx whose body is not an API reply (an HTML page, an empty body, non-JSON under a JSON type). A rate limit advances to another Provider and exhausted quota to another key or Provider; rate limits, exhausted quota and rejected credentials also cool the executor (credential × Provider × upstream model) until the reported reset or a minute, at most an hour, moving it to the end of later candidate lists. A declared conversation goes first to the executor that last completed it honestly and stays there after a failover. Both states are in memory and bounded. A public model with several catalog bindings compiles to one route in failover order (the configured Provider order, else catalog order) that skips candidates unable to serve the request. 401/403, context overflow, and protocol or projection errors do not advance. While another candidate could still answer, lifecycle-only frames (`response.created`, the Chat role chunk, `message_start`, message and reasoning openers) are held until the first content, up to 64 KiB or 20 s, so a pre-content stream error, an unusable reply or a non-API 2xx (HTML, a missing or foreign type) fails over unseen.
-- Publishing the first content frame freezes the candidate; handing over the body commits; completion requires strict upstream EOF and the final hand-off. Later errors can only abort the body: no splicing another attempt, no fabricated success terminal. Response headers, lifecycle-only frames and SSE comment keep-alives do not freeze the candidate.
-- Upstream SSE and downstream delivery are independent: JSON clients get a bounded aggregate, SSE clients get incremental delivery.
-- Bodies, frames, event counts and time are bounded. Client disconnect, timeout or shutdown cancels the upstream request.
-
-### Native Messages delivered to OpenAI clients
-
-- Requests are assembled into native messages by item role, preserving the relative order of thinking, `tool_use` and `tool_result` and their call IDs. Stateless defaults such as `store: false` are not sent upstream; `include: ["reasoning.encrypted_content"]` selects the downstream carrier only and does not change native thinking.
-- OpenAI reasoning controls map to adaptive thinking: effort → `output_config.effort`, a requested summary → `display: "summarized"`, a disabled summary → `"omitted"`; with no summary, `thinking` stays absent (the 5.x default). Named rules record what does not map: `none`/`minimal` effort sent as `low` (disabling thinking is model-specific on 5.5), concise/detailed summaries as summarized, dropped `reasoning.context`, and dropped `temperature`/`top_p` (5.x rejects non-default sampling). Call IDs outside `^[a-zA-Z0-9_-]{1,64}$` become a stable digest; a collision fails as a duplicate call. Diagnostics list the applied rule names per candidate.
-- Every native request carries top-level `cache_control: {"type": "ephemeral"}`, so the API places and advances the breakpoint, like OpenAI's implicit caching. Below the model's minimum prompt length nothing is cached. Breakpoints are placed by hand only if a relay rejects the field.
-- Stop reasons: `stop_sequence` completes the turn; `max_tokens` and `model_context_window_exceeded` are truncation; `refusal` is an incomplete answer with reason `content_filter`, so output before it is never presented as complete. `pause_turn` needs server tools and is rejected.
-- Native observations stay unchanged. Only the delivery copy drops container boundaries, serializes structured tool arguments to exact JSON strings, and expresses turn progress with OpenAI terminals and tool calls.
-- Chat carries leading thinking blocks, then text, then tool calls. Text after tools or interleaved thinking is rejected rather than reordered. Responses keeps independent item order.
-- Cache-inclusive input and total are computed only when input, cache-read, cache-write and output are all reported; otherwise `usage` is `null`. Invalid or overflowing usage still fails.
-- The native protocol has no creation time. The OpenAI delivery copy fixes one when the gateway creates the delivery object, shared by all frames, and does not present it as upstream-reported.
-- Native SSE maps frame by frame to `StreamEvent`, reusing static stop/usage semantics and the target projection. Text, thinking and tool argument deltas stream; signature fragments do not, and the full payload is enveloped once the block closes and validates.
-- `message_stop` is not transport EOF. The success terminal waits for strict EOF, where Chat closes ordinary item state with the final stop reason. A truncated transport aborts the body with no fabricated `completed` or `[DONE]` and no replay. SSE intake can still aggregate into JSON delivery.
-
-## 6. Cache affinity
-
-- The optional `X-MorphieCore-Conversation-Id` header, or else an agent's declared session header (opencode `X-Session-Id`, pi `session_id`, Codex `session-id`), names a Provider-neutral logical conversation; the gateway derives each upstream's session or cache carriers from it. Provider session headers such as `x-opencode-session` are never read.
-- Standard `prompt_cache_key` is a separate cache-grouping intent.
-- Without a conversation ID, a short-TTL prefix-digest index reuses cache groups on a best-effort basis. It can be dropped at any time, misses only lose cache hits, and it is neither history storage nor part of replay decisions. Histories with opaque reasoning are excluded.
-- Implicit cache scope stays isolated by ingress key, credential source and public model; it does not reuse the replay fingerprint.
-
-## 7. Credentials
-
-- Credentials come only from the application's own file store: no keys from environment variables, no third-party auth caches.
-- One manager owns API keys and OAuth (Grok, ChatGPT subscription SIWC). Inference uses explicitly configured ordered pools and borrows short-lived access views per fixed identity.
-- Requests never trigger login or refresh. Credentials, locators and upstream origins never reach clients.
-
-## 8. Settled decisions
-
-| Decision | Summary |
+| Direction | Protocols |
 |---|---|
-| Functional module ownership | Keep the architectural root boundaries; group internal code by domain and expose deliberate type and codec entry points. Directories follow the Rust module tree. Request transforms remain children of their private request owner; stream grammar, state, reduction and materialization share one stream boundary. No compatibility-only module aliases or generic plugin framework |
-| One semantic core | One IR serves the gateway and a future Agent library; planning, memory and tool execution belong to the caller |
-| Separate tasks | Generation, Embedding, Images, Speech and Transcription each have their own contract, not a universal message container |
-| Pure codecs and lowering | No network, credentials or registry; encode from the final IR, never patch JSON afterwards |
-| Layered capabilities | Semantic capability, wire representation, execution properties and downstream promises are declared separately; public capability is not the union of candidates |
-| Legal candidates, pre-content fallback | Compiled order by default; trusted runtime ordering within the legal set; see §5 |
-| Failover, not load balancing | A public model's bindings form a failover order. Runtime policy only skips cooling or excluded executors and keeps a conversation on its last honest executor for cache and account-bound thinking; no weights, rotation or load spreading |
-| Conversation is the routing unit | Target affinity, failover state and cache carriers attach to the declared conversation (session) as a whole. Turns and messages are not routing units: no turn-boundary detection, no branch or subtask keys from message content, no per-turn holds, rules or effort. Magpie's turn and branch routing is not adopted |
-| Downstream response identity | An unreported upstream response ID stays absent. Delivery generates an ID only on its downstream copy, stable within that response. This is not a session ID, routing input or history key; it does not enable stored history or `previous_response_id`. Protocols requiring an upstream ID still reject its absence |
-| Agents as oracles | Target agents' observed parsing, history and retry behavior at pinned revisions decide acceptance alongside the protocol schema |
-| Held streams | Follow the structure of Magpie's user-validated held-stream design: while another candidate could answer, hold until first content, keep clients alive with SSE comments, advance on pre-content errors. Decide on typed stream events and trusted bindings, not model-name or byte heuristics |
-| Lenient downstream fields | Unknown request fields are ignored and recorded; unknown discriminators are rejected |
-| Cross-target thinking as text | On a Provider or model switch, readable reasoning becomes plain assistant text in every turn; opaque values never cross |
-| Append-only projection | Earlier history projects byte-identically for a fixed target; see §4 |
-| Agent error classes | Upstream failures reach clients as context overflow (400 `context_length_exceeded`), quota (429 `insufficient_quota`), rate limit (429 `rate_limit_exceeded`, `Retry-After`), overloaded (503 `server_is_overloaded`) or other (502), with OpenAI's codes and gateway-authored text that pi, opencode and Codex recognize. Upstream error bodies and Anthropic in-stream `error` events are read, bounded, for classification only. Codex reads overflow and quota only from a streamed `response.failed`, so a Responses stream that fails before its first frame still answers 200 with `response.failed`; after headers a classified failure ends the stream with `response.failed` or a Chat error chunk, never a success terminal |
-| Refusals are answers | A safety refusal is delivered and never retried, on the same model or another; a refusal after content is an incomplete answer |
-| Non-API 2xx is a failure | Classified like a 5xx before content is published |
-| Target affinity binds the exact credential | The binding names Endpoint, credential identity and upstream model; a different credential is a different cache domain. API keys are identified by binding plus an in-memory material fingerprint, OAuth by verified principal, so key rotation drops the binding and token refresh keeps it |
-| Minimal HTTP gateway | Loopback listener, single Bearer ingress auth, no inbound header pass-through |
-| Open upstream decoding | Strict on known fields, ignore unknown ones |
-| Gemini signatures as reasoning | A generateContent `thoughtSignature` travels as a reasoning item whose value names its anchor part (call ID, thought, or tail), so every downstream reasoning carrier returns it and the encoder restores it by anchor, not by position. Signature-only items trail the response, keeping a message contiguous with its calls; Chat carries them ahead of the message |
-| Stateless Interactions | `/v1/interactions`, `store: false`, full history, no `previous_interaction_id` or revision header. Thought signatures and call-ID-anchored signatures travel as reasoning items; the IR has no part- or call-level replay slots. Provider-tool replay remains independent. Interactions and generateContent are separate replay formats; foreign values are dropped, not translated. Preserve both signatures even when an upstream sample accepts an omitted one. Stateless requests can use implicit caching |
-| Opaque envelope | No encryption or local proof; restore on same Provider and model, otherwise drop |
-| Chat extensions | OpenRouter shapes for semantics Chat cannot express |
-| File credentials and ordered pools | Authorization lifecycle is separate from inference borrowing; no automatic refresh or load balancing |
+| Downstream | OpenAI Chat Completions, OpenAI Responses, Anthropic Messages |
+| Upstream | OpenAI Responses/Chat and compatible dialects, Anthropic Messages, Google generateContent, Google Interactions |
+
+Generation supports JSON and SSE. Google upstreams use streaming intake even for downstream JSON delivery. Interactions uses stateless, full-history requests.
+
+Downstream Messages uses a public model's Chat candidates; it does not imply a native Anthropic upstream. Standalone Embeddings, Images, Speech and Transcription have separate contracts and are frozen.
+
+Provider definitions, public models and bindings are maintained in [provider/catalog.rs](../src/provider/catalog.rs), [topology/catalog.rs](../src/topology/catalog.rs) and [gateway bootstrap](../src/gateway/startup/bootstrap.rs). Registration does not prove activation or live account access.
+
+## Layers and data flow
+
+```text
+downstream HTTP: authenticate and collect within bounds
+  → client codec: wire → IR
+  → validate requirements and resolve the trusted route
+  → prepare each candidate from the unchanged source IR
+  → target projection and upstream codec: IR → wire
+  → transport: trusted origin, auth and deadline
+  → upstream codec: JSON/SSE → IR response or events
+  → client projection and codec: IR → JSON/SSE
+  → acknowledged body delivery
+```
+
+| Module | Responsibility | Boundary |
+|---|---|---|
+| `semantic` | Task types, validation, requirements and stream reduction | No protocol, Provider or execution dependency |
+| `protocol` | Codecs, dialects, capabilities and named projections | No network, credentials or registry |
+| `lowering` | Cross-protocol capability dispatch and representation errors | Protocols own their representation checks |
+| `adapter` | Generic requests, replay isolation and upstream dispatch | Trusted bindings select rules |
+| `topology` | Compile public model → route → endpoints | Endpoints fix origin, path, model and credential scope |
+| `execution` | Candidate planning, preparation, intake and delivery state | No agent planning or tool execution |
+| `transport` | HTTP I/O and SSE framing | Prepared trusted requests only |
+| `credential` | Private store, API keys, OAuth and ordered pools | No credentials in the IR |
+| `gateway` | Ingress, startup, budgets, routing and cancellation | CLI listener is loopback only |
+
+Directories follow the Rust module tree. Keep architectural root boundaries; group internals by domain and expose deliberate entry points. Do not add compatibility-only aliases or a generic plugin framework.
+
+Request transforms stay with their request owner. Stream grammar, state, reduction and materialization share a stream boundary. Chat and Responses own their envelopes and SSE codecs; only genuinely shared content and state logic is shared.
+
+Protocol differences stay in protocol modules. Native Anthropic, Google and Interactions adapters do not borrow OpenAI switches.
+
+## Semantic IR
+
+The IR is neither a protocol DTO nor a union of vendor fields.
+
+- **Ordered items:** instructions, messages, tool calls/results, reasoning and Provider tool observations share one ordered history. A message is one container, not the whole conversation.
+- **Explicit links:** calls and results link by call ID, never position or name. Item IDs, part IDs, wire IDs and stream indexes remain distinct.
+- **Exact JSON:** arguments and schemas retain numeric precision and key order. Parsing rejects duplicate keys and bounds depth, nodes and bytes.
+- **Meaningful presence:** distinguish absent, null, empty and default where semantics differ, not mechanically for every field.
+- **Separate reasoning:** readable text and summaries are distinct from opaque continuation values. Effort, budget and display are controls.
+- **Shared resources:** request/response resources have one declaration table and scoped references. A URL match does not merge identities or authorize I/O.
+- **Owner-local replay:** typed replay belongs to its semantic owner. Resource identity, replay permission and runtime cache scope are different concepts.
+- **Honest usage:** missing counts are not zero; cumulative snapshots are not summed; derived counts are not reported counts.
+- **Honest terminals:** response closure, artifact completeness and turn progress are separate. Failure, truncation and cancellation never become success.
+- **No runtime state:** targets, credentials, retries and publication state stay outside the IR.
+
+Clients currently resend full history each turn. Future gateway-managed `previous_response_id` history will materialize the same full IR and use the same pipeline. Cache affinity is not history storage.
+
+When a concept cannot be expressed, show a minimal counterexample and structural options before changing the IR. Do not hide it in private adapter fields.
+
+## Adaptation
+
+### Field handling
+
+| Class | Handling |
+|---|---|
+| Must preserve | Preserve instructions, order, tools, arguments, call/result links, required continuations, stop reasons and core usage; reject an unrepresentable target |
+| Degradable | Apply a named rule to the candidate copy and record it; never silently patch the source |
+| Unknown | Ignore unregistered protocol fields; keep known fields strict and never forward unknown input |
+
+Upstream responses are strict on known types, values and relations. Unknown fields are ignored. Unknown Responses event types are skipped and counted; registered content and terminal events remain strict.
+
+Downstream generation requests ignore unregistered fields and record bounded field names, never values. Unknown content or role discriminators are rejected because ignoring them would lose content. Critical known semantics that a target cannot express return an error. Trusted configuration and frozen-task requests stay closed.
+
+Parsing direction is explicit: client input, upstream reports and encoder checks have different policies. Nested parsing inherits that direction; no ambient or thread-local policy is used.
+
+### Candidate-local projection
+
+Each candidate starts from the unchanged source IR. Static and streaming paths use the same named rules.
+
+Semantic support, wire representation, execution properties and client promises are separate capability layers. Public capability is not the union of all candidates.
+
+For a fixed target, earlier history projects byte-identically as later turns are added; cache markers may move. Rules must not reinterpret earlier content based on the current turn or request position. This protects cache prefixes and preserved-thinking replay.
+
+Native container boundaries may be omitted by a named client projection. Ordered items, exact arguments and call/result identity remain intact; a later Chat projection does not recover the original container ownership.
+
+## Reasoning replay
+
+Opaque upstream values reach clients in a tagged envelope:
+
+```text
+mc1. + base64url JSON: {o: issuer fingerprint, f: native format, d: payload}
+```
+
+The fingerprint binds Provider and upstream model. It does not include public aliases, credentials or ingress keys. Clients must treat the whole value as opaque.
+
+1. Restore the native payload only for the matching Provider/model and carrier.
+2. Drop foreign payloads and reasoning items left empty by that drop.
+3. Preserve readable foreign reasoning as assistant text through a named rule.
+4. Never send bare, malformed or unsupported-version envelopes upstream.
+5. Reject a same-target value if its required carrier is unavailable.
+
+Native Messages sends unsigned or foreign thinking as text. OpenAI targets do so when an opaque replay value was dropped; reasoning that never carried a value keeps its kind when representable. A changed item kind gets a derived identity in the candidate copy, not the issuer's identity.
+
+The envelope is not encryption, authentication or local proof. It cannot choose a route, origin or credential. The issuing upstream validates its payload.
+
+Some native thinking is account-bound. Exact-credential affinity helps preserve it, but Provider/model compatibility alone cannot guarantee replay after credential fallback.
+
+Carriers include Responses `encrypted_content`, Chat encrypted reasoning details, Anthropic thinking signatures, Gemini `thoughtSignature` and Interactions signatures. Gemini signatures carry semantic anchors, not positional guesses. generateContent and Interactions formats are not translated into each other.
+
+## Chat reasoning extensions
+
+Chat uses OpenRouter shapes for semantics its standard fields cannot carry:
+
+| Carrier | Meaning |
+|---|---|
+| `reasoning`, `reasoning_content` | Readable reasoning view |
+| `reasoning_details` | Ordered reasoning items for replay |
+| `reasoning.text` | `text`, optional `signature` |
+| `reasoning.summary` | `summary` |
+| `reasoning.encrypted` | Opaque `data` |
+
+Details may also carry `id`, `format` and `index`. Signatures and encrypted data use the replay envelope above. Clients return details unchanged.
+
+One assistant message carries the reasoning items ahead of it. A replay value closes its item; adjacent items without values merge. The readable view concatenates readable details.
+
+Streamed readable deltas carry both readable views and no empty opener. Client input does not rely on returned indexes or format labels because target clients merge fragments; duplicate readable views must agree.
+
+Register new extension shapes here one at a time. The old `_openbridge` attachment is rejected and never emitted.
+
+## Failover
+
+### Legal candidates
+
+Startup compiles a public model to a route with legal endpoints and credential candidates. Business input cannot create candidates or name an executor.
+
+Compiled order is the default. Runtime policy may prefer the conversation's last successful executor and move cooling executors to the end. Cooling candidates remain a last resort. This is failover, not load balancing.
+
+An executor is the exact credential × Provider × upstream model. API-key rotation changes its identity; OAuth token refresh preserves the verified principal. A different credential is a different cache domain.
+
+### Advancement
+
+Advancement requires enabled policy, an unpublished body, a remaining candidate and remaining attempt/time budget.
+
+| Failure | Advancement |
+|---|---|
+| Transport/connect failure, timeout, server failure, unavailable credential | Advance where the route or credential policy permits |
+| Exhausted quota | Next key or another Provider, where enabled |
+| Rate limit | Another Provider; do not rotate keys for unknown quota scope |
+| Authentication/permission failure, context overflow, request projection failure | Do not advance |
+| Safety refusal | Deliver it; never retry on another model |
+
+A non-API 2xx reply, such as HTML or an empty body, is not success. Invalid or truncated upstream intake can advance while unpublished. Downstream projection failures do not acquire retry permission.
+
+Rate limits, exhausted quota and rejected credentials cool an executor. Server errors and timeouts do not. Health and conversation affinity are bounded in-memory state.
+
+### Routing unit
+
+The declared conversation is the routing unit. Turns, messages, branches and inferred subtasks are not routing keys.
+
+After honest completion, later requests prefer that executor. A successful failover updates affinity. There are no weights, rotations, concurrency lanes or load-spreading rules.
+
+## Streaming and delivery
+
+When another candidate could answer, lifecycle-only frames are held before publication. Content releases the buffer; byte and elapsed-time bounds also release it. This lets a pre-publication failure advance without exposing the attempt.
+
+Publishing any body frame freezes advancement. Body handoff acknowledges commit. Completion requires validated upstream EOF and the final handoff.
+
+After publication:
+
+- Never splice another candidate into the body.
+- A classified upstream failure may produce a protocol failure frame.
+- Other failures abort delivery.
+- Never invent a successful terminal or replay the request.
+
+A Responses stream with context overflow or exhausted quota can return HTTP 200 with `response.failed` even before normal output, because Codex reads those classes from stream events.
+
+Upstream streaming and client delivery are independent. JSON clients receive a bounded aggregate; SSE clients receive incremental output. A native stop event is not transport EOF.
+
+Bodies, frames, event counts and deadlines are bounded. Client disconnect, timeout or shutdown cancels upstream work. Held-stream keep-alives remain [deferred](roadmap.md#only-if-needed).
+
+## Native Messages projection
+
+Native requests preserve thinking, tool-use/result order and call IDs. Messages owns its profile, cache controls, limits and session headers.
+
+### Request rules
+
+- Effort maps to adaptive thinking. `none`/`minimal` map to `low`; budgets use a named effort projection.
+- Summary intent maps to summarized or omitted display. Unsupported reasoning context and sampling controls are dropped by named rules.
+- A leading developer instruction maps to the system prompt by name.
+- Call IDs outside the native grammar map to stable digests; collisions fail rather than merge calls.
+- Each native request uses top-level ephemeral cache control. Cache hits still depend on upstream thresholds.
+- OpenAI stateless controls are not forwarded as native fields. Requesting an encrypted reasoning carrier selects delivery, not native thinking.
+
+Exact rules live in [semantic_request.rs](../src/protocol/anthropic/semantic_request.rs).
+
+### Response rules
+
+Native observations stay unchanged. OpenAI delivery projects a copy:
+
+- Chat requires leading thinking, then text, then calls; it rejects unrepresentable interleaving. Responses retains independent item order.
+- Structured tool arguments become exact JSON strings; call/result links remain intact.
+- Max-token/context limits are truncation. Refusal after content is incomplete. Unsupported server-tool continuation is rejected.
+- Cache-inclusive usage is computed only from complete reported operands; missing usage is not invented.
+- Delivery generates required IDs/timestamps only on its own copy, stable within the response. They are not upstream facts or stored-history keys.
+- Text, thinking and tool arguments stream incrementally. Full signatures are enveloped after block validation.
+
+## Conversation and cache affinity
+
+The explicit `X-MorphieCore-Conversation-Id` header takes precedence over agent session headers. See [Usage](usage.md#conversation-and-cache-affinity) for accepted headers and constraints.
+
+The gateway derives Provider-specific cache/session carriers; it does not read Provider session headers as conversation authority. Standard `prompt_cache_key` is a separate cache-grouping intent.
+
+Without a declared conversation, a short-lived prefix-digest index offers best-effort cache-group reuse. It stores no bodies, selects no credential and restores no history. Opaque-reasoning histories are excluded.
+
+Implicit cache scope is isolated by ingress key, credential source and public model. It is independent of the replay fingerprint. Losing the index loses cache hits, not correctness.
+
+## Credentials and security
+
+Credentials come only from the application's private store. A manager owns API keys, OAuth identities and ordered pools. Inference borrows access for a fixed identity; it never logs in or refreshes.
+
+Ingress accepts one configured token via Bearer or `x-api-key` and authenticates before body collection. Business data cannot select an origin, credential or auth/proxy header. Inbound headers are not passed through.
+
+Transport uses trusted prepared requests, no redirects and no implicit HTTP retries. Environment proxies require explicit startup opt-in. Credentials, locators, private config and upstream bodies never reach clients.
+
+## Settled decisions
+
+| Decision | Consequence |
+|---|---|
+| One semantic core | Gateway and future agent library share the IR; callers own agent behavior |
+| Separate task contracts | Generation, Embeddings, Images, Speech and Transcription are not one universal message type |
+| Pure protocol boundaries | Encode from final typed input; no network in codecs or post-encoding JSON patches |
+| Functional ownership | Keep root layers; organize internals by domain, without compatibility aliases or plugin frameworks |
+| Layered capabilities | Public promises are not the union of candidate features |
+| Declared adaptation | Named candidate-local losses; known fields strict, unknown protocol fields ignored |
+| Append-only history projection | Earlier content does not change when a later turn is added |
+| Scoped opaque replay | Restore only compatible native values; foreign readable reasoning becomes text |
+| Failover, not balancing | Legal candidates, bounded advancement and exact-credential affinity |
+| Conversation routing | No inferred turn, branch or message routing |
+| Honest delivery | Publication forbids advancement; success requires validated EOF and handoff |
+| Agent-shaped failures | Sanitized error classes match pinned client behavior; refusals are not retries |
+| Delivery-local identity | Generated client IDs/timestamps are not upstream facts or history keys |
+| Stateless Google Interactions | Full history, no stored interaction ID; signatures retain their native formats |
+| Separate credential lifecycle | Private file store and ordered pools; no inference-triggered login or refresh |
+
+Pinned clients and protocol sources are in [References](references.md). Observed client behavior is an oracle, not permission to weaken security or fabricate semantics.

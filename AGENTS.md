@@ -2,8 +2,8 @@
 
 ## Project and sources of truth
 
-- A central gateway built on one unified IR that hides Provider differences from a few agents' loops: pi and opencode first, Codex and Claude Code second. Downstream: OpenAI Chat Completions and Responses, Anthropic Messages. Upstream: OpenAI Responses/Chat, Anthropic Messages, Google generateContent and Interactions. Routing is cache-affine failover across a model's Providers and keys, never load balancing.
-- Design principles and settled decisions: [docs/architecture.md](docs/architecture.md). Direction, frozen scope and the current slice: [docs/roadmap.md](docs/roadmap.md).
+- MorphieCore is a gateway built on one typed IR. It hides Provider differences from agent clients: pi and opencode first, Codex and Claude Code second. Routing is cache-affine failover, never load balancing.
+- Principles and decisions: [Architecture](docs/architecture.md). Scope and current focus: [Roadmap](docs/roadmap.md). Local setup and API use: [Usage](docs/usage.md).
 - Code and tests define behavior; docs record only concepts, decisions and direction. For available Providers, models and bindings read `src/provider/catalog.rs`, `src/topology/catalog*` and `src/gateway/startup/bootstrap.rs`; never keep lists in docs or memory.
 
 ## Authorization
@@ -24,10 +24,10 @@
 
 - **One IR**: `src/semantic` does not depend on protocols, Providers or execution. Codecs and lowering are pure: no network, credentials or registry. Runtime targets, credentials and retry state stay out of the IR.
 - **Protocol differences stay in protocol modules**: no Provider-specific IR fields, no raw JSON request bags. When the IR cannot express a concept, first show the user a minimal counterexample and structural options, then implement.
-- **Parsing**: upstream responses are strict on known fields and ignore unknown ones. Downstream requests reject critical semantics they cannot express; degradable fields are removed by named rules and recorded (architecture §4).
+- **Parsing**: upstream responses are strict on known fields and ignore unknown ones. Downstream requests reject critical semantics they cannot express; degradable fields are removed by named rules and recorded. See [Adaptation](docs/architecture.md#adaptation).
 - **Keep it simple**: no prebuilt generic frameworks, extra defensive layers or speculative abstractions. Delete code that is no longer needed instead of keeping old paths. Every new check or limit needs a concrete failure scenario.
 - **Process**: for behavior changes, first state the goal and exit condition in the roadmap's current focus, then write tests first. Dependency changes update `Cargo.lock` and are verified with `--locked`.
-- Docs, code comments, docstrings and commit messages use concise English. Comments explain only non-obvious reasons, with source URLs when useful. Non-ASCII test inputs are data, not prose.
+- Docs, code comments, docstrings and commit messages use concise, direct English. Keep one main point per paragraph; use ordered steps for procedures and tables for comparisons. Comments explain only non-obvious reasons, with source URLs when useful. Non-ASCII test inputs are data, not prose.
 - Never inspect or edit `target/`, `.venv/` or `__pycache__/` by hand; never commit `testdata/{generated,reports,dist,runtime}/`.
 
 ## Tests
@@ -51,4 +51,4 @@ The suite is deliberately lean. Keep it that way; do not regrow it.
 
 - The doc set is fixed: `README.md`, `AGENTS.md`, `docs/architecture.md`, `docs/roadmap.md`, `docs/usage.md`, `docs/development.md`, `docs/references.md`, `docs/openapi.json`. No analysis pages, run reports or history (use Git).
 - Remove finished slices from the roadmap; record new decisions in the architecture decision table.
-- For Markdown-only changes, check links and run `git diff --check`.
+- For Markdown changes, check local paths and heading anchors and run `git diff --check`. For OpenAPI changes, also run the schema checks in [Development](docs/development.md#sdk-loopback-gate) and compare the summary with gateway code.

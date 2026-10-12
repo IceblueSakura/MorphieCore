@@ -31,11 +31,23 @@ class OpenApiSchemaTests(unittest.TestCase):
         for path, schema, body in (
             ("/v1/chat/completions", "ChatRequest", {"model": "synthetic", "messages": []}),
             ("/v1/responses", "ResponsesRequest", {"model": "synthetic", "input": "hello"}),
+            ("/v1/messages", "MessagesRequest", {
+                "model": "synthetic", "max_tokens": 64,
+                "messages": [{"role": "user", "content": "hello"}],
+            }),
         ):
+            validator(schema).validate(body)
             self.assertIn({"$ref": "#/components/parameters/ConversationId"},
                           DOCUMENT["paths"][path]["post"]["parameters"])
             for value in (None, "upstream-session"):
                 self.assertFalse(validator(schema).is_valid({**body, "session_id": value}))
+        messages = DOCUMENT["paths"]["/v1/messages"]["post"]["responses"]
+        self.assertIn("402", messages)
+        self.assertIn("529", messages)
+        self.assertEqual(messages["401"]["$ref"], "#/components/responses/Error")
+        self.assertFalse(validator("MessagesRequest").is_valid({
+            "model": "synthetic", "messages": [{"role": "user", "content": "hello"}],
+        }))
 
     def test_all_component_schemas_and_local_references_are_valid(self):
         for schema in SCHEMAS.values():
@@ -171,7 +183,11 @@ class ModelsSchemaTests(unittest.TestCase):
             self.assertFalse(check.is_valid(value))
 
     def test_paths_auth_and_deletion_denial_match_public_contract(self):
-        self.assertEqual(DOCUMENT["security"], [{"bearerAuth": []}])
+        self.assertEqual(DOCUMENT["security"], [{"bearerAuth": []}, {"apiKeyAuth": []}])
+        schemes = DOCUMENT["components"]["securitySchemes"]
+        self.assertEqual(schemes["apiKeyAuth"]["type"], "apiKey")
+        self.assertEqual(schemes["apiKeyAuth"]["in"], "header")
+        self.assertEqual(schemes["apiKeyAuth"]["name"], "x-api-key")
         paths = DOCUMENT["paths"]
         self.assertEqual(paths["/v1/models"]["get"]["responses"]["200"]["content"]
                          ["application/json"]["schema"]["$ref"], "#/components/schemas/ModelList")

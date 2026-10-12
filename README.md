@@ -1,42 +1,61 @@
 # MorphieCore
 
-A central gateway built on one unified IR that hides Provider differences from agent loops (pi and opencode first, then Codex and Claude Code). Clients speak OpenAI Chat Completions, Responses or Anthropic Messages; upstream Providers speak OpenAI-compatible, Anthropic Messages, Google generateContent and Interactions. The project is in core design and validation.
+MorphieCore is a local gateway that hides Provider differences from agent clients. It translates requests and responses through one typed intermediate representation (IR).
 
-## Status
+Clients use OpenAI Chat Completions, OpenAI Responses or Anthropic Messages. Upstream protocols include OpenAI-compatible APIs, Anthropic Messages, Google generateContent and Google Interactions.
 
-- **Working:** downstream Responses, Chat and Anthropic Messages (JSON and SSE; text, tools, reasoning, images and some file inputs); upstream OpenAI Responses and Chat with several compatible dialects, native Anthropic Messages, Google generateContent and stateless Interactions; failover across a model's Providers and keys with held streams, cooldown and per-conversation affinity; file credentials with ordered pools; Provider-native cache affinity. pi passes real-client acceptance on all three downstream protocols.
-- **Frozen:** the standalone Embeddings, Images, Speech and Transcription endpoints, and new Providers.
-- **Later:** stateful Responses and file services. Real failover acceptance, the coverage pass and Claude Code acceptance are deferred. See the [roadmap](docs/roadmap.md).
+The project is in core design and validation. pi and opencode are the first target clients; Codex and Claude Code follow.
 
-## Quick start
+## Start here
+
+| Goal | Read |
+|---|---|
+| Configure and run the gateway | [Usage](docs/usage.md) |
+| Understand the design | [Architecture](docs/architecture.md) |
+| Build and verify changes | [Development](docs/development.md) |
+| Check current scope and future work | [Roadmap](docs/roadmap.md) |
+| Find protocol sources and licenses | [References](docs/references.md) |
+| Inspect the HTTP API summary | [OpenAPI](docs/openapi.json) |
+
+## Scope
+
+- Generation supports JSON and SSE, tool calls, reasoning replay and selected media inputs.
+- Routing uses bounded failover across a model's Providers and credentials, with conversation affinity. It is not load balancing.
+- Credentials come from the application's private file store. Requests never log in or refresh credentials.
+- Standalone Embeddings, Images, Speech and Transcription endpoints are frozen.
+- Stored Responses history and file services are future work.
+
+Code and tests define behavior. The [roadmap](docs/roadmap.md) separates implemented work from deferred acceptance checks. Supported models and bindings come from the catalogs, not this page.
+
+## Run
+
+Prepare credentials, a pool and `gateway.json` as described in [Usage](docs/usage.md), then run:
 
 ```sh
-cargo run --locked --offline --bin morphiecore        # gateway
-cargo run --locked --offline --bin morphiecore-auth   # credential management
+cargo run --locked --offline --bin morphiecore
 ```
 
-Configuration, endpoints and credentials: [usage](docs/usage.md).
+The gateway listens on loopback only. Credential management uses a separate CLI:
 
-## Layout
+```sh
+cargo run --locked --offline --bin morphiecore-auth -- --help
+```
 
-| Path | Contents |
+For the build environment, see [Development](docs/development.md#environment).
+
+## Code layout
+
+| Path | Responsibility |
 |---|---|
-| `src/semantic` | IR: task types, validation, event reducer |
-| `src/protocol` | Wire codecs, capabilities, dialects and protocol-specific projections |
-| `src/lowering`, `src/adapter` | Cross-protocol capability dispatch, generic requests and errors; legacy adapters for frozen tasks |
-| `src/topology`, `src/provider` | Model → Route → Endpoint bindings; Provider definitions |
-| `src/execution`, `src/transport` | Candidate execution; HTTP and SSE |
-| `src/gateway` | HTTP gateway |
-| `src/credential` | Credential store, API keys, OAuth |
-| `tests/` | Offline tests and the SDK loopback gate |
+| `src/semantic` | Task IR, validation and stream reduction |
+| `src/protocol` | Wire codecs, dialects and protocol-specific projections |
+| `src/lowering`, `src/adapter` | Capability dispatch, request preparation and frozen-task adapters |
+| `src/topology`, `src/provider` | Model routes, endpoint bindings and Provider definitions |
+| `src/execution`, `src/transport` | Candidate execution, HTTP and SSE |
+| `src/gateway` | Ingress, startup, routing and body delivery |
+| `src/credential` | Private store, API keys, OAuth and pools |
+| `tests/` | Offline contracts and separate SDK gates |
 
-## Documentation
+Agent rules and authorization are in [AGENTS.md](AGENTS.md).
 
-- [Architecture](docs/architecture.md): principles and settled decisions
-- [Roadmap](docs/roadmap.md): phases, frozen scope, current focus
-- [Usage](docs/usage.md): startup, configuration, HTTP API, credentials
-- [Development](docs/development.md): environment, checks, tests
-- [References](docs/references.md): pinned sources and protocol docs
-- Contribution rules: [AGENTS.md](AGENTS.md)
-
-Original code and docs are under the [MIT License](LICENSE); external material keeps its source and license.
+Original code and docs use the [MIT License](LICENSE). External material keeps its source and license.
