@@ -18,6 +18,7 @@ pub fn may_advance_credential(
         && matches!(
             error,
             ErrorClass::CredentialUnavailable
+                | ErrorClass::Quota
                 | ErrorClass::Server
                 | ErrorClass::Timeout
                 | ErrorClass::Upstream
@@ -36,6 +37,10 @@ pub fn may_advance(
         && budget_remaining
         && matches!(
             error,
-            ErrorClass::RateLimit | ErrorClass::Server | ErrorClass::Timeout | ErrorClass::Upstream
+            ErrorClass::RateLimit
+                | ErrorClass::Quota
+                | ErrorClass::Server
+                | ErrorClass::Timeout
+                | ErrorClass::Upstream
         )
 }

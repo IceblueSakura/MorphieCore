@@ -31,6 +31,7 @@ cargo run --locked --offline --bin morphiecore -- --credentials-dir /path/to/sto
 | `models` | Public models to enable. If omitted, the default chat bindings with configured pools are enabled; media, Embedding, audio-input and native Messages models must be listed explicitly |
 | `max_attempts` | Global attempt ceiling (1–64) |
 | `responses_via_chat` | Subset of `models` whose Responses entry uses the model's Chat upstream instead |
+| `failover` | Per listed model, its Providers in failover order, e.g. `{"glm-5.3": ["openrouter", "zhipu"]}`. Each needs a pool; unlisted Providers are not used. Without it, every Provider with a pool serves in catalog order |
 | `implicit_cache_affinity` | Implicit cache-affinity index, default `true` |
 | `diagnostics` | Local diagnostics metadata file (must be new; never records bodies) |
 

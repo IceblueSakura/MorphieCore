@@ -96,21 +96,17 @@ impl ApiKeyBinding {
     }
 }
 pub fn default_topology() -> Result<CompiledTopology, TopologyError> {
+    topology(&Default::default())
+}
+/// The catalog with each public model's bindings in failover order: the trusted
+/// configured Provider order (`model -> [provider]`) first, then catalog order.
+pub fn topology(
+    failover: &std::collections::BTreeMap<String, Vec<String>>,
+) -> Result<CompiledTopology, TopologyError> {
     let mut endpoints = vec![];
     let mut routes = vec![];
-    let mut public_models = vec![];
+    let mut public_models: Vec<PublicModel> = vec![];
     for binding in API_KEY_BINDINGS {
-        let public = binding.public_model();
-        routes.push(Route {
-            id: public.route.clone(),
-            task: public.task,
-            policy: RoutePolicy::default(),
-            endpoints: binding
-                .protocols
-                .iter()
-                .map(|&p| binding.endpoint_id(p))
-                .collect(),
-        });
         endpoints.extend(
             binding
                 .protocols
@@ -118,6 +114,47 @@ pub fn default_topology() -> Result<CompiledTopology, TopologyError> {
                 .map(|&p| binding.endpoint(p))
                 .collect::<Result<Vec<_>, _>>()?,
         );
+        if public_models.iter().any(|p| p.id.as_str() == binding.model) {
+            continue;
+        }
+        let mut group: Vec<_> = API_KEY_BINDINGS
+            .iter()
+            .filter(|b| b.model == binding.model)
+            .collect();
+        let order = failover.get(binding.model);
+        group.sort_by_key(|b| {
+            let provider = (b.provider)().id;
+            order
+                .and_then(|o| o.iter().position(|p| p == provider.as_str()))
+                .unwrap_or(usize::MAX)
+        });
+        let public = binding.public_model();
+        // Alternatives share one public contract; candidates differ only in delivery.
+        if group.iter().any(|b| {
+            let other = b.public_model();
+            other.contract != public.contract || other.canonical_model != public.canonical_model
+        }) {
+            return Err(TopologyError::SemanticUnsatisfiable);
+        }
+        routes.push(Route {
+            id: public.route.clone(),
+            task: public.task,
+            // Failover only: skip candidates that cannot serve the request, advance
+            // before commit, never spread load.
+            policy: if group.len() > 1 {
+                RoutePolicy {
+                    candidates: CandidatePolicy::SkipUnrepresentable,
+                    fallback: FallbackPolicy::BeforeCommit,
+                    ..RoutePolicy::default()
+                }
+            } else {
+                RoutePolicy::default()
+            },
+            endpoints: group
+                .iter()
+                .flat_map(|b| b.protocols.iter().map(|&p| b.endpoint_id(p)))
+                .collect(),
+        });
         public_models.push(public);
     }
     for binding in SUBSCRIPTION_BINDINGS {

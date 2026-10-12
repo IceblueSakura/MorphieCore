@@ -20,7 +20,7 @@ mod provider_profiles {
     }
 
     #[test]
-    fn opencode_go_unversioned_readable_views_are_closed_and_never_restore_deleted_reasoning() {
+    fn unversioned_readable_views_are_closed_and_never_restore_deleted_reasoning() {
         use morphiecore::semantic::task::generation::{Item, ReasoningContent};
         use morphiecore::semantic::value::Text;
         let provider = adapter(Dialect::OpenCodeGo);
@@ -49,8 +49,14 @@ mod provider_profiles {
             wire["usage"]["completion_tokens_details"]["audio_tokens"],
             0
         );
+        // OpenRouter sends the same view for non-OpenAI models (`z-ai/glm-5.3`).
         assert!(
             adapter(Dialect::OpenRouter)
+                .decode_response(source.to_string().as_bytes())
+                .is_ok()
+        );
+        assert!(
+            adapter(Dialect::DeepSeek)
                 .decode_response(source.to_string().as_bytes())
                 .is_err()
         );

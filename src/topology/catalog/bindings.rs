@@ -255,6 +255,22 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         public_slice: RequestSlice::Canonical,
         endpoint_slice: RequestSlice::Canonical,
     },
+    // Failover alternative for glm-5.3.
+    // Source: https://openrouter.ai/api/v1/models (`z-ai/glm-5.3`)
+    ApiKeyBinding {
+        provider: catalog::openrouter,
+        dialect: Dialect::OpenRouter,
+        endpoint_prefix: "openrouter-glm-5.3",
+        model: "glm-5.3",
+        canonical_model: "glm-5.3",
+        upstream: "z-ai/glm-5.3",
+        credential: "openrouter-api-key",
+        protocols: CHAT,
+        replay_responses: false,
+        replay_chat: false,
+        public_slice: RequestSlice::Canonical,
+        endpoint_slice: RequestSlice::Canonical,
+    },
     ApiKeyBinding {
         provider: catalog::zhipu,
         dialect: Dialect::Zhipu,

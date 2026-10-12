@@ -36,6 +36,9 @@ struct Configuration {
     responses_via_chat: Vec<String>,
     #[serde(default = "enabled")]
     implicit_cache_affinity: bool,
+    /// Failover order of a listed model's Providers; unlisted Providers stay unused.
+    #[serde(default)]
+    failover: std::collections::BTreeMap<String, Vec<String>>,
     /// Trusted global ceiling across all route and credential candidates.
     #[serde(default)]
     max_attempts: Option<usize>,
@@ -110,6 +113,20 @@ impl Bootstrap {
         {
             return Err(StartupError::Binding);
         }
+        if configuration.failover.iter().any(|(model, providers)| {
+            selected.as_ref().is_none_or(|set| !set.contains(model))
+                || providers.is_empty()
+                || providers.len() > 8
+                || providers.iter().collect::<BTreeSet<_>>().len() != providers.len()
+                || providers.iter().any(|provider| {
+                    !catalog::API_KEY_BINDINGS.iter().any(|binding| {
+                        binding.model == model && (binding.provider)().id.as_str() == provider
+                    })
+                })
+        }) {
+            return Err(StartupError::Binding);
+        }
+        let mut serving = BTreeSet::new();
         let manager = CredentialManager::new(
             directory,
             crate::credential::builtin_drivers(None).map_err(|_| StartupError::Credentials)?,
@@ -141,11 +158,16 @@ impl Bootstrap {
                 if selected
                     .as_ref()
                     .is_some_and(|set| !set.contains(binding.model))
+                    || configuration
+                        .failover
+                        .get(binding.model)
+                        .is_some_and(|order| !order.contains(&provider))
                 {
                     continue;
                 }
                 used = true;
                 activated.insert(binding.model.to_owned());
+                serving.insert((binding.model.to_owned(), provider.clone()));
                 for protocol in binding.protocols {
                     if bridges.contains(binding.model)
                         && *protocol == crate::topology::ProtocolProfile::OpenAiResponses
@@ -303,11 +325,17 @@ impl Bootstrap {
                 )?;
             }
         }
-        if selected.as_ref().is_some_and(|set| *set != activated) {
+        if selected.as_ref().is_some_and(|set| *set != activated)
+            || configuration.failover.iter().any(|(model, providers)| {
+                providers
+                    .iter()
+                    .any(|p| !serving.contains(&(model.clone(), p.clone())))
+            })
+        {
             return Err(StartupError::Binding);
         }
         let mut gateway = Gateway::new_with_media_and_environment_proxy(
-            catalog::default_topology().map_err(|_| StartupError::Binding)?,
+            catalog::topology(&configuration.failover).map_err(|_| StartupError::Binding)?,
             entries,
             image_entries,
             speech_entries,

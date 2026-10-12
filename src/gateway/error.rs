@@ -72,6 +72,9 @@ impl ApiError {
         {
             error.fallback = Some(class);
         }
+        if error.code == "insufficient_quota" {
+            error.fallback = Some(crate::provider::ErrorClass::Quota);
+        }
         error
     }
 }

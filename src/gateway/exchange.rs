@@ -158,7 +158,11 @@ pub(super) async fn produce_chain(
                                 remaining,
                             )
                         } else if candidate.provider.id == next.provider.id
-                            && class == crate::provider::ErrorClass::RateLimit
+                            && matches!(
+                                class,
+                                crate::provider::ErrorClass::RateLimit
+                                    | crate::provider::ErrorClass::Quota
+                            )
                         {
                             false
                         } else {

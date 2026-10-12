@@ -102,6 +102,8 @@ impl Dialect {
                     responses_done_marker: true,
                     reasoning_alias: true,
                     structured_chat_reasoning: true,
+                    // Non-OpenAI models (`z-ai/glm-5.3`) stream `format: "unknown"` text.
+                    unversioned_chat_reasoning_view: true,
                     repeated_finish_usage: true,
                     require_parameters: true,
                     ..Default::default()

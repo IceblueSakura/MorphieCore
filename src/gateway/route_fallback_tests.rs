@@ -37,6 +37,15 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
             vec!["a", "b"],
             200,
         ),
+        // Exhausted quota or credit advances like a rate limit.
+        (
+            402,
+            false,
+            FallbackPolicy::BeforeCommit,
+            2,
+            vec!["a", "b"],
+            200,
+        ),
         (1, false, FallbackPolicy::BeforeCommit, 2, vec!["a"], 504),
         (302, false, FallbackPolicy::BeforeCommit, 2, vec!["a"], 502),
         (403, false, FallbackPolicy::BeforeCommit, 2, vec!["a"], 502),

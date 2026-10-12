@@ -11,6 +11,8 @@ pub enum ErrorClass {
     NotFound,
     Redirect,
     RateLimit,
+    /// Exhausted quota or credit: scoped to the credential, so another may answer.
+    Quota,
     Server,
     Timeout,
     Upstream,

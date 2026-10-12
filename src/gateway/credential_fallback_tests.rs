@@ -24,6 +24,8 @@ async fn same_provider_fallback_is_ordered_bounded_and_never_crosses_publication
         (401, false, true, 2, vec!["first"], 502),
         (403, false, true, 2, vec!["first"], 502),
         (429, false, true, 2, vec!["first"], 429),
+        // Quota belongs to the key, so the next key may still answer.
+        (402, false, true, 2, vec!["first", "second"], 200),
         (200, true, true, 2, vec!["first"], 200),
     ] {
         let dir = crate::credential::test_support::private_directory();

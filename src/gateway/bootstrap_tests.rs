@@ -255,7 +255,7 @@ impl Fixture {
             }
         }
         let mut config = serde_json::json!({"client_key":get("client_key")?.ok_or(StartupError::Credentials)?,"bind":get("bind")?.unwrap_or("127.0.0.1:0".into())});
-        for field in ["models", "responses_via_chat"] {
+        for field in ["models", "responses_via_chat", "failover"] {
             if let Some(value) = get(field)? {
                 config[field] = serde_json::from_str(&value).map_err(|_| StartupError::Binding)?;
             }
@@ -479,4 +479,65 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
     input.extend(call(projected, "again"));
     let error = prepare(serde_json::json!({"effort":"low"}), &input).unwrap_err();
     assert!(format!("{error:?}").contains("duplicate call"), "{error:?}");
+}
+
+#[test]
+fn configured_failover_orders_and_limits_a_models_providers() {
+    let settings = |failover: Option<&'static str>| {
+        move |name: &str| {
+            Ok(match name {
+                "client_key" => Some("synthetic-gateway-client-token-0001".into()),
+                "zhipu-api-key" | "openrouter-api-key" => Some("synthetic-upstream".into()),
+                "models" => Some(r#"["glm-5.3"]"#.into()),
+                "failover" => failover.map(Into::into),
+                _ => None,
+            })
+        }
+    };
+    let providers = |boot: &Fixture, protocol| {
+        boot.gateway
+            .state
+            .entries
+            .get(&(super::super::family(protocol), "glm-5.3".into()))
+            .map(|entry| {
+                assert_eq!(
+                    entry.policy.fallback,
+                    crate::topology::FallbackPolicy::BeforeCommit
+                );
+                entry
+                    .candidates
+                    .iter()
+                    .map(|c| c.provider.id.as_str().to_owned())
+                    .collect::<Vec<_>>()
+            })
+    };
+    // Catalog order by default; OpenRouter serves Chat only.
+    let boot = Fixture::from_lookup(settings(None)).unwrap();
+    assert_eq!(
+        providers(&boot, Profile::Chat).unwrap(),
+        ["zhipu", "openrouter"]
+    );
+    let boot =
+        Fixture::from_lookup(settings(Some(r#"{"glm-5.3":["openrouter","zhipu"]}"#))).unwrap();
+    assert_eq!(
+        providers(&boot, Profile::Chat).unwrap(),
+        ["openrouter", "zhipu"]
+    );
+    assert_eq!(providers(&boot, Profile::Responses).unwrap(), ["zhipu"]);
+    // An unlisted Provider is not used, even with a pool.
+    let boot = Fixture::from_lookup(settings(Some(r#"{"glm-5.3":["openrouter"]}"#))).unwrap();
+    assert_eq!(providers(&boot, Profile::Chat).unwrap(), ["openrouter"]);
+    assert!(providers(&boot, Profile::Responses).is_none());
+    for invalid in [
+        r#"{"glm-5.3":[]}"#,
+        r#"{"glm-5.3":["zhipu","zhipu"]}"#,
+        r#"{"glm-5.3":["xiaomi"]}"#,
+        r#"{"glm-5.3":["unknown"]}"#,
+        r#"{"mimo-v2.6-pro":["xiaomi"]}"#,
+    ] {
+        assert!(
+            Fixture::from_lookup(settings(Some(invalid))).is_err(),
+            "{invalid}"
+        );
+    }
 }
