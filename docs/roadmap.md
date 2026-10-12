@@ -4,18 +4,7 @@ This page owns direction and current scope. Code and tests define behavior; [Arc
 
 ## Current focus
 
-**Multimodal input carriers.** Carry image, audio, video and document input, including tool-result media, through the IR to every protocol with a native carrier. Findings and sources: [Multimodal carriers](refs/multimodal.md).
-
-Exit condition:
-
-1. The IR has a video resource kind with its own admission flag.
-2. Hand-written wire→IR and IR→wire expectations cover Chat `video_url` and `file`, Messages `image` and `document` (user and tool result), Gemini `inlineData`/`fileData` and `functionResponse.parts`, and Interactions `image`/`audio`/`document` and `function_result` images.
-3. Media a target cannot carry fail as unrepresentable; per-use options a target lacks are dropped by named rules.
-4. The offline baseline passes.
-
-Out of scope: generated media, Provider file references, a gateway file service, and audio or video carriers for Responses.
-
-Deferred acceptance work stays deferred until the user reopens it.
+No feature slice is selected. The next planned work is the [coverage pass](#deferred-acceptance), now including the multimodal carriers. Deferred acceptance work stays deferred until the user reopens it.
 
 ## Target clients
 
@@ -56,9 +45,10 @@ Treat a bound upstream's in-stream error as a classified failure, not normal out
 |---|---|
 | Real failover | One bounded real run for a model with two credentials or Providers and a reproducible advanceable failure |
 | Coverage pass | Independent wire→IR and IR→wire fixtures, synthetic upstreams and chunked SSE intake |
+| Multimodal real checks | One bounded real call for each [open question](refs/multimodal.md#open-questions) |
 | Claude Code (on hold) | Sample real request shapes, then verify beta headers/query, token counting and user metadata hints |
 
-The coverage pass covers text, tools, tool errors, reasoning replay, usage, truncation and error classes. It also checks client-facing fragment shapes and meaningful absent/null/empty distinctions. It does not authorize a variant matrix.
+The coverage pass covers text, tools, tool errors, reasoning replay, usage, truncation, error classes and media carriers (user and tool-result image, audio, video and document). It also checks client-facing fragment shapes and meaningful absent/null/empty distinctions. It does not authorize a variant matrix.
 
 Claude Code acceptance is on hold until the user schedules it: no runs or request sampling before then.
 

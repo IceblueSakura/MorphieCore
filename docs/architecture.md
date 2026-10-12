@@ -105,6 +105,7 @@ Image, audio, video and file resources are inert: inline data or a URL, never fe
 
 - Chat video uses the registered extension `{"type":"video_url","video_url":{"url":…}}`, shared by OpenRouter, DashScope, Zhipu, vLLM and ModelBest. Only targets whose dialect declares it receive video.
 - Per-use options without a target slot (image detail, file detail, filename) are dropped by a named rule. Inbound options with no IR slot that change model-visible content, such as a Messages document `context`, are rejected.
+- Tool results may carry media of any kind. Admission needs tool-result media and, for non-image media, the kind's input modality.
 - Provider file IDs and file URIs are bound to the gateway credential's workspace or project. Client-supplied references are rejected.
 - A failover route may include candidates narrower than the public contract. Requests they cannot represent skip them, which reduces failover rather than admission.
 
