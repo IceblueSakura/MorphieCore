@@ -29,7 +29,6 @@ Deferred until a real need: SSE keep-alive comments while frames are held (the h
 
 Claude Code reaches any public model through `POST /v1/messages`; the model's candidates and failover are the ones its Chat clients use. Built from the public Messages API first; Claude Code's own request shapes are sampled later (not yet authorized) and adjust the details.
 
-- **Slice 2, SSE.** Native event stream (`message_start` … `message_stop`), thinking signatures sealed once a block closes, held frames and error classes as in Phase 3.
 - **Slice 3, Claude Code details** once sampled: `anthropic-beta`, `?beta=true`, `count_tokens`, `metadata.user_id` as a conversation hint.
 
 Exit: Claude Code drives a tool loop with thinking against the native binding and an OpenAI-compatible binding, in JSON and SSE, and reacts to each error class as it does against Anthropic.

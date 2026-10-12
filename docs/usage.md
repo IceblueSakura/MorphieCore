@@ -44,7 +44,7 @@ Unknown fields, unknown or duplicate models, and models without a matching pool 
 | `GET /v1/models`, `GET /v1/models/{model}` | Enabled public models; `DELETE` on an enabled model returns 403 |
 | `POST /v1/responses` | Responses, JSON or SSE |
 | `POST /v1/chat/completions` | Chat Completions, JSON or SSE |
-| `POST /v1/messages` | Anthropic Messages for Claude Code, JSON only for now; any public model with a Chat entry. The key may come as `x-api-key`; errors use Anthropic's envelope |
+| `POST /v1/messages` | Anthropic Messages for Claude Code, JSON or SSE; any public model with a Chat entry. The key may come as `x-api-key`; errors use Anthropic's envelope |
 | `POST /v1/embeddings` | Text float vectors |
 | `POST /v1/images/generations` | Static image generation |
 | `POST /v1/audio/speech` | Text to speech, binary audio |

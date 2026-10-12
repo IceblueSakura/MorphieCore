@@ -124,10 +124,6 @@ async fn handle_client(
         Some(profile) => admission::prepare(&state, profile, &bytes)?,
         None => admission::prepare_messages(&state, &bytes)?,
     };
-    // Messages streaming lands in the next slice.
-    if profile.is_none() && semantic.delivery.streaming() {
-        return Err(ApiError::invalid());
-    }
     semantic.conversation = Some(conversation);
     trace.ignored_fields(std::mem::take(&mut semantic.ignored_fields));
     let deadline = tokio::time::Instant::now() + state.limits.exchange_timeout;

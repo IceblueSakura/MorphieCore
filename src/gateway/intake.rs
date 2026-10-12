@@ -73,7 +73,12 @@ async fn produce(
                             .published
                             .load(std::sync::atomic::Ordering::Acquire)
                     {
-                        let frames = delivery.fail_stream(&failure.body()).map_err(|_| failure)?;
+                        let body = if delivery.is_messages() {
+                            failure.messages_error().1
+                        } else {
+                            failure.body()
+                        };
+                        let frames = delivery.fail_stream(&body).map_err(|_| failure)?;
                         for frame in frames {
                             super::body::send_frame(lane, frame, trace).await?;
                         }

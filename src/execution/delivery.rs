@@ -40,6 +40,7 @@ fn delivery_item_id(
 enum Encoder {
     Responses(ResponsesSseEncoder),
     Chat(ChatSseEncoder),
+    Messages(crate::protocol::anthropic::client_events::ClientEventEncoder),
 }
 
 pub struct ResponseDelivery {
@@ -93,6 +94,9 @@ impl ResponseDelivery {
             native_projection: None,
             messages: false,
         }
+    }
+    pub fn is_messages(&self) -> bool {
+        self.messages
     }
     /// Deliver to an Anthropic Messages client (Claude Code) when `messages`.
     pub fn for_messages(mut self, messages: bool) -> Self {
@@ -271,6 +275,7 @@ impl ResponseDelivery {
             match self.encoder.as_ref() {
                 Some(Encoder::Responses(e)) => e.finish()?,
                 Some(Encoder::Chat(e)) => e.finish()?,
+                Some(Encoder::Messages(e)) => e.finish()?,
                 None => return Err(AttemptError::Delivery("missing stream encoder")),
             }
             self.terminal = true;
@@ -287,6 +292,28 @@ impl ResponseDelivery {
         events: &[StreamEvent],
     ) -> Result<Vec<Bytes>, AttemptError> {
         self.bind(attempt)?;
+        if self.messages {
+            let metadata = self.metadata(attempt)?;
+            let label = self.public_label.clone();
+            let Encoder::Messages(encoder) = self.encoder.get_or_insert_with(|| {
+                Encoder::Messages(
+                    crate::protocol::anthropic::client_events::ClientEventEncoder::new(
+                        &metadata.id,
+                        &label,
+                    ),
+                )
+            }) else {
+                return Err(AttemptError::Delivery("profile mismatch"));
+            };
+            let mut frames = vec![];
+            for event in events {
+                let event =
+                    super::replay::seal_event(event.clone(), &super::replay::CLIENT_ORIGIN)?;
+                frames.extend(encoder.encode(&event)?);
+            }
+            self.rendered |= !frames.is_empty();
+            return Ok(frames);
+        }
         let projected;
         let events = if attempt.is_native_messages() {
             projected = self
@@ -358,6 +385,7 @@ impl ResponseDelivery {
                     frames.extend(encoder.encode(&event, &source)?);
                 }
             }
+            Encoder::Messages(_) => return Err(AttemptError::Delivery("profile mismatch")),
         }
         self.rendered |= !frames.is_empty();
         Ok(frames)
@@ -373,6 +401,12 @@ impl ResponseDelivery {
         };
         let result = (|| {
             self.ready()?;
+            if self.messages {
+                self.terminal = true;
+                return Ok(vec![Bytes::from(format!(
+                    "event: error\ndata: {error}\n\n"
+                ))]);
+            }
             if self.adapter.protocol == Profile::Chat {
                 return Ok(vec![Bytes::from(format!("data: {error}\n\n"))]);
             }
@@ -420,7 +454,9 @@ impl ResponseDelivery {
                     frames.extend(encoder.encode(&failed, &source)?);
                     frames
                 }
-                Some(Encoder::Chat(_)) => return Err(AttemptError::Delivery("profile mismatch")),
+                Some(Encoder::Chat(_) | Encoder::Messages(_)) => {
+                    return Err(AttemptError::Delivery("profile mismatch"));
+                }
             };
             self.terminal = true;
             Ok(frames)

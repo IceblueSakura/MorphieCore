@@ -236,28 +236,6 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     Ok(request)
 }
 
-/// Usage split into input, cache read and cache write, as Messages reports it.
-fn usage(response: &GenerationResponse) -> Value {
-    let Some(u) = response.usage() else {
-        return json!({"input_tokens":0,"output_tokens":0});
-    };
-    let read = u.cached_input_tokens.unwrap_or(0);
-    let write = u.input_cache_write_tokens.unwrap_or(0);
-    let input = u.input_tokens.unwrap_or(0);
-    let input = match u.input_relation {
-        InputTokenRelation::IncludesCache => input.saturating_sub(read).saturating_sub(write),
-        _ => input,
-    };
-    let mut v = json!({"input_tokens":input,"output_tokens":u.output_tokens.unwrap_or(0)});
-    if let Some(read) = u.cached_input_tokens {
-        v["cache_read_input_tokens"] = json!(read);
-    }
-    if let Some(write) = u.input_cache_write_tokens {
-        v["cache_creation_input_tokens"] = json!(write);
-    }
-    v
-}
-
 /// Encode a sealed response for a Messages client under the public label.
 pub fn encode_client_response(
     response: &DecodedResponse,
@@ -321,6 +299,9 @@ pub fn encode_client_response(
     v.insert("content".into(), json!(content));
     v.insert("stop_reason".into(), json!(stop_reason));
     v.insert("stop_sequence".into(), Value::Null);
-    v.insert("usage".into(), usage(semantic));
+    v.insert(
+        "usage".into(),
+        super::client_events::usage_json(semantic.usage().as_ref()),
+    );
     Ok(Value::Object(v))
 }

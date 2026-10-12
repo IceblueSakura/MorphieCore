@@ -119,6 +119,21 @@ impl ApiError {
     /// Anthropic's error envelope for Messages clients, with the wording Claude
     /// Code reacts to (context overflow reads "prompt is too long").
     pub fn into_messages_response(self) -> Response {
+        let (status, body) = self.messages_error();
+        let mut response = (status, Json(body)).into_response();
+        if let Some(seconds) = self.retry_after {
+            response
+                .headers_mut()
+                .insert("retry-after", axum::http::HeaderValue::from(seconds));
+        }
+        response.headers_mut().insert(
+            "cache-control",
+            axum::http::HeaderValue::from_static("no-store"),
+        );
+        response
+    }
+    /// Anthropic's status and `{"type":"error","error":…}` body.
+    pub fn messages_error(&self) -> (StatusCode, serde_json::Value) {
         let (status, kind, message): (StatusCode, &str, String) = match self.code {
             "context_length_exceeded" => (
                 StatusCode::BAD_REQUEST,
@@ -157,21 +172,10 @@ impl ApiError {
                 )
             }
         };
-        let mut response = (
+        (
             status,
-            Json(json!({"type":"error","error":{"type":kind,"message":message}})),
+            json!({"type":"error","error":{"type":kind,"message":message}}),
         )
-            .into_response();
-        if let Some(seconds) = self.retry_after {
-            response
-                .headers_mut()
-                .insert("retry-after", axum::http::HeaderValue::from(seconds));
-        }
-        response.headers_mut().insert(
-            "cache-control",
-            axum::http::HeaderValue::from_static("no-store"),
-        );
-        response
     }
 }
 impl IntoResponse for ApiError {
