@@ -20,6 +20,7 @@ pub(crate) fn topology() -> CompiledTopology {
         chat_completions: Some(EndpointPath::new("/chat/completions").unwrap()),
         responses: Some(EndpointPath::new("/responses").unwrap()),
         messages: None,
+        generate_content: None,
         auth: AuthScheme::Bearer,
     };
     let canonical = ModelId::new("fixture-canonical").unwrap();

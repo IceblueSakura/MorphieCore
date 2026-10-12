@@ -1,7 +1,7 @@
 //! Protocol-owned endpoint capabilities, not a client protocol or execution policy.
 use crate::protocol::openai::TargetCaps as OpenAiCaps;
 use crate::{
-    protocol::{anthropic, cache::CacheProjection},
+    protocol::{anthropic, cache::CacheProjection, google},
     semantic::task::generation::GenerationSemanticContract,
 };
 
@@ -9,6 +9,7 @@ use crate::{
 pub enum TargetCaps {
     OpenAi(Box<OpenAiCaps>),
     AnthropicMessages(Box<anthropic::TargetCaps>),
+    GoogleGenerateContent(Box<google::TargetCaps>),
 }
 impl From<OpenAiCaps> for TargetCaps {
     fn from(value: OpenAiCaps) -> Self {
@@ -18,6 +19,11 @@ impl From<OpenAiCaps> for TargetCaps {
 impl From<anthropic::TargetCaps> for TargetCaps {
     fn from(value: anthropic::TargetCaps) -> Self {
         Self::AnthropicMessages(Box::new(value))
+    }
+}
+impl From<google::TargetCaps> for TargetCaps {
+    fn from(value: google::TargetCaps) -> Self {
+        Self::GoogleGenerateContent(Box::new(value))
     }
 }
 impl TargetCaps {
@@ -49,24 +55,28 @@ impl TargetCaps {
         match self {
             Self::OpenAi(c) => &c.semantics,
             Self::AnthropicMessages(c) => &c.semantics,
+            Self::GoogleGenerateContent(c) => &c.semantics,
         }
     }
     pub fn cache(&self) -> CacheProjection {
         match self {
             Self::OpenAi(c) => c.cache,
             Self::AnthropicMessages(c) => c.cache,
+            Self::GoogleGenerateContent(c) => c.cache,
         }
     }
     pub fn standard_context(&self) -> bool {
         match self {
             Self::OpenAi(c) => c.standard_context,
-            Self::AnthropicMessages(_) => false,
+            Self::AnthropicMessages(_) | Self::GoogleGenerateContent(_) => false,
         }
     }
     pub fn forced_stream(&self) -> bool {
         match self {
             Self::OpenAi(c) => c.adaptation.rules.responses_forced_stream,
             Self::AnthropicMessages(_) => false,
+            // Only `streamGenerateContent` is bound; JSON clients get the aggregate.
+            Self::GoogleGenerateContent(_) => true,
         }
     }
 }

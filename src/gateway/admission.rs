@@ -116,12 +116,15 @@ pub(super) fn prepare_messages(
 ) -> Result<(Arc<BoundEntry>, Request), ApiError> {
     prepare_in(state, super::MESSAGES_FAMILY, bytes, |entry| {
         let mut request = crate::protocol::anthropic::client::decode_client_request(bytes)?;
-        // Only native Messages targets carry `is_error`; elsewhere the result text
-        // stays and the flag is dropped by name.
-        let native = entry
-            .candidates
-            .iter()
-            .all(|c| c.endpoint.protocol == crate::topology::ProtocolProfile::AnthropicMessages);
+        // Only native targets carry `is_error`; elsewhere the result text stays and
+        // the flag is dropped by name.
+        let native = entry.candidates.iter().all(|c| {
+            matches!(
+                c.endpoint.protocol,
+                crate::topology::ProtocolProfile::AnthropicMessages
+                    | crate::topology::ProtocolProfile::GoogleGenerateContent
+            )
+        });
         if !native && request.drop_tool_error_flags()? {
             request.ignored_fields.push("tool_result.is_error".into());
         }

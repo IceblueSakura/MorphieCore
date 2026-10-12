@@ -48,6 +48,7 @@ impl ReplayValue {
             self.format(),
             ReplayFormat::ResponsesEncrypted
                 | ReplayFormat::GoogleInteractionsV1Thought
+                | ReplayFormat::GoogleGenerateContentPart
                 | ReplayFormat::AnthropicMessagesThinking
         ) {
             return Err(GenerationError::InvalidReplay);

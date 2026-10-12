@@ -1,0 +1,66 @@
+//! Anchored `thoughtSignature` payloads. Gemini validates a signature on the part that
+//! carried it (the first `functionCall` of a step), so the value names that part instead
+//! of relying on where a downstream carrier placed the reasoning item.
+//! Source: <https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures>.
+use crate::protocol::CodecError;
+use serde_json::{Map, Value};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) enum Anchor {
+    /// The `functionCall` part with this call ID.
+    Call(String),
+    /// Its own `thought: true` part; the signature is optional.
+    Thought,
+    /// The last part of the model content, when no call carried the signature.
+    Tail,
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct Signed {
+    pub anchor: Anchor,
+    pub signature: Option<String>,
+}
+impl Signed {
+    pub fn encode(&self) -> String {
+        let mut o = Map::new();
+        match &self.anchor {
+            Anchor::Call(id) => {
+                o.insert("anchor".into(), "call".into());
+                o.insert("call".into(), id.as_str().into());
+            }
+            Anchor::Thought => {
+                o.insert("anchor".into(), "thought".into());
+            }
+            Anchor::Tail => {
+                o.insert("anchor".into(), "tail".into());
+            }
+        }
+        if let Some(signature) = &self.signature {
+            o.insert("signature".into(), signature.as_str().into());
+        }
+        Value::Object(o).to_string()
+    }
+    pub fn decode(value: &str) -> Result<Self, CodecError> {
+        let invalid = || CodecError::Invalid("Gemini signature payload");
+        let value: Value = serde_json::from_str(value).map_err(|_| invalid())?;
+        let o = value.as_object().ok_or_else(invalid)?;
+        if o.keys()
+            .any(|k| !matches!(k.as_str(), "anchor" | "call" | "signature"))
+        {
+            return Err(invalid());
+        }
+        let string = |key: &str| match o.get(key) {
+            None => Ok(None),
+            Some(Value::String(s)) if !s.is_empty() => Ok(Some(s.clone())),
+            Some(_) => Err(invalid()),
+        };
+        let signature = string("signature")?;
+        let call = string("call")?;
+        let anchor = match (o.get("anchor").and_then(Value::as_str), call) {
+            (Some("call"), Some(id)) if signature.is_some() => Anchor::Call(id),
+            (Some("thought"), None) => Anchor::Thought,
+            (Some("tail"), None) if signature.is_some() => Anchor::Tail,
+            _ => return Err(invalid()),
+        };
+        Ok(Self { anchor, signature })
+    }
+}

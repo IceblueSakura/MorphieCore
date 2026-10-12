@@ -167,7 +167,7 @@ pub fn compile(
         let operation = definition
             .generation_entry(endpoint.protocol.operation())
             .ok_or(TopologyError::TargetMismatch)?;
-        if operation.path != &endpoint.target.path
+        if endpoint.declared_path(operation.path) != endpoint.target.path.as_str()
             || operation.auth.kind() != endpoint.execution.credential_kind
             || operation.auth.kind() != definition.auth.kind()
         {
@@ -239,15 +239,21 @@ pub fn compile(
             if endpoint.canonical_model != model.canonical_model {
                 return Err(TopologyError::CanonicalModelMismatch);
             }
-            if endpoint.protocol == super::ProtocolProfile::AnthropicMessages {
-                let native =
-                    crate::protocol::anthropic::Profile::AdaptiveTextTools.semantic_contract();
-                if !native.supports(endpoint.representation.semantics())
-                    || !native.supports(&model.contract)
-                    || model.standard_context
-                {
-                    return Err(TopologyError::ContractUnsatisfiable);
+            let native = match endpoint.protocol {
+                super::ProtocolProfile::AnthropicMessages => {
+                    Some(crate::protocol::anthropic::Profile::AdaptiveTextTools.semantic_contract())
                 }
+                super::ProtocolProfile::GoogleGenerateContent => {
+                    Some(crate::protocol::google::semantic_contract())
+                }
+                _ => None,
+            };
+            if let Some(native) = native
+                && (!native.supports(endpoint.representation.semantics())
+                    || !native.supports(&model.contract)
+                    || model.standard_context)
+            {
+                return Err(TopologyError::ContractUnsatisfiable);
             }
             if route.policy.candidates == super::CandidatePolicy::RequireAll
                 && (!promised(&model.contract, &endpoint.representation)
@@ -298,6 +304,7 @@ mod tests {
             chat_completions: Some(EndpointPath::new("/chat/completions").unwrap()),
             responses: Some(EndpointPath::new("/responses").unwrap()),
             messages: None,
+            generate_content: None,
             auth: AuthScheme::Bearer,
         }
     }

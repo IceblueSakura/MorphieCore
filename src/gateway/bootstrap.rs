@@ -177,7 +177,8 @@ impl Bootstrap {
                     let family = match protocol {
                         crate::topology::ProtocolProfile::OpenAiChat => Profile::Chat,
                         crate::topology::ProtocolProfile::OpenAiResponses => Profile::Responses,
-                        crate::topology::ProtocolProfile::AnthropicMessages => {
+                        crate::topology::ProtocolProfile::AnthropicMessages
+                        | crate::topology::ProtocolProfile::GoogleGenerateContent => {
                             return Err(StartupError::Binding);
                         }
                     };
@@ -204,6 +205,26 @@ impl Bootstrap {
                 if !selected
                     .as_ref()
                     .is_some_and(|set| set.contains(binding.model))
+                {
+                    continue;
+                }
+                used = true;
+                activated.insert(binding.model.to_owned());
+                let endpoint = binding.endpoint().id;
+                entries.extend([Profile::Responses, Profile::Chat].map(|protocol| Entry {
+                    model: binding.model.into(),
+                    protocol,
+                    endpoint: endpoint.clone(),
+                }));
+            }
+            for binding in catalog::GOOGLE_BINDINGS {
+                if binding.credential != id || binding.provider().id.as_str() != provider {
+                    continue;
+                }
+                known = true;
+                if selected
+                    .as_ref()
+                    .is_some_and(|set| !set.contains(binding.model))
                 {
                     continue;
                 }

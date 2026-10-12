@@ -220,6 +220,7 @@ fn aliases(count: usize, metadata: bool) -> crate::topology::CompiledTopology {
         chat_completions: Some(EndpointPath::new("/chat/completions").unwrap()),
         responses: None,
         messages: None,
+        generate_content: None,
         auth: AuthScheme::Bearer,
     };
     let endpoint = Endpoint {

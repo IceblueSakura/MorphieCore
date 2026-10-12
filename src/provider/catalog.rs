@@ -17,6 +17,7 @@ pub fn deepseek() -> ProviderDefinition {
         chat_completions: Some(EndpointPath::new("/chat/completions").expect("static path")),
         responses: Some(EndpointPath::new("/responses").expect("static path")),
         messages: None,
+        generate_content: None,
         auth: AuthScheme::Bearer,
     }
 }
@@ -30,6 +31,7 @@ pub fn xiaomi() -> ProviderDefinition {
         chat_completions: Some(EndpointPath::new("/v1/chat/completions").expect("static path")),
         responses: Some(EndpointPath::new("/v1/responses").expect("static path")),
         messages: None,
+        generate_content: None,
         auth: AuthScheme::Bearer,
     }
 }
@@ -55,6 +57,7 @@ pub fn openrouter() -> ProviderDefinition {
         chat_completions: Some(EndpointPath::new("/api/v1/chat/completions").expect("static path")),
         responses: Some(EndpointPath::new("/api/v1/responses").expect("static path")),
         messages: None,
+        generate_content: None,
         auth: AuthScheme::Bearer,
     }
 }
@@ -66,6 +69,7 @@ fn chat_provider(id: &str, origin: &str, path: &str) -> ProviderDefinition {
         chat_completions: Some(EndpointPath::new(path).expect("static path")),
         responses: None,
         messages: None,
+        generate_content: None,
         auth: AuthScheme::Bearer,
     }
 }
@@ -139,6 +143,7 @@ pub fn zhipu() -> ProviderDefinition {
 pub fn openai() -> ProviderDefinition {
     ProviderDefinition {
         messages: None,
+        generate_content: None,
         auth: AuthScheme::OAuthBearer("openai"),
         responses: Some(EndpointPath::new("/v1/responses").expect("static path")),
         id: ProviderId::new("openai").expect("static identity"),
@@ -151,11 +156,26 @@ pub fn openai() -> ProviderDefinition {
 pub fn grok() -> ProviderDefinition {
     ProviderDefinition {
         messages: None,
+        generate_content: None,
         auth: AuthScheme::OAuthBearer("grok"),
         responses: Some(EndpointPath::new("/v1/responses").expect("static path")),
         id: ProviderId::new("grok").expect("static identity"),
         origin: TrustedOrigin::parse("https://api.x.ai").expect("static origin"),
         chat_completions: None,
+    }
+}
+/// Google AI Studio; generateContent paths name the model under `/v1beta/models`.
+/// Source: <https://ai.google.dev/api/generate-content>.
+pub fn google() -> ProviderDefinition {
+    ProviderDefinition {
+        id: ProviderId::new("google").expect("static identity"),
+        origin: TrustedOrigin::parse("https://generativelanguage.googleapis.com")
+            .expect("static origin"),
+        chat_completions: None,
+        responses: None,
+        messages: None,
+        generate_content: Some(EndpointPath::new("/v1beta/models").expect("static path")),
+        auth: AuthScheme::ApiKeyHeader("x-goog-api-key"),
     }
 }
 pub fn all() -> Vec<ProviderDefinition> {
@@ -171,5 +191,6 @@ pub fn all() -> Vec<ProviderDefinition> {
         aliyun_dashscope_cn(),
         aliyun_tokenplan_cn(),
         zhipu(),
+        google(),
     ]
 }

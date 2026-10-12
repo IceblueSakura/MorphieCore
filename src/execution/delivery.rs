@@ -126,7 +126,7 @@ impl ResponseDelivery {
             .cloned()
             .ok_or(AttemptError::Protocol("missing response metadata"))?;
         metadata.model = self.public_label.clone();
-        if attempt.is_native_messages() {
+        if attempt.is_native() {
             // This is the Gateway envelope's creation time, not an upstream report.
             metadata.created = Some(
                 self.native_created
@@ -150,13 +150,13 @@ impl ResponseDelivery {
         let mut decoded = attempt.response()?.clone();
         decoded.metadata = self.metadata(attempt)?;
         super::replay::seal_for_client(&mut decoded, &super::replay::CLIENT_ORIGIN)?;
-        if attempt.is_native_messages() && !self.messages {
+        if attempt.is_native() && !self.messages {
             crate::protocol::openai::lowering::native_messages::project(
                 &mut decoded,
                 self.adapter.protocol,
             )?;
         }
-        if self.adapter.protocol == Profile::Responses || attempt.is_native_messages() {
+        if self.adapter.protocol == Profile::Responses || attempt.is_native() {
             for (owner, _) in decoded.semantic.items() {
                 if decoded.fidelity.response_item_id(*owner).is_none() {
                     decoded.fidelity.record_response_item_id(
@@ -315,7 +315,7 @@ impl ResponseDelivery {
             return Ok(frames);
         }
         let projected;
-        let events = if attempt.is_native_messages() {
+        let events = if attempt.is_native() {
             projected = self
                 .native_projection
                 .get_or_insert_with(|| {
@@ -355,7 +355,7 @@ impl ResponseDelivery {
             .fidelity()
             .ok_or(AttemptError::Protocol("missing response fidelity"))?;
         let mut source = std::borrow::Cow::Borrowed(source);
-        if self.adapter.protocol == Profile::Responses || attempt.is_native_messages() {
+        if self.adapter.protocol == Profile::Responses || attempt.is_native() {
             for event in events {
                 if let StreamEvent::ItemStarted { item, .. } = event
                     && source.response_item_id(*item).is_none()

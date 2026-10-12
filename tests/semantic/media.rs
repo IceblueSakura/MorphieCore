@@ -140,6 +140,7 @@ mod image_binding {
             chat_completions: None,
             responses: None,
             messages: None,
+            generate_content: None,
             auth: AuthScheme::Bearer,
         }
     }

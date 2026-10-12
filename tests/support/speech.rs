@@ -19,6 +19,7 @@ pub fn provider(origin: &str) -> ProviderDefinition {
         chat_completions: None,
         responses: None,
         messages: None,
+        generate_content: None,
         auth: AuthScheme::Bearer,
     }
 }

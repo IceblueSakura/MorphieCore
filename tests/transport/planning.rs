@@ -19,6 +19,7 @@ mod candidates {
             chat_completions: None,
             responses: Some(EndpointPath::new("/responses").unwrap()),
             messages: None,
+            generate_content: None,
             auth: AuthScheme::Bearer,
         }
     }

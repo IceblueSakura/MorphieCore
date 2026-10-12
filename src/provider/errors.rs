@@ -68,6 +68,8 @@ const OVERFLOW: &[&str] = &[
     "maximum prompt length",
     "exceeded model token limit",
     "range of input length should be",
+    // Gemini: "The input token count (N) exceeds the maximum number of tokens allowed (M)."
+    "exceeds the maximum number of tokens allowed",
 ];
 const QUOTA: &[&str] = &[
     "insufficient_quota",

@@ -87,6 +87,7 @@ async fn same_provider_fallback_is_ordered_bounded_and_never_crosses_publication
             responses: Some(EndpointPath::new("/responses").unwrap()),
             chat_completions: None,
             messages: None,
+            generate_content: None,
             auth: AuthScheme::Bearer,
         };
         let endpoint = Endpoint {

@@ -4,6 +4,8 @@ mod messages;
 pub use messages::{MESSAGES_BINDINGS, MessagesBinding};
 mod embeddings;
 pub use embeddings::{EMBEDDING_BINDINGS, EmbeddingBinding};
+mod google;
+pub use google::{GOOGLE_BINDINGS, GoogleBinding};
 mod images;
 mod models;
 pub use images::{IMAGE_BINDINGS, ImageBinding};
@@ -48,7 +50,9 @@ impl ApiKeyBinding {
                 provider.responses.clone().expect("declared entry"),
                 self.replay_responses,
             ),
-            ProtocolProfile::AnthropicMessages => return Err(TopologyError::ContractUnsatisfiable),
+            ProtocolProfile::AnthropicMessages | ProtocolProfile::GoogleGenerateContent => {
+                return Err(TopologyError::ContractUnsatisfiable);
+            }
         };
         let scope = crate::protocol::replay_envelope::issuer(provider.id.as_str(), self.upstream);
         let contract = TargetCaps {
@@ -91,6 +95,7 @@ impl ApiKeyBinding {
             ProtocolProfile::OpenAiChat => "chat",
             ProtocolProfile::OpenAiResponses => "responses",
             ProtocolProfile::AnthropicMessages => "messages",
+            ProtocolProfile::GoogleGenerateContent => "generate-content",
         };
         EndpointId::new(&format!("{}-{suffix}", self.endpoint_prefix)).expect("static id")
     }
@@ -182,6 +187,12 @@ pub fn topology(
         public_models.push(binding.public_model());
         canonical_models.push(binding.canonical_model());
     }
+    for binding in GOOGLE_BINDINGS {
+        endpoints.push(binding.endpoint());
+        routes.push(binding.route());
+        public_models.push(binding.public_model());
+        canonical_models.push(binding.canonical_model());
+    }
     compile(
         catalog::all(),
         endpoints,
@@ -220,6 +231,12 @@ pub fn topology(
             .chain(MESSAGES_BINDINGS.iter().map(|b| {
                 (
                     ModelId::new(b.model).expect("static messages id"),
+                    b.metadata(),
+                )
+            }))
+            .chain(GOOGLE_BINDINGS.iter().map(|b| {
+                (
+                    ModelId::new(b.model).expect("static google id"),
                     b.metadata(),
                 )
             }))

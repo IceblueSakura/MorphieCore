@@ -112,6 +112,7 @@ pub enum GenerationOperation {
     ChatCompletions,
     Responses,
     AnthropicMessages,
+    GoogleGenerateContent,
 }
 /// A borrowed operation declaration; endpoints cannot override its path or auth.
 #[derive(Clone, Copy, Debug)]
@@ -130,6 +131,9 @@ pub struct ProviderDefinition {
     pub responses: Option<EndpointPath>,
     /// A native Messages operation declaration, not a usable public model binding.
     pub messages: Option<EndpointPath>,
+    /// The model collection of generateContent; an endpoint appends
+    /// `/{model}:streamGenerateContent`.
+    pub generate_content: Option<EndpointPath>,
     /// Credential-domain default, also used by independently declared media operations.
     pub auth: AuthScheme,
 }
@@ -141,6 +145,10 @@ impl ProviderDefinition {
             GenerationOperation::AnthropicMessages => (
                 self.messages.as_ref()?,
                 AuthScheme::ApiKeyHeader("x-api-key"),
+            ),
+            GenerationOperation::GoogleGenerateContent => (
+                self.generate_content.as_ref()?,
+                AuthScheme::ApiKeyHeader("x-goog-api-key"),
             ),
         };
         Some(GenerationEntry { path, auth })

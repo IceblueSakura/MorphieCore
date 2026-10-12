@@ -32,6 +32,7 @@ mod native_bindings {
             chat_completions: Some(EndpointPath::new("/chat/completions").unwrap()),
             responses: None,
             messages: Some(EndpointPath::new("/messages").unwrap()),
+            generate_content: None,
             auth: AuthScheme::Bearer,
         }
     }

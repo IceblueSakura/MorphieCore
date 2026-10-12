@@ -67,6 +67,14 @@ impl Endpoint {
                     )?,
                 }
             }
+            (ProtocolProfile::GoogleGenerateContent, TargetCaps::GoogleGenerateContent(_)) => {
+                UpstreamAdapter::GoogleGenerateContent {
+                    target: crate::protocol::native::ReplayTarget::new(
+                        self.provider.as_str(),
+                        &self.upstream_model,
+                    )?,
+                }
+            }
             (
                 ProtocolProfile::OpenAiChat | ProtocolProfile::OpenAiResponses,
                 TargetCaps::OpenAi(caps),
@@ -103,6 +111,10 @@ impl Endpoint {
                 UpstreamAdapter::AnthropicMessages { target, .. },
                 TargetCaps::AnthropicMessages(caps),
             ) => caps.encode_request(request, &target),
+            (
+                UpstreamAdapter::GoogleGenerateContent { target },
+                TargetCaps::GoogleGenerateContent(caps),
+            ) => caps.encode_request(request, &target),
             _ => Err(crate::protocol::CodecError::ProfileMismatch.into()),
         }
     }
@@ -117,6 +129,29 @@ impl Endpoint {
                 .openai()?
                 .request_headers(request, caps.cache),
             TargetCaps::AnthropicMessages(caps) => caps.request_headers(request),
+            TargetCaps::GoogleGenerateContent(caps) => Ok(caps.request_headers()),
+        }
+    }
+    /// The target path the Provider's declared operation entry implies for this binding:
+    /// the entry itself, or for generateContent the model inside its collection.
+    pub(crate) fn declared_path(&self, entry: &EndpointPath) -> String {
+        match self.protocol {
+            ProtocolProfile::GoogleGenerateContent => format!(
+                "{}/{}:streamGenerateContent",
+                entry.as_str(),
+                self.upstream_model
+            ),
+            _ => entry.as_str().into(),
+        }
+    }
+    /// Relative request target. generateContent names the model in its path and
+    /// selects SSE framing with a fixed query, never business input.
+    pub(crate) fn request_path(&self) -> String {
+        match self.protocol {
+            ProtocolProfile::GoogleGenerateContent => {
+                format!("{}?alt=sse", self.target.path.as_str())
+            }
+            _ => self.target.path.as_str().into(),
         }
     }
     pub fn validate(&self) -> Result<(), crate::topology::TopologyError> {
