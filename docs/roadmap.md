@@ -23,11 +23,9 @@ Vendor stream shapes are a standing rule, not a phase: a Chat shape seen from a 
 
 An agent loop decides its next step from the error class, the terminal and its own history; the gateway makes those identical across Providers.
 
-- **Scenario fixtures.** One hand-written wire fixture per scenario per protocol, checked wire→IR and IR→wire against a synthetic upstream; pair-level tests only for pair-specific projection rules ([test rules](../AGENTS.md#tests)). Each SSE fixture is also fed in small fixed-size chunks. Consumer expectations come from pi (`openai-completions`, `openai-responses`) and opencode's own `@opencode/ai` protocols (`openai-chat`, `open-responses`; it no longer uses the AI SDK) at the revisions in [references](references.md). Scenarios:
-  - Text, single and parallel tools, tool errors, reasoning replay, usage, truncation, each error class.
-  - Consumer shapes: a tool name only on the first fragment; no empty reasoning or tool-call deltas; null, empty and absent stay distinct.
+- **Consumer audit.** Check the target agents' latest parsers and request builders against the gateway (references pins) and fix real defects with a functional test each.
 
-Exit: each error class reaches pi and Codex as the class they act on, in JSON and SSE; every scenario has an independent expectation per protocol; the SDK loopback gate passes.
+Exit: each error class reaches pi and Codex as the class they act on, in JSON and SSE; the consumer audit leaves no known defect; the SDK loopback gate passes.
 
 ## Later phases
 
@@ -64,6 +62,10 @@ Only when a target agent needs a Gemini model. IR questions to settle first:
 ### Phase 6 — Google Interactions upstream
 
 Submit full history statelessly, without server-side storage; reuse the opaque envelope. Pin the official API version before starting.
+
+### Coverage pass (after the feature phases)
+
+Feature phases add functional tests only. Once they are done: one hand-written wire fixture per scenario per protocol, checked wire→IR and IR→wire against a synthetic upstream, each SSE fixture also fed in small fixed-size chunks, with consumer expectations from pi and opencode. Scenarios: text, single and parallel tools, tool errors, reasoning replay, usage, truncation, each error class; consumer shapes (a tool name only on the first fragment, no empty reasoning or tool-call deltas, null/empty/absent kept distinct).
 
 ### After that
 

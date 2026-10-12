@@ -248,6 +248,10 @@ async fn answer(
         }
         return native_response(response, body["stream"] == true);
     }
+    assert_eq!(
+        body["tool_choice"],
+        json!({"type":"auto","disable_parallel_tool_use":true})
+    );
     let turn = body["messages"].as_array().unwrap().len() > 1;
     if turn {
         assert_eq!(
@@ -391,6 +395,8 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             input["prompt_cache_key"] = json!("pi-session");
             input["prompt_cache_retention"] = json!("24h");
             input["client_metadata"] = json!({"session_id":"synthetic-session"});
+            // Without `tool_choice`, the switch rides on Messages' default `auto`.
+            input["parallel_tool_calls"] = json!(false);
             if stream && !responses {
                 input["stream_options"] = json!({"include_usage":true,"include_obfuscation":false});
             }

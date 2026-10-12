@@ -1280,6 +1280,12 @@ mod replay_carrier {
                 .decode_client_request(history("AX").to_string().as_bytes())
                 .is_err()
         );
+        // pi's DeepSeek compat adds an empty `reasoning_content` beside the details.
+        assert!(
+            chat_client()
+                .decode_client_request(history("").to_string().as_bytes())
+                .is_ok()
+        );
     }
 }
 mod replay_formats {

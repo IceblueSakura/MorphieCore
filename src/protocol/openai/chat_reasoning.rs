@@ -190,8 +190,12 @@ fn parse_message(
         .iter()
         .flat_map(|group| group.parts.iter().map(|(_, text)| text.as_str()))
         .collect();
+    // An empty view says nothing: pi sends `reasoning_content: ""` beside the
+    // details when its DeepSeek compat requires the field.
     for key in ["reasoning", "reasoning_content"] {
-        if let Some(value) = m.get(key).filter(|v| !v.is_null())
+        if let Some(value) = m
+            .get(key)
+            .filter(|v| !v.is_null() && v.as_str() != Some(""))
             && value
                 .as_str()
                 .ok_or(CodecError::Invalid("reasoning view"))?

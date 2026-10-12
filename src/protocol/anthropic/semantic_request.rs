@@ -137,10 +137,14 @@ pub(super) fn project(
                 .map_or(Presence::Absent, |b| Presence::Value(!b)),
         })
     } else {
-        if s.parallel_tool_calls.is_some() {
-            return Err(unsupported());
+        // Messages carries the switch only inside `tool_choice`, whose default is `auto`.
+        match s.parallel_tool_calls {
+            Some(false) if tools.value().is_some() => Presence::Value(super::ToolChoice {
+                selection: Selection::Auto,
+                disable_parallel_tool_use: Presence::Value(true),
+            }),
+            _ => Presence::Absent,
         }
-        Presence::Absent
     };
     let reasoning = &s.reasoning;
     if reasoning.budget.is_some()
