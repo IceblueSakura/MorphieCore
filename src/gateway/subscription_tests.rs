@@ -50,6 +50,7 @@ async fn consume(
     });
     let entry = Arc::new(BoundEntry {
         public: original.public.clone(),
+        messages: false,
         client: Adapter::new(
             Profile::Responses,
             crate::protocol::openai::Dialect::MorphieCore,

@@ -63,8 +63,11 @@ struct BoundCandidate {
     credential_fallback: bool,
     cache_scope: crate::semantic::value::ReplayOrigin,
 }
+#[derive(Clone)]
 struct BoundEntry {
     public: PublicModel,
+    /// Messages clients (Claude Code) share the Chat entry's candidates.
+    messages: bool,
     client: Adapter,
     downstream: TargetCaps,
     policy: crate::topology::RoutePolicy,
@@ -114,3 +117,4 @@ fn family(profile: Profile) -> u8 {
         Profile::Responses => 1,
     }
 }
+const MESSAGES_FAMILY: u8 = 2;

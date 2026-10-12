@@ -105,6 +105,35 @@ pub(super) fn prepare(
     profile: Profile,
     bytes: &[u8],
 ) -> Result<(Arc<BoundEntry>, Request), ApiError> {
+    prepare_in(state, family(profile), bytes, |entry| {
+        entry.client.decode_client_request(bytes)
+    })
+}
+/// Messages clients use the model's Chat candidates through their own codec.
+pub(super) fn prepare_messages(
+    state: &Runtime,
+    bytes: &[u8],
+) -> Result<(Arc<BoundEntry>, Request), ApiError> {
+    prepare_in(state, super::MESSAGES_FAMILY, bytes, |entry| {
+        let mut request = crate::protocol::anthropic::client::decode_client_request(bytes)?;
+        // Only native Messages targets carry `is_error`; elsewhere the result text
+        // stays and the flag is dropped by name.
+        let native = entry
+            .candidates
+            .iter()
+            .all(|c| c.endpoint.protocol == crate::topology::ProtocolProfile::AnthropicMessages);
+        if !native && request.drop_tool_error_flags()? {
+            request.ignored_fields.push("tool_result.is_error".into());
+        }
+        Ok(request)
+    })
+}
+fn prepare_in(
+    state: &Runtime,
+    family: u8,
+    bytes: &[u8],
+    decode: impl FnOnce(&BoundEntry) -> Result<Request, crate::protocol::CodecError>,
+) -> Result<(Arc<BoundEntry>, Request), ApiError> {
     // Only envelope identity is inspected here; semantic interpretation starts
     // after resolving the trusted Public Model/task. Duplicate keys remain errors.
     let value = crate::protocol::openai::json::decode(bytes).map_err(|_| ApiError::invalid())?;
@@ -114,16 +143,13 @@ pub(super) fn prepare(
         .ok_or(ApiError::invalid())?;
     let entry = state
         .entries
-        .get(&(family(profile), model.into()))
+        .get(&(family, model.into()))
         .ok_or(ApiError::new(StatusCode::NOT_FOUND, "model_not_found"))?
         .clone();
     if value.get("session_id").is_some() {
         return Err(ApiError::invalid());
     }
-    let mut request = entry
-        .client
-        .decode_client_request(bytes)
-        .map_err(|_| ApiError::invalid())?;
+    let mut request = decode(&entry).map_err(|_| ApiError::invalid())?;
     crate::execution::replay::open_from_client(&mut request).map_err(|_| ApiError::invalid())?;
     let mut settings = request.task.semantic.settings().clone();
     match settings.controls.max_output_tokens {

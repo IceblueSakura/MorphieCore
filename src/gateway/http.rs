@@ -22,6 +22,7 @@ impl Gateway {
             )
             .route("/v1/chat/completions", post(chat))
             .route("/v1/responses", post(responses))
+            .route("/v1/messages", post(messages))
             .route("/v1/embeddings", post(super::embeddings::handle))
             .route("/v1/images/generations", post(super::images::handle))
             .route("/v1/audio/speech", post(super::speech::handle))
@@ -84,9 +85,23 @@ async fn responses(State(state): State<Arc<Runtime>>, request: Request) -> Respo
         .await
         .unwrap_or_else(IntoResponse::into_response)
 }
+/// Anthropic Messages clients (Claude Code); errors use Anthropic's envelope.
+async fn messages(State(state): State<Arc<Runtime>>, request: Request) -> Response {
+    handle_client(state, None, request)
+        .await
+        .unwrap_or_else(ApiError::into_messages_response)
+}
 pub(super) async fn handle(
     state: Arc<Runtime>,
     profile: Profile,
+    request: Request,
+) -> Result<Response, ApiError> {
+    handle_client(state, Some(profile), request).await
+}
+/// `None` is a Messages client.
+async fn handle_client(
+    state: Arc<Runtime>,
+    profile: Option<Profile>,
     request: Request,
 ) -> Result<Response, ApiError> {
     let mut trace = Trace::new(state.diagnostics.as_ref());
@@ -105,12 +120,19 @@ pub(super) async fn handle(
         _=state.shutdown.cancelled()=>return Err(ApiError::shutdown()),
         result=tokio::time::timeout(state.limits.body_timeout,admission::collect(request.into_body(),state.limits.request_bytes))=>result.map_err(|_|ApiError::new(StatusCode::REQUEST_TIMEOUT,"request_timeout"))??,
     };
-    let (entry, mut semantic) = admission::prepare(&state, profile, &bytes)?;
+    let (entry, mut semantic) = match profile {
+        Some(profile) => admission::prepare(&state, profile, &bytes)?,
+        None => admission::prepare_messages(&state, &bytes)?,
+    };
+    // Messages streaming lands in the next slice.
+    if profile.is_none() && semantic.delivery.streaming() {
+        return Err(ApiError::invalid());
+    }
     semantic.conversation = Some(conversation);
     trace.ignored_fields(std::mem::take(&mut semantic.ignored_fields));
     let deadline = tokio::time::Instant::now() + state.limits.exchange_timeout;
-    let failed =
-        (profile == Profile::Responses && semantic.delivery.streaming()).then(|| entry.clone());
+    let failed = (profile == Some(Profile::Responses) && semantic.delivery.streaming())
+        .then(|| entry.clone());
     match exchange::run(state, entry, semantic, deadline, permit, trace).await {
         Err(error) if error.streams_as_failed() && failed.is_some() => {
             failed_stream(&failed.expect("checked"), &error)

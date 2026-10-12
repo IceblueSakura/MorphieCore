@@ -341,6 +341,7 @@ impl Gateway {
                     .entry((family(entry.protocol), entry.model.clone()))
                     .or_insert_with(|| BoundEntry {
                         public: public.clone(),
+                        messages: false,
                         client,
                         downstream,
                         policy: route.policy.clone(),
@@ -378,6 +379,13 @@ impl Gateway {
                     .position(|id| id == &c.endpoint.id)
                     .expect("validated member")
             });
+            if key.0 == family(Profile::Chat) {
+                let messages = BoundEntry {
+                    messages: true,
+                    ..group.clone()
+                };
+                activated.insert((super::MESSAGES_FAMILY, key.1.clone()), Arc::new(messages));
+            }
             activated.insert(key, Arc::new(group));
         }
         let shutdown = CancellationToken::new();

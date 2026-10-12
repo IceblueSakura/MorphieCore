@@ -248,7 +248,8 @@ pub(super) async fn produce_candidate(
         sse,
         options,
         padding,
-    );
+    )
+    .for_messages(entry.messages);
     let result = produce(
         upstream,
         &mut attempt,

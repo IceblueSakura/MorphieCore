@@ -241,6 +241,81 @@ async fn upstream_failures_reach_clients_as_agent_error_classes() {
         }
     }
 }
+#[tokio::test]
+async fn messages_clients_get_anthropic_shapes_from_an_openai_target() {
+    let gate = gateway(Limits::default());
+    let entry =
+        gate.state.entries[&(crate::gateway::MESSAGES_FAMILY, "fixture-model".into())].clone();
+    // A failed tool result keeps its text toward an OpenAI target; the flag is named.
+    let body = serde_json::json!({"model":"fixture-model","max_tokens":32,"messages":[
+        {"role":"user","content":"q"},
+        {"role":"assistant","content":[{"type":"tool_use","id":"call-local","name":"lookup","input":{}}]},
+        {"role":"user","content":[{"type":"tool_result","tool_use_id":"call-local","content":"boom","is_error":true}]}]});
+    let (_, request) =
+        crate::gateway::admission::prepare_messages(&gate.state, body.to_string().as_bytes())
+            .unwrap();
+    assert_eq!(request.ignored_fields, ["tool_result.is_error"]);
+    for (turn, expected) in [
+        (
+            0,
+            serde_json::json!({"content":[{"type":"text","text":"old 🧪"}],"stop_reason":"end_turn"}),
+        ),
+        (
+            1,
+            serde_json::json!({"content":[{"type":"tool_use","id":"call-local","name":"lookup","input":{"n":1}}],
+                "stop_reason":"tool_use"}),
+        ),
+    ] {
+        let (tx, upstream, _, _) = upstream(200, "application/json");
+        tx.send(Ok(Bytes::from(wire::response(turn).to_string())))
+            .await
+            .unwrap();
+        drop(tx);
+        let response = respond(
+            entry.clone(),
+            entry.candidates[0].clone(),
+            request.clone(),
+            upstream,
+            &gate.state.limits,
+            Instant::now() + Duration::from_secs(2),
+            gate.state.shutdown.clone(),
+            gate.state.permits.clone().acquire_owned().await.unwrap(),
+            super::Trace::new(None),
+        )
+        .await
+        .unwrap();
+        let bytes = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(value["type"], "message");
+        assert_eq!(value["model"], "fixture-model");
+        assert_eq!(value["content"], expected["content"]);
+        assert_eq!(value["stop_reason"], expected["stop_reason"]);
+        assert_eq!(
+            value["usage"],
+            serde_json::json!({"input_tokens":3,"output_tokens":2})
+        );
+    }
+    // Errors use Anthropic's envelope with the wording Claude Code reacts to.
+    let error = ApiError::failure(
+        400,
+        br#"{"error":{"message":"maximum context length is 9 tokens"}}"#,
+        None,
+    )
+    .into_messages_response();
+    assert_eq!(error.status(), 400);
+    let bytes = axum::body::to_bytes(error.into_body(), 4096).await.unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(value["type"], "error");
+    assert_eq!(value["error"]["type"], "invalid_request_error");
+    assert!(
+        value["error"]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("prompt is too long")
+    );
+}
 async fn bounded<T>(future: impl std::future::Future<Output = T>) -> T {
     tokio::time::timeout(Duration::from_secs(2), future)
         .await

@@ -147,7 +147,7 @@ pub struct Tool {
     pub strict: Presence<bool>,
 }
 impl Tool {
-    fn read(v: &Value) -> Result<Self, CodecError> {
+    pub(super) fn read(v: &Value) -> Result<Self, CodecError> {
         let o = closed(v, &["name", "description", "input_schema", "strict"])?;
         Ok(Self {
             name: string(required(o, "name")?)?,
@@ -156,7 +156,7 @@ impl Tool {
             strict: presence(o, "strict", boolean)?,
         })
     }
-    fn bytes(&self) -> Result<usize, CodecError> {
+    pub(super) fn bytes(&self) -> Result<usize, CodecError> {
         name(&self.name, 128)?;
         nonnull(&self.description)?;
         nonnull(&self.strict)?;
@@ -196,7 +196,7 @@ pub struct ToolChoice {
     pub disable_parallel_tool_use: Presence<bool>,
 }
 impl ToolChoice {
-    fn read(v: &Value) -> Result<Self, CodecError> {
+    pub(super) fn read(v: &Value) -> Result<Self, CodecError> {
         let o = closed(v, &["type", "name", "disable_parallel_tool_use"])?;
         let selection = match required(o, "type")?.as_str() {
             Some("tool") => Selection::Tool(string(required(o, "name")?)?),
@@ -277,7 +277,7 @@ pub enum Effort {
     Max,
 }
 impl Effort {
-    fn read(v: &Value) -> Result<Self, CodecError> {
+    pub(super) fn read(v: &Value) -> Result<Self, CodecError> {
         let o = closed(v, &["effort"])?;
         match required(o, "effort")?.as_str() {
             Some("low") => Ok(Self::Low),

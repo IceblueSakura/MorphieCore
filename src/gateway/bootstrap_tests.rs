@@ -336,7 +336,8 @@ fn native_messages_binding_activates_only_when_listed() {
         assert!(!boot.gateway.state.entries.contains_key(&key));
     }
     let boot = Fixture::from_lookup(settings(Some(r#"["claude-haiku-5-5"]"#))).unwrap();
-    assert_eq!(boot.gateway.state.entries.len(), 2);
+    // Chat, Responses and Messages clients.
+    assert_eq!(boot.gateway.state.entries.len(), 3);
     for protocol in [Profile::Chat, Profile::Responses] {
         let entry = &boot.gateway.state.entries[&(super::super::family(protocol), haiku.into())];
         let endpoint = &entry.candidates[0].endpoint;

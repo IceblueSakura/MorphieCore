@@ -8,7 +8,7 @@ MorphieCore is a central gateway for a few agents (pi and opencode first, Codex 
 |---|---|---|
 | Downstream | OpenAI Chat Completions (declared losses, extension fields for missing semantics) | Live; pi and opencode |
 | Downstream | OpenAI Responses | Live; pi, opencode and Codex |
-| Downstream | Anthropic Messages | Planned, for Claude Code |
+| Downstream | Anthropic Messages | JSON, for Claude Code; SSE next. Uses each model's Chat candidates; `is_error` is dropped by name when a non-native target may serve |
 | Upstream | OpenAI Responses and Chat, including compatible dialects | Live |
 | Upstream | Anthropic Messages | JSON and SSE; directory bootstrap activates a binding only when `models` lists it |
 | Upstream | Google generateContent, Google Interactions | Planned |

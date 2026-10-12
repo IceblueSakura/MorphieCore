@@ -99,6 +99,23 @@ impl Request {
         }
         Ok(())
     }
+    /// Clear tool result error flags; true when any was set.
+    pub(crate) fn drop_tool_error_flags(&mut self) -> Result<bool, CodecError> {
+        use crate::semantic::task::generation::Item;
+        let mut items = self.task.semantic.items().to_vec();
+        let mut dropped = false;
+        for (_, item) in &mut items {
+            if let Item::ToolResult(result) = item
+                && result.is_error.take().is_some()
+            {
+                dropped = true;
+            }
+        }
+        if dropped {
+            self.task.semantic = self.task.semantic.clone().with_items(items)?;
+        }
+        Ok(dropped)
+    }
     pub(crate) fn check_grouping(&self) -> Result<(), CodecError> {
         if self.conversation.is_some() && self.cache_session.is_some() {
             return Err(CodecError::Invalid("ambiguous request grouping"));

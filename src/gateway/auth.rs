@@ -16,19 +16,26 @@ impl Auth {
             digest: Sha256::digest(secret.expose().as_bytes()).into(),
         })
     }
+    /// Exactly one credential: `Authorization: Bearer`, or `x-api-key` as Anthropic
+    /// clients (Claude Code with `ANTHROPIC_API_KEY`) send it.
     pub fn accepts(&self, headers: &HeaderMap) -> bool {
-        let mut values = headers.get_all(AUTHORIZATION).iter();
-        let Some(value) = values.next() else {
-            return false;
+        let bearer: Vec<_> = headers.get_all(AUTHORIZATION).iter().collect();
+        let key: Vec<_> = headers.get_all("x-api-key").iter().collect();
+        let secret = match (bearer.as_slice(), key.as_slice()) {
+            ([value], []) => {
+                let bytes = value.as_bytes();
+                if bytes.len() < 8 || !bytes[..7].eq_ignore_ascii_case(b"Bearer ") {
+                    return false;
+                }
+                &bytes[7..]
+            }
+            ([], [value]) => value.as_bytes(),
+            _ => return false,
         };
-        if values.next().is_some() {
+        if secret.len() > 4096 {
             return false;
         }
-        let bytes = value.as_bytes();
-        if bytes.len() < 8 || bytes.len() > 4103 || !bytes[..7].eq_ignore_ascii_case(b"Bearer ") {
-            return false;
-        }
-        let digest: [u8; 32] = Sha256::digest(&bytes[7..]).into();
+        let digest: [u8; 32] = Sha256::digest(secret).into();
         bool::from(digest.ct_eq(&self.digest))
     }
 }
@@ -66,6 +73,18 @@ mod tests {
             "Bearer synthetic-client-identity-00000001-extra"
                 .parse()
                 .unwrap(),
+        );
+        assert!(!auth.accepts(&h));
+        h.clear();
+        h.insert(
+            "x-api-key",
+            "synthetic-client-identity-00000001".parse().unwrap(),
+        );
+        assert!(auth.accepts(&h));
+        // Two credentials are ambiguous even when both are valid.
+        h.insert(
+            AUTHORIZATION,
+            "Bearer synthetic-client-identity-00000001".parse().unwrap(),
         );
         assert!(!auth.accepts(&h));
     }

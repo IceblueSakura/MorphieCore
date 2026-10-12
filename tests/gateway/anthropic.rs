@@ -524,6 +524,58 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
         }
     }
     assert_eq!(seen.lock().unwrap().len(), 26);
+    // A Messages client (Claude Code) runs the same tool loop with thinking replay.
+    let mut input = json!({"model":binding.model,"max_tokens":64,
+        "metadata":{"user_id":"synthetic-user"},
+        "system":[{"type":"text","text":"Be brief.","cache_control":{"type":"ephemeral"}}],
+        "tools":[{"name":"lookup","strict":false,"cache_control":{"type":"ephemeral"},
+            "input_schema":{"type":"object","properties":{"key":{"type":"string"}}}}],
+        "tool_choice":{"type":"auto","disable_parallel_tool_use":true},
+        "messages":[{"role":"user","content":"lookup"}]});
+    for turn in 0..2 {
+        let result = client
+            .post(format!("{base}/v1/messages"))
+            .header("x-api-key", "synthetic-client-identity-00000001")
+            .header("anthropic-version", "2023-06-01")
+            .json(&input)
+            .send()
+            .await
+            .unwrap();
+        let status = result.status();
+        let body: Value = result.json().await.unwrap();
+        assert_eq!(status, 200, "Messages turn {turn}: {body}");
+        assert_eq!(body["type"], "message");
+        assert_eq!(body["role"], "assistant");
+        assert_eq!(body["model"], binding.model);
+        assert_eq!(
+            body["usage"],
+            json!({"input_tokens":11,"cache_read_input_tokens":3,"cache_creation_input_tokens":2,"output_tokens":7})
+        );
+        if turn == 1 {
+            assert_eq!(body["content"], json!([{"type":"text","text":"answer"}]));
+            assert_eq!(body["stop_reason"], "end_turn");
+            break;
+        }
+        assert_eq!(body["stop_reason"], "tool_use");
+        assert_eq!(body["content"][0]["type"], "thinking");
+        assert_eq!(body["content"][0]["thinking"], "plan");
+        let (_, format, payload) =
+            replay_envelope::open(body["content"][0]["signature"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            format,
+            morphiecore::semantic::task::generation::ReplayFormat::AnthropicMessagesThinking
+        );
+        assert_eq!(payload.as_str(), "synthetic-native-signature");
+        assert_eq!(
+            body["content"][1],
+            json!({"type":"tool_use","id":"call-local","name":"lookup","input":{"key":"A"}})
+        );
+        let history = input["messages"].as_array_mut().unwrap();
+        history.push(json!({"role":"assistant","content":body["content"]}));
+        history.push(json!({"role":"user","content":[
+            {"type":"tool_result","tool_use_id":"call-local","content":"found"}]}));
+    }
+    assert_eq!(seen.lock().unwrap().len(), 28);
     for profile in [Profile::Responses, Profile::Chat] {
         let responses = profile == Profile::Responses;
         let path = if responses {
@@ -616,7 +668,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             );
         }
     }
-    assert_eq!(seen.lock().unwrap().len(), 32);
+    assert_eq!(seen.lock().unwrap().len(), 34);
     // Error classes: Codex reads overflow only from a streamed `response.failed`;
     // a failure after headers ends the stream with its class instead of a cut.
     for profile in [Profile::Responses, Profile::Chat] {
@@ -697,7 +749,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             }
         }
     }
-    assert_eq!(seen.lock().unwrap().len(), 50);
+    assert_eq!(seen.lock().unwrap().len(), 52);
     diagnostic_owner.flush_diagnostics().await;
     let records = std::fs::read_to_string(&diagnostics).unwrap();
     assert!(records.contains(r#""request_rules":["messages.omit-sampling.v1"]"#));

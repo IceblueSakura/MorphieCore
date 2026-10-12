@@ -115,6 +115,65 @@ impl ApiError {
         json!({"error":{"message":message,"type":kind,"param":null,"code":self.code}})
     }
 }
+impl ApiError {
+    /// Anthropic's error envelope for Messages clients, with the wording Claude
+    /// Code reacts to (context overflow reads "prompt is too long").
+    pub fn into_messages_response(self) -> Response {
+        let (status, kind, message): (StatusCode, &str, String) = match self.code {
+            "context_length_exceeded" => (
+                StatusCode::BAD_REQUEST,
+                "invalid_request_error",
+                "prompt is too long: the input exceeds the context window of this model".into(),
+            ),
+            "insufficient_quota" => (
+                StatusCode::PAYMENT_REQUIRED,
+                "billing_error",
+                "The upstream credit balance is too low; check the plan and billing details."
+                    .into(),
+            ),
+            "rate_limit_exceeded" => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "rate_limit_error",
+                "Rate limit reached. Please retry later.".into(),
+            ),
+            "server_is_overloaded" => (
+                StatusCode::from_u16(529).expect("valid status"),
+                "overloaded_error",
+                "Overloaded".into(),
+            ),
+            _ => {
+                let kind = match self.status.as_u16() {
+                    401 => "authentication_error",
+                    403 => "permission_error",
+                    404 => "not_found_error",
+                    429 => "rate_limit_error",
+                    400..=499 => "invalid_request_error",
+                    _ => "api_error",
+                };
+                (
+                    self.status,
+                    kind,
+                    "The request could not be completed.".into(),
+                )
+            }
+        };
+        let mut response = (
+            status,
+            Json(json!({"type":"error","error":{"type":kind,"message":message}})),
+        )
+            .into_response();
+        if let Some(seconds) = self.retry_after {
+            response
+                .headers_mut()
+                .insert("retry-after", axum::http::HeaderValue::from(seconds));
+        }
+        response.headers_mut().insert(
+            "cache-control",
+            axum::http::HeaderValue::from_static("no-store"),
+        );
+        response
+    }
+}
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let mut response = (self.status, Json(self.body())).into_response();

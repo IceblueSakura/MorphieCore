@@ -57,6 +57,8 @@ pub struct ResponseDelivery {
     rejected: bool,
     native_created: Option<serde_json::Number>,
     native_projection: Option<crate::protocol::openai::lowering::native_messages::EventProjection>,
+    /// Encode for an Anthropic Messages client instead of the OpenAI adapter.
+    messages: bool,
 }
 impl ResponseDelivery {
     pub fn new(
@@ -89,7 +91,13 @@ impl ResponseDelivery {
                 .ok()
                 .map(|time| time.as_secs().into()),
             native_projection: None,
+            messages: false,
         }
+    }
+    /// Deliver to an Anthropic Messages client (Claude Code) when `messages`.
+    pub fn for_messages(mut self, messages: bool) -> Self {
+        self.messages = messages;
+        self
     }
     pub fn lifecycle(&self) -> &Lifecycle {
         &self.lifecycle
@@ -138,7 +146,7 @@ impl ResponseDelivery {
         let mut decoded = attempt.response()?.clone();
         decoded.metadata = self.metadata(attempt)?;
         super::replay::seal_for_client(&mut decoded, &super::replay::CLIENT_ORIGIN)?;
-        if attempt.is_native_messages() {
+        if attempt.is_native_messages() && !self.messages {
             crate::protocol::openai::lowering::native_messages::project(
                 &mut decoded,
                 self.adapter.protocol,
@@ -164,6 +172,7 @@ impl ResponseDelivery {
     ) -> Option<crate::adapter::Request> {
         use crate::protocol::cache_affinity::{MAX_PROMPT_BYTES, prefixes};
         if self.rejected
+            || self.messages
             || self.lifecycle.state() != crate::execution::DeliveryState::Terminal
             || attempt.response().ok()?.semantic.outcome()
                 != crate::semantic::task::generation::Outcome::Completed
@@ -209,7 +218,14 @@ impl ResponseDelivery {
             }
             self.bind(attempt)?;
             let decoded = self.client_response(attempt)?;
-            let value = self.adapter.encode_response(&decoded, &self.contract)?;
+            let value = if self.messages {
+                crate::protocol::anthropic::client::encode_client_response(
+                    &decoded,
+                    &self.public_label,
+                )?
+            } else {
+                self.adapter.encode_response(&decoded, &self.contract)?
+            };
             let body = serde_json::to_vec(&value)
                 .map_err(|_| AttemptError::Protocol("body serialization"))?;
             self.rendered = true;
