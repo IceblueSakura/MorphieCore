@@ -48,35 +48,6 @@ impl Request {
             n: Presence::Absent,
         })
     }
-    /// Optional caller-owned stability check, never a cache directive or hit claim.
-    pub fn capture_cache_prefix(
-        &self,
-        intent: crate::semantic::cache::CachePrefixIntent,
-        scope: &crate::semantic::cache::CachePrefixScope,
-    ) -> Result<crate::semantic::cache::CachePrefixProof, AdapterError> {
-        self.check_context(true)?;
-        Ok(intent
-            .capture(&self.task.semantic, self.cache_prefix_context(), scope)
-            .map_err(CodecError::from)?)
-    }
-    pub fn check_cache_prefix(
-        &self,
-        proof: &crate::semantic::cache::CachePrefixProof,
-        scope: &crate::semantic::cache::CachePrefixScope,
-    ) -> Result<(), AdapterError> {
-        self.check_context(true)?;
-        Ok(proof
-            .check(&self.task.semantic, self.cache_prefix_context(), scope)
-            .map_err(CodecError::from)?)
-    }
-    fn cache_prefix_context(&self) -> crate::semantic::cache::CachePrefixContext<'_> {
-        crate::semantic::cache::CachePrefixContext {
-            model: &self.model,
-            hints: &self.context,
-            grouping: self.cache_session.as_ref().map(|session| session.as_str()),
-            conversation: self.conversation.as_ref(),
-        }
-    }
     pub fn check_semantic(
         &self,
         contract: &crate::semantic::task::generation::GenerationSemanticContract,

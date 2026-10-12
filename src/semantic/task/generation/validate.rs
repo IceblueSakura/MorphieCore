@@ -53,8 +53,7 @@ pub fn items(
     let mut calls = BTreeMap::new();
     let mut namespaces = BTreeMap::new();
     let mut results = BTreeSet::new();
-    let mut bytes =
-        crate::semantic::task::generation::history::configuration::validate_bindings(items)?;
+    let mut bytes = 0usize;
     let mut file_decoded_bytes = 0usize;
     let mut citations = 0usize;
     for (position, (id, item)) in items.iter().enumerate() {
@@ -119,13 +118,6 @@ pub fn items(
                             charge(&mut bytes, reference.bytes())?;
                         }
                         ContentPart::Resource(resource) => {
-                            let expected = match m.role {
-                                MessageRole::User => ResourcePurpose::Input,
-                                MessageRole::Assistant => ResourcePurpose::Output,
-                            };
-                            if resource.purpose != expected {
-                                return Err(GenerationError::InvalidResource);
-                            }
                             let resource = resource.media(resources)?;
                             // Assistant images are observations, not public carrier admission.
                             if m.role == MessageRole::Assistant
@@ -242,10 +234,8 @@ pub fn items(
                             return Err(GenerationError::DuplicateCall);
                         }
                     }
-                    ProviderOperation::Reference(_) if !response => {
-                        observed
-                            .resolve(&items[..position])
-                            .map_err(|_| GenerationError::InvalidProviderObservation)?;
+                    ProviderOperation::Reference(reference) if !response => {
+                        provider_reference(observed, reference, &items[..position])?;
                     }
                     _ => {}
                 }
@@ -278,9 +268,6 @@ pub fn items(
                             match value {
                                 ToolResultPart::Text(text) => add(&mut bytes, text.as_str())?,
                                 ToolResultPart::Resource(resource) => {
-                                    if resource.purpose != ResourcePurpose::ToolResult {
-                                        return Err(GenerationError::InvalidResource);
-                                    }
                                     let resource = resource.media(resources)?;
                                     // Tool media is inert URL/inline content of any kind.
                                     // Opaque references need an issuer/lifecycle contract first.
@@ -363,13 +350,6 @@ fn provider_observation_value(
         return Err(GenerationError::InvalidProviderObservation);
     }
     add(bytes, observed.source.source.as_str())?;
-    if let Some(value) = &observed.replay {
-        if value.format() != ReplayFormat::GoogleInteractionsV1Step {
-            return Err(GenerationError::InvalidReplay);
-        }
-        value.validate()?;
-        add(bytes, value.as_str())?;
-    }
     match &observed.operation {
         ProviderOperation::Reported {
             tool,
@@ -461,9 +441,6 @@ fn provider_observation_value(
                 match value {
                     ToolResultPart::Text(value) => add(bytes, value.as_str())?,
                     ToolResultPart::Resource(resource) => {
-                        if resource.purpose != ResourcePurpose::ToolResult {
-                            return Err(GenerationError::InvalidResource);
-                        }
                         let resource = resource.media(resources)?;
                         charge(bytes, resource.validate()?)?;
                         if resource.kind() == ResourceKind::File {
@@ -689,4 +666,29 @@ pub fn tools(
         _ => {}
     }
     Ok(bytes)
+}
+
+/// A reference names exactly one earlier reported operation from the same source.
+fn provider_reference(
+    observed: &ProviderToolObservation,
+    reference: &ProviderOperationReference,
+    earlier: &[(ItemId, Item)],
+) -> Result<(), GenerationError> {
+    let mut matches = earlier.iter().filter(|(id, item)| match reference {
+        ProviderOperationReference::Native(value) => {
+            crate::semantic::task::generation::identity::call_alias(item).is_some_and(
+                |(domain, _, alias)| domain == Some(&observed.source) && alias == value.as_str(),
+            )
+        }
+        ProviderOperationReference::Local(owner) => id == owner,
+    });
+    match (matches.next(), matches.next()) {
+        (Some((_, Item::ProviderTool(found))), None)
+            if found.source == observed.source
+                && matches!(found.operation, ProviderOperation::Reported { .. }) =>
+        {
+            Ok(())
+        }
+        _ => Err(GenerationError::InvalidProviderObservation),
+    }
 }

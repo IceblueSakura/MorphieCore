@@ -49,12 +49,6 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
         Outcome::Completed,
     )
     .unwrap();
-    let grouped = GenerationResponse::new(progress.items().to_vec(), Outcome::Completed)
-        .unwrap()
-        .with_replay_groups(vec![
-            ReplayGroup::new(GroupId::new(LocalScope::ROOT, 1), vec![ItemId::new(1)]).unwrap(),
-        ])
-        .unwrap();
     let fidelity = crate::protocol::fidelity::FidelityRecords::default();
     let metadata = ResponseMetadata {
         id: Some("r".into()),
@@ -67,7 +61,6 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
         vec![(
             ItemId::new(1),
             Item::ProviderTool(ProviderToolObservation {
-                replay: None,
                 source: NativeAliasDomain {
                     source: text("abstract"),
                     scope: LocalScope::ROOT,
@@ -87,14 +80,7 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
         Outcome::Completed,
     )
     .unwrap();
-    for semantic in [
-        &structured,
-        &progress,
-        &scoped,
-        &replay,
-        &grouped,
-        &provider,
-    ] {
+    for semantic in [&structured, &progress, &scoped, &replay, &provider] {
         for profile in [Profile::Chat, Profile::Responses] {
             let forged = ResponseRepresentation {
                 semantic: std::borrow::Cow::Borrowed(semantic),
@@ -117,14 +103,7 @@ fn text(value: &str) -> Text {
     Text::new(value, "synthetic", 256).unwrap()
 }
 fn resource_table(url: &str) -> ResourceTable {
-    ResourceTable::new(vec![(
-        ResourceId::new(1),
-        ResourceDeclaration {
-            body: ResourceBody::Media(ResourceLocation::Url(text(url))),
-            conditions: Default::default(),
-        },
-    )])
-    .unwrap()
+    ResourceTable::new(vec![(ResourceId::new(1), ResourceLocation::Url(text(url)))]).unwrap()
 }
 #[test]
 fn request_codecs_enforce_result_carriers_before_rendering() {
@@ -146,7 +125,6 @@ fn request_codecs_enforce_result_carriers_before_rendering() {
                 PartId::new(1),
                 ToolResultPart::Resource(ResourceUse {
                     id: ResourceId::new(1),
-                    purpose: ResourcePurpose::ToolResult,
                     description: ResourceDescription::Image { detail: None },
                 }),
             )]),

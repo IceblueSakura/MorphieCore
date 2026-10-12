@@ -19,8 +19,7 @@ pub use content::audio::{
     OutputModality,
 };
 pub use content::citation::{
-    Annotation, Citation, CitationKind, ClaimAnchor, SourceBounds, SourceCoordinates, TextRange,
-    TextUnit,
+    Annotation, Citation, CitationKind, ClaimAnchor, SourceCoordinates, TextRange, TextUnit,
 };
 pub use content::item::{
     ConfigurationUpdate, ContentPart, Instruction, InstructionAuthority, Item, Message,
@@ -37,33 +36,22 @@ pub use content::text::{
 };
 pub use contract::{GenerationFeature, GenerationSemanticContract};
 pub use error::GenerationError;
-pub use history::configuration::{ConfigurationId, ConfigurationSnapshot, ToolDefinitionBinding};
-pub use history::continuation::{CallReference, Continuation, ProviderContinuationRequirement};
-pub use history::dependency::{
-    HistoryDependency, RequestDependencyProof, SettingsDependency, SettingsField,
-};
+pub use history::continuation::{CallReference, Continuation};
 pub use history::envelope::{MessageEnvelope, MessageEnvelopeRole};
-pub use history::group::{GroupId, MessageGroup, ReplayGroup, ReplayGroupView};
+pub use history::group::{GroupId, MessageGroup};
 pub use history::progress::InteractionProgress;
-pub(crate) use history::replay::ReplayDependency;
-pub use history::replay::{ReplayFormat, ReplayOwner, ReplayValue};
+pub use history::replay::{ReplayFormat, ReplayValue};
 pub use history::turn::{
     ContinuationError, ResponseContinuation, ResponseId, ResponseRelation, ResultReadiness, TurnId,
 };
-pub use identity::{
-    AliasResolutionError, ItemId, LocalScope, NativeAliasDomain, NativeCallAlias, NativeIdKind,
-    PartId, resolve_call_alias,
-};
+pub use identity::{ItemId, LocalScope, NativeAliasDomain, PartId};
 pub use output::{OutputConstraint, TextOptions, Verbosity};
 pub use request::{
     ClientManaged, ContextBuild, ContextChange, ContextEdit, ContextError, ContextStage,
     GenerationControls, GenerationRequest, GenerationSettings, SelectedHistory, Truncation,
 };
 pub use requirements::{GenerationRequirements, GenerationResponseRequirements};
-pub use resources::table::{
-    ResourceBody, ResourceConditions, ResourceDeclaration, ResourceDependency, ResourceId,
-    ResourcePurpose, ResourceTable, ResourceTarget, ResourceUse,
-};
+pub use resources::table::{ResourceDependency, ResourceId, ResourceTable, ResourceUse};
 pub use resources::{
     FileDescription, FileDetail, ImageDetail, ImageFormat, MAX_FILE_DECODED_BYTES,
     MAX_FILE_NAME_BYTES, MAX_IMAGE_DECODED_BYTES, MAX_RESOURCE_MEDIA_TYPE_BYTES,

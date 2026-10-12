@@ -146,7 +146,6 @@ pub(super) fn call_context(
         async_call,
         caller,
         alias_domain: None,
-        definition: None,
     })
 }
 pub(super) fn write_call_context(context: &CallContext, o: &mut Map<String, Value>) {
@@ -202,15 +201,13 @@ fn output(b: &mut Items, v: &Value) -> Result<ToolOutput, CodecError> {
                         Profile::Responses,
                         direction,
                     )?,
-                    ResourcePurpose::ToolResult,
                 )?),
             ),
             "input_file" => (
                 b.part_id()?,
-                ToolResultPart::Resource(b.resource(
-                    crate::protocol::openai::content::file::read(o, direction)?,
-                    ResourcePurpose::ToolResult,
-                )?),
+                ToolResultPart::Resource(
+                    b.resource(crate::protocol::openai::content::file::read(o, direction)?)?,
+                ),
             ),
             _ => return Err(CodecError::Unsupported("tool result media".into())),
         };
@@ -519,13 +516,11 @@ pub(super) fn decode_items(
                                         Profile::Responses,
                                         direction,
                                     )?,
-                                    ResourcePurpose::Input,
                                 )?)
                             }
                             "input_file" if !response && role == MessageRole::User => {
                                 ContentPart::Resource(b.resource(
                                     crate::protocol::openai::content::file::read(p, direction)?,
-                                    ResourcePurpose::Input,
                                 )?)
                             }
                             "output_text" if role == MessageRole::Assistant => ContentPart::Text(
@@ -579,14 +574,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         Profile::Responses,
     )?;
     target.semantic.validate()?;
-    if !target.semantic.replay_groups().is_empty() || !target.semantic.call_derivations().is_empty()
-    {
-        return Err(CodecError::Unsupported(
-            "interaction relation carrier".into(),
-        ));
-    }
     check_item_carriers(target.semantic.items())?;
-    check_resource_carriers(target.semantic.resources())?;
     crate::protocol::openai::content::citations::check_items(
         target.semantic.items(),
         target.semantic.resources(),

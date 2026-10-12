@@ -38,6 +38,7 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
         }
         StreamEvent::ResourceDeclared { id, resource } => {
             let bytes = resource
+                .source_view()
                 .validate()?
                 .checked_add(std::mem::size_of::<ResourceId>())
                 .ok_or(EventError::Limit)?;
@@ -81,12 +82,9 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                             && state.used_resources.insert(value.id)
                         {
                             bytes = bytes
-                                .checked_sub(match &value.resolve(&state.resources)?.body {
-                                    ResourceBody::Media(location) => {
-                                        location.source_view().validate()?
-                                    }
-                                    ResourceBody::Text(_) => return Err(EventError::Lifecycle),
-                                })
+                                .checked_sub(
+                                    value.resolve(&state.resources)?.source_view().validate()?,
+                                )
                                 .ok_or(EventError::Limit)?;
                         }
                     }
@@ -104,38 +102,6 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 }
             }
             if let Some(call_id) = kind.call_id() {
-                let binding = match &kind {
-                    ItemKind::ToolCall { name, context, .. }
-                    | ItemKind::CustomCall { name, context, .. } => {
-                        if let Some(binding) = &context.definition {
-                            binding.check_call(
-                                if matches!(kind, ItemKind::ToolCall { .. }) {
-                                    ToolKind::Function
-                                } else {
-                                    ToolKind::Custom
-                                },
-                                name,
-                                context.namespace.as_ref(),
-                            )?;
-                        }
-                        context.definition.as_ref()
-                    }
-                    _ => None,
-                };
-                if let Some(binding) = binding {
-                    for old in &state.items {
-                        if let ItemKind::ToolCall { context, .. }
-                        | ItemKind::CustomCall { context, .. } = &old.kind
-                            && let Some(previous) = &context.definition
-                        {
-                            binding.snapshot().check_revision(
-                                previous.snapshot().revision(),
-                                previous.snapshot().settings(),
-                            )?;
-                        }
-                    }
-                    state.charge(binding.bytes()?)?;
-                }
                 if call_id.as_str().is_empty() || call_id.as_str().len() > 256 {
                     return Err(EventError::Limit);
                 }
@@ -543,23 +509,6 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             owner.replay = replay;
             owner.status = Some(status);
         }
-        StreamEvent::ReplayFinalized { owner, value } => {
-            value.validate()?;
-            if value.replay_token().is_none() {
-                return Err(EventError::Lifecycle);
-            }
-            let format = value.format();
-            let slot = state
-                .open_item(owner.item())?
-                .attachment_slot(owner, format)?;
-            if slot.is_some() {
-                return Err(EventError::Lifecycle);
-            }
-            state.charge(value.as_str().len())?;
-            *state
-                .open_item(owner.item())?
-                .attachment_slot(owner, format)? = Some(value);
-        }
         StreamEvent::Progress(progress) => {
             if progress == InteractionProgress::Unreported
                 || state.items.iter().any(|item| item.status.is_none())
@@ -608,28 +557,6 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 std::mem::size_of::<MessageEnvelope>() + std::mem::size_of_val(group.members()),
             )?;
             state.message_envelopes.push(group);
-        }
-        StreamEvent::ReplayGroup(group) => {
-            if state.replay_groups.len() >= MAX_ITEMS
-                || state
-                    .replay_groups
-                    .iter()
-                    .map(|g| g.members().len())
-                    .sum::<usize>()
-                    + group.members().len()
-                    > MAX_ITEMS
-            {
-                return Err(EventError::Limit);
-            }
-            if state.replay_groups.iter().any(|old| old.id() == group.id()) {
-                return Err(EventError::Identity);
-            }
-            let owners: Vec<_> = state.items.iter().map(|item| item.id).collect();
-            group.check_owners(&owners)?;
-            state.charge(
-                std::mem::size_of::<ReplayGroup>() + std::mem::size_of_val(group.members()),
-            )?;
-            state.replay_groups.push(group);
         }
         StreamEvent::Usage(usage) => {
             if matches!(usage.scope, UsageScope::Item(id) if state.item(id).is_err()) {

@@ -273,7 +273,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 
 | Decision | Consequence |
 |---|---|
-| One semantic core | Gateway and future agent library share the IR; callers own agent behavior |
+| One semantic core | Gateway and future agent library share the IR; callers own agent behavior. Beyond context edits and response continuation, agent-only machinery joins the IR when the library needs it |
 | Separate task contracts | Generation, Embeddings, Images, Speech and Transcription are not one universal message type |
 | Pure protocol boundaries | Encode from final typed input; no network in codecs or post-encoding JSON patches |
 | Functional ownership | Keep root layers; organize internals by domain, without compatibility aliases or plugin frameworks |

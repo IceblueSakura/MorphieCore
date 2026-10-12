@@ -215,7 +215,7 @@ impl Profile {
         let joined = ClientManaged::new(source.semantic.settings().clone())?
             .select_request(&source.semantic)?
             .select_response(&response.semantic)?
-            .build(&[])?;
+            .build()?;
         response
             .fidelity
             .require_reasoning_replay(&joined, &target.origin())?;

@@ -1,5 +1,5 @@
 //! Caller-owned local scopes and native reference domains, never authentication.
-use crate::semantic::task::generation::{Item, MAX_ITEMS};
+use crate::semantic::task::generation::Item;
 use crate::semantic::value::Text;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -31,64 +31,9 @@ pub enum NativeIdKind {
     ProgramCall,
     ProviderOperation,
 }
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NativeCallAlias {
-    pub domain: Option<NativeAliasDomain>,
-    pub kind: NativeIdKind,
-    pub value: Text,
-}
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum AliasResolutionError {
-    #[error("native call reference is missing")]
-    Missing,
-    #[error("native call reference is ambiguous")]
-    Ambiguous,
-    #[error("native reference names a different call kind")]
-    WrongKind,
-    #[error("native reference lookup exceeds limits")]
-    Limit,
-}
-
-/// Resolve only reported aliases in explicitly selected items. No nearest-match
-/// heuristic, source body, session lookup or ID synthesis participates.
-pub fn resolve_call_alias(
-    items: &[(ItemId, Item)],
-    alias: &NativeCallAlias,
-) -> Result<ItemId, AliasResolutionError> {
-    if items.len() > MAX_ITEMS
-        || alias.value.as_str().is_empty()
-        || alias.value.as_str().len() > 256
-        || alias.domain.as_ref().is_some_and(|domain| {
-            domain.source.as_str().is_empty() || domain.source.as_str().len() > 256
-        })
-    {
-        return Err(AliasResolutionError::Limit);
-    }
-    let mut found = None;
-    let mut wrong_kind = false;
-    for (owner, item) in items {
-        let Some((domain, kind, value)) = call_alias(item) else {
-            continue;
-        };
-        if domain != alias.domain.as_ref() || value != alias.value.as_str() {
-            continue;
-        }
-        if kind != alias.kind {
-            wrong_kind = true;
-            continue;
-        }
-        if found.replace(*owner).is_some() {
-            return Err(AliasResolutionError::Ambiguous);
-        }
-    }
-    found.ok_or(if wrong_kind {
-        AliasResolutionError::WrongKind
-    } else {
-        AliasResolutionError::Missing
-    })
-}
-
-pub(super) fn call_alias(item: &Item) -> Option<(Option<&NativeAliasDomain>, NativeIdKind, &str)> {
+pub(in crate::semantic::task::generation) fn call_alias(
+    item: &Item,
+) -> Option<(Option<&NativeAliasDomain>, NativeIdKind, &str)> {
     match item {
         Item::ToolCall(call) => Some((
             call.context.alias_domain.as_ref(),
@@ -124,7 +69,6 @@ fn same_call_context(
         && a.async_call == b.async_call
         && a.caller == b.caller
         && a.alias_domain == b.alias_domain
-        && a.definition == b.definition
 }
 fn same_call_meaning(left: &Item, right: &Item) -> bool {
     match (left, right) {
@@ -164,29 +108,6 @@ pub(super) fn check_call_edits(
         }
     }
     Ok(())
-}
-
-/// Revising an observed Provider operation creates a proposal, not new reported facts.
-pub(super) fn check_operation_revision(
-    source: &Item,
-    replacement: &Item,
-) -> Result<(), crate::semantic::task::generation::GenerationError> {
-    match (source, replacement) {
-        (Item::ProviderTool(_), Item::ProviderTool(next))
-            if (call_alias(source).is_none() || call_alias(source) != call_alias(replacement))
-                && next.progress.is_none()
-                && next.execution.is_none()
-                && next.output.is_none()
-                && next.replay.is_none()
-                && next.artifact_status.is_none() =>
-        {
-            Ok(())
-        }
-        (Item::ProviderTool(_), _) | (_, Item::ProviderTool(_)) => {
-            Err(crate::semantic::task::generation::GenerationError::InvalidDependency)
-        }
-        _ => Ok(()),
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]

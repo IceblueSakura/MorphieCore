@@ -113,10 +113,7 @@ pub(in crate::protocol::openai) fn read(
             CitationKind::ArtifactReference,
         ),
     };
-    let source = items.declare(ResourceDeclaration {
-        body: ResourceBody::Media(location),
-        conditions: Default::default(),
-    })?;
+    let source = items.declare(location)?;
     Ok(Annotation::new(
         Citation {
             kind,
@@ -132,17 +129,14 @@ pub(in crate::protocol::openai) fn read(
 fn wire(annotation: &Annotation, resources: &ResourceTable) -> Result<WireAnnotation, CodecError> {
     annotation.check_source(resources)?;
     let value = annotation.value();
-    let declaration = resources
+    let location = resources
         .get(value.source)
         .ok_or(CodecError::Invalid("citation source"))?;
-    if value.coordinates != SourceCoordinates::Unreported || !context(declaration) {
+    if value.coordinates != SourceCoordinates::Unreported || !context(location) {
         return Err(CodecError::Unsupported(
-            "citation source coordinates or conditions".into(),
+            "citation source coordinates or carrier".into(),
         ));
     }
-    let ResourceBody::Media(location) = &declaration.body else {
-        return Err(CodecError::Unsupported("citation source carrier".into()));
-    };
     let label = || {
         value
             .label
@@ -244,14 +238,6 @@ pub(crate) fn check_items(
     Ok(())
 }
 /// Inert context only: never a new public event or media-output admission.
-pub(crate) fn context(resource: &ResourceDeclaration) -> bool {
-    resource.conditions == ResourceConditions::default()
-        && matches!(
-            resource.body,
-            ResourceBody::Media(
-                ResourceLocation::Url(_)
-                    | ResourceLocation::OpaqueReference(_)
-                    | ResourceLocation::NamespacedReference { .. }
-            )
-        )
+pub(crate) fn context(resource: &ResourceLocation) -> bool {
+    !matches!(resource, ResourceLocation::Inline { .. })
 }

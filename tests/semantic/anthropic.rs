@@ -246,7 +246,7 @@ mod anthropic_semantics {
                 }),
             )])
             .unwrap()
-            .build(&[])
+            .build()
             .unwrap();
         let mut groups = request.message_envelopes().to_vec();
         groups.push(

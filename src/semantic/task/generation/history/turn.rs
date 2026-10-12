@@ -1,7 +1,6 @@
 //! Caller-declared local response relations; no wire inference or Agent scheduler.
 use crate::semantic::task::generation::{
-    CallReference, GenerationRequest, GenerationResponse, Item, ItemLifecycle, MAX_ITEMS, Outcome,
-    RequestDependencyProof,
+    CallReference, GenerationRequest, GenerationResponse, Item, ItemLifecycle, Outcome,
 };
 
 /// Local identity, not an upstream response ID or stream lane.
@@ -69,8 +68,6 @@ pub enum ContinuationError {
     ChangedResponse,
     #[error("this response's tool results are not completely reported")]
     ResultsNotComplete,
-    #[error("declared continuation dependencies changed or exceed the item budget")]
-    ChangedDependency,
     #[error("successor response identity conflicts with the current relation")]
     ConflictingResponse,
 }
@@ -80,21 +77,10 @@ pub enum ContinuationError {
 pub struct ResponseContinuation<'a> {
     relation: ResponseRelation,
     response: &'a GenerationResponse,
-    dependencies: &'a [RequestDependencyProof],
 }
 impl<'a> ResponseContinuation<'a> {
     pub const fn new(relation: ResponseRelation, response: &'a GenerationResponse) -> Self {
-        Self {
-            relation,
-            response,
-            dependencies: &[],
-        }
-    }
-    /// Trusted caller-declared requirements, not inferred wire dependencies.
-    /// A successor needs its own declarations; these apply only to this response.
-    pub const fn with_dependencies(mut self, dependencies: &'a [RequestDependencyProof]) -> Self {
-        self.dependencies = dependencies;
-        self
+        Self { relation, response }
     }
     pub const fn relation(&self) -> ResponseRelation {
         self.relation
@@ -109,15 +95,6 @@ impl<'a> ResponseContinuation<'a> {
         history
             .validate()
             .map_err(|_| ContinuationError::InvalidHistory)?;
-        for group in self.response.replay_groups() {
-            if !history
-                .replay_groups()
-                .iter()
-                .any(|candidate| candidate == group)
-            {
-                return Err(ContinuationError::ChangedResponse);
-            }
-        }
         for (owner, _) in self.response.items() {
             if history
                 .message_envelopes()
@@ -144,14 +121,6 @@ impl<'a> ResponseContinuation<'a> {
             {
                 return Err(ContinuationError::ChangedResponse);
             }
-        }
-        if self.dependencies.len() > MAX_ITEMS
-            || self
-                .dependencies
-                .iter()
-                .any(|proof| proof.check(history).is_err())
-        {
-            return Err(ContinuationError::ChangedDependency);
         }
         let mut pending = Vec::new();
         let mut in_progress = Vec::new();

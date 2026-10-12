@@ -14,9 +14,6 @@ pub struct GenerationRequest {
     items: Vec<(ItemId, Item)>,
     resources: ResourceTable,
     settings: std::sync::Arc<GenerationSettings>,
-    configuration_revision: Option<ConfigurationId>,
-    replay_groups: Vec<ReplayGroup>,
-    call_derivations: std::collections::BTreeMap<ItemId, ItemId>,
     message_owners: crate::semantic::task::generation::history::envelope::MessageEnvelopes,
 }
 impl GenerationRequest {
@@ -47,9 +44,6 @@ impl GenerationRequest {
             items,
             resources,
             settings: std::sync::Arc::new(settings),
-            configuration_revision: None,
-            replay_groups: vec![],
-            call_derivations: Default::default(),
             message_owners: Default::default(),
         };
         r.validate()?;
@@ -63,45 +57,11 @@ impl GenerationRequest {
             crate::semantic::task::generation::validate::items(&self.items, false, &self.resources)?
         };
         let resources = self.resources.uncharged_bytes(&self.items)?;
-        if let Some(revision) = self.configuration_revision {
-            for (_, item) in &self.items {
-                if let Some(binding) =
-                    crate::semantic::task::generation::history::configuration::item_binding(item)
-                {
-                    binding
-                        .snapshot()
-                        .check_revision(revision, &self.settings)?;
-                }
-            }
-        }
-        let groups = crate::semantic::task::generation::history::group::validate_replay_groups(
-            &self.items,
-            &self.replay_groups,
-        )?;
         let message_owners = self.message_owners.validate(&self.items)?;
-        if self.call_derivations.len() > MAX_ITEMS {
-            return Err(GenerationError::Limit);
-        }
-        if self.call_derivations.iter().any(|(owner, source)| {
-            owner == source
-                || !self
-                    .items
-                    .iter()
-                    .any(|(id, item)| id == owner && item.is_operation())
-        }) {
-            return Err(GenerationError::InvalidDependency);
-        }
-        let derivations = self.call_derivations.len() * std::mem::size_of::<(ItemId, ItemId)>();
         if items
             .saturating_add(settings)
             .saturating_add(resources)
-            .saturating_add(groups)
-            .saturating_add(derivations)
             .saturating_add(message_owners)
-            .saturating_add(
-                self.configuration_revision
-                    .map_or(0, |_| std::mem::size_of::<ConfigurationId>()),
-            )
             > MAX_TOTAL_BYTES
         {
             return Err(GenerationError::Limit);
@@ -121,25 +81,6 @@ impl GenerationRequest {
     }
     pub fn settings(&self) -> &GenerationSettings {
         &self.settings
-    }
-    pub const fn configuration_revision(&self) -> Option<ConfigurationId> {
-        self.configuration_revision
-    }
-    /// Select a complete explicit revision; old call bindings remain unchanged.
-    pub fn with_configuration(
-        mut self,
-        snapshot: ConfigurationSnapshot,
-    ) -> Result<Self, GenerationError> {
-        if let Some(revision) = self.configuration_revision {
-            snapshot.check_revision(revision, &self.settings)?;
-        }
-        self.settings = snapshot.settings;
-        self.configuration_revision = Some(snapshot.revision);
-        self.validate()?;
-        Ok(self)
-    }
-    pub fn replay_groups(&self) -> &[ReplayGroup] {
-        &self.replay_groups
     }
     pub fn message_owners(&self) -> &std::collections::BTreeMap<ItemId, ItemId> {
         self.message_owners.chat()
@@ -171,51 +112,6 @@ impl GenerationRequest {
         self.validate()?;
         Ok(self)
     }
-    pub fn with_replay_groups(mut self, groups: Vec<ReplayGroup>) -> Result<Self, GenerationError> {
-        self.replay_groups = groups;
-        self.validate()?;
-        Ok(self)
-    }
-    /// Caller-declared derivation, not an issuer attestation or an execution proof.
-    pub fn call_derivations(&self) -> &std::collections::BTreeMap<ItemId, ItemId> {
-        &self.call_derivations
-    }
-    pub fn revise_call(
-        self,
-        source: ItemId,
-        replacement: (ItemId, Item),
-    ) -> Result<Self, GenerationError> {
-        if source == replacement.0
-            || !replacement.1.is_operation()
-            || self.items.iter().any(|(owner, _)| *owner == replacement.0)
-            || self
-                .call_derivations
-                .values()
-                .any(|owner| *owner == replacement.0)
-        {
-            return Err(GenerationError::InvalidDependency);
-        }
-        let index = self
-            .items
-            .iter()
-            .position(|(id, item)| *id == source && item.is_operation())
-            .ok_or(GenerationError::InvalidDependency)?;
-        crate::semantic::task::generation::identity::check_operation_revision(
-            &self.items[index].1,
-            &replacement.1,
-        )?;
-        let next = replacement.0;
-        let mut items = self.items.clone();
-        items[index] = replacement;
-        // Move an explicitly declared relation with the replacement, never infer
-        // a new parent from position or alias. Replay members are not retargeted.
-        let mut source_request = self;
-        source_request.message_owners.revise(source, next);
-        let mut edited = source_request.with_items(items)?;
-        edited.call_derivations.insert(next, source);
-        edited.validate()?;
-        Ok(edited)
-    }
     pub fn controls(&self) -> &GenerationControls {
         &self.settings.controls
     }
@@ -245,14 +141,6 @@ impl GenerationRequest {
     }
     pub fn with_settings(mut self, settings: GenerationSettings) -> Result<Self, GenerationError> {
         settings.validate()?;
-        if self.configuration_revision.is_some()
-            && !crate::semantic::task::generation::history::configuration::same_settings(
-                &self.settings,
-                &settings,
-            )
-        {
-            return Err(GenerationError::ConfigurationRevisionConflict);
-        }
         self.settings = std::sync::Arc::new(settings);
         self.validate()?;
         Ok(self)
@@ -292,8 +180,6 @@ impl GenerationRequest {
         if items.len() > MAX_ITEMS {
             return Err(GenerationError::Limit);
         }
-        self.call_derivations
-            .retain(|owner, _| items.iter().any(|(id, _)| id == owner));
         self.message_owners = self.message_owners.edited(&items)?;
         let source = std::mem::replace(&mut self.items, items);
         self.validate()?;

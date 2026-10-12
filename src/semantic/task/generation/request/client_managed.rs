@@ -6,7 +6,6 @@ pub struct ClientManaged {
     request: GenerationRequest,
     selections: Vec<SelectedHistory>,
     changes: Vec<ContextChange>,
-    continuations: Vec<ProviderContinuationRequirement>,
 }
 impl std::fmt::Debug for ClientManaged {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -17,66 +16,37 @@ impl ClientManaged {
     /// Each build receives the complete current configuration explicitly.
     pub fn new(settings: GenerationSettings) -> Result<Self, GenerationError> {
         settings.validate()?;
-        Ok(Self::from_parts(std::sync::Arc::new(settings), None))
-    }
-    pub fn from_configuration(snapshot: ConfigurationSnapshot) -> Result<Self, GenerationError> {
-        Ok(Self::from_parts(snapshot.settings, Some(snapshot.revision)))
-    }
-    fn from_parts(
-        settings: std::sync::Arc<GenerationSettings>,
-        configuration_revision: Option<ConfigurationId>,
-    ) -> Self {
-        Self {
+        Ok(Self {
             selections: vec![],
             changes: vec![],
-            continuations: vec![],
             request: GenerationRequest {
                 items: vec![],
                 resources: ResourceTable::default(),
-                settings,
-                configuration_revision,
-                replay_groups: vec![],
-                call_derivations: Default::default(),
+                settings: std::sync::Arc::new(settings),
                 message_owners: Default::default(),
             },
-        }
+        })
     }
     pub fn select_request(mut self, source: &GenerationRequest) -> Result<Self, GenerationError> {
         source.validate()?;
-        self.reserve_selection(source.items(), source.replay_groups())?;
+        self.reserve_selection(source.items())?;
         self.request.resources = self
             .request
             .resources
             .merge(&source.resources().select_items(source.items())?)?;
         self.request.items.extend_from_slice(source.items());
-        self.request
-            .replay_groups
-            .extend_from_slice(source.replay_groups());
         self.merge_envelopes(source.message_envelopes())?;
-        for (owner, ancestor) in source.call_derivations() {
-            if self
-                .request
-                .call_derivations
-                .insert(*owner, *ancestor)
-                .is_some()
-            {
-                return Err(GenerationError::InvalidDependency);
-            }
-        }
         self.request.validate()?;
         self.record_selection(source.items(), None)?;
         Ok(self)
     }
     pub fn select_response(mut self, source: &GenerationResponse) -> Result<Self, GenerationError> {
-        self.reserve_selection(source.items(), source.replay_groups())?;
+        self.reserve_selection(source.items())?;
         self.request.resources = self
             .request
             .resources
             .merge(&source.resources().select_items(source.items())?)?;
         self.request.items.extend_from_slice(source.items());
-        self.request
-            .replay_groups
-            .extend_from_slice(source.replay_groups());
         self.merge_envelopes(source.message_envelopes())?;
         self.request.validate()?;
         self.record_selection(source.items(), Some(source.progress()))?;
@@ -84,55 +54,25 @@ impl ClientManaged {
     }
     /// Explicit new input/results; edits of selected history use validated request APIs.
     pub fn append_items(mut self, items: Vec<(ItemId, Item)>) -> Result<Self, GenerationError> {
-        self.reserve_selection(&items, &[])?;
+        self.reserve_selection(&items)?;
         self.request.items.extend(items);
         self.request.validate()?;
         Ok(self)
     }
-    pub fn build(
-        self,
-        dependencies: &[RequestDependencyProof],
-    ) -> Result<GenerationRequest, GenerationError> {
-        self.finish(dependencies)
+    pub fn build(self) -> Result<GenerationRequest, GenerationError> {
+        self.finish()
             .map(ContextBuild::into_request)
             .map_err(|e| e.error)
     }
-    pub fn finish(
-        self,
-        dependencies: &[RequestDependencyProof],
-    ) -> Result<ContextBuild, ContextError> {
+    pub fn finish(self) -> Result<ContextBuild, ContextError> {
         self.request
             .validate()
             .map_err(|e| ContextError::at(ContextStage::Association, None, e))?;
-        super::context_transform::check_dependencies(&self.request, dependencies)?;
-        for (index, requirement) in self.continuations.iter().enumerate() {
-            requirement
-                .check(&self.request)
-                .map_err(|e| ContextError::at(ContextStage::Continuation, Some(index), e))?;
-        }
         Ok(ContextBuild {
             request: self.request,
             changes: self.changes,
             selections: self.selections,
-            continuations: self.continuations,
         })
-    }
-    pub fn require_provider_continuation(
-        mut self,
-        requirement: ProviderContinuationRequirement,
-    ) -> Result<Self, GenerationError> {
-        if self.continuations.len() == MAX_ITEMS {
-            return Err(GenerationError::Limit);
-        }
-        if self
-            .continuations
-            .iter()
-            .any(|old| old.owner() == requirement.owner())
-        {
-            return Err(GenerationError::InvalidDependency);
-        }
-        self.continuations.push(requirement);
-        Ok(self)
     }
     fn record_selection(
         &mut self,
@@ -166,11 +106,7 @@ impl ClientManaged {
         }
         let select = || -> Result<GenerationRequest, GenerationError> {
             let items = super::context_transform::selected(source.items(), owners)?;
-            let mut selected = source.clone();
-            selected
-                .replay_groups
-                .retain(|g| g.members().iter().any(|id| owners.contains(id)));
-            selected.with_items(items)
+            source.clone().with_items(items)
         };
         let selected = select().map_err(|e| ContextError::at(ContextStage::Selection, None, e))?;
         self.select_request(&selected)
@@ -187,20 +123,13 @@ impl ClientManaged {
         let selection = |e| ContextError::at(ContextStage::Selection, None, e);
         let items =
             super::context_transform::selected(source.items(), owners).map_err(selection)?;
-        let groups: Vec<_> = source
-            .replay_groups()
-            .iter()
-            .filter(|g| g.members().iter().any(|id| owners.contains(id)))
-            .cloned()
-            .collect();
-        self.reserve_selection(&items, &groups).map_err(selection)?;
+        self.reserve_selection(&items).map_err(selection)?;
         self.request.resources = self
             .request
             .resources
             .merge(&source.resources().select_items(&items).map_err(selection)?)
             .map_err(selection)?;
         self.request.items.extend_from_slice(&items);
-        self.request.replay_groups.extend(groups);
         let selected = crate::semantic::task::generation::history::envelope::MessageEnvelopes::new(
             source.items(),
             source.message_envelopes().to_vec(),
@@ -217,7 +146,7 @@ impl ClientManaged {
         Ok(self)
     }
     pub fn edit(mut self, edits: Vec<ContextEdit>) -> Result<Self, ContextError> {
-        let edited = self.request.transform(edits, &[])?;
+        let edited = self.request.transform(edits)?;
         let weight: usize = self
             .changes
             .iter()
@@ -235,17 +164,8 @@ impl ClientManaged {
         self.changes.extend(edited.changes);
         Ok(self)
     }
-    fn reserve_selection(
-        &self,
-        items: &[(ItemId, Item)],
-        groups: &[ReplayGroup],
-    ) -> Result<(), GenerationError> {
-        if items.len().saturating_add(self.request.items.len()) > MAX_ITEMS
-            || groups
-                .len()
-                .saturating_add(self.request.replay_groups.len())
-                > MAX_ITEMS
-        {
+    fn reserve_selection(&self, items: &[(ItemId, Item)]) -> Result<(), GenerationError> {
+        if items.len().saturating_add(self.request.items.len()) > MAX_ITEMS {
             return Err(GenerationError::Limit);
         }
         // Reject overlapping selected identities rather than renumbering or deduplicating.

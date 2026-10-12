@@ -202,20 +202,10 @@ impl<'a> Items<'a> {
             ..Default::default()
         }
     }
-    pub fn resource(
-        &mut self,
-        value: Resource,
-        purpose: ResourcePurpose,
-    ) -> Result<ResourceUse, CodecError> {
-        let description = value.description;
-        let id = self.declare(ResourceDeclaration {
-            body: ResourceBody::Media(value.location),
-            conditions: Default::default(),
-        })?;
+    pub fn resource(&mut self, value: Resource) -> Result<ResourceUse, CodecError> {
         Ok(ResourceUse {
-            id,
-            purpose,
-            description,
+            id: self.declare(value.location)?,
+            description: value.description,
         })
     }
     pub fn from_resources(resources: ResourceTable, direction: DecodeDirection<'a>) -> Self {
@@ -227,7 +217,7 @@ impl<'a> Items<'a> {
             ..Default::default()
         }
     }
-    pub fn declare(&mut self, value: ResourceDeclaration) -> Result<ResourceId, CodecError> {
+    pub fn declare(&mut self, value: ResourceLocation) -> Result<ResourceId, CodecError> {
         if self.next_resource as usize >= MAX_ITEMS {
             return Err(CodecError::Limit);
         }
@@ -382,10 +372,6 @@ pub(super) fn tool_call(
     })
 }
 pub(super) fn check_response_carriers(response: &GenerationResponse) -> Result<(), CodecError> {
-    check_resource_carriers(response.resources())?;
-    if !response.replay_groups().is_empty() {
-        return Err(CodecError::Unsupported("replay group carrier".into()));
-    }
     if response.usage_reports().len() > 1
         || response.usage_reports().iter().any(|usage| {
             usage.scope != UsageScope::Operation
@@ -406,25 +392,9 @@ pub(super) fn check_response_carriers(response: &GenerationResponse) -> Result<(
     Ok(())
 }
 
-pub(super) fn check_resource_carriers(resources: &ResourceTable) -> Result<(), CodecError> {
-    if resources
-        .iter()
-        .any(|(_, value)| value.conditions != ResourceConditions::default())
-    {
-        return Err(CodecError::Unsupported(
-            "resource conditions carrier".into(),
-        ));
-    }
-    Ok(())
-}
 pub(super) fn check_item_carriers(items: &[(ItemId, Item)]) -> Result<(), CodecError> {
-    if items
-        .iter()
-        .any(|(_, item)| item.has_non_reasoning_replay() || item.has_assistant_media())
-    {
-        return Err(CodecError::Unsupported(
-            "replay attachment or assistant media carrier".into(),
-        ));
+    if items.iter().any(|(_, item)| item.has_assistant_media()) {
+        return Err(CodecError::Unsupported("assistant media carrier".into()));
     }
     if items
         .iter()

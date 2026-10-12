@@ -1,7 +1,7 @@
 //! Owner-local claims and source dependencies; no native annotation DTOs.
 use crate::semantic::task::generation::{
-    GenerationError, MAX_TEXT_BYTES, ResourceBody, ResourceDependency, ResourceId,
-    ResourceLocation, ResourceTable,
+    GenerationError, MAX_TEXT_BYTES, ResourceDependency, ResourceId, ResourceLocation,
+    ResourceTable,
 };
 use crate::semantic::value::Text;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -55,11 +55,6 @@ pub enum SourceCoordinates {
     },
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SourceBounds {
-    Verified,
-    Unreported,
-}
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CitationKind {
     Citation,
     ArtifactReference,
@@ -96,17 +91,12 @@ pub struct Annotation {
 impl Annotation {
     pub fn new(value: Citation, resources: &ResourceTable) -> Result<Self, GenerationError> {
         let source = ResourceDependency::capture(resources, value.source)?;
-        let source_bytes = match &resources
+        let source_bytes = match resources
             .get(value.source)
             .ok_or(GenerationError::InvalidCitation)?
-            .body
         {
-            ResourceBody::Media(
-                location @ (ResourceLocation::Url(_)
-                | ResourceLocation::OpaqueReference(_)
-                | ResourceLocation::NamespacedReference { .. }),
-            ) => location.source_view().validate()?,
-            _ => 0,
+            ResourceLocation::Inline { .. } => 0,
+            location => location.source_view().validate()?,
         };
         let result = Self {
             value,
@@ -153,31 +143,7 @@ impl Annotation {
             }
             _ => {}
         }
-        if let SourceCoordinates::Text(range) = self.value.coordinates
-            && let Some(source) = resources.get(self.value.source)
-            && let ResourceBody::Text(text) = &source.body
-        {
-            range.validate(text.as_str())?;
-        }
         Ok(())
-    }
-    pub fn source_bounds(
-        &self,
-        resources: &ResourceTable,
-    ) -> Result<SourceBounds, GenerationError> {
-        self.check_source(resources)?;
-        Ok(
-            if matches!(self.value.coordinates, SourceCoordinates::Text(_))
-                && matches!(
-                    resources.get(self.value.source).map(|s| &s.body),
-                    Some(ResourceBody::Text(_))
-                )
-            {
-                SourceBounds::Verified
-            } else {
-                SourceBounds::Unreported
-            },
-        )
     }
     pub(crate) fn fingerprint(&self) -> [u8; 32] {
         use sha2::{Digest, Sha256};

@@ -1,16 +1,8 @@
 //! Synthetic declarations; expected wire values stay in the owning tests.
 use morphiecore::semantic::task::generation::*;
-pub fn input(id: u64) -> ResourceUse {
+pub fn image(id: u64) -> ResourceUse {
     ResourceUse {
         id: ResourceId::new(id),
-        purpose: ResourcePurpose::Input,
-        description: ResourceDescription::Image { detail: None },
-    }
-}
-pub fn tool(id: u64) -> ResourceUse {
-    ResourceUse {
-        id: ResourceId::new(id),
-        purpose: ResourcePurpose::ToolResult,
         description: ResourceDescription::Image { detail: None },
     }
 }
@@ -20,12 +12,6 @@ pub fn replace(table: &ResourceTable, id: ResourceId, body: Resource) -> Resourc
         .filter(|(key, _)| *key != id)
         .map(|(key, value)| (key, value.clone()))
         .collect();
-    entries.push((
-        id,
-        ResourceDeclaration {
-            body: ResourceBody::Media(body.location),
-            conditions: Default::default(),
-        },
-    ));
+    entries.push((id, body.location));
     ResourceTable::new(entries).unwrap()
 }

@@ -525,15 +525,7 @@ mod tool_results {
             output
                 .resources
                 .into_iter()
-                .map(|(id, resource)| {
-                    (
-                        ResourceId::new(id),
-                        ResourceDeclaration {
-                            body: ResourceBody::Media(resource.location),
-                            conditions: Default::default(),
-                        },
-                    )
-                })
+                .map(|(id, resource)| (ResourceId::new(id), resource.location))
                 .collect(),
         )?;
         GenerationRequest::from_resources(
@@ -567,7 +559,7 @@ mod tool_results {
                 (PartId::new(10), ToolResultPart::Text(text("caption"))),
                 (
                     PartId::new(11),
-                    ToolResultPart::Resource(resources::tool(1)),
+                    ToolResultPart::Resource(resources::image(1)),
                 ),
             ]),
             vec![(1, image(url))],
@@ -612,23 +604,6 @@ mod tool_results {
         let requirements = GenerationRequirements::derive(&history);
         assert_eq!(requirements.tool_result_media, 1);
         assert_eq!(requirements.image_inputs, 0);
-        let proof = RequestDependencyProof::capture(
-            &history,
-            HistoryDependency::PrefixThrough(ItemId::new(2)),
-            morphiecore::semantic::task::generation::SettingsDependency::All,
-        )
-        .unwrap();
-        assert!(
-            proof
-                .check(
-                    &request(
-                        media("https://example.invalid/b.png"),
-                        Some(ItemLifecycle::Incomplete)
-                    )
-                    .unwrap()
-                )
-                .is_err()
-        );
         assert!(
             request(
                 ToolOutput::Parts(vec![
@@ -647,7 +622,7 @@ mod tool_results {
                 (
                     ToolOutput::Parts(vec![(
                         PartId::new(10),
-                        ToolResultPart::Resource(resources::tool(1))
+                        ToolResultPart::Resource(resources::image(1))
                     )]),
                     vec![(1, opaque)]
                 ),
@@ -1274,45 +1249,6 @@ mod turn_continuation {
         assert!(
             next.advance(&request, ResponseId::new(10), &next_response)
                 .is_err()
-        );
-    }
-
-    #[test]
-    fn declared_dependencies_are_checked_even_after_results_arrive() {
-        let response = GenerationResponse::new(vec![call(1, "a")], Outcome::Completed).unwrap();
-        let source = history(response.items().to_vec());
-        let proofs = [RequestDependencyProof::capture(
-            &source,
-            HistoryDependency::PrefixThrough(ItemId::new(1)),
-            morphiecore::semantic::task::generation::SettingsDependency::All,
-        )
-        .unwrap()];
-        let exchange = ResponseContinuation::new(relation(), &response).with_dependencies(&proofs);
-        let complete = history(vec![call(1, "a"), result(2, "a", ItemLifecycle::Completed)]);
-        assert_eq!(
-            exchange.inspect(&complete).unwrap(),
-            ResultReadiness::ResultsComplete
-        );
-        exchange
-            .advance(&complete, ResponseId::new(11), &response)
-            .unwrap();
-        let mut settings = complete.settings().clone();
-        settings.controls.max_output_tokens = Some(100);
-        let changed = complete.with_settings(settings).unwrap();
-        assert_eq!(
-            exchange.inspect(&changed).unwrap_err(),
-            ContinuationError::ChangedDependency
-        );
-        assert_eq!(
-            exchange
-                .advance(&changed, ResponseId::new(11), &response)
-                .unwrap_err(),
-            ContinuationError::ChangedDependency
-        );
-        let inserted = history(vec![call(3, "earlier"), call(1, "a")]);
-        assert_eq!(
-            exchange.inspect(&inserted).unwrap_err(),
-            ContinuationError::ChangedDependency
         );
     }
 }

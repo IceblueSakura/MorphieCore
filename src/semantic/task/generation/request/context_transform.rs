@@ -14,18 +14,12 @@ pub enum ContextEdit {
         item: Item,
     },
     Reorder(Vec<ItemId>),
-    ReviseCall {
-        source: ItemId,
-        replacement: (ItemId, Item),
-    },
     Summary {
         sources: Vec<ItemId>,
         owner: ItemId,
         part: PartId,
         text: Text,
     },
-    Configuration(ConfigurationSnapshot),
-    ReplayGroups(Vec<ReplayGroup>),
     MessageOwners(Vec<(ItemId, ItemId)>),
     MessageEnvelopes(Vec<MessageEnvelope>),
 }
@@ -40,19 +34,7 @@ pub enum ContextChange {
     Deleted(Vec<ItemId>),
     Replaced(ItemId),
     Reordered(Vec<ItemId>),
-    CallRevised {
-        source: ItemId,
-        owner: ItemId,
-    },
-    Summarized {
-        sources: Vec<ItemId>,
-        owner: ItemId,
-    },
-    Configuration {
-        previous: Option<ConfigurationId>,
-        current: ConfigurationId,
-    },
-    ReplayGroups,
+    Summarized { sources: Vec<ItemId>, owner: ItemId },
     MessageOwners,
     MessageEnvelopes,
 }
@@ -71,8 +53,6 @@ pub enum ContextStage {
     Selection,
     Edit,
     Association,
-    Dependency,
-    Continuation,
 }
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("context {stage:?} failed at {index:?}: {error}")]
@@ -102,7 +82,6 @@ pub struct ContextBuild {
     pub(super) request: GenerationRequest,
     pub(super) changes: Vec<ContextChange>,
     pub(super) selections: Vec<SelectedHistory>,
-    pub(super) continuations: Vec<ProviderContinuationRequirement>,
 }
 impl std::fmt::Debug for ContextBuild {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -125,28 +104,6 @@ impl ContextBuild {
     pub fn client_results(&self) -> Continuation<'_> {
         self.request.continuation()
     }
-    /// Explicit requirements, separate from both pending client results and progress reports.
-    pub fn provider_continuations(&self) -> impl Iterator<Item = &ProviderContinuationRequirement> {
-        self.continuations.iter()
-    }
-}
-pub(super) fn check_dependencies(
-    request: &GenerationRequest,
-    dependencies: &[RequestDependencyProof],
-) -> Result<(), ContextError> {
-    if dependencies.len() > MAX_ITEMS {
-        return Err(ContextError::at(
-            ContextStage::Dependency,
-            None,
-            GenerationError::Limit,
-        ));
-    }
-    for (index, proof) in dependencies.iter().enumerate() {
-        proof
-            .check(request)
-            .map_err(|error| ContextError::at(ContextStage::Dependency, Some(index), error))?;
-    }
-    Ok(())
 }
 pub(super) fn selected(
     items: &[(ItemId, Item)],
@@ -190,11 +147,7 @@ fn contains_part(items: &[(ItemId, Item)], part: PartId) -> bool {
 }
 
 impl GenerationRequest {
-    pub fn transform(
-        self,
-        edits: Vec<ContextEdit>,
-        dependencies: &[RequestDependencyProof],
-    ) -> Result<ContextBuild, ContextError> {
+    pub fn transform(self, edits: Vec<ContextEdit>) -> Result<ContextBuild, ContextError> {
         let fail = |stage, index, error| ContextError::at(stage, index, error);
         if edits.len() > MAX_ITEMS {
             return Err(fail(ContextStage::Edit, None, GenerationError::Limit));
@@ -233,20 +186,6 @@ impl GenerationRequest {
                         request.items.sort_by_key(|(id,_)| order.iter().position(|next| next == id));
                         ContextChange::Reordered(order)
                     }
-                    ContextEdit::ReviseCall { source, replacement } => {
-                        if source == replacement.0 || !replacement.1.is_operation()
-                            || request.items.iter().any(|(id,_)| *id == replacement.0)
-                            || request.call_derivations.values().any(|id| *id == replacement.0)
-                        { return Err(GenerationError::InvalidDependency); }
-                        let position = index(&request.items, source)?;
-                        if !request.items[position].1.is_operation() { return Err(GenerationError::InvalidDependency); }
-                        crate::semantic::task::generation::identity::check_operation_revision(&request.items[position].1, &replacement.1)?;
-                        let owner = replacement.0;
-                        request.items[position] = replacement;
-                        request.message_owners.revise(source, owner);
-                        request.call_derivations.insert(owner, source);
-                        ContextChange::CallRevised { source, owner }
-                    }
                     ContextEdit::Summary { sources, owner, part, text } => {
                         if sources.is_empty() || text.as_str().len() > MAX_TEXT_BYTES {
                             return Err(GenerationError::Limit);
@@ -272,25 +211,6 @@ impl GenerationRequest {
                         })));
                         ContextChange::Summarized { sources, owner }
                     }
-                    ContextEdit::Configuration(snapshot) => {
-                        if let Some(revision) = request.configuration_revision {
-                            snapshot.check_revision(revision, request.settings())?;
-                        }
-                        if let Some(revision) = source.configuration_revision {
-                            snapshot.check_revision(revision, source.settings())?;
-                        }
-                        let change = ContextChange::Configuration {
-                            previous: request.configuration_revision, current: snapshot.revision(),
-                        };
-                        request.configuration_revision = Some(snapshot.revision);
-                        request.settings = snapshot.settings;
-                        change
-                    }
-                    ContextEdit::ReplayGroups(groups) => {
-                        if groups.len() > MAX_ITEMS { return Err(GenerationError::Limit); }
-                        request.replay_groups = groups;
-                        ContextChange::ReplayGroups
-                    }
                     ContextEdit::MessageOwners(owners) => {
                         request.message_owners = crate::semantic::task::generation::history::envelope::MessageEnvelopes::from_chat(&request.items, owners)?;
                         ContextChange::MessageOwners
@@ -307,18 +227,10 @@ impl GenerationRequest {
             }
             changes.push(changed);
         }
-        request
-            .call_derivations
-            .retain(|id, _| request.items.iter().any(|(owner, _)| owner == id));
         request.message_owners = request
             .message_owners
             .edited(&request.items)
             .map_err(|e| fail(ContextStage::Association, None, e))?;
-        request.replay_groups.retain(|g| {
-            g.members()
-                .iter()
-                .any(|id| request.items.iter().any(|(owner, _)| owner == id))
-        });
         crate::semantic::task::generation::identity::check_call_edits(
             source.items(),
             request.items(),
@@ -329,12 +241,10 @@ impl GenerationRequest {
         request
             .validate()
             .map_err(|e| fail(ContextStage::Association, None, e))?;
-        check_dependencies(&request, dependencies)?;
         Ok(ContextBuild {
             request,
             changes,
             selections: vec![],
-            continuations: vec![],
         })
     }
 }

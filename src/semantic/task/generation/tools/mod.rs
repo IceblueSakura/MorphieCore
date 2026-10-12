@@ -42,8 +42,6 @@ pub struct CallContext {
     pub caller: Option<CallOrigin>,
     /// Explicit native reference domain; never inferred from a result's owner.
     pub alias_domain: Option<crate::semantic::task::generation::NativeAliasDomain>,
-    /// Historical definition association on function/custom calls only, never results.
-    pub definition: Option<crate::semantic::task::generation::ToolDefinitionBinding>,
 }
 impl CallContext {
     pub fn is_direct(&self) -> bool {

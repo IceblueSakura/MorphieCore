@@ -40,9 +40,6 @@ pub fn check_event(
                 return Err(RepresentationError::UnmigratedSemantic);
             }
         }
-        StreamEvent::ReplayGroup(_) | StreamEvent::ReplayFinalized { .. } => {
-            return Err(RepresentationError::UnmigratedSemantic);
-        }
         StreamEvent::MessageEnvelope(group) => {
             let items = snapshot_items(state).map_err(|_| RepresentationError::MessageGrouping)?;
             if profile == Profile::Chat && group.chat_owner(&items).is_none() {
@@ -118,7 +115,7 @@ pub fn check_event(
                     return Err(RepresentationError::UnmigratedSemantic);
                 }
                 ItemKind::ToolCall { context, .. } | ItemKind::CustomCall { context, .. }
-                    if context.alias_domain.is_some() || context.definition.is_some() =>
+                    if context.alias_domain.is_some() =>
                 {
                     return Err(RepresentationError::UnmigratedSemantic);
                 }

@@ -37,7 +37,6 @@ pub struct StreamState {
     pub(super) file_decoded_bytes: usize,
     pub(super) queued: bool,
     pub(super) items: Vec<StreamItem>,
-    pub(super) replay_groups: Vec<ReplayGroup>,
     pub(super) message_envelopes: Vec<MessageEnvelope>,
     pub(super) part_ids: BTreeSet<PartId>,
     pub(super) terminal: Option<StreamTerminal>,
@@ -55,9 +54,6 @@ impl StreamState {
     }
     pub fn resources(&self) -> &ResourceTable {
         &self.resources
-    }
-    pub fn replay_groups(&self) -> &[ReplayGroup] {
-        &self.replay_groups
     }
     pub fn message_envelopes(&self) -> &[MessageEnvelope] {
         &self.message_envelopes
@@ -116,34 +112,5 @@ impl StreamState {
             return Err(EventError::Limit);
         }
         Ok(())
-    }
-}
-impl StreamItem {
-    pub(super) fn attachment_slot(
-        &mut self,
-        owner: ReplayOwner,
-        format: ReplayFormat,
-    ) -> Result<&mut Option<ReplayValue>, EventError> {
-        if self.status.is_some() {
-            return Err(EventError::Lifecycle);
-        }
-        match (owner, &mut self.kind) {
-            (ReplayOwner::Item(_), ItemKind::ProviderTool(observed)) => {
-                if format != ReplayFormat::GoogleInteractionsV1Step {
-                    return Err(EventError::Identity);
-                }
-                Ok(&mut observed.replay)
-            }
-            (ReplayOwner::Item(_), ItemKind::ProviderResult { observation, .. }) => {
-                if format != ReplayFormat::GoogleInteractionsV1Step
-                    || self.parts.len() != 1
-                    || self.parts.iter().any(|p| !p.finished)
-                {
-                    return Err(EventError::Lifecycle);
-                }
-                Ok(&mut observation.replay)
-            }
-            _ => Err(EventError::Identity),
-        }
     }
 }

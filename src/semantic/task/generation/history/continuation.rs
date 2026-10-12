@@ -4,59 +4,6 @@ use crate::semantic::task::generation::{
 };
 use std::collections::BTreeMap;
 
-/// Explicit caller/profile-declared conditions on a Provider observation's successor.
-/// This is not inferred from reported progress, an execution command or issuer proof.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProviderContinuationRequirement {
-    owner: ItemId,
-    configuration: crate::semantic::task::generation::ConfigurationId,
-    proof: crate::semantic::task::generation::RequestDependencyProof,
-}
-impl ProviderContinuationRequirement {
-    pub fn capture(
-        request: &GenerationRequest,
-        owner: ItemId,
-        settings: crate::semantic::task::generation::SettingsDependency,
-    ) -> Result<Self, crate::semantic::task::generation::GenerationError> {
-        let configuration = request
-            .configuration_revision()
-            .ok_or(crate::semantic::task::generation::GenerationError::InvalidDependency)?;
-        if !request
-            .items()
-            .iter()
-            .any(|(id, item)| *id == owner && matches!(item, Item::ProviderTool(_)))
-        {
-            return Err(
-                crate::semantic::task::generation::GenerationError::InvalidProviderObservation,
-            );
-        }
-        let proof = crate::semantic::task::generation::RequestDependencyProof::capture(
-            request,
-            crate::semantic::task::generation::HistoryDependency::Owners(vec![owner]),
-            settings,
-        )?;
-        Ok(Self {
-            owner,
-            configuration,
-            proof,
-        })
-    }
-    pub const fn owner(&self) -> ItemId {
-        self.owner
-    }
-    pub const fn original_configuration(
-        &self,
-    ) -> crate::semantic::task::generation::ConfigurationId {
-        self.configuration
-    }
-    pub fn check(
-        &self,
-        request: &GenerationRequest,
-    ) -> Result<(), crate::semantic::task::generation::GenerationError> {
-        self.proof.check(request)
-    }
-}
-
 /// Local owner and wire call identity are distinct; positions are not references.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CallReference<'a> {

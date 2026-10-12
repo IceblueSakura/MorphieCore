@@ -48,8 +48,7 @@ pub fn lower_request<'a>(
         return Err(RepresentationError::Tools);
     }
     check_schema_documents(r.settings())?;
-    if q.provider_observations || !r.replay_groups().is_empty() || !r.call_derivations().is_empty()
-    {
+    if q.provider_observations {
         return Err(RepresentationError::UnmigratedSemantic);
     }
     check_tool_selection(r.tool_choice())?;
@@ -366,9 +365,6 @@ fn validate_response(
     profile: Profile,
     c: &TargetCaps,
 ) -> Result<(), RepresentationError> {
-    if !r.replay_groups().is_empty() {
-        return Err(RepresentationError::UnmigratedSemantic);
-    }
     if let Some(settings) = &metadata.context.settings {
         check_schema_documents(settings)?;
         if settings.reasoning.requires_extended_controls() {
@@ -615,17 +611,11 @@ fn text_items(
 ) -> Result<(), RepresentationError> {
     crate::protocol::openai::content::citations::check_items(items, resources, profile)
         .map_err(|_| RepresentationError::TextMetadata)?;
-    if resources
-        .iter()
-        .any(|(_, resource)| resource.conditions != ResourceConditions::default())
-    {
-        return Err(RepresentationError::UnmigratedSemantic);
-    }
     for (_, i) in items {
         // Public carriers have no source/reference-domain field. A domain
         // declaration is not permission to erase it or invent a private carrier.
-        if matches!(i, Item::ToolCall(call) if call.context.alias_domain.is_some() || call.context.definition.is_some())
-            || matches!(i, Item::CustomCall(call) if call.context.alias_domain.is_some() || call.context.definition.is_some())
+        if matches!(i, Item::ToolCall(call) if call.context.alias_domain.is_some())
+            || matches!(i, Item::CustomCall(call) if call.context.alias_domain.is_some())
             || matches!(i, Item::ToolResult(result) | Item::CustomResult(result) if result.context.alias_domain.is_some())
         {
             return Err(RepresentationError::UnmigratedSemantic);

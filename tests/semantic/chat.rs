@@ -45,16 +45,11 @@ mod chat_media {
             let replacement = ResourceTable::default()
                 .insert(
                     audio.id,
-                    ResourceDeclaration {
-                        body: ResourceBody::Media(ResourceLocation::Inline {
-                            media_type: morphiecore::semantic::value::Text::new(mime, "mime", 64)
-                                .unwrap(),
-                            data_base64: morphiecore::semantic::value::Text::new(
-                                "BAUG", "audio", 100,
-                            )
+                    ResourceLocation::Inline {
+                        media_type: morphiecore::semantic::value::Text::new(mime, "mime", 64)
                             .unwrap(),
-                        }),
-                        conditions: Default::default(),
+                        data_base64: morphiecore::semantic::value::Text::new("BAUG", "audio", 100)
+                            .unwrap(),
                     },
                 )
                 .unwrap();
@@ -516,8 +511,8 @@ mod chat_media {
         assert_eq!(citation.label.as_ref().unwrap().as_str(), "Synthetic");
         assert_eq!(citation.reported_ordinal, None);
         assert!(
-            matches!(&decoded.semantic.resources().get(citation.source).unwrap().body,
-        ResourceBody::Media(ResourceLocation::Url(url)) if url.as_str() == "https://example.invalid/source")
+            matches!(decoded.semantic.resources().get(citation.source).unwrap(),
+        ResourceLocation::Url(url) if url.as_str() == "https://example.invalid/source")
         );
         let encoded = standard(Profile::Chat)
             .encode_response(&decoded, &Contract::full())
@@ -724,10 +719,7 @@ mod citation_bindings {
     fn sources(s: &str) -> ResourceTable {
         ResourceTable::new(vec![(
             ResourceId::new(1),
-            ResourceDeclaration {
-                body: ResourceBody::Text(text(s)),
-                conditions: Default::default(),
-            },
+            ResourceLocation::OpaqueReference(text(s)),
         )])
         .unwrap()
     }
@@ -769,12 +761,7 @@ mod citation_bindings {
         };
         let table = ResourceTable::new(vec![(
             ResourceId::new(1),
-            ResourceDeclaration {
-                body: ResourceBody::Media(ResourceLocation::OpaqueReference(text(
-                    "synthetic-document",
-                ))),
-                conditions: Default::default(),
-            },
+            ResourceLocation::OpaqueReference(text("synthetic-document")),
         )])
         .unwrap();
         let native = Citation {
@@ -826,10 +813,6 @@ mod citation_bindings {
                 &table,
             )
             .unwrap();
-            assert_eq!(
-                annotation.source_bounds(&table).unwrap(),
-                SourceBounds::Unreported
-            );
             let response = GenerationResponse::from_resources(
                 vec![message(1, vec![annotation])],
                 Outcome::Completed,
@@ -886,154 +869,37 @@ mod citation_bindings {
         );
     }
     #[test]
-    fn source_selection_edits_cache_and_original_usage_share_one_dependency_owner() {
-        use morphiecore::semantic::{
-            cache::{CachePrefixContext, CachePrefixIntent, CachePrefixScope},
-            context::ExecutionHints,
-        };
-        let table = sources("A😀B");
-        let annotation = cite(
-            &table,
-            SourceCoordinates::Text(TextRange {
-                unit: TextUnit::UnicodeScalars,
-                start: 0,
-                end: 3,
-            }),
-        );
-        let owner = message(1, vec![annotation]);
-        let unused = ResourceDeclaration {
-            body: ResourceBody::Text(text("unused")),
-            conditions: Default::default(),
-        };
+    fn selection_keeps_cited_sources_and_rejects_a_changed_source() {
+        let table = sources("synthetic-document");
         let response = GenerationResponse::from_resources(
-            vec![owner],
+            vec![message(
+                1,
+                vec![cite(&table, SourceCoordinates::Unreported)],
+            )],
             Outcome::Completed,
             table
                 .clone()
-                .insert(ResourceId::new(2), unused.clone())
+                .insert(
+                    ResourceId::new(2),
+                    ResourceLocation::OpaqueReference(text("unused")),
+                )
                 .unwrap(),
         )
-        .unwrap()
-        .with_usage(Usage::operation(3, 5, 8))
         .unwrap();
         let request = ClientManaged::new(Default::default())
             .unwrap()
             .select_response(&response)
             .unwrap()
-            .build(&[])
+            .build()
             .unwrap();
-        assert_eq!(request.resources().len(), 1);
-        let dependency = RequestDependencyProof::capture(
-            &request,
-            HistoryDependency::Owners(vec![ItemId::new(1)]),
-            SettingsDependency::All,
-        )
-        .unwrap();
-        let hints = ExecutionHints::default();
-        let context = CachePrefixContext {
-            model: "synthetic",
-            hints: &hints,
-            grouping: None,
-            conversation: None,
-        };
-        let scope = CachePrefixScope::new("synthetic").unwrap();
-        let cache = CachePrefixIntent::through(ItemId::new(1))
-            .capture(&request, context, &scope)
-            .unwrap();
-        let unrelated = request
-            .clone()
-            .with_resources(table.clone().insert(ResourceId::new(2), unused).unwrap())
-            .unwrap();
-        assert!(cache.check(&unrelated, context, &scope).is_ok());
-        assert!(dependency.check(&unrelated).is_ok());
+        assert_eq!(request.resources(), &table);
         assert!(
             request
                 .clone()
                 .with_resources(sources("replacement"))
                 .is_err()
         );
-        assert!(
-            request
-                .clone()
-                .with_resources(ResourceTable::default())
-                .is_err()
-        );
-        for next_table in [table.clone(), sources("replacement")] {
-            let mut items = request.items().to_vec();
-            let Item::Message(m) = &mut items[0].1 else {
-                panic!()
-            };
-            let ContentPart::Text(t) = &m.parts[0].content else {
-                panic!()
-            };
-            let mut value = t.annotations()[0].value().clone();
-            value.label = Some(text("changed label"));
-            m.parts[0].content = ContentPart::Text(
-                TextContent::new(
-                    text(t.as_str()),
-                    vec![Annotation::new(value, &next_table).unwrap()],
-                    Presence::Absent,
-                )
-                .unwrap(),
-            );
-            let rebound =
-                GenerationRequest::from_resources(items, request.settings().clone(), next_table)
-                    .unwrap();
-            assert!(cache.check(&rebound, context, &scope).is_err());
-            assert!(dependency.check(&rebound).is_err());
-        }
-        let mut changed_conditions = table.get(ResourceId::new(1)).unwrap().clone();
-        changed_conditions.conditions.expires_at = Some(99);
-        assert!(
-            request
-                .clone()
-                .with_resources(
-                    ResourceTable::new(vec![(ResourceId::new(1), changed_conditions)]).unwrap()
-                )
-                .is_err()
-        );
-        let mut items = response.items().to_vec();
-        let Item::Message(m) = &mut items[0].1 else {
-            panic!()
-        };
-        let ContentPart::Text(t) = &m.parts[0].content else {
-            panic!()
-        };
-        m.parts[0].content = ContentPart::Text(t.clone().replace_text(text("edited claim")));
-        let edited = response.clone().with_items(items).unwrap();
-        assert_eq!(edited.usage_reports(), response.usage_reports());
-        let branch = ClientManaged::new(Default::default())
-            .unwrap()
-            .select_response(&edited)
-            .unwrap()
-            .build(&[])
-            .unwrap();
-        assert!(branch.resources().is_empty());
-        assert!(cache.check(&branch, context, &scope).is_err());
-        assert!(dependency.check(&branch).is_err());
-        // A second branch changes configuration, not either citation anchor.
-        let mut settings = request.settings().clone();
-        settings.instructions = Presence::Value(text("branch configuration"));
-        let configured = request
-            .clone()
-            .with_configuration(
-                ConfigurationSnapshot::new(ConfigurationId::new(LocalScope::new(9), 2), settings)
-                    .unwrap(),
-            )
-            .unwrap();
-        assert_eq!(configured.items(), request.items());
-        assert_eq!(configured.resources(), request.resources());
-        assert!(cache.check(&configured, context, &scope).is_err());
-        assert!(dependency.check(&configured).is_err());
-        let recaptured = RequestDependencyProof::capture(
-            &configured,
-            HistoryDependency::Owners(vec![ItemId::new(1)]),
-            SettingsDependency::All,
-        )
-        .unwrap();
-        assert_ne!(dependency, recaptured);
-        assert!(dependency.check(&request).is_ok());
-        assert_eq!(response.usage().unwrap().output_tokens, Some(5));
+        assert!(request.with_resources(ResourceTable::default()).is_err());
     }
     #[test]
     fn native_file_reports_preserve_list_ordinals_and_namespaced_identity_without_fake_claims() {
@@ -1068,8 +934,8 @@ mod citation_bindings {
             CitationKind::ArtifactReference
         );
         assert!(
-            matches!(&decoded.semantic.resources().get(t.annotations()[1].value().source).unwrap().body,
-        ResourceBody::Media(ResourceLocation::NamespacedReference { namespace, id })
+            matches!(decoded.semantic.resources().get(t.annotations()[1].value().source).unwrap(),
+        ResourceLocation::NamespacedReference { namespace, id }
         if namespace.as_str()=="synthetic-container" && id.as_str()=="synthetic-file")
         );
         let encoded = adapter
@@ -1083,7 +949,7 @@ mod citation_bindings {
             .unwrap()
             .select_response(&decoded.semantic)
             .unwrap()
-            .build(&[])
+            .build()
             .unwrap();
         let needs = GenerationRequirements::derive(&request);
         assert_eq!(needs.file_inputs, 0);
@@ -1139,7 +1005,7 @@ mod files {
                 id: PartId::new(i as u64 + 1),
                 content: ContentPart::Resource(ResourceUse {
                     description: value.description.clone(),
-                    ..resources::input(i as u64 + 1)
+                    ..resources::image(i as u64 + 1)
                 }),
             })
             .collect();
@@ -1147,15 +1013,7 @@ mod files {
             values
                 .into_iter()
                 .enumerate()
-                .map(|(i, value)| {
-                    (
-                        ResourceId::new(i as u64 + 1),
-                        ResourceDeclaration {
-                            body: ResourceBody::Media(value.location),
-                            conditions: Default::default(),
-                        },
-                    )
-                })
+                .map(|(i, value)| (ResourceId::new(i as u64 + 1), value.location))
                 .collect(),
         )?;
         GenerationRequest::from_resources(
@@ -1296,12 +1154,6 @@ mod files {
             decode(json!([{"type":"input_file","file_url":"https://example.invalid/old"}]))
                 .unwrap();
         let source = decoded.task.semantic.clone();
-        let proof = RequestDependencyProof::capture(
-            &source,
-            HistoryDependency::Owners(vec![ItemId::new(1)]),
-            SettingsDependency::None,
-        )
-        .unwrap();
         let mut items = source.items().to_vec();
         let Item::Message(m) = &mut items[0].1 else {
             panic!()
@@ -1322,7 +1174,6 @@ mod files {
             .unwrap()
             .with_items(items)
             .unwrap();
-        assert!(proof.check(&decoded.task.semantic).is_err());
         let wire = adapter()
             .encode_request(&decoded, "synthetic", &Contract::full())
             .unwrap();
@@ -1334,7 +1185,6 @@ mod files {
             panic!()
         };
         assert_eq!(m.parts[0].id, id);
-        assert!(proof.check(&source).is_ok());
     }
 
     #[test]
@@ -1406,16 +1256,7 @@ mod files {
             data_base64: text(&"A".repeat(MAX_TEXT_BYTES + 4)),
         };
         assert_eq!(resource.validate(), Err(GenerationError::Limit));
-        assert!(
-            ResourceTable::new(vec![(
-                ResourceId::new(1),
-                ResourceDeclaration {
-                    body: ResourceBody::Media(resource.location),
-                    conditions: Default::default(),
-                }
-            )])
-            .is_err()
-        );
+        assert!(ResourceTable::new(vec![(ResourceId::new(1), resource.location)]).is_err());
         // Generic IDs remain typed but have no issuer-bound file carrier.
         let mut resource = typed_file(None);
         resource.location = ResourceLocation::OpaqueReference(text("file-synthetic"));

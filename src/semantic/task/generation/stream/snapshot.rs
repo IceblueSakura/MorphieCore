@@ -181,7 +181,6 @@ pub fn materialize(state: &StreamState) -> Result<GenerationResponse, EventError
             })
             .collect(),
     )?
-    .with_replay_groups(state.replay_groups.clone())?
     .with_progress(state.progress)?
     .with_details(state.details.clone())?;
     if !state.message_envelopes.is_empty() {

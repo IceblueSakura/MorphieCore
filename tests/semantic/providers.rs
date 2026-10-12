@@ -636,7 +636,6 @@ mod provider_observations {
     }
     fn operation() -> ProviderToolObservation {
         ProviderToolObservation {
-            replay: None,
             source: domain(),
             operation: ProviderOperation::Reported {
                 tool: text("search"),
@@ -655,7 +654,6 @@ mod provider_observations {
     }
     fn report() -> ProviderToolObservation {
         ProviderToolObservation {
-            replay: None,
             source: domain(),
             operation: ProviderOperation::Reference(ProviderOperationReference::Native(text("S"))),
             progress: None,
@@ -674,19 +672,13 @@ mod provider_observations {
     }
 
     #[test]
-    fn action_edits_require_new_identity_and_derivation_without_retargeting_results() {
+    fn observed_actions_are_not_edited_in_place_and_references_need_an_earlier_report() {
         let source = GenerationRequest::new(
             vec![(ItemId::new(1), Item::ProviderTool(operation()))],
             GenerationControls::default(),
         )
         .unwrap();
-        let proof = RequestDependencyProof::capture(
-            &source,
-            HistoryDependency::Owners(vec![ItemId::new(1)]),
-            SettingsDependency::All,
-        )
-        .unwrap();
-        let mut changed = with_action(ProviderAction::Search {
+        let changed = with_action(ProviderAction::Search {
             query: Some(text("changed query")),
             queries: None,
         });
@@ -698,238 +690,22 @@ mod provider_observations {
                     .is_err()
             );
         }
-        // Independently constructed values still invalidate a content dependency.
-        let rebuilt = GenerationRequest::new(
-            vec![(ItemId::new(1), Item::ProviderTool(changed.clone()))],
-            GenerationControls::default(),
-        )
-        .unwrap();
-        assert!(proof.check(&rebuilt).is_err());
-        let ProviderOperation::Reported { alias, .. } = &mut changed.operation else {
-            unreachable!()
-        };
-        *alias = Some(text("new-S"));
-        let replacement = (ItemId::new(3), Item::ProviderTool(changed.clone()));
-        let revised = source
-            .clone()
-            .revise_call(ItemId::new(1), replacement.clone())
-            .unwrap();
-        assert_eq!(
-            revised.call_derivations().get(&ItemId::new(3)),
-            Some(&ItemId::new(1))
+        assert!(
+            source
+                .clone()
+                .with_items(vec![
+                    (ItemId::new(1), Item::ProviderTool(operation())),
+                    (ItemId::new(2), Item::ProviderTool(report())),
+                ])
+                .is_ok()
         );
-        assert_eq!(revised.continuation(), Continuation::Unreported);
-        assert!(!revised.items()[0].1.is_call());
-        assert!(proof.check(&revised).is_err());
-        let atomic = source
-            .clone()
-            .transform(
-                vec![ContextEdit::ReviseCall {
-                    source: ItemId::new(1),
-                    replacement: replacement.clone(),
-                }],
-                &[],
+        assert!(
+            GenerationRequest::new(
+                vec![(ItemId::new(2), Item::ProviderTool(report()))],
+                GenerationControls::default(),
             )
-            .unwrap();
-        assert_eq!(atomic.request(), &revised);
-        assert_eq!(
-            atomic.changes(),
-            &[ContextChange::CallRevised {
-                source: ItemId::new(1),
-                owner: ItemId::new(3)
-            }]
+            .is_err()
         );
-        let with_result = source
-            .clone()
-            .with_items(vec![
-                (ItemId::new(1), Item::ProviderTool(operation())),
-                (ItemId::new(2), Item::ProviderTool(report())),
-            ])
-            .unwrap();
-        assert!(
-            with_result
-                .clone()
-                .revise_call(ItemId::new(1), replacement.clone())
-                .is_err()
-        );
-        assert!(
-            with_result
-                .clone()
-                .transform(
-                    vec![ContextEdit::ReviseCall {
-                        source: ItemId::new(1),
-                        replacement: replacement.clone(),
-                    }],
-                    &[]
-                )
-                .is_err()
-        );
-        let repaired = with_result
-            .transform(
-                vec![
-                    ContextEdit::Delete(vec![ItemId::new(2)]),
-                    ContextEdit::ReviseCall {
-                        source: ItemId::new(1),
-                        replacement,
-                    },
-                ],
-                &[],
-            )
-            .unwrap();
-        assert_eq!(repaired.request(), &revised);
-        assert_eq!(source.items()[0].1, Item::ProviderTool(operation()));
-        assert_eq!(report().resolve(source.items()).unwrap(), ItemId::new(1));
-        assert_eq!(
-            report().resolve(revised.items()),
-            Err(AliasResolutionError::Missing)
-        );
-        for dimension in 0..4 {
-            // Each reported dimension must stay on the original operation.
-            let mut fabricated = changed.clone();
-            match dimension {
-                0 => fabricated.progress = Some(ProviderExecutionProgress::Running),
-                1 => fabricated.execution = Some(ToolExecution::Succeeded),
-                2 => fabricated.output = Some("old report".into()),
-                _ => fabricated.artifact_status = Some(ItemLifecycle::Completed),
-            }
-            assert!(
-                source
-                    .clone()
-                    .revise_call(
-                        ItemId::new(1),
-                        (ItemId::new(4), Item::ProviderTool(fabricated.clone())),
-                    )
-                    .is_err()
-            );
-            assert!(
-                source
-                    .clone()
-                    .transform(
-                        vec![ContextEdit::ReviseCall {
-                            source: ItemId::new(1),
-                            replacement: (ItemId::new(4), Item::ProviderTool(fabricated)),
-                        }],
-                        &[]
-                    )
-                    .is_err()
-            );
-        }
-        assert!(
-            source
-                .clone()
-                .revise_call(ItemId::new(1), (ItemId::new(4), client_call()))
-                .is_err()
-        );
-        // A result reference is not an operation proposal.
-        assert!(
-            source
-                .revise_call(
-                    ItemId::new(1),
-                    (ItemId::new(4), Item::ProviderTool(report()))
-                )
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn action_dependencies_bind_kind_presence_order_and_each_parameter() {
-        let source = GenerationRequest::new(
-            vec![(ItemId::new(1), Item::ProviderTool(operation()))],
-            GenerationControls::default(),
-        )
-        .unwrap();
-        // Even an unchanged action cannot relabel the old invocation as a new proposal.
-        let replacement = (ItemId::new(2), Item::ProviderTool(operation()));
-        assert!(
-            source
-                .clone()
-                .revise_call(ItemId::new(1), replacement.clone())
-                .is_err()
-        );
-        assert!(
-            source
-                .transform(
-                    vec![ContextEdit::ReviseCall {
-                        source: ItemId::new(1),
-                        replacement,
-                    }],
-                    &[]
-                )
-                .is_err()
-        );
-        let actions = [
-            None,
-            Some(ProviderAction::Search {
-                query: None,
-                queries: None,
-            }),
-            Some(ProviderAction::Search {
-                query: Some(text("a")),
-                queries: None,
-            }),
-            Some(ProviderAction::Search {
-                query: Some(text("b")),
-                queries: None,
-            }),
-            Some(ProviderAction::Search {
-                query: None,
-                queries: Some(vec![]),
-            }),
-            Some(ProviderAction::Search {
-                query: None,
-                queries: Some(vec![text("a"), text("b")]),
-            }),
-            Some(ProviderAction::Search {
-                query: None,
-                queries: Some(vec![text("b"), text("a")]),
-            }),
-            Some(ProviderAction::OpenPage { url: None }),
-            Some(ProviderAction::OpenPage {
-                url: Some(text("a")),
-            }),
-            Some(ProviderAction::OpenPage {
-                url: Some(text("b")),
-            }),
-            Some(ProviderAction::FindInPage {
-                url: text("a"),
-                pattern: text("a"),
-            }),
-            Some(ProviderAction::FindInPage {
-                url: text("a"),
-                pattern: text("b"),
-            }),
-            Some(ProviderAction::FindInPage {
-                url: text("b"),
-                pattern: text("a"),
-            }),
-        ];
-        let requests: Vec<_> = actions
-            .into_iter()
-            .map(|action| {
-                let mut observed = operation();
-                let ProviderOperation::Reported { action: value, .. } = &mut observed.operation
-                else {
-                    unreachable!()
-                };
-                *value = action;
-                GenerationRequest::new(
-                    vec![(ItemId::new(1), Item::ProviderTool(observed))],
-                    GenerationControls::default(),
-                )
-                .unwrap()
-            })
-            .collect();
-        for (i, source) in requests.iter().enumerate() {
-            let proof = RequestDependencyProof::capture(
-                source,
-                HistoryDependency::Owners(vec![ItemId::new(1)]),
-                SettingsDependency::All,
-            )
-            .unwrap();
-            for (j, candidate) in requests.iter().enumerate() {
-                assert_eq!(proof.check(candidate).is_ok(), i == j);
-            }
-        }
     }
 
     #[test]
@@ -1066,15 +842,6 @@ mod provider_observations {
                 );
             }
         }
-    }
-    fn client_call() -> Item {
-        Item::ToolCall(ToolCall {
-            call_id: text("C"),
-            name: text("lookup"),
-            arguments: r#"{"executor":"provider"}"#.into(),
-            status: ItemLifecycle::Completed,
-            context: CallContext::default(),
-        })
     }
     #[test]
     fn report_payload_execution_and_artifact_facts_are_independent_and_bounded() {

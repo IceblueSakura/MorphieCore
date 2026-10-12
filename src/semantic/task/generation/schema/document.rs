@@ -69,11 +69,4 @@ impl SchemaDocument {
     pub fn is_unversioned_local(&self) -> bool {
         self.dialect == SchemaDialect::Unspecified && self.resources.is_empty()
     }
-    pub(in crate::semantic::task::generation) fn same_authority(&self, other: &Self) -> bool {
-        self == other
-            && crate::semantic::task::generation::tools::ordered_json_equal(&self.root, &other.root)
-            && self.resources.iter().zip(&other.resources).all(|(a, b)| {
-                crate::semantic::task::generation::tools::ordered_json_equal(&a.value, &b.value)
-            })
-    }
 }

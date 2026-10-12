@@ -95,7 +95,7 @@ pub enum PartKind {
 pub enum StreamEvent {
     ResourceDeclared {
         id: ResourceId,
-        resource: ResourceDeclaration,
+        resource: ResourceLocation,
     },
     Started,
     Queued,
@@ -145,19 +145,12 @@ pub enum StreamEvent {
         item: ItemId,
         part: PartId,
     },
-    /// One complete attachment before item closure, including after visible part closure.
-    ReplayFinalized {
-        owner: ReplayOwner,
-        value: ReplayValue,
-    },
     ItemFinished {
         item: ItemId,
         status: ItemLifecycle,
         replay: Option<ReasoningReplay>,
     },
     Usage(Usage),
-    /// An explicit relation declaration, not a native item or a replay payload.
-    ReplayGroup(ReplayGroup),
     /// Complete container declaration after its members close, before response terminal.
     MessageEnvelope(MessageEnvelope),
     Progress(InteractionProgress),

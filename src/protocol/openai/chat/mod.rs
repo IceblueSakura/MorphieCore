@@ -364,14 +364,12 @@ pub(super) fn decode_message(
                                         Profile::Chat,
                                         direction,
                                     )?,
-                                    ResourcePurpose::Input,
                                 )?),
                             }),
                             "video_url" => parts.push(Part {
                                 id: b.part_id()?,
                                 content: ContentPart::Resource(b.resource(
                                     crate::protocol::openai::content::video::read(part, direction)?,
-                                    ResourcePurpose::Input,
                                 )?),
                             }),
                             "file" => parts.push(Part {
@@ -380,7 +378,6 @@ pub(super) fn decode_message(
                                     crate::protocol::openai::content::file::read_chat(
                                         part, direction,
                                     )?,
-                                    ResourcePurpose::Input,
                                 )?),
                             }),
                             "input_audio" => parts.push(Part {
@@ -389,7 +386,6 @@ pub(super) fn decode_message(
                                     crate::protocol::openai::content::input_audio::read(
                                         part, direction,
                                     )?,
-                                    ResourcePurpose::Input,
                                 )?),
                             }),
                             _ => return Err(CodecError::Unsupported("user content part".into())),
@@ -459,12 +455,6 @@ pub(super) fn decode_message(
     Ok(())
 }
 pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, CodecError> {
-    if !target.semantic.replay_groups().is_empty() || !target.semantic.call_derivations().is_empty()
-    {
-        return Err(CodecError::Unsupported(
-            "interaction relation carrier".into(),
-        ));
-    }
     if target.profile != Profile::Chat {
         return Err(CodecError::ProfileMismatch);
     }
@@ -475,7 +465,6 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         Profile::Chat,
     )?;
     check_item_carriers(target.semantic.items())?;
-    check_resource_carriers(target.semantic.resources())?;
     crate::protocol::openai::content::citations::check_items(
         target.semantic.items(),
         target.semantic.resources(),

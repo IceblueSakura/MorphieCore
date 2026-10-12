@@ -198,7 +198,7 @@ mod message_envelopes {
     }
 
     #[test]
-    fn envelope_dependencies_and_selection_do_not_reduce_to_call_ids() {
+    fn envelope_selection_keeps_the_declared_container() {
         let source = history();
         let ids: Vec<_> = source.items().iter().map(|(id, _)| *id).collect();
         let group = MessageEnvelope::new(
@@ -208,25 +208,13 @@ mod message_envelopes {
         )
         .unwrap();
         let source = source.with_message_envelopes(vec![group.clone()]).unwrap();
-        let proof = RequestDependencyProof::capture(
-            &source,
-            HistoryDependency::MessageEnvelope(group.id()),
-            SettingsDependency::None,
-        )
-        .unwrap();
-        assert!(proof.check(&source).is_ok());
-        let dropped = source.clone().with_message_envelopes(vec![]).unwrap();
-        assert!(proof.check(&dropped).is_err());
-        let edited = source.clone().retain_items(|id, _| id != ids[2]).unwrap();
-        assert!(proof.check(&edited).is_err());
         let rebuilt = ClientManaged::new(GenerationSettings::default())
             .unwrap()
             .select_request_items(&source, &ids[..3])
             .unwrap()
-            .build(&[])
+            .build()
             .unwrap();
         assert_eq!(rebuilt.message_envelopes(), &[group]);
-        assert!(proof.check(&rebuilt).is_ok());
     }
 }
 mod message_ownership_owner {
@@ -295,56 +283,14 @@ mod message_ownership_owner {
         ]
     }
     #[test]
-    fn prefix_cannot_cut_an_interleaved_explicit_group() {
-        use morphiecore::semantic::cache::{
-            CachePrefixContext, CachePrefixIntent, CachePrefixScope,
-        };
-        let request = GenerationRequest::new(values(), GenerationControls::default())
-            .unwrap()
-            .with_message_owners(vec![(ItemId::new(3), ItemId::new(1))])
-            .unwrap();
-        let scope = CachePrefixScope::new("synthetic").unwrap();
-        let hints = Default::default();
-        let context = CachePrefixContext {
-            model: "synthetic",
-            hints: &hints,
-            grouping: None,
-            conversation: None,
-        };
-        assert!(
-            CachePrefixIntent::through(ItemId::new(2))
-                .capture(&request, context, &scope)
-                .is_err()
-        );
-        assert!(
-            CachePrefixIntent::through(ItemId::new(3))
-                .capture(&request, context, &scope)
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn continuation_rejects_lost_replay_group_and_added_message_membership() {
+    fn continuation_rejects_added_message_membership() {
         let items = vec![values()[0].clone(), values()[2].clone()];
-        let group = ReplayGroup::new(
-            GroupId::new(LocalScope::ROOT, 1),
-            vec![ItemId::new(1), ItemId::new(3)],
-        )
-        .unwrap();
-        let response = GenerationResponse::new(items.clone(), Outcome::Completed)
-            .unwrap()
-            .with_replay_groups(vec![group.clone()])
-            .unwrap();
+        let response = GenerationResponse::new(items.clone(), Outcome::Completed).unwrap();
         let exchange = ResponseContinuation::new(
             ResponseRelation::new(TurnId::new(1), ResponseId::new(1)),
             &response,
         );
-        let plain = GenerationRequest::new(items, GenerationControls::default()).unwrap();
-        assert_eq!(
-            exchange.inspect(&plain).unwrap_err(),
-            ContinuationError::ChangedResponse
-        );
-        let history = plain.with_replay_groups(vec![group]).unwrap();
+        let history = GenerationRequest::new(items, GenerationControls::default()).unwrap();
         exchange.inspect(&history).unwrap();
         let changed = history
             .with_message_owners(vec![(ItemId::new(3), ItemId::new(1))])
@@ -508,31 +454,11 @@ mod scoped_identity {
         )
     }
     #[test]
-    fn missing_ambiguous_and_wrong_kind_aliases_are_distinct() {
+    fn duplicate_aliases_and_foreign_domain_results_are_rejected() {
         let mut items = vec![call(1)];
-        let mut alias = NativeCallAlias {
-            domain: Some(domain(2)),
-            kind: NativeIdKind::FunctionCall,
-            value: text("same"),
-        };
-        assert_eq!(
-            resolve_call_alias(&items, &alias),
-            Err(AliasResolutionError::Missing)
-        );
-        alias.domain = Some(domain(1));
-        alias.kind = NativeIdKind::CustomCall;
-        assert_eq!(
-            resolve_call_alias(&items, &alias),
-            Err(AliasResolutionError::WrongKind)
-        );
-        alias.kind = NativeIdKind::FunctionCall;
         let mut duplicate = call(1);
         duplicate.0 = ItemId::scoped(LocalScope::new(1), 2);
         items.push(duplicate);
-        assert_eq!(
-            resolve_call_alias(&items, &alias),
-            Err(AliasResolutionError::Ambiguous)
-        );
         assert_eq!(
             GenerationRequest::new(items, GenerationControls::default()).unwrap_err(),
             GenerationError::DuplicateCall

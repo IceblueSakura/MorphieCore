@@ -59,8 +59,6 @@ pub(super) fn project(
         || !s.output_modalities.is_absent()
         || !s.audio.is_absent()
         || s.parallel_tool_calls == Some(false)
-        || !request.replay_groups().is_empty()
-        || !request.call_derivations().is_empty()
     {
         return Err(unsupported());
     }
@@ -318,7 +316,6 @@ fn steps(
                 Item::ToolCall(c) => {
                     if c.status != ItemLifecycle::Completed
                         || !c.context.is_direct()
-                        || c.context.definition.is_some()
                         || c.context.alias_domain.is_some()
                     {
                         return Err(unsupported());
@@ -340,7 +337,6 @@ fn steps(
                 Item::ToolResult(r) => {
                     if !r.context.is_direct()
                         || r.context.alias_domain.is_some()
-                        || r.context.definition.is_some()
                         || r.status.is_some()
                     {
                         return Err(unsupported());

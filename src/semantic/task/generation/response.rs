@@ -72,7 +72,6 @@ impl TerminalDetails {
 pub struct GenerationResponse {
     items: Vec<(ItemId, Item)>,
     resources: crate::semantic::task::generation::ResourceTable,
-    replay_groups: Vec<crate::semantic::task::generation::ReplayGroup>,
     message_owners: crate::semantic::task::generation::history::envelope::MessageEnvelopes,
     outcome: Outcome,
     progress: crate::semantic::task::generation::InteractionProgress,
@@ -113,7 +112,6 @@ impl GenerationResponse {
         Ok(Self {
             items,
             resources,
-            replay_groups: vec![],
             message_owners: Default::default(),
             outcome,
             progress: crate::semantic::task::generation::InteractionProgress::Unreported,
@@ -162,12 +160,6 @@ impl GenerationResponse {
             .saturating_add(details.bytes())
             .saturating_add(self.resources.uncharged_bytes(&self.items)?)
             .saturating_add(self.usage.len() * std::mem::size_of::<Usage>())
-            .saturating_add(
-                crate::semantic::task::generation::history::group::validate_replay_groups(
-                    &self.items,
-                    &self.replay_groups,
-                )?,
-            )
             .saturating_add(self.message_owners.validate(&self.items)?)
             > crate::semantic::task::generation::MAX_TOTAL_BYTES
         {
@@ -178,9 +170,6 @@ impl GenerationResponse {
     }
     pub fn items(&self) -> &[(ItemId, Item)] {
         &self.items
-    }
-    pub fn replay_groups(&self) -> &[crate::semantic::task::generation::ReplayGroup] {
-        &self.replay_groups
     }
     pub fn message_owners(&self) -> &std::collections::BTreeMap<ItemId, ItemId> {
         self.message_owners.chat()
@@ -209,18 +198,6 @@ impl GenerationResponse {
                 &self.items,
                 owners,
             )?;
-        let details = self.details.clone();
-        self.with_details(details)
-    }
-    pub fn with_replay_groups(
-        mut self,
-        groups: Vec<crate::semantic::task::generation::ReplayGroup>,
-    ) -> Result<Self, GenerationError> {
-        crate::semantic::task::generation::history::group::validate_replay_groups(
-            &self.items,
-            &groups,
-        )?;
-        self.replay_groups = groups;
         let details = self.details.clone();
         self.with_details(details)
     }
@@ -255,7 +232,6 @@ impl GenerationResponse {
         let groups = self.message_owners.edited(&items)?.values().to_vec();
         let mut response = Self::from_resources(items, self.outcome, self.resources)?
             .with_message_envelopes(groups)?
-            .with_replay_groups(self.replay_groups)?
             .with_progress(self.progress)?
             .with_details(self.details)?;
         crate::semantic::task::generation::identity::check_call_edits(

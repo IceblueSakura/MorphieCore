@@ -3,7 +3,6 @@ use crate::semantic::task::generation::{
 };
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct GenerationRequirements {
-    pub replay_attachments: bool,
     pub assistant_media: bool,
     pub instruction_count: usize,
     pub message_count: usize,
@@ -27,7 +26,6 @@ pub struct GenerationRequirements {
     pub strict_function_tools: bool,
     pub tool_history: bool,
     pub provider_observations: bool,
-    pub configuration_revisions: bool,
     pub structured_arguments: bool,
     pub structured_tool_results: bool,
     pub tool_execution_reports: bool,
@@ -42,7 +40,6 @@ pub struct GenerationRequirements {
 impl GenerationRequirements {
     pub fn derive(r: &GenerationRequest) -> Self {
         let mut x = Self {
-            configuration_revisions: r.configuration_revision().is_some(),
             audio_output: r.settings().audio.value().is_some(),
             tool_choice: r.tool_choice().cloned(),
             parallel_tool_calls: r.parallel_tool_calls(),
@@ -61,11 +58,7 @@ impl GenerationRequirements {
             ..Self::default()
         };
         for (_, i) in r.items() {
-            x.replay_attachments |= i.has_non_reasoning_replay();
             x.assistant_media |= i.has_assistant_media();
-            x.configuration_revisions |=
-                crate::semantic::task::generation::history::configuration::item_binding(i)
-                    .is_some();
             match i {
                 Item::Instruction(_) => x.instruction_count += 1,
                 Item::Message(m) => {
@@ -164,10 +157,8 @@ impl GenerationRequirements {
 /// Actual output domains, independent of input controls or tool declarations.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct GenerationResponseRequirements {
-    pub replay_attachments: bool,
     pub assistant_media: bool,
     pub provider_observations: bool,
-    pub configuration_revisions: bool,
     pub audio_output: bool,
     pub instructions: bool,
     pub tools: bool,
@@ -181,11 +172,7 @@ impl GenerationResponseRequirements {
     pub fn derive(response: &GenerationResponse) -> Self {
         let mut q = Self::default();
         for (_, item) in response.items() {
-            q.replay_attachments |= item.has_non_reasoning_replay();
             q.assistant_media |= item.has_assistant_media();
-            q.configuration_revisions |=
-                crate::semantic::task::generation::history::configuration::item_binding(item)
-                    .is_some();
             match item {
                 Item::Instruction(_) => q.instructions = true,
                 Item::ProviderTool(_) => q.provider_observations = true,

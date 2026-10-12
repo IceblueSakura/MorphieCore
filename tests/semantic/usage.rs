@@ -888,27 +888,6 @@ mod projection {
             ),
         );
         variants.push(original.clone().with_items(items).unwrap());
-        let resources = ResourceTable::new(vec![(
-            ResourceId::new(1),
-            ResourceDeclaration {
-                body: ResourceBody::Text(text("source")),
-                conditions: ResourceConditions {
-                    access: Some(text("explicit-access")),
-                    ..Default::default()
-                },
-            },
-        )])
-        .unwrap();
-        variants.push(
-            GenerationResponse::from_resources(
-                original.items().to_vec(),
-                Outcome::Completed,
-                resources,
-            )
-            .unwrap()
-            .with_usage(original.usage().unwrap())
-            .unwrap(),
-        );
         for changed in variants {
             assert!(
                 lower_response(

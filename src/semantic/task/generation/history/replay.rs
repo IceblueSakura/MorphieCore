@@ -83,72 +83,8 @@ impl ReplayValue {
 }
 
 impl crate::semantic::task::generation::Item {
-    pub(crate) fn has_non_reasoning_replay(&self) -> bool {
-        match self {
-            Self::ProviderTool(p) => p.replay.is_some(),
-            _ => false,
-        }
-    }
     pub(crate) fn has_assistant_media(&self) -> bool {
         matches!(self, Self::Message(m) if m.role == crate::semantic::task::generation::MessageRole::Assistant
             && m.parts.iter().any(|p| matches!(p.content, crate::semantic::task::generation::ContentPart::Resource(_))))
-    }
-}
-/// A borrowed locator, never a second writable attachment table.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum ReplayOwner {
-    Item(crate::semantic::task::generation::ItemId),
-}
-impl ReplayOwner {
-    pub fn item(self) -> crate::semantic::task::generation::ItemId {
-        match self {
-            Self::Item(item) => item,
-        }
-    }
-    pub fn value(
-        self,
-        items: &[(
-            crate::semantic::task::generation::ItemId,
-            crate::semantic::task::generation::Item,
-        )],
-    ) -> Option<&ReplayValue> {
-        use crate::semantic::task::generation::Item;
-        if items.len() > crate::semantic::task::generation::MAX_ITEMS {
-            return None;
-        }
-        let mut candidates = items.iter().filter(|(id, _)| *id == self.item());
-        let (_, item) = candidates.next()?;
-        if candidates.next().is_some() {
-            return None;
-        }
-        match (self, item) {
-            (Self::Item(_), Item::Reasoning(r)) => r.replay.as_ref(),
-            (Self::Item(_), Item::ProviderTool(p)) => p.replay.as_ref(),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct ReplayDependency(crate::semantic::task::generation::RequestDependencyProof);
-impl ReplayDependency {
-    pub(crate) fn capture(
-        owner: ReplayOwner,
-        request: &crate::semantic::task::generation::GenerationRequest,
-    ) -> Result<Self, GenerationError> {
-        request.validate()?;
-        Ok(Self(
-            crate::semantic::task::generation::RequestDependencyProof::capture(
-                request,
-                crate::semantic::task::generation::HistoryDependency::Owners(vec![owner.item()]),
-                crate::semantic::task::generation::SettingsDependency::None,
-            )?,
-        ))
-    }
-    pub(crate) fn check(
-        &self,
-        request: &crate::semantic::task::generation::GenerationRequest,
-    ) -> bool {
-        self.0.check(request).is_ok()
     }
 }

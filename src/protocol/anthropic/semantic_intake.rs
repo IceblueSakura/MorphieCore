@@ -23,23 +23,12 @@ impl Intake {
             resources: ResourceTable::default(),
         }
     }
-    fn resource(
-        &mut self,
-        media: &Media,
-        purpose: ResourcePurpose,
-    ) -> Result<ResourceUse, CodecError> {
+    fn resource(&mut self, media: &Media) -> Result<ResourceUse, CodecError> {
         let resource = media.resource()?;
-        let id = ResourceId::scoped(self.scope, self.resources.iter().count() as u64 + 1);
-        self.resources = std::mem::take(&mut self.resources).insert(
-            id,
-            ResourceDeclaration {
-                body: ResourceBody::Media(resource.location),
-                conditions: Default::default(),
-            },
-        )?;
+        let id = ResourceId::scoped(self.scope, self.resources.len() as u64 + 1);
+        self.resources = std::mem::take(&mut self.resources).insert(id, resource.location)?;
         Ok(ResourceUse {
             id,
-            purpose,
             description: resource.description,
         })
     }
@@ -70,7 +59,7 @@ impl Intake {
                 role: MessageRole::User,
                 parts: vec![Part {
                     id: part,
-                    content: ContentPart::Resource(self.resource(media, ResourcePurpose::Input)?),
+                    content: ContentPart::Resource(self.resource(media)?),
                 }],
                 status: ItemLifecycle::Completed,
                 phase: None,
@@ -122,9 +111,9 @@ impl Intake {
                                         PartId::scoped(self.scope, base + i as u64),
                                         match block {
                                             ResultBlock::Text(s) => ToolResultPart::Text(text(s)?),
-                                            ResultBlock::Media(m) => ToolResultPart::Resource(
-                                                self.resource(m, ResourcePurpose::ToolResult)?,
-                                            ),
+                                            ResultBlock::Media(m) => {
+                                                ToolResultPart::Resource(self.resource(m)?)
+                                            }
                                         },
                                     ))
                                 })

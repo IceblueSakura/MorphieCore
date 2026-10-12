@@ -15,10 +15,6 @@ pub enum GenerationError {
     InvalidControl,
     #[error("history dependency is missing or changed")]
     InvalidDependency,
-    #[error("configuration revision has conflicting contents or needs an explicit new revision")]
-    ConfigurationRevisionConflict,
-    #[error("historical tool definition is missing or incompatible with its call owner")]
-    InvalidToolBinding,
     #[error("context transformation would change a protected authority, scope, phase or owner")]
     InvalidContextTransform,
     #[error("tool call identity is duplicated")]
@@ -31,8 +27,6 @@ pub enum GenerationError {
     InvalidProviderObservation,
     #[error("tool calls must remain contiguous with their assistant owner")]
     InvalidMessageGroup,
-    #[error("invalid replay group identity, member reference or order")]
-    InvalidReplayGroup,
     #[error("invalid tool definition")]
     InvalidToolDefinition,
     #[error("invalid or unsupported schema")]

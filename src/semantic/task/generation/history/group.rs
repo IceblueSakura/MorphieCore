@@ -3,7 +3,7 @@ use crate::semantic::task::generation::{
     CallReference, GenerationError, GenerationRequest, GenerationResponse, Item, ItemId,
     LocalScope, MAX_ITEMS, Message, MessageRole,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 /// Caller-allocated group identity; neither a message nor a reported native ID.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -22,123 +22,6 @@ impl GroupId {
         self.value
     }
 }
-/// The only writable replay membership. Shared members never duplicate bodies.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ReplayGroup {
-    id: GroupId,
-    members: Vec<ItemId>,
-}
-impl ReplayGroup {
-    pub fn new(id: GroupId, members: Vec<ItemId>) -> Result<Self, GenerationError> {
-        if members.len() > MAX_ITEMS {
-            return Err(GenerationError::Limit);
-        }
-        if members.is_empty() || members.iter().collect::<BTreeSet<_>>().len() != members.len() {
-            return Err(GenerationError::InvalidReplayGroup);
-        }
-        Ok(Self { id, members })
-    }
-    pub const fn id(&self) -> GroupId {
-        self.id
-    }
-    pub fn members(&self) -> &[ItemId] {
-        &self.members
-    }
-    pub(in crate::semantic::task::generation) fn check_owners(
-        &self,
-        owners: &[ItemId],
-    ) -> Result<(), GenerationError> {
-        let mut previous = None;
-        for owner in &self.members {
-            let index = owners
-                .iter()
-                .position(|id| id == owner)
-                .ok_or(GenerationError::InvalidReplayGroup)?;
-            if previous.is_some_and(|old| old >= index) {
-                return Err(GenerationError::InvalidReplayGroup);
-            }
-            previous = Some(index);
-        }
-        Ok(())
-    }
-}
-pub(in crate::semantic::task::generation) fn validate_replay_groups(
-    items: &[(ItemId, Item)],
-    groups: &[ReplayGroup],
-) -> Result<usize, GenerationError> {
-    if groups.len() > MAX_ITEMS || items.len() > MAX_ITEMS {
-        return Err(GenerationError::Limit);
-    }
-    let owners: Vec<_> = items.iter().map(|(owner, _)| *owner).collect();
-    let mut ids = BTreeSet::new();
-    let mut members = 0usize;
-    for group in groups {
-        if !ids.insert(group.id) {
-            return Err(GenerationError::InvalidReplayGroup);
-        }
-        members = members
-            .checked_add(group.members.len())
-            .ok_or(GenerationError::Limit)?;
-        if members > MAX_ITEMS {
-            return Err(GenerationError::Limit);
-        }
-        group.check_owners(&owners)?;
-    }
-    Ok(std::mem::size_of_val(groups) + members * std::mem::size_of::<ItemId>())
-}
-/// A bounded borrowed view; finding a member never restores deleted content.
-#[derive(Clone, Copy)]
-pub struct ReplayGroupView<'a> {
-    group: &'a ReplayGroup,
-    items: &'a [(ItemId, Item)],
-}
-impl std::fmt::Debug for ReplayGroupView<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ReplayGroupView")
-            .field("declaration", &self.group)
-            .finish()
-    }
-}
-impl<'a> ReplayGroupView<'a> {
-    pub const fn declaration(self) -> &'a ReplayGroup {
-        self.group
-    }
-    pub fn items(self) -> impl ExactSizeIterator<Item = &'a (ItemId, Item)> + use<'a> {
-        self.group.members.iter().map(move |owner| {
-            self.items
-                .iter()
-                .find(|(id, _)| id == owner)
-                .expect("validated replay member")
-        })
-    }
-}
-impl GenerationRequest {
-    pub fn replay_group_views(&self) -> impl Iterator<Item = ReplayGroupView<'_>> {
-        self.replay_groups().iter().map(|group| ReplayGroupView {
-            group,
-            items: self.items(),
-        })
-    }
-    pub fn replay_groups_for(&self, owner: ItemId) -> impl Iterator<Item = &ReplayGroup> {
-        self.replay_groups()
-            .iter()
-            .filter(move |group| group.members.contains(&owner))
-    }
-}
-impl GenerationResponse {
-    pub fn replay_group_views(&self) -> impl Iterator<Item = ReplayGroupView<'_>> {
-        self.replay_groups().iter().map(|group| ReplayGroupView {
-            group,
-            items: self.items(),
-        })
-    }
-    pub fn replay_groups_for(&self, owner: ItemId) -> impl Iterator<Item = &ReplayGroup> {
-        self.replay_groups()
-            .iter()
-            .filter(move |group| group.members.contains(&owner))
-    }
-}
-
 pub(in crate::semantic::task::generation) fn validate_message_owners(
     items: &[(ItemId, Item)],
     owners: &BTreeMap<ItemId, ItemId>,

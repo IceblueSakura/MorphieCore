@@ -176,7 +176,7 @@ fn next_request(observed: &DecodedResponse) -> GenerationRequest {
             result(2, "c2", "missing", true),
         ])
         .unwrap()
-        .build(&[])
+        .build()
         .unwrap()
 }
 
