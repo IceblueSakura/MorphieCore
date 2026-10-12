@@ -702,7 +702,6 @@ mod citation_bindings {
                 phase: None,
                 parts: vec![Part {
                     id: PartId::new(id),
-                    replay: None,
                     content: ContentPart::Text(
                         TextContent::new(text("claim"), annotations, Presence::Absent).unwrap(),
                     ),
@@ -834,14 +833,10 @@ mod citation_bindings {
         );
     }
     #[test]
-    fn source_selection_edits_replay_cache_and_original_usage_share_one_dependency_owner() {
-        use morphiecore::{
-            protocol::fidelity::FidelityRecords,
-            semantic::{
-                cache::{CachePrefixContext, CachePrefixIntent, CachePrefixScope},
-                context::ExecutionHints,
-                value::ReplayOrigin,
-            },
+    fn source_selection_edits_cache_and_original_usage_share_one_dependency_owner() {
+        use morphiecore::semantic::{
+            cache::{CachePrefixContext, CachePrefixIntent, CachePrefixScope},
+            context::ExecutionHints,
         };
         let table = sources("A😀B");
         let annotation = cite(
@@ -852,14 +847,7 @@ mod citation_bindings {
                 end: 3,
             }),
         );
-        let mut owner = message(1, vec![annotation]);
-        let Item::Message(m) = &mut owner.1 else {
-            panic!()
-        };
-        m.parts[0].replay = Some(ReplayValue::final_value(
-            ReplayFormat::GoogleGenerateContentPart,
-            text("synthetic-token"),
-        ));
+        let owner = message(1, vec![annotation]);
         let unused = ResourceDeclaration {
             body: ResourceBody::Text(text("unused")),
             conditions: Default::default(),
@@ -882,24 +870,12 @@ mod citation_bindings {
             .build(&[])
             .unwrap();
         assert_eq!(request.resources().len(), 1);
-        let replay_owner = ReplayOwner::Part {
-            item: ItemId::new(1),
-            part: PartId::new(1),
-        };
-        let origin = ReplayOrigin::new("synthetic-source").unwrap();
-        let mut fidelity = FidelityRecords::default();
-        fidelity
-            .record_attachment(replay_owner, &request, origin.clone())
-            .unwrap();
         let dependency = RequestDependencyProof::capture(
             &request,
             HistoryDependency::Owners(vec![ItemId::new(1)]),
             SettingsDependency::All,
         )
         .unwrap();
-        fidelity
-            .bind_attachment_dependency(replay_owner, dependency, &request)
-            .unwrap();
         let hints = ExecutionHints::default();
         let context = CachePrefixContext {
             model: "synthetic",
@@ -916,7 +892,7 @@ mod citation_bindings {
             .with_resources(table.clone().insert(ResourceId::new(2), unused).unwrap())
             .unwrap();
         assert!(cache.check(&unrelated, context, &scope).is_ok());
-        assert!(fidelity.attachment_matches(replay_owner, &unrelated, Some(&origin)));
+        assert!(dependency.check(&unrelated).is_ok());
         assert!(
             request
                 .clone()
@@ -951,7 +927,7 @@ mod citation_bindings {
                 GenerationRequest::from_resources(items, request.settings().clone(), next_table)
                     .unwrap();
             assert!(cache.check(&rebound, context, &scope).is_err());
-            assert!(!fidelity.attachment_matches(replay_owner, &rebound, Some(&origin)));
+            assert!(dependency.check(&rebound).is_err());
         }
         let mut changed_conditions = table.get(ResourceId::new(1)).unwrap().clone();
         changed_conditions.conditions.expires_at = Some(99);
@@ -981,7 +957,7 @@ mod citation_bindings {
             .unwrap();
         assert!(branch.resources().is_empty());
         assert!(cache.check(&branch, context, &scope).is_err());
-        assert!(!fidelity.attachment_matches(replay_owner, &branch, Some(&origin)));
+        assert!(dependency.check(&branch).is_err());
         // A second branch changes configuration, not either citation anchor.
         let mut settings = request.settings().clone();
         settings.instructions = Presence::Value(text("branch configuration"));
@@ -995,34 +971,15 @@ mod citation_bindings {
         assert_eq!(configured.items(), request.items());
         assert_eq!(configured.resources(), request.resources());
         assert!(cache.check(&configured, context, &scope).is_err());
-        assert!(!fidelity.attachment_matches(replay_owner, &configured, Some(&origin)));
+        assert!(dependency.check(&configured).is_err());
         let recaptured = RequestDependencyProof::capture(
             &configured,
             HistoryDependency::Owners(vec![ItemId::new(1)]),
             SettingsDependency::All,
         )
         .unwrap();
-        assert!(
-            fidelity
-                .bind_attachment_dependency(replay_owner, recaptured, &configured)
-                .is_err()
-        );
-        assert!(fidelity.attachment_matches(replay_owner, &request, Some(&origin)));
-        for candidate in [&request, &configured] {
-            for profile in [
-                morphiecore::protocol::openai::Profile::Chat,
-                morphiecore::protocol::openai::Profile::Responses,
-            ] {
-                let mut contract = morphiecore::protocol::openai::TargetCaps::full();
-                contract.replay_origin = Some(origin.clone());
-                assert!(
-                    morphiecore::protocol::openai::lowering::lower_request(
-                        candidate, &fidelity, profile, contract
-                    )
-                    .is_err()
-                );
-            }
-        }
+        assert_ne!(dependency, recaptured);
+        assert!(dependency.check(&request).is_ok());
         assert_eq!(response.usage().unwrap().output_tokens, Some(5));
     }
     #[test]
@@ -1126,7 +1083,6 @@ mod files {
             .iter()
             .enumerate()
             .map(|(i, value)| Part {
-                replay: None,
                 id: PartId::new(i as u64 + 1),
                 content: ContentPart::Resource(ResourceUse {
                     description: value.description.clone(),

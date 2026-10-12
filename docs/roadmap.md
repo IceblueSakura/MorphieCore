@@ -29,10 +29,6 @@ Not current work; each returns only when the user reopens it.
 
 Until a real need: SSE keep-alive comments while frames are held (the hold stays far below Codex's 300 s idle timeout), executor affinity from the prefix index for requests without a declared conversation (all target agents declare one), an opt-in first-content timeout.
 
-## Current focus: Phase 6 — replay representation cleanup
-
-Google signatures now use reasoning-item carriers. Remove part- and call-level replay slots with no runtime consumer, keeping Provider-tool replay and the safety assertions for surviving owners. Exit: affected tests and the full offline baseline pass, with the source coverage change reported. Protocol and real-client acceptance do not substitute for this cleanup.
-
 ## Later phases
 
 ### After that

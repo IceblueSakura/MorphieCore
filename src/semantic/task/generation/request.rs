@@ -89,7 +89,6 @@ pub enum ContentPart {
 pub struct Part {
     pub id: PartId,
     pub content: ContentPart,
-    pub replay: Option<super::ReplayValue>,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Message {
@@ -545,7 +544,6 @@ impl GenerationRequest {
                     (!text.as_str().trim().is_empty()).then(|| Part {
                         id: *part,
                         content: ContentPart::Text(text.clone().into()),
-                        replay: None,
                     })
                 })
                 .collect();

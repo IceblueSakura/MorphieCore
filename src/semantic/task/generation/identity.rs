@@ -181,9 +181,6 @@ pub(super) fn check_operation_revision(
         (Item::ProviderTool(_), _) | (_, Item::ProviderTool(_)) => {
             Err(super::GenerationError::InvalidDependency)
         }
-        (_, Item::ToolCall(call)) if call.context.replay.is_some() => {
-            Err(super::GenerationError::InvalidDependency)
-        }
         _ => Ok(()),
     }
 }

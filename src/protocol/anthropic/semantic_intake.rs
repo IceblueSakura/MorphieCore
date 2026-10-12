@@ -37,7 +37,6 @@ impl Intake {
                 parts: vec![Part {
                     id: part,
                     content: ContentPart::Text(text(s)?.into()),
-                    replay: None,
                 }],
                 status: ItemLifecycle::Completed,
                 phase: None,

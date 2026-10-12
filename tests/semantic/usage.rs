@@ -114,7 +114,6 @@ mod scoped_usage {
             Item::Message(Message {
                 role: MessageRole::Assistant,
                 parts: vec![Part {
-                    replay: None,
                     id: PartId::new(2),
                     content: ContentPart::Text(text("a").into()),
                 }],
@@ -658,7 +657,6 @@ mod projection {
                     role: MessageRole::Assistant,
                     parts: vec![Part {
                         id: PartId::new(2),
-                        replay: None,
                         content: ContentPart::Text(text("answer").into()),
                     }],
                     status: ItemLifecycle::Completed,
@@ -862,7 +860,6 @@ mod projection {
         };
         message.parts.push(Part {
             id: PartId::new(3),
-            replay: None,
             content: ContentPart::Text(text("second").into()),
         });
         variants.push(original.clone().with_items(items).unwrap());

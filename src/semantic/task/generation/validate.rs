@@ -84,18 +84,6 @@ pub fn items(
                 }
                 for p in &m.parts {
                     part_id(&mut parts, p.id)?;
-                    if let Some(value) = &p.replay {
-                        if m.role != MessageRole::Assistant
-                            || value.format() != ReplayFormat::GoogleGenerateContentPart
-                            || !(matches!(&p.content, ContentPart::Text(_))
-                                || matches!(&p.content, ContentPart::Resource(value)
-                                    if value.media(resources)?.kind() == ResourceKind::Image))
-                        {
-                            return Err(GenerationError::InvalidReplay);
-                        }
-                        value.validate()?;
-                        add(&mut bytes, value.as_str())?;
-                    }
                     match &p.content {
                         ContentPart::Text(t) => {
                             t.validate()?;
@@ -158,17 +146,6 @@ pub fn items(
             }
             Item::ToolCall(c) => {
                 call_context(&c.context, &mut bytes)?;
-                if let Some(value) = &c.context.replay {
-                    if !matches!(
-                        value.format(),
-                        ReplayFormat::GoogleGenerateContentPart
-                            | ReplayFormat::GoogleInteractionsV1Step
-                    ) {
-                        return Err(GenerationError::InvalidReplay);
-                    }
-                    value.validate()?;
-                    add(&mut bytes, value.as_str())?;
-                }
                 namespaces.insert(
                     (c.context.alias_domain.as_ref(), c.call_id.as_str()),
                     c.context.namespace.as_ref(),
@@ -190,9 +167,6 @@ pub fn items(
                 }
             }
             Item::CustomCall(c) => {
-                if c.context.replay.is_some() {
-                    return Err(GenerationError::InvalidReplay);
-                }
                 call_context(&c.context, &mut bytes)?;
                 namespaces.insert(
                     (c.context.alias_domain.as_ref(), c.call_id.as_str()),
@@ -275,9 +249,6 @@ pub fn items(
                 }
             }
             Item::ToolResult(r) | Item::CustomResult(r) => {
-                if r.context.replay.is_some() {
-                    return Err(GenerationError::InvalidReplay);
-                }
                 call_context(&r.context, &mut bytes)?;
                 let reference = (r.context.alias_domain.as_ref(), r.call_id.as_str());
                 if r.context.namespace.as_ref().is_some_and(|namespace| {

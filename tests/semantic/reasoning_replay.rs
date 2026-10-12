@@ -316,8 +316,7 @@ mod reasoning_controls {
     }
 }
 mod replay_attachments {
-    //! Owner-local replay values and trusted bindings, without native Google/Anthropic codecs.
-    use crate::resources_support as resources;
+    //! Provider-tool replay is the remaining non-reasoning attachment owner.
     use morphiecore::{
         protocol::{
             fidelity::FidelityRecords,
@@ -331,296 +330,167 @@ mod replay_attachments {
     fn text(s: &str) -> Text {
         Text::new(s, "synthetic", MAX_TEXT_BYTES).unwrap()
     }
-    fn token(format: ReplayFormat) -> ReplayValue {
-        ReplayValue::final_value(format, text("synthetic-private-token"))
-    }
-    fn call() -> Item {
-        Item::ToolCall(ToolCall {
-            call_id: text("C"),
-            name: text("lookup"),
-            arguments: "{}".into(),
-            status: ItemLifecycle::Completed,
-            context: CallContext {
-                replay: Some(token(ReplayFormat::GoogleGenerateContentPart)),
-                ..Default::default()
-            },
-        })
-    }
-    fn message() -> Item {
-        Item::Message(Message {
-            role: MessageRole::Assistant,
-            status: ItemLifecycle::Completed,
-            phase: None,
-            parts: vec![
-                Part {
-                    id: PartId::new(1),
-                    content: ContentPart::Text(text("visible").into()),
-                    replay: Some(token(ReplayFormat::GoogleGenerateContentPart)),
-                },
-                Part {
-                    id: PartId::new(2),
-                    content: ContentPart::Resource(resources::output(1)),
-                    replay: Some(token(ReplayFormat::GoogleGenerateContentPart)),
-                },
-                Part {
-                    id: PartId::new(3),
-                    content: ContentPart::Text(text("outside").into()),
-                    replay: None,
-                },
-            ],
-        })
-    }
-    fn request() -> GenerationRequest {
-        GenerationRequest::from_resources(
-            vec![(ItemId::new(1), message()), (ItemId::new(2), call())],
-            GenerationSettings::default(),
-            resources::table([(
-                1,
-                Resource {
-                    location: ResourceLocation::Url(text("https://example.test/image.png")),
-                    description: ResourceDescription::Image { detail: None },
-                },
-            )]),
+    fn token() -> ReplayValue {
+        ReplayValue::final_value(
+            ReplayFormat::GoogleInteractionsV1Step,
+            text("synthetic-private-token"),
         )
-        .unwrap()
     }
-    #[test]
-    fn local_attachments_have_one_owner_and_no_existing_public_carrier() {
-        let source = request();
-        let requirements = GenerationRequirements::derive(&source);
-        assert!(requirements.assistant_media);
-        assert_eq!(requirements.image_inputs, 0);
-        assert_eq!(requirements.resource_count, 1);
-        let owners = [
-            ReplayOwner::Part {
-                item: ItemId::new(1),
-                part: PartId::new(1),
+    fn observation() -> ProviderToolObservation {
+        ProviderToolObservation {
+            replay: None,
+            source: NativeAliasDomain {
+                source: text("p"),
+                scope: LocalScope::new(8),
             },
-            ReplayOwner::Part {
-                item: ItemId::new(1),
-                part: PartId::new(2),
+            operation: ProviderOperation::Reported {
+                tool: text("s"),
+                alias: None,
+                requester: ProviderRequester::Model,
+                action: None,
             },
-            ReplayOwner::Item(ItemId::new(2)),
-        ];
-        let origin = ReplayOrigin::new("synthetic:model-a:version-1").unwrap();
-        for owner in owners {
-            assert_eq!(
-                owner.value(source.items()).unwrap().replay_token(),
-                Some("synthetic-private-token")
-            );
-            let mut fidelity = FidelityRecords::default();
-            fidelity
-                .record_attachment(owner, &source, origin.clone())
-                .unwrap();
-            assert!(fidelity.attachment_matches(owner, &source, Some(&origin)));
-            assert!(!fidelity.attachment_matches(owner, &source, None));
-            assert!(!fidelity.attachment_matches(
-                owner,
-                &source,
-                Some(&ReplayOrigin::new("synthetic:model-a:version-2").unwrap())
-            ));
-            assert!(!format!("{source:?}{fidelity:?}").contains("synthetic-private-token"));
-            for profile in [Profile::Chat, Profile::Responses] {
-                assert!(lower_request(&source, &fidelity, profile, TargetCaps::full()).is_err());
-            }
-            assert!(GenerationSemanticContract::full().check(&source).is_err());
+            progress: None,
+            execution: None,
+            output: None,
+            artifact_status: None,
         }
     }
     #[test]
-    fn selected_part_binding_ignores_siblings_but_rejects_own_edits_and_resurrection() {
-        let source = request();
-        let owner = ReplayOwner::Part {
-            item: ItemId::new(1),
-            part: PartId::new(2),
+    fn local_attachments_have_one_owner_and_no_existing_public_carrier() {
+        let mut observed = observation();
+        observed.replay = Some(token());
+        let resource = ResourceUse {
+            id: ResourceId::new(1),
+            purpose: ResourcePurpose::Output,
+            description: ResourceDescription::Image { detail: None },
         };
+        let source = GenerationRequest::from_resources(
+            vec![
+                (ItemId::new(1), Item::ProviderTool(observed)),
+                (
+                    ItemId::new(2),
+                    Item::Message(Message {
+                        role: MessageRole::Assistant,
+                        status: ItemLifecycle::Completed,
+                        phase: None,
+                        parts: vec![Part {
+                            id: PartId::new(1),
+                            content: ContentPart::Resource(resource.clone()),
+                        }],
+                    }),
+                ),
+                (
+                    ItemId::new(3),
+                    Item::ToolCall(ToolCall {
+                        call_id: text("C"),
+                        name: text("lookup"),
+                        arguments: "{}".into(),
+                        status: ItemLifecycle::Completed,
+                        context: Default::default(),
+                    }),
+                ),
+            ],
+            GenerationSettings::default(),
+            ResourceTable::new(vec![(
+                ResourceId::new(1),
+                ResourceDeclaration {
+                    body: ResourceBody::Media(ResourceLocation::Url(text(
+                        "https://example.test/image.png",
+                    ))),
+                    conditions: Default::default(),
+                },
+            )])
+            .unwrap(),
+        )
+        .unwrap();
+        let requirements = GenerationRequirements::derive(&source);
+        assert!(requirements.assistant_media);
+        assert_eq!(
+            (requirements.image_inputs, requirements.resource_count),
+            (0, 1)
+        );
+        assert_eq!(
+            resource.media(source.resources()).unwrap().to_owned(),
+            Resource {
+                location: ResourceLocation::Url(text("https://example.test/image.png")),
+                description: ResourceDescription::Image { detail: None },
+            }
+        );
+        let owner = ReplayOwner::Item(ItemId::new(1));
         let origin = ReplayOrigin::new("synthetic:model-a:version-1").unwrap();
+        assert_eq!(
+            owner.value(source.items()).unwrap().replay_token(),
+            Some("synthetic-private-token")
+        );
         let mut fidelity = FidelityRecords::default();
         fidelity
             .record_attachment(owner, &source, origin.clone())
             .unwrap();
-        let mut outside = source.items().to_vec();
-        let Item::Message(m) = &mut outside[0].1 else {
-            panic!()
-        };
-        m.parts[2].content = ContentPart::Text(text("changed sibling").into());
-        let outside = source.clone().with_items(outside).unwrap();
-        assert!(fidelity.attachment_matches(owner, &outside, Some(&origin)));
-        for edit in 0..5 {
-            let mut items = source.items().to_vec();
-            let mut declarations = source.resources().clone();
-            let Item::Message(m) = &mut items[0].1 else {
-                panic!()
-            };
-            match edit {
-                0 => {
-                    let ContentPart::Resource(r) = &mut m.parts[1].content else {
-                        panic!()
-                    };
-                    let mut value = r.media(source.resources()).unwrap().to_owned();
-                    value.location =
-                        ResourceLocation::Url(text("https://example.test/changed.png"));
-                    declarations = resources::replace(&declarations, r.id, value);
-                }
-                1 => {
-                    m.parts[1].replay = Some(ReplayValue::final_value(
-                        ReplayFormat::GoogleGenerateContentPart,
-                        text("changed-token"),
-                    ))
-                }
-                2 => m.parts[1].replay = None,
-                3 => m.parts[1].id = PartId::scoped(LocalScope::new(8), 2),
-                _ => {
-                    m.parts.remove(1);
-                }
-            }
-            let candidate = source
-                .clone()
-                .with_resources(declarations)
-                .unwrap()
-                .with_items(items)
-                .unwrap();
-            assert!(!fidelity.attachment_matches(owner, &candidate, Some(&origin)));
-            assert!(
-                fidelity
-                    .clone()
-                    .record_attachment(owner, &candidate, origin.clone())
-                    .is_err()
-            );
-            if edit >= 2 {
-                assert!(owner.value(candidate.items()).is_none());
-            }
+        assert!(fidelity.attachment_matches(owner, &source, Some(&origin)));
+        assert!(!fidelity.attachment_matches(owner, &source, None));
+        assert!(!fidelity.attachment_matches(
+            owner,
+            &source,
+            Some(&ReplayOrigin::new("synthetic:model-a:version-2").unwrap())
+        ));
+        assert!(!format!("{source:?}{fidelity:?}").contains("synthetic-private-token"));
+        for profile in [Profile::Chat, Profile::Responses] {
+            assert!(lower_request(&source, &fidelity, profile, TargetCaps::full()).is_err());
         }
+        assert!(GenerationSemanticContract::full().check(&source).is_err());
         let proof = RequestDependencyProof::capture(
             &source,
-            HistoryDependency::PrefixThrough(ItemId::new(2)),
+            HistoryDependency::Owners(vec![ItemId::new(1)]),
             SettingsDependency::All,
         )
         .unwrap();
         fidelity
             .bind_attachment_dependency(owner, proof, &source)
             .unwrap();
-        assert!(!fidelity.attachment_matches(owner, &outside, Some(&origin)));
-    }
-
-    #[test]
-    fn call_and_provider_step_events_preserve_their_own_attachments() {
-        for format in [
-            ReplayFormat::GoogleGenerateContentPart,
-            ReplayFormat::GoogleInteractionsV1Step,
-        ] {
-            let mut state = reduce(StreamState::new(), StreamEvent::Started).unwrap();
-            state = reduce(
-                state,
-                StreamEvent::ItemStarted {
-                    item: ItemId::new(2),
-                    kind: ItemKind::ToolCall {
-                        format: ArgumentFormat::Raw,
-                        call_id: text("C"),
-                        name: text("lookup"),
-                        message: None,
-                        context: Default::default(),
-                    },
-                    replay: None,
-                },
-            )
-            .unwrap();
-            let attachment = StreamEvent::ReplayFinalized {
-                owner: ReplayOwner::Item(ItemId::new(2)),
-                value: token(format),
-            };
-            assert!(reduce(state.clone(), attachment.clone()).is_err());
-            for event in [
-                StreamEvent::PartStarted {
-                    item: ItemId::new(2),
-                    part: PartId::new(1),
-                    kind: PartKind::Arguments,
-                },
-                StreamEvent::Delta {
-                    item: ItemId::new(2),
-                    part: PartId::new(1),
-                    fragment: "{}".into(),
-                    logprobs: vec![],
-                },
-                StreamEvent::ValueFinished {
-                    item: ItemId::new(2),
-                    part: PartId::new(1),
-                },
-                StreamEvent::PartFinished {
-                    item: ItemId::new(2),
-                    part: PartId::new(1),
-                },
-            ] {
-                state = reduce(state, event).unwrap();
-            }
-            assert!(
-                reduce(
-                    state.clone(),
-                    StreamEvent::ReplayFinalized {
-                        owner: ReplayOwner::Item(ItemId::new(2)),
-                        value: ReplayValue::partial(format, text("partial")),
-                    }
-                )
+        let mut settings = source.settings().clone();
+        settings.instructions =
+            morphiecore::semantic::value::Presence::Value(text("changed configuration"));
+        let configured = source.clone().with_settings(settings).unwrap();
+        let recaptured = RequestDependencyProof::capture(
+            &configured,
+            HistoryDependency::Owners(vec![ItemId::new(1)]),
+            SettingsDependency::All,
+        )
+        .unwrap();
+        assert!(!fidelity.attachment_matches(owner, &configured, Some(&origin)));
+        assert!(
+            fidelity
+                .bind_attachment_dependency(owner, recaptured, &configured)
                 .is_err()
-            );
-            assert!(
-                reduce(
-                    state.clone(),
-                    StreamEvent::ReplayFinalized {
-                        owner: ReplayOwner::Item(ItemId::new(2)),
-                        value: token(ReplayFormat::ResponsesEncrypted),
-                    }
-                )
-                .is_err()
-            );
-            state = reduce(state, attachment).unwrap();
-            state = reduce(
-                state,
-                StreamEvent::ItemFinished {
-                    item: ItemId::new(2),
-                    status: ItemLifecycle::Completed,
-                    replay: None,
-                },
-            )
-            .unwrap();
-            state = reduce(
-                state,
-                StreamEvent::Terminal {
-                    terminal: StreamTerminal::Completed,
-                    details: TerminalDetails::default(),
-                },
-            )
-            .unwrap();
-            let mut expected = call();
-            let Item::ToolCall(c) = &mut expected else {
-                panic!()
-            };
-            c.context.replay = Some(token(format));
-            assert_eq!(
-                materialize(&state).unwrap(),
-                GenerationResponse::new(vec![(ItemId::new(2), expected)], Outcome::Completed)
-                    .unwrap()
-            );
-        }
-        let mut observed = ProviderToolObservation {
-            replay: None,
-            source: NativeAliasDomain {
-                source: text("interactions-v1"),
-                scope: LocalScope::new(8),
-            },
-            operation: ProviderOperation::Reported {
-                tool: text("search"),
-                alias: Some(text("S")),
-                requester: ProviderRequester::Model,
-                action: Some(ProviderAction::Search {
-                    query: None,
-                    queries: Some(vec![text("query")]),
-                }),
-            },
-            progress: None,
-            execution: None,
-            output: None,
-            artifact_status: None,
+        );
+        let mut changed = source.items().to_vec();
+        let mut stripped = changed.clone();
+        let Item::ProviderTool(p) = &mut stripped[0].1 else {
+            panic!()
         };
+        p.replay = None;
+        let stripped = source.clone().with_items(stripped).unwrap();
+        assert!(owner.value(stripped.items()).is_none());
+        assert!(!fidelity.attachment_matches(owner, &stripped, Some(&origin)));
+        assert!(
+            fidelity
+                .record_attachment(owner, &stripped, origin.clone())
+                .is_err()
+        );
+        let Item::ProviderTool(p) = &mut changed[0].1 else {
+            panic!()
+        };
+        p.replay = Some(ReplayValue::final_value(
+            ReplayFormat::GoogleInteractionsV1Step,
+            text("changed"),
+        ));
+        let changed = source.with_items(changed).unwrap();
+        assert!(!fidelity.attachment_matches(owner, &changed, Some(&origin)));
+        assert!(fidelity.record_attachment(owner, &changed, origin).is_err());
+    }
+    #[test]
+    fn provider_step_events_preserve_their_own_attachments() {
+        let mut observed = observation();
         let mut state = reduce(StreamState::new(), StreamEvent::Started).unwrap();
         state = reduce(
             state,
@@ -631,14 +501,27 @@ mod replay_attachments {
             },
         )
         .unwrap();
-        state = reduce(
-            state,
-            StreamEvent::ReplayFinalized {
-                owner: ReplayOwner::Item(ItemId::new(1)),
-                value: token(ReplayFormat::GoogleInteractionsV1Step),
-            },
-        )
-        .unwrap();
+        for value in [
+            ReplayValue::partial(ReplayFormat::GoogleInteractionsV1Step, text("partial")),
+            ReplayValue::final_value(ReplayFormat::ResponsesEncrypted, text("foreign")),
+        ] {
+            assert!(
+                reduce(
+                    state.clone(),
+                    StreamEvent::ReplayFinalized {
+                        owner: ReplayOwner::Item(ItemId::new(1)),
+                        value,
+                    }
+                )
+                .is_err()
+            );
+        }
+        let attachment = StreamEvent::ReplayFinalized {
+            owner: ReplayOwner::Item(ItemId::new(1)),
+            value: token(),
+        };
+        state = reduce(state, attachment.clone()).unwrap();
+        assert!(reduce(state.clone(), attachment.clone()).is_err());
         state = reduce(
             state,
             StreamEvent::ItemFinished {
@@ -648,6 +531,7 @@ mod replay_attachments {
             },
         )
         .unwrap();
+        assert!(reduce(state.clone(), attachment.clone()).is_err());
         state = reduce(
             state,
             StreamEvent::Terminal {
@@ -656,133 +540,77 @@ mod replay_attachments {
             },
         )
         .unwrap();
-        observed.replay = Some(token(ReplayFormat::GoogleInteractionsV1Step));
-        let expected = GenerationResponse::new(
-            vec![(ItemId::new(1), Item::ProviderTool(observed))],
-            Outcome::Completed,
-        )
-        .unwrap();
-        assert_eq!(materialize(&state).unwrap(), expected);
-        let source =
-            GenerationRequest::new(expected.items().to_vec(), GenerationControls::default())
-                .unwrap();
-        let origin = ReplayOrigin::new("synthetic:step:v1").unwrap();
-        let mut fidelity = FidelityRecords::default();
-        fidelity
-            .record_attachment(ReplayOwner::Item(ItemId::new(1)), &source, origin.clone())
-            .unwrap();
-        assert!(fidelity.attachment_matches(
-            ReplayOwner::Item(ItemId::new(1)),
-            &source,
-            Some(&origin)
-        ));
-        let mut changed = source.items().to_vec();
-        let Item::ProviderTool(p) = &mut changed[0].1 else {
-            panic!()
-        };
-        p.replay = Some(ReplayValue::final_value(
-            ReplayFormat::GoogleInteractionsV1Step,
-            text("changed"),
-        ));
-        let changed = source.with_items(changed).unwrap();
-        assert!(!fidelity.attachment_matches(
-            ReplayOwner::Item(ItemId::new(1)),
-            &changed,
-            Some(&origin)
-        ));
+        assert!(reduce(state.clone(), attachment).is_err());
+        observed.replay = Some(token());
+        assert_eq!(
+            materialize(&state).unwrap(),
+            GenerationResponse::new(
+                vec![(ItemId::new(1), Item::ProviderTool(observed))],
+                Outcome::Completed
+            )
+            .unwrap()
+        );
     }
-
     #[test]
     fn attachment_budgets_count_each_value_and_the_aggregate_in_static_and_events() {
         for size in [0, MAX_TEXT_BYTES - 1, MAX_TEXT_BYTES, MAX_TEXT_BYTES + 1] {
-            let value = ReplayValue::final_value(
-                ReplayFormat::GoogleGenerateContentPart,
+            let mut observed = observation();
+            observed.replay = Some(ReplayValue::final_value(
+                ReplayFormat::GoogleInteractionsV1Step,
                 Text::allowing_empty("x".repeat(size), "synthetic", MAX_TEXT_BYTES + 1).unwrap(),
-            );
-            let mut call = call();
-            let Item::ToolCall(c) = &mut call else {
-                panic!()
-            };
-            c.context.replay = Some(value);
+            ));
             assert_eq!(
-                GenerationRequest::new(vec![(ItemId::new(1), call)], GenerationControls::default())
-                    .is_ok(),
+                GenerationRequest::new(
+                    vec![(ItemId::new(1), Item::ProviderTool(observed))],
+                    GenerationControls::default()
+                )
+                .is_ok(),
                 size > 0 && size <= MAX_TEXT_BYTES
             );
         }
         for last in [9, 10, 11] {
+            // Each Provider-tool header reports two bytes besides its replay payload.
             let sizes = [
                 MAX_TEXT_BYTES,
                 MAX_TEXT_BYTES,
                 MAX_TEXT_BYTES,
-                MAX_TEXT_BYTES - 10,
+                MAX_TEXT_BYTES - 20,
                 last,
             ];
-            let mut parts = vec![];
+            let mut items = vec![];
             let mut state = Ok(reduce(StreamState::new(), StreamEvent::Started).unwrap());
-            state = state.and_then(|s| {
-                reduce(
-                    s,
-                    StreamEvent::ItemStarted {
-                        item: ItemId::new(1),
-                        kind: ItemKind::Message { phase: None },
-                        replay: None,
-                    },
-                )
-            });
             for (i, size) in sizes.into_iter().enumerate() {
-                let id = PartId::new(i as u64);
+                let id = ItemId::new(i as u64 + 1);
+                let mut observed = observation();
                 let value = ReplayValue::final_value(
-                    ReplayFormat::GoogleGenerateContentPart,
+                    ReplayFormat::GoogleInteractionsV1Step,
                     text(&"x".repeat(size)),
                 );
-                parts.push(Part {
-                    id,
-                    content: ContentPart::Text(
-                        Text::allowing_empty("", "synthetic", MAX_TEXT_BYTES)
-                            .unwrap()
-                            .into(),
-                    ),
-                    replay: Some(value.clone()),
-                });
                 for event in [
-                    StreamEvent::PartStarted {
-                        item: ItemId::new(1),
-                        part: id,
-                        kind: PartKind::Text,
-                    },
-                    StreamEvent::ValueFinished {
-                        item: ItemId::new(1),
-                        part: id,
-                    },
-                    StreamEvent::PartFinished {
-                        item: ItemId::new(1),
-                        part: id,
+                    StreamEvent::ItemStarted {
+                        item: id,
+                        kind: ItemKind::ProviderTool(observed.clone()),
+                        replay: None,
                     },
                     StreamEvent::ReplayFinalized {
-                        owner: ReplayOwner::Part {
-                            item: ItemId::new(1),
-                            part: id,
-                        },
-                        value,
+                        owner: ReplayOwner::Item(id),
+                        value: value.clone(),
+                    },
+                    StreamEvent::ItemFinished {
+                        item: id,
+                        status: ItemLifecycle::Completed,
+                        replay: None,
                     },
                 ] {
                     state = state.and_then(|s| reduce(s, event));
                 }
+                observed.replay = Some(value);
+                items.push((id, Item::ProviderTool(observed)));
             }
-            let response = GenerationResponse::new(
-                vec![(
-                    ItemId::new(1),
-                    Item::Message(Message {
-                        role: MessageRole::Assistant,
-                        status: ItemLifecycle::Completed,
-                        phase: None,
-                        parts,
-                    }),
-                )],
-                Outcome::Completed,
+            assert_eq!(
+                GenerationResponse::new(items, Outcome::Completed).is_ok(),
+                last <= 10
             );
-            assert_eq!(response.is_ok(), last <= 10);
             assert_eq!(state.is_ok(), last <= 10);
         }
     }
@@ -1298,7 +1126,6 @@ mod replay_formats {
             Item::Message(Message {
                 role: MessageRole::User,
                 parts: vec![Part {
-                    replay: None,
                     id: PartId::new(id),
                     content: ContentPart::Text(text(value).into()),
                 }],

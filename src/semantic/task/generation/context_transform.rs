@@ -267,7 +267,7 @@ impl GenerationRequest {
                         let sources: Vec<_> = values.iter().map(|(id,_)| *id).collect();
                         request.items.retain(|(id,_)| !sources.contains(id));
                         request.items.insert(position, (owner, Item::Message(Message {
-                            role: MessageRole::User, parts: vec![Part { id: part, content: ContentPart::Text(text.into()), replay: None }],
+                            role: MessageRole::User, parts: vec![Part { id: part, content: ContentPart::Text(text.into()) }],
                             status: ItemLifecycle::Completed, phase: None,
                         })));
                         ContextChange::Summarized { sources, owner }

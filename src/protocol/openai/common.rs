@@ -256,7 +256,6 @@ impl<'a> Items<'a> {
             return Err(CodecError::Limit);
         }
         Ok(Part {
-            replay: None,
             id: PartId::new(self.next_part),
             content: ContentPart::Refusal(text.into()),
         })
@@ -267,7 +266,6 @@ impl<'a> Items<'a> {
             return Err(CodecError::Limit);
         }
         Ok(Part {
-            replay: None,
             id: PartId::new(self.next_part),
             content: ContentPart::Text(
                 Text::allowing_empty(s, "text", MAX_TEXT_BYTES)

@@ -132,7 +132,6 @@ mod client_managed {
                     Item::Message(Message {
                         role: MessageRole::Assistant,
                         parts: vec![Part {
-                            replay: None,
                             id: PartId::new(5),
                             content: ContentPart::Text(text("reported text").into()),
                         }],
@@ -288,7 +287,6 @@ mod client_managed_composition {
             Item::Message(Message {
                 role: MessageRole::User,
                 parts: vec![Part {
-                    replay: None,
                     id: PartId::new(id),
                     content: ContentPart::Text(text(value).into()),
                 }],
@@ -385,7 +383,6 @@ mod client_managed_composition {
                         Item::Message(Message {
                             role: MessageRole::Assistant,
                             parts: vec![Part {
-                                replay: None,
                                 id: PartId::scoped(LocalScope::new(1), 1),
                                 content: ContentPart::Text(text("reported commentary").into()),
                             }],
@@ -994,7 +991,6 @@ mod context_transforms {
             Item::Message(Message {
                 role: MessageRole::User,
                 parts: vec![Part {
-                    replay: None,
                     id: PartId::new(id),
                     content: ContentPart::Text(text(s).into()),
                 }],
@@ -1265,7 +1261,6 @@ mod history_dependencies {
             Item::Message(Message {
                 role: MessageRole::Assistant,
                 parts: vec![Part {
-                    replay: None,
                     id: PartId::new(id),
                     content: ContentPart::Text(
                         TextContent::new(
@@ -1639,7 +1634,6 @@ mod resource_table {
                     phase: None,
                     parts: vec![Part {
                         id: PartId::new(1),
-                        replay: None,
                         content: ContentPart::Resource(ResourceUse {
                             id,
                             purpose: ResourcePurpose::Output,

@@ -122,7 +122,7 @@ impl FidelityRecords {
         attachment_ready(owner, request)
             && self.attachments.get(&owner).is_some_and(|binding| {
                 Some(&binding.origin) == target
-                    && binding.local.check(owner, request)
+                    && binding.local.check(request)
                     && binding
                         .history
                         .as_ref()
@@ -140,8 +140,7 @@ impl FidelityRecords {
             .attachments
             .get_mut(&owner)
             .ok_or(CodecError::Invalid("unbound replay attachment"))?;
-        if !binding.local.check(owner, source)
-            || binding.history.as_ref().is_some_and(|old| old != &proof)
+        if !binding.local.check(source) || binding.history.as_ref().is_some_and(|old| old != &proof)
         {
             return Err(CodecError::Invalid("replay dependency rebinding"));
         }
@@ -607,19 +606,10 @@ fn attachment_ready(owner: ReplayOwner, request: &GenerationRequest) -> bool {
     {
         return false;
     }
-    request.items().iter().any(|(id, item)| {
-        *id == owner.item()
-            && match (owner, item) {
-                (ReplayOwner::Item(_), Item::ToolCall(call)) => {
-                    call.status == ItemLifecycle::Completed
-                }
-                (ReplayOwner::Item(_), Item::ProviderTool(_)) => true,
-                (ReplayOwner::Part { .. }, Item::Message(message)) => {
-                    message.status == ItemLifecycle::Completed
-                }
-                _ => false,
-            }
-    })
+    request
+        .items()
+        .iter()
+        .any(|(id, item)| *id == owner.item() && matches!(item, Item::ProviderTool(_)))
 }
 // This in-process fingerprint is not persisted or exposed as a wire identity.
 // Hashing the complete typed response conservatively invalidates extras after edits.
@@ -636,7 +626,6 @@ fn response_dependency(response: &GenerationResponse) -> [u8; 32] {
     for (id, item) in response.items() {
         let replay = match item {
             Item::Reasoning(r) => r.replay.as_ref(),
-            Item::ToolCall(c) => c.context.replay.as_ref(),
             Item::ProviderTool(p) => p.replay.as_ref(),
             _ => None,
         };
@@ -649,9 +638,6 @@ fn response_dependency(response: &GenerationResponse) -> [u8; 32] {
     for (_, item) in response.items() {
         if let Item::Message(m) = item {
             for p in &m.parts {
-                if let Some(value) = &p.replay {
-                    hash.update(value.fingerprint());
-                }
                 match &p.content {
                     ContentPart::Text(t) => {
                         for a in t.annotations() {

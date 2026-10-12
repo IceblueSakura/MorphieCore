@@ -296,9 +296,6 @@ fn dependency(
             }
             Item::Message(m) => {
                 for part in &m.parts {
-                    if let Some(value) = &part.replay {
-                        writer.hash.update(value.fingerprint());
-                    }
                     match &part.content {
                         ContentPart::Text(t) => {
                             for a in t.annotations() {
@@ -316,11 +313,6 @@ fn dependency(
                     }
                 }
             }
-            Item::ToolCall(call) => {
-                if let Some(value) = &call.context.replay {
-                    writer.hash.update(value.fingerprint());
-                }
-            }
             Item::ToolResult(result) | Item::CustomResult(result) => {
                 if let ToolOutput::Parts(parts) = &result.output {
                     for (_, part) in parts {
@@ -334,45 +326,6 @@ fn dependency(
             }
             _ => {}
         }
-    }
-    Ok(writer.hash.finalize().into())
-}
-pub(super) fn part_dependency(
-    request: &GenerationRequest,
-    item: ItemId,
-    part: PartId,
-) -> Result<[u8; 32], GenerationError> {
-    let Some((_, Item::Message(message))) = request.items().iter().find(|(id, _)| *id == item)
-    else {
-        return Err(GenerationError::InvalidReplay);
-    };
-    let part = message
-        .parts
-        .iter()
-        .find(|p| p.id == part)
-        .ok_or(GenerationError::InvalidReplay)?;
-    let mut writer = HashWriter {
-        hash: Sha256::new(),
-        remaining: MAX_TOTAL_BYTES * 8,
-    };
-    write!(
-        writer,
-        "{item:?}:{:?}:{:?}:{:?}:{part:?}",
-        message.role, message.phase, message.status
-    )
-    .map_err(|_| GenerationError::Limit)?;
-    if let Some(value) = &part.replay {
-        writer.hash.update(value.fingerprint());
-    }
-    if let ContentPart::Text(t) = &part.content {
-        for a in t.annotations() {
-            writer.hash.update(a.fingerprint());
-        }
-    }
-    if let ContentPart::Resource(resource) = &part.content {
-        writer
-            .hash
-            .update(resource.fingerprint(request.resources())?);
     }
     Ok(writer.hash.finalize().into())
 }

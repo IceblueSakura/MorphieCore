@@ -85,8 +85,6 @@ impl ReplayValue {
 impl super::Item {
     pub(crate) fn has_non_reasoning_replay(&self) -> bool {
         match self {
-            Self::Message(m) => m.parts.iter().any(|p| p.replay.is_some()),
-            Self::ToolCall(c) => c.context.replay.is_some(),
             Self::ProviderTool(p) => p.replay.is_some(),
             _ => false,
         }
@@ -100,15 +98,11 @@ impl super::Item {
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ReplayOwner {
     Item(super::ItemId),
-    Part {
-        item: super::ItemId,
-        part: super::PartId,
-    },
 }
 impl ReplayOwner {
     pub fn item(self) -> super::ItemId {
         match self {
-            Self::Item(item) | Self::Part { item, .. } => item,
+            Self::Item(item) => item,
         }
     }
     pub fn value(self, items: &[(super::ItemId, super::Item)]) -> Option<&ReplayValue> {
@@ -123,50 +117,27 @@ impl ReplayOwner {
         }
         match (self, item) {
             (Self::Item(_), Item::Reasoning(r)) => r.replay.as_ref(),
-            (Self::Item(_), Item::ToolCall(c)) => c.context.replay.as_ref(),
             (Self::Item(_), Item::ProviderTool(p)) => p.replay.as_ref(),
-            (Self::Part { part, .. }, Item::Message(m)) => {
-                if m.parts.len() > super::MAX_ITEMS {
-                    return None;
-                }
-                let mut parts = m.parts.iter().filter(|p| p.id == part);
-                let value = parts.next()?;
-                if parts.next().is_some() {
-                    return None;
-                }
-                value.replay.as_ref()
-            }
             _ => None,
         }
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum ReplayDependency {
-    Item(super::RequestDependencyProof),
-    Part([u8; 32]),
-}
+pub(crate) struct ReplayDependency(super::RequestDependencyProof);
 impl ReplayDependency {
     pub(crate) fn capture(
         owner: ReplayOwner,
         request: &super::GenerationRequest,
     ) -> Result<Self, GenerationError> {
         request.validate()?;
-        match owner {
-            ReplayOwner::Item(id) => Ok(Self::Item(super::RequestDependencyProof::capture(
-                request,
-                super::HistoryDependency::Owners(vec![id]),
-                super::SettingsDependency::None,
-            )?)),
-            ReplayOwner::Part { item, part } => Ok(Self::Part(super::dependency::part_dependency(
-                request, item, part,
-            )?)),
-        }
+        Ok(Self(super::RequestDependencyProof::capture(
+            request,
+            super::HistoryDependency::Owners(vec![owner.item()]),
+            super::SettingsDependency::None,
+        )?))
     }
-    pub(crate) fn check(&self, owner: ReplayOwner, request: &super::GenerationRequest) -> bool {
-        match self {
-            Self::Item(proof) => proof.check(request).is_ok(),
-            Self::Part(_) => Self::capture(owner, request).is_ok_and(|value| value == *self),
-        }
+    pub(crate) fn check(&self, request: &super::GenerationRequest) -> bool {
+        self.0.check(request).is_ok()
     }
 }

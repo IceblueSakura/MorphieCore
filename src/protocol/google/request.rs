@@ -318,7 +318,7 @@ fn item_parts(
                 let ContentPart::Text(t) = &p.content else {
                     return Err(unsupported());
                 };
-                if !t.is_plain() || p.replay.is_some() {
+                if !t.is_plain() {
                     return Err(unsupported());
                 }
                 parts.push(json!({"text": t.as_str()}));
@@ -375,7 +375,6 @@ fn item_parts(
         Item::ToolCall(c) => {
             if c.status != ItemLifecycle::Completed
                 || !c.context.is_direct()
-                || c.context.replay.is_some()
                 || c.context.definition.is_some()
                 || c.context.alias_domain.is_some()
             {

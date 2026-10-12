@@ -87,7 +87,6 @@ mod message_envelopes {
                                 .unwrap()
                                 .into()
                         ),
-                        replay: None,
                     }],
                     status: ItemLifecycle::Completed,
                     phase: None,

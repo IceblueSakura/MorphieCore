@@ -187,7 +187,6 @@ pub enum EventError {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StreamPart {
     pub id: PartId,
-    pub replay: Option<ReplayValue>,
     pub kind: PartKind,
     data: StreamPartValue,
     pub value_finished: bool,
@@ -341,10 +340,6 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             state.resources = std::mem::take(&mut state.resources).insert(id, resource)?;
         }
         StreamEvent::ItemStarted { item, kind, replay } => {
-            if matches!(&kind, ItemKind::ToolCall { context, .. } | ItemKind::CustomCall { context, .. } if context.replay.is_some())
-            {
-                return Err(EventError::Lifecycle);
-            }
             if state.items.len() >= MAX_ITEMS {
                 return Err(EventError::Limit);
             }
@@ -573,7 +568,6 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 return Err(EventError::Lifecycle);
             }
             owner.parts.push(StreamPart {
-                replay: None,
                 id: part,
                 kind,
                 data: if kind == PartKind::Audio {
@@ -1020,18 +1014,6 @@ impl StreamItem {
             return Err(EventError::Lifecycle);
         }
         match (owner, &mut self.kind) {
-            (ReplayOwner::Item(_), ItemKind::ToolCall { context, .. }) => {
-                if !matches!(
-                    format,
-                    ReplayFormat::GoogleGenerateContentPart
-                        | ReplayFormat::GoogleInteractionsV1Step
-                ) || self.parts.len() != 1
-                    || self.parts.iter().any(|p| !p.finished)
-                {
-                    return Err(EventError::Lifecycle);
-                }
-                Ok(&mut context.replay)
-            }
             (ReplayOwner::Item(_), ItemKind::ProviderTool(observed)) => {
                 if format != ReplayFormat::GoogleInteractionsV1Step {
                     return Err(EventError::Identity);
@@ -1046,20 +1028,6 @@ impl StreamItem {
                     return Err(EventError::Lifecycle);
                 }
                 Ok(&mut observation.replay)
-            }
-            (ReplayOwner::Part { part, .. }, ItemKind::Message { .. }) => {
-                if format != ReplayFormat::GoogleGenerateContentPart {
-                    return Err(EventError::Identity);
-                }
-                let part = self
-                    .parts
-                    .iter_mut()
-                    .find(|p| p.id == part)
-                    .ok_or(EventError::Identity)?;
-                if part.kind != PartKind::Text || !part.finished {
-                    return Err(EventError::Lifecycle);
-                }
-                Ok(&mut part.replay)
             }
             _ => Err(EventError::Identity),
         }
@@ -1085,7 +1053,6 @@ impl StreamItem {
                     .iter()
                     .map(|p| {
                         Ok(Part {
-                            replay: p.replay.clone(),
                             id: p.id,
                             content: match p.kind {
                                 PartKind::Audio => match &p.data {

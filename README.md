@@ -6,7 +6,7 @@ A central gateway built on one unified IR that hides Provider differences from a
 
 - **Working:** downstream Responses, Chat and Anthropic Messages (JSON and SSE; text, tools, reasoning, images and some file inputs); upstream OpenAI Responses and Chat with several compatible dialects, native Anthropic Messages, Google generateContent and stateless Interactions; failover across a model's Providers and keys with held streams, cooldown and per-conversation affinity; file credentials with ordered pools; Provider-native cache affinity. pi passes real-client acceptance on all three downstream protocols.
 - **Frozen:** the standalone Embeddings, Images, Speech and Transcription endpoints, and new Providers.
-- **Next:** finish the Google replay representation cleanup. Real failover acceptance, the coverage pass and Claude Code acceptance are deferred. See the [roadmap](docs/roadmap.md).
+- **Later:** stateful Responses and file services. Real failover acceptance, the coverage pass and Claude Code acceptance are deferred. See the [roadmap](docs/roadmap.md).
 
 ## Quick start
 
