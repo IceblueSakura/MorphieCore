@@ -53,7 +53,7 @@ impl Endpoint {
         use crate::{
             adapter::UpstreamAdapter,
             protocol::{
-                CodecError, anthropic,
+                CodecError,
                 openai::{Adapter, Profile},
             },
         };
@@ -61,7 +61,7 @@ impl Endpoint {
             (ProtocolProfile::AnthropicMessages, TargetCaps::AnthropicMessages(caps)) => {
                 UpstreamAdapter::AnthropicMessages {
                     profile: caps.profile,
-                    target: anthropic::ReplayTarget::new(
+                    target: crate::protocol::native::ReplayTarget::new(
                         self.provider.as_str(),
                         &self.upstream_model,
                     )?,

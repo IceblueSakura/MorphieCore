@@ -1,10 +1,7 @@
 //! Candidate-local native request/history projection.
-use super::{
-    Block, InputMessage, MessageContent, Role, Selection, TextContent as WireText,
-    target::ReplayTarget,
-};
+use super::{Block, InputMessage, MessageContent, Role, Selection, TextContent as WireText};
 use crate::{
-    protocol::{CodecError, fidelity::FidelityRecords},
+    protocol::{CodecError, fidelity::FidelityRecords, native::ReplayTarget},
     semantic::{task::generation::*, value::Presence},
 };
 use sha2::{Digest, Sha256};

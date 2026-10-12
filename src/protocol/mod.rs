@@ -10,6 +10,7 @@ pub mod extensions;
 pub mod fidelity;
 pub mod file_constraints;
 pub mod image_constraints;
+pub mod native;
 pub mod openai;
 pub mod openrouter_images;
 pub mod openrouter_speech;

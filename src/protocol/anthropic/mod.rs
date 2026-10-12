@@ -12,15 +12,13 @@ mod shape;
 mod sse;
 pub use sse::MessageSseDecoder;
 mod events;
-pub use events::GenerationSseDecoder;
-mod target;
 use crate::protocol::CodecError;
+pub use events::GenerationSseDecoder;
 pub use request::*;
 pub use response::*;
 pub use semantic::NativeProjection;
 pub use semantic_request::RequestRule;
 use serde_json::Value;
-pub use target::ReplayTarget;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Profile {

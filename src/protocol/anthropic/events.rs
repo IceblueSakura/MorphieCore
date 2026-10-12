@@ -1,9 +1,10 @@
 //! Incremental native semantic mapping over the same strict wire reducer as aggregation.
-use super::{Block, Delta, Event, Message, MessageSseDecoder, ReplayTarget};
+use super::{Block, Delta, Event, Message, MessageSseDecoder};
 use crate::{
     protocol::{
         CodecError, ResponseMetadata,
         fidelity::FidelityRecords,
+        native::ReplayTarget,
         openai::sse::{SseError, SseLimits},
     },
     semantic::{task::generation::*, value::Text},

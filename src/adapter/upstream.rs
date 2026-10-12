@@ -7,7 +7,7 @@ pub enum UpstreamAdapter {
     /// Native intake labels opaque values with the trusted Provider/model binding.
     AnthropicMessages {
         profile: anthropic::Profile,
-        target: anthropic::ReplayTarget,
+        target: crate::protocol::native::ReplayTarget,
     },
 }
 impl From<Adapter> for UpstreamAdapter {

@@ -1,5 +1,6 @@
 //! Explicit block/container intake and Provider/model compatibility association.
-use super::{Block, Role, TextContent as WireText, target::ReplayTarget};
+use super::{Block, Role, TextContent as WireText};
+use crate::protocol::native::ReplayTarget;
 use crate::{
     protocol::{CodecError, fidelity::FidelityRecords},
     semantic::{task::generation::*, value::Text},

@@ -3,7 +3,8 @@ use morphiecore::{
     adapter::UpstreamAdapter,
     execution::Attempt,
     protocol::{
-        anthropic::{MessageSseDecoder, Profile, ReplayTarget},
+        anthropic::{MessageSseDecoder, Profile},
+        native::ReplayTarget,
         openai::sse::{SseError, SseLimits},
     },
     semantic::task::generation::LocalScope,

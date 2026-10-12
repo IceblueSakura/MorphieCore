@@ -1,8 +1,12 @@
 //! Native target projection and dialect policy; no OpenAI profile or wire switches.
-use super::{Profile, ReplayTarget};
+use super::Profile;
 use crate::{
     adapter::{AdapterError, Request},
-    protocol::{CodecError, cache::CacheProjection},
+    protocol::{
+        CodecError,
+        cache::CacheProjection,
+        native::{ReplayTarget, group_client_history},
+    },
     semantic::{
         context::ExecutionHints, task::generation::GenerationSemanticContract, value::Presence,
     },
@@ -89,7 +93,7 @@ impl TargetCaps {
         self.check_context(request)?;
         request.check_semantic(&self.semantics)?;
         request.check_semantic(&self.profile.semantic_contract())?;
-        let mut semantic = self.profile.group_client_history(&request.task.semantic)?;
+        let mut semantic = group_client_history(&request.task.semantic)?;
         let mut settings = semantic.settings().clone();
         // Include selects the downstream opaque carrier, not a native control.
         settings.reasoning = settings.reasoning.with_encrypted_output(false);

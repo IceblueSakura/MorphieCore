@@ -5,9 +5,8 @@ mod native_bindings {
         adapter::{Request, UpstreamAdapter},
         execution::{Attempt, UpstreamRequest, plan::representable, prepare},
         protocol::{
-            anthropic::{
-                Dialect as NativeDialect, Profile as NativeProfile, ReplayTarget, TargetCaps,
-            },
+            anthropic::{Dialect as NativeDialect, Profile as NativeProfile, TargetCaps},
+            native::ReplayTarget,
             openai::{Adapter, Dialect, Profile, TargetCaps as Contract, sse::SseLimits},
         },
         provider::{
@@ -304,7 +303,7 @@ mod native_catalog {
     use morphiecore::{
         adapter::Request,
         execution::{admit, plan::representable, prepare},
-        protocol::anthropic::{Profile, ReplayTarget},
+        protocol::{anthropic::Profile, native::ReplayTarget},
         provider::SecretMaterial,
         semantic::{task::generation::LocalScope, value::Presence},
         topology::catalog,

@@ -200,10 +200,7 @@ mod anthropic_profile {
 mod anthropic_semantics {
     //! Independent semantic mapping and append-only native continuation expectations.
     use morphiecore::{
-        protocol::{
-            DecodedRequest,
-            anthropic::{Profile, ReplayTarget},
-        },
+        protocol::{DecodedRequest, anthropic::Profile, native::ReplayTarget},
         semantic::{task::generation::*, value::Text},
     };
     use serde_json::{Value, json};
