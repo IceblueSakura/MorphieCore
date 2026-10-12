@@ -49,6 +49,6 @@ The suite is deliberately lean. Keep it that way; do not regrow it.
 
 ## Documentation
 
-- The doc set is fixed: `README.md`, `AGENTS.md`, `docs/architecture.md`, `docs/roadmap.md`, `docs/usage.md`, `docs/development.md`, `docs/references.md`, `docs/openapi.json`. No analysis pages, run reports or history (use Git).
+- The doc set is fixed: `README.md`, `AGENTS.md`, `docs/architecture.md`, `docs/roadmap.md`, `docs/usage.md`, `docs/development.md`, `docs/references.md`, `docs/openapi.json`, plus dated protocol research notes in `docs/refs/` that cite their sources. No analysis pages, run reports or history (use Git).
 - Remove finished slices from the roadmap; record new decisions in the architecture decision table.
 - For Markdown changes, check local paths and heading anchors and run `git diff --check`. For OpenAPI changes, also run the schema checks in [Development](docs/development.md#sdk-loopback-gate) and compare the summary with gateway code.

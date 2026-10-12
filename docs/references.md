@@ -18,6 +18,8 @@ The SDK loopback gate uses the versions locked in `tests/sdk/uv.lock`, independe
 
 ## Protocol docs
 
+Protocol research notes with dated findings live in `refs/`: [Multimodal carriers](refs/multimodal.md).
+
 ### OpenAI
 
 - [Create response](https://developers.openai.com/api/reference/resources/responses/methods/create)
@@ -25,6 +27,8 @@ The SDK loopback gate uses the versions locked in `tests/sdk/uv.lock`, independe
 - [Reasoning](https://developers.openai.com/api/docs/guides/reasoning)
 - [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
 - [Migrate to Responses](https://developers.openai.com/api/docs/guides/migrate-to-responses)
+- [File inputs](https://developers.openai.com/api/docs/guides/file-inputs)
+- [Images and vision](https://developers.openai.com/api/docs/guides/images-vision)
 
 ### Anthropic
 
@@ -37,6 +41,9 @@ The SDK loopback gate uses the versions locked in `tests/sdk/uv.lock`, independe
 - [Tool calls](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls)
 - [Stop reasons](https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons)
 - [Prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)
+- [Vision](https://platform.claude.com/docs/en/build-with-claude/vision)
+- [PDF support](https://platform.claude.com/docs/en/build-with-claude/pdf-support)
+- [Files API](https://platform.claude.com/docs/en/build-with-claude/files)
 
 ### Google Gemini
 
@@ -49,12 +56,15 @@ Documentation: CC-BY-4.0. Samples: Apache-2.0.
 - [Interactions API v1](https://ai.google.dev/api/interactions-api-v1)
 - [Interactions streaming](https://ai.google.dev/gemini-api/docs/interactions/streaming)
 - [Thinking](https://ai.google.dev/gemini-api/docs/thinking)
+- [File input methods](https://ai.google.dev/gemini-api/docs/file-input-methods)
+- [Video understanding](https://ai.google.dev/gemini-api/docs/video-understanding)
 
 ### OpenRouter
 
-Source for Chat reasoning extension shapes.
+Source for Chat reasoning and video extension shapes.
 
 - [Reasoning tokens](https://openrouter.ai/docs/reasoning-tokens)
+- [Video inputs](https://openrouter.ai/docs/guides/overview/multimodal/videos)
 - [Prompt caching](https://openrouter.ai/docs/guides/best-practices/prompt-caching)
 
 ### OpenCode Go

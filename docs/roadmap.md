@@ -4,7 +4,18 @@ This page owns direction and current scope. Code and tests define behavior; [Arc
 
 ## Current focus
 
-No feature slice is selected. Keep the core maintainable within the frozen scope below. Deferred acceptance work stays deferred until the user reopens it.
+**Multimodal input carriers.** Carry image, audio, video and document input, including tool-result media, through the IR to every protocol with a native carrier. Findings and sources: [Multimodal carriers](refs/multimodal.md).
+
+Exit condition:
+
+1. The IR has a video resource kind with its own admission flag.
+2. Hand-written wire→IR and IR→wire expectations cover Chat `video_url` and `file`, Messages `image` and `document` (user and tool result), Gemini `inlineData`/`fileData` and `functionResponse.parts`, and Interactions `image`/`audio`/`document` and `function_result` images.
+3. Media a target cannot carry fail as unrepresentable; per-use options a target lacks are dropped by named rules.
+4. The offline baseline passes.
+
+Out of scope: generated media, Provider file references, a gateway file service, and audio or video carriers for Responses.
+
+Deferred acceptance work stays deferred until the user reopens it.
 
 ## Target clients
 

@@ -99,6 +99,17 @@ Downstream generation requests ignore unregistered fields and record bounded fie
 
 Parsing direction is explicit: client input, upstream reports and encoder checks have different policies. Nested parsing inherits that direction; no ambient or thread-local policy is used.
 
+### Media
+
+Image, audio, video and file resources are inert: inline data or a URL, never fetched, decoded or uploaded by the gateway. Each kind is explicit, because a URL source carries no media type. An inline file keeps its declared MIME, and targets that dispatch by MIME may carry it.
+
+- Chat video uses the registered extension `{"type":"video_url","video_url":{"url":…}}`, shared by OpenRouter, DashScope, Zhipu, vLLM and ModelBest. Only targets whose dialect declares it receive video.
+- Per-use options without a target slot (image detail, file detail, filename) are dropped by a named rule. Inbound options with no IR slot that change model-visible content, such as a Messages document `context`, are rejected.
+- Provider file IDs and file URIs are bound to the gateway credential's workspace or project. Client-supplied references are rejected.
+- A failover route may include candidates narrower than the public contract. Requests they cannot represent skip them, which reduces failover rather than admission.
+
+Carrier tables and sources: [Multimodal carriers](refs/multimodal.md).
+
 ### Candidate-local projection
 
 Each candidate starts from the unchanged source IR. Static and streaming paths use the same named rules.
@@ -277,6 +288,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Stateless Google Interactions | `store: false` and full history; no `previous_interaction_id` or revision header. Signatures keep their native formats |
 | Separate credential lifecycle | Private file store and ordered pools; no inference-triggered login or refresh |
 | Agent-sized bounds | Bodies, IR budgets and deadlines fit whole-history agent sessions and long turns: tens of MiB and one hour per exchange. Upstreams enforce their own maxima |
+| Inert, credential-free media | Inline data or URLs only; no gateway fetch or file service, and no client-supplied Provider file references |
 | Client-owned output caps | The gateway neither caps nor invents `max_tokens`; the upstream enforces its model limit. Only a protocol that requires the field fills a fixed default |
 
 Pinned clients and protocol sources are in [References](references.md). Observed client behavior is an oracle, not permission to weaken security or fabricate semantics.
