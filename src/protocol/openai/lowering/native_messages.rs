@@ -23,6 +23,19 @@ fn client_usage(usage: Usage) -> Result<Option<Usage>, CodecError> {
     )
 }
 
+/// A signature-only Gemini item names the part it belongs to, so Chat may carry it
+/// ahead of the message whatever its observed position. Readable reasoning keeps its order.
+pub(super) fn anchored(item: &ReasoningItem) -> bool {
+    item.parts.is_empty()
+        && item.replay.as_ref().is_some_and(|value| {
+            let format = match crate::protocol::replay_envelope::open(value.as_str()) {
+                Some((_, sealed, _)) => sealed,
+                None => value.format(),
+            };
+            format == ReplayFormat::GoogleGenerateContentPart
+        })
+}
+
 /// The caller supplies a private delivery copy; the native observation stays intact.
 /// Container boundaries are omitted, object arguments are serialized exactly, and
 /// stop progress is represented by OpenAI outcome plus the preserved tool calls.
@@ -72,6 +85,7 @@ pub(crate) fn project(decoded: &mut DecodedResponse, profile: Profile) -> Result
         let mut owner = None;
         for (id, item) in projected.items() {
             match item {
+                Item::Reasoning(r) if anchored(r) => reasoning.push((*id, item.clone())),
                 Item::Reasoning(_)
                     if parts.is_empty() && calls.is_empty() && reasoning.is_empty() =>
                 {

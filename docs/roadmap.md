@@ -36,7 +36,7 @@ Target: `gemini-3.8-flash` on Google AI Studio (`generativelanguage.googleapis.c
 Phase 5 — generateContent:
 
 - Always `:streamGenerateContent?alt=sse` upstream; JSON clients get the aggregate.
-- Each `thoughtSignature` becomes a reasoning item whose `GoogleGenerateContentPart` value names its anchor: the function call ID, its own thought part, or the content's tail. The encoder restores it by anchor, so existing downstream reasoning carriers return it and downstream reordering (Chat puts reasoning first) cannot misplace it. Thought parts always carry such a value, so the same target gets them back as thoughts while other targets get readable text.
+- Each `thoughtSignature` becomes a reasoning item whose `GoogleGenerateContentPart` value names its anchor: the function call ID, its own thought part, or the content's tail. Signature-only items trail the response; the encoder restores each by anchor, so existing downstream reasoning carriers return it and downstream reordering (Chat puts reasoning first) cannot misplace it. Thought parts always carry such a value, so the same target gets them back as thoughts while other targets get readable text.
 - Effort maps to `thinkingLevel` `low`/`medium`/`high`; `none` and `minimal` become `low` by a named rule (3.8 Flash rejects `minimal`). Tool schemas go as `parametersJsonSchema`; tool results as `functionResponse` with the call ID.
 - Finish reasons, `usageMetadata` (`thoughtsTokenCount`, `cachedContentTokenCount`) and Google error bodies map onto the existing stop, usage and error classes.
 

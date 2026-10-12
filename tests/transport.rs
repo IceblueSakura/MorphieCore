@@ -14,6 +14,8 @@ mod chain;
 mod chat;
 #[path = "transport/framing.rs"]
 mod framing;
+#[path = "transport/google_sse.rs"]
+mod google_sse;
 #[path = "transport/native.rs"]
 mod native;
 #[path = "transport/planning.rs"]

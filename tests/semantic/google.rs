@@ -83,12 +83,13 @@ fn stream_maps_thoughts_text_calls_and_anchored_signatures() {
     assert!(matches!(&items[1].1, Item::Message(m)
         if m.role == MessageRole::Assistant
             && matches!(&m.parts[0].content, ContentPart::Text(t) if t.as_str() == "Reading.")));
-    assert!(matches!(&items[2].1, Item::Reasoning(r) if r.parts.is_empty()));
+    // Signature-only items trail the calls; their anchor, not position, binds them.
+    assert!(matches!(&items[4].1, Item::Reasoning(r) if r.parts.is_empty()));
     assert_eq!(
-        signature(&items[2].1),
+        signature(&items[4].1),
         json!({"anchor":"call","call":"c1","signature":"U0lH"})
     );
-    for (index, (id, path)) in [(3, ("c1", "a.txt")), (4, ("c2", "b.txt"))] {
+    for (index, (id, path)) in [(2, ("c1", "a.txt")), (3, ("c2", "b.txt"))] {
         assert!(matches!(&items[index].1, Item::ToolCall(c)
             if c.call_id.as_str() == id && c.name.as_str() == "read"
                 && c.arguments.as_structured().unwrap().value() == &json!({"path": path})));
@@ -202,7 +203,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
     assert!(rules.is_empty());
     // Chat delivers reasoning ahead of the message; the anchor, not the position, binds it.
     let mut items = request.items().to_vec();
-    let signed = items.remove(3);
+    let signed = items.remove(5);
     items.insert(1, signed);
     let hoisted = request
         .clone()

@@ -42,6 +42,9 @@ pub struct GenerationSseDecoder {
     members: Vec<ItemId>,
     calls: Vec<String>,
     usage: Option<Usage>,
+    /// Call and tail signatures, emitted last: they bind by anchor, and trailing them
+    /// keeps a message contiguous with its calls for every downstream carrier.
+    signatures: Vec<Signed>,
     finished: bool,
     closed: bool,
     rejected: bool,
@@ -132,6 +135,7 @@ impl GenerationSseDecoder {
             members: vec![],
             calls: vec![],
             usage: None,
+            signatures: vec![],
             finished: false,
             closed: false,
             rejected: false,
@@ -347,14 +351,10 @@ impl GenerationSseDecoder {
                     self.delta(fragment, PartKind::Text, out)?;
                 }
                 if let Some(signature) = signature {
-                    self.close(out)?;
-                    self.signature(
-                        Signed {
-                            anchor: Anchor::Tail,
-                            signature: Some(signature),
-                        },
-                        out,
-                    )?;
+                    self.signatures.push(Signed {
+                        anchor: Anchor::Tail,
+                        signature: Some(signature),
+                    });
                 }
                 Ok(())
             }
@@ -378,13 +378,10 @@ impl GenerationSseDecoder {
                 }
                 self.calls.push(id.into());
                 if let Some(signature) = signature {
-                    self.signature(
-                        Signed {
-                            anchor: Anchor::Call(id.into()),
-                            signature: Some(signature),
-                        },
-                        out,
-                    )?;
+                    self.signatures.push(Signed {
+                        anchor: Anchor::Call(id.into()),
+                        signature: Some(signature),
+                    });
                 }
                 let (item, part) = self.next_ids()?;
                 self.emit(
@@ -548,6 +545,9 @@ impl GenerationSseDecoder {
         out: &mut Vec<StreamEvent>,
     ) -> Result<(), SseError> {
         self.close(out)?;
+        for value in std::mem::take(&mut self.signatures) {
+            self.signature(value, out)?;
+        }
         self.finished = true;
         let group = GroupId::new(self.scope, 1);
         let envelope = if self.members.is_empty() {

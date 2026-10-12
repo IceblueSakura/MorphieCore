@@ -62,7 +62,13 @@ All listeners are temporary loopback ones with synthetic credentials; no environ
 
 ## Real Provider checks
 
-Authorization is defined in [AGENTS.md](../AGENTS.md#authorization). There is no standing probe tool: when needed, write a minimal entry point under `examples/` that gets credentials through the project loader, fixes request count, output cap and timeout, runs serially with no hidden retries, prints only redacted status and counts, and never saves bodies or opaque values. Real calls supplement, never replace, synthetic regression.
+Authorization is defined in [AGENTS.md](../AGENTS.md#authorization). `tests/live.rs` holds the real-Provider gateway checks, ignored by default:
+
+```sh
+cargo test --locked --offline --test live -- --ignored --nocapture
+```
+
+Each check starts the gateway in-process on loopback with the catalog topology and borrows its key from the default credential store through the project loader (the pool must exist, e.g. `google/google-api-key`); no `gateway.json` is read. It runs serially with a fixed request count, output cap and timeout and no retries, and prints only status, error codes and body-free diagnostics. Extend it rather than writing ad-hoc probes. Real calls supplement, never replace, synthetic regression.
 
 ## pi acceptance
 

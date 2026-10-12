@@ -5,10 +5,15 @@ use crate::{
 };
 use std::collections::BTreeMap;
 
+fn order() -> CodecError {
+    CodecError::Unsupported("native block order on Chat".into())
+}
 pub(crate) struct EventProjection {
     profile: Profile,
     message: Option<ItemId>,
-    reasoning: Option<ItemId>,
+    reasoning: Vec<ItemId>,
+    /// A reasoning item opened after content, held until it proves to be anchored.
+    late: Option<StreamEvent>,
     text_owners: BTreeMap<ItemId, ItemId>,
     pending: Vec<ItemId>,
     tools: bool,
@@ -19,7 +24,8 @@ impl EventProjection {
         Self {
             profile,
             message: None,
-            reasoning: None,
+            reasoning: vec![],
+            late: None,
             text_owners: BTreeMap::new(),
             pending: vec![],
             tools: false,
@@ -46,6 +52,12 @@ impl EventProjection {
         self.close_later(owner);
         owner
     }
+    fn late_item(&self) -> Option<ItemId> {
+        match &self.late {
+            Some(StreamEvent::ItemStarted { item, .. }) => Some(*item),
+            _ => None,
+        }
+    }
     pub(crate) fn project(
         &mut self,
         events: &[StreamEvent],
@@ -58,12 +70,14 @@ impl EventProjection {
                     self.scope = item.scope();
                     match kind {
                         ItemKind::Reasoning if self.profile == Profile::Chat => {
-                            if self.reasoning.is_some() || self.message.is_some() || self.tools {
-                                return Err(CodecError::Unsupported(
-                                    "native block order on Chat".into(),
-                                ));
+                            if !self.reasoning.is_empty() || self.message.is_some() || self.tools {
+                                if self.late.is_some() {
+                                    return Err(order());
+                                }
+                                self.late = Some(event.clone());
+                                continue;
                             }
-                            self.reasoning = Some(*item);
+                            self.reasoning.push(*item);
                         }
                         ItemKind::Message { .. } if self.profile == Profile::Chat => {
                             if self.tools {
@@ -91,6 +105,27 @@ impl EventProjection {
                         _ => {}
                     }
                 }
+                StreamEvent::PartStarted { item, .. } | StreamEvent::Delta { item, .. }
+                    if self.late_item() == Some(*item) =>
+                {
+                    return Err(order());
+                }
+                StreamEvent::ItemFinished {
+                    item,
+                    replay: Some(replay),
+                    ..
+                } if self.late_item() == Some(*item) => {
+                    let anchored = super::anchored(&ReasoningItem {
+                        parts: vec![],
+                        status: ItemLifecycle::Completed,
+                        replay: Some(replay.value.clone()),
+                    });
+                    if !anchored {
+                        return Err(order());
+                    }
+                    out.extend(self.late.take());
+                    self.reasoning.push(*item);
+                }
                 StreamEvent::PartStarted { item, kind, .. } => {
                     if *kind == PartKind::StructuredArguments {
                         *kind = PartKind::Arguments;
@@ -103,7 +138,10 @@ impl EventProjection {
                     *item = self.text_owners.get(item).copied().unwrap_or(*item);
                 }
                 StreamEvent::ItemFinished { item, .. } if self.profile == Profile::Chat => {
-                    if Some(*item) != self.reasoning {
+                    if self.late_item() == Some(*item) {
+                        return Err(order());
+                    }
+                    if !self.reasoning.contains(item) {
                         continue;
                     }
                 }
