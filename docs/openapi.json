@@ -284,7 +284,7 @@
       "ConversationId": {
         "in": "header", "name": "X-MorphieCore-Conversation-Id", "required": false,
         "schema": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[\\u0021-\\u002b\\u002d-\\u007e]+$"},
-        "description": "Provider-neutral logical conversation ID, normally carried automatically by the client integration. Keep it stable across turns and model changes; use a new ID for a new or forked conversation. Duplicate values are rejected, even when equal. Absence creates only an independent request-local group, not stored history. Never forwarded verbatim, echoed, or used for authorization or replay permission."
+        "description": "Provider-neutral logical conversation ID, normally carried automatically by the client integration. Keep it stable across turns and model changes; use a new ID for a new or forked conversation. Duplicate values are rejected, even when equal. Absence creates only an independent request-local group, not stored history. Never forwarded verbatim, echoed, or used for authorization or replay permission. Without it, an `x-session-id` or `session_id` header (pi) is read the same way."
       }
     },
     "securitySchemes": {"bearerAuth": {"type": "http", "scheme": "bearer", "description": "Exactly one Authorization header. Configured startup secret, not an upstream API key."}},

@@ -11,8 +11,18 @@ pub(super) fn conversation(
     headers: &HeaderMap,
 ) -> Result<crate::semantic::context::ConversationContext, ApiError> {
     use crate::semantic::context::ConversationContext;
-    let mut values = headers.get_all("x-morphiecore-conversation-id").iter();
-    if let Some(value) = values.next() {
+    // The explicit header wins; pi declares its session as `x-session-id` or
+    // `session_id`. Provider session headers (`x-opencode-session`) are never read.
+    let name = [
+        "x-morphiecore-conversation-id",
+        "x-session-id",
+        "session_id",
+    ]
+    .into_iter()
+    .find(|name| headers.contains_key(*name));
+    if let Some(name) = name {
+        let mut values = headers.get_all(name).iter();
+        let value = values.next().expect("present");
         if values.next().is_some() || value.len() > 256 {
             return Err(ApiError::invalid());
         }

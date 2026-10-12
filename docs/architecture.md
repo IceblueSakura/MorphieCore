@@ -122,7 +122,7 @@ When Chat Completions cannot carry a semantic such as reasoning, MorphieCore fol
 
 ## 6. Cache affinity
 
-- The optional `X-MorphieCore-Conversation-Id` header names a Provider-neutral logical conversation; the gateway derives each upstream's session or cache carriers from it.
+- The optional `X-MorphieCore-Conversation-Id` header, or else pi's declared session header (`x-session-id` or `session_id`), names a Provider-neutral logical conversation; the gateway derives each upstream's session or cache carriers from it. Provider session headers such as `x-opencode-session` are never read.
 - Standard `prompt_cache_key` is a separate cache-grouping intent.
 - Without a conversation ID, a short-TTL prefix-digest index reuses cache groups on a best-effort basis. It can be dropped at any time, misses only lose cache hits, and it is neither history storage nor part of replay decisions. Histories with opaque reasoning are excluded.
 - Implicit cache scope stays isolated by ingress key, credential source and public model; it does not reuse the replay fingerprint.

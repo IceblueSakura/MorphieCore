@@ -59,19 +59,27 @@ fn public_chat_no_longer_accepts_provider_session_body() {
 }
 
 #[test]
-fn neutral_context_has_explicit_or_request_local_scope_and_never_reads_vendor_headers() {
+fn neutral_context_reads_agent_session_headers_but_never_provider_sessions() {
     use axum::http::{HeaderMap, HeaderValue};
     let mut headers = HeaderMap::new();
     headers.insert(
         "x-opencode-session",
         HeaderValue::from_static("ignored-provider-session"),
     );
-    headers.insert("x-session-id", HeaderValue::from_static("ignored-alias"));
     let one = admission::conversation(&headers).unwrap();
     let two = admission::conversation(&headers).unwrap();
     assert!(!one.is_conversation_scoped());
     assert_ne!(one.id(), two.id());
     assert_eq!(one.id().len(), 32);
+    // pi declares its session as `session_id` or `x-session-id`.
+    for name in ["session_id", "x-session-id"] {
+        headers.insert(name, HeaderValue::from_static("pi-session"));
+        let group = admission::conversation(&headers).unwrap();
+        assert!(group.is_conversation_scoped());
+        assert_eq!(group.id(), "pi-session");
+        headers.remove(name);
+    }
+    headers.insert("x-session-id", HeaderValue::from_static("pi-session"));
     headers.insert(
         "x-morphiecore-conversation-id",
         HeaderValue::from_static("conversation-one"),
