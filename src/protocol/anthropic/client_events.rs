@@ -5,7 +5,8 @@
 use crate::{
     protocol::CodecError,
     semantic::task::generation::{
-        IncompleteReason, InputTokenRelation, ItemId, ItemKind, StreamEvent, StreamTerminal, Usage,
+        IncompleteReason, InputTokenRelation, ItemId, ItemKind, OutputTokenRelation, StreamEvent,
+        StreamTerminal, Usage,
     },
 };
 use bytes::Bytes;
@@ -45,25 +46,40 @@ fn frame(v: &Value) -> Bytes {
     Bytes::from(format!("event: {kind}\ndata: {v}\n\n"))
 }
 /// Messages usage: input excludes cache reads and writes.
-pub(super) fn usage_json(u: Option<&Usage>) -> Value {
-    let Some(u) = u else {
-        return json!({"input_tokens":0,"output_tokens":0});
-    };
-    let read = u.cached_input_tokens.unwrap_or(0);
-    let write = u.input_cache_write_tokens.unwrap_or(0);
-    let input = u.input_tokens.unwrap_or(0);
+pub(super) fn usage_json(u: Option<&Usage>) -> Result<Value, CodecError> {
+    let unsupported = || CodecError::Unsupported("Messages usage".into());
+    let u = u.ok_or_else(unsupported)?;
+    u.validate()?;
+    let input = u.input_tokens.ok_or_else(unsupported)?;
     let input = match u.input_relation {
-        InputTokenRelation::IncludesCache => input.saturating_sub(read).saturating_sub(write),
-        _ => input,
+        InputTokenRelation::ExcludesCacheReadAndWrite => input,
+        InputTokenRelation::IncludesCache => {
+            let read = u.cached_input_tokens.ok_or_else(unsupported)?;
+            let write = u.input_cache_write_tokens.ok_or_else(unsupported)?;
+            // IncludesCache does not promise disjoint cache-read and cache-write subsets.
+            if read != 0 && write != 0 {
+                return Err(unsupported());
+            }
+            input.checked_sub(read.max(write)).ok_or_else(unsupported)?
+        }
+        InputTokenRelation::Unreported => return Err(unsupported()),
     };
-    let mut v = json!({"input_tokens":input,"output_tokens":u.output_tokens.unwrap_or(0)});
+    let output = u.output_tokens.ok_or_else(unsupported)?;
+    let output = match u.output_relation {
+        OutputTokenRelation::IncludesReasoning => output,
+        OutputTokenRelation::ExcludesReasoning => output
+            .checked_add(u.reasoning_tokens.ok_or_else(unsupported)?)
+            .ok_or_else(unsupported)?,
+        OutputTokenRelation::Unreported => return Err(unsupported()),
+    };
+    let mut v = json!({"input_tokens":input,"output_tokens":output});
     if let Some(read) = u.cached_input_tokens {
         v["cache_read_input_tokens"] = json!(read);
     }
     if let Some(write) = u.input_cache_write_tokens {
         v["cache_creation_input_tokens"] = json!(write);
     }
-    v
+    Ok(v)
 }
 impl ClientEventEncoder {
     pub fn new(id: &str, model: &str) -> Self {
@@ -161,7 +177,16 @@ impl ClientEventEncoder {
                 }
                 out.push(frame(&json!({"type":"content_block_stop","index":index})));
             }
-            StreamEvent::Usage(usage) => self.usage = Some(*usage),
+            StreamEvent::AnnotationAdded { .. } => {
+                return Err(CodecError::Unsupported("Messages citations".into()));
+            }
+            StreamEvent::TextMetadata { annotations, .. } if !annotations.is_empty() => {
+                return Err(CodecError::Unsupported("Messages citations".into()));
+            }
+            StreamEvent::Usage(usage) => {
+                usage_json(Some(usage))?;
+                self.usage = Some(*usage);
+            }
             StreamEvent::Terminal { terminal, details } => {
                 self.start(&mut out);
                 let stop = match (terminal, &details.incomplete) {
@@ -180,7 +205,7 @@ impl ClientEventEncoder {
                 }
                 out.push(frame(&json!({"type":"message_delta",
                     "delta":{"stop_reason":stop,"stop_sequence":null},
-                    "usage":usage_json(self.usage.as_ref())})));
+                    "usage":usage_json(self.usage.as_ref())?})));
                 out.push(frame(&json!({"type":"message_stop"})));
                 self.finished = true;
             }

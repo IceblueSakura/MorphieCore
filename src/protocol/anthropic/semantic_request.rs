@@ -215,7 +215,10 @@ pub(super) fn project(
         }
         _ => return Err(unsupported()),
     };
-    let effort = match (reasoning.effort.clone(), reasoning.budget_as_effort()) {
+    let effort = match (
+        reasoning.effort.clone(),
+        crate::protocol::reasoning::budget_as_effort(reasoning),
+    ) {
         (Presence::Absent, Some(effort)) => Presence::Value(effort),
         (effort, _) => effort,
     };

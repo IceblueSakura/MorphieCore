@@ -68,6 +68,8 @@ Protocol differences stay in protocol modules. Native Anthropic, Google and Inte
 
 The IR is neither a protocol DTO nor a union of vendor fields.
 
+Generation semantics come from the official OpenAI, Anthropic and Google APIs. One official API is enough to justify a concept; a target without its carrier rejects it. Provider dialects and lossy mappings, including budget-to-effort thresholds, belong to protocol codecs and projection rules, not the semantic types. Realtime and standalone tasks do not determine Generation completeness.
+
 - **Ordered items:** instructions, messages, tool calls/results, reasoning and Provider tool observations share one ordered history. A message is one container, not the whole conversation.
 - **Explicit links:** calls and results link by call ID, never position or name. Item IDs, part IDs, wire IDs and stream indexes remain distinct.
 - **Exact JSON:** arguments and schemas retain numeric precision and key order. Parsing rejects duplicate keys and bounds depth, nodes and bytes. A schema is any JSON object; keyword vocabularies and strict subsets are target constraints.
@@ -155,6 +157,7 @@ Redacted thinking is an opaque-only reasoning item with its own replay format, s
 Google signatures travel as reasoning items. The IR has no part- or call-level replay slots; Provider-tool replay stays separate.
 
 - A generateContent value names its anchor: call ID, thought or tail. The encoder restores it by anchor, not position.
+- A signed thought closes its owner. Later thought text starts another item, so adjacent signed parts never overwrite one another.
 - An Interactions value is a thought signature or a call-ID-anchored signature.
 - Signature-only items trail the response, so a message stays contiguous with its calls. Chat carries them ahead of the message.
 - Preserve every signature, even when an upstream sample accepts an omitted one.
@@ -239,6 +242,7 @@ Native requests preserve thinking, tool-use/result order and call IDs. Messages 
 
 - Effort maps to adaptive thinking. `none`/`minimal` map to `low`; budgets use a named effort projection.
 - Summary intent maps to summarized or omitted display. Unsupported reasoning context and sampling controls are dropped by named rules.
+- Client `thinking.display` is preserved independently of effort and budget, using the same display parser as native intake.
 - A leading developer instruction maps to the system prompt by name.
 - Call IDs outside the native grammar map to stable digests; collisions fail rather than merge calls.
 - Each native request uses top-level ephemeral cache control. Cache hits still depend on upstream thresholds.
@@ -258,6 +262,10 @@ Native observations stay unchanged. OpenAI delivery projects a copy:
 - Cache-inclusive usage is computed only from complete reported operands; missing usage is not invented.
 - Delivery generates required IDs/timestamps only on its own copy, stable within the response. They are not upstream facts or stored-history keys.
 - Text, thinking and tool arguments stream incrementally. Full signatures are enveloped after block validation.
+
+Messages delivery rejects citations until that carrier is implemented. Static and streamed output use the same refusal to discard annotations.
+
+Messages final usage requires reported input/output counts and a known accounting relation. Cache-exclusive input is preserved. Inclusive input can be converted only with both cache counts reported and at least one zero: the IR does not promise that nonzero cache-read and cache-write subsets are disjoint. Missing or ambiguous counts fail projection instead of becoming zero. SSE opening counters are provisional; they never replace the required final report.
 
 ## Conversation and cache affinity
 
@@ -282,6 +290,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Decision | Consequence |
 |---|---|
 | One semantic core | Gateway and future agent library share the IR; callers own agent behavior. Beyond context edits and response continuation, agent-only machinery joins the IR when the library needs it |
+| Official Generation vocabulary | OpenAI, Anthropic and Google define semantic concepts; dialect carriers and approximation policies stay in protocol modules. Semantic expression, codec support and activated bindings are separate claims |
 | Separate task contracts | Generation, Embeddings, Images, Speech and Transcription are not one universal message type |
 | Pure protocol boundaries | Encode from final typed input; no network in codecs or post-encoding JSON patches |
 | Functional ownership | Keep root layers; organize internals by domain, without compatibility aliases or plugin frameworks |
@@ -302,7 +311,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Target-local image restrictions | Formats, encoded sizes, counts and unavailable per-use options are checked or projected at the protocol boundary, not encoded as Provider-specific IR fields |
 | Envelopes as grouping | Ordered message envelopes are the only IR grouping. Chat's call ownership is a view derived in the OpenAI codec, which also enforces Chat-only rules such as no calls on a refusal |
 | Schemas as data | The IR keeps any bounded JSON-object schema an official API accepts. The OpenAI strict subset is checked only for OpenAI targets. An unnamed output schema (Messages) gets the fixed name `response` only on OpenAI targets, which require one |
-| No stop sequences | Not IR semantics while no target client needs them. Client `stop` and `stop_sequences` stay unregistered fields, ignored and named; a native `stop_sequence` stop reports a finished turn. Reopen with a client that sends them |
+| Deferred stop sequences | Nonempty client `stop` and `stop_sequences` are rejected, not treated as unknown fields. No stop control enters the IR until implemented; a native `stop_sequence` stop still reports a finished turn |
 | Client-owned output caps | The gateway neither caps nor invents `max_tokens`; the upstream enforces its model limit. Only a protocol that requires the field fills a fixed default |
 
 Pinned clients and protocol sources are in [References](references.md). Observed client behavior is an oracle, not permission to weaken security or fabricate semantics.

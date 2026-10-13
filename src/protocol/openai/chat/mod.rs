@@ -30,6 +30,7 @@ pub(super) const FIELDS: &[&str] = &[
     "top_logprobs",
     "audio",
     "modalities",
+    "stop",
 ];
 pub fn decode_generation(v: &Value) -> Result<DecodedRequest, CodecError> {
     decode_generation_with(v, &Default::default(), DecodeDirection::Request)
@@ -42,6 +43,11 @@ pub(crate) fn decode_generation_with(
     bounded(v)?;
     let o = object(v)?;
     direction.fields(o, FIELDS)?;
+    if o.get("stop")
+        .is_some_and(|v| !v.is_null() && v != &json!([]))
+    {
+        return Err(CodecError::Unsupported("stop".into()));
+    }
     let messages = o
         .get("messages")
         .and_then(Value::as_array)

@@ -362,7 +362,7 @@ fn validate_response(
 ) -> Result<(), RepresentationError> {
     if let Some(settings) = &metadata.context.settings {
         settings.validate()?;
-        if settings.reasoning.requires_extended_controls() {
+        if super::reasoning::requires_extended_controls(&settings.reasoning) {
             return Err(RepresentationError::Reasoning);
         }
         check_tool_selection(settings.tool_choice.as_ref())?;
@@ -525,7 +525,7 @@ fn represent_reasoning(
 ) -> Result<(), RepresentationError> {
     let structured_chat = adaptation.rules.structured_chat_reasoning;
     let request = history.is_some();
-    if controls.requires_extended_controls() {
+    if super::reasoning::requires_extended_controls(controls) {
         return Err(RepresentationError::Reasoning);
     }
     if profile == Profile::Responses && controls.summary() == Some(ReasoningSummary::Disabled) {

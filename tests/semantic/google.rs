@@ -116,6 +116,28 @@ fn stream_maps_thoughts_text_calls_and_anchored_signatures() {
         usage.output_relation,
         OutputTokenRelation::IncludesReasoning
     );
+    // A signature ends its thought; the next signed thought has another owner.
+    let mut signed = frames();
+    signed[0]["candidates"][0]["content"]["parts"][0]["thoughtSignature"] = json!("U0lHMQ==");
+    signed[1]["candidates"][0]["content"]["parts"][0]["thoughtSignature"] = json!("U0lHMg==");
+    let observed = decode(&wire(&signed)).unwrap();
+    assert_eq!(
+        signature(&observed.semantic.items()[0].1),
+        json!({"anchor":"thought","signature":"U0lHMQ=="})
+    );
+    assert_eq!(
+        signature(&observed.semantic.items()[1].1),
+        json!({"anchor":"thought","signature":"U0lHMg=="})
+    );
+    let (encoded, _) =
+        encode_generation_request(&next_request(&observed), &observed.fidelity, &target()).unwrap();
+    assert_eq!(
+        &encoded["contents"][1]["parts"].as_array().unwrap()[..2],
+        &[
+            json!({"thought":true,"text":"Plan","thoughtSignature":"U0lHMQ=="}),
+            json!({"thought":true,"text":" more","thoughtSignature":"U0lHMg=="}),
+        ]
+    );
 }
 
 #[test]

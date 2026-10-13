@@ -293,7 +293,8 @@ impl GenerationSseDecoder {
                 if !matches!(
                     self.open,
                     Some(Open {
-                        kind: OpenKind::Thought { .. },
+                        // A signature closes its part; later text has another owner.
+                        kind: OpenKind::Thought { signature: None },
                         ..
                     })
                 ) {

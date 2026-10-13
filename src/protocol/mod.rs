@@ -18,4 +18,5 @@ pub mod native;
 pub mod openai;
 pub mod openrouter_images;
 pub mod openrouter_speech;
+pub(crate) mod reasoning;
 pub mod replay_envelope;

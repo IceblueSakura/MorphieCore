@@ -19,6 +19,14 @@ pub struct NativeProjection {
     pub omitted_execution: Vec<ItemId>,
     pub rules: Vec<RequestRule>,
 }
+pub(super) fn display(value: &Presence<super::Display>) -> Presence<ReasoningDisplay> {
+    match value {
+        Presence::Absent => Presence::Absent,
+        Presence::Null => Presence::Null,
+        Presence::Value(super::Display::Summarized) => Presence::Value(ReasoningDisplay::Summary),
+        Presence::Value(super::Display::Omitted) => Presence::Value(ReasoningDisplay::Omitted),
+    }
+}
 impl std::fmt::Debug for NativeProjection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NativeProjection")
@@ -104,16 +112,7 @@ impl Profile {
         if let Presence::Value(thinking) = &wire.thinking {
             settings.reasoning = ReasoningRequest::present(None, None);
             settings.reasoning.mode = Presence::Value(ReasoningMode::Adaptive);
-            settings.reasoning.display = match thinking.display {
-                Presence::Absent => Presence::Absent,
-                Presence::Null => Presence::Null,
-                Presence::Value(super::Display::Summarized) => {
-                    Presence::Value(ReasoningDisplay::Summary)
-                }
-                Presence::Value(super::Display::Omitted) => {
-                    Presence::Value(ReasoningDisplay::Omitted)
-                }
-            };
+            settings.reasoning.display = display(&thinking.display);
         }
         if let Presence::Value(config) = &wire.output_config {
             output_settings(config, &mut settings);

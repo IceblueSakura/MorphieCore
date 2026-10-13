@@ -237,6 +237,15 @@ pub enum Display {
     Summarized,
     Omitted,
 }
+impl Display {
+    pub(super) fn read(v: &Value) -> Result<Self, CodecError> {
+        match v.as_str() {
+            Some("summarized") => Ok(Self::Summarized),
+            Some("omitted") => Ok(Self::Omitted),
+            _ => Err(CodecError::Invalid("Anthropic display")),
+        }
+    }
+}
 #[derive(Clone, Eq, PartialEq)]
 pub struct Thinking {
     pub display: Presence<Display>,
@@ -248,11 +257,7 @@ impl Thinking {
             return Err(CodecError::Unsupported("Anthropic thinking mode".into()));
         }
         Ok(Self {
-            display: presence(o, "display", |v| match v.as_str() {
-                Some("summarized") => Ok(Display::Summarized),
-                Some("omitted") => Ok(Display::Omitted),
-                _ => Err(CodecError::Unsupported("Anthropic display".into())),
-            })?,
+            display: presence(o, "display", Display::read)?,
         })
     }
     fn wire(&self) -> Value {

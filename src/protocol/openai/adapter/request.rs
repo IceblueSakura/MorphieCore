@@ -13,6 +13,43 @@ use crate::{
 };
 use serde_json::Value;
 
+/// Candidate-local loss of thinking mode/display/budget; the bool reports a budget mapping.
+fn without_extended_reasoning(request: &Request) -> Result<Option<(Request, bool)>, CodecError> {
+    let settings = request.task.semantic.settings();
+    let reasoning = &settings.reasoning;
+    if !openai::reasoning::requires_extended_controls(reasoning) {
+        return Ok(None);
+    }
+    let mut settings = settings.clone();
+    let budget = crate::protocol::reasoning::budget_as_effort(reasoning);
+    let mapped = reasoning.effort.is_absent() && budget.is_some();
+    if let (true, Some(effort)) = (mapped, budget) {
+        settings.reasoning.effort = Presence::Value(effort);
+    }
+    settings.reasoning.mode = Presence::Absent;
+    settings.reasoning.display = Presence::Absent;
+    settings.reasoning.budget_tokens = None;
+    let mut copy = request.clone();
+    copy.task.semantic = copy.task.semantic.with_settings(settings)?;
+    Ok(Some((copy, mapped)))
+}
+/// The selected dialect admits only low/high/max effort.
+fn with_effort_levels(request: &Request) -> Result<Option<Request>, CodecError> {
+    use crate::semantic::task::generation::ReasoningEffort as E;
+    let settings = request.task.semantic.settings();
+    let leveled = match settings.reasoning.effort.value() {
+        Some(E::None | E::Minimal) => E::Low,
+        Some(E::Medium) => E::High,
+        Some(E::XHigh) => E::Max,
+        _ => return Ok(None),
+    };
+    let mut settings = settings.clone();
+    settings.reasoning.effort = Presence::Value(leveled);
+    let mut copy = request.clone();
+    copy.task.semantic = copy.task.semantic.with_settings(settings)?;
+    Ok(Some(copy))
+}
+
 fn without_image_detail(request: &Request) -> Result<Option<Request>, CodecError> {
     use crate::semantic::task::generation::{
         ContentPart, InputPart, Item, ResourceDescription, ResourceUse, ToolOutput,
@@ -246,7 +283,7 @@ impl Adapter {
             }
         }
         let request = stripped.as_ref().map_or(request, |(copy, _)| copy);
-        let thinking = request.without_extended_reasoning()?;
+        let thinking = without_extended_reasoning(request)?;
         if let Some((_, mapped)) = &thinking {
             let chat = self.protocol == Profile::Chat;
             rules.push(if chat {
@@ -264,7 +301,7 @@ impl Adapter {
         }
         let request = thinking.as_ref().map_or(request, |(copy, _)| copy);
         let leveled = if self.adaptation.rules.low_high_max_effort {
-            request.with_effort_levels()?
+            with_effort_levels(request)?
         } else {
             None
         };

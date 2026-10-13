@@ -27,6 +27,7 @@ const TOP: &[&str] = &[
     "temperature",
     "top_p",
     "stream",
+    "stop_sequences",
 ];
 const MAX_IGNORED: usize = 32;
 
@@ -86,6 +87,11 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     let mut ignored = BTreeSet::new();
     keep(&mut v, TOP, &mut ignored);
     let o = object(&v)?.clone();
+    if o.get("stop_sequences")
+        .is_some_and(|v| !v.is_null() && v != &json!([]))
+    {
+        return Err(CodecError::Unsupported("stop_sequences".into()));
+    }
     let model = string(required(&o, "model")?)?;
     label(&model)?;
     let mut settings = GenerationSettings::default();
@@ -174,7 +180,13 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         settings.parallel_tool_calls = choice.disable_parallel_tool_use.value().map(|b| !b);
     }
     if let Some(thinking) = o.get("thinking").filter(|v| !v.is_null()) {
-        let t = object(thinking)?;
+        let mut thinking = thinking.clone();
+        keep(
+            &mut thinking,
+            &["type", "budget_tokens", "display"],
+            &mut ignored,
+        );
+        let t = object(&thinking)?;
         match t.get("type").and_then(Value::as_str) {
             Some("enabled") => {
                 let budget = t
@@ -195,6 +207,8 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
             }
             _ => return Err(CodecError::Unsupported("Anthropic thinking mode".into())),
         }
+        settings.reasoning.display =
+            super::semantic::display(&super::shape::presence(t, "display", super::Display::read)?);
     }
     if let Some(config) = o.get("output_config").filter(|v| !v.is_null()) {
         let mut config = config.clone();
@@ -300,6 +314,9 @@ pub fn encode_client_response(
                 for part in &m.parts {
                     match &part.content {
                         ContentPart::Text(t) => {
+                            if !t.annotations().is_empty() {
+                                return Err(CodecError::Unsupported("Messages citations".into()));
+                            }
                             content.push(json!({"type":"text","text":t.as_str()}))
                         }
                         ContentPart::Refusal(t) => {
@@ -340,7 +357,7 @@ pub fn encode_client_response(
     v.insert("stop_sequence".into(), Value::Null);
     v.insert(
         "usage".into(),
-        super::client_events::usage_json(semantic.usage().as_ref()),
+        super::client_events::usage_json(semantic.usage().as_ref())?,
     );
     Ok(Value::Object(v))
 }

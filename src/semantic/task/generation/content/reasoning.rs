@@ -1,7 +1,7 @@
-//! Responses reasoning controls and readable reasoning items.
+//! Reasoning controls and readable reasoning items from official Generation APIs.
 //!
 //! An absent object, an omitted child, and explicit `none` are distinct.
-//! Opaque Responses values belong to their typed item, never to readable parts.
+//! Opaque continuation values belong to their typed item, never to readable parts.
 //! Source records bind provenance and dependencies without owning another payload.
 use crate::semantic::task::generation::PartId;
 use crate::semantic::value::Text;
@@ -134,24 +134,6 @@ impl ReasoningRequest {
             return Err(crate::semantic::task::generation::GenerationError::InvalidControl);
         }
         Ok(())
-    }
-    /// No current Responses/Chat carrier can preserve these independent intents.
-    /// A token budget as the nearest effort, for targets without budgets (Claude
-    /// Code's "think", "think hard" and "ultrathink" are about 4k, 10k and 32k).
-    pub fn budget_as_effort(&self) -> Option<ReasoningEffort> {
-        Some(match self.budget_tokens? {
-            0..8192 => ReasoningEffort::Low,
-            8192..24576 => ReasoningEffort::Medium,
-            _ => ReasoningEffort::High,
-        })
-    }
-    pub fn requires_extended_controls(&self) -> bool {
-        self.budget_tokens.is_some()
-            || !self.display.is_absent()
-            || matches!(
-                self.mode.value(),
-                Some(ReasoningMode::Adaptive | ReasoningMode::Budgeted)
-            )
     }
 }
 /// Event-owned value and trusted intake scope. Materialization moves the value

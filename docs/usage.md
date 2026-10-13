@@ -181,6 +181,8 @@ Use `"stream": true` for SSE. Send the full history each turn; the gateway does 
 
 Return reasoning carriers unchanged in later history. Chat clients must preserve `reasoning_details`, not just readable text. See [Reasoning replay](architecture.md#reasoning-replay).
 
+Nonempty Chat `stop` and Messages `stop_sequences` are unsupported and rejected. Messages `thinking.display` is preserved. Messages responses with citations or missing/ambiguous final usage fail projection rather than dropping annotations or inventing zero counts; a failure after streaming starts aborts delivery without a success terminal.
+
 ### Image input
 
 Select an activated public model that admits image input. A tool-result image also needs a representable tool-media carrier on the selected upstream.

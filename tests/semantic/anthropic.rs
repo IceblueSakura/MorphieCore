@@ -212,7 +212,10 @@ mod anthropic_semantics {
     //! Independent semantic mapping and append-only native continuation expectations.
     use morphiecore::{
         protocol::{DecodedRequest, anthropic::Profile, native::ReplayTarget},
-        semantic::{task::generation::*, value::Text},
+        semantic::{
+            task::generation::*,
+            value::{Presence, Text},
+        },
     };
     use serde_json::{Value, json};
 
@@ -429,6 +432,18 @@ mod anthropic_semantics {
         assert_eq!(encoded.value["output_config"], json!({"effort":"low"}));
         assert_eq!(encoded.value["cache_control"], json!({"type":"ephemeral"}));
         assert_eq!(encoded.value["max_tokens"], 32);
+        let client = morphiecore::protocol::anthropic::client::decode_client_request(raw).unwrap();
+        assert_eq!(
+            client.task.semantic.reasoning().display,
+            Presence::Value(ReasoningDisplay::Omitted)
+        );
+        let invalid = std::str::from_utf8(raw)
+            .unwrap()
+            .replace("\"omitted\"", "7");
+        assert!(
+            morphiecore::protocol::anthropic::client::decode_client_request(invalid.as_bytes())
+                .is_err()
+        );
         // Messages requires max_tokens; a source without a cap gets the fixed default.
         let mut settings = decoded.semantic.settings().clone();
         settings.controls.max_output_tokens = None;
@@ -730,6 +745,7 @@ mod anthropic_media {
 }
 mod anthropic_output {
     //! Messages structured output: one IR owner with a native and an OpenAI carrier.
+
     use morphiecore::{
         adapter::Request,
         protocol::{
@@ -816,5 +832,168 @@ mod anthropic_output {
             json!({"format":{"type":"json_schema","schema":schema()}})
         );
         assert_eq!(rules, ["messages.omit-schema-name.v1"]);
+    }
+}
+mod client_fidelity {
+    use morphiecore::{
+        protocol::{
+            DecodedResponse,
+            anthropic::{
+                client::{decode_client_request, encode_client_response},
+                client_events::ClientEventEncoder,
+            },
+            openai::{Adapter, Dialect, Profile},
+        },
+        semantic::{task::generation::*, value::Presence},
+    };
+    use serde_json::json;
+
+    fn response() -> DecodedResponse {
+        Adapter::new(Profile::Chat, Dialect::Standard, None)
+            .decode_response(
+                json!({"id":"r","object":"chat.completion","model":"synthetic","created":1,
+                "choices":[{"index":0,"finish_reason":"stop",
+                    "message":{"role":"assistant","content":"answer"}}]})
+                .to_string()
+                .as_bytes(),
+            )
+            .unwrap()
+    }
+    fn terminal() -> StreamEvent {
+        StreamEvent::Terminal {
+            terminal: StreamTerminal::Completed,
+            details: TerminalDetails::default(),
+        }
+    }
+    #[test]
+    fn messages_final_usage_requires_reported_counts_and_unambiguous_cache_categories() {
+        let mut response = response();
+        assert!(encode_client_response(&response, "m").is_err());
+        let mut stream = ClientEventEncoder::new("r", "m");
+        stream.encode(&StreamEvent::Started).unwrap();
+        assert!(stream.encode(&terminal()).is_err());
+        assert!(stream.finish().is_err());
+
+        let mut usage = Usage::operation(10, 3, 13);
+        usage.cached_input_tokens = Some(2);
+        usage.input_cache_write_tokens = Some(0);
+        response.semantic = response.semantic.with_usage(Some(usage)).unwrap();
+        assert_eq!(
+            encode_client_response(&response, "m").unwrap()["usage"],
+            json!({"input_tokens":8,"output_tokens":3,
+                "cache_read_input_tokens":2,"cache_creation_input_tokens":0})
+        );
+        let mut stream = ClientEventEncoder::new("r", "m");
+        stream.encode(&StreamEvent::Usage(usage)).unwrap();
+        let frames = stream.encode(&terminal()).unwrap();
+        assert!(frames.iter().any(|frame| {
+            std::str::from_utf8(frame)
+                .unwrap()
+                .contains("\"input_tokens\":8")
+        }));
+        stream.finish().unwrap();
+
+        // Inclusive cache categories may overlap; their sum cannot be subtracted.
+        usage.input_cache_write_tokens = Some(1);
+        response.semantic = response.semantic.with_usage(Some(usage)).unwrap();
+        assert!(encode_client_response(&response, "m").is_err());
+    }
+    #[test]
+    fn messages_rejects_citations_instead_of_silently_removing_them() {
+        let mut response = response();
+        let mut usage = Usage::operation(0, 3, 3);
+        usage.input_relation = InputTokenRelation::ExcludesCacheReadAndWrite;
+        response.semantic = response.semantic.with_usage(Some(usage)).unwrap();
+        assert_eq!(
+            encode_client_response(&response, "m").unwrap()["content"],
+            json!([{"type":"text","text":"answer"}])
+        );
+        let resource = ResourceId::scoped(LocalScope::ROOT, 1);
+        let resources = ResourceTable::default()
+            .insert(
+                resource,
+                ResourceLocation::Url(
+                    morphiecore::semantic::value::Text::new(
+                        "https://example.invalid/source",
+                        "synthetic",
+                        128,
+                    )
+                    .unwrap(),
+                ),
+            )
+            .unwrap();
+        let annotation = Annotation::new(
+            Citation {
+                kind: CitationKind::Citation,
+                claim: ClaimAnchor::Whole,
+                source: resource,
+                coordinates: SourceCoordinates::Unreported,
+                label: None,
+                reported_ordinal: None,
+            },
+            &resources,
+        )
+        .unwrap();
+        let mut items = response.semantic.items().to_vec();
+        let Item::Message(message) = &mut items[0].1 else {
+            panic!("message")
+        };
+        let ContentPart::Text(text) = &message.parts[0].content else {
+            panic!("text")
+        };
+        message.parts[0].content = ContentPart::Text(
+            TextContent::new(
+                morphiecore::semantic::value::Text::new(text.as_str(), "synthetic", 128).unwrap(),
+                vec![annotation.clone()],
+                Presence::Absent,
+            )
+            .unwrap(),
+        );
+        response.semantic = response
+            .semantic
+            .with_resources(resources)
+            .unwrap()
+            .with_items(items)
+            .unwrap();
+        assert!(encode_client_response(&response, "m").is_err());
+        let mut stream = ClientEventEncoder::new("r", "m");
+        assert!(
+            stream
+                .encode(&StreamEvent::AnnotationAdded {
+                    item: ItemId::new(1),
+                    part: PartId::new(1),
+                    annotation: annotation.clone(),
+                })
+                .is_err()
+        );
+        assert!(
+            stream
+                .encode(&StreamEvent::TextMetadata {
+                    item: ItemId::new(1),
+                    part: PartId::new(1),
+                    annotations: vec![annotation],
+                    logprobs: Presence::Absent,
+                })
+                .is_err()
+        );
+    }
+    #[test]
+    fn unsupported_stop_controls_are_rejected_at_client_intake() {
+        let mut body = json!({"model":"m","max_tokens":8,
+            "messages":[{"role":"user","content":"go"}]});
+        assert!(decode_client_request(body.to_string().as_bytes()).is_ok());
+        body["stop_sequences"] = json!(["END"]);
+        assert!(decode_client_request(body.to_string().as_bytes()).is_err());
+        let mut body = json!({"model":"m","messages":[{"role":"user","content":"go"}]});
+        let chat = Adapter::new(Profile::Chat, Dialect::Standard, None);
+        assert!(
+            chat.decode_client_request(body.to_string().as_bytes())
+                .is_ok()
+        );
+        body["stop"] = json!(["END"]);
+        assert!(
+            chat.decode_client_request(body.to_string().as_bytes())
+                .is_err()
+        );
     }
 }

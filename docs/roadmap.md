@@ -4,14 +4,20 @@ This page owns direction and current scope. Code and tests define behavior; [Arc
 
 ## Current focus
 
-First complete the IR's semantic support for all target protocols and modalities. Each slice must state its goal and exit condition before code changes.
+Complete the Generation IR against selected semantics accepted by the official OpenAI, Anthropic and Google APIs. Provider dialects remain codec concerns. Realtime and standalone tasks do not need complete integration for this phase. Each slice must state its goal and exit condition before code changes.
 
-IR completeness proceeds in two steps. First, the standard OpenAI Chat, OpenAI Responses and Anthropic Messages media fields, checked against the pinned SDK types (openai-python `5e7a23e`, anthropic-sdk-python `b4b7916`). Second, compatibility with client shapes beyond those standards, such as opencode's.
+Track semantic expression, codec representation and enabled bindings separately. A concept supported by only one official API may belong in the IR; other targets reject it when they have no carrier. Client compatibility does not define the semantic vocabulary. Protocol sources are pinned in [References](references.md).
 
-No slice is selected. Open items wait on a carrier or a later stage:
+No slice is selected. Until the IR core is complete, add only minimal regressions for changed contracts and confirmed defects, preferably by extending existing tests. Keep safety invariants and the offline baseline; defer coverage expansion.
+
+### Deferred Generation semantics
+
+These are explicit gaps, not claims of complete official API coverage:
 
 - Messages citations (1C) are deferred to Claude Code acceptance; requests and responses that carry them are rejected, not dropped. The [design](#1c-design-messages-citations) records the IR change for when it reopens.
-- Messages document `context` stays rejected: it is model-visible text with no carrier outside Messages.
+- Messages document `context` stays rejected until its model-visible semantics have an IR owner. Its lack of a carrier on other targets is not a reason to exclude it permanently.
+- Generated media beyond the existing Chat audio contract need a selected output, stream and replay design. Standalone media tasks remain frozen.
+- Hosted tools have observation types but no admitted end-to-end contract. Select one official tool before extending declarations, observations and continuation.
 - Tool-result video has no carrier on any bound target: OpenAI and Interactions results have no video part, and Gemini function responses admit only images, PDF and plain text.
 
 ### 1C design: Messages citations
@@ -47,7 +53,7 @@ IR completeness does not mean every upstream can carry every modality. Protocol-
 
 ## Planned order
 
-1. **IR modality completeness.** Complete semantic support for all target protocols and modalities, including input, output and history/replay concepts. Establish completeness against concrete protocol requirements, not just the existing implementation.
+1. **Generation IR completeness.** Complete the selected official semantic contracts, including input, output and history/replay. Keep deferred concepts explicit rather than claiming full API coverage or expanding frozen tasks.
 2. **Stateful extension and coverage improvement.** After IR completeness, add stateful APIs in two forms, Provider-held state and gateway-held, time-limited `previous_response_id` history, and improve contract coverage. The IR keeps its response continuation types for this stage. No order between these two tracks is selected.
 3. **Failover.** The feature remains in early design. Its priority is undecided, lowest for now; design, implementation improvement and real acceptance follow the second stage.
 4. **Other agent acceptance.** Codex, Claude Code and other agents follow failover. Their priority is undecided, lowest for now.

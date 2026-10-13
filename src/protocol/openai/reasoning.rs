@@ -10,6 +10,16 @@ use crate::semantic::task::generation::{
 };
 use serde_json::{Map, Value, json};
 
+/// Responses and Chat have no carrier for these independent thinking controls.
+pub(super) fn requires_extended_controls(value: &ReasoningRequest) -> bool {
+    value.budget_tokens.is_some()
+        || !value.display.is_absent()
+        || matches!(
+            value.mode.value(),
+            Some(ReasoningMode::Adaptive | ReasoningMode::Budgeted)
+        )
+}
+
 /// `reported` distinguishes response-echo admission from request admission: the
 /// pinned create type marks `mode` non-nullable, the response model does not.
 pub(super) fn request(
@@ -93,7 +103,7 @@ pub(super) fn write_request(
     profile: Profile,
 ) -> Result<(), CodecError> {
     value.validate()?;
-    if value.requires_extended_controls() {
+    if requires_extended_controls(value) {
         return Err(CodecError::Unsupported("reasoning controls".into()));
     }
     if profile == Profile::Responses && value.summary() == Some(ReasoningSummary::Disabled) {
