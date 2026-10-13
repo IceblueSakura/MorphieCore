@@ -180,6 +180,9 @@ impl ClientEventEncoder {
             StreamEvent::AnnotationAdded { .. } => {
                 return Err(CodecError::Unsupported("Messages citations".into()));
             }
+            StreamEvent::ToolResultOutput { .. } => {
+                return Err(CodecError::Unsupported("Messages result output".into()));
+            }
             StreamEvent::TextMetadata { annotations, .. } if !annotations.is_empty() => {
                 return Err(CodecError::Unsupported("Messages citations".into()));
             }

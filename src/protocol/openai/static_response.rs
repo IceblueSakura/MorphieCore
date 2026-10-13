@@ -544,6 +544,14 @@ pub fn encode_chat(target: &ResponseRepresentation<'_>) -> Result<Value, CodecEr
     if target.profile != Profile::Chat {
         return Err(CodecError::ProfileMismatch);
     }
+    if target
+        .semantic
+        .items()
+        .iter()
+        .any(|(_, item)| matches!(item, Item::ToolResult(_) | Item::CustomResult(_)))
+    {
+        return Err(CodecError::Unsupported("Chat result output".into()));
+    }
     check_response_carriers(&target.semantic)?;
     crate::protocol::openai::content::citations::check_items(
         target.semantic.items(),
@@ -621,6 +629,9 @@ pub fn encode_chat(target: &ResponseRepresentation<'_>) -> Result<Value, CodecEr
 pub fn encode_responses(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> {
     if target.profile != Profile::Responses {
         return Err(CodecError::ProfileMismatch);
+    }
+    if target.semantic.items().iter().any(|(_, item)| matches!(item, Item::ToolResult(r) | Item::CustomResult(r) if r.status.is_none())) {
+        return Err(CodecError::Unsupported("result output lifecycle".into()));
     }
     if !target.metadata.context.system_fingerprint.is_absent() {
         return Err(CodecError::Unsupported("unprojected fingerprint".into()));

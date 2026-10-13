@@ -376,11 +376,13 @@ fn steps(
                         .items()
                         .iter()
                         .find_map(|(_, i)| match i {
-                            Item::ToolCall(c) if c.call_id == r.call_id => Some(c.name.as_str()),
+                            Item::ToolCall(c) if r.call_id.as_ref() == Some(&c.call_id) => {
+                                Some(c.name.as_str())
+                            }
                             _ => None,
                         })
                         .ok_or(CodecError::Invalid("Interactions result without call"))?;
-                    let mut step = json!({"type":"function_result","call_id":r.call_id.as_str(),
+                    let mut step = json!({"type":"function_result","call_id":r.required_call_id()?,
                         "name":name,"result":result});
                     if let Some(error) = r.is_error {
                         step["is_error"] = error.into();

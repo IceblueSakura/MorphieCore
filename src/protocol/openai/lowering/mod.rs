@@ -602,6 +602,18 @@ fn text_items(
     crate::protocol::openai::content::citations::check_items(items, resources, profile)
         .map_err(|_| RepresentationError::TextMetadata)?;
     for (_, i) in items {
+        if !request
+            && profile == Profile::Chat
+            && matches!(i, Item::ToolResult(_) | Item::CustomResult(_))
+        {
+            return Err(RepresentationError::Tools);
+        }
+        if !request
+            && matches!(i, Item::ToolResult(r) | Item::CustomResult(r) if r.status.is_none())
+            || matches!(i, Item::CustomResult(r) if r.call_id.is_none() || r.name.is_some())
+        {
+            return Err(RepresentationError::Tools);
+        }
         // Public carriers have no source/reference-domain field. A domain
         // declaration is not permission to erase it or invent a private carrier.
         if matches!(i, Item::ToolCall(call) if call.context.alias_domain.is_some())
@@ -623,10 +635,10 @@ fn text_items(
         {
             return Err(RepresentationError::UnmigratedSemantic);
         }
-        // Standard Responses admits image and file result parts in history; Chat does not.
+        // Responses admits image and file result parts in history and output.
         if matches!(i, Item::ToolResult(result) | Item::CustomResult(result)
-            if result.execution.is_some() || matches!(result.output, ToolOutput::Structured(_))
-                || (!request || profile == Profile::Chat) && !result.output.is_text_only()
+            if result.execution.is_some() || result.is_error.is_some() || matches!(result.output, ToolOutput::Structured(_))
+                || profile == Profile::Chat && !result.output.is_text_only()
                 || matches!(&result.output, ToolOutput::Parts(parts) if parts.iter().any(|(_, part)|
                     matches!(part, InputPart::Resource(r) if r.media(resources).is_ok_and(|r|
                         matches!(r.kind(), ResourceKind::Audio | ResourceKind::Video))))))

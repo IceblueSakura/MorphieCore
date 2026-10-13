@@ -448,7 +448,8 @@ mod scoped_identity {
             ItemId::scoped(LocalScope::new(owner_scope), 2),
             Item::ToolResult(ToolResult {
                 is_error: None,
-                call_id: text("same"),
+                call_id: Some(text("same")),
+                name: None,
                 output: "synthetic result".into(),
                 execution: None,
                 status: None,

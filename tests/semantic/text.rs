@@ -200,7 +200,7 @@ mod text_profile {
             panic!()
         };
         // Explicit synthetic report for the new call, never automatic result relinking.
-        r.call_id = text("edited-custom-call");
+        r.call_id = Some(text("edited-custom-call"));
         r.output = ToolOutput::Text("changed".into());
         d.semantic = d.semantic.with_items(items).unwrap();
         let out = request_wire(&d);

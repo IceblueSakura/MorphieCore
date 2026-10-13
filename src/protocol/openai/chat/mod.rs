@@ -274,7 +274,8 @@ pub(super) fn decode_message(
                 Item::ToolResult(ToolResult {
                     is_error: None,
                     execution: None,
-                    call_id: text(string(m, "tool_call_id")?, "call_id", 256)?,
+                    call_id: Some(text(string(m, "tool_call_id")?, "call_id", 256)?),
+                    name: None,
                     output,
                     status: None,
                     context: CallContext::default(),
@@ -683,7 +684,7 @@ pub(super) fn encode_items_with(
             Item::ToolResult(r) => {
                 standalone_calls = false;
                 messages.push(
-                    json!({"role":"tool","tool_call_id":r.call_id.as_str(),"content":match &r.output {
+                    json!({"role":"tool","tool_call_id":r.required_call_id().expect("validated request history"),"content":match &r.output {
                         ToolOutput::Text(s)=>json!(s),
                         ToolOutput::Parts(parts)=>json!(parts.iter().map(|(_,t)|json!({"type":"text","text":t.as_text().expect("lowering admits text-only tool parts")})).collect::<Vec<_>>()),
                         ToolOutput::Structured(_) => unreachable!("lowering rejects tool result semantics without a carrier"),

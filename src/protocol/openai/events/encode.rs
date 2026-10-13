@@ -285,6 +285,9 @@ impl EventEncoder {
                     ItemKind::ProgramOutput { call_id, result } => {
                         json!({"id":id,"type":"program_output","call_id":call_id.as_str(),"result":result})
                     }
+                    ItemKind::ToolResult(_) | ItemKind::CustomResult(_) => {
+                        item_wire(self.state()?, *item, &self.fidelity)?
+                    }
                     ItemKind::ProviderTool(_) | ItemKind::ProviderResult { .. } => {
                         return Err(CodecError::Unsupported(
                             "Provider observation carrier".into(),
@@ -427,7 +430,9 @@ impl EventEncoder {
                 )?;
                 vec![v]
             }
-            StreamEvent::ResourceDeclared { .. } | StreamEvent::MessageEnvelope(_) => vec![],
+            StreamEvent::ResourceDeclared { .. }
+            | StreamEvent::ToolResultOutput { .. }
+            | StreamEvent::MessageEnvelope(_) => vec![],
             StreamEvent::LogprobsSnapshot { .. }
             | StreamEvent::TextMetadata { .. }
             | StreamEvent::Usage(_) => vec![],

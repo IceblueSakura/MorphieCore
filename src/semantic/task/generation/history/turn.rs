@@ -139,7 +139,7 @@ impl<'a> ResponseContinuation<'a> {
                 .find_map(|(_, value)| match (item, value) {
                     (Item::ToolCall(_), Item::ToolResult(result))
                     | (Item::CustomCall(_), Item::CustomResult(result))
-                        if result.call_id.as_str() == call_id
+                        if result.call_id.as_ref().map(|id| id.as_str()) == Some(call_id)
                             && result.context.alias_domain.as_ref() == domain =>
                     {
                         Some(result.status)

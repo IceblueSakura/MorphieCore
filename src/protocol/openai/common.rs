@@ -416,6 +416,13 @@ pub(super) fn check_item_carriers(items: &[(ItemId, Item)]) -> Result<(), CodecE
     if items.iter().any(|(_, item)| matches!(item, Item::ToolCall(call) if !matches!(call.arguments, ToolArguments::Raw(_)))) {
         return Err(CodecError::Unsupported("structured arguments".into()));
     }
+    if items.iter().any(|(_, item)| {
+        matches!(item, Item::ToolResult(r) | Item::CustomResult(r)
+            if r.execution.is_some() || r.is_error.is_some() || matches!(r.output, ToolOutput::Structured(_)))
+            || matches!(item, Item::CustomResult(r) if r.call_id.is_none() || r.name.is_some())
+    }) {
+        return Err(CodecError::Unsupported("tool result semantics".into()));
+    }
     Ok(())
 }
 pub(super) fn check_message_carriers(

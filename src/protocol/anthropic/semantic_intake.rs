@@ -116,7 +116,8 @@ impl Intake {
                 content,
                 is_error,
             } => Item::ToolResult(ToolResult {
-                call_id: text(tool_use_id)?,
+                call_id: Some(text(tool_use_id)?),
+                name: None,
                 output: match content {
                     ResultContent::Text(s) => ToolOutput::Text(s.clone()),
                     ResultContent::Blocks(parts) => {

@@ -270,57 +270,101 @@ pub fn items(
                 }
             }
             Item::ToolResult(r) | Item::CustomResult(r) => {
-                call_context(&r.context, &mut bytes)?;
-                let reference = (r.context.alias_domain.as_ref(), r.call_id.as_str());
-                if r.context.namespace.as_ref().is_some_and(|namespace| {
-                    namespaces.get(&reference).copied().flatten() != Some(namespace)
-                }) {
-                    return Err(GenerationError::InvalidToolResult);
-                }
-                if response {
-                    return Err(GenerationError::InvalidResponse);
-                }
                 let kind = if matches!(item, Item::CustomResult(_)) {
                     CallKind::Custom
                 } else {
                     CallKind::Function
                 };
-                if calls.get(&reference) != Some(&kind) || !results.insert(reference) {
-                    return Err(GenerationError::InvalidToolResult);
-                }
-                add(&mut bytes, r.call_id.as_str())?;
-                match &r.output {
-                    ToolOutput::Text(t) => add(&mut bytes, t)?,
-                    ToolOutput::Parts(p) => {
-                        for (id, value) in p {
-                            part_id(&mut parts, *id)?;
-                            input_part(value, resources, &mut bytes, &mut file_decoded_bytes)?;
-                        }
-                    }
-                    ToolOutput::Structured(value) => charge(&mut bytes, value.bytes()?)?,
-                }
-                if matches!(
-                    (&r.execution, r.is_error),
-                    (Some(ToolExecution::Succeeded), Some(true))
-                        | (Some(ToolExecution::Failed { .. }), Some(false))
-                ) {
-                    return Err(GenerationError::InvalidToolResult);
-                }
-                if let Some(execution) = &r.execution {
-                    if r.status == Some(ItemLifecycle::InProgress) {
+                if let Some(call_id) = &r.call_id {
+                    let reference = (r.context.alias_domain.as_ref(), call_id.as_str());
+                    let preceding = calls.get(&reference);
+                    let linked = !response || preceding.is_some();
+                    if linked && preceding != Some(&kind)
+                        || !results.insert(reference)
+                        || linked
+                            && r.context.namespace.as_ref().is_some_and(|namespace| {
+                                namespaces.get(&reference).copied().flatten() != Some(namespace)
+                            })
+                    {
                         return Err(GenerationError::InvalidToolResult);
                     }
-                    if let ToolExecution::Failed { code: Some(code) } = execution {
-                        if code.as_str().is_empty() || code.as_str().len() > 128 {
-                            return Err(GenerationError::Limit);
-                        }
-                        add(&mut bytes, code.as_str())?;
+                    if let Some(name) = &r.name
+                        && items[..position].iter().any(|(_, item)| match item {
+                            Item::ToolCall(c) => {
+                                c.context.alias_domain == r.context.alias_domain
+                                    && c.call_id == *call_id
+                                    && c.name != *name
+                            }
+                            Item::CustomCall(c) => {
+                                c.context.alias_domain == r.context.alias_domain
+                                    && c.call_id == *call_id
+                                    && c.name != *name
+                            }
+                            _ => false,
+                        })
+                    {
+                        return Err(GenerationError::InvalidToolResult);
                     }
+                } else if !response {
+                    return Err(GenerationError::InvalidToolResult);
                 }
+                tool_result(
+                    r,
+                    &mut bytes,
+                    &mut parts,
+                    resources,
+                    &mut file_decoded_bytes,
+                )?;
             }
         }
     }
     Ok(bytes)
+}
+pub(super) fn tool_result(
+    r: &ToolResult,
+    bytes: &mut usize,
+    parts: &mut BTreeSet<PartId>,
+    resources: &ResourceTable,
+    file_decoded_bytes: &mut usize,
+) -> Result<(), GenerationError> {
+    call_context(&r.context, bytes)?;
+    for (value, max) in [(&r.call_id, 256), (&r.name, 128)] {
+        if let Some(value) = value {
+            if value.as_str().is_empty() || value.as_str().len() > max {
+                return Err(GenerationError::InvalidToolResult);
+            }
+            add(bytes, value.as_str())?;
+        }
+    }
+    match &r.output {
+        ToolOutput::Text(t) => add(bytes, t)?,
+        ToolOutput::Parts(p) => {
+            for (id, value) in p {
+                part_id(parts, *id)?;
+                input_part(value, resources, bytes, file_decoded_bytes)?;
+            }
+        }
+        ToolOutput::Structured(value) => charge(bytes, value.bytes()?)?,
+    }
+    if matches!(
+        (&r.execution, r.is_error),
+        (Some(ToolExecution::Succeeded), Some(true))
+            | (Some(ToolExecution::Failed { .. }), Some(false))
+    ) {
+        return Err(GenerationError::InvalidToolResult);
+    }
+    if let Some(execution) = &r.execution {
+        if r.status == Some(ItemLifecycle::InProgress) {
+            return Err(GenerationError::InvalidToolResult);
+        }
+        if let ToolExecution::Failed { code: Some(code) } = execution {
+            if code.as_str().is_empty() || code.as_str().len() > 128 {
+                return Err(GenerationError::Limit);
+            }
+            add(bytes, code.as_str())?;
+        }
+    }
+    Ok(())
 }
 pub(super) fn provider_observation(
     observed: &ProviderToolObservation,

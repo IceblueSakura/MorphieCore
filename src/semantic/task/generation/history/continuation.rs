@@ -33,13 +33,12 @@ pub(in crate::semantic::task::generation) fn pending_results(
     for (item, value) in items.iter().rev() {
         let (domain, call_id) = match value {
             Item::ToolResult(result) | Item::CustomResult(result) => {
-                results.insert(
-                    (
-                        result.context.alias_domain.as_ref(),
-                        result.call_id.as_str(),
-                    ),
-                    value,
-                );
+                if let Some(call_id) = &result.call_id {
+                    results.insert(
+                        (result.context.alias_domain.as_ref(), call_id.as_str()),
+                        value,
+                    );
+                }
                 continue;
             }
             Item::ProgramOutput(result) => {

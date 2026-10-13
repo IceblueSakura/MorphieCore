@@ -25,6 +25,8 @@ pub enum ItemKind {
         name: Text,
         context: CallContext,
     },
+    ToolResult(ToolResult),
+    CustomResult(ToolResult),
     Reasoning,
     ConfigurationUpdate {
         effort: Option<ReasoningEffort>,
@@ -98,6 +100,11 @@ pub enum StreamEvent {
         item: ItemId,
         kind: ItemKind,
         replay: Option<ReasoningReplay>,
+    },
+    /// Replace an open result's reported value, not its association or execution facts.
+    ToolResultOutput {
+        item: ItemId,
+        output: ToolOutput,
     },
     PartStarted {
         item: ItemId,

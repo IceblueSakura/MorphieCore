@@ -81,7 +81,7 @@ pub(super) async fn handle(
                 .semantic
                 .items()
                 .iter()
-                .any(|(_, i)| matches!(i, Item::ToolResult(r) if r.call_id.as_str()=="call-local" && matches!(&r.output,ToolOutput::Parts(parts) if parts.len()==2 && parts[0].1.as_text()==Some("synthetic result") && parts[1].1.as_text()==Some(""))))
+                .any(|(_, i)| matches!(i, Item::ToolResult(r) if r.required_call_id().ok()==Some("call-local") && matches!(&r.output,ToolOutput::Parts(parts) if parts.len()==2 && parts[0].1.as_text()==Some("synthetic result") && parts[1].1.as_text()==Some(""))))
     {
         return failure(StatusCode::BAD_REQUEST, "Chat continuation", &state);
     }

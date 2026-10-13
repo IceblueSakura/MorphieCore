@@ -80,7 +80,32 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
         Outcome::Completed,
     )
     .unwrap();
-    for semantic in [&structured, &progress, &disjoint, &replay, &provider] {
+    let result = GenerationResponse::new(
+        vec![(
+            ItemId::new(1),
+            Item::ToolResult(ToolResult {
+                call_id: None,
+                name: None,
+                output: ToolOutput::Structured(
+                    StructuredValue::new(serde_json::json!({"n":1})).unwrap(),
+                ),
+                status: Some(ItemLifecycle::Completed),
+                execution: None,
+                is_error: None,
+                context: Default::default(),
+            }),
+        )],
+        Outcome::Completed,
+    )
+    .unwrap();
+    for semantic in [
+        &structured,
+        &progress,
+        &disjoint,
+        &replay,
+        &provider,
+        &result,
+    ] {
         for profile in [Profile::Chat, Profile::Responses] {
             let forged = ResponseRepresentation {
                 semantic: std::borrow::Cow::Borrowed(semantic),
@@ -149,7 +174,8 @@ fn request_codecs_enforce_result_carriers_before_rendering() {
                     Item::ToolResult(ToolResult {
                         is_error: None,
                         execution,
-                        call_id: text("c"),
+                        call_id: Some(text("c")),
+                        name: None,
                         output,
                         status: None,
                         context: CallContext::default(),

@@ -443,7 +443,9 @@ fn item_parts(
                 .items()
                 .iter()
                 .find_map(|(_, i)| match i {
-                    Item::ToolCall(c) if c.call_id == r.call_id => Some(c.name.as_str()),
+                    Item::ToolCall(c) if r.call_id.as_ref() == Some(&c.call_id) => {
+                        Some(c.name.as_str())
+                    }
                     _ => None,
                 })
                 .ok_or(CodecError::Invalid("Gemini result without call"))?;
@@ -453,7 +455,7 @@ fn item_parts(
                 "output"
             };
             let mut response = json!({
-                "id": r.call_id.as_str(), "name": name, "response": {key: output}});
+                "id": r.required_call_id()?, "name": name, "response": {key: output}});
             if !media_parts.is_empty() {
                 response["parts"] = media_parts.into();
             }

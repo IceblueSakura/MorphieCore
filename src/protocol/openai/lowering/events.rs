@@ -36,9 +36,27 @@ pub fn check_event(
     }
     match event {
         StreamEvent::ResourceDeclared { resource, .. } => {
-            if !crate::protocol::openai::content::citations::context(resource) {
+            if profile != Profile::Responses
+                && !crate::protocol::openai::content::citations::context(resource)
+            {
                 return Err(RepresentationError::UnmigratedSemantic);
             }
+        }
+        StreamEvent::ToolResultOutput { item, output } => {
+            let (ItemKind::ToolResult(result) | ItemKind::CustomResult(result)) =
+                &state.item(*item)?.kind
+            else {
+                return Err(RepresentationError::Tools);
+            };
+            let mut result = result.clone();
+            result.output = output.clone();
+            check_result(
+                state,
+                &result,
+                matches!(state.item(*item)?.kind, ItemKind::CustomResult(_)),
+                profile,
+                contract,
+            )?;
         }
         StreamEvent::MessageEnvelope(group) => {
             let items = snapshot_items(state).map_err(|_| RepresentationError::MessageGrouping)?;
@@ -79,6 +97,15 @@ pub fn check_event(
         }
         StreamEvent::ItemStarted { kind, replay, .. } => {
             match kind {
+                ItemKind::ToolResult(result) | ItemKind::CustomResult(result) => {
+                    check_result(
+                        state,
+                        result,
+                        matches!(kind, ItemKind::CustomResult(_)),
+                        profile,
+                        contract,
+                    )?;
+                }
                 ItemKind::ProviderTool(_) | ItemKind::ProviderResult { .. } => {
                     return Err(RepresentationError::UnmigratedSemantic);
                 }
@@ -259,6 +286,30 @@ pub fn check_event(
     }
     Ok(())
 }
+fn check_result(
+    state: &StreamState,
+    result: &ToolResult,
+    custom: bool,
+    profile: Profile,
+    contract: &TargetCaps,
+) -> Result<(), RepresentationError> {
+    if profile != Profile::Responses {
+        return Err(RepresentationError::Tools);
+    }
+    let item = if custom {
+        Item::CustomResult(result.clone())
+    } else {
+        Item::ToolResult(result.clone())
+    };
+    let items = vec![(ItemId::new(1), item)];
+    super::text_items(&items, profile, false, state.resources())?;
+    let response =
+        GenerationResponse::from_resources(items, Outcome::Incomplete, state.resources().clone())
+            .map_err(|_| RepresentationError::Tools)?;
+    contract.semantics.check_response(&response)?;
+    Ok(())
+}
+
 fn probability_target(
     state: &StreamState,
     item: ItemId,

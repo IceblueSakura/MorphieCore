@@ -178,7 +178,8 @@ fn next_request(observed: &DecodedResponse) -> GenerationRequest {
         (
             ItemId::scoped(LocalScope::new(3), n),
             Item::ToolResult(ToolResult {
-                call_id: Text::new(call, "call", 64).unwrap(),
+                call_id: Some(Text::new(call, "call", 64).unwrap()),
+                name: None,
                 output: output.into(),
                 is_error: error.then_some(true),
                 execution: None,

@@ -8,25 +8,23 @@ Complete the Generation IR against selected semantics accepted by the official O
 
 Track semantic expression, codec representation and enabled bindings separately. A concept supported by only one official API may belong in the IR; other targets reject it when they have no carrier. Client compatibility does not define the semantic vocabulary. Protocol sources are pinned in [References](references.md).
 
-The next four Generation slices are selected below, with OpenAI Responses as the primary reference and Chat Completions as a supplement. Until the IR core is complete, add only minimal regressions for changed contracts and confirmed defects, preferably by extending existing tests. Keep safety invariants and the offline baseline; defer coverage expansion.
+Chat Completions, Responses and Messages are equally important downstream contracts. Each slice must assess static delivery, streaming and history replay for all three. A protocol used as the semantic reference does not receive higher downstream priority; missing carriers require explicit rejection, not silent loss or invented roles.
+
+The next Generation slices are selected below, with OpenAI Responses as the primary reference and Chat Completions as a supplement. Until the IR core is complete, add only minimal regressions for changed contracts and confirmed defects, preferably by extending existing tests. Keep safety invariants and the offline baseline; defer coverage expansion.
 
 ### Next Generation slices
 
 Implement in this order. This is a plan, not an implementation or acceptance result. Show the minimal counterexample and structural options before changing an IR contract.
 
-1. **Tool results in responses and streams.** Complete `function_call_output` and `custom_tool_call_output` as reported Generation output, not only request history. Preserve values, call association and artifact lifecycle without making the gateway execute tools.
-
-   Exit condition: static and streamed output retain the same result facts and can enter subsequent history. Unreported response references are not fabricated; outbound history still enforces its required call/result associations.
-
-2. **Compaction history and replay.** Add a distinct official `compaction` item with opaque content, identity and ordered history ownership. Do not reinterpret it as readable summary or reasoning. Receiving and replaying compacted history does not require gateway-managed conversation storage.
+1. **Compaction history and replay.** Add a distinct official `compaction` item with opaque content, identity and ordered history ownership. Do not reinterpret it as readable summary or reasoning. Receiving and replaying compacted history does not require gateway-managed conversation storage.
 
    Exit condition: compatible Responses history preserves the compaction item and its payload; incompatible targets reject rather than discard compacted context. Automatic compaction scheduling, a gateway compaction service and stateful history storage remain outside this slice.
 
-3. **Tool discovery and ordered availability updates.** Complete the semantics and codecs for `tool_search`, its call/output items and `additional_tools`, building on existing deferred-loading and namespace types. Tools discovered later must not be retroactively added to earlier history through top-level settings.
+2. **Tool discovery and ordered availability updates.** Complete the semantics and codecs for `tool_search`, its call/output items and `additional_tools`, building on existing deferred-loading and namespace types. Tools discovered later must not be retroactively added to earlier history through top-level settings.
 
    Exit condition: discovery results and availability changes retain order, definitions and references through decode, encode and history replay. Client/server execution remains explicit. This slice models the interaction; it does not add a gateway tool registry, search executor or activate another hosted tool.
 
-4. **First built-in tool: OpenAI `web_search`.** Complete the first end-to-end official built-in tool path through Generation: declaration and supported controls, Provider-executed search observations, reported sources and URL citations, streamed lifecycle and subsequent history. Reuse the existing observation and citation foundations; keep native wire shapes in the OpenAI codec.
+3. **First built-in tool: OpenAI `web_search`.** Complete the first end-to-end official built-in tool path through Generation: declaration and supported controls, Provider-executed search observations, reported sources and URL citations, streamed lifecycle and subsequent history. Reuse the existing observation and citation foundations; keep native wire shapes in the OpenAI codec.
 
    Exit condition: the selected Responses path preserves search operations, reported results, citation associations and honest terminals in JSON and SSE. Targets without a carrier reject explicitly. Select and verify a trusted binding's capability before activation; the gateway does not fetch search URLs or execute searches itself. Other built-in tools remain deferred.
 
@@ -75,7 +73,7 @@ IR completeness does not mean every upstream can carry every modality. Protocol-
 
 ## Planned order
 
-1. **Generation IR completeness.** Start with the [next four slices](#next-generation-slices), then assess remaining selected official contracts. Keep deferred concepts explicit rather than claiming full API coverage or expanding frozen tasks.
+1. **Generation IR completeness.** Start with the [next slices](#next-generation-slices), then assess remaining selected official contracts. Keep deferred concepts explicit rather than claiming full API coverage or expanding frozen tasks.
 2. **Stateful extension and coverage improvement.** After IR completeness, add [gateway-only stateful Responses](architecture.md#stateful-history) with in-memory TTL history alongside stateless requests, and improve contract coverage. The IR keeps its response continuation types for this stage. No order between stateful implementation and the coverage pass is selected.
 3. **Failover.** The feature remains in early design. Its priority is undecided, lowest for now; design, implementation improvement and real acceptance follow the second stage.
 4. **Other agent acceptance.** Codex, Claude Code and other agents follow failover. Their priority is undecided, lowest for now.

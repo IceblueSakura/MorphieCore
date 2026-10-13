@@ -175,6 +175,22 @@ impl GenerationSemanticContract {
                 self.structured_arguments,
                 StructuredArguments,
             ),
+            (
+                q.structured_tool_results,
+                self.structured_tool_results,
+                StructuredToolResult,
+            ),
+            (
+                q.tool_execution_reports,
+                self.tool_execution_reports,
+                ToolExecutionReport,
+            ),
+            (
+                q.tool_result_errors,
+                self.tool_result_errors,
+                ToolResultError,
+            ),
+            (q.tool_result_media, self.tool_result_media, ToolResultMedia),
             (q.reasoning, self.reasoning, Reasoning),
             (q.text_metadata, self.text_metadata, TextMetadata),
             (q.logprobs, self.logprobs, Controls),

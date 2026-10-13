@@ -20,7 +20,8 @@ mod client_managed {
     fn result() -> Item {
         Item::ToolResult(ToolResult {
             is_error: None,
-            call_id: text("C"),
+            call_id: Some(text("C")),
+            name: None,
             output: "reported".into(),
             execution: None,
             status: None,
@@ -318,7 +319,8 @@ mod client_managed_composition {
                 owner(2, 2),
                 Item::ToolResult(ToolResult {
                     is_error: None,
-                    call_id: text("C"),
+                    call_id: Some(text("C")),
+                    name: None,
                     output: "client-reported result".into(),
                     execution: Some(ToolExecution::Unknown),
                     status: Some(ItemLifecycle::Completed),
@@ -612,7 +614,8 @@ mod context_transforms {
                     ItemId::new(2),
                     Item::ToolResult(ToolResult {
                         is_error: None,
-                        call_id: text("C"),
+                        call_id: Some(text("C")),
+                        name: None,
                         output: "reported".into(),
                         execution: None,
                         status: None,

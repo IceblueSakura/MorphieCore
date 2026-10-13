@@ -302,12 +302,14 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 |---|---|
 | One semantic core | Gateway and future agent library share the IR; callers own agent behavior. Beyond context edits and response continuation, agent-only machinery joins the IR when the library needs it |
 | Official Generation vocabulary | OpenAI, Anthropic and Google define semantic concepts; dialect carriers and approximation policies stay in protocol modules. Semantic expression, codec support and activated bindings are separate claims |
+| Equal downstream contracts | Chat Completions, Responses and Messages receive equal consideration for static delivery, streaming and history replay; a missing carrier requires explicit rejection |
 | Separate task contracts | Generation, Embeddings, Images, Speech and Transcription are not one universal message type |
 | Pure protocol boundaries | Encode from final typed input; no network in codecs or post-encoding JSON patches |
 | Functional ownership | Keep root layers; organize internals by domain, without compatibility aliases or plugin frameworks |
 | Layered capabilities | Public promises are not the union of candidate features |
 | Declared adaptation | Named candidate-local losses; known fields strict, unknown protocol fields ignored |
 | Append-only history projection | Earlier content does not change when a later turn is added |
+| Reported tool results | Responses carries function/custom results in static output and item snapshots. Missing call references stay unreported; request history still requires matching preceding calls. Chat and Messages reject ordinary tool results as assistant output, not their supported history forms |
 | Scoped opaque replay | Restore only compatible native values; foreign readable reasoning becomes text |
 | Failover, not balancing | Legal candidates, bounded advancement and exact-credential affinity |
 | Conversation routing | No inferred turn, branch or message routing |

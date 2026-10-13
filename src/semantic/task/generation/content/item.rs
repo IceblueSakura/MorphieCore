@@ -100,6 +100,7 @@ impl Item {
             Self::ToolCall(c) => Some(c.status),
             Self::Reasoning(r) => Some(r.status),
             Self::Instruction(i) => i.status,
+            Self::ToolResult(r) | Self::CustomResult(r) => r.status,
             Self::ProgramOutput(o) => Some(o.status),
             _ => None,
         }

@@ -1,5 +1,7 @@
 //! Closed tool result values. Error reporting never changes a generation outcome.
-use crate::semantic::task::generation::{CallContext, InputPart, ItemLifecycle, PartId};
+use crate::semantic::task::generation::{
+    CallContext, GenerationError, InputPart, ItemLifecycle, PartId,
+};
 use crate::semantic::value::Text;
 /// Execution conclusion is independent of the result value and artifact lifecycle.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -39,7 +41,10 @@ impl From<&str> for ToolOutput {
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ToolResult {
-    pub call_id: Text,
+    /// A reported result may omit the association; request history must supply it.
+    pub call_id: Option<Text>,
+    /// Reported name, never inferred from a missing call reference.
+    pub name: Option<Text>,
     pub output: ToolOutput,
     /// Independent result report: missing is unknown, never inferred from execution or text.
     pub is_error: Option<bool>,
@@ -48,4 +53,12 @@ pub struct ToolResult {
     /// Artifact lifecycle, not tool success; absent remains unreported.
     pub status: Option<ItemLifecycle>,
     pub context: CallContext,
+}
+impl ToolResult {
+    pub fn required_call_id(&self) -> Result<&str, GenerationError> {
+        self.call_id
+            .as_ref()
+            .map(Text::as_str)
+            .ok_or(GenerationError::InvalidToolResult)
+    }
 }

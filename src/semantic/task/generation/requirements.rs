@@ -174,6 +174,10 @@ pub struct GenerationResponseRequirements {
     pub tools: bool,
     pub custom_tools: bool,
     pub structured_arguments: bool,
+    pub structured_tool_results: bool,
+    pub tool_execution_reports: bool,
+    pub tool_result_errors: bool,
+    pub tool_result_media: bool,
     pub reasoning: bool,
     pub text_metadata: bool,
     pub logprobs: bool,
@@ -217,8 +221,17 @@ impl GenerationResponseRequirements {
                         }
                     }
                 }
-                // Complete response validation, not request admission, rejects these.
-                Item::ToolResult(_) | Item::CustomResult(_) => {}
+                Item::ToolResult(result) | Item::CustomResult(result) => {
+                    q.tools = true;
+                    q.custom_tools |= matches!(item, Item::CustomResult(_));
+                    q.structured_tool_results |= matches!(
+                        result.output,
+                        crate::semantic::task::generation::ToolOutput::Structured(_)
+                    );
+                    q.tool_execution_reports |= result.execution.is_some();
+                    q.tool_result_errors |= result.is_error.is_some();
+                    q.tool_result_media |= item.resource_uses().next().is_some();
+                }
             }
         }
         q

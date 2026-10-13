@@ -497,7 +497,7 @@ pub(super) fn item_blocks(
                 _ => return Err(unsupported()),
             };
             vec![Block::ToolResult {
-                tool_use_id: r.call_id.as_str().into(),
+                tool_use_id: r.required_call_id()?.into(),
                 content,
                 is_error: r.is_error.map_or(Presence::Absent, Presence::Value),
             }]

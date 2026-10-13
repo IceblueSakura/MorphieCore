@@ -268,6 +268,59 @@ pub(super) fn configuration_effort(
         }
     }
 }
+pub(super) fn tool_result(
+    b: &mut Items,
+    o: &Map<String, Value>,
+    response: bool,
+    custom: bool,
+) -> Result<ToolResult, CodecError> {
+    // Function output snapshots may omit call_id; replay still requires it.
+    // https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/responses/response_function_tool_call_output_item.py
+    b.direction.fields(
+        o,
+        &[
+            "type",
+            "id",
+            "call_id",
+            "output",
+            "status",
+            "name",
+            "namespace",
+            "caller",
+        ],
+    )?;
+    let optional = |key, limit| {
+        o.get(key)
+            .filter(|v| !v.is_null())
+            .map(|v| text(v.as_str().ok_or(CodecError::Invalid(key))?, key, limit))
+            .transpose()
+    };
+    let call_id = optional("call_id", 256)?;
+    if (!response || custom) && call_id.is_none() {
+        return Err(CodecError::Invalid("tool result call id"));
+    }
+    if response {
+        text(string(o, "id")?, "result id", 256)?;
+        string(o, "status")?;
+    }
+    Ok(ToolResult {
+        call_id,
+        name: optional("name", 128)?,
+        output: output(
+            b,
+            o.get("output").ok_or(CodecError::Invalid("tool output"))?,
+        )?,
+        status: if o.contains_key("status") {
+            Some(status(o, ItemLifecycle::Completed)?)
+        } else {
+            None
+        },
+        is_error: None,
+        execution: None,
+        context: call_context(o, b.direction)?,
+    })
+}
+
 pub(super) fn decode_items(
     b: &mut Items,
     input: &[Value],
@@ -311,53 +364,9 @@ pub(super) fn decode_items(
                     context: call_context(o, direction)?,
                 })
             }
-            Some("function_call_output" | "custom_tool_call_output") if !response => {
-                direction.fields(
-                    o,
-                    &[
-                        "type",
-                        "id",
-                        "call_id",
-                        "output",
-                        "status",
-                        "name",
-                        "namespace",
-                        "caller",
-                    ],
-                )?;
-                let context = call_context(o, direction)?;
-                let call_id = string(o, "call_id")?;
-                if let Some(name) = o.get("name").filter(|v| !v.is_null()) {
-                    let expected = b.items.iter().find_map(|(_, i)| match i {
-                        Item::ToolCall(c) if c.call_id.as_str() == call_id => Some(c.name.as_str()),
-                        Item::CustomCall(c) if c.call_id.as_str() == call_id => {
-                            Some(c.name.as_str())
-                        }
-                        _ => None,
-                    });
-                    if name.as_str() != expected {
-                        return Err(CodecError::Invalid("tool result name"));
-                    }
-                }
-                let r = ToolResult {
-                    is_error: None,
-                    execution: None,
-                    call_id: text(call_id, "call id", 256)?,
-                    output: output(
-                        b,
-                        o.get("output").ok_or(CodecError::Invalid("tool output"))?,
-                    )?,
-                    status: if o.contains_key("status") {
-                        Some(status(o, ItemLifecycle::Completed)?)
-                    } else {
-                        None
-                    },
-                    context,
-                };
+            Some("function_call_output" | "custom_tool_call_output") => {
+                let r = tool_result(b, o, response, typ == Some("custom_tool_call_output"))?;
                 if typ == Some("custom_tool_call_output") {
-                    if r.status.is_some() {
-                        return Err(CodecError::Unsupported("custom result status".into()));
-                    }
                     Item::CustomResult(r)
                 } else {
                     Item::ToolResult(r)
@@ -590,10 +599,6 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     target
         .fidelity
         .check_wire_item_ids(target.semantic.items(), false)?;
-    if target.semantic.items().iter().any(|(_, item)| matches!(item, Item::ToolResult(result) | Item::CustomResult(result)
-        if result.execution.is_some() || result.is_error.is_some() || matches!(result.output, ToolOutput::Structured(_)))) {
-        return Err(CodecError::Unsupported("tool result semantics".into()));
-    }
     let mut v = json!({"input":encode_items(target.semantic.items(), target.fidelity, false, target.semantic.resources())});
     settings::write(
         target.semantic.settings(),
@@ -637,7 +642,11 @@ fn input_wire(
             .collect::<Vec<_>>()
     )
 }
-fn output_wire(o: &ToolOutput, fidelity: &FidelityRecords, resources: &ResourceTable) -> Value {
+pub(super) fn output_wire(
+    o: &ToolOutput,
+    fidelity: &FidelityRecords,
+    resources: &ResourceTable,
+) -> Value {
     match o {
         ToolOutput::Text(s) => json!(s),
         ToolOutput::Parts(p) => input_wire(p, fidelity, resources),
@@ -683,7 +692,13 @@ pub(super) fn encode_items(
                 v
             }
             Item::ToolResult(r) | Item::CustomResult(r) => {
-                let mut v = json!({"type":if matches!(item,Item::CustomResult(_)){"custom_tool_call_output"}else{"function_call_output"},"call_id":r.call_id.as_str(),"output":output_wire(&r.output, fidelity, resources)});
+                let mut v = json!({"type":if matches!(item,Item::CustomResult(_)){"custom_tool_call_output"}else{"function_call_output"},"output":output_wire(&r.output, fidelity, resources)});
+                if let Some(call_id) = &r.call_id {
+                    v["call_id"] = json!(call_id.as_str());
+                }
+                if let Some(name) = &r.name {
+                    v["name"] = json!(name.as_str());
+                }
                 if let Some(s) = r.status {
                     v["status"] = json!(status_label(s));
                 }

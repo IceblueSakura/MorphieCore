@@ -104,6 +104,15 @@ impl StreamItem {
                     .unwrap_or_default(),
                 context: context.clone(),
             }),
+            ItemKind::ToolResult(result) | ItemKind::CustomResult(result) => {
+                let mut result = result.clone();
+                result.status = Some(status);
+                if matches!(i.kind, ItemKind::CustomResult(_)) {
+                    Item::CustomResult(result)
+                } else {
+                    Item::ToolResult(result)
+                }
+            }
             ItemKind::Reasoning => Item::Reasoning(ReasoningItem {
                 status,
                 replay: i.replay.as_ref().map(|r| r.value.clone()),

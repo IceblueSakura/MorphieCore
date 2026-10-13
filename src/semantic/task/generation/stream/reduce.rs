@@ -52,6 +52,24 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             if state.items.iter().any(|i| i.id == item) {
                 return Err(EventError::Identity);
             }
+            if let ItemKind::ToolResult(result) | ItemKind::CustomResult(result) = &kind {
+                if result
+                    .status
+                    .is_some_and(|s| s != ItemLifecycle::InProgress)
+                {
+                    return Err(EventError::Lifecycle);
+                }
+                if let Some(call_id) = &result.call_id
+                    && state.items.iter().any(|old| {
+                        matches!(&old.kind, ItemKind::ToolResult(r) | ItemKind::CustomResult(r)
+                            if r.context.alias_domain == result.context.alias_domain
+                                && r.call_id.as_ref() == Some(call_id))
+                    })
+                {
+                    return Err(EventError::Identity);
+                }
+                charge_tool_result(&mut state, result, None)?;
+            }
             if let ItemKind::ProviderTool(observed)
             | ItemKind::ProviderResult {
                 observation: observed,
@@ -158,6 +176,25 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 status: None,
                 replay,
             });
+        }
+        StreamEvent::ToolResultOutput { item, output } => {
+            let owner = state.open_item(item)?;
+            let (ItemKind::ToolResult(old) | ItemKind::CustomResult(old)) = &owner.kind else {
+                return Err(EventError::Lifecycle);
+            };
+            let old = old.clone();
+            if old.output != output {
+                let mut next = old.clone();
+                next.output = output;
+                charge_tool_result(&mut state, &next, Some(&old))?;
+                let owner = state.open_item(item)?;
+                let (ItemKind::ToolResult(result) | ItemKind::CustomResult(result)) =
+                    &mut owner.kind
+                else {
+                    unreachable!("checked result kind");
+                };
+                *result = next;
+            }
         }
         StreamEvent::PartStarted { item, part, kind } => {
             if state.part_ids.len() >= MAX_ITEMS {
@@ -548,6 +585,47 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
         }
     }
     Ok(state)
+}
+fn charge_tool_result(
+    state: &mut StreamState,
+    result: &ToolResult,
+    previous: Option<&ToolResult>,
+) -> Result<(), EventError> {
+    let mut parts = state.part_ids.clone();
+    if let Some(ToolResult {
+        output: ToolOutput::Parts(old),
+        ..
+    }) = previous
+    {
+        for (id, _) in old {
+            parts.remove(id);
+        }
+    }
+    let mut bytes = 0;
+    crate::semantic::task::generation::validate::tool_result(
+        result,
+        &mut bytes,
+        &mut parts,
+        &state.resources,
+        &mut state.file_decoded_bytes,
+    )?;
+    state.part_ids.extend(parts);
+    if state.part_ids.len() > MAX_ITEMS {
+        return Err(EventError::Limit);
+    }
+    if let ToolOutput::Parts(parts) = &result.output {
+        for (_, part) in parts {
+            if let InputPart::Resource(value) = part
+                && state.used_resources.insert(value.id)
+            {
+                bytes = bytes
+                    .checked_sub(value.resolve(&state.resources)?.source_view().validate()?)
+                    .ok_or(EventError::Limit)?;
+            }
+        }
+    }
+    // Snapshot updates consume a bounded cumulative value budget, like deltas.
+    state.charge(bytes)
 }
 fn metadata_cost(
     annotations: &[Annotation],

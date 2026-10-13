@@ -593,6 +593,12 @@ impl EventDecoder {
                     )?,
                 }
             }
+            "function_call_output" => {
+                ItemKind::ToolResult(self.read_tool_result(v, false, None, out)?)
+            }
+            "custom_tool_call_output" => {
+                ItemKind::CustomResult(self.read_tool_result(v, true, None, out)?)
+            }
             "configuration_update" => {
                 DecodeDirection::Upstream.fields(v, &["type", "id", "reasoning"])?;
                 ItemKind::ConfigurationUpdate {
@@ -711,6 +717,45 @@ impl EventDecoder {
             }
         }
         Ok(())
+    }
+    fn read_tool_result(
+        &mut self,
+        value: &Map<String, Value>,
+        custom: bool,
+        previous: Option<&ToolResult>,
+        out: &mut Vec<StreamEvent>,
+    ) -> Result<ToolResult, CodecError> {
+        let mut sources =
+            Items::from_resources(self.state()?.resources().clone(), DecodeDirection::Upstream);
+        let mut result =
+            crate::protocol::openai::responses::tool_result(&mut sources, value, true, custom)?;
+        if let Some(previous) = previous
+            && crate::protocol::openai::responses::output_wire(
+                &previous.output,
+                &self.fidelity,
+                self.state()?.resources(),
+            ) == crate::protocol::openai::responses::output_wire(
+                &result.output,
+                &sources.fidelity,
+                &sources.resources,
+            )
+        {
+            // This item's repeated snapshot preserves its part/resource identities.
+            // Equal URLs in different items still declare distinct resources.
+            result.output = previous.output.clone();
+            return Ok(result);
+        }
+        if let ToolOutput::Parts(parts) = &mut result.output {
+            for (id, _) in parts {
+                let next = self.allocate_part()?;
+                if sources.fidelity.cache_breakpoint(*id) {
+                    self.fidelity.record_cache_breakpoint(next)?;
+                }
+                *id = next;
+            }
+        }
+        self.declare_sources(&sources.resources, out)?;
+        Ok(result)
     }
     fn owner(&self, o: &Map<String, Value>) -> Result<ItemId, CodecError> {
         let id = *self
@@ -1182,6 +1227,33 @@ impl EventDecoder {
             .ok_or(CodecError::Invalid("output index"))?;
         let v = o.get("item").ok_or(CodecError::Invalid("item"))?;
         let p = object(v)?;
+        if let ItemKind::ToolResult(old) | ItemKind::CustomResult(old) =
+            &self.state()?.item(item)?.kind
+        {
+            let old = old.clone();
+            let custom = matches!(self.state()?.item(item)?.kind, ItemKind::CustomResult(_));
+            if string(p, "type")?
+                != if custom {
+                    "custom_tool_call_output"
+                } else {
+                    "function_call_output"
+                }
+                || self.fidelity.response_item_id(item) != Some(string(p, "id")?)
+            {
+                return Err(CodecError::Invalid("result identity"));
+            }
+            let next = self.read_tool_result(p, custom, Some(&old), out)?;
+            if old.call_id != next.call_id || old.name != next.name || old.context != next.context {
+                return Err(CodecError::Invalid("result association changed"));
+            }
+            self.emit(
+                StreamEvent::ToolResultOutput {
+                    item,
+                    output: next.output,
+                },
+                out,
+            )?;
+        }
         let status = if matches!(self.state()?.item(item)?.kind, ItemKind::CustomCall { .. }) {
             ItemLifecycle::Completed
         } else {

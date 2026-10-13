@@ -243,7 +243,8 @@ mod anthropic_semantics {
             .append_items(vec![(
                 id,
                 Item::ToolResult(ToolResult {
-                    call_id: Text::new("c", "call", 64).unwrap(),
+                    call_id: Some(Text::new("c", "call", 64).unwrap()),
+                    name: None,
                     output: "actual feedback".into(),
                     is_error: if matches!(&execution, ToolExecution::Succeeded) {
                         None
