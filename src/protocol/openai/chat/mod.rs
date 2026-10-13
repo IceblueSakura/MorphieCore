@@ -30,8 +30,15 @@ pub(super) const FIELDS: &[&str] = &[
     "top_logprobs",
     "audio",
     "modalities",
+    "verbosity",
     "stop",
+    "functions",
+    "function_call",
+    "web_search_options",
 ];
+/// Official fields whose active value changes tools or output; ignoring them would be
+/// silent loss. Other unregistered client fields are ignored by name.
+const UNSUPPORTED: &[&str] = &["stop", "functions", "function_call", "web_search_options"];
 pub fn decode_generation(v: &Value) -> Result<DecodedRequest, CodecError> {
     decode_generation_with(v, &Default::default(), DecodeDirection::Request)
 }
@@ -43,10 +50,11 @@ pub(crate) fn decode_generation_with(
     bounded(v)?;
     let o = object(v)?;
     direction.fields(o, FIELDS)?;
-    if o.get("stop")
-        .is_some_and(|v| !v.is_null() && v != &json!([]) && v != &json!(""))
-    {
-        return Err(CodecError::Unsupported("stop".into()));
+    if let Some(key) = UNSUPPORTED.iter().find(|key| {
+        o.get(**key)
+            .is_some_and(|v| !v.is_null() && v != &json!([]) && v != &json!(""))
+    }) {
+        return Err(CodecError::Unsupported((*key).into()));
     }
     let messages = o
         .get("messages")
@@ -83,12 +91,13 @@ pub(crate) fn decode_generation_with(
         return Err(CodecError::Invalid("top_logprobs without logprobs"));
     }
     let format = read_presence(o, "response_format", |v| read_response_format(v, direction))?;
+    let verbosity = read_presence(o, "verbosity", crate::protocol::openai::settings::verbosity)?;
     let mut settings = GenerationSettings {
         controls,
         text: TextOptions {
-            presence: !format.is_absent(),
+            presence: !format.is_absent() || !verbosity.is_absent(),
             format,
-            verbosity: Presence::Absent,
+            verbosity,
         },
         reasoning: crate::protocol::openai::reasoning::chat_request(o)?,
         ..Default::default()

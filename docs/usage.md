@@ -181,7 +181,7 @@ Use `"stream": true` for SSE. Send the full history each turn; the gateway does 
 
 Return reasoning carriers unchanged in later history. Chat clients must preserve `reasoning_details`, not just readable text. See [Reasoning replay](architecture.md#reasoning-replay).
 
-Nonempty Chat `stop` and Messages `stop_sequences` are unsupported and rejected. Messages `thinking.display` is preserved. Messages responses with citations or missing/ambiguous final usage fail projection rather than dropping annotations or inventing zero counts; a failure after streaming starts aborts delivery without a success terminal.
+Chat accepts the deprecated `max_tokens` as the output cap, but not together with `max_completion_tokens`. Chat `verbosity` reaches admitted Responses targets; Chat targets reject it. Active Chat `stop`, `functions`, `function_call` and `web_search_options`, and Messages `stop_sequences`, `container`, `mcp_servers`, `context_management` and `compaction` are unsupported and rejected. Other unrecognized fields are ignored by name. Messages `thinking.display` is preserved. Messages responses with citations or missing/ambiguous final usage fail projection rather than dropping annotations or inventing zero counts; a failure after streaming starts aborts delivery without a success terminal.
 
 ### Image input
 

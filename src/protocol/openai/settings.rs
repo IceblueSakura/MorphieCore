@@ -79,12 +79,7 @@ pub(super) fn read(
         direction.fields(t, &["format", "verbosity"])?;
         s.text.presence = true;
         s.text.format = read_presence(t, "format", |v| read_format(v, direction))?;
-        s.text.verbosity = read_presence(t, "verbosity", |v| match v.as_str() {
-            Some("low") => Ok(Verbosity::Low),
-            Some("medium") => Ok(Verbosity::Medium),
-            Some("high") => Ok(Verbosity::High),
-            _ => Err(CodecError::Invalid("verbosity")),
-        })?;
+        s.text.verbosity = read_presence(t, "verbosity", verbosity)?;
     }
     function_tools::read_settings(o, Profile::Responses, &mut s, direction)?;
     s.validate()?;
@@ -224,4 +219,13 @@ pub(super) fn write(s: &GenerationSettings, o: &mut Map<String, Value>) -> Resul
         o.insert("text".into(), Value::Object(t));
     }
     Ok(())
+}
+/// Responses nests verbosity under `text`; Chat intake reads it at top level.
+pub(super) fn verbosity(v: &Value) -> Result<Verbosity, CodecError> {
+    match v.as_str() {
+        Some("low") => Ok(Verbosity::Low),
+        Some("medium") => Ok(Verbosity::Medium),
+        Some("high") => Ok(Verbosity::High),
+        _ => Err(CodecError::Invalid("verbosity")),
+    }
 }

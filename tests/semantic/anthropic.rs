@@ -991,23 +991,61 @@ mod client_fidelity {
         );
     }
     #[test]
-    fn unsupported_stop_controls_are_rejected_at_client_intake() {
-        let mut body = json!({"model":"m","max_tokens":8,
+    fn client_intake_carries_caps_and_rejects_active_fields_it_cannot_carry() {
+        let body = json!({"model":"m","max_tokens":8,"stop_sequences":[],
             "messages":[{"role":"user","content":"go"}]});
         assert!(decode_client_request(body.to_string().as_bytes()).is_ok());
-        body["stop_sequences"] = json!(["END"]);
-        assert!(decode_client_request(body.to_string().as_bytes()).is_err());
-        // An empty stop string, like an empty list, requests no stop control.
-        let mut body = json!({"model":"m","stop":"","messages":[{"role":"user","content":"go"}]});
-        let chat = Adapter::new(Profile::Chat, Dialect::Standard, None);
-        assert!(
-            chat.decode_client_request(body.to_string().as_bytes())
-                .is_ok()
+        for (key, value) in [
+            ("stop_sequences", json!(["END"])),
+            ("container", json!("container_1")),
+            (
+                "mcp_servers",
+                json!([{"type":"url","url":"https://example.invalid","name":"x"}]),
+            ),
+            (
+                "context_management",
+                json!({"edits":[{"type":"clear_tool_uses_20250919"}]}),
+            ),
+            ("compaction", json!({})),
+        ] {
+            let mut active = body.clone();
+            active[key] = value;
+            assert!(
+                decode_client_request(active.to_string().as_bytes()).is_err(),
+                "{key}"
+            );
+        }
+
+        // The client-facing Chat dialect accepts the deprecated cap spelling.
+        let chat = Adapter::new(Profile::Chat, Dialect::MorphieCore, None);
+        let decode =
+            |body: &serde_json::Value| chat.decode_client_request(body.to_string().as_bytes());
+        // Empty stop values request no stop control.
+        let body = json!({"model":"m","max_tokens":7,"stop":"","functions":[],
+            "messages":[{"role":"user","content":"go"}]});
+        assert_eq!(
+            decode(&body)
+                .unwrap()
+                .task
+                .semantic
+                .settings()
+                .controls
+                .max_output_tokens,
+            Some(7)
         );
-        body["stop"] = json!(["END"]);
-        assert!(
-            chat.decode_client_request(body.to_string().as_bytes())
-                .is_err()
-        );
+        for (key, value) in [
+            ("max_completion_tokens", json!(7)),
+            ("stop", json!(["END"])),
+            (
+                "functions",
+                json!([{"name":"lookup","parameters":{"type":"object"}}]),
+            ),
+            ("function_call", json!("auto")),
+            ("web_search_options", json!({})),
+        ] {
+            let mut active = body.clone();
+            active[key] = value;
+            assert!(decode(&active).is_err(), "{key}");
+        }
     }
 }

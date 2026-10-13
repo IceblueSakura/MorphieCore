@@ -123,6 +123,23 @@ mod text_profile {
                 );
             }
         }
+        // Verbosity shares the owner: Chat intake reads it at top level, Responses nests it
+        // under `text`. Chat targets reject it until a binding's carrier is verified.
+        let source = json!({"messages":[{"role":"user","content":"hello"}],"verbosity":"low"});
+        let d = chat::decode_generation(&source).unwrap();
+        assert_eq!(
+            d.semantic.text_options(),
+            &TextOptions {
+                presence: true,
+                format: Presence::Absent,
+                verbosity: Presence::Value(Verbosity::Low),
+            }
+        );
+        assert_eq!(request_wire(&d)["text"], json!({"verbosity":"low"}));
+        assert!(lower_request(&d.semantic, &d.fidelity, Profile::Chat, contract()).is_err());
+        let mut invalid = source;
+        invalid["verbosity"] = json!("loud");
+        assert!(chat::decode_generation(&invalid).is_err());
     }
 
     #[test]

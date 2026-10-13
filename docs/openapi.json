@@ -744,7 +744,7 @@
           "stream": {"type": ["boolean", "null"], "default": false}
         },
         "additionalProperties": true,
-        "description": "Envelope subset. The client codec admits text, thinking, redacted_thinking, tool_use and tool_result blocks plus system, tools, reasoning controls and output_config (effort and a json_schema format). Known values stay strict; unknown fields and client cache markers are ignored. Return thinking signatures and redacted thinking data unchanged. Target projection remains separate."
+        "description": "Envelope subset. The client codec admits text, thinking, redacted_thinking, tool_use and tool_result blocks plus system, tools, reasoning controls and output_config (effort and a json_schema format). Known values stay strict; active stop_sequences, container, mcp_servers, context_management and compaction are rejected; other unknown fields and client cache markers are ignored by name. Return thinking signatures and redacted thinking data unchanged. Target projection remains separate."
       },
       "MessagesError": {
         "type": "object", "required": ["type", "error"], "additionalProperties": false,
@@ -770,14 +770,19 @@
           "audio": {"type": ["object", "null"], "required": ["format", "voice"], "properties": {"format": {"enum": ["wav", "aac", "mp3", "flac", "opus", "pcm16"]}, "voice": {"type": "string", "minLength": 1, "maxLength": 128}}, "description": "Named-voice output options. Requires audio modality; streaming requires pcm16. Target admission is separate."},
           "stream": {"type": ["boolean", "null"], "default": false},
           "max_completion_tokens": {"type": ["integer", "null"], "minimum": 1, "description": "Default 1024 and ceiling 16384 in CLI bootstrap, when admitted. A target without output-token control receives no fabricated cap."},
+          "max_tokens": {"type": ["integer", "null"], "minimum": 1, "deprecated": true, "description": "Deprecated spelling of the same output cap; cannot be combined with max_completion_tokens."},
+          "verbosity": {"type": ["string", "null"], "enum": ["low", "medium", "high", null], "description": "Output verbosity, carried to admitted Responses targets. Chat targets reject it; it is never dropped silently."},
           "metadata": {"type": ["object", "null"], "maxProperties": 16, "propertyNames": {"maxLength": 64}, "additionalProperties": {"type": "string", "maxLength": 512}, "description": "Typed request hint, never copied into reported response metadata."},
           "service_tier": {"type": ["string", "null"], "enum": ["auto", "default", "flex", "scale", "priority", "fast", null], "description": "Request hint; the reported effective tier may differ. Endpoint context admission remains independent."},
           "logprobs": {"type": ["boolean", "null"], "description": "Return token probabilities when true; null/false are inactive controls."},
           "top_logprobs": {"type": ["integer", "null"], "minimum": 0, "maximum": 20, "description": "A non-null integer requires logprobs:true; null normalizes to absent."}
         },
-        "allOf": [{"if": {"required": ["top_logprobs"], "properties": {"top_logprobs": {"type": "integer"}}}, "then": {"required": ["logprobs"], "properties": {"logprobs": {"const": true}}}}],
+        "allOf": [
+          {"if": {"required": ["top_logprobs"], "properties": {"top_logprobs": {"type": "integer"}}}, "then": {"required": ["logprobs"], "properties": {"logprobs": {"const": true}}}},
+          {"not": {"required": ["max_tokens", "max_completion_tokens"]}}
+        ],
         "additionalProperties": true,
-        "description": "Envelope subset, not an arbitrary upstream parameter bag. Known fields follow the codec; unknown fields are ignored. Return reasoning_details unchanged for opaque replay. Named projection may omit container boundaries, not call/result identity."
+        "description": "Envelope subset, not an arbitrary upstream parameter bag. Known fields follow the codec; active stop, functions, function_call and web_search_options are rejected; other unknown fields are ignored by name. Return reasoning_details unchanged for opaque replay. Named projection may omit container boundaries, not call/result identity."
       },
       "ResponsesReasoningSummary": {
         "type": ["string", "null"],

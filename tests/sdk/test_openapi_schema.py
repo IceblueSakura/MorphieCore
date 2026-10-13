@@ -48,6 +48,9 @@ class OpenApiSchemaTests(unittest.TestCase):
         self.assertFalse(validator("MessagesRequest").is_valid({
             "model": "synthetic", "messages": [{"role": "user", "content": "hello"}],
         }))
+        chat = {"model": "synthetic", "messages": [], "max_tokens": 8}
+        validator("ChatRequest").validate(chat)
+        self.assertFalse(validator("ChatRequest").is_valid({**chat, "max_completion_tokens": 8}))
 
     def test_all_component_schemas_and_local_references_are_valid(self):
         for schema in SCHEMAS.values():

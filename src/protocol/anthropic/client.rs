@@ -27,7 +27,15 @@ const TOP: &[&str] = &[
     "temperature",
     "top_p",
     "stream",
+];
+/// Official fields (including beta) whose active value changes model input, tools or
+/// output; ignoring them would be silent loss. Other unregistered fields are ignored by name.
+const UNSUPPORTED: &[&str] = &[
     "stop_sequences",
+    "container",
+    "mcp_servers",
+    "context_management",
+    "compaction",
 ];
 const MAX_IGNORED: usize = 32;
 
@@ -84,14 +92,16 @@ fn blocks(v: &mut Value, ignored: &mut BTreeSet<String>) {
 /// Decode a client request; the model is a public label, never an upstream name.
 pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     let mut v = parse(bytes)?;
+    let o = object(&v)?;
+    if let Some(key) = UNSUPPORTED.iter().find(|key| {
+        o.get(**key)
+            .is_some_and(|v| !v.is_null() && v != &json!([]))
+    }) {
+        return Err(CodecError::Unsupported((*key).into()));
+    }
     let mut ignored = BTreeSet::new();
     keep(&mut v, TOP, &mut ignored);
     let o = object(&v)?.clone();
-    if o.get("stop_sequences")
-        .is_some_and(|v| !v.is_null() && v != &json!([]))
-    {
-        return Err(CodecError::Unsupported("stop_sequences".into()));
-    }
     let model = string(required(&o, "model")?)?;
     label(&model)?;
     let mut settings = GenerationSettings::default();

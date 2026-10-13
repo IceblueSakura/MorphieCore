@@ -97,7 +97,9 @@ pub(crate) fn decode_request_with(
 ) -> Result<DecodedChatRequest, CodecError> {
     bounded(v)?;
     let mut normalized;
-    let v = if adaptation.rules.legacy_max_tokens && v.get("max_tokens").is_some() {
+    // Deprecated `max_tokens` is still an official output cap; the rule only selects
+    // the upstream spelling.
+    let v = if v.get("max_tokens").is_some() {
         normalized = v.clone();
         let o = normalized
             .as_object_mut()
