@@ -1,6 +1,6 @@
 use crate::semantic::task::generation::{
     ContentPart, GenerationRequest, GenerationResponse, Item, OutputConstraint, ResourceKind,
-    ResourceUse,
+    ResourceLocation, ResourceUse,
 };
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct GenerationRequirements {
@@ -40,15 +40,25 @@ pub struct GenerationRequirements {
 }
 impl GenerationRequirements {
     fn input(&mut self, resource: &ResourceUse, r: &GenerationRequest) {
-        match resource
-            .media(r.resources())
-            .expect("validated resource")
-            .kind()
-        {
+        let resource = resource.media(r.resources()).expect("validated resource");
+        match resource.kind() {
             ResourceKind::Image => self.image_inputs += 1,
             ResourceKind::Audio => self.audio_inputs += 1,
             ResourceKind::Video => self.video_inputs += 1,
-            ResourceKind::File => self.file_inputs += 1,
+            ResourceKind::File => {
+                self.file_inputs += 1;
+                // A file the model must see or hear also needs that modality, e.g. an
+                // audio data URL sent as a Responses `input_file`. Remote MIME is unknown.
+                if let ResourceLocation::Inline { media_type, .. } = resource.location {
+                    let family = media_type.as_str().split('/').next().unwrap_or_default();
+                    match family.to_ascii_lowercase().as_str() {
+                        "image" => self.image_inputs += 1,
+                        "audio" => self.audio_inputs += 1,
+                        "video" => self.video_inputs += 1,
+                        _ => {}
+                    }
+                }
+            }
         }
     }
     pub fn derive(r: &GenerationRequest) -> Self {

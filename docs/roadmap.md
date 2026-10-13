@@ -10,9 +10,36 @@ IR completeness proceeds in two steps. First, the standard OpenAI Chat, OpenAI R
 
 | Slice | Goal | Exit condition |
 |---|---|---|
-| 1C (needs design) | Document citations | Messages `citations`, `content` document sources, `search_result` blocks and cited response locations |
+| 1C (design proposed, awaiting decision) | Messages document citations | See [1C design](#1c-design-messages-citations) |
 
-Messages document `context` stays rejected: it is model-visible text with no carrier outside Messages.
+Messages document `context` stays rejected: it is model-visible text with no carrier outside Messages. Responses tool-result `input_video` (opencode, Open Responses) waits until a bound target can carry video in tool results.
+
+### 1C design: Messages citations
+
+Counterexample: a request holds two PDF documents with `citations: {"enabled": true}`. The response cites `{"type":"page_location","document_index":1,"document_title":"B","cited_text":"…","start_page_number":2,"end_page_number":3}`, and the client sends that text block back with its citation next turn. The IR has page coordinates, but it cannot hold the per-document flag or the cited text. Nor can it name the second request document: `Citation.source` resolves only in its owner's resource table, and a response table does not contain request documents.
+
+Protocol facts (pinned SDK; [Citations](https://platform.claude.com/docs/en/build-with-claude/citations) and [Search results](https://platform.claude.com/docs/en/build-with-claude/search-results), read 2026-10-13):
+
+- `document_index` is 0-based over all document blocks in the request, across messages. `search_result_index` is 0-based over all `search_result` blocks, across messages and tool results.
+- Character and block ranges are 0-based; pages are 1-based. All ends are exclusive.
+- Citations are enabled on all or none of the documents, and likewise for search results. They are incompatible with structured output; the upstream enforces both.
+- Messages cites whole text blocks: the response splits text at citation boundaries. `cited_text` is not billed as input or output.
+
+Proposed structure for 1C-a, documents only:
+
+| Concept | IR change |
+|---|---|
+| Enable flag | `FileDescription.citations: bool` per use. Messages carries it; other targets reject `true`, because it changes the output contract |
+| Cited source | `Citation.source` becomes `CitationSource::Resource(ResourceId)` or `CitationSource::RequestDocument(ordinal)`. The ordinal counts the request's file uses in order; append-only history keeps it stable |
+| Cited text | `Citation.quote: Option<Text>`, kept exactly |
+| Location | Existing `SourceCoordinates` text, page and block ranges; the claim is `Whole` |
+| Other targets | OpenAI carriers have no request-document citation. Response delivery to OpenAI clients drops it through a named rule; history that carries it is rejected by OpenAI targets, like other unrepresentable annotations |
+
+1C-a exit condition: one hand-written Messages oracle each way for a cited PDF (request flag, response page citation, returned history), one streamed `citations_delta`, and an OpenAI target rejecting the flag. A bounded real call must confirm whether documents inside `tool_result` count toward `document_index` before the ordinal rule is final.
+
+Later and separate (1C-b): `search_result` blocks as a new input part with `CitationSource::SearchResult(ordinal)`, and `content` documents made of text and image blocks. Neither has a carrier outside Messages. `web_search_result_location` belongs to Provider web search, not 1C.
+
+The alternative is to keep 1C rejected until Claude Code acceptance: pi never sends citations, and opencode sends them only from part metadata.
 
 The coverage-improvement pass starts only after IR completeness is established. Focused contract tests, safety invariants and the offline baseline remain required for every implementation slice; deferring the coverage pass does not defer those checks.
 

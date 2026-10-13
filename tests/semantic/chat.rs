@@ -1135,6 +1135,30 @@ mod files {
         );
     }
     #[test]
+    fn inline_file_media_need_their_input_modality() {
+        // opencode sends audio over Responses as a file with an audio data URL.
+        let decoded = decode(json!([
+            {"type":"input_file","file_data":"data:audio/wav;base64,AQID","filename":"clip.wav"}]))
+        .unwrap();
+        let semantic = &decoded.task.semantic;
+        let needs = GenerationRequirements::derive(semantic);
+        assert_eq!((needs.file_inputs, needs.audio_inputs), (1, 1));
+        let mut files_only = GenerationSemanticContract::full();
+        files_only.audio_input = false;
+        assert_eq!(
+            files_only.check(semantic),
+            Err(GenerationFeature::AudioInput)
+        );
+        assert!(GenerationSemanticContract::full().check(semantic).is_ok());
+        // A PDF needs only file input.
+        let pdf = decode(json!([file()])).unwrap();
+        let needs = GenerationRequirements::derive(&pdf.task.semantic);
+        assert_eq!(
+            (needs.file_inputs, needs.audio_inputs, needs.image_inputs),
+            (1, 0, 0)
+        );
+    }
+    #[test]
     fn responses_instructions_carry_media_only_to_responses() {
         let input = json!([
             {"role":"developer","content":[

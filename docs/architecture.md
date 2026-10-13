@@ -107,7 +107,7 @@ Image, audio, video and file resources are inert: inline data or a URL, never fe
 - Per-use options without a target slot (image detail, file detail, filename) are dropped by a named rule. Inbound options with no IR slot that change model-visible content, such as a Messages document `context`, are rejected.
 - A file name is the model-visible document name: OpenAI `filename` and Messages document `title` map to each other.
 - Instructions may carry image and file parts. Only Responses system and developer messages have a carrier; other targets reject them rather than move media to another role.
-- Tool results may carry media of any kind. Admission needs tool-result media and the kind's input modality. Responses carries tool media; standard Chat does not, so Chat targets reject it.
+- Tool results may carry media of any kind. Admission needs tool-result media and the kind's input modality. An inline file whose MIME type is image, audio or video also needs that modality, in addition to file input. Responses carries tool media; standard Chat does not, so Chat targets reject it.
 - Provider file IDs and file URIs are bound to the gateway credential's workspace or project. Client-supplied references are rejected.
 - Google protocol boundaries reject media URLs on the Files API host, even when a client labels them as ordinary image or file URLs. Public URLs stay inert.
 - Image and file formats, encoded sizes and counts are target constraints, including tool-result media. Pixel dimensions and actual image validity remain upstream checks; the gateway does not decode or transcode images.
