@@ -8,9 +8,8 @@ First complete the IR's semantic support for all target protocols and modalities
 
 IR completeness proceeds in two steps. First, the standard OpenAI Chat, OpenAI Responses and Anthropic Messages media fields, checked against the pinned SDK types (openai-python `5e7a23e`, anthropic-sdk-python `b4b7916`). Second, compatibility with client shapes beyond those standards, such as opencode's.
 
-No slice is selected. Open items wait on a carrier, research or a later stage:
+No slice is selected. Open items wait on a carrier or a later stage:
 
-- Stop sequences (Chat `stop`, Messages `stop_sequences`, Gemini `stopSequences`, Interactions `stop_sequences`) are ignored as unregistered fields. The IR shape, the Responses target without a carrier, and the matched-sequence report wait on further research.
 - Messages citations (1C) are deferred to Claude Code acceptance; requests and responses that carry them are rejected, not dropped. The [design](#1c-design-messages-citations) records the IR change for when it reopens.
 - Messages document `context` stays rejected: it is model-visible text with no carrier outside Messages.
 - Tool-result video has no carrier on any bound target: OpenAI and Interactions results have no video part, and Gemini function responses admit only images, PDF and plain text.
