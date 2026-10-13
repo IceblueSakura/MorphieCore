@@ -144,6 +144,7 @@ Real failover needs a controlled failure source, such as an exhausted key in a s
 
 ## Future work
 
+- **Server-side compaction (priority and scheduling undecided).** Use Provider-executed compaction, beyond receiving and replaying compaction items. Select the trigger policy, supported bindings and client-visible behavior before implementation. Preserve opaque history and reject incompatible replay targets; this does not imply Provider-held conversation state.
 - Stateful Responses in the second planned stage, after IR completeness.
 - File services.
 - Generated-image output with a selected semantic contract and downstream carrier; input support does not authorize this work.
