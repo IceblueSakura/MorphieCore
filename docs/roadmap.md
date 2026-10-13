@@ -48,7 +48,7 @@ IR completeness does not mean every upstream can carry every modality. Protocol-
 ## Planned order
 
 1. **IR modality completeness.** Complete semantic support for all target protocols and modalities, including input, output and history/replay concepts. Establish completeness against concrete protocol requirements, not just the existing implementation.
-2. **Stateful extension and coverage improvement.** After IR completeness, extend Responses with gateway-managed, time-limited `previous_response_id` history and improve contract coverage. No order between these two tracks is selected.
+2. **Stateful extension and coverage improvement.** After IR completeness, add stateful APIs in two forms, Provider-held state and gateway-held, time-limited `previous_response_id` history, and improve contract coverage. The IR keeps its response continuation types for this stage. No order between these two tracks is selected.
 3. **Failover.** The feature remains in early design. Its priority is undecided, lowest for now; design, implementation improvement and real acceptance follow the second stage.
 4. **Other agent acceptance.** Codex, Claude Code and other agents follow failover. Their priority is undecided, lowest for now.
 
