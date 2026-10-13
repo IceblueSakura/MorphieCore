@@ -124,13 +124,22 @@ pub const MODELS: &[ModelDefinition] = &[
         released_at: 1_788_739_200,
         developer: "ModelBest",
     },
-    // Source: https://github.com/OpenBMB/MiniCPM-V (2026-05-11).
+    // Source: https://github.com/OpenBMB/MiniCPM-V (2026-10-12).
     ModelDefinition {
-        id: "minicpm-v-4.6",
+        id: "MiniCPM-V-4.7-1B",
         images: true,
         files: false,
         strict_tools: false,
-        released_at: 1_778_457_600,
+        released_at: 1_791_763_200,
+        developer: "ModelBest",
+    },
+    // Source: https://github.com/OpenBMB/MiniCPM-V (2026-10-12).
+    ModelDefinition {
+        id: "MiniCPM-V-4.7-35B-A3B",
+        images: true,
+        files: false,
+        strict_tools: false,
+        released_at: 1_791_763_200,
         developer: "ModelBest",
     },
     // Source: https://www.tencent.com/tencent-releases-and-open-sources-tencent-hy4-preview/ (2026-08-28).
@@ -171,7 +180,10 @@ pub fn contract(id: &str) -> GenerationSemanticContract {
         file_input: definition.files,
         audio_input: id == "gpt-audio-mini",
         // Sources: MiniCPM-V docs/api.md and the Zhipu Chat reference (docs/refs/multimodal.md).
-        video_input: matches!(id, "minicpm-v-4.6" | "glm-5.3-flash"),
+        video_input: matches!(
+            id,
+            "MiniCPM-V-4.7-1B" | "MiniCPM-V-4.7-35B-A3B" | "glm-5.3-flash"
+        ),
         strict_tools: definition.strict_tools,
         // Admission still needs the media kind's input. Only Responses carries tool
         // media; standard Chat has no carrier, so Chat targets reject it.

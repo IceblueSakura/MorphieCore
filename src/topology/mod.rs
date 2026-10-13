@@ -25,13 +25,13 @@ pub use route::{CandidatePolicy, FallbackPolicy, PublicModel, Route, RoutePolicy
 use crate::provider::{ProviderError, ident_ok};
 
 macro_rules! ident {
-    ($name:ident) => {
+    ($name:ident, $valid:expr) => {
         #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub struct $name(String);
 
         impl $name {
             pub fn new(id: &str) -> Result<Self, ProviderError> {
-                if ident_ok(id) {
+                if ($valid)(id) {
                     Ok(Self(id.into()))
                 } else {
                     Err(ProviderError::InvalidId)
@@ -45,9 +45,15 @@ macro_rules! ident {
     };
 }
 
-ident!(ModelId);
-ident!(EndpointId);
-ident!(RouteId);
+ident!(ModelId, |id: &str| {
+    !id.is_empty()
+        && id.len() <= 64
+        && id
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_' | b'.'))
+});
+ident!(EndpointId, ident_ok);
+ident!(RouteId, ident_ok);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TaskKind {
@@ -84,9 +90,11 @@ mod tests {
     #[test]
     fn model_labels_do_not_encode_provider_selection() {
         assert_eq!(
-            ModelId::new("synthetic-model").unwrap().as_str(),
-            "synthetic-model"
+            ModelId::new("Synthetic-Model").unwrap().as_str(),
+            "Synthetic-Model"
         );
         assert!(ModelId::new("synthetic-provider/synthetic-model").is_err());
+        assert!(super::EndpointId::new("Synthetic-Endpoint").is_err());
+        assert!(super::RouteId::new("Synthetic-Route").is_err());
     }
 }

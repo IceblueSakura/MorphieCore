@@ -303,6 +303,32 @@ fn declared_topology_compiles() {
 }
 #[cfg(test)]
 #[test]
+fn modelbest_vision_versions_use_upstream_ids_and_multimodal_chat_contracts() {
+    let topology = default_topology().unwrap();
+    for id in ["MiniCPM-V-4.7-1B", "MiniCPM-V-4.7-35B-A3B"] {
+        let binding = API_KEY_BINDINGS.iter().find(|b| b.model == id).unwrap();
+        assert_eq!(binding.upstream, id);
+        assert_eq!(binding.canonical_model, id);
+        assert_eq!(binding.protocols, &[ProtocolProfile::OpenAiChat]);
+        let public = topology.model(id).unwrap();
+        assert!(public.contract.image_input && public.contract.video_input);
+        let endpoint = binding.endpoint(ProtocolProfile::OpenAiChat).unwrap();
+        assert_eq!(endpoint.provider.as_str(), "modelbest");
+        assert_eq!(endpoint.upstream_model, id);
+        assert_eq!(endpoint.credential.as_str(), "modelbest-api-key");
+    }
+    assert!(topology.model("minicpm-v-4.6").is_none());
+    assert!(
+        API_KEY_BINDINGS
+            .iter()
+            .all(|b| b.upstream != "MiniCPM-V-4.6")
+    );
+    for id in ["minicpm5-1b", "minicpm5-2b"] {
+        assert!(topology.model(id).is_some());
+    }
+}
+#[cfg(test)]
+#[test]
 fn removed_providers_have_no_routes_and_unrelated_bindings_survive() {
     let removed = default_topology().unwrap();
     for (provider, model) in [("longcat", "longcat-2.5-preview"), ("kimi", "kimi-k3")] {

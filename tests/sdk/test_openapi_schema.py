@@ -159,6 +159,7 @@ class ModelsSchemaTests(unittest.TestCase):
         check.validate(model)
         check.validate({**model, "shutdown_date": None})
         check.validate({**model, "shutdown_date": "2027-01-02"})
+        check.validate({**model, "id": "Synthetic-Model"})
         for key in model:
             missing = {k: v for k, v in model.items() if k != key}
             self.assertFalse(check.is_valid(missing))

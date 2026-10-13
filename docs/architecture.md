@@ -322,6 +322,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Pure protocol boundaries | Encode from final typed input; no network in codecs or post-encoding JSON patches |
 | Functional ownership | Keep root layers; organize internals by domain, without compatibility aliases or plugin frameworks |
 | Layered capabilities | Public promises are not the union of candidate features |
+| Case-sensitive model labels | Public IDs may preserve upstream ASCII capitalization, but resolve only registered routes. Provider prefixes remain rejected; Provider, endpoint and route IDs keep their lowercase grammar |
 | Declared adaptation | Named candidate-local losses; known fields strict, unknown protocol fields ignored |
 | Official intake fields | Pinned client request fields are carried, ignored by name or rejected. Fields that change model input, tools, the output contract or the output cap are never ignored; execution, billing, telemetry, cache and sampling preferences may be |
 | Append-only history projection | Earlier content does not change when a later turn is added |

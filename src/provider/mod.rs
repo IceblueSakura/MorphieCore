@@ -20,7 +20,7 @@ pub use errors::{
     ErrorClass, FailureKind, ProviderError, StatusClass, classify_failure, classify_status,
 };
 
-/// Shared identity grammar for provider, endpoint, route and model labels.
+/// Shared identity grammar for provider, endpoint and route labels.
 pub(crate) fn ident_ok(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= 64

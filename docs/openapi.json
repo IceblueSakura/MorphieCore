@@ -795,8 +795,8 @@
         ]
       },
       "PublicModelLabel": {
-        "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9_.-]+$",
-        "description": "Activated public label, without a Provider prefix. Resolves a trusted route; upstream names and credentials remain internal."
+        "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9_.-]+(?![\\s\\S])",
+        "description": "Case-sensitive activated public label, without a Provider prefix. Resolves a trusted route; matching an upstream model name does not grant upstream selection."
       },
       "MessagesRequest": {
         "type": "object", "required": ["model", "max_tokens", "messages"],
