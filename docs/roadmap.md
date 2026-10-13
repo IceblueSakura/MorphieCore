@@ -76,7 +76,7 @@ IR completeness does not mean every upstream can carry every modality. Protocol-
 ## Planned order
 
 1. **Generation IR completeness.** Start with the [next four slices](#next-generation-slices), then assess remaining selected official contracts. Keep deferred concepts explicit rather than claiming full API coverage or expanding frozen tasks.
-2. **Stateful extension and coverage improvement.** After IR completeness, add stateful APIs in two forms, Provider-held state and gateway-held, time-limited `previous_response_id` history, and improve contract coverage. The IR keeps its response continuation types for this stage. No order between these two tracks is selected.
+2. **Stateful extension and coverage improvement.** After IR completeness, add [gateway-only stateful Responses](architecture.md#stateful-history) with in-memory TTL history alongside stateless requests, and improve contract coverage. The IR keeps its response continuation types for this stage. No order between stateful implementation and the coverage pass is selected.
 3. **Failover.** The feature remains in early design. Its priority is undecided, lowest for now; design, implementation improvement and real acceptance follow the second stage.
 4. **Other agent acceptance.** Codex, Claude Code and other agents follow failover. Their priority is undecided, lowest for now.
 
@@ -105,6 +105,7 @@ Maintenance only, when a refactor requires it:
 - Invented tool results or changed roles for orphan results.
 - Message-content hashes as conversation identity, or LLM classifiers for routing.
 - Plugin hosts, middleware hosts or capabilities learned automatically from upstream errors.
+- Provider-held conversation state or background Generation execution.
 - Load balancing, credential concurrency/RPM lanes or budget reservations.
 - Retrying a refusal on another model.
 - Routing below the declared conversation: turn detection, branch/subtask keys, per-turn holds or model switches, and per-message effort.

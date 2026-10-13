@@ -1,6 +1,6 @@
 # Architecture
 
-MorphieCore translates client and Provider protocols through one typed semantic IR. It is a gateway, not an agent loop: planning, memory and tool execution belong to the caller.
+MorphieCore translates client and Provider protocols through one typed semantic IR. It is a gateway, not an agent loop: planning, agent memory and tool execution belong to the caller.
 
 This page records design principles and settled decisions. Code and tests define behavior; [Roadmap](roadmap.md) sets scope and direction.
 
@@ -16,6 +16,7 @@ This page records design principles and settled decisions. Code and tests define
 - [Streaming and delivery](#streaming-and-delivery)
 - [Native Messages projection](#native-messages-projection)
 - [Conversation and cache affinity](#conversation-and-cache-affinity)
+- [Stateful history](#stateful-history)
 - [Credentials and security](#credentials-and-security)
 - [Settled decisions](#settled-decisions)
 
@@ -81,7 +82,7 @@ Generation semantics come from the official OpenAI, Anthropic and Google APIs. O
 - **Honest terminals:** response closure, artifact completeness and turn progress are separate. Failure, truncation and cancellation never become success.
 - **No runtime state:** targets, credentials, retries and publication state stay outside the IR.
 
-Clients currently resend full history each turn. Future gateway-managed `previous_response_id` history will materialize the same full IR and use the same pipeline. Cache affinity is not history storage.
+Clients currently resend full history each turn. Future [gateway-managed history](#stateful-history) will materialize the same full IR and use the same pipeline. Cache affinity is not history storage.
 
 When a concept cannot be expressed, show a minimal counterexample and structural options before changing the IR. Do not hide it in private adapter fields.
 
@@ -277,6 +278,16 @@ Without a declared conversation, a short-lived prefix-digest index offers best-e
 
 Implicit cache scope is isolated by ingress key, credential source and public model. It is independent of the replay fingerprint. Losing the index loses cache hits, not correctness.
 
+## Stateful history
+
+Direction selected, not implemented. Downstream Responses will offer stateless full-history requests and gateway-managed `previous_response_id` continuation. The gateway retains canonical request/response history and resolves it to the same full IR before candidate preparation.
+
+History lives in bounded process memory with a TTL. Expiration or restart invalidates stored references; there is no disk durability or restart recovery. Other storage backends require a later decision, not a prebuilt backend framework.
+
+Upstream calls remain stateless, using full history and `store: false` where supported. Neither Provider-only nor hybrid Provider-held continuation is planned. Downstream storage intent never enables upstream storage. Cache affinity remains separate from history ownership.
+
+The scope is conversation history management, not execution persistence. No `background: true`, detached generation jobs, scheduler or agent loop is planned. JSON and SSE requests keep the existing cancellation and honest-delivery rules.
+
 ## Credentials and security
 
 Credentials come only from the application's private store. A manager owns API keys, OAuth identities and ordered pools. Inference borrows access for a fixed identity; it never logs in or refreshes.
@@ -300,6 +311,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Scoped opaque replay | Restore only compatible native values; foreign readable reasoning becomes text |
 | Failover, not balancing | Legal candidates, bounded advancement and exact-credential affinity |
 | Conversation routing | No inferred turn, branch or message routing |
+| Gateway-only history (planned) | [In-memory TTL history](#stateful-history) adds downstream continuation without Provider-held state or background execution |
 | Honest delivery | Publication forbids advancement; success requires validated EOF and handoff |
 | Agent-shaped failures | Sanitized error classes match pinned client behavior; refusals are not retries |
 | Delivery-local identity | Generated client IDs/timestamps are not upstream facts or history keys |
