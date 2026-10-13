@@ -3,7 +3,7 @@
   "info": {
     "title": "MorphieCore HTTP API",
     "version": "0.1.0",
-    "description": "HTTP API summary for the local gateway, not full vendor API conformance. Generation uses a typed IR, stateless upstream history and bounded pre-publication failover. Responses offers opt-in gateway-managed TTL history. Known fields are strict; unknown generation fields are ignored, not forwarded. Standalone media and Embeddings are frozen and require explicit activation. Codecs define exact admission; docs/usage.md explains setup."
+    "description": "HTTP API summary for the local gateway, not full vendor API conformance. Generation uses a typed IR, stateless upstream history and bounded pre-publication failover. Responses enables gateway-managed TTL history by default; store:false opts out. Known fields are strict; unknown generation fields are ignored, not forwarded. Standalone media and Embeddings are frozen and require explicit activation. Codecs define exact admission; docs/usage.md explains setup."
   },
   "servers": [{"url": "http://127.0.0.1:8080"}],
   "security": [{"bearerAuth": []}, {"apiKeyAuth": []}],
@@ -285,7 +285,7 @@
       "post": {
         "operationId": "response",
         "parameters": [{"$ref": "#/components/parameters/ConversationId"}],
-        "summary": "Generate with full history or opt-in gateway-managed Responses",
+        "summary": "Generate with full history or gateway-managed Responses",
         "requestBody": {
           "required": true,
           "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ResponsesRequest"}}}
@@ -382,7 +382,7 @@
       "ResponseId": {
         "in": "path", "name": "response_id", "required": true,
         "schema": {"type": "string", "minLength": 1},
-        "description": "Gateway-issued ID of an explicitly stored response. Not an upstream reference or conversation-affinity key."
+        "description": "Gateway-issued ID of a stored response. Not an upstream reference or conversation-affinity key."
       },
       "ConversationId": {
         "in": "header", "name": "X-MorphieCore-Conversation-Id", "required": false,
@@ -889,7 +889,7 @@
         "not": {"required": ["session_id"]},
         "properties": {
           "model": {"$ref": "#/components/schemas/PublicModelLabel"},
-          "store": {"type": ["boolean", "null"], "default": false, "description": "Only true retains this response in gateway TTL memory. Unlike OpenAI, omission does not store. Upstream storage stays disabled."},
+          "store": {"type": ["boolean", "null"], "default": true, "description": "Omitted, null or true retains this response in gateway TTL memory. Explicit false opts out. Upstream storage stays disabled."},
           "previous_response_id": {"type": ["string", "null"], "minLength": 1, "maxLength": 256, "pattern": "^[\\u0021-\\u007e]+$", "description": "Gateway-owned predecessor. Only history is inherited; current instructions, tools and controls replace top-level settings."},
           "background": {"enum": [false, null], "description": "Background execution is not supported."},
           "conversation": {"type": "null", "description": "Provider-held conversations and Conversations API are not supported."},
@@ -914,7 +914,7 @@
           "max_output_tokens": {"type": ["integer", "null"], "minimum": 1, "description": "Client-owned output cap. Selected targets may reject explicit caps; local limits alone do not bound upstream charges."}
         },
         "additionalProperties": true,
-        "description": "Full-history or gateway-managed synchronous profile. Explicit store:true opts into bounded TTL memory with no durability. Only final body handoff publishes a stored reference; cancellation and late errors do not create a readable snapshot. Capacity exhaustion returns history_capacity_exceeded before publication or aborts an already started stream. Selected media and replay still require public/target admission. No arbitrary upstream selection or private attachment. Codecs define exact admission."
+        "description": "Full-history or gateway-managed synchronous profile. Storage defaults to true in bounded TTL memory with no durability; explicit store:false opts out. Only final body handoff publishes a stored reference; cancellation and late errors do not create a readable snapshot. Capacity exhaustion returns history_capacity_exceeded before publication or aborts an already started stream. Selected media and replay still require public/target admission. No arbitrary upstream selection or private attachment. Codecs define exact admission."
       },
       "StoredResponse": {
         "type": "object",

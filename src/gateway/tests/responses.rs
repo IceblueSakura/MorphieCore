@@ -115,7 +115,7 @@ async fn stored_json_and_sse_support_tool_continuation_retrieval_and_independent
             "POST",
             "/v1/responses",
             json!({
-                "model":"fixture-model","input":"first","instructions":"old","store":true
+                "model":"fixture-model","input":"first","instructions":"old"
             }),
         )
         .await,
@@ -151,7 +151,7 @@ async fn stored_json_and_sse_support_tool_continuation_retrieval_and_independent
         "/v1/responses",
         json!({
             "model":"fixture-model","previous_response_id":parent,"input":result,
-            "instructions":"new","store":true,"stream":true,
+            "instructions":"new","stream":true,
             "stream_options":{"include_obfuscation":false}
         }),
     )
@@ -214,7 +214,7 @@ async fn stored_json_and_sse_support_tool_continuation_retrieval_and_independent
             "POST",
             "/v1/responses",
             json!({
-                "model":"fixture-model","previous_response_id":parent,"input":result
+                "model":"fixture-model","previous_response_id":parent,"input":result,"store":false
             }),
         )
         .await,

@@ -726,7 +726,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             let input = if responses {
                 let mut tool = function.clone();
                 tool["type"] = json!("function");
-                json!({"model":binding.model,"max_output_tokens":64,"input":mode,"stream":true,"tools":[tool]})
+                json!({"model":binding.model,"max_output_tokens":64,"input":mode,"store":false,"stream":true,"tools":[tool]})
             } else {
                 json!({"model":binding.model,"max_completion_tokens":64,"messages":[{"role":"user","content":mode}],
                     "tools":[{"type":"function","function":function}],"stream":true,

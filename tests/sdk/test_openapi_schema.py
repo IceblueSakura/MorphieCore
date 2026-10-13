@@ -208,7 +208,7 @@ class ModelsSchemaTests(unittest.TestCase):
 
 
 class ResponsesSchemaTests(unittest.TestCase):
-    def test_opt_in_storage_and_local_snapshot_operations(self):
+    def test_default_storage_and_local_snapshot_operations(self):
         request = {"model": "synthetic", "input": "next", "store": True,
                    "previous_response_id": "resp_mc_synthetic"}
         check = validator("ResponsesRequest")
@@ -218,7 +218,7 @@ class ResponsesSchemaTests(unittest.TestCase):
                        {"previous_response_id": 7}, {"background": True},
                        {"conversation": "remote-conversation"}):
             self.assertFalse(check.is_valid({**request, **fields}))
-        self.assertFalse(SCHEMAS["ResponsesRequest"]["properties"]["store"]["default"])
+        self.assertTrue(SCHEMAS["ResponsesRequest"]["properties"]["store"]["default"])
         stored = {"id": "resp_mc_synthetic", "object": "response", "model": "synthetic",
                   "created_at": 1, "status": "completed", "output": [], "store": True,
                   "previous_response_id": None}

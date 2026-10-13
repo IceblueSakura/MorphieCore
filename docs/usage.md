@@ -220,11 +220,11 @@ Formats, encoded sizes and counts are target constraints, not a promise that eve
 
 ## Stored Responses
 
-Storage is opt-in. Set `store: true` to retain a Responses exchange in gateway memory. Omitted, null or false `store` does not retain the new response; this differs from OpenAI's default. Upstream requests always carry complete history and disable Provider storage where supported.
+Storage defaults to true, matching OpenAI Responses. Omitted or null `store` retains a Responses exchange in gateway memory; set `store: false` to opt out. Upstream requests always carry complete history and disable Provider storage where supported.
 
-1. Create a response with `store: true` and consume the full JSON body or SSE stream. A gateway-owned response ID becomes readable only after validated upstream EOF and final body handoff.
+1. Create a response with `store` omitted or set to `true` and consume the full JSON body or SSE stream. A gateway-owned response ID becomes readable only after validated upstream EOF and final body handoff.
 2. Send that ID as `previous_response_id` with only the new input. The gateway prepends the stored request input and response output. Send current instructions, tools and controls explicitly: top-level settings are not inherited, while instruction items in history remain.
-3. Use `store: true` again if the successor must be retrievable or usable as another predecessor. A successor with `store: false` may still read an existing predecessor.
+3. The successor is also stored by default. Set `store: false` if it need not be retrievable or usable as another predecessor; it may still read an existing predecessor.
 
 ```json
 {"model":"configured-public-model","input":"Remember the label cedar.","store":true,"max_output_tokens":64}
@@ -258,7 +258,7 @@ History is process-local and is lost at shutdown or restart. A declared conversa
 | `GET /v1/models/{model}` | Retrieve an activated public model |
 | `DELETE /v1/models/{model}` | Denied: 403 for an activated model, 404 otherwise |
 | `POST /v1/responses` | Responses, JSON or SSE |
-| `GET /v1/responses/{response_id}` | Retrieve an opt-in stored response |
+| `GET /v1/responses/{response_id}` | Retrieve a stored response |
 | `DELETE /v1/responses/{response_id}` | Delete a stored response |
 | `GET /v1/responses/{response_id}/input_items` | Cursor-paginated resolved input |
 | `POST /v1/chat/completions` | Chat Completions, JSON or SSE |

@@ -24,7 +24,7 @@ The project is in core design and validation. pi and opencode are the first targ
 - Routing uses bounded failover across a model's Providers and credentials, with conversation affinity. It is not load balancing.
 - Credentials come from the application's private file store. Requests never log in or refresh credentials.
 - Standalone Embeddings, Images, Speech and Transcription endpoints are frozen.
-- Responses supports opt-in gateway-managed history, retrieval and deletion in bounded TTL memory. File services remain deferred.
+- Responses stores gateway-managed history by default, with retrieval and deletion in bounded TTL memory; `store: false` opts out. File services remain deferred.
 
 Code and tests define behavior. The [roadmap](docs/roadmap.md) separates implemented work from deferred acceptance checks. Supported models and bindings come from the catalogs, not this page.
 
