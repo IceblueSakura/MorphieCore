@@ -667,9 +667,26 @@ mod anthropic_media {
             json!([{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"AQID"},"title":"report.pdf"}])
         );
         assert!(rules.is_empty());
+        // Messages has no audio or video carrier, and its system prompt is text.
         let audio =
             decode(json!([{"type":"input_audio","input_audio":{"data":"AQID","format":"wav"}}]));
         assert!(endpoint.encode_request_with_rules(&audio).is_err());
+        let video =
+            decode(json!([{"type":"video_url","video_url":{"url":"data:video/mp4;base64,AQID"}}]));
+        assert!(endpoint.encode_request_with_rules(&video).is_err());
+        let mut instruction = Adapter::new(Client::Responses, Dialect::Standard, None)
+            .decode_client_request(
+                json!({"model":"m","input":[
+                    {"role":"developer","content":[{"type":"input_image","image_url":"data:image/png;base64,AQID"}]},
+                    {"role":"user","content":"Describe."}]})
+                .to_string()
+                .as_bytes(),
+            )
+            .unwrap();
+        instruction.conversation = Some(
+            morphiecore::semantic::context::ConversationContext::conversation("synthetic").unwrap(),
+        );
+        assert!(endpoint.encode_request_with_rules(&instruction).is_err());
         // `downsize` is the default; `error` survives only on a Messages target.
         let messages = |oversized: &str| {
             let raw = json!({"model":"m","max_tokens":8,"messages":[{"role":"user","content":[

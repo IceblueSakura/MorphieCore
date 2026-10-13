@@ -12,7 +12,7 @@ No slice is selected. Open items wait on a carrier or a later stage:
 
 - Messages citations (1C) are deferred to Claude Code acceptance; requests and responses that carry them are rejected, not dropped. The [design](#1c-design-messages-citations) records the IR change for when it reopens.
 - Messages document `context` stays rejected: it is model-visible text with no carrier outside Messages.
-- Tool-result video reaches only Gemini generateContent, whose `functionResponse.parts` carry inline data; OpenAI targets have no carrier.
+- Tool-result video has no carrier on any bound target: OpenAI and Interactions results have no video part, and Gemini function responses admit only images, PDF and plain text.
 
 ### 1C design: Messages citations
 

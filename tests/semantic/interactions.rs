@@ -332,6 +332,27 @@ fn media_become_v1_content_and_video_has_no_carrier() {
     assert!(
         encode_generation_request(&video.task.semantic, &video.task.fidelity, &target).is_err()
     );
+    // System instructions are text, and other targets may downsize an oversized image.
+    let instruction = decode(
+        Profile::Responses,
+        json!({"model":"public","input":[
+            {"role":"developer","content":[{"type":"input_image","image_url":"data:image/png;base64,AQID"}]},
+            {"role":"user","content":"Describe."}]}),
+    );
+    let strict = morphiecore::protocol::anthropic::client::decode_client_request(
+        json!({"model":"public","max_tokens":8,"messages":[{"role":"user","content":[
+            {"type":"image","source":{"type":"base64","media_type":"image/png","data":"AQID"},
+                "transformations":{"oversized_image":"error"}}]}]})
+        .to_string()
+        .as_bytes(),
+    )
+    .unwrap();
+    for request in [instruction, strict] {
+        assert!(
+            encode_generation_request(&request.task.semantic, &request.task.fidelity, &target)
+                .is_err()
+        );
+    }
     for tool in [false, true] {
         let uri = "https://generativelanguage.googleapis.com/v1beta/files/synthetic";
         let input = if tool {

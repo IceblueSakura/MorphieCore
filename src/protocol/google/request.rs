@@ -465,7 +465,8 @@ fn item_parts(
 }
 
 /// One inert resource as `inlineData` or, outside tool results, `fileData`. Tool results
-/// carry only `inlineData` (`FunctionResponsePart`). `mimeType` is optional for `fileData`.
+/// carry only `inlineData` (`FunctionResponsePart`) of the documented types, so no audio
+/// or video. `mimeType` is optional for `fileData`.
 /// Source: docs/refs/multimodal.md.
 fn media(
     resource: ResourceView<'_>,
@@ -484,18 +485,25 @@ fn media(
             media_type,
             data_base64,
         } => {
-            // User images and function-response images have different format sets.
-            // https://ai.google.dev/gemini-api/docs/image-understanding
+            // Function responses admit a closed type list; user images have their own.
             // https://ai.google.dev/gemini-api/docs/generate-content/function-calling
-            if media_type
-                .as_str()
-                .to_ascii_lowercase()
-                .starts_with("image/")
-                && !(matches!(
+            // https://ai.google.dev/gemini-api/docs/image-understanding
+            let allowed = if tool {
+                matches!(
                     media_type.as_str(),
-                    "image/png" | "image/jpeg" | "image/webp"
-                ) || !tool && matches!(media_type.as_str(), "image/heic" | "image/heif"))
-            {
+                    "image/png" | "image/jpeg" | "image/webp" | "application/pdf" | "text/plain"
+                )
+            } else {
+                !media_type
+                    .as_str()
+                    .to_ascii_lowercase()
+                    .starts_with("image/")
+                    || matches!(
+                        media_type.as_str(),
+                        "image/png" | "image/jpeg" | "image/webp" | "image/heic" | "image/heif"
+                    )
+            };
+            if !allowed {
                 return Err(unsupported());
             }
             Ok(json!({"inlineData": {

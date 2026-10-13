@@ -302,4 +302,47 @@ fn tool_media_ride_inline_in_the_function_response() {
         )
         .is_err()
     );
+    // Function responses admit only the documented image, PDF and plain-text types.
+    let part = |part: Value| {
+        let mut body = input("data:image/png;base64,AQID");
+        body["input"][1]["output"] = json!([part]);
+        client(Profile::Responses, body)
+    };
+    let pdf = part(json!({"type":"input_file","file_data":"data:application/pdf;base64,BAUG"}));
+    let (body, _) =
+        encode_generation_request(&pdf.task.semantic, &pdf.task.fidelity, &target()).unwrap();
+    assert_eq!(
+        body["contents"][1]["parts"][0]["functionResponse"]["parts"],
+        json!([{"inlineData":{"mimeType":"application/pdf","data":"BAUG"}}])
+    );
+    let video = part(json!({"type":"input_video","video_url":"data:video/mp4;base64,BAUG"}));
+    assert!(
+        encode_generation_request(&video.task.semantic, &video.task.fidelity, &target()).is_err()
+    );
+}
+
+#[test]
+fn instruction_media_and_strict_image_sizes_have_no_gemini_carrier() {
+    let instruction = client(
+        Profile::Responses,
+        json!({"model":"gemini","input":[
+            {"role":"developer","content":[{"type":"input_image","image_url":"data:image/png;base64,AQID"}]},
+            {"role":"user","content":"Describe."}]}),
+    );
+    let messages = |oversized: &str| {
+        let raw = json!({"model":"gemini","max_tokens":8,"messages":[{"role":"user","content":[
+            {"type":"image","source":{"type":"base64","media_type":"image/png","data":"AQID"},
+                "transformations":{"oversized_image":oversized}}]}]});
+        morphiecore::protocol::anthropic::client::decode_client_request(raw.to_string().as_bytes())
+            .unwrap()
+    };
+    for (request, ok) in [
+        (instruction, false),
+        (messages("downsize"), true),
+        (messages("error"), false),
+    ] {
+        let result =
+            encode_generation_request(&request.task.semantic, &request.task.fidelity, &target());
+        assert_eq!(result.is_ok(), ok);
+    }
 }
