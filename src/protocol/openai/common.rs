@@ -372,18 +372,14 @@ pub(super) fn tool_call(
     })
 }
 pub(super) fn check_response_carriers(response: &GenerationResponse) -> Result<(), CodecError> {
-    if response.usage_reports().len() > 1
-        || response.usage_reports().iter().any(|usage| {
-            usage.scope != UsageScope::Operation
-                || usage.basis != UsageBasis::Final
-                || usage.output_relation != OutputTokenRelation::IncludesReasoning
-                || usage.total_relation != TotalTokenRelation::InputAndOutput
-                || usage.input_relation != InputTokenRelation::IncludesCache
-                || usage.input_tokens.is_none()
-                || usage.output_tokens.is_none()
-                || usage.total_tokens.is_none()
-        })
-    {
+    if response.usage().is_some_and(|usage| {
+        usage.output_relation != OutputTokenRelation::IncludesReasoning
+            || usage.total_relation != TotalTokenRelation::InputAndOutput
+            || usage.input_relation != InputTokenRelation::IncludesCache
+            || usage.input_tokens.is_none()
+            || usage.output_tokens.is_none()
+            || usage.total_tokens.is_none()
+    }) {
         return Err(CodecError::Unsupported("usage projection".into()));
     }
     if response.progress() != InteractionProgress::Unreported {

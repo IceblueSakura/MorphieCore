@@ -74,12 +74,8 @@ pub(crate) fn project(decoded: &mut DecodedResponse, profile: Profile) -> Result
     let mut projected =
         GenerationResponse::from_resources(items, source.outcome(), source.resources().clone())?
             .with_details(source.details().clone())?
-            .with_usage_reports(source.usage_reports().to_vec())?;
-    if let Some(usage) = source.usage() {
-        // Derivation requires all disjoint input categories. Missing is not zero.
-        let reports = client_usage(usage)?.into_iter().collect();
-        projected = projected.with_usage_reports(reports)?;
-    }
+            // Derivation requires all disjoint input categories. Missing is not zero.
+            .with_usage(source.usage().map(client_usage).transpose()?.flatten())?;
     if profile == Profile::Chat {
         let status = if source.outcome() == Outcome::Incomplete {
             ItemLifecycle::Incomplete
@@ -144,7 +140,7 @@ pub(crate) fn project(decoded: &mut DecodedResponse, profile: Profile) -> Result
             projected.resources().clone(),
         )?
         .with_details(projected.details().clone())?
-        .with_usage_reports(projected.usage_reports().to_vec())?
+        .with_usage(projected.usage())?
         .with_message_envelopes(vec![MessageEnvelope::new(
             GroupId::new(owner.scope(), owner.get()),
             MessageEnvelopeRole::Assistant,

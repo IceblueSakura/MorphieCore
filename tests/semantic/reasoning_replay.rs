@@ -269,23 +269,12 @@ mod reasoning_controls {
     #[test]
     fn each_new_control_independently_rejects_request_echo_and_stream_projection() {
         use morphiecore::protocol::openai::{events::EventEncoder, lowering::lower_response};
-        for dimension in 0..5 {
+        for dimension in 0..4 {
             let mut control = ReasoningRequest::present(Some(ReasoningEffort::High), None);
             match dimension {
-                0 => {
-                    control.budget = Some(ReasoningBudget {
-                        hard_limit: Some(1024),
-                        soft_target: None,
-                    })
-                }
-                1 => {
-                    control.budget = Some(ReasoningBudget {
-                        hard_limit: None,
-                        soft_target: Some(1024),
-                    })
-                }
-                2 => control.display = Presence::Value(ReasoningDisplay::Omitted),
-                3 => control.display = Presence::Value(ReasoningDisplay::Summary),
+                0 => control.budget_tokens = Some(1024),
+                1 => control.display = Presence::Value(ReasoningDisplay::Omitted),
+                2 => control.display = Presence::Value(ReasoningDisplay::Summary),
                 _ => control.mode = Presence::Value(ReasoningMode::Adaptive),
             }
             let settings = GenerationSettings {

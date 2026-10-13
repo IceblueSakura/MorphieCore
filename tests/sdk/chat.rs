@@ -135,7 +135,7 @@ pub(super) async fn handle(
             input_image_tokens: Some(1),
             ..d.semantic.usage().unwrap()
         };
-        d.semantic = d.semantic.with_usage(source_usage).unwrap();
+        d.semantic = d.semantic.with_usage(Some(source_usage)).unwrap();
         if turn == 2 {
             let mut items = d.semantic.items().to_vec();
             let Item::Message(m) = &mut items[0].1 else {

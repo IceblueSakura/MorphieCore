@@ -40,7 +40,7 @@ pub struct StreamState {
     pub(super) message_envelopes: Vec<MessageEnvelope>,
     pub(super) part_ids: BTreeSet<PartId>,
     pub(super) terminal: Option<StreamTerminal>,
-    pub(super) usage: Vec<Usage>,
+    pub(super) usage: Option<Usage>,
     pub(super) progress: InteractionProgress,
     pub(super) details: TerminalDetails,
     pub(super) bytes: usize,
@@ -78,10 +78,7 @@ impl StreamState {
         self.terminal
     }
     pub fn usage(&self) -> Option<Usage> {
-        Usage::final_operation(&self.usage)
-    }
-    pub fn usage_reports(&self) -> &[Usage] {
-        &self.usage
+        self.usage
     }
     pub const fn progress(&self) -> InteractionProgress {
         self.progress

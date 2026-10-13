@@ -409,11 +409,7 @@ mod native_catalog {
         let mut settings = controlled.task.semantic.settings().clone();
         settings.reasoning =
             morphiecore::semantic::task::generation::ReasoningRequest::present(None, None);
-        settings.reasoning.budget =
-            Some(morphiecore::semantic::task::generation::ReasoningBudget {
-                hard_limit: Some(1024),
-                soft_target: None,
-            });
+        settings.reasoning.budget_tokens = Some(1024);
         controlled.task.semantic = controlled.task.semantic.with_settings(settings).unwrap();
         // Claude 5.x has no token budget: it becomes the nearest effort.
         assert!(representable(&endpoint, &controlled).is_ok());

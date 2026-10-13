@@ -559,16 +559,13 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             state.message_envelopes.push(group);
         }
         StreamEvent::Usage(usage) => {
-            if matches!(usage.scope, UsageScope::Item(id) if state.item(id).is_err()) {
-                return Err(EventError::Identity);
-            }
             usage.validate()?;
-            let old = state.usage.len();
-            Usage::update(&mut state.usage, usage).map_err(|error| match error {
-                GenerationError::Limit => EventError::Limit,
-                _ => EventError::Lifecycle,
-            })?;
-            state.charge((state.usage.len() - old) * std::mem::size_of::<Usage>())?;
+            // The report is final; a second one would contradict it.
+            if state.usage.is_some() {
+                return Err(EventError::Lifecycle);
+            }
+            state.charge(std::mem::size_of::<Usage>())?;
+            state.usage = Some(usage);
         }
         StreamEvent::Terminal { terminal, details } => {
             if terminal == StreamTerminal::Completed

@@ -184,10 +184,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                     .ok_or(CodecError::Invalid("thinking budget"))?;
                 settings.reasoning = ReasoningRequest::present(None, None);
                 settings.reasoning.mode = Presence::Value(ReasoningMode::Budgeted);
-                settings.reasoning.budget = Some(ReasoningBudget {
-                    hard_limit: Some(budget),
-                    soft_target: None,
-                });
+                settings.reasoning.budget_tokens = Some(budget);
             }
             Some("adaptive") => {
                 settings.reasoning = ReasoningRequest::present(None, None);

@@ -91,8 +91,6 @@ pub(super) fn usage(
     }
     DecodeDirection::Upstream.fields(usage, &allowed)?;
     let mut parsed = Usage {
-        scope: crate::semantic::task::generation::UsageScope::Operation,
-        basis: crate::semantic::task::generation::UsageBasis::Final,
         output_relation: crate::semantic::task::generation::OutputTokenRelation::IncludesReasoning,
         input_relation: crate::semantic::task::generation::InputTokenRelation::IncludesCache,
         total_relation: crate::semantic::task::generation::TotalTokenRelation::InputAndOutput,
@@ -539,11 +537,7 @@ fn response_with_usage(
     usage: Option<Usage>,
     resources: ResourceTable,
 ) -> Result<GenerationResponse, CodecError> {
-    let response = GenerationResponse::from_resources(items, outcome, resources)?;
-    Ok(match usage {
-        Some(usage) => response.with_usage(usage)?,
-        None => response,
-    })
+    Ok(GenerationResponse::from_resources(items, outcome, resources)?.with_usage(usage)?)
 }
 pub fn encode_chat(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> {
     if target.profile != Profile::Chat {

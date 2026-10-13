@@ -86,7 +86,7 @@ impl Request {
         }
         settings.reasoning.mode = Presence::Absent;
         settings.reasoning.display = Presence::Absent;
-        settings.reasoning.budget = None;
+        settings.reasoning.budget_tokens = None;
         let mut copy = self.clone();
         copy.task.semantic = copy.task.semantic.with_settings(settings)?;
         Ok(Some((copy, mapped)))

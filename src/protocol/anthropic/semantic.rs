@@ -164,7 +164,7 @@ impl Profile {
             .with_message_envelopes(intake.groups)?
             .with_progress(progress)?
             .with_details(details)?
-            .with_usage(usage)?;
+            .with_usage(Some(usage))?;
         let mut fidelity = FidelityRecords::default();
         bind(&mut fidelity, semantic.items(), target)?;
         Ok(DecodedResponse {
@@ -275,7 +275,7 @@ impl Profile {
         selected.total_relation = TotalTokenRelation::Unreported;
         selected.cached_input_tokens = usage.cached_input_tokens;
         selected.input_cache_write_tokens = usage.input_cache_write_tokens;
-        if selected != usage || response.semantic.usage_reports().len() != 1 {
+        if selected != usage {
             return Err(unsupported());
         }
         self.encode_response(&super::Message {

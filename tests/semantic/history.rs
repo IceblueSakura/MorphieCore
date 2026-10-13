@@ -293,7 +293,7 @@ mod client_managed_composition {
             .unwrap()
             .with_progress(InteractionProgress::NeedsContinuation)
             .unwrap()
-            .with_usage(usage)
+            .with_usage(Some(usage))
             .unwrap();
             let r2 = GenerationResponse::new(
                 vec![(
@@ -558,11 +558,10 @@ mod context_transforms {
             };
             message.role = MessageRole::Assistant;
         }
-        let mut usage = Usage::operation(10, 20, 30);
-        usage.scope = UsageScope::Item(ItemId::new(2));
+        let usage = Usage::operation(10, 20, 30);
         let response = GenerationResponse::new(items, Outcome::Completed)
             .unwrap()
-            .with_usage(usage)
+            .with_usage(Some(usage))
             .unwrap()
             .with_progress(InteractionProgress::NeedsContinuation)
             .unwrap();
@@ -577,7 +576,7 @@ mod context_transforms {
             selected.selections()[0].progress,
             Some(InteractionProgress::NeedsContinuation)
         );
-        assert_eq!(response.usage_reports(), &[usage]);
+        assert_eq!(response.usage(), Some(usage));
         assert_eq!(response.items().len(), 2);
     }
 
@@ -784,14 +783,14 @@ mod resource_table {
             ResourceTable::new(vec![(id, declaration())]).unwrap(),
         )
         .unwrap()
-        .with_usage(Usage::operation(3, 5, 8))
+        .with_usage(Some(Usage::operation(3, 5, 8)))
         .unwrap();
         let changed = ResourceLocation::Url(text("https://example.test/edited.png"));
         let edited = response
             .clone()
             .with_resources(ResourceTable::new(vec![(id, changed)]).unwrap())
             .unwrap();
-        assert_eq!(edited.usage_reports(), response.usage_reports());
+        assert_eq!(edited.usage(), response.usage());
         assert_eq!(edited.usage().unwrap().output_tokens, Some(5));
         let selected = ClientManaged::new(GenerationSettings::default())
             .unwrap()

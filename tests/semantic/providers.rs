@@ -1288,7 +1288,7 @@ mod modelbest {
             let mut edited = decoded.clone();
             let mut usage = edited.semantic.usage().unwrap();
             usage.reasoning_tokens = count;
-            edited.semantic = edited.semantic.with_usage(usage).unwrap();
+            edited.semantic = edited.semantic.with_usage(Some(usage)).unwrap();
             let encoded = provider()
                 .encode_response(&edited, &Contract::full())
                 .unwrap();
@@ -1375,7 +1375,7 @@ mod modelbest {
             let mut report = edited.semantic.usage().unwrap();
             report.input_cache_write_tokens = write;
             report.input_image_tokens = image;
-            edited.semantic = edited.semantic.with_usage(report).unwrap();
+            edited.semantic = edited.semantic.with_usage(Some(report)).unwrap();
             let encoded = provider()
                 .encode_response(&edited, &Contract::full())
                 .unwrap();

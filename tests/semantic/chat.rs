@@ -1580,7 +1580,7 @@ mod client_carrier {
             })
         };
         let mut usage = Usage::operation(3, 5, 8);
-        usage.scope = UsageScope::Session;
+        usage.input_relation = InputTokenRelation::ExcludesCacheReadAndWrite;
         let mut prediction = Usage::operation(3, 5, 8);
         prediction.accepted_prediction_tokens = Some(1);
         let response = |item| {
@@ -1593,7 +1593,7 @@ mod client_carrier {
                 .clone()
                 .with_progress(InteractionProgress::TurnFinished)
                 .unwrap(),
-            base.semantic.clone().with_usage(usage).unwrap(),
+            base.semantic.clone().with_usage(Some(usage)).unwrap(),
             response(call(ToolArguments::Structured(
                 StructuredValue::new(json!({"n":1})).unwrap(),
             ))),
@@ -1625,7 +1625,7 @@ mod client_carrier {
         assert_eq!(encoded["output"][1]["call_id"], "c");
         assert_eq!(decoded.semantic.message_owners().len(), 1);
         let mut counted = base.clone();
-        counted.semantic = counted.semantic.with_usage(prediction).unwrap();
+        counted.semantic = counted.semantic.with_usage(Some(prediction)).unwrap();
         let projected = adapter.encode_response(&counted, &contract()).unwrap();
         no_attachment(&projected);
         assert_eq!(projected["usage"]["total_tokens"], 8);

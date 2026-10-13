@@ -1379,8 +1379,8 @@ impl EventDecoder {
                 &actual, &expected,
             )));
         }
-        for usage in decoded.semantic.usage_reports() {
-            self.emit(StreamEvent::Usage(*usage), out)?;
+        if let Some(usage) = decoded.semantic.usage() {
+            self.emit(StreamEvent::Usage(usage), out)?;
         }
         self.emit(
             StreamEvent::Terminal {

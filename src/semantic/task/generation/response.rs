@@ -75,7 +75,7 @@ pub struct GenerationResponse {
     message_owners: crate::semantic::task::generation::history::envelope::MessageEnvelopes,
     outcome: Outcome,
     progress: crate::semantic::task::generation::InteractionProgress,
-    usage: Vec<Usage>,
+    usage: Option<Usage>,
     details: TerminalDetails,
 }
 impl GenerationResponse {
@@ -115,7 +115,7 @@ impl GenerationResponse {
             message_owners: Default::default(),
             outcome,
             progress: crate::semantic::task::generation::InteractionProgress::Unreported,
-            usage: vec![],
+            usage: None,
             details: TerminalDetails::default(),
         })
     }
@@ -130,19 +130,11 @@ impl GenerationResponse {
     pub const fn progress(&self) -> crate::semantic::task::generation::InteractionProgress {
         self.progress
     }
-    pub fn with_usage(self, usage: Usage) -> Result<Self, GenerationError> {
-        self.with_usage_reports(vec![usage])
-    }
-    pub fn with_usage_reports(mut self, reports: Vec<Usage>) -> Result<Self, GenerationError> {
-        if reports.len() > crate::semantic::task::generation::MAX_ITEMS {
-            return Err(GenerationError::Limit);
+    pub fn with_usage(mut self, usage: Option<Usage>) -> Result<Self, GenerationError> {
+        if let Some(usage) = usage {
+            usage.validate()?;
         }
-        let mut values = Vec::new();
-        for report in reports {
-            Usage::update(&mut values, report)?;
-        }
-        Usage::check_owners(&values, &self.items)?;
-        self.usage = values;
+        self.usage = usage;
         let details = self.details.clone();
         self.with_details(details)
     }
@@ -159,7 +151,7 @@ impl GenerationResponse {
         if bytes
             .saturating_add(details.bytes())
             .saturating_add(self.resources.uncharged_bytes(&self.items)?)
-            .saturating_add(self.usage.len() * std::mem::size_of::<Usage>())
+            .saturating_add(usize::from(self.usage.is_some()) * std::mem::size_of::<Usage>())
             .saturating_add(self.message_owners.validate(&self.items)?)
             > crate::semantic::task::generation::MAX_TOTAL_BYTES
         {
@@ -205,10 +197,7 @@ impl GenerationResponse {
         self.outcome
     }
     pub fn usage(&self) -> Option<Usage> {
-        Usage::final_operation(&self.usage)
-    }
-    pub fn usage_reports(&self) -> &[Usage] {
-        &self.usage
+        self.usage
     }
     pub fn resources(&self) -> &crate::semantic::task::generation::ResourceTable {
         &self.resources
@@ -242,7 +231,7 @@ impl GenerationResponse {
             &self.items,
             response.items(),
         )?;
-        response = response.with_usage_reports(self.usage)?;
+        response = response.with_usage(self.usage)?;
         Ok(response)
     }
 }

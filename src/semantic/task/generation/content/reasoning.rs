@@ -53,24 +53,6 @@ pub enum ReasoningDisplay {
     Summary,
     Omitted,
 }
-/// Reasoning-token constraints, distinct from a total response-token ceiling.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ReasoningBudget {
-    pub hard_limit: Option<u64>,
-    pub soft_target: Option<u64>,
-}
-impl ReasoningBudget {
-    pub fn validate(self) -> Result<(), crate::semantic::task::generation::GenerationError> {
-        if self.hard_limit.is_none() && self.soft_target.is_none()
-            || self.hard_limit == Some(0)
-            || self.soft_target == Some(0)
-            || matches!((self.soft_target, self.hard_limit), (Some(target), Some(limit)) if target > limit)
-        {
-            return Err(crate::semantic::task::generation::GenerationError::InvalidControl);
-        }
-        Ok(())
-    }
-}
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ReasoningRequest {
     pub presence: ReasoningPresence,
@@ -78,7 +60,9 @@ pub struct ReasoningRequest {
     pub summary: crate::semantic::value::Presence<ReasoningSummary>,
     pub context: crate::semantic::value::Presence<ReasoningContext>,
     pub mode: crate::semantic::value::Presence<ReasoningMode>,
-    pub budget: Option<ReasoningBudget>,
+    /// Reasoning tokens, distinct from the response-token ceiling. Whether it is a
+    /// target or a cap is the target's rule; Messages documents a target.
+    pub budget_tokens: Option<u64>,
     pub display: crate::semantic::value::Presence<ReasoningDisplay>,
     encrypted_output: bool,
 }
@@ -112,15 +96,15 @@ impl ReasoningRequest {
         self.summary.value().copied()
     }
     pub fn validate(&self) -> Result<(), crate::semantic::task::generation::GenerationError> {
-        if let Some(budget) = self.budget {
-            budget.validate()?;
+        if self.budget_tokens == Some(0) {
+            return Err(crate::semantic::task::generation::GenerationError::InvalidControl);
         }
         if self.presence != ReasoningPresence::Present
             && (!self.effort.is_absent()
                 || !self.summary.is_absent()
                 || !self.context.is_absent()
                 || !self.mode.is_absent()
-                || self.budget.is_some()
+                || self.budget_tokens.is_some()
                 || !self.display.is_absent())
         {
             return Err(crate::semantic::task::generation::GenerationError::InvalidControl);
@@ -132,9 +116,9 @@ impl ReasoningRequest {
         {
             return Err(crate::semantic::task::generation::GenerationError::InvalidControl);
         }
-        if self.mode.value() == Some(&ReasoningMode::Budgeted) && self.budget.is_none()
+        if self.mode.value() == Some(&ReasoningMode::Budgeted) && self.budget_tokens.is_none()
             || self.effort() == Some(ReasoningEffort::None)
-                && (self.budget.is_some()
+                && (self.budget_tokens.is_some()
                     || matches!(
                         self.mode.value(),
                         Some(ReasoningMode::Adaptive | ReasoningMode::Budgeted)
@@ -155,15 +139,14 @@ impl ReasoningRequest {
     /// A token budget as the nearest effort, for targets without budgets (Claude
     /// Code's "think", "think hard" and "ultrathink" are about 4k, 10k and 32k).
     pub fn budget_as_effort(&self) -> Option<ReasoningEffort> {
-        let budget = self.budget?;
-        Some(match budget.hard_limit.or(budget.soft_target)? {
+        Some(match self.budget_tokens? {
             0..8192 => ReasoningEffort::Low,
             8192..24576 => ReasoningEffort::Medium,
             _ => ReasoningEffort::High,
         })
     }
     pub fn requires_extended_controls(&self) -> bool {
-        self.budget.is_some()
+        self.budget_tokens.is_some()
             || !self.display.is_absent()
             || matches!(
                 self.mode.value(),

@@ -188,6 +188,6 @@ pub fn materialize(state: &StreamState) -> Result<GenerationResponse, EventError
         groups.extend_from_slice(&state.message_envelopes);
         response = response.with_message_envelopes(groups)?;
     }
-    response = response.with_usage_reports(state.usage.clone())?;
+    response = response.with_usage(state.usage)?;
     Ok(response)
 }

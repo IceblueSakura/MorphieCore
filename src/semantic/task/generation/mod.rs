@@ -26,9 +26,8 @@ pub use content::item::{
     MessageRole, Part, Phase,
 };
 pub use content::reasoning::{
-    ReasoningBudget, ReasoningContent, ReasoningContext, ReasoningDisplay, ReasoningEffort,
-    ReasoningItem, ReasoningMode, ReasoningPresence, ReasoningReplay, ReasoningRequest,
-    ReasoningSummary,
+    ReasoningContent, ReasoningContext, ReasoningDisplay, ReasoningEffort, ReasoningItem,
+    ReasoningMode, ReasoningPresence, ReasoningReplay, ReasoningRequest, ReasoningSummary,
 };
 pub use content::structured::StructuredValue;
 pub use content::text::{
@@ -73,9 +72,7 @@ pub use tools::{
     ToolNamespace, ToolReference,
 };
 pub use usage::views::{DerivedTokenCount, UsageFormula};
-pub use usage::{
-    InputTokenRelation, OutputTokenRelation, TotalTokenRelation, Usage, UsageBasis, UsageScope,
-};
+pub use usage::{InputTokenRelation, OutputTokenRelation, TotalTokenRelation, Usage};
 
 pub use response::{GenerationResponse, IncompleteReason, Outcome, ResponseError, TerminalDetails};
 pub use stream::{

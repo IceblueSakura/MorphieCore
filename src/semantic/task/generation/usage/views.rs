@@ -12,8 +12,7 @@ pub enum UsageFormula {
     /// Output total less reported reasoning; the remainder is not visible text.
     OutputMinusReasoning,
 }
-/// No independently mutable count is stored. This view does not assert finality
-/// of a snapshot and must never be summed across cumulative stream reports.
+/// No independently mutable count is stored; the view is derived from its report.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DerivedTokenCount<'a> {
     source: &'a Usage,

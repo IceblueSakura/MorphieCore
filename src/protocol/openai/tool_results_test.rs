@@ -32,8 +32,8 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
         .with_progress(InteractionProgress::AwaitingToolResults)
         .unwrap();
     let mut usage = Usage::operation(2, 3, 5);
-    usage.scope = UsageScope::Session;
-    let scoped = base.with_usage(usage).unwrap();
+    usage.input_relation = InputTokenRelation::ExcludesCacheReadAndWrite;
+    let disjoint = base.with_usage(Some(usage)).unwrap();
     let replay = GenerationResponse::new(
         vec![(
             ItemId::new(1),
@@ -80,7 +80,7 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
         Outcome::Completed,
     )
     .unwrap();
-    for semantic in [&structured, &progress, &scoped, &replay, &provider] {
+    for semantic in [&structured, &progress, &disjoint, &replay, &provider] {
         for profile in [Profile::Chat, Profile::Responses] {
             let forged = ResponseRepresentation {
                 semantic: std::borrow::Cow::Borrowed(semantic),

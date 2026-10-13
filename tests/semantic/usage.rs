@@ -56,8 +56,6 @@ mod usage_views {
     }
     fn usage() -> Usage {
         Usage {
-            scope: UsageScope::Operation,
-            basis: UsageBasis::Final,
             input_relation:
                 morphiecore::semantic::task::generation::InputTokenRelation::IncludesCache,
             output_relation: OutputTokenRelation::IncludesReasoning,
@@ -97,8 +95,8 @@ mod usage_views {
         assert_eq!(usage.total_tokens, Some(22));
     }
 }
-mod scoped_usage {
-    //! Counting scope, basis and relationships remain explicit reported facts.
+mod usage_relations {
+    //! Counting relationships remain explicit reported facts.
     use crate::events_support::{self as events, text};
     use morphiecore::{
         lowering::generation::RepresentationError,
@@ -139,7 +137,7 @@ mod scoped_usage {
         assert_eq!(usage.input_tokens, None);
         let response = GenerationResponse::new(vec![message()], Outcome::Completed)
             .unwrap()
-            .with_usage(usage)
+            .with_usage(Some(usage))
             .unwrap();
         assert_eq!(response.usage().unwrap().input_tokens, None);
         for profile in [Profile::Chat, Profile::Responses] {
@@ -157,70 +155,16 @@ mod scoped_usage {
         }
     }
     #[test]
-    fn cumulative_item_reports_replace_not_add_and_final_reports_cannot_change() {
-        let mut first = Usage::operation(2, 3, 5);
-        first.scope = UsageScope::Item(ItemId::new(1));
-        first.basis = UsageBasis::Cumulative;
-        let mut last = first;
-        last.output_tokens = Some(6);
-        last.total_tokens = Some(8);
-        last.basis = UsageBasis::Final;
-        let response = GenerationResponse::new(vec![message()], Outcome::Completed)
-            .unwrap()
-            .with_usage_reports(vec![first, last])
-            .unwrap();
-        assert_eq!(response.usage(), None);
-        assert_eq!(response.usage_reports(), &[last]);
-        assert!(response.clone().with_items(vec![]).is_err());
-        assert!(
-            GenerationResponse::new(vec![message()], Outcome::Completed)
-                .unwrap()
-                .with_usage_reports(vec![last, last])
-                .is_err()
-        );
-        let mut lower = first;
-        lower.output_tokens = Some(1);
-        lower.total_tokens = Some(3);
-        assert!(
-            GenerationResponse::new(vec![message()], Outcome::Completed)
-                .unwrap()
-                .with_usage_reports(vec![first, lower])
-                .is_err()
-        );
-    }
-    #[test]
-    fn partial_relations_and_delta_lower_bounds_reject_contradictions_without_filling_counts() {
+    fn contradictory_relations_and_a_second_final_report_are_rejected() {
         let mut partial = Usage::operation(2, 3, 5);
         partial.input_tokens = None;
         partial.total_tokens = Some(2);
         assert!(partial.validate().is_err());
-        let mut delta = Usage::operation(2, 3, 5);
-        delta.basis = UsageBasis::Delta;
-        let too_small = Usage::operation(2, 3, 5);
-        assert!(
-            GenerationResponse::new(vec![message()], Outcome::Completed)
-                .unwrap()
-                .with_usage_reports(vec![delta, delta, too_small])
-                .is_err()
-        );
-        let total = Usage::operation(4, 6, 10);
-        let response = GenerationResponse::new(vec![message()], Outcome::Completed)
-            .unwrap()
-            .with_usage_reports(vec![delta, delta, total])
-            .unwrap();
-        assert_eq!(response.usage(), Some(total));
-        assert_eq!(response.usage_reports().len(), 3);
-        let mut incomplete = total;
-        incomplete.input_tokens = None;
+        let state = reduce(StreamState::new(), StreamEvent::Started).unwrap();
+        let state = reduce(state, StreamEvent::Usage(Usage::operation(2, 3, 5))).unwrap();
         assert_eq!(
-            GenerationResponse::new(vec![], Outcome::Completed)
-                .unwrap()
-                .with_usage(incomplete)
-                .unwrap()
-                .usage()
-                .unwrap()
-                .input_tokens,
-            None
+            reduce(state, StreamEvent::Usage(Usage::operation(2, 3, 5))).err(),
+            Some(EventError::Lifecycle)
         );
     }
 }
@@ -285,9 +229,7 @@ mod billing_modal_usage {
         decoded.semantic = decoded
             .semantic
             .clone()
-            .with_usage(Usage {
-                scope: morphiecore::semantic::task::generation::UsageScope::Operation,
-                basis: morphiecore::semantic::task::generation::UsageBasis::Final,
+            .with_usage(Some(Usage {
                 input_relation:
                     morphiecore::semantic::task::generation::InputTokenRelation::IncludesCache,
                 output_relation:
@@ -297,7 +239,7 @@ mod billing_modal_usage {
                 input_image_tokens: Some(5),
                 input_text_tokens: Some(2),
                 ..usage
-            })
+            }))
             .unwrap();
         let edited = provider
             .encode_response(&decoded, &Contract::full())
@@ -310,9 +252,7 @@ mod billing_modal_usage {
         decoded.semantic = decoded
             .semantic
             .clone()
-            .with_usage(Usage {
-                scope: morphiecore::semantic::task::generation::UsageScope::Operation,
-                basis: morphiecore::semantic::task::generation::UsageBasis::Final,
+            .with_usage(Some(Usage {
                 input_relation:
                     morphiecore::semantic::task::generation::InputTokenRelation::IncludesCache,
                 output_relation:
@@ -323,7 +263,7 @@ mod billing_modal_usage {
                 input_text_tokens: None,
                 output_text_tokens: None,
                 ..usage
-            })
+            }))
             .unwrap();
         let deleted = client.encode_response(&decoded, &Contract::full()).unwrap();
         assert_eq!(
@@ -618,7 +558,7 @@ mod subscription_accounting {
         let mut usage = decoded.semantic.usage().unwrap();
         usage.output_tokens = Some(7);
         usage.total_tokens = Some(10);
-        decoded.semantic = decoded.semantic.with_usage(usage).unwrap();
+        decoded.semantic = decoded.semantic.with_usage(Some(usage)).unwrap();
         assert!(
             source.encode_response(&decoded, &Contract::full()).unwrap()["usage"]
                 .get("cost_in_usd_ticks")
@@ -668,10 +608,10 @@ mod projection {
             Outcome::Completed,
         )
         .unwrap()
-        .with_usage(Usage {
+        .with_usage(Some(Usage {
             input_image_tokens: Some(7),
             ..Usage::operation(10, 2, 12)
-        })
+        }))
         .unwrap()
     }
 
@@ -682,7 +622,7 @@ mod projection {
             protocol::openai::{events::EventEncoder, responses},
             semantic::value::Presence,
         };
-        let source = response().with_usage_reports(vec![]).unwrap();
+        let source = response().with_usage(None).unwrap();
         let fidelity = FidelityRecords::default();
         for fingerprint in [
             Presence::Absent,
@@ -853,7 +793,7 @@ mod projection {
         variants.push(
             GenerationResponse::new(items, Outcome::Completed)
                 .unwrap()
-                .with_usage(original.usage().unwrap())
+                .with_usage(original.usage())
                 .unwrap(),
         );
         let mut items = original.items().to_vec();

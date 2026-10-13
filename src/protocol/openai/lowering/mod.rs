@@ -259,9 +259,7 @@ pub(super) fn check_usage(
     rules: &crate::protocol::openai::dialect::adaptation::WireRules,
 ) -> Result<(), RepresentationError> {
     usage.validate()?;
-    if usage.scope != UsageScope::Operation
-        || usage.basis != UsageBasis::Final
-        || usage.output_relation != OutputTokenRelation::IncludesReasoning
+    if usage.output_relation != OutputTokenRelation::IncludesReasoning
         || usage.total_relation != TotalTokenRelation::InputAndOutput
         || usage.input_relation != InputTokenRelation::IncludesCache
         || usage.input_tokens.is_none()
@@ -336,13 +334,7 @@ pub fn lower_response<'a>(
             Profile::Responses => projection::responses_usage(usage, &c.adaptation.rules)?,
         };
         if !losses.is_empty() {
-            // Preserve every report and its scope; projection is not aggregation.
-            let reports = r
-                .usage_reports()
-                .iter()
-                .map(|report| if *report == usage { projected } else { *report })
-                .collect();
-            semantic = std::borrow::Cow::Owned(semantic.into_owned().with_usage_reports(reports)?);
+            semantic = std::borrow::Cow::Owned(semantic.into_owned().with_usage(Some(projected))?);
             projection.extend(losses.into_iter().map(|loss| {
                 projection::ProjectionStage::response(profile, c.adaptation.profile_id, Some(loss))
             }));
@@ -382,13 +374,6 @@ fn validate_response(
     }
     if r.progress() != InteractionProgress::Unreported {
         return Err(RepresentationError::InteractionProgress);
-    }
-    if r.usage_reports().len() > 1
-        || r.usage_reports().iter().any(|report| {
-            report.scope != UsageScope::Operation || report.basis != UsageBasis::Final
-        })
-    {
-        return Err(RepresentationError::UsageProjection);
     }
     if metadata
         .context
