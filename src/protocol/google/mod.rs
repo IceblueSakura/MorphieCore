@@ -41,6 +41,7 @@ pub(crate) fn check_public_media_url(raw: &str) -> Result<(), CodecError> {
 /// The implemented semantic slice, not a Provider/model capability inventory.
 pub fn semantic_contract() -> GenerationSemanticContract {
     GenerationSemanticContract {
+        compaction: false,
         instructions: true,
         temperature: true,
         max_output_tokens: true,

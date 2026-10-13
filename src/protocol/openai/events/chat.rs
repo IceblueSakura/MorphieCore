@@ -184,7 +184,7 @@ impl EventDecoder {
         if let Some((wire_id, data)) = details.and_then(|d| d.responses_encrypted) {
             let item = self.reasoning_owner(&mut out)?;
             self.fidelity.record_response_item_id(item, &wire_id)?;
-            let replay = ReasoningReplay {
+            let replay = ItemReplay {
                 value: ReplayValue::final_value(
                     ReplayFormat::ResponsesEncrypted,
                     text(&data, "encrypted reasoning", MAX_TEXT_BYTES)?,

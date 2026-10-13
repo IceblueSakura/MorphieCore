@@ -27,7 +27,7 @@ pub use content::item::{
 };
 pub use content::reasoning::{
     ReasoningContent, ReasoningContext, ReasoningDisplay, ReasoningEffort, ReasoningItem,
-    ReasoningMode, ReasoningPresence, ReasoningReplay, ReasoningRequest, ReasoningSummary,
+    ReasoningMode, ReasoningPresence, ReasoningRequest, ReasoningSummary,
 };
 pub use content::structured::StructuredValue;
 pub use content::text::{
@@ -39,7 +39,7 @@ pub use history::continuation::{CallReference, Continuation};
 pub use history::envelope::{MessageEnvelope, MessageEnvelopeRole};
 pub use history::group::GroupId;
 pub use history::progress::InteractionProgress;
-pub use history::replay::{ReplayFormat, ReplayValue};
+pub use history::replay::{ItemReplay, ReplayFormat, ReplayValue};
 pub use history::turn::{
     ContinuationError, ResponseContinuation, ResponseId, ResponseRelation, ResultReadiness, TurnId,
 };

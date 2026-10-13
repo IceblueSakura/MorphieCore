@@ -1,5 +1,5 @@
-//! Downstream carrier for upstream-issued opaque reasoning (signatures, encrypted
-//! content). The envelope is tagged, not encrypted or authenticated: the upstream
+//! Downstream carrier for upstream-issued reasoning and compaction content.
+//! The envelope is tagged, not encrypted or authenticated: the upstream
 //! issuer validates the payload, and the tag only decides whether a value may return
 //! to the same Provider/model. Clients must treat the whole string as opaque.
 use crate::semantic::{
@@ -34,6 +34,7 @@ struct Envelope<'a> {
 fn format_tag(format: ReplayFormat) -> &'static str {
     match format {
         ReplayFormat::ResponsesEncrypted => "openai-responses",
+        ReplayFormat::ResponsesCompaction => "openai-compaction",
         ReplayFormat::AnthropicMessagesThinking => "anthropic-thinking",
         ReplayFormat::AnthropicMessagesRedactedThinking => "anthropic-redacted-thinking",
         ReplayFormat::GoogleGenerateContentPart => "gemini-part",
@@ -44,6 +45,7 @@ fn format_tag(format: ReplayFormat) -> &'static str {
 fn parse_format(tag: &str) -> Option<ReplayFormat> {
     Some(match tag {
         "openai-responses" => ReplayFormat::ResponsesEncrypted,
+        "openai-compaction" => ReplayFormat::ResponsesCompaction,
         "anthropic-thinking" => ReplayFormat::AnthropicMessagesThinking,
         "anthropic-redacted-thinking" => ReplayFormat::AnthropicMessagesRedactedThinking,
         "gemini-part" => ReplayFormat::GoogleGenerateContentPart,

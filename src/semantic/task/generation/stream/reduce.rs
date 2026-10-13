@@ -162,11 +162,11 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 }
                 state.charge(call_id.as_str().len() + result.len())?;
             }
+            if matches!(kind, ItemKind::Compaction) && replay.is_none() {
+                return Err(EventError::Lifecycle);
+            }
             if let Some(r) = &replay {
-                r.validate()?;
-                if !matches!(kind, ItemKind::Reasoning) {
-                    return Err(EventError::Lifecycle);
-                }
+                r.validate(&kind)?;
                 state.charge(r.value.as_str().len())?;
             }
             state.items.push(StreamItem {
@@ -505,9 +505,14 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             if owner.kind.call().is_some() && owner.parts.len() != 1 {
                 return Err(EventError::Lifecycle);
             }
+            if matches!(owner.kind, ItemKind::Compaction)
+                && (replay.is_none() || status != ItemLifecycle::Completed)
+            {
+                return Err(EventError::Lifecycle);
+            }
             if let Some(r) = &replay {
-                r.validate()?;
-                if !matches!(owner.kind, ItemKind::Reasoning) || r.value.replay_token().is_none() {
+                r.validate(&owner.kind)?;
+                if r.value.replay_token().is_none() {
                     return Err(EventError::Lifecycle);
                 }
                 if owner.replay.as_ref().is_some_and(|old| {

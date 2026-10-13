@@ -268,6 +268,9 @@ impl EventEncoder {
                     ItemKind::Reasoning => {
                         json!({"id":id,"type":"reasoning","summary":[],"status":"in_progress"})
                     }
+                    ItemKind::Compaction => {
+                        json!({"id":id,"type":"compaction"})
+                    }
                     ItemKind::ConfigurationUpdate { effort } => {
                         let mut v = json!({"id":id,"type":"configuration_update"});
                         if let Some(effort) = effort {
@@ -308,7 +311,10 @@ impl EventEncoder {
                     }
                 };
                 if let Some(r) = replay
-                    && r.value.format() == ReplayFormat::ResponsesEncrypted
+                    && matches!(
+                        r.value.format(),
+                        ReplayFormat::ResponsesEncrypted | ReplayFormat::ResponsesCompaction
+                    )
                 {
                     v["encrypted_content"] = json!(r.value.as_str());
                 }

@@ -25,6 +25,7 @@ Protocol research notes with dated findings live in `refs/`: [Multimodal carrier
 - [Create response](https://developers.openai.com/api/reference/resources/responses/methods/create)
 - [Streaming events](https://developers.openai.com/api/reference/resources/responses/streaming-events)
 - [Reasoning](https://developers.openai.com/api/docs/guides/reasoning)
+- [Compaction](https://developers.openai.com/api/docs/guides/compaction)
 - [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
 - [Migrate to Responses](https://developers.openai.com/api/docs/guides/migrate-to-responses)
 - [File inputs](https://developers.openai.com/api/docs/guides/file-inputs)

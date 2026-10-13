@@ -206,6 +206,13 @@ pub fn items(
                 )?;
             }
             Item::ConfigurationUpdate(_) => {}
+            Item::Compaction(value) => {
+                value.validate_compaction()?;
+                if !response && value.replay_token().is_none() {
+                    return Err(GenerationError::InvalidReplay);
+                }
+                add(&mut bytes, value.as_str())?;
+            }
             Item::Program(p) => {
                 if calls
                     .insert((None, p.call_id.as_str()), CallKind::Program)

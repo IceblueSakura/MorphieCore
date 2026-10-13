@@ -30,8 +30,8 @@ pub fn contract() -> Contract {
     c.replay_origin = Some(origin());
     c
 }
-pub fn token(s: &str, final_value: bool) -> ReasoningReplay {
-    ReasoningReplay {
+pub fn token(s: &str, final_value: bool) -> ItemReplay {
+    ItemReplay {
         origin: Some(origin()),
         value: if final_value {
             ReplayValue::final_value(ReplayFormat::ResponsesEncrypted, text(s))

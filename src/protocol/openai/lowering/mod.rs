@@ -532,6 +532,18 @@ fn represent_reasoning(
         return Err(RepresentationError::Reasoning);
     }
     for (id, item) in items {
+        if let Item::Compaction(value) = item {
+            if profile != Profile::Responses {
+                return Err(RepresentationError::UnmigratedSemantic);
+            }
+            if !fidelity.compaction_matches(*id, value, origin) {
+                return Err(RepresentationError::ReplayOrigin);
+            }
+            // No partial marker exists on a static compaction carrier.
+            if value.replay_token().is_none() {
+                return Err(RepresentationError::ReplayPhase);
+            }
+        }
         if matches!(item, Item::Reasoning(r) if r.replay.as_ref().is_some_and(|value| value.format() != ReplayFormat::ResponsesEncrypted))
         {
             return Err(RepresentationError::ReplayFormat);

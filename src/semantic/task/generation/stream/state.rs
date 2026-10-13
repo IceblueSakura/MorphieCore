@@ -27,7 +27,7 @@ pub struct StreamItem {
     pub kind: ItemKind,
     pub parts: Vec<StreamPart>,
     pub status: Option<ItemLifecycle>,
-    pub replay: Option<ReasoningReplay>,
+    pub replay: Option<ItemReplay>,
 }
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct StreamState {

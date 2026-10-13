@@ -386,6 +386,15 @@ pub(super) fn decode_items(
                     effort: configuration_effort(o, response, direction)?,
                 })
             }
+            Some("compaction") => {
+                direction.fields(o, &["type", "id", "encrypted_content"])?;
+                if response {
+                    text(string(o, "id")?, "compaction id", 256)?;
+                }
+                let value = compaction_content(o, true)?;
+                b.fidelity.record_compaction(id, &value, None)?;
+                Item::Compaction(value)
+            }
             Some("program") => {
                 direction.fields(o, &["type", "id", "call_id", "code", "fingerprint"])?;
                 text(string(o, "id")?, "program id", 256)?;
@@ -569,16 +578,38 @@ pub(super) fn decode_items(
             }
             _ => return Err(CodecError::Unsupported("Responses item kind".into())),
         };
-        // Function/custom IDs are optional/nullable; other required IDs have
+        // Function/custom and compaction IDs are optional/nullable in input; required IDs have
         // already been validated by their owning branch or complete boundary.
-        if !(matches!(typ, Some("function_call" | "custom_tool_call"))
-            && o.get("id").is_some_and(Value::is_null))
+        if !(matches!(
+            typ,
+            Some("function_call" | "custom_tool_call" | "compaction")
+        ) && o.get("id").is_some_and(Value::is_null))
         {
             b.record_id(id, o)?;
         }
         b.items.push((id, item));
     }
     Ok(())
+}
+/// Compaction snapshots have no readable parts or native lifecycle field.
+/// https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/responses/response_compaction_item.py
+pub(super) fn compaction_content(
+    o: &Map<String, Value>,
+    final_value: bool,
+) -> Result<ReplayValue, CodecError> {
+    let content = Text::allowing_empty(
+        string(o, "encrypted_content")?,
+        "compaction content",
+        MAX_TEXT_BYTES,
+    )
+    .map_err(|_| CodecError::Limit)?;
+    let value = if final_value {
+        ReplayValue::final_value(ReplayFormat::ResponsesCompaction, content)
+    } else {
+        ReplayValue::partial(ReplayFormat::ResponsesCompaction, content)
+    };
+    value.validate_compaction()?;
+    Ok(value)
 }
 pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, CodecError> {
     if target.profile != Profile::Responses {
@@ -720,6 +751,9 @@ pub(super) fn encode_items(
                 json!({"type":"program_output","call_id":o.call_id.as_str(),"result":o.result,"status":status_label(o.status)})
             }
             Item::Reasoning(r) => crate::protocol::openai::reasoning::encode_item(r, response),
+            Item::Compaction(value) => {
+                json!({"type":"compaction","encrypted_content":value.as_str()})
+            }
             Item::ProviderTool(_) => unreachable!("checked Provider carrier"),
         };
         if response {

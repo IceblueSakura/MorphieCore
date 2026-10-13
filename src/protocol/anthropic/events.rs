@@ -207,7 +207,7 @@ impl GenerationSseDecoder {
                     };
                     self.fidelity
                         .record_replay(item, &reasoning, Some(self.target.origin()))?;
-                    Some(ReasoningReplay {
+                    Some(ItemReplay {
                         value: replay,
                         origin: Some(self.target.origin()),
                     })

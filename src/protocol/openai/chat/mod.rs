@@ -677,6 +677,7 @@ pub(super) fn encode_items_with(
             | Item::ProviderTool(_)
             | Item::CustomResult(_)
             | Item::ConfigurationUpdate(_)
+            | Item::Compaction(_)
             | Item::Program(_)
             | Item::ProgramOutput(_) => {
                 unreachable!("lowering rejects unsupported Chat items")

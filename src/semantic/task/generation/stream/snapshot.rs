@@ -131,6 +131,13 @@ impl StreamItem {
                     })
                     .collect::<Result<_, EventError>>()?,
             }),
+            ItemKind::Compaction => Item::Compaction(
+                i.replay
+                    .as_ref()
+                    .ok_or(EventError::Lifecycle)?
+                    .value
+                    .clone(),
+            ),
             ItemKind::ConfigurationUpdate { effort } => {
                 Item::ConfigurationUpdate(ConfigurationUpdate { effort: *effort })
             }

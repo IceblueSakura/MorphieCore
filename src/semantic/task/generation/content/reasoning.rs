@@ -136,21 +136,6 @@ impl ReasoningRequest {
         Ok(())
     }
 }
-/// Event-owned value and trusted intake scope. Materialization moves the value
-/// into its reasoning item; fidelity retains only a source/dependency binding.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ReasoningReplay {
-    pub value: crate::semantic::task::generation::ReplayValue,
-    pub origin: Option<crate::semantic::value::ReplayOrigin>,
-}
-impl ReasoningReplay {
-    pub fn validate(&self) -> Result<(), crate::semantic::task::generation::GenerationError> {
-        self.value.validate_reasoning()
-    }
-    pub fn permits(&self, target: Option<&crate::semantic::value::ReplayOrigin>) -> bool {
-        self.origin.is_some() && self.origin.as_ref() == target
-    }
-}
 /// Readable reasoning content. This is not assistant message text or encrypted replay.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReasoningContent {

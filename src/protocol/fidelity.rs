@@ -67,7 +67,7 @@ pub struct FidelityRecords {
     /// Messages images that must fail rather than be downsized when oversized.
     strict_image_sizes: std::collections::BTreeSet<PartId>,
     input_text_forms: std::collections::BTreeSet<PartId>,
-    reasoning_replay: BTreeMap<ItemId, ReplayBinding>,
+    item_replay: BTreeMap<ItemId, ReplayBinding>,
     audio: BTreeMap<PartId, AudioBinding>,
     response_extras: Option<ResponseExtras>,
     routing_extras: Option<ResponseExtras>,
@@ -221,20 +221,37 @@ impl FidelityRecords {
             return Ok(());
         };
         value.validate_reasoning()?;
-        if !self.reasoning_replay.contains_key(&owner) && self.reasoning_replay.len() >= MAX_ITEMS {
+        self.record_opaque(owner, value, fingerprint(semantic), origin)
+    }
+    pub fn record_compaction(
+        &mut self,
+        owner: ItemId,
+        value: &ReplayValue,
+        origin: Option<ReplayOrigin>,
+    ) -> Result<(), CodecError> {
+        value.validate_compaction()?;
+        self.record_opaque(owner, value, value.fingerprint(), origin)
+    }
+    fn record_opaque(
+        &mut self,
+        owner: ItemId,
+        value: &ReplayValue,
+        dependency: [u8; 32],
+        origin: Option<ReplayOrigin>,
+    ) -> Result<(), CodecError> {
+        if !self.item_replay.contains_key(&owner) && self.item_replay.len() >= MAX_ITEMS {
             return Err(CodecError::Limit);
         }
         let final_value = value.replay_token().is_some();
-        let dependency = fingerprint(semantic);
-        if let Some(old) = self.reasoning_replay.get(&owner) {
+        if let Some(old) = self.item_replay.get(&owner) {
             if old.final_value && !final_value {
-                return Err(CodecError::Invalid("encrypted reasoning phase"));
+                return Err(CodecError::Invalid("opaque replay phase"));
             }
             if old.origin.is_some() && old.origin != origin {
                 return Err(CodecError::Invalid("replay origin rebinding"));
             }
         }
-        self.reasoning_replay.insert(
+        self.item_replay.insert(
             owner,
             ReplayBinding {
                 origin,
@@ -244,13 +261,25 @@ impl FidelityRecords {
         );
         Ok(())
     }
+    pub fn compaction_matches(
+        &self,
+        owner: ItemId,
+        value: &ReplayValue,
+        target: Option<&ReplayOrigin>,
+    ) -> bool {
+        self.item_replay.get(&owner).is_some_and(|binding| {
+            binding.origin.is_some()
+                && binding.origin.as_ref() == target
+                && binding.dependency == value.fingerprint()
+        })
+    }
     pub fn replay_matches(
         &self,
         owner: ItemId,
         semantic: &ReasoningItem,
         target: Option<&ReplayOrigin>,
     ) -> bool {
-        self.reasoning_replay.get(&owner).is_some_and(|binding| {
+        self.item_replay.get(&owner).is_some_and(|binding| {
             binding.origin.is_some()
                 && binding.origin.as_ref() == target
                 && binding.dependency == fingerprint(semantic)
@@ -275,7 +304,7 @@ impl FidelityRecords {
         request: &GenerationRequest,
         target: &ReplayOrigin,
     ) -> Result<(), CodecError> {
-        for owner in self.reasoning_replay.keys() {
+        for owner in self.item_replay.keys() {
             let Some((_, Item::Reasoning(r))) = request.items().iter().find(|(id, _)| id == owner)
             else {
                 return Err(CodecError::Invalid("missing native replay owner"));
@@ -288,21 +317,21 @@ impl FidelityRecords {
     }
     /// Compatibility label associated at intake, not proof of issuer authenticity.
     pub fn replay_origin(&self, owner: ItemId) -> Option<&ReplayOrigin> {
-        self.reasoning_replay.get(&owner)?.origin.as_ref()
+        self.item_replay.get(&owner)?.origin.as_ref()
     }
     pub fn remove_replay(&mut self, owner: ItemId) {
-        self.reasoning_replay.remove(&owner);
+        self.item_replay.remove(&owner);
     }
     /// Bind origin only at a trusted decode boundary, never from business JSON.
     pub fn bind_replay_origin(&mut self, origin: &ReplayOrigin) -> Result<(), CodecError> {
         if self
-            .reasoning_replay
+            .item_replay
             .values()
             .any(|r| r.origin.as_ref().is_some_and(|old| old != origin))
         {
             return Err(CodecError::Invalid("replay origin rebinding"));
         }
-        for replay in self.reasoning_replay.values_mut() {
+        for replay in self.item_replay.values_mut() {
             replay.origin = Some(origin.clone());
         }
         Ok(())
@@ -475,10 +504,10 @@ impl FidelityRecords {
             .retain(|owner| part_exists(items, *owner));
         self.response_item_ids
             .retain(|id, _| items.iter().any(|(owner, _)| owner == id));
-        self.reasoning_replay.retain(|id, _| {
-            items
-                .iter()
-                .any(|(owner, item)| owner == id && matches!(item, Item::Reasoning(_)))
+        self.item_replay.retain(|id, _| {
+            items.iter().any(|(owner, item)| {
+                owner == id && matches!(item, Item::Reasoning(_) | Item::Compaction(_))
+            })
         });
     }
 }
@@ -508,9 +537,12 @@ fn response_dependency(response: &GenerationResponse) -> [u8; 32] {
     }
     // Opaque Debug is redacted; bind its bytes separately without formatting them.
     for (id, item) in response.items() {
-        if let Item::Reasoning(r) = item
-            && let Some(value) = &r.replay
-        {
+        let value = match item {
+            Item::Reasoning(r) => r.replay.as_ref(),
+            Item::Compaction(value) => Some(value),
+            _ => None,
+        };
+        if let Some(value) = value {
             hash.update(id.scope().get().to_le_bytes());
             hash.update(id.get().to_le_bytes());
             hash.update(value.fingerprint());

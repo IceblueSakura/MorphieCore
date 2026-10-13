@@ -34,12 +34,18 @@ fn replay(
     o: &Map<String, Value>,
     origin: Option<&ReplayOrigin>,
     final_value: bool,
-) -> Result<Option<ReasoningReplay>, CodecError> {
+) -> Result<Option<ItemReplay>, CodecError> {
+    if o.get("type").and_then(Value::as_str) == Some("compaction") {
+        return Ok(Some(ItemReplay {
+            origin: origin.cloned(),
+            value: super::responses::compaction_content(o, final_value)?,
+        }));
+    }
     match o.get("encrypted_content") {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(s)) => {
             let value = text(s, "encrypted reasoning", MAX_TEXT_BYTES)?;
-            Ok(Some(ReasoningReplay {
+            Ok(Some(ItemReplay {
                 origin: origin.cloned(),
                 value: if final_value {
                     ReplayValue::final_value(ReplayFormat::ResponsesEncrypted, value)
@@ -114,7 +120,13 @@ fn sync_replays(
         .iter()
         .filter(|i| owner.is_none_or(|id| i.id == id))
     {
-        if matches!(item.kind, ItemKind::Reasoning) {
+        if matches!(item.kind, ItemKind::Compaction) {
+            let replay = item
+                .replay
+                .as_ref()
+                .ok_or(CodecError::Invalid("compaction content"))?;
+            fidelity.record_compaction(item.id, &replay.value, replay.origin.clone())?;
+        } else if matches!(item.kind, ItemKind::Reasoning) {
             if let Some(replay) = &item.replay {
                 let Item::Reasoning(semantic) = item.snapshot()? else {
                     unreachable!("reasoning owner")

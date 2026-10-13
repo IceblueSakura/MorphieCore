@@ -11,6 +11,7 @@ This page records design principles and settled decisions. Code and tests define
 - [Semantic IR](#semantic-ir)
 - [Adaptation](#adaptation)
 - [Reasoning replay](#reasoning-replay)
+- [Compacted history](#compacted-history)
 - [Chat reasoning extensions](#chat-reasoning-extensions)
 - [Failover](#failover)
 - [Streaming and delivery](#streaming-and-delivery)
@@ -71,7 +72,7 @@ The IR is neither a protocol DTO nor a union of vendor fields.
 
 Generation semantics come from the official OpenAI, Anthropic and Google APIs. One official API is enough to justify a concept; a target without its carrier rejects it. Provider dialects and lossy mappings, including budget-to-effort thresholds, belong to protocol codecs and projection rules, not the semantic types. Realtime and standalone tasks do not determine Generation completeness.
 
-- **Ordered items:** instructions, messages, tool calls/results, reasoning and Provider tool observations share one ordered history. A message is one container, not the whole conversation.
+- **Ordered items:** instructions, messages, tool calls/results, reasoning, compaction and Provider tool observations share one ordered history. A message is one container, not the whole conversation.
 - **Explicit links:** calls and results link by call ID, never position or name. Item IDs, part IDs, wire IDs and stream indexes remain distinct.
 - **Exact JSON:** arguments and schemas retain numeric precision and key order. Parsing rejects duplicate keys and bounds depth, nodes and bytes. A schema is any JSON object; keyword vocabularies and strict subsets are target constraints.
 - **Meaningful presence:** distinguish absent, null, empty and default where semantics differ, not mechanically for every field.
@@ -163,6 +164,14 @@ Google signatures travel as reasoning items. The IR has no part- or call-level r
 - Signature-only items trail the response, so a message stays contiguous with its calls. Chat carries them ahead of the message.
 - Preserve every signature, even when an upstream sample accepts an omitted one.
 - generateContent and Interactions are separate formats. A value of the other format is dropped as foreign, not translated, so failover between the two bindings loses reasoning instead of failing.
+
+## Compacted history
+
+A compaction item owns opaque context at one position in the ordered history. It is not a readable summary, reasoning or a message with an invented role. Responses preserves its identity and `encrypted_content` in input, static output and streamed item snapshots. Only a completed opaque value can enter replay history; an unfinished stream cannot become a static compaction item.
+
+Compaction uses the [replay envelope](#reasoning-replay) with a distinct format tag. The gateway restores the native payload only for the matching Provider/model and Responses carrier. Bare, malformed, foreign or unbound values are rejected, never stripped: unlike optional reasoning, removing compacted context would lose history. Chat Completions, Messages and Google targets reject it in the absence of a carrier.
+
+Compaction admission is separate from reasoning support. Codec support does not activate existing model bindings. This contract receives and replays compacted history; it does not schedule compaction, expose `/responses/compact` or store conversations. The [official guide](https://developers.openai.com/api/docs/guides/compaction) and [pinned SDK](references.md#pinned-sources) define the selected wire contract.
 
 ## Chat reasoning extensions
 
@@ -311,6 +320,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Append-only history projection | Earlier content does not change when a later turn is added |
 | Reported tool results | Responses carries function/custom results in static output and item snapshots. Missing call references stay unreported; request history still requires matching preceding calls. Chat and Messages reject ordinary tool results as assistant output, not their supported history forms |
 | Scoped opaque replay | Restore only compatible native values; foreign readable reasoning becomes text |
+| Compacted context is required history | A distinct ordered compaction item preserves opaque content and identity. Incompatible targets reject it rather than apply the foreign-reasoning strip rule |
 | Failover, not balancing | Legal candidates, bounded advancement and exact-credential affinity |
 | Conversation routing | No inferred turn, branch or message routing |
 | Gateway-only history (planned) | [In-memory TTL history](#stateful-history) adds downstream continuation without Provider-held state or background execution |

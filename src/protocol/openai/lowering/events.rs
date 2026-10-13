@@ -9,7 +9,7 @@ pub fn check_event(
     contract: &TargetCaps,
 ) -> Result<(), RepresentationError> {
     if matches!(event, StreamEvent::ItemStarted { replay: Some(replay), .. } | StreamEvent::ItemFinished { replay: Some(replay), .. }
-        if replay.value.format() != ReplayFormat::ResponsesEncrypted)
+        if !matches!(replay.value.format(), ReplayFormat::ResponsesEncrypted | ReplayFormat::ResponsesCompaction))
     {
         return Err(RepresentationError::ReplayFormat);
     }
@@ -97,6 +97,11 @@ pub fn check_event(
         }
         StreamEvent::ItemStarted { kind, replay, .. } => {
             match kind {
+                ItemKind::Compaction
+                    if profile != Profile::Responses || !contract.semantics.compaction =>
+                {
+                    return Err(RepresentationError::UnmigratedSemantic);
+                }
                 ItemKind::ToolResult(result) | ItemKind::CustomResult(result) => {
                     check_result(
                         state,

@@ -4,6 +4,7 @@ use crate::semantic::value::Text;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReplayFormat {
     ResponsesEncrypted,
+    ResponsesCompaction,
     GoogleInteractionsV1Thought,
     GoogleInteractionsV1Step,
     GoogleGenerateContentPart,
@@ -40,10 +41,20 @@ impl ReplayValue {
         }
     }
     pub fn validate(&self) -> Result<(), GenerationError> {
-        if self.as_str().is_empty() || self.as_str().len() > MAX_TEXT_BYTES {
+        let empty_compaction_opener =
+            self.format() == ReplayFormat::ResponsesCompaction && self.replay_token().is_none();
+        if self.as_str().is_empty() && !empty_compaction_opener
+            || self.as_str().len() > MAX_TEXT_BYTES
+        {
             return Err(GenerationError::Limit);
         }
         Ok(())
+    }
+    pub(crate) fn validate_compaction(&self) -> Result<(), GenerationError> {
+        if self.format() != ReplayFormat::ResponsesCompaction {
+            return Err(GenerationError::InvalidReplay);
+        }
+        self.validate()
     }
     pub(crate) fn validate_reasoning(&self) -> Result<(), GenerationError> {
         if !matches!(
@@ -68,6 +79,7 @@ impl ReplayValue {
             ReplayFormat::GoogleGenerateContentPart => 3,
             ReplayFormat::AnthropicMessagesThinking => 4,
             ReplayFormat::AnthropicMessagesRedactedThinking => 5,
+            ReplayFormat::ResponsesCompaction => 6,
         }]);
         hash.update([u8::from(self.replay_token().is_some())]);
         hash.update(self.as_str().as_bytes());
@@ -83,6 +95,29 @@ impl ReplayValue {
         match self {
             Self::Partial { value, .. } | Self::Final { value, .. } => value.as_str(),
         }
+    }
+}
+
+/// Event-owned opaque value and intake origin. The item kind owns format admission.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ItemReplay {
+    pub value: ReplayValue,
+    pub origin: Option<crate::semantic::value::ReplayOrigin>,
+}
+impl ItemReplay {
+    pub fn validate(
+        &self,
+        kind: &crate::semantic::task::generation::ItemKind,
+    ) -> Result<(), GenerationError> {
+        use crate::semantic::task::generation::ItemKind;
+        match kind {
+            ItemKind::Reasoning => self.value.validate_reasoning(),
+            ItemKind::Compaction => self.value.validate_compaction(),
+            _ => Err(GenerationError::InvalidReplay),
+        }
+    }
+    pub fn permits(&self, target: Option<&crate::semantic::value::ReplayOrigin>) -> bool {
+        self.origin.is_some() && self.origin.as_ref() == target
     }
 }
 

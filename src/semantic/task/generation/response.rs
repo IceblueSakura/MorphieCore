@@ -103,9 +103,10 @@ impl GenerationResponse {
             return Err(GenerationError::Limit);
         }
         if outcome == Outcome::Completed
-            && items
-                .iter()
-                .any(|(_, i)| i.lifecycle().is_some_and(|s| s != ItemLifecycle::Completed))
+            && items.iter().any(|(_, i)| {
+                i.lifecycle().is_some_and(|s| s != ItemLifecycle::Completed)
+                    || matches!(i, Item::Compaction(value) if value.replay_token().is_none())
+            })
         {
             return Err(GenerationError::InvalidResponse);
         }

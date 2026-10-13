@@ -413,6 +413,12 @@ pub(super) fn check_item_carriers(items: &[(ItemId, Item)]) -> Result<(), CodecE
     if items.iter().any(|(_, item)| matches!(item, Item::Reasoning(r) if r.replay.as_ref().is_some_and(|value| value.format() != ReplayFormat::ResponsesEncrypted))) {
         return Err(CodecError::Unsupported("replay format".into()));
     }
+    if items
+        .iter()
+        .any(|(_, item)| matches!(item, Item::Compaction(value) if value.replay_token().is_none()))
+    {
+        return Err(CodecError::Unsupported("partial compaction carrier".into()));
+    }
     if items.iter().any(|(_, item)| matches!(item, Item::ToolCall(call) if !matches!(call.arguments, ToolArguments::Raw(_)))) {
         return Err(CodecError::Unsupported("structured arguments".into()));
     }
@@ -430,6 +436,13 @@ pub(super) fn check_message_carriers(
     groups: &[MessageEnvelope],
     profile: Profile,
 ) -> Result<(), CodecError> {
+    if profile == Profile::Chat
+        && items
+            .iter()
+            .any(|(_, item)| matches!(item, Item::Compaction(_)))
+    {
+        return Err(CodecError::Unsupported("Chat compaction carrier".into()));
+    }
     if profile == Profile::Responses && !groups.is_empty() {
         return Err(CodecError::Unsupported("message grouping".into()));
     }

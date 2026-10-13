@@ -14,6 +14,8 @@ mod wire;
 mod anthropic;
 #[path = "semantic/chat.rs"]
 mod chat;
+#[path = "semantic/compaction.rs"]
+mod compaction;
 #[path = "semantic/google.rs"]
 mod google;
 #[path = "semantic/history.rs"]

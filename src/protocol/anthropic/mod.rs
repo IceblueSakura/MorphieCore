@@ -33,6 +33,7 @@ impl Profile {
     ) -> crate::semantic::task::generation::GenerationSemanticContract {
         use crate::semantic::task::generation::GenerationSemanticContract;
         GenerationSemanticContract {
+            compaction: false,
             instructions: true,
             // Accepted, then dropped by `RequestRule::OmitSampling`.
             temperature: true,

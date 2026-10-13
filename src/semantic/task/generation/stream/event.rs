@@ -28,6 +28,7 @@ pub enum ItemKind {
     ToolResult(ToolResult),
     CustomResult(ToolResult),
     Reasoning,
+    Compaction,
     ConfigurationUpdate {
         effort: Option<ReasoningEffort>,
     },
@@ -99,7 +100,7 @@ pub enum StreamEvent {
     ItemStarted {
         item: ItemId,
         kind: ItemKind,
-        replay: Option<ReasoningReplay>,
+        replay: Option<ItemReplay>,
     },
     /// Replace an open result's reported value, not its association or execution facts.
     ToolResultOutput {
@@ -150,7 +151,7 @@ pub enum StreamEvent {
     ItemFinished {
         item: ItemId,
         status: ItemLifecycle,
-        replay: Option<ReasoningReplay>,
+        replay: Option<ItemReplay>,
     },
     Usage(Usage),
     /// Complete container declaration after its members close, before response terminal.

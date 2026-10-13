@@ -83,6 +83,8 @@ pub enum Item {
     CustomCall(CustomCall),
     CustomResult(ToolResult),
     Reasoning(ReasoningItem),
+    /// Opaque compacted context at this exact position, never readable reasoning.
+    Compaction(ReplayValue),
     ConfigurationUpdate(ConfigurationUpdate),
     Program(Program),
     ProgramOutput(ProgramOutput),

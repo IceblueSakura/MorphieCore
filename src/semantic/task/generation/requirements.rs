@@ -35,6 +35,7 @@ pub struct GenerationRequirements {
     pub structured_output: bool,
     pub reasoning: bool,
     pub reasoning_items: usize,
+    pub compaction: bool,
     pub max_output_tokens: Option<u64>,
     pub temperature: bool,
 }
@@ -157,6 +158,7 @@ impl GenerationRequirements {
                     x.reasoning = true;
                 }
                 Item::ConfigurationUpdate(_) => x.reasoning = true,
+                Item::Compaction(_) => x.compaction = true,
                 Item::ProviderTool(_) => x.provider_observations = true,
             }
         }
@@ -167,6 +169,7 @@ impl GenerationRequirements {
 /// Actual output domains, independent of input controls or tool declarations.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct GenerationResponseRequirements {
+    pub compaction: bool,
     pub assistant_media: bool,
     pub provider_observations: bool,
     pub audio_output: bool,
@@ -203,6 +206,7 @@ impl GenerationResponseRequirements {
                 }
                 Item::Program(_) | Item::ProgramOutput(_) => q.tools = true,
                 Item::Reasoning(_) | Item::ConfigurationUpdate(_) => q.reasoning = true,
+                Item::Compaction(_) => q.compaction = true,
                 Item::Message(message) => {
                     for part in &message.parts {
                         match &part.content {

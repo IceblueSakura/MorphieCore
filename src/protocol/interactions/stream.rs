@@ -479,7 +479,7 @@ impl GenerationSseDecoder {
             StreamEvent::ItemFinished {
                 item,
                 status: ItemLifecycle::Completed,
-                replay: Some(ReasoningReplay {
+                replay: Some(ItemReplay {
                     value,
                     origin: Some(self.target.origin()),
                 }),

@@ -609,6 +609,10 @@ impl EventDecoder {
                     )?,
                 }
             }
+            "compaction" => {
+                DecodeDirection::Upstream.fields(v, &["type", "id", "encrypted_content"])?;
+                ItemKind::Compaction
+            }
             "program" => {
                 DecodeDirection::Upstream
                     .fields(v, &["type", "id", "call_id", "code", "fingerprint"])?;
@@ -660,7 +664,7 @@ impl EventDecoder {
         let item = self.allocate_item()?;
         self.fidelity
             .record_response_item_id(item, string(v, "id")?)?;
-        let replay = if matches!(kind, ItemKind::Reasoning) {
+        let replay = if matches!(kind, ItemKind::Reasoning | ItemKind::Compaction) {
             replay(v, self.origin.as_ref(), false)?
         } else {
             None
@@ -1275,7 +1279,10 @@ impl EventDecoder {
                 )?;
             }
         }
-        let token = if matches!(self.state()?.item(item)?.kind, ItemKind::Reasoning) {
+        let token = if matches!(
+            self.state()?.item(item)?.kind,
+            ItemKind::Reasoning | ItemKind::Compaction
+        ) {
             replay(p, self.origin.as_ref(), true)?
         } else {
             None

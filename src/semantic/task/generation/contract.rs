@@ -22,6 +22,7 @@ pub enum GenerationFeature {
     ToolResultMedia,
     StructuredOutput,
     Reasoning,
+    Compaction,
     ImageInput,
     AudioInput,
     VideoInput,
@@ -48,6 +49,7 @@ pub struct GenerationSemanticContract {
     pub truncation: bool,
     pub structured_output: bool,
     pub reasoning: bool,
+    pub compaction: bool,
     pub image_input: bool,
     pub audio_input: bool,
     pub video_input: bool,
@@ -61,6 +63,7 @@ impl GenerationSemanticContract {
     /// Complete vocabulary, useful for codecs and synthetic fixtures, not model discovery.
     pub fn full() -> Self {
         Self {
+            compaction: true,
             instructions: true,
             temperature: true,
             max_output_tokens: true,
@@ -91,6 +94,7 @@ impl GenerationSemanticContract {
     /// Explicit currently admitted text/image slice; new fields require a decision here.
     pub fn text_images() -> Self {
         Self {
+            compaction: false,
             instructions: true,
             temperature: true,
             max_output_tokens: true,
@@ -140,6 +144,7 @@ impl GenerationSemanticContract {
             (promise.truncation, self.truncation),
             (promise.structured_output, self.structured_output),
             (promise.reasoning, self.reasoning),
+            (promise.compaction, self.compaction),
             (promise.image_input, self.image_input),
             (promise.audio_input, self.audio_input),
             (promise.video_input, self.video_input),
@@ -166,6 +171,7 @@ impl GenerationSemanticContract {
             return Err(ProviderObservation);
         }
         for (needed, supported, feature) in [
+            (q.compaction, self.compaction, Compaction),
             (q.audio_output, self.audio_output, AudioOutput),
             (q.instructions, self.instructions, Instructions),
             (q.tools, self.tools, Tools),
@@ -215,6 +221,7 @@ impl GenerationSemanticContract {
             return Err(ProviderObservation);
         }
         for (required, supported, feature) in [
+            (q.compaction, self.compaction, Compaction),
             (q.instruction_count > 0, self.instructions, Instructions),
             (q.temperature, self.temperature, Temperature),
             (

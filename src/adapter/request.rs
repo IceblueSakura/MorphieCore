@@ -106,6 +106,16 @@ impl Request {
     ) -> Result<Option<(Request, bool)>, CodecError> {
         use crate::semantic::task::generation::Item;
         let fidelity = &self.task.fidelity;
+        // Compaction replaces context; losing a foreign value is not a safe projection.
+        for (id, item) in self.task.semantic.items() {
+            if let Item::Compaction(value) = item
+                && !fidelity.compaction_matches(*id, value, target)
+            {
+                return Err(CodecError::Unsupported(
+                    "incompatible compaction replay".into(),
+                ));
+            }
+        }
         let foreign: Vec<_> = self
             .task
             .semantic
