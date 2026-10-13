@@ -78,7 +78,7 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 // Declarations prepay each body once; repeated uses still charge expansion.
                 if let Some(ToolOutput::Parts(parts)) = &observed.output {
                     for (_, part) in parts {
-                        if let ToolResultPart::Resource(value) = part
+                        if let InputPart::Resource(value) = part
                             && state.used_resources.insert(value.id)
                         {
                             bytes = bytes

@@ -247,7 +247,7 @@ pub(super) fn decode_message(
                     for value in texts {
                         parts.push((
                             b.part_id()?,
-                            ToolResultPart::Text(
+                            InputPart::Text(
                                 crate::semantic::value::Text::allowing_empty(
                                     value,
                                     "tool output",
@@ -284,12 +284,14 @@ pub(super) fn decode_message(
             )? {
                 parts.push((
                     b.part_id()?,
-                    crate::semantic::value::Text::allowing_empty(
-                        text,
-                        "instruction",
-                        MAX_TEXT_BYTES,
-                    )
-                    .map_err(|_| CodecError::Limit)?,
+                    InputPart::Text(
+                        crate::semantic::value::Text::allowing_empty(
+                            text,
+                            "instruction",
+                            MAX_TEXT_BYTES,
+                        )
+                        .map_err(|_| CodecError::Limit)?,
+                    ),
                 ));
             }
             b.items.push((
@@ -549,13 +551,14 @@ pub(super) fn encode_items_with(
             }
             Item::Instruction(i) => {
                 standalone_calls = false;
-                let content = if i.parts.len() == 1 {
-                    json!(i.parts[0].1.as_str())
+                let texts = i.texts().expect("lowering rejects Chat instruction media");
+                let content = if let [(_, t)] = texts.as_slice() {
+                    json!(t)
                 } else {
                     json!(
-                        i.parts
+                        texts
                             .iter()
-                            .map(|(_, t)| json!({"type":"text","text":t.as_str()}))
+                            .map(|(_, t)| json!({"type":"text","text":t}))
                             .collect::<Vec<_>>()
                     )
                 };

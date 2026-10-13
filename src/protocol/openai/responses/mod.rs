@@ -163,7 +163,6 @@ pub(super) fn write_call_context(context: &CallContext, o: &mut Map<String, Valu
     }
 }
 fn output(b: &mut Items, v: &Value) -> Result<ToolOutput, CodecError> {
-    let direction = b.direction;
     if let Some(s) = v.as_str() {
         if s.len() > MAX_TEXT_BYTES {
             return Err(CodecError::Limit);
@@ -171,6 +170,11 @@ fn output(b: &mut Items, v: &Value) -> Result<ToolOutput, CodecError> {
         return Ok(ToolOutput::Text(s.into()));
     }
     let a = v.as_array().ok_or(CodecError::Invalid("tool output"))?;
+    Ok(ToolOutput::Parts(input_parts(b, a)?))
+}
+/// Text, image and file input content shared by tool results and instructions.
+fn input_parts(b: &mut Items, a: &[Value]) -> Result<Vec<(PartId, InputPart)>, CodecError> {
+    let direction = b.direction;
     if a.len() > MAX_ITEMS {
         return Err(CodecError::Limit);
     }
@@ -184,7 +188,7 @@ fn output(b: &mut Items, v: &Value) -> Result<ToolOutput, CodecError> {
                 record_input_form(b, id, o)?;
                 (
                     id,
-                    ToolResultPart::Text(
+                    InputPart::Text(
                         Text::allowing_empty(string(o, "text")?, "tool output", MAX_TEXT_BYTES)
                             .map_err(|_| CodecError::Limit)?,
                     ),
@@ -201,19 +205,19 @@ fn output(b: &mut Items, v: &Value) -> Result<ToolOutput, CodecError> {
                 )?;
                 let id = b.part_id()?;
                 record_breakpoint(b, id, o)?;
-                (id, ToolResultPart::Resource(b.resource(resource)?))
+                (id, InputPart::Resource(b.resource(resource)?))
             }
             "input_file" => {
                 let resource = crate::protocol::openai::content::file::read(o, direction)?;
                 let id = b.part_id()?;
                 record_breakpoint(b, id, o)?;
-                (id, ToolResultPart::Resource(b.resource(resource)?))
+                (id, InputPart::Resource(b.resource(resource)?))
             }
-            _ => return Err(CodecError::Unsupported("tool result media".into())),
+            _ => return Err(CodecError::Unsupported("input content part".into())),
         };
         p.push(part);
     }
-    Ok(ToolOutput::Parts(p))
+    Ok(p)
 }
 fn record_input_form(b: &mut Items, id: PartId, o: &Map<String, Value>) -> Result<(), CodecError> {
     b.fidelity.record_input_text(id)?;
@@ -452,21 +456,7 @@ pub(super) fn decode_items(
                     let instruction_status = status(o, ItemLifecycle::Completed)?;
                     let instruction_status = (instruction_status != ItemLifecycle::Completed)
                         .then_some(instruction_status);
-                    let mut parts = vec![];
-                    for v in &values {
-                        let p = object(v)?;
-                        direction.fields(p, &["type", "text", "prompt_cache_breakpoint"])?;
-                        if string(p, "type")? != "input_text" {
-                            return Err(CodecError::Invalid("instruction part"));
-                        }
-                        let part_id = b.part_id()?;
-                        record_input_form(b, part_id, p)?;
-                        parts.push((
-                            part_id,
-                            Text::allowing_empty(string(p, "text")?, "instruction", MAX_TEXT_BYTES)
-                                .map_err(|_| CodecError::Limit)?,
-                        ));
-                    }
+                    let parts = input_parts(b, &values)?;
                     Item::Instruction(Instruction {
                         authority: if role == "system" {
                             InstructionAuthority::System
@@ -621,19 +611,25 @@ fn media_part(
     }
     v
 }
+fn input_wire(
+    parts: &[(PartId, InputPart)],
+    fidelity: &FidelityRecords,
+    resources: &ResourceTable,
+) -> Value {
+    json!(
+        parts
+            .iter()
+            .map(|(id, part)| match part {
+                InputPart::Text(text) => input_part(*id, text.as_str(), fidelity),
+                InputPart::Resource(resource) => media_part(*id, resource, fidelity, resources),
+            })
+            .collect::<Vec<_>>()
+    )
+}
 fn output_wire(o: &ToolOutput, fidelity: &FidelityRecords, resources: &ResourceTable) -> Value {
     match o {
         ToolOutput::Text(s) => json!(s),
-        ToolOutput::Parts(p) => json!(
-            p.iter()
-                .map(|(id, part)| match part {
-                    ToolResultPart::Text(text) => input_part(*id, text.as_str(), fidelity),
-                    ToolResultPart::Resource(resource) => {
-                        media_part(*id, resource, fidelity, resources)
-                    }
-                })
-                .collect::<Vec<_>>()
-        ),
+        ToolOutput::Parts(p) => input_wire(p, fidelity, resources),
         ToolOutput::Structured(_) => {
             unreachable!("lowering rejects tool result semantics without a carrier")
         }
@@ -649,7 +645,7 @@ pub(super) fn encode_items(
     for (id, item) in items {
         let mut v = match item {
             Item::Instruction(i) => {
-                let mut v = json!({"role":match i.authority{InstructionAuthority::System=>"system",InstructionAuthority::Developer=>"developer"},"content":if let [(id,t)]=i.parts.as_slice() && !fidelity.cache_breakpoint(*id){json!(t.as_str())}else{json!(i.parts.iter().map(|(id,t)|input_part(*id,t.as_str(),fidelity)).collect::<Vec<_>>())}});
+                let mut v = json!({"role":match i.authority{InstructionAuthority::System=>"system",InstructionAuthority::Developer=>"developer"},"content":if let [(id,InputPart::Text(t))]=i.parts.as_slice() && !fidelity.cache_breakpoint(*id){json!(t.as_str())}else{input_wire(&i.parts,fidelity,resources)}});
                 if let Some(status) = i.status {
                     v["type"] = json!("message");
                     v["status"] = json!(status_label(status));

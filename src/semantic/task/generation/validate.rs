@@ -37,6 +37,35 @@ enum CallKind {
     Provider,
 }
 type AliasKey<'a> = (Option<&'a NativeAliasDomain>, &'a str);
+/// Input media is inert URL/inline content of any kind. Opaque references need an
+/// issuer/lifecycle contract first.
+fn input_part(
+    value: &InputPart,
+    resources: &ResourceTable,
+    bytes: &mut usize,
+    file_decoded_bytes: &mut usize,
+) -> Result<(), GenerationError> {
+    let resource = match value {
+        InputPart::Text(text) => return add(bytes, text.as_str()),
+        InputPart::Resource(resource) => resource.media(resources)?,
+    };
+    if matches!(
+        resource.location,
+        ResourceLocation::OpaqueReference(_) | ResourceLocation::NamespacedReference { .. }
+    ) {
+        return Err(GenerationError::InvalidResource);
+    }
+    charge(bytes, resource.validate()?)?;
+    if resource.kind() == ResourceKind::File {
+        *file_decoded_bytes = file_decoded_bytes
+            .checked_add(resource.inline_decoded_bytes()?.unwrap_or(0))
+            .ok_or(GenerationError::Limit)?;
+        if *file_decoded_bytes > MAX_TOTAL_FILE_DECODED_BYTES {
+            return Err(GenerationError::Limit);
+        }
+    }
+    Ok(())
+}
 pub fn items(
     items: &[(ItemId, Item)],
     response: bool,
@@ -65,9 +94,9 @@ pub fn items(
                 if response {
                     return Err(GenerationError::InvalidResponse);
                 }
-                for (id, t) in &i.parts {
+                for (id, value) in &i.parts {
                     part_id(&mut parts, *id)?;
-                    add(&mut bytes, t.as_str())?;
+                    input_part(value, resources, &mut bytes, &mut file_decoded_bytes)?;
                 }
                 if i.parts.is_empty() {
                     return Err(GenerationError::EmptyMessage);
@@ -265,32 +294,7 @@ pub fn items(
                     ToolOutput::Parts(p) => {
                         for (id, value) in p {
                             part_id(&mut parts, *id)?;
-                            match value {
-                                ToolResultPart::Text(text) => add(&mut bytes, text.as_str())?,
-                                ToolResultPart::Resource(resource) => {
-                                    let resource = resource.media(resources)?;
-                                    // Tool media is inert URL/inline content of any kind.
-                                    // Opaque references need an issuer/lifecycle contract first.
-                                    if matches!(
-                                        resource.location,
-                                        ResourceLocation::OpaqueReference(_)
-                                            | ResourceLocation::NamespacedReference { .. }
-                                    ) {
-                                        return Err(GenerationError::InvalidResource);
-                                    }
-                                    charge(&mut bytes, resource.validate()?)?;
-                                    if resource.kind() == ResourceKind::File {
-                                        file_decoded_bytes = file_decoded_bytes
-                                            .checked_add(
-                                                resource.inline_decoded_bytes()?.unwrap_or(0),
-                                            )
-                                            .ok_or(GenerationError::Limit)?;
-                                        if file_decoded_bytes > MAX_TOTAL_FILE_DECODED_BYTES {
-                                            return Err(GenerationError::Limit);
-                                        }
-                                    }
-                                }
-                            }
+                            input_part(value, resources, &mut bytes, &mut file_decoded_bytes)?;
                         }
                     }
                     ToolOutput::Structured(value) => charge(&mut bytes, value.bytes()?)?,
@@ -439,8 +443,8 @@ fn provider_observation_value(
             for (id, value) in values {
                 part_id(parts, *id)?;
                 match value {
-                    ToolResultPart::Text(value) => add(bytes, value.as_str())?,
-                    ToolResultPart::Resource(resource) => {
+                    InputPart::Text(value) => add(bytes, value.as_str())?,
+                    InputPart::Resource(resource) => {
                         let resource = resource.media(resources)?;
                         charge(bytes, resource.validate()?)?;
                         if resource.kind() == ResourceKind::File {

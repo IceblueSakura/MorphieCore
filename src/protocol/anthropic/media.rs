@@ -36,13 +36,17 @@ pub enum Media {
         source: Source,
         reject_oversized: bool,
     },
-    Document(Source),
+    /// `title` is the model-visible document name, the IR file name.
+    Document {
+        source: Source,
+        title: Option<String>,
+    },
 }
 impl Media {
     pub(super) fn read(kind: &str, v: &Value) -> Result<Self, CodecError> {
         let o = object(v)?;
         // These change what the model sees or returns and have no IR slot.
-        for key in ["title", "context", "citations"] {
+        for key in ["context", "citations"] {
             if o.get(key).is_some_and(|v| !v.is_null()) {
                 return Err(CodecError::Unsupported(format!("Anthropic document {key}")));
             }
@@ -78,7 +82,13 @@ impl Media {
                     },
                 },
             },
-            _ => Self::Document(source),
+            _ => Self::Document {
+                source,
+                title: match o.get("title") {
+                    None | Some(Value::Null) => None,
+                    Some(v) => Some(string(v)?),
+                },
+            },
         };
         media.validate()?;
         Ok(media)
@@ -95,7 +105,10 @@ impl Media {
             } if !IMAGE_TYPES.contains(&&**media_type) => {
                 Err(CodecError::Unsupported("Anthropic image type".into()))
             }
-            Self::Document(Source::Base64 { media_type, .. }) if media_type != PDF => {
+            Self::Document {
+                source: Source::Base64 { media_type, .. },
+                ..
+            } if media_type != PDF => {
                 Err(CodecError::Unsupported("Anthropic document type".into()))
             }
             Self::Image {
@@ -106,17 +119,22 @@ impl Media {
         }
     }
     pub(super) fn bytes(&self) -> Result<usize, CodecError> {
-        let (Self::Image { source, .. } | Self::Document(source)) = self;
+        let (Self::Image { source, .. } | Self::Document { source, .. }) = self;
         self.validate()?;
-        Ok(match source {
-            Source::Base64 { media_type, data } => text(media_type)? + text(data)?,
-            Source::Url(url) | Source::Text(url) => text(url)?,
-        })
+        let title = match self {
+            Self::Document { title: Some(t), .. } => text(t)?,
+            _ => 0,
+        };
+        Ok(title
+            + match source {
+                Source::Base64 { media_type, data } => text(media_type)? + text(data)?,
+                Source::Url(url) | Source::Text(url) => text(url)?,
+            })
     }
     pub(super) fn wire(&self) -> Value {
         let (kind, source) = match self {
             Self::Image { source, .. } => ("image", source),
-            Self::Document(source) => ("document", source),
+            Self::Document { source, .. } => ("document", source),
         };
         let source = match source {
             Source::Base64 { media_type, data } => {
@@ -126,14 +144,13 @@ impl Media {
             Source::Text(data) => json!({"type":"text","media_type":PLAIN_TEXT,"data":data}),
         };
         let mut block = json!({"type":kind,"source":source});
-        if matches!(
-            self,
+        match self {
             Self::Image {
                 reject_oversized: true,
                 ..
-            }
-        ) {
-            block["transformations"] = json!({"oversized_image":"error"});
+            } => block["transformations"] = json!({"oversized_image":"error"}),
+            Self::Document { title: Some(t), .. } => block["title"] = json!(t),
+            _ => {}
         }
         block
     }
@@ -143,10 +160,16 @@ impl Media {
             |s: &str, kind| Text::new(s, kind, MAX_TEXT_BYTES).map_err(|_| CodecError::Limit);
         let (source, description) = match self {
             Self::Image { source, .. } => (source, ResourceDescription::Image { detail: None }),
-            Self::Document(source) => (
+            Self::Document { source, title } => (
                 source,
                 ResourceDescription::File(FileDescription {
-                    filename: None,
+                    filename: title
+                        .as_deref()
+                        .map(|t| {
+                            Text::allowing_empty(t, "document title", MAX_FILE_NAME_BYTES)
+                                .map_err(|_| CodecError::Limit)
+                        })
+                        .transpose()?,
                     detail: None,
                 }),
             ),
@@ -178,7 +201,7 @@ impl Media {
         let unsupported = || CodecError::Unsupported("Anthropic media".into());
         *omitted |= match resource.description {
             ResourceDescription::Image { detail } => detail.is_some(),
-            ResourceDescription::File(file) => file.filename.is_some() || file.detail.is_some(),
+            ResourceDescription::File(file) => file.detail.is_some(),
             _ => false,
         };
         let source = match resource.location {
@@ -213,7 +236,15 @@ impl Media {
                 source,
                 reject_oversized,
             },
-            ResourceKind::File => Self::Document(source),
+            ResourceKind::File => Self::Document {
+                source,
+                title: match resource.description {
+                    ResourceDescription::File(file) => {
+                        file.filename.as_ref().map(|n| n.as_str().into())
+                    }
+                    _ => None,
+                },
+            },
             ResourceKind::Audio | ResourceKind::Video => return Err(unsupported()),
         };
         media.validate()?;

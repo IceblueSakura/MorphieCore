@@ -106,7 +106,11 @@ pub(super) fn project(
             }
         }
         system = Presence::Value(WireText::Blocks(
-            i.parts.iter().map(|(_, t)| t.as_str().into()).collect(),
+            i.texts()
+                .ok_or_else(unsupported)?
+                .into_iter()
+                .map(|(_, t)| t.into())
+                .collect(),
         ));
     }
     let tools = if s.tools.is_some() {
@@ -452,8 +456,8 @@ pub(super) fn item_blocks(
                         .iter()
                         .map(|(id, part)| {
                             Ok(match part {
-                                ToolResultPart::Text(t) => ResultBlock::Text(t.as_str().into()),
-                                ToolResultPart::Resource(r) => ResultBlock::Media(media(*id, r)?),
+                                InputPart::Text(t) => ResultBlock::Text(t.as_str().into()),
+                                InputPart::Resource(r) => ResultBlock::Media(media(*id, r)?),
                             })
                         })
                         .collect::<Result<_, CodecError>>()?,

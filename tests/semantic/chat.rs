@@ -1106,7 +1106,7 @@ mod files {
         let ToolOutput::Parts(parts) = &result.output else {
             panic!("parts")
         };
-        let ToolResultPart::Resource(pdf) = &parts[0].1 else {
+        let InputPart::Resource(pdf) = &parts[0].1 else {
             panic!("file part")
         };
         assert_eq!(
@@ -1131,6 +1131,45 @@ mod files {
         assert!(
             adapter()
                 .encode_request(&decoded, "synthetic", &images_only)
+                .is_err()
+        );
+    }
+    #[test]
+    fn responses_instructions_carry_media_only_to_responses() {
+        let input = json!([
+            {"role":"developer","content":[
+                {"type":"input_text","text":"Follow the attached guide."},
+                {"type":"input_file","file_data":"data:application/pdf;base64,AQID","filename":"synthetic.pdf"}]},
+            {"type":"message","role":"user","content":[{"type":"input_text","text":"Draft."}]}]);
+        let decoded = adapter()
+            .decode_request(
+                &serde_json::to_vec(&json!({"model":"synthetic","input":input})).unwrap(),
+            )
+            .unwrap();
+        let semantic = &decoded.task.semantic;
+        let Item::Instruction(instruction) = &semantic.items()[0].1 else {
+            panic!("instruction")
+        };
+        assert_eq!(instruction.authority, InstructionAuthority::Developer);
+        assert!(
+            matches!(&instruction.parts[0].1, InputPart::Text(t) if t.as_str() == "Follow the attached guide.")
+        );
+        let InputPart::Resource(guide) = &instruction.parts[1].1 else {
+            panic!("file part")
+        };
+        assert_eq!(
+            guide.media(semantic.resources()).unwrap().to_owned(),
+            typed_file(Some("synthetic.pdf"))
+        );
+        assert_eq!(GenerationRequirements::derive(semantic).file_inputs, 1);
+        let output = adapter()
+            .encode_request(&decoded, "synthetic", &Contract::full())
+            .unwrap();
+        assert_eq!(output["input"][0], input[0]);
+        // Chat system and developer content is text only.
+        let chat = Adapter::new(Profile::Chat, Dialect::Standard, None);
+        assert!(
+            chat.encode_request(&decoded, "synthetic", &Contract::full())
                 .is_err()
         );
     }

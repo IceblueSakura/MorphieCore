@@ -22,7 +22,7 @@ pub use content::citation::{
     Annotation, Citation, CitationKind, ClaimAnchor, SourceCoordinates, TextRange, TextUnit,
 };
 pub use content::item::{
-    ConfigurationUpdate, ContentPart, Instruction, InstructionAuthority, Item, Message,
+    ConfigurationUpdate, ContentPart, InputPart, Instruction, InstructionAuthority, Item, Message,
     MessageRole, Part, Phase,
 };
 pub use content::reasoning::{
@@ -67,7 +67,7 @@ pub use tools::provider::{
     ProviderAction, ProviderExecutionProgress, ProviderOperation, ProviderOperationReference,
     ProviderRequester, ProviderResultFormat, ProviderToolObservation,
 };
-pub use tools::result::{ToolExecution, ToolOutput, ToolResult, ToolResultPart};
+pub use tools::result::{ToolExecution, ToolOutput, ToolResult};
 pub use tools::{
     ArgumentFormat, CallContext, CallOrigin, CallerMode, CustomCall, CustomFormat, CustomTool,
     FunctionStrictness, FunctionTool, GrammarSyntax, ItemLifecycle, Program, ProgramOutput,

@@ -123,9 +123,9 @@ impl Intake {
                                     Ok((
                                         part,
                                         match block {
-                                            ResultBlock::Text(s) => ToolResultPart::Text(text(s)?),
+                                            ResultBlock::Text(s) => InputPart::Text(text(s)?),
                                             ResultBlock::Media(m) => {
-                                                ToolResultPart::Resource(self.resource(part, m)?)
+                                                InputPart::Resource(self.resource(part, m)?)
                                             }
                                         },
                                     ))

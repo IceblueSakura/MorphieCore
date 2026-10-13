@@ -60,7 +60,12 @@ impl Profile {
                         parts: parts
                             .iter()
                             .enumerate()
-                            .map(|(i, s)| Ok((PartId::scoped(scope, i as u64 + 1), text(s)?)))
+                            .map(|(i, s)| {
+                                Ok((
+                                    PartId::scoped(scope, i as u64 + 1),
+                                    InputPart::Text(text(s)?),
+                                ))
+                            })
                             .collect::<Result<_, CodecError>>()?,
                     }),
                 ));

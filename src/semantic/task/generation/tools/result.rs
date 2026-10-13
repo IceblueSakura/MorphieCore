@@ -1,5 +1,5 @@
 //! Closed tool result values. Error reporting never changes a generation outcome.
-use crate::semantic::task::generation::{CallContext, ItemLifecycle, PartId, ResourceUse};
+use crate::semantic::task::generation::{CallContext, InputPart, ItemLifecycle, PartId};
 use crate::semantic::value::Text;
 /// Execution conclusion is independent of the result value and artifact lifecycle.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -11,22 +11,9 @@ pub enum ToolExecution {
     Unknown,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ToolResultPart {
-    Text(Text),
-    Resource(ResourceUse),
-}
-impl ToolResultPart {
-    pub fn as_text(&self) -> Option<&str> {
-        match self {
-            Self::Text(text) => Some(text.as_str()),
-            Self::Resource(_) => None,
-        }
-    }
-}
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ToolOutput {
     Text(String),
-    Parts(Vec<(PartId, ToolResultPart)>),
+    Parts(Vec<(PartId, InputPart)>),
     Structured(crate::semantic::task::generation::StructuredValue),
 }
 impl ToolOutput {
@@ -35,7 +22,7 @@ impl ToolOutput {
             Self::Text(_) => true,
             Self::Parts(parts) => parts
                 .iter()
-                .all(|(_, part)| matches!(part, ToolResultPart::Text(_))),
+                .all(|(_, part)| matches!(part, InputPart::Text(_))),
             Self::Structured(_) => false,
         }
     }

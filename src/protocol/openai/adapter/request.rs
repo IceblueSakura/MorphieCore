@@ -15,7 +15,7 @@ use serde_json::Value;
 
 fn without_image_detail(request: &Request) -> Result<Option<Request>, CodecError> {
     use crate::semantic::task::generation::{
-        ContentPart, Item, ResourceDescription, ResourceUse, ToolOutput, ToolResultPart,
+        ContentPart, InputPart, Item, ResourceDescription, ResourceUse, ToolOutput,
     };
     let mut items = request.task.semantic.items().to_vec();
     let mut changed = false;
@@ -36,7 +36,7 @@ fn without_image_detail(request: &Request) -> Result<Option<Request>, CodecError
             Item::ToolResult(result) | Item::CustomResult(result) => {
                 if let ToolOutput::Parts(parts) = &mut result.output {
                     for (_, part) in parts {
-                        if let ToolResultPart::Resource(resource) = part {
+                        if let InputPart::Resource(resource) = part {
                             omit(resource);
                         }
                     }

@@ -6,12 +6,35 @@ pub enum InstructionAuthority {
     System,
     Developer,
 }
+/// Input-only content of instructions and tool results: text or an inert resource.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum InputPart {
+    Text(Text),
+    Resource(ResourceUse),
+}
+impl InputPart {
+    pub fn as_text(&self) -> Option<&str> {
+        match self {
+            Self::Text(text) => Some(text.as_str()),
+            Self::Resource(_) => None,
+        }
+    }
+}
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Instruction {
     pub authority: InstructionAuthority,
-    pub parts: Vec<(PartId, Text)>,
+    pub parts: Vec<(PartId, InputPart)>,
     /// Non-complete lifecycle only. Omitted and explicit `completed` stay absent.
     pub status: Option<ItemLifecycle>,
+}
+impl Instruction {
+    /// The text parts, or `None` when a resource part needs a media carrier.
+    pub fn texts(&self) -> Option<Vec<(PartId, &str)>> {
+        self.parts
+            .iter()
+            .map(|(id, part)| part.as_text().map(|t| (*id, t)))
+            .collect()
+    }
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MessageRole {
@@ -81,13 +104,14 @@ impl Item {
             _ => None,
         }
     }
-    /// Resource uses in order: message parts, then tool-result parts.
+    /// Resource uses of message, instruction and tool-result parts.
     pub fn resource_uses(&self) -> impl Iterator<Item = &ResourceUse> {
         let message: &[Part] = match self {
             Self::Message(m) => &m.parts,
             _ => &[],
         };
-        let result: &[(PartId, ToolResultPart)] = match self {
+        let input: &[(PartId, InputPart)] = match self {
+            Self::Instruction(i) => &i.parts,
             Self::ToolResult(r) | Self::CustomResult(r) => match &r.output {
                 ToolOutput::Parts(parts) => parts,
                 _ => &[],
@@ -98,11 +122,11 @@ impl Item {
             ContentPart::Resource(r) => Some(r),
             _ => None,
         });
-        let result = result.iter().filter_map(|(_, p)| match p {
-            ToolResultPart::Resource(r) => Some(r),
-            ToolResultPart::Text(_) => None,
+        let input = input.iter().filter_map(|(_, p)| match p {
+            InputPart::Resource(r) => Some(r),
+            InputPart::Text(_) => None,
         });
-        message.chain(result)
+        message.chain(input)
     }
     pub fn is_call(&self) -> bool {
         matches!(

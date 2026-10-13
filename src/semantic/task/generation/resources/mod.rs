@@ -45,7 +45,8 @@ impl FileDetail {
 }
 #[derive(Clone, Eq, PartialEq)]
 pub struct FileDescription {
-    /// A descriptive name, never a local path to open. Empty differs from omitted.
+    /// The model-visible document name (OpenAI `filename`, Messages `title`), never a
+    /// local path to open. Empty differs from omitted.
     pub filename: Option<Text>,
     /// Omitted differs from explicit auto; not an image option or lifecycle fact.
     pub detail: Option<FileDetail>,

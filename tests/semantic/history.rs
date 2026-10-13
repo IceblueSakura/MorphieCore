@@ -340,7 +340,10 @@ mod client_managed_composition {
                         ItemId::new(10),
                         Item::Instruction(Instruction {
                             authority: InstructionAuthority::Developer,
-                            parts: vec![(PartId::new(10), text("observe; do not execute"))],
+                            parts: vec![(
+                                PartId::new(10),
+                                InputPart::Text(text("observe; do not execute")),
+                            )],
                             status: None,
                         }),
                     ),
@@ -534,7 +537,7 @@ mod context_transforms {
         let mut items = source.items().to_vec();
         items[0].1 = Item::Instruction(Instruction {
             authority: InstructionAuthority::Developer,
-            parts: vec![(PartId::new(1), text("protected"))],
+            parts: vec![(PartId::new(1), InputPart::Text(text("protected")))],
             status: None,
         });
         let protected = GenerationRequest::new(items, GenerationControls::default()).unwrap();
@@ -693,14 +696,14 @@ mod resource_table {
             output: Some(ToolOutput::Parts(vec![
                 (
                     PartId::new(1),
-                    ToolResultPart::Resource(ResourceUse {
+                    InputPart::Resource(ResourceUse {
                         id,
                         description: ResourceDescription::Image { detail: None },
                     }),
                 ),
                 (
                     PartId::new(2),
-                    ToolResultPart::Resource(ResourceUse {
+                    InputPart::Resource(ResourceUse {
                         id,
                         description: ResourceDescription::Image { detail: None },
                     }),

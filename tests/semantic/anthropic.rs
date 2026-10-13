@@ -401,7 +401,11 @@ mod anthropic_semantics {
         };
         assert_eq!(i.authority, InstructionAuthority::System);
         assert_eq!(
-            i.parts.iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>(),
+            i.texts()
+                .unwrap()
+                .into_iter()
+                .map(|(_, t)| t)
+                .collect::<Vec<_>>(),
             ["one", "two"]
         );
         let encoded = p
@@ -514,7 +518,7 @@ mod anthropic_media {
                 {"type":"image","source":{"type":"base64","media_type":"image/png","data":"AQID"},
                     "transformations":{"oversized_image":"error"}},
                 {"type":"image","source":{"type":"url","url":"https://example.invalid/a.jpg"}},
-                {"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"BAUG"}},
+                {"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"BAUG"},"title":"Report"},
                 {"type":"document","source":{"type":"text","media_type":"text/plain","data":"notes"}},
                 {"type":"text","text":"Compare."}]},
             {"role":"assistant","content":[
@@ -575,6 +579,11 @@ mod anthropic_media {
             matches!(inputs[1].location, ResourceLocation::Url(u) if u.as_str() == "https://example.invalid/a.jpg")
         );
         assert_eq!(inputs[2].kind(), ResourceKind::File);
+        // A document title is the model-visible file name.
+        assert!(
+            matches!(inputs[2].description, ResourceDescription::File(FileDescription {
+            filename: Some(name), detail: None }) if name.as_str() == "Report")
+        );
         assert!(inline("application/pdf", "BAUG"));
         // A text document is an inline text/plain file: base64("notes").
         assert!(inline("text/plain", "bm90ZXM="));
@@ -584,7 +593,7 @@ mod anthropic_media {
         let ToolOutput::Parts(parts) = &result.output else {
             panic!("parts")
         };
-        let ToolResultPart::Resource(shot) = &parts[1].1 else {
+        let InputPart::Resource(shot) = &parts[1].1 else {
             panic!("tool image")
         };
         assert_eq!(view(semantic, shot).kind(), ResourceKind::Image);
@@ -639,6 +648,14 @@ mod anthropic_media {
             json!([{"type":"image","source":{"type":"url","url":"https://example.invalid/a.png"}}])
         );
         assert_eq!(rules, ["messages.omit-media-options.v1"]);
+        let named = decode(json!([{"type":"file","file":{
+            "file_data":"data:application/pdf;base64,AQID","filename":"report.pdf"}}]));
+        let (wire, rules) = endpoint.encode_request_with_rules(&named).unwrap();
+        assert_eq!(
+            wire["messages"][0]["content"],
+            json!([{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"AQID"},"title":"report.pdf"}])
+        );
+        assert!(rules.is_empty());
         let audio =
             decode(json!([{"type":"input_audio","input_audio":{"data":"AQID","format":"wav"}}]));
         assert!(endpoint.encode_request_with_rules(&audio).is_err());

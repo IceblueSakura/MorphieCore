@@ -1,5 +1,6 @@
 use crate::semantic::task::generation::{
     ContentPart, GenerationRequest, GenerationResponse, Item, OutputConstraint, ResourceKind,
+    ResourceUse,
 };
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct GenerationRequirements {
@@ -38,6 +39,18 @@ pub struct GenerationRequirements {
     pub temperature: bool,
 }
 impl GenerationRequirements {
+    fn input(&mut self, resource: &ResourceUse, r: &GenerationRequest) {
+        match resource
+            .media(r.resources())
+            .expect("validated resource")
+            .kind()
+        {
+            ResourceKind::Image => self.image_inputs += 1,
+            ResourceKind::Audio => self.audio_inputs += 1,
+            ResourceKind::Video => self.video_inputs += 1,
+            ResourceKind::File => self.file_inputs += 1,
+        }
+    }
     pub fn derive(r: &GenerationRequest) -> Self {
         let mut x = Self {
             audio_output: r.settings().audio.value().is_some(),
@@ -60,7 +73,13 @@ impl GenerationRequirements {
         for (_, i) in r.items() {
             x.assistant_media |= i.has_assistant_media();
             match i {
-                Item::Instruction(_) => x.instruction_count += 1,
+                Item::Instruction(_) => {
+                    x.instruction_count += 1;
+                    for resource in i.resource_uses() {
+                        x.resource_count += 1;
+                        x.input(resource, r);
+                    }
+                }
                 Item::Message(m) => {
                     // A tool-only Chat owner is grouping, not an extra semantic message.
                     x.message_count += usize::from(!m.parts.is_empty());
@@ -79,16 +98,7 @@ impl GenerationRequirements {
                             ContentPart::Resource(resource) => {
                                 x.resource_count += 1;
                                 if m.role == crate::semantic::task::generation::MessageRole::User {
-                                    match resource
-                                        .media(r.resources())
-                                        .expect("validated resource")
-                                        .kind()
-                                    {
-                                        ResourceKind::Image => x.image_inputs += 1,
-                                        ResourceKind::Audio => x.audio_inputs += 1,
-                                        ResourceKind::Video => x.video_inputs += 1,
-                                        ResourceKind::File => x.file_inputs += 1,
-                                    }
+                                    x.input(resource, r);
                                 }
                             }
                         }
@@ -112,7 +122,7 @@ impl GenerationRequirements {
                         }
                         crate::semantic::task::generation::ToolOutput::Parts(parts) => {
                             for (_, part) in parts {
-                                let crate::semantic::task::generation::ToolResultPart::Resource(
+                                let crate::semantic::task::generation::InputPart::Resource(
                                     resource,
                                 ) = part
                                 else {
@@ -121,16 +131,7 @@ impl GenerationRequirements {
                                 x.tool_result_media += 1;
                                 x.resource_count += 1;
                                 // Tool media also needs the model's input modality.
-                                match resource
-                                    .media(r.resources())
-                                    .expect("validated resource")
-                                    .kind()
-                                {
-                                    ResourceKind::Image => x.image_inputs += 1,
-                                    ResourceKind::Audio => x.audio_inputs += 1,
-                                    ResourceKind::Video => x.video_inputs += 1,
-                                    ResourceKind::File => x.file_inputs += 1,
-                                }
+                                x.input(resource, r);
                             }
                         }
                         _ => {}

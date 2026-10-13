@@ -619,12 +619,21 @@ fn text_items(
         if matches!(i, Item::ToolCall(call) if !matches!(call.arguments, ToolArguments::Raw(_))) {
             return Err(RepresentationError::Tools);
         }
+        // Responses instructions carry image and file parts only; Chat is checked below.
+        if matches!(i, Item::Instruction(_))
+            && i.resource_uses().any(|r| {
+                r.media(resources)
+                    .is_ok_and(|r| matches!(r.kind(), ResourceKind::Audio | ResourceKind::Video))
+            })
+        {
+            return Err(RepresentationError::UnmigratedSemantic);
+        }
         // Standard Responses admits image and file result parts in history; Chat does not.
         if matches!(i, Item::ToolResult(result) | Item::CustomResult(result)
             if result.execution.is_some() || matches!(result.output, ToolOutput::Structured(_))
                 || (!request || profile == Profile::Chat) && !result.output.is_text_only()
                 || matches!(&result.output, ToolOutput::Parts(parts) if parts.iter().any(|(_, part)|
-                    matches!(part, ToolResultPart::Resource(r) if r.media(resources).is_ok_and(|r|
+                    matches!(part, InputPart::Resource(r) if r.media(resources).is_ok_and(|r|
                         matches!(r.kind(), ResourceKind::Audio | ResourceKind::Video))))))
         {
             return Err(RepresentationError::Tools);
@@ -654,6 +663,10 @@ fn text_items(
                 }
                 Item::Instruction(i) if !request && i.parts.len() != 1 => {
                     return Err(RepresentationError::MessageGrouping);
+                }
+                // Chat system and developer content is text only.
+                Item::Instruction(i) if i.texts().is_none() => {
+                    return Err(RepresentationError::UnmigratedSemantic);
                 }
                 Item::ToolResult(r)
                     if (!request && matches!(r.output, ToolOutput::Parts(_)))

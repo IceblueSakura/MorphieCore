@@ -10,7 +10,6 @@ IR completeness proceeds in two steps. First, the standard OpenAI Chat, OpenAI R
 
 | Slice | Goal | Exit condition |
 |---|---|---|
-| 1B (selected) | Document names and instruction media | Messages document `title` maps to the file name both ways; Responses system and developer messages carry `input_image` and `input_file`; targets without a carrier reject them |
 | 1C (needs design) | Document citations | Messages `citations`, `content` document sources, `search_result` blocks and cited response locations |
 
 Messages document `context` stays rejected: it is model-visible text with no carrier outside Messages.

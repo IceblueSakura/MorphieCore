@@ -47,7 +47,8 @@ fn block_fields(kind: Option<&str>) -> &'static [&'static str] {
         Some("tool_use") => &["type", "id", "name", "input"],
         Some("tool_result") => &["type", "tool_use_id", "content", "is_error"],
         Some("image") => &["type", "source", "transformations"],
-        // Kept so `Media::read` rejects them; they change model-visible content.
+        // `context` and `citations` are kept so `Media::read` rejects them; they
+        // change model-visible content.
         Some("document") => &["type", "source", "title", "context", "citations"],
         // Unknown block types stay closed and fail in `Block::read`.
         _ => &[
@@ -116,7 +117,12 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                     parts: parts
                         .iter()
                         .enumerate()
-                        .map(|(i, s)| Ok((PartId::scoped(scope, i as u64 + 1), text(s)?)))
+                        .map(|(i, s)| {
+                            Ok((
+                                PartId::scoped(scope, i as u64 + 1),
+                                InputPart::Text(text(s)?),
+                            ))
+                        })
                         .collect::<Result<_, CodecError>>()?,
                 }),
             )),

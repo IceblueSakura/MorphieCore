@@ -89,7 +89,13 @@ pub(super) fn project(
         if i.authority == InstructionAuthority::Developer {
             rules.insert(RequestRule::DeveloperAsSystem);
         }
-        system = Some(i.parts.iter().map(|(_, t)| t.as_str().to_owned()).collect());
+        system = Some(
+            i.texts()
+                .ok_or_else(unsupported)?
+                .into_iter()
+                .map(|(_, t)| t.to_owned())
+                .collect(),
+        );
     }
     if let Some(parts) = system {
         body.insert(
@@ -419,8 +425,8 @@ fn item_parts(
                     let mut text = vec![];
                     for (_, part) in list {
                         match part {
-                            ToolResultPart::Text(t) => text.push(t.as_str()),
-                            ToolResultPart::Resource(r) => {
+                            InputPart::Text(t) => text.push(t.as_str()),
+                            InputPart::Resource(r) => {
                                 media_parts.push(media(r.media(request.resources())?, true, rules)?)
                             }
                         }

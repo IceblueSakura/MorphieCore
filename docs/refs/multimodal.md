@@ -102,5 +102,5 @@ Responses has a standard Provider-tool image carrier, not a generic assistant-im
 3. URL sources need no IR media type: Gemini `fileData.mimeType` and Interactions `mime_type` are optional.
 4. Client-supplied Provider file IDs and file URIs are rejected. Forwarding one would read the gateway credential's workspace or project.
 5. Without a gateway file service, large media are limited to inline data within the gateway body and IR budgets, or public URLs.
-6. Detail, resolution, filename, title, fps and similar per-use options do not translate across protocols. Targets without the option drop it through a named rule; inbound options with no IR slot that change visible content are rejected.
+6. Detail, resolution, fps and similar per-use options do not translate across protocols. Targets without the option drop it through a named rule; inbound options with no IR slot that change visible content are rejected. A file name and a Messages document `title` are both the model-visible document name and map to each other.
 7. Generated media stays out of scope until its semantic contract and selected client carrier are implemented. Do not relabel a native assistant image as a Provider tool call.

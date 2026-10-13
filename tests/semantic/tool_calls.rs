@@ -115,8 +115,8 @@ mod tools {
                 unreachable!()
             };
             result.output = ToolOutput::Parts(vec![
-                (PartId::new(900), ToolResultPart::Text(text("replacement"))),
-                (PartId::new(901), ToolResultPart::Text(text("inserted"))),
+                (PartId::new(900), InputPart::Text(text("replacement"))),
+                (PartId::new(901), InputPart::Text(text("inserted"))),
             ]);
             decoded.semantic = decoded.semantic.with_items(items).unwrap();
             assert_eq!(
@@ -556,11 +556,8 @@ mod tool_results {
     fn media(url: &str) -> Payload {
         (
             ToolOutput::Parts(vec![
-                (PartId::new(10), ToolResultPart::Text(text("caption"))),
-                (
-                    PartId::new(11),
-                    ToolResultPart::Resource(resources::image(1)),
-                ),
+                (PartId::new(10), InputPart::Text(text("caption"))),
+                (PartId::new(11), InputPart::Resource(resources::image(1))),
             ]),
             vec![(1, image(url))],
         )
@@ -613,8 +610,8 @@ mod tool_results {
             panic!("parts")
         };
         assert_eq!(result.call_id.as_str(), "c");
-        assert!(matches!(&parts[0].1, ToolResultPart::Text(t) if t.as_str() == "caption"));
-        let ToolResultPart::Resource(resource) = &parts[1].1 else {
+        assert!(matches!(&parts[0].1, InputPart::Text(t) if t.as_str() == "caption"));
+        let InputPart::Resource(resource) = &parts[1].1 else {
             panic!("image")
         };
         let view = resource.media(decoded.semantic.resources()).unwrap();
@@ -648,8 +645,8 @@ mod tool_results {
         assert!(
             request(
                 ToolOutput::Parts(vec![
-                    (PartId::new(10), ToolResultPart::Text(text("one"))),
-                    (PartId::new(10), ToolResultPart::Text(text("two")))
+                    (PartId::new(10), InputPart::Text(text("one"))),
+                    (PartId::new(10), InputPart::Text(text("two")))
                 ]),
                 None
             )
@@ -663,7 +660,7 @@ mod tool_results {
                 (
                     ToolOutput::Parts(vec![(
                         PartId::new(10),
-                        ToolResultPart::Resource(resources::image(1))
+                        InputPart::Resource(resources::image(1))
                     )]),
                     vec![(1, opaque)]
                 ),

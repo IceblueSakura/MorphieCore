@@ -115,7 +115,7 @@ impl ResourceTable {
             crate::semantic::task::generation::Item,
         )],
     ) -> Vec<ResourceId> {
-        use crate::semantic::task::generation::{ContentPart, Item, ToolOutput, ToolResultPart};
+        use crate::semantic::task::generation::{ContentPart, InputPart, Item, ToolOutput};
         let mut ids = BTreeSet::new();
         for (_, item) in items {
             if let Item::Message(message) = item {
@@ -125,16 +125,21 @@ impl ResourceTable {
                     }
                 }
             }
-            let output = match item {
-                Item::ToolResult(value) | Item::CustomResult(value) => Some(&value.output),
-                Item::ProviderTool(value) => value.output.as_ref(),
+            let parts = match item {
+                Item::Instruction(value) => Some(value.parts.as_slice()),
+                Item::ToolResult(value) | Item::CustomResult(value) => match &value.output {
+                    ToolOutput::Parts(parts) => Some(parts.as_slice()),
+                    _ => None,
+                },
+                Item::ProviderTool(value) => match &value.output {
+                    Some(ToolOutput::Parts(parts)) => Some(parts.as_slice()),
+                    _ => None,
+                },
                 _ => None,
             };
-            if let Some(ToolOutput::Parts(parts)) = output {
-                for (_, part) in parts {
-                    if let ToolResultPart::Resource(value) = part {
-                        ids.insert(value.id);
-                    }
+            for (_, part) in parts.unwrap_or_default() {
+                if let InputPart::Resource(value) = part {
+                    ids.insert(value.id);
                 }
             }
         }

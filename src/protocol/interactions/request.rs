@@ -80,9 +80,10 @@ pub(super) fn project(
             rules.insert(RequestRule::DeveloperAsSystem);
         }
         system = Some(
-            i.parts
-                .iter()
-                .map(|(_, t)| t.as_str())
+            i.texts()
+                .ok_or_else(unsupported)?
+                .into_iter()
+                .map(|(_, t)| t)
                 .collect::<Vec<_>>()
                 .join("\n"),
         );
@@ -360,10 +361,10 @@ fn steps(
                             parts
                                 .iter()
                                 .map(|(_, p)| match p {
-                                    ToolResultPart::Text(t) => {
+                                    InputPart::Text(t) => {
                                         Ok(json!({"type":"text","text":t.as_str()}))
                                     }
-                                    ToolResultPart::Resource(r) => {
+                                    InputPart::Resource(r) => {
                                         media(r.media(request.resources())?, true, rules)
                                     }
                                 })

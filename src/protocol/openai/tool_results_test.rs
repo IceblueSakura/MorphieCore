@@ -123,7 +123,7 @@ fn request_codecs_enforce_result_carriers_before_rendering() {
         (
             ToolOutput::Parts(vec![(
                 PartId::new(1),
-                ToolResultPart::Resource(ResourceUse {
+                InputPart::Resource(ResourceUse {
                     id: ResourceId::new(1),
                     description: ResourceDescription::Image { detail: None },
                 }),
