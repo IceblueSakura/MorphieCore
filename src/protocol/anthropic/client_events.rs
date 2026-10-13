@@ -1,6 +1,7 @@
 //! Native SSE for Messages clients from the shared stream events of any upstream.
 //! Readable deltas stream; an opaque value (already sealed for the client) arrives
-//! as one `signature_delta` when its thinking block closes.
+//! as one `signature_delta` when its thinking block closes. A reasoning block opens on
+//! its first delta or at its end, so a redacted value can still open `redacted_thinking`.
 use crate::{
     protocol::CodecError,
     semantic::task::generation::{
@@ -22,10 +23,22 @@ pub struct ClientEventEncoder {
     model: String,
     started: bool,
     finished: bool,
-    open: BTreeMap<ItemId, (usize, Kind, Option<String>)>,
+    /// Wire index once the block has opened, kind, and a replay value seen at start.
+    open: BTreeMap<ItemId, (Option<usize>, Kind, Option<String>)>,
     next: usize,
     calls: bool,
     usage: Option<Usage>,
+}
+fn thinking_block() -> Value {
+    json!({"type":"thinking","thinking":"","signature":""})
+}
+fn open_block(next: &mut usize, out: &mut Vec<Bytes>, block: Value) -> usize {
+    let index = *next;
+    *next += 1;
+    out.push(frame(
+        &json!({"type":"content_block_start","index":index,"content_block":block}),
+    ));
+    index
 }
 fn frame(v: &Value) -> Bytes {
     let kind = v["type"].as_str().unwrap_or("error");
@@ -83,33 +96,33 @@ impl ClientEventEncoder {
             StreamEvent::ItemStarted { item, kind, replay } => {
                 self.start(&mut out);
                 let (kind, block) = match kind {
-                    ItemKind::Message { .. } => (Kind::Text, json!({"type":"text","text":""})),
-                    ItemKind::Reasoning => (
-                        Kind::Thinking,
-                        json!({"type":"thinking","thinking":"","signature":""}),
-                    ),
+                    ItemKind::Message { .. } => {
+                        (Kind::Text, Some(json!({"type":"text","text":""})))
+                    }
+                    // Opens on its first delta or at its end, once a redacted value is known.
+                    ItemKind::Reasoning => (Kind::Thinking, None),
                     ItemKind::ToolCall { call_id, name, .. } => {
                         self.calls = true;
                         (
                             Kind::ToolUse,
-                            json!({"type":"tool_use","id":call_id.as_str(),"name":name.as_str(),"input":{}}),
+                            Some(
+                                json!({"type":"tool_use","id":call_id.as_str(),"name":name.as_str(),"input":{}}),
+                            ),
                         )
                     }
                     _ => return Err(CodecError::Unsupported("Messages stream item".into())),
                 };
-                let index = self.next;
-                self.next += 1;
+                let index = block.map(|block| open_block(&mut self.next, &mut out, block));
                 let signature = replay.as_ref().map(|r| r.value.as_str().to_owned());
                 self.open.insert(*item, (index, kind, signature));
-                out.push(frame(
-                    &json!({"type":"content_block_start","index":index,"content_block":block}),
-                ));
             }
             StreamEvent::Delta { item, fragment, .. } if !fragment.is_empty() => {
                 let (index, kind, _) = self
                     .open
-                    .get(item)
+                    .get_mut(item)
                     .ok_or(CodecError::Invalid("Messages block"))?;
+                let index = *index
+                    .get_or_insert_with(|| open_block(&mut self.next, &mut out, thinking_block()));
                 let delta = match kind {
                     Kind::Text => json!({"type":"text_delta","text":fragment}),
                     Kind::Thinking => json!({"type":"thinking_delta","thinking":fragment}),
@@ -128,7 +141,19 @@ impl ClientEventEncoder {
                     .as_ref()
                     .map(|r| r.value.as_str().to_owned())
                     .or(signature);
+                let redacted =
+                    index.is_none() && signature.as_deref().is_some_and(super::client::redacted);
+                let index = match index {
+                    Some(index) => index,
+                    None if redacted => open_block(
+                        &mut self.next,
+                        &mut out,
+                        json!({"type":"redacted_thinking","data":signature}),
+                    ),
+                    None => open_block(&mut self.next, &mut out, thinking_block()),
+                };
                 if kind == Kind::Thinking
+                    && !redacted
                     && let Some(signature) = signature
                 {
                     out.push(frame(&json!({"type":"content_block_delta","index":index,

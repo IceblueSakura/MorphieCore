@@ -14,6 +14,7 @@ mod anthropic_profile {
     fn message() -> Value {
         json!({"id":"msg_synthetic","type":"message","role":"assistant","model":"synthetic-model",
         "content":[{"type":"thinking","thinking":"","signature":"synthetic-signature"},
+            {"type":"redacted_thinking","data":"synthetic-redacted"},
             {"type":"tool_use","id":"toolu_1","name":"lookup","input":{"key":"A"}}],
         "stop_reason":"tool_use","stop_sequence":null,
         "usage":{"input_tokens":11,"output_tokens":7}})
@@ -30,12 +31,18 @@ mod anthropic_profile {
             .unwrap();
         assert_eq!(p.encode_response(&decoded).unwrap(), message());
         assert!(!format!("{decoded:?}").contains("synthetic-signature"));
+        assert!(!format!("{decoded:?}").contains("synthetic-redacted"));
+        for data in [json!(""), json!(7), Value::Null] {
+            let mut bad = message();
+            bad["content"][1]["data"] = data;
+            assert!(p.decode_response(bad.to_string().as_bytes()).is_err());
+        }
         // Unknown upstream fields are ignored; known ones are re-encoded unchanged.
         let mut unknown = message();
         unknown["created_at"] = json!(0);
         unknown["usage"]["service_tier"] = json!("standard");
         unknown["usage"]["cache_creation"] = json!({"ephemeral_5m_input_tokens":0});
-        unknown["content"][1]["extra"] = json!(null);
+        unknown["content"][2]["extra"] = json!(null);
         let decoded = p.decode_response(unknown.to_string().as_bytes()).unwrap();
         assert_eq!(p.encode_response(&decoded).unwrap(), message());
         let mut edited = p.decode_request(request().to_string().as_bytes()).unwrap();

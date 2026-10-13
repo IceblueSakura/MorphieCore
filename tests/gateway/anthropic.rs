@@ -39,6 +39,12 @@ fn native_stream_body(value: &Value) -> String {
                 events.push(json!({"type":"content_block_delta","index":index,"delta":{"type":"thinking_delta","thinking":block["thinking"]}}));
                 events.push(json!({"type":"content_block_delta","index":index,"delta":{"type":"signature_delta","signature":block["signature"]}}));
             }
+            // Redacted thinking arrives whole; it has no delta type.
+            "redacted_thinking" => {
+                events.push(
+                    json!({"type":"content_block_start","index":index,"content_block":block}),
+                );
+            }
             "tool_use" => {
                 events.push(json!({"type":"content_block_start","index":index,"content_block":{"type":"tool_use","id":block["id"],"name":block["name"],"input":{}}}));
                 events.push(json!({"type":"content_block_delta","index":index,"delta":{"type":"input_json_delta","partial_json":block["input"].to_string()}}));
@@ -135,7 +141,7 @@ fn messages_stream_body(wire: &str) -> Value {
     panic!("no message_stop")
 }
 fn stream_body(wire: &str, profile: Profile) -> Value {
-    assert!(!wire.contains("synthetic-native-signature"));
+    assert!(!wire.contains("synthetic-native-signature") && !wire.contains("synthetic-redacted"));
     let client = morphiecore::protocol::openai::Adapter::new(
         profile,
         morphiecore::protocol::openai::Dialect::MorphieCore,
@@ -322,6 +328,7 @@ async fn answer(
                 {"role":"user","content":[{"type":"text","text":"lookup"}]},
                 {"role":"assistant","content":[
                     {"type":"thinking","thinking":"plan","signature":"synthetic-native-signature"},
+                    {"type":"redacted_thinking","data":"synthetic-redacted"},
                     {"type":"tool_use","id":"call-local","name":"lookup","input":{"key":"A"}}
                 ]},
                 {"role":"user","content":[{"type":"tool_result","tool_use_id":"call-local","content":"found"}]}
@@ -332,6 +339,7 @@ async fn answer(
         json!({"id":"msg-local","type":"message","role":"assistant","model":"claude-haiku-5-5",
             "content": if turn { json!([{"type":"text","text":"answer"}]) } else { json!([
                 {"type":"thinking","thinking":"plan","signature":"synthetic-native-signature"},
+                {"type":"redacted_thinking","data":"synthetic-redacted"},
                 {"type":"tool_use","id":"call-local","name":"lookup","input":{"key":"A"}}
             ]) },
             "stop_reason":if turn {"end_turn"}else{"tool_use"},"stop_sequence":null,
@@ -496,6 +504,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 );
                 assert_eq!(body["usage"]["total_tokens"], 23);
                 assert!(!body.to_string().contains("synthetic-native-signature"));
+                assert!(!body.to_string().contains("synthetic-redacted"));
                 if turn == 0 {
                     let token = if responses {
                         &body["output"][0]["encrypted_content"]
@@ -510,6 +519,15 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                     );
                     assert_eq!(format,morphiecore::semantic::task::generation::ReplayFormat::AnthropicMessagesThinking);
                     assert_eq!(payload.as_str(), "synthetic-native-signature");
+                    let redacted = if responses {
+                        &body["output"][1]["encrypted_content"]
+                    } else {
+                        &body["choices"][0]["message"]["reasoning_details"][2]["data"]
+                    };
+                    let (_, format, payload) =
+                        replay_envelope::open(redacted.as_str().unwrap()).unwrap();
+                    assert_eq!(format,morphiecore::semantic::task::generation::ReplayFormat::AnthropicMessagesRedactedThinking);
+                    assert_eq!(payload.as_str(), "synthetic-redacted");
                     if responses {
                         let history = input["input"].as_array_mut().unwrap();
                         history.extend(body["output"].as_array().unwrap().iter().cloned());
@@ -629,8 +647,16 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 morphiecore::semantic::task::generation::ReplayFormat::AnthropicMessagesThinking
             );
             assert_eq!(payload.as_str(), "synthetic-native-signature");
+            assert_eq!(body["content"][1]["type"], "redacted_thinking");
+            let (_, format, payload) =
+                replay_envelope::open(body["content"][1]["data"].as_str().unwrap()).unwrap();
             assert_eq!(
-                body["content"][1],
+                format,
+                morphiecore::semantic::task::generation::ReplayFormat::AnthropicMessagesRedactedThinking
+            );
+            assert_eq!(payload.as_str(), "synthetic-redacted");
+            assert_eq!(
+                body["content"][2],
                 json!({"type":"tool_use","id":"call-local","name":"lookup","input":{"key":"A"}})
             );
             let history = input["messages"].as_array_mut().unwrap();

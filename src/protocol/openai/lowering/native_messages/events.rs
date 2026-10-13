@@ -70,7 +70,7 @@ impl EventProjection {
                     self.scope = item.scope();
                     match kind {
                         ItemKind::Reasoning if self.profile == Profile::Chat => {
-                            if !self.reasoning.is_empty() || self.message.is_some() || self.tools {
+                            if self.message.is_some() || self.tools {
                                 if self.late.is_some() {
                                     return Err(order());
                                 }

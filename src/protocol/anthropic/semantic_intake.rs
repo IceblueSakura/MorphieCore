@@ -91,6 +91,14 @@ impl Intake {
                     text(signature)?,
                 )),
             }),
+            Block::RedactedThinking(data) => Item::Reasoning(ReasoningItem {
+                parts: vec![],
+                status: ItemLifecycle::Completed,
+                replay: Some(ReplayValue::final_value(
+                    ReplayFormat::AnthropicMessagesRedactedThinking,
+                    text(data)?,
+                )),
+            }),
             Block::ToolUse {
                 id: call,
                 name,

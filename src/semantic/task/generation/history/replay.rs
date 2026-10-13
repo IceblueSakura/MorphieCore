@@ -8,6 +8,8 @@ pub enum ReplayFormat {
     GoogleInteractionsV1Step,
     GoogleGenerateContentPart,
     AnthropicMessagesThinking,
+    /// Safety-redacted thinking: opaque `data` with no readable parts.
+    AnthropicMessagesRedactedThinking,
 }
 #[derive(Clone, Eq, PartialEq)]
 pub enum ReplayValue {
@@ -50,6 +52,7 @@ impl ReplayValue {
                 | ReplayFormat::GoogleInteractionsV1Thought
                 | ReplayFormat::GoogleGenerateContentPart
                 | ReplayFormat::AnthropicMessagesThinking
+                | ReplayFormat::AnthropicMessagesRedactedThinking
         ) {
             return Err(GenerationError::InvalidReplay);
         }
@@ -64,6 +67,7 @@ impl ReplayValue {
             ReplayFormat::GoogleInteractionsV1Step => 2,
             ReplayFormat::GoogleGenerateContentPart => 3,
             ReplayFormat::AnthropicMessagesThinking => 4,
+            ReplayFormat::AnthropicMessagesRedactedThinking => 5,
         }]);
         hash.update([u8::from(self.replay_token().is_some())]);
         hash.update(self.as_str().as_bytes());

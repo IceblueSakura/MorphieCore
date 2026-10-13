@@ -133,6 +133,7 @@ impl EventDecoder {
             delta,
             &self.adaptation,
             prior,
+            self.chat_detail_base,
             DecodeDirection::Upstream,
         )?;
         if details.is_none() && delta.contains_key("reasoning") {
@@ -181,18 +182,15 @@ impl EventDecoder {
             )?;
         }
         if let Some((wire_id, data)) = details.and_then(|d| d.responses_encrypted) {
-            if self.chat_replay.is_some() {
-                return Err(CodecError::Invalid("duplicate reasoning replay"));
-            }
             let item = self.reasoning_owner(&mut out)?;
             self.fidelity.record_response_item_id(item, &wire_id)?;
-            self.chat_replay = Some(ReasoningReplay {
+            let replay = ReasoningReplay {
                 value: ReplayValue::final_value(
                     ReplayFormat::ResponsesEncrypted,
                     text(&data, "encrypted reasoning", MAX_TEXT_BYTES)?,
                 ),
                 origin: self.origin.clone(),
-            });
+            };
             // The complete encrypted detail closes its reasoning owner before
             // the carrier content; never wait for response finish to invent it.
             for part in self.state()?.item(item)?.parts.clone() {
@@ -215,10 +213,14 @@ impl EventDecoder {
                 StreamEvent::ItemFinished {
                     item,
                     status: ItemLifecycle::Completed,
-                    replay: self.chat_replay.clone(),
+                    replay: Some(replay),
                 },
                 &mut out,
             )?;
+            // The value closes its item; a later detail opens the next one.
+            let details = self.state()?.item(item)?.parts.len() as u64 + 1;
+            self.chat_detail_base += details;
+            self.chat_reasoning = None;
         }
         // One Chat candidate owns an assistant message even when it only contains
         // calls. The owner is allocated at the first message-owned signal so
@@ -574,11 +576,7 @@ impl EventDecoder {
                         } else {
                             ItemLifecycle::Incomplete
                         },
-                        replay: if Some(item.id) == self.chat_reasoning {
-                            self.chat_replay.clone()
-                        } else {
-                            None
-                        },
+                        replay: None,
                     },
                     &mut out,
                 )?;

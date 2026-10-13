@@ -99,6 +99,7 @@ impl GenerationSseDecoder {
                         (!thinking.is_empty()).then_some(PartKind::Summary),
                         thinking,
                     ),
+                    Block::RedactedThinking(_) => (ItemKind::Reasoning, None, String::new()),
                     Block::ToolUse { id, name, .. } => (
                         ItemKind::ToolCall {
                             format: ArgumentFormat::Json,
@@ -180,15 +181,22 @@ impl GenerationSseDecoder {
                     out.push(StreamEvent::ValueFinished { item, part });
                     out.push(StreamEvent::PartFinished { item, part });
                 }
-                let replay = if let Block::Thinking {
-                    thinking,
-                    signature,
-                } = block
-                {
-                    let replay = ReplayValue::final_value(
+                let opaque = match block {
+                    Block::Thinking {
+                        thinking,
+                        signature,
+                    } => Some((
                         ReplayFormat::AnthropicMessagesThinking,
-                        text(signature)?,
-                    );
+                        signature,
+                        thinking.as_str(),
+                    )),
+                    Block::RedactedThinking(data) => {
+                        Some((ReplayFormat::AnthropicMessagesRedactedThinking, data, ""))
+                    }
+                    _ => None,
+                };
+                let replay = if let Some((format, value, thinking)) = opaque {
+                    let replay = ReplayValue::final_value(format, text(value)?);
                     let reasoning = ReasoningItem {
                         parts: if thinking.is_empty() {
                             vec![]

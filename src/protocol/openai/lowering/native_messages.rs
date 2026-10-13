@@ -93,9 +93,8 @@ pub(crate) fn project(decoded: &mut DecodedResponse, profile: Profile) -> Result
         for (id, item) in projected.items() {
             match item {
                 Item::Reasoning(r) if anchored(r) => reasoning.push((*id, item.clone())),
-                Item::Reasoning(_)
-                    if parts.is_empty() && calls.is_empty() && reasoning.is_empty() =>
-                {
+                // Consecutive blocks such as thinking then redacted thinking keep their order.
+                Item::Reasoning(_) if parts.is_empty() && calls.is_empty() => {
                     reasoning.push((*id, item.clone()))
                 }
                 Item::Message(message)

@@ -79,7 +79,8 @@ pub struct EventDecoder {
     pub(super) chat_owner: Option<ItemId>,
     pub(super) chat_calls: Vec<ItemId>,
     pub(super) chat_reasoning: Option<ItemId>,
-    pub(super) chat_replay: Option<ReasoningReplay>,
+    /// Message position of the open reasoning item's first detail.
+    pub(super) chat_detail_base: u64,
     pub(super) chat_pending_part: Option<PartKind>,
     pub(super) chat_audio_bytes: crate::protocol::openai::chat::audio::ChunkBytes,
 }
@@ -105,7 +106,7 @@ impl EventDecoder {
             chat_owner: None,
             chat_calls: vec![],
             chat_reasoning: None,
-            chat_replay: None,
+            chat_detail_base: 0,
             chat_pending_part: None,
             chat_audio_bytes: Default::default(),
         }

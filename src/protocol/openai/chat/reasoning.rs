@@ -11,11 +11,12 @@ pub(in crate::protocol::openai) struct Details {
     pub responses_encrypted: Option<(String, String)>,
 }
 /// One stream delta: one ordered readable part plus an optional final encrypted
-/// token. Fragment indices belong to the carrier, not to invented semantic items.
+/// token. Fragment indices are message positions; `base` is the open item's first.
 pub(in crate::protocol::openai) fn parse(
     m: &Map<String, Value>,
     a: &Adaptation,
     prior: Option<PartKind>,
+    base: u64,
     direction: DecodeDirection,
 ) -> Result<Option<Details>, CodecError> {
     let Some(value) = m.get("reasoning_details") else {
@@ -68,7 +69,7 @@ pub(in crate::protocol::openai) fn parse(
                 if result.part.is_some()
                     || result.responses_encrypted.is_some()
                     || prior.is_some_and(|p| p != part_kind)
-                    || o.get("index").and_then(Value::as_u64) != Some(0)
+                    || o.get("index").and_then(Value::as_u64) != Some(base)
                 {
                     return Err(CodecError::Invalid("reasoning detail order"));
                 }
@@ -80,7 +81,7 @@ pub(in crate::protocol::openai) fn parse(
             }
             "reasoning.encrypted" => {
                 direction.fields(o, &["type", "format", "index", "id", "data"])?;
-                let expected = u64::from(prior.is_some() || result.part.is_some());
+                let expected = base + u64::from(prior.is_some() || result.part.is_some());
                 if result.responses_encrypted.is_some()
                     || o.get("index").and_then(Value::as_u64) != Some(expected)
                 {

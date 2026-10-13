@@ -148,7 +148,9 @@ The envelope is not encryption, authentication or local proof. It cannot choose 
 
 Some native thinking is account-bound. Exact-credential affinity helps preserve it, but Provider/model compatibility alone cannot guarantee replay after credential fallback.
 
-Carriers include Responses `encrypted_content`, Chat encrypted reasoning details, Anthropic thinking signatures, Gemini `thoughtSignature` and Interactions signatures.
+Carriers include Responses `encrypted_content`, Chat encrypted reasoning details, Anthropic thinking signatures and redacted thinking `data`, Gemini `thoughtSignature` and Interactions signatures.
+
+Redacted thinking is an opaque-only reasoning item with its own replay format, so the native block type survives the envelope. Messages clients receive it as `redacted_thinking` whose `data` is the envelope; a streamed reasoning block opens on its first delta or at its end, once a redacted value can be recognized.
 
 Google signatures travel as reasoning items. The IR has no part- or call-level replay slots; Provider-tool replay stays separate.
 

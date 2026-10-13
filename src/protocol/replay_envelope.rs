@@ -35,6 +35,7 @@ fn format_tag(format: ReplayFormat) -> &'static str {
     match format {
         ReplayFormat::ResponsesEncrypted => "openai-responses",
         ReplayFormat::AnthropicMessagesThinking => "anthropic-thinking",
+        ReplayFormat::AnthropicMessagesRedactedThinking => "anthropic-redacted-thinking",
         ReplayFormat::GoogleGenerateContentPart => "gemini-part",
         ReplayFormat::GoogleInteractionsV1Thought => "interactions-thought",
         ReplayFormat::GoogleInteractionsV1Step => "interactions-step",
@@ -44,6 +45,7 @@ fn parse_format(tag: &str) -> Option<ReplayFormat> {
     Some(match tag {
         "openai-responses" => ReplayFormat::ResponsesEncrypted,
         "anthropic-thinking" => ReplayFormat::AnthropicMessagesThinking,
+        "anthropic-redacted-thinking" => ReplayFormat::AnthropicMessagesRedactedThinking,
         "gemini-part" => ReplayFormat::GoogleGenerateContentPart,
         "interactions-thought" => ReplayFormat::GoogleInteractionsV1Thought,
         "interactions-step" => ReplayFormat::GoogleInteractionsV1Step,

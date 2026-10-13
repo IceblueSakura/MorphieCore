@@ -17,6 +17,8 @@ pub enum Block {
         thinking: String,
         signature: String,
     },
+    /// Arrives whole in `content_block_start`; there is no delta type.
+    RedactedThinking(String),
     ToolUse {
         id: String,
         name: String,
@@ -54,6 +56,7 @@ impl Block {
                     signature: string(required(o, "signature")?)?,
                 }
             }
+            "redacted_thinking" => Self::RedactedThinking(string(required(object(v)?, "data")?)?),
             "tool_use" => {
                 let o = object(v)?;
                 let input = required(o, "input")?;
@@ -91,7 +94,7 @@ impl Block {
             (Self::Text(_), _)
                 | (Self::ToolResult { .. } | Self::Media(_), Role::User)
                 | (
-                    Self::Thinking { .. } | Self::ToolUse { .. },
+                    Self::Thinking { .. } | Self::RedactedThinking(_) | Self::ToolUse { .. },
                     Role::Assistant
                 )
         )
@@ -109,6 +112,12 @@ impl Block {
                 }
                 charge(&mut bytes, text(thinking)?)?;
                 charge(&mut bytes, text(signature)?)?;
+            }
+            Self::RedactedThinking(data) => {
+                if data.is_empty() {
+                    return Err(CodecError::Invalid("Anthropic redacted thinking"));
+                }
+                charge(&mut bytes, text(data)?)?;
             }
             Self::ToolUse {
                 id,
@@ -160,6 +169,7 @@ impl Block {
                 thinking,
                 signature,
             } => json!({"type":"thinking","thinking":thinking,"signature":signature}),
+            Self::RedactedThinking(data) => json!({"type":"redacted_thinking","data":data}),
             Self::ToolUse {
                 id,
                 name,

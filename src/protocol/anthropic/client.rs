@@ -7,7 +7,9 @@ use super::{
 };
 use crate::{
     adapter::Request,
-    protocol::{CodecError, DecodedRequest, DecodedResponse, fidelity::FidelityRecords},
+    protocol::{
+        CodecError, DecodedRequest, DecodedResponse, fidelity::FidelityRecords, replay_envelope,
+    },
     semantic::{task::generation::*, value::Presence},
 };
 use serde_json::{Map, Value, json};
@@ -45,6 +47,7 @@ fn block_fields(kind: Option<&str>) -> &'static [&'static str] {
         // `citations` is kept so readers reject a non-empty list.
         Some("text") => &["type", "text", "citations"],
         Some("thinking") => &["type", "thinking", "signature"],
+        Some("redacted_thinking") => &["type", "data"],
         Some("tool_use") => &["type", "id", "name", "input"],
         Some("tool_result") => &["type", "tool_use_id", "content", "is_error"],
         Some("image") => &["type", "source", "transformations"],
@@ -263,6 +266,14 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     Ok(request)
 }
 
+/// Client values are sealed envelopes; the format tag keeps a redacted block's type.
+pub(super) fn redacted(sealed: &str) -> bool {
+    matches!(
+        replay_envelope::open(sealed),
+        Some((_, ReplayFormat::AnthropicMessagesRedactedThinking, _))
+    )
+}
+
 /// Encode a sealed response for a Messages client under the public label.
 pub fn encode_client_response(
     response: &DecodedResponse,
@@ -274,6 +285,11 @@ pub fn encode_client_response(
     for (_, item) in semantic.items() {
         match item {
             Item::Reasoning(r) => {
+                let signature = r.replay.as_ref().map_or("", ReplayValue::as_str);
+                if redacted(signature) {
+                    content.push(json!({"type":"redacted_thinking","data":signature}));
+                    continue;
+                }
                 let thinking: String = r
                     .parts
                     .iter()
@@ -281,7 +297,6 @@ pub fn encode_client_response(
                         ReasoningContent::Summary(t) | ReasoningContent::Text(t) => t.as_str(),
                     })
                     .collect();
-                let signature = r.replay.as_ref().map_or("", ReplayValue::as_str);
                 content.push(json!({"type":"thinking","thinking":thinking,"signature":signature}));
             }
             Item::Message(m) if m.role == MessageRole::Assistant => {

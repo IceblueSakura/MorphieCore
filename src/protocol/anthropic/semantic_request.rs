@@ -415,18 +415,21 @@ pub(super) fn item_blocks(
                 return Err(CodecError::Invalid("native replay dependency"));
             }
             let replay = r.replay.as_ref().ok_or_else(unsupported)?;
-            if replay.format() != ReplayFormat::AnthropicMessagesThinking {
-                return Err(unsupported());
-            }
-            let thinking = match r.parts.first() {
-                None => String::new(),
-                Some((_, ReasoningContent::Summary(t))) => t.as_str().into(),
+            let value = replay.replay_token().ok_or_else(unsupported)?.into();
+            match (replay.format(), r.parts.first()) {
+                (ReplayFormat::AnthropicMessagesRedactedThinking, None) => {
+                    vec![Block::RedactedThinking(value)]
+                }
+                (ReplayFormat::AnthropicMessagesThinking, part) => vec![Block::Thinking {
+                    thinking: match part {
+                        None => String::new(),
+                        Some((_, ReasoningContent::Summary(t))) => t.as_str().into(),
+                        _ => return Err(unsupported()),
+                    },
+                    signature: value,
+                }],
                 _ => return Err(unsupported()),
-            };
-            vec![Block::Thinking {
-                thinking,
-                signature: replay.replay_token().ok_or_else(unsupported)?.into(),
-            }]
+            }
         }
         Item::ToolCall(c) => {
             if c.status != ItemLifecycle::Completed
