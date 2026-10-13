@@ -1121,6 +1121,20 @@ mod router_adapter {
         );
         body["output"][0]["format"] = json!("unrecognized-signature-v1");
         assert!(source.decode_response(body.to_string().as_bytes()).is_err());
+        // Unclassified reasoning (observed for z-ai/glm-5.3-flash) is readable text only.
+        body["output"][0] = json!({"type":"reasoning","id":"rs","status":"completed","summary":[],
+            "content":[{"type":"reasoning_text","text":"think"}],"format":"unknown"});
+        let decoded = source.decode_response(body.to_string().as_bytes()).unwrap();
+        use morphiecore::semantic::task::generation::{Item, ReasoningContent};
+        let Item::Reasoning(reasoning) = &decoded.semantic.items()[0].1 else {
+            panic!("reasoning")
+        };
+        assert!(reasoning.replay.is_none());
+        assert!(
+            matches!(&reasoning.parts[..], [(_, ReasoningContent::Text(t))] if t.as_str() == "think")
+        );
+        body["output"][0]["encrypted_content"] = json!("synthetic");
+        assert!(source.decode_response(body.to_string().as_bytes()).is_err());
     }
 
     #[test]

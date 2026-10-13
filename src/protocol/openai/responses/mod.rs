@@ -213,6 +213,12 @@ fn input_parts(b: &mut Items, a: &[Value]) -> Result<Vec<(PartId, InputPart)>, C
                 record_breakpoint(b, id, o)?;
                 (id, InputPart::Resource(b.resource(resource)?))
             }
+            // Open Responses places video in tool results; targets without a carrier reject it.
+            "input_video" => {
+                let resource =
+                    crate::protocol::openai::content::video::read_responses(o, direction)?;
+                (b.part_id()?, InputPart::Resource(b.resource(resource)?))
+            }
             _ => return Err(CodecError::Unsupported("input content part".into())),
         };
         p.push(part);
@@ -516,6 +522,13 @@ pub(super) fn decode_items(
                                     crate::protocol::openai::content::file::read(p, direction)?,
                                 )?)
                             }
+                            "input_video" if !response && role == MessageRole::User => {
+                                ContentPart::Resource(b.resource(
+                                    crate::protocol::openai::content::video::read_responses(
+                                        p, direction,
+                                    )?,
+                                )?)
+                            }
                             "output_text" if role == MessageRole::Assistant => ContentPart::Text(
                                 crate::protocol::openai::content::text::read(p, !response, b)?,
                             ),
@@ -602,9 +615,8 @@ fn media_part(
             crate::protocol::openai::content::image::write(resource, Profile::Responses)
         }
         ResourceKind::File => crate::protocol::openai::content::file::write(resource),
-        ResourceKind::Audio | ResourceKind::Video => {
-            unreachable!("lowering rejects audio and video without a Responses carrier")
-        }
+        ResourceKind::Video => crate::protocol::openai::content::video::write_responses(resource),
+        ResourceKind::Audio => unreachable!("lowering rejects audio without a Responses carrier"),
     };
     if fidelity.cache_breakpoint(id) {
         v["prompt_cache_breakpoint"] = json!({"mode":"explicit"});

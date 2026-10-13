@@ -478,6 +478,64 @@ mod chat_media {
                 .is_err()
         );
     }
+    #[test]
+    fn input_video_reaches_only_declaring_responses_dialects() {
+        let content = json!([
+            {"type":"input_video","video_url":"data:video/mp4;base64,AQID"},
+            {"type":"input_text","text":"Describe it."}]);
+        let wire = json!({"model":"synthetic-model","input":[
+            {"type":"message","role":"user","content":content}]});
+        let decoded = standard(Profile::Responses)
+            .decode_request(&serde_json::to_vec(&wire).unwrap())
+            .unwrap();
+        let semantic = &decoded.task.semantic;
+        assert_eq!(GenerationRequirements::derive(semantic).video_inputs, 1);
+        let Item::Message(message) = &semantic.items()[0].1 else {
+            panic!("message")
+        };
+        let ContentPart::Resource(video) = &message.parts[0].content else {
+            panic!("video")
+        };
+        let view = video.media(semantic.resources()).unwrap();
+        assert_eq!(view.kind(), ResourceKind::Video);
+        assert!(
+            matches!(view.location, ResourceLocation::Inline { media_type, data_base64 }
+            if media_type.as_str() == "video/mp4" && data_base64.as_str() == "AQID")
+        );
+        let openrouter = |profile| Adapter::new(profile, Dialect::OpenRouter, None);
+        let output = openrouter(Profile::Responses)
+            .encode_request(&decoded, "synthetic-model", &Contract::full())
+            .unwrap();
+        assert_eq!(output["input"][0]["content"], content);
+        let output = openrouter(Profile::Chat)
+            .encode_request(&decoded, "synthetic-model", &Contract::full())
+            .unwrap();
+        assert_eq!(
+            output["messages"][0]["content"][0],
+            json!({"type":"video_url","video_url":{"url":"data:video/mp4;base64,AQID"}})
+        );
+        assert!(
+            standard(Profile::Responses)
+                .encode_request(&decoded, "synthetic-model", &Contract::full())
+                .is_err()
+        );
+        // Tool-result video decodes, but OpenRouter's function_call_output has no video part.
+        let tool = json!({"model":"synthetic-model","input":[
+            {"type":"function_call","call_id":"call_1","name":"record","arguments":"{}"},
+            {"type":"function_call_output","call_id":"call_1","output":[
+                {"type":"input_video","video_url":"https://example.invalid/clip.mp4"}]}],
+            "tools":[{"type":"function","name":"record","parameters":{"type":"object"}}]});
+        let decoded = standard(Profile::Responses)
+            .decode_request(&serde_json::to_vec(&tool).unwrap())
+            .unwrap();
+        let needs = GenerationRequirements::derive(&decoded.task.semantic);
+        assert_eq!((needs.tool_result_media, needs.video_inputs), (1, 1));
+        assert!(
+            openrouter(Profile::Responses)
+                .encode_request(&decoded, "synthetic-model", &Contract::full())
+                .is_err()
+        );
+    }
     fn completion(message: Value) -> Value {
         json!({"id":"synthetic-response","object":"chat.completion","created":1,"model":"synthetic-model","choices":[{"index":0,"message":message,"finish_reason":"stop"}]})
     }

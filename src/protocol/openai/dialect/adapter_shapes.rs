@@ -487,17 +487,20 @@ pub(crate) fn reasoning_text_shorthand(value: &mut Value) -> Result<(), CodecErr
 
 /// A known syntax marker is redundant with the admitted Responses reasoning
 /// codec. Unknown formats must not borrow that codec's replay semantics.
+/// `unknown` marks reasoning the router did not classify (observed for
+/// `z-ai/glm-5.3-flash`, 2026-10-13); it is readable text only, never a replay carrier.
 pub(crate) fn reasoning_marker(value: &mut Value) -> Result<(), CodecError> {
-    if value.get("type").and_then(Value::as_str) == Some("reasoning")
-        && let Some(format) = value
-            .as_object_mut()
-            .expect("object")
-            .shift_remove("format")
-        && format.as_str() != Some("openai-responses-v1")
-    {
-        return Err(CodecError::Unsupported("reasoning format".into()));
+    if value.get("type").and_then(Value::as_str) != Some("reasoning") {
+        return Ok(());
     }
-    Ok(())
+    let o = value.as_object_mut().expect("object");
+    let readable = o.get("encrypted_content").is_none_or(Value::is_null);
+    match o.shift_remove("format") {
+        None => Ok(()),
+        Some(f) if f.as_str() == Some("openai-responses-v1") => Ok(()),
+        Some(f) if f.as_str() == Some("unknown") && readable => Ok(()),
+        Some(_) => Err(CodecError::Unsupported("reasoning format".into())),
+    }
 }
 
 /// Project the final typed readable reasoning carrier to the selected spelling.

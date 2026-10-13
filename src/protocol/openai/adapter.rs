@@ -97,6 +97,7 @@ impl Dialect {
                 "openrouter-v1",
                 WireRules {
                     chat_video_url: true,
+                    responses_input_video: true,
                     readable_reasoning: true,
                     routing_extras: true,
                     response_extras: true,

@@ -1,6 +1,7 @@
-//! Chat `video_url` extension: a video URL or base64 data URL, never a frame list.
-//! Shared by OpenRouter, DashScope, Zhipu, vLLM and ModelBest; extras such as `fps` are
-//! dialect-specific and ignored. Source: docs/refs/multimodal.md.
+//! Video extensions: Chat `video_url` and Responses `input_video`, each a video URL or
+//! base64 data URL, never a frame list. Chat's is shared by OpenRouter, DashScope, Zhipu,
+//! vLLM and ModelBest; Responses' by Open Responses and OpenRouter. Extras such as `fps`
+//! or `processing` are dialect-specific and ignored. Source: docs/refs/multimodal.md.
 use crate::protocol::openai::{CodecError, common::*};
 use crate::semantic::task::generation::*;
 use serde_json::{Map, Value, json};
@@ -15,7 +16,17 @@ pub(in crate::protocol::openai) fn read(
             .ok_or(CodecError::Invalid("video_url"))?,
     )?;
     direction.fields(video, &["url"])?;
-    let raw = string(video, "url")?;
+    resource(string(video, "url")?)
+}
+/// Responses `input_video`: `video_url` is a plain string, not Chat's object.
+pub(in crate::protocol::openai) fn read_responses(
+    part: &Map<String, Value>,
+    direction: DecodeDirection,
+) -> Result<Resource, CodecError> {
+    direction.fields(part, &["type", "video_url"])?;
+    resource(string(part, "video_url")?)
+}
+fn resource(raw: &str) -> Result<Resource, CodecError> {
     if raw.len() > MAX_TEXT_BYTES {
         return Err(CodecError::Limit);
     }
@@ -44,7 +55,13 @@ pub(in crate::protocol::openai) fn read(
 }
 
 pub(in crate::protocol::openai) fn write(resource: ResourceView<'_>) -> Value {
-    let url = match resource.location {
+    json!({"type":"video_url","video_url":{"url":url(resource)}})
+}
+pub(in crate::protocol::openai) fn write_responses(resource: ResourceView<'_>) -> Value {
+    json!({"type":"input_video","video_url":url(resource)})
+}
+fn url(resource: ResourceView<'_>) -> String {
+    match resource.location {
         ResourceLocation::Url(url) => url.as_str().to_owned(),
         ResourceLocation::Inline {
             media_type,
@@ -57,6 +74,5 @@ pub(in crate::protocol::openai) fn write(resource: ResourceView<'_>) -> Value {
         ResourceLocation::OpaqueReference(_) | ResourceLocation::NamespacedReference { .. } => {
             unreachable!("lowering rejects resource IDs")
         }
-    };
-    json!({"type":"video_url","video_url":{"url":url}})
+    }
 }

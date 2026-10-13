@@ -61,7 +61,7 @@ Anthropic Messages has no audio or video carrier. OpenRouter's Messages endpoint
 | Protocol | Carrier |
 |---|---|
 | OpenAI Chat | None. `role: tool` content is text parts only |
-| OpenAI Responses | `function_call_output.output` array: `input_text`, `input_image`, `input_file`. Open Responses adds `input_video` here (not in user messages) |
+| OpenAI Responses | `function_call_output.output` array: `input_text`, `input_image`, `input_file`. Open Responses adds `input_video` here (not in user messages). OpenRouter's OpenAPI (`docs/openapi/openapi.yaml`, 2026-10-13) allows only text, image and file parts here, though its Chat `tool` messages accept all content parts |
 | Anthropic Messages | `tool_result.content`: `text`, `image`, `document`, `search_result` |
 | Gemini generateContent | `functionResponse.parts[].inlineData` only (no `fileData`); Gemini 3 models. The guide lists png, jpeg, webp, PDF and plain text. A unique `displayName` is required when the structured `response` references the part through `$ref`; the pinned discovery schema does not expose that field |
 | Interactions v1 | `function_result.result` array: `text` and `image` only |

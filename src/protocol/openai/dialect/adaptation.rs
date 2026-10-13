@@ -137,6 +137,9 @@ pub struct WireRules {
     /// User video as `{"type":"video_url","video_url":{"url":…}}`, URL or data URL.
     /// Source: docs/refs/multimodal.md.
     pub chat_video_url: bool,
+    /// User video as `{"type":"input_video","video_url":…}`, URL or data URL; no
+    /// tool-result carrier. Source: OpenRouter OpenAPI `InputVideo` (2026-10-13).
+    pub responses_input_video: bool,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

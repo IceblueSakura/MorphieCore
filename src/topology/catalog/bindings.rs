@@ -285,4 +285,20 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         public_slice: RequestSlice::Canonical,
         endpoint_slice: RequestSlice::Canonical,
     },
+    // Failover alternative for glm-5.3-flash, and its Responses video carrier.
+    // Source: https://openrouter.ai/api/v1/models/z-ai/glm-5.3-flash/endpoints
+    ApiKeyBinding {
+        provider: catalog::openrouter,
+        dialect: Dialect::OpenRouter,
+        endpoint_prefix: "openrouter-glm-5.3-flash",
+        model: "glm-5.3-flash",
+        canonical_model: "glm-5.3-flash",
+        upstream: "z-ai/glm-5.3-flash",
+        credential: "openrouter-api-key",
+        protocols: BOTH,
+        replay_responses: false,
+        replay_chat: false,
+        public_slice: RequestSlice::Canonical,
+        endpoint_slice: RequestSlice::Canonical,
+    },
 ];

@@ -122,8 +122,21 @@ pub fn lower_request<'a>(
     c.files
         .check(r)
         .map_err(|_| RepresentationError::FileInput)?;
-    // Video has no standard OpenAI carrier; only declared Chat extensions receive it.
-    if q.video_inputs > 0 && !(profile == Profile::Chat && c.adaptation.rules.chat_video_url) {
+    // Video has no standard OpenAI carrier; only declared extensions receive it. A file
+    // with a video MIME type is a file carrier, checked by the file constraints instead.
+    let video = r
+        .items()
+        .iter()
+        .flat_map(|(_, i)| i.resource_uses())
+        .any(|u| {
+            u.media(r.resources())
+                .is_ok_and(|v| v.kind() == ResourceKind::Video)
+        });
+    let video_carrier = match profile {
+        Profile::Chat => c.adaptation.rules.chat_video_url,
+        Profile::Responses => c.adaptation.rules.responses_input_video,
+    };
+    if video && !video_carrier {
         return Err(RepresentationError::UnmigratedSemantic);
     }
     for (_, item) in r.items() {
@@ -753,8 +766,7 @@ fn text_items(
                                 }
                             },
                             ResourceKind::Video => {
-                                profile != Profile::Chat
-                                    || m.role != MessageRole::User
+                                m.role != MessageRole::User
                                     || matches!(
                                         resource.location,
                                         ResourceLocation::OpaqueReference(_)
