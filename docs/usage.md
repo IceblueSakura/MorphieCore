@@ -181,6 +181,40 @@ Use `"stream": true` for SSE. Send the full history each turn; the gateway does 
 
 Return reasoning carriers unchanged in later history. Chat clients must preserve `reasoning_details`, not just readable text. See [Reasoning replay](architecture.md#reasoning-replay).
 
+### Image input
+
+Select an activated public model that admits image input. A tool-result image also needs a representable tool-media carrier on the selected upstream.
+
+| Client protocol | User image | Tool-result image |
+|---|---|---|
+| Chat Completions | `image_url` | No tool-message carrier; clients may send a separate user image themselves |
+| Responses | `input_image` | `function_call_output.output` array |
+| Messages | `image` with a base64 or URL source | `tool_result.content` array |
+
+Responses tool images require a Responses or native upstream carrier. Messages uses the model's Chat candidates, so a Messages tool image still fails on a Chat upstream. `responses_via_chat` has the same limitation. The gateway does not move tool media to another role; that projection remains a [pending decision](roadmap.md#pending-decisions).
+
+For an inline Responses image, replace `<base64-image>` with valid base64 for the declared image type:
+
+```json
+{
+  "model": "configured-public-model",
+  "input": [{
+    "role": "user",
+    "content": [
+      {"type": "input_text", "text": "Describe this image briefly."},
+      {"type": "input_image", "image_url": "data:image/png;base64,<base64-image>", "detail": "auto"}
+    ]
+  }],
+  "max_output_tokens": 256
+}
+```
+
+For a tool image, append a `function_call_output` with the returned `call_id` and an `output` array containing `input_image`. Return the complete earlier history, including reported thinking and opaque replay values. Do not fabricate a tool call to substitute for model-issued history.
+
+Image sources stay inert: the gateway does not fetch URLs, decode pixels, resize or transcode. Public URL availability and actual image validity remain upstream concerns. Client Provider file references are rejected, including Google Files API URLs disguised as ordinary image URLs. File services remain deferred.
+
+Formats, encoded sizes and counts are target constraints, not a promise that every IR image fits every upstream. Per-use `detail` without a target slot is removed by a named rule on the candidate copy. The source request is unchanged. See [Media](architecture.md#media), [IR resource budgets](../src/semantic/task/generation/resources/mod.rs) and [Messages media limits](../src/protocol/anthropic/media.rs).
+
 ## HTTP API
 
 | Method and path | Purpose |

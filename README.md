@@ -19,7 +19,8 @@ The project is in core design and validation. pi and opencode are the first targ
 
 ## Scope
 
-- Generation supports JSON and SSE, tool calls, reasoning replay and selected media inputs.
+- Generation supports JSON and SSE, tool calls, reasoning replay and selected media inputs. User images and tool-result images use typed, target-checked carriers; [Usage](docs/usage.md#image-input) explains the protocol boundaries.
+- Image input does not enable generated-image output, a file service or tool media on Chat upstreams.
 - Routing uses bounded failover across a model's Providers and credentials, with conversation affinity. It is not load balancing.
 - Credentials come from the application's private file store. Requests never log in or refresh credentials.
 - Standalone Embeddings, Images, Speech and Transcription endpoints are frozen.

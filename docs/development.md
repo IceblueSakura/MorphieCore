@@ -116,6 +116,8 @@ Local byte, event and deadline limits do not prove bounded upstream charges when
 
 For tool-result image checks, first obtain a real tool call from the selected model, then return a synthetic valid image with the complete reported history. Preserve thinking and opaque replay carriers unchanged. A hand-written call without model-issued continuation values is not a valid replay oracle for thinking models.
 
+Distinguish HTTP success, honest completion and visual recognition. Check a known feature of the synthetic image without logging response text. A successful public-URL sample does not prove URL availability or justify automatic retries after an earlier failure.
+
 ## pi acceptance
 
 Use pi's real binary against the CLI gateway, not a wrapper that sources private environment.
@@ -163,7 +165,7 @@ opencode run --standalone --format json --title '<title>' \
   -m '<provider>/<model>#medium' '<synthetic prompt>'
 ```
 
-6. Check for a completed `read` tool event and a final answer. The JSON stream can omit the last `step_finish`. Read each assistant `finish` (`tool-calls`, then `stop`) and the idle outcome from `session_message` in the scratch `opencode.db`. Report counts and status, not bodies.
+6. Check for a completed `read` tool event and a final answer. The JSON stream can omit the last `step_finish`. Read each assistant `finish` (`tool-calls`, then `stop`) from `session_message` and the idle outcome from `session_v2` in the scratch `opencode.db`. Report counts and status, not bodies.
 7. Remove the test-owned scratch directory after the run.
 
 `--standalone` keeps the server inside the run instead of a background service. A title avoids an extra title-generation request.
@@ -177,5 +179,7 @@ Some installed clients omit the wire cap despite `limit.output`. Set the fixed c
 The fixed document set is defined in [AGENTS.md](../AGENTS.md#documentation).
 
 For Markdown changes, check local paths and heading anchors, then run `git diff --check`. Recheck external sources when changing a protocol claim; a link check is not evidence of current API behavior.
+
+Record the tested binary version separately from the pinned source revision. An installed-client gate does not establish behavior for a different pinned revision or every protocol route.
 
 For OpenAPI changes, also run the schema checks above and compare paths, authentication and error envelopes with the gateway code. The OpenAPI file is an API summary, not a second codec implementation.
