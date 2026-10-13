@@ -4,11 +4,24 @@ This page owns direction and current scope. Code and tests define behavior; [Arc
 
 ## Current focus
 
-No feature slice is selected. The next planned work is the [coverage pass](#deferred-acceptance), extending existing contracts rather than rebuilding image input. Deferred acceptance work stays deferred until the user reopens it. File services and generated image output stay out of scope; [pending decisions](#pending-decisions) stay as described until the user decides them.
+First complete the IR's semantic support for all target protocols and modalities. No implementation slice is selected yet; each slice must state its goal and exit condition before code changes.
+
+The coverage-improvement pass starts only after IR completeness is established. Focused contract tests, safety invariants and the offline baseline remain required for every implementation slice; deferring the coverage pass does not defer those checks.
+
+IR completeness does not mean every upstream can carry every modality. Protocol-specific carrier limits and the [pending decisions](#pending-decisions) remain explicit. This phase does not open file services, generated-image delivery or new Provider bindings.
+
+## Planned order
+
+1. **IR modality completeness.** Complete semantic support for all target protocols and modalities, including input, output and history/replay concepts. Establish completeness against concrete protocol requirements, not just the existing implementation.
+2. **Stateful extension and coverage improvement.** After IR completeness, extend Responses with gateway-managed, time-limited `previous_response_id` history and improve contract coverage. No order between these two tracks is selected.
+3. **Failover.** The feature remains in early design. Its priority is undecided, lowest for now; design, implementation improvement and real acceptance follow the second stage.
+4. **Other agent acceptance.** Codex, Claude Code and other agents follow failover. Their priority is undecided, lowest for now.
+
+This sequence does not select implementation slices or start deferred acceptance runs. Each later stage stays deferred until scheduled.
 
 ## Target clients
 
-pi and opencode first; Codex and Claude Code second. pi and opencode are the real-client gates.
+pi and opencode are the primary clients and real-client gates. Codex, Claude Code and other agent acceptance belong to the final planned stage, with priority undecided and lowest for now.
 
 Pinned client behavior is an acceptance oracle alongside the protocol schema: parsing, stream merging, returned history and error classification. See [References](references.md), [pi acceptance](development.md#pi-acceptance) and [opencode acceptance](development.md#opencode-acceptance).
 
@@ -19,7 +32,8 @@ Maintenance only, when a refactor requires it:
 - Standalone Images, Speech, Transcription and Embeddings.
 - New Providers and model bindings unless an approved slice reopens them. Alternative bindings for an existing public model belong to failover work; activating a registered binding is not adding one.
 - New subscription credential features.
-- Stateful Responses, file services and Realtime.
+- Stateful Responses until the second planned stage is scheduled.
+- File services and Realtime.
 
 ### Not planned
 
@@ -41,17 +55,18 @@ Treat a bound upstream's in-stream error as a classified failure, not normal out
 
 ## Deferred acceptance
 
-| Work | Exit condition when reopened |
-|---|---|
-| Real failover | One bounded real run for a model with two credentials or Providers and a reproducible advanceable failure |
-| Coverage pass | Independent wire→IR and IR→wire fixtures, synthetic upstreams and chunked SSE intake |
-| Non-image multimodal real checks | One bounded real check for each selected audio, video or document carrier, using model-issued history for tool results; no per-model or format matrix |
-| Pinned-client image replay | If the installed binary differs from the pinned source, run the bounded image tool round trip with a binary built from that revision; do not infer it from installed-client acceptance |
-| Claude Code (on hold) | Sample real request shapes, then verify beta headers/query, token counting and user metadata hints |
+| Work | Scheduling | Exit condition when reopened |
+|---|---|---|
+| Coverage pass | Second stage, only after IR completeness | Independent wire→IR and IR→wire fixtures, synthetic upstreams and chunked SSE intake |
+| Non-image multimodal real checks | Deferred acceptance after IR completeness | One bounded real check for each selected audio, video or document carrier, using model-issued history for tool results; no per-model or format matrix |
+| Pinned-client image replay | Deferred, conditional acceptance | If the installed binary differs from the pinned source, run the bounded image tool round trip with a binary built from that revision; do not infer it from installed-client acceptance |
+| Real failover | Third stage; priority undecided, lowest for now | One bounded real run for a model with two credentials or Providers and a reproducible advanceable failure |
+| Codex and other agents | Final stage; priority undecided, lowest for now | Define the selected client's acceptance contract before reopening |
+| Claude Code | Final stage; priority undecided, lowest for now | Sample real request shapes, then verify beta headers/query, token counting and user metadata hints |
 
 The coverage pass covers text, tools, tool errors, reasoning replay, usage, truncation, error classes and media carriers (user and tool-result image, audio, video and document). It also checks client-facing fragment shapes and meaningful absent/null/empty distinctions. It does not authorize a variant matrix.
 
-Claude Code acceptance is on hold until the user schedules it: no runs or request sampling before then.
+Codex, Claude Code and other agent acceptance are on hold until scheduled: no acceptance runs or request sampling before then.
 
 Real failover needs a controlled failure source, such as an exhausted key in a scratch store. Functional tests and pi Messages acceptance do not prove Claude Code acceptance.
 
@@ -70,7 +85,7 @@ Real failover needs a controlled failure source, such as an exhausted key in a s
 
 ## Future work
 
-- Stateful Responses with gateway-managed, time-limited `previous_response_id` history.
+- Stateful Responses in the second planned stage, after IR completeness.
 - File services.
 - Generated-image output with a selected semantic contract and downstream carrier; input support does not authorize this work.
 - Resumed standalone media work.
