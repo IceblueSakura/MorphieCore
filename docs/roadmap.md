@@ -16,11 +16,15 @@ The next Generation slices are selected below, with OpenAI Responses as the prim
 
 Implement in this order. This is a plan, not an implementation or acceptance result. Show the minimal counterexample and structural options before changing an IR contract.
 
-1. **Tool discovery and ordered availability updates.** Complete the semantics and codecs for `tool_search`, its call/output items and `additional_tools`, building on existing deferred-loading and namespace types. Tools discovered later must not be retroactively added to earlier history through top-level settings.
+1. **Client intake field audit.** Classify every top-level request field of the pinned Chat Completions, Responses and Messages SDK types (including Messages beta fields) as IR-carried, ignored by name, or rejected. A field that changes model-visible input, available tools, the output contract or the client's output cap must be carried or rejected; execution, billing, telemetry, cache and sampling preferences may be ignored by name.
+
+   Exit condition: Chat `max_tokens` sets the output cap and conflicts with `max_completion_tokens`; Chat `verbosity` is carried; Chat `functions`, `function_call` and `web_search_options`, and Messages `container`, `mcp_servers`, `context_management` and `compaction` are rejected when active. One positive and one negative case per codec; no new IR concepts.
+
+2. **Tool discovery and ordered availability updates.** Complete the semantics and codecs for `tool_search`, its call/output items and `additional_tools`, building on existing deferred-loading and namespace types. Tools discovered later must not be retroactively added to earlier history through top-level settings.
 
    Exit condition: discovery results and availability changes retain order, definitions and references through decode, encode and history replay. Client/server execution remains explicit. This slice models the interaction; it does not add a gateway tool registry, search executor or activate another hosted tool.
 
-2. **First built-in tool: OpenAI `web_search`.** Complete the first end-to-end official built-in tool path through Generation: declaration and supported controls, Provider-executed search observations, reported sources and URL citations, streamed lifecycle and subsequent history. Reuse the existing observation and citation foundations; keep native wire shapes in the OpenAI codec.
+3. **First built-in tool: OpenAI `web_search`.** Complete the first end-to-end official built-in tool path through Generation: declaration and supported controls, Provider-executed search observations, reported sources and URL citations, streamed lifecycle and subsequent history. Reuse the existing observation and citation foundations; keep native wire shapes in the OpenAI codec.
 
    Exit condition: the selected Responses path preserves search operations, reported results, citation associations and honest terminals in JSON and SSE. Targets without a carrier reject explicitly. Select and verify a trusted binding's capability before activation; the gateway does not fetch search URLs or execute searches itself. Other built-in tools remain deferred.
 
