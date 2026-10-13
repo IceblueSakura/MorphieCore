@@ -8,7 +8,29 @@ Complete the Generation IR against selected semantics accepted by the official O
 
 Track semantic expression, codec representation and enabled bindings separately. A concept supported by only one official API may belong in the IR; other targets reject it when they have no carrier. Client compatibility does not define the semantic vocabulary. Protocol sources are pinned in [References](references.md).
 
-No slice is selected. Until the IR core is complete, add only minimal regressions for changed contracts and confirmed defects, preferably by extending existing tests. Keep safety invariants and the offline baseline; defer coverage expansion.
+The next four Generation slices are selected below, with OpenAI Responses as the primary reference and Chat Completions as a supplement. Until the IR core is complete, add only minimal regressions for changed contracts and confirmed defects, preferably by extending existing tests. Keep safety invariants and the offline baseline; defer coverage expansion.
+
+### Next Generation slices
+
+Implement in this order. This is a plan, not an implementation or acceptance result. Show the minimal counterexample and structural options before changing an IR contract.
+
+1. **Tool results in responses and streams.** Complete `function_call_output` and `custom_tool_call_output` as reported Generation output, not only request history. Preserve values, call association and artifact lifecycle without making the gateway execute tools.
+
+   Exit condition: static and streamed output retain the same result facts and can enter subsequent history. Unreported response references are not fabricated; outbound history still enforces its required call/result associations.
+
+2. **Compaction history and replay.** Add a distinct official `compaction` item with opaque content, identity and ordered history ownership. Do not reinterpret it as readable summary or reasoning. Receiving and replaying compacted history does not require gateway-managed conversation storage.
+
+   Exit condition: compatible Responses history preserves the compaction item and its payload; incompatible targets reject rather than discard compacted context. Automatic compaction scheduling, a gateway compaction service and stateful history storage remain outside this slice.
+
+3. **Tool discovery and ordered availability updates.** Complete the semantics and codecs for `tool_search`, its call/output items and `additional_tools`, building on existing deferred-loading and namespace types. Tools discovered later must not be retroactively added to earlier history through top-level settings.
+
+   Exit condition: discovery results and availability changes retain order, definitions and references through decode, encode and history replay. Client/server execution remains explicit. This slice models the interaction; it does not add a gateway tool registry, search executor or activate another hosted tool.
+
+4. **First built-in tool: OpenAI `web_search`.** Complete the first end-to-end official built-in tool path through Generation: declaration and supported controls, Provider-executed search observations, reported sources and URL citations, streamed lifecycle and subsequent history. Reuse the existing observation and citation foundations; keep native wire shapes in the OpenAI codec.
+
+   Exit condition: the selected Responses path preserves search operations, reported results, citation associations and honest terminals in JSON and SSE. Targets without a carrier reject explicitly. Select and verify a trusted binding's capability before activation; the gateway does not fetch search URLs or execute searches itself. Other built-in tools remain deferred.
+
+Use the pinned official API sources in [References](references.md). These slices do not reopen generated-media delivery, file services, new Provider/model bindings, Realtime or Embeddings. Real Provider and client acceptance remain separate, explicitly scoped steps.
 
 ### Deferred Generation semantics
 
@@ -17,7 +39,7 @@ These are explicit gaps, not claims of complete official API coverage:
 - Messages citations (1C) are deferred to Claude Code acceptance; requests and responses that carry them are rejected, not dropped. The [design](#1c-design-messages-citations) records the IR change for when it reopens.
 - Messages document `context` stays rejected until its model-visible semantics have an IR owner. Its lack of a carrier on other targets is not a reason to exclude it permanently.
 - Generated media beyond the existing Chat audio contract need a selected output, stream and replay design. Standalone media tasks remain frozen.
-- Hosted tools have observation types but no admitted end-to-end contract. Select one official tool before extending declarations, observations and continuation.
+- Hosted tools other than the selected OpenAI `web_search` path remain deferred. Existing observation types do not imply an admitted end-to-end contract.
 - Tool-result video has no carrier on any bound target: OpenAI and Interactions results have no video part, and Gemini function responses admit only images, PDF and plain text.
 
 ### 1C design: Messages citations
@@ -53,12 +75,12 @@ IR completeness does not mean every upstream can carry every modality. Protocol-
 
 ## Planned order
 
-1. **Generation IR completeness.** Complete the selected official semantic contracts, including input, output and history/replay. Keep deferred concepts explicit rather than claiming full API coverage or expanding frozen tasks.
+1. **Generation IR completeness.** Start with the [next four slices](#next-generation-slices), then assess remaining selected official contracts. Keep deferred concepts explicit rather than claiming full API coverage or expanding frozen tasks.
 2. **Stateful extension and coverage improvement.** After IR completeness, add stateful APIs in two forms, Provider-held state and gateway-held, time-limited `previous_response_id` history, and improve contract coverage. The IR keeps its response continuation types for this stage. No order between these two tracks is selected.
 3. **Failover.** The feature remains in early design. Its priority is undecided, lowest for now; design, implementation improvement and real acceptance follow the second stage.
 4. **Other agent acceptance.** Codex, Claude Code and other agents follow failover. Their priority is undecided, lowest for now.
 
-This sequence does not select implementation slices or start deferred acceptance runs. Each later stage stays deferred until scheduled.
+The next Generation slices belong to the first stage. This plan does not start deferred acceptance runs; each later stage stays deferred until scheduled.
 
 ## Target clients
 
