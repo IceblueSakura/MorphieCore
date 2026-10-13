@@ -94,7 +94,7 @@ pub(super) async fn handle(
     if turn == 2
         && !matches!(
             request.task.semantic.output(),
-            OutputConstraint::JsonSchema { name, strict: Some(true), .. } if name.as_str() == "Answer"
+            OutputConstraint::JsonSchema { name: Some(name), strict: Some(true), .. } if name.as_str() == "Answer"
         )
     {
         return failure(StatusCode::BAD_REQUEST, "Chat response_format", &state);

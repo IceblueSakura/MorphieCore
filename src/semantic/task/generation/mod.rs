@@ -58,9 +58,7 @@ pub use resources::{
     MAX_RESOURCE_URL_BYTES, MAX_TOTAL_FILE_DECODED_BYTES, Resource, ResourceDescription,
     ResourceKind, ResourceLocation, ResourceView,
 };
-pub use schema::document::{
-    MAX_SCHEMA_REFERENCES, MAX_SCHEMA_RESOURCES, SchemaDialect, SchemaDocument, SchemaResource,
-};
+pub use schema::SchemaDocument;
 pub use stream::audio::{AudioBuffer, AudioUpdate};
 pub use stream::value::StreamPartValue;
 pub use tools::provider::{

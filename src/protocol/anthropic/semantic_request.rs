@@ -39,6 +39,8 @@ pub enum RequestRule {
     DefaultStrictAsPlain,
     /// Image detail, file detail and filename have no Messages slot.
     OmitMediaOptions,
+    /// A Messages output format has no name; OpenAI requires one as a label.
+    OmitSchemaName,
 }
 impl RequestRule {
     pub const fn name(self) -> &'static str {
@@ -54,6 +56,7 @@ impl RequestRule {
             Self::DeveloperAsSystem => "messages.developer-as-system.v1",
             Self::DefaultStrictAsPlain => "messages.default-strict-as-plain.v1",
             Self::OmitMediaOptions => "messages.omit-media-options.v1",
+            Self::OmitSchemaName => "messages.omit-schema-name.v1",
         }
     }
 }
@@ -84,7 +87,7 @@ pub(super) fn project(
     if s.controls.top_logprobs.is_some()
         || !s.controls.logprobs.is_absent()
         || s.controls.truncation.is_some()
-        || s.text != TextOptions::default()
+        || !s.text.verbosity.is_absent()
         || !s.output_modalities.is_absent()
         || !s.audio.is_absent()
     {
@@ -216,7 +219,7 @@ pub(super) fn project(
         (Presence::Absent, Some(effort)) => Presence::Value(effort),
         (effort, _) => effort,
     };
-    let output_config = match effort {
+    let effort = match effort {
         Presence::Absent => Presence::Absent,
         Presence::Value(ReasoningEffort::None | ReasoningEffort::Minimal) => {
             rules.insert(RequestRule::LowerEffort);
@@ -231,10 +234,33 @@ pub(super) fn project(
     };
     if reasoning.presence == ReasoningPresence::Present
         && thinking.is_absent()
-        && output_config.is_absent()
+        && effort.is_absent()
     {
         return Err(unsupported());
     }
+    let format = match &s.text.format {
+        Presence::Absent | Presence::Null | Presence::Value(OutputConstraint::Text) => {
+            Presence::Absent
+        }
+        // Messages has no JSON-object mode, and a schema description is model-visible.
+        Presence::Value(OutputConstraint::JsonObject)
+        | Presence::Value(OutputConstraint::JsonSchema {
+            description: Some(_),
+            ..
+        }) => return Err(unsupported()),
+        // Messages output is always constrained, which satisfies any OpenAI `strict`.
+        Presence::Value(OutputConstraint::JsonSchema { name, schema, .. }) => {
+            if name.is_some() {
+                rules.insert(RequestRule::OmitSchemaName);
+            }
+            Presence::Value(schema.clone())
+        }
+    };
+    let output_config = if effort.is_absent() && format.is_absent() {
+        Presence::Absent
+    } else {
+        Presence::Value(super::OutputConfig { effort, format })
+    };
     let mut included = BTreeSet::new();
     let mut messages = vec![];
     for group in request.message_envelopes() {

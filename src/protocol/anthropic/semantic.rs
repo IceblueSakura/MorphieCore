@@ -115,15 +115,8 @@ impl Profile {
                 }
             };
         }
-        if let Presence::Value(effort) = &wire.output_config {
-            settings.reasoning.presence = ReasoningPresence::Present;
-            settings.reasoning.effort = Presence::Value(match effort {
-                super::Effort::Low => ReasoningEffort::Low,
-                super::Effort::Medium => ReasoningEffort::Medium,
-                super::Effort::High => ReasoningEffort::High,
-                super::Effort::XHigh => ReasoningEffort::XHigh,
-                super::Effort::Max => ReasoningEffort::Max,
-            });
+        if let Presence::Value(config) = &wire.output_config {
+            output_settings(config, &mut settings);
         }
         for message in &wire.messages {
             match &message.content {
@@ -302,6 +295,29 @@ impl Profile {
                     .map_or(Presence::Absent, Presence::Value),
             },
         })
+    }
+}
+/// Effort and format of a Messages `output_config`; a null member is unset.
+pub(super) fn output_settings(config: &super::OutputConfig, settings: &mut GenerationSettings) {
+    if let Presence::Value(effort) = config.effort {
+        settings.reasoning.presence = ReasoningPresence::Present;
+        settings.reasoning.effort = Presence::Value(match effort {
+            super::Effort::Low => ReasoningEffort::Low,
+            super::Effort::Medium => ReasoningEffort::Medium,
+            super::Effort::High => ReasoningEffort::High,
+            super::Effort::XHigh => ReasoningEffort::XHigh,
+            super::Effort::Max => ReasoningEffort::Max,
+        });
+    }
+    if let Presence::Value(schema) = &config.format {
+        // Messages output always conforms to the schema, as OpenAI strict output does.
+        settings.text.presence = true;
+        settings.text.format = Presence::Value(OutputConstraint::JsonSchema {
+            name: None,
+            description: None,
+            schema: schema.clone(),
+            strict: Some(true),
+        });
     }
 }
 pub(super) fn outcome(stop: super::StopReason) -> (Outcome, InteractionProgress, TerminalDetails) {

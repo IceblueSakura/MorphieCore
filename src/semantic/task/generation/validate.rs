@@ -513,25 +513,23 @@ pub fn output(value: &OutputConstraint) -> Result<usize, GenerationError> {
         OutputConstraint::JsonSchema {
             name,
             description,
-            schema: s,
-            strict,
+            schema,
+            ..
         } => {
-            if name.as_str().is_empty()
-                || name.as_str().len() > 64
-                || !name
-                    .as_str()
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-            {
+            if name.as_ref().is_some_and(|name| {
+                name.as_str().is_empty()
+                    || name.as_str().len() > 64
+                    || !name
+                        .as_str()
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+            }) {
                 return Err(GenerationError::InvalidControl);
             }
-            let mode = if *strict == Some(true) {
-                crate::semantic::task::generation::schema::Mode::Explicit
-            } else {
-                crate::semantic::task::generation::schema::Mode::General
-            };
-            let mut bytes = crate::semantic::task::generation::schema::validate(s, mode)?;
-            add(&mut bytes, name.as_str())?;
+            let mut bytes = schema.validate()?;
+            if let Some(name) = name {
+                add(&mut bytes, name.as_str())?;
+            }
             if let Some(d) = description {
                 add(&mut bytes, d.as_str())?;
             }
@@ -591,29 +589,8 @@ pub fn tools(
                 if let Some(d) = &t.description {
                     add(&mut bytes, d)?;
                 }
-                if let Some(s) = &t.parameters {
-                    let mode = match t.strict {
-                        FunctionStrictness::Explicit(true) => {
-                            crate::semantic::task::generation::schema::Mode::Explicit
-                        }
-                        FunctionStrictness::Omitted(StrictDefault::NormalizeSchema) => {
-                            crate::semantic::task::generation::schema::Mode::Normalize
-                        }
-                        _ => crate::semantic::task::generation::schema::Mode::General,
-                    };
-                    schema_bytes(
-                        &mut bytes,
-                        crate::semantic::task::generation::schema::validate(s, mode)?,
-                    )?;
-                }
-                if let Some(s) = &t.output_schema {
-                    schema_bytes(
-                        &mut bytes,
-                        crate::semantic::task::generation::schema::validate(
-                            s,
-                            crate::semantic::task::generation::schema::Mode::General,
-                        )?,
-                    )?;
+                for schema in t.parameters.iter().chain(&t.output_schema) {
+                    schema_bytes(&mut bytes, schema.validate()?)?;
                 }
             }
             ToolDefinition::Custom(t) => {

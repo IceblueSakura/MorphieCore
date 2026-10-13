@@ -132,9 +132,6 @@ pub(super) fn project(
                     d.insert("description".into(), description.as_str().into());
                 }
                 let parameters = t.parameters.as_ref().ok_or_else(unsupported)?;
-                if !parameters.is_unversioned_local() {
-                    return Err(unsupported());
-                }
                 d.insert("parametersJsonSchema".into(), parameters.root().clone());
                 Ok(Value::Object(d))
             })

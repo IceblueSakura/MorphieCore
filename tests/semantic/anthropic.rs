@@ -721,3 +721,93 @@ mod anthropic_media {
         assert!(chat.encode_request(&strict, "synthetic", &full).is_err());
     }
 }
+mod anthropic_output {
+    //! Messages structured output: one IR owner with a native and an OpenAI carrier.
+    use morphiecore::{
+        adapter::Request,
+        protocol::{
+            anthropic::client::decode_client_request,
+            openai::{Adapter, Dialect, Profile, TargetCaps},
+        },
+        semantic::{context::ConversationContext, task::generation::*},
+        topology::catalog,
+    };
+    use serde_json::{Value, json};
+
+    fn schema() -> Value {
+        json!({"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"],"additionalProperties":false})
+    }
+    fn grouped(mut request: Request) -> Request {
+        // The Go binding needs a session grouping.
+        request.conversation = Some(ConversationContext::conversation("synthetic").unwrap());
+        request
+    }
+    fn messages(config: Value) -> Result<Request, morphiecore::protocol::CodecError> {
+        let raw = json!({"model":"m","max_tokens":8,"output_config":config,
+            "messages":[{"role":"user","content":"go"}]});
+        decode_client_request(raw.to_string().as_bytes()).map(grouped)
+    }
+    fn chat(format: Value) -> Request {
+        let raw = json!({"model":"m","response_format":format,
+            "messages":[{"role":"user","content":"go"}]});
+        grouped(
+            Adapter::new(Profile::Chat, Dialect::Standard, None)
+                .decode_client_request(raw.to_string().as_bytes())
+                .unwrap(),
+        )
+    }
+
+    #[test]
+    fn messages_format_is_an_unnamed_strict_schema_with_native_and_openai_carriers() {
+        let format = json!({"type":"json_schema","schema":schema()});
+        let source = messages(json!({"effort":"low","format":format})).unwrap();
+        let OutputConstraint::JsonSchema {
+            name,
+            description,
+            schema: decoded,
+            strict,
+        } = source.task.semantic.output()
+        else {
+            panic!("structured output")
+        };
+        assert_eq!((name, description, strict), (&None, &None, &Some(true)));
+        assert_eq!(decoded.root().to_string(), schema().to_string());
+        let endpoint = catalog::MESSAGES_BINDINGS[0].endpoint();
+        let (wire, rules) = endpoint.encode_request_with_rules(&source).unwrap();
+        assert_eq!(
+            wire["output_config"],
+            json!({"effort":"low","format":format})
+        );
+        assert!(rules.is_empty());
+        let (wire, rules) = Adapter::new(Profile::Chat, Dialect::Standard, None)
+            .encode_request_with_rules(&source, "synthetic", &TargetCaps::full())
+            .unwrap();
+        assert_eq!(
+            wire["response_format"],
+            json!({"type":"json_schema","json_schema":{"name":"response","schema":schema(),"strict":true}})
+        );
+        assert!(rules.contains(&"openai.default-schema-name.v1"));
+    }
+
+    #[test]
+    fn unknown_and_natively_unrepresentable_formats_fail() {
+        assert!(messages(json!({"format":{"type":"json_object"}})).is_err());
+        assert!(messages(json!({"format":{"type":"json_schema","schema":true}})).is_err());
+        let endpoint = catalog::MESSAGES_BINDINGS[0].endpoint();
+        // Messages has no JSON-object mode and no model-visible schema description.
+        for format in [
+            json!({"type":"json_object"}),
+            json!({"type":"json_schema","json_schema":{"name":"answer","description":"pick","schema":schema()}}),
+        ] {
+            assert!(endpoint.encode_request_with_rules(&chat(format)).is_err());
+        }
+        let named =
+            chat(json!({"type":"json_schema","json_schema":{"name":"answer","schema":schema()}}));
+        let (wire, rules) = endpoint.encode_request_with_rules(&named).unwrap();
+        assert_eq!(
+            wire["output_config"],
+            json!({"format":{"type":"json_schema","schema":schema()}})
+        );
+        assert_eq!(rules, ["messages.omit-schema-name.v1"]);
+    }
+}

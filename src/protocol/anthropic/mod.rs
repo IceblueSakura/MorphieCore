@@ -49,7 +49,7 @@ impl Profile {
             logprobs: false,
             verbosity: false,
             truncation: false,
-            structured_output: false,
+            structured_output: true,
             reasoning: true,
             image_input: true,
             audio_input: false,

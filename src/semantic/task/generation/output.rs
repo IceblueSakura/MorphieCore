@@ -6,7 +6,8 @@ pub enum OutputConstraint {
     Text,
     JsonObject,
     JsonSchema {
-        name: Text,
+        /// OpenAI requires a name; Messages and Gemini formats have none.
+        name: Option<Text>,
         description: Option<Text>,
         schema: crate::semantic::task::generation::SchemaDocument,
         strict: Option<bool>,

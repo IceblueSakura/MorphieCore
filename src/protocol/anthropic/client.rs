@@ -1,7 +1,7 @@
 //! Downstream Messages clients (Claude Code): requests to the IR, responses from it.
 //! Unregistered fields and `cache_control` are ignored and named, as for OpenAI clients.
 use super::{
-    Block, Effort, Role, Selection, TextContent as WireText, Tool, ToolChoice as WireChoice,
+    Block, OutputConfig, Role, Selection, TextContent as WireText, Tool, ToolChoice as WireChoice,
     semantic_intake::{Intake, text},
     shape::{label, object, parse, required, string},
 };
@@ -198,17 +198,11 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     }
     if let Some(config) = o.get("output_config").filter(|v| !v.is_null()) {
         let mut config = config.clone();
-        keep(&mut config, &["effort"], &mut ignored);
-        if config.get("effort").is_some() {
-            settings.reasoning.presence = ReasoningPresence::Present;
-            settings.reasoning.effort = Presence::Value(match Effort::read(&config)? {
-                Effort::Low => ReasoningEffort::Low,
-                Effort::Medium => ReasoningEffort::Medium,
-                Effort::High => ReasoningEffort::High,
-                Effort::XHigh => ReasoningEffort::XHigh,
-                Effort::Max => ReasoningEffort::Max,
-            });
+        keep(&mut config, &["effort", "format"], &mut ignored);
+        if let Some(format) = config.get_mut("format") {
+            keep(format, &["type", "schema"], &mut ignored);
         }
+        super::semantic::output_settings(&OutputConfig::read(&config)?, &mut settings);
     }
     let messages = required(&o, "messages")?
         .as_array()

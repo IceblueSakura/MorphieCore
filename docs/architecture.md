@@ -70,7 +70,7 @@ The IR is neither a protocol DTO nor a union of vendor fields.
 
 - **Ordered items:** instructions, messages, tool calls/results, reasoning and Provider tool observations share one ordered history. A message is one container, not the whole conversation.
 - **Explicit links:** calls and results link by call ID, never position or name. Item IDs, part IDs, wire IDs and stream indexes remain distinct.
-- **Exact JSON:** arguments and schemas retain numeric precision and key order. Parsing rejects duplicate keys and bounds depth, nodes and bytes.
+- **Exact JSON:** arguments and schemas retain numeric precision and key order. Parsing rejects duplicate keys and bounds depth, nodes and bytes. A schema is any JSON object; keyword vocabularies and strict subsets are target constraints.
 - **Meaningful presence:** distinguish absent, null, empty and default where semantics differ, not mechanically for every field.
 - **Separate reasoning:** readable text and summaries are distinct from opaque continuation values. Effort, budget and display are controls.
 - **Shared resources:** request/response resources have one declaration table and scoped references. A URL match does not merge identities or authorize I/O.
@@ -240,6 +240,7 @@ Native requests preserve thinking, tool-use/result order and call IDs. Messages 
 - A leading developer instruction maps to the system prompt by name.
 - Call IDs outside the native grammar map to stable digests; collisions fail rather than merge calls.
 - Each native request uses top-level ephemeral cache control. Cache hits still depend on upstream thresholds.
+- A JSON-schema output format maps to `output_config.format`, which always constrains decoding. Its name is dropped by a named rule; a JSON-object mode or a schema description has no carrier and is rejected.
 - A source without an output cap gets `max_tokens: 32000`, the default of opencode's Messages client, because Messages requires the field.
 - OpenAI stateless controls are not forwarded as native fields. Requesting an encrypted reasoning carrier selects delivery, not native thinking.
 
@@ -297,6 +298,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Inert, credential-free media | Inline data or URLs only; no gateway fetch or file service, and no client-supplied Provider file references |
 | Standard carriers only | A target without a standard carrier for a semantic rejects it. The gateway does not move content to another role or add model-visible text to make it fit; for example, Chat targets reject tool-result media |
 | Target-local image restrictions | Formats, encoded sizes, counts and unavailable per-use options are checked or projected at the protocol boundary, not encoded as Provider-specific IR fields |
+| Schemas as data | The IR keeps any bounded JSON-object schema an official API accepts. The OpenAI strict subset is checked only for OpenAI targets. An unnamed output schema (Messages) gets the fixed name `response` only on OpenAI targets, which require one |
 | Client-owned output caps | The gateway neither caps nor invents `max_tokens`; the upstream enforces its model limit. Only a protocol that requires the field fills a fixed default |
 
 Pinned clients and protocol sources are in [References](references.md). Observed client behavior is an oracle, not permission to weaken security or fabricate semantics.

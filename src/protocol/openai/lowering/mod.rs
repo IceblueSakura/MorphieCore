@@ -47,7 +47,7 @@ pub fn lower_request<'a>(
     if q.tool_result_errors {
         return Err(RepresentationError::Tools);
     }
-    check_schema_documents(r.settings())?;
+    check_strict_schemas(r.settings())?;
     if q.provider_observations {
         return Err(RepresentationError::UnmigratedSemantic);
     }
@@ -374,7 +374,7 @@ fn validate_response(
     c: &TargetCaps,
 ) -> Result<(), RepresentationError> {
     if let Some(settings) = &metadata.context.settings {
-        check_schema_documents(settings)?;
+        settings.validate()?;
         if settings.reasoning.requires_extended_controls() {
             return Err(RepresentationError::Reasoning);
         }
@@ -874,9 +874,15 @@ fn validate_wire_ids(
         .check_wire_item_ids(items, generate)
         .map_err(|_| RepresentationError::Metadata)
 }
-fn check_schema_documents(settings: &GenerationSettings) -> Result<(), RepresentationError> {
-    settings.validate()?;
-    if matches!(settings.output(),OutputConstraint::JsonSchema { schema, .. } if !schema.is_unversioned_local())
+/// The IR admits any bounded schema; only an OpenAI request target checks its strict subset.
+fn check_strict_schemas(settings: &GenerationSettings) -> Result<(), RepresentationError> {
+    use crate::protocol::openai::strict_schema::admits;
+    if let OutputConstraint::JsonSchema {
+        schema,
+        strict: Some(true),
+        ..
+    } = settings.output()
+        && !admits(schema, true)
     {
         return Err(RepresentationError::StructuredOutput);
     }
@@ -887,13 +893,15 @@ fn check_schema_documents(settings: &GenerationSettings) -> Result<(), Represent
         .iter()
         .flat_map(ToolDefinition::leaves)
     {
-        if let ToolDefinition::Function(tool) = tool
-            && tool
-                .parameters
-                .iter()
-                .chain(&tool.output_schema)
-                .any(|s| !s.is_unversioned_local())
-        {
+        let ToolDefinition::Function(tool) = tool else {
+            continue;
+        };
+        let closed = match tool.strict {
+            FunctionStrictness::Explicit(true) => true,
+            FunctionStrictness::Omitted(StrictDefault::NormalizeSchema) => false,
+            _ => continue,
+        };
+        if tool.parameters.as_ref().is_some_and(|p| !admits(p, closed)) {
             return Err(RepresentationError::Tools);
         }
     }

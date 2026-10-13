@@ -11,7 +11,7 @@ use crate::{
         value::Presence,
     },
 };
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use std::collections::BTreeSet;
 
 #[derive(Clone, Eq, PartialEq)]
@@ -168,9 +168,7 @@ impl Tool {
         if self.strict == Presence::Value(true) {
             return Err(CodecError::Unsupported("Anthropic strict tools".into()));
         }
-        if !self.input_schema.is_unversioned_local()
-            || self.input_schema.root().get("type").and_then(Value::as_str) != Some("object")
-        {
+        if self.input_schema.root().get("type").and_then(Value::as_str) != Some("object") {
             return Err(CodecError::Unsupported("Anthropic object schema".into()));
         }
         let mut bytes = self.input_schema.validate()?;
@@ -282,9 +280,8 @@ pub enum Effort {
     Max,
 }
 impl Effort {
-    pub(super) fn read(v: &Value) -> Result<Self, CodecError> {
-        let o = closed(v, &["effort"])?;
-        match required(o, "effort")?.as_str() {
+    fn read(v: &Value) -> Result<Self, CodecError> {
+        match v.as_str() {
             Some("low") => Ok(Self::Low),
             Some("medium") => Ok(Self::Medium),
             Some("high") => Ok(Self::High),
@@ -294,14 +291,49 @@ impl Effort {
         }
     }
     fn wire(self) -> Value {
-        let effort = match self {
+        json!(match self {
             Self::Low => "low",
             Self::Medium => "medium",
             Self::High => "high",
             Self::XHigh => "xhigh",
             Self::Max => "max",
-        };
-        json!({ "effort": effort })
+        })
+    }
+}
+/// Effort and the output format are independent settings of one object.
+/// The format is always a constrained JSON schema; it has no name or description.
+/// https://platform.claude.com/docs/en/build-with-claude/structured-outputs
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OutputConfig {
+    pub effort: Presence<Effort>,
+    pub format: Presence<SchemaDocument>,
+}
+impl OutputConfig {
+    pub(super) fn read(v: &Value) -> Result<Self, CodecError> {
+        let o = closed(v, &["effort", "format"])?;
+        Ok(Self {
+            effort: presence(o, "effort", Effort::read)?,
+            format: presence(o, "format", |v| {
+                let o = closed(v, &["type", "schema"])?;
+                if required(o, "type")?.as_str() != Some("json_schema") {
+                    return Err(CodecError::Unsupported("Anthropic output format".into()));
+                }
+                let schema = SchemaDocument::from(required(o, "schema")?.clone());
+                schema.validate()?;
+                Ok(schema)
+            })?,
+        })
+    }
+    fn wire(&self) -> Value {
+        let mut v = Map::new();
+        put(&mut v, "effort", &self.effort, |e| e.wire());
+        put(
+            &mut v,
+            "format",
+            &self.format,
+            |s| json!({"type":"json_schema","schema":s.root()}),
+        );
+        Value::Object(v)
     }
 }
 /// Top-level automatic caching: the API places and advances the breakpoint.
@@ -331,7 +363,7 @@ pub struct Request {
     pub tools: Presence<Vec<Tool>>,
     pub tool_choice: Presence<ToolChoice>,
     pub thinking: Presence<Thinking>,
-    pub output_config: Presence<Effort>,
+    pub output_config: Presence<OutputConfig>,
     pub cache_control: Presence<CacheControl>,
     pub stream: Presence<bool>,
 }
@@ -370,7 +402,7 @@ impl Request {
             })?,
             tool_choice: presence(o, "tool_choice", ToolChoice::read)?,
             thinking: presence(o, "thinking", Thinking::read)?,
-            output_config: presence(o, "output_config", Effort::read)?,
+            output_config: presence(o, "output_config", OutputConfig::read)?,
             cache_control: presence(o, "cache_control", CacheControl::read)?,
             stream: presence(o, "stream", boolean)?,
         };
@@ -413,6 +445,14 @@ impl Request {
                 if !names.insert(tool.name.as_str()) {
                     return Err(CodecError::Invalid("Anthropic duplicate tool"));
                 }
+            }
+        }
+        if let Presence::Value(config) = &self.output_config {
+            nonnull(&config.effort)?;
+            nonnull(&config.format)?;
+            if let Presence::Value(schema) = &config.format {
+                charge(&mut bytes, schema.validate()?)?;
+                node_charge(&mut nodes, value_nodes(schema.root())?)?;
             }
         }
         if let Presence::Value(choice) = &self.tool_choice {
@@ -512,7 +552,7 @@ impl Request {
         });
         put(o, "tool_choice", &self.tool_choice, ToolChoice::wire);
         put(o, "thinking", &self.thinking, Thinking::wire);
-        put(o, "output_config", &self.output_config, |e| e.wire());
+        put(o, "output_config", &self.output_config, OutputConfig::wire);
         put(o, "cache_control", &self.cache_control, |c| c.wire());
         put(o, "stream", &self.stream, |b| json!(b));
         v

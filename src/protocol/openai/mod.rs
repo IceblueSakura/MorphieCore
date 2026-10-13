@@ -20,6 +20,7 @@ mod settings;
 pub mod speech;
 pub(crate) mod static_response;
 pub mod stream;
+mod strict_schema;
 mod terminal;
 #[cfg(test)]
 mod tool_results_test;

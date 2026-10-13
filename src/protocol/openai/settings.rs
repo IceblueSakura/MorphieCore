@@ -114,7 +114,7 @@ pub(super) fn read_format(
 /// Shared json_schema body fields; each protocol shell owns its wrapper and key set.
 pub(super) fn read_schema_body(o: &Map<String, Value>) -> Result<OutputConstraint, CodecError> {
     Ok(OutputConstraint::JsonSchema {
-        name: text(string(o, "name")?, "schema name", 64)?,
+        name: Some(text(string(o, "name")?, "schema name", 64)?),
         description: o
             .get("description")
             .filter(|v| !v.is_null())
@@ -142,17 +142,14 @@ pub(super) fn read_schema_body(o: &Map<String, Value>) -> Result<OutputConstrain
 /// Missing and null description/strict collapse to `None`; explicit `strict: false` stays visible.
 pub(super) fn write_schema_body(
     o: &mut Map<String, Value>,
-    name: &Text,
+    name: Option<&Text>,
     description: Option<&Text>,
     schema: &SchemaDocument,
     strict: Option<bool>,
 ) -> Result<(), CodecError> {
     schema.validate()?;
-    if !schema.is_unversioned_local() {
-        return Err(CodecError::Unsupported(
-            "schema dialect or resources".into(),
-        ));
-    }
+    // OpenAI requires the name; an unnamed source schema needs the adapter's named rule.
+    let name = name.ok_or_else(|| CodecError::Unsupported("unnamed JSON schema".into()))?;
     o.insert("name".into(), json!(name.as_str()));
     if let Some(d) = description {
         o.insert("description".into(), json!(d.as_str()));
@@ -175,7 +172,7 @@ pub(super) fn write_format(f: &OutputConstraint) -> Result<Value, CodecError> {
         } => {
             let mut o = Map::new();
             o.insert("type".into(), json!("json_schema"));
-            write_schema_body(&mut o, name, description.as_ref(), schema, *strict)?;
+            write_schema_body(&mut o, name.as_ref(), description.as_ref(), schema, *strict)?;
             Value::Object(o)
         }
     })

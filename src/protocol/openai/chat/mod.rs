@@ -134,7 +134,7 @@ fn write_response_format(f: &OutputConstraint) -> Result<Value, CodecError> {
             let mut body = Map::new();
             crate::protocol::openai::settings::write_schema_body(
                 &mut body,
-                name,
+                name.as_ref(),
                 description.as_ref(),
                 schema,
                 *strict,

@@ -52,6 +52,25 @@ fn without_image_detail(request: &Request) -> Result<Option<Request>, CodecError
     copy.task.semantic = copy.task.semantic.with_items(items)?;
     Ok(Some(copy))
 }
+/// OpenAI requires a schema name; Messages and Gemini formats have none. The fixed
+/// name is a wire label, like the fixed `max_tokens` default on Messages targets.
+fn with_schema_name(request: &Request) -> Result<Option<Request>, CodecError> {
+    use crate::semantic::{
+        task::generation::OutputConstraint,
+        value::{Presence, Text},
+    };
+    let mut settings = request.task.semantic.settings().clone();
+    let Presence::Value(OutputConstraint::JsonSchema {
+        name: name @ None, ..
+    }) = &mut settings.text.format
+    else {
+        return Ok(None);
+    };
+    *name = Some(Text::new("response", "schema name", 64).expect("static name"));
+    let mut copy = request.clone();
+    copy.task.semantic = copy.task.semantic.with_settings(settings)?;
+    Ok(Some(copy))
+}
 
 impl Adapter {
     /// Closed decode: every field must be registered.
@@ -266,6 +285,11 @@ impl Adapter {
             rules.push("openai.omit-image-detail.v1");
         }
         let request = media.as_ref().unwrap_or(request);
+        let named = with_schema_name(request)?;
+        if named.is_some() {
+            rules.push("openai.default-schema-name.v1");
+        }
+        let request = named.as_ref().unwrap_or(request);
         request.check_context(contract.standard_context)?;
         if self.adaptation.rules.responses_siwc {
             if self.protocol != Profile::Responses {

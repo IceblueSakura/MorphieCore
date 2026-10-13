@@ -120,9 +120,6 @@ pub(super) fn project(
                     FunctionStrictness::Explicit(true) => return Err(unsupported()),
                 }
                 let parameters = t.parameters.as_ref().ok_or_else(unsupported)?;
-                if !parameters.is_unversioned_local() {
-                    return Err(unsupported());
-                }
                 let mut tool = json!({"type":"function","name":t.name.as_str(),
                 "parameters":parameters.root()});
                 if let Some(description) = &t.description {

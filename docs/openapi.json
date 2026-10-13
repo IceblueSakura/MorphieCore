@@ -744,7 +744,7 @@
           "stream": {"type": ["boolean", "null"], "default": false}
         },
         "additionalProperties": true,
-        "description": "Envelope subset. The client codec admits text, thinking, tool_use and tool_result blocks plus system, tools and reasoning controls. Known values stay strict; unknown fields and client cache markers are ignored. Return thinking signatures unchanged. Target projection remains separate."
+        "description": "Envelope subset. The client codec admits text, thinking, tool_use and tool_result blocks plus system, tools, reasoning controls and output_config (effort and a json_schema format). Known values stay strict; unknown fields and client cache markers are ignored. Return thinking signatures unchanged. Target projection remains separate."
       },
       "MessagesError": {
         "type": "object", "required": ["type", "error"], "additionalProperties": false,

@@ -373,20 +373,10 @@ pub(super) fn write_tool(t: &ToolDefinition, profile: Profile) -> Result<Value, 
             }
             if let Some(p) = &t.parameters {
                 p.validate()?;
-                if !p.is_unversioned_local() {
-                    return Err(CodecError::Unsupported(
-                        "schema dialect or resources".into(),
-                    ));
-                }
                 f["parameters"] = p.root().clone();
             }
             if let Some(p) = &t.output_schema {
                 p.validate()?;
-                if !p.is_unversioned_local() {
-                    return Err(CodecError::Unsupported(
-                        "schema dialect or resources".into(),
-                    ));
-                }
                 f["output_schema"] = p.root().clone();
             }
             if let FunctionStrictness::Explicit(b) = t.strict {
