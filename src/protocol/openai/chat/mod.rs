@@ -44,7 +44,7 @@ pub(crate) fn decode_generation_with(
     let o = object(v)?;
     direction.fields(o, FIELDS)?;
     if o.get("stop")
-        .is_some_and(|v| !v.is_null() && v != &json!([]))
+        .is_some_and(|v| !v.is_null() && v != &json!([]) && v != &json!(""))
     {
         return Err(CodecError::Unsupported("stop".into()));
     }

@@ -898,6 +898,18 @@ mod client_fidelity {
         usage.input_cache_write_tokens = Some(1);
         response.semantic = response.semantic.with_usage(Some(usage)).unwrap();
         assert!(encode_client_response(&response, "m").is_err());
+
+        // OpenAI and Google report no write category; it stays absent, not zero.
+        usage.input_cache_write_tokens = None;
+        response.semantic = response.semantic.with_usage(Some(usage)).unwrap();
+        assert_eq!(
+            encode_client_response(&response, "m").unwrap()["usage"],
+            json!({"input_tokens":8,"output_tokens":3,"cache_read_input_tokens":2})
+        );
+        // Without the read subset, input cannot be split.
+        usage.cached_input_tokens = None;
+        response.semantic = response.semantic.with_usage(Some(usage)).unwrap();
+        assert!(encode_client_response(&response, "m").is_err());
     }
     #[test]
     fn messages_rejects_citations_instead_of_silently_removing_them() {
@@ -985,7 +997,8 @@ mod client_fidelity {
         assert!(decode_client_request(body.to_string().as_bytes()).is_ok());
         body["stop_sequences"] = json!(["END"]);
         assert!(decode_client_request(body.to_string().as_bytes()).is_err());
-        let mut body = json!({"model":"m","messages":[{"role":"user","content":"go"}]});
+        // An empty stop string, like an empty list, requests no stop control.
+        let mut body = json!({"model":"m","stop":"","messages":[{"role":"user","content":"go"}]});
         let chat = Adapter::new(Profile::Chat, Dialect::Standard, None);
         assert!(
             chat.decode_client_request(body.to_string().as_bytes())

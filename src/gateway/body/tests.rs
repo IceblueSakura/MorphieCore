@@ -284,9 +284,8 @@ async fn messages_clients_get_anthropic_shapes_from_an_openai_target() {
     ] {
         let (tx, upstream, _, _) = upstream(200, "application/json");
         let mut source = wire::response(turn);
-        // Messages needs explicit cache categories, not invented zero counters.
-        source["usage"]["prompt_tokens_details"] =
-            serde_json::json!({"cached_tokens":0,"cache_write_tokens":0});
+        // Messages needs the reported cache-read subset; Chat has no write category.
+        source["usage"]["prompt_tokens_details"] = serde_json::json!({"cached_tokens":0});
         tx.send(Ok(Bytes::from(source.to_string()))).await.unwrap();
         drop(tx);
         let response = respond(
@@ -312,8 +311,7 @@ async fn messages_clients_get_anthropic_shapes_from_an_openai_target() {
         assert_eq!(value["stop_reason"], expected["stop_reason"]);
         assert_eq!(
             value["usage"],
-            serde_json::json!({"input_tokens":3,"output_tokens":2,
-                "cache_read_input_tokens":0,"cache_creation_input_tokens":0})
+            serde_json::json!({"input_tokens":3,"output_tokens":2,"cache_read_input_tokens":0})
         );
     }
     // Errors use Anthropic's envelope with the wording Claude Code reacts to.

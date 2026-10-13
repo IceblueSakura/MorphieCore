@@ -45,7 +45,8 @@ fn frame(v: &Value) -> Bytes {
     let kind = v["type"].as_str().unwrap_or("error");
     Bytes::from(format!("event: {kind}\ndata: {v}\n\n"))
 }
-/// Messages usage: input excludes cache reads and writes.
+/// Messages usage: input excludes cache reads and reported cache writes.
+/// An unreported write category stays absent; the remaining input keeps any such writes.
 pub(super) fn usage_json(u: Option<&Usage>) -> Result<Value, CodecError> {
     let unsupported = || CodecError::Unsupported("Messages usage".into());
     let u = u.ok_or_else(unsupported)?;
@@ -55,12 +56,13 @@ pub(super) fn usage_json(u: Option<&Usage>) -> Result<Value, CodecError> {
         InputTokenRelation::ExcludesCacheReadAndWrite => input,
         InputTokenRelation::IncludesCache => {
             let read = u.cached_input_tokens.ok_or_else(unsupported)?;
-            let write = u.input_cache_write_tokens.ok_or_else(unsupported)?;
-            // IncludesCache does not promise disjoint cache-read and cache-write subsets.
-            if read != 0 && write != 0 {
-                return Err(unsupported());
-            }
-            input.checked_sub(read.max(write)).ok_or_else(unsupported)?
+            let excluded = match u.input_cache_write_tokens {
+                None => read,
+                // IncludesCache does not promise disjoint cache-read and cache-write subsets.
+                Some(write) if read != 0 && write != 0 => return Err(unsupported()),
+                Some(write) => read.max(write),
+            };
+            input.checked_sub(excluded).ok_or_else(unsupported)?
         }
         InputTokenRelation::Unreported => return Err(unsupported()),
     };
@@ -179,9 +181,6 @@ impl ClientEventEncoder {
             }
             StreamEvent::AnnotationAdded { .. } => {
                 return Err(CodecError::Unsupported("Messages citations".into()));
-            }
-            StreamEvent::ToolResultOutput { .. } => {
-                return Err(CodecError::Unsupported("Messages result output".into()));
             }
             StreamEvent::TextMetadata { annotations, .. } if !annotations.is_empty() => {
                 return Err(CodecError::Unsupported("Messages citations".into()));

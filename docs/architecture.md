@@ -275,7 +275,7 @@ Native observations stay unchanged. OpenAI delivery projects a copy:
 
 Messages delivery rejects citations until that carrier is implemented. Static and streamed output use the same refusal to discard annotations.
 
-Messages final usage requires reported input/output counts and a known accounting relation. Cache-exclusive input is preserved. Inclusive input can be converted only with both cache counts reported and at least one zero: the IR does not promise that nonzero cache-read and cache-write subsets are disjoint. Missing or ambiguous counts fail projection instead of becoming zero. SSE opening counters are provisional; they never replace the required final report.
+Messages final usage requires reported input/output counts and a known accounting relation. Cache-exclusive input is preserved. Inclusive input needs a reported cache-read count. An unreported cache-write category (OpenAI and Google report none) stays absent rather than zero, and the remaining input keeps any such writes. With both counts reported, at least one must be zero: the IR does not promise that nonzero cache-read and cache-write subsets are disjoint. Missing or ambiguous counts fail projection instead of becoming zero. SSE opening counters are provisional; they never replace the required final report.
 
 ## Conversation and cache affinity
 
