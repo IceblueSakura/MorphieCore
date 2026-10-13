@@ -108,7 +108,8 @@ Image, audio, video and file resources are inert: inline data or a URL, never fe
 - Tool results may carry media of any kind. Admission needs tool-result media and the kind's input modality. Responses carries tool media; standard Chat does not, so Chat targets reject it.
 - Provider file IDs and file URIs are bound to the gateway credential's workspace or project. Client-supplied references are rejected.
 - Google protocol boundaries reject media URLs on the Files API host, even when a client labels them as ordinary image or file URLs. Public URLs stay inert.
-- Image formats, encoded sizes and counts are target constraints, including tool-result images. Pixel dimensions and actual image validity remain upstream checks; the gateway does not decode or transcode images.
+- Image and file formats, encoded sizes and counts are target constraints, including tool-result media. Pixel dimensions and actual image validity remain upstream checks; the gateway does not decode or transcode images.
+- Some standard options are protocol records, not IR fields. A Responses `prompt_cache_breakpoint` on an image or file reaches Responses targets; Chat targets reject it. A Messages image with `transformations.oversized_image: "error"` keeps it on Messages targets and is rejected elsewhere, because other targets may downsize; `downsize` is the default and needs no record.
 - A failover route may include candidates narrower than the public contract. Requests they cannot represent skip them, which reduces failover rather than admission.
 
 Carrier tables and sources: [Multimodal carriers](refs/multimodal.md).

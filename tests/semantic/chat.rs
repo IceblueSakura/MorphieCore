@@ -1086,10 +1086,13 @@ mod files {
     }
     #[test]
     fn responses_tool_output_carries_files_and_needs_file_admission() {
+        // Explicit cache breakpoints on media parts are standard Responses fields.
         let input = json!([
+            {"type":"message","role":"user","content":[
+                {"type":"input_image","image_url":"https://example.invalid/a.png","detail":"auto","prompt_cache_breakpoint":{"mode":"explicit"}}]},
             {"type":"function_call","call_id":"call_1","name":"read","arguments":"{}"},
             {"type":"function_call_output","call_id":"call_1","output":[
-                {"type":"input_file","file_data":"data:application/pdf;base64,AQID","filename":"synthetic.pdf"}]}]);
+                {"type":"input_file","file_data":"data:application/pdf;base64,AQID","filename":"synthetic.pdf","prompt_cache_breakpoint":{"mode":"explicit"}}]}]);
         let request = json!({"model":"synthetic","input":input,"tools":[{"type":"function","name":"read","parameters":{"type":"object"}}]});
         let decoded = adapter()
             .decode_request(&serde_json::to_vec(&request).unwrap())
@@ -1097,7 +1100,7 @@ mod files {
         let semantic = &decoded.task.semantic;
         let needs = GenerationRequirements::derive(semantic);
         assert_eq!((needs.tool_result_media, needs.file_inputs), (1, 1));
-        let Item::ToolResult(result) = &semantic.items()[1].1 else {
+        let Item::ToolResult(result) = &semantic.items()[2].1 else {
             panic!("tool result")
         };
         let ToolOutput::Parts(parts) = &result.output else {
@@ -1113,12 +1116,21 @@ mod files {
         let output = adapter()
             .encode_request(&decoded, "synthetic", &Contract::full())
             .unwrap();
-        assert_eq!(output["input"][1]["output"], input[1]["output"]);
+        assert_eq!(output["input"][0]["content"], input[0]["content"]);
+        assert_eq!(output["input"][2]["output"], input[2]["output"]);
         let mut no_files = Contract::full();
         no_files.semantics.file_input = false;
         assert!(
             adapter()
                 .encode_request(&decoded, "synthetic", &no_files)
+                .is_err()
+        );
+        // Target file limits cover tool results, not only user messages.
+        let mut images_only = Contract::full();
+        images_only.files.inline_media_types = Some(vec!["image/png".into()]);
+        assert!(
+            adapter()
+                .encode_request(&decoded, "synthetic", &images_only)
                 .is_err()
         );
     }

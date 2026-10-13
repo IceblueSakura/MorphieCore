@@ -193,22 +193,22 @@ fn output(b: &mut Items, v: &Value) -> Result<ToolOutput, CodecError> {
             // The pinned function/custom result union includes standard image
             // content. File IDs still require an issuer/resource lifecycle.
             // https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/responses/response_function_call_output_item_list_param.py
-            "input_image" => (
-                b.part_id()?,
-                ToolResultPart::Resource(b.resource(
-                    crate::protocol::openai::content::image::read(
-                        o,
-                        Profile::Responses,
-                        direction,
-                    )?,
-                )?),
-            ),
-            "input_file" => (
-                b.part_id()?,
-                ToolResultPart::Resource(
-                    b.resource(crate::protocol::openai::content::file::read(o, direction)?)?,
-                ),
-            ),
+            "input_image" => {
+                let resource = crate::protocol::openai::content::image::read(
+                    o,
+                    Profile::Responses,
+                    direction,
+                )?;
+                let id = b.part_id()?;
+                record_breakpoint(b, id, o)?;
+                (id, ToolResultPart::Resource(b.resource(resource)?))
+            }
+            "input_file" => {
+                let resource = crate::protocol::openai::content::file::read(o, direction)?;
+                let id = b.part_id()?;
+                record_breakpoint(b, id, o)?;
+                (id, ToolResultPart::Resource(b.resource(resource)?))
+            }
             _ => return Err(CodecError::Unsupported("tool result media".into())),
         };
         p.push(part);
@@ -217,6 +217,9 @@ fn output(b: &mut Items, v: &Value) -> Result<ToolOutput, CodecError> {
 }
 fn record_input_form(b: &mut Items, id: PartId, o: &Map<String, Value>) -> Result<(), CodecError> {
     b.fidelity.record_input_text(id)?;
+    record_breakpoint(b, id, o)
+}
+fn record_breakpoint(b: &mut Items, id: PartId, o: &Map<String, Value>) -> Result<(), CodecError> {
     if let Some(v) = o.get("prompt_cache_breakpoint") {
         if v != &json!({"mode":"explicit"}) {
             return Err(CodecError::Invalid("prompt cache breakpoint"));
@@ -529,8 +532,10 @@ pub(super) fn decode_items(
                             _ => return Err(CodecError::Unsupported("content part".into())),
                         };
                         let part_id = b.part_id()?;
-                        if kind == "input_text" {
-                            record_input_form(b, part_id, p)?;
+                        match kind {
+                            "input_text" => record_input_form(b, part_id, p)?,
+                            "input_image" | "input_file" => record_breakpoint(b, part_id, p)?,
+                            _ => {}
                         }
                         parts.push(Part {
                             id: part_id,
@@ -584,9 +589,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         .fidelity
         .check_wire_item_ids(target.semantic.items(), false)?;
     if target.semantic.items().iter().any(|(_, item)| matches!(item, Item::ToolResult(result) | Item::CustomResult(result)
-        if result.execution.is_some() || result.is_error.is_some() || matches!(result.output, ToolOutput::Structured(_))
-            || matches!(&result.output, ToolOutput::Parts(parts)
-                if parts.iter().any(|(id, part)| matches!(part, ToolResultPart::Resource(_)) && target.fidelity.cache_breakpoint(*id))))) {
+        if result.execution.is_some() || result.is_error.is_some() || matches!(result.output, ToolOutput::Structured(_)))) {
         return Err(CodecError::Unsupported("tool result semantics".into()));
     }
     let mut v = json!({"input":encode_items(target.semantic.items(), target.fidelity, false, target.semantic.resources())});
@@ -597,6 +600,27 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     bounded(&v)?;
     Ok(v)
 }
+fn media_part(
+    id: PartId,
+    resource: &ResourceUse,
+    fidelity: &FidelityRecords,
+    resources: &ResourceTable,
+) -> Value {
+    let resource = resource.media(resources).expect("validated resource");
+    let mut v = match resource.kind() {
+        ResourceKind::Image => {
+            crate::protocol::openai::content::image::write(resource, Profile::Responses)
+        }
+        ResourceKind::File => crate::protocol::openai::content::file::write(resource),
+        ResourceKind::Audio | ResourceKind::Video => {
+            unreachable!("lowering rejects audio and video without a Responses carrier")
+        }
+    };
+    if fidelity.cache_breakpoint(id) {
+        v["prompt_cache_breakpoint"] = json!({"mode":"explicit"});
+    }
+    v
+}
 fn output_wire(o: &ToolOutput, fidelity: &FidelityRecords, resources: &ResourceTable) -> Value {
     match o {
         ToolOutput::Text(s) => json!(s),
@@ -605,21 +629,7 @@ fn output_wire(o: &ToolOutput, fidelity: &FidelityRecords, resources: &ResourceT
                 .map(|(id, part)| match part {
                     ToolResultPart::Text(text) => input_part(*id, text.as_str(), fidelity),
                     ToolResultPart::Resource(resource) => {
-                        let resource = resource.media(resources).expect("validated resource");
-                        match resource.kind() {
-                            ResourceKind::Image => crate::protocol::openai::content::image::write(
-                                resource,
-                                Profile::Responses,
-                            ),
-                            ResourceKind::File => {
-                                crate::protocol::openai::content::file::write(resource)
-                            }
-                            ResourceKind::Audio | ResourceKind::Video => {
-                                unreachable!(
-                                    "lowering rejects tool media without a Responses carrier"
-                                )
-                            }
-                        }
+                        media_part(*id, resource, fidelity, resources)
                     }
                 })
                 .collect::<Vec<_>>()
@@ -649,7 +659,7 @@ pub(super) fn encode_items(
             // Empty owners still carry identity, phase and lifecycle. Omitting
             // one here would also contradict its already emitted SSE item.
             Item::Message(m) => {
-                let mut v = json!({"type":"message","role":if m.role==MessageRole::User{"user"}else{"assistant"},"content":m.parts.iter().map(|p|match &p.content{ContentPart::Text(t)=>if !response && (m.role==MessageRole::User || fidelity.input_text_form(p.id) && t.is_plain()){input_part(p.id,t.as_str(),fidelity)}else{crate::protocol::openai::content::text::write(t,"output_text",resources)},ContentPart::Refusal(t)=>json!({"type":"refusal","refusal":t.as_str()}),ContentPart::Resource(value)=>{let resource=value.media(resources).expect("validated resource");match resource.kind(){ResourceKind::Image=>crate::protocol::openai::content::image::write(resource,Profile::Responses),ResourceKind::File=>crate::protocol::openai::content::file::write(resource),ResourceKind::Audio|ResourceKind::Video=>unreachable!("lowering rejects audio and video resources without a Responses carrier")}},ContentPart::Audio(_)|ContentPart::AudioReference(_)=>unreachable!("lowering rejects audio without a Responses carrier")}).collect::<Vec<_>>()});
+                let mut v = json!({"type":"message","role":if m.role==MessageRole::User{"user"}else{"assistant"},"content":m.parts.iter().map(|p|match &p.content{ContentPart::Text(t)=>if !response && (m.role==MessageRole::User || fidelity.input_text_form(p.id) && t.is_plain()){input_part(p.id,t.as_str(),fidelity)}else{crate::protocol::openai::content::text::write(t,"output_text",resources)},ContentPart::Refusal(t)=>json!({"type":"refusal","refusal":t.as_str()}),ContentPart::Resource(value)=>media_part(p.id,value,fidelity,resources),ContentPart::Audio(_)|ContentPart::AudioReference(_)=>unreachable!("lowering rejects audio without a Responses carrier")}).collect::<Vec<_>>()});
                 if let Some(p) = m.phase {
                     v["phase"] = json!(p.label());
                 }

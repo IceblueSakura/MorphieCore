@@ -81,6 +81,29 @@ impl Item {
             _ => None,
         }
     }
+    /// Resource uses in order: message parts, then tool-result parts.
+    pub fn resource_uses(&self) -> impl Iterator<Item = &ResourceUse> {
+        let message: &[Part] = match self {
+            Self::Message(m) => &m.parts,
+            _ => &[],
+        };
+        let result: &[(PartId, ToolResultPart)] = match self {
+            Self::ToolResult(r) | Self::CustomResult(r) => match &r.output {
+                ToolOutput::Parts(parts) => parts,
+                _ => &[],
+            },
+            _ => &[],
+        };
+        let message = message.iter().filter_map(|p| match &p.content {
+            ContentPart::Resource(r) => Some(r),
+            _ => None,
+        });
+        let result = result.iter().filter_map(|(_, p)| match p {
+            ToolResultPart::Resource(r) => Some(r),
+            ToolResultPart::Text(_) => None,
+        });
+        message.chain(result)
+    }
     pub fn is_call(&self) -> bool {
         matches!(
             self,

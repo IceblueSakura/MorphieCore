@@ -30,7 +30,12 @@ pub enum Source {
 }
 #[derive(Clone, Eq, PartialEq)]
 pub enum Media {
-    Image(Source),
+    /// `reject_oversized` is `transformations.oversized_image: "error"`; the
+    /// default `downsize` has no record.
+    Image {
+        source: Source,
+        reject_oversized: bool,
+    },
     Document(Source),
 }
 impl Media {
@@ -59,7 +64,20 @@ impl Media {
             _ => return Err(CodecError::Unsupported("Anthropic media source".into())),
         };
         let media = match kind {
-            "image" => Self::Image(source),
+            "image" => Self::Image {
+                source,
+                reject_oversized: match o.get("transformations") {
+                    None | Some(Value::Null) => false,
+                    Some(t) => match object(t)?.get("oversized_image") {
+                        None | Some(Value::Null) => false,
+                        Some(v) => match v.as_str() {
+                            Some("downsize") => false,
+                            Some("error") => true,
+                            _ => return Err(CodecError::Invalid("Anthropic oversized_image")),
+                        },
+                    },
+                },
+            },
             _ => Self::Document(source),
         };
         media.validate()?;
@@ -67,23 +85,28 @@ impl Media {
     }
     fn validate(&self) -> Result<(), CodecError> {
         match self {
-            Self::Image(Source::Base64 { data, .. }) if data.len() > MAX_IMAGE_BASE64_BYTES => {
-                Err(CodecError::Limit)
-            }
-            Self::Image(Source::Base64 { media_type, .. })
-                if !IMAGE_TYPES.contains(&&**media_type) =>
-            {
+            Self::Image {
+                source: Source::Base64 { data, .. },
+                ..
+            } if data.len() > MAX_IMAGE_BASE64_BYTES => Err(CodecError::Limit),
+            Self::Image {
+                source: Source::Base64 { media_type, .. },
+                ..
+            } if !IMAGE_TYPES.contains(&&**media_type) => {
                 Err(CodecError::Unsupported("Anthropic image type".into()))
             }
             Self::Document(Source::Base64 { media_type, .. }) if media_type != PDF => {
                 Err(CodecError::Unsupported("Anthropic document type".into()))
             }
-            Self::Image(Source::Text(_)) => Err(CodecError::Invalid("Anthropic image source")),
+            Self::Image {
+                source: Source::Text(_),
+                ..
+            } => Err(CodecError::Invalid("Anthropic image source")),
             _ => Ok(()),
         }
     }
     pub(super) fn bytes(&self) -> Result<usize, CodecError> {
-        let (Self::Image(source) | Self::Document(source)) = self;
+        let (Self::Image { source, .. } | Self::Document(source)) = self;
         self.validate()?;
         Ok(match source {
             Source::Base64 { media_type, data } => text(media_type)? + text(data)?,
@@ -92,7 +115,7 @@ impl Media {
     }
     pub(super) fn wire(&self) -> Value {
         let (kind, source) = match self {
-            Self::Image(source) => ("image", source),
+            Self::Image { source, .. } => ("image", source),
             Self::Document(source) => ("document", source),
         };
         let source = match source {
@@ -102,14 +125,24 @@ impl Media {
             Source::Url(url) => json!({"type":"url","url":url}),
             Source::Text(data) => json!({"type":"text","media_type":PLAIN_TEXT,"data":data}),
         };
-        json!({"type":kind,"source":source})
+        let mut block = json!({"type":kind,"source":source});
+        if matches!(
+            self,
+            Self::Image {
+                reject_oversized: true,
+                ..
+            }
+        ) {
+            block["transformations"] = json!({"oversized_image":"error"});
+        }
+        block
     }
     /// The IR view: a text document becomes an inline `text/plain` file.
     pub(super) fn resource(&self) -> Result<Resource, CodecError> {
         let text =
             |s: &str, kind| Text::new(s, kind, MAX_TEXT_BYTES).map_err(|_| CodecError::Limit);
         let (source, description) = match self {
-            Self::Image(source) => (source, ResourceDescription::Image { detail: None }),
+            Self::Image { source, .. } => (source, ResourceDescription::Image { detail: None }),
             Self::Document(source) => (
                 source,
                 ResourceDescription::File(FileDescription {
@@ -139,6 +172,7 @@ impl Media {
     /// The native carrier for one IR resource. `omitted` reports a dropped per-use option.
     pub(super) fn from_resource(
         resource: ResourceView<'_>,
+        reject_oversized: bool,
         omitted: &mut bool,
     ) -> Result<Self, CodecError> {
         let unsupported = || CodecError::Unsupported("Anthropic media".into());
@@ -175,7 +209,10 @@ impl Media {
             _ => return Err(unsupported()),
         };
         let media = match resource.kind() {
-            ResourceKind::Image => Self::Image(source),
+            ResourceKind::Image => Self::Image {
+                source,
+                reject_oversized,
+            },
             ResourceKind::File => Self::Document(source),
             ResourceKind::Audio | ResourceKind::Video => return Err(unsupported()),
         };

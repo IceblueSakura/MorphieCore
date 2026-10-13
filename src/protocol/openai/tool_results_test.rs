@@ -190,10 +190,10 @@ fn request_codecs_enforce_result_carriers_before_rendering() {
                     profile,
                     adaptation: Default::default(),
                 };
-                assert!(matches!(
-                    responses::encode_generation(&forged),
-                    Err(CodecError::Unsupported(_))
-                ));
+                assert_eq!(
+                    responses::encode_generation(&forged).unwrap()["input"][1]["output"][0]["prompt_cache_breakpoint"],
+                    serde_json::json!({"mode":"explicit"})
+                );
             } else {
                 assert!(matches!(result, Err(CodecError::Unsupported(_))));
             }

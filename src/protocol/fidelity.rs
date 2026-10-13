@@ -64,6 +64,8 @@ struct AudioBinding {
 pub struct FidelityRecords {
     response_item_ids: BTreeMap<ItemId, Text>,
     cache_breakpoints: std::collections::BTreeSet<PartId>,
+    /// Messages images that must fail rather than be downsized when oversized.
+    strict_image_sizes: std::collections::BTreeSet<PartId>,
     input_text_forms: std::collections::BTreeSet<PartId>,
     reasoning_replay: BTreeMap<ItemId, ReplayBinding>,
     audio: BTreeMap<PartId, AudioBinding>,
@@ -144,6 +146,22 @@ impl FidelityRecords {
     }
     pub fn cache_breakpoint(&self, owner: PartId) -> bool {
         self.cache_breakpoints.contains(&owner)
+    }
+    pub fn record_strict_image_size(&mut self, owner: PartId) -> Result<(), CodecError> {
+        if self.strict_image_sizes.len() >= MAX_ITEMS {
+            return Err(CodecError::Limit);
+        }
+        self.strict_image_sizes.insert(owner);
+        Ok(())
+    }
+    pub fn strict_image_size(&self, owner: PartId) -> bool {
+        self.strict_image_sizes.contains(&owner)
+    }
+    /// Targets without a size-policy carrier must reject, not downsize.
+    pub fn has_strict_image_sizes(&self, items: &[(ItemId, Item)]) -> bool {
+        self.strict_image_sizes
+            .iter()
+            .any(|owner| part_exists(items, *owner))
     }
     pub fn record_response_item_id(
         &mut self,
@@ -452,6 +470,8 @@ impl FidelityRecords {
     }
     pub fn retain_owners(&mut self, items: &[(ItemId, Item)]) {
         self.cache_breakpoints
+            .retain(|owner| part_exists(items, *owner));
+        self.strict_image_sizes
             .retain(|owner| part_exists(items, *owner));
         self.response_item_ids
             .retain(|id, _| items.iter().any(|(owner, _)| owner == id));

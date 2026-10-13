@@ -477,15 +477,22 @@ mod anthropic_media {
         let MessageContent::Blocks(blocks) = &mut request.messages[0].content else {
             panic!("image blocks")
         };
-        blocks[0] = Block::Media(Media::Image(Source::Base64 {
-            media_type: "image/png".into(),
-            data: "AAAA".repeat(10_000_000 / 4),
-        }));
+        blocks[0] = Block::Media(Media::Image {
+            source: Source::Base64 {
+                media_type: "image/png".into(),
+                data: "AAAA".repeat(10_000_000 / 4),
+            },
+            reject_oversized: false,
+        });
         assert!(profile.encode_request(&request).is_ok());
         let MessageContent::Blocks(blocks) = &mut request.messages[0].content else {
             unreachable!()
         };
-        let Block::Media(Media::Image(Source::Base64 { data, .. })) = &mut blocks[0] else {
+        let Block::Media(Media::Image {
+            source: Source::Base64 { data, .. },
+            ..
+        }) = &mut blocks[0]
+        else {
             unreachable!()
         };
         data.push_str("AAAA");
@@ -504,7 +511,8 @@ mod anthropic_media {
     fn messages() -> Value {
         json!([
             {"role":"user","content":[
-                {"type":"image","source":{"type":"base64","media_type":"image/png","data":"AQID"}},
+                {"type":"image","source":{"type":"base64","media_type":"image/png","data":"AQID"},
+                    "transformations":{"oversized_image":"error"}},
                 {"type":"image","source":{"type":"url","url":"https://example.invalid/a.jpg"}},
                 {"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"BAUG"}},
                 {"type":"document","source":{"type":"text","media_type":"text/plain","data":"notes"}},
@@ -514,7 +522,8 @@ mod anthropic_media {
             {"role":"user","content":[
                 {"type":"tool_result","tool_use_id":"toolu_1","content":[
                     {"type":"text","text":"screen"},
-                    {"type":"image","source":{"type":"base64","media_type":"image/webp","data":"BwgJ"}}]}]}
+                    {"type":"image","source":{"type":"base64","media_type":"image/webp","data":"BwgJ"},
+                        "transformations":{"oversized_image":"error"}}]}]}
         ])
     }
     fn view<'a>(request: &'a GenerationRequest, resource: &'a ResourceUse) -> ResourceView<'a> {
@@ -633,5 +642,37 @@ mod anthropic_media {
         let audio =
             decode(json!([{"type":"input_audio","input_audio":{"data":"AQID","format":"wav"}}]));
         assert!(endpoint.encode_request_with_rules(&audio).is_err());
+        // `downsize` is the default; `error` survives only on a Messages target.
+        let messages = |oversized: &str| {
+            let raw = json!({"model":"m","max_tokens":8,"messages":[{"role":"user","content":[
+                {"type":"image","source":{"type":"url","url":"https://example.invalid/a.png"},
+                    "transformations":{"oversized_image":oversized}}]}]});
+            let mut request = morphiecore::protocol::anthropic::client::decode_client_request(
+                &serde_json::to_vec(&raw).unwrap(),
+            )
+            .unwrap();
+            request.conversation = Some(
+                morphiecore::semantic::context::ConversationContext::conversation("synthetic")
+                    .unwrap(),
+            );
+            request
+        };
+        let image =
+            json!({"type":"image","source":{"type":"url","url":"https://example.invalid/a.png"}});
+        let (wire, _) = endpoint
+            .encode_request_with_rules(&messages("downsize"))
+            .unwrap();
+        assert_eq!(wire["messages"][0]["content"], json!([image]));
+        let full = morphiecore::protocol::openai::TargetCaps::full();
+        assert!(
+            chat.encode_request(&messages("downsize"), "synthetic", &full)
+                .is_ok()
+        );
+        let strict = messages("error");
+        let (wire, _) = endpoint.encode_request_with_rules(&strict).unwrap();
+        let mut expected = image;
+        expected["transformations"] = json!({"oversized_image":"error"});
+        assert_eq!(wire["messages"][0]["content"], json!([expected]));
+        assert!(chat.encode_request(&strict, "synthetic", &full).is_err());
     }
 }

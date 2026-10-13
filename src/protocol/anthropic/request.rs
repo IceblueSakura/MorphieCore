@@ -446,13 +446,13 @@ impl Request {
                 count(block_count)?;
                 for block in blocks {
                     image_count += match block {
-                        Block::Media(Media::Image(_)) => 1,
+                        Block::Media(Media::Image { .. }) => 1,
                         Block::ToolResult {
                             content: ResultContent::Blocks(parts),
                             ..
                         } => parts
                             .iter()
-                            .filter(|p| matches!(p, ResultBlock::Media(Media::Image(_))))
+                            .filter(|p| matches!(p, ResultBlock::Media(Media::Image { .. })))
                             .count(),
                         _ => 0,
                     };

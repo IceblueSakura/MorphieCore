@@ -4,7 +4,16 @@ This page owns direction and current scope. Code and tests define behavior; [Arc
 
 ## Current focus
 
-First complete the IR's semantic support for all target protocols and modalities. No implementation slice is selected yet; each slice must state its goal and exit condition before code changes.
+First complete the IR's semantic support for all target protocols and modalities. Each slice must state its goal and exit condition before code changes.
+
+IR completeness proceeds in two steps. First, the standard OpenAI Chat, OpenAI Responses and Anthropic Messages media fields, checked against the pinned SDK types (openai-python `5e7a23e`, anthropic-sdk-python `b4b7916`). Second, compatibility with client shapes beyond those standards, such as opencode's.
+
+| Slice | Goal | Exit condition |
+|---|---|---|
+| 1B (selected) | Document names and instruction media | Messages document `title` maps to the file name both ways; Responses system and developer messages carry `input_image` and `input_file`; targets without a carrier reject them |
+| 1C (needs design) | Document citations | Messages `citations`, `content` document sources, `search_result` blocks and cited response locations |
+
+Messages document `context` stays rejected: it is model-visible text with no carrier outside Messages.
 
 The coverage-improvement pass starts only after IR completeness is established. Focused contract tests, safety invariants and the offline baseline remain required for every implementation slice; deferring the coverage pass does not defer those checks.
 

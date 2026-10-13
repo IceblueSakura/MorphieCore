@@ -10,7 +10,10 @@ pub(in crate::protocol::openai) fn read(
 ) -> Result<Resource, CodecError> {
     let image = match profile {
         Profile::Responses => {
-            direction.fields(part, &["type", "image_url", "detail"])?;
+            direction.fields(
+                part,
+                &["type", "image_url", "detail", "prompt_cache_breakpoint"],
+            )?;
             part
         }
         Profile::Chat => {

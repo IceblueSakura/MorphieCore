@@ -59,6 +59,7 @@ pub(super) fn project(
         || !s.output_modalities.is_absent()
         || !s.audio.is_absent()
         || s.parallel_tool_calls == Some(false)
+        || fidelity.has_strict_image_sizes(request.items())
     {
         return Err(unsupported());
     }

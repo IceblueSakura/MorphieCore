@@ -685,7 +685,6 @@ mod tool_results {
             json!({"type":"input_image","image_url":"https://user:secret@example.invalid/a.png"}),
             json!({"type":"input_image","image_url":"file:///etc/passwd"}),
             json!({"type":"input_image","image_url":"data:image/png;base64,???"}),
-            json!({"type":"input_image","image_url":"https://example.invalid/a.png","prompt_cache_breakpoint":{"mode":"explicit"}}),
         ] {
             let wire = json!({"input":[
                 {"type":"function_call","call_id":"c","name":"lookup","arguments":"{}"},

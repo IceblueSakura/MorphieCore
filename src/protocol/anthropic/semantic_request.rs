@@ -349,9 +349,13 @@ pub(super) fn item_blocks(
     omitted: &mut Vec<ItemId>,
     rules: &mut BTreeSet<RequestRule>,
 ) -> Result<Vec<Block>, CodecError> {
-    let mut media = |resource: &ResourceUse| {
+    let mut media = |part: PartId, resource: &ResourceUse| {
         let mut dropped = false;
-        let value = Media::from_resource(resource.media(request.resources())?, &mut dropped)?;
+        let value = Media::from_resource(
+            resource.media(request.resources())?,
+            fidelity.strict_image_size(part),
+            &mut dropped,
+        )?;
         if dropped {
             rules.insert(RequestRule::OmitMediaOptions);
         }
@@ -367,7 +371,7 @@ pub(super) fn item_blocks(
                 .map(|p| match &p.content {
                     ContentPart::Text(t) if t.is_plain() => Ok(Block::Text(t.as_str().into())),
                     ContentPart::Resource(r) if m.role == MessageRole::User => {
-                        Ok(Block::Media(media(r)?))
+                        Ok(Block::Media(media(p.id, r)?))
                     }
                     _ => Err(unsupported()),
                 })
@@ -446,10 +450,10 @@ pub(super) fn item_blocks(
                 ToolOutput::Parts(parts) => ResultContent::Blocks(
                     parts
                         .iter()
-                        .map(|(_, part)| {
+                        .map(|(id, part)| {
                             Ok(match part {
                                 ToolResultPart::Text(t) => ResultBlock::Text(t.as_str().into()),
-                                ToolResultPart::Resource(r) => ResultBlock::Media(media(r)?),
+                                ToolResultPart::Resource(r) => ResultBlock::Media(media(*id, r)?),
                             })
                         })
                         .collect::<Result<_, CodecError>>()?,

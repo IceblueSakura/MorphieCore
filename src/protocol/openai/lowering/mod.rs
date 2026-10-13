@@ -116,6 +116,9 @@ pub fn lower_request<'a>(
     c.images
         .check(r)
         .map_err(|_| RepresentationError::ImageInput)?;
+    if fidelity.has_strict_image_sizes(r.items()) {
+        return Err(RepresentationError::ImageInput);
+    }
     c.files
         .check(r)
         .map_err(|_| RepresentationError::FileInput)?;
@@ -192,14 +195,6 @@ pub fn lower_request<'a>(
             _ => vec![],
         };
         if profile == Profile::Chat && parts.iter().any(|id| fidelity.cache_breakpoint(*id)) {
-            return Err(RepresentationError::Controls);
-        }
-        if matches!(item, Item::ToolResult(result) | Item::CustomResult(result)
-            if matches!(&result.output, ToolOutput::Parts(parts)
-                if parts.iter().any(|(id, part)| matches!(part, ToolResultPart::Resource(_)) && fidelity.cache_breakpoint(*id))))
-        {
-            // Image breakpoints need an explicit image-carrier admission;
-            // the text-only breakpoint path cannot silently omit one.
             return Err(RepresentationError::Controls);
         }
         if let Item::Message(m)=item && m.parts.iter().any(|p|matches!(&p.content,ContentPart::Text(t) if !t.is_plain() && (m.role==MessageRole::User || fidelity.cache_breakpoint(p.id)))){return Err(RepresentationError::TextMetadata);}

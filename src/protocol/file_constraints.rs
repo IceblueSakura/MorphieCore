@@ -1,7 +1,7 @@
 //! File-source target limits, independent of image budgets and model admission.
 use crate::semantic::task::generation::{
-    ContentPart, FileDetail, GenerationError, GenerationRequest, Item, MAX_FILE_DECODED_BYTES,
-    MAX_ITEMS, MAX_TOTAL_FILE_DECODED_BYTES, ResourceDescription, ResourceLocation,
+    FileDetail, GenerationError, GenerationRequest, MAX_FILE_DECODED_BYTES, MAX_ITEMS,
+    MAX_TOTAL_FILE_DECODED_BYTES, ResourceDescription, ResourceLocation,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -72,44 +72,37 @@ impl FileConstraints {
     pub(crate) fn check(&self, request: &GenerationRequest) -> Result<(), GenerationError> {
         let mut count = 0;
         let mut total = 0usize;
-        for (_, item) in request.items() {
-            let Item::Message(message) = item else {
+        // Tool-result files face the same target limits as user files.
+        for resource in request.items().iter().flat_map(|(_, i)| i.resource_uses()) {
+            let resource = resource.media(request.resources())?;
+            let ResourceDescription::File(file) = &resource.description else {
                 continue;
             };
-            for part in &message.parts {
-                let ContentPart::Resource(resource) = &part.content else {
-                    continue;
-                };
-                let resource = resource.media(request.resources())?;
-                let ResourceDescription::File(file) = &resource.description else {
-                    continue;
-                };
-                count += 1;
-                let source_ok = match &resource.location {
-                    ResourceLocation::Url(_) => self.urls,
-                    ResourceLocation::Inline { media_type, .. } => {
-                        let bytes = resource
-                            .inline_decoded_bytes()?
-                            .ok_or(GenerationError::InvalidResource)?;
-                        total = total.checked_add(bytes).ok_or(GenerationError::Limit)?;
-                        bytes <= self.max_inline_bytes
-                            && total <= self.max_total_inline_bytes
-                            && self
-                                .inline_media_types
-                                .as_ref()
-                                .is_none_or(|types| types.iter().any(|t| t == media_type.as_str()))
-                    }
-                    ResourceLocation::OpaqueReference(_)
-                    | ResourceLocation::NamespacedReference { .. } => false,
-                };
-                if count > self.max_files
-                    || !source_ok
-                    || file.detail.is_some_and(|d| !self.details.contains(&d))
-                    || self.require_filename
-                        && file.filename.as_ref().is_none_or(|n| n.as_str().is_empty())
-                {
-                    return Err(GenerationError::InvalidResource);
+            count += 1;
+            let source_ok = match &resource.location {
+                ResourceLocation::Url(_) => self.urls,
+                ResourceLocation::Inline { media_type, .. } => {
+                    let bytes = resource
+                        .inline_decoded_bytes()?
+                        .ok_or(GenerationError::InvalidResource)?;
+                    total = total.checked_add(bytes).ok_or(GenerationError::Limit)?;
+                    bytes <= self.max_inline_bytes
+                        && total <= self.max_total_inline_bytes
+                        && self
+                            .inline_media_types
+                            .as_ref()
+                            .is_none_or(|types| types.iter().any(|t| t == media_type.as_str()))
                 }
+                ResourceLocation::OpaqueReference(_)
+                | ResourceLocation::NamespacedReference { .. } => false,
+            };
+            if count > self.max_files
+                || !source_ok
+                || file.detail.is_some_and(|d| !self.details.contains(&d))
+                || self.require_filename
+                    && file.filename.as_ref().is_none_or(|n| n.as_str().is_empty())
+            {
+                return Err(GenerationError::InvalidResource);
             }
         }
         Ok(())

@@ -13,6 +13,8 @@ pub(super) struct Intake {
     pub(super) items: Vec<(ItemId, Item)>,
     pub(super) groups: Vec<MessageEnvelope>,
     pub(super) resources: ResourceTable,
+    /// Parts whose image rejects downsizing; the caller records them as fidelity.
+    pub(super) strict_images: Vec<PartId>,
 }
 impl Intake {
     pub(super) fn new(scope: LocalScope) -> Self {
@@ -21,9 +23,19 @@ impl Intake {
             items: vec![],
             groups: vec![],
             resources: ResourceTable::default(),
+            strict_images: vec![],
         }
     }
-    fn resource(&mut self, media: &Media) -> Result<ResourceUse, CodecError> {
+    fn resource(&mut self, part: PartId, media: &Media) -> Result<ResourceUse, CodecError> {
+        if matches!(
+            media,
+            Media::Image {
+                reject_oversized: true,
+                ..
+            }
+        ) {
+            self.strict_images.push(part);
+        }
         let resource = media.resource()?;
         let id = ResourceId::scoped(self.scope, self.resources.len() as u64 + 1);
         self.resources = std::mem::take(&mut self.resources).insert(id, resource.location)?;
@@ -59,7 +71,7 @@ impl Intake {
                 role: MessageRole::User,
                 parts: vec![Part {
                     id: part,
-                    content: ContentPart::Resource(self.resource(media)?),
+                    content: ContentPart::Resource(self.resource(part, media)?),
                 }],
                 status: ItemLifecycle::Completed,
                 phase: None,
@@ -107,12 +119,13 @@ impl Intake {
                                 .iter()
                                 .enumerate()
                                 .map(|(i, block)| {
+                                    let part = PartId::scoped(self.scope, base + i as u64);
                                     Ok((
-                                        PartId::scoped(self.scope, base + i as u64),
+                                        part,
                                         match block {
                                             ResultBlock::Text(s) => ToolResultPart::Text(text(s)?),
                                             ResultBlock::Media(m) => {
-                                                ToolResultPart::Resource(self.resource(m)?)
+                                                ToolResultPart::Resource(self.resource(part, m)?)
                                             }
                                         },
                                     ))

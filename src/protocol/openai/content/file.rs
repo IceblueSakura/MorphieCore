@@ -10,7 +10,14 @@ pub(in crate::protocol::openai) fn read(
 ) -> Result<Resource, CodecError> {
     direction.fields(
         part,
-        &["type", "file_data", "file_url", "filename", "detail"],
+        &[
+            "type",
+            "file_data",
+            "file_url",
+            "filename",
+            "detail",
+            "prompt_cache_breakpoint",
+        ],
     )?;
     let location = match (
         part.contains_key("file_data"),
