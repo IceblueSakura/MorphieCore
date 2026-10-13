@@ -187,6 +187,25 @@ impl ResponseContext {
         direction: DecodeDirection,
     ) -> Result<(Self, crate::protocol::fidelity::FidelityRecords), CodecError> {
         let mut controls = o.clone();
+        // Storage facts belong to the API envelope, never upstream execution intent.
+        let storage = super::managed::read_storage(o)?;
+        if matches!(direction, DecodeDirection::Upstream)
+            && storage.as_ref().is_some_and(|storage| {
+                storage.store == Presence::Value(true)
+                    || storage.previous_response_id.value().is_some()
+            })
+        {
+            return Err(CodecError::Unsupported("upstream response state".into()));
+        }
+        let execution = o
+            .iter()
+            .filter(|(key, _)| {
+                (EXEC_FIELDS.contains(&key.as_str()) || CACHE_FIELDS.contains(&key.as_str()))
+                    && key.as_str() != "store"
+                    && key.as_str() != "previous_response_id"
+            })
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
         let mut fidelity = crate::protocol::fidelity::FidelityRecords::default();
         let instruction_messages = if let Some(Value::Array(values)) = o.get("instructions") {
             controls.remove("instructions");
@@ -210,7 +229,7 @@ impl ResponseContext {
         let value = Self {
             settings: s,
             instruction_messages,
-            execution: ExecutionHints::read(o)?,
+            execution: ExecutionHints::read(&execution)?,
             completed_at: read_presence(o, "completed_at", timestamp)?,
             cache_diagnostics: read_presence(o, "prompt_cache_diagnostics", |v| {
                 serde_json::from_value(v.clone())
@@ -468,5 +487,16 @@ pub(in crate::protocol::openai) fn write_metadata(
 ) -> Result<(), CodecError> {
     metadata
         .context
-        .write(&metadata.instruction_fidelity, o, completed)
+        .write(&metadata.instruction_fidelity, o, completed)?;
+    if let Some(storage) = &metadata.storage {
+        storage.validate()?;
+        put_presence(o, "store", &storage.store, |value| json!(value));
+        put_presence(
+            o,
+            "previous_response_id",
+            &storage.previous_response_id,
+            |value| json!(value),
+        );
+    }
+    Ok(())
 }

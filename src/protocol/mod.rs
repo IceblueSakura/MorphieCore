@@ -7,7 +7,7 @@ pub(crate) mod cache_affinity;
 mod decoded;
 pub(crate) mod json;
 pub mod stream;
-pub use decoded::{CodecError, DecodedRequest, DecodedResponse, ResponseMetadata};
+pub use decoded::{CodecError, DecodedRequest, DecodedResponse, ResponseMetadata, ResponseStorage};
 pub mod extensions;
 pub mod fidelity;
 pub mod file_constraints;

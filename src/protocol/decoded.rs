@@ -18,6 +18,8 @@ pub struct DecodedResponse {
 /// Envelope identity is not a task instruction or a routing input.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ResponseMetadata {
+    /// API storage facts, separate from task settings and upstream execution hints.
+    pub storage: Option<ResponseStorage>,
     /// Unreported upstream identity stays absent. Delivery may fill its own copy.
     pub id: Option<String>,
     pub model: String,
@@ -38,6 +40,9 @@ impl ResponseMetadata {
     }
     /// Validate shared facts without imposing a wire family's required fields.
     pub fn validate(&self) -> Result<(), CodecError> {
+        if let Some(storage) = &self.storage {
+            storage.validate()?;
+        }
         if self
             .id
             .as_ref()
@@ -55,6 +60,21 @@ impl ResponseMetadata {
             return Err(CodecError::Invalid("timestamp"));
         }
         self.context.validate()?;
+        Ok(())
+    }
+}
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ResponseStorage {
+    pub store: crate::semantic::value::Presence<bool>,
+    pub previous_response_id: crate::semantic::value::Presence<String>,
+}
+impl ResponseStorage {
+    pub fn validate(&self) -> Result<(), CodecError> {
+        if self.previous_response_id.value().is_some_and(|id| {
+            id.is_empty() || id.len() > 256 || !id.bytes().all(|b| b.is_ascii_graphic())
+        }) {
+            return Err(CodecError::Invalid("previous_response_id"));
+        }
         Ok(())
     }
 }

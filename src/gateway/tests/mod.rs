@@ -5,6 +5,7 @@ mod credential_fallback;
 mod embedding;
 mod ingress;
 mod models;
+mod responses;
 mod route_fallback;
 mod shutdown;
 mod speech;

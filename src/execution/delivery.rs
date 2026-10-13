@@ -68,6 +68,7 @@ pub struct ResponseDelivery {
     native_created: Option<serde_json::Number>,
     /// Request-local envelope identity, never stored as upstream metadata or history.
     generated_id: Option<String>,
+    storage: Option<(String, crate::protocol::ResponseStorage)>,
     native_projection: Option<crate::protocol::openai::lowering::native_messages::EventProjection>,
     /// Encode for an Anthropic Messages client instead of the OpenAI adapter.
     messages: bool,
@@ -104,11 +105,20 @@ impl ResponseDelivery {
                 .map(|time| time.as_secs().into()),
             native_projection: None,
             generated_id: None,
+            storage: None,
             messages: false,
         }
     }
     pub fn is_messages(&self) -> bool {
         self.messages
+    }
+    pub(crate) fn with_storage(
+        mut self,
+        id: &str,
+        storage: crate::protocol::ResponseStorage,
+    ) -> Self {
+        self.storage = Some((id.into(), storage));
+        self
     }
     /// Deliver to an Anthropic Messages client (Claude Code) when `messages`.
     pub fn for_messages(mut self, messages: bool) -> Self {
@@ -131,6 +141,7 @@ impl ResponseDelivery {
         }
         self.source = Some(attempt.identity().clone());
         if self.generated_id.is_none()
+            && self.storage.is_none()
             && attempt
                 .metadata()
                 .is_some_and(|metadata| metadata.id.is_none())
@@ -145,6 +156,10 @@ impl ResponseDelivery {
             .cloned()
             .ok_or(AttemptError::Protocol("missing response metadata"))?;
         metadata.model = self.public_label.clone();
+        if let Some((id, storage)) = &self.storage {
+            metadata.id = Some(id.clone());
+            metadata.storage = Some(storage.clone());
+        }
         if metadata.id.is_none() {
             metadata.id = Some(
                 self.generated_id
@@ -169,7 +184,7 @@ impl ResponseDelivery {
             Ok(())
         }
     }
-    fn client_response(
+    pub(crate) fn client_response(
         &self,
         attempt: &Attempt,
     ) -> Result<crate::protocol::DecodedResponse, AttemptError> {
@@ -251,17 +266,7 @@ impl ResponseDelivery {
                 return Err(AttemptError::Delivery("stream already started"));
             }
             self.bind(attempt)?;
-            let decoded = self.client_response(attempt)?;
-            let value = if self.messages {
-                crate::protocol::anthropic::client::encode_client_response(
-                    &decoded,
-                    &self.public_label,
-                )?
-            } else {
-                self.adapter.encode_response(&decoded, &self.contract)?
-            };
-            let body = serde_json::to_vec(&value)
-                .map_err(|_| AttemptError::Protocol("body serialization"))?;
+            let (_, body) = self.snapshot(attempt)?;
             self.rendered = true;
             self.terminal = true;
             Ok(body)
@@ -270,6 +275,42 @@ impl ResponseDelivery {
             self.rejected = true;
         }
         result
+    }
+    /// The same final representation serves creation, retrieval and stored replay.
+    pub(crate) fn snapshot(
+        &self,
+        attempt: &Attempt,
+    ) -> Result<(crate::protocol::DecodedResponse, Vec<u8>), AttemptError> {
+        let mut decoded = self.client_response(attempt)?;
+        let value = if self.messages {
+            crate::protocol::anthropic::client::encode_client_response(
+                &decoded,
+                &self.public_label,
+            )?
+        } else {
+            let target = crate::protocol::openai::lowering::lower_response(
+                &decoded.semantic,
+                &decoded.fidelity,
+                &decoded.metadata,
+                self.adapter.protocol,
+                self.adapter.contract(&self.contract),
+            )
+            .map_err(crate::adapter::AdapterError::from)?;
+            let value = match self.adapter.protocol {
+                Profile::Chat => crate::protocol::openai::chat::envelope::encode_response(&target)?,
+                Profile::Responses => {
+                    crate::protocol::openai::responses::envelope::encode_response(&target)?
+                }
+            };
+            let semantic = target.semantic().clone();
+            let metadata = target.metadata().clone();
+            decoded.semantic = semantic;
+            decoded.metadata = metadata;
+            value
+        };
+        let body =
+            serde_json::to_vec(&value).map_err(|_| AttemptError::Protocol("body serialization"))?;
+        Ok((decoded, body))
     }
     pub fn encode_events(
         &mut self,
@@ -461,6 +502,7 @@ impl ResponseDelivery {
                 Some(Encoder::Responses(encoder)) => encoder.encode(&failed, &source)?,
                 None => {
                     let metadata = ResponseMetadata {
+                        storage: None,
                         id: Some(response_id()?),
                         model: self.public_label.clone(),
                         created: self.native_created.clone(),

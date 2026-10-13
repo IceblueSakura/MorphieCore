@@ -417,6 +417,7 @@ mod text_admission {
             },
         };
         let metadata = ResponseMetadata {
+            storage: None,
             id: Some("c".into()),
             model: "m".into(),
             created: Some(1.into()),
@@ -565,6 +566,7 @@ mod response {
 
     fn metadata() -> ResponseMetadata {
         ResponseMetadata {
+            storage: None,
             id: Some("response_1".into()),
             model: "fixture-model".into(),
             created: Some(10.into()),

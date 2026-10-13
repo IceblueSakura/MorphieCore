@@ -212,6 +212,7 @@ impl GenerationSseDecoder {
         }
         if self.metadata.is_none() {
             let metadata = ResponseMetadata {
+                storage: None,
                 id: Some(
                     string(o, "responseId")?
                         .ok_or_else(|| invalid("responseId"))?

@@ -25,6 +25,15 @@ impl Gateway {
             )
             .route("/v1/chat/completions", post(chat))
             .route("/v1/responses", post(responses))
+            .route(
+                "/v1/responses/{response_id}",
+                get(crate::gateway::ingress::responses::retrieve)
+                    .delete(crate::gateway::ingress::responses::delete),
+            )
+            .route(
+                "/v1/responses/{response_id}/input_items",
+                get(crate::gateway::ingress::responses::input_items),
+            )
             .route("/v1/messages", post(messages))
             .route(
                 "/v1/embeddings",
@@ -54,6 +63,7 @@ impl Gateway {
     }
     pub fn shutdown(&self) {
         self.state.shutdown.cancel();
+        self.state.history.clear();
     }
     pub async fn serve(
         self,
@@ -132,16 +142,26 @@ async fn handle_client(
         _=state.shutdown.cancelled()=>return Err(ApiError::shutdown()),
         result=tokio::time::timeout(state.limits.body_timeout,admission::collect(request.into_body(),state.limits.request_bytes))=>result.map_err(|_|ApiError::new(StatusCode::REQUEST_TIMEOUT,"request_timeout"))??,
     };
-    let (entry, mut semantic) = match profile {
-        Some(profile) => admission::prepare(&state, profile, &bytes)?,
-        None => admission::prepare_messages(&state, &bytes)?,
+    let (entry, mut semantic, history) = match profile {
+        Some(Profile::Responses) => {
+            let (entry, request, history) = admission::prepare_responses(&state, &bytes)?;
+            (entry, request, Some(Box::new(history)))
+        }
+        Some(profile) => {
+            let (entry, request) = admission::prepare(&state, profile, &bytes)?;
+            (entry, request, None)
+        }
+        None => {
+            let (entry, request) = admission::prepare_messages(&state, &bytes)?;
+            (entry, request, None)
+        }
     };
     semantic.conversation = Some(conversation);
     trace.ignored_fields(std::mem::take(&mut semantic.ignored_fields));
     let deadline = tokio::time::Instant::now() + state.limits.exchange_timeout;
     let failed = (profile == Some(Profile::Responses) && semantic.delivery.streaming())
         .then(|| entry.clone());
-    match exchange::run(state, entry, semantic, deadline, permit, trace).await {
+    match exchange::run(state, entry, semantic, history, deadline, permit, trace).await {
         Err(error) if error.streams_as_failed() && failed.is_some() => {
             failed_stream(&failed.expect("checked"), &error)
         }

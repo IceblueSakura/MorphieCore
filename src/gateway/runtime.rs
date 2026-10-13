@@ -51,6 +51,7 @@ impl BoundEntry {
     }
 }
 pub(super) struct Runtime {
+    pub(super) history: Arc<crate::gateway::generation::history::Store>,
     pub(super) diagnostics: Option<diagnostics::Sink>,
     pub(super) affinity: affinity::Index,
     pub(super) executors: executors::Executors,

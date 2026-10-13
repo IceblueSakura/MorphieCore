@@ -22,6 +22,7 @@ pub(in crate::gateway) enum Upstreams {
     Http {
         runtime: Arc<Runtime>,
         candidates: Vec<Arc<BoundCandidate>>,
+        history: Option<Box<super::history::Pending>>,
     },
     #[cfg(test)]
     Observed {
@@ -47,22 +48,23 @@ pub(in crate::gateway) async fn produce_chain(
         .as_ref()
         .filter(|c| c.is_conversation_scoped())
         .map(|c| c.id());
-    let (runtime, candidates, mut observed) = match source {
+    let (runtime, candidates, mut observed, history) = match source {
         Upstreams::Http {
             runtime,
             mut candidates,
+            history,
         } => {
             let order = runtime
                 .executors
                 .order(model, conversation, &mut candidates);
             trace.executor_order(order);
-            (Some(runtime), candidates, None)
+            (Some(runtime), candidates, None, history)
         }
         #[cfg(test)]
         Upstreams::Observed {
             candidate,
             response,
-        } => (None, vec![candidate], Some(response)),
+        } => (None, vec![candidate], Some(response), None),
     };
     for (index, candidate) in candidates
         .iter()
@@ -150,7 +152,15 @@ pub(in crate::gateway) async fn produce_chain(
                             && candidate.credential_fallback
                 });
             let successor = intake::produce_candidate(
-                entry, candidate, &local, upstream, limits, &lane, hold, trace,
+                entry,
+                candidate,
+                &local,
+                upstream,
+                limits,
+                &lane,
+                hold,
+                history.as_deref(),
+                trace,
             )
             .await?;
             if let (Some(selection), Some(successor), Some(runtime)) =
@@ -218,6 +228,7 @@ pub(in crate::gateway) async fn run(
     runtime: Arc<Runtime>,
     entry: Arc<BoundEntry>,
     request: Request,
+    history: Option<Box<super::history::Pending>>,
     deadline: Instant,
     permit: OwnedSemaphorePermit,
     trace: Trace,
@@ -231,6 +242,7 @@ pub(in crate::gateway) async fn run(
         Upstreams::Http {
             runtime,
             candidates,
+            history,
         },
         limits,
         deadline,

@@ -6,7 +6,7 @@ Primary sources used in design, with pinned revisions and licenses. Web pages ar
 
 | Source | Revision | License | Used for |
 |---|---|---|---|
-| OpenAI Python SDK | [`be9d666`](https://github.com/openai/openai-python/tree/be9d66628ad7377bd36fe5a76ae6d735843f0e76) (3.19.0) | Apache-2.0 | Required, nullable and union checks for Responses, Chat and Embeddings types |
+| OpenAI Python SDK | [`be9d666`](https://github.com/openai/openai-python/tree/be9d66628ad7377bd36fe5a76ae6d735843f0e76) (3.19.0) | Apache-2.0 | Required, nullable and union checks for Responses, Chat and Embeddings types; Responses continuation and input-item pagination |
 | OpenAI Codex | [`a9b0815`](https://github.com/openai/codex/tree/a9b0815167c27ab13719dd12d13b63e02b70d221) | Apache-2.0 | Codex/SIWC product profile (not a public API); target agent: request shape, session headers, `response.failed` error codes |
 | Anthropic Python SDK | [`b4b7916`](https://github.com/anthropics/anthropic-sdk-python/tree/b4b7916deaf4e5570cd627b1ae7ee4394a4de39f) (1.13.0) | MIT | Message, event, thinking and tool types |
 | pi | [`4270522`](https://github.com/earendil-works/pi/tree/4270522473e677ddba7b093caa0064a3df51d459) | MIT | Tool constraints and execution layering, history transforms (`transform-messages.ts`), Anthropic/Responses codecs |
@@ -23,6 +23,7 @@ Protocol research notes with dated findings live in `refs/`: [Multimodal carrier
 ### OpenAI
 
 - [Create response](https://developers.openai.com/api/reference/resources/responses/methods/create)
+- [Delete response](https://developers.openai.com/api/reference/resources/responses/methods/delete)
 - [Streaming events](https://developers.openai.com/api/reference/resources/responses/streaming-events)
 - [Reasoning](https://developers.openai.com/api/docs/guides/reasoning)
 - [Compaction](https://developers.openai.com/api/docs/guides/compaction)

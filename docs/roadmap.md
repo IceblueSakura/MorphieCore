@@ -70,7 +70,7 @@ IR completeness does not mean every upstream can carry every modality. Protocol-
 ## Planned order
 
 1. **Generation IR completeness.** Start with the [next slices](#next-generation-slices), then assess remaining selected official contracts. Keep deferred concepts explicit rather than claiming full API coverage or expanding frozen tasks.
-2. **Stateful extension and coverage improvement.** After IR completeness, add [gateway-only stateful Responses](architecture.md#stateful-history) with in-memory TTL history alongside stateless requests, and improve contract coverage. The IR keeps its response continuation types for this stage. No order between stateful implementation and the coverage pass is selected.
+2. **Coverage improvement.** Start the coverage pass only after IR completeness. Keep focused regressions and safety invariants throughout implementation.
 3. **Failover.** The feature remains in early design. Its priority is undecided, lowest for now; design, implementation improvement and real acceptance follow the second stage.
 4. **Other agent acceptance.** Codex, Claude Code and other agents follow failover. Their priority is undecided, lowest for now.
 
@@ -89,7 +89,6 @@ Maintenance only, when a refactor requires it:
 - Standalone Images, Speech, Transcription and Embeddings.
 - New Providers and model bindings unless an approved slice reopens them. Alternative bindings for an existing public model belong to failover work; activating a registered binding is not adding one.
 - New subscription credential features.
-- Stateful Responses until the second planned stage is scheduled.
 - File services.
 - Realtime: implementation is undecided; no protocol, transport or session runtime is selected.
 
@@ -145,7 +144,6 @@ Real failover needs a controlled failure source, such as an exhausted key in a s
 ## Future work
 
 - **Server-side compaction (priority and scheduling undecided).** Use Provider-executed compaction, beyond receiving and replaying compaction items. Select the trigger policy, supported bindings and client-visible behavior before implementation. Preserve opaque history and reject incompatible replay targets; this does not imply Provider-held conversation state.
-- Stateful Responses in the second planned stage, after IR completeness.
 - File services.
 - Generated-image output with a selected semantic contract and downstream carrier; input support does not authorize this work.
 - [Independent Embedding path](#independent-embedding-path), with scheduling undecided.

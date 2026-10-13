@@ -83,7 +83,7 @@ Generation semantics come from the official OpenAI, Anthropic and Google APIs. O
 - **Honest terminals:** response closure, artifact completeness and turn progress are separate. Failure, truncation and cancellation never become success.
 - **No runtime state:** targets, credentials, retries and publication state stay outside the IR.
 
-Clients currently resend full history each turn. Future [gateway-managed history](#stateful-history) will materialize the same full IR and use the same pipeline. Cache affinity is not history storage.
+Clients may resend full history or use [gateway-managed Responses history](#stateful-history), which materializes the same full IR and uses the same pipeline. Cache affinity is not history storage.
 
 When a concept cannot be expressed, show a minimal counterexample and structural options before changing the IR. Do not hide it in private adapter fields.
 
@@ -270,7 +270,7 @@ Native observations stay unchanged. OpenAI delivery projects a copy:
 - Structured tool arguments become exact JSON strings; call/result links remain intact.
 - Max-token/context limits are truncation. Refusal after content is incomplete. Unsupported server-tool continuation is rejected.
 - Cache-inclusive usage is computed only from complete reported operands; missing usage is not invented.
-- Delivery generates required IDs/timestamps only on its own copy, stable within the response. They are not upstream facts or stored-history keys.
+- Delivery generates required IDs/timestamps only on its own copy, stable within the response. They are not upstream facts; an explicitly stored Responses snapshot uses its gateway ID as a local history key.
 - Text, thinking and tool arguments stream incrementally. Full signatures are enveloped after block validation.
 
 Messages delivery rejects citations until that carrier is implemented. Static and streamed output use the same refusal to discard annotations.
@@ -289,9 +289,15 @@ Implicit cache scope is isolated by ingress key, credential source and public mo
 
 ## Stateful history
 
-Direction selected, not implemented. Downstream Responses will offer stateless full-history requests and gateway-managed `previous_response_id` continuation. The gateway retains canonical request/response history and resolves it to the same full IR before candidate preparation.
+Downstream Responses offers stateless full-history requests and gateway-managed `previous_response_id` continuation. The gateway retains canonical request input and the delivered response projection, with replay envelopes intact. The Responses codec materializes their ordered items with new input before ordinary IR validation and candidate preparation. Storage facts stay in protocol metadata, outside Generation IR and upstream execution hints.
+
+Storage is opt-in: omitted, null or false `store` does not retain the new response. This deliberately differs from OpenAI's default. A request may read a stored predecessor without storing its successor. Top-level instructions and other settings come from the new request, not its predecessor; instruction items in history remain history.
+
+The synchronous API includes response retrieval and deletion and cursor-paginated input items. Only fully delivered terminal responses become visible. Unknown, deleted and expired references have the same not-found result. Stored branches own complete snapshots: deleting or expiring an ancestor does not invalidate an already stored descendant. Retrieval is JSON only; there is no event log or stream resumption.
 
 History lives in bounded process memory with a TTL. Expiration or restart invalidates stored references; there is no disk durability or restart recovery. Other storage backends require a later decision, not a prebuilt backend framework.
+
+Capacity accounts for typed payloads, retrieval bytes and owner records. A final snapshot reserves capacity before its terminal frame is queued. The body publishes it synchronously at the final acknowledged handoff, so an immediately following request can resolve it. Dropped or failed delivery releases the reservation. TTL starts at publication, reads do not extend it, and expired entries are reclaimed on store access. Unexpired entries are not evicted.
 
 Upstream calls remain stateless, using full history and `store: false` where supported. Neither Provider-only nor hybrid Provider-held continuation is planned. Downstream storage intent never enables upstream storage. Cache affinity remains separate from history ownership.
 
@@ -324,10 +330,10 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Compacted context is required history | A distinct ordered compaction item preserves opaque content and identity. Incompatible targets reject it rather than apply the foreign-reasoning strip rule |
 | Failover, not balancing | Legal candidates, bounded advancement and exact-credential affinity |
 | Conversation routing | No inferred turn, branch or message routing |
-| Gateway-only history (planned) | [In-memory TTL history](#stateful-history) adds downstream continuation without Provider-held state or background execution |
+| Gateway-only history | [Opt-in in-memory TTL history](#stateful-history) adds synchronous downstream continuation, retrieval and deletion without Provider-held state or background execution |
 | Honest delivery | Publication forbids advancement; success requires validated EOF and handoff |
 | Agent-shaped failures | Sanitized error classes match pinned client behavior; refusals are not retries |
-| Delivery-local identity | Generated client IDs/timestamps are not upstream facts or history keys |
+| Delivery-local identity | Generated client IDs/timestamps are not upstream facts. Responses allocates a gateway-owned ID; only an explicitly stored, fully delivered snapshot makes it a history key |
 | Stateless Google Interactions | `store: false` and full history; no `previous_interaction_id` or revision header. Signatures keep their native formats |
 | Separate credential lifecycle | Private file store and ordered pools; no inference-triggered login or refresh |
 | Agent-sized bounds | Bodies, IR budgets and deadlines fit whole-history agent sessions and long turns: tens of MiB and one hour per exchange. Upstreams enforce their own maxima |

@@ -1,5 +1,6 @@
 //! Responses task payload codec. HTTP request bindings are owned by `envelope`.
 pub mod envelope;
+pub(crate) mod managed;
 pub mod sse;
 pub use crate::protocol::openai::static_response::{
     decode_responses as decode_response, encode_responses as encode_response,

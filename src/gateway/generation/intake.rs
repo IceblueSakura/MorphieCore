@@ -37,6 +37,7 @@ async fn produce(
     stream: bool,
     hold: bool,
     limit: usize,
+    history: Option<&super::history::Pending>,
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
     let started = std::time::Instant::now();
@@ -141,7 +142,18 @@ async fn produce(
     if let Some(buffer) = held.take() {
         send_frames(lane, delivery, buffer, trace).await?;
     }
-    send_frames(lane, delivery, frames, trace).await?;
+    let reservation = if let Some(history) = history.filter(|h| h.input.is_some()) {
+        let (response, body) = delivery
+            .snapshot(attempt)
+            .map_err(|_| ApiError::upstream())?;
+        if body.len() > limit {
+            return Err(ApiError::upstream());
+        }
+        Some(history.stage(response, Bytes::from(body))?)
+    } else {
+        None
+    };
+    crate::gateway::body::send_final_frames(lane, delivery, frames, reservation, trace).await?;
     delivery
         .complete(attempt)
         .map_err(|_| ApiError::upstream())?;
@@ -168,6 +180,7 @@ pub(in crate::gateway) async fn produce_candidate(
     limits: &Limits,
     lane: &Lane<'_>,
     hold: bool,
+    history: Option<&super::history::Pending>,
     trace: &mut Trace,
 ) -> Result<Option<Request>, ApiError> {
     trace.stage(Stage::ResponseHead);
@@ -255,6 +268,9 @@ pub(in crate::gateway) async fn produce_candidate(
         padding,
     )
     .for_messages(entry.messages);
+    if let Some(history) = history {
+        delivery = delivery.with_storage(&history.id, history.options.metadata());
+    }
     let result = produce(
         upstream,
         &mut attempt,
@@ -263,6 +279,7 @@ pub(in crate::gateway) async fn produce_candidate(
         stream,
         hold,
         limit,
+        history,
         trace,
     )
     .await;

@@ -208,6 +208,41 @@ class ModelsSchemaTests(unittest.TestCase):
 
 
 class ResponsesSchemaTests(unittest.TestCase):
+    def test_opt_in_storage_and_local_snapshot_operations(self):
+        request = {"model": "synthetic", "input": "next", "store": True,
+                   "previous_response_id": "resp_mc_synthetic"}
+        check = validator("ResponsesRequest")
+        check.validate(request)
+        check.validate({**request, "store": None, "previous_response_id": None})
+        for fields in ({"store": "true"}, {"previous_response_id": ""},
+                       {"previous_response_id": 7}, {"background": True},
+                       {"conversation": "remote-conversation"}):
+            self.assertFalse(check.is_valid({**request, **fields}))
+        self.assertFalse(SCHEMAS["ResponsesRequest"]["properties"]["store"]["default"])
+        stored = {"id": "resp_mc_synthetic", "object": "response", "model": "synthetic",
+                  "created_at": 1, "status": "completed", "output": [], "store": True,
+                  "previous_response_id": None}
+        validator("StoredResponse").validate(stored)
+        self.assertFalse(validator("StoredResponse").is_valid({**stored, "store": False}))
+        deletion = {"id": "resp_mc_synthetic", "object": "response.deleted", "deleted": True}
+        validator("ResponseDeleted").validate(deletion)
+        self.assertFalse(validator("ResponseDeleted").is_valid({**deletion, "deleted": False}))
+        page = {"object": "list", "data": [], "first_id": None, "last_id": None,
+                "has_more": False}
+        validator("ResponseInputItems").validate(page)
+        self.assertFalse(validator("ResponseInputItems").is_valid({**page, "has_more": "false"}))
+        paths = DOCUMENT["paths"]
+        for path, method, schema in (
+            ("/v1/responses/{response_id}", "get", "StoredResponse"),
+            ("/v1/responses/{response_id}", "delete", "ResponseDeleted"),
+            ("/v1/responses/{response_id}/input_items", "get", "ResponseInputItems"),
+        ):
+            operation = paths[path][method]
+            self.assertEqual(operation["responses"]["200"]["content"]["application/json"]
+                             ["schema"]["$ref"], f"#/components/schemas/{schema}")
+            for status in ("400", "401", "404", "429", "503"):
+                self.assertIn(status, operation["responses"])
+
     def test_summary_presence_and_invalid_carriers(self):
         check = validator("ResponsesRequest")
         base = {"model": "synthetic", "input": "hello"}

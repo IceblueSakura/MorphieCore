@@ -237,6 +237,7 @@ impl GenerationSseDecoder {
                 return Err(invalid("interaction object"));
             }
             let metadata = ResponseMetadata {
+                storage: None,
                 id: string(i, "id")?.map(str::to_owned),
                 model: required(i, "model")?.into(),
                 created: None,

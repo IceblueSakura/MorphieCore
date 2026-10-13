@@ -32,6 +32,7 @@ pub(super) struct Chunk {
     bytes: Bytes,
     ack: oneshot::Sender<()>,
     audio_content_type: Option<&'static str>,
+    history: Option<crate::gateway::generation::history::Reservation>,
 }
 pub(super) enum ResponseType {
     Json,
@@ -77,6 +78,9 @@ impl Stream for Output {
                     self.ended = true;
                     Poll::Ready(Some(Err(std::io::Error::other("delivery cancelled"))))
                 } else {
+                    if let Some(history) = chunk.history {
+                        history.publish(Instant::now());
+                    }
                     Poll::Ready(Some(Ok(chunk.bytes)))
                 }
             }
@@ -122,7 +126,20 @@ pub(super) async fn send_frame(
     bytes: Bytes,
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
-    send_chunk(lane, bytes, None, trace).await
+    send_chunk(lane, bytes, None, None, trace).await
+}
+pub(super) async fn send_final_frames(
+    lane: &Lane<'_>,
+    delivery: &mut ResponseDelivery,
+    mut frames: Vec<Bytes>,
+    history: Option<crate::gateway::generation::history::Reservation>,
+    trace: &mut Trace,
+) -> Result<(), ApiError> {
+    let last = frames.pop().ok_or_else(ApiError::upstream)?;
+    send_frames(lane, delivery, frames, trace).await?;
+    send_chunk(lane, last, None, history, trace).await?;
+    delivery.commit().map_err(|_| ApiError::upstream())?;
+    Ok(())
 }
 pub(super) async fn send_audio(
     lane: &Lane<'_>,
@@ -130,12 +147,13 @@ pub(super) async fn send_audio(
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
     let content_type = crate::protocol::openai::speech::response_content_type(&audio);
-    send_chunk(lane, audio.into_data(), Some(content_type), trace).await
+    send_chunk(lane, audio.into_data(), Some(content_type), None, trace).await
 }
 async fn send_chunk(
     lane: &Lane<'_>,
     bytes: Bytes,
     audio_content_type: Option<&'static str>,
+    history: Option<crate::gateway::generation::history::Reservation>,
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
     trace.stage(Stage::Delivery);
@@ -148,6 +166,7 @@ async fn send_chunk(
             bytes,
             ack,
             audio_content_type,
+            history,
         }))
         .await
         .map_err(|_| ApiError::upstream())?;

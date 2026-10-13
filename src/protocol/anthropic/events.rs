@@ -76,6 +76,7 @@ impl GenerationSseDecoder {
                     return Err(CodecError::Invalid("native model binding").into());
                 }
                 self.metadata = Some(ResponseMetadata {
+                    storage: None,
                     id: Some(message.id),
                     model: message.model,
                     created: None,

@@ -109,6 +109,41 @@ pub(in crate::gateway) fn prepare(
         entry.client.decode_client_request(bytes)
     })
 }
+/// Resolve gateway history before ordinary task admission or any upstream I/O.
+pub(in crate::gateway) fn prepare_responses(
+    state: &Runtime,
+    bytes: &[u8],
+) -> Result<
+    (
+        Arc<BoundEntry>,
+        Request,
+        crate::gateway::generation::history::Pending,
+    ),
+    ApiError,
+> {
+    use crate::{gateway::generation::history::Pending, protocol::openai::responses::managed};
+    let value = crate::protocol::json::decode(bytes).map_err(|_| ApiError::invalid())?;
+    let options = managed::Options::read(&value).map_err(|_| ApiError::invalid())?;
+    let previous = options
+        .previous
+        .as_ref()
+        .map(|id| state.history.get(id, tokio::time::Instant::now()))
+        .transpose()?;
+    let mut input = None;
+    let (entry, request) = prepare_in(state, family(Profile::Responses), bytes, |entry| {
+        let (request, _) = managed::decode(
+            &entry.client,
+            bytes,
+            previous.as_ref().map(|old| (&old.input, &old.response)),
+        )?;
+        if options.store {
+            input = Some(request.task.clone());
+        }
+        Ok(request)
+    })?;
+    let pending = Pending::new(options, input, state.history.clone())?;
+    Ok((entry, request, pending))
+}
 /// Messages clients use the model's Chat candidates through their own codec.
 pub(in crate::gateway) fn prepare_messages(
     state: &Runtime,

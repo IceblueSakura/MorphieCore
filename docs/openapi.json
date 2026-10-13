@@ -3,7 +3,7 @@
   "info": {
     "title": "MorphieCore HTTP API",
     "version": "0.1.0",
-    "description": "HTTP API summary for the local gateway, not full vendor API conformance. Generation uses a typed IR, stateless full history and bounded pre-publication failover. Known fields are strict; unknown generation fields are ignored, not forwarded. Standalone media and Embeddings are frozen and require explicit activation. Codecs define exact admission; docs/usage.md explains setup."
+    "description": "HTTP API summary for the local gateway, not full vendor API conformance. Generation uses a typed IR, stateless upstream history and bounded pre-publication failover. Responses offers opt-in gateway-managed TTL history. Known fields are strict; unknown generation fields are ignored, not forwarded. Standalone media and Embeddings are frozen and require explicit activation. Codecs define exact admission; docs/usage.md explains setup."
   },
   "servers": [{"url": "http://127.0.0.1:8080"}],
   "security": [{"bearerAuth": []}, {"apiKeyAuth": []}],
@@ -285,7 +285,7 @@
       "post": {
         "operationId": "response",
         "parameters": [{"$ref": "#/components/parameters/ConversationId"}],
-        "summary": "Generate with stateless Responses",
+        "summary": "Generate with full history or opt-in gateway-managed Responses",
         "requestBody": {
           "required": true,
           "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ResponsesRequest"}}}
@@ -306,10 +306,84 @@
           "504": {"$ref": "#/components/responses/Error"}
         }
       }
+    },
+    "/v1/responses/{response_id}": {
+      "parameters": [{"$ref": "#/components/parameters/ResponseId"}],
+      "get": {
+        "operationId": "retrieveResponse",
+        "summary": "Retrieve a fully delivered local snapshot as JSON",
+        "description": "No upstream call. Unknown, expired, deleted and unstored IDs share response_not_found. Retrieval does not extend TTL. No stream resumption; unknown query fields are rejected.",
+        "parameters": [
+          {"in": "query", "name": "stream", "schema": {"const": false}},
+          {"in": "query", "name": "include[]", "schema": {"type": "string", "const": "reasoning.encrypted_content"}}
+        ],
+        "responses": {
+          "200": {
+            "description": "Final stored snapshot, also for responses created with SSE.",
+            "headers": {"Cache-Control": {"schema": {"const": "no-store"}}},
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StoredResponse"}}}
+          },
+          "400": {"$ref": "#/components/responses/Error"},
+          "401": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"},
+          "429": {"$ref": "#/components/responses/Error"},
+          "502": {"$ref": "#/components/responses/Error"},
+          "503": {"$ref": "#/components/responses/Error"}
+        }
+      },
+      "delete": {
+        "operationId": "deleteResponse",
+        "summary": "Delete one local snapshot without invalidating stored descendants",
+        "responses": {
+          "200": {
+            "description": "Deletion acknowledgement. No upstream call.",
+            "headers": {"Cache-Control": {"schema": {"const": "no-store"}}},
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ResponseDeleted"}}}
+          },
+          "400": {"$ref": "#/components/responses/Error"},
+          "401": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"},
+          "429": {"$ref": "#/components/responses/Error"},
+          "502": {"$ref": "#/components/responses/Error"},
+          "503": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/v1/responses/{response_id}/input_items": {
+      "parameters": [{"$ref": "#/components/parameters/ResponseId"}],
+      "get": {
+        "operationId": "listResponseInputItems",
+        "summary": "List resolved input, including predecessor history but excluding current output",
+        "description": "Cursor pagination over one immutable snapshot. Unknown cursors and duplicate or unsupported query fields are rejected.",
+        "parameters": [
+          {"in": "query", "name": "limit", "schema": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20}},
+          {"in": "query", "name": "order", "schema": {"type": "string", "enum": ["asc", "desc"], "default": "desc"}},
+          {"in": "query", "name": "after", "schema": {"type": "string", "minLength": 1, "maxLength": 256}},
+          {"in": "query", "name": "include[]", "schema": {"type": "string", "const": "reasoning.encrypted_content"}}
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded page of input items with stable cursor IDs.",
+            "headers": {"Cache-Control": {"schema": {"const": "no-store"}}},
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ResponseInputItems"}}}
+          },
+          "400": {"$ref": "#/components/responses/Error"},
+          "401": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"},
+          "429": {"$ref": "#/components/responses/Error"},
+          "502": {"$ref": "#/components/responses/Error"},
+          "503": {"$ref": "#/components/responses/Error"}
+        }
+      }
     }
   },
   "components": {
     "parameters": {
+      "ResponseId": {
+        "in": "path", "name": "response_id", "required": true,
+        "schema": {"type": "string", "minLength": 1},
+        "description": "Gateway-issued ID of an explicitly stored response. Not an upstream reference or conversation-affinity key."
+      },
       "ConversationId": {
         "in": "header", "name": "X-MorphieCore-Conversation-Id", "required": false,
         "schema": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[\\u0021-\\u002b\\u002d-\\u007e]+$"},
@@ -815,6 +889,10 @@
         "not": {"required": ["session_id"]},
         "properties": {
           "model": {"$ref": "#/components/schemas/PublicModelLabel"},
+          "store": {"type": ["boolean", "null"], "default": false, "description": "Only true retains this response in gateway TTL memory. Unlike OpenAI, omission does not store. Upstream storage stays disabled."},
+          "previous_response_id": {"type": ["string", "null"], "minLength": 1, "maxLength": 256, "pattern": "^[\\u0021-\\u007e]+$", "description": "Gateway-owned predecessor. Only history is inherited; current instructions, tools and controls replace top-level settings."},
+          "background": {"enum": [false, null], "description": "Background execution is not supported."},
+          "conversation": {"type": "null", "description": "Provider-held conversations and Conversations API are not supported."},
           "prompt_cache_key": {"type": ["string", "null"], "maxLength": 256, "description": "Cache-grouping intent, separate from conversation identity. Null is not filled from conversation context; cache reports remain upstream facts."},
           "input": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "object", "not": {"required": ["_openbridge"]}}}]},
           "tools": {
@@ -833,10 +911,43 @@
             "description": "Other reasoning controls and conflicting aliases are checked by the owning codec and selected target."
           },
           "stream": {"type": ["boolean", "null"], "default": false},
-          "max_output_tokens": {"type": ["integer", "null"], "minimum": 1, "description": "Default 1024 and ceiling 16384 in CLI bootstrap, when admitted. SIWC rejects explicit caps; local limits do not bound upstream charges."}
+          "max_output_tokens": {"type": ["integer", "null"], "minimum": 1, "description": "Client-owned output cap. Selected targets may reject explicit caps; local limits alone do not bound upstream charges."}
         },
         "additionalProperties": true,
-        "description": "Stateless full-history profile. Selected user images/files and tool-result images require explicit public/target admission. File URLs are forwarded only to admitted trusted targets; the gateway never fetches them. No stored history, arbitrary upstream selection or private attachment. Codecs define exact tools, content, replay and projection rules."
+        "description": "Full-history or gateway-managed synchronous profile. Explicit store:true opts into bounded TTL memory with no durability. Only final body handoff publishes a stored reference; cancellation and late errors do not create a readable snapshot. Capacity exhaustion returns history_capacity_exceeded before publication or aborts an already started stream. Selected media and replay still require public/target admission. No arbitrary upstream selection or private attachment. Codecs define exact admission."
+      },
+      "StoredResponse": {
+        "type": "object",
+        "required": ["id", "object", "model", "created_at", "status", "output", "store", "previous_response_id"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "object": {"const": "response"},
+          "model": {"$ref": "#/components/schemas/PublicModelLabel"},
+          "created_at": {"type": "number", "minimum": 0},
+          "status": {"enum": ["completed", "incomplete", "failed"]},
+          "output": {"type": "array", "items": {"type": "object"}},
+          "store": {"const": true},
+          "previous_response_id": {"type": ["string", "null"]}
+        },
+        "additionalProperties": true
+      },
+      "ResponseDeleted": {
+        "type": "object", "required": ["id", "object", "deleted"], "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "object": {"const": "response.deleted"},
+          "deleted": {"const": true}
+        }
+      },
+      "ResponseInputItems": {
+        "type": "object", "required": ["object", "data", "first_id", "last_id", "has_more"], "additionalProperties": false,
+        "properties": {
+          "object": {"const": "list"},
+          "data": {"type": "array", "maxItems": 100, "items": {"type": "object", "required": ["id", "type"]}},
+          "first_id": {"type": ["string", "null"]},
+          "last_id": {"type": ["string", "null"]},
+          "has_more": {"type": "boolean"}
+        }
       },
       "Error": {
         "type": "object", "required": ["error"], "additionalProperties": false,

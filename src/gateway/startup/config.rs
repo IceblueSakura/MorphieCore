@@ -52,6 +52,10 @@ pub struct Limits {
     pub event_bytes: usize,
     pub max_events: usize,
     pub concurrency: usize,
+    /// Opt-in response snapshots; payload bytes include retained JSON and typed history.
+    pub history_entries: usize,
+    pub history_bytes: usize,
+    pub history_ttl: Duration,
     pub body_timeout: Duration,
     pub exchange_timeout: Duration,
 }
@@ -68,6 +72,9 @@ impl Default for Limits {
             event_bytes: 16 << 20,
             max_events: 1_000_000,
             concurrency: 16,
+            history_entries: 1024,
+            history_bytes: 256 << 20,
+            history_ttl: Duration::from_secs(30 * 60),
             body_timeout: Duration::from_secs(60),
             exchange_timeout: Duration::from_secs(60 * 60),
         }
@@ -87,6 +94,10 @@ impl Limits {
             && (1..=64 << 20).contains(&self.event_bytes)
             && (1..=1_000_000).contains(&self.max_events)
             && (1..=256).contains(&self.concurrency)
+            && (1..=4096).contains(&self.history_entries)
+            && (1..=1 << 30).contains(&self.history_bytes)
+            && !self.history_ttl.is_zero()
+            && self.history_ttl <= Duration::from_secs(24 * 60 * 60)
             && !self.body_timeout.is_zero()
             && self.body_timeout <= Duration::from_secs(60)
             && !self.exchange_timeout.is_zero()
@@ -407,6 +418,7 @@ impl Gateway {
         Ok(Self {
             state: Arc::new(Runtime {
                 diagnostics: None,
+                history: Arc::new(crate::gateway::generation::history::Store::new(&limits)),
                 affinity: crate::gateway::routing::prefix_cache::Index::new(
                     limits.implicit_cache_affinity,
                 ),

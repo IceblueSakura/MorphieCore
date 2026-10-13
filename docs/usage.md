@@ -8,6 +8,7 @@ This guide covers local setup and client requests. For the build environment, se
 - [Configure the gateway](#configure-the-gateway)
 - [Start the gateway](#start-the-gateway)
 - [Send a request](#send-a-request)
+- [Stored Responses](#stored-responses)
 - [HTTP API](#http-api)
 - [Conversation and cache affinity](#conversation-and-cache-affinity)
 - [Errors and limits](#errors-and-limits)
@@ -177,7 +178,7 @@ Both forms work at ingress. Repeated headers or both forms together are rejected
 {"model":"configured-public-model","messages":[{"role":"user","content":"Reply with exactly pong."}],"max_tokens":64}
 ```
 
-Use `"stream": true` for SSE. Send the full history each turn; the gateway does not store conversation history.
+Use `"stream": true` for SSE. Send the full history each turn, or use [stored Responses](#stored-responses). Chat Completions and Messages remain full-history APIs.
 
 Return reasoning carriers unchanged in later history. Chat clients must preserve `reasoning_details`, not just readable text. See [Reasoning replay](architecture.md#reasoning-replay).
 
@@ -217,6 +218,38 @@ Image sources stay inert: the gateway does not fetch URLs, decode pixels, resize
 
 Formats, encoded sizes and counts are target constraints, not a promise that every IR image fits every upstream. Per-use `detail` without a target slot is removed by a named rule on the candidate copy. The source request is unchanged. See [Media](architecture.md#media), [IR resource budgets](../src/semantic/task/generation/resources/mod.rs) and [Messages media limits](../src/protocol/anthropic/media.rs).
 
+## Stored Responses
+
+Storage is opt-in. Set `store: true` to retain a Responses exchange in gateway memory. Omitted, null or false `store` does not retain the new response; this differs from OpenAI's default. Upstream requests always carry complete history and disable Provider storage where supported.
+
+1. Create a response with `store: true` and consume the full JSON body or SSE stream. A gateway-owned response ID becomes readable only after validated upstream EOF and final body handoff.
+2. Send that ID as `previous_response_id` with only the new input. The gateway prepends the stored request input and response output. Send current instructions, tools and controls explicitly: top-level settings are not inherited, while instruction items in history remain.
+3. Use `store: true` again if the successor must be retrievable or usable as another predecessor. A successor with `store: false` may still read an existing predecessor.
+
+```json
+{"model":"configured-public-model","input":"Remember the label cedar.","store":true,"max_output_tokens":64}
+```
+
+Use the returned `id` in the next request:
+
+```json
+{"model":"configured-public-model","previous_response_id":"<returned-id>","input":"What was the label?","store":true,"max_output_tokens":64}
+```
+
+For tool continuation, send only the new `function_call_output` or other admitted result. The stored call and reasoning remain in history. Existing carrier and replay checks still apply; a response reference does not bypass model admission or grant cross-Provider replay.
+
+| Operation | Behavior |
+|---|---|
+| `GET /v1/responses/{response_id}` | Retrieve the final JSON snapshot, including responses created with SSE |
+| `DELETE /v1/responses/{response_id}` | Return `{"id":"…","object":"response.deleted","deleted":true}` |
+| `GET /v1/responses/{response_id}/input_items` | List the complete resolved input, excluding this response's output; `limit` is 1–100 (default 20), `order` is `asc` or `desc` (default `desc`), and `after` is a returned item ID |
+
+All operations require the same ingress authentication. Unknown, expired, deleted and unstored IDs return `404` with `response_not_found`. Concurrent requests may branch from one predecessor; they do not mutate it. Deleting an ancestor leaves already stored descendants usable.
+
+Snapshots use a fixed TTL from final delivery, not a sliding TTL. Defaults are 30 minutes, 1,024 entries and a 256 MiB accounted payload/owner budget; transient request and body limits still apply. See [Limits](../src/gateway/startup/config.rs) for embedded configuration and bounds. Capacity exhaustion rejects storage with `history_capacity_exceeded` before a successful terminal; an already started SSE body aborts. Unexpired snapshots are not evicted to make room.
+
+History is process-local and is lost at shutdown or restart. A declared conversation header still controls routing/cache affinity independently; response IDs do not select credentials. There is no disk persistence, Conversations API, background generation or event log. Retrieval is JSON only: `stream=true` and `starting_after` are rejected. Retrieval and input listing accept only `include[]=reasoning.encrypted_content` as an optional include; other query fields are rejected.
+
 ## HTTP API
 
 | Method and path | Purpose |
@@ -225,6 +258,9 @@ Formats, encoded sizes and counts are target constraints, not a promise that eve
 | `GET /v1/models/{model}` | Retrieve an activated public model |
 | `DELETE /v1/models/{model}` | Denied: 403 for an activated model, 404 otherwise |
 | `POST /v1/responses` | Responses, JSON or SSE |
+| `GET /v1/responses/{response_id}` | Retrieve an opt-in stored response |
+| `DELETE /v1/responses/{response_id}` | Delete a stored response |
+| `GET /v1/responses/{response_id}/input_items` | Cursor-paginated resolved input |
 | `POST /v1/chat/completions` | Chat Completions, JSON or SSE |
 | `POST /v1/messages` | Messages, JSON or SSE, using the model's Chat candidates |
 
@@ -261,9 +297,9 @@ OpenAI routes return `{"error":{"message","type","param","code"}}`. Messages han
 |---|---|
 | 400 | Invalid or unrepresentable request, context overflow |
 | 401 | Missing, wrong or ambiguous ingress credential |
-| 404 / 405 | Unknown model or route / unsupported method |
+| 404 / 405 | Unknown model, route or stored response / unsupported method |
 | 408 / 413 / 415 | Body timeout / body too large / unsupported media type |
-| 429 | Gateway busy, upstream rate limit or exhausted quota |
+| 429 | Gateway busy, history capacity exhausted, upstream rate limit or exhausted quota |
 | 502 / 504 | Upstream or projection failure / upstream timeout |
 | 503 / 500 | Shutdown, unavailable credentials or upstream overload / local fault |
 

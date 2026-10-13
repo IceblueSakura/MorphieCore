@@ -14,9 +14,12 @@ use crate::{
 };
 
 pub(crate) fn topology() -> CompiledTopology {
+    topology_at("http://127.0.0.1:9")
+}
+pub(crate) fn topology_at(origin: &str) -> CompiledTopology {
     let provider = ProviderDefinition {
         id: ProviderId::new("fixture").unwrap(),
-        origin: TrustedOrigin::parse("http://127.0.0.1:9").unwrap(),
+        origin: TrustedOrigin::parse(origin).unwrap(),
         chat_completions: Some(EndpointPath::new("/chat/completions").unwrap()),
         responses: Some(EndpointPath::new("/responses").unwrap()),
         messages: None,
