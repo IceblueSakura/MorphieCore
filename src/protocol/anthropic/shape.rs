@@ -34,6 +34,14 @@ pub(super) fn closed<'a>(
     }
     Ok(o)
 }
+/// Text-block citations are not modeled yet; only an absent, null or empty list passes.
+pub(super) fn uncited(o: &Map<String, Value>) -> Result<(), CodecError> {
+    match o.get("citations") {
+        None | Some(Value::Null) => Ok(()),
+        Some(Value::Array(a)) if a.is_empty() => Ok(()),
+        Some(_) => Err(CodecError::Unsupported("Anthropic citations".into())),
+    }
+}
 pub(super) fn required<'a>(
     o: &'a Map<String, Value>,
     key: &'static str,

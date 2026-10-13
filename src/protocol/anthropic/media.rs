@@ -271,10 +271,11 @@ impl ResultContent {
             list(v)?
                 .iter()
                 .map(|v| match required(object(v)?, "type")?.as_str() {
-                    Some("text") => Ok(ResultBlock::Text(string(required(
-                        closed(v, &["type", "text"])?,
-                        "text",
-                    )?)?)),
+                    Some("text") => {
+                        let o = closed(v, &["type", "text", "citations"])?;
+                        uncited(o)?;
+                        Ok(ResultBlock::Text(string(required(o, "text")?)?))
+                    }
                     Some(kind @ ("image" | "document")) => {
                         Ok(ResultBlock::Media(Media::read(kind, v)?))
                     }

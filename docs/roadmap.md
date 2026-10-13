@@ -8,11 +8,11 @@ First complete the IR's semantic support for all target protocols and modalities
 
 IR completeness proceeds in two steps. First, the standard OpenAI Chat, OpenAI Responses and Anthropic Messages media fields, checked against the pinned SDK types (openai-python `5e7a23e`, anthropic-sdk-python `b4b7916`). Second, compatibility with client shapes beyond those standards, such as opencode's.
 
-| Slice | Goal | Exit condition |
-|---|---|---|
-| 1C (design proposed, awaiting decision) | Messages document citations | See [1C design](#1c-design-messages-citations) |
+No slice is selected. Open items wait on a carrier or a later stage:
 
-Messages document `context` stays rejected: it is model-visible text with no carrier outside Messages. Responses tool-result `input_video` (opencode, Open Responses) waits until a bound target can carry video in tool results.
+- Messages citations (1C) are deferred to Claude Code acceptance; requests and responses that carry them are rejected, not dropped. The [design](#1c-design-messages-citations) records the IR change for when it reopens.
+- Messages document `context` stays rejected: it is model-visible text with no carrier outside Messages.
+- Responses tool-result `input_video` (opencode, Open Responses) waits until a bound target can carry video in tool results.
 
 ### 1C design: Messages citations
 
@@ -97,7 +97,7 @@ Treat a bound upstream's in-stream error as a classified failure, not normal out
 | Pinned-client image replay | Deferred, conditional acceptance | If the installed binary differs from the pinned source, run the bounded image tool round trip with a binary built from that revision; do not infer it from installed-client acceptance |
 | Real failover | Third stage; priority undecided, lowest for now | One bounded real run for a model with two credentials or Providers and a reproducible advanceable failure |
 | Codex and other agents | Final stage; priority undecided, lowest for now | Define the selected client's acceptance contract before reopening |
-| Claude Code | Final stage; priority undecided, lowest for now | Sample real request shapes, then verify beta headers/query, token counting and user metadata hints |
+| Claude Code | Final stage; priority undecided, lowest for now | Sample real request shapes, then verify beta headers/query, token counting and user metadata hints; implement [1C](#1c-design-messages-citations) if the samples use citations |
 
 The coverage pass covers text, tools, tool errors, reasoning replay, usage, truncation, error classes and media carriers (user and tool-result image, audio, video and document). It also checks client-facing fragment shapes and meaningful absent/null/empty distinctions. It does not authorize a variant matrix.
 

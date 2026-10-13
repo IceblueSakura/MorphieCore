@@ -28,7 +28,8 @@ impl TextContent {
             list(v)?
                 .iter()
                 .map(|v| {
-                    let o = closed(v, &["type", "text"])?;
+                    let o = closed(v, &["type", "text", "citations"])?;
+                    uncited(o)?;
                     if required(o, "type")?.as_str() != Some("text") {
                         return Err(CodecError::Unsupported("Anthropic text content".into()));
                     }

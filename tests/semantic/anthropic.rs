@@ -611,6 +611,9 @@ mod anthropic_media {
             json!({"type":"document","source":{"type":"content","content":"x"}}),
             json!({"type":"document","context":"private","source":{"type":"url","url":"https://example.invalid/a.pdf"}}),
             json!({"type":"image","source":{"type":"base64","media_type":"image/bmp","data":"AQID"}}),
+            // Citations are deferred; dropping one would lose a known field silently.
+            json!({"type":"text","text":"x","citations":[{"type":"char_location","cited_text":"x",
+                "document_index":0,"document_title":null,"start_char_index":0,"end_char_index":1}]}),
         ] {
             let raw =
                 json!({"model":"m","max_tokens":8,"messages":[{"role":"user","content":[block]}]});
@@ -621,6 +624,14 @@ mod anthropic_media {
                 .is_err()
             );
         }
+        let uncited = json!({"model":"m","max_tokens":8,"messages":[{"role":"user","content":[
+            {"type":"text","text":"x","citations":null}]}]});
+        assert!(
+            morphiecore::protocol::anthropic::client::decode_client_request(
+                &serde_json::to_vec(&uncited).unwrap()
+            )
+            .is_ok()
+        );
         use morphiecore::protocol::openai::{Adapter, Dialect, Profile as Client};
         let endpoint = catalog::MESSAGES_BINDINGS[0].endpoint();
         let chat = Adapter::new(Client::Chat, Dialect::Standard, None);

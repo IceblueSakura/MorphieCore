@@ -44,6 +44,7 @@ impl Block {
         Ok(match kind {
             "text" => {
                 let o = object(v)?;
+                uncited(o)?;
                 Self::Text(string(required(o, "text")?)?)
             }
             "thinking" => {

@@ -42,7 +42,8 @@ fn keep(v: &mut Value, allowed: &[&str], ignored: &mut BTreeSet<String>) {
 }
 fn block_fields(kind: Option<&str>) -> &'static [&'static str] {
     match kind {
-        Some("text") => &["type", "text"],
+        // `citations` is kept so readers reject a non-empty list.
+        Some("text") => &["type", "text", "citations"],
         Some("thinking") => &["type", "thinking", "signature"],
         Some("tool_use") => &["type", "id", "name", "input"],
         Some("tool_result") => &["type", "tool_use_id", "content", "is_error"],
