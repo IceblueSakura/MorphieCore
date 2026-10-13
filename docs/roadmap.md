@@ -74,7 +74,8 @@ Maintenance only, when a refactor requires it:
 - New Providers and model bindings unless an approved slice reopens them. Alternative bindings for an existing public model belong to failover work; activating a registered binding is not adding one.
 - New subscription credential features.
 - Stateful Responses until the second planned stage is scheduled.
-- File services and Realtime.
+- File services.
+- Realtime: implementation is undecided; no protocol, transport or session runtime is selected.
 
 ### Not planned
 
@@ -122,11 +123,31 @@ Real failover needs a controlled failure source, such as an exhausted key in a s
 | Question | Current behavior | Options |
 |---|---|---|
 | File API (deferred) | Inline data or public URLs only. Inline media fit the IR budgets (12 MiB decoded per item, 32 MiB of IR per request), with narrower target limits where required. Client Provider file IDs and credential-owned file URIs are rejected; there is no gateway file service | Gateway store resolved to inline before lowering; upload pinned to one credential; or a gateway store with per-executor upstream upload. The first and last share one IR slot |
+| Realtime implementation (undecided) | Deferred; no implementation approach or schedule is selected | Select a client scenario and official API contract before deciding session ownership, transport, interruption and recovery. A separate session runtime is an option, not an adopted implementation plan |
 
 ## Future work
 
 - Stateful Responses in the second planned stage, after IR completeness.
 - File services.
 - Generated-image output with a selected semantic contract and downstream carrier; input support does not authorize this work.
+- [Independent Embedding path](#independent-embedding-path), with scheduling undecided.
 - Resumed standalone media work.
-- Realtime.
+- Realtime implementation remains a [pending decision](#pending-decisions).
+
+### Independent Embedding path
+
+Direction selected; implementation scheduling is undecided. Extend the existing Embedding path independently of Generation. This plan does not reopen frozen scope or make Embedding completeness a prerequisite for the Generation IR.
+
+```text
+client request → Embedding codec → Embedding IR
+  → task admission and trusted route → target codec → HTTP execution
+  → Embedding IR response → client codec
+```
+
+The [task contract](../src/semantic/task/embedding.rs) owns bounded inputs, requested dimensions, vectors, input/result association and usage. The [adapter](../src/adapter/embeddings.rs), [execution path](../src/execution/embeddings.rs) and [topology](../src/topology/embeddings.rs) keep model bindings, encoding choices and runtime state outside that contract. Do not represent embeddings as Generation messages, tool results or stream events.
+
+Add semantics only for selected official API requirements; Provider dialects stay in codecs. Reuse stable value types, credential loading, trusted transport, limits and cancellation without introducing a universal request or session framework.
+
+Routes must preserve embedding-space compatibility. Equal dimensions do not prove that two models produce compatible vectors; do not apply Generation's cross-model failover policy without an explicit compatibility contract. Document chunking, vector indexes and retrieval remain caller responsibilities.
+
+When scheduled, the exit condition is one selected official Embedding contract working end to end through this independent path, with input/result correspondence, dimensions, bounds and cancellation verified. Keep the contract smoke tests lean; no per-Provider matrix.
