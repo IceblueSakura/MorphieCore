@@ -72,7 +72,7 @@ impl TerminalDetails {
 pub struct GenerationResponse {
     items: Vec<(ItemId, Item)>,
     resources: crate::semantic::task::generation::ResourceTable,
-    message_owners: crate::semantic::task::generation::history::envelope::MessageEnvelopes,
+    envelopes: crate::semantic::task::generation::history::envelope::MessageEnvelopes,
     outcome: Outcome,
     progress: crate::semantic::task::generation::InteractionProgress,
     usage: Option<Usage>,
@@ -112,7 +112,7 @@ impl GenerationResponse {
         Ok(Self {
             items,
             resources,
-            message_owners: Default::default(),
+            envelopes: Default::default(),
             outcome,
             progress: crate::semantic::task::generation::InteractionProgress::Unreported,
             usage: None,
@@ -152,7 +152,7 @@ impl GenerationResponse {
             .saturating_add(details.bytes())
             .saturating_add(self.resources.uncharged_bytes(&self.items)?)
             .saturating_add(usize::from(self.usage.is_some()) * std::mem::size_of::<Usage>())
-            .saturating_add(self.message_owners.validate(&self.items)?)
+            .saturating_add(self.envelopes.validate(&self.items)?)
             > crate::semantic::task::generation::MAX_TOTAL_BYTES
         {
             return Err(GenerationError::Limit);
@@ -163,32 +163,17 @@ impl GenerationResponse {
     pub fn items(&self) -> &[(ItemId, Item)] {
         &self.items
     }
-    pub fn message_owners(&self) -> &std::collections::BTreeMap<ItemId, ItemId> {
-        self.message_owners.chat()
-    }
     pub fn message_envelopes(&self) -> &[crate::semantic::task::generation::MessageEnvelope] {
-        self.message_owners.values()
+        self.envelopes.values()
     }
     pub fn with_message_envelopes(
         mut self,
         groups: Vec<crate::semantic::task::generation::MessageEnvelope>,
     ) -> Result<Self, GenerationError> {
-        self.message_owners =
+        self.envelopes =
             crate::semantic::task::generation::history::envelope::MessageEnvelopes::new(
                 &self.items,
                 groups,
-            )?;
-        let details = self.details.clone();
-        self.with_details(details)
-    }
-    pub fn with_message_owners(
-        mut self,
-        owners: Vec<(ItemId, ItemId)>,
-    ) -> Result<Self, GenerationError> {
-        self.message_owners =
-            crate::semantic::task::generation::history::envelope::MessageEnvelopes::from_chat(
-                &self.items,
-                owners,
             )?;
         let details = self.details.clone();
         self.with_details(details)
@@ -218,7 +203,7 @@ impl GenerationResponse {
         if items.len() > crate::semantic::task::generation::MAX_ITEMS {
             return Err(GenerationError::Limit);
         }
-        let groups = self.message_owners.edited(&items)?.values().to_vec();
+        let groups = self.envelopes.edited(&items)?.values().to_vec();
         let mut response = Self::from_resources(items, self.outcome, self.resources)?
             .with_message_envelopes(groups)?
             .with_progress(self.progress)?

@@ -14,7 +14,7 @@ pub struct GenerationRequest {
     items: Vec<(ItemId, Item)>,
     resources: ResourceTable,
     settings: std::sync::Arc<GenerationSettings>,
-    message_owners: crate::semantic::task::generation::history::envelope::MessageEnvelopes,
+    envelopes: crate::semantic::task::generation::history::envelope::MessageEnvelopes,
 }
 impl GenerationRequest {
     pub fn new(
@@ -44,7 +44,7 @@ impl GenerationRequest {
             items,
             resources,
             settings: std::sync::Arc::new(settings),
-            message_owners: Default::default(),
+            envelopes: Default::default(),
         };
         r.validate()?;
         Ok(r)
@@ -57,11 +57,11 @@ impl GenerationRequest {
             crate::semantic::task::generation::validate::items(&self.items, false, &self.resources)?
         };
         let resources = self.resources.uncharged_bytes(&self.items)?;
-        let message_owners = self.message_owners.validate(&self.items)?;
+        let envelopes = self.envelopes.validate(&self.items)?;
         if items
             .saturating_add(settings)
             .saturating_add(resources)
-            .saturating_add(message_owners)
+            .saturating_add(envelopes)
             > MAX_TOTAL_BYTES
         {
             return Err(GenerationError::Limit);
@@ -82,32 +82,17 @@ impl GenerationRequest {
     pub fn settings(&self) -> &GenerationSettings {
         &self.settings
     }
-    pub fn message_owners(&self) -> &std::collections::BTreeMap<ItemId, ItemId> {
-        self.message_owners.chat()
-    }
     pub fn message_envelopes(&self) -> &[MessageEnvelope] {
-        self.message_owners.values()
+        self.envelopes.values()
     }
     pub fn with_message_envelopes(
         mut self,
         groups: Vec<MessageEnvelope>,
     ) -> Result<Self, GenerationError> {
-        self.message_owners =
+        self.envelopes =
             crate::semantic::task::generation::history::envelope::MessageEnvelopes::new(
                 &self.items,
                 groups,
-            )?;
-        self.validate()?;
-        Ok(self)
-    }
-    pub fn with_message_owners(
-        mut self,
-        owners: Vec<(ItemId, ItemId)>,
-    ) -> Result<Self, GenerationError> {
-        self.message_owners =
-            crate::semantic::task::generation::history::envelope::MessageEnvelopes::from_chat(
-                &self.items,
-                owners,
             )?;
         self.validate()?;
         Ok(self)
@@ -180,7 +165,7 @@ impl GenerationRequest {
         if items.len() > MAX_ITEMS {
             return Err(GenerationError::Limit);
         }
-        self.message_owners = self.message_owners.edited(&items)?;
+        self.envelopes = self.envelopes.edited(&items)?;
         let source = std::mem::replace(&mut self.items, items);
         self.validate()?;
         crate::semantic::task::generation::identity::check_call_edits(&source, &self.items)?;
@@ -215,7 +200,7 @@ impl GenerationRequest {
                 continue;
             }
             let fresh = ItemId::scoped(LocalScope::DERIVED, position as u64);
-            self.message_owners.revise(*id, fresh);
+            self.envelopes.revise(*id, fresh);
             items.push((
                 fresh,
                 Item::Message(Message {

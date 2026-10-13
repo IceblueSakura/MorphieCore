@@ -1,6 +1,6 @@
 //! Explicit native message containers; result and replay edges remain independent.
 use crate::semantic::task::generation::*;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MessageEnvelopeRole {
@@ -57,34 +57,17 @@ impl MessageEnvelope {
     pub fn before(&self) -> Option<ItemId> {
         self.before
     }
-    /// A derived narrow shape, not a second declaration of native ownership.
-    pub(crate) fn chat_owner(&self, items: &[(ItemId, Item)]) -> Option<ItemId> {
-        let owner = *self.members.first()?;
-        (self.role == MessageEnvelopeRole::Assistant
-            && items.iter().any(|(id, item)| {
-                *id == owner && matches!(item, Item::Message(m) if m.role == MessageRole::Assistant)
-            })
-            && self.members[1..].iter().all(|id| {
-                items
-                    .iter()
-                    .any(|(member, item)| member == id && matches!(item, Item::ToolCall(_)))
-            }))
-        .then_some(owner)
-    }
 }
 
-/// Only envelopes are writable. The narrow Chat ownership index is always derived.
+/// Validated envelopes of one request or response. Protocol views, such as Chat's
+/// call ownership, are derived at their boundary.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(in crate::semantic::task::generation) struct MessageEnvelopes {
     values: Vec<MessageEnvelope>,
-    chat: BTreeMap<ItemId, ItemId>,
 }
 impl MessageEnvelopes {
     pub fn values(&self) -> &[MessageEnvelope] {
         &self.values
-    }
-    pub fn chat(&self) -> &BTreeMap<ItemId, ItemId> {
-        &self.chat
     }
     pub fn new(
         items: &[(ItemId, Item)],
@@ -95,7 +78,6 @@ impl MessageEnvelopes {
         }
         let mut ids = BTreeSet::new();
         let mut members = BTreeSet::new();
-        let mut chat = BTreeMap::new();
         for group in &values {
             if !ids.insert(group.id) {
                 return Err(GenerationError::InvalidMessageGroup);
@@ -147,41 +129,8 @@ impl MessageEnvelopes {
                 }
                 previous = Some(index);
             }
-            // This view is exact only for the original Chat container shape.
-            if let Some(owner) = group.chat_owner(items) {
-                chat.extend(group.members[1..].iter().map(|id| (*id, owner)));
-            }
         }
-        crate::semantic::task::generation::history::group::validate_message_owners(items, &chat)?;
-        Ok(Self { values, chat })
-    }
-    pub fn from_chat(
-        items: &[(ItemId, Item)],
-        declarations: Vec<(ItemId, ItemId)>,
-    ) -> Result<Self, GenerationError> {
-        let owners =
-            crate::semantic::task::generation::history::group::message_owners(declarations)?;
-        crate::semantic::task::generation::history::group::validate_message_owners(items, &owners)?;
-        let mut values = Vec::new();
-        for (owner, _) in items {
-            if owners.values().any(|parent| parent == owner) {
-                let mut members = vec![*owner];
-                members.extend(
-                    items
-                        .iter()
-                        .filter_map(|(id, _)| (owners.get(id) == Some(owner)).then_some(*id)),
-                );
-                let mut group = MessageEnvelope::new(
-                    GroupId::new(owner.scope(), owner.get()),
-                    MessageEnvelopeRole::Assistant,
-                    members,
-                )?;
-                // Removing a native Chat content owner requires explicit repair.
-                group.before = Some(*owner);
-                values.push(group);
-            }
-        }
-        Self::new(items, values)
+        Ok(Self { values })
     }
     pub fn validate(&self, items: &[(ItemId, Item)]) -> Result<usize, GenerationError> {
         Self::new(items, self.values.clone())?;
@@ -190,8 +139,7 @@ impl MessageEnvelopes {
                 .values
                 .iter()
                 .map(|g| std::mem::size_of_val(g.members.as_slice()))
-                .sum::<usize>()
-            + self.chat.len() * std::mem::size_of::<(ItemId, ItemId)>())
+                .sum::<usize>())
     }
     pub fn edited(&self, items: &[(ItemId, Item)]) -> Result<Self, GenerationError> {
         let mut values = self.values.clone();
@@ -214,10 +162,6 @@ impl MessageEnvelopes {
             if group.before == Some(old) {
                 group.before = Some(new);
             }
-        }
-        // Call revision never changes the content owner.
-        if let Some(parent) = self.chat.remove(&old) {
-            self.chat.insert(new, parent);
         }
     }
 }

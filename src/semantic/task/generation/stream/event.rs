@@ -18,7 +18,6 @@ pub enum ItemKind {
         format: ArgumentFormat,
         call_id: Text,
         name: Text,
-        message: Option<ItemId>,
         context: CallContext,
     },
     CustomCall {
@@ -48,15 +47,11 @@ pub enum ItemKind {
     },
 }
 impl ItemKind {
-    pub fn call(&self) -> Option<(&Text, &Text, Option<ItemId>)> {
+    pub fn call(&self) -> Option<(&Text, &Text)> {
         match self {
-            Self::ToolCall {
-                call_id,
-                name,
-                message,
-                ..
-            } => Some((call_id, name, *message)),
-            Self::CustomCall { call_id, name, .. } => Some((call_id, name, None)),
+            Self::ToolCall { call_id, name, .. } | Self::CustomCall { call_id, name, .. } => {
+                Some((call_id, name))
+            }
             _ => None,
         }
     }

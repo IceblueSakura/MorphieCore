@@ -42,15 +42,7 @@ pub fn check_event(
         }
         StreamEvent::MessageEnvelope(group) => {
             let items = snapshot_items(state).map_err(|_| RepresentationError::MessageGrouping)?;
-            if profile == Profile::Chat && group.chat_owner(&items).is_none() {
-                return Err(RepresentationError::MessageGrouping);
-            }
-            super::message_groups::project(
-                &items,
-                std::slice::from_ref(group),
-                &Default::default(),
-                profile,
-            )?;
+            super::message_groups::project(&items, std::slice::from_ref(group), profile)?;
         }
         StreamEvent::Terminal {
             terminal: StreamTerminal::Cancelled,
@@ -86,30 +78,6 @@ pub fn check_event(
             super::check_usage(projected, profile, &contract.adaptation.rules)?;
         }
         StreamEvent::ItemStarted { kind, replay, .. } => {
-            if let ItemKind::ToolCall {
-                message: Some(owner),
-                ..
-            } = kind
-            {
-                let position = state
-                    .items()
-                    .iter()
-                    .position(|item| item.id == *owner)
-                    .ok_or(RepresentationError::MessageGrouping)?;
-                if state.items()[position+1..].iter().any(|item| {
-                    !matches!(&item.kind, ItemKind::ToolCall { message: Some(parent), .. } if parent == owner)
-                }) {
-                    return Err(RepresentationError::MessageGrouping);
-                }
-                if profile == Profile::Responses
-                    && state
-                        .items()
-                        .iter()
-                        .any(|i| i.replay.is_some() && !matches!(i.kind, ItemKind::Reasoning))
-                {
-                    return Err(RepresentationError::ReplayOrigin);
-                }
-            }
             match kind {
                 ItemKind::ProviderTool(_) | ItemKind::ProviderResult { .. } => {
                     return Err(RepresentationError::UnmigratedSemantic);
@@ -165,20 +133,7 @@ pub fn check_event(
                 ItemKind::Message { .. }
                     if profile == Profile::Chat
                         && state.items().iter().any(|i| {
-                            matches!(
-                                i.kind,
-                                ItemKind::Message { .. } | ItemKind::ToolCall { message: None, .. }
-                            )
-                        }) =>
-                {
-                    return Err(RepresentationError::MessageGrouping);
-                }
-                ItemKind::ToolCall { message, .. }
-                    if profile == Profile::Chat
-                        && state.items().iter().any(|i| {
-                            matches!(i.kind, ItemKind::Message { .. })
-                                && message.is_some()
-                                && Some(i.id) != *message
+                            matches!(i.kind, ItemKind::Message { .. } | ItemKind::ToolCall { .. })
                         }) =>
                 {
                     return Err(RepresentationError::MessageGrouping);

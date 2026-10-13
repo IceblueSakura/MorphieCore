@@ -433,8 +433,9 @@ pub(crate) fn decode_chat_with(
         }
     }
     let usage = usage(o.get("usage"), Profile::Chat, adaptation, &mut b.fidelity)?;
+    let groups = chat::owners::envelopes(&b.message_owners)?;
     let semantic = response_with_usage(b.items, outcome, usage, b.resources)?
-        .with_message_owners(b.message_owners)?
+        .with_message_envelopes(groups)?
         .with_details(if outcome == Outcome::Incomplete {
             TerminalDetails {
                 error: None,
@@ -556,13 +557,12 @@ pub fn encode_chat(target: &ResponseRepresentation<'_>) -> Result<Value, CodecEr
     let finish = chat_finish(&target.semantic)?;
     check_message_carriers(
         target.semantic.items(),
-        target.semantic.message_owners(),
         target.semantic.message_envelopes(),
         Profile::Chat,
     )?;
     let mut messages = chat::encode_items_with(
         target.semantic.items(),
-        target.semantic.message_owners(),
+        &chat::owners::owners(target.semantic.items(), target.semantic.message_envelopes()),
         target.fidelity,
         target.adaptation.rules.structured_chat_reasoning,
         true,
@@ -643,7 +643,6 @@ pub fn encode_responses(target: &ResponseRepresentation<'_>) -> Result<Value, Co
         .check_wire_item_ids(target.semantic.items(), true)?;
     check_message_carriers(
         target.semantic.items(),
-        target.semantic.message_owners(),
         target.semantic.message_envelopes(),
         Profile::Responses,
     )?;

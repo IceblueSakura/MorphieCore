@@ -37,7 +37,7 @@ pub use contract::{GenerationFeature, GenerationSemanticContract};
 pub use error::GenerationError;
 pub use history::continuation::{CallReference, Continuation};
 pub use history::envelope::{MessageEnvelope, MessageEnvelopeRole};
-pub use history::group::{GroupId, MessageGroup};
+pub use history::group::GroupId;
 pub use history::progress::InteractionProgress;
 pub use history::replay::{ReplayFormat, ReplayValue};
 pub use history::turn::{

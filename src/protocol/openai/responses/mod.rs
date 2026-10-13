@@ -577,7 +577,6 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     }
     check_message_carriers(
         target.semantic.items(),
-        target.semantic.message_owners(),
         target.semantic.message_envelopes(),
         Profile::Responses,
     )?;

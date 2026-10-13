@@ -965,7 +965,6 @@ mod provider_observations {
                 format: ArgumentFormat::Raw,
                 call_id: text("C"),
                 name: text("lookup"),
-                message: Some(ItemId::new(1)),
                 context: CallContext::default(),
             },
             replay: None,

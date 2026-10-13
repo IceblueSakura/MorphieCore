@@ -91,7 +91,7 @@ impl GenerationRequirements {
                     }
                 }
                 Item::Message(m) => {
-                    // A tool-only Chat owner is grouping, not an extra semantic message.
+                    // An empty assistant message only groups calls; it adds no content.
                     x.message_count += usize::from(!m.parts.is_empty());
                     for p in &m.parts {
                         match &p.content {

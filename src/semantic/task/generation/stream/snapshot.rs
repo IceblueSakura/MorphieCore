@@ -168,26 +168,9 @@ pub fn materialize(state: &StreamState) -> Result<GenerationResponse, EventError
         outcome(terminal),
         state.resources.clone(),
     )?
-    .with_message_owners(
-        state
-            .items
-            .iter()
-            .filter_map(|item| match &item.kind {
-                ItemKind::ToolCall {
-                    message: Some(owner),
-                    ..
-                } => Some((item.id, *owner)),
-                _ => None,
-            })
-            .collect(),
-    )?
+    .with_message_envelopes(state.message_envelopes.clone())?
     .with_progress(state.progress)?
     .with_details(state.details.clone())?;
-    if !state.message_envelopes.is_empty() {
-        let mut groups = response.message_envelopes().to_vec();
-        groups.extend_from_slice(&state.message_envelopes);
-        response = response.with_message_envelopes(groups)?;
-    }
     response = response.with_usage(state.usage)?;
     Ok(response)
 }

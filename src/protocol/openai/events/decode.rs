@@ -643,7 +643,6 @@ impl EventDecoder {
                     format: ArgumentFormat::Raw,
                     call_id: text(string(v, "call_id")?, "call id", 256)?,
                     name: text(string(v, "name")?, "tool name", 128)?,
-                    message: None,
                     context: crate::protocol::openai::responses::call_context(
                         v,
                         DecodeDirection::Upstream,

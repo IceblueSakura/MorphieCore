@@ -29,12 +29,9 @@ pub fn lower_request<'a>(
     r.validate()?;
     let mut semantic = std::borrow::Cow::Borrowed(r);
     let mut projection = Vec::new();
-    if let Some((groups, loss)) = message_groups::project(
-        r.items(),
-        r.message_envelopes(),
-        r.message_owners(),
-        profile,
-    )? {
+    if let Some((groups, loss)) =
+        message_groups::project(r.items(), r.message_envelopes(), profile)?
+    {
         // Replay dependencies must be checked against the final target value below.
         semantic = std::borrow::Cow::Owned(r.clone().with_message_envelopes(groups)?);
         let mut stage =
@@ -156,8 +153,9 @@ pub fn lower_request<'a>(
         crate::protocol::openai::responses::validate_program_history(r)
             .map_err(|_| RepresentationError::Tools)?;
     }
-    if (profile == Profile::Responses && !r.message_owners().is_empty())
-        || (profile == Profile::Chat && r.message_groups().any(|group| !group.is_contiguous()))
+    if (profile == Profile::Responses && !r.message_envelopes().is_empty())
+        || (profile == Profile::Chat
+            && !crate::protocol::openai::chat::owners::contiguous(r.items(), r.message_envelopes()))
     {
         return Err(RepresentationError::MessageGrouping);
     }
@@ -311,12 +309,9 @@ pub fn lower_response<'a>(
             Some(projection::LossRule::OmitResponsesSystemFingerprint),
         ));
     }
-    if let Some((groups, loss)) = message_groups::project(
-        r.items(),
-        r.message_envelopes(),
-        r.message_owners(),
-        profile,
-    )? {
+    if let Some((groups, loss)) =
+        message_groups::project(r.items(), r.message_envelopes(), profile)?
+    {
         semantic = std::borrow::Cow::Owned(r.clone().with_message_envelopes(groups)?);
         projection.push(projection::ProjectionStage::response(
             profile,
@@ -448,13 +443,15 @@ fn validate_response(
     {
         return Err(RepresentationError::Terminal);
     }
-    if (profile == Profile::Responses && !r.message_owners().is_empty())
-        || (profile == Profile::Chat && r.message_groups().any(|group| !group.is_contiguous()))
+    if (profile == Profile::Responses && !r.message_envelopes().is_empty())
+        || (profile == Profile::Chat
+            && !crate::protocol::openai::chat::owners::contiguous(r.items(), r.message_envelopes()))
     {
         return Err(RepresentationError::MessageGrouping);
     }
     text_items(r.items(), profile, false, r.resources())?;
-    if profile == Profile::Chat && chat_message_count(r.items(), r.message_owners()) != 1 {
+    let owners = crate::protocol::openai::chat::owners::owners(r.items(), r.message_envelopes());
+    if profile == Profile::Chat && chat_message_count(r.items(), &owners) != 1 {
         return Err(RepresentationError::MessageGrouping);
     }
     if metadata.validate().is_err() {

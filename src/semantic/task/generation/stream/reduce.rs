@@ -115,7 +115,7 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 }
                 state.charge(call_id.as_str().len())?;
             }
-            if let Some((_, name, message)) = kind.call() {
+            if let Some((_, name)) = kind.call() {
                 if let Some(domain) = kind.alias_domain() {
                     if domain.source.as_str().is_empty() || domain.source.as_str().len() > 256 {
                         return Err(EventError::Limit);
@@ -124,23 +124,6 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 }
                 if name.as_str().is_empty() || name.as_str().len() > 128 {
                     return Err(EventError::Limit);
-                }
-                if let Some(owner) = message {
-                    if !state
-                        .items
-                        .iter()
-                        .any(|i| i.id == owner && matches!(i.kind, ItemKind::Message { .. }))
-                    {
-                        return Err(EventError::Identity);
-                    }
-                    if state
-                        .item(owner)?
-                        .parts
-                        .iter()
-                        .any(|p| p.kind == PartKind::Refusal)
-                    {
-                        return Err(GenerationError::InvalidResponse.into());
-                    }
                 }
                 state.charge(name.as_str().len())?;
             }
@@ -177,12 +160,6 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             });
         }
         StreamEvent::PartStarted { item, part, kind } => {
-            // Refusal and calls cannot share an owner, regardless of arrival order.
-            if kind == PartKind::Refusal && state.items.iter().any(|i| {
-                matches!(i.kind, ItemKind::ToolCall { message: Some(owner), .. } if owner == item)
-            }) {
-                return Err(GenerationError::InvalidResponse.into());
-            }
             if state.part_ids.len() >= MAX_ITEMS {
                 return Err(EventError::Limit);
             }
@@ -534,22 +511,6 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             let mut groups = state.message_envelopes.clone();
             groups.push(group.clone());
             let values = snapshot_items(&state)?;
-            let native =
-                crate::semantic::task::generation::history::envelope::MessageEnvelopes::from_chat(
-                    &values,
-                    state
-                        .items
-                        .iter()
-                        .filter_map(|item| match &item.kind {
-                            ItemKind::ToolCall {
-                                message: Some(owner),
-                                ..
-                            } => Some((item.id, *owner)),
-                            _ => None,
-                        })
-                        .collect(),
-                )?;
-            groups.extend_from_slice(native.values());
             crate::semantic::task::generation::history::envelope::MessageEnvelopes::new(
                 &values, groups,
             )?;

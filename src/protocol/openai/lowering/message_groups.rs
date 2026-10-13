@@ -6,7 +6,6 @@ use std::collections::BTreeMap;
 pub(super) fn project(
     items: &[(ItemId, Item)],
     groups: &[MessageEnvelope],
-    owners: &BTreeMap<ItemId, ItemId>,
     profile: Profile,
 ) -> Result<Option<(Vec<MessageEnvelope>, LossRule)>, RepresentationError> {
     if profile == Profile::Responses {
@@ -40,10 +39,11 @@ pub(super) fn project(
     }
     // Non-Chat native envelopes need their own target contract, not flattening.
     for group in groups {
-        if group.chat_owner(items).is_none() {
+        if crate::protocol::openai::chat::owners::owner(group, items).is_none() {
             return Err(RepresentationError::MessageGrouping);
         }
     }
+    let owners = crate::protocol::openai::chat::owners::owners(items, groups);
     let mut projected = groups.to_vec();
     let mut current = None;
     let mut additions: BTreeMap<ItemId, Vec<ItemId>> = BTreeMap::new();

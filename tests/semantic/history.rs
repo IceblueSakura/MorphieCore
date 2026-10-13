@@ -582,6 +582,14 @@ mod context_transforms {
 
     #[test]
     fn edits_never_orphan_results_and_relations_have_one_final_owner() {
+        let envelope = || {
+            MessageEnvelope::new(
+                GroupId::new(LocalScope::ROOT, 9),
+                MessageEnvelopeRole::Assistant,
+                vec![ItemId::new(9), ItemId::new(1)],
+            )
+            .unwrap()
+        };
         let call = |alias| {
             Item::ToolCall(ToolCall {
                 call_id: text(alias),
@@ -615,7 +623,7 @@ mod context_transforms {
             GenerationControls::default(),
         )
         .unwrap()
-        .with_message_owners(vec![(ItemId::new(1), ItemId::new(9))])
+        .with_message_envelopes(vec![envelope()])
         .unwrap();
         let orphaned = source
             .clone()
@@ -626,14 +634,10 @@ mod context_transforms {
             .clone()
             .transform(vec![
                 ContextEdit::Delete(vec![ItemId::new(2)]),
-                ContextEdit::MessageOwners(vec![(ItemId::new(1), ItemId::new(9))]),
+                ContextEdit::MessageEnvelopes(vec![envelope()]),
             ])
             .unwrap();
-        assert_eq!(edited.request().message_owners().len(), 1);
-        assert_eq!(
-            edited.request().message_owners().get(&ItemId::new(1)),
-            Some(&ItemId::new(9))
-        );
+        assert_eq!(edited.request().message_envelopes(), [envelope()]);
         assert_eq!(edited.request().items().len(), 2);
         assert_eq!(source.items().len(), 3);
     }

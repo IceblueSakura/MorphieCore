@@ -393,7 +393,6 @@ impl GenerationSseDecoder {
                             format: ArgumentFormat::Json,
                             call_id: text(id)?,
                             name: text(name)?,
-                            message: None,
                             context: Default::default(),
                         },
                         replay: None,

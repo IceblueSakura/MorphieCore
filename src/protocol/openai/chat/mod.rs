@@ -3,6 +3,7 @@ pub(in crate::protocol::openai) mod annotations;
 pub(in crate::protocol::openai) mod audio;
 pub mod envelope;
 pub(crate) mod logprobs;
+pub(in crate::protocol::openai) mod owners;
 pub(in crate::protocol::openai) mod reasoning;
 pub mod sse;
 pub use crate::protocol::openai::static_response::{
@@ -87,8 +88,9 @@ pub(crate) fn decode_generation_with(
         ..Default::default()
     };
     crate::protocol::openai::chat::audio::settings(o, &mut settings, direction)?;
+    let groups = owners::envelopes(&b.message_owners)?;
     let r = GenerationRequest::from_resources(b.items, settings, b.resources)?
-        .with_message_owners(b.message_owners)?;
+        .with_message_envelopes(groups)?;
     Ok(DecodedRequest {
         semantic: function_tools::decode(r, o, Profile::Chat, direction)?,
         fidelity: b.fidelity,
@@ -462,7 +464,6 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     }
     check_message_carriers(
         target.semantic.items(),
-        target.semantic.message_owners(),
         target.semantic.message_envelopes(),
         Profile::Chat,
     )?;
@@ -480,7 +481,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     }
     let mut messages = encode_items_with(
         target.semantic.items(),
-        target.semantic.message_owners(),
+        &owners::owners(target.semantic.items(), target.semantic.message_envelopes()),
         target.fidelity,
         target.adaptation.rules.structured_chat_reasoning,
         false,

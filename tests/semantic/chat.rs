@@ -1618,12 +1618,19 @@ mod client_carrier {
             base.semantic.resources().clone(),
         )
         .unwrap()
-        .with_message_owners(vec![(ItemId::new(2), ItemId::new(1))])
+        .with_message_envelopes(vec![
+            MessageEnvelope::new(
+                GroupId::new(LocalScope::ROOT, 1),
+                MessageEnvelopeRole::Assistant,
+                vec![ItemId::new(1), ItemId::new(2)],
+            )
+            .unwrap(),
+        ])
         .unwrap();
         let encoded = adapter.encode_response(&decoded, &contract()).unwrap();
         no_attachment(&encoded);
         assert_eq!(encoded["output"][1]["call_id"], "c");
-        assert_eq!(decoded.semantic.message_owners().len(), 1);
+        assert_eq!(decoded.semantic.message_envelopes().len(), 1);
         let mut counted = base.clone();
         counted.semantic = counted.semantic.with_usage(Some(prediction)).unwrap();
         let projected = adapter.encode_response(&counted, &contract()).unwrap();

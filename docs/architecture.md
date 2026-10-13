@@ -300,6 +300,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Inert, credential-free media | Inline data or URLs only; no gateway fetch or file service, and no client-supplied Provider file references |
 | Standard carriers only | A target without a standard carrier for a semantic rejects it. The gateway does not move content to another role or add model-visible text to make it fit; for example, Chat targets reject tool-result media |
 | Target-local image restrictions | Formats, encoded sizes, counts and unavailable per-use options are checked or projected at the protocol boundary, not encoded as Provider-specific IR fields |
+| Envelopes as grouping | Ordered message envelopes are the only IR grouping. Chat's call ownership is a view derived in the OpenAI codec, which also enforces Chat-only rules such as no calls on a refusal |
 | Schemas as data | The IR keeps any bounded JSON-object schema an official API accepts. The OpenAI strict subset is checked only for OpenAI targets. An unnamed output schema (Messages) gets the fixed name `response` only on OpenAI targets, which require one |
 | No stop sequences | Not IR semantics while no target client needs them. Client `stop` and `stop_sequences` stay unregistered fields, ignored and named; a native `stop_sequence` stop reports a finished turn. Reopen with a client that sends them |
 | Client-owned output caps | The gateway neither caps nor invents `max_tokens`; the upstream enforces its model limit. Only a protocol that requires the field fills a fixed default |

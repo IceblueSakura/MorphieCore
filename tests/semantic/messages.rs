@@ -128,6 +128,21 @@ mod message_envelopes {
         }
         events.extend(decoder.done().unwrap());
         let source = decoder.materialize().unwrap();
+        // As in a static message, a refusal cannot carry calls.
+        let mut refused = EventDecoder::new(Profile::Chat);
+        refused
+            .push(&chunk(
+                json!({"role":"assistant","refusal":"no","tool_calls":[
+                    {"index":0,"id":"c","type":"function","function":{"name":"lookup","arguments":"{}"}}]}),
+                json!(null),
+            ))
+            .unwrap();
+        assert_eq!(
+            refused
+                .push(&chunk(json!({}), json!("tool_calls")))
+                .unwrap_err(),
+            morphiecore::protocol::CodecError::Invalid("refusal with tool calls")
+        );
         let mut encoder = EventEncoder::new(Profile::Responses, source.metadata.clone()).unwrap();
         let mut wire = vec![];
         for event in &events {
@@ -154,27 +169,11 @@ mod message_envelopes {
                 .iter()
                 .any(|stage| stage.loss.is_some())
         );
-        // The complete explicit-envelope event and the native attached-call event
-        // are two construction paths to the same Chat-representable shape.
-        for event in &mut events {
-            if let StreamEvent::ItemStarted {
-                kind: ItemKind::ToolCall { message, .. },
-                ..
-            } = event
-            {
-                *message = None;
-            }
-        }
-        events.insert(
-            events.len() - 1,
-            StreamEvent::MessageEnvelope(
-                MessageEnvelope::new(
-                    GroupId::new(LocalScope::ROOT, 42),
-                    MessageEnvelopeRole::Assistant,
-                    source.semantic.items().iter().map(|(id, _)| *id).collect(),
-                )
-                .unwrap(),
-            ),
+        // The decoder groups the calls with an envelope event that both profiles carry.
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, StreamEvent::MessageEnvelope(_)))
         );
         for profile in [Profile::Chat, Profile::Responses] {
             let mut encoder = EventEncoder::new(profile, source.metadata.clone()).unwrap();
@@ -234,11 +233,12 @@ mod message_ownership_owner {
         let items = values();
         let request = GenerationRequest::new(items, GenerationControls::default())
             .unwrap()
-            .with_message_owners(vec![(ItemId::new(3), ItemId::new(1))])
+            .with_message_envelopes(vec![envelope()])
             .unwrap();
-        let group = request.message_groups().next().unwrap();
-        assert_eq!(group.owner(), ItemId::new(1));
-        assert_eq!(group.calls().next().unwrap().item, ItemId::new(3));
+        assert_eq!(
+            request.message_envelopes()[0].members(),
+            [ItemId::new(1), ItemId::new(3)]
+        );
         for profile in [Profile::Chat, Profile::Responses] {
             assert!(
                 lower_request(
@@ -250,6 +250,14 @@ mod message_ownership_owner {
                 .is_err()
             );
         }
+    }
+    fn envelope() -> MessageEnvelope {
+        MessageEnvelope::new(
+            GroupId::new(LocalScope::ROOT, 1),
+            MessageEnvelopeRole::Assistant,
+            vec![ItemId::new(1), ItemId::new(3)],
+        )
+        .unwrap()
     }
     fn values() -> Vec<(ItemId, Item)> {
         vec![
@@ -292,9 +300,7 @@ mod message_ownership_owner {
         );
         let history = GenerationRequest::new(items, GenerationControls::default()).unwrap();
         exchange.inspect(&history).unwrap();
-        let changed = history
-            .with_message_owners(vec![(ItemId::new(3), ItemId::new(1))])
-            .unwrap();
+        let changed = history.with_message_envelopes(vec![envelope()]).unwrap();
         assert_eq!(
             exchange.inspect(&changed).unwrap_err(),
             ContinuationError::ChangedResponse

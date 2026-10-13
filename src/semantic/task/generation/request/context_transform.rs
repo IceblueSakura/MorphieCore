@@ -20,7 +20,6 @@ pub enum ContextEdit {
         part: PartId,
         text: Text,
     },
-    MessageOwners(Vec<(ItemId, ItemId)>),
     MessageEnvelopes(Vec<MessageEnvelope>),
 }
 impl std::fmt::Debug for ContextEdit {
@@ -35,7 +34,6 @@ pub enum ContextChange {
     Replaced(ItemId),
     Reordered(Vec<ItemId>),
     Summarized { sources: Vec<ItemId>, owner: ItemId },
-    MessageOwners,
     MessageEnvelopes,
 }
 impl ContextChange {
@@ -211,12 +209,8 @@ impl GenerationRequest {
                         })));
                         ContextChange::Summarized { sources, owner }
                     }
-                    ContextEdit::MessageOwners(owners) => {
-                        request.message_owners = crate::semantic::task::generation::history::envelope::MessageEnvelopes::from_chat(&request.items, owners)?;
-                        ContextChange::MessageOwners
-                    }
                     ContextEdit::MessageEnvelopes(groups) => {
-                        request.message_owners = crate::semantic::task::generation::history::envelope::MessageEnvelopes::new(&request.items, groups)?;
+                        request.envelopes = crate::semantic::task::generation::history::envelope::MessageEnvelopes::new(&request.items, groups)?;
                         ContextChange::MessageEnvelopes
                     }
                 })
@@ -227,8 +221,8 @@ impl GenerationRequest {
             }
             changes.push(changed);
         }
-        request.message_owners = request
-            .message_owners
+        request.envelopes = request
+            .envelopes
             .edited(&request.items)
             .map_err(|e| fail(ContextStage::Association, None, e))?;
         crate::semantic::task::generation::identity::check_call_edits(

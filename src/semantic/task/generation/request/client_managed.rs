@@ -23,7 +23,7 @@ impl ClientManaged {
                 items: vec![],
                 resources: ResourceTable::default(),
                 settings: std::sync::Arc::new(settings),
-                message_owners: Default::default(),
+                envelopes: Default::default(),
             },
         })
     }
@@ -189,7 +189,7 @@ impl ClientManaged {
         }
         let mut values = self.request.message_envelopes().to_vec();
         values.extend_from_slice(groups);
-        self.request.message_owners =
+        self.request.envelopes =
             crate::semantic::task::generation::history::envelope::MessageEnvelopes::new(
                 self.request.items(),
                 values,

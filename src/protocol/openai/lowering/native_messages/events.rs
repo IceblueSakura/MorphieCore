@@ -16,7 +16,8 @@ pub(crate) struct EventProjection {
     late: Option<StreamEvent>,
     text_owners: BTreeMap<ItemId, ItemId>,
     pending: Vec<ItemId>,
-    tools: bool,
+    /// Chat calls, grouped under the carrier message at the terminal.
+    calls: Vec<ItemId>,
     scope: LocalScope,
 }
 impl EventProjection {
@@ -28,7 +29,7 @@ impl EventProjection {
             late: None,
             text_owners: BTreeMap::new(),
             pending: vec![],
-            tools: false,
+            calls: vec![],
             scope: LocalScope::new(2),
         }
     }
@@ -70,7 +71,7 @@ impl EventProjection {
                     self.scope = item.scope();
                     match kind {
                         ItemKind::Reasoning if self.profile == Profile::Chat => {
-                            if self.message.is_some() || self.tools {
+                            if self.message.is_some() || !self.calls.is_empty() {
                                 if self.late.is_some() {
                                     return Err(order());
                                 }
@@ -80,7 +81,7 @@ impl EventProjection {
                             self.reasoning.push(*item);
                         }
                         ItemKind::Message { .. } if self.profile == Profile::Chat => {
-                            if self.tools {
+                            if !self.calls.is_empty() {
                                 return Err(CodecError::Unsupported(
                                     "native block order on Chat".into(),
                                 ));
@@ -92,14 +93,12 @@ impl EventProjection {
                                 continue;
                             }
                         }
-                        ItemKind::ToolCall {
-                            format, message, ..
-                        } => {
+                        ItemKind::ToolCall { format, .. } => {
                             *format = ArgumentFormat::Raw;
                             if self.profile == Profile::Chat {
-                                *message = Some(self.owner(&mut out));
+                                self.owner(&mut out);
                                 self.close_later(*item);
-                                self.tools = true;
+                                self.calls.push(*item);
                             }
                         }
                         _ => {}
@@ -153,7 +152,7 @@ impl EventProjection {
                 }
                 StreamEvent::Progress(_) | StreamEvent::MessageEnvelope(_) => continue,
                 StreamEvent::Terminal { terminal, .. } if self.profile == Profile::Chat => {
-                    self.owner(&mut out);
+                    let owner = self.owner(&mut out);
                     for item in self.pending.drain(..) {
                         out.push(StreamEvent::ItemFinished {
                             item,
@@ -164,6 +163,15 @@ impl EventProjection {
                             },
                             replay: None,
                         });
+                    }
+                    if !self.calls.is_empty() {
+                        let mut members = vec![owner];
+                        members.extend(&self.calls);
+                        out.push(StreamEvent::MessageEnvelope(MessageEnvelope::new(
+                            GroupId::new(owner.scope(), owner.get()),
+                            MessageEnvelopeRole::Assistant,
+                            members,
+                        )?));
                     }
                 }
                 _ => {}

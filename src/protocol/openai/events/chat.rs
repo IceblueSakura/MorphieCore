@@ -437,7 +437,6 @@ impl EventDecoder {
                         format: ArgumentFormat::Raw,
                         call_id: text(string(call, "id")?, "call id", 256)?,
                         name: text(string(f, "name")?, "name", 128)?,
-                        message: self.chat_owner,
                         context: CallContext::default(),
                     };
                     self.emit(
@@ -580,6 +579,26 @@ impl EventDecoder {
                     },
                     &mut out,
                 )?;
+            }
+            // The calls belong to the message that opened before them.
+            if !self.chat_calls.is_empty() {
+                if self
+                    .state()?
+                    .item(owner)?
+                    .parts
+                    .iter()
+                    .any(|p| p.kind == PartKind::Refusal)
+                {
+                    return Err(CodecError::Invalid("refusal with tool calls"));
+                }
+                let mut members = vec![owner];
+                members.extend(&self.chat_calls);
+                let group = MessageEnvelope::new(
+                    GroupId::new(owner.scope(), owner.get()),
+                    MessageEnvelopeRole::Assistant,
+                    members,
+                )?;
+                self.emit(StreamEvent::MessageEnvelope(group), &mut out)?;
             }
             self.chat_finish_reason = reason.as_str().map(str::to_owned);
             self.chat_pending = Some((

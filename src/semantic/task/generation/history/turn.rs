@@ -110,17 +110,6 @@ impl<'a> ResponseContinuation<'a> {
             {
                 return Err(ContinuationError::ChangedResponse);
             }
-            if history.message_owners().get(owner) != self.response.message_owners().get(owner) {
-                return Err(ContinuationError::ChangedResponse);
-            }
-        }
-        for group in self.response.message_groups() {
-            if !history
-                .message_groups()
-                .any(|candidate| candidate.items() == group.items())
-            {
-                return Err(ContinuationError::ChangedResponse);
-            }
         }
         let mut pending = Vec::new();
         let mut in_progress = Vec::new();

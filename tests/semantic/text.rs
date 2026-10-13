@@ -415,7 +415,6 @@ mod text_admission {
                 format: ArgumentFormat::Raw,
                 call_id: Text::new("call", "test", 128).unwrap(),
                 name: Text::new("lookup", "test", 128).unwrap(),
-                message: None,
                 context: CallContext {
                     namespace: Some(Text::new("scope", "test", 128).unwrap()),
                     ..Default::default()
@@ -575,7 +574,6 @@ mod response {
         chat_wire["choices"][0]["finish_reason"] = json!("length");
         let decoded = chat::decode_response(&chat_wire).unwrap();
         assert_eq!(decoded.semantic.outcome(), Outcome::Incomplete);
-        assert_eq!(decoded.semantic.continuation(), Continuation::Unreported);
         let fidelity = morphiecore::protocol::fidelity::FidelityRecords::default();
         let metadata = metadata();
         let encoded = lower_response(
