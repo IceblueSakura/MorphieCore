@@ -174,7 +174,7 @@ pub fn contract(id: &str) -> GenerationSemanticContract {
         video_input: matches!(id, "minicpm-v-4.6" | "glm-5.3-flash"),
         strict_tools: definition.strict_tools,
         // Admission still needs the media kind's input. Only Responses carries tool
-        // media; Chat targets reject it until the roadmap's pending decision.
+        // media; standard Chat has no carrier, so Chat targets reject it.
         tool_result_media: true,
         ..GenerationSemanticContract::text_images()
     }

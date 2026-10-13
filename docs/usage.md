@@ -191,7 +191,7 @@ Select an activated public model that admits image input. A tool-result image al
 | Responses | `input_image` | `function_call_output.output` array |
 | Messages | `image` with a base64 or URL source | `tool_result.content` array |
 
-Responses tool images require a Responses or native upstream carrier. Messages uses the model's Chat candidates, so a Messages tool image still fails on a Chat upstream. `responses_via_chat` has the same limitation. The gateway does not move tool media to another role; that projection remains a [pending decision](roadmap.md#pending-decisions).
+Responses tool images require a Responses or native upstream carrier. Messages uses the model's Chat candidates, so a Messages tool image still fails on a Chat upstream. `responses_via_chat` has the same limitation. The gateway does not move tool media to another role, because standard Chat has no tool-media carrier.
 
 For an inline Responses image, replace `<base64-image>` with valid base64 for the declared image type:
 

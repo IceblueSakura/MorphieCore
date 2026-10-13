@@ -80,7 +80,6 @@ Real failover needs a controlled failure source, such as an exhausted key in a s
 
 | Question | Current behavior | Options |
 |---|---|---|
-| Tool-result media on Chat upstreams | Chat tool messages carry text only, so Chat clients cannot send tool media. Tool media from Messages clients or through the Responses-to-Chat bridge fails representation on Chat upstreams | A named rule that moves the media into a following user message, as pi does client-side; or keep rejecting |
 | File API (deferred) | Inline data or public URLs only. Inline media fit the IR budgets (12 MiB decoded per item, 32 MiB of IR per request), with narrower target limits where required. Client Provider file IDs and credential-owned file URIs are rejected; there is no gateway file service | Gateway store resolved to inline before lowering; upload pinned to one credential; or a gateway store with per-executor upstream upload. The first and last share one IR slot |
 
 ## Future work

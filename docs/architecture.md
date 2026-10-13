@@ -105,7 +105,7 @@ Image, audio, video and file resources are inert: inline data or a URL, never fe
 
 - Chat video uses the registered extension `{"type":"video_url","video_url":{"url":…}}`, shared by OpenRouter, DashScope, Zhipu, vLLM and ModelBest. Only targets whose dialect declares it receive video.
 - Per-use options without a target slot (image detail, file detail, filename) are dropped by a named rule. Inbound options with no IR slot that change model-visible content, such as a Messages document `context`, are rejected.
-- Tool results may carry media of any kind. Admission needs tool-result media and the kind's input modality. Responses carries tool media; Chat does not, and that gap is a [pending decision](roadmap.md#pending-decisions).
+- Tool results may carry media of any kind. Admission needs tool-result media and the kind's input modality. Responses carries tool media; standard Chat does not, so Chat targets reject it.
 - Provider file IDs and file URIs are bound to the gateway credential's workspace or project. Client-supplied references are rejected.
 - Google protocol boundaries reject media URLs on the Files API host, even when a client labels them as ordinary image or file URLs. Public URLs stay inert.
 - Image formats, encoded sizes and counts are target constraints, including tool-result images. Pixel dimensions and actual image validity remain upstream checks; the gateway does not decode or transcode images.
@@ -292,6 +292,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Separate credential lifecycle | Private file store and ordered pools; no inference-triggered login or refresh |
 | Agent-sized bounds | Bodies, IR budgets and deadlines fit whole-history agent sessions and long turns: tens of MiB and one hour per exchange. Upstreams enforce their own maxima |
 | Inert, credential-free media | Inline data or URLs only; no gateway fetch or file service, and no client-supplied Provider file references |
+| Standard carriers only | A target without a standard carrier for a semantic rejects it. The gateway does not move content to another role or add model-visible text to make it fit; for example, Chat targets reject tool-result media |
 | Target-local image restrictions | Formats, encoded sizes, counts and unavailable per-use options are checked or projected at the protocol boundary, not encoded as Provider-specific IR fields |
 | Client-owned output caps | The gateway neither caps nor invents `max_tokens`; the upstream enforces its model limit. Only a protocol that requires the field fills a fixed default |
 
