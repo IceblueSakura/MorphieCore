@@ -191,6 +191,7 @@ pub fn compile(
             return Err(TopologyError::InvalidRoutePolicy);
         }
         let mut seen = std::collections::BTreeSet::new();
+        let mut siwc_seen = false;
         for candidate in &route.endpoints {
             if !seen.insert(candidate) {
                 return Err(TopologyError::DuplicateCandidate);
@@ -200,11 +201,17 @@ pub fn compile(
                 .ok_or(TopologyError::UnknownEndpoint)?;
             if endpoint.execution.credential_kind
                 == crate::provider::CredentialKind::OAuth("openai")
-                && (route.endpoints.len() != 1
-                    || route.policy.max_attempts != 1
-                    || route.policy.fallback != super::FallbackPolicy::Disabled)
             {
-                return Err(TopologyError::InvalidRoutePolicy);
+                // Another Provider is a legal fallback, not another SIWC account
+                // or endpoint. A standalone subscription still has one attempt.
+                if siwc_seen
+                    || route.endpoints.len() == 1
+                        && (route.policy.max_attempts != 1
+                            || route.policy.fallback != super::FallbackPolicy::Disabled)
+                {
+                    return Err(TopologyError::InvalidRoutePolicy);
+                }
+                siwc_seen = true;
             }
             if endpoint.task != route.task {
                 return Err(TopologyError::TaskMismatch);
@@ -388,31 +395,40 @@ mod tests {
     }
 
     #[test]
-    fn siwc_cannot_enter_a_fallback_route_even_through_embedded_configuration() {
-        for (attempts, fallback, count, accepted) in [
-            (1, false, 1, true),
-            (2, false, 1, false),
-            (1, true, 1, false),
-            (1, false, 2, false),
+    fn siwc_cross_provider_routes_keep_one_subscription_candidate() {
+        for (attempts, fallback, other_kind, accepted) in [
+            (1, false, None, true),
+            (2, false, None, false),
+            (1, true, None, false),
+            (2, true, Some(CredentialKind::ApiKey), true),
+            (2, true, Some(CredentialKind::OAuth("openai")), false),
         ] {
             let mut provider = provider();
             provider.auth = AuthScheme::OAuthBearer("openai");
             let mut endpoint = endpoint(ProtocolProfile::OpenAiResponses);
             endpoint.execution.credential_kind = CredentialKind::OAuth("openai");
+            let mut providers = vec![provider.clone()];
             let mut endpoints = vec![endpoint.clone()];
             let mut route = route();
             route.policy.max_attempts = attempts;
             if fallback {
                 route.policy.fallback = crate::topology::FallbackPolicy::BeforeCommit;
             }
-            if count == 2 {
+            if let Some(kind) = other_kind {
+                provider.id = ProviderId::new("other").unwrap();
+                if kind == CredentialKind::ApiKey {
+                    provider.auth = AuthScheme::Bearer;
+                }
+                endpoint.provider = provider.id.clone();
+                endpoint.execution.credential_kind = kind;
                 endpoint.id = EndpointId::new("second").unwrap();
                 route.endpoints.push(endpoint.id.clone());
                 endpoints.push(endpoint);
+                providers.push(provider);
             }
             assert_eq!(
                 compile(
-                    vec![provider],
+                    providers,
                     endpoints,
                     vec![route],
                     vec![model(TargetCaps::full())],
@@ -420,7 +436,7 @@ mod tests {
                 )
                 .is_ok(),
                 accepted,
-                "attempts={attempts} fallback={fallback} count={count}"
+                "attempts={attempts} fallback={fallback} other_kind={other_kind:?}"
             );
         }
     }

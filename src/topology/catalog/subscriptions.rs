@@ -27,6 +27,14 @@ pub const SUBSCRIPTION_BINDINGS: &[SubscriptionBinding] = &[
         provider: catalog::openai,
     },
     SubscriptionBinding {
+        profile: "openai",
+        identity: "openai-luna",
+        model: "gpt-6-luna",
+        upstream: "gpt-6-luna",
+        dialect: Dialect::Siwc,
+        provider: catalog::openai,
+    },
+    SubscriptionBinding {
         profile: "grok",
         identity: "grok",
         model: "grok-4.7",
@@ -60,7 +68,13 @@ impl SubscriptionBinding {
             canonical_model: ModelId::new(self.model).unwrap(),
             task: TaskKind::Generation,
             route: RouteId::new(&format!("{}-generation", self.identity)).unwrap(),
-            contract: self.contract(),
+            // An alternative keeps the existing public promise; SIWC restrictions
+            // still apply to this endpoint during candidate preparation.
+            contract: API_KEY_BINDINGS
+                .iter()
+                .find(|binding| binding.model == self.model)
+                .map(|binding| binding.public_model().contract)
+                .unwrap_or_else(|| self.contract()),
             standard_context: false,
             reported_facts: ReportedFactPolicy::Faithful,
         }

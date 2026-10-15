@@ -322,7 +322,8 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Pure protocol boundaries | Encode from final typed input; no network in codecs or post-encoding JSON patches |
 | Functional ownership | Keep root layers; organize internals by domain, without compatibility aliases or plugin frameworks |
 | Layered capabilities | Public promises are not the union of candidate features |
-| Shared model identities across protocols | Compatible API-key and native Messages bindings share one public model and ordered route. Endpoint protocols and credential domains stay distinct; merging never overrides SIWC's single-endpoint, single-attempt, no-fallback constraint |
+| Shared model identities across protocols | Compatible API-key, OAuth and native Messages bindings share one public model and ordered route. Endpoint protocols and credential domains stay distinct; narrower candidates reject requests they cannot represent |
+| SIWC cross-Provider fallback | A mixed route may contain one SIWC endpoint and advance to another Provider before publication within the route budget. SIWC pools remain single-account with no credential fallback; standalone SIWC routes remain single-attempt with fallback disabled |
 | Case-sensitive model labels | Public IDs may preserve upstream ASCII capitalization, but resolve only registered routes. Provider prefixes remain rejected; Provider, endpoint and route IDs keep their lowercase grammar |
 | Declared adaptation | Named candidate-local losses; known fields strict, unknown protocol fields ignored |
 | Official intake fields | Pinned client request fields are carried, ignored by name or rejected. Fields that change model input, tools, the output contract or the output cap are never ignored; execution, billing, telemetry, cache and sampling preferences may be |

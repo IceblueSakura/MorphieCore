@@ -76,6 +76,8 @@ Members are ordered. To allow credential fallback, add members, set `fallback: t
 
 An OAuth member uses `{"kind":"oauth","profile":"openai","alias":"personal"}`. An `openai` subscription pool must have one member, no fallback and `max_attempts: 1`.
 
+That pool limit does not disable cross-Provider fallback on a mixed model route. Such a route may contain one SIWC endpoint; its public contract stays shared, while requests containing unsupported SIWC controls skip that candidate. The route budget and optional global `max_attempts` still bound all attempts, and publication ends fallback.
+
 ### OAuth
 
 Login, refresh and revocation are explicit operator actions:

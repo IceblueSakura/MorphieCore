@@ -140,7 +140,6 @@ Real failover needs a controlled failure source, such as an exhausted key in a s
 |---|---|---|
 | File API (deferred) | Inline data or public URLs only. Inline media fit the IR budgets (12 MiB decoded per item, 32 MiB of IR per request), with narrower target limits where required. Client Provider file IDs and credential-owned file URIs are rejected; there is no gateway file service | Gateway store resolved to inline before lowering; upload pinned to one credential; or a gateway store with per-executor upstream upload. The first and last share one IR slot |
 | Realtime implementation (undecided) | Deferred; no implementation approach or schedule is selected | Select a client scenario and official API contract before deciding session ownership, transport, interruption and recovery. A separate session runtime is an option, not an adopted implementation plan |
-| SIWC cross-Provider routes (deferred) | OpenAI Luna is not added alongside the existing OpenRouter route. SIWC still requires one endpoint, one attempt and no fallback | Select an exclusive Provider at startup, or separately approve bounded cross-Provider fallback while retaining single-account credential pools |
 
 ## Future work
 
