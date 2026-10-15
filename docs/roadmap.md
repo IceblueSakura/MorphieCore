@@ -6,19 +6,135 @@ This page owns direction and current scope. Code and tests define behavior; [Arc
 
 Complete the Generation IR against selected semantics accepted by the official OpenAI, Anthropic and Google APIs. Provider dialects remain codec concerns. Realtime and standalone tasks do not need complete integration for this phase. Each slice must state its goal and exit condition before code changes.
 
-Track semantic expression, codec representation and enabled bindings separately. A concept supported by only one official API may belong in the IR; other targets reject it when they have no carrier. Client compatibility does not define the semantic vocabulary. Protocol sources are pinned in [References](references.md).
+Track semantic expression, codec representation and enabled bindings separately. Preserve accurate IR, prefer exact carriers, and allow explicitly selected advisory losses or behavioral approximations on target-private copies. Reject loss of protected task, execution or security semantics. Client compatibility does not define the semantic vocabulary. Protocol sources are pinned in [References](references.md).
 
-Chat Completions, Responses and Messages are equally important downstream contracts. Each slice must assess static delivery, streaming and history replay for all three. A protocol used as the semantic reference does not receive higher downstream priority; missing carriers require explicit rejection, not silent loss or invented roles.
+Chat Completions, Responses and Messages are equally important downstream contracts. Assess static delivery, streaming and history replay for all three. Google generateContent and Interactions currently supply upstream request encoding and SSE intake, not Google client endpoints or static intake. This migration does not expand that direction set.
 
-Correct existing parameter and content projections before adding missing support. Start with [projection repair](#projection-repair), using the [researched contracts](refs/2026-10-15-generation-projections.md) and the selected [two-responsibility codec boundary](architecture.md#protocol-baselines-and-provider-dialects). Complete the repair gate before the [support queue](#support-queue-after-projection-repair).
+Follow the [IR and codec migration](#ir-and-codec-migration) below. It combines existing [projection repairs](#projection-repair), a small loss-tolerant codec path and selected missing carriers already expressible in the IR. Broader additions remain in the [support queue](#support-queue-after-projection-repair). The [architecture contract](architecture.md#accurate-ir-and-declared-loss) is selected; concrete unresolved policies stay in [Pending decisions](#pending-decisions).
 
-Until the IR core is complete, add only minimal regressions for changed contracts and confirmed defects, preferably by extending existing tests. Keep safety invariants and the offline baseline; defer coverage expansion.
+For this migration, update existing tests and independent wire expectations only; do not add test functions, suites or variant matrices. Preserve safety assertions. Record uncovered contracts rather than claiming coverage from compilation or a round trip.
 
-An independent delivery-maintenance slice is designed below: [optional delta coalescing](#optional-delta-coalescing). This is an implementation plan, not a claim of shipped functionality or a change to the Generation semantic sequence. It does not reopen deferred failover or real-client acceptance.
+Optional delta coalescing remains a separate planned slice. Do not combine it with loss-policy, routing or codec repair work.
+
+### Temporary routing freeze
+
+During this IR/codec migration, do not change route construction, candidate membership/order/selection policy, cache affinity, cooling, failover eligibility, attempt budgets, credentials or public model routing. Do not rank targets by projection loss or add a fallback to hide an unsupported conversion.
+
+IR/codec contracts take priority over keeping the full client-to-gateway-to-Provider chain connected. Existing public admission or topology checks may reject the new codec contract; record the exact incompatible boundary and leave integration disconnected rather than weakening IR or changing routing. Changed codec representability may affect an unchanged policy's result; it does not authorize changing that policy.
+
+Work may change semantic requirements, faithful representation checks, target-local projection policy, client/upstream codecs, delivery representation and diagnostics. Necessary call-site/type maintenance is allowed only without route-policy changes. Trusted target policy data may evolve without activating endpoints or changing route membership. If an old public-contract check cannot consume the new distinction without a routing decision, stop at that interface.
+
+Reconnection is a later explicitly scheduled integration step. It must verify preflight/preparation agreement, public capability publication and the full client loop against the then-selected routing design. No compatibility shim, weakened test or live deployment is required to conceal the temporary gap.
+
+### IR and codec migration
+
+This is an implementation plan. Only accurate IR, declared loss, verbosity omission and the routing freeze are settled here; recommendations in the decision queue are not silently activated.
+
+Use the sequence below. S1 repairs can be split by independent contract. S2 establishes one working codec-level path before broader abstractions. S3/S4 do not wait for S5's unresolved policies; no slice depends on reconnecting the routing layer.
+
+| Slice | Dependency | Deliverable |
+|---|---|---|
+| S1: Source and output integrity | None | Known-field, role, content and terminal defects no longer masquerade as tolerable loss |
+| S2: First declared-loss path | Relevant S1 guards | Responses verbosity reaches a Messages projection with explicit omission and unchanged source IR |
+| S3: Advisory controls and text carriers | S2 | Per-field text handling across current protocols; exact carriers used before omission |
+| S4: Existing-IR constrained carriers | Relevant S1 guards; S2 contract split | Selected schema/tool/output carriers without weakening required semantics |
+| S5: Quality-sensitive approximation | S2; relevant P decisions | Individually selected scope/allocation/sampling policies, not a universal fallback |
+| S6: Reports, SSE and history | S2; each selected S3–S5 rule | Source facts stay distinct from delivery losses and retained history |
+| S7: Diagnostic and contract closure | S2–S6, excluding explicitly deferred decisions | Bounded end-to-end evidence at codec/delivery boundaries and an explicit integration handoff |
+
+#### S1: Source and output integrity
+
+Goal: preserve the source contract before introducing more lossy projection. Use the detailed [repair work](#projection-repair) below, not a new repository-wide cleanup.
+
+1. Separate official baseline fields from selected dialect aliases and extensions. An ignored field must never also populate the IR. Validate conflicts before normalization.
+2. Fix known content/role gaps in [Chat tools](../src/protocol/openai/function_tools.rs), [Chat messages](../src/protocol/openai/chat/mod.rs), [Messages client intake](../src/protocol/anthropic/client.rs) and [native intake](../src/protocol/anthropic/semantic_intake.rs). Preserve or explicitly reject caller/dispatch intent and legacy calls; do not repair invalid roles by regrouping them.
+3. Separate source parsing from target-profile restrictions, including Messages strict tools. Decode concepts the IR already supports without claiming that every target can encode them.
+4. Reconcile static/SSE content rejection in [Messages delivery](../src/protocol/anthropic/client_events.rs). Reproduce the Google incomplete-progress conflict before fixing it; do not relax the reducer's terminal contract or invent an incomplete cause.
+
+Exit: existing lowest-owner cases retain strict JSON, discriminators, role/call identity, content and terminal truth. Unknown protocol extensions remain inert. Any unreproduced or uncovered path is reported separately from confirmed repairs.
+
+#### S2: First declared-loss path
+
+Goal: implement the smallest useful conversion without changing the meaning stored in the IR: Responses `text.verbosity: low` to a Messages request.
+
+1. Keep `GenerationSettings.text.verbosity` on the source. In the [Messages adapter](../src/protocol/anthropic/adapter.rs), project a private request copy, omit only that unsupported preference and return bounded typed loss evidence.
+2. Split source validity, acceptance through approved adaptation and faithful representation in [requirements](../src/semantic/task/generation/requirements.rs), [contracts](../src/semantic/task/generation/contract.rs) and [lowering](../src/lowering/generation.rs). Validate the source first, then the projected target. Do not set native support flags to true merely because an omission is allowed.
+3. Start with the existing per-protocol rules and projection records. Unify only the evidence needed by this slice; no generic transformation registry, raw JSON bag or client-selectable policy.
+4. Preserve the input and independent target projections. A second target with a verbosity carrier must still see `low`. Do not add prompt text or reinterpret verbosity as effort.
+
+Exit: existing independent wire expectations show accurate source decoding, omission from Messages output and the named input/output control receipt. Schema, tools, activation and output caps remain unchanged. A direct codec/adapter path is sufficient; if existing public admission blocks the gateway path, record that gap instead of editing route policy.
+
+#### S3: Advisory controls and text carriers
+
+Goal: classify fields individually rather than reject a whole options container.
+
+1. Replace whole-`TextOptions` rejection in [generateContent](../src/protocol/google/request.rs) and [Interactions](../src/protocol/interactions/request.rs) with field-specific handling. Allow the selected verbosity omission without erasing `format` or a required schema.
+2. Implement the standard Chat verbosity carrier in [Chat encoding](../src/protocol/openai/chat/mod.rs) and [OpenAI lowering](../src/protocol/openai/lowering/mod.rs). Keep model eligibility separate from protocol grammar.
+3. Normalize empty/plain-text/inactive values only when the source and target semantics establish equivalence. Absence, null and defaults are not globally interchangeable.
+4. Inventory existing advisory cache losses and schema-label changes; make their evidence complete. Keep explicit cache modes, storage, prewarm, service tiers and other execution controls outside the advisory bucket. Handle prediction only after D3.
+
+Exit: supported fields survive exact encoding, selected unsupported preferences produce named loss, and unsupported constrained output still rejects. Standard carriers are not treated as dialect-only extensions. Malformed known fields remain invalid even if a target would omit them.
+
+#### S4: Existing-IR constrained carriers
+
+Goal: fix missing representations before considering degradation of required output.
+
+1. Add selected Google structured-output carriers and verify their schema restrictions without rewriting user schemas. Treat generateContent and Interactions as separate protocols.
+2. Complete eligible Messages strict-tool representation after separating client parsing from profile admission. Audit `DefaultStrictAsPlain` under P8 rather than treating the existing rule as proof of acceptable quality.
+3. Complete selected existing-IR logprob and allowed-tool carriers where the official target supports them. A declaration in an SDK does not activate every model or binding.
+4. Keep parameter schemas, required tool selection, explicit strictness, parallel prohibition, arguments, call/result links and necessary media protected. Missing target implementations remain explicit gaps until their carrier is completed.
+
+Exit: existing independent request and response expectations preserve the relevant constraint. Unsupported targets reject that constraint rather than remove it; official protocol support and activated model support remain separate claims.
+
+#### S5: Quality-sensitive approximation
+
+Goal: allow useful, deliberate approximations without losing the source's meaning. Implement each family only after its decision and concrete target policy are selected.
+
+1. Keep activation, scoped effort, budget, mode, display and verbosity separate. Implement selected cross-scope conversion on a private target copy, not by relabeling source IR or reusing a same-scope table as an implicit conversion.
+2. Keep level calibration directional, same-model and explicitly declared, including identities. Do not infer nearest levels, inverses or policies from upstream errors. P1 selects the target pairs and behavior of unmapped values.
+3. Resolve disabled-plus-response-effort handling (P2), numeric guidance/allocation (P3), and sampling (P4) separately. No rule may enable explicitly disabled reasoning or discard a hard output cap.
+4. Review existing summary/context/display, media-option and instruction-authority losses under P8. Hiding reasoning must not become disclosure; a summary display preference must not invent activation.
+
+Exit: selected rules run once, report source/target controls and preserve unchanged input. Unselected combinations retain explicit rejection. Native request/intake wiring and [configuration-history policy](#reasoning-repair-slices) follow the selected directions rather than inferring effective settings.
+
+#### S6: Reports, SSE and history
+
+Goal: make response-side tolerance independent of request-control admission without weakening source or delivery truth.
+
+1. Validate upstream reports and raw repeated snapshots before normalization or omission. Fix [reported-settings observation](../src/protocol/openai/events/decode.rs) so many-to-one mappings cannot hide conflicts.
+2. Classify target-unrepresentable settings echoes and auxiliary reports independently from generated content. Preserve required output evidence under P5; never reconstruct actual effort, usage or tool execution from request settings.
+3. Apply the same selected projection to static encoding and incremental events. Reject unsupported content before publishing it when known; later discoveries terminate honestly, without replaying the request after publication.
+4. Keep [delivery snapshots](../src/execution/delivery.rs), [client encoding](../src/adapter/downstream.rs) and [stored history](../src/gateway/generation/history.rs) aligned. Source input remains canonical; retained response history reflects the delivered projection. Fidelity cannot resurrect a dropped field or owner.
+5. Distinguish control loss from ordered configuration history. Keep non-identity history mappings rejected until source-snapshot validation and the selected policy are complete.
+
+Exit: JSON and materialized SSE agree for each affected contract; generated content, call links, required replay, usage relations and EOF-gated terminals remain honest. No second reducer or whole-stream buffer is introduced to make projection easier.
+
+#### S7: Diagnostic and contract closure
+
+Goal: explain each selected loss without making routing or a logging backend part of codec semantics.
+
+1. Extend [diagnostics](../src/gateway/diagnostics.rs) using the typed evidence introduced in S2. Distinguish source intent, sent controls, upstream reports and delivered facts. Include the fixed rule, field category, direction, action and bounded safe before/after values chosen in P6.
+2. Propagate request, response and event losses; do not log only failures. Aggregate repeated SSE evidence and keep attempt attribution without changing candidate selection. Treat an unavailable gateway path as an integration gap, not proof that evidence is durably recorded.
+3. Keep credentials, bodies, schemas, arguments, URLs and opaque values out of logs. Review arbitrary ignored-field names; bounded strings are not necessarily safe strings.
+4. Audit capability descriptions against actual faithful carriers and approved acceptance. P7 governs publication/reconnection; do not change existing routing to satisfy the new contract.
+
+Exit: the connected codec/delivery boundaries expose complete bounded evidence for selected losses, with disabled/overflow/error behavior checked under P6. Remaining route-facing gaps are explicitly listed; no completion claim requires a live client-to-Provider loop.
+
+### Verification and integration boundary
+
+For every implementation slice:
+
+1. Update the affected existing semantic, transport and delivery expectations. Keep independently written wire-to-IR and IR-to-wire oracles; a round trip is supplementary. Do not add tests or weaken safety assertions to make a route pass.
+2. Run affected offline targets, then the [full offline baseline](development.md#offline-baseline). Compilation, local codec correctness and integrated gateway behavior are separate results.
+3. Separate codec regressions from an incompatible frozen integration contract. A failed full baseline remains a failure; identify the exact blocker and continue independent work without repairing routing. Temporary disconnection does not authorize deleting assertions, excluding suites or claiming the baseline passed.
+4. Commit/push slices that pass the baseline under the existing project policy. If a disconnected integration prevents that gate, leave publication blocked and report it; this plan does not create a new permission to publish a failing slice.
+5. Run the synthetic SDK loopback gate when the relevant codec boundary is connected. Otherwise mark it blocked, not waived or passed. No real client/Provider check or deployment is required for this planning phase.
+
+Phase completion means the selected policies and carriers pass their local gates and unresolved decisions/integration boundaries are explicit. Restoring and accepting the full client loop belongs to a later routing/integration phase, not a hidden exit condition for IR/codec work.
 
 ### Projection repair
 
-Implement small slices in this order. These are planned corrections, not shipped behavior. Finish independent boundary repairs while the [semantic decisions](#pending-decisions) remain open; do not choose an approximation or IR contract implicitly.
+These are the detailed repair obligations consumed by S1–S6, not a second competing schedule. Finish independent boundary repairs while [semantic decisions](#pending-decisions) remain open; do not choose an approximation or IR contract implicitly.
 
 1. **Isolate equivalent usage aliases.** Move DeepSeek Chat cache-hit/miss interpretation out of the unconditional [shared usage reader](../src/protocol/openai/static_response.rs). Select it through the trusted dialect and retain canonical-value conflict and total checks.
 
@@ -38,31 +154,31 @@ Implement small slices in this order. These are planned corrections, not shipped
 
 5. **Complete target-specific reasoning admission.** Check model restrictions separately from the [activation/scoped-effort contract](architecture.md#reasoning-activation-and-effort-scope) and [explicit calibration](architecture.md#initial-mapping-plan). Assess remaining display/context losses separately from level calibration. Do not claim effective sampling or exact reasoning budgets solely from SDK field presence.
 
-   Exit condition: each selected binding has sourced model-level admission for the controls it promises. Unsupported off, numeric allocation and effort scopes reject; display/context losses have an explicit policy rather than entering a level table. Extend native policy wiring only for a concretely selected mapping.
+   Exit condition: each selected target has sourced model-level admission for the controls it promises. Off, numeric allocation and effort scopes have faithful carriers, selected loss policies or explicit pending rejections; display/context losses do not enter a level table. Extend native policy wiring only for a concretely selected mapping, without changing route membership.
 
 6. **Reproduce terminal-projection suspicion independently.** Feed a synthetic Gemini `MAX_TOKENS` finish through [the decoder](../src/protocol/google/stream.rs) and reducer. Inspect the predicted `Progress(Unreported)` rejection before changing lifecycle behavior.
 
    Exit condition: either an honest incomplete result reaches JSON/SSE without a fabricated success terminal, or the reproduction disproves the suspected defect. Keep terminal correction separate from field-boundary refactoring.
 
-Repair gate: each confirmed defect has a lowest-owner regression, a corrected projection or an explicitly selected rejection/degradation. Assess static delivery, streaming and history for all three downstream contracts. Extend independent wire oracles rather than round trips or variant matrices. Preserve source-IR isolation, bounded expansion, cancellation, replay isolation and EOF-gated publication.
+Repair gate: each confirmed defect has a corrected projection or an explicitly selected rejection/degradation, with existing lowest-owner expectations updated where available and coverage gaps reported. Assess static delivery, streaming and history for all three downstream contracts. Preserve source-IR isolation, bounded expansion, cancellation, replay isolation and EOF-gated publication.
 
-Run affected targets before the [full offline baseline](development.md#offline-baseline), review and commit/push each passing slice. Run the synthetic SDK loopback gate separately at the boundary milestone. Real Provider checks are needed only for a named unresolved remote contract and follow the fixed request/cap/timeout procedure; docs and compilation do not prove live acceptance.
+Use the [verification and integration boundary](#verification-and-integration-boundary) above. Real Provider checks, if later needed for a named unresolved remote contract, remain separate fixed-target/count/cap/timeout steps; docs and compilation do not prove live acceptance.
 
 ### Reasoning repair slices
 
-Finish the remaining [effort-policy boundaries](../src/protocol/reasoning.rs) without changing the scoped IR. D3 does not block these independent repairs. Keep the hypothetical A/B table out of live bindings unless its values are explicitly chosen; do not add an external configuration surface.
+S5/S6 own the remaining [effort-policy boundaries](../src/protocol/reasoning.rs). Keep the scoped IR and hypothetical A/B table separate from concrete target-policy decisions. D3 does not block these repairs; do not add an external configuration surface.
 
 1. Validate repeated reported reasoning settings before many-to-one normalization. Item-terminal equality is not evidence that created/in-progress/terminal settings agree.
 2. Extend non-identity calibration to ordered configuration items only with native snapshot validation before normalization. Until then, reject non-identity or undeclared entries rather than bypass a selected policy.
 3. Propagate selected policy into native request/intake paths only for a concrete binding that needs it.
 
-Exit condition: static/SSE metadata and supported history receive the selected scoped, directional policy without inferring an inverse or fabricating absent reports. Invalid native levels fail trusted validation. Preserve pre-normalization source conflicts, unchanged-source candidate projection and existing lifecycle safety. Use the SDK loopback gate at the boundary milestone; any real acceptance run has a fixed target, request count, cap and timeout.
+Exit condition: static/SSE metadata and supported history receive the selected scoped, directional policy without inferring an inverse or fabricating absent reports. Invalid native levels fail trusted validation. Preserve pre-normalization source conflicts, unchanged-source candidate projection and existing lifecycle safety. Route reconnection is not required to validate these codec boundaries.
 
 ### Support queue after projection repair
 
-Do not start this queue until the repair gate is complete. Before each IR extension, present a minimal counterexample and structural options. An official carrier alone does not activate a binding.
+S3/S4 promote selected existing-IR carriers into the current migration. The remaining queue follows its local repair and contract gates, not successful route reconnection. Before each IR extension, present a minimal counterexample and structural options. An official carrier alone does not activate a binding.
 
-1. Complete existing-IR carriers first: Google structured output, then logprobs; selected Messages strict tools and Chat custom tools/verbosity; explicit cache breakpoints and TTL. Split these into independent contracts rather than a multi-Provider feature batch.
+1. Complete the remaining existing-IR carriers after S3/S4: Chat custom tools and explicit cache breakpoints/TTL. Keep each contract separate; unimplemented output or tool semantics do not become advisory omissions.
 2. Add missing generation controls: `top_k`, then stopping sequences with honest stop reporting, then penalties/seed. Treat `logit_bias` token identities as model-dependent; do not forward them blindly across tokenizers.
 3. Design execution-policy semantics separately: service tiers, native cache resources/prewarming and safety settings. Preserve native distinctions; equal names do not establish equivalent billing, capacity or safety behavior. `max_tokens: 0` prewarming is not ordinary zero-length generation.
 4. Continue the existing tool-discovery and `web_search` sequence below, preserving their relative order. Other hosted tools, Messages citations, generated media, multi-candidate execution and file services retain their deferred boundaries.
@@ -148,12 +264,12 @@ IR completeness does not mean every upstream can carry every modality. Protocol-
 
 ## Planned order
 
-1. **Generation IR completeness.** Repair existing projections first, complete the support queue, then continue the selected tool slices. Keep deferred concepts explicit rather than claiming full API coverage or expanding frozen tasks.
+1. **Generation IR completeness.** Execute S1–S7 under the temporary routing freeze, complete the remaining support queue, then continue the selected tool slices. Keep deferred concepts explicit; a disconnected client loop does not invalidate correct IR/codec work.
 2. **Coverage improvement.** Start the coverage pass only after IR completeness. Keep focused regressions and safety invariants throughout implementation.
 3. **Failover.** The feature remains in early design. Its priority is undecided, lowest for now; design, implementation improvement and real acceptance follow the second stage.
 4. **Other agent acceptance.** Codex, Claude Code and other agents follow failover. Their priority is undecided, lowest for now.
 
-The next Generation slices belong to the first stage. The optional delivery-maintenance slice above may proceed independently without changing these stage dependencies. This plan does not start deferred acceptance runs; each later stage stays deferred until scheduled.
+The next Generation slices belong to the first stage. Optional delivery maintenance remains separate. Route reconnection needs an explicitly scheduled boundary review; it does not authorize redesigning failover during this migration. This plan does not start deferred acceptance runs.
 
 ## Target clients
 
@@ -214,6 +330,19 @@ Real failover needs a controlled failure source, such as an exhausted key in a s
 - An opt-in first-content timeout.
 
 ## Pending decisions
+
+The direction and verbosity omission are selected, but the following concrete policies are not. Continue independent slices; ask only for the decision that blocks the next affected contract. Existing rejection is a temporary fallback, not a claim that faithful conversion is impossible.
+
+| Question | Unresolved choice and recommendation | Blocks |
+|---|---|---|
+| P1: Cross-scope effort | Select source/target scope pairs, exact model-local levels and behavior of unmapped values. Recommended: trusted directional approximation with explicit loss; no blanket same-label conversion, inferred inverse or implicit identity. The current same-scope table alone is insufficient | S5 cross-scope rules and related S6 reports/history |
+| P2: Disabled plus response-wide effort | A target may carry off but not independent response effort. Recommended: preserve explicit off and omit only the unrepresentable effort with a named loss; alternative: reject the combination. A target with no off carrier still cannot silently enable reasoning | S5 activation/effort conflicts |
+| P3: Numeric thinking guidance | Determine source guidance versus hard-limit semantics and eligible target allocation modes. Recommended: allow a specifically declared guidance-to-adaptive migration, with numeric intent retained in source IR; otherwise reject. No generic token thresholds or automatic budget-to-level table | S5 budget/allocation rules |
+| P4: Sampling and model-effective controls | Identify supported, fixed and ignored controls per selected target. Recommended: preserve supported controls; omit only under an explicit model policy when they are fixed/ignored. Decide separately whether unknown quality impact should permit omission | S5 sampling rules; not ordinary exact sampling carriers |
+| P5: Required versus incidental output evidence | Decide treatment of requested logprobs/citations, unsolicited annotations and settings echoes, including how requirement is established. Recommended: preserve explicitly required evidence; allow selected incidental report losses after source validation. Never omit content, falsify usage or fabricate terminal reasons | S6 optional reports; does not reopen deferred Messages citations |
+| P6: Diagnostic detail and durability | Select safe enum/numeric before/after fields, unknown-name handling and whether recording must succeed. Recommended: typed allowlisted summaries, counts for arbitrary unknown fields, bounded best-effort logs without bodies; a mandatory durable audit would be a separate availability decision | S7 final schema/behavior; S2 can return a body-free typed receipt |
+| P7: Public capability publication and reconnection | Decide how the future public surface distinguishes native fidelity from accepted-with-loss controls and whether clients receive warnings. Recommended: no false native support claim, no per-request policy override in this slice. Current route/admission incompatibilities stay blocked until a separate integration decision | Route-facing publication and full-chain acceptance, not local IR/codec work |
+| P8: Existing loss rules with quality impact | Review default-strict-as-plain, reasoning-context omission, display suppression, developer-to-system and media-detail loss individually. Recommended: preserve explicit constraints and visibility intent, use faithful carriers first, and retain a legacy approximation only after its consequences are selected. Existing code is not evidence of equivalence | Affected S4–S6 rules only |
 
 | Question | Current behavior | Options |
 |---|---|---|

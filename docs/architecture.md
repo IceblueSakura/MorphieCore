@@ -72,7 +72,7 @@ Execution is typed dataflow coordinated by scoped state machines. Semantic reduc
 
 The IR is neither a protocol DTO nor a union of vendor fields.
 
-Generation semantics come from the official OpenAI, Anthropic and Google APIs. One official API is enough to justify a concept; a target without its carrier rejects it. Provider dialects and explicitly chosen adaptations belong to protocol codecs and projection rules, not the semantic types. Reasoning activation, numeric budgets and qualitative effort are not interchangeable. Realtime and standalone tasks do not determine Generation completeness.
+Generation semantics come from the official OpenAI, Anthropic and Google APIs. One official API is enough to justify a concept. Preserve its meaning in the IR even when a target needs a declared lossy projection; reject losses of protected semantics or cases without an approved adaptation. Provider dialects and adaptation policies belong to protocol codecs, not semantic types. Reasoning activation, numeric budgets and qualitative effort are not interchangeable. Realtime and standalone tasks do not determine Generation completeness.
 
 - **Ordered items:** instructions, messages, tool calls/results, reasoning, compaction and Provider tool observations share one ordered history. A message is one container, not the whole conversation.
 - **Explicit links:** calls and results link by call ID, never position or name. Item IDs, part IDs, wire IDs and stream indexes remain distinct.
@@ -90,6 +90,33 @@ Clients may resend full history or use [gateway-managed Responses history](#stat
 When a concept cannot be expressed, show a minimal counterexample and structural options before changing the IR. Do not hide it in private adapter fields.
 
 ## Adaptation
+
+### Accurate IR and declared loss
+
+The selected policy favors useful conversion over exact wire correspondence. Preserve source intent and observed facts in the IR; prefer an exact target carrier, then an explicitly approved omission or approximation on a target-private copy. Missing fidelity alone need not reject a request. This is the migration contract, not a claim that current codecs implement every rule; see the [implementation plan](roadmap.md#ir-and-codec-migration).
+
+Classify losses by their effect on task constraints, output quality, execution and security, not by whether a field is optional in an SDK. A verbosity preference may be omitted when no target carrier exists. A required output schema, tool selection, call/result link, content item or honest terminal cannot be discarded merely to complete a request. Billing, storage and disclosure controls also need an explicit policy even when they do not change answer quality.
+
+| Treatment | Contract |
+|---|---|
+| Exact representation | Preserve meaning; check source conflicts before alias normalization |
+| Advisory loss | Omit a selected preference or optimization through a named rule; verbosity omission is selected, other fields need individual classification |
+| Behavioral approximation | Use a trusted directional rule for the selected target, recording the changed control; concrete effort, budget and sampling policies remain explicit decisions |
+| Protected meaning | Preserve task content, constraints, execution identity, security boundaries and result truth; reject when no faithful carrier exists |
+
+Decode according to the source protocol before target projection. Known types, variants and relations remain strict even when a later target may omit the field. A known but unsupported critical field is not an unknown field. A target profile's restriction must not prevent the client decoder from expressing a valid source concept already supported by the IR.
+
+Keep source validation, acceptance with approved adaptation, and faithful target support distinct. Project before checking the final target representation; do not advertise an omitted feature as native support. Capability assessment belongs to IR/codec contracts, not to a new route-ranking or fallback policy. The [temporary routing freeze](roadmap.md#temporary-routing-freeze) permits integration to remain disconnected while these contracts change.
+
+Request controls, upstream-reported settings and downstream delivery have different authority. Sent controls do not prove effective settings. A response-only echo can be omitted under a selected delivery rule without discarding generated content; validate source facts and repeated snapshots before that omission. JSON, SSE and retained delivered history must agree on the applied loss.
+
+### Adaptation evidence
+
+Every selected loss produces bounded typed evidence with a stable rule, direction, semantic field category and action. Safe control summaries may show input/output enum values and presence; numeric fields need an explicit allowlist. Keep request intent, sent controls, upstream reports and delivered facts distinguishable. Evidence cannot restore omitted values, change semantic meaning or select an upstream.
+
+Reuse the existing diagnostics and protocol projection records rather than add a logging platform or a generic rule engine. Record losses once per affected control or aggregate repeated event occurrences within existing budgets. Do not serialize bodies, prompts, tool arguments, schemas, URLs, credentials or opaque replay values. Arbitrary input strings and unknown field names are not automatically safe diagnostic labels.
+
+The exact diagnostic schema and whether durable recording is required remain [pending decisions](roadmap.md#pending-decisions). Current diagnostics are optional and best-effort; adding evidence alone does not establish durable logging or authorize changing that availability contract.
 
 ### Protocol baselines and Provider dialects
 
@@ -120,15 +147,15 @@ Activation distinguishes disabled from enabled reasoning; enabled permits reason
 
 Disabled activation plus response-wide high effort is valid IR. Disabled activation plus a positive reasoning-only effort, adaptive/budgeted allocation or numeric thinking budget is contradictory. Standard/pro execution mode is not an activation switch; validate its combinations against the target contract rather than banning it solely because reasoning is disabled. Validate official wire variants separately before constructing this contract.
 
-OpenAI non-off effort and Google levels have reasoning scope. Anthropic `output_config.effort` has response scope and must not change reasoning-object presence by itself. Target codecs preserve that scope or reject it; a level calibration cannot silently broaden reasoning-only intent to response-wide effort. This makes some formerly approximate cross-protocol requests unrepresentable until a faithful declared carrier exists.
+OpenAI non-off effort and Google levels have reasoning scope. Anthropic `output_config.effort` has response scope and must not change reasoning-object presence by itself. Preserve source scope in the IR. A target-private cross-scope approximation needs its own directional policy and loss evidence; equal level labels are not an equivalence. Current codecs reject that projection until a concrete policy is selected and implemented.
 
 Requirements and target contracts must distinguish response-wide effort from reasoning support. Reported settings use the same scoped types without acquiring request intent that was not reported. No Provider identifiers or mapping tables enter semantic types, and no compatibility-only effort field survives the migration.
 
 ### Reasoning level calibration
 
-Reject a candidate that cannot represent the requested reasoning semantics. The exception is an explicit, hand-authored level mapping for the same model, scoped by trusted binding/dialect selection. Numeric budgets and off controls are not converted to positive levels.
+The existing level interface performs explicit, hand-authored calibration for the same model under trusted binding/dialect selection. It is not a universal adapter for all reasoning controls. The new loss policy permits separately selected approximations, but their concrete scope, activation and budget behavior remains in the [decision queue](roadmap.md#pending-decisions). Until resolved, unsupported combinations keep their current rejection.
 
-Different Providers may expose different labels for one model. A selected rule may map `low` to `medium`, for example. Without a declared rule, neither a nearest-level heuristic nor matching label spelling establishes equivalence. This exception does not authorize converting disabled reasoning into enabled reasoning or replacing a numeric budget with an effort level.
+Different Providers may expose different labels for one model. A selected rule may map `low` to `medium`, for example. Without a declared rule, neither a nearest-level heuristic nor matching label spelling establishes equivalence. Calibration cannot turn disabled reasoning on or infer a positive level from a numeric budget. Any selected budget-to-adaptive migration is a distinct behavioral loss, not a level-table entry.
 
 Encode and decode mappings are directional. A many-to-one encode mapping has no automatic inverse; normalization of an upstream report needs its own explicit rule. Preserve request intent and reported effective settings separately, never synthesizing a reported setting from the request. Apply each mapping once at its boundary, record its named provenance, and validate the result against the target contract.
 
@@ -156,7 +183,7 @@ Activation is outside the positive-level table, so a table cannot turn off into 
 
 Selected policies currently calibrate settings. Ordered configuration items must declare an identity in the selected direction; a non-identity projection is rejected until native snapshot conflicts can be checked before normalization. Always-reasoning bindings also reject disabled configuration history. A settings policy must not silently bypass historical native-level admission.
 
-Validate duplicate keys, output levels, effort scope and binding identity when compiling topology. Preflight and preparation each project afresh from unchanged input through the same pure path; they need not share a mutable adapted request. Calibration precedes the final supported-level check, but cannot bypass mode, budget, semantic or scope validation.
+Validate duplicate keys, output levels, effort scope and binding identity at the trusted target boundary. Existing topology compilation also checks these declarations; its policy is frozen for this migration. Preflight and preparation project afresh from unchanged input through the same pure codec path when connected. Calibration precedes the final supported-level check, but cannot bypass source validation or final target restrictions.
 
 Validate native types, alias conflicts and source-snapshot consistency before a many-to-one normalization can hide a disagreement. Normalize only fields actually reported. Static and streamed metadata use the same rule, and downstream delivery does not reapply the source Provider's encode map. Comparing repeated reported reasoning settings before normalization remains a [boundary repair](roadmap.md#reasoning-repair-slices), not a guarantee supplied by item-snapshot checks.
 
@@ -180,12 +207,12 @@ Keep [candidate preflight](../src/execution/plan.rs) and transport free of mappi
 | Class | Handling |
 |---|---|
 | Must preserve | Preserve instructions, order, tools, arguments, call/result links, required continuations, stop reasons and core usage; reject an unrepresentable target |
-| Degradable | Apply a named rule to the candidate copy and record it; never silently patch the source |
+| Degradable | Apply an approved advisory omission or behavioral approximation to a target-private copy and record it; never silently patch the source |
 | Unknown | Ignore unregistered protocol fields; keep known fields strict and never forward unknown input |
 
 Upstream responses are strict on known types, values and relations. Unknown fields are ignored. Unknown Responses event types are skipped and counted; registered content and terminal events remain strict.
 
-Downstream generation requests ignore unregistered fields and record bounded field names, never values. Unknown content or role discriminators are rejected because ignoring them would lose content. Critical known semantics that a target cannot express return an error. Trusted configuration and frozen-task requests stay closed.
+Downstream generation requests currently ignore unregistered fields and record bounded field names, never values; the diagnostic migration will review those labels against the evidence policy above. Unknown content or role discriminators are rejected because ignoring them would lose content. Protected known semantics that a target cannot express return an error. Trusted configuration and frozen-task requests stay closed.
 
 Parsing direction is explicit: client input, upstream reports and encoder checks have different policies. Nested parsing inherits that direction; no ambient or thread-local policy is used.
 
@@ -383,6 +410,8 @@ Native requests preserve thinking, tool-use/result order and call IDs. Messages 
 
 ### Request rules
 
+These describe current native behavior, not completion of the [loss-policy migration](roadmap.md#ir-and-codec-migration). In particular, scope rejection, sampling omission and default-strict projection require the planned review.
+
 - Disabled and adaptive activation have distinct carriers. This selected profile rejects numeric thinking budgets instead of replacing them with effort.
 - Response-wide effort maps to `output_config.effort` independently of thinking. Reasoning-only effort is rejected, not broadened to response-wide effort.
 - Summary intent maps to summarized or omitted display only with a representable activation/allocation. Display alone does not enable thinking. Unsupported reasoning context and sampling controls still have named projection rules.
@@ -453,12 +482,14 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Official Generation vocabulary | OpenAI, Anthropic and Google define semantic concepts; dialect carriers and approximation policies stay in protocol modules. Semantic expression, codec support and activated bindings are separate claims |
 | Two codec responsibilities | Normalize Provider dialects into an official API baseline plus declared extensions before semantic decoding; encode in reverse before serialization. Semantic extensions enter IR; eligible non-semantic fidelity stays scoped outside it |
 | Independent activation and scoped effort | Activation belongs to reasoning; a single scoped effort control belongs to generation settings. Response-wide effort is not reasoning-only effort, and off is not a positive level |
-| Explicit same-model level calibration | Reject unrepresentable reasoning except for hand-authored, trusted, directional level mappings for the same model. No automatic nearest-level conversion, inverse mapping, off-to-on conversion or budget-to-level substitution |
-| Equal downstream contracts | Chat Completions, Responses and Messages receive equal consideration for static delivery, streaming and history replay; a missing carrier requires explicit rejection |
+| Accurate IR with declared lossy projection | Prefer exact carriers, permit approved advisory omissions and behavioral approximations, and reject loss of protected meaning. Preserve the source and record target-local changes; implementation follows the roadmap |
+| Explicit same-model level calibration | Hand-authored directional level mappings remain distinct from scope or allocation approximation. No automatic nearest-level conversion, inverse mapping, off-to-on conversion or budget-to-level substitution |
+| Equal downstream contracts | Chat Completions, Responses and Messages receive equal consideration for static delivery, streaming and history replay; a missing carrier needs an approved projection or explicit rejection |
 | Separate task contracts | Generation, Embeddings, Images, Speech and Transcription are not one universal message type |
 | Pure protocol boundaries | Encode from final typed input; no network in codecs or post-encoding JSON patches |
 | Functional ownership | Keep root layers; organize internals by domain, without compatibility aliases or plugin frameworks |
-| Layered capabilities | Public promises are not the union of candidate features |
+| Layered capabilities | Source validity, acceptance through approved adaptation and faithful target support are distinct. Do not advertise lossy acceptance as native support or infer public promises from a union of candidates |
+| Temporary routing freeze | The current IR/codec migration does not redesign routing, affinity, candidate policy or failover. IR/codec correctness takes priority over preserving the complete client–gateway–Provider chain; incompatible integration stays explicitly blocked |
 | Shared model identities across protocols | Compatible API-key, OAuth and native Messages bindings share one public model and ordered route. Endpoint protocols and credential domains stay distinct; narrower candidates reject requests they cannot represent |
 | SIWC cross-Provider fallback | A mixed route may contain one SIWC endpoint and advance to another Provider before publication within the route budget. SIWC pools remain single-account with no credential fallback; standalone SIWC routes remain single-attempt with fallback disabled |
 | Case-sensitive model labels | Public IDs may preserve upstream ASCII capitalization, but resolve only registered routes. Provider prefixes remain rejected; Provider, endpoint and route IDs keep their lowercase grammar |
@@ -469,7 +500,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Dataflow and scoped state | Typed stages have separate semantic, protocol, attempt and delivery authorities; optional stages do not introduce a generic pipeline framework |
 | Delta coalescing (planned) | Optional, disabled-by-default delivery optimization after client projection and before encoding. Final-only clients retain existing materialization; original intake validation and publication safety remain authoritative |
 | Typed startup activation | One `TaskEntries` input selects Generation and each standalone task explicitly. Empty lists activate nothing; embedding does not discover catalogs, credentials or environment proxies |
-| Official intake fields | Pinned client request fields are carried, ignored by name or rejected. Fields that change model input, tools, the output contract or the output cap are never ignored; execution, billing, telemetry, cache and sampling preferences may be |
+| Official intake fields | Decode registered source semantics accurately. Unsupported preferences need selected omission rules; critical content and execution intent cannot masquerade as unknown fields. Optionality alone does not authorize dropping billing, storage or quality controls |
 | Append-only history projection | Earlier content does not change when a later turn is added |
 | Reported tool results | Responses carries function/custom results in static output and item snapshots. Missing call references stay unreported; request history still requires matching preceding calls. Chat and Messages reject ordinary tool results as assistant output, not their supported history forms |
 | Scoped opaque replay | Restore only compatible native values; foreign readable reasoning becomes text |
@@ -485,7 +516,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Independent CLI paths | Default configuration lives in the home-relative application directory, with credentials in its `credentials` child. Explicit config and credential paths override independently; no legacy path discovery or automatic migration |
 | Agent-sized bounds | Bodies, IR budgets and deadlines fit whole-history agent sessions and long turns: tens of MiB and one hour per exchange. Upstreams enforce their own maxima |
 | Inert, credential-free media | Inline data or URLs only; no gateway fetch or file service, and no client-supplied Provider file references |
-| Standard carriers only | A target without a standard carrier for a semantic rejects it. The gateway does not move content to another role or add model-visible text to make it fit; for example, Chat targets reject tool-result media |
+| Target carriers and protected content | Use official carriers or declared extensions when available; approved losses cover selected preferences, not missing task content. Do not add model-visible text, invent roles or drop media merely to make a target accept the request |
 | Target-local image restrictions | Formats, encoded sizes, counts and unavailable per-use options are checked or projected at the protocol boundary, not encoded as Provider-specific IR fields |
 | Envelopes as grouping | Ordered message envelopes are the only IR grouping. Chat's call ownership is a view derived in the OpenAI codec, which also enforces Chat-only rules such as no calls on a refusal |
 | Schemas as data | The IR keeps any bounded JSON-object schema an official API accepts. The OpenAI strict subset is checked only for OpenAI targets. An unnamed output schema (Messages) gets the fixed name `response` only on OpenAI targets, which require one |
