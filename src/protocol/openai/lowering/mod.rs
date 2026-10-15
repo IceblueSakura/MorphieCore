@@ -84,7 +84,7 @@ pub fn lower_request<'a>(
     {
         return Err(RepresentationError::Terminal);
     }
-    if profile == Profile::Chat && (q.truncation || !r.text_options().verbosity.is_absent()) {
+    if profile == Profile::Chat && q.truncation {
         return Err(RepresentationError::UnmigratedSemantic);
     }
     if profile == Profile::Chat

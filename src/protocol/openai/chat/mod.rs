@@ -557,6 +557,18 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     if let Some(n) = target.semantic.controls().top_logprobs {
         o.insert("top_logprobs".into(), json!(n));
     }
+    put_presence(
+        o,
+        "verbosity",
+        &target.semantic.text_options().verbosity,
+        |v| {
+            json!(match v {
+                Verbosity::Low => "low",
+                Verbosity::Medium => "medium",
+                Verbosity::High => "high",
+            })
+        },
+    );
     match &target.semantic.text_options().format {
         crate::semantic::value::Presence::Absent => {}
         crate::semantic::value::Presence::Null => {

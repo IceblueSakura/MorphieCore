@@ -14,6 +14,8 @@ pub(super) fn unsupported() -> CodecError {
 /// Named degradable rules applied to one candidate's request copy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum RequestRule {
+    OmitVerbosity,
+    Cache(crate::protocol::cache::CacheRule),
     /// Gemini has one summary form, without concise or detailed variants.
     SummarizeReasoning,
     OmitReasoningContext,
@@ -36,6 +38,8 @@ pub enum RequestRule {
 impl RequestRule {
     pub const fn name(self) -> &'static str {
         match self {
+            Self::OmitVerbosity => "gemini.omit-verbosity.v1",
+            Self::Cache(rule) => rule.name(),
             Self::SummarizeReasoning => "gemini.summarize-reasoning.v1",
             Self::OmitReasoningContext => "gemini.omit-reasoning-context.v1",
             Self::OmitForeignReplay => "gemini.omit-foreign-replay.v1",
@@ -59,13 +63,19 @@ pub(super) fn project(
     if s.controls.top_logprobs.is_some()
         || !s.controls.logprobs.is_absent()
         || s.controls.truncation.is_some()
-        || s.text != TextOptions::default()
         || !s.output_modalities.is_absent()
         || !s.audio.is_absent()
         || s.parallel_tool_calls == Some(false)
         || fidelity.has_strict_image_sizes(request.items())
     {
         return Err(unsupported());
+    }
+    match &s.text.format {
+        Presence::Absent | Presence::Value(OutputConstraint::Text) => {}
+        _ => return Err(unsupported()),
+    }
+    if !s.text.verbosity.is_absent() {
+        rules.insert(RequestRule::OmitVerbosity);
     }
     let mut body = Map::new();
     let mut system = match &s.instructions {

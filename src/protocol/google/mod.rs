@@ -129,8 +129,19 @@ impl TargetCaps {
         let foreign = stripped.is_some();
         let request = stripped.as_ref().unwrap_or(request);
         let cache_key = self.check_context(request)?;
-        request.check_semantic(&self.semantics)?;
-        request.check_semantic(&semantic_contract())?;
+        let mut admission = request.clone();
+        let mut settings = admission.task.semantic.settings().clone();
+        settings.text.verbosity = Presence::Absent;
+        if settings.text.format.is_absent() {
+            settings.text.presence = false;
+        }
+        admission.task.semantic = admission
+            .task
+            .semantic
+            .with_settings(settings)
+            .map_err(CodecError::from)?;
+        admission.check_semantic(&self.semantics)?;
+        admission.check_semantic(&semantic_contract())?;
         let semantic = &request.task.semantic;
         let mut settings = semantic.settings().clone();
         // Include selects the downstream opaque carrier, not a native control.
@@ -147,6 +158,12 @@ impl TargetCaps {
         if cache_key {
             rules.push(RequestRule::OmitCacheKey);
         }
+        rules.extend(
+            self.cache
+                .losses(&request.context)
+                .into_iter()
+                .map(RequestRule::Cache),
+        );
         rules.sort();
         rules.dedup();
         Ok((wire, rules.iter().map(|r| r.name()).collect()))

@@ -893,7 +893,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
     assert_eq!(seen.lock().unwrap().len(), 56);
     diagnostic_owner.flush_diagnostics().await;
     let records = std::fs::read_to_string(&diagnostics).unwrap();
-    assert!(records.contains(r#""request_rules":["messages.omit-sampling.v1"]"#));
+    assert!(records.contains(r#""request_rules":["cache.omit-key.v1","cache.omit-retention.v1","messages.omit-sampling.v1"]"#));
     assert!(records.contains(r#""ignored_request_fields":["client_metadata"]"#));
     // Native adaptive intent stays adaptive, without a numeric-budget approximation.
     assert!(!records.contains("messages.budget-as-effort.v1"));

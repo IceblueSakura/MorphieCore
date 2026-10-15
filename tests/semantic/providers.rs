@@ -1625,11 +1625,26 @@ mod cache_projection {
             .decode_request(empty.to_string().as_bytes())
             .unwrap();
         let saved = decoded.context.clone();
-        let without_options = Adapter::new(Profile::Chat, Dialect::DeepSeek, None)
-            .encode_request(&decoded, "upstream", &Contract::full())
+        let (without_options, rules) = Adapter::new(Profile::Chat, Dialect::DeepSeek, None)
+            .encode_request_with_rules(&decoded, "upstream", &Contract::full())
             .unwrap();
         assert!(without_options.get("prompt_cache_options").is_none());
+        assert!(rules.contains(&"cache.omit-inactive-options.v1"));
         assert_eq!(decoded.context, saved);
+        let mut advisory = decoded.clone();
+        advisory.context.cache.prompt_cache_key =
+            morphiecore::semantic::value::Presence::Value("synthetic".into());
+        advisory.context.cache.prompt_cache_retention =
+            morphiecore::semantic::value::Presence::Value(
+                morphiecore::semantic::context::CacheRetention::Day,
+            );
+        let (wire, rules) = Adapter::new(Profile::Chat, Dialect::DeepSeek, None)
+            .encode_request_with_rules(&advisory, "upstream", &Contract::full())
+            .unwrap();
+        assert!(wire.get("prompt_cache_key").is_none());
+        assert!(wire.get("prompt_cache_retention").is_none());
+        assert!(rules.contains(&"cache.omit-key.v1"));
+        assert!(rules.contains(&"cache.omit-retention.v1"));
         empty["prompt_cache_options"] = json!({"mode":"explicit"});
         let active = client(Profile::Chat)
             .decode_request(empty.to_string().as_bytes())

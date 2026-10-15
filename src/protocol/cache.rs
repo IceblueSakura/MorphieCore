@@ -39,7 +39,43 @@ pub struct CacheProjection {
     pub options: bool,
     pub session_id: bool,
 }
+/// Fixed field labels only; cache values and caller identifiers stay private.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum CacheRule {
+    OmitKey,
+    OmitRetention,
+    OmitInactiveOptions,
+}
+impl CacheRule {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::OmitKey => "cache.omit-key.v1",
+            Self::OmitRetention => "cache.omit-retention.v1",
+            Self::OmitInactiveOptions => "cache.omit-inactive-options.v1",
+        }
+    }
+}
 impl CacheProjection {
+    /// Call only after successful projection; active options still reject.
+    pub fn losses(self, context: &ExecutionHints) -> Vec<CacheRule> {
+        [
+            (
+                !self.key && !context.cache.prompt_cache_key.is_absent(),
+                CacheRule::OmitKey,
+            ),
+            (
+                !self.retention && !context.cache.prompt_cache_retention.is_absent(),
+                CacheRule::OmitRetention,
+            ),
+            (
+                !self.options && !context.cache.prompt_cache_options.is_absent(),
+                CacheRule::OmitInactiveOptions,
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(lost, rule)| lost.then_some(rule))
+        .collect()
+    }
     pub const fn all() -> Self {
         Self {
             key: true,

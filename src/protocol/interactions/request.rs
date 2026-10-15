@@ -11,6 +11,8 @@ use std::collections::BTreeSet;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum RequestRule {
+    OmitVerbosity,
+    Cache(crate::protocol::cache::CacheRule),
     SummarizeReasoning,
     OmitReasoningContext,
     OmitForeignReplay,
@@ -24,6 +26,8 @@ pub enum RequestRule {
 impl RequestRule {
     pub const fn name(self) -> &'static str {
         match self {
+            Self::OmitVerbosity => "interactions.omit-verbosity.v1",
+            Self::Cache(rule) => rule.name(),
             Self::SummarizeReasoning => "interactions.summarize-reasoning.v1",
             Self::OmitReasoningContext => "interactions.omit-reasoning-context.v1",
             Self::OmitForeignReplay => "interactions.omit-foreign-replay.v1",
@@ -49,13 +53,19 @@ pub(super) fn project(
     if s.controls.top_logprobs.is_some()
         || !s.controls.logprobs.is_absent()
         || s.controls.truncation.is_some()
-        || s.text != TextOptions::default()
         || !s.output_modalities.is_absent()
         || !s.audio.is_absent()
         || s.parallel_tool_calls == Some(false)
         || fidelity.has_strict_image_sizes(request.items())
     {
         return Err(unsupported());
+    }
+    match &s.text.format {
+        Presence::Absent | Presence::Value(OutputConstraint::Text) => {}
+        _ => return Err(unsupported()),
+    }
+    if !s.text.verbosity.is_absent() {
+        rules.insert(RequestRule::OmitVerbosity);
     }
     let mut body = Map::new();
     body.insert("model".into(), target.model().into());

@@ -120,6 +120,12 @@ impl TargetCaps {
         if foreign {
             projection.rules.push(RequestRule::OmitForeignReplay);
         }
+        projection.rules.extend(
+            self.cache
+                .losses(&request.context)
+                .into_iter()
+                .map(RequestRule::Cache),
+        );
         projection.rules.sort();
         Ok(projection)
     }

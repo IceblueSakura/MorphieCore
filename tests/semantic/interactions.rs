@@ -270,6 +270,34 @@ fn projects_stateless_steps_tools_and_controls() {
 
 #[test]
 fn rejects_unrepresentable_critical_tool_semantics() {
+    let advisory = Adapter::new(Profile::Responses, Dialect::Standard, None)
+        .decode_request(
+            br#"{"model":"public","input":"Read.","text":{"format":{"type":"text"},"verbosity":"low"}}"#,
+        )
+        .unwrap();
+    let target = ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap();
+    let (wire, rules) =
+        encode_generation_request(&advisory.task.semantic, &advisory.task.fidelity, &target)
+            .unwrap();
+    assert!(wire.get("response_format").is_none());
+    assert_eq!(
+        rules.iter().map(|r| r.name()).collect::<Vec<_>>(),
+        ["interactions.omit-verbosity.v1"]
+    );
+    assert_eq!(
+        advisory.task.semantic.text_options().verbosity,
+        morphiecore::semantic::value::Presence::Value(Verbosity::Low)
+    );
+    let mut settings = advisory.task.semantic.settings().clone();
+    settings.text.format =
+        morphiecore::semantic::value::Presence::Value(OutputConstraint::JsonObject);
+    let constrained = advisory
+        .task
+        .semantic
+        .clone()
+        .with_settings(settings)
+        .unwrap();
+    assert!(encode_generation_request(&constrained, &advisory.task.fidelity, &target).is_err());
     let request = Adapter::new(Profile::Responses, Dialect::Standard, None)
         .decode_request(
             json!({

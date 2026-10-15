@@ -30,26 +30,14 @@ P7 keeps routing frozen until the selected Generation IR, codec and protocol-con
 
 This is an implementation plan. Accurate IR, declared loss, verbosity omission and the routing freeze are selected. P1/P2/P4/P5 follow the [recorded architecture decisions](architecture.md#settled-decisions); P3 selects six thinking-budget presets with nearest-token/highest-level-tie quantization, and P3b permits named downward adjustment of conversion-generated budgets. P6 selects configurable business capture with mandatory credential redaction; P7 defers routing until IR/codec/conversion completion. P8 selects summary-granularity and role approximation, and D3 selects named prediction omission. Remaining budget details and P8 rules stay in [Pending decisions](#pending-decisions).
 
-Use the sequence below. Reuse the source-integrity guards, existing Messages verbosity projection and typed control receipts before adding abstractions. S3/S4 do not wait for P3b's remaining adjustment details or P8's remaining rule review; no slice depends on reconnecting the routing layer.
+Use the sequence below. Reuse the source-integrity guards, existing verbosity projections and control receipts before adding abstractions. S4 does not wait for P3b's remaining adjustment details or P8's remaining rule review; no slice depends on reconnecting the routing layer.
 
 | Slice | Dependency | Deliverable |
 |---|---|---|
-| S3: Advisory controls and text carriers | Existing declared-loss contract | Per-field text handling across current protocols; exact carriers used before omission |
 | S4: Existing-IR constrained carriers | Source-integrity guards; existing contract split | Selected schema/tool/output carriers without weakening required semantics |
 | S5: Quality-sensitive approximation | Existing declared-loss contract; declared target data; remaining P3b/P8 details where applicable | Selected scope/allocation/sampling, summary and role policies, not a universal fallback |
-| S6: Reports, SSE and history | Each selected S3–S5 rule | Source facts stay distinct from delivery losses and retained history |
-| S7: Diagnostic and contract closure | S3–S6, excluding explicitly deferred decisions | Bounded end-to-end evidence at codec/delivery boundaries and an explicit integration handoff |
-
-#### S3: Advisory controls and text carriers
-
-Goal: classify fields individually rather than reject a whole options container.
-
-1. Replace whole-`TextOptions` rejection in [generateContent](../src/protocol/google/request.rs) and [Interactions](../src/protocol/interactions/request.rs) with field-specific handling. Allow the selected verbosity omission without erasing `format` or a required schema.
-2. Implement the standard Chat verbosity carrier in [Chat encoding](../src/protocol/openai/chat/mod.rs) and [OpenAI lowering](../src/protocol/openai/lowering/mod.rs). Keep model eligibility separate from protocol grammar.
-3. Normalize empty/plain-text/inactive values only when the source and target semantics establish equivalence. Absence, null and defaults are not globally interchangeable.
-4. Inventory existing advisory cache losses and schema-label changes; make their evidence complete. Keep explicit cache modes, storage, prewarm, service tiers and other execution controls outside the advisory bucket.
-
-Exit: supported fields survive exact encoding, selected unsupported preferences produce named loss, and unsupported constrained output still rejects. Standard carriers are not treated as dialect-only extensions. Malformed known fields remain invalid even if a target would omit them.
+| S6: Reports, SSE and history | Each selected request projection rule | Source facts stay distinct from delivery losses and retained history |
+| S7: Diagnostic and contract closure | S4–S6, excluding explicitly deferred decisions | Bounded end-to-end evidence at codec/delivery boundaries and an explicit integration handoff |
 
 #### S4: Existing-IR constrained carriers
 
@@ -135,9 +123,9 @@ Exit condition: static/SSE metadata and supported history receive the selected s
 
 ### Support queue after projection repair
 
-S3/S4 promote selected existing-IR carriers into the current migration. The remaining queue follows its local repair and contract gates, not successful route reconnection. Before each IR extension, present a minimal counterexample and structural options. An official carrier alone does not activate a binding.
+S4 promotes selected existing-IR carriers into the current migration. The remaining queue follows its local repair and contract gates, not successful route reconnection. Before each IR extension, present a minimal counterexample and structural options. An official carrier alone does not activate a binding.
 
-1. Complete the remaining existing-IR carriers after S3/S4: Chat custom tools and explicit cache breakpoints/TTL. Keep each contract separate; unimplemented output or tool semantics do not become advisory omissions.
+1. Complete the remaining existing-IR carriers after S4: Chat custom tools and explicit cache breakpoints/TTL. Keep each contract separate; unimplemented output or tool semantics do not become advisory omissions.
 2. Add missing generation controls: `top_k`, then stopping sequences with honest stop reporting, then penalties/seed. Treat `logit_bias` token identities as model-dependent; do not forward them blindly across tokenizers.
 3. Design execution-policy semantics separately: service tiers, native cache resources/prewarming and safety settings. Preserve native distinctions; equal names do not establish equivalent billing, capacity or safety behavior. `max_tokens: 0` prewarming is not ordinary zero-length generation.
 
@@ -224,7 +212,7 @@ IR completeness does not mean every upstream can carry every modality. Protocol-
 
 ## Planned order
 
-1. **Generation IR completeness.** Execute the remaining S3–S7 slices under the temporary routing freeze, complete the remaining non-tool support queue, then continue tool discovery and `web_search` in that order. Keep deferred concepts explicit; a disconnected client loop does not invalidate correct IR/codec work.
+1. **Generation IR completeness.** Execute the remaining S4–S7 slices under the temporary routing freeze, complete the remaining non-tool support queue, then continue tool discovery and `web_search` in that order. Keep deferred concepts explicit; a disconnected client loop does not invalidate correct IR/codec work.
 2. **Coverage improvement.** Start the coverage pass only after IR completeness. Keep focused regressions and safety invariants throughout implementation.
 3. **Failover.** The feature remains in early design. Its priority is undecided, lowest for now; design, implementation improvement and real acceptance follow the second stage.
 4. **Other agent acceptance.** Codex, Claude Code and other agents follow failover. Their priority is undecided, lowest for now.

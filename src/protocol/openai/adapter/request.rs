@@ -359,6 +359,13 @@ impl Adapter {
             request.conversation.as_ref(),
             request.inferred_affinity,
         )?;
+        rules.extend(
+            contract
+                .cache
+                .losses(&request.context)
+                .into_iter()
+                .map(|r| r.name()),
+        );
         if !contract.identity_hints
             && (!context.identity.user.is_absent()
                 || !context.identity.safety_identifier.is_absent())

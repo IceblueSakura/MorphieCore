@@ -252,6 +252,25 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
     assert_eq!(body, expected);
     let other = ReplayTarget::new("synthetic-google", "gemini-other").unwrap();
     assert!(encode_generation_request(&request, &observed.fidelity, &other).is_err());
+    let mut settings = request.settings().clone();
+    settings.text = TextOptions {
+        presence: true,
+        format: morphiecore::semantic::value::Presence::Value(OutputConstraint::Text),
+        verbosity: morphiecore::semantic::value::Presence::Value(Verbosity::Low),
+    };
+    let advisory = request.clone().with_settings(settings.clone()).unwrap();
+    let (body, rules) =
+        encode_generation_request(&advisory, &observed.fidelity, &target()).unwrap();
+    assert_eq!(body, expected);
+    assert_eq!(
+        rules.iter().map(|r| r.name()).collect::<Vec<_>>(),
+        ["gemini.omit-verbosity.v1"]
+    );
+    assert_eq!(advisory.settings(), &settings);
+    settings.text.format =
+        morphiecore::semantic::value::Presence::Value(OutputConstraint::JsonObject);
+    let constrained = request.clone().with_settings(settings).unwrap();
+    assert!(encode_generation_request(&constrained, &observed.fidelity, &target()).is_err());
 }
 
 fn client(profile: Profile, body: Value) -> Request {
