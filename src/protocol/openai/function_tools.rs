@@ -181,6 +181,7 @@ pub(super) fn read_tool(
         return Err(CodecError::Unsupported("tool kind".into()));
     }
     let f = if profile == Profile::Chat {
+        reject_chat_orchestration(o)?;
         direction.fields(o, &["type", "function"])?;
         object(o.get("function").ok_or(CodecError::Invalid("function"))?)?
     } else {
@@ -204,7 +205,12 @@ pub(super) fn read_tool(
             ]
         },
     )?;
-    let dispatch = dispatch(f)?;
+    let dispatch = if profile == Profile::Chat {
+        reject_chat_orchestration(f)?;
+        ToolDispatch::default()
+    } else {
+        dispatch(f)?
+    };
     Ok(ToolDefinition::Function(FunctionTool {
         name: text(string(f, "name")?, "function name", 128)?,
         description: f
@@ -221,11 +227,14 @@ pub(super) fn read_tool(
             Some(v) => FunctionStrictness::Explicit(v),
             None => FunctionStrictness::Omitted(strict_default(profile)),
         },
-        output_schema: f
-            .get("output_schema")
-            .filter(|v| !v.is_null())
-            .cloned()
-            .map(Into::into),
+        output_schema: if profile == Profile::Responses {
+            f.get("output_schema")
+                .filter(|v| !v.is_null())
+                .cloned()
+                .map(Into::into)
+        } else {
+            None
+        },
         dispatch,
     }))
 }

@@ -243,6 +243,34 @@ mod tools {
     }
     #[test]
     fn active_tool_dispatch_and_instruction_lifecycle_round_trip_without_chat_projection() {
+        use morphiecore::protocol::openai::{Adapter, Dialect};
+        let adapter = Adapter::new(Profile::Chat, Dialect::MorphieCore, None);
+        let decode = |value: &Value| adapter.decode_client_request(value.to_string().as_bytes());
+        let mut ignored = chat_history();
+        ignored["model"] = json!("m");
+        let original = decode(&ignored).unwrap();
+        ignored["tools"][0]["function"]["output_schema"] = json!({"type":"string"});
+        ignored["messages"][1]["tool_calls"][0]["status"] = json!("in_progress");
+        assert_eq!(decode(&ignored).unwrap().task, original.task);
+        for key in ["async", "defer_loading", "allowed_callers"] {
+            let mut active = ignored.clone();
+            active["tools"][0]["function"][key] = if key == "allowed_callers" {
+                json!(["programmatic"])
+            } else {
+                json!(true)
+            };
+            assert!(decode(&active).is_err(), "{key}");
+        }
+        let mut legacy = ignored.clone();
+        legacy["messages"][1]["function_call"] = json!({"name":"lookup","arguments":"{}"});
+        assert!(decode(&legacy).is_err());
+        let mut caller = ignored.clone();
+        caller["messages"][1]["tool_calls"][0]["caller"] =
+            json!({"type":"program","caller_id":"p"});
+        assert!(decode(&caller).is_err());
+        let mut audio = ignored;
+        audio["messages"][0]["audio"] = json!({"id":"a"});
+        assert!(decode(&audio).is_err());
         let source = json!({"input":[
         {"type":"message","id":"ins","role":"developer","status":"in_progress","content":"hold"},
         {"type":"function_call","call_id":"c","name":"lookup","arguments":"{}","namespace":"pkg","async":true,"caller":{"type":"program","caller_id":"prog"}}

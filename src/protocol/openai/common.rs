@@ -275,6 +275,21 @@ pub(super) fn strict_default(profile: Profile) -> StrictDefault {
         Profile::Responses => StrictDefault::NormalizeSchema,
     }
 }
+pub(super) fn reject_chat_orchestration(o: &Map<String, Value>) -> Result<(), CodecError> {
+    if let Some(key) = [
+        "async",
+        "defer_loading",
+        "allowed_callers",
+        "caller",
+        "namespace",
+    ]
+    .into_iter()
+    .find(|key| o.get(*key).is_some_and(|v| !v.is_null()))
+    {
+        return Err(CodecError::Unsupported(key.into()));
+    }
+    Ok(())
+}
 pub(super) fn tool_call(
     o: &Map<String, Value>,
     profile: Profile,
@@ -284,11 +299,13 @@ pub(super) fn tool_call(
 ) -> Result<ToolCall, CodecError> {
     let (f, id) = match profile {
         Profile::Chat => {
+            reject_chat_orchestration(o)?;
             direction.fields(o, &["id", "type", "function", "index"])?;
             if string(o, "type")? != "function" {
                 return Err(CodecError::Unsupported("tool kind".into()));
             }
             let f = object(o.get("function").ok_or(CodecError::Invalid("function"))?)?;
+            reject_chat_orchestration(f)?;
             direction.fields(
                 f,
                 if replay {
@@ -337,14 +354,16 @@ pub(super) fn tool_call(
     };
     // The pinned SDK derives this view from the authoritative raw arguments; wire
     // positions never carry it and history replay drops it after validation.
-    admit_parsed(
-        "parsed_arguments",
-        f.get("parsed_arguments"),
-        Some(string(f, "arguments")?),
-    )?;
+    if replay {
+        admit_parsed(
+            "parsed_arguments",
+            f.get("parsed_arguments"),
+            Some(string(f, "arguments")?),
+        )?;
+    }
     // Function-call status is optional/nullable, unlike complete message status.
     // https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/responses/response_function_tool_call.py
-    let status = if o.get("status").is_some_and(Value::is_null) {
+    let status = if profile == Profile::Chat || o.get("status").is_some_and(Value::is_null) {
         ItemLifecycle::Completed
     } else {
         crate::protocol::openai::responses::status(o, ItemLifecycle::Completed)?

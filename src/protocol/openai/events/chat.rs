@@ -50,6 +50,7 @@ impl EventDecoder {
                 if [
                     "refusal",
                     "tool_calls",
+                    "function_call",
                     "reasoning_content",
                     "reasoning",
                     "reasoning_details",
@@ -102,6 +103,10 @@ impl EventDecoder {
         }
         let probabilities = crate::protocol::openai::chat::logprobs::read(choice.get("logprobs"))?;
         let delta = object(choice.get("delta").ok_or(CodecError::Invalid("delta"))?)?;
+        reject_chat_orchestration(delta)?;
+        if delta.get("function_call").is_some_and(|v| !v.is_null()) {
+            return Err(CodecError::Unsupported("legacy function_call".into()));
+        }
         DecodeDirection::Upstream.fields(
             delta,
             &[
@@ -417,6 +422,7 @@ impl EventDecoder {
         if let Some(calls) = delta.get("tool_calls").filter(|v| !v.is_null()) {
             for call in calls.as_array().ok_or(CodecError::Invalid("tool calls"))? {
                 let call = object(call)?;
+                reject_chat_orchestration(call)?;
                 DecodeDirection::Upstream.fields(call, &["index", "id", "type", "function"])?;
                 let n = index(call, "index")?;
                 match call.get("type") {
@@ -429,6 +435,7 @@ impl EventDecoder {
                     None | Some(Value::Null) => &empty,
                     Some(value) => object(value)?,
                 };
+                reject_chat_orchestration(f)?;
                 DecodeDirection::Upstream.fields(f, &["name", "arguments"])?;
                 let established = n < self.chat_calls.len();
                 let item = if n == self.chat_calls.len() {

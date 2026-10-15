@@ -189,6 +189,17 @@ pub(super) fn decode_message(
 ) -> Result<(), CodecError> {
     let direction = b.direction;
     let role = string(m, "role")?;
+    reject_chat_orchestration(m)?;
+    if m.get("function_call").is_some_and(|v| !v.is_null()) {
+        return Err(CodecError::Unsupported("legacy function_call".into()));
+    }
+    if role != "assistant"
+        && ["audio", "annotations", "refusal", "tool_calls"]
+            .iter()
+            .any(|key| m.get(*key).is_some_and(|v| !v.is_null()))
+    {
+        return Err(CodecError::Invalid("assistant-only message content"));
+    }
     // A shared field superset would silently erase assistant-only values on
     // instruction/tool messages. Validate the role's shell before normalization.
     let allowed: &[&str] = match role {

@@ -156,6 +156,11 @@ fn malformed_late_or_unfinished_chat_streams_cannot_recover() {
         b"data: {\"a\":1,\"a\":2}\n\n".to_vec(),
         b"data: invalid\n\n".to_vec(),
         b"event: response.created\ndata: {}\n\n".to_vec(),
+        frame(
+            &json!({"id":"r","object":"chat.completion.chunk","created":1,"model":"m",
+            "choices":[{"index":0,"delta":{"function_call":{"name":"lookup","arguments":"{}"}},
+                "finish_reason":null}]}),
+        ),
     ] {
         let mut d = decoder();
         assert!(d.consume(&bad).is_err());
