@@ -184,7 +184,8 @@ S3/S4 promote selected existing-IR carriers into the current migration. The rema
 1. Complete the remaining existing-IR carriers after S3/S4: Chat custom tools and explicit cache breakpoints/TTL. Keep each contract separate; unimplemented output or tool semantics do not become advisory omissions.
 2. Add missing generation controls: `top_k`, then stopping sequences with honest stop reporting, then penalties/seed. Treat `logit_bias` token identities as model-dependent; do not forward them blindly across tokenizers.
 3. Design execution-policy semantics separately: service tiers, native cache resources/prewarming and safety settings. Preserve native distinctions; equal names do not establish equivalent billing, capacity or safety behavior. `max_tokens: 0` prewarming is not ordinary zero-length generation.
-4. Continue the existing tool-discovery and `web_search` sequence below, preserving their relative order. Other hosted tools, Messages citations, generated media, multi-candidate execution and file services retain their deferred boundaries.
+
+After these non-tool support slices, continue tool discovery and then `web_search` below. Other hosted tools, Messages citations, generated media, multi-candidate execution and file services retain their deferred boundaries.
 
 ### Optional delta coalescing
 
@@ -212,7 +213,7 @@ For each slice, run affected tests before the [full offline baseline](developmen
 
 ### Next Generation slices
 
-These tool slices follow the projection-repair gate and support queue above. Keep their relative order. This is a plan, not an implementation or acceptance result. Show the minimal counterexample and structural options before changing an IR contract.
+These tool slices follow the projection-repair gate and the non-tool support queue above. Keep their relative order. This is a plan, not an implementation or acceptance result. Show the minimal counterexample and structural options before changing an IR contract.
 
 1. **Tool discovery and ordered availability updates.** Complete the semantics and codecs for `tool_search`, its call/output items and `additional_tools`, building on existing deferred-loading and namespace types. Tools discovered later must not be retroactively added to earlier history through top-level settings.
 
@@ -253,7 +254,7 @@ Proposed structure for 1C-a, documents only:
 | Cited source | `Citation.source` becomes `CitationSource::Resource(ResourceId)` or `CitationSource::RequestDocument(ordinal)`. The ordinal counts the request's file uses in order; append-only history keeps it stable |
 | Cited text | `Citation.quote: Option<Text>`, kept exactly |
 | Location | Existing `SourceCoordinates` text, page and block ranges; the claim is `Whole` |
-| Other targets | OpenAI carriers have no request-document citation. Response delivery to OpenAI clients drops it through a named rule; history that carries it is rejected by OpenAI targets, like other unrepresentable annotations |
+| Other targets | OpenAI carriers have no request-document citation. Required citation evidence must survive delivery and history; reject an incompatible target instead of dropping the citation. A named rule alone does not establish permission to omit evidence |
 
 1C-a exit condition: one hand-written Messages oracle each way for a cited PDF (request flag, response page citation, returned history), one streamed `citations_delta`, and an OpenAI target rejecting the flag. A bounded real call must confirm whether documents inside `tool_result` count toward `document_index` before the ordinal rule is final.
 
@@ -267,7 +268,7 @@ IR completeness does not mean every upstream can carry every modality. Protocol-
 
 ## Planned order
 
-1. **Generation IR completeness.** Execute S1–S7 under the temporary routing freeze, complete the remaining support queue, then continue the selected tool slices. Keep deferred concepts explicit; a disconnected client loop does not invalidate correct IR/codec work.
+1. **Generation IR completeness.** Execute S1–S7 under the temporary routing freeze, complete the remaining non-tool support queue, then continue tool discovery and `web_search` in that order. Keep deferred concepts explicit; a disconnected client loop does not invalidate correct IR/codec work.
 2. **Coverage improvement.** Start the coverage pass only after IR completeness. Keep focused regressions and safety invariants throughout implementation.
 3. **Failover.** The feature remains in early design. Its priority is undecided, lowest for now; design, implementation improvement and real acceptance follow the second stage.
 4. **Other agent acceptance.** Codex, Claude Code and other agents follow failover. Their priority is undecided, lowest for now.
