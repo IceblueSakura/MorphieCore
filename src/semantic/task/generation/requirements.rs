@@ -19,6 +19,7 @@ pub struct GenerationRequirements {
     pub custom_tools: bool,
     pub text_metadata: bool,
     pub top_p: bool,
+    pub verbosity: bool,
     /// Requested output probabilities; reported history slots belong to text_metadata.
     pub logprobs: bool,
     pub truncation: bool,
@@ -71,6 +72,7 @@ impl GenerationRequirements {
             instruction_count: usize::from(r.instructions().value().is_some()),
             custom_tools: r.tools().iter().flat_map(crate::semantic::task::generation::ToolDefinition::leaves).any(|t|matches!(t,crate::semantic::task::generation::ToolDefinition::Custom(_))),
             top_p: r.controls().top_p().is_some(),
+            verbosity: !r.text_options().verbosity.is_absent(),
             logprobs: r.controls().logprobs == crate::semantic::value::Presence::Value(true) || r.controls().top_logprobs.is_some(),
             truncation: r.controls().truncation.is_some(),
             strict_function_tools: r.tools().iter().flat_map(crate::semantic::task::generation::ToolDefinition::leaves).any(|t| matches!(t,crate::semantic::task::generation::ToolDefinition::Function(t) if matches!(t.strict,crate::semantic::task::generation::FunctionStrictness::Explicit(true)))),

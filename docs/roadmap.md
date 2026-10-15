@@ -30,37 +30,24 @@ P7 keeps routing frozen until the selected Generation IR, codec and protocol-con
 
 This is an implementation plan. Accurate IR, declared loss, verbosity omission and the routing freeze are selected. P1/P2/P4/P5 follow the [recorded architecture decisions](architecture.md#settled-decisions); P3 selects six thinking-budget presets with nearest-token/highest-level-tie quantization, and P3b permits named downward adjustment of conversion-generated budgets. P6 selects configurable business capture with mandatory credential redaction; P7 defers routing until IR/codec/conversion completion. P8 selects summary-granularity and role approximation, and D3 selects named prediction omission. Remaining budget details and P8 rules stay in [Pending decisions](#pending-decisions).
 
-Use the sequence below. S1 repairs can be split by independent contract. S2 establishes one working codec-level path before broader abstractions. S3/S4 do not wait for P3b's remaining adjustment details or P8's remaining rule review; no slice depends on reconnecting the routing layer.
+Use the sequence below. Split remaining S1 repairs by contract and reuse the existing Messages verbosity projection and typed control receipts before adding abstractions. S3/S4 do not wait for P3b's remaining adjustment details or P8's remaining rule review; no slice depends on reconnecting the routing layer.
 
 | Slice | Dependency | Deliverable |
 |---|---|---|
 | S1: Source and output integrity | None | Known-field, role, content and terminal defects no longer masquerade as tolerable loss |
-| S2: First declared-loss path | Relevant S1 guards | Responses verbosity reaches a Messages projection with explicit omission and unchanged source IR |
-| S3: Advisory controls and text carriers | S2 | Per-field text handling across current protocols; exact carriers used before omission |
-| S4: Existing-IR constrained carriers | Relevant S1 guards; S2 contract split | Selected schema/tool/output carriers without weakening required semantics |
-| S5: Quality-sensitive approximation | S2; declared target data; remaining P3b/P8 details where applicable | Selected scope/allocation/sampling, summary and role policies, not a universal fallback |
-| S6: Reports, SSE and history | S2; each selected S3–S5 rule | Source facts stay distinct from delivery losses and retained history |
-| S7: Diagnostic and contract closure | S2–S6, excluding explicitly deferred decisions | Bounded end-to-end evidence at codec/delivery boundaries and an explicit integration handoff |
+| S3: Advisory controls and text carriers | Existing declared-loss contract | Per-field text handling across current protocols; exact carriers used before omission |
+| S4: Existing-IR constrained carriers | Relevant S1 guards; existing contract split | Selected schema/tool/output carriers without weakening required semantics |
+| S5: Quality-sensitive approximation | Existing declared-loss contract; declared target data; remaining P3b/P8 details where applicable | Selected scope/allocation/sampling, summary and role policies, not a universal fallback |
+| S6: Reports, SSE and history | Each selected S3–S5 rule | Source facts stay distinct from delivery losses and retained history |
+| S7: Diagnostic and contract closure | S3–S6, excluding explicitly deferred decisions | Bounded end-to-end evidence at codec/delivery boundaries and an explicit integration handoff |
 
 #### S1: Source and output integrity
 
 Goal: preserve the source contract before introducing more lossy projection. Use the detailed [repair work](#projection-repair) below, not a new repository-wide cleanup.
 
-1. Separate official baseline fields from selected dialect aliases and extensions. An ignored field must never also populate the IR. Validate conflicts before normalization.
-2. Fix known content/role gaps in [Chat tools](../src/protocol/openai/function_tools.rs) and [Chat messages](../src/protocol/openai/chat/mod.rs). Preserve or explicitly reject caller/dispatch intent and legacy calls; do not repair invalid roles by regrouping them.
+1. Resolve registered reasoning-view absence/null/empty handling across static, streamed and returned history. Nonempty duplicate views must agree before normalization; do not broaden a strict alias rule implicitly.
 
 Exit: existing lowest-owner cases retain strict JSON, discriminators, role/call identity, content and terminal truth. Unknown protocol extensions remain inert. Any unreproduced or uncovered path is reported separately from confirmed repairs.
-
-#### S2: First declared-loss path
-
-Goal: implement the smallest useful conversion without changing the meaning stored in the IR: Responses `text.verbosity: low` to a Messages request.
-
-1. Keep `GenerationSettings.text.verbosity` on the source. In the [Messages adapter](../src/protocol/anthropic/adapter.rs), project a private request copy, omit only that unsupported preference and return bounded typed loss evidence.
-2. Split source validity, acceptance through approved adaptation and faithful representation in [requirements](../src/semantic/task/generation/requirements.rs), [contracts](../src/semantic/task/generation/contract.rs) and [lowering](../src/lowering/generation.rs). Validate the source first, then the projected target. Do not set native support flags to true merely because an omission is allowed.
-3. Start with the existing per-protocol rules and projection records. Unify only the evidence needed by this slice; no generic transformation registry, raw JSON bag or client-selectable policy.
-4. Preserve the input and independent target projections. A second target with a verbosity carrier must still see `low`. Do not add prompt text or reinterpret verbosity as effort.
-
-Exit: existing independent wire expectations show accurate source decoding, omission from Messages output and the named input/output control receipt. Schema, tools, activation and output caps remain unchanged. A direct codec/adapter path is sufficient; if existing public admission blocks the gateway path, record that gap instead of editing route policy.
 
 #### S3: Advisory controls and text carriers
 
@@ -113,7 +100,7 @@ Exit: JSON and materialized SSE agree for each affected contract; generated cont
 
 Goal: explain each selected loss without making routing or a logging backend part of codec semantics.
 
-1. Extend [diagnostics](../src/gateway/diagnostics.rs) using the typed evidence introduced in S2. Distinguish source intent, sent controls, upstream reports and delivered facts. Include fixed rule, field category, direction, action and bounded control summaries without embedding bodies in those receipts.
+1. Extend [diagnostics](../src/gateway/diagnostics.rs) using the [typed request evidence](../src/lowering/generation.rs). Distinguish source intent, sent controls, upstream reports and delivered facts. Include fixed rule, field category, direction, action and bounded control summaries without embedding bodies in those receipts.
 2. Propagate request, response and event losses; do not log only failures. Aggregate repeated SSE evidence and keep attempt attribution without changing candidate selection. Treat an unavailable gateway path as an integration gap, not proof that evidence is durably recorded.
 3. Implement P6 [exchange capture](architecture.md#configurable-exchange-capture) outside pure codecs, with independent header/body controls for client request, upstream request, upstream response and client response. Business content may be complete when enabled, but authentication material must be redacted before enqueue/write, including in headers, queries and known credential-bearing body fields.
 4. Keep capture opt-in, private, bounded and best-effort. Stream incrementally; record redacted, incomplete, truncated or dropped capture instead of claiming full retention. Extend existing diagnostic assertions for disabled capture, enabled synthetic content and non-optional credential redaction. Logs are not fixtures, replay inputs or tool output.
@@ -137,9 +124,9 @@ Phase completion means the selected policies and carriers pass their local gates
 
 These are the detailed repair obligations consumed by S1–S6, not a second competing schedule. Finish independent boundary repairs while [semantic decisions](#pending-decisions) remain open; do not choose an approximation or IR contract implicitly.
 
-1. **Isolate content extensions and restore registered aliases.** Separate reasoning extension admission from the [Chat message decoder](../src/protocol/openai/chat/mod.rs) and [stream decoder](../src/protocol/openai/events/chat.rs). Preserve the registered MorphieCore reasoning carriers, including standalone plaintext `reasoning`, without coupling alias intake to output spelling.
+1. **Unify registered reasoning-view presence.** Select the pending absence/null/empty contract before changing [static](../src/protocol/openai/chat/reasoning.rs) and [streamed](../src/protocol/openai/events/chat.rs) duplicate-view checks.
 
-   Exit condition: request, JSON, SSE and history paths interpret a carrier only under its declared profile. Nonempty duplicate views must agree; specify absent/null/empty handling consistently before coding. Readable text, summary, item order, signatures and owner-local replay keep their distinctions. Standard unknown fields do not become reasoning or parse errors.
+   Exit condition: registered request, JSON, SSE and history carriers follow the selected presence contract. Readable text, summary, item order, signatures and owner-local replay keep their distinctions; unregistered fields stay inert.
 
 2. **Complete target-specific reasoning admission.** Check model restrictions separately from the [activation/scoped-effort contract](architecture.md#reasoning-activation-and-effort-scope) and [explicit calibration](architecture.md#initial-mapping-plan). Assess remaining display/context losses separately from level calibration. Do not claim effective sampling or exact reasoning budgets solely from SDK field presence.
 
@@ -321,6 +308,7 @@ P1/P2/P4/P5/P6, P3's six-budget quantization, P3b's permission for named downwar
 
 | Question | Unresolved choice and recommendation | Blocks |
 |---|---|---|
+| Registered reasoning-view presence | Decide whether absent/null/empty plaintext views all make no assertion, or whether explicit empty/null siblings must match a supplied view. Recommend nonempty-only agreement for plaintext views; preserve explicit structured parts and their owners rather than erasing them. Do not infer this normalization from the alias name alone | Remaining S1 duplicate-view normalization, not independent control projection |
 | P3b details: Reduction and answer room | Named downward adjustment of conversion-generated budgets is selected. Choose a lower preset versus an arbitrary fitting integer, and protocol-minimum versus additional reserved answer room. Never raise the client ceiling, repair an invalid source request, silently reduce its explicit numeric budget or turn a positive budget into off. Until these details are selected, retain target-validation failure on the conflicting projection | Only conflicting level-to-budget projection, not ordinary P3 lookup or quantization |
 | P7 follow-up: Public surface and reconnection | Revisit only after the selected IR/codec/protocol-conversion scope is complete. Decide the public native-versus-lossy capability representation and whether/how to warn clients; then schedule reconnection. No false native support claim or per-request policy override is selected | Later route-facing publication and full-chain acceptance, not the current migration |
 | P8 remainder: Media, context and default strictness | Image/file detail, filename and reasoning-context omission remain open; `DefaultStrictAsPlain` was not selected and remains under review. Summary-granularity approximation with unchanged visibility and named developer/system/user mappings are already selected. Preserve exact carriers and explicit constraints; existing loss rules are not approval | Only the affected remaining S4–S6 rules |

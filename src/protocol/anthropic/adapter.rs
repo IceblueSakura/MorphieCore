@@ -1,5 +1,5 @@
 //! Native target projection and dialect policy; no OpenAI profile or wire switches.
-use super::Profile;
+use super::{NativeProjection, Profile, RequestRule};
 use crate::{
     adapter::{AdapterError, Request},
     protocol::{
@@ -11,7 +11,6 @@ use crate::{
         context::ExecutionHints, task::generation::GenerationSemanticContract, value::Presence,
     },
 };
-use serde_json::Value;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Dialect {
@@ -63,11 +62,37 @@ impl TargetCaps {
         Ok(())
     }
     /// The target labels come from the trusted endpoint binding, never the request.
-    pub(crate) fn encode_request(
+    pub fn encode_request(
         &self,
         request: &Request,
         target: &ReplayTarget,
-    ) -> Result<(Value, Vec<&'static str>), AdapterError> {
+    ) -> Result<NativeProjection, AdapterError> {
+        request.task.semantic.validate().map_err(CodecError::from)?;
+        let mut projected = std::borrow::Cow::Borrowed(request);
+        let verbosity = request.task.semantic.text_options().verbosity.clone();
+        let loss = if verbosity.is_absent() {
+            None
+        } else {
+            let copy = projected.to_mut();
+            let mut settings = copy.task.semantic.settings().clone();
+            settings.text.verbosity = Presence::Absent;
+            if settings.text.format.is_absent() {
+                settings.text.presence = false;
+            }
+            copy.task.semantic = copy
+                .task
+                .semantic
+                .clone()
+                .with_settings(settings)
+                .map_err(CodecError::from)?;
+            Some(
+                crate::lowering::generation::RequestControlLoss::MessagesVerbosity {
+                    input: verbosity,
+                    output: Presence::Absent,
+                },
+            )
+        };
+        let request = projected.as_ref();
         // Native projection converts unsigned reasoning itself, inside the assistant turn.
         let stripped = request
             .without_foreign_replay(Some(&target.origin()), false)?
@@ -82,19 +107,21 @@ impl TargetCaps {
         // Include selects the downstream opaque carrier, not a native control.
         settings.reasoning = settings.reasoning.with_encrypted_output(false);
         semantic = semantic.with_settings(settings).map_err(CodecError::from)?;
-        let projection =
+        let mut projection =
             self.profile
                 .encode_generation_request(&semantic, &request.task.fidelity, target)?;
-        let mut wire = projection.value;
         if let Some(stream) = request.delivery.stream.value() {
-            wire["stream"] = serde_json::json!(stream);
+            projection.value["stream"] = serde_json::json!(stream);
         }
-        let mut rules = projection.rules;
+        if let Some(loss) = loss {
+            projection.control_losses.push(loss);
+            projection.rules.push(RequestRule::OmitVerbosity);
+        }
         if foreign {
-            rules.push(super::RequestRule::OmitForeignReplay);
+            projection.rules.push(RequestRule::OmitForeignReplay);
         }
-        rules.sort();
-        Ok((wire, rules.iter().map(|r| r.name()).collect()))
+        projection.rules.sort();
+        Ok(projection)
     }
     pub(crate) fn request_headers(
         &self,

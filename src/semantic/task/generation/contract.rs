@@ -273,11 +273,7 @@ impl GenerationSemanticContract {
             (q.top_p, self.top_p, Controls),
             (q.logprobs, self.logprobs, Controls),
             (q.truncation, self.truncation, Controls),
-            (
-                !r.text_options().verbosity.is_absent(),
-                self.verbosity,
-                Controls,
-            ),
+            (q.verbosity, self.verbosity, Controls),
             (
                 q.parallel_tool_calls == Some(true),
                 self.parallel_tool_calls,

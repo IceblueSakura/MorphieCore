@@ -126,7 +126,12 @@ impl Endpoint {
             (
                 UpstreamAdapter::AnthropicMessages { target, .. },
                 TargetCaps::AnthropicMessages(caps),
-            ) => caps.encode_request(request, &target),
+            ) => caps.encode_request(request, &target).map(|projection| {
+                (
+                    projection.value,
+                    projection.rules.iter().map(|rule| rule.name()).collect(),
+                )
+            }),
             (
                 UpstreamAdapter::GoogleGenerateContent { target },
                 TargetCaps::GoogleGenerateContent(caps),

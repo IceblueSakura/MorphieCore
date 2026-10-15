@@ -18,6 +18,7 @@ pub(super) fn unsupported() -> CodecError {
 /// Named degradable rules applied to one candidate's request copy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum RequestRule {
+    OmitVerbosity,
     /// Messages has one summarized display, without concise or detailed variants.
     SummarizeReasoning,
     OmitReasoningContext,
@@ -41,6 +42,7 @@ pub enum RequestRule {
 impl RequestRule {
     pub const fn name(self) -> &'static str {
         match self {
+            Self::OmitVerbosity => "messages.omit-verbosity.v1",
             Self::SummarizeReasoning => "messages.summarize-reasoning.v1",
             Self::OmitReasoningContext => "messages.omit-reasoning-context.v1",
             Self::OmitSampling => "messages.omit-sampling.v1",

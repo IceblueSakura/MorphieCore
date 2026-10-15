@@ -1,5 +1,33 @@
 //! Shared generation representation failures and reported-fact policy.
 use crate::semantic::task::generation::*;
+use crate::semantic::value::Presence;
+
+/// Request-side control evidence contains finite enums and presence, never prompt data.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RequestControlLoss {
+    MessagesVerbosity {
+        input: Presence<Verbosity>,
+        output: Presence<Verbosity>,
+    },
+}
+impl RequestControlLoss {
+    pub const fn rule(&self) -> &'static str {
+        match self {
+            Self::MessagesVerbosity { .. } => "messages.omit-verbosity.v1",
+        }
+    }
+    pub const fn field(&self) -> &'static str {
+        match self {
+            Self::MessagesVerbosity { .. } => "generation.text.verbosity",
+        }
+    }
+    pub const fn direction(&self) -> &'static str {
+        "request.encode"
+    }
+    pub const fn action(&self) -> &'static str {
+        "omit"
+    }
+}
 
 /// Delivery policy for reported response facts (ADR 0008). Absence is a
 /// reported fact; a target that demands the SDK-strict complete form fails

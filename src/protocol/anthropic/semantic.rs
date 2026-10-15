@@ -18,6 +18,7 @@ pub struct NativeProjection {
     pub normalized_arguments: Vec<ItemId>,
     pub omitted_execution: Vec<ItemId>,
     pub rules: Vec<RequestRule>,
+    pub control_losses: Vec<crate::lowering::generation::RequestControlLoss>,
 }
 pub(super) fn display(value: &Presence<super::Display>) -> Presence<ReasoningDisplay> {
     match value {
@@ -34,6 +35,7 @@ impl std::fmt::Debug for NativeProjection {
             .field("normalized_arguments", &self.normalized_arguments)
             .field("omitted_execution", &self.omitted_execution)
             .field("rules", &self.rules)
+            .field("control_losses", &self.control_losses)
             .finish()
     }
 }
@@ -205,6 +207,7 @@ impl Profile {
             normalized_arguments: normalized,
             omitted_execution: omitted,
             rules: rules.into_iter().collect(),
+            control_losses: vec![],
         })
     }
     pub fn encode_generation_response(
