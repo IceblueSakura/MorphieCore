@@ -35,9 +35,8 @@ pub struct WireRules {
     /// This target has no image-detail carrier; omit the per-use option by name.
     /// https://mimo.mi.com/docs/zh-CN/api/chat/responses
     pub omit_image_detail: bool,
-    /// Typed image-token fact in Chat input details, not an opaque vendor Usage.
-    /// Source: <https://mimo.mi.com/docs/zh-CN/api/chat/openai-api>.
-    pub chat_image_usage: bool,
+    /// DeepSeek Chat cache-hit/miss aliases; canonical counts must agree.
+    pub chat_cache_usage_aliases: bool,
     /// MorphieCore's explicit image-token extension on Responses input details;
     /// the fixed standard Responses schema has no such position.
     pub responses_image_usage: bool,

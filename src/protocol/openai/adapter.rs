@@ -76,7 +76,6 @@ impl Dialect {
                     chat_video_url: true,
                     readable_reasoning: true,
                     structured_chat_reasoning: true,
-                    chat_image_usage: true,
                     responses_image_usage: true,
                     responses_text_usage: true,
                     ..Default::default()
@@ -85,6 +84,7 @@ impl Dialect {
             Self::DeepSeek => (
                 "deepseek-v1",
                 WireRules {
+                    chat_cache_usage_aliases: true,
                     readable_reasoning: true,
                     chat_original_image_detail: true,
                     default_cache_write: true,
@@ -138,7 +138,6 @@ impl Dialect {
                     chat_reasoning_usage_alias: true,
                     chunk_created_drift: true,
                     chat_inference_response_shape: true,
-                    chat_image_usage: true,
                     legacy_max_tokens: true,
                     reject_reasoning_controls: true,
                     ..Default::default()
@@ -176,9 +175,6 @@ impl Dialect {
                     responses_image_usage: true,
                     responses_queued_creation: true,
                     responses_summary_text_alias: true,
-                    // Modality counters are reported facts, never inferred from images.
-                    // https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions
-                    chat_image_usage: true,
                     ..Default::default()
                 },
             ),
@@ -203,7 +199,6 @@ impl Dialect {
                     omit_image_detail: true,
                     readable_reasoning: true,
                     responses_unreported_text_logprobs: true,
-                    chat_image_usage: true,
                     chunk_metadata_drift: true,
                     ..Default::default()
                 },

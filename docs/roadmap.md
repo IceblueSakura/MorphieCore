@@ -137,23 +137,11 @@ Phase completion means the selected policies and carriers pass their local gates
 
 These are the detailed repair obligations consumed by S1–S6, not a second competing schedule. Finish independent boundary repairs while [semantic decisions](#pending-decisions) remain open; do not choose an approximation or IR contract implicitly.
 
-1. **Isolate equivalent usage aliases.** Move DeepSeek Chat cache-hit/miss interpretation out of the unconditional [shared usage reader](../src/protocol/openai/static_response.rs). Select it through the trusted dialect and retain canonical-value conflict and total checks.
-
-   Exit condition: the declared dialect preserves the counts in static and streamed intake; Standard Chat and Responses ignore the unregistered aliases. Conflicting canonical and alias counts still fail where the alias is admitted. Prove that an unknown alias cannot change standard usage or make it fail.
-
-2. **Isolate content extensions and restore registered aliases.** Separate reasoning extension admission from the [Chat message decoder](../src/protocol/openai/chat/mod.rs) and [stream decoder](../src/protocol/openai/events/chat.rs). Preserve the registered MorphieCore reasoning carriers, including standalone plaintext `reasoning`, without coupling alias intake to output spelling.
+1. **Isolate content extensions and restore registered aliases.** Separate reasoning extension admission from the [Chat message decoder](../src/protocol/openai/chat/mod.rs) and [stream decoder](../src/protocol/openai/events/chat.rs). Preserve the registered MorphieCore reasoning carriers, including standalone plaintext `reasoning`, without coupling alias intake to output spelling.
 
    Exit condition: request, JSON, SSE and history paths interpret a carrier only under its declared profile. Nonempty duplicate views must agree; specify absent/null/empty handling consistently before coding. Readable text, summary, item order, signatures and owner-local replay keep their distinctions. Standard unknown fields do not become reasoning or parse errors.
 
-3. **Close nested protocol scopes and known content loss.** Stop [Chat function parsing](../src/protocol/openai/function_tools.rs) from reading Responses-only dispatch/output-schema members after reporting them as ignored. Reject active misplaced orchestration semantics and unsupported legacy assistant `function_call` history rather than dropping a call. Keep genuine unknown-field handling unchanged.
-
-   Exit condition: ignored values never affect IR or upstream output. Existing Responses dispatch and registered extensions still work; unsupported Chat custom tools remain explicit rejections, not a newly opened support slice. Apply D3's selected named omission to `prediction`, separately from unknown-field handling.
-
-4. **Correct existing cache and accounting carriers.** Match optional `prompt_cache_options` members and protocol-specific fields to the pinned official types. Distinguish empty options from active controls without inventing explicit defaults. Correct Standard Chat image-usage projection so an official reported count is not dropped as a vendor extension. Do not broaden Responses usage positions.
-
-   Exit condition: legal partial options survive decode and supported re-encoding without adding defaults; Responses-only controls cannot leak through Chat. Existing cache-key and retention advisory policy remains explicit. Usage mappings preserve reported zero versus absent and reject inconsistent totals. New cache breakpoint/TTL carriers wait for the support queue.
-
-5. **Complete target-specific reasoning admission.** Check model restrictions separately from the [activation/scoped-effort contract](architecture.md#reasoning-activation-and-effort-scope) and [explicit calibration](architecture.md#initial-mapping-plan). Assess remaining display/context losses separately from level calibration. Do not claim effective sampling or exact reasoning budgets solely from SDK field presence.
+2. **Complete target-specific reasoning admission.** Check model restrictions separately from the [activation/scoped-effort contract](architecture.md#reasoning-activation-and-effort-scope) and [explicit calibration](architecture.md#initial-mapping-plan). Assess remaining display/context losses separately from level calibration. Do not claim effective sampling or exact reasoning budgets solely from SDK field presence.
 
    Exit condition: each selected target has sourced model-level admission for the controls it promises. Off, numeric allocation and effort scopes have faithful carriers, selected loss policies or explicit pending rejections; display/context losses do not enter a level table. Extend native policy wiring only for a concretely selected mapping, without changing route membership.
 

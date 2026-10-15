@@ -72,6 +72,18 @@ impl RequestContext {
 /// https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/chat/completion_create_params.py
 pub(crate) fn validate_context(context: &ExecutionHints) -> Result<(), CodecError> {
     context.validate()?;
+    if context
+        .cache
+        .prompt_cache_options
+        .value()
+        .is_some_and(|options| {
+            !options.comparison_response_id.is_absent() || !options.prewarm.is_absent()
+        })
+    {
+        return Err(CodecError::Unsupported(
+            "Responses-only cache options".into(),
+        ));
+    }
     if context.service_tier == Presence::Value(ServiceTier::Ultrafast) {
         return Err(CodecError::Unsupported("Chat service tier".into()));
     }
@@ -132,7 +144,7 @@ pub(crate) fn decode_request_with(
         ])
         .collect();
     direction.fields(o, &allowed)?;
-    let hints = ExecutionHints::read(o)?;
+    let hints = ExecutionHints::read(o, crate::protocol::openai::Profile::Chat, direction)?;
     let context = RequestContext {
         model: string(o, "model")?.into(),
         n: read_presence(o, "n", |v| v.as_u64().ok_or(CodecError::Invalid("n")))?,

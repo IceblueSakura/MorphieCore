@@ -1571,6 +1571,32 @@ mod cache_projection {
 
     #[test]
     fn scoped_session_and_standard_cache_key_remain_independent_on_both_wires() {
+        let mut empty = request(Profile::Chat);
+        empty["prompt_cache_options"] = json!({});
+        let decoded = client(Profile::Chat)
+            .decode_request(empty.to_string().as_bytes())
+            .unwrap();
+        let saved = decoded.context.clone();
+        let without_options = Adapter::new(Profile::Chat, Dialect::DeepSeek, None)
+            .encode_request(&decoded, "upstream", &Contract::full())
+            .unwrap();
+        assert!(without_options.get("prompt_cache_options").is_none());
+        assert_eq!(decoded.context, saved);
+        empty["prompt_cache_options"] = json!({"mode":"explicit"});
+        let active = client(Profile::Chat)
+            .decode_request(empty.to_string().as_bytes())
+            .unwrap();
+        assert!(
+            Adapter::new(Profile::Chat, Dialect::DeepSeek, None)
+                .encode_request(&active, "upstream", &Contract::full())
+                .is_err()
+        );
+        empty["prompt_cache_options"] = json!({"prewarm":true});
+        assert!(
+            client(Profile::Chat)
+                .decode_client_request(empty.to_string().as_bytes())
+                .is_err()
+        );
         for p in [Profile::Chat, Profile::Responses] {
             let mut wire = request(p);
             wire["prompt_cache_key"] = json!("key-a");
@@ -1715,6 +1741,22 @@ mod chat_wire {
     fn aliases_are_normalized_without_losing_counts_or_masking_disagreement() {
         let adapter = Adapter::new(Profile::Chat, Dialect::DeepSeek, None);
         let mut body = response("pong");
+        let standard = Adapter::new(Profile::Chat, Dialect::Standard, None);
+        let mut unknown = body.clone();
+        unknown["usage"]["prompt_cache_hit_tokens"] = json!({"not":"a count"});
+        unknown["usage"]["prompt_cache_miss_tokens"] = json!(9);
+        assert_eq!(
+            standard
+                .decode_response(unknown.to_string().as_bytes())
+                .unwrap()
+                .semantic
+                .usage(),
+            standard
+                .decode_response(body.to_string().as_bytes())
+                .unwrap()
+                .semantic
+                .usage()
+        );
         body["usage"] = json!({"prompt_tokens":3,"completion_tokens":2,"total_tokens":5,
         "prompt_tokens_details":{"cached_tokens":1},"completion_tokens_details":{"reasoning_tokens":1},
         "prompt_cache_hit_tokens":1,"prompt_cache_miss_tokens":2});
@@ -1733,6 +1775,15 @@ mod chat_wire {
             1
         );
         assert!(encoded["usage"].get("prompt_cache_hit_tokens").is_none());
+        let mut stream = adapter.event_decoder();
+        let mut finish = chunk(json!({"content":"pong"}), json!("stop"));
+        finish["usage"] = body["usage"].clone();
+        stream.push(&finish).unwrap();
+        stream.done().unwrap();
+        assert_eq!(
+            stream.materialize().unwrap().semantic.usage(),
+            decoded.semantic.usage()
+        );
         for (key, value) in [
             ("prompt_cache_hit_tokens", 0),
             ("prompt_cache_miss_tokens", 9),

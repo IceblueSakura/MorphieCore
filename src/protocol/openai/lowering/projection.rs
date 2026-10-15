@@ -7,7 +7,6 @@ pub const MAX_PROJECTION_STAGES: usize = 16;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LossRule {
     OmitResponsesSystemFingerprint,
-    OmitChatInputImageTokens,
     OmitResponsesInputImageTokens,
     OmitResponsesInputTextTokens,
     OmitResponsesOutputTextTokens,
@@ -22,7 +21,6 @@ impl LossRule {
     pub const fn name(self) -> &'static str {
         match self {
             Self::OmitResponsesSystemFingerprint => "responses.omit-system-fingerprint.v1",
-            Self::OmitChatInputImageTokens => "chat.omit-input-image-tokens.v1",
             Self::OmitResponsesInputImageTokens => "responses.omit-input-image-tokens.v1",
             Self::OmitResponsesInputTextTokens => "responses.omit-input-text-tokens.v1",
             Self::OmitResponsesOutputTextTokens => "responses.omit-output-text-tokens.v1",
@@ -41,9 +39,7 @@ impl LossRule {
     pub const fn owner(self) -> &'static str {
         match self {
             Self::OmitResponsesSystemFingerprint => "response.context.system_fingerprint",
-            Self::OmitChatInputImageTokens | Self::OmitResponsesInputImageTokens => {
-                "generation.usage.input_image_tokens"
-            }
+            Self::OmitResponsesInputImageTokens => "generation.usage.input_image_tokens",
             Self::OmitResponsesInputTextTokens => "generation.usage.input_text_tokens",
             Self::OmitResponsesOutputTextTokens => "generation.usage.output_text_tokens",
             Self::OmitResponsesInputAudioTokens => "generation.usage.input_audio_tokens",
@@ -63,9 +59,6 @@ impl LossRule {
         match self {
             Self::OmitResponsesSystemFingerprint => {
                 "The Chat-only fingerprint field is omitted; response identity and content are unchanged."
-            }
-            Self::OmitChatInputImageTokens => {
-                "The reported image-token detail is omitted; totals are unchanged."
             }
             Self::OmitResponsesMessageEnvelopes => {
                 "Native container boundaries are omitted; ordered items and call-result identity remain."
@@ -90,7 +83,6 @@ impl std::str::FromStr for LossRule {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "responses.omit-system-fingerprint.v1" => Ok(Self::OmitResponsesSystemFingerprint),
-            "chat.omit-input-image-tokens.v1" => Ok(Self::OmitChatInputImageTokens),
             "responses.omit-input-image-tokens.v1" => Ok(Self::OmitResponsesInputImageTokens),
             "responses.omit-input-text-tokens.v1" => Ok(Self::OmitResponsesInputTextTokens),
             "responses.omit-output-text-tokens.v1" => Ok(Self::OmitResponsesOutputTextTokens),
@@ -139,25 +131,6 @@ impl ProjectionStage {
             revision: 1,
             loss,
         }
-    }
-}
-
-/// Validation precedes omission, including for zero-valued reported details.
-pub(crate) fn chat_usage(
-    usage: Usage,
-    image_carrier: bool,
-) -> Result<(Usage, Option<LossRule>), RepresentationError> {
-    usage.validate()?;
-    if !image_carrier && usage.input_image_tokens.is_some() {
-        Ok((
-            Usage {
-                input_image_tokens: None,
-                ..usage
-            },
-            Some(LossRule::OmitChatInputImageTokens),
-        ))
-    } else {
-        Ok((usage, None))
     }
 }
 

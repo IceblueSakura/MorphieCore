@@ -89,7 +89,7 @@ pub fn check_event(
         }
         StreamEvent::Usage(usage) => {
             let projected = if profile == Profile::Chat {
-                super::projection::chat_usage(*usage, contract.adaptation.rules.chat_image_usage)?.0
+                *usage
             } else {
                 super::projection::responses_usage(*usage, &contract.adaptation.rules)?.0
             };

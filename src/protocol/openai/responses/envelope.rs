@@ -45,14 +45,47 @@ pub(in crate::protocol::openai) const EXEC_FIELDS: &[&str] = &[
     "context_management",
 ];
 impl ExecutionHints {
-    pub(in crate::protocol::openai) fn read(o: &Map<String, Value>) -> Result<Self, CodecError> {
-        let fields: Map<_, _> = o
+    pub(in crate::protocol::openai) fn read(
+        o: &Map<String, Value>,
+        profile: Profile,
+        direction: DecodeDirection<'_>,
+    ) -> Result<Self, CodecError> {
+        let mut fields: Map<_, _> = o
             .iter()
             .filter(|(k, _)| {
-                EXEC_FIELDS.contains(&k.as_str()) || CACHE_FIELDS.contains(&k.as_str())
+                CACHE_FIELDS.contains(&k.as_str())
+                    || if profile == Profile::Chat {
+                        ["metadata", "service_tier"].contains(&k.as_str())
+                    } else {
+                        EXEC_FIELDS.contains(&k.as_str())
+                    }
             })
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
+        if let Some(options) = fields
+            .get_mut("prompt_cache_options")
+            .filter(|v| !v.is_null())
+        {
+            let options = options
+                .as_object_mut()
+                .ok_or(CodecError::Invalid("cache options"))?;
+            let allowed: &[&str] = if profile == Profile::Chat {
+                if direction.client()
+                    && ["comparison_response_id", "prewarm"]
+                        .iter()
+                        .any(|key| options.get(*key).is_some_and(|v| !v.is_null()))
+                {
+                    return Err(CodecError::Unsupported(
+                        "Responses-only cache options".into(),
+                    ));
+                }
+                &["mode", "ttl"]
+            } else {
+                &["mode", "ttl", "comparison_response_id", "prewarm"]
+            };
+            direction.fields(options, allowed)?;
+            options.retain(|key, _| allowed.contains(&key.as_str()));
+        }
         let hints: Self = serde_json::from_value(Value::Object(fields))
             .map_err(|_| CodecError::Invalid("execution hints"))?;
         hints.validate()?;
@@ -146,7 +179,7 @@ pub(crate) fn decode_request_in(
                 serde_json::from_value(v.clone()).map_err(|_| CodecError::Invalid("stream_options"))
             })?,
         },
-        execution: ExecutionHints::read(o)?,
+        execution: ExecutionHints::read(o, Profile::Responses, direction)?,
     };
     context.validate()?;
     let task: Map<_, _> = o
@@ -229,7 +262,7 @@ impl ResponseContext {
         let value = Self {
             settings: s,
             instruction_messages,
-            execution: ExecutionHints::read(&execution)?,
+            execution: ExecutionHints::read(&execution, Profile::Responses, direction)?,
             completed_at: read_presence(o, "completed_at", timestamp)?,
             cache_diagnostics: read_presence(o, "prompt_cache_diagnostics", |v| {
                 serde_json::from_value(v.clone())

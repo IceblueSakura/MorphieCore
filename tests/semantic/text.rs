@@ -319,6 +319,32 @@ mod text_profile {
     #[test]
     fn reported_cache_context_is_an_independent_response_fact() {
         let mut response = wire::response(2);
+        response["prompt_cache_options"] = json!({"ttl":"30m","future":true});
+        let decoded = responses::decode_response(&response).unwrap();
+        assert_eq!(
+            serde_json::to_value(
+                &decoded
+                    .metadata
+                    .context
+                    .execution
+                    .cache
+                    .prompt_cache_options
+            )
+            .unwrap(),
+            json!({"ttl":"30m"})
+        );
+        assert_eq!(
+            response_round_trip(&response)["prompt_cache_options"],
+            json!({"ttl":"30m"})
+        );
+        let mut request = wire::request(false);
+        request["prompt_cache_options"] = json!({});
+        assert_eq!(
+            responses_round_trip(&request)["prompt_cache_options"],
+            json!({})
+        );
+        request["prompt_cache_options"] = json!({"mode":null});
+        assert!(responses::envelope::decode_request(&request).is_err());
         response["prompt_cache_options"] = json!({"mode":"explicit","ttl":"30m","prewarm":true});
         response["prompt_cache_diagnostics"] = json!({"type":"cache_miss","reason":"input_changed","cache_missed_tokens":3,"comparison_reusable_tokens":2});
         let out = response_round_trip(&response);
@@ -775,6 +801,10 @@ mod open_decoding {
         let a = adapter(Profile::Responses);
         let plain = wire::response(1);
         let mut extended = plain.clone();
+        extended["usage"]["prompt_cache_hit_tokens"] = json!({"future":true});
+        extended["usage"]["prompt_cache_miss_tokens"] = json!(-1);
+        extended["usage"]["input_tokens_details"]["image_tokens"] = json!("unknown extension");
+        extended["usage"]["input_tokens_details"]["text_tokens"] = json!(-1);
         for pointer in [
             "",
             "/usage",

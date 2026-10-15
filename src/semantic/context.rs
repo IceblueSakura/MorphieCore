@@ -80,11 +80,13 @@ pub enum CacheTtl {
     #[serde(rename = "30m")]
     ThirtyMinutes,
 }
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CacheOptions {
-    pub mode: CacheMode,
-    pub ttl: CacheTtl,
+    #[serde(default, skip_serializing_if = "Presence::is_absent")]
+    pub mode: Presence<CacheMode>,
+    #[serde(default, skip_serializing_if = "Presence::is_absent")]
+    pub ttl: Presence<CacheTtl>,
     #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub comparison_response_id: Presence<String>,
     #[serde(default, skip_serializing_if = "Presence::is_absent")]
@@ -133,8 +135,11 @@ impl CacheHints {
             }
         }
         if let Some(options) = self.prompt_cache_options.value() {
-            if options.prewarm == Presence::Null {
-                return Err(ContextError::Invalid("prewarm"));
+            if options.mode == Presence::Null
+                || options.ttl == Presence::Null
+                || options.prewarm == Presence::Null
+            {
+                return Err(ContextError::Invalid("cache options"));
             }
             if options
                 .comparison_response_id

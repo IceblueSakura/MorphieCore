@@ -266,11 +266,9 @@ pub(super) fn check_usage(
     {
         return Err(RepresentationError::UsageProjection);
     }
-    if usage.input_image_tokens.is_some()
-        && !(match profile {
-            Profile::Chat => rules.chat_image_usage,
-            Profile::Responses => rules.responses_image_usage,
-        })
+    if profile == Profile::Responses
+        && usage.input_image_tokens.is_some()
+        && !rules.responses_image_usage
     {
         return Err(RepresentationError::UsageDetails);
     }
@@ -321,11 +319,7 @@ pub fn lower_response<'a>(
     }
     if let Some(usage) = r.usage() {
         let (projected, losses) = match profile {
-            Profile::Chat => {
-                let (usage, loss) =
-                    projection::chat_usage(usage, c.adaptation.rules.chat_image_usage)?;
-                (usage, loss.into_iter().collect::<Vec<_>>())
-            }
+            Profile::Chat => (usage, vec![]),
             Profile::Responses => projection::responses_usage(usage, &c.adaptation.rules)?,
         };
         if !losses.is_empty() {

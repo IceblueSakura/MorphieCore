@@ -721,7 +721,7 @@ mod projection {
             },
         };
         assert_eq!(
-            "chat.omit-input-image-tokens.v1"
+            "responses.omit-input-image-tokens.v1"
                 .parse::<LossRule>()
                 .unwrap()
                 .owner(),
@@ -753,6 +753,10 @@ mod projection {
             Contract::full(),
         )
         .unwrap();
+        assert_eq!(
+            chat::encode_response(&first).unwrap()["usage"]["prompt_tokens_details"]["image_tokens"],
+            7
+        );
         descend(&first, MAX_PROJECTION_STAGES - 1);
     }
 
@@ -774,7 +778,7 @@ mod projection {
         let fidelity = FidelityRecords::default();
         encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
         let mut contract = Contract::full();
-        contract.adaptation.rules.chat_image_usage = true;
+        contract.adaptation.rules.structured_chat_reasoning = true;
         encoder = encoder.with_contract(contract);
         assert!(encoder.encode(&text_events()[1], &fidelity).is_err());
     }

@@ -32,7 +32,11 @@ pub(super) fn metadata(
     } else {
         (
             crate::semantic::context::ResponseContext {
-                execution: crate::semantic::context::ExecutionHints::read(o)?,
+                execution: crate::semantic::context::ExecutionHints::read(
+                    o,
+                    Profile::Chat,
+                    DecodeDirection::Upstream,
+                )?,
                 system_fingerprint: read_presence(o, "system_fingerprint", |v| {
                     v.as_str()
                         .map(str::to_owned)
@@ -109,9 +113,11 @@ pub(super) fn usage(
         "total_tokens",
         input_details,
         output_details,
-        "prompt_cache_hit_tokens",
-        "prompt_cache_miss_tokens",
     ];
+    let cache_aliases = profile == Profile::Chat && adaptation.rules.chat_cache_usage_aliases;
+    if cache_aliases {
+        allowed.extend(["prompt_cache_hit_tokens", "prompt_cache_miss_tokens"]);
+    }
     if profile == Profile::Chat && adaptation.rules.chat_reasoning_usage_alias {
         allowed.push("reasoning_tokens");
     }
@@ -124,7 +130,11 @@ pub(super) fn usage(
         output_tokens: Some(count(usage, output_key)?),
         total_tokens: Some(count(usage, "total_tokens")?),
         cached_input_tokens: detail(usage, input_details, "cached_tokens")?,
-        input_image_tokens: detail(usage, input_details, "image_tokens")?,
+        input_image_tokens: if profile == Profile::Chat || adaptation.rules.responses_image_usage {
+            detail(usage, input_details, "image_tokens")?
+        } else {
+            None
+        },
         input_audio_tokens: if profile == Profile::Chat {
             detail(usage, input_details, "audio_tokens")?
         } else {
@@ -137,8 +147,16 @@ pub(super) fn usage(
         },
         input_cache_write_tokens: detail(usage, input_details, "cache_write_tokens")?,
         reasoning_tokens: detail(usage, output_details, "reasoning_tokens")?,
-        input_text_tokens: detail(usage, input_details, "text_tokens")?,
-        output_text_tokens: detail(usage, output_details, "text_tokens")?,
+        input_text_tokens: if profile == Profile::Chat || adaptation.rules.responses_text_usage {
+            detail(usage, input_details, "text_tokens")?
+        } else {
+            None
+        },
+        output_text_tokens: if profile == Profile::Chat || adaptation.rules.responses_text_usage {
+            detail(usage, output_details, "text_tokens")?
+        } else {
+            None
+        },
         accepted_prediction_tokens: if profile == Profile::Chat {
             detail(usage, output_details, "accepted_prediction_tokens")?
         } else {
@@ -176,7 +194,7 @@ pub(super) fn usage(
     // as aliases of the standard details. Normalize the hit count into
     // `cached_input_tokens` and validate both aliases against the reported
     // totals: no count is lost, none is estimated, and disagreement is rejected.
-    if let Some(hit) = usage.get("prompt_cache_hit_tokens") {
+    if cache_aliases && let Some(hit) = usage.get("prompt_cache_hit_tokens") {
         let hit = hit.as_u64().ok_or(CodecError::Invalid("usage detail"))?;
         if parsed
             .cached_input_tokens
@@ -186,9 +204,11 @@ pub(super) fn usage(
         }
         parsed.cached_input_tokens = Some(hit);
     }
-    if let Some(miss) = usage.get("prompt_cache_miss_tokens") {
+    if cache_aliases && let Some(miss) = usage.get("prompt_cache_miss_tokens") {
         let miss = miss.as_u64().ok_or(CodecError::Invalid("usage detail"))?;
-        let cached = parsed.cached_input_tokens.unwrap_or(0);
+        let cached = parsed.cached_input_tokens.ok_or_else(|| {
+            CodecError::Unsupported("cache-miss usage without a cache-hit count".into())
+        })?;
         if parsed
             .input_tokens
             .and_then(|input| input.checked_sub(cached))
@@ -314,7 +334,7 @@ pub(super) fn encode_usage(
         }
     }
     if let Some(images) = usage.input_image_tokens {
-        // Lowering has already checked the explicitly selected extension slot.
+        // Chat owns this standard detail; Responses requires an explicit extension.
         let key = if profile == Profile::Chat {
             "prompt_tokens_details"
         } else {

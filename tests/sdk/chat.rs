@@ -129,8 +129,7 @@ pub(super) async fn handle(
         let mut body = wire::response(turn as u8);
         body["usage"] = usage();
         let mut d = envelope::decode_response_bytes(&serde_json::to_vec(&body).unwrap()).unwrap();
-        // Synthetic typed source fact has no Standard Chat carrier. The SDK
-        // must consume the named projection, not preserve an unknown field.
+        // Standard Chat preserves its official reported image-token detail.
         let source_usage = morphiecore::semantic::task::generation::Usage {
             input_image_tokens: Some(1),
             ..d.semantic.usage().unwrap()
@@ -160,17 +159,15 @@ pub(super) async fn handle(
             Contract::full(),
         )
         .unwrap();
-        assert_eq!(
-            projected.projection()[0].loss,
-            Some(morphiecore::protocol::openai::lowering::projection::LossRule::OmitChatInputImageTokens)
+        assert!(
+            projected
+                .projection()
+                .iter()
+                .all(|stage| stage.loss.is_none())
         );
         let out = envelope::encode_response(&projected).unwrap();
         assert_eq!(d.semantic.usage(), Some(source_usage));
-        assert!(
-            out["usage"]["prompt_tokens_details"]
-                .get("image_tokens")
-                .is_none()
-        );
+        assert_eq!(out["usage"]["prompt_tokens_details"]["image_tokens"], 1);
         return Response::builder()
             .header(CONTENT_TYPE, "application/json")
             .body(Body::from(out.to_string()))

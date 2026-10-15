@@ -64,7 +64,15 @@ impl CacheProjection {
             context.cache.prompt_cache_retention = Presence::Absent;
         }
         // Explicit cache modes/prewarm are behavioral controls, not inactive hints.
-        if !self.options && context.cache.prompt_cache_options.value().is_some() {
+        if !self.options
+            && context
+                .cache
+                .prompt_cache_options
+                .value()
+                .is_some_and(|options| {
+                    options != &crate::semantic::context::CacheOptions::default()
+                })
+        {
             return Err(CodecError::Unsupported("cache options".into()));
         }
         if !self.options {
