@@ -165,9 +165,6 @@ impl Tool {
         name(&self.name, 128)?;
         nonnull(&self.description)?;
         nonnull(&self.strict)?;
-        if self.strict == Presence::Value(true) {
-            return Err(CodecError::Unsupported("Anthropic strict tools".into()));
-        }
         if self.input_schema.root().get("type").and_then(Value::as_str) != Some("object") {
             return Err(CodecError::Unsupported("Anthropic object schema".into()));
         }

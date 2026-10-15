@@ -45,6 +45,9 @@ impl Intake {
         })
     }
     fn block(&mut self, block: &Block, role: Role) -> Result<ItemId, CodecError> {
+        if !block.permits(role) {
+            return Err(CodecError::Invalid("Anthropic block role"));
+        }
         if self.items.len() >= MAX_ITEMS {
             return Err(CodecError::Limit);
         }
@@ -64,9 +67,6 @@ impl Intake {
                 status: ItemLifecycle::Completed,
                 phase: None,
             }),
-            Block::Media(_) if role != Role::User => {
-                return Err(CodecError::Invalid("Anthropic block role"));
-            }
             Block::Media(media) => Item::Message(Message {
                 role: MessageRole::User,
                 parts: vec![Part {

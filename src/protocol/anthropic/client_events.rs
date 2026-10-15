@@ -5,8 +5,8 @@
 use crate::{
     protocol::CodecError,
     semantic::task::generation::{
-        IncompleteReason, InputTokenRelation, ItemId, ItemKind, OutputTokenRelation, StreamEvent,
-        StreamTerminal, Usage,
+        IncompleteReason, InputTokenRelation, ItemId, ItemKind, OutputTokenRelation, PartKind,
+        StreamEvent, StreamTerminal, Usage,
     },
 };
 use bytes::Bytes;
@@ -184,6 +184,13 @@ impl ClientEventEncoder {
             }
             StreamEvent::TextMetadata { annotations, .. } if !annotations.is_empty() => {
                 return Err(CodecError::Unsupported("Messages citations".into()));
+            }
+            StreamEvent::PartStarted {
+                kind: PartKind::Audio,
+                ..
+            }
+            | StreamEvent::AudioDelta { .. } => {
+                return Err(CodecError::Unsupported("Messages audio output".into()));
             }
             StreamEvent::Usage(usage) => {
                 usage_json(Some(usage))?;

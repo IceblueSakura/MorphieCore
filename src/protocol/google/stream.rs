@@ -573,7 +573,9 @@ impl GenerationSseDecoder {
                 InteractionProgress::AwaitingToolResults,
             ),
         };
-        self.emit(StreamEvent::Progress(progress), out)?;
+        if progress != InteractionProgress::Unreported {
+            self.emit(StreamEvent::Progress(progress), out)?;
+        }
         self.emit(
             StreamEvent::Terminal {
                 terminal,

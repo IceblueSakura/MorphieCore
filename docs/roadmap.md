@@ -47,9 +47,7 @@ Use the sequence below. S1 repairs can be split by independent contract. S2 esta
 Goal: preserve the source contract before introducing more lossy projection. Use the detailed [repair work](#projection-repair) below, not a new repository-wide cleanup.
 
 1. Separate official baseline fields from selected dialect aliases and extensions. An ignored field must never also populate the IR. Validate conflicts before normalization.
-2. Fix known content/role gaps in [Chat tools](../src/protocol/openai/function_tools.rs), [Chat messages](../src/protocol/openai/chat/mod.rs), [Messages client intake](../src/protocol/anthropic/client.rs) and [native intake](../src/protocol/anthropic/semantic_intake.rs). Preserve or explicitly reject caller/dispatch intent and legacy calls; do not repair invalid roles by regrouping them.
-3. Separate source parsing from target-profile restrictions, including Messages strict tools. Decode concepts the IR already supports without claiming that every target can encode them.
-4. Reconcile static/SSE content rejection in [Messages delivery](../src/protocol/anthropic/client_events.rs). Reproduce the Google incomplete-progress conflict before fixing it; do not relax the reducer's terminal contract or invent an incomplete cause.
+2. Fix known content/role gaps in [Chat tools](../src/protocol/openai/function_tools.rs) and [Chat messages](../src/protocol/openai/chat/mod.rs). Preserve or explicitly reject caller/dispatch intent and legacy calls; do not repair invalid roles by regrouping them.
 
 Exit: existing lowest-owner cases retain strict JSON, discriminators, role/call identity, content and terminal truth. Unknown protocol extensions remain inert. Any unreproduced or uncovered path is reported separately from confirmed repairs.
 
@@ -158,10 +156,6 @@ These are the detailed repair obligations consumed by S1–S6, not a second comp
 5. **Complete target-specific reasoning admission.** Check model restrictions separately from the [activation/scoped-effort contract](architecture.md#reasoning-activation-and-effort-scope) and [explicit calibration](architecture.md#initial-mapping-plan). Assess remaining display/context losses separately from level calibration. Do not claim effective sampling or exact reasoning budgets solely from SDK field presence.
 
    Exit condition: each selected target has sourced model-level admission for the controls it promises. Off, numeric allocation and effort scopes have faithful carriers, selected loss policies or explicit pending rejections; display/context losses do not enter a level table. Extend native policy wiring only for a concretely selected mapping, without changing route membership.
-
-6. **Reproduce terminal-projection suspicion independently.** Feed a synthetic Gemini `MAX_TOKENS` finish through [the decoder](../src/protocol/google/stream.rs) and reducer. Inspect the predicted `Progress(Unreported)` rejection before changing lifecycle behavior.
-
-   Exit condition: either an honest incomplete result reaches JSON/SSE without a fabricated success terminal, or the reproduction disproves the suspected defect. Keep terminal correction separate from field-boundary refactoring.
 
 Repair gate: each confirmed defect has a corrected projection or an explicitly selected rejection/degradation, with existing lowest-owner expectations updated where available and coverage gaps reported. Assess static delivery, streaming and history for all three downstream contracts. Preserve source-IR isolation, bounded expansion, cancellation, replay isolation and EOF-gated publication.
 

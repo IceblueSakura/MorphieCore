@@ -66,11 +66,12 @@ mod anthropic_profile {
                 "{key}"
             );
         }
-        for strict in [Value::Null, json!(true)] {
-            let mut body = request();
-            body["tools"][0]["strict"] = strict;
-            assert!(p.decode_request(body.to_string().as_bytes()).is_err());
-        }
+        let mut body = request();
+        body["tools"][0]["strict"] = Value::Null;
+        assert!(p.decode_request(body.to_string().as_bytes()).is_err());
+        body["tools"][0]["strict"] = json!(true);
+        let decoded = p.decode_request(body.to_string().as_bytes()).unwrap();
+        assert!(p.encode_request(&decoded).is_err());
         let mut body = request();
         body["tools"][0]
             .as_object_mut()
@@ -911,6 +912,52 @@ mod client_fidelity {
         let mut usage = Usage::operation(0, 3, 3);
         usage.input_relation = InputTokenRelation::ExcludesCacheReadAndWrite;
         response.semantic = response.semantic.with_usage(Some(usage)).unwrap();
+        let mut audio = response.clone();
+        let mut items = audio.semantic.items().to_vec();
+        let Item::Message(message) = &mut items[0].1 else {
+            panic!("message")
+        };
+        let text = |s: &str| morphiecore::semantic::value::Text::new(s, "synthetic", 128).unwrap();
+        message.parts[0].content = ContentPart::Audio(
+            GeneratedAudio::new(
+                AudioReference::new(text("a"), Some(2000)).unwrap(),
+                text("AQID"),
+                text("answer"),
+            )
+            .unwrap(),
+        );
+        audio.semantic = audio.semantic.with_items(items).unwrap();
+        assert!(encode_client_response(&audio, "m").is_err());
+        let mut audio_stream = ClientEventEncoder::new("r", "m");
+        audio_stream.encode(&StreamEvent::Started).unwrap();
+        audio_stream
+            .encode(&StreamEvent::ItemStarted {
+                item: ItemId::new(1),
+                kind: ItemKind::Message { phase: None },
+                replay: None,
+            })
+            .unwrap();
+        assert!(
+            audio_stream
+                .encode(&StreamEvent::PartStarted {
+                    item: ItemId::new(1),
+                    part: PartId::new(1),
+                    kind: PartKind::Audio,
+                })
+                .is_err()
+        );
+        assert!(
+            audio_stream
+                .encode(&StreamEvent::AudioDelta {
+                    item: ItemId::new(1),
+                    part: PartId::new(1),
+                    update: AudioUpdate {
+                        data: Some(vec![1, 2, 3]),
+                        ..Default::default()
+                    },
+                })
+                .is_err()
+        );
         assert_eq!(
             encode_client_response(&response, "m").unwrap()["content"],
             json!([{"type":"text","text":"answer"}])
@@ -989,6 +1036,37 @@ mod client_fidelity {
         let body = json!({"model":"m","max_tokens":8,"stop_sequences":[],
             "messages":[{"role":"user","content":"go"}]});
         assert!(decode_client_request(body.to_string().as_bytes()).is_ok());
+        let mut strict = body.clone();
+        strict["tools"] = json!([{"name":"lookup","input_schema":{"type":"object"},"strict":true}]);
+        let decoded = decode_client_request(strict.to_string().as_bytes()).unwrap();
+        assert!(matches!(&decoded.task.semantic.tools()[0],
+            ToolDefinition::Function(t) if t.strict == FunctionStrictness::Explicit(true)));
+        for (key, value) in [
+            ("defer_loading", json!(true)),
+            ("allowed_callers", json!(["code_execution_20250825"])),
+        ] {
+            let mut active = strict.clone();
+            active["tools"][0][key] = value;
+            assert!(
+                decode_client_request(active.to_string().as_bytes()).is_err(),
+                "{key}"
+            );
+        }
+        let mut thinking = body.clone();
+        thinking["messages"][0]["content"] =
+            json!([{"type":"thinking","thinking":"plan","signature":"synthetic"}]);
+        assert!(decode_client_request(thinking.to_string().as_bytes()).is_err());
+        thinking["messages"][0]["role"] = json!("assistant");
+        assert!(decode_client_request(thinking.to_string().as_bytes()).is_ok());
+        let mut calls = body.clone();
+        calls["messages"] = json!([
+            {"role":"assistant","content":[{"type":"tool_use","id":"c","name":"lookup","input":{},
+                "caller":{"type":"direct"}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"c","content":"ok"}]}]);
+        assert!(decode_client_request(calls.to_string().as_bytes()).is_ok());
+        calls["messages"][0]["content"][0]["caller"] =
+            json!({"type":"code_execution_20250825","tool_id":"program_1"});
+        assert!(decode_client_request(calls.to_string().as_bytes()).is_err());
         for (key, value) in [
             ("stop_sequences", json!(["END"])),
             ("container", json!("container_1")),

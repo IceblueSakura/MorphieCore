@@ -73,6 +73,19 @@ fn signature(item: &Item) -> Value {
 
 #[test]
 fn stream_maps_thoughts_text_calls_and_anchored_signatures() {
+    let partial = decode(&wire(&[json!({
+        "responseId":"partial","modelVersion":"gemini-synthetic",
+        "candidates":[{"index":0,"content":{"role":"model","parts":[{"text":"partial"}]},
+            "finishReason":"MAX_TOKENS"}],
+        "usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}
+    })]))
+    .unwrap();
+    assert_eq!(partial.semantic.outcome(), Outcome::Incomplete);
+    assert_eq!(partial.semantic.progress(), InteractionProgress::Unreported);
+    assert_eq!(
+        partial.semantic.details().incomplete,
+        Some(IncompleteReason::MaxOutputTokens)
+    );
     let observed = decode(&wire(&frames())).unwrap();
     assert_eq!(observed.metadata.id.as_deref(), Some("resp-1"));
     assert_eq!(observed.metadata.created, None);

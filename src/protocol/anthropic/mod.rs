@@ -68,6 +68,13 @@ impl Profile {
     }
     pub fn encode_request(self, request: &Request) -> Result<Value, CodecError> {
         request.validate()?;
+        if request.tools.value().is_some_and(|tools| {
+            tools
+                .iter()
+                .any(|tool| tool.strict == crate::semantic::value::Presence::Value(true))
+        }) {
+            return Err(CodecError::Unsupported("Anthropic strict tools".into()));
+        }
         let wire = request.wire();
         shape::bounded(&wire)?;
         Ok(wire)

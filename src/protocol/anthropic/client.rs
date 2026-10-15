@@ -57,7 +57,7 @@ fn block_fields(kind: Option<&str>) -> &'static [&'static str] {
         Some("text") => &["type", "text", "citations"],
         Some("thinking") => &["type", "thinking", "signature"],
         Some("redacted_thinking") => &["type", "data"],
-        Some("tool_use") => &["type", "id", "name", "input"],
+        Some("tool_use") => &["type", "id", "name", "input", "caller"],
         Some("tool_result") => &["type", "tool_use_id", "content", "is_error"],
         Some("image") => &["type", "source", "transformations"],
         // `context` and `citations` are kept so `Media::read` rejects them; they
@@ -156,6 +156,12 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                 tools
                     .iter()
                     .map(|t| {
+                        if ["defer_loading", "allowed_callers"]
+                            .iter()
+                            .any(|key| t.get(key).is_some())
+                        {
+                            return Err(CodecError::Unsupported("Anthropic tool dispatch".into()));
+                        }
                         let mut t = t.clone();
                         keep(
                             &mut t,

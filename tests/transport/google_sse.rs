@@ -91,6 +91,18 @@ fn deliver(bytes: &[u8], profile: Profile, stream: bool) -> Result<Value, String
 
 #[test]
 fn signed_calls_after_content_reach_chat_and_responses_clients() {
+    let partial = b"data: {\"responseId\":\"resp\",\"modelVersion\":\"gemini-synthetic\",\"candidates\":[{\"index\":0,\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"partial\"}]},\"finishReason\":\"MAX_TOKENS\"}],\"usageMetadata\":{\"promptTokenCount\":1,\"candidatesTokenCount\":1,\"totalTokenCount\":2}}\n\n";
+    let json = deliver(partial, Profile::Responses, false).unwrap();
+    assert_eq!(json["status"], "incomplete");
+    assert_eq!(json["incomplete_details"]["reason"], "max_output_tokens");
+    assert_eq!(json["output"][0]["content"][0]["text"], "partial");
+    let sse = deliver(partial, Profile::Responses, true).unwrap();
+    let sse = sse.as_str().unwrap();
+    assert!(sse.contains("event: response.incomplete\n"));
+    assert!(!sse.contains("event: response.completed\n"));
+    let chat = deliver(partial, Profile::Chat, false).unwrap();
+    assert_eq!(chat["choices"][0]["finish_reason"], "length");
+    assert_eq!(chat["choices"][0]["message"]["content"], "partial");
     for profile in [Profile::Chat, Profile::Responses] {
         for stream in [false, true] {
             let body = deliver(&tool_turn(), profile, stream)
