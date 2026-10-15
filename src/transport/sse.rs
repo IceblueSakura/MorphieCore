@@ -186,39 +186,31 @@ struct EventBuilder {
     data_lines: Vec<String>,
     id: Option<String>,
     retry_ms: Option<u64>,
-    has_fields: bool,
 }
 impl EventBuilder {
     fn apply_line(&mut self, line: &str) {
         let (field, value) = line.split_once(':').unwrap_or((line, ""));
         let value = value.strip_prefix(' ').unwrap_or(value);
         match field {
-            "event" => {
-                self.event = Some(value.into());
-                self.has_fields = true;
-            }
-            "data" => {
-                self.data_lines.push(value.into());
-                self.has_fields = true;
-            }
-            "id" if !value.contains('\0') => {
-                self.id = Some(value.into());
-                self.has_fields = true;
-            }
+            "event" => self.event = Some(value.into()),
+            "data" => self.data_lines.push(value.into()),
+            "id" if !value.contains('\0') => self.id = Some(value.into()),
             "retry" if value.bytes().all(|b| b.is_ascii_digit()) => {
                 if let Ok(n) = value.parse() {
                     self.retry_ms = Some(n);
-                    self.has_fields = true;
                 }
             }
             _ => {}
         }
     }
     fn take_event(&mut self) -> Option<SseEvent> {
-        if !self.has_fields {
+        if self.event.is_none()
+            && self.data_lines.is_empty()
+            && self.id.is_none()
+            && self.retry_ms.is_none()
+        {
             return None;
         }
-        self.has_fields = false;
         Some(SseEvent {
             event: self.event.take(),
             data: std::mem::take(&mut self.data_lines).join("\n"),

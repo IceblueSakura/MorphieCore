@@ -103,10 +103,10 @@ impl ContextBuild {
         self.request.continuation()
     }
 }
-pub(super) fn selected(
-    items: &[(ItemId, Item)],
+pub(super) fn selected<'a>(
+    items: &'a [(ItemId, Item)],
     owners: &[ItemId],
-) -> Result<Vec<(ItemId, Item)>, GenerationError> {
+) -> Result<impl Iterator<Item = &'a (ItemId, Item)>, GenerationError> {
     if owners.len() > MAX_ITEMS {
         return Err(GenerationError::Limit);
     }
@@ -119,11 +119,7 @@ pub(super) fn selected(
         return Err(GenerationError::InvalidDependency);
     }
     // Selection preserves source order. Reordering is a separate explicit edit.
-    Ok(items
-        .iter()
-        .filter(|(id, _)| wanted.contains(id))
-        .cloned()
-        .collect())
+    Ok(items.iter().filter(move |(id, _)| wanted.contains(id)))
 }
 fn index(items: &[(ItemId, Item)], owner: ItemId) -> Result<usize, GenerationError> {
     items
@@ -169,7 +165,7 @@ impl GenerationRequest {
                         ContextChange::Inserted(owner)
                     }
                     ContextEdit::Delete(owners) => {
-                        selected(&request.items, &owners)?;
+                        let _ = selected(&request.items, &owners)?;
                         request.items.retain(|(id,_)| !owners.contains(id));
                         ContextChange::Deleted(owners)
                     }
@@ -180,7 +176,7 @@ impl GenerationRequest {
                     }
                     ContextEdit::Reorder(order) => {
                         if order.len() != request.items.len() { return Err(GenerationError::InvalidDependency); }
-                        selected(&request.items, &order)?;
+                        let _ = selected(&request.items, &order)?;
                         request.items.sort_by_key(|(id,_)| order.iter().position(|next| next == id));
                         ContextChange::Reordered(order)
                     }
@@ -188,7 +184,7 @@ impl GenerationRequest {
                         if sources.is_empty() || text.as_str().len() > MAX_TEXT_BYTES {
                             return Err(GenerationError::Limit);
                         }
-                        let values = selected(&request.items, &sources)?;
+                        let values: Vec<_> = selected(&request.items, &sources)?.collect();
                         if source.items.iter().any(|(id,_)| *id == owner)
                             || request.items.iter().any(|(id,_)| *id == owner)
                             || contains_part(source.items(),part) || contains_part(request.items(),part)

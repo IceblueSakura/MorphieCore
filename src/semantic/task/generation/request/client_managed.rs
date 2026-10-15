@@ -105,7 +105,9 @@ impl ClientManaged {
             return Ok(self);
         }
         let select = || -> Result<GenerationRequest, GenerationError> {
-            let items = super::context_transform::selected(source.items(), owners)?;
+            let items = super::context_transform::selected(source.items(), owners)?
+                .cloned()
+                .collect();
             source.clone().with_items(items)
         };
         let selected = select().map_err(|e| ContextError::at(ContextStage::Selection, None, e))?;
@@ -121,8 +123,10 @@ impl ClientManaged {
             return Ok(self);
         }
         let selection = |e| ContextError::at(ContextStage::Selection, None, e);
-        let items =
-            super::context_transform::selected(source.items(), owners).map_err(selection)?;
+        let items: Vec<_> = super::context_transform::selected(source.items(), owners)
+            .map_err(selection)?
+            .cloned()
+            .collect();
         self.reserve_selection(&items).map_err(selection)?;
         self.request.resources = self
             .request

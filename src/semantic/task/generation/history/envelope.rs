@@ -73,12 +73,17 @@ impl MessageEnvelopes {
         items: &[(ItemId, Item)],
         values: Vec<MessageEnvelope>,
     ) -> Result<Self, GenerationError> {
-        if values.len() > MAX_ITEMS {
+        let envelopes = Self { values };
+        envelopes.validate(items)?;
+        Ok(envelopes)
+    }
+    pub fn validate(&self, items: &[(ItemId, Item)]) -> Result<usize, GenerationError> {
+        if self.values.len() > MAX_ITEMS {
             return Err(GenerationError::Limit);
         }
         let mut ids = BTreeSet::new();
         let mut members = BTreeSet::new();
-        for group in &values {
+        for group in &self.values {
             if !ids.insert(group.id) {
                 return Err(GenerationError::InvalidMessageGroup);
             }
@@ -130,10 +135,6 @@ impl MessageEnvelopes {
                 previous = Some(index);
             }
         }
-        Ok(Self { values })
-    }
-    pub fn validate(&self, items: &[(ItemId, Item)]) -> Result<usize, GenerationError> {
-        Self::new(items, self.values.clone())?;
         Ok(std::mem::size_of_val(self.values.as_slice())
             + self
                 .values

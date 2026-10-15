@@ -1,27 +1,17 @@
 use crate::protocol::openai::{CodecError, Profile};
 use crate::{
     protocol::fidelity::FidelityRecords,
-    semantic::{task::generation::*, value::Text},
+    semantic::{
+        task::generation::*,
+        value::{Text, json_size},
+    },
 };
 use serde_json::{Map, Value};
-use std::io::{self, Write};
 
-// Count serialization without allocating another full wire buffer.
 pub(super) fn bounded(v: &Value) -> Result<(), CodecError> {
-    struct Counter(usize);
-    impl Write for Counter {
-        fn write(&mut self, b: &[u8]) -> io::Result<usize> {
-            self.0 = self.0.saturating_add(b.len());
-            if self.0 > MAX_TOTAL_BYTES {
-                return Err(io::Error::other("wire limit"));
-            }
-            Ok(b.len())
-        }
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
-    serde_json::to_writer(Counter(0), v).map_err(|_| CodecError::Limit)
+    json_size(v, MAX_TOTAL_BYTES)
+        .map(|_| ())
+        .map_err(|_| CodecError::Limit)
 }
 pub(super) fn read_presence<T>(
     o: &Map<String, Value>,
@@ -486,4 +476,18 @@ pub(super) fn accept_status(o: &Map<String, Value>, expected: &str) -> Result<()
     Ok(())
 }
 #[cfg(test)]
-mod direction_tests {}
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wire_budget_counts_utf8_and_escaped_bytes_at_the_limit() {
+        // Quotes, one three-byte character and one escaped newline occupy seven bytes.
+        let mut value = Value::String(format!("你\n{}", "x".repeat(MAX_TOTAL_BYTES - 7)));
+        assert!(bounded(&value).is_ok());
+        let Value::String(text) = &mut value else {
+            unreachable!()
+        };
+        text.push('x');
+        assert!(matches!(bounded(&value), Err(CodecError::Limit)));
+    }
+}
