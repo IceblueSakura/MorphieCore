@@ -124,7 +124,15 @@ Request-wide `instructions` may use a leading role-bearing message when the targ
 
 Chat already supports system/developer/user messages, so this selector applies only to the leading message generated from request-wide instructions. It neither moves existing ordered instruction items to the front nor rewrites their explicit roles; those follow exact carriers or a separate selected role rule. Keep instruction text unchanged and emit it once. The current Chat encoder always uses a leading developer message; the target-local selector and system fallback remain implementation work. Keep the selector in trusted protocol/binding policy, outside semantic IR and the public request schema.
 
-These are selected policies, not claims that all codecs implement them. Concrete role mappings use trusted target policy, not client-selected fallback logic. Image/file detail, filename and reasoning-context omission remain under individual P8 review. `DefaultStrictAsPlain` is unselected: native targets reject Responses normalization-default tools instead of treating the omitted flag as non-strict.
+P8 keeps image detail and file detail separate. Prefer exact carriers. Omit an explicit detail only when the selected target's default is proven equivalent, or apply a named, directional approximation backed by evidence for that target. An absent carrier alone does not justify omission, and explicit `auto` is not automatically equivalent to absence. Undeclared or unsupported conversions reject. These rules do not permit dropping media, transcoding it or moving it to another role.
+
+P8 protects the model-visible filename. Preserve it through an exact carrier, including OpenAI `filename` and Messages document `title`; reject a target without one when a filename is present. Do not omit the name or inject it into surrounding text. An empty name remains distinct from absence.
+
+P8 permits omission of an explicit reasoning-context control only when the selected target's default is proven equivalent. Otherwise preserve its exact carrier or reject, including when equivalence is unknown. Keep absent controls absent. This policy does not permit deleting messages, necessary reasoning replay or compacted history to simulate a context setting, and does not apply to a Messages document's `context` field.
+
+P8 rejects `DefaultStrictAsPlain`. Keep omitted normalization-default strictness distinct from omitted non-strict defaults and explicit `strict: false`. Responses normalization-default tools must not become plain native tools; reject when their source semantics cannot be preserved. This decision does not select a new schema-normalization implementation or permit removal of explicit schema constraints.
+
+These are selected policies, not claims that all codecs implement them. Concrete mappings and default-equivalence checks use trusted target policy with source evidence, not client-selected fallback logic or upstream-error discovery. Existing broad media/context omission paths still need the S5 repair; a named rule alone does not establish approval.
 
 ### Adaptation evidence
 
@@ -279,8 +287,8 @@ Parsing direction is explicit: client input, upstream reports and encoder checks
 Image, audio, video and file resources are inert: inline data or a URL, never fetched, decoded or uploaded by the gateway. Each kind is explicit, because a URL source carries no media type. An inline file keeps its declared MIME, and targets that dispatch by MIME may carry it.
 
 - Chat video uses the registered extension `{"type":"video_url","video_url":{"url":…}}`, shared by OpenRouter, DashScope, Zhipu, vLLM and ModelBest. Responses video uses `{"type":"input_video","video_url":…}` from Open Responses and OpenRouter, in user messages only. Only targets whose dialect declares the carrier receive video. Responses clients may send `input_video` in tool results, but no bound target carries tool-result video: OpenAI and Interactions results have no video part, and Gemini function responses admit only PNG, JPEG, WebP, PDF and plain text.
-- Existing codecs drop some per-use options without a target slot (image detail, file detail, filename) through named rules. This describes current behavior, not approval to retain or extend those losses; each remains under P8 review. Inbound options with no IR slot that change model-visible content, such as a Messages document `context`, are rejected.
-- A file name is the model-visible document name: OpenAI `filename` and Messages document `title` map to each other.
+- Some codecs still drop image detail, file detail or filename through broad named rules. S5 must replace these paths with the [selected P8 rules](#selected-request-approximations): evidence-backed target-local detail handling and no filename loss. Inbound options with no IR slot that change model-visible content, such as a Messages document `context`, remain rejected.
+- A file name is the model-visible document name: OpenAI `filename` and Messages document `title` map to each other. A present name needs an exact carrier; do not drop it or inject it into text.
 - Instructions may carry image and file parts. Only Responses system and developer messages have a carrier; other targets reject them rather than move media to another role.
 - Tool results may carry media of any kind. Admission needs tool-result media and the kind's input modality. An inline file whose MIME type is image, audio or video also needs that modality, in addition to file input. Responses carries tool media; standard Chat does not, so Chat targets reject it.
 - Provider file IDs and file URIs are bound to the gateway credential's workspace or project. Client-supplied references are rejected.
@@ -470,11 +478,11 @@ Native requests preserve thinking, tool-use/result order and call IDs. Messages 
 
 ### Request rules
 
-These describe current native behavior, not completion of the [loss-policy migration](roadmap.md#ir-and-codec-migration). Scope rejection and sampling omission still need the selected policies; default-strict projection remains under review. Selected summary-granularity and role approximations follow the [request policy](#selected-request-approximations).
+These describe current native behavior, not completion of the [loss-policy migration](roadmap.md#ir-and-codec-migration). Scope rejection, sampling omission and broad media/context losses still need the selected policies. Default-strict-to-plain conversion remains rejected by decision. Selected P8 behavior follows the [request policy](#selected-request-approximations).
 
 - Disabled and adaptive activation have distinct carriers. This selected profile rejects numeric thinking budgets instead of replacing them with effort.
 - Response-wide effort maps to `output_config.effort` independently of thinking. Reasoning-only effort is rejected, not broadened to response-wide effort.
-- Summary intent maps to summarized or omitted display only with a representable activation/allocation. Display alone does not enable thinking. Unsupported reasoning context and sampling controls still have named projection rules.
+- Summary intent maps to summarized or omitted display only with a representable activation/allocation. Display alone does not enable thinking. Current reasoning-context omission must be restricted to proven target-default equivalence; sampling omission needs a declared fixed/ignored target policy.
 - Client `thinking.display` is preserved independently of effort and budget, using the same display parser as native intake.
 - A leading developer instruction maps to the system prompt by name.
 - Call IDs outside the native grammar map to stable digests; collisions fail rather than merge calls.
@@ -552,6 +560,10 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Configurable internal exchange capture | P6 permits opt-in business headers/bodies at all four I/O boundaries with separate controls, finite retention and best-effort writes. Credentials are always redacted; no switch permits credential-bearing logs |
 | Summary granularity and visibility | P8 permits approximate summary granularity while preserving show/hide intent. Do not enable reasoning, fabricate summaries or expose hidden content |
 | Role and instruction approximation | P8 permits named developer/system/user mappings on target copies. A trusted Chat instruction-role selector uses developer for supported targets or system for compatibility fallback, before encoding and without error-triggered retry; existing ordered history stays ordered |
+| Target-local media detail | P8 prefers exact image/file detail carriers. Omission needs proven target-default equivalence; other approximations need evidence-backed named directional rules. No blanket media-option omission or inferred auto/absence equivalence |
+| Model-visible filenames | P8 requires an exact filename carrier, including filename/title mapping, or rejection when a name is present. No omission or automatic text injection; empty and absent remain distinct |
+| Reasoning-context defaults | P8 permits omission only for proven equivalent target defaults; otherwise preserve exactly or reject. Do not simulate context controls by deleting messages, required replay or compacted history |
+| No default-strict-to-plain conversion | P8 rejects `DefaultStrictAsPlain`. Omitted Responses normalization defaults are not non-strict tools; preserve their source semantics or reject, without removing explicit constraints |
 | Predicted-output optimization | D3 selects named omission of Chat prediction after source validation until supported. Record the loss without changing generated text or fabricating usage |
 | Registered reasoning-view presence | Absent/null/empty plaintext views make no assertion; nonempty duplicates must agree. Explicit structured parts and replay ownership remain intact |
 | Equal downstream contracts | Chat Completions, Responses and Messages receive equal consideration for static delivery, streaming and history replay; a missing carrier needs an approved projection or explicit rejection |

@@ -28,13 +28,13 @@ P7 keeps routing frozen until the selected Generation IR, codec and protocol-con
 
 ### IR and codec migration
 
-This is an implementation plan. Accurate IR, declared loss, verbosity omission and the routing freeze are selected. P1/P2/P4/P5 follow the [recorded architecture decisions](architecture.md#settled-decisions); P3 selects six thinking-budget presets with nearest-token/highest-level-tie quantization, and P3b rejects budgets above the applicable explicit output ceiling without adjustment. P6 selects configurable business capture with mandatory credential redaction; P7 defers routing until IR/codec/conversion completion. P8 selects summary-granularity and role approximation, and D3 selects named prediction omission. Remaining P8 rules stay in [Pending decisions](#pending-decisions).
+This is an implementation plan. Accurate IR, declared loss, verbosity omission and the routing freeze are selected. P1/P2/P4/P5 follow the [recorded architecture decisions](architecture.md#settled-decisions); P3 selects six thinking-budget presets with nearest-token/highest-level-tie quantization, and P3b rejects budgets above the applicable explicit output ceiling without adjustment. P6 selects configurable business capture with mandatory credential redaction; P7 defers routing until IR/codec/conversion completion. P8 selects bounded summary/role approximation, evidence-backed target-local media-detail rules, exact filename preservation, reasoning-context omission only for proven equivalent defaults, and rejection of `DefaultStrictAsPlain`. D3 selects named prediction omission.
 
-Use the sequence below. Reuse the source-integrity guards, existing verbosity projections and control receipts before adding abstractions. Continue independent work while remaining P8 rules stay open; no slice depends on reconnecting the routing layer.
+Use the sequence below. Reuse the source-integrity guards, existing verbosity projections and control receipts before adding abstractions. P3b/P8 policy choices are settled; concrete target evidence and implementation remain required. No slice depends on reconnecting the routing layer.
 
 | Slice | Dependency | Deliverable |
 |---|---|---|
-| S5: Quality-sensitive approximation | Existing declared-loss contract; declared target data; remaining P8 rules where applicable | Selected scope/allocation/sampling, summary and role policies, not a universal fallback |
+| S5: Quality-sensitive approximation | Existing declared-loss contract and evidence-backed declared target data | Selected scope/allocation/sampling and P8 policies, not a universal fallback |
 | S6: Reports, SSE and history | Each selected request projection rule | Source facts stay distinct from delivery losses and retained history |
 | S7: Diagnostic and contract closure | S5/S6 and existing carrier rules, excluding explicitly deferred decisions | Bounded end-to-end evidence at codec/delivery boundaries and an explicit integration handoff |
 
@@ -47,7 +47,7 @@ Goal: implement the selected approximations without losing the source's meaning.
 3. Implement P2 by preserving a supported off carrier and omitting only independent unrepresentable response effort. Under P4, retain supported sampling and name omission only for declared fixed/ignored controls; unknown model behavior remains a gap.
 4. Implement P3's [selected six-budget preset and matching rule](architecture.md#thinking-budget-quantization), not pi's collapsed high/xhigh/max defaults. Preserve original numeric intent, permit duplicate values in target-specific tables, minimize absolute distance and choose the highest level on all ties. Keep off/sentinels outside matching and exact native carriers ahead of approximation. Update existing expectations with the approved `750 -> xhigh` example, exact shared values and upward midpoint boundaries. Under P3b, reject explicit or conversion-generated budgets above the applicable explicit output ceiling. Keep both values unchanged and enforce stricter target relations without automatic adjustment; ordinary lookup/quantization remains unchanged.
 5. Implement the selected [P8 summary and role rules](architecture.md#selected-request-approximations). Approximate summary granularity while preserving show/hide behavior and activation. Declare target-local developer/system/user mappings without changing source IR, content or existing history order. Replace Chat's fixed leading-developer encoding of request-wide instructions with a trusted target-local developer/system selector: prefer supported developer, retain system for compatibility fallback, and validate before encoding without error-triggered retry. Update existing expectations for both choices; explicit role-bearing history still uses its exact carrier or a separate selected role rule.
-6. Keep image/file detail, filename, reasoning-context omission and `DefaultStrictAsPlain` under individual P8 review. Existing loss rules do not establish approval; explicit constraints, necessary replay and content stay protected.
+6. Enforce the remaining [selected P8 rules](architecture.md#selected-request-approximations). Prefer exact image/file detail carriers; omission needs proven default equivalence and other approximations need evidence-backed named target rules. Preserve present filenames exactly or reject, without text injection. Preserve reasoning context exactly or omit only for proven equivalent target defaults; unknown equivalence rejects. Keep `DefaultStrictAsPlain` rejected. Replace broad media/context omissions and update existing expectations without weakening content, constraints or required replay.
 
 Exit: selected rules run once, report source/target controls and preserve unchanged input. Unselected combinations retain explicit rejection. Native request/intake wiring and [configuration-history policy](#reasoning-repair-slices) follow the selected directions rather than inferring effective settings.
 
@@ -91,7 +91,9 @@ Native `representation_contract()` carrier availability is separate from default
 
 Remaining constrained-carrier gaps are explicit rejections: Google JSON-object mode, schema references and unselected schema keywords; generateContent optional allowed-tool subsets; Interactions logprobs; and Messages strict string enum/const, references and regex. Google probability intake selects only unambiguous chunk-local text reports; mixed or cumulative reports reject rather than guess ownership. Google reports no token bytes, so the current Responses probability carrier cannot deliver that evidence. Non-identity history projection and static/SSE delivery alignment remain S6 work.
 
-Responses normalization-default strictness cannot become a plain native tool. That conversion now rejects pending P8 selection; pi-shaped requests that omit `strict` therefore do not reach those native bindings. Explicit non-strict tools retain their separate carrier.
+Responses normalization-default strictness cannot become a plain native tool. P8 selects continued rejection of that conversion; pi-shaped requests that omit `strict` therefore do not reach those native bindings. Explicit non-strict tools retain their separate carrier. No new schema-normalization implementation is selected.
+
+P8 policy selection is complete, not its implementation. Broad media-detail, filename and reasoning-context omission paths remain S5 repair work. Each selected target still needs carrier/default evidence; missing evidence means rejection, not an implicit approximation or a reopened policy decision.
 
 Explicit cache retention also rejects targets without an exact carrier. No cross-Provider retention approximation or route-policy change is selected.
 
@@ -275,12 +277,11 @@ Real failover needs a controlled failure source, such as an exhausted key in a s
 
 ## Pending decisions
 
-P1/P2/P4/P5/P6, P3's six-budget quantization, P3b's rejection of over-ceiling budgets without adjustment, P8's summary/role approximations and D3's prediction omission are selected in [Architecture](architecture.md#settled-decisions). P7 keeps routing frozen until the selected IR/codec/protocol-conversion work is complete. Only the following details and deferred policies remain open. Continue independent slices; ask only when an unresolved choice blocks the affected contract. Unimplemented support is not a reason to reconsider an already selected policy.
+P1/P2/P4/P5/P6, P3's six-budget quantization, P3b's rejection of over-ceiling budgets without adjustment, all P8 policies and D3's prediction omission are selected in [Architecture](architecture.md#settled-decisions). P7 keeps routing frozen until the selected IR/codec/protocol-conversion work is complete. Only the following deferred policies remain open. Continue independent slices; ask only when an unresolved choice blocks the affected contract. Unimplemented support or missing target evidence is not a reason to reconsider an already selected policy.
 
 | Question | Unresolved choice and recommendation | Blocks |
 |---|---|---|
 | P7 follow-up: Public surface and reconnection | Revisit only after the selected IR/codec/protocol-conversion scope is complete. Decide the public native-versus-lossy capability representation and whether/how to warn clients; then schedule reconnection. No false native support claim or per-request policy override is selected | Later route-facing publication and full-chain acceptance, not the current migration |
-| P8 remainder: Media, context and default strictness | Image/file detail, filename and reasoning-context omission remain open; `DefaultStrictAsPlain` was not selected and the corresponding conversion rejects pending review. Summary-granularity approximation with unchanged visibility and named developer/system/user mappings are already selected. Preserve exact carriers and explicit constraints; existing loss rules are not approval | Only the affected remaining S5/S6 rules and normalization-default tool conversion |
 
 | Question | Current behavior | Options |
 |---|---|---|
