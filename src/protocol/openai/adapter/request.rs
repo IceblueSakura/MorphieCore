@@ -159,7 +159,7 @@ impl Adapter {
                         stream: decoded.context.stream,
                         options: decoded.context.stream_options,
                     },
-                    source: Some(self.protocol),
+                    source: Some(self.protocol.into()),
                     conversation: None,
                     cache_session,
                     inferred_affinity: None,
@@ -185,7 +185,7 @@ impl Adapter {
                         stream: decoded.context.delivery.stream,
                         options,
                     },
-                    source: Some(self.protocol),
+                    source: Some(self.protocol.into()),
                     conversation: None,
                     cache_session,
                     inferred_affinity: None,
@@ -327,6 +327,18 @@ impl Adapter {
             rules.push("openai.default-schema-name.v1");
         }
         let request = named.as_ref().unwrap_or(request);
+        // Messages permits this named loss only on targets without an error carrier.
+        // Keep the source and every native candidate unchanged.
+        let errors = if request.source == Some(crate::adapter::ClientProtocol::Messages) {
+            let mut copy = request.clone();
+            copy.drop_tool_error_flags()?.then_some(copy)
+        } else {
+            None
+        };
+        if errors.is_some() {
+            rules.push("openai.omit-tool-result-errors.v1");
+        }
+        let request = errors.as_ref().unwrap_or(request);
         request.check_context(contract.standard_context)?;
         if self.adaptation.rules.responses_siwc {
             if self.protocol != Profile::Responses {
@@ -384,7 +396,7 @@ impl Adapter {
                 let mut options = request.delivery.options.clone();
                 // Cross-protocol delivery still needs actual upstream usage; request
                 // its wire report rather than synthesizing any counters.
-                if request.source != Some(self.protocol) && request.delivery.streaming() {
+                if request.source != Some(self.protocol.into()) && request.delivery.streaming() {
                     let mut common = options.value().cloned().unwrap_or_default();
                     common.include_usage = Presence::Value(true);
                     options = Presence::Value(common);
@@ -393,7 +405,7 @@ impl Adapter {
                     &target,
                     &chat_envelope::RequestContext {
                         model: model.into(),
-                        n: if request.source == Some(self.protocol) {
+                        n: if request.source == Some(self.protocol.into()) {
                             request.n.clone()
                         } else {
                             Presence::Absent

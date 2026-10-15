@@ -389,6 +389,49 @@ fn native_messages_binding_activates_only_when_listed() {
         );
         assert_eq!(endpoint.target.path.as_str(), "/zen/go/v1/messages");
     }
+    let mixed = Fixture::from_lookup(|name| {
+        if name == "openrouter-api-key" {
+            Ok(Some("synthetic-router-key".into()))
+        } else {
+            settings(Some(r#"["claude-haiku-5-5"]"#))(name)
+        }
+    })
+    .unwrap();
+    let body = br#"{"model":"claude-haiku-5-5","max_tokens":64,"messages":[
+        {"role":"user","content":"read the file"},
+        {"role":"assistant","content":[{"type":"tool_use","id":"call-1","name":"read","input":{}}]},
+        {"role":"user","content":[{"type":"tool_result","tool_use_id":"call-1","content":"failed","is_error":true}]}
+    ]}"#;
+    let (_, native_request) =
+        crate::gateway::ingress::admission::prepare_messages(&boot.gateway.state, body).unwrap();
+    let (entry, mut request) =
+        crate::gateway::ingress::admission::prepare_messages(&mixed.gateway.state, body).unwrap();
+    assert_eq!(request, native_request);
+    request.conversation = Some(
+        crate::semantic::context::ConversationContext::conversation("synthetic-conversation")
+            .unwrap(),
+    );
+    let original = request.clone();
+    for candidate in &entry.candidates {
+        let secret = candidate.secret.resolve().unwrap().0;
+        let (prepared, rules) = crate::execution::prepare_with_rules(
+            &candidate.endpoint,
+            &candidate.provider,
+            &secret,
+            &request,
+        )
+        .unwrap();
+        let wire: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
+        if candidate.endpoint.protocol == crate::topology::ProtocolProfile::AnthropicMessages {
+            assert_eq!(wire["messages"][2]["content"][0]["is_error"], true);
+            assert!(!rules.contains(&"openai.omit-tool-result-errors.v1"));
+        } else {
+            assert_eq!(wire["messages"][2]["content"], "failed");
+            assert!(rules.contains(&"openai.omit-tool-result-errors.v1"));
+        }
+    }
+    assert_eq!(entry.eligible(&request).unwrap().len(), 2);
+    assert_eq!(request, original);
 }
 
 #[test]

@@ -279,6 +279,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         fidelity.record_strict_image_size(part)?;
     }
     let mut request = Request::from_generation(DecodedRequest { semantic, fidelity }, &model)?;
+    request.source = Some(crate::adapter::ClientProtocol::Messages);
     if let Some(stream) = o.get("stream").filter(|v| !v.is_null()) {
         request.delivery.stream =
             Presence::Value(stream.as_bool().ok_or(CodecError::Invalid("stream"))?);

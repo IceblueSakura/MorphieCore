@@ -260,12 +260,24 @@ async fn messages_clients_get_anthropic_shapes_from_an_openai_target() {
         body.to_string().as_bytes(),
     )
     .unwrap();
-    assert_eq!(request.ignored_fields, ["tool_result.is_error"]);
+    assert!(request.ignored_fields.is_empty());
+    assert!(
+        request
+            .task
+            .semantic
+            .items()
+            .iter()
+            .any(|(_, item)| matches!(
+                item, crate::semantic::task::generation::Item::ToolResult(result)
+                    if result.is_error == Some(true)
+            ))
+    );
     // Messages turns regroup as Chat messages for an OpenAI target.
-    let chat = entry.candidates[0]
+    let (chat, rules) = entry.candidates[0]
         .endpoint
-        .encode_request(&request)
+        .encode_request_with_rules(&request)
         .unwrap();
+    assert!(rules.contains(&"openai.omit-tool-result-errors.v1"));
     assert_eq!(
         chat["messages"][1],
         serde_json::json!({"role":"assistant","content":null,"reasoning_content":"plan",

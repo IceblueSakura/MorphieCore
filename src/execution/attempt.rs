@@ -75,7 +75,13 @@ pub fn admit(
         return Err(AttemptError::Protocol("public model mismatch"));
     }
     request.check_context(public.standard_context)?;
-    Ok(request.check_semantic(&public.contract)?)
+    let mut contract = public.contract.clone();
+    // Messages tool errors have an explicit candidate-local projection on
+    // non-native targets; admission must not erase them for native candidates.
+    if request.source == Some(crate::adapter::ClientProtocol::Messages) {
+        contract.tool_result_errors = true;
+    }
+    Ok(request.check_semantic(&contract)?)
 }
 
 pub(crate) fn operation_auth(

@@ -1,8 +1,8 @@
 //! Protocol-neutral generation input, context validation and replay isolation.
-use super::AdapterError;
+use super::{AdapterError, ClientProtocol};
 use crate::{
     lowering::generation::RepresentationError,
-    protocol::{CodecError, DecodedRequest, openai::Profile},
+    protocol::{CodecError, DecodedRequest},
     semantic::{
         context::{ConversationContext, DeliveryIntent, ExecutionHints},
         value::Presence,
@@ -17,7 +17,7 @@ pub struct Request {
     pub conversation: Option<ConversationContext>,
     pub(crate) inferred_affinity: Option<crate::protocol::cache::InferredAffinity>,
     pub cache_session: Option<crate::protocol::cache::CacheSession>,
-    pub(crate) source: Option<Profile>,
+    pub(crate) source: Option<ClientProtocol>,
     pub(crate) n: Presence<u64>,
     /// Ignored client request field names, for diagnostics only; never encoded.
     pub(crate) ignored_fields: Vec<String>,

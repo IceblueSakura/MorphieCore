@@ -4,6 +4,8 @@ This page owns direction and current scope. Code and tests define behavior; [Arc
 
 ## Current focus
 
+Selected slice: consolidate gateway boundaries without changing route selection or fallback policy. Preserve the source IR during Messages admission and apply tool-error degradation per candidate; make downstream protocol identity explicit; centralize candidate-transition policy and codec dispatch; replace chained startup constructors with one typed activation input. Exit condition: mixed native/Chat candidates preserve native tool-error flags, existing lifecycle/security contracts pass, and the full offline baseline remains green. No new model-selection policy or live deployment is included.
+
 Complete the Generation IR against selected semantics accepted by the official OpenAI, Anthropic and Google APIs. Provider dialects remain codec concerns. Realtime and standalone tasks do not need complete integration for this phase. Each slice must state its goal and exit condition before code changes.
 
 Track semantic expression, codec representation and enabled bindings separately. A concept supported by only one official API may belong in the IR; other targets reject it when they have no carrier. Client compatibility does not define the semantic vocabulary. Protocol sources are pinned in [References](references.md).
