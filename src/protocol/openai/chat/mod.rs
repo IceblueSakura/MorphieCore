@@ -62,7 +62,6 @@ pub(crate) fn decode_generation_with(
         .ok_or(CodecError::Invalid("messages"))?;
     let mut b = Items::new(direction);
     for message in messages {
-        adaptation.validate_message(object(message)?)?;
         let message = crate::protocol::openai::chat::reasoning::decode_static(
             &mut b,
             object(message)?,

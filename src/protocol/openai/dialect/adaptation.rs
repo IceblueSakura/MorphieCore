@@ -1,6 +1,5 @@
 //! Explicit wire rules selected by trusted adapters, never by business JSON.
-use crate::{protocol::openai::CodecError, semantic::value::ReplayOrigin};
-use serde_json::{Map, Value};
+use crate::semantic::value::ReplayOrigin;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct WireRules {
@@ -71,7 +70,9 @@ pub struct WireRules {
     pub empty_continuation_call_id: bool,
     /// Bounded, source-bound router and billing facts, never task semantics.
     pub routing_extras: bool,
-    /// A readable alias must not conflict with the canonical reasoning carrier.
+    /// Admit the plaintext `reasoning` input alias independently of output spelling.
+    pub accept_reasoning_alias: bool,
+    /// Emit the Provider's `reasoning` spelling instead of `reasoning_content`.
     pub reasoning_alias: bool,
     /// Scoped OpenAI Responses-format reasoning details on a Chat carrier.
     /// Final encrypted replay requires a completed owner and matching origin;
@@ -151,13 +152,4 @@ pub struct Adaptation {
     /// Stable adapter contract identity, not a network or credential locator.
     pub profile_id: &'static str,
     pub scope: Option<ReplayOrigin>,
-}
-impl Adaptation {
-    /// Request-side gate only; upstream responses ignore keys the dialect does not model.
-    pub(crate) fn validate_message(&self, message: &Map<String, Value>) -> Result<(), CodecError> {
-        if message.contains_key("reasoning_content") && !self.rules.readable_reasoning {
-            return Err(CodecError::Unsupported("reasoning_content".into()));
-        }
-        Ok(())
-    }
 }

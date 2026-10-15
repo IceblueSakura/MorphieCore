@@ -219,11 +219,27 @@ pub(in crate::protocol::openai) fn decode_static(
     m: &Map<String, Value>,
     a: &Adaptation,
 ) -> Result<Map<String, Value>, CodecError> {
-    let groups = parse_message(m, a, b.direction)?;
-    if m.contains_key("reasoning_details") && string(m, "role")? != "assistant" {
+    let mut clean = m.clone();
+    for (key, admitted) in [
+        ("reasoning_content", a.rules.readable_reasoning),
+        ("reasoning", a.rules.accept_reasoning_alias),
+        (
+            "reasoning_details",
+            a.rules.structured_chat_reasoning || a.rules.unversioned_chat_reasoning_view,
+        ),
+    ] {
+        if !admitted && let Some(value) = clean.shift_remove(key) {
+            b.direction
+                .fields(&Map::from_iter([(key.into(), value)]), &[])?;
+        }
+    }
+    if a.rules.accept_reasoning_alias {
+        crate::protocol::openai::dialect::adapter_shapes::decode_message(&mut clean)?;
+    }
+    let groups = parse_message(&clean, a, b.direction)?;
+    if clean.contains_key("reasoning_details") && string(&clean, "role")? != "assistant" {
         return Err(CodecError::Invalid("reasoning owner"));
     }
-    let mut clean = m.clone();
     if !groups.is_empty() {
         clean.shift_remove("reasoning");
         clean.shift_remove("reasoning_content");
@@ -265,9 +281,6 @@ pub(in crate::protocol::openai) fn decode_static(
     }
     if a.rules.structured_chat_reasoning || a.rules.unversioned_chat_reasoning_view {
         clean.shift_remove("reasoning_details");
-    }
-    if a.rules.unversioned_chat_reasoning_view && a.rules.reasoning_alias {
-        crate::protocol::openai::dialect::adapter_shapes::decode_message(&mut clean)?;
     }
     Ok(clean)
 }

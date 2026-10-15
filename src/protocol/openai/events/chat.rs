@@ -44,20 +44,30 @@ impl EventDecoder {
                     return Err(CodecError::Invalid("repeated finish"));
                 }
                 let delta = object(choice.get("delta").ok_or(CodecError::Invalid("delta"))?)?;
+                reject_chat_orchestration(delta)?;
                 DecodeDirection::Upstream.fields(delta, &["role", "content"])?;
                 // Explicit, not via `fields`: upstream decoding ignores unknown keys, but
                 // late content after the finish must still fail rather than be dropped.
+                if ["refusal", "tool_calls", "function_call", "audio"]
+                    .iter()
+                    .any(|key| delta.get(*key).is_some_and(|v| !v.is_null()))
+                {
+                    return Err(CodecError::Invalid("content after finish"));
+                }
                 if [
-                    "refusal",
-                    "tool_calls",
-                    "function_call",
-                    "reasoning_content",
-                    "reasoning",
-                    "reasoning_details",
-                    "audio",
+                    (
+                        "reasoning_content",
+                        self.adaptation.rules.readable_reasoning,
+                    ),
+                    ("reasoning", self.adaptation.rules.accept_reasoning_alias),
+                    (
+                        "reasoning_details",
+                        self.adaptation.rules.structured_chat_reasoning
+                            || self.adaptation.rules.unversioned_chat_reasoning_view,
+                    ),
                 ]
-                .iter()
-                .any(|key| delta.get(*key).is_some_and(|v| !v.is_null()))
+                .into_iter()
+                .any(|(key, admitted)| admitted && delta.get(key).is_some_and(|v| !v.is_null()))
                 {
                     return Err(CodecError::Invalid("content after finish"));
                 }
@@ -134,28 +144,33 @@ impl EventDecoder {
                 .first()
                 .map(|p| p.kind)
         });
-        let details = crate::protocol::openai::chat::reasoning::parse(
-            delta,
-            &self.adaptation,
-            prior,
-            self.chat_detail_base,
-            DecodeDirection::Upstream,
-        )?;
-        if details.is_none() && delta.contains_key("reasoning") {
-            return Err(CodecError::Unsupported("reasoning alias".into()));
-        }
+        let details = if self.adaptation.rules.structured_chat_reasoning
+            || self.adaptation.rules.unversioned_chat_reasoning_view
+        {
+            crate::protocol::openai::chat::reasoning::parse(
+                delta,
+                &self.adaptation,
+                prior,
+                self.chat_detail_base,
+                DecodeDirection::Upstream,
+            )?
+        } else {
+            None
+        };
         let kind = details
             .as_ref()
             .and_then(|d| d.part.as_ref().map(|(k, _)| *k))
             .unwrap_or(PartKind::ReasoningText);
         let fragment = if let Some((_, s)) = details.as_ref().and_then(|d| d.part.as_ref()) {
             Some(s.as_str())
-        } else {
+        } else if self.adaptation.rules.readable_reasoning {
             delta
                 .get("reasoning_content")
                 .filter(|v| !v.is_null())
                 .map(|v| v.as_str().ok_or(CodecError::Invalid("reasoning delta")))
                 .transpose()?
+        } else {
+            None
         };
         if let Some(fragment) = fragment
             && (!fragment.is_empty() || details.as_ref().is_some_and(|d| d.part.is_some()))

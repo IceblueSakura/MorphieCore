@@ -42,6 +42,28 @@ mod provider_profiles {
     fn unversioned_readable_views_are_closed_and_never_restore_deleted_reasoning() {
         use morphiecore::semantic::task::generation::{Item, ReasoningContent};
         use morphiecore::semantic::value::Text;
+        let standard = adapter(Dialect::Standard);
+        let mut unknown = body();
+        unknown["choices"][0]["message"]["reasoning_content"] = json!({"not":"text"});
+        unknown["choices"][0]["message"]["reasoning"] = json!(7);
+        unknown["choices"][0]["message"]["reasoning_details"] = json!({"not":"details"});
+        assert!(
+            standard
+                .decode_response(unknown.to_string().as_bytes())
+                .unwrap()
+                .semantic
+                .items()
+                .iter()
+                .all(|(_, item)| !matches!(item, Item::Reasoning(_)))
+        );
+        let client = adapter(Dialect::MorphieCore);
+        let alias = client.decode_client_request(
+            br#"{"model":"m","messages":[{"role":"assistant","content":"answer","reasoning":"think"}]}"#
+        ).unwrap();
+        assert!(
+            matches!(&alias.task.semantic.items()[0].1, Item::Reasoning(r)
+            if matches!(&r.parts[0].1, ReasoningContent::Text(t) if t.as_str() == "think"))
+        );
         let provider = adapter(Dialect::OpenCodeGo);
         let details =
             json!([{"type":"reasoning.text","text":"think","format":"unknown","index":0}]);
@@ -74,10 +96,15 @@ mod provider_profiles {
                 .decode_response(source.to_string().as_bytes())
                 .is_ok()
         );
+        let unrelated = adapter(Dialect::DeepSeek)
+            .decode_response(source.to_string().as_bytes())
+            .unwrap();
         assert!(
-            adapter(Dialect::DeepSeek)
-                .decode_response(source.to_string().as_bytes())
-                .is_err()
+            unrelated
+                .semantic
+                .items()
+                .iter()
+                .all(|(_, item)| !matches!(item, Item::Reasoning(_)))
         );
         for (path, value) in [
             ("/choices/0/message/reasoning", json!("disagree")),
@@ -105,6 +132,24 @@ mod provider_profiles {
             );
         }
         let chunk = |delta: Value, finish: Value| json!({"id":"c1","object":"chat.completion.chunk","model":"m","created":1,"choices":[{"index":0,"delta":delta,"finish_reason":finish}]});
+        let mut standard_stream = standard.event_decoder();
+        standard_stream
+            .push(&chunk(
+                json!({"role":"assistant","content":"answer",
+            "reasoning_content":{},"reasoning":7,"reasoning_details":false}),
+                json!("stop"),
+            ))
+            .unwrap();
+        standard_stream.done().unwrap();
+        assert!(
+            standard_stream
+                .materialize()
+                .unwrap()
+                .semantic
+                .items()
+                .iter()
+                .all(|(_, item)| !matches!(item, Item::Reasoning(_)))
+        );
         let mut stream = provider.event_decoder();
         stream
             .push(&chunk(

@@ -76,6 +76,7 @@ impl Dialect {
                     chat_video_url: true,
                     readable_reasoning: true,
                     structured_chat_reasoning: true,
+                    accept_reasoning_alias: true,
                     responses_image_usage: true,
                     responses_text_usage: true,
                     ..Default::default()
@@ -103,6 +104,7 @@ impl Dialect {
                     response_extras: true,
                     responses_reasoning_format: true,
                     responses_done_marker: true,
+                    accept_reasoning_alias: true,
                     reasoning_alias: true,
                     structured_chat_reasoning: true,
                     // Non-OpenAI models (`z-ai/glm-5.3`) stream `format: "unknown"` text.
@@ -117,6 +119,7 @@ impl Dialect {
                 WireRules {
                     readable_reasoning: true,
                     reject_reasoning_controls: true,
+                    accept_reasoning_alias: true,
                     reasoning_alias: true,
                     unversioned_chat_reasoning_view: true,
                     repeated_finish_usage: true,
@@ -133,6 +136,7 @@ impl Dialect {
                 WireRules {
                     chat_video_url: true,
                     readable_reasoning: true,
+                    accept_reasoning_alias: true,
                     reasoning_alias: true,
                     chat_stop_diagnostics: true,
                     chat_reasoning_usage_alias: true,

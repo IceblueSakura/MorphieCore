@@ -292,7 +292,7 @@ pub(crate) fn decode<'a>(
 ) -> Result<(Cow<'a, Value>, Extras), CodecError> {
     bounded(value)?;
     if !adaptation.rules.routing_extras
-        && !adaptation.rules.reasoning_alias
+        && !adaptation.rules.accept_reasoning_alias
         && !adaptation.rules.responses_reasoning_format
         && !adaptation.rules.responses_reasoning_text_shorthand
         && !adaptation.rules.chat_stop_diagnostics
@@ -438,7 +438,7 @@ pub(crate) fn decode<'a>(
     }
     check_budget(&extras)?;
     if profile == Profile::Chat
-        && adaptation.rules.reasoning_alias
+        && adaptation.rules.accept_reasoning_alias
         && let Some(choices) = o.get_mut("choices").and_then(Value::as_array_mut)
     {
         for choice in choices {
