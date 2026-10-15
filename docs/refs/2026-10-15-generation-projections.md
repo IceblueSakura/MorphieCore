@@ -127,7 +127,7 @@ Google's [thinking-level](https://github.com/googleapis/python-genai/blob/78f6d3
 
 Anthropic's [How effort works](https://platform.claude.com/docs/en/build-with-claude/effort#how-effort-works) explicitly applies effort to all response tokens, including tool arguments and text without thinking. Therefore it is broader than OpenAI's documented reasoning effort. Adding `enabled: false` next to an unchanged, supposedly universal reasoning-effort field would retain two wire values but would not by itself resolve their semantic scope.
 
-The value of independent activation is faithful expression of an official contract, even when only one API has that carrier. It is not evidence that off plus response-wide high effort can be translated to OpenAI `none` plus `high`, Google low/minimal, or a verbosity setting. D1 can either model activation and effort scope explicitly or reject the currently unrepresentable combination. A scoped effort control or separate reasoning/response effort are structural options; no new type or cross-scope mapping is selected here.
+The value of independent activation is faithful expression of an official contract, even when only one API has that carrier. It is not evidence that off plus response-wide high effort can be translated to OpenAI `none` plus `high`, Google low/minimal, or a verbosity setting. The selected [IR direction](../architecture.md#reasoning-activation-and-effort-scope) models activation and one scope-qualified effort control. This preserves the official counterexample without adding parallel effort controls that no selected request requires together. Cross-scope conversion is not selected.
 
 ### Hand-authored same-model level calibration
 
@@ -135,7 +135,7 @@ The selected product policy rejects unrepresentable reasoning semantics while al
 
 For example, one Provider may expose medium/high and another medium/high/xhigh. A hand-authored encode rule may choose `low → medium`. It does not imply a decode rule `medium → low`, nor determine how to invert high/xhigh if both were mapped to one canonical level. Configure each intended direction explicitly under trusted binding selection.
 
-This exception is limited to qualitative levels. It does not permit automatic budget-to-level conversion, off-to-on conversion, or relabeling response-wide effort as reasoning-only effort. Keep request intent separate from what the upstream actually reports, and do not synthesize effective settings from the request. The rule belongs at the codec boundary, not in protocol-independent IR or arbitrary client JSON; the configuration interface remains unselected.
+This exception is limited to qualitative levels. It does not permit automatic budget-to-level conversion, off-to-on conversion, or relabeling response-wide effort as reasoning-only effort. Keep request intent separate from what the upstream actually reports, and do not synthesize effective settings from the request. The rule belongs at the codec boundary, not in protocol-independent IR or arbitrary client JSON. The [initial mapping plan](../architecture.md#initial-mapping-plan) uses hand-authored Rust policies selected by trusted bindings; no external configuration interface is selected.
 
 ## Sampling, schemas and service policy
 

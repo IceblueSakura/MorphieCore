@@ -36,7 +36,7 @@ Implement small slices in this order. These are planned corrections, not shipped
 
    Exit condition: legal partial options survive decode and supported re-encoding without adding defaults; Responses-only controls cannot leak through Chat. Existing cache-key and retention advisory policy remains explicit. Usage mappings preserve reported zero versus absent and reject inconsistent totals. New cache breakpoint/TTL carriers wait for the support queue.
 
-5. **Correct reasoning controls after D1.** Apply the selected [strict representation and same-model calibration policy](architecture.md#reasoning-level-calibration). Validate thinking variants before normalization. Preserve disabled activation, independent effort and numeric budget intent where the selected target has a carrier; never equate hidden summaries with disabled reasoning. Check model restrictions separately from protocol grammar and do not claim a guidance budget is a hard cap.
+5. **Correct reasoning controls.** Implement the selected [activation/scoped-effort contract](architecture.md#reasoning-activation-and-effort-scope) and [same-model calibration plan](architecture.md#initial-mapping-plan) through the slices below. Validate thinking variants before normalization. Preserve disabled activation, effort scope and numeric budget intent where the selected target has a carrier; never equate hidden summaries with disabled reasoning. Check model restrictions separately from protocol grammar and do not claim a guidance budget is a hard cap.
 
    Exit condition: the disabled-plus-effort counterexample has the selected representation or an explicit rejection. Off never becomes low/minimal/adaptive and numeric budgets never automatically become levels. Unsupported intent rejects the candidate. Explicit encode/decode level rules apply once for the same model, with independent directions and target validation; no inverse is inferred from a many-to-one map. Sampling admission does not claim effective support solely because an SDK field exists.
 
@@ -47,6 +47,22 @@ Implement small slices in this order. These are planned corrections, not shipped
 Repair gate: each confirmed defect has a lowest-owner regression, a corrected projection or an explicitly selected rejection/degradation. Assess static delivery, streaming and history for all three downstream contracts. Extend independent wire oracles rather than round trips or variant matrices. Preserve source-IR isolation, bounded expansion, cancellation, replay isolation and EOF-gated publication.
 
 Run affected targets before the [full offline baseline](development.md#offline-baseline), review and commit/push each passing slice. Run the synthetic SDK loopback gate separately at the boundary milestone. Real Provider checks are needed only for a named unresolved remote contract and follow the fixed request/cap/timeout procedure; docs and compilation do not prove live acceptance.
+
+### Reasoning repair slices
+
+These implement projection-repair step 5 after the earlier boundary slices. D1's direction is selected, not shipped; D2's table is an initial design, not a live binding change. D3 does not block these independent repairs.
+
+1. **Separate activation and effort scope.** Extend the existing IR with explicit activation and one scoped effort control, with no Provider state or compatibility shim. Migrate requirements, contracts and reported-setting owners together. Update codecs so Anthropic disabled plus response-wide high survives, off aliases remain off, and incompatible effort scopes reject instead of changing meaning.
+
+   Exit condition: independent wire-to-IR and IR-to-wire expectations cover the approved counterexample, and a target without a scope/carrier rejects it. An effort-only Messages request does not fabricate a thinking object. Existing JSON/SSE/history paths compile and preserve meaningful presence and unchanged-source projection. Remove automatic budget-to-effort and off-to-level behavior; an unsupported numeric/mode carrier rejects.
+
+2. **Introduce one scoped directional level policy.** Replace ad hoc level transforms with finite typed encode/decode tables in the existing protocol reasoning boundary. Select hand-authored Rust policy data through canonical-model endpoint construction; propagate it into both request adapters and native/static/SSE intake. Do not add an external configuration surface.
+
+   Exit condition: a synthetic same-model A/B binding demonstrates low-to-medium encode calibration and an independently declared decode result. A many-to-one encode map never creates an inverse. Duplicate/conflicting keys and invalid target levels fail trusted validation; unknown/unmapped unsupported levels reject. Absent reports remain absent, and source-wire conflicts remain detectable before normalization. Verify that preflight and preparation agree without changing the source request or mapping twice.
+
+3. **Migrate only explicitly selected bindings.** Inventory existing model-specific effort transforms in code, replace each with an individually chosen policy or strict rejection, and delete obsolete switches/helpers and their unused tests. Keep the hypothetical A/B table out of real bindings unless a concrete mapping is selected.
+
+   Exit condition: static response, SSE and history use the same chosen scope/directions; shared dialects cannot leak one model's calibration to another. Record applied rules without sensitive values. Run the SDK loopback gate at the boundary milestone; any real acceptance run has a fixed target, request count, cap and timeout.
 
 ### Support queue after projection repair
 
@@ -207,7 +223,6 @@ Real failover needs a controlled failure source, such as an exhausted key in a s
 
 | Question | Current behavior | Options |
 |---|---|---|
-| D1: activation and the scope of effort | Messages `thinking: disabled` and response-wide effort can coexist. OpenAI effort concerns reasoning, and Google has no documented independent off-plus-level combination in the selected contracts. A generic boolean alone does not resolve this scope difference | After the [cross-protocol comparison](refs/2026-10-15-generation-projections.md#cross-protocol-activation-and-effort), choose either explicit activation plus scope-aware effort semantics, or explicit rejection of combinations the current IR cannot represent. Do not add a universal on/off field or silently broaden the existing effort's meaning |
 | D3: Chat predicted-output optimization | Official `prediction` is currently unregistered and dropped by name; usage counters do not restore the request | Recommended: an explicit named omission of this optimization until supported. Alternative: reject active prediction until a typed carrier is implemented. Neither option constrains generated text to the prediction |
 | File API (deferred) | Inline data or public URLs only. Inline media fit the IR budgets (12 MiB decoded per item, 32 MiB of IR per request), with narrower target limits where required. Client Provider file IDs and credential-owned file URIs are rejected; there is no gateway file service | Gateway store resolved to inline before lowering; upload pinned to one credential; or a gateway store with per-executor upstream upload. The first and last share one IR slot |
 | Realtime implementation (undecided) | Deferred; no implementation approach or schedule is selected | Select a client scenario and official API contract before deciding session ownership, transport, interruption and recovery. A separate session runtime is an option, not an adopted implementation plan |

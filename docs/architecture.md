@@ -110,6 +110,20 @@ Encode from the current typed meaning. A source extension cannot override canoni
 
 Introduce this seam incrementally around concrete mappings. Do not add a universal protocol DTO, arbitrary extension bag, plugin registry, second stream reducer or whole-stream buffering. Existing framing limits, conflict validation, EOF-gated terminals and replay authority remain unchanged.
 
+### Reasoning activation and effort scope
+
+The selected IR direction separates activation from a scope-qualified effort control. This is a design contract; migrate the existing types and codecs in the [reasoning repair slices](roadmap.md#reasoning-repair-slices) after the earlier boundary repairs.
+
+Put activation on `ReasoningRequest` and one optional `EffortControl { scope, level }` on `GenerationSettings`. The initial scopes are `Reasoning` and `Response`. One scoped control is sufficient for the selected contracts; do not add two parallel effort fields without a counterexample requiring both at once. Keep protocol-relevant absence and null separate from active intent.
+
+Activation distinguishes disabled from enabled reasoning; enabled permits reasoning and does not promise a nonzero token count. Keep execution/allocation mode, numeric budget, summary, display and replay separate. Remove `None` from the positive effort-level vocabulary when migrating: native off spellings normalize to activation, not a minimum effort. An omitted activation does not invent enabled behavior.
+
+Disabled activation plus response-wide high effort is valid IR. Disabled activation plus a positive reasoning-only effort, adaptive/budgeted allocation or numeric thinking budget is contradictory. Standard/pro execution mode is not an activation switch; validate its combinations against the target contract rather than banning it solely because reasoning is disabled. Validate official wire variants separately before constructing this contract.
+
+OpenAI non-off effort and Google levels have reasoning scope. Anthropic `output_config.effort` has response scope and must not change reasoning-object presence by itself. Target codecs preserve that scope or reject it; a level calibration cannot silently broaden reasoning-only intent to response-wide effort. This makes some formerly approximate cross-protocol requests unrepresentable until a faithful declared carrier exists.
+
+Requirements and target contracts must distinguish response-wide effort from reasoning support. Reported settings use the same scoped types without acquiring request intent that was not reported. No Provider identifiers or mapping tables enter semantic types, and no compatibility-only effort field survives the migration.
+
 ### Reasoning level calibration
 
 Reject a candidate that cannot represent the requested reasoning semantics. The exception is an explicit, hand-authored level mapping for the same model, scoped by trusted binding/dialect selection. This is the selected correction policy; existing automatic approximations are not evidence that it has shipped.
@@ -118,7 +132,42 @@ Different Providers may expose different labels for one model. A selected rule m
 
 Encode and decode mappings are directional. A many-to-one encode mapping has no automatic inverse; normalization of an upstream report needs its own explicit rule. Preserve request intent and reported effective settings separately, never synthesizing a reported setting from the request. Apply each mapping once at its boundary, record its named provenance, and validate the result against the target contract.
 
-Rules cannot expand accepted content types, bypass model restrictions, select a route or modify the source IR. No public request override or new configuration interface is selected by this decision. Thinking activation and the scope of effort remain a separate [pending IR decision](roadmap.md#pending-decisions).
+Rules cannot expand accepted content types, bypass model restrictions, select a route or modify the source IR. No public request override is selected. The initial implementation uses hand-authored Rust policy data, not a new startup JSON schema or generic rule engine.
+
+#### Initial mapping plan
+
+Select a policy for one canonical model and trusted endpoint/protocol binding, not for every model of a Provider. It declares a stable rule identity, effort scope, accepted native levels and independent encode/decode tables. Use finite typed pairs or match arms; off, absence, null, budgets, display and execution mode are not table entries.
+
+The following is a hypothetical reasoning-scope encode policy, not an activated binding or an assertion of model equivalence:
+
+| Canonical level | Endpoint A accepts medium/high | Endpoint B accepts medium/high/xhigh |
+|---|---|---|
+| low | medium, explicit calibration | medium, explicit calibration |
+| medium | medium, identity | medium, identity |
+| high | high, identity | high, identity |
+| xhigh | reject until an explicit mapping is chosen | xhigh, identity |
+| minimal/max | reject until explicitly supported or mapped | reject until explicitly supported or mapped |
+
+For this example, decode starts with identity on each declared native level: a reported medium remains medium, even when the request was low. A separately authored decode rule may normalize it differently; never infer that rule from encode. Missing table entries use identity only when the target accepts that level with the same semantic scope, otherwise reject. Do not chain table entries or apply the encode table to an already adapted candidate.
+
+Validate duplicate keys, output levels, effort scope and binding identity when compiling topology. Preflight and preparation each project afresh from unchanged input through the same pure path; they need not share a mutable adapted request. Calibration precedes the final supported-level check, but cannot bypass mode, budget, semantic or scope validation.
+
+Validate native types, alias conflicts and source-snapshot consistency before a many-to-one normalization can hide a disagreement. Normalize only fields actually reported. Static and streamed metadata use the same rule, and downstream delivery does not reapply the source Provider's encode map.
+
+#### Implementation owners
+
+| Owner | Planned responsibility |
+|---|---|
+| [Semantic reasoning types](../src/semantic/task/generation/content/reasoning.rs), [settings](../src/semantic/task/generation/request/settings.rs), [requirements](../src/semantic/task/generation/requirements.rs) and [contract](../src/semantic/task/generation/contract.rs) | Activation and scoped effort only; no model-specific level policy |
+| [Protocol reasoning helper](../src/protocol/reasoning.rs) | Small immutable level-policy lookup and validation; retire automatic budget-to-effort thresholds after migrating their callers |
+| [Catalog binding declarations](../src/topology/catalog/bindings.rs), [catalog construction](../src/topology/catalog.rs), native catalog constructors and [endpoint compilation](../src/topology/endpoint.rs) | Select policy by canonical model and binding, validate it and pass it through representation caps to the adapter; do not reuse a Provider-wide switch for model-specific levels |
+| [OpenAI adaptation](../src/protocol/openai/dialect/adaptation.rs), [request projection](../src/protocol/openai/adapter/request.rs), [Messages projection](../src/protocol/anthropic/semantic_request.rs), [generateContent projection](../src/protocol/google/request.rs) and [Interactions projection](../src/protocol/interactions/request.rs) | Carry the selected encode policy and apply it once to the candidate-private typed representation before final target validation and serialization; replace broad `low_high_max_effort` behavior rather than keeping both paths |
+| [Upstream adapter](../src/adapter/upstream.rs), [static response intake](../src/protocol/openai/static_response.rs), [event intake](../src/protocol/openai/events/decode.rs) and native decoders | Carry the selected decode policy into actual reported-setting parsing, including SSE; do not put policy in `ReplayTarget` or discover it from a response model string |
+| [Fidelity](../src/protocol/fidelity.rs) and existing named request rules | Record bounded normalization provenance and actual encode adaptation, without restoring unsupported controls or synthesizing effective settings |
+
+Native `Endpoint::adapter()` currently carries profile/replay labels rather than all representation caps. Propagate the selected reasoning policy explicitly into native intake when implementing this plan; storing it only in request caps would leave decode uncalibrated. The ordinary downstream client decoder uses its declared client contract, not a guessed Provider policy chosen from business JSON.
+
+Keep [candidate preflight](../src/execution/plan.rs) and transport free of mapping tables. Preflight already invokes endpoint encoding, so preparation must reuse that same codec path rather than add a second execution-layer mapper.
 
 ### Field handling
 
@@ -398,6 +447,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | One semantic core | Gateway and future agent library share the IR; callers own agent behavior. Beyond context edits and response continuation, agent-only machinery joins the IR when the library needs it |
 | Official Generation vocabulary | OpenAI, Anthropic and Google define semantic concepts; dialect carriers and approximation policies stay in protocol modules. Semantic expression, codec support and activated bindings are separate claims |
 | Two codec responsibilities | Normalize Provider dialects into an official API baseline plus declared extensions before semantic decoding; encode in reverse before serialization. Semantic extensions enter IR; eligible non-semantic fidelity stays scoped outside it |
+| Independent activation and scoped effort | Activation belongs to reasoning; a single scoped effort control belongs to generation settings. Response-wide effort is not reasoning-only effort, and off is not a positive level |
 | Explicit same-model level calibration | Reject unrepresentable reasoning except for hand-authored, trusted, directional level mappings for the same model. No automatic nearest-level conversion, inverse mapping, off-to-on conversion or budget-to-level substitution |
 | Equal downstream contracts | Chat Completions, Responses and Messages receive equal consideration for static delivery, streaming and history replay; a missing carrier requires explicit rejection |
 | Separate task contracts | Generation, Embeddings, Images, Speech and Transcription are not one universal message type |
