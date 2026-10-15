@@ -10,9 +10,52 @@ Track semantic expression, codec representation and enabled bindings separately.
 
 Chat Completions, Responses and Messages are equally important downstream contracts. Each slice must assess static delivery, streaming and history replay for all three. A protocol used as the semantic reference does not receive higher downstream priority; missing carriers require explicit rejection, not silent loss or invented roles.
 
-The next Generation slices are selected below, with OpenAI Responses as the primary reference and Chat Completions as a supplement. Until the IR core is complete, add only minimal regressions for changed contracts and confirmed defects, preferably by extending existing tests. Keep safety invariants and the offline baseline; defer coverage expansion.
+Correct existing parameter and content projections before adding missing support. Start with [projection repair](#projection-repair), using the [researched contracts](refs/2026-10-15-generation-projections.md) and the selected [two-responsibility codec boundary](architecture.md#protocol-baselines-and-provider-dialects). Complete the repair gate before the [support queue](#support-queue-after-projection-repair).
+
+Until the IR core is complete, add only minimal regressions for changed contracts and confirmed defects, preferably by extending existing tests. Keep safety invariants and the offline baseline; defer coverage expansion.
 
 An independent delivery-maintenance slice is designed below: [optional delta coalescing](#optional-delta-coalescing). This is an implementation plan, not a claim of shipped functionality or a change to the Generation semantic sequence. It does not reopen deferred failover or real-client acceptance.
+
+### Projection repair
+
+Implement small slices in this order. These are planned corrections, not shipped behavior. Finish independent boundary repairs while the [semantic decisions](#pending-decisions) remain open; do not choose an approximation or IR contract implicitly.
+
+1. **Isolate equivalent usage aliases.** Move DeepSeek Chat cache-hit/miss interpretation out of the unconditional [shared usage reader](../src/protocol/openai/static_response.rs). Select it through the trusted dialect and retain canonical-value conflict and total checks.
+
+   Exit condition: the declared dialect preserves the counts in static and streamed intake; Standard Chat and Responses ignore the unregistered aliases. Conflicting canonical and alias counts still fail where the alias is admitted. Prove that an unknown alias cannot change standard usage or make it fail.
+
+2. **Isolate content extensions and restore registered aliases.** Separate reasoning extension admission from the [Chat message decoder](../src/protocol/openai/chat/mod.rs) and [stream decoder](../src/protocol/openai/events/chat.rs). Preserve the registered MorphieCore reasoning carriers, including standalone plaintext `reasoning`, without coupling alias intake to output spelling.
+
+   Exit condition: request, JSON, SSE and history paths interpret a carrier only under its declared profile. Nonempty duplicate views must agree; specify absent/null/empty handling consistently before coding. Readable text, summary, item order, signatures and owner-local replay keep their distinctions. Standard unknown fields do not become reasoning or parse errors.
+
+3. **Close nested protocol scopes and known content loss.** Stop [Chat function parsing](../src/protocol/openai/function_tools.rs) from reading Responses-only dispatch/output-schema members after reporting them as ignored. Reject active misplaced orchestration semantics and unsupported legacy assistant `function_call` history rather than dropping a call. Keep genuine unknown-field handling unchanged.
+
+   Exit condition: ignored values never affect IR or upstream output. Existing Responses dispatch and registered extensions still work; unsupported Chat custom tools remain explicit rejections, not a newly opened support slice. Resolve D3 before changing `prediction` handling.
+
+4. **Correct existing cache and accounting carriers.** Match optional `prompt_cache_options` members and protocol-specific fields to the pinned official types. Distinguish empty options from active controls without inventing explicit defaults. Correct Standard Chat image-usage projection so an official reported count is not dropped as a vendor extension. Do not broaden Responses usage positions.
+
+   Exit condition: legal partial options survive decode and supported re-encoding without adding defaults; Responses-only controls cannot leak through Chat. Existing cache-key and retention advisory policy remains explicit. Usage mappings preserve reported zero versus absent and reject inconsistent totals. New cache breakpoint/TTL carriers wait for the support queue.
+
+5. **Correct reasoning controls after D1 and D2.** Validate thinking variants before normalization. Preserve disabled activation, independent effort and numeric budget intent where the selected target has a carrier; never equate hidden summaries with disabled reasoning. Check model restrictions separately from protocol grammar and do not claim a guidance budget is a hard cap.
+
+   Exit condition: the disabled-plus-effort counterexample has the selected representation or an explicit rejection. Off never silently becomes low/minimal/adaptive. Numeric intent is preserved, rejected or approximated only under the chosen D2 policy. Sampling admission does not claim effective support solely because an SDK field exists. Existing named losses change only as the selected decision requires.
+
+6. **Reproduce terminal-projection suspicion independently.** Feed a synthetic Gemini `MAX_TOKENS` finish through [the decoder](../src/protocol/google/stream.rs) and reducer. Inspect the predicted `Progress(Unreported)` rejection before changing lifecycle behavior.
+
+   Exit condition: either an honest incomplete result reaches JSON/SSE without a fabricated success terminal, or the reproduction disproves the suspected defect. Keep terminal correction separate from field-boundary refactoring.
+
+Repair gate: each confirmed defect has a lowest-owner regression, a corrected projection or an explicitly selected rejection/degradation. Assess static delivery, streaming and history for all three downstream contracts. Extend independent wire oracles rather than round trips or variant matrices. Preserve source-IR isolation, bounded expansion, cancellation, replay isolation and EOF-gated publication.
+
+Run affected targets before the [full offline baseline](development.md#offline-baseline), review and commit/push each passing slice. Run the synthetic SDK loopback gate separately at the boundary milestone. Real Provider checks are needed only for a named unresolved remote contract and follow the fixed request/cap/timeout procedure; docs and compilation do not prove live acceptance.
+
+### Support queue after projection repair
+
+Do not start this queue until the repair gate is complete. Before each IR extension, present a minimal counterexample and structural options. An official carrier alone does not activate a binding.
+
+1. Complete existing-IR carriers first: Google structured output, then logprobs; selected Messages strict tools and Chat custom tools/verbosity; explicit cache breakpoints and TTL. Split these into independent contracts rather than a multi-Provider feature batch.
+2. Add missing generation controls: `top_k`, then stopping sequences with honest stop reporting, then penalties/seed. Treat `logit_bias` token identities as model-dependent; do not forward them blindly across tokenizers.
+3. Design execution-policy semantics separately: service tiers, native cache resources/prewarming and safety settings. Preserve native distinctions; equal names do not establish equivalent billing, capacity or safety behavior. `max_tokens: 0` prewarming is not ordinary zero-length generation.
+4. Continue the existing tool-discovery and `web_search` sequence below, preserving their relative order. Other hosted tools, Messages citations, generated media, multi-candidate execution and file services retain their deferred boundaries.
 
 ### Optional delta coalescing
 
@@ -40,7 +83,7 @@ For each slice, run affected tests before the [full offline baseline](developmen
 
 ### Next Generation slices
 
-Implement in this order. This is a plan, not an implementation or acceptance result. Show the minimal counterexample and structural options before changing an IR contract.
+These tool slices follow the projection-repair gate and support queue above. Keep their relative order. This is a plan, not an implementation or acceptance result. Show the minimal counterexample and structural options before changing an IR contract.
 
 1. **Tool discovery and ordered availability updates.** Complete the semantics and codecs for `tool_search`, its call/output items and `additional_tools`, building on existing deferred-loading and namespace types. Tools discovered later must not be retroactively added to earlier history through top-level settings.
 
@@ -95,7 +138,7 @@ IR completeness does not mean every upstream can carry every modality. Protocol-
 
 ## Planned order
 
-1. **Generation IR completeness.** Start with the [next slices](#next-generation-slices), then assess remaining selected official contracts. Keep deferred concepts explicit rather than claiming full API coverage or expanding frozen tasks.
+1. **Generation IR completeness.** Repair existing projections first, complete the support queue, then continue the selected tool slices. Keep deferred concepts explicit rather than claiming full API coverage or expanding frozen tasks.
 2. **Coverage improvement.** Start the coverage pass only after IR completeness. Keep focused regressions and safety invariants throughout implementation.
 3. **Failover.** The feature remains in early design. Its priority is undecided, lowest for now; design, implementation improvement and real acceptance follow the second stage.
 4. **Other agent acceptance.** Codex, Claude Code and other agents follow failover. Their priority is undecided, lowest for now.
@@ -164,6 +207,9 @@ Real failover needs a controlled failure source, such as an exhausted key in a s
 
 | Question | Current behavior | Options |
 |---|---|---|
+| D1: thinking activation and independent effort | Messages `thinking: disabled` occupies `effort: None`; `output_config.effort: high` overwrites it. The IR cannot preserve both | Recommended: represent activation independently of effort, with an explicit disabled mode/activation. Alternative: reject combinations the current IR cannot express. Choose the contract before changing types |
+| D2: unrepresentable reasoning controls | Named budget-to-effort and effort-lowering rules approximate numeric requests and can turn off into low/minimal thinking | Recommended: exact declared intent where a carrier exists, otherwise reject; do not invent guarantees for guidance budgets. Alternative: retain explicitly approved target-local approximations, with off-to-on separately identified rather than called equivalent |
+| D3: Chat predicted-output optimization | Official `prediction` is currently unregistered and dropped by name; usage counters do not restore the request | Recommended: an explicit named omission of this optimization until supported. Alternative: reject active prediction until a typed carrier is implemented. Neither option constrains generated text to the prediction |
 | File API (deferred) | Inline data or public URLs only. Inline media fit the IR budgets (12 MiB decoded per item, 32 MiB of IR per request), with narrower target limits where required. Client Provider file IDs and credential-owned file URIs are rejected; there is no gateway file service | Gateway store resolved to inline before lowering; upload pinned to one credential; or a gateway store with per-executor upstream upload. The first and last share one IR slot |
 | Realtime implementation (undecided) | Deferred; no implementation approach or schedule is selected | Select a client scenario and official API contract before deciding session ownership, transport, interruption and recovery. A separate session runtime is an option, not an adopted implementation plan |
 
