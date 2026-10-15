@@ -6,6 +6,8 @@ pub const MAX_PROJECTION_STAGES: usize = 16;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LossRule {
+    OmitReportedReasoningControls,
+    OmitChatReportedSettings,
     OmitResponsesSystemFingerprint,
     OmitResponsesInputImageTokens,
     OmitResponsesInputTextTokens,
@@ -20,6 +22,10 @@ pub enum LossRule {
 impl LossRule {
     pub const fn name(self) -> &'static str {
         match self {
+            Self::OmitReportedReasoningControls => {
+                "responses.omit-incidental-reasoning-controls.v1"
+            }
+            Self::OmitChatReportedSettings => "chat.omit-incidental-settings.v1",
             Self::OmitResponsesSystemFingerprint => "responses.omit-system-fingerprint.v1",
             Self::OmitResponsesInputImageTokens => "responses.omit-input-image-tokens.v1",
             Self::OmitResponsesInputTextTokens => "responses.omit-input-text-tokens.v1",
@@ -38,6 +44,8 @@ impl LossRule {
     }
     pub const fn owner(self) -> &'static str {
         match self {
+            Self::OmitReportedReasoningControls => "response.reported.reasoning",
+            Self::OmitChatReportedSettings => "response.reported.settings",
             Self::OmitResponsesSystemFingerprint => "response.context.system_fingerprint",
             Self::OmitResponsesInputImageTokens => "generation.usage.input_image_tokens",
             Self::OmitResponsesInputTextTokens => "generation.usage.input_text_tokens",
@@ -57,6 +65,9 @@ impl LossRule {
     }
     pub const fn consequence(self) -> &'static str {
         match self {
+            Self::OmitReportedReasoningControls | Self::OmitChatReportedSettings => {
+                "Incidental settings echoes without a target carrier are omitted; content and required continuation are unchanged."
+            }
             Self::OmitResponsesSystemFingerprint => {
                 "The Chat-only fingerprint field is omitted; response identity and content are unchanged."
             }
@@ -82,6 +93,10 @@ impl std::str::FromStr for LossRule {
     type Err = RepresentationError;
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
+            "responses.omit-incidental-reasoning-controls.v1" => {
+                Ok(Self::OmitReportedReasoningControls)
+            }
+            "chat.omit-incidental-settings.v1" => Ok(Self::OmitChatReportedSettings),
             "responses.omit-system-fingerprint.v1" => Ok(Self::OmitResponsesSystemFingerprint),
             "responses.omit-input-image-tokens.v1" => Ok(Self::OmitResponsesInputImageTokens),
             "responses.omit-input-text-tokens.v1" => Ok(Self::OmitResponsesInputTextTokens),
@@ -106,6 +121,52 @@ pub enum ProjectionDirection {
     Request,
     Response,
     Event,
+}
+
+/// This changes reported echoes only, never request admission or generated items.
+pub(crate) fn reported_settings(
+    metadata: &mut crate::protocol::ResponseMetadata,
+    profile: Profile,
+) -> Result<Option<LossRule>, RepresentationError> {
+    use crate::semantic::{task::generation::*, value::Presence};
+    metadata
+        .context
+        .validate()
+        .map_err(|_| RepresentationError::Metadata)?;
+    let Some(settings) = &mut metadata.context.settings else {
+        return Ok(None);
+    };
+    if profile == Profile::Chat {
+        metadata.context.settings = None;
+        return Ok(Some(LossRule::OmitChatReportedSettings));
+    }
+    let before = settings.clone();
+    settings.reasoning.budget_tokens = None;
+    settings.reasoning.display = Presence::Absent;
+    if matches!(
+        settings.reasoning.mode.value(),
+        Some(ReasoningMode::Adaptive | ReasoningMode::Budgeted)
+    ) {
+        settings.reasoning.mode = Presence::Absent;
+    }
+    if settings.reasoning.summary() == Some(ReasoningSummary::Disabled) {
+        settings.reasoning.summary = Presence::Absent;
+    }
+    if settings
+        .effort
+        .value()
+        .is_some_and(|effort| effort.scope == EffortScope::Response)
+    {
+        settings.effort = Presence::Absent;
+    }
+    if settings.reasoning.activation == Presence::Null
+        || settings.reasoning.activation == Presence::Value(ReasoningActivation::Enabled)
+            && settings.effort.value().is_none()
+    {
+        settings.reasoning.activation = Presence::Absent;
+    }
+    settings.validate()?;
+    Ok((before != *settings).then_some(LossRule::OmitReportedReasoningControls))
 }
 
 /// Evidence describes a checked value, not authorization or issuer acceptance.

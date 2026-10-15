@@ -221,8 +221,20 @@ impl EventEncoder {
             .as_ref()
             .ok_or(CodecError::Invalid("created time"))?;
         let mut v = json!({"id":self.metadata.id,"object":"response","created_at":created,"model":self.metadata.model,"status":status,"output":output});
+        let mut delivered = self.metadata.clone();
+        let loss = crate::protocol::openai::lowering::projection::reported_settings(
+            &mut delivered,
+            self.profile,
+        )
+        .map_err(|_| CodecError::Unsupported("reported settings".into()))?;
+        if loss.is_some()
+            && self.contract.reported_facts
+                == crate::lowering::generation::ReportedFactPolicy::StrictComplete
+        {
+            return Err(CodecError::Unsupported("required reported settings".into()));
+        }
         crate::protocol::openai::responses::envelope::write_metadata(
-            &self.metadata,
+            &delivered,
             v.as_object_mut().expect("object"),
             status == "completed",
         )?;
@@ -493,11 +505,6 @@ impl EventEncoder {
 fn validate_metadata(profile: Profile, metadata: &ResponseMetadata) -> Result<(), CodecError> {
     if let Some(settings) = &metadata.context.settings {
         settings.validate()?;
-        if super::super::reasoning::requires_extended_controls(settings) {
-            return Err(CodecError::Unsupported(
-                "reported reasoning controls".into(),
-            ));
-        }
     }
     metadata.required_id()?;
     let created = metadata

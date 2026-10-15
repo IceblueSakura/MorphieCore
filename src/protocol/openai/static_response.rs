@@ -549,7 +549,7 @@ pub(crate) fn decode_responses_with(
         "incomplete"
     };
     responses::decode_items(&mut b, output, true, item_status)?;
-    for (_, item) in &b.items {
+    for (_, item) in &mut b.items {
         if let Item::ConfigurationUpdate(update) = item {
             crate::protocol::openai::reasoning::admit_configuration_mapping(
                 update,

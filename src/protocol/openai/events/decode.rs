@@ -65,6 +65,8 @@ pub struct EventDecoder {
     pub(super) state: Option<StreamState>,
     pub(super) fidelity: FidelityRecords,
     pub(super) metadata: Option<ResponseMetadata>,
+    native_settings: Option<GenerationSettings>,
+    native_configurations: Vec<(usize, ConfigurationUpdate)>,
     pub(super) origin: Option<ReplayOrigin>,
     pub(super) ids: Vec<ItemId>,
     pub(super) next_part: u64,
@@ -92,6 +94,8 @@ impl EventDecoder {
             state: Some(StreamState::new()),
             fidelity: FidelityRecords::default(),
             metadata: None,
+            native_settings: None,
+            native_configurations: vec![],
             origin: None,
             ids: vec![],
             next_part: 0,
@@ -362,6 +366,21 @@ impl EventDecoder {
         Ok(PartId::new(self.next_part))
     }
     pub(super) fn observe_metadata(&mut self, o: &Map<String, Value>) -> Result<(), CodecError> {
+        if self.profile == Profile::Responses {
+            let (native, _) =
+                crate::semantic::context::ResponseContext::read(o, DecodeDirection::Upstream)?;
+            native.validate()?;
+            if let Some(settings) = native.settings {
+                if self
+                    .native_settings
+                    .as_ref()
+                    .is_some_and(|old| old != &settings)
+                {
+                    return Err(CodecError::Invalid("reported settings changed"));
+                }
+                self.native_settings = Some(settings);
+            }
+        }
         let mut m = crate::protocol::openai::static_response::metadata(
             o,
             self.profile,
@@ -606,13 +625,9 @@ impl EventDecoder {
             }
             "configuration_update" => {
                 DecodeDirection::Upstream.fields(v, &["type", "id", "reasoning"])?;
-                let update = crate::protocol::openai::responses::configuration_update(
-                    v,
-                    true,
-                    DecodeDirection::Upstream,
-                )?;
+                let mut update = self.observe_configuration(index(o, "output_index")?, v)?;
                 crate::protocol::openai::reasoning::admit_configuration_mapping(
-                    &update,
+                    &mut update,
                     self.adaptation.effort_mapping,
                     true,
                 )?;
@@ -1234,6 +1249,11 @@ impl EventDecoder {
         out: &mut Vec<StreamEvent>,
     ) -> Result<(), CodecError> {
         event_fields(o, &["type", "output_index", "item"])?;
+        if let Some(value) = o.get("item").and_then(Value::as_object)
+            && value.get("type").and_then(Value::as_str) == Some("configuration_update")
+        {
+            self.observe_configuration(index(o, "output_index")?, value)?;
+        }
         let item = *self
             .ids
             .get(index(o, "output_index")?)
@@ -1321,6 +1341,32 @@ impl EventDecoder {
         }
         Ok(())
     }
+    fn observe_configuration(
+        &mut self,
+        index: usize,
+        value: &Map<String, Value>,
+    ) -> Result<ConfigurationUpdate, CodecError> {
+        let update = crate::protocol::openai::responses::configuration_update(
+            value,
+            true,
+            DecodeDirection::Upstream,
+        )?;
+        if index >= MAX_ITEMS {
+            return Err(CodecError::Limit);
+        }
+        if let Some((_, old)) = self
+            .native_configurations
+            .iter()
+            .find(|(key, _)| *key == index)
+        {
+            if old != &update {
+                return Err(CodecError::Invalid("configuration snapshot changed"));
+            }
+        } else {
+            self.native_configurations.push((index, update));
+        }
+        Ok(update)
+    }
     fn close_terminal_reasoning(
         &mut self,
         response: &Map<String, Value>,
@@ -1395,6 +1441,15 @@ impl EventDecoder {
     ) -> Result<(), CodecError> {
         event_fields(o, &["type", "response"])?;
         let r = o.get("response").ok_or(CodecError::Invalid("response"))?;
+        if let Some(output) = r.get("output").and_then(Value::as_array) {
+            for (index, item) in output.iter().enumerate() {
+                if let Some(value) = item.as_object()
+                    && value.get("type").and_then(Value::as_str) == Some("configuration_update")
+                {
+                    self.observe_configuration(index, value)?;
+                }
+            }
+        }
         let mut summary;
         let r = if self.adaptation.rules.responses_event_owned_output
             && r.get("status").and_then(Value::as_str) == Some("completed")
@@ -1421,6 +1476,13 @@ impl EventDecoder {
                 true,
                 self.state()?.resources()
             )?);
+            // The synthetic terminal still enters the native decoder once.
+            // Reuse validated native controls instead of decoding canonical levels again.
+            for (index, update) in &self.native_configurations {
+                if let Some(effort) = crate::protocol::openai::reasoning::effort_label(update)? {
+                    summary["output"][*index]["reasoning"] = json!({"effort":effort});
+                }
+            }
             &summary
         } else {
             r

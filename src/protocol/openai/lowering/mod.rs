@@ -299,6 +299,16 @@ pub fn lower_response<'a>(
     let mut metadata = std::borrow::Cow::Borrowed(metadata);
     let mut semantic = std::borrow::Cow::Borrowed(r);
     let mut projection = Vec::new();
+    if let Some(loss) = projection::reported_settings(metadata.to_mut(), profile)? {
+        if c.reported_facts == ReportedFactPolicy::StrictComplete {
+            return Err(RepresentationError::ReportedFacts);
+        }
+        projection.push(projection::ProjectionStage::response(
+            profile,
+            c.adaptation.profile_id,
+            Some(loss),
+        ));
+    }
     if profile == Profile::Responses && !metadata.context.system_fingerprint.is_absent() {
         metadata.to_mut().context.system_fingerprint = crate::semantic::value::Presence::Absent;
         projection.push(projection::ProjectionStage::response(

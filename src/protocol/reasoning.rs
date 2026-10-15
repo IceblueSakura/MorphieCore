@@ -92,20 +92,32 @@ impl ReasoningRequestPolicy {
         source: &GenerationRequest,
     ) -> Result<Option<GenerationRequest>, CodecError> {
         let settings = self.project(source.settings())?;
-        if &settings == source.settings() {
+        let mut items = source.items().to_vec();
+        for (_, item) in &mut items {
+            if let Item::ConfigurationUpdate(update) = item {
+                let mut controls = GenerationSettings {
+                    effort: update.effort.map_or(Presence::Absent, Presence::Value),
+                    ..Default::default()
+                };
+                if let Some(activation) = update.activation {
+                    controls.reasoning.presence = ReasoningPresence::Present;
+                    controls.reasoning.activation = Presence::Value(activation);
+                }
+                let projected = self.project(&controls)?;
+                if projected.reasoning.budget_tokens.is_some() {
+                    return Err(CodecError::Unsupported(
+                        "configuration budget carrier".into(),
+                    ));
+                }
+                update.effort = projected.effort.value().copied();
+            }
+        }
+        if &settings == source.settings() && items == source.items() {
             return Ok(None);
         }
-        // Configuration history has its own ordered source contract.
-        if source
-            .items()
-            .iter()
-            .any(|(_, item)| matches!(item, Item::ConfigurationUpdate(_)))
-        {
-            return Err(CodecError::Unsupported(
-                "reasoning policy configuration history".into(),
-            ));
-        }
-        Ok(Some(source.clone().with_settings(settings)?))
+        Ok(Some(
+            source.clone().with_settings(settings)?.with_items(items)?,
+        ))
     }
     pub fn project(&self, source: &GenerationSettings) -> Result<GenerationSettings, CodecError> {
         source.validate()?;

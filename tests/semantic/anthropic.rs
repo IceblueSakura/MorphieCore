@@ -1008,6 +1008,19 @@ mod client_fidelity {
             json!({"input_tokens":8,"output_tokens":3,
                 "cache_read_input_tokens":2,"cache_creation_input_tokens":0})
         );
+        let original = response.clone();
+        let (retained, wire) = morphiecore::adapter::ClientAdapter::Messages
+            .snapshot(response.clone())
+            .unwrap();
+        assert_eq!(wire["usage"]["input_tokens"], 8);
+        let retained_usage = retained.semantic.usage().unwrap();
+        assert_eq!(retained_usage.input_tokens, Some(8));
+        assert_eq!(
+            retained_usage.input_relation,
+            InputTokenRelation::ExcludesCacheReadAndWrite
+        );
+        assert_eq!(retained_usage.total_tokens, None);
+        assert_eq!(response, original);
         let mut stream = ClientEventEncoder::new("r", "m");
         stream.encode(&StreamEvent::Usage(usage)).unwrap();
         let frames = stream.encode(&terminal()).unwrap();

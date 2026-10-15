@@ -36,7 +36,7 @@ pub(super) fn requires_extended_controls(settings: &GenerationSettings) -> bool 
 }
 
 pub(super) fn admit_configuration_mapping(
-    update: &ConfigurationUpdate,
+    update: &mut ConfigurationUpdate,
     mapping: Option<&crate::protocol::reasoning::ReasoningEffortMapping>,
     decode: bool,
 ) -> Result<(), CodecError> {
@@ -49,13 +49,10 @@ pub(super) fn admit_configuration_mapping(
         } else {
             mapping.encode(control.level)?
         };
-        // Snapshot equality currently owns native configuration values. Do not
-        // conceal conflicts by normalizing their many-to-one aliases first.
-        if level != control.level {
-            return Err(CodecError::Unsupported(
-                "calibrated configuration history".into(),
-            ));
-        }
+        update.effort = Some(EffortControl {
+            scope: control.scope,
+            level,
+        });
     }
     Ok(())
 }

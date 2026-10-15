@@ -21,29 +21,32 @@ fn with_effort_mapping(
     if openai::reasoning::requires_extended_controls(request.task.semantic.settings()) {
         return Err(CodecError::Unsupported("reasoning controls".into()));
     }
-    for (_, item) in request.task.semantic.items() {
+    let mut items = request.task.semantic.items().to_vec();
+    for (_, item) in &mut items {
         if let crate::semantic::task::generation::Item::ConfigurationUpdate(update) = item {
             openai::reasoning::admit_configuration_mapping(update, Some(mapping), false)?;
         }
     }
-    let settings = request.task.semantic.settings();
-    let Some(control) = settings.effort.value() else {
-        return Ok(None);
-    };
-    if control.scope != mapping.scope {
-        return Err(CodecError::Unsupported("reasoning mapping scope".into()));
+    let mut settings = request.task.semantic.settings().clone();
+    if let Some(control) = settings.effort.value() {
+        if control.scope != mapping.scope {
+            return Err(CodecError::Unsupported("reasoning mapping scope".into()));
+        }
+        let mapped = mapping.encode(control.level)?;
+        settings.effort = Presence::Value(crate::semantic::task::generation::EffortControl {
+            scope: control.scope,
+            level: mapped,
+        });
     }
-    let mapped = mapping.encode(control.level)?;
-    if mapped == control.level {
+    if &settings == request.task.semantic.settings() && items == request.task.semantic.items() {
         return Ok(None);
     }
-    let mut settings = settings.clone();
-    settings.effort = Presence::Value(crate::semantic::task::generation::EffortControl {
-        scope: control.scope,
-        level: mapped,
-    });
     let mut copy = request.clone();
-    copy.task.semantic = copy.task.semantic.with_settings(settings)?;
+    copy.task.semantic = copy
+        .task
+        .semantic
+        .with_settings(settings)?
+        .with_items(items)?;
     Ok(Some(copy))
 }
 
@@ -241,6 +244,9 @@ impl Adapter {
             }
         }
         let request = stripped.as_ref().map_or(request, |(copy, _)| copy);
+        if self.adaptation.reasoning_policy.is_some() && self.adaptation.effort_mapping.is_some() {
+            return Err(CodecError::Invalid("overlapping reasoning policies").into());
+        }
         let mut projected = std::borrow::Cow::Borrowed(request);
         if let Some(policy) = self.adaptation.reasoning_policy
             && let Some(semantic) = policy.project_request(&request.task.semantic)?

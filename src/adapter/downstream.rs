@@ -72,10 +72,13 @@ impl ClientAdapter {
         mut decoded: DecodedResponse,
     ) -> Result<(DecodedResponse, Value), super::AdapterError> {
         let value = match self {
-            Self::Messages => crate::protocol::anthropic::client::encode_client_response(
-                &decoded,
-                &decoded.metadata.model,
-            )?,
+            Self::Messages => {
+                crate::protocol::anthropic::client::project_snapshot(&mut decoded)?;
+                crate::protocol::anthropic::client::encode_client_response(
+                    &decoded,
+                    &decoded.metadata.model,
+                )?
+            }
             Self::OpenAi { adapter, contract } => {
                 let target = crate::protocol::openai::lowering::lower_response(
                     &decoded.semantic,

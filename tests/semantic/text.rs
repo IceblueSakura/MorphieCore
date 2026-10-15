@@ -497,6 +497,37 @@ mod text_admission {
         metadata.context.execution.service_tier = Presence::Value(ServiceTier::Priority);
         assert!(encoder.update_metadata(metadata).is_err());
         assert!(encoder.finish().is_err());
+        use morphiecore::protocol::{
+            openai::{Adapter, Dialect},
+            reasoning::ReasoningEffortMapping,
+        };
+        static MANY_TO_ONE: ReasoningEffortMapping = ReasoningEffortMapping {
+            canonical_model: "m",
+            rule: "synthetic.reported-effort.v1",
+            scope: EffortScope::Reasoning,
+            native_levels: &[EffortLevel::High, EffortLevel::XHigh],
+            encode: &[(EffortLevel::High, EffortLevel::High)],
+            decode: &[
+                (EffortLevel::High, EffortLevel::High),
+                (EffortLevel::XHigh, EffortLevel::High),
+            ],
+        };
+        let mut adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+        adapter.adaptation.effort_mapping = Some(&MANY_TO_ONE);
+        let mut decoder = adapter.event_decoder();
+        decoder
+            .push(&json!({"type":"response.created","response":{
+            "id":"r","object":"response","created_at":1,"model":"m","status":"in_progress",
+            "reasoning":{"effort":"high"},"output":[]}}))
+            .unwrap();
+        assert!(
+            decoder
+                .push(&json!({"type":"response.in_progress","response":{
+            "id":"r","object":"response","created_at":1,"model":"m","status":"in_progress",
+            "reasoning":{"effort":"xhigh"},"output":[]}}))
+                .is_err()
+        );
+        assert!(decoder.materialize().is_err());
     }
 }
 mod text_events {

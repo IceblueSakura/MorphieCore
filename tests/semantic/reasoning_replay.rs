@@ -44,19 +44,30 @@ mod reasoning {
         let mut reported = metadata();
         reported.context.settings = Some(settings);
         let response = GenerationResponse::new(vec![], Outcome::Completed).unwrap();
-        assert!(
-            lower_response(
-                &response,
-                &fidelity,
-                &reported,
-                Profile::Responses,
-                Contract::full()
-            )
-            .is_err()
+        let target = lower_response(
+            &response,
+            &fidelity,
+            &reported,
+            Profile::Responses,
+            Contract::full(),
+        )
+        .unwrap();
+        assert!(target.projection().iter().any(|stage| stage.loss.is_some()));
+        assert_eq!(
+            target
+                .metadata()
+                .context
+                .settings
+                .as_ref()
+                .unwrap()
+                .reasoning
+                .summary(),
+            None
         );
         let mut encoder = EventEncoder::new(Profile::Responses, reported).unwrap();
-        assert!(encoder.encode(&StreamEvent::Started, &fidelity).is_err());
-        assert!(encoder.encode(&StreamEvent::Started, &fidelity).is_err());
+        let wire = encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
+        assert_eq!(wire[0]["response"]["reasoning"]["effort"], "none");
+        assert!(wire[0]["response"]["reasoning"].get("summary").is_none());
     }
 
     #[test]
@@ -265,6 +276,83 @@ mod reasoning {
                 level: EffortLevel::Low
             })
         );
+        use morphiecore::protocol::{
+            openai::{Adapter, Dialect},
+            reasoning::ReasoningEffortMapping,
+        };
+        static MAPPING: ReasoningEffortMapping = ReasoningEffortMapping {
+            canonical_model: "m",
+            rule: "synthetic.configuration-effort.v1",
+            scope: EffortScope::Reasoning,
+            native_levels: &[EffortLevel::Low, EffortLevel::Medium, EffortLevel::High],
+            encode: &[
+                (EffortLevel::Low, EffortLevel::High),
+                (EffortLevel::High, EffortLevel::High),
+            ],
+            decode: &[
+                (EffortLevel::Low, EffortLevel::High),
+                (EffortLevel::Medium, EffortLevel::High),
+                (EffortLevel::High, EffortLevel::High),
+            ],
+        };
+        let mut adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+        adapter.adaptation.effort_mapping = Some(&MAPPING);
+        let mut source = source;
+        source["model"] = json!("m");
+        let request = adapter
+            .decode_request(source.to_string().as_bytes())
+            .unwrap();
+        let before = request.clone();
+        let (wire, rules) = adapter
+            .encode_request_with_rules(&request, "m", &Contract::full())
+            .unwrap();
+        assert_eq!(wire["input"][0]["reasoning"]["effort"], "high");
+        assert_eq!(rules, ["synthetic.configuration-effort.v1"]);
+        assert_eq!(request, before);
+        let scoped = morphiecore::protocol::reasoning::ReasoningRequestPolicy {
+            canonical_model: "m",
+            rule: "synthetic.configuration-scope.v1",
+            conversion: morphiecore::protocol::reasoning::ReasoningConversion::Scope {
+                from: EffortScope::Reasoning,
+                to: EffortScope::Response,
+                levels: &[(EffortLevel::Low, EffortLevel::High)],
+            },
+        }
+        .project_request(&request.task.semantic)
+        .unwrap()
+        .unwrap();
+        assert!(
+            matches!(&scoped.items()[0].1, Item::ConfigurationUpdate(update)
+            if update.effort.unwrap().scope == EffortScope::Response)
+        );
+        assert_eq!(request, before);
+        let item = json!({"id":"cu","type":"configuration_update","reasoning":{"effort":"low"}});
+        let mut calibrated = adapter.event_decoder();
+        calibrated.push(&created()).unwrap();
+        calibrated
+            .push(&json!({"type":"response.output_item.added","output_index":0,"item":item}))
+            .unwrap();
+        calibrated
+            .push(&json!({"type":"response.output_item.done","output_index":0,"item":item}))
+            .unwrap();
+        calibrated.push(&json!({"type":"response.completed","response":envelope("completed",json!([item]))})).unwrap();
+        let delivered = calibrated.materialize().unwrap();
+        assert!(
+            matches!(&delivered.semantic.items()[0].1, Item::ConfigurationUpdate(update)
+            if update.effort.unwrap().level == EffortLevel::High)
+        );
+        let mut conflicting = adapter.event_decoder();
+        conflicting.push(&created()).unwrap();
+        conflicting
+            .push(&json!({"type":"response.output_item.added","output_index":0,"item":item}))
+            .unwrap();
+        let mut changed = item;
+        changed["reasoning"]["effort"] = json!("medium");
+        assert!(
+            conflicting
+                .push(&json!({"type":"response.output_item.done","output_index":0,"item":changed}))
+                .is_err()
+        );
     }
 }
 mod reasoning_controls {
@@ -444,19 +532,65 @@ mod reasoning_controls {
             let request = GenerationRequest::from_settings(vec![], settings.clone()).unwrap();
             let mut metadata = crate::events_support::metadata();
             metadata.context.settings = Some(settings);
-            let response = GenerationResponse::new(vec![], Outcome::Completed).unwrap();
+            let response = GenerationResponse::new(
+                vec![(
+                    ItemId::new(1),
+                    Item::Message(Message {
+                        role: MessageRole::Assistant,
+                        phase: None,
+                        status: ItemLifecycle::Completed,
+                        parts: vec![Part {
+                            id: PartId::new(1),
+                            content: ContentPart::Text(Text::new("ok", "test", 32).unwrap().into()),
+                        }],
+                    }),
+                )],
+                Outcome::Completed,
+            )
+            .unwrap();
             let fidelity = FidelityRecords::default();
             for profile in [Profile::Responses, Profile::Chat] {
                 assert_eq!(
                     lower_request(&request, &fidelity, profile, TargetCaps::full()).err(),
                     Some(RepresentationError::Reasoning)
                 );
-                assert_eq!(
+                let target =
                     lower_response(&response, &fidelity, &metadata, profile, TargetCaps::full())
-                        .err(),
-                    Some(RepresentationError::Reasoning)
+                        .unwrap();
+                assert!(target.projection().iter().any(|stage| stage.loss.is_some()));
+                assert_eq!(
+                    metadata.context.settings.as_ref().unwrap().reasoning,
+                    request.settings().reasoning
                 );
-                assert!(EventEncoder::new(profile, metadata.clone()).is_err());
+                let mut encoder = EventEncoder::new(profile, metadata.clone()).unwrap();
+                encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
+                encoder
+                    .encode(
+                        &crate::events_support::start(1, ItemKind::Message { phase: None }),
+                        &fidelity,
+                    )
+                    .unwrap();
+                for event in crate::events_support::part(1, 1, PartKind::Text, "ok") {
+                    encoder.encode(&event, &fidelity).unwrap();
+                }
+                encoder
+                    .encode(
+                        &crate::events_support::close(1, ItemLifecycle::Completed),
+                        &fidelity,
+                    )
+                    .unwrap();
+                let terminal = StreamEvent::Terminal {
+                    terminal: StreamTerminal::Completed,
+                    details: Default::default(),
+                };
+                encoder.encode(&terminal, &fidelity).unwrap();
+                encoder.finish().unwrap();
+                assert!(
+                    encoder
+                        .projection()
+                        .iter()
+                        .any(|stage| stage.loss.is_some())
+                );
             }
         }
     }

@@ -142,6 +142,8 @@ Reuse the existing diagnostics and protocol projection records rather than add a
 
 Required output evidence is established by explicit request controls, the source contract or continuation requirements. Preserve it or reject an incompatible target. Selected incidental settings echoes and auxiliary reports may be omitted after source validation, with evidence. Absence of a request flag alone does not prove that citations or other content are incidental; deferred citation support remains deferred.
 
+Chat omits incidental settings echoes because its response has no settings carrier. Responses omits unsupported independent reasoning-control echoes while retaining representable settings. Strict-complete delivery rejects either loss. These rules never drop generated reasoning, probabilities, citations or continuation values. Messages rejects unsupported probabilities and citations; its retained usage uses the same explicit cache/total view as delivery.
+
 ### Configurable exchange capture
 
 P6 selects configurable full business-message capture for this internal gateway, not just field summaries. Keep independent header/body controls for four boundaries: inbound client request, outbound upstream request, inbound upstream response and outbound client response. Body capture includes JSON, streamed application content, tool arguments/results and non-authentication opaque payloads when enabled. Capture is not a source of replay or semantic restoration.
@@ -247,11 +249,11 @@ The code interface is [ReasoningEffortMapping](../src/protocol/reasoning.rs): ha
 
 Activation is outside the positive-level table, so a table cannot turn off into on. Absence and null never create a level. The interface does not add Provider-only level labels to the standard IR.
 
-Selected policies currently calibrate settings. Ordered configuration items must declare an identity in the selected direction; a non-identity projection is rejected until native snapshot conflicts can be checked before normalization. Always-reasoning bindings also reject disabled configuration history. A settings policy must not silently bypass historical native-level admission.
+Selected policies calibrate settings and ordered configuration items independently. Responses intake checks native configuration snapshots across added, done and terminal boundaries before normalization. Request projection maps a private ordered copy; a configuration budget without an item carrier rejects. Always-reasoning bindings also reject disabled configuration history. A settings policy must not silently bypass historical native-level admission.
 
 Validate duplicate keys, output levels, effort scope and binding identity at the trusted target boundary. Existing topology compilation also checks these declarations; its policy is frozen for this migration. Preflight and preparation project afresh from unchanged input through the same pure codec path when connected. Calibration precedes the final supported-level check, but cannot bypass source validation or final target restrictions.
 
-Validate native types, alias conflicts and source-snapshot consistency before a many-to-one normalization can hide a disagreement. Normalize only fields actually reported. Static and streamed metadata use the same rule, and downstream delivery does not reapply the source Provider's encode map. Comparing repeated reported reasoning settings before normalization remains a [boundary repair](roadmap.md#reasoning-repair-slices), not a guarantee supplied by item-snapshot checks.
+Validate native types, alias conflicts and source-snapshot consistency before a many-to-one normalization can hide a disagreement. Responses intake compares repeated reported settings before effort calibration, separately from item-snapshot validation. Normalize only fields actually reported. Static and streamed metadata use the same rule, and downstream delivery does not reapply the source Provider's encode map.
 
 #### Implementation owners
 

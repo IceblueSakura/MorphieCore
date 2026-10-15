@@ -314,6 +314,37 @@ pub(super) fn redacted(sealed: &str) -> bool {
     )
 }
 
+/// Retained metadata and accounting reflect the actual Messages carrier.
+pub(crate) fn project_snapshot(response: &mut DecodedResponse) -> Result<(), CodecError> {
+    response.metadata.context.validate()?;
+    response.metadata.context.settings = None;
+    response.metadata.context.instruction_messages = None;
+    response.metadata.instruction_fidelity = Default::default();
+    response.metadata.context.system_fingerprint = Presence::Absent;
+    let wire = super::client_events::usage_json(response.semantic.usage().as_ref())?;
+    let count = |key: &str| -> Result<u64, CodecError> {
+        wire[key]
+            .as_u64()
+            .ok_or(CodecError::Invalid("Messages projected usage"))
+    };
+    let selected = super::semantic::usage(&super::Usage {
+        input_tokens: Presence::Value(count("input_tokens")?),
+        output_tokens: count("output_tokens")?,
+        cache_read_input_tokens: wire
+            .get("cache_read_input_tokens")
+            .map(|_| count("cache_read_input_tokens"))
+            .transpose()?
+            .map_or(Presence::Absent, Presence::Value),
+        cache_creation_input_tokens: wire
+            .get("cache_creation_input_tokens")
+            .map(|_| count("cache_creation_input_tokens"))
+            .transpose()?
+            .map_or(Presence::Absent, Presence::Value),
+    });
+    response.semantic = response.semantic.clone().with_usage(Some(selected))?;
+    Ok(())
+}
+
 /// Encode a sealed response for a Messages client under the public label.
 pub fn encode_client_response(
     response: &DecodedResponse,
@@ -340,15 +371,28 @@ pub fn encode_client_response(
                 content.push(json!({"type":"thinking","thinking":thinking,"signature":signature}));
             }
             Item::Message(m) if m.role == MessageRole::Assistant => {
+                if m.phase.is_some() {
+                    return Err(CodecError::Unsupported("Messages phase".into()));
+                }
                 for part in &m.parts {
                     match &part.content {
                         ContentPart::Text(t) => {
+                            if !t.logprobs().is_absent() {
+                                return Err(CodecError::Unsupported(
+                                    "Messages probabilities".into(),
+                                ));
+                            }
                             if !t.annotations().is_empty() {
                                 return Err(CodecError::Unsupported("Messages citations".into()));
                             }
                             content.push(json!({"type":"text","text":t.as_str()}))
                         }
                         ContentPart::Refusal(t) => {
+                            if !t.logprobs().is_absent() {
+                                return Err(CodecError::Unsupported(
+                                    "Messages probabilities".into(),
+                                ));
+                            }
                             content.push(json!({"type":"text","text":t.as_str()}))
                         }
                         _ => return Err(CodecError::Unsupported("Messages content".into())),

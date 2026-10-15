@@ -114,7 +114,7 @@ impl ClientEventEncoder {
             StreamEvent::ItemStarted { item, kind, replay } => {
                 self.start(&mut out);
                 let (kind, block) = match kind {
-                    ItemKind::Message { .. } => {
+                    ItemKind::Message { phase: None } => {
                         (Kind::Text, Some(json!({"type":"text","text":""})))
                     }
                     // Opens on its first delta or at its end, once a redacted value is known.
@@ -133,6 +133,15 @@ impl ClientEventEncoder {
                 let index = block.map(|block| open_block(&mut self.next, &mut out, block));
                 let signature = replay.as_ref().map(|r| r.value.as_str().to_owned());
                 self.open.insert(*item, (index, kind, signature));
+            }
+            StreamEvent::Delta { logprobs, .. } if !logprobs.is_empty() => {
+                return Err(CodecError::Unsupported("Messages probabilities".into()));
+            }
+            StreamEvent::LogprobsSnapshot { .. } => {
+                return Err(CodecError::Unsupported("Messages probabilities".into()));
+            }
+            StreamEvent::TextMetadata { logprobs, .. } if !logprobs.is_absent() => {
+                return Err(CodecError::Unsupported("Messages probabilities".into()));
             }
             StreamEvent::Delta { item, fragment, .. } if !fragment.is_empty() => {
                 let (index, kind, _) = self
