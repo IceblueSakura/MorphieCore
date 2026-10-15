@@ -98,12 +98,31 @@ mod anthropic_profile {
         }}});
         let decoded = p.decode_request(complex.to_string().as_bytes()).unwrap();
         assert!(p.encode_request(&decoded).is_err());
+        let mut output_only = complex.clone();
+        output_only.as_object_mut().unwrap().remove("tools");
+        let decoded = p
+            .decode_request(output_only.to_string().as_bytes())
+            .unwrap();
+        assert!(p.encode_request(&decoded).is_err());
         let properties = (0..17)
             .map(|n| (format!("p{n}"), json!({"type":["boolean","null"]})))
             .collect::<serde_json::Map<_, _>>();
         complex["output_config"]["format"]["schema"]["properties"] = json!(properties);
         let decoded = p.decode_request(complex.to_string().as_bytes()).unwrap();
         assert!(p.encode_request(&decoded).is_err());
+        output_only["output_config"] = complex["output_config"].clone();
+        let decoded = p
+            .decode_request(output_only.to_string().as_bytes())
+            .unwrap();
+        assert!(p.encode_request(&decoded).is_err());
+        output_only["output_config"]["format"]["schema"] = json!({
+            "type":"object","properties":{"ok":{"type":"boolean"}},
+            "required":["ok"],"additionalProperties":false
+        });
+        let decoded = p
+            .decode_request(output_only.to_string().as_bytes())
+            .unwrap();
+        assert_eq!(p.encode_request(&decoded).unwrap(), output_only);
         body["tools"][0]["input_schema"]["properties"]["key"]["minimum"] = json!(2);
         let decoded = p.decode_request(body.to_string().as_bytes()).unwrap();
         assert!(p.encode_request(&decoded).is_err());

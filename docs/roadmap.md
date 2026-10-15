@@ -93,6 +93,8 @@ Remaining constrained-carrier gaps are explicit rejections: Google JSON-object m
 
 Responses normalization-default strictness cannot become a plain native tool. That conversion now rejects pending P8 selection; pi-shaped requests that omit `strict` therefore do not reach those native bindings. Explicit non-strict tools retain their separate carrier.
 
+Explicit cache retention also rejects targets without an exact carrier. No cross-Provider retention approximation or route-policy change is selected.
+
 ### Projection repair
 
 These are the remaining repair obligations consumed by S5/S6, not a second competing schedule. Finish independent work while [semantic decisions](#pending-decisions) remain open; do not choose an approximation or IR contract implicitly.

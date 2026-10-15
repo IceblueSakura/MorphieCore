@@ -43,14 +43,12 @@ pub struct CacheProjection {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum CacheRule {
     OmitKey,
-    OmitRetention,
     OmitInactiveOptions,
 }
 impl CacheRule {
     pub const fn name(self) -> &'static str {
         match self {
             Self::OmitKey => "cache.omit-key.v1",
-            Self::OmitRetention => "cache.omit-retention.v1",
             Self::OmitInactiveOptions => "cache.omit-inactive-options.v1",
         }
     }
@@ -62,10 +60,6 @@ impl CacheProjection {
             (
                 !self.key && !context.cache.prompt_cache_key.is_absent(),
                 CacheRule::OmitKey,
-            ),
-            (
-                !self.retention && !context.cache.prompt_cache_retention.is_absent(),
-                CacheRule::OmitRetention,
             ),
             (
                 !self.options && !context.cache.prompt_cache_options.is_absent(),
@@ -92,12 +86,18 @@ impl CacheProjection {
     }
     pub fn project(self, context: &mut ExecutionHints) -> Result<(), CodecError> {
         context.cache.validate()?;
-        // Key and retention are advisory; absence leaves automatic caching to the Provider.
+        // Shared hints also hold nullable reports; target projection admits requests only.
+        if context.cache.prompt_cache_options == Presence::Null {
+            return Err(CodecError::Invalid("cache options"));
+        }
+        // Retention constrains storage; automatic caching proves no equivalent policy.
+        // https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/chat/completion_create_params.py
+        if !self.retention && !context.cache.prompt_cache_retention.is_absent() {
+            return Err(CodecError::Unsupported("cache retention".into()));
+        }
+        // The grouping key alone is advisory.
         if !self.key {
             context.cache.prompt_cache_key = Presence::Absent;
-        }
-        if !self.retention {
-            context.cache.prompt_cache_retention = Presence::Absent;
         }
         // Explicit cache modes/prewarm are behavioral controls, not inactive hints.
         if !self.options

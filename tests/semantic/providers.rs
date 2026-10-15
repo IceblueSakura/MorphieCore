@@ -1631,20 +1631,44 @@ mod cache_projection {
         assert!(without_options.get("prompt_cache_options").is_none());
         assert!(rules.contains(&"cache.omit-inactive-options.v1"));
         assert_eq!(decoded.context, saved);
+        empty["prompt_cache_options"] = Value::Null;
+        assert!(
+            client(Profile::Chat)
+                .decode_client_request(empty.to_string().as_bytes())
+                .is_err()
+        );
+        let mut invalid = decoded.clone();
+        invalid.context.cache.prompt_cache_options = morphiecore::semantic::value::Presence::Null;
+        assert!(
+            Adapter::new(Profile::Chat, Dialect::DeepSeek, None)
+                .encode_request(&invalid, "upstream", &Contract::full())
+                .is_err()
+        );
         let mut advisory = decoded.clone();
         advisory.context.cache.prompt_cache_key =
             morphiecore::semantic::value::Presence::Value("synthetic".into());
-        advisory.context.cache.prompt_cache_retention =
-            morphiecore::semantic::value::Presence::Value(
-                morphiecore::semantic::context::CacheRetention::Day,
-            );
         let (wire, rules) = Adapter::new(Profile::Chat, Dialect::DeepSeek, None)
             .encode_request_with_rules(&advisory, "upstream", &Contract::full())
             .unwrap();
         assert!(wire.get("prompt_cache_key").is_none());
         assert!(wire.get("prompt_cache_retention").is_none());
         assert!(rules.contains(&"cache.omit-key.v1"));
-        assert!(rules.contains(&"cache.omit-retention.v1"));
+        advisory.context.cache.prompt_cache_retention =
+            morphiecore::semantic::value::Presence::Value(
+                morphiecore::semantic::context::CacheRetention::InMemory,
+            );
+        let saved = advisory.clone();
+        assert!(
+            Adapter::new(Profile::Chat, Dialect::DeepSeek, None)
+                .encode_request(&advisory, "upstream", &Contract::full())
+                .is_err()
+        );
+        let (wire, rules) = Adapter::new(Profile::Chat, Dialect::Standard, None)
+            .encode_request_with_rules(&advisory, "upstream", &Contract::full())
+            .unwrap();
+        assert_eq!(wire["prompt_cache_retention"], "in_memory");
+        assert!(rules.is_empty());
+        assert_eq!(advisory, saved);
         empty["prompt_cache_options"] = json!({"mode":"explicit"});
         let active = client(Profile::Chat)
             .decode_request(empty.to_string().as_bytes())

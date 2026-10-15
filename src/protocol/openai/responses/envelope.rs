@@ -62,6 +62,16 @@ impl ExecutionHints {
             })
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
+        // Reports may echo null, but request cache-options containers are non-nullable.
+        if matches!(
+            direction,
+            DecodeDirection::Request | DecodeDirection::Client(_)
+        ) && fields
+            .get("prompt_cache_options")
+            .is_some_and(Value::is_null)
+        {
+            return Err(CodecError::Invalid("cache options"));
+        }
         if let Some(options) = fields
             .get_mut("prompt_cache_options")
             .filter(|v| !v.is_null())

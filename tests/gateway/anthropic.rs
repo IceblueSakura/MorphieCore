@@ -464,9 +464,28 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 "tools":[{"type":"function","function":function}]})
             };
             input["stream"] = json!(stream);
-            // pi's cache fields; Codex always sends `client_metadata`, which no target takes.
+            // Cache grouping is advisory; native targets cannot erase retention intent.
             input["prompt_cache_key"] = json!("pi-session");
-            input["prompt_cache_retention"] = json!("24h");
+            if responses && !stream {
+                input["prompt_cache_retention"] = json!("24h");
+                let count = seen.lock().unwrap().len();
+                let rejected = client
+                    .post(format!("{base}{path}"))
+                    .bearer_auth("synthetic-client-identity-00000001")
+                    .json(&input)
+                    .send()
+                    .await
+                    .unwrap();
+                assert_eq!(rejected.status(), 400);
+                let error: Value = rejected.json().await.unwrap();
+                assert_eq!(error["error"]["code"], "invalid_request");
+                assert_eq!(seen.lock().unwrap().len(), count);
+                input
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("prompt_cache_retention");
+            }
+            // Codex always sends `client_metadata`, which no target takes.
             input["client_metadata"] = json!({"session_id":"synthetic-session"});
             // Without `tool_choice`, the switch rides on Messages' default `auto`.
             input["parallel_tool_calls"] = json!(false);
@@ -893,7 +912,9 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
     assert_eq!(seen.lock().unwrap().len(), 56);
     diagnostic_owner.flush_diagnostics().await;
     let records = std::fs::read_to_string(&diagnostics).unwrap();
-    assert!(records.contains(r#""request_rules":["cache.omit-key.v1","cache.omit-retention.v1","messages.omit-sampling.v1"]"#));
+    assert!(
+        records.contains(r#""request_rules":["cache.omit-key.v1","messages.omit-sampling.v1"]"#)
+    );
     assert!(records.contains(r#""ignored_request_fields":["client_metadata"]"#));
     // Native adaptive intent stays adaptive, without a numeric-budget approximation.
     assert!(!records.contains("messages.budget-as-effort.v1"));

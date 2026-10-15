@@ -1,4 +1,4 @@
-//! Target-only strict tool admission. Client parsing keeps the original schema.
+//! Target-only strict schemas and request-wide complexity. Client parsing keeps the schema.
 //! https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations
 use serde_json::Value;
 
@@ -11,9 +11,6 @@ pub(super) fn admits_request(request: &super::Request) -> bool {
         .flatten()
         .filter(|tool| tool.strict == Presence::Value(true))
         .collect();
-    if tools.is_empty() {
-        return true;
-    }
     // These native grammar limits are request-wide, including JSON output.
     if tools.len() > 20 {
         return false;

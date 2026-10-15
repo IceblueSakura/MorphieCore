@@ -97,6 +97,8 @@ The selected policy favors useful conversion over exact wire correspondence. Pre
 
 Classify losses by their effect on task constraints, output quality, execution and security, not by whether a field is optional in an SDK. A verbosity preference may be omitted when no target carrier exists. A required output schema, tool selection, call/result link, content item or honest terminal cannot be discarded merely to complete a request. Billing, storage and disclosure controls also need an explicit policy even when they do not change answer quality.
 
+Cache grouping keys are advisory. Explicit cache retention constrains storage, so preserve its exact carrier or reject a target without one; automatic caching does not establish a compatible retention policy. Null request cache-options containers are invalid, independently of nullable upstream echoes.
+
 | Treatment | Contract |
 |---|---|
 | Exact representation | Preserve meaning; check source conflicts before alias normalization |
@@ -562,6 +564,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | SIWC cross-Provider fallback | A mixed route may contain one SIWC endpoint and advance to another Provider before publication within the route budget. SIWC pools remain single-account with no credential fallback; standalone SIWC routes remain single-attempt with fallback disabled |
 | Case-sensitive model labels | Public IDs may preserve upstream ASCII capitalization, but resolve only registered routes. Provider prefixes remain rejected; Provider, endpoint and route IDs keep their lowercase grammar |
 | Declared adaptation | Named candidate-local losses; known fields strict, unknown protocol fields ignored |
+| Cache storage intent is protected | Cache keys may be omitted with evidence, but explicit retention needs an exact target carrier. Do not erase a storage constraint or repair a malformed request cache container through adaptation |
 | Native carrier availability is not activation | Native `representation_contract()` describes codec carriers; default `semantic_contract()` keeps binding admission unchanged. Frozen public/topology checks may remain narrower until the scheduled integration review |
 | Candidate-local tool errors | Messages admission preserves tool-result error flags regardless of the route. Native targets retain them; OpenAI targets apply a named loss on their private copy |
 | Explicit downstream identity | A closed client protocol and its adapter own decoding and delivery carriers. Messages keeps its Chat-candidate activation policy without a dummy OpenAI adapter |
@@ -589,7 +592,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Target-local image restrictions | Formats, encoded sizes, counts and unavailable per-use options are checked or projected at the protocol boundary, not encoded as Provider-specific IR fields |
 | Envelopes as grouping | Ordered message envelopes are the only IR grouping. Chat's call ownership is a view derived in the OpenAI codec, which also enforces Chat-only rules such as no calls on a refusal |
 | Schemas as data | The IR keeps any bounded JSON-object schema an official API accepts. Each target checks its selected subset without rewriting constraints. Google protocols keep distinct structured-output shells; native strict-tool checks do not restrict client parsing. An unnamed output schema gets the fixed name `response` only on OpenAI targets, which require one |
-| Strict tool constraints stay protected | Messages strict tools reject unsupported constraints and documented case-sensitive string enum/const fidelity gaps, and check native request-wide schema complexity. No SDK constraint-removal helper or implicit default-strict conversion is used |
+| Strict tool constraints stay protected | Messages strict tools reject unsupported constraints and documented case-sensitive string enum/const fidelity gaps. Native request-wide schema complexity includes output-only schemas and combined strict-tool/output schemas. No SDK constraint-removal helper or implicit default-strict conversion is used |
 | Deferred stop sequences | Nonempty client `stop` and `stop_sequences` are rejected, not treated as unknown fields. No stop control enters the IR until implemented; a native `stop_sequence` stop still reports a finished turn |
 | Client-owned output caps | The gateway neither caps nor invents `max_tokens`; the upstream enforces its model limit. Only a protocol that requires the field fills a fixed default |
 

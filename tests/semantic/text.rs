@@ -347,6 +347,13 @@ mod text_profile {
         );
         request["prompt_cache_options"] = json!({"mode":null});
         assert!(responses::envelope::decode_request(&request).is_err());
+        request["prompt_cache_options"] = Value::Null;
+        assert!(responses::envelope::decode_request(&request).is_err());
+        response["prompt_cache_options"] = Value::Null;
+        assert_eq!(
+            response_round_trip(&response)["prompt_cache_options"],
+            Value::Null
+        );
         response["prompt_cache_options"] = json!({"mode":"explicit","ttl":"30m","prewarm":true});
         response["prompt_cache_diagnostics"] = json!({"type":"cache_miss","reason":"input_changed","cache_missed_tokens":3,"comparison_reusable_tokens":2});
         let out = response_round_trip(&response);
