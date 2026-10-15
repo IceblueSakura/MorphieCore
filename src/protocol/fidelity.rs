@@ -34,6 +34,7 @@ pub(crate) fn declared_response_extras(
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Normalization {
     CacheWriteDefault { profile: &'static str },
+    ReasoningEffortMapping { rule: &'static str },
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ResponseExtras {
@@ -475,6 +476,10 @@ impl FidelityRecords {
     pub(crate) fn record_cache_write_default(&mut self, profile: &'static str) {
         self.normalizations
             .insert(Normalization::CacheWriteDefault { profile });
+    }
+    pub(crate) fn record_effort_mapping(&mut self, rule: &'static str) {
+        self.normalizations
+            .insert(Normalization::ReasoningEffortMapping { rule });
     }
     pub(crate) fn copy_response_records(&mut self, source: &Self) {
         self.response_extras = source.response_extras.clone();

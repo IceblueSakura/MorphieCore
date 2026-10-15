@@ -12,6 +12,7 @@ Researched on 2026-10-15. These notes establish official wire contracts and mapp
 | [Gemini v1beta discovery](https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta) | observed revision `20261012`, id `generativelanguage:v1beta` | GenerationConfig, ThinkingConfig, FunctionCallingConfig and service-tier wire enums |
 | [DeepSeek Chat](https://api-docs.deepseek.com/api/create-chat-completion), [thinking mode](https://api-docs.deepseek.com/guides/thinking_mode) | unversioned, read 2026-10-15 | Cache count aliases and readable reasoning history |
 | [OpenRouter reasoning](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens) | unversioned, read 2026-10-15 | Plaintext aliases, structured reasoning and routing-level approximations |
+| [MiMo Responses](https://mimo.mi.com/docs/zh-CN/api/chat/responses) | unversioned, read 2026-10-15 | Explicit effort aliases and the distinction between accepted labels and effective thinking strength |
 
 The discovery URL is mutable, not an archived schema or an Interactions v1 descriptor. The observed response SHA-256 was `d0bc24031ace09fe6b7bd3f0bee4aae327d097e9df412fffa42fdb72b21e4b96`; the pinned SDK supplies a separately retrievable revision. A revision, SDK declaration or guide does not establish account access or effective support on every model.
 
@@ -130,6 +131,8 @@ Anthropic's [How effort works](https://platform.claude.com/docs/en/build-with-cl
 The value of independent activation is faithful expression of an official contract, even when only one API has that carrier. It is not evidence that off plus response-wide high effort can be translated to OpenAI `none` plus `high`, Google low/minimal, or a verbosity setting. The selected [IR direction](../architecture.md#reasoning-activation-and-effort-scope) models activation and one scope-qualified effort control. This preserves the official counterexample without adding parallel effort controls that no selected request requires together. Cross-scope conversion is not selected.
 
 ### Hand-authored same-model level calibration
+
+MiMo's Responses reference explicitly aliases `minimal` to `low`, and `xhigh`, `max` and its extra `ultra` label to `high`. It also states that all non-off levels currently enable the same thinking behavior: accepted labels are not evidence of distinct effective effort. A table can document those wire aliases without claiming performance calibration. Do not infer the same contract for an older Chat documentation page or another intermediary.
 
 The selected product policy rejects unrepresentable reasoning semantics while allowing deliberate level calibration in encode/decode for the same model. This is not an official claim that different Providers expose equivalent levels.
 

@@ -362,7 +362,12 @@ impl EventDecoder {
         Ok(PartId::new(self.next_part))
     }
     pub(super) fn observe_metadata(&mut self, o: &Map<String, Value>) -> Result<(), CodecError> {
-        let mut m = crate::protocol::openai::static_response::metadata(o, self.profile)?;
+        let mut m = crate::protocol::openai::static_response::metadata(
+            o,
+            self.profile,
+            &self.adaptation,
+            &mut self.fidelity,
+        )?;
         if let Some(old) = &self.metadata {
             // Response identity is strict; providers re-stamp scalar facts such
             // as `created` and `system_fingerprint` per chunk, so the first

@@ -50,6 +50,29 @@ fn with_effort_levels(request: &Request) -> Result<Option<Request>, CodecError> 
     Ok(Some(copy))
 }
 
+fn with_effort_mapping(
+    request: &Request,
+    mapping: &crate::protocol::reasoning::ReasoningEffortMapping,
+) -> Result<Option<Request>, CodecError> {
+    mapping.validate()?;
+    if openai::reasoning::requires_extended_controls(request.task.semantic.reasoning()) {
+        return Err(CodecError::Unsupported("reasoning controls".into()));
+    }
+    let settings = request.task.semantic.settings();
+    let Some(level) = settings.reasoning.effort.value() else {
+        return Ok(None);
+    };
+    let mapped = mapping.encode(*level)?;
+    if mapped == *level {
+        return Ok(None);
+    }
+    let mut settings = settings.clone();
+    settings.reasoning.effort = Presence::Value(mapped);
+    let mut copy = request.clone();
+    copy.task.semantic = copy.task.semantic.with_settings(settings)?;
+    Ok(Some(copy))
+}
+
 fn without_image_detail(request: &Request) -> Result<Option<Request>, CodecError> {
     use crate::semantic::task::generation::{
         ContentPart, InputPart, Item, ResourceDescription, ResourceUse, ToolOutput,
@@ -283,6 +306,21 @@ impl Adapter {
             }
         }
         let request = stripped.as_ref().map_or(request, |(copy, _)| copy);
+        let mapped = self
+            .adaptation
+            .effort_mapping
+            .map(|mapping| with_effort_mapping(request, mapping))
+            .transpose()?
+            .flatten();
+        if mapped.is_some() {
+            rules.push(
+                self.adaptation
+                    .effort_mapping
+                    .expect("selected mapping")
+                    .rule,
+            );
+        }
+        let request = mapped.as_ref().unwrap_or(request);
         let thinking = without_extended_reasoning(request)?;
         if let Some((_, mapped)) = &thinking {
             let chat = self.protocol == Profile::Chat;
@@ -300,7 +338,9 @@ impl Adapter {
             }
         }
         let request = thinking.as_ref().map_or(request, |(copy, _)| copy);
-        let leveled = if self.adaptation.rules.low_high_max_effort {
+        let leveled = if self.adaptation.effort_mapping.is_none()
+            && self.adaptation.rules.low_high_max_effort
+        {
             with_effort_levels(request)?
         } else {
             None

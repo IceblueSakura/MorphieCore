@@ -86,14 +86,22 @@ impl Endpoint {
             (
                 ProtocolProfile::OpenAiChat | ProtocolProfile::OpenAiResponses,
                 TargetCaps::OpenAi(caps),
-            ) => UpstreamAdapter::OpenAi(Box::new(Adapter {
-                protocol: if self.protocol == ProtocolProfile::OpenAiChat {
-                    Profile::Chat
-                } else {
-                    Profile::Responses
-                },
-                adaptation: caps.adaptation.clone(),
-            })),
+            ) => {
+                if let Some(mapping) = caps.adaptation.effort_mapping {
+                    mapping.validate()?;
+                    if mapping.canonical_model != self.canonical_model.as_str() {
+                        return Err(CodecError::Invalid("reasoning mapping model"));
+                    }
+                }
+                UpstreamAdapter::OpenAi(Box::new(Adapter {
+                    protocol: if self.protocol == ProtocolProfile::OpenAiChat {
+                        Profile::Chat
+                    } else {
+                        Profile::Responses
+                    },
+                    adaptation: caps.adaptation.clone(),
+                }))
+            }
             _ => return Err(CodecError::ProfileMismatch),
         })
     }

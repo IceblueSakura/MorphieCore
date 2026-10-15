@@ -62,12 +62,21 @@ impl ApiKeyBinding {
             }
         };
         let scope = crate::protocol::replay_envelope::issuer(provider.id.as_str(), self.upstream);
+        let mut adapter = Adapter::new(family, self.dialect, Some(scope.clone()));
+        let mut mappings = self
+            .effort_mappings
+            .iter()
+            .filter(|(member, _)| *member == protocol);
+        adapter.adaptation.effort_mapping = mappings.next().map(|(_, mapping)| *mapping);
+        if mappings.next().is_some() {
+            return Err(TopologyError::InvalidModelBinding);
+        }
         let contract = TargetCaps {
             semantics: self
                 .endpoint_slice
                 .apply(models::contract(self.canonical_model)),
             replay_origin: replay.then_some(scope.clone()),
-            cache: Adapter::new(family, self.dialect, None).adaptation.cache,
+            cache: adapter.adaptation.cache,
             identity_hints: false,
             standard_context: false,
             ..TargetCaps::full()
@@ -83,9 +92,7 @@ impl ApiKeyBinding {
             task: TaskKind::Generation,
             protocol,
             upstream_model: self.upstream.into(),
-            representation: Adapter::new(family, self.dialect, Some(scope))
-                .contract(&contract)
-                .into(),
+            representation: adapter.contract(&contract).into(),
             execution: ExecutionContract {
                 streaming: true,
                 retry_before_commit: false,

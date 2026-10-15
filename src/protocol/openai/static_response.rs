@@ -9,6 +9,8 @@ use serde_json::{Map, Value, json};
 pub(super) fn metadata(
     o: &Map<String, Value>,
     profile: Profile,
+    adaptation: &crate::protocol::openai::dialect::adaptation::Adaptation,
+    fidelity: &mut crate::protocol::fidelity::FidelityRecords,
 ) -> Result<ResponseMetadata, CodecError> {
     let created_key = if profile == Profile::Chat {
         "created"
@@ -25,7 +27,7 @@ pub(super) fn metadata(
         o.get(created_key)
             .ok_or(CodecError::Invalid("created time"))?,
     )?;
-    let (context, instruction_fidelity) = if profile == Profile::Responses {
+    let (mut context, instruction_fidelity) = if profile == Profile::Responses {
         crate::semantic::context::ResponseContext::read(o, DecodeDirection::Upstream)?
     } else {
         (
@@ -42,6 +44,19 @@ pub(super) fn metadata(
         )
     };
     context.validate()?;
+    if let Some(mapping) = adaptation.effort_mapping {
+        mapping.validate()?;
+        if let Some(settings) = &mut context.settings
+            && let Some(level) = settings.reasoning.effort.value()
+        {
+            let mapped = mapping.decode(*level)?;
+            if mapped != *level {
+                settings.reasoning.effort = crate::semantic::value::Presence::Value(mapped);
+                settings.validate()?;
+                fidelity.record_effort_mapping(mapping.rule);
+            }
+        }
+    }
     if profile == Profile::Chat {
         crate::protocol::openai::chat::envelope::validate_context(&context.execution)?;
     }
@@ -458,7 +473,7 @@ pub(crate) fn decode_chat_with(
     if chat_finish(&semantic)? != string(c, "finish_reason")? {
         return Err(CodecError::Invalid("finish reason conflicts with output"));
     }
-    let metadata = metadata(o, Profile::Chat)?;
+    let metadata = metadata(o, Profile::Chat, adaptation, &mut b.fidelity)?;
     b.fidelity.capture_routing_extras(
         Profile::Chat,
         adaptation,
@@ -523,7 +538,7 @@ pub(crate) fn decode_responses_with(
         &mut b.fidelity,
         Some(&semantic),
     )?;
-    let metadata = metadata(o, Profile::Responses)?;
+    let metadata = metadata(o, Profile::Responses, adaptation, &mut b.fidelity)?;
     b.fidelity.capture_routing_extras(
         Profile::Responses,
         adaptation,

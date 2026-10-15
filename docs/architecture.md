@@ -148,7 +148,11 @@ The following is a hypothetical reasoning-scope encode policy, not an activated 
 | xhigh | reject until an explicit mapping is chosen | xhigh, identity |
 | minimal/max | reject until explicitly supported or mapped | reject until explicitly supported or mapped |
 
-For this example, decode starts with identity on each declared native level: a reported medium remains medium, even when the request was low. A separately authored decode rule may normalize it differently; never infer that rule from encode. Missing table entries use identity only when the target accepts that level with the same semantic scope, otherwise reject. Do not chain table entries or apply the encode table to an already adapted candidate.
+For this example, decode explicitly declares identity on each native level: a reported medium remains medium, even when the request was low. A separately authored decode rule may normalize it differently; never infer that rule from encode. Every handled entry, including an identity, must be declared. Missing entries reject, with no supported-level fallback. Do not chain table entries or apply the encode table to an already adapted candidate.
+
+The initial code interface is [ReasoningEffortMapping](../src/protocol/reasoning.rs): hand-authored encode/decode pairs selected by `ApiKeyBinding.effort_mappings` for an exact protocol member. Endpoint construction carries the policy into request encoding and static/SSE metadata intake; adapter selection validates its canonical-model identity. Bindings without a selected policy keep their existing codec behavior. D1's scoped IR migration remains separate.
+
+With the current pre-D1 enum, `None` may appear only as an explicitly declared `None → None` entry. This preserves an off carrier, not an effort calibration. Cross-activation entries are invalid; absence and null never create a level. The interface does not add Provider-only level labels to the standard IR.
 
 Validate duplicate keys, output levels, effort scope and binding identity when compiling topology. Preflight and preparation each project afresh from unchanged input through the same pure path; they need not share a mutable adapted request. Calibration precedes the final supported-level check, but cannot bypass mode, budget, semantic or scope validation.
 
