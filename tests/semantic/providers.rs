@@ -58,18 +58,21 @@ mod provider_profiles {
         );
         let client = adapter(Dialect::MorphieCore);
         let alias = client.decode_client_request(
-            br#"{"model":"m","messages":[{"role":"assistant","content":"answer","reasoning":"think"}]}"#
+            br#"{"model":"m","messages":[{"role":"assistant","content":"answer","reasoning":"think","reasoning_content":""}]}"#
         ).unwrap();
         assert!(
             matches!(&alias.task.semantic.items()[0].1, Item::Reasoning(r)
             if matches!(&r.parts[0].1, ReasoningContent::Text(t) if t.as_str() == "think"))
         );
+        assert!(client.decode_client_request(
+            br#"{"model":"m","messages":[{"role":"assistant","content":"answer","reasoning":"think","reasoning_content":"different"}]}"#
+        ).is_err());
         let provider = adapter(Dialect::OpenCodeGo);
         let details =
             json!([{"type":"reasoning.text","text":"think","format":"unknown","index":0}]);
         let mut source = body();
         let message = source["choices"][0]["message"].as_object_mut().unwrap();
-        message.remove("reasoning_content");
+        message.insert("reasoning_content".into(), json!(""));
         message.insert("reasoning".into(), json!("think"));
         message.insert("reasoning_details".into(), details.clone());
         source["usage"]["prompt_tokens_details"] =
@@ -153,7 +156,7 @@ mod provider_profiles {
         let mut stream = provider.event_decoder();
         stream
             .push(&chunk(
-                json!({"role":"assistant","reasoning":"think","reasoning_details":details}),
+                json!({"role":"assistant","reasoning":null,"reasoning_content":"","reasoning_details":details}),
                 Value::Null,
             ))
             .unwrap();

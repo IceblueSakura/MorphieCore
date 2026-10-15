@@ -820,6 +820,22 @@ mod replay_carrier {
                 .decode_client_request(history("").to_string().as_bytes())
                 .is_ok()
         );
+        let mut empty = history("");
+        empty["messages"][1]["reasoning_details"][0]["text"] = json!("");
+        empty["messages"][1]["reasoning_details"][1]["summary"] = json!("");
+        let decoded = chat_client()
+            .decode_client_request(empty.to_string().as_bytes())
+            .unwrap();
+        assert!(
+            matches!(&decoded.task.semantic.items()[1].1, Item::Reasoning(r)
+            if matches!(&r.parts[..], [(_, ReasoningContent::Text(t))] if t.as_str().is_empty())
+                && r.replay.as_ref().unwrap().replay_token() == Some("sig-1"))
+        );
+        assert!(
+            matches!(&decoded.task.semantic.items()[2].1, Item::Reasoning(r)
+            if matches!(&r.parts[..], [(_, ReasoningContent::Summary(t))] if t.as_str().is_empty())
+                && r.replay.as_ref().unwrap().replay_token() == Some("tok-2"))
+        );
     }
 }
 mod replay_ownership {

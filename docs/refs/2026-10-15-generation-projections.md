@@ -44,7 +44,7 @@ A declared alias profile must reject the disagreement. Standard upstream parsing
 
 The pinned official Chat [message](https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/chat/chat_completion_message.py) and [delta](https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/chat/chat_completion_chunk.py) types do not declare `reasoning_content`, `reasoning` or `reasoning_details`. DeepSeek and OpenRouter supply separate extension contracts.
 
-OpenRouter declares `reasoning_content` as an alias of `reasoning`. A declared plaintext alias must not depend on a structured-details sibling being present. If multiple nonempty readable views are supplied, normalize and check agreement before constructing IR. Choose a consistent absence/null/empty policy; the public alias description alone does not specify every conflicting combination.
+OpenRouter declares `reasoning_content` as an alias of `reasoning`. A declared plaintext alias must not depend on a structured-details sibling being present. If multiple nonempty readable views are supplied, normalize and check agreement before constructing IR. MorphieCore's selected nonempty-only plaintext agreement is recorded in [Architecture](../architecture.md#chat-reasoning-extensions); the public alias description alone does not specify every conflicting combination.
 
 An extension that carries reasoning is semantic input, not merely a value for later wire restoration. Keep it distinct from ordinary assistant text. Structured text, summaries and encrypted continuation values have different ownership and replay requirements; unfamiliar formats are not automatically Responses ciphertext.
 

@@ -95,7 +95,10 @@ pub(in crate::protocol::openai) fn parse(
         }
     }
     for key in ["reasoning", "reasoning_content"] {
-        if let Some(view) = m.get(key).filter(|v| !v.is_null()) {
+        if let Some(view) = m
+            .get(key)
+            .filter(|v| !v.is_null() && v.as_str() != Some(""))
+        {
             let view = view.as_str().ok_or(CodecError::Invalid("reasoning view"))?;
             if view != result.part.as_ref().map(|(_, s)| s.as_str()).unwrap_or("") {
                 return Err(CodecError::Invalid("reasoning view disagreement"));
@@ -127,6 +130,7 @@ fn parse_message(
     }
     let values = match value {
         Value::Null => return Ok(vec![]),
+        Value::Array(values) if values.is_empty() => return Ok(vec![]),
         Value::Array(values) => values,
         _ => return Err(CodecError::Invalid("reasoning details")),
     };

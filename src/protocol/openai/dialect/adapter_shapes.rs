@@ -275,12 +275,15 @@ pub(crate) fn decode_message(o: &mut Map<String, Value>) -> Result<(), CodecErro
         if !reasoning.is_null() && !reasoning.is_string() {
             return Err(CodecError::Invalid("readable reasoning"));
         }
-        if o.get("reasoning_content")
-            .is_some_and(|old| old != &reasoning)
-        {
-            return Err(CodecError::Invalid("reasoning alias conflict"));
+        if reasoning.as_str().is_some_and(|view| !view.is_empty()) {
+            if o.get("reasoning_content")
+                .filter(|old| !old.is_null() && old.as_str() != Some(""))
+                .is_some_and(|old| old != &reasoning)
+            {
+                return Err(CodecError::Invalid("reasoning alias conflict"));
+            }
+            o.insert("reasoning_content".into(), reasoning);
         }
-        o.insert("reasoning_content".into(), reasoning);
     }
     Ok(())
 }
