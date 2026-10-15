@@ -171,6 +171,22 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         public_slice: RequestSlice::Canonical,
         endpoint_slice: RequestSlice::Canonical,
     },
+    // Prime is an inference mode, not a new canonical model publication.
+    // https://help.aliyun.com/en/model-studio/prime-mode
+    ApiKeyBinding {
+        provider: catalog::aliyun_dashscope_cn,
+        dialect: Dialect::Bailian,
+        endpoint_prefix: "dashscope-glm-prime",
+        model: "glm-5.3-prime",
+        canonical_model: "glm-5.3",
+        upstream: "glm-5.3-prime",
+        credential: "aliyun-dashscope-cn-api-key",
+        protocols: CHAT,
+        replay_responses: false,
+        replay_chat: false,
+        public_slice: RequestSlice::Canonical,
+        endpoint_slice: RequestSlice::Canonical,
+    },
     ApiKeyBinding {
         provider: catalog::aliyun_tokenplan_cn,
         dialect: Dialect::BailianTokenPlan,

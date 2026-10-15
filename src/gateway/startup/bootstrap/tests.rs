@@ -71,6 +71,43 @@ fn shared_provider_credentials_keep_model_and_protocol_targets_distinct() {
             );
         }
     }
+    let boot = Fixture::from_lookup(|name| {
+        Ok(match name {
+            "client_key" => Some("synthetic-gateway-client-token-0001".into()),
+            "aliyun-dashscope-cn-api-key" => Some("synthetic-metered-key".into()),
+            "models" => Some(r#"["glm-5.3-prime"]"#.into()),
+            _ => None,
+        })
+    })
+    .unwrap();
+    let (entry, request) = crate::gateway::ingress::admission::prepare(
+        &boot.gateway.state,
+        Profile::Chat,
+        br#"{"model":"glm-5.3-prime","messages":[{"role":"user","content":"hi"}],"max_completion_tokens":64}"#,
+    ).unwrap();
+    assert_eq!(entry.public.canonical_model.as_str(), "glm-5.3");
+    assert_eq!(entry.candidates.len(), 1);
+    let candidate = &entry.candidates[0];
+    assert_eq!(
+        candidate.endpoint.credential.as_str(),
+        "aliyun-dashscope-cn-api-key"
+    );
+    let prepared = crate::execution::prepare(
+        &candidate.endpoint,
+        &candidate.provider,
+        &candidate.secret.resolve().unwrap().0,
+        &request,
+    )
+    .unwrap();
+    assert_eq!(prepared.origin, "https://dashscope.aliyuncs.com");
+    assert_eq!(prepared.path, "/compatible-mode/v1/chat/completions");
+    let wire: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
+    assert_eq!(wire["model"], "glm-5.3-prime");
+    assert_eq!(wire["max_tokens"], 64);
+    assert!(!boot.gateway.state.entries.contains_key(&(
+        crate::gateway::family(Profile::Responses),
+        "glm-5.3-prime".into(),
+    )));
 }
 
 #[test]
