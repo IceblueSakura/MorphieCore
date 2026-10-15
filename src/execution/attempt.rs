@@ -120,12 +120,29 @@ pub fn prepare_with_rules(
     secret: &SecretMaterial,
     request: &Request,
 ) -> Result<(UpstreamRequest, Vec<&'static str>), AttemptError> {
+    prepare_with_evidence(endpoint, provider, secret, request)
+        .map(|(prepared, rules, _)| (prepared, rules))
+}
+pub(crate) fn prepare_with_evidence(
+    endpoint: &Endpoint,
+    provider: &ProviderDefinition,
+    secret: &SecretMaterial,
+    request: &Request,
+) -> Result<
+    (
+        UpstreamRequest,
+        Vec<&'static str>,
+        Vec<crate::lowering::generation::RequestControlLoss>,
+    ),
+    AttemptError,
+> {
     let auth = operation_auth(endpoint, provider)?;
     let streaming = request.delivery.streaming() || endpoint.representation.forced_stream();
     if streaming && !endpoint.execution.streaming {
         return Err(AttemptError::Delivery("endpoint cannot stream"));
     }
-    let (value, rules) = endpoint.encode_request_with_rules(request)?;
+    let projection = endpoint.encode_request_with_evidence(request)?;
+    let value = projection.value;
     let body =
         serde_json::to_vec(&value).map_err(|_| AttemptError::Protocol("body serialization"))?;
     if body.len() > endpoint.execution.request_body_limit {
@@ -153,7 +170,8 @@ pub fn prepare_with_rules(
             auth_header: auth.auth_header(secret),
             body,
         },
-        rules,
+        projection.rules,
+        projection.controls,
     ))
 }
 
@@ -162,6 +180,16 @@ enum Intake {
     Static(Vec<u8>),
     Stream(Box<GenerationDecoder>),
     Closed,
+}
+
+impl Attempt {
+    /// Borrow the existing static intake buffer for private diagnostics before finish.
+    pub(crate) fn static_body(&self) -> Option<&[u8]> {
+        match &self.intake {
+            Intake::Static(bytes) => Some(bytes),
+            _ => None,
+        }
+    }
 }
 
 /// Holds bounded decoder state, not a replay log. A terminal is withheld until

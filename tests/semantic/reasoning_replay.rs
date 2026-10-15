@@ -356,7 +356,7 @@ mod reasoning {
     }
 }
 mod reasoning_controls {
-    //! Independent control intents, not generated facts or approximate wire mappings.
+    //! Directional request projections and independently validated incidental reports.
     use morphiecore::{
         lowering::generation::RepresentationError,
         protocol::{
@@ -370,11 +370,26 @@ mod reasoning_controls {
     };
 
     #[test]
-    fn each_new_control_independently_rejects_request_echo_and_stream_projection() {
+    fn requests_reject_unselected_controls_while_incidental_reports_project() {
         use morphiecore::protocol::openai::{events::EventEncoder, lowering::lower_response};
         use morphiecore::protocol::reasoning::{
             ReasoningConversion, ReasoningRequestPolicy, SHARED_BUDGETS, ThinkingBudgets,
         };
+        assert_eq!(
+            SHARED_BUDGETS.entries,
+            &[
+                (EffortLevel::Minimal, 1024),
+                (EffortLevel::Low, 2048),
+                (EffortLevel::Medium, 4096),
+                (EffortLevel::High, 8192),
+                (EffortLevel::XHigh, 16384),
+                (EffortLevel::Max, 24576),
+            ]
+        );
+        assert_eq!(SHARED_BUDGETS.nearest(1536).unwrap().0, EffortLevel::Low);
+        assert_eq!(SHARED_BUDGETS.nearest(3072).unwrap().0, EffortLevel::Medium);
+        assert_eq!(SHARED_BUDGETS.nearest(6144).unwrap().0, EffortLevel::High);
+        assert_eq!(SHARED_BUDGETS.nearest(20480).unwrap().0, EffortLevel::Max);
         assert_eq!(
             SHARED_BUDGETS.nearest(12288).unwrap(),
             (EffortLevel::XHigh, 16384)
@@ -394,6 +409,7 @@ mod reasoning_controls {
         };
         assert_eq!(repeated.nearest(750).unwrap().0, EffortLevel::XHigh);
         assert_eq!(repeated.nearest(500).unwrap().0, EffortLevel::Medium);
+        assert_eq!(repeated.nearest(1000).unwrap().0, EffortLevel::XHigh);
         assert_eq!(repeated.nearest(u64::MAX).unwrap().0, EffortLevel::XHigh);
         static QUANTIZE: ReasoningRequestPolicy = ReasoningRequestPolicy {
             canonical_model: "m",
@@ -562,29 +578,64 @@ mod reasoning_controls {
                     metadata.context.settings.as_ref().unwrap().reasoning,
                     request.settings().reasoning
                 );
-                let mut encoder = EventEncoder::new(profile, metadata.clone()).unwrap();
-                encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
-                encoder
-                    .encode(
-                        &crate::events_support::start(1, ItemKind::Message { phase: None }),
-                        &fidelity,
-                    )
-                    .unwrap();
-                for event in crate::events_support::part(1, 1, PartKind::Text, "ok") {
-                    encoder.encode(&event, &fidelity).unwrap();
+                let json = match profile {
+                    Profile::Responses => {
+                        morphiecore::protocol::openai::responses::envelope::encode_response(&target)
+                            .unwrap()
+                    }
+                    Profile::Chat => {
+                        morphiecore::protocol::openai::chat::envelope::encode_response(&target)
+                            .unwrap()
+                    }
+                };
+                if profile == Profile::Responses {
+                    assert_eq!(json["reasoning"], serde_json::json!({"effort":"high"}));
+                } else {
+                    assert!(target.metadata().context.settings.is_none());
                 }
-                encoder
-                    .encode(
-                        &crate::events_support::close(1, ItemLifecycle::Completed),
-                        &fidelity,
-                    )
-                    .unwrap();
+                let mut encoder = EventEncoder::new(profile, metadata.clone()).unwrap();
+                let mut frames = encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
+                frames.extend(
+                    encoder
+                        .encode(
+                            &crate::events_support::start(1, ItemKind::Message { phase: None }),
+                            &fidelity,
+                        )
+                        .unwrap(),
+                );
+                for event in crate::events_support::part(1, 1, PartKind::Text, "ok") {
+                    frames.extend(encoder.encode(&event, &fidelity).unwrap());
+                }
+                frames.extend(
+                    encoder
+                        .encode(
+                            &crate::events_support::close(1, ItemLifecycle::Completed),
+                            &fidelity,
+                        )
+                        .unwrap(),
+                );
                 let terminal = StreamEvent::Terminal {
                     terminal: StreamTerminal::Completed,
                     details: Default::default(),
                 };
-                encoder.encode(&terminal, &fidelity).unwrap();
+                frames.extend(encoder.encode(&terminal, &fidelity).unwrap());
                 encoder.finish().unwrap();
+                let mut intake = morphiecore::protocol::openai::events::EventDecoder::new(profile);
+                for frame in &frames {
+                    intake.push(frame).unwrap();
+                }
+                if profile == Profile::Chat {
+                    intake.done().unwrap();
+                }
+                let materialized = intake.materialize().unwrap();
+                assert_eq!(
+                    materialized.metadata.context.settings,
+                    target.metadata().context.settings
+                );
+                assert!(
+                    matches!(&materialized.semantic.items()[0].1, Item::Message(message)
+                    if matches!(&message.parts[0].content, ContentPart::Text(text) if text.as_str() == "ok"))
+                );
                 assert!(
                     encoder
                         .projection()

@@ -41,6 +41,7 @@ fn response_id() -> Result<String, AttemptError> {
 }
 
 pub struct ResponseDelivery {
+    losses: Vec<crate::lowering::generation::LossEvidence>,
     client: ClientAdapter,
     public_label: String,
     limits: SseLimits,
@@ -67,6 +68,7 @@ impl ResponseDelivery {
     ) -> Self {
         client.bind_replay_origin(&super::replay::CLIENT_ORIGIN);
         Self {
+            losses: vec![],
             client,
             public_label: public_label.into(),
             limits,
@@ -88,6 +90,9 @@ impl ResponseDelivery {
     }
     pub fn is_messages(&self) -> bool {
         self.client.protocol() == ClientProtocol::Messages
+    }
+    pub(crate) fn losses(&self) -> &[crate::lowering::generation::LossEvidence] {
+        &self.losses
     }
     pub(crate) fn with_storage(
         mut self,
@@ -230,10 +235,17 @@ impl ResponseDelivery {
     }
     /// The same final representation serves creation, retrieval and stored replay.
     pub(crate) fn snapshot(
-        &self,
+        &mut self,
         attempt: &Attempt,
     ) -> Result<(crate::protocol::DecodedResponse, Vec<u8>), AttemptError> {
-        let (decoded, value) = self.client.snapshot(self.client_response(attempt)?)?;
+        let (decoded, value, losses) = self
+            .client
+            .snapshot_with_evidence(self.client_response(attempt)?)?;
+        for loss in losses {
+            if !self.losses.contains(&loss) {
+                self.losses.push(loss);
+            }
+        }
         let body =
             serde_json::to_vec(&value).map_err(|_| AttemptError::Protocol("body serialization"))?;
         Ok((decoded, body))
@@ -330,6 +342,11 @@ impl ResponseDelivery {
         for event in events {
             let event = super::replay::seal_event(event.clone(), &super::replay::CLIENT_ORIGIN)?;
             frames.extend(encoder.encode(&event, &source)?);
+        }
+        for loss in encoder.losses() {
+            if !self.losses.contains(&loss) {
+                self.losses.push(loss);
+            }
         }
         self.rendered |= !frames.is_empty();
         Ok(frames)

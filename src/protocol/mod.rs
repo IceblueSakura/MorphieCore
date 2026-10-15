@@ -21,3 +21,10 @@ pub mod openrouter_speech;
 pub mod reasoning;
 pub mod replay_envelope;
 pub mod xiaomi_audio;
+
+/// One pure upstream encoding and its body-free adaptation receipts.
+pub(crate) struct RequestProjection {
+    pub value: serde_json::Value,
+    pub rules: Vec<&'static str>,
+    pub controls: Vec<crate::lowering::generation::RequestControlLoss>,
+}

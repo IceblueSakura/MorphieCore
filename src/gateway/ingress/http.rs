@@ -89,13 +89,48 @@ impl Gateway {
 }
 pub(in crate::gateway) async fn authenticate(
     State(state): State<Arc<Runtime>>,
-    request: Request,
+    mut request: Request,
     next: Next,
 ) -> Response {
     if !state.auth.accepts(request.headers()) {
         return ApiError::new(StatusCode::UNAUTHORIZED, "unauthorized").into_response();
     }
-    next.run(request).await
+    let Some(sink) = &state.capture else {
+        return next.run(request).await;
+    };
+    use crate::gateway::capture::Boundary;
+    let capture = sink.exchange();
+    capture.head(
+        Boundary::ClientRequest,
+        None,
+        request.headers(),
+        request.uri().query(),
+    );
+    let content_type = request
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_owned();
+    request.extensions_mut().insert(capture.clone());
+    if let Some(body_capture) = capture.body(Boundary::ClientRequest, None, &content_type) {
+        let (parts, body) = request.into_parts();
+        request = Request::from_parts(parts, crate::gateway::capture::observe(body, body_capture));
+    }
+    let response = next.run(request).await;
+    capture.head(Boundary::ClientResponse, None, response.headers(), None);
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let body_capture = capture.body(Boundary::ClientResponse, None, content_type);
+    let (parts, body) = response.into_parts();
+    let body = match body_capture {
+        Some(capture) => crate::gateway::capture::observe(body, capture),
+        None => body,
+    };
+    Response::from_parts(parts, body)
 }
 async fn chat(State(state): State<Arc<Runtime>>, request: Request) -> Response {
     handle(state, Profile::Chat, request)
@@ -127,6 +162,10 @@ async fn handle_client(
     request: Request,
 ) -> Result<Response, ApiError> {
     let mut trace = Trace::new(state.diagnostics.as_ref());
+    trace.capture = request
+        .extensions()
+        .get::<crate::gateway::capture::Exchange>()
+        .cloned();
     if state.shutdown.is_cancelled() {
         return Err(ApiError::shutdown());
     }
@@ -157,6 +196,7 @@ async fn handle_client(
         }
     };
     semantic.conversation = Some(conversation);
+    trace.request_intake(&semantic.task.fidelity);
     trace.ignored_fields(std::mem::take(&mut semantic.ignored_fields));
     let deadline = tokio::time::Instant::now() + state.limits.exchange_timeout;
     let failed = (profile == Some(Profile::Responses) && semantic.delivery.streaming())

@@ -33,9 +33,17 @@ pub(crate) fn declared_response_extras(
 /// Intake audit facts only; never used to restore or change semantic values.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Normalization {
-    CacheWriteDefault { profile: &'static str },
-    ReasoningEffortMapping { rule: &'static str },
-    PredictionOmitted { rule: &'static str },
+    CacheWriteDefault {
+        profile: &'static str,
+    },
+    ReasoningEffortMapping {
+        rule: &'static str,
+        input: &'static str,
+        output: &'static str,
+    },
+    PredictionOmitted {
+        rule: &'static str,
+    },
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ResponseExtras {
@@ -478,9 +486,18 @@ impl FidelityRecords {
         self.normalizations
             .insert(Normalization::CacheWriteDefault { profile });
     }
-    pub(crate) fn record_effort_mapping(&mut self, rule: &'static str) {
+    pub(crate) fn record_effort_mapping(
+        &mut self,
+        rule: &'static str,
+        input: &'static str,
+        output: &'static str,
+    ) {
         self.normalizations
-            .insert(Normalization::ReasoningEffortMapping { rule });
+            .insert(Normalization::ReasoningEffortMapping {
+                rule,
+                input,
+                output,
+            });
     }
     pub(crate) fn record_prediction_omission(&mut self) {
         self.normalizations

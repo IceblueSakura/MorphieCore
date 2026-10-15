@@ -133,12 +133,15 @@ impl TargetCaps {
         &self,
         request: &Request,
         target: &ReplayTarget,
-    ) -> Result<(Value, Vec<&'static str>), AdapterError> {
+    ) -> Result<crate::protocol::RequestProjection, AdapterError> {
+        use crate::lowering::generation::RequestControlLoss as Loss;
         let mut projected = std::borrow::Cow::Borrowed(request);
         let mut reasoning_rule = None;
+        let mut controls = vec![];
         if let Some(policy) = self.reasoning_policy
             && let Some(semantic) = policy.project_request(&request.task.semantic)?
         {
+            controls.push(policy.receipt(&request.task.semantic, &semantic)?);
             projected.to_mut().task.semantic = semantic;
             reasoning_rule = Some(policy.rule);
         }
@@ -192,9 +195,34 @@ impl TargetCaps {
         );
         rules.sort();
         rules.dedup();
+        for rule in &rules {
+            use crate::semantic::task::generation::{InstructionAuthority, ReasoningDisplay};
+            match rule {
+                RequestRule::OmitVerbosity => controls.push(Loss::Verbosity {
+                    rule: rule.name(),
+                    input: request.task.semantic.text_options().verbosity.clone(),
+                    output: Presence::Absent,
+                }),
+                RequestRule::SummarizeReasoning => controls.push(Loss::Summary {
+                    rule: rule.name(),
+                    input: request.task.semantic.reasoning().summary.clone(),
+                    output: ReasoningDisplay::Summary,
+                }),
+                RequestRule::DeveloperAsSystem => controls.push(Loss::Role {
+                    rule: rule.name(),
+                    input: InstructionAuthority::Developer,
+                    output: InstructionAuthority::System,
+                }),
+                _ => {}
+            }
+        }
         let mut rules: Vec<_> = rules.iter().map(|r| r.name()).collect();
         rules.extend(reasoning_rule);
-        Ok((wire, rules))
+        Ok(crate::protocol::RequestProjection {
+            value: wire,
+            rules,
+            controls,
+        })
     }
     pub(crate) fn request_headers(&self) -> Vec<(String, String)> {
         vec![(

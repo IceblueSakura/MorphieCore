@@ -20,6 +20,7 @@ enum Kind {
     ToolUse,
 }
 pub struct ClientEventEncoder {
+    losses: Vec<crate::lowering::generation::LossEvidence>,
     id: String,
     model: String,
     started: bool,
@@ -86,6 +87,7 @@ pub(super) fn usage_json(u: Option<&Usage>) -> Result<Value, CodecError> {
 impl ClientEventEncoder {
     pub fn new(id: &str, model: &str) -> Self {
         Self {
+            losses: vec![],
             id: id.into(),
             model: model.into(),
             started: false,
@@ -202,8 +204,13 @@ impl ClientEventEncoder {
                 return Err(CodecError::Unsupported("Messages audio output".into()));
             }
             StreamEvent::Usage(usage) => {
-                usage_json(Some(usage))?;
-                self.usage = Some(*usage);
+                let selected = super::client::project_usage(*usage)?;
+                if selected != *usage && self.losses.is_empty() {
+                    let mut loss = super::client::usage_loss();
+                    loss.direction = "event.encode";
+                    self.losses.push(loss);
+                }
+                self.usage = Some(selected);
             }
             StreamEvent::Terminal { terminal, details } => {
                 self.start(&mut out);
@@ -238,6 +245,9 @@ impl ClientEventEncoder {
         } else {
             Err(CodecError::Invalid("Messages stream unfinished"))
         }
+    }
+    pub(crate) fn losses(&self) -> &[crate::lowering::generation::LossEvidence] {
+        &self.losses
     }
     /// End the stream with Anthropic's `error` event (`{"type":"error","error":…}`).
     pub fn fail(&mut self, error: &Value) -> Vec<Bytes> {

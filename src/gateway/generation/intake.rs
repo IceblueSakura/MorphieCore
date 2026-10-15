@@ -40,6 +40,18 @@ async fn produce(
     history: Option<&super::history::Pending>,
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
+    let json = attempt.static_body().is_some();
+    let mut capture = trace.capture.as_ref().and_then(|capture| {
+        capture.body(
+            crate::gateway::capture::Boundary::UpstreamResponse,
+            Some(trace.capture_attempt),
+            if json {
+                "application/json"
+            } else {
+                "text/event-stream"
+            },
+        )
+    });
     let started = std::time::Instant::now();
     let mut held: Option<Vec<Bytes>> = (stream && hold).then(Vec::new);
     let mut used_bytes = 0usize;
@@ -52,6 +64,9 @@ async fn produce(
     })? {
         trace.stage(Stage::Intake);
         trace.received(chunk.len());
+        if !json && let Some(capture) = &mut capture {
+            capture.feed(&chunk);
+        }
         used_bytes = used_bytes.saturating_add(chunk.len());
         if used_bytes > limit {
             return Err(ApiError::upstream());
@@ -89,6 +104,12 @@ async fn produce(
             };
             trace.events(&events);
             trace.ignored_events(attempt.ignored_events());
+            trace.reported_settings(
+                attempt
+                    .metadata()
+                    .and_then(|metadata| metadata.context.settings.as_ref()),
+                attempt.fidelity(),
+            );
             if used == 0 {
                 return Err(ApiError::upstream());
             }
@@ -99,6 +120,7 @@ async fn produce(
                     trace.projection_error(&error);
                     ApiError::upstream()
                 })?;
+                trace.delivery_losses(delivery.losses());
                 if let Some(buffer) = held.as_mut()
                     && events.iter().all(lifecycle_only)
                     && buffer.iter().chain(&frames).map(Bytes::len).sum::<usize>() <= HOLD_BYTES
@@ -115,11 +137,23 @@ async fn produce(
             }
         }
     }
+    if let Some(capture) = &mut capture {
+        if json && let Some(bytes) = attempt.static_body() {
+            capture.feed(bytes);
+        }
+        capture.finish();
+    }
     trace.stage(Stage::Terminal);
     attempt.finish().map_err(|error| {
         trace.decode_error(&error);
         ApiError::transport(crate::provider::ErrorClass::Upstream)
     })?;
+    trace.reported_settings(
+        attempt
+            .metadata()
+            .and_then(|metadata| metadata.context.settings.as_ref()),
+        attempt.fidelity(),
+    );
     trace.stage(Stage::Projection);
     let (frames, json_snapshot) = if stream {
         let frames = delivery.finish_stream(attempt).map_err(|error| {
@@ -144,6 +178,7 @@ async fn produce(
             .map(|_| (response, body.clone()));
         (vec![body], snapshot)
     };
+    trace.delivery_losses(delivery.losses());
     if let Some(buffer) = held.take() {
         send_frames(lane, delivery, buffer, trace).await?;
     }
@@ -171,14 +206,46 @@ async fn produce(
     Ok(())
 }
 /// Error bodies are read for classification only, within the attempt deadline.
-async fn error_body(mut upstream: reqwest::Response) -> Vec<u8> {
+async fn error_body(mut upstream: reqwest::Response, trace: &Trace) -> Vec<u8> {
     const LIMIT: usize = 16 << 10;
+    let content_type = upstream
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let json = content_type.starts_with("application/json");
+    let mut capture = trace.capture.as_ref().and_then(|capture| {
+        capture.body(
+            crate::gateway::capture::Boundary::UpstreamResponse,
+            Some(trace.capture_attempt),
+            content_type,
+        )
+    });
     let mut body = vec![];
-    while let Ok(Some(chunk)) = upstream.chunk().await {
+    loop {
+        let chunk = match upstream.chunk().await {
+            Ok(Some(chunk)) => chunk,
+            Ok(None) => break,
+            Err(_) => {
+                if json && let Some(capture) = &mut capture {
+                    capture.feed(&body);
+                }
+                return body;
+            }
+        };
         if body.len() + chunk.len() > LIMIT {
             return vec![];
         }
+        if !json && let Some(capture) = &mut capture {
+            capture.feed(&chunk);
+        }
         body.extend_from_slice(&chunk);
+    }
+    if let Some(capture) = &mut capture {
+        if json {
+            capture.feed(&body);
+        }
+        capture.finish();
     }
     body
 }
@@ -197,6 +264,14 @@ pub(in crate::gateway) async fn produce_candidate(
     trace.stage(Stage::ResponseHead);
     let status = upstream.status().as_u16();
     trace.head(status, upstream.headers());
+    if let Some(capture) = &trace.capture {
+        capture.head(
+            crate::gateway::capture::Boundary::UpstreamResponse,
+            Some(trace.capture_attempt),
+            upstream.headers(),
+            None,
+        );
+    }
     if !(200..300).contains(&status) {
         if !(400..600).contains(&status) {
             return Err(ApiError::status(status));
@@ -204,7 +279,7 @@ pub(in crate::gateway) async fn produce_candidate(
         let retry_after = crate::gateway::error::retry_after(upstream.headers());
         return Err(ApiError::failure(
             status,
-            &error_body(upstream).await,
+            &error_body(upstream, trace).await,
             retry_after,
         ));
     }

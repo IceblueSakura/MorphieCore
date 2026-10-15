@@ -69,11 +69,33 @@ impl ClientAdapter {
     /// Return exactly the representation encoded, so stored history agrees with delivery.
     pub fn snapshot(
         &self,
-        mut decoded: DecodedResponse,
+        decoded: DecodedResponse,
     ) -> Result<(DecodedResponse, Value), super::AdapterError> {
+        self.snapshot_with_evidence(decoded)
+            .map(|(decoded, value, _)| (decoded, value))
+    }
+    pub(crate) fn snapshot_with_evidence(
+        &self,
+        mut decoded: DecodedResponse,
+    ) -> Result<
+        (
+            DecodedResponse,
+            Value,
+            Vec<crate::lowering::generation::LossEvidence>,
+        ),
+        super::AdapterError,
+    > {
+        let mut losses = vec![];
         let value = match self {
             Self::Messages => {
+                losses.extend(crate::protocol::anthropic::client::metadata_losses(
+                    &decoded.metadata,
+                ));
+                let usage = decoded.semantic.usage();
                 crate::protocol::anthropic::client::project_snapshot(&mut decoded)?;
+                if usage != decoded.semantic.usage() {
+                    losses.push(crate::protocol::anthropic::client::usage_loss());
+                }
                 crate::protocol::anthropic::client::encode_client_response(
                     &decoded,
                     &decoded.metadata.model,
@@ -97,12 +119,18 @@ impl ClientAdapter {
                 };
                 let semantic = target.semantic().clone();
                 let metadata = target.metadata().clone();
+                losses.extend(
+                    target
+                        .projection()
+                        .iter()
+                        .filter_map(|stage| stage.evidence()),
+                );
                 decoded.semantic = semantic;
                 decoded.metadata = metadata;
                 value
             }
         };
-        Ok((decoded, value))
+        Ok((decoded, value, losses))
     }
     /// Protocol-shaped cache continuation, not conversation storage or target selection.
     pub(crate) fn cache_successor(
@@ -165,6 +193,7 @@ impl ClientAdapter {
         Ok(ClientEncoder {
             encoder,
             native_projection: None,
+            losses: vec![],
         })
     }
     /// Whether an error frame closes this protocol's stream is a carrier property.
@@ -231,6 +260,7 @@ enum Encoder {
     Messages(crate::protocol::anthropic::client_events::ClientEventEncoder),
 }
 pub(crate) struct ClientEncoder {
+    losses: Vec<crate::lowering::generation::LossEvidence>,
     encoder: Encoder,
     native_projection: Option<crate::protocol::openai::lowering::native_messages::EventProjection>,
 }
@@ -258,7 +288,23 @@ impl ClientEncoder {
         match &mut self.encoder {
             Encoder::Chat(e) => e.update_metadata(metadata),
             Encoder::Responses(e) => e.update_metadata(metadata),
-            Encoder::Messages(_) => Ok(()),
+            Encoder::Messages(_) => {
+                metadata.context.validate().map_err(CodecError::from)?;
+                if metadata.context.execution != crate::semantic::context::ExecutionHints::default()
+                {
+                    return Err(CodecError::Unsupported(
+                        "Messages reported execution context".into(),
+                    )
+                    .into());
+                }
+                for mut loss in crate::protocol::anthropic::client::metadata_losses(&metadata) {
+                    loss.direction = "event.encode";
+                    if !self.losses.contains(&loss) {
+                        self.losses.push(loss);
+                    }
+                }
+                Ok(())
+            }
         }
     }
     pub(crate) fn encode(
@@ -278,5 +324,18 @@ impl ClientEncoder {
             Encoder::Responses(e) => e.finish(),
             Encoder::Messages(e) => Ok(e.finish()?),
         }
+    }
+    pub(crate) fn losses(&self) -> Vec<crate::lowering::generation::LossEvidence> {
+        let mut losses = self.losses.clone();
+        match &self.encoder {
+            Encoder::Chat(e) => {
+                losses.extend(e.projection().iter().filter_map(|stage| stage.evidence()))
+            }
+            Encoder::Responses(e) => {
+                losses.extend(e.projection().iter().filter_map(|stage| stage.evidence()))
+            }
+            Encoder::Messages(e) => losses.extend_from_slice(e.losses()),
+        }
+        losses
     }
 }

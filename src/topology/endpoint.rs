@@ -129,19 +129,27 @@ impl Endpoint {
         &self,
         request: &crate::adapter::Request,
     ) -> Result<(serde_json::Value, Vec<&'static str>), crate::adapter::AdapterError> {
+        self.encode_request_with_evidence(request)
+            .map(|projection| (projection.value, projection.rules))
+    }
+    pub(crate) fn encode_request_with_evidence(
+        &self,
+        request: &crate::adapter::Request,
+    ) -> Result<crate::protocol::RequestProjection, crate::adapter::AdapterError> {
         use crate::adapter::UpstreamAdapter;
         match (self.adapter()?, &self.representation) {
             (UpstreamAdapter::OpenAi(adapter), TargetCaps::OpenAi(caps)) => {
-                adapter.encode_request_with_rules(request, &self.upstream_model, caps)
+                adapter.encode_request_with_evidence(request, &self.upstream_model, caps)
             }
             (
                 UpstreamAdapter::AnthropicMessages { target, .. },
                 TargetCaps::AnthropicMessages(caps),
             ) => caps.encode_request(request, &target).map(|projection| {
-                (
-                    projection.value,
-                    projection.rules.iter().map(|rule| rule.name()).collect(),
-                )
+                crate::protocol::RequestProjection {
+                    value: projection.value,
+                    rules: projection.rules.iter().map(|rule| rule.name()).collect(),
+                    controls: projection.control_losses,
+                }
             }),
             (
                 UpstreamAdapter::GoogleGenerateContent { target },

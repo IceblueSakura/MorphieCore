@@ -70,6 +70,12 @@ async fn response(
     let entry = gate.state.entries[&(family(Profile::Chat), "fixture-model".into())].clone();
     let request=entry.client.as_openai().unwrap().0.decode_request(serde_json::json!({"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"stream":stream,"stream_options":if stream {serde_json::json!({"include_usage":true,"include_obfuscation":false})}else{serde_json::Value::Null}}).to_string().as_bytes()).unwrap();
     let candidate = entry.candidates[0].clone();
+    let mut trace = super::Trace::new(gate.state.diagnostics.as_ref());
+    trace.capture = gate
+        .state
+        .capture
+        .as_ref()
+        .map(crate::gateway::capture::Sink::exchange);
     respond(
         entry,
         candidate,
@@ -79,7 +85,7 @@ async fn response(
         deadline,
         gate.state.shutdown.clone(),
         gate.state.permits.clone().acquire_owned().await.unwrap(),
-        super::Trace::new(gate.state.diagnostics.as_ref()),
+        trace,
     )
     .await
 }
@@ -87,7 +93,16 @@ async fn response(
 async fn diagnostic_status_and_final_intake_are_from_the_original_attempt() {
     let directory = crate::test_files::private_directory();
     let path = directory.path().join("events.jsonl");
-    let gate = gateway(Limits::default()).with_diagnostics(&path).unwrap();
+    let capture_path = directory.path().join("capture.jsonl");
+    let config = serde_json::from_value(serde_json::json!({
+        "path":capture_path,"upstream_response":{"headers":true,"body":true}
+    }))
+    .unwrap();
+    let gate = gateway(Limits::default())
+        .with_diagnostics(&path)
+        .unwrap()
+        .with_capture(config)
+        .unwrap();
     for status in [429, 503, 200] {
         let (tx, mut source, _, _) = upstream(status, "application/json");
         source
@@ -131,6 +146,35 @@ async fn diagnostic_status_and_final_intake_are_from_the_original_attempt() {
             }
         );
     }
+    let (tx, source, _, _) = upstream(503, "application/json");
+    tx.send(Ok(Bytes::from_static(
+        br#"{"error":{"message":"synthetic-failure"}}"#,
+    )))
+    .await
+    .unwrap();
+    tx.send(Err(std::io::Error::other("synthetic read failure")))
+        .await
+        .unwrap();
+    drop(tx);
+    assert!(
+        response(
+            &gate,
+            source,
+            false,
+            Instant::now() + Duration::from_secs(2)
+        )
+        .await
+        .is_err()
+    );
+    gate.flush_diagnostics().await;
+    let captured = std::fs::read_to_string(&capture_path).unwrap();
+    let last: Vec<serde_json::Value> = captured
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .filter(|value: &serde_json::Value| value["exchange"] == 4)
+        .collect();
+    assert!(last.iter().any(|value| value["status"] == "incomplete"));
+    assert!(!last.iter().any(|value| value["status"] == "source_eof"));
 }
 #[tokio::test]
 async fn upstream_failures_reach_clients_as_agent_error_classes() {

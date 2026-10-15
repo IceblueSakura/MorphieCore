@@ -72,9 +72,11 @@ impl TargetCaps {
         request.task.semantic.validate().map_err(CodecError::from)?;
         let mut projected = std::borrow::Cow::Borrowed(request);
         let mut reasoning_rule = None;
+        let mut controls = vec![];
         if let Some(policy) = self.reasoning_policy
             && let Some(semantic) = policy.project_request(&request.task.semantic)?
         {
+            controls.push(policy.receipt(&request.task.semantic, &semantic)?);
             projected.to_mut().task.semantic = semantic;
             reasoning_rule = Some(policy.rule);
         }
@@ -139,6 +141,30 @@ impl TargetCaps {
                 .map(RequestRule::Cache),
         );
         projection.rules.sort();
+        projection.control_losses.extend(controls);
+        for rule in &projection.rules {
+            use crate::lowering::generation::RequestControlLoss as Loss;
+            use crate::semantic::task::generation::{InstructionAuthority, ReasoningDisplay};
+            let settings = request.task.semantic.settings();
+            match rule {
+                RequestRule::SummarizeReasoning => projection.control_losses.push(Loss::Summary {
+                    rule: rule.name(),
+                    input: settings.reasoning.summary.clone(),
+                    output: ReasoningDisplay::Summary,
+                }),
+                RequestRule::DeveloperAsSystem => projection.control_losses.push(Loss::Role {
+                    rule: rule.name(),
+                    input: InstructionAuthority::Developer,
+                    output: InstructionAuthority::System,
+                }),
+                RequestRule::OmitSampling => projection.control_losses.push(Loss::Sampling {
+                    rule: rule.name(),
+                    temperature: settings.controls.temperature().is_some(),
+                    top_p: settings.controls.top_p().is_some(),
+                }),
+                _ => {}
+            }
+        }
         Ok(projection)
     }
     pub(crate) fn request_headers(

@@ -165,6 +165,11 @@ pub struct ChatSseEncoder {
     rejected: bool,
 }
 impl ChatSseEncoder {
+    pub(crate) fn projection(
+        &self,
+    ) -> &[crate::protocol::openai::lowering::projection::ProjectionStage] {
+        self.codec.projection()
+    }
     /// Enabled obfuscation requires a caller-supplied seed; no random/credential source is used here.
     pub fn new(
         metadata: ResponseMetadata,

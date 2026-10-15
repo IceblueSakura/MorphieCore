@@ -1,5 +1,6 @@
 //! Minimal HTTP ingress over immutable, explicitly bound task entries.
 mod body;
+mod capture;
 mod diagnostics;
 mod error;
 mod generation;
@@ -15,6 +16,7 @@ use crate::{
     protocol::openai::{Adapter, Profile, TargetCaps},
     provider::{ProviderDefinition, SecretMaterial},
 };
+pub use capture::{CaptureConfig, CaptureStatus, Selection as CaptureSelection};
 use error::ApiError;
 use runtime::{BoundCandidate, BoundEntry, MESSAGES_FAMILY, Runtime, family};
 pub use startup::config::{

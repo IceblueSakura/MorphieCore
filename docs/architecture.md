@@ -136,7 +136,7 @@ These are selected policies, not claims that all bindings support every conversi
 
 ### Adaptation evidence
 
-Every selected loss produces bounded typed evidence with a stable rule, direction, semantic field category and action. Safe control summaries may show input/output enum values and presence; numeric fields need an explicit allowlist. Keep request intent, sent controls, upstream reports and delivered facts distinguishable. Evidence cannot restore omitted values, change semantic meaning or select an upstream.
+Every selected loss produces bounded typed evidence with a stable rule, direction, semantic field category and action. Safe control summaries show enum values and presence; numeric request summaries allow only thinking budgets, representative preset tokens and output-token ceilings. Keep request intent, sent controls, upstream reports and delivered facts distinguishable. Evidence cannot restore omitted values, change semantic meaning or select an upstream.
 
 Reuse the existing diagnostics and protocol projection records rather than add a logging platform or a generic rule engine. Record losses once per affected control or aggregate repeated event occurrences within existing budgets. These summary records do not contain bodies, prompts, schemas, arguments or opaque values; full business content belongs only to the separately controlled capture below. Arbitrary input strings and unknown field names are not automatically safe summary labels.
 
@@ -152,7 +152,11 @@ Capture is opt-in and off by default. Use private local storage, restrictive fil
 
 Credentials are excluded even in full mode. Redact Authorization/Proxy-Authorization, authentication cookies, API keys, token-bearing query values, known authentication body fields and credential material before enqueueing or writing. Configuration cannot disable this step. If a capture unit cannot be sanitized safely, omit it and record the reason. Complete business capture is not byte-for-byte credential-bearing wire capture.
 
-Capture belongs at gateway/transport I/O boundaries; codecs remain pure and only return bounded typed adaptation evidence. Stream incrementally within existing lifecycle bounds, sanitize at safe parsing boundaries and do not buffer the whole response or delay publication for logging. Associate upstream capture with the existing attempt identity without changing routing, retry or cancellation behavior. The configuration schema and storage plumbing are implementation work, not a new Provider/configuration discovery mechanism.
+Capture belongs at gateway/transport I/O boundaries; codecs remain pure and only return bounded typed adaptation evidence. Stream incrementally within existing lifecycle bounds, sanitize at safe parsing boundaries and do not buffer the whole response or wait for storage before publication. Associate capture with an exchange-local identity and existing attempt ordinal without changing routing, retry or cancellation.
+
+The startup-owned [capture configuration](usage.md#private-exchange-capture) selects four independent header/body boundaries. Authenticated client traffic and Generation upstream I/O use a private exclusive-create writer. Static upstream JSON borrows the existing intake buffer; SSE uses bounded event framing. Unsafe serialized-argument fragments and URI headers are omitted explicitly, not logged as raw strings. Frozen standalone-task upstream capture remains outside these hooks.
+
+Capture is normalized application evidence, not a wire archive. Source EOF is distinct from semantic completion, body handoff and retained completeness. Queue, exchange and aggregate limits are finite; observed drops and writer failures remain queryable even when storage cannot retain a status record. No capture failure changes request acceptance or permits replay.
 
 ### Protocol baselines and Provider dialects
 
@@ -175,7 +179,7 @@ Introduce this seam incrementally around concrete mappings. Do not add a univers
 
 ### Reasoning activation and effort scope
 
-The IR separates activation from a scope-qualified effort control. [Reasoning types](../src/semantic/task/generation/content/reasoning.rs), [settings](../src/semantic/task/generation/request/settings.rs) and their codecs own the contract; remaining target-specific work is in [Roadmap](roadmap.md#reasoning-repair-slices).
+The IR separates activation from a scope-qualified effort control. [Reasoning types](../src/semantic/task/generation/content/reasoning.rs), [settings](../src/semantic/task/generation/request/settings.rs) and their codecs own the contract; target-specific integration limits are in [Roadmap](roadmap.md#integration-handoff).
 
 Put activation on `ReasoningRequest` and one optional `EffortControl { scope, level }` on `GenerationSettings`. The initial scopes are `Reasoning` and `Response`. One scoped control is sufficient for the selected contracts; do not add two parallel effort fields without a counterexample requiring both at once. Keep protocol-relevant absence and null separate from active intent.
 
@@ -183,7 +187,7 @@ Activation distinguishes disabled from enabled reasoning; enabled permits reason
 
 Disabled activation plus response-wide high effort is valid IR. Disabled activation plus a positive reasoning-only effort, adaptive/budgeted allocation or numeric thinking budget is contradictory. Standard/pro execution mode is not an activation switch; validate its combinations against the target contract rather than banning it solely because reasoning is disabled. Validate official wire variants separately before constructing this contract.
 
-OpenAI non-off effort and Google levels have reasoning scope. Anthropic `output_config.effort` has response scope and must not change reasoning-object presence by itself. Preserve source scope in the IR. P1 selects target-private cross-scope approximation through trusted directional policy with loss evidence; equal level labels are not an equivalence. Concrete target mappings must be declared, including identities, and undeclared entries reject rather than silently inherit a same-label conversion. Current codec rejection remains until that policy is implemented.
+OpenAI non-off effort and Google levels have reasoning scope. Anthropic `output_config.effort` has response scope and must not change reasoning-object presence by itself. Preserve source scope in the IR. P1 selects target-private cross-scope approximation through trusted directional policy with loss evidence; equal level labels are not an equivalence. Concrete target mappings must be declared, including identities, and undeclared entries reject rather than silently inherit a same-label conversion. A binding without a selected policy retains rejection.
 
 P2 gives explicit disabled activation priority when the target can represent off but cannot represent independent response-wide effort. Preserve off and omit only that effort through a named rule. A target with no off carrier still rejects; the approximation never enables reasoning.
 
@@ -280,7 +284,7 @@ Keep [candidate preflight](../src/execution/plan.rs) and transport free of mappi
 
 Upstream responses are strict on known types, values and relations. Unknown fields are ignored. Unknown Responses event types are skipped and counted; registered content and terminal events remain strict.
 
-Downstream generation requests currently ignore unregistered fields and record bounded field names, never values; the diagnostic migration will review those labels against the evidence policy above. Unknown content or role discriminators are rejected because ignoring them would lose content. Protected known semantics that a target cannot express return an error. Trusted configuration and frozen-task requests stay closed.
+Downstream generation requests ignore unregistered fields; diagnostics record their count, not untrusted names or values. Unknown content or role discriminators are rejected because ignoring them would lose content. Protected known semantics that a target cannot express return an error. Trusted configuration and frozen-task requests stay closed.
 
 Parsing direction is explicit: client input, upstream reports and encoder checks have different policies. Nested parsing inherits that direction; no ambient or thread-local policy is used.
 

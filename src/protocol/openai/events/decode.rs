@@ -626,11 +626,22 @@ impl EventDecoder {
             "configuration_update" => {
                 DecodeDirection::Upstream.fields(v, &["type", "id", "reasoning"])?;
                 let mut update = self.observe_configuration(index(o, "output_index")?, v)?;
+                let native = update.effort;
                 crate::protocol::openai::reasoning::admit_configuration_mapping(
                     &mut update,
                     self.adaptation.effort_mapping,
                     true,
                 )?;
+                if let (Some(mapping), Some(input), Some(output)) =
+                    (self.adaptation.effort_mapping, native, update.effort)
+                    && input != output
+                {
+                    self.fidelity.record_effort_mapping(
+                        mapping.rule,
+                        input.level.into(),
+                        output.level.into(),
+                    );
+                }
                 ItemKind::ConfigurationUpdate(update)
             }
             "compaction" => {

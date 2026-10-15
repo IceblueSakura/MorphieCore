@@ -809,7 +809,9 @@ impl EventEncoder {
                 for stage in &mut stages {
                     stage.direction=crate::protocol::openai::lowering::projection::ProjectionDirection::Event;
                 }
-                self.projection=stages;
+                for stage in stages {
+                    if !self.projection.contains(&stage) { self.projection.push(stage); }
+                }
                 chunks
             }
             _=>vec![],

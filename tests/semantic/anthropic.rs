@@ -680,7 +680,7 @@ mod anthropic_media {
     }
 
     #[test]
-    fn unrepresentable_sources_fail_and_foreign_options_are_named_losses() {
+    fn unrepresentable_sources_and_uncalibrated_options_fail_without_losing_filenames() {
         for block in [
             json!({"type":"image","source":{"type":"file","file_id":"file_synthetic"}}),
             json!({"type":"document","source":{"type":"content","content":"x"}}),

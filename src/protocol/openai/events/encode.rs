@@ -85,6 +85,25 @@ impl EventEncoder {
         }
         self.target_locked = true;
         let result = (|| {
+            if self.profile == Profile::Chat
+                && (self.metadata.context.settings.is_some()
+                    || self.metadata.context.instruction_messages.is_some())
+            {
+                if self.contract.reported_facts
+                    == crate::lowering::generation::ReportedFactPolicy::StrictComplete
+                {
+                    return Err(CodecError::Unsupported("required reported settings".into()));
+                }
+                let mut stage = crate::protocol::openai::lowering::projection::ProjectionStage::response(
+                    self.profile, self.contract.adaptation.profile_id,
+                    Some(crate::protocol::openai::lowering::projection::LossRule::OmitChatReportedSettings),
+                );
+                stage.direction =
+                    crate::protocol::openai::lowering::projection::ProjectionDirection::Event;
+                if !self.projection.contains(&stage) {
+                    self.projection.push(stage);
+                }
+            }
             crate::protocol::openai::lowering::events::check_event(
                 self.state()?,
                 event,
@@ -214,7 +233,11 @@ impl EventEncoder {
         }
         Ok(v)
     }
-    pub(super) fn envelope(&self, status: &str, output: Vec<Value>) -> Result<Value, CodecError> {
+    pub(super) fn envelope(
+        &mut self,
+        status: &str,
+        output: Vec<Value>,
+    ) -> Result<Value, CodecError> {
         let created = self
             .metadata
             .created
@@ -238,6 +261,19 @@ impl EventEncoder {
             v.as_object_mut().expect("object"),
             status == "completed",
         )?;
+        if let Some(loss) = loss {
+            let mut stage =
+                crate::protocol::openai::lowering::projection::ProjectionStage::response(
+                    self.profile,
+                    self.contract.adaptation.profile_id,
+                    Some(loss),
+                );
+            stage.direction =
+                crate::protocol::openai::lowering::projection::ProjectionDirection::Event;
+            if !self.projection.contains(&stage) {
+                self.projection.push(stage);
+            }
+        }
         Ok(v)
     }
     fn responses(&mut self, event: &StreamEvent) -> Result<Vec<Value>, CodecError> {
@@ -495,7 +531,11 @@ impl EventEncoder {
                     stage.direction =
                         crate::protocol::openai::lowering::projection::ProjectionDirection::Event;
                 }
-                self.projection = stages;
+                for stage in stages {
+                    if !self.projection.contains(&stage) {
+                        self.projection.push(stage);
+                    }
+                }
                 vec![json!({"type":kind,"response":v})]
             }
         };

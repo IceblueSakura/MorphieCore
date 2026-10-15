@@ -915,7 +915,8 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
     assert!(
         records.contains(r#""request_rules":["cache.omit-key.v1","messages.omit-sampling.v1"]"#)
     );
-    assert!(records.contains(r#""ignored_request_fields":["client_metadata"]"#));
+    assert!(records.contains(r#""ignored_request_field_count":1"#));
+    assert!(!records.contains("client_metadata"));
     // Native adaptive intent stays adaptive, without a numeric-budget approximation.
     assert!(!records.contains("messages.budget-as-effort.v1"));
     assert!(!records.contains("0.375"));

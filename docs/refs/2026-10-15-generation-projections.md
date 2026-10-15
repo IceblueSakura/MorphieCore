@@ -1,6 +1,6 @@
 # Generation projection contracts
 
-Researched on 2026-10-15. These notes establish official wire contracts and mapping constraints, not implemented support or live Provider acceptance. Code and tests define behavior. The repair sequence and unresolved product choices belong in [Roadmap](../roadmap.md#projection-repair).
+Researched on 2026-10-15. These notes establish official wire contracts and mapping constraints, not implemented support or live Provider acceptance. Code and tests define behavior. Integration limits and deferred product choices belong in [Roadmap](../roadmap.md#integration-handoff).
 
 ## Sources and version boundaries
 

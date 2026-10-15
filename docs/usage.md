@@ -125,12 +125,44 @@ Replace `configured-public-model` with a catalog label whose credential pool is 
 | `failover` | Map from a listed model to its ordered Provider IDs; each needs a pool |
 | `implicit_cache_affinity` | Best-effort prefix index; default `true` |
 | `diagnostics` | Path for a new private diagnostics file; no bodies are recorded |
+| `capture` | Optional private exchange capture; omitted or all-disabled selections record no content |
 
 Explicit `models` selection is recommended. If omitted, eligible generation bindings with pools are activated. Standalone media, Embeddings, audio-input and native Messages bindings require explicit selection.
 
 For models covered by `failover`, only the named Providers are used. Otherwise available bindings follow catalog order. Configuration is not an upstream parameter bag: unknown fields, duplicate or unknown models, and models without a matching pool fail startup.
 
 Exact activation rules are in [bootstrap.rs](../src/gateway/startup/bootstrap.rs).
+
+### Private exchange capture
+
+Capture is separate from body-free diagnostics and disabled by default. To enable it, add a `capture` object to the private gateway configuration:
+
+```json
+{
+  "capture": {
+    "path": "/path/to/private/exchanges.jsonl",
+    "client_request": {"headers": true, "body": true},
+    "upstream_request": {"headers": true, "body": true},
+    "upstream_response": {"headers": true, "body": true},
+    "client_response": {"headers": true, "body": true},
+    "max_unit_bytes": 262144,
+    "max_exchange_bytes": 4194304,
+    "max_total_bytes": 67108864
+  }
+}
+```
+
+Each header/body switch is independent and defaults to `false`. The parent directory must already be private; the writer exclusively creates a new file with Unix mode `0600` and never replaces an existing file. Choose a new path for a new run. Capture may contain private business data: never commit it, print it, use it as a fixture or replay input, or export it remotely.
+
+| Bound | Default | Accepted range |
+|---|---|---|
+| Serialized unit | 256 KiB | 1 KiB–1 MiB; raw JSON/SSE parsing conservatively uses half |
+| Exchange, shared across attempts | 4 MiB | At least one unit, at most 64 MiB |
+| Aggregate file retention | 64 MiB | At least one exchange, at most 1 GiB |
+
+The writer queue holds at most 32 sanitized units. Authentication headers/cookies, credential query values and known authentication body fields are redacted before enqueueing. There is no redaction-disable switch. SSE is captured as normalized application units, not exact wire bytes. Unsafe argument fragments, URI headers and unsupported binary/multipart units are omitted or marked incomplete; large content is explicitly truncated rather than retained unboundedly.
+
+Authenticated client boundaries and Generation upstream I/O are instrumented. Frozen standalone-task upstreams are not. A prepared upstream request is not proof of network transmission, client body handoff is not remote receipt, and `source_eof` proves neither semantic success nor durable full retention. `dropped_before` reports observed exchange-local drops; the library's `Gateway::capture_status()` exposes queue/retention drops and writer failure. Status records can themselves be lost when storage is full or unavailable.
 
 ## Start the gateway
 

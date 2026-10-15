@@ -51,7 +51,7 @@ pub(super) fn metadata(
     if let Some(mapping) = adaptation.effort_mapping {
         mapping.validate()?;
         if let Some(settings) = &mut context.settings
-            && let Some(control) = settings.effort.value()
+            && let Some(control) = settings.effort.value().copied()
         {
             if control.scope != mapping.scope {
                 return Err(CodecError::Unsupported("reasoning mapping scope".into()));
@@ -63,7 +63,7 @@ pub(super) fn metadata(
                     level: mapped,
                 });
                 settings.validate()?;
-                fidelity.record_effort_mapping(mapping.rule);
+                fidelity.record_effort_mapping(mapping.rule, control.level.into(), mapped.into());
             }
         }
     }
@@ -551,11 +551,22 @@ pub(crate) fn decode_responses_with(
     responses::decode_items(&mut b, output, true, item_status)?;
     for (_, item) in &mut b.items {
         if let Item::ConfigurationUpdate(update) = item {
+            let native = update.effort;
             crate::protocol::openai::reasoning::admit_configuration_mapping(
                 update,
                 adaptation.effort_mapping,
                 true,
             )?;
+            if let (Some(mapping), Some(input), Some(output)) =
+                (adaptation.effort_mapping, native, update.effort)
+                && input != output
+            {
+                b.fidelity.record_effort_mapping(
+                    mapping.rule,
+                    input.level.into(),
+                    output.level.into(),
+                );
+            }
         }
     }
     let usage = usage(

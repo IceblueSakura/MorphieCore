@@ -317,11 +317,56 @@ pub(super) fn redacted(sealed: &str) -> bool {
 /// Retained metadata and accounting reflect the actual Messages carrier.
 pub(crate) fn project_snapshot(response: &mut DecodedResponse) -> Result<(), CodecError> {
     response.metadata.context.validate()?;
+    if response.metadata.context.execution != crate::semantic::context::ExecutionHints::default() {
+        return Err(CodecError::Unsupported(
+            "Messages reported execution context".into(),
+        ));
+    }
     response.metadata.context.settings = None;
     response.metadata.context.instruction_messages = None;
     response.metadata.instruction_fidelity = Default::default();
     response.metadata.context.system_fingerprint = Presence::Absent;
-    let wire = super::client_events::usage_json(response.semantic.usage().as_ref())?;
+    let selected = project_usage(
+        response
+            .semantic
+            .usage()
+            .ok_or(CodecError::Invalid("Messages usage"))?,
+    )?;
+    response.semantic = response.semantic.clone().with_usage(Some(selected))?;
+    Ok(())
+}
+pub(crate) fn metadata_losses(
+    metadata: &crate::protocol::ResponseMetadata,
+) -> Vec<crate::lowering::generation::LossEvidence> {
+    let mut losses = vec![];
+    if metadata.context.settings.is_some() || metadata.context.instruction_messages.is_some() {
+        losses.push(crate::lowering::generation::LossEvidence {
+            rule: "messages.omit-incidental-settings.v1",
+            field: "response.reported.settings",
+            direction: "response.encode",
+            action: "omit",
+        });
+    }
+    if !metadata.context.system_fingerprint.is_absent() {
+        losses.push(crate::lowering::generation::LossEvidence {
+            rule: "messages.omit-system-fingerprint.v1",
+            field: "response.context.system_fingerprint",
+            direction: "response.encode",
+            action: "omit",
+        });
+    }
+    losses
+}
+pub(crate) fn usage_loss() -> crate::lowering::generation::LossEvidence {
+    crate::lowering::generation::LossEvidence {
+        rule: "messages.usage-view.v1",
+        field: "generation.usage",
+        direction: "response.encode",
+        action: "project",
+    }
+}
+pub(crate) fn project_usage(source: Usage) -> Result<Usage, CodecError> {
+    let wire = super::client_events::usage_json(Some(&source))?;
     let count = |key: &str| -> Result<u64, CodecError> {
         wire[key]
             .as_u64()
@@ -341,8 +386,7 @@ pub(crate) fn project_snapshot(response: &mut DecodedResponse) -> Result<(), Cod
             .transpose()?
             .map_or(Presence::Absent, Presence::Value),
     });
-    response.semantic = response.semantic.clone().with_usage(Some(selected))?;
-    Ok(())
+    Ok(selected)
 }
 
 /// Encode a sealed response for a Messages client under the public label.

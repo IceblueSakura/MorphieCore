@@ -227,11 +227,22 @@ async fn model_request_limits_do_not_suppress_client_reported_facts() {
 async fn diagnostics_only_record_authenticated_requests_and_never_expose_headers() {
     let directory = crate::test_files::private_directory();
     let path = directory.path().join("events.jsonl");
-    let gate = gateway(Limits::default()).with_diagnostics(&path).unwrap();
+    let capture_path = directory.path().join("capture.jsonl");
+    let config = serde_json::from_value(serde_json::json!({
+        "path":capture_path,
+        "client_request":{"headers":true,"body":true},
+        "client_response":{"headers":true,"body":true}
+    }))
+    .unwrap();
+    let gate = gateway(Limits::default())
+        .with_diagnostics(&path)
+        .unwrap()
+        .with_capture(config)
+        .unwrap();
     for authenticated in [false, true] {
         let mut request = HttpRequest::builder()
             .method("POST")
-            .uri("/v1/chat/completions")
+            .uri("/v1/chat/completions?api_key=synthetic-query-secret")
             .header("x-private", "synthetic-private-header")
             .header("content-type", "application/json");
         if authenticated {
@@ -247,6 +258,9 @@ async fn diagnostics_only_record_authenticated_requests_and_never_expose_headers
             .await
             .unwrap();
         assert_eq!(response.status(), if authenticated { 400 } else { 401 });
+        axum::body::to_bytes(response.into_body(), 65536)
+            .await
+            .unwrap();
     }
     gate.flush_diagnostics().await;
     let text = std::fs::read_to_string(&path).unwrap();
@@ -254,10 +268,27 @@ async fn diagnostics_only_record_authenticated_requests_and_never_expose_headers
     assert!(!text.contains(KEY));
     assert!(!text.contains("invalid json"));
     assert!(text.contains("admission"));
+    let captured = std::fs::read_to_string(&capture_path).unwrap();
+    assert!(!captured.contains(KEY));
+    assert!(!captured.contains("synthetic-query-secret"));
+    assert!(!captured.contains("invalid json"));
+    assert!(captured.contains("synthetic-private-header"));
+    assert!(captured.contains("client_response"));
+    assert!(
+        captured.lines().all(|line| {
+            serde_json::from_str::<serde_json::Value>(line).unwrap()["exchange"] == 1
+        })
+    );
 }
 #[tokio::test]
 async fn authentication_runs_before_any_body_poll() {
     let gate = gateway(Limits::default());
+    let directory = crate::test_files::private_directory();
+    let disabled = directory.path().join("disabled.jsonl");
+    let config = serde_json::from_value(serde_json::json!({"path":disabled})).unwrap();
+    let gate = gate.with_capture(config).unwrap();
+    assert!(gate.capture_status().is_none());
+    assert!(!disabled.exists());
     let app = Router::new()
         .fallback(|| async {
             panic!("unauthenticated handler ran");

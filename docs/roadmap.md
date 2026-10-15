@@ -10,7 +10,7 @@ Track semantic expression, codec representation and enabled bindings separately.
 
 Chat Completions, Responses and Messages are equally important downstream contracts. Assess static delivery, streaming and history replay for all three. Google generateContent and Interactions currently supply upstream request encoding and SSE intake, not Google client endpoints or static intake. This migration does not expand that direction set.
 
-Follow the [IR and codec migration](#ir-and-codec-migration) below. It combines existing [projection repairs](#projection-repair), a small loss-tolerant codec path and selected missing carriers already expressible in the IR. Broader additions remain in the [support queue](#support-queue-after-projection-repair). The [architecture contract](architecture.md#accurate-ir-and-declared-loss) is selected; concrete unresolved policies stay in [Pending decisions](#pending-decisions).
+Follow the [IR and codec contract](#ir-and-codec-migration) and preserve its [integration boundary](#integration-handoff). Continue with the remaining [support queue](#support-queue-after-projection-repair). The [architecture contract](architecture.md#accurate-ir-and-declared-loss) is selected; deferred public-surface and reconnection decisions stay in [Pending decisions](#pending-decisions).
 
 For this migration, update existing tests and independent wire expectations only; do not add test functions, suites or variant matrices. Preserve safety assertions. Record uncovered contracts rather than claiming coverage from compilation or a round trip.
 
@@ -28,52 +28,11 @@ P7 keeps routing frozen until the selected Generation IR, codec and protocol-con
 
 ### IR and codec migration
 
-This is an implementation plan. Accurate IR, declared loss, verbosity omission and the routing freeze are selected. P1/P2/P4/P5 follow the [recorded architecture decisions](architecture.md#settled-decisions); P3 selects six thinking-budget presets with nearest-token/highest-level-tie quantization, and P3b rejects budgets above the applicable explicit output ceiling without adjustment. P6 selects configurable business capture with mandatory credential redaction; P7 defers routing until IR/codec/conversion completion. P8 selects bounded summary/role approximation, evidence-backed target-local media-detail rules, exact filename preservation, reasoning-context omission only for proven equivalent defaults, and rejection of `DefaultStrictAsPlain`. D3 selects named prediction omission.
+Preserve the [selected request policies](architecture.md#selected-request-approximations), [thinking-budget contract](architecture.md#thinking-budget-quantization), [reported-fact policy](architecture.md#adaptation-evidence) and [capture boundary](architecture.md#configurable-exchange-capture). Apply target-local conversions once, keep source IR unchanged and reject unselected combinations.
 
-Use the sequence below. Reuse the source-integrity guards, existing verbosity projections and control receipts before adding abstractions. P3b/P8 policy choices are settled; concrete target evidence and implementation remain required. No slice depends on reconnecting the routing layer.
+Request acceptance, upstream-reported settings and delivered history remain separate. Repeated native reports must agree before normalization or omission. JSON and SSE use the same delivery policy; necessary continuation and EOF-gated terminals remain authoritative. Diagnostics expose body-free typed receipts; optional capture never selects a semantic mapping.
 
-| Slice | Dependency | Deliverable |
-|---|---|---|
-| S5: Quality-sensitive approximation | Existing declared-loss contract and evidence-backed declared target data | Selected scope/allocation/sampling and P8 policies, not a universal fallback |
-| S6: Reports, SSE and history | Each selected request projection rule | Source facts stay distinct from delivery losses and retained history |
-| S7: Diagnostic and contract closure | S5/S6 and existing carrier rules, excluding explicitly deferred decisions | Bounded end-to-end evidence at codec/delivery boundaries and an explicit integration handoff |
-
-#### S5: Quality-sensitive approximation
-
-Goal: implement the selected approximations without losing the source's meaning. Concrete target tables must still be declared and validated; do not treat an approved policy direction as automatic support on every model.
-
-1. Keep activation, scoped effort, budget, mode, display and verbosity separate. Implement selected cross-scope conversion on a private target copy, not by relabeling source IR or reusing a same-scope table as an implicit conversion.
-2. Implement P1 as trusted directional cross-scope approximation with named loss. Keep qualitative model-local mappings explicit, including identities; undeclared entries reject. Do not infer qualitative nearest levels, inverses or policies from upstream errors. P3's numeric quantization is a separate selected rule.
-3. Implement P2 by preserving a supported off carrier and omitting only independent unrepresentable response effort. Under P4, retain supported sampling and name omission only for declared fixed/ignored controls; unknown model behavior remains a gap.
-4. Implement P3's [selected six-budget preset and matching rule](architecture.md#thinking-budget-quantization), not pi's collapsed high/xhigh/max defaults. Preserve original numeric intent, permit duplicate values in target-specific tables, minimize absolute distance and choose the highest level on all ties. Keep off/sentinels outside matching and exact native carriers ahead of approximation. Update existing expectations with the approved `750 -> xhigh` example, exact shared values and upward midpoint boundaries. Under P3b, reject explicit or conversion-generated budgets above the applicable explicit output ceiling. Keep both values unchanged and enforce stricter target relations without automatic adjustment; ordinary lookup/quantization remains unchanged.
-5. Implement the selected [P8 summary and role rules](architecture.md#selected-request-approximations). Approximate summary granularity while preserving show/hide behavior and activation. Declare target-local developer/system/user mappings without changing source IR, content or existing history order. Replace Chat's fixed leading-developer encoding of request-wide instructions with a trusted target-local developer/system selector: prefer supported developer, retain system for compatibility fallback, and validate before encoding without error-triggered retry. Update existing expectations for both choices; explicit role-bearing history still uses its exact carrier or a separate selected role rule.
-6. Enforce the remaining [selected P8 rules](architecture.md#selected-request-approximations). Prefer exact image/file detail carriers; omission needs proven default equivalence and other approximations need evidence-backed named target rules. Preserve present filenames exactly or reject, without text injection. Preserve reasoning context exactly or omit only for proven equivalent target defaults; unknown equivalence rejects. Keep `DefaultStrictAsPlain` rejected. Replace broad media/context omissions and update existing expectations without weakening content, constraints or required replay.
-
-Exit: selected rules run once, report source/target controls and preserve unchanged input. Unselected combinations retain explicit rejection. Native request/intake wiring and [configuration-history policy](#reasoning-repair-slices) follow the selected directions rather than inferring effective settings.
-
-#### S6: Reports, SSE and history
-
-Goal: make response-side tolerance independent of request-control admission without weakening source or delivery truth.
-
-1. Validate upstream reports and raw repeated snapshots before normalization or omission. Fix [reported-settings observation](../src/protocol/openai/events/decode.rs) so many-to-one mappings cannot hide conflicts.
-2. Apply P5 independently from request-control admission: preserve output evidence required by request controls, source contract or continuation, and allow named loss of selected incidental reports after validation. Missing request flags alone do not establish that an annotation is optional. Never reconstruct actual effort, usage or tool execution from request settings.
-3. Apply the same selected projection to static encoding and incremental events. Reject unsupported content before publishing it when known; later discoveries terminate honestly, without replaying the request after publication.
-4. Keep [delivery snapshots](../src/execution/delivery.rs), [client encoding](../src/adapter/downstream.rs) and [stored history](../src/gateway/generation/history.rs) aligned. Source input remains canonical; retained response history reflects the delivered projection. Fidelity cannot resurrect a dropped field or owner.
-5. Distinguish control loss from ordered configuration history. Keep non-identity history mappings rejected until source-snapshot validation and the selected policy are complete.
-
-Exit: JSON and materialized SSE agree for each affected contract; generated content, call links, required replay, usage relations and EOF-gated terminals remain honest. No second reducer or whole-stream buffer is introduced to make projection easier.
-
-#### S7: Diagnostic and contract closure
-
-Goal: explain each selected loss without making routing or a logging backend part of codec semantics.
-
-1. Extend [diagnostics](../src/gateway/diagnostics.rs) using the [typed request evidence](../src/lowering/generation.rs). Distinguish source intent, sent controls, upstream reports and delivered facts. Include fixed rule, field category, direction, action and bounded control summaries without embedding bodies in those receipts.
-2. Propagate request, response and event losses; do not log only failures. Aggregate repeated SSE evidence and keep attempt attribution without changing candidate selection. Treat an unavailable gateway path as an integration gap, not proof that evidence is durably recorded.
-3. Implement P6 [exchange capture](architecture.md#configurable-exchange-capture) outside pure codecs, with independent header/body controls for client request, upstream request, upstream response and client response. Business content may be complete when enabled, but authentication material must be redacted before enqueue/write, including in headers, queries and known credential-bearing body fields.
-4. Keep capture opt-in, private, bounded and best-effort. Stream incrementally; record redacted, incomplete, truncated or dropped capture instead of claiming full retention. Extend existing diagnostic assertions for disabled capture, enabled synthetic content and non-optional credential redaction. Logs are not fixtures, replay inputs or tool output.
-5. Audit capability descriptions against actual faithful carriers and approved acceptance. P7 keeps routing frozen until the selected IR/codec/protocol-conversion scope is complete. Public capability/warning design and reconnection belong to the later integration phase, not this closure step.
-
-Exit: connected codec/delivery boundaries expose bounded loss evidence; selected I/O capture retains configured business content with correct attribution and credential redaction. Disabled/overflow/error paths do not change request semantics. Remaining route-facing gaps are explicitly listed; no completion claim requires a live client-to-Provider loop.
+Continue the support queue without reconnecting routing implicitly. Concrete target tables still need model-level evidence; a codec interface or passing synthetic test is not a new public capability promise.
 
 ### Verification and integration boundary
 
@@ -87,9 +46,11 @@ For every implementation slice:
 
 Phase completion means the selected policies and carriers pass their local gates and unresolved decisions/integration boundaries are explicit. Restoring and accepting the full client loop belongs to a later routing/integration phase, not a hidden exit condition for IR/codec work.
 
+### Integration handoff
+
 Native `representation_contract()` carrier availability is separate from default `semantic_contract()` binding admission. Google structured output/logprobs and Messages strict tools are not enabled by completing their codecs. [Topology compilation](../src/topology/compile.rs) still checks the narrower default contracts; widening a synthetic endpoint for a codec test does not establish a compiled public route.
 
-Remaining constrained-carrier gaps are explicit rejections: Google JSON-object mode, schema references and unselected schema keywords; generateContent optional allowed-tool subsets; Interactions logprobs; and Messages strict string enum/const, references and regex. Google probability intake selects only unambiguous chunk-local text reports; mixed or cumulative reports reject rather than guess ownership. Google reports no token bytes, so the current Responses probability carrier cannot deliver that evidence. Non-identity history projection and static/SSE delivery alignment remain S6 work.
+Remaining constrained-carrier gaps are explicit rejections: Google JSON-object mode, schema references and unselected schema keywords; generateContent optional allowed-tool subsets; Interactions logprobs; and Messages strict string enum/const, references and regex. Google probability intake selects only unambiguous chunk-local text reports; mixed or cumulative reports reject rather than guess ownership. Google reports no token bytes, so the current Responses probability carrier cannot deliver that evidence.
 
 Responses normalization-default strictness cannot become a plain native tool. P8 selects continued rejection of that conversion; pi-shaped requests that omit `strict` therefore do not reach those native bindings. Explicit non-strict tools retain their separate carrier. No new schema-normalization implementation is selected.
 
@@ -97,27 +58,9 @@ P8 policy selection is complete. Native codecs reject uncalibrated media detail/
 
 Explicit cache retention also rejects targets without an exact carrier. No cross-Provider retention approximation or route-policy change is selected.
 
-### Projection repair
+Google directions remain upstream request encoding and SSE intake, not static intake or Google client endpoints. Native policy propagation requires a concrete binding and an actually reported carrier; absent reports are not supplied from request controls.
 
-These are the remaining repair obligations consumed by S5/S6, not a second competing schedule. Finish independent work while [semantic decisions](#pending-decisions) remain open; do not choose an approximation or IR contract implicitly.
-
-1. **Complete target-specific reasoning admission.** Check model restrictions separately from the [activation/scoped-effort contract](architecture.md#reasoning-activation-and-effort-scope) and [explicit calibration](architecture.md#initial-mapping-plan). Assess remaining display/context losses separately from level calibration. Do not claim effective sampling or exact reasoning budgets solely from SDK field presence.
-
-   Exit condition: each selected target has sourced model-level admission for the controls it promises. Off, numeric allocation and effort scopes have faithful carriers, selected loss policies or explicit pending rejections; display/context losses do not enter a level table. Extend native policy wiring only for a concretely selected mapping, without changing route membership.
-
-Repair gate: each confirmed defect has a corrected projection or an explicitly selected rejection/degradation, with existing lowest-owner expectations updated where available and coverage gaps reported. Assess static delivery, streaming and history for all three downstream contracts. Preserve source-IR isolation, bounded expansion, cancellation, replay isolation and EOF-gated publication.
-
-Use the [verification and integration boundary](#verification-and-integration-boundary) above. Real Provider checks, if later needed for a named unresolved remote contract, remain separate fixed-target/count/cap/timeout steps; docs and compilation do not prove live acceptance.
-
-### Reasoning repair slices
-
-S5/S6 own the remaining [effort-policy boundaries](../src/protocol/reasoning.rs). Keep the scoped IR and hypothetical A/B table separate from concrete target-policy decisions. D3 does not block these repairs; do not add an external mapping configuration surface. P6 capture switches do not select semantic mappings.
-
-1. Validate repeated reported reasoning settings before many-to-one normalization. Item-terminal equality is not evidence that created/in-progress/terminal settings agree.
-2. Extend non-identity calibration to ordered configuration items only with native snapshot validation before normalization. Until then, reject non-identity or undeclared entries rather than bypass a selected policy.
-3. Propagate selected policy into native request/intake paths only for a concrete binding that needs it.
-
-Exit condition: static/SSE metadata and supported history receive the selected scoped, directional policy without inferring an inverse or fabricating absent reports. Invalid native levels fail trusted validation. Preserve pre-normalization source conflicts, unchanged-source candidate projection and existing lifecycle safety. Route reconnection is not required to validate these codec boundaries.
+Exchange capture covers authenticated client boundaries and Generation upstream I/O. Frozen standalone-task upstreams are not instrumented. Binary, multipart, fragmented argument carriers and other unsafe units are explicitly incomplete or omitted, never raw fallbacks. Capture EOF and drop counters do not establish semantic completion or durable full retention.
 
 ### Support queue after projection repair
 
@@ -210,7 +153,7 @@ IR completeness does not mean every upstream can carry every modality. Protocol-
 
 ## Planned order
 
-1. **Generation IR completeness.** Execute the remaining S5–S7 slices under the temporary routing freeze, complete the remaining non-tool support queue, then continue tool discovery and `web_search` in that order. Keep deferred concepts explicit; a disconnected client loop does not invalidate correct IR/codec work.
+1. **Generation IR completeness.** Complete the remaining non-tool support queue under the temporary routing freeze, then continue tool discovery and `web_search` in that order. Preserve the explicit integration handoff and deferred concepts; a disconnected client loop does not invalidate correct IR/codec work.
 2. **Coverage improvement.** Start the coverage pass only after IR completeness. Keep focused regressions and safety invariants throughout implementation.
 3. **Failover.** The feature remains in early design. Its priority is undecided, lowest for now; design, implementation improvement and real acceptance follow the second stage.
 4. **Other agent acceptance.** Codex, Claude Code and other agents follow failover. Their priority is undecided, lowest for now.

@@ -186,6 +186,11 @@ pub struct ResponsesSseEncoder {
     rejected: bool,
 }
 impl ResponsesSseEncoder {
+    pub(crate) fn projection(
+        &self,
+    ) -> &[crate::protocol::openai::lowering::projection::ProjectionStage] {
+        self.codec.projection()
+    }
     pub fn new(
         metadata: ResponseMetadata,
         contract: TargetCaps,

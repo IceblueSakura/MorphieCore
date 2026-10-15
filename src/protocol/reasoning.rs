@@ -87,6 +87,28 @@ pub struct ReasoningRequestPolicy {
     pub conversion: ReasoningConversion,
 }
 impl ReasoningRequestPolicy {
+    pub(crate) fn receipt(
+        &self,
+        source: &GenerationRequest,
+        target: &GenerationRequest,
+    ) -> Result<crate::lowering::generation::RequestControlLoss, CodecError> {
+        let preset_tokens = match self.conversion {
+            ReasoningConversion::BudgetToEffort { table, .. } => target
+                .settings()
+                .effort
+                .value()
+                .map(|effort| table.budget(effort.level))
+                .transpose()?,
+            ReasoningConversion::EffortToBudget { .. } => target.reasoning().budget_tokens,
+            _ => None,
+        };
+        Ok(crate::lowering::generation::RequestControlLoss::Reasoning {
+            rule: self.rule,
+            input: crate::lowering::generation::ReasoningControls::request(source),
+            output: crate::lowering::generation::ReasoningControls::request(target),
+            preset_tokens,
+        })
+    }
     pub fn project_request(
         &self,
         source: &GenerationRequest,

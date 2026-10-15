@@ -133,13 +133,18 @@ pub(crate) fn reported_settings(
         .context
         .validate()
         .map_err(|_| RepresentationError::Metadata)?;
+    if profile == Profile::Chat {
+        if metadata.context.settings.is_none() && metadata.context.instruction_messages.is_none() {
+            return Ok(None);
+        }
+        metadata.context.settings = None;
+        metadata.context.instruction_messages = None;
+        metadata.instruction_fidelity = Default::default();
+        return Ok(Some(LossRule::OmitChatReportedSettings));
+    }
     let Some(settings) = &mut metadata.context.settings else {
         return Ok(None);
     };
-    if profile == Profile::Chat {
-        metadata.context.settings = None;
-        return Ok(Some(LossRule::OmitChatReportedSettings));
-    }
     let before = settings.clone();
     settings.reasoning.budget_tokens = None;
     settings.reasoning.display = Presence::Absent;
@@ -180,6 +185,23 @@ pub struct ProjectionStage {
     pub loss: Option<LossRule>,
 }
 impl ProjectionStage {
+    pub(crate) fn evidence(&self) -> Option<crate::lowering::generation::LossEvidence> {
+        let loss = self.loss?;
+        Some(crate::lowering::generation::LossEvidence {
+            rule: loss.name(),
+            field: loss.owner(),
+            direction: match self.direction {
+                ProjectionDirection::Request => "request.encode",
+                ProjectionDirection::Response => "response.encode",
+                ProjectionDirection::Event => "event.encode",
+            },
+            action: if loss == LossRule::RegroupChatMessageItems {
+                "regroup"
+            } else {
+                "omit"
+            },
+        })
+    }
     pub(crate) fn response(
         target: Profile,
         profile_id: &'static str,

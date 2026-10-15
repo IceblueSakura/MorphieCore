@@ -218,6 +218,16 @@ impl Adapter {
         model: &str,
         contract: &TargetCaps,
     ) -> Result<(Value, Vec<&'static str>), AdapterError> {
+        self.encode_request_with_evidence(request, model, contract)
+            .map(|projection| (projection.value, projection.rules))
+    }
+    pub(crate) fn encode_request_with_evidence(
+        &self,
+        request: &Request,
+        model: &str,
+        contract: &TargetCaps,
+    ) -> Result<crate::protocol::RequestProjection, AdapterError> {
+        use crate::lowering::generation::RequestControlLoss;
         // Compatibility and carrier support are separate: a same-issuer value
         // without a target carrier must fail lowering, not disappear silently.
         let issuer = contract
@@ -228,6 +238,7 @@ impl Adapter {
         // item would keep the issuer's ID, which a stateless upstream may reject.
         let stripped = request.without_foreign_replay(issuer, true)?;
         let mut rules = vec![];
+        let mut controls = vec![];
         if let Some((_, converted)) = &stripped {
             let chat = self.protocol == Profile::Chat;
             rules.push(if chat {
@@ -251,6 +262,7 @@ impl Adapter {
         if let Some(policy) = self.adaptation.reasoning_policy
             && let Some(semantic) = policy.project_request(&request.task.semantic)?
         {
+            controls.push(policy.receipt(&request.task.semantic, &semantic)?);
             projected.to_mut().task.semantic = semantic;
             rules.push(policy.rule);
         }
@@ -260,6 +272,11 @@ impl Adapter {
             && request.task.semantic.instructions().value().is_some()
         {
             rules.push("chat.instructions-as-system.v1");
+            controls.push(RequestControlLoss::Role {
+                rule: "chat.instructions-as-system.v1",
+                input: crate::semantic::task::generation::InstructionAuthority::Developer,
+                output: crate::semantic::task::generation::InstructionAuthority::System,
+            });
         }
         if self.adaptation.rules.reject_disabled_reasoning
             && (request.task.semantic.reasoning().activation.value()
@@ -280,7 +297,21 @@ impl Adapter {
             .map(|mapping| with_effort_mapping(request, mapping))
             .transpose()?
             .flatten();
-        if mapped.is_some() {
+        if let Some(mapped_request) = &mapped {
+            controls.push(RequestControlLoss::Reasoning {
+                rule: self
+                    .adaptation
+                    .effort_mapping
+                    .expect("selected mapping")
+                    .rule,
+                input: crate::lowering::generation::ReasoningControls::request(
+                    &request.task.semantic,
+                ),
+                output: crate::lowering::generation::ReasoningControls::request(
+                    &mapped_request.task.semantic,
+                ),
+                preset_tokens: None,
+            });
             rules.push(
                 self.adaptation
                     .effort_mapping
@@ -467,7 +498,11 @@ impl Adapter {
             crate::semantic::task::generation::MAX_TOTAL_BYTES,
         )
         .map_err(|_| CodecError::Limit)?;
-        Ok((value, rules))
+        Ok(crate::protocol::RequestProjection {
+            value,
+            rules,
+            controls,
+        })
     }
 }
 

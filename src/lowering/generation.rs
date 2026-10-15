@@ -2,9 +2,82 @@
 use crate::semantic::task::generation::*;
 use crate::semantic::value::Presence;
 
+/// Explicitly allowlisted controls only; no instructions, schemas or identities.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReasoningControls {
+    pub configuration_efforts: Vec<EffortControl>,
+    pub activation: Presence<ReasoningActivation>,
+    pub effort: Presence<EffortControl>,
+    pub budget_tokens: Option<u64>,
+    pub max_output_tokens: Option<u64>,
+    pub mode: Presence<ReasoningMode>,
+    pub summary: Presence<ReasoningSummary>,
+    pub display: Presence<ReasoningDisplay>,
+}
+impl From<&GenerationSettings> for ReasoningControls {
+    fn from(settings: &GenerationSettings) -> Self {
+        Self {
+            configuration_efforts: vec![],
+            activation: settings.reasoning.activation.clone(),
+            effort: settings.effort.clone(),
+            budget_tokens: settings.reasoning.budget_tokens,
+            max_output_tokens: settings.controls.max_output_tokens,
+            mode: settings.reasoning.mode.clone(),
+            summary: settings.reasoning.summary.clone(),
+            display: settings.reasoning.display.clone(),
+        }
+    }
+}
+impl ReasoningControls {
+    pub fn request(request: &GenerationRequest) -> Self {
+        let mut controls: Self = request.settings().into();
+        for (_, item) in request.items() {
+            if let Item::ConfigurationUpdate(update) = item
+                && let Some(effort) = update.effort
+                && !controls.configuration_efforts.contains(&effort)
+            {
+                controls.configuration_efforts.push(effort);
+            }
+        }
+        controls
+    }
+}
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct LossEvidence {
+    pub rule: &'static str,
+    pub field: &'static str,
+    pub direction: &'static str,
+    pub action: &'static str,
+}
 /// Request-side control evidence contains finite enums and presence, never prompt data.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RequestControlLoss {
+    Verbosity {
+        rule: &'static str,
+        input: Presence<Verbosity>,
+        output: Presence<Verbosity>,
+    },
+    Reasoning {
+        rule: &'static str,
+        input: ReasoningControls,
+        output: ReasoningControls,
+        preset_tokens: Option<u64>,
+    },
+    Summary {
+        rule: &'static str,
+        input: Presence<ReasoningSummary>,
+        output: ReasoningDisplay,
+    },
+    Role {
+        rule: &'static str,
+        input: InstructionAuthority,
+        output: InstructionAuthority,
+    },
+    Sampling {
+        rule: &'static str,
+        temperature: bool,
+        top_p: bool,
+    },
     MessagesVerbosity {
         input: Presence<Verbosity>,
         output: Presence<Verbosity>,
@@ -13,19 +86,46 @@ pub enum RequestControlLoss {
 impl RequestControlLoss {
     pub const fn rule(&self) -> &'static str {
         match self {
+            Self::Reasoning { rule, .. }
+            | Self::Summary { rule, .. }
+            | Self::Role { rule, .. }
+            | Self::Sampling { rule, .. }
+            | Self::Verbosity { rule, .. } => rule,
             Self::MessagesVerbosity { .. } => "messages.omit-verbosity.v1",
         }
     }
     pub const fn field(&self) -> &'static str {
         match self {
-            Self::MessagesVerbosity { .. } => "generation.text.verbosity",
+            Self::Reasoning { input, output, .. } => {
+                if input.budget_tokens.is_some() || output.budget_tokens.is_some() {
+                    "generation.reasoning.allocation"
+                } else {
+                    "generation.effort"
+                }
+            }
+            Self::Summary { .. } => "generation.reasoning.summary",
+            Self::Role { .. } => "generation.instructions.authority",
+            Self::Sampling { .. } => "generation.sampling",
+            Self::MessagesVerbosity { .. } | Self::Verbosity { .. } => "generation.text.verbosity",
         }
     }
     pub const fn direction(&self) -> &'static str {
         "request.encode"
     }
-    pub const fn action(&self) -> &'static str {
-        "omit"
+    pub fn action(&self) -> &'static str {
+        match self {
+            Self::Reasoning { input, output, .. }
+                if !input.effort.is_absent()
+                    && output.effort.is_absent()
+                    && input.budget_tokens == output.budget_tokens =>
+            {
+                "omit"
+            }
+            Self::MessagesVerbosity { .. } | Self::Verbosity { .. } | Self::Sampling { .. } => {
+                "omit"
+            }
+            _ => "approximate",
+        }
     }
 }
 

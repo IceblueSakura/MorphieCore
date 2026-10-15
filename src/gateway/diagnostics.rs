@@ -77,6 +77,8 @@ fn decode_failure(error: &crate::execution::AttemptError) -> &'static str {
             "metadata changed" | "service tier changed" | "fingerprint changed" => {
                 "invalid_metadata"
             }
+            "reported settings changed" => "reported_settings_conflict",
+            "configuration snapshot changed" => "configuration_conflict",
             "item snapshot" => "invalid_item_snapshot",
             "terminal snapshot" => "invalid_terminal_snapshot",
             "terminal snapshot count" | "terminal snapshot content" => "snapshot_shape",
@@ -110,8 +112,32 @@ fn decode_failure(error: &crate::execution::AttemptError) -> &'static str {
         _ => "other",
     }
 }
+#[derive(Clone, PartialEq, Serialize)]
+struct LossObservation {
+    #[serde(flatten)]
+    evidence: crate::lowering::generation::LossEvidence,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    input: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output: Option<serde_json::Value>,
+}
+fn reasoning_controls(
+    controls: &crate::lowering::generation::ReasoningControls,
+) -> serde_json::Value {
+    serde_json::json!({
+        "activation":format!("{:?}",controls.activation), "effort":format!("{:?}",controls.effort),
+        "budget_tokens":controls.budget_tokens, "mode":format!("{:?}",controls.mode),
+        "max_output_tokens":controls.max_output_tokens,
+        "summary":format!("{:?}",controls.summary), "display":format!("{:?}",controls.display),
+        "configuration_efforts":format!("{:?}",controls.configuration_efforts),
+    })
+}
 #[derive(Serialize)]
 struct CandidateRecord {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reported_reasoning: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    losses: Vec<LossObservation>,
     #[serde(flatten)]
     affinity: AffinityObservation,
     ordinal: usize,
@@ -145,6 +171,10 @@ struct ImageAccountingObservation {
 }
 #[derive(Serialize)]
 struct Record {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    input_losses: Vec<LossObservation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    capture_exchange: Option<u64>,
     #[serde(flatten)]
     affinity: AffinityObservation,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -168,9 +198,9 @@ struct Record {
     /// input/output audio, in that bit order. Never count values or response text.
     #[serde(skip_serializing_if = "Option::is_none")]
     reported_usage_detail_mask: Option<u8>,
-    /// Ignored client request field names (bounded); values never escape.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    ignored_request_fields: Vec<String>,
+    /// Untrusted field names are not safe diagnostic labels.
+    #[serde(skip_serializing_if = "is_zero")]
+    ignored_request_field_count: u64,
     /// Count of skipped unregistered upstream event types; names never escape.
     #[serde(skip_serializing_if = "is_zero")]
     ignored_upstream_events: u64,
@@ -236,6 +266,10 @@ impl Sink {
 }
 
 pub(super) struct Trace {
+    reported_reasoning: Option<serde_json::Value>,
+    losses: Vec<LossObservation>,
+    pub(super) capture: Option<super::capture::Exchange>,
+    pub(super) capture_attempt: usize,
     sink: Option<Sink>,
     record: Record,
     start: Instant,
@@ -246,8 +280,14 @@ pub(super) struct Trace {
 impl Trace {
     pub(super) fn new(sink: Option<&Sink>) -> Self {
         Self {
+            reported_reasoning: None,
+            losses: vec![],
+            capture: None,
+            capture_attempt: 0,
             sink: sink.cloned(),
             record: Record {
+                input_losses: vec![],
+                capture_exchange: None,
                 affinity: AffinityObservation::default(),
                 reported_cached_tokens: None,
                 stage: Stage::Admission,
@@ -264,7 +304,7 @@ impl Trace {
                 decode_failure: None,
                 projection_failure: None,
                 reported_usage_detail_mask: None,
-                ignored_request_fields: vec![],
+                ignored_request_field_count: 0,
                 ignored_upstream_events: 0,
                 events: EventCounts::default(),
                 image: ImageAccountingObservation::default(),
@@ -276,6 +316,9 @@ impl Trace {
         }
     }
     pub(super) fn begin_candidate(&mut self, ordinal: usize) {
+        self.capture_attempt = ordinal;
+        self.losses.clear();
+        self.reported_reasoning = None;
         self.record.affinity = AffinityObservation::default();
         self.record.reported_cached_tokens = None;
         self.record.upstream_status = None;
@@ -297,6 +340,8 @@ impl Trace {
             && self.record.candidates.len() < crate::topology::route::MAX_ROUTE_CANDIDATES
         {
             self.record.candidates.push(CandidateRecord {
+                reported_reasoning: self.reported_reasoning.take(),
+                losses: std::mem::take(&mut self.losses),
                 affinity: self.record.affinity,
                 ordinal,
                 stage: self.record.stage,
@@ -322,7 +367,7 @@ impl Trace {
     }
     pub(super) fn ignored_fields(&mut self, names: Vec<String>) {
         if self.sink.is_some() {
-            self.record.ignored_request_fields = names;
+            self.record.ignored_request_field_count = names.len() as u64;
         }
     }
     pub(super) fn ignored_events(&mut self, count: usize) {
@@ -330,7 +375,148 @@ impl Trace {
     }
     pub(super) fn request_rules(&mut self, rules: Vec<&'static str>) {
         if self.sink.is_some() {
+            for rule in &rules {
+                self.loss(
+                    crate::lowering::generation::LossEvidence {
+                        rule,
+                        field: "protocol.representation",
+                        direction: "request.encode",
+                        action: "adapt",
+                    },
+                    None,
+                    None,
+                );
+            }
             self.request_rules = rules;
+        }
+    }
+    fn loss(
+        &mut self,
+        evidence: crate::lowering::generation::LossEvidence,
+        input: Option<serde_json::Value>,
+        output: Option<serde_json::Value>,
+    ) {
+        if self.sink.is_some() && self.losses.len() < 64 {
+            let observation = LossObservation {
+                evidence,
+                input,
+                output,
+            };
+            if !self.losses.contains(&observation) {
+                self.losses.push(observation);
+            }
+        }
+    }
+    pub(super) fn request_controls(
+        &mut self,
+        losses: &[crate::lowering::generation::RequestControlLoss],
+    ) {
+        use crate::lowering::generation::RequestControlLoss as Loss;
+        use serde_json::json;
+        if self.sink.is_none() {
+            return;
+        }
+        for loss in losses {
+            let (input, output) = match loss {
+                Loss::Reasoning {
+                    input,
+                    output,
+                    preset_tokens,
+                    ..
+                } => {
+                    let mut output = reasoning_controls(output);
+                    output["preset_tokens"] = json!(preset_tokens);
+                    (reasoning_controls(input), output)
+                }
+                Loss::MessagesVerbosity { input, output }
+                | Loss::Verbosity { input, output, .. } => {
+                    (json!(format!("{input:?}")), json!(format!("{output:?}")))
+                }
+                Loss::Summary { input, output, .. } => {
+                    (json!(format!("{input:?}")), json!(format!("{output:?}")))
+                }
+                Loss::Role { input, output, .. } => {
+                    (json!(format!("{input:?}")), json!(format!("{output:?}")))
+                }
+                Loss::Sampling {
+                    temperature, top_p, ..
+                } => (
+                    json!({"temperature_present":temperature,"top_p_present":top_p}),
+                    json!({"temperature_present":false,"top_p_present":false}),
+                ),
+            };
+            self.loss(
+                crate::lowering::generation::LossEvidence {
+                    rule: loss.rule(),
+                    field: loss.field(),
+                    direction: loss.direction(),
+                    action: loss.action(),
+                },
+                Some(input),
+                Some(output),
+            );
+        }
+    }
+    pub(super) fn request_intake(&mut self, fidelity: &crate::protocol::fidelity::FidelityRecords) {
+        if self.sink.is_none() {
+            return;
+        }
+        for normalization in fidelity.normalizations() {
+            if let crate::protocol::fidelity::Normalization::PredictionOmitted { rule } =
+                normalization
+            {
+                let loss = LossObservation {
+                    evidence: crate::lowering::generation::LossEvidence {
+                        rule,
+                        field: "generation.prediction",
+                        direction: "request.decode",
+                        action: "omit",
+                    },
+                    input: None,
+                    output: None,
+                };
+                if !self.record.input_losses.contains(&loss) {
+                    self.record.input_losses.push(loss);
+                }
+            }
+        }
+    }
+    pub(super) fn reported_settings(
+        &mut self,
+        settings: Option<&crate::semantic::task::generation::GenerationSettings>,
+        fidelity: Option<&crate::protocol::fidelity::FidelityRecords>,
+    ) {
+        if self.sink.is_none() {
+            return;
+        }
+        if let Some(settings) = settings {
+            self.reported_reasoning = Some(reasoning_controls(&settings.into()));
+        }
+        if let Some(fidelity) = fidelity {
+            for normalization in fidelity.normalizations() {
+                if let crate::protocol::fidelity::Normalization::ReasoningEffortMapping {
+                    rule,
+                    input,
+                    output,
+                } = normalization
+                {
+                    self.loss(
+                        crate::lowering::generation::LossEvidence {
+                            rule,
+                            field: "response.reported.effort",
+                            direction: "response.decode",
+                            action: "normalize",
+                        },
+                        Some(serde_json::json!(input)),
+                        Some(serde_json::json!(output)),
+                    );
+                }
+            }
+        }
+    }
+    pub(super) fn delivery_losses(&mut self, losses: &[crate::lowering::generation::LossEvidence]) {
+        for loss in losses {
+            self.loss(loss.clone(), None, None);
         }
     }
     pub(super) fn stage(&mut self, stage: Stage) {
@@ -477,8 +663,11 @@ impl Drop for Trace {
     fn drop(&mut self) {
         self.end_candidate(Some("interrupted"), false);
         if let Some(sink) = self.sink.take() {
+            self.record.capture_exchange = self.capture.as_ref().map(super::capture::Exchange::id);
             self.record.elapsed_ms = self.start.elapsed().as_millis().min(u64::MAX as u128) as u64;
             let placeholder = Record {
+                input_losses: vec![],
+                capture_exchange: None,
                 affinity: AffinityObservation::default(),
                 reported_cached_tokens: None,
                 stage: Stage::Complete,
@@ -495,7 +684,7 @@ impl Drop for Trace {
                 decode_failure: None,
                 projection_failure: None,
                 reported_usage_detail_mask: None,
-                ignored_request_fields: vec![],
+                ignored_request_field_count: 0,
                 ignored_upstream_events: 0,
                 events: EventCounts::default(),
                 image: ImageAccountingObservation::default(),
@@ -547,7 +736,52 @@ mod tests {
         trace.executor("zhipu");
         trace.head(429, &HeaderMap::new());
         trace.received(7);
+        use crate::protocol::openai::{Adapter, Dialect, Profile};
+        let binding = crate::topology::catalog::API_KEY_BINDINGS
+            .iter()
+            .find(|binding| binding.endpoint_prefix == "zhipu")
+            .unwrap();
+        let endpoint = binding
+            .endpoint(crate::topology::ProtocolProfile::OpenAiChat)
+            .unwrap();
+        let request = Adapter::new(Profile::Chat, Dialect::MorphieCore, None).decode_request(
+            br#"{"model":"m","messages":[{"role":"user","content":"synthetic-private-prompt"}],"reasoning_effort":"medium"}"#
+        ).unwrap();
+        let (_, _, losses) = crate::execution::attempt::prepare_with_evidence(
+            &endpoint,
+            &(binding.provider)(),
+            &crate::provider::SecretMaterial::new("synthetic-key").unwrap(),
+            &request,
+        )
+        .unwrap();
+        assert_eq!(losses.len(), 1);
+        trace.request_controls(&losses);
+        trace.request_controls(&losses);
+        trace.reported_settings(None, None);
+        let output_loss = crate::lowering::generation::LossEvidence {
+            rule: "responses.omit-system-fingerprint.v1",
+            field: "response.context.system_fingerprint",
+            direction: "event.encode",
+            action: "omit",
+        };
+        trace.delivery_losses(&[output_loss.clone(), output_loss]);
         trace.end_candidate(Some("upstream_rate_limit"), true);
+        assert_eq!(trace.record.candidates[0].losses.len(), 2);
+        let safe = serde_json::to_value(&trace.record.candidates[0]).unwrap();
+        assert!(
+            safe["losses"][0]["input"]["effort"]
+                .as_str()
+                .unwrap()
+                .contains("Medium")
+        );
+        assert!(
+            safe["losses"][0]["output"]["effort"]
+                .as_str()
+                .unwrap()
+                .contains("High")
+        );
+        assert!(!safe.to_string().contains("synthetic-private-prompt"));
+        assert!(safe.get("reported_reasoning").is_none());
         trace.begin_candidate(2);
         trace.stage(Stage::Connect);
         trace.end_candidate(Some("upstream_timeout"), false);
@@ -688,5 +922,153 @@ mod tests {
         assert_eq!(value["retry_after_seconds"], 7);
         assert!(text.len() <= LIMIT);
         drop(sink);
+        use crate::gateway::capture::{Boundary, CaptureConfig, Sink as CaptureSink};
+        let capture_path = directory.path().join("capture.jsonl");
+        let config: CaptureConfig = serde_json::from_value(serde_json::json!({
+            "path":capture_path,"client_request":{"headers":true,"body":true},
+            "upstream_response":{"body":true},"max_unit_bytes":2048,
+            "max_exchange_bytes":8192,"max_total_bytes":16384
+        }))
+        .unwrap();
+        assert!(
+            serde_json::from_value::<CaptureConfig>(serde_json::json!({
+                "path":capture_path,"redact":false
+            }))
+            .is_err()
+        );
+        let sink = CaptureSink::open(config.clone()).unwrap();
+        assert!(CaptureSink::open(config).is_err());
+        let capture = sink.exchange();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "authorization",
+            "Bearer synthetic-auth-secret".parse().unwrap(),
+        );
+        headers.insert("x-business", "synthetic-business-header".parse().unwrap());
+        headers.insert(
+            "location",
+            "/continue?access_token=synthetic-location-secret"
+                .parse()
+                .unwrap(),
+        );
+        headers.insert(
+            "link",
+            "<https://example.invalid/?sig=synthetic-link-secret>; rel=next"
+                .parse()
+                .unwrap(),
+        );
+        headers.insert("x-private-key", "synthetic-private-key".parse().unwrap());
+        headers.insert(
+            "www-authenticate",
+            "Negotiate synthetic-challenge-secret".parse().unwrap(),
+        );
+        capture.head(
+            Boundary::ClientRequest,
+            None,
+            &headers,
+            Some("%61pi_key=synthetic-query-secret&sig=synthetic-signature-secret&tag=business"),
+        );
+        assert!(capture.json(Boundary::ClientRequest, None,
+            br#"{"input":"synthetic-business-body","private_key":"synthetic-body-key","auth":"synthetic-auth-body","redirect":"/next?api_key=synthetic-relative-secret","url":"https://example.invalid/#access_token=synthetic-fragment-token","nested":{"api\u005fkey":"synthetic-body-secret"},"arguments":"{\"password\":\"synthetic-argument-secret\",\"path\":\"ok\"}"}"#));
+        assert!(capture.json(
+            Boundary::ClientRequest,
+            None,
+            br#"{"literal":"{ \"sample\": 1 }"}"#
+        ));
+        let mut stream = capture
+            .body(Boundary::UpstreamResponse, Some(1), "text/event-stream")
+            .unwrap();
+        for byte in b"data: {\"value\":{\"access_token\":\"synthetic-stream-secret\",\"text\":\"business-stream\"}}\n\n" {
+            stream.feed(std::slice::from_ref(byte));
+        }
+        stream.finish();
+        let mut unsafe_stream = capture
+            .body(Boundary::UpstreamResponse, Some(2), "text/event-stream")
+            .unwrap();
+        unsafe_stream.feed(b"data: {\"type\":\"response.function_call_arguments.delta\",\"delta\":\"synthetic-fragment-secret\"}\n\n");
+        unsafe_stream.finish();
+        let mut legacy = capture
+            .body(Boundary::UpstreamResponse, Some(3), "text/event-stream")
+            .unwrap();
+        legacy.feed(b"data: {\"choices\":[{\"delta\":{\"function_call\":{\"arguments\":\"{\\\"password\\\":\\\"\"}}}]}\n\ndata: {\"choices\":[{\"delta\":{\"function_call\":{\"arguments\":\"synthetic-legacy-secret\\\"}\"}}}]}\n\n");
+        legacy.finish();
+        use futures_util::StreamExt;
+        let broken = axum::body::Body::from_stream(futures_util::stream::iter([
+            Ok::<_, std::io::Error>(bytes::Bytes::from_static(
+                b"data: {\"text\":\"read-error-business\"}\n\n",
+            )),
+            Err(std::io::Error::other("synthetic read failure")),
+        ]));
+        let observer = capture
+            .body(Boundary::UpstreamResponse, Some(4), "text/event-stream")
+            .unwrap();
+        let mut observed = crate::gateway::capture::observe(broken, observer).into_data_stream();
+        assert!(observed.next().await.unwrap().is_ok());
+        assert!(observed.next().await.unwrap().is_err());
+        assert!(observed.next().await.is_none());
+        drop(observed);
+        assert!(
+            capture
+                .body(Boundary::ClientResponse, None, "application/json")
+                .is_none()
+        );
+        sink.flush().await;
+        let captured = std::fs::read_to_string(&capture_path).unwrap();
+        assert!(
+            captured
+                .lines()
+                .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+                .any(|value| value["value"]["literal"] == "{ \"sample\": 1 }")
+        );
+        for secret in [
+            "synthetic-auth-secret",
+            "synthetic-query-secret",
+            "synthetic-body-secret",
+            "synthetic-argument-secret",
+            "synthetic-stream-secret",
+            "synthetic-fragment-secret",
+            "synthetic-location-secret",
+            "synthetic-link-secret",
+            "synthetic-private-key",
+            "synthetic-signature-secret",
+            "synthetic-body-key",
+            "synthetic-legacy-secret",
+            "synthetic-auth-body",
+            "synthetic-relative-secret",
+            "synthetic-fragment-token",
+            "synthetic-challenge-secret",
+        ] {
+            assert!(!captured.contains(secret));
+        }
+        assert!(captured.contains("synthetic-business-body"));
+        assert!(captured.contains("synthetic-business-header"));
+        assert!(captured.contains("business-stream"));
+        assert!(captured.contains("unsafe_fragment"));
+        assert!(captured.contains("incomplete"));
+        let errored: Vec<serde_json::Value> = captured
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .filter(|value: &serde_json::Value| value["attempt"] == 4)
+            .collect();
+        assert!(errored.iter().any(|value| value["status"] == "incomplete"));
+        assert!(!errored.iter().any(|value| value["status"] == "source_eof"));
+        for _ in 0..100 {
+            capture.json(Boundary::ClientRequest, None, br#"{"input":"business"}"#);
+        }
+        sink.flush().await;
+        assert!(sink.status().retention_dropped > 0);
+        assert!(std::fs::metadata(&capture_path).unwrap().len() <= 16384);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&capture_path)
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+        }
     }
 }

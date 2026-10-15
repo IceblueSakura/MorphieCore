@@ -106,14 +106,16 @@ pub(in crate::gateway) async fn produce_chain(
                         trace.affinity("unavailable", false, false);
                     }
                 }
-                let (mut prepared, rules) = crate::execution::prepare_with_rules(
-                    &candidate.endpoint,
-                    &candidate.provider,
-                    &secret,
-                    &local,
-                )
-                .map_err(|_| ApiError::invalid())?;
+                let (mut prepared, rules, controls) =
+                    crate::execution::attempt::prepare_with_evidence(
+                        &candidate.endpoint,
+                        &candidate.provider,
+                        &secret,
+                        &local,
+                    )
+                    .map_err(|_| ApiError::invalid())?;
                 trace.request_rules(rules);
+                trace.request_controls(&controls);
                 if let Some(grant) = grant {
                     prepared.safe_headers.extend(
                         crate::provider::subscription::headers(candidate.provider.auth, &grant)
@@ -131,6 +133,9 @@ pub(in crate::gateway) async fn produce_chain(
                     .iter()
                     .any(|(name, _)| name == "x-opencode-session");
                 trace.stage(Stage::Connect);
+                if let Some(capture) = &trace.capture {
+                    capture.upstream_request(&prepared, index + 1);
+                }
                 let response = runtime
                     .transport
                     .send(

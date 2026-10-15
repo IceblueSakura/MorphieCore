@@ -27,6 +27,8 @@ struct Configuration {
     #[serde(default)]
     diagnostics: Option<std::path::PathBuf>,
     #[serde(default)]
+    capture: Option<crate::gateway::CaptureConfig>,
+    #[serde(default)]
     models: Option<Vec<String>>,
     /// Explicit Responses entry on the fixed Chat endpoint; never a fallback route.
     #[serde(default)]
@@ -399,6 +401,10 @@ impl Bootstrap {
         }
         let gateway = match configuration.diagnostics {
             Some(path) => gateway.with_diagnostics(&path)?,
+            None => gateway,
+        };
+        let gateway = match configuration.capture {
+            Some(config) => gateway.with_capture(config)?,
             None => gateway,
         };
         Ok(Self {
