@@ -100,8 +100,8 @@ Classify losses by their effect on task constraints, output quality, execution a
 | Treatment | Contract |
 |---|---|
 | Exact representation | Preserve meaning; check source conflicts before alias normalization |
-| Advisory loss | Omit a selected preference or optimization through a named rule; verbosity omission is selected, other fields need individual classification |
-| Behavioral approximation | Use trusted directional effort rules and explicit budget presets; preserve supported sampling and omit fixed/ignored sampling only under a target policy. Record changes and validate target restrictions |
+| Advisory loss | Omit selected verbosity preferences or predicted-output optimization through named rules; other fields need individual classification |
+| Behavioral approximation | Use selected effort/budget, summary-granularity and role mappings on target copies. Preserve visibility and output ceilings; preserve supported sampling and omit fixed/ignored sampling only under a target policy. Record changes and validate target restrictions |
 | Protected meaning | Preserve task content, constraints, execution identity, security boundaries and result truth; reject when no faithful carrier exists |
 
 Decode according to the source protocol before target projection. Known types, variants and relations remain strict even when a later target may omit the field. A known but unsupported critical field is not an unknown field. A target profile's restriction must not prevent the client decoder from expressing a valid source concept already supported by the IR.
@@ -109,6 +109,18 @@ Decode according to the source protocol before target projection. Known types, v
 Keep source validation, acceptance with approved adaptation, and faithful target support distinct. Project before checking the final target representation; do not advertise an omitted feature as native support. Capability assessment belongs to IR/codec contracts, not to a new route-ranking or fallback policy. The [temporary routing freeze](roadmap.md#temporary-routing-freeze) permits integration to remain disconnected while these contracts change.
 
 Request controls, upstream-reported settings and downstream delivery have different authority. Sent controls do not prove effective settings. A response-only echo can be omitted under a selected delivery rule without discarding generated content; validate source facts and repeated snapshots before that omission. JSON, SSE and retained delivered history must agree on the applied loss.
+
+### Selected request approximations
+
+D3 selects named omission of Chat `prediction` until a faithful carrier is implemented. Validate its known source shape before omitting the optimization, and record the omission rather than treating it as an unknown field. Predicted content is not a constraint on generated text. Neither output text nor reported accepted/rejected prediction counts may be synthesized from it; loss receipts do not contain the predicted body.
+
+P8 permits approximation of summary/display granularity, such as concise or detailed summary intent to a target's single summary mode. Preserve the requested show/hide behavior independently: hiding must not become disclosure, and requested display must not be silently disabled. An absent preference remains absent. These control approximations do not enable reasoning, fabricate summaries, discard generated content or remove required replay. Reject a target that cannot preserve the visibility contract.
+
+P8 also permits named, target-specific approximation among developer, system and user roles when an exact carrier is unavailable. Preserve the original role and authority in source IR; project only the target copy and record the source/target roles. Preserve content and the relative order of existing history. This does not permit inventing assistant/tool speakers, repairing orphan results or accepting an invalid source role.
+
+Request-wide `instructions` may use a leading system message when the target has no dedicated instructions field and accepts that carrier. For Chat, the selected migration maps it to the first system message; Chat already supports system/developer/user messages, so existing ordered instruction items are not all moved to the front or treated as unsupported. Keep the instruction text unchanged and do not duplicate it across carriers. The current Chat encoder uses a leading developer message for request-wide instructions; the selected system-message rule remains implementation work.
+
+These are selected policies, not claims that all codecs implement them. Concrete role mappings use trusted target policy, not client-selected fallback logic. Image/file detail, filename, reasoning-context omission and `DefaultStrictAsPlain` remain under individual P8 review.
 
 ### Adaptation evidence
 
@@ -195,7 +207,11 @@ The shared preset's upward tie boundaries are `1536 -> low`, `3072 -> medium`, `
 
 Absent controls stay absent. Off is decoded into activation before matching; protocol-specific zero/automatic sentinels never enter positive-budget quantization. If a target can preserve the requested native numeric budget, prefer that carrier instead of quantizing unnecessarily. Qualitative requests with an exact target carrier likewise need no budget round trip.
 
-Retain the original budget and record the selected table, matched level and representative tokens as adaptation evidence, not reported model effort. Quantization does not bypass scope or target-level admission, invent a missing table entry, activate a binding or change route policy. Behavior when a selected numeric preset cannot fit under an explicit output ceiling remains [P3b](roadmap.md#pending-decisions); the ceiling must not be raised to copy pi's allowance adjustment.
+Retain the original budget and record the selected table, matched level and representative tokens as adaptation evidence, not reported model effort. Quantization does not bypass scope or target-level admission, invent a missing table entry, activate a binding or change route policy.
+
+P3b permits a named downward adjustment of a conversion-generated thinking budget when it cannot fit the target's answer-room requirement under the client's explicit output ceiling. Keep source intent unchanged and record the preset budget and adjusted budget separately. Never raise the output ceiling, turn off into on or turn an insufficient positive budget into disabled thinking. If no legal positive budget fits, reject. This policy does not repair an invalid source request or authorize reducing a client-supplied numeric budget.
+
+The reduction method (a lower preset or an arbitrary fitting integer) and answer-room reservation remain [pending details](roadmap.md#pending-decisions). Until those details are selected for the affected projection, retain target-validation failure. Ordinary preset lookup and nearest-budget quantization do not depend on them.
 
 Rules cannot expand accepted content types, bypass model restrictions, select a route or modify the source IR. No public request override is selected. Mapping data remains hand-authored Rust policy, not a new startup mapping schema or generic rule engine. P6's diagnostic switches configure capture, not semantic mapping.
 
@@ -448,7 +464,7 @@ Native requests preserve thinking, tool-use/result order and call IDs. Messages 
 
 ### Request rules
 
-These describe current native behavior, not completion of the [loss-policy migration](roadmap.md#ir-and-codec-migration). In particular, scope rejection, sampling omission and default-strict projection require the planned review.
+These describe current native behavior, not completion of the [loss-policy migration](roadmap.md#ir-and-codec-migration). Scope rejection and sampling omission still need the selected policies; default-strict projection remains under review. Selected summary-granularity and role approximations follow the [request policy](#selected-request-approximations).
 
 - Disabled and adaptive activation have distinct carriers. This selected profile rejects numeric thinking budgets instead of replacing them with effort.
 - Response-wide effort maps to `output_config.effort` independently of thinking. Reasoning-only effort is rejected, not broadened to response-wide effort.
@@ -524,15 +540,19 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Explicit same-model level calibration | P1 permits declared directional scope approximation on target copies; level mappings stay model-local. No inferred nearest level, inverse or off-to-on conversion |
 | Disabled activation priority | P2 preserves a supported off carrier and names omission of independent unrepresentable response effort; a target without off support still rejects |
 | Preset-based thinking allocation | P3 uses six distinct shared budgets from 1024 to 24576; target-specific tables may contain duplicates. Numeric conversion minimizes absolute token distance and chooses the highest level on every tie. Preserve original intent and hard caps; this is explicit lossy quantization, not an inferred qualitative inverse |
+| Conversion-generated budget adjustment | P3b permits named downward adjustment within the unchanged client output ceiling. Source numeric budgets are not silently rewritten; reduction and answer-room details remain pending |
 | Target-effective sampling | P4 preserves supported controls and permits named omission only for declared fixed/ignored behavior; unknown effectiveness is not permission to discard a control |
 | Required and incidental output evidence | P5 preserves required output facts and allows selected incidental-report loss after validation; request intent never fabricates upstream reports |
 | Configurable internal exchange capture | P6 permits opt-in business headers/bodies at all four I/O boundaries with separate controls, finite retention and best-effort writes. Credentials are always redacted; no switch permits credential-bearing logs |
+| Summary granularity and visibility | P8 permits approximate summary granularity while preserving show/hide intent. Do not enable reasoning, fabricate summaries or expose hidden content |
+| Role and instruction approximation | P8 permits named developer/system/user mappings on target copies. Request-wide instructions use a first system message when no dedicated field exists and the target permits it; existing ordered history stays ordered |
+| Predicted-output optimization | D3 selects named omission of Chat prediction after source validation until supported. Record the loss without changing generated text or fabricating usage |
 | Equal downstream contracts | Chat Completions, Responses and Messages receive equal consideration for static delivery, streaming and history replay; a missing carrier needs an approved projection or explicit rejection |
 | Separate task contracts | Generation, Embeddings, Images, Speech and Transcription are not one universal message type |
 | Pure protocol boundaries | Encode from final typed input; no network in codecs or post-encoding JSON patches |
 | Functional ownership | Keep root layers; organize internals by domain, without compatibility aliases or plugin frameworks |
 | Layered capabilities | Source validity, acceptance through approved adaptation and faithful target support are distinct. Do not advertise lossy acceptance as native support or infer public promises from a union of candidates |
-| Temporary routing freeze | The current IR/codec migration does not redesign routing, affinity, candidate policy or failover. IR/codec correctness takes priority over preserving the complete client–gateway–Provider chain; incompatible integration stays explicitly blocked |
+| Temporary routing freeze | P7 keeps routing, affinity, candidate policy and failover frozen until the selected Generation IR, codec and protocol-conversion work is complete. Only then reopen routing/integration design; incompatible integration stays explicitly blocked in the meantime |
 | Shared model identities across protocols | Compatible API-key, OAuth and native Messages bindings share one public model and ordered route. Endpoint protocols and credential domains stay distinct; narrower candidates reject requests they cannot represent |
 | SIWC cross-Provider fallback | A mixed route may contain one SIWC endpoint and advance to another Provider before publication within the route budget. SIWC pools remain single-account with no credential fallback; standalone SIWC routes remain single-attempt with fallback disabled |
 | Case-sensitive model labels | Public IDs may preserve upstream ASCII capitalization, but resolve only registered routes. Provider prefixes remain rejected; Provider, endpoint and route IDs keep their lowercase grammar |
@@ -559,7 +579,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Independent CLI paths | Default configuration lives in the home-relative application directory, with credentials in its `credentials` child. Explicit config and credential paths override independently; no legacy path discovery or automatic migration |
 | Agent-sized bounds | Bodies, IR budgets and deadlines fit whole-history agent sessions and long turns: tens of MiB and one hour per exchange. Upstreams enforce their own maxima |
 | Inert, credential-free media | Inline data or URLs only; no gateway fetch or file service, and no client-supplied Provider file references |
-| Target carriers and protected content | Use official carriers or declared extensions when available; approved losses cover selected preferences, not missing task content. Do not add model-visible text, invent roles or drop media merely to make a target accept the request |
+| Target carriers and protected content | Prefer official carriers or declared extensions. Selected role approximations change only the target representation; they do not invent content, assistant/tool speakers or call/result links. Do not drop task content or media merely to make a target accept the request |
 | Target-local image restrictions | Formats, encoded sizes, counts and unavailable per-use options are checked or projected at the protocol boundary, not encoded as Provider-specific IR fields |
 | Envelopes as grouping | Ordered message envelopes are the only IR grouping. Chat's call ownership is a view derived in the OpenAI codec, which also enforces Chat-only rules such as no calls on a refusal |
 | Schemas as data | The IR keeps any bounded JSON-object schema an official API accepts. The OpenAI strict subset is checked only for OpenAI targets. An unnamed output schema (Messages) gets the fixed name `response` only on OpenAI targets, which require one |
