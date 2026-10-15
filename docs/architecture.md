@@ -167,11 +167,33 @@ Requirements and target contracts must distinguish response-wide effort from rea
 
 The existing level interface performs explicit, hand-authored calibration for the same model under trusted binding/dialect selection. It is not a universal adapter for all reasoning controls. P1/P2 select scope approximation and disabled-priority handling; P3 selects preset-based numeric-budget conversion inspired by [pi's pinned implementation](refs/2026-10-15-generation-projections.md#pi-thinking-budget-presets). These are design decisions, not claims of implemented support.
 
-Different Providers may expose different labels for one model. A selected rule may map `low` to `medium`, for example. Without a declared rule, neither a nearest-level heuristic nor matching label spelling establishes equivalence. Budget presets are separate named approximations: declare level-to-budget and budget-to-level directions independently, keep original numeric intent in source IR, and validate the target's mode, minimum and output ceiling. Do not infer a reverse table, apply generic nearest-level rounding or raise an explicit output cap. The exact bins and cap-conflict behavior remain [P3 detail](roadmap.md#pending-decisions).
+Different Providers may expose different labels for one model. A selected rule may map `low` to `medium`, for example. Qualitative level-to-level calibration still requires explicit pairs; equal labels or ordinal proximity do not establish equivalence. P3 separately selects nearest-budget quantization as a named numeric approximation, defined below. Preserve original numeric intent and validate the target's mode, minimum and output ceiling.
 
 P4 preserves supported sampling controls. A named target policy may omit controls known to be fixed or ignored by that model. Unknown effectiveness does not justify guessing or dropping them; keep the rejection until a valid carrier or explicit target policy exists. Protocol grammar and model-effective support remain separate.
 
 Encode and decode mappings are directional. A many-to-one encode mapping has no automatic inverse; normalization of an upstream report needs its own explicit rule. Preserve request intent and reported effective settings separately, never synthesizing a reported setting from the request. Apply each mapping once at its boundary, record its named provenance, and validate the result against the target contract.
+
+#### Thinking-budget quantization
+
+The initial shared preset follows pi's current helper, verified at [`4a5d372`](refs/2026-10-15-generation-projections.md#pi-thinking-budget-presets), and expands its high-budget alias to the full positive OpenAI/IR level vocabulary:
+
+| Level | Thinking tokens |
+|---|---|
+| none / disabled | Activation only; not a positive budget entry |
+| minimal | 1024 |
+| low | 2048 |
+| medium | 8192 |
+| high | 16384 |
+| xhigh | 16384 |
+| max | 16384 |
+
+A trusted target policy selects this shared preset or an explicitly declared target-specific table. Duplicate token values are valid. For a positive numeric budget `b`, choose the entry with the smallest absolute token distance `abs(b - tokens(level))`; among every entry with that minimum distance, choose the highest level in `minimal < low < medium < high < xhigh < max`. Table iteration order must not affect the result. Use overflow-safe integer distance, not floating-point midpoints.
+
+For `{low: 500, medium: 500, high: 1000, xhigh: 1000}`, budget `750` selects `xhigh`. An exact `500` selects `medium`, and exact `1000` selects `xhigh`. With the shared preset, `1536` selects `low`, `5120` selects `medium`, and both `12288` and `16384` select `max`. Thus `high -> 16384 -> max` is intentionally not an identity; this is approved quantization, not recovery of the originally requested level.
+
+Absent controls stay absent. Off is decoded into activation before matching; protocol-specific zero/automatic sentinels never enter positive-budget quantization. If a target can preserve the requested native numeric budget, prefer that carrier instead of quantizing unnecessarily. Qualitative requests with an exact target carrier likewise need no budget round trip.
+
+Retain the original budget and record the selected table, matched level and representative tokens as adaptation evidence, not reported model effort. Quantization does not bypass scope or target-level admission, invent a missing table entry, activate a binding or change route policy. Behavior when a selected numeric preset cannot fit under an explicit output ceiling remains [P3b](roadmap.md#pending-decisions); the ceiling must not be raised to copy pi's allowance adjustment.
 
 Rules cannot expand accepted content types, bypass model restrictions, select a route or modify the source IR. No public request override is selected. Mapping data remains hand-authored Rust policy, not a new startup mapping schema or generic rule engine. P6's diagnostic switches configure capture, not semantic mapping.
 
@@ -206,7 +228,7 @@ Validate native types, alias conflicts and source-snapshot consistency before a 
 | Owner | Planned responsibility |
 |---|---|
 | [Semantic reasoning types](../src/semantic/task/generation/content/reasoning.rs), [settings](../src/semantic/task/generation/request/settings.rs), [requirements](../src/semantic/task/generation/requirements.rs) and [contract](../src/semantic/task/generation/contract.rs) | Activation and scoped effort only; no model-specific level policy |
-| [Protocol reasoning helper](../src/protocol/reasoning.rs) | Small immutable directional policies and validation; explicit budget presets remain distinct from level calibration, with no inferred reverse thresholds |
+| [Protocol reasoning helper](../src/protocol/reasoning.rs) | Explicit qualitative mapping pairs plus separate P3 preset lookup and nearest-budget quantization with highest-level ties; no inferred qualitative inverse |
 | [Catalog binding declarations](../src/topology/catalog/bindings.rs), [catalog construction](../src/topology/catalog.rs), native catalog constructors and [endpoint compilation](../src/topology/endpoint.rs) | Select policy by canonical model and binding, validate it and pass it through representation caps to the adapter; do not reuse a Provider-wide switch for model-specific levels |
 | [OpenAI adaptation](../src/protocol/openai/dialect/adaptation.rs), [request projection](../src/protocol/openai/adapter/request.rs), [Messages projection](../src/protocol/anthropic/semantic_request.rs), [generateContent projection](../src/protocol/google/request.rs) and [Interactions projection](../src/protocol/interactions/request.rs) | Preserve scope and apply a selected level policy once to candidate-private typed representation before final validation and serialization; no Provider-wide level calibration switch |
 | [Upstream adapter](../src/adapter/upstream.rs), [static response intake](../src/protocol/openai/static_response.rs), [event intake](../src/protocol/openai/events/decode.rs) and native decoders | Carry the selected decode policy into actual reported-setting parsing, including SSE; do not put policy in `ReplayTarget` or discover it from a response model string |
@@ -499,7 +521,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Accurate IR with declared lossy projection | Prefer exact carriers, permit approved advisory omissions and behavioral approximations, and reject loss of protected meaning. Preserve the source and record target-local changes; implementation follows the roadmap |
 | Explicit same-model level calibration | P1 permits declared directional scope approximation on target copies; level mappings stay model-local. No inferred nearest level, inverse or off-to-on conversion |
 | Disabled activation priority | P2 preserves a supported off carrier and names omission of independent unrepresentable response effort; a target without off support still rejects |
-| Preset-based thinking allocation | P3 permits explicit pi-inspired budget presets as approximations, not protocol equivalences. Preserve original intent and hard caps; independently specify reverse bins rather than invert a many-to-one table |
+| Preset-based thinking allocation | P3 uses pi-inspired presets expanded through max; duplicate budgets are allowed. Numeric conversion minimizes absolute token distance and chooses the highest level on every tie. Preserve original intent and hard caps; this is explicit lossy quantization, not an inferred qualitative inverse |
 | Target-effective sampling | P4 preserves supported controls and permits named omission only for declared fixed/ignored behavior; unknown effectiveness is not permission to discard a control |
 | Required and incidental output evidence | P5 preserves required output facts and allows selected incidental-report loss after validation; request intent never fabricates upstream reports |
 | Configurable internal exchange capture | P6 permits opt-in business headers/bodies at all four I/O boundaries with separate controls, finite retention and best-effort writes. Credentials are always redacted; no switch permits credential-bearing logs |

@@ -28,9 +28,9 @@ Reconnection is a later explicitly scheduled integration step. It must verify pr
 
 ### IR and codec migration
 
-This is an implementation plan. Accurate IR, declared loss, verbosity omission and the routing freeze are selected. P1/P2/P4/P5 now follow the [recorded architecture decisions](architecture.md#settled-decisions); P3 uses explicit presets and P6 permits configurable business-message capture with mandatory credential redaction. P7/P8/D3 remain pending, together with the numeric details of P3.
+This is an implementation plan. Accurate IR, declared loss, verbosity omission and the routing freeze are selected. P1/P2/P4/P5 follow the [recorded architecture decisions](architecture.md#settled-decisions); P3 selects pi-inspired presets with nearest-token/highest-level-tie quantization, and P6 permits configurable business-message capture with mandatory credential redaction. P7/P8/D3 remain pending, together with P3's insufficient-output-room handling.
 
-Use the sequence below. S1 repairs can be split by independent contract. S2 establishes one working codec-level path before broader abstractions. S3/S4 do not wait for P3's unresolved bins or P8's legacy-rule review; no slice depends on reconnecting the routing layer.
+Use the sequence below. S1 repairs can be split by independent contract. S2 establishes one working codec-level path before broader abstractions. S3/S4 do not wait for P3b's cap-conflict handling or P8's legacy-rule review; no slice depends on reconnecting the routing layer.
 
 | Slice | Dependency | Deliverable |
 |---|---|---|
@@ -38,7 +38,7 @@ Use the sequence below. S1 repairs can be split by independent contract. S2 esta
 | S2: First declared-loss path | Relevant S1 guards | Responses verbosity reaches a Messages projection with explicit omission and unchanged source IR |
 | S3: Advisory controls and text carriers | S2 | Per-field text handling across current protocols; exact carriers used before omission |
 | S4: Existing-IR constrained carriers | Relevant S1 guards; S2 contract split | Selected schema/tool/output carriers without weakening required semantics |
-| S5: Quality-sensitive approximation | S2; declared target data; P3a/P8 where applicable | Selected scope/allocation/sampling policies, not a universal fallback |
+| S5: Quality-sensitive approximation | S2; declared target data; P3b/P8 where applicable | Selected scope/allocation/sampling policies, not a universal fallback |
 | S6: Reports, SSE and history | S2; each selected S3–S5 rule | Source facts stay distinct from delivery losses and retained history |
 | S7: Diagnostic and contract closure | S2–S6, excluding explicitly deferred decisions | Bounded end-to-end evidence at codec/delivery boundaries and an explicit integration handoff |
 
@@ -91,9 +91,9 @@ Exit: existing independent request and response expectations preserve the releva
 Goal: implement the selected approximations without losing the source's meaning. Concrete target tables must still be declared and validated; do not treat an approved policy direction as automatic support on every model.
 
 1. Keep activation, scoped effort, budget, mode, display and verbosity separate. Implement selected cross-scope conversion on a private target copy, not by relabeling source IR or reusing a same-scope table as an implicit conversion.
-2. Implement P1 as trusted directional cross-scope approximation with named loss. Keep model-local level mappings explicit, including identities; undeclared entries reject. Do not infer nearest levels, inverses or policies from upstream errors.
+2. Implement P1 as trusted directional cross-scope approximation with named loss. Keep qualitative model-local mappings explicit, including identities; undeclared entries reject. Do not infer qualitative nearest levels, inverses or policies from upstream errors. P3's numeric quantization is a separate selected rule.
 3. Implement P2 by preserving a supported off carrier and omitting only independent unrepresentable response effort. Under P4, retain supported sampling and name omission only for declared fixed/ignored controls; unknown model behavior remains a gap.
-4. Implement P3 with separate preset data for level-to-budget and budget-to-level approximation, based on the [pi reference](refs/2026-10-15-generation-projections.md#pi-thinking-budget-presets). Preserve original numeric intent and explicit output ceilings. Resolve P3a before quantizing arbitrary budgets or changing preset values to fit a cap.
+4. Implement P3's [complete preset and matching rule](architecture.md#thinking-budget-quantization). Preserve original numeric intent, accept duplicate token values, minimize absolute distance and choose the highest level on all ties. Keep off/sentinels outside matching and exact native carriers ahead of approximation. Update existing expectations with the approved `750 -> xhigh` example and shared-preset boundaries. P3b blocks only an adjustment when a preset cannot fit the output cap, not the lookup/quantization work.
 5. Review existing summary/context/display, media-option and instruction-authority losses under P8. Hiding reasoning must not become disclosure; a summary display preference must not invent activation.
 
 Exit: selected rules run once, report source/target controls and preserve unchanged input. Unselected combinations retain explicit rejection. Native request/intake wiring and [configuration-history policy](#reasoning-repair-slices) follow the selected directions rather than inferring effective settings.
@@ -333,11 +333,11 @@ Real failover needs a controlled failure source, such as an exhausted key in a s
 
 ## Pending decisions
 
-P1/P2/P4/P5 are decided; P3's preset approach and P6's configurable capture are also selected in [Architecture](architecture.md#settled-decisions). Only the following details and deferred policies remain open. Continue independent slices; ask only when an unresolved choice blocks the affected contract. Unimplemented support is not a reason to reconsider an already selected policy.
+P1/P2/P4/P5, P3's complete shared preset and nearest-token/highest-level-tie rule, and P6's configurable capture are selected in [Architecture](architecture.md#settled-decisions). Only the following details and deferred policies remain open. Continue independent slices; ask only when an unresolved choice blocks the affected contract. Unimplemented support is not a reason to reconsider an already selected policy.
 
 | Question | Unresolved choice and recommendation | Blocks |
 |---|---|---|
-| P3a: Preset values and reverse quantization | Pi supplies level-to-budget values, not arbitrary-budget bins or a unique inverse. Select per-target presets, numeric intervals/rounding, canonical resolution of merged high/xhigh/max and insufficient-output-room behavior. Recommended: explicit directional tables/ranges, faithful numeric carriage where supported, no inferred nearest level or raised client cap. The pinned shared table is reference data, not an activated universal mapping | Only S5 numeric approximation and dependent S6 report/history mappings |
+| P3b: Insufficient output room | If a selected numeric thinking preset conflicts with the client's explicit output ceiling or the target's required answer room, choose rejection or a named downward budget adjustment within the ceiling. Never raise that ceiling or convert a reduced budget into disabled thinking implicitly. Until selected, retain target-validation failure; nearest-level matching and duplicate resolution are already decided | Only conflicting level-to-budget projection, not ordinary P3 lookup or quantization |
 | P7: Public capability publication and reconnection | Decide how the future public surface distinguishes native fidelity from accepted-with-loss controls and whether clients receive warnings. Recommended: no false native support claim, no per-request policy override in this slice. Current route/admission incompatibilities stay blocked until a separate integration decision | Route-facing publication and full-chain acceptance, not local IR/codec work |
 | P8: Existing loss rules with quality impact | Review default-strict-as-plain, reasoning-context omission, display suppression, developer-to-system and media-detail loss individually. Recommended: preserve explicit constraints and visibility intent, use faithful carriers first, and retain a legacy approximation only after its consequences are selected. Existing code is not evidence of equivalence | Affected S4–S6 rules only |
 

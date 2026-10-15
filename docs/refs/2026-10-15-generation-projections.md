@@ -142,7 +142,7 @@ The existing level interface is limited to qualitative levels. Scope or numeric-
 
 ### Pi thinking-budget presets
 
-The pinned pi revision `4270522` supplies product-level presets, not a protocol equivalence. Its [simple-options helper](https://github.com/earendil-works/pi/blob/4270522473e677ddba7b093caa0064a3df51d459/packages/ai/src/api/simple-options.ts) defines:
+Pi's current `main`, pinned for this lookup at `4a5d372` on 2026-10-15, supplies the same shared defaults as the broader client pin `4270522`. These are product-level presets, not a protocol equivalence. The [current simple-options helper](https://github.com/earendil-works/pi/blob/4a5d37291531ad48b8e536c892557877d219463c/packages/ai/src/api/simple-options.ts) defines:
 
 | Pi level | Shared default thinking tokens |
 |---|---|
@@ -153,11 +153,11 @@ The pinned pi revision `4270522` supplies product-level presets, not a protocol 
 
 That helper folds `xhigh` and `max` into `high` for budget lookup and accepts custom budget overrides. This many-to-one mapping supplies no unique inverse. It does not specify how an arbitrary incoming numeric budget should be quantized to a level.
 
-The [Anthropic codec](https://github.com/earendil-works/pi/blob/4270522473e677ddba7b093caa0064a3df51d459/packages/ai/src/api/anthropic-messages.ts) uses the helper for manual-budget models and a separate effort path for adaptive models. The [Google codec](https://github.com/earendil-works/pi/blob/4270522473e677ddba7b093caa0064a3df51d459/packages/ai/src/api/google-generative-ai.ts) has target-specific numeric tables and a separate discrete-level path. The shared table is therefore not a universal Google or Anthropic model contract.
+The [current Anthropic codec](https://github.com/earendil-works/pi/blob/4a5d37291531ad48b8e536c892557877d219463c/packages/ai/src/api/anthropic-messages.ts) uses the helper for manual-budget models and a separate effort path for adaptive models. The [current Google codec](https://github.com/earendil-works/pi/blob/4a5d37291531ad48b8e536c892557877d219463c/packages/ai/src/api/google-generative-ai.ts) has target-specific numeric tables and a separate discrete-level path. The shared table is therefore not a universal Google or Anthropic model contract.
 
 Pi's helper can add the thinking budget to a supplied response allowance, then cap it at the model limit; it reserves answer room when necessary. MorphieCore must not copy that adjustment onto an explicit client-owned total-output ceiling. Reusing preset values does not authorize raising a hard cap or converting disabled activation into positive thinking.
 
-The selected gateway approach uses explicit presets as approximations while preserving the original budget in IR. Target tables, numeric-to-level bins, duplicate-level resolution and insufficient-budget handling need independent definitions; see [the remaining P3 detail](../roadmap.md#pending-decisions).
+The selected gateway rule expands the shared high-budget alias into explicit `high/xhigh/max` rows, then matches a positive numeric budget by minimum absolute distance with the highest level winning every tie. This reverse quantization is a MorphieCore product decision, not behavior established by pi's forward helper. Original numeric intent stays in IR; see [the complete P3 contract](../architecture.md#thinking-budget-quantization). Insufficient-output-room handling remains a separate decision.
 
 ## Sampling, schemas and service policy
 
