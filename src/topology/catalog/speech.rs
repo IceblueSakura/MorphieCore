@@ -26,6 +26,19 @@ pub struct SpeechBinding {
 // Named voices: https://openrouter.ai/api/v1/models?output_modalities=speech
 pub const SPEECH_BINDINGS: &[SpeechBinding] = &[
     SpeechBinding {
+        provider: catalog::xiaomi,
+        path: "/v1/chat/completions",
+        identity: "xiaomi-speech",
+        profile: Profile::Xiaomi,
+        model: "mimo-v2.5-tts",
+        upstream: "mimo-v2.5-tts",
+        credential: "xiaomi-api-key",
+        voices: crate::protocol::xiaomi_audio::VOICES,
+        // https://mimo.mi.com/docs/updates/model (2026-04-23).
+        released_at: 1_776_902_400,
+        developer: "Xiaomi",
+    },
+    SpeechBinding {
         provider: catalog::openrouter,
         path: "/api/v1/audio/speech",
         identity: "openrouter-qwen-speech",
@@ -87,8 +100,12 @@ impl SpeechBinding {
                 profile: self.profile,
                 capabilities: SpeechCapabilities {
                     voices: self.voices.iter().map(|v| (*v).into()).collect(),
-                    formats: vec![AudioEncoding::Mp3],
-                    instructions: false,
+                    formats: if self.profile == Profile::Xiaomi {
+                        crate::protocol::xiaomi_audio::FORMATS.to_vec()
+                    } else {
+                        vec![AudioEncoding::Mp3]
+                    },
+                    instructions: self.profile == Profile::Xiaomi,
                     speed: false,
                 },
                 credential: CredentialBindingId::new(self.credential).expect("static binding"),

@@ -208,6 +208,7 @@ async fn produce_one(
         .map_err(ApiError::transport)?;
     let result = receive(
         upstream,
+        entry.route.endpoint.profile,
         runtime
             .limits
             .response_bytes
@@ -228,6 +229,7 @@ async fn produce_one(
 }
 pub(in crate::gateway) async fn receive(
     mut upstream: reqwest::Response,
+    profile: crate::adapter::transcription::Profile,
     limit: usize,
     trace: &mut Trace,
 ) -> Result<RecognitionResult, ApiError> {
@@ -285,5 +287,7 @@ pub(in crate::gateway) async fn receive(
     if length.is_some_and(|n| n != bytes.len() as u64) {
         return Err(ApiError::upstream());
     }
-    crate::protocol::aliyun_asr::decode_response(&bytes).map_err(|_| ApiError::upstream())
+    profile
+        .decode_response(&bytes)
+        .map_err(|_| ApiError::upstream())
 }

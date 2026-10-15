@@ -7,6 +7,7 @@ pub enum Profile {
     Standard,
     OpenRouterMp3,
     AliyunMp3,
+    Xiaomi,
 }
 impl Profile {
     pub fn encode_request(
@@ -20,6 +21,7 @@ impl Profile {
                 crate::protocol::openrouter_speech::encode_request(request, model)
             }
             Self::AliyunMp3 => crate::protocol::aliyun_speech::encode_request(request, model),
+            Self::Xiaomi => crate::protocol::xiaomi_audio::encode_speech(request, model),
         }
     }
     pub fn upstream_sse(self) -> bool {
@@ -38,12 +40,32 @@ impl Profile {
         if self == Self::OpenRouterMp3 {
             crate::protocol::openrouter_speech::validate_task(task)?;
         }
+        if self == Self::Xiaomi {
+            let mime: mime::Mime = content_type
+                .parse()
+                .map_err(|_| crate::protocol::CodecError::Invalid("speech JSON"))?;
+            if mime.essence_str() != "application/json"
+                || mime
+                    .params()
+                    .any(|(k, v)| k != mime::CHARSET || v != mime::UTF_8)
+            {
+                return Err(crate::protocol::CodecError::Invalid("speech JSON"));
+            }
+            return Ok(Some(task.requested_format()));
+        }
         crate::protocol::openai::speech::reported_encoding(content_type, task)
     }
     pub(crate) fn supports(
         self,
         capabilities: &crate::lowering::speech::SpeechCapabilities,
     ) -> bool {
+        if self == Self::Xiaomi {
+            return !capabilities.speed
+                && capabilities
+                    .formats
+                    .iter()
+                    .all(|f| crate::protocol::xiaomi_audio::FORMATS.contains(f));
+        }
         self == Self::Standard
             || !capabilities.instructions
                 && !capabilities.speed

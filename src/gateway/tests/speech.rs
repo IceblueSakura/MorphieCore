@@ -13,21 +13,38 @@ use axum::body::Bytes;
 #[tokio::test]
 async fn cancelling_binary_collection_drops_unfinished_upstream() {
     let task = SpeechRequest::new("synthetic", "alloy").unwrap();
+    for (profile, media) in [
+        (Profile::Standard, "audio/mpeg"),
+        (Profile::Xiaomi, "application/json"),
+    ] {
+        let mut trace = diagnostics::Trace::new(None);
+        let (_tx, response, dropped) = source(200, media);
+        let mut pending = Box::pin(speech::receive(response, &task, profile, 4, &mut trace));
+        assert!(futures_util::poll!(&mut pending).is_pending());
+        drop(pending);
+        tokio::time::timeout(std::time::Duration::from_secs(1), dropped)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+}
+#[tokio::test]
+async fn json_speech_waits_for_eof_before_decoding_audio() {
+    let task = SpeechRequest::new("synthetic", "Chloe").unwrap();
     let mut trace = diagnostics::Trace::new(None);
-    let (_tx, response, dropped) = source(200, "audio/mpeg");
+    let (tx, response, dropped) = source(200, "application/json");
+    tx.send(Ok(Bytes::from_static(br#"{"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","audio":{"data":"YWJj"}}}]}"#))).await.unwrap();
     let mut pending = Box::pin(speech::receive(
         response,
         &task,
-        Profile::Standard,
-        4,
+        Profile::Xiaomi,
+        4096,
         &mut trace,
     ));
     assert!(futures_util::poll!(&mut pending).is_pending());
-    drop(pending);
-    tokio::time::timeout(std::time::Duration::from_secs(1), dropped)
-        .await
-        .unwrap()
-        .unwrap();
+    drop(tx);
+    assert_eq!(pending.await.unwrap().data().as_ref(), b"abc");
+    dropped.await.unwrap();
 }
 fn native_sse() -> Vec<u8> {
     use serde_json::json;

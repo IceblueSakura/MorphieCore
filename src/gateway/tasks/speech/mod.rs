@@ -270,5 +270,13 @@ pub(in crate::gateway) async fn receive(
     if length.is_some_and(|n| n != bytes.len() as u64) {
         return Err(ApiError::upstream());
     }
-    AudioArtifact::new(bytes.into(), encoding).map_err(|_| ApiError::upstream())
+    if profile == crate::adapter::speech::Profile::Xiaomi {
+        let result = crate::protocol::xiaomi_audio::decode_speech(&bytes, task)
+            .map_err(|_| ApiError::upstream())?;
+        Ok(codec::project_result(&result)
+            .map_err(|_| ApiError::upstream())?
+            .audio)
+    } else {
+        AudioArtifact::new(bytes.into(), encoding).map_err(|_| ApiError::upstream())
+    }
 }

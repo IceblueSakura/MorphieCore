@@ -17,8 +17,24 @@ pub struct TranscriptionBinding {
     pub provider: fn() -> ProviderDefinition,
     pub endpoint_id: &'static str,
     pub released_at: u64,
+    pub developer: &'static str,
+    pub path: &'static str,
+    pub profile: Profile,
 }
 pub const TRANSCRIPTION_BINDINGS: &[TranscriptionBinding] = &[
+    TranscriptionBinding {
+        model: "mimo-v2.5-asr",
+        canonical_model: "mimo-v2.5-asr",
+        upstream: "mimo-v2.5-asr",
+        credential: "xiaomi-api-key",
+        provider: catalog::xiaomi,
+        endpoint_id: "xiaomi-asr",
+        // https://mimo.mi.com/docs/updates/model (2026-06-02).
+        released_at: 1_780_358_400,
+        developer: "Xiaomi",
+        path: "/v1/chat/completions",
+        profile: Profile::Xiaomi,
+    },
     TranscriptionBinding {
         model: "qwen-audio-3.0-asr-flash",
         canonical_model: "qwen-audio-3.0-asr-flash",
@@ -29,6 +45,9 @@ pub const TRANSCRIPTION_BINDINGS: &[TranscriptionBinding] = &[
         // Developer release notes, 2026-07-30 UTC midnight, not plan registration.
         // https://help.aliyun.com/zh/model-studio/newly-released-models
         released_at: 1_785_369_600,
+        developer: "Alibaba",
+        path: "/api/v1/services/aigc/multimodal-generation/generation",
+        profile: Profile::AliyunFlash,
     },
     TranscriptionBinding {
         model: "qwen-audio-3.0-asr-flash-dashscope",
@@ -38,6 +57,9 @@ pub const TRANSCRIPTION_BINDINGS: &[TranscriptionBinding] = &[
         provider: catalog::aliyun_dashscope_cn,
         endpoint_id: "dashscope-qwen-asr",
         released_at: 1_785_369_600,
+        developer: "Alibaba",
+        path: "/api/v1/services/aigc/multimodal-generation/generation",
+        profile: Profile::AliyunFlash,
     },
 ];
 impl TranscriptionBinding {
@@ -45,13 +67,12 @@ impl TranscriptionBinding {
         (self.provider)()
     }
     pub fn metadata(&self) -> ModelMetadata {
-        ModelMetadata::new(self.released_at, "Alibaba").expect("static publication")
+        ModelMetadata::new(self.released_at, self.developer).expect("static publication")
     }
     pub fn operation(&self) -> ProviderEntry {
         ProviderEntry {
             provider: self.provider().id,
-            path: EndpointPath::new("/api/v1/services/aigc/multimodal-generation/generation")
-                .expect("static ASR path"),
+            path: EndpointPath::new(self.path).expect("static ASR path"),
         }
     }
     pub fn route(&self) -> TranscriptionRoute {
@@ -70,7 +91,7 @@ impl TranscriptionBinding {
                 },
                 upstream_model: self.upstream.into(),
                 canonical_model: canonical,
-                profile: Profile::AliyunFlash,
+                profile: self.profile,
                 credential: CredentialBindingId::new(self.credential)
                     .expect("static credential binding"),
                 execution: ExecutionContract {

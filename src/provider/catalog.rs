@@ -48,6 +48,7 @@ pub fn opencode_go() -> ProviderDefinition {
         "/zen/go/v1/chat/completions",
     );
     provider.messages = Some(EndpointPath::new("/zen/go/v1/messages").expect("static path"));
+    provider.responses = Some(EndpointPath::new("/zen/go/v1/responses").expect("static path"));
     provider
 }
 

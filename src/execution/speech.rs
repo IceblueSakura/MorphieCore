@@ -30,6 +30,8 @@ pub fn prepare(
     if route.endpoint.profile.upstream_sse() {
         headers.push(("accept".into(), "text/event-stream".into()));
         headers.push(("x-dashscope-sse".into(), "enable".into()));
+    } else if route.endpoint.profile == crate::adapter::speech::Profile::Xiaomi {
+        headers.push(("accept".into(), "application/json".into()));
     } else {
         headers.push(("accept".into(), "application/octet-stream".into()));
     }

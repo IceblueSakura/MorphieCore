@@ -202,89 +202,171 @@ pub fn topology(
         public_models.push(binding.public_model());
         canonical_models.push(binding.canonical_model());
     }
-    compile(
-        catalog::all(),
-        endpoints,
-        routes,
-        public_models,
-        canonical_models,
-    )?
-    .with_images(
-        IMAGE_BINDINGS.iter().map(|b| b.operation()).collect(),
-        IMAGE_BINDINGS.iter().map(|b| b.route()).collect(),
-    )?
-    .with_speech(
-        SPEECH_BINDINGS.iter().map(|b| b.operation()).collect(),
-        SPEECH_BINDINGS.iter().map(|b| b.route()).collect(),
-    )?
-    .with_transcriptions(
-        TRANSCRIPTION_BINDINGS
-            .iter()
-            .map(|b| b.operation())
-            .collect(),
-        TRANSCRIPTION_BINDINGS.iter().map(|b| b.route()).collect(),
-    )?
-    .with_embeddings(
-        EMBEDDING_BINDINGS.iter().map(|b| b.operation()).collect(),
-        EMBEDDING_BINDINGS.iter().map(|b| b.route()).collect(),
-    )?
-    .with_model_metadata(
-        models::MODELS
-            .iter()
-            .map(|m| {
-                (
-                    ModelId::new(m.id).expect("static id"),
-                    ModelMetadata::new(m.released_at, m.developer).expect("static publication"),
-                )
-            })
-            .chain(MESSAGES_BINDINGS.iter().map(|b| {
-                (
-                    ModelId::new(b.model).expect("static messages id"),
-                    b.metadata(),
-                )
-            }))
-            .chain(GOOGLE_BINDINGS.iter().map(|b| {
-                (
-                    ModelId::new(b.model).expect("static google id"),
-                    b.metadata(),
-                )
-            }))
-            .chain(IMAGE_BINDINGS.iter().map(|b| {
-                (
-                    ModelId::new(b.model).expect("static image id"),
-                    b.metadata(),
-                )
-            }))
-            .chain(SPEECH_BINDINGS.iter().map(|b| {
-                (
-                    ModelId::new(b.model).expect("static speech id"),
-                    b.metadata(),
-                )
-            }))
-            .chain(EMBEDDING_BINDINGS.iter().map(|b| {
-                (
-                    ModelId::new(b.model).expect("static embedding id"),
-                    b.metadata(),
-                )
-            }))
-            // Public credential-domain aliases share the original canonical publication.
-            .chain(
-                TRANSCRIPTION_BINDINGS
+    // Authentication and wire families do not create separate public identities.
+    // Keep each family's endpoint contract and credential binding unchanged.
+    let mut merged: Vec<PublicModel> = Vec::new();
+    for public in public_models {
+        if let Some(existing) = merged.iter().find(|p| p.id == public.id) {
+            if existing.canonical_model != public.canonical_model
+                || existing.contract != public.contract
+                || existing.standard_context != public.standard_context
+                || existing.reported_facts != public.reported_facts
+            {
+                return Err(TopologyError::SemanticUnsatisfiable);
+            }
+            let index = routes
+                .iter()
+                .position(|r| r.id == public.route)
+                .ok_or(TopologyError::ContractUnsatisfiable)?;
+            let alternative = routes.remove(index);
+            let route = routes
+                .iter_mut()
+                .find(|r| r.id == existing.route)
+                .ok_or(TopologyError::ContractUnsatisfiable)?;
+            route.endpoints.extend(alternative.endpoints);
+            route.policy = RoutePolicy {
+                candidates: CandidatePolicy::SkipUnrepresentable,
+                fallback: FallbackPolicy::BeforeCommit,
+                ..RoutePolicy::default()
+            };
+        } else {
+            merged.push(public);
+        }
+    }
+    for public in &merged {
+        if let Some(order) = failover.get(public.id.as_str()) {
+            let route = routes
+                .iter_mut()
+                .find(|r| r.id == public.route)
+                .ok_or(TopologyError::ContractUnsatisfiable)?;
+            route.endpoints.sort_by_key(|id| {
+                let endpoint = endpoints
                     .iter()
-                    .filter(|b| b.model == b.canonical_model)
-                    .map(|b| {
-                        (
-                            ModelId::new(b.model).expect("static transcription id"),
-                            b.metadata(),
-                        )
-                    }),
-            ),
-    )
+                    .find(|e| &e.id == id)
+                    .expect("declared endpoint");
+                order
+                    .iter()
+                    .position(|p| p == endpoint.provider.as_str())
+                    .unwrap_or(usize::MAX)
+            });
+        }
+    }
+    compile(catalog::all(), endpoints, routes, merged, canonical_models)?
+        .with_images(
+            IMAGE_BINDINGS.iter().map(|b| b.operation()).collect(),
+            IMAGE_BINDINGS.iter().map(|b| b.route()).collect(),
+        )?
+        .with_speech(
+            SPEECH_BINDINGS.iter().map(|b| b.operation()).collect(),
+            SPEECH_BINDINGS.iter().map(|b| b.route()).collect(),
+        )?
+        .with_transcriptions(
+            TRANSCRIPTION_BINDINGS
+                .iter()
+                .map(|b| b.operation())
+                .collect(),
+            TRANSCRIPTION_BINDINGS.iter().map(|b| b.route()).collect(),
+        )?
+        .with_embeddings(
+            EMBEDDING_BINDINGS.iter().map(|b| b.operation()).collect(),
+            EMBEDDING_BINDINGS.iter().map(|b| b.route()).collect(),
+        )?
+        .with_model_metadata(
+            models::MODELS
+                .iter()
+                .map(|m| {
+                    (
+                        ModelId::new(m.id).expect("static id"),
+                        ModelMetadata::new(m.released_at, m.developer).expect("static publication"),
+                    )
+                })
+                .chain(MESSAGES_BINDINGS.iter().map(|b| {
+                    (
+                        ModelId::new(b.model).expect("static messages id"),
+                        b.metadata(),
+                    )
+                }))
+                .chain(GOOGLE_BINDINGS.iter().map(|b| {
+                    (
+                        ModelId::new(b.model).expect("static google id"),
+                        b.metadata(),
+                    )
+                }))
+                .chain(IMAGE_BINDINGS.iter().map(|b| {
+                    (
+                        ModelId::new(b.model).expect("static image id"),
+                        b.metadata(),
+                    )
+                }))
+                .chain(SPEECH_BINDINGS.iter().map(|b| {
+                    (
+                        ModelId::new(b.model).expect("static speech id"),
+                        b.metadata(),
+                    )
+                }))
+                .chain(EMBEDDING_BINDINGS.iter().map(|b| {
+                    (
+                        ModelId::new(b.model).expect("static embedding id"),
+                        b.metadata(),
+                    )
+                }))
+                // Public credential-domain aliases share the original canonical publication.
+                .chain(
+                    TRANSCRIPTION_BINDINGS
+                        .iter()
+                        .filter(|b| b.model == b.canonical_model)
+                        .map(|b| {
+                            (
+                                ModelId::new(b.model).expect("static transcription id"),
+                                b.metadata(),
+                            )
+                        }),
+                ),
+        )
 }
 #[cfg(test)]
 #[test]
 fn declared_topology_compiles() {
     let topology = default_topology().unwrap();
+    for (model, providers) in [
+        ("claude-haiku-5-5", &["openrouter", "opencode-go"][..]),
+        ("mimo-v2.6-pro", &["xiaomi", "opencode-go"][..]),
+        (
+            "glm-5.3",
+            &["zhipu", "aliyun-dashscope-cn", "aliyun-tokenplan-cn"][..],
+        ),
+    ] {
+        let public = topology.model(model).unwrap();
+        let route = topology.route(&public.route).unwrap();
+        let actual: std::collections::BTreeSet<_> = route
+            .endpoints
+            .iter()
+            .map(|id| topology.endpoint(id).unwrap().provider.as_str())
+            .collect();
+        assert_eq!(actual, providers.iter().copied().collect());
+    }
+    for model in [
+        "gpt-6-astra",
+        "mimo-v2.6-pro-ultraspeed",
+        "muse-spark-1.3-contributor",
+        "kimi-k3",
+    ] {
+        assert!(topology.model(model).is_some(), "{model}");
+    }
+    let muse = topology.model("muse-spark-1.3-contributor").unwrap();
+    let muse_endpoints = topology.route_endpoints(&muse.route);
+    assert_eq!(muse_endpoints.len(), 1);
+    assert_eq!(muse_endpoints[0].protocol, ProtocolProfile::OpenAiResponses);
+    assert_eq!(
+        muse_endpoints[0].target.path.as_str(),
+        "/zen/go/v1/responses"
+    );
+    assert!(topology.speech_route("mimo-v2.5-tts").is_some());
+    assert!(topology.transcription_route("mimo-v2.5-asr").is_some());
+    for excluded in ["mimo-v2.5-tts-voiceclone", "mimo-v2.5-tts-voicedesign"] {
+        assert!(topology.speech_route(excluded).is_none());
+        assert!(topology.model(excluded).is_none());
+    }
     for public in topology.models() {
         assert!(topology.model_metadata(&public.canonical_model).is_some());
     }
@@ -331,9 +413,9 @@ fn modelbest_vision_versions_use_upstream_ids_and_multimodal_chat_contracts() {
 #[test]
 fn removed_providers_have_no_routes_and_unrelated_bindings_survive() {
     let removed = default_topology().unwrap();
-    for (provider, model) in [("longcat", "longcat-2.5-preview"), ("kimi", "kimi-k3")] {
+    for provider in ["longcat", "kimi"] {
         assert!(removed.provider(provider).is_none());
-        assert!(removed.model(model).is_none());
     }
+    assert!(removed.model("longcat-2.5-preview").is_none());
     assert!(removed.provider("opencode-go").is_some());
 }

@@ -3,6 +3,7 @@ use super::{models, *};
 use crate::protocol::openai::Dialect;
 pub struct SubscriptionBinding {
     pub profile: &'static str,
+    pub identity: &'static str,
     pub model: &'static str,
     pub upstream: &'static str,
     pub dialect: Dialect,
@@ -11,13 +12,23 @@ pub struct SubscriptionBinding {
 pub const SUBSCRIPTION_BINDINGS: &[SubscriptionBinding] = &[
     SubscriptionBinding {
         profile: "openai",
+        identity: "openai",
         model: "gpt-6.1-sol",
         upstream: "gpt-6.1-sol",
         dialect: Dialect::Siwc,
         provider: catalog::openai,
     },
     SubscriptionBinding {
+        profile: "openai",
+        identity: "openai-astra",
+        model: "gpt-6-astra",
+        upstream: "gpt-6-astra",
+        dialect: Dialect::Siwc,
+        provider: catalog::openai,
+    },
+    SubscriptionBinding {
         profile: "grok",
+        identity: "grok",
         model: "grok-4.7",
         upstream: "grok-4.7",
         dialect: Dialect::Grok,
@@ -41,14 +52,14 @@ impl SubscriptionBinding {
             .expect("static binding")
     }
     pub fn endpoint_id(&self) -> EndpointId {
-        EndpointId::new(&format!("{}-responses", (self.provider)().id.as_str())).expect("static id")
+        EndpointId::new(&format!("{}-responses", self.identity)).expect("static id")
     }
     pub fn public_model(&self) -> PublicModel {
         PublicModel {
             id: ModelId::new(self.model).unwrap(),
             canonical_model: ModelId::new(self.model).unwrap(),
             task: TaskKind::Generation,
-            route: RouteId::new(&format!("{}-generation", (self.provider)().id.as_str())).unwrap(),
+            route: RouteId::new(&format!("{}-generation", self.identity)).unwrap(),
             contract: self.contract(),
             standard_context: false,
             reported_facts: ReportedFactPolicy::Faithful,

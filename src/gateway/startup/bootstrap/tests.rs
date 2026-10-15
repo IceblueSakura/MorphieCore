@@ -88,20 +88,7 @@ fn subscription_and_metered_entries_never_exchange_credentials_or_origins() {
         })
         .unwrap();
         for profile in [Profile::Chat, Profile::Responses] {
-            for (model, enabled, origin, secret) in [
-                (
-                    "qwen3.8-flash",
-                    subscription,
-                    "https://token-plan.cn-beijing.maas.aliyuncs.com",
-                    "synthetic-subscription-key",
-                ),
-                (
-                    "qwen3.8-max",
-                    metered,
-                    "https://dashscope.aliyuncs.com",
-                    "synthetic-metered-key",
-                ),
-            ] {
+            for model in ["qwen3.8-flash", "qwen3.8-max"] {
                 let value = if profile == Profile::Chat {
                     serde_json::json!({"model":model,"messages":[{"role":"user","content":"hi"}],"max_completion_tokens":32})
                 } else {
@@ -112,42 +99,57 @@ fn subscription_and_metered_entries_never_exchange_credentials_or_origins() {
                     profile,
                     &serde_json::to_vec(&value).unwrap(),
                 );
-                if !enabled {
-                    assert!(admitted.is_err());
-                    continue;
-                }
                 let (entry, request) = admitted.unwrap();
-                let candidate = &entry.candidates[0];
-                let prepared = crate::execution::prepare(
-                    &candidate.endpoint,
-                    &candidate.provider,
-                    &candidate.secret.resolve().unwrap().0,
-                    &request,
-                )
-                .unwrap();
-                assert_eq!(prepared.origin, origin);
                 assert_eq!(
-                    prepared.auth_header,
-                    ("authorization".into(), format!("Bearer {secret}"))
+                    entry.candidates.len(),
+                    usize::from(subscription) + usize::from(metered)
                 );
-                assert_eq!(
-                    prepared.path,
-                    if profile == Profile::Chat {
-                        "/compatible-mode/v1/chat/completions"
-                    } else {
-                        "/compatible-mode/v1/responses"
-                    }
-                );
-                let wire: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
-                assert_eq!(wire["model"], model);
-                assert_eq!(
-                    wire[if profile == Profile::Chat {
-                        "max_tokens"
-                    } else {
-                        "max_output_tokens"
-                    }],
-                    32
-                );
+                for candidate in &entry.candidates {
+                    let (origin, secret) = match candidate.provider.id.as_str() {
+                        "aliyun-tokenplan-cn" => {
+                            assert!(subscription);
+                            (
+                                "https://token-plan.cn-beijing.maas.aliyuncs.com",
+                                "synthetic-subscription-key",
+                            )
+                        }
+                        "aliyun-dashscope-cn" => {
+                            assert!(metered);
+                            ("https://dashscope.aliyuncs.com", "synthetic-metered-key")
+                        }
+                        _ => panic!("unexpected provider"),
+                    };
+                    let prepared = crate::execution::prepare(
+                        &candidate.endpoint,
+                        &candidate.provider,
+                        &candidate.secret.resolve().unwrap().0,
+                        &request,
+                    )
+                    .unwrap();
+                    assert_eq!(prepared.origin, origin);
+                    assert_eq!(
+                        prepared.auth_header,
+                        ("authorization".into(), format!("Bearer {secret}"))
+                    );
+                    assert_eq!(
+                        prepared.path,
+                        if profile == Profile::Chat {
+                            "/compatible-mode/v1/chat/completions"
+                        } else {
+                            "/compatible-mode/v1/responses"
+                        }
+                    );
+                    let wire: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
+                    assert_eq!(wire["model"], model);
+                    assert_eq!(
+                        wire[if profile == Profile::Chat {
+                            "max_tokens"
+                        } else {
+                            "max_output_tokens"
+                        }],
+                        32
+                    );
+                }
             }
         }
         if subscription && metered {
@@ -321,6 +323,7 @@ fn responses_chat_bridge_is_explicit_and_replaces_not_falls_back_to_native_respo
 
 #[test]
 fn native_messages_binding_activates_only_when_listed() {
+    // Both protocol families share the same public contract; activation remains explicit.
     let settings = |models: Option<&'static str>| {
         move |name: &str| {
             Ok(match name {
@@ -348,6 +351,81 @@ fn native_messages_binding_activates_only_when_listed() {
             crate::topology::ProtocolProfile::AnthropicMessages
         );
         assert_eq!(endpoint.target.path.as_str(), "/zen/go/v1/messages");
+    }
+}
+
+#[test]
+fn xiaomi_audio_is_explicit_and_prepares_its_own_json_contracts() {
+    let settings = |selected| {
+        move |name: &str| {
+            Ok(match name {
+                "client_key" => Some("synthetic-gateway-client-token-0001".into()),
+                "xiaomi-api-key" => Some("synthetic-upstream-only".into()),
+                "models" if selected => Some(r#"["mimo-v2.5-tts","mimo-v2.5-asr"]"#.into()),
+                _ => None,
+            })
+        }
+    };
+    let implicit = Fixture::from_lookup(settings(false)).unwrap();
+    assert!(implicit.gateway.state.speech.is_empty());
+    assert!(implicit.gateway.state.transcriptions.is_empty());
+    let explicit = Fixture::from_lookup(settings(true)).unwrap();
+    assert!(explicit.gateway.state.entries.is_empty());
+    assert_eq!(explicit.gateway.state.speech.len(), 1);
+    assert_eq!(explicit.gateway.state.transcriptions.len(), 1);
+    let topology = catalog::default_topology().unwrap();
+    let provider = crate::provider::catalog::xiaomi();
+    let secret = SecretMaterial::new("synthetic-upstream-only").unwrap();
+    let speech = crate::adapter::speech::Request::new(
+        "mimo-v2.5-tts",
+        crate::semantic::task::speech_synthesis::SpeechRequest::new("Hello.", "Chloe").unwrap(),
+    );
+    let transcription = crate::adapter::transcription::Request {
+        model: "mimo-v2.5-asr".into(),
+        task: crate::semantic::task::speech_recognition::RecognitionRequest::new(
+            crate::semantic::task::speech_recognition::AudioInput::new(
+                bytes::Bytes::from_static(b"synthetic"),
+                crate::semantic::task::speech_recognition::InputFormat::Wav,
+            )
+            .unwrap(),
+        ),
+    };
+    for prepared in [
+        crate::execution::speech::prepare(
+            topology.speech_route(&speech.model).unwrap(),
+            &provider,
+            &secret,
+            &speech,
+        )
+        .unwrap(),
+        crate::execution::transcription::prepare(
+            topology.transcription_route(&transcription.model).unwrap(),
+            &provider,
+            &secret,
+            &transcription,
+        )
+        .unwrap(),
+    ] {
+        assert_eq!(prepared.origin, "https://api.xiaomimimo.com");
+        assert_eq!(prepared.path, "/v1/chat/completions");
+        assert!(
+            prepared
+                .safe_headers
+                .contains(&("accept".into(), "application/json".into()))
+        );
+        assert!(
+            !prepared
+                .safe_headers
+                .iter()
+                .any(|(name, _)| name == "x-dashscope-sse")
+        );
+        assert_eq!(
+            prepared.auth_header,
+            (
+                "authorization".into(),
+                "Bearer synthetic-upstream-only".into()
+            )
+        );
     }
 }
 
@@ -490,8 +568,8 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         move |name: &str| {
             Ok(match name {
                 "client_key" => Some("synthetic-gateway-client-token-0001".into()),
-                "zhipu-api-key" | "openrouter-api-key" => Some("synthetic-upstream".into()),
-                "models" => Some(r#"["glm-5.3"]"#.into()),
+                "opencode-go-api-key" | "openrouter-api-key" => Some("synthetic-upstream".into()),
+                "models" => Some(r#"["claude-haiku-5-5"]"#.into()),
                 "failover" => failover.map(Into::into),
                 _ => None,
             })
@@ -501,7 +579,7 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         boot.gateway
             .state
             .entries
-            .get(&(crate::gateway::family(protocol), "glm-5.3".into()))
+            .get(&(crate::gateway::family(protocol), "claude-haiku-5-5".into()))
             .map(|entry| {
                 assert_eq!(
                     entry.policy.fallback,
@@ -514,28 +592,34 @@ fn configured_failover_orders_and_limits_a_models_providers() {
                     .collect::<Vec<_>>()
             })
     };
-    // Catalog order by default; OpenRouter serves Chat only.
+    // Cross-family alternatives; OpenRouter serves Chat and Go serves native Messages.
     let boot = Fixture::from_lookup(settings(None)).unwrap();
     assert_eq!(
         providers(&boot, Profile::Chat).unwrap(),
-        ["zhipu", "openrouter"]
+        ["openrouter", "opencode-go"]
     );
-    let boot =
-        Fixture::from_lookup(settings(Some(r#"{"glm-5.3":["openrouter","zhipu"]}"#))).unwrap();
+    let boot = Fixture::from_lookup(settings(Some(
+        r#"{"claude-haiku-5-5":["opencode-go","openrouter"]}"#,
+    )))
+    .unwrap();
     assert_eq!(
         providers(&boot, Profile::Chat).unwrap(),
-        ["openrouter", "zhipu"]
+        ["opencode-go", "openrouter"]
     );
-    assert_eq!(providers(&boot, Profile::Responses).unwrap(), ["zhipu"]);
+    assert_eq!(
+        providers(&boot, Profile::Responses).unwrap(),
+        ["opencode-go"]
+    );
     // An unlisted Provider is not used, even with a pool.
-    let boot = Fixture::from_lookup(settings(Some(r#"{"glm-5.3":["openrouter"]}"#))).unwrap();
+    let boot =
+        Fixture::from_lookup(settings(Some(r#"{"claude-haiku-5-5":["openrouter"]}"#))).unwrap();
     assert_eq!(providers(&boot, Profile::Chat).unwrap(), ["openrouter"]);
     assert!(providers(&boot, Profile::Responses).is_none());
     for invalid in [
-        r#"{"glm-5.3":[]}"#,
-        r#"{"glm-5.3":["zhipu","zhipu"]}"#,
-        r#"{"glm-5.3":["xiaomi"]}"#,
-        r#"{"glm-5.3":["unknown"]}"#,
+        r#"{"claude-haiku-5-5":[]}"#,
+        r#"{"claude-haiku-5-5":["opencode-go","opencode-go"]}"#,
+        r#"{"claude-haiku-5-5":["xiaomi"]}"#,
+        r#"{"claude-haiku-5-5":["unknown"]}"#,
         r#"{"mimo-v2.6-pro":["xiaomi"]}"#,
     ] {
         assert!(

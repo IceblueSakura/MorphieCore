@@ -1,3 +1,4 @@
+use crate::adapter::transcription::Profile;
 use crate::gateway::{diagnostics::Trace, tasks::transcription, tests::support::source};
 use bytes::Bytes;
 const RESULT: &[u8] =
@@ -5,13 +6,23 @@ const RESULT: &[u8] =
 #[tokio::test]
 async fn transcription_json_requires_eof_and_rejects_bad_heads_and_reads() {
     let mut trace = Trace::new(None);
+    for (profile, result) in [
+        (Profile::AliyunFlash, RESULT),
+        (Profile::Xiaomi, br#"{"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"Hi."}}]}"#.as_slice()),
+    ] {
     let (tx, response, dropped) = source(200, "application/json");
-    tx.send(Ok(Bytes::from_static(RESULT))).await.unwrap();
-    let mut pending = Box::pin(transcription::receive(response, 4096, &mut trace));
+    tx.send(Ok(Bytes::copy_from_slice(result))).await.unwrap();
+    let mut pending = Box::pin(transcription::receive(
+        response,
+        profile,
+        4096,
+        &mut trace,
+    ));
     assert!(futures_util::poll!(&mut pending).is_pending());
     drop(tx);
     assert_eq!(pending.await.unwrap().text(), "Hi.");
     dropped.await.unwrap();
+    }
     for case in 0..6 {
         let (tx, mut response, dropped) = source(
             200,
@@ -47,9 +58,14 @@ async fn transcription_json_requires_eof_and_rejects_bad_heads_and_reads() {
         }
         drop(tx);
         assert!(
-            transcription::receive(response, if case == 5 { 2 } else { 4096 }, &mut trace)
-                .await
-                .is_err()
+            transcription::receive(
+                response,
+                Profile::AliyunFlash,
+                if case == 5 { 2 } else { 4096 },
+                &mut trace
+            )
+            .await
+            .is_err()
         );
         dropped.await.unwrap();
     }
@@ -58,7 +74,12 @@ async fn transcription_json_requires_eof_and_rejects_bad_heads_and_reads() {
 async fn cancelled_transcription_releases_upstream() {
     let mut trace = Trace::new(None);
     let (_tx, response, dropped) = source(200, "application/json");
-    let mut pending = Box::pin(transcription::receive(response, 4096, &mut trace));
+    let mut pending = Box::pin(transcription::receive(
+        response,
+        Profile::Xiaomi,
+        4096,
+        &mut trace,
+    ));
     assert!(futures_util::poll!(&mut pending).is_pending());
     drop(pending);
     tokio::time::timeout(std::time::Duration::from_secs(1), dropped)

@@ -13,6 +13,44 @@ pub struct ModelDefinition {
 }
 // Official publication dates normalized to UTC midnight, not router listing timestamps.
 pub const MODELS: &[ModelDefinition] = &[
+    // https://openai.com/index/safety-overview-gpt-6-astra/ (2026-09-03).
+    ModelDefinition {
+        id: "gpt-6-astra",
+        images: true,
+        files: true,
+        strict_tools: false,
+        released_at: 1_788_393_600,
+        developer: "OpenAI",
+    },
+    // https://mimo.mi.com/docs/updates/model (2026-09-22).
+    ModelDefinition {
+        id: "mimo-v2.6-pro-ultraspeed",
+        images: true,
+        files: false,
+        strict_tools: false,
+        released_at: 1_790_035_200,
+        developer: "Xiaomi",
+    },
+    // Family publication, not Contributor-tier listing time.
+    // https://research.meta.ai/blog/introducing-muse-spark-1-3 (2026-09-02).
+    ModelDefinition {
+        id: "muse-spark-1.3-contributor",
+        images: true,
+        files: false,
+        strict_tools: false,
+        released_at: 1_788_307_200,
+        developer: "Meta",
+    },
+    // Original publication, not the later announcement update.
+    // https://www.kimi.com/en/blog/ (2026-07-16).
+    ModelDefinition {
+        id: "kimi-k3",
+        images: true,
+        files: false,
+        strict_tools: false,
+        released_at: 1_784_160_000,
+        developer: "Moonshot AI",
+    },
     // https://platform.openai.com/docs/changelog (2025-10-06 release).
     ModelDefinition {
         id: "gpt-audio-mini",
@@ -171,6 +209,9 @@ pub const MODELS: &[ModelDefinition] = &[
     },
 ];
 pub fn contract(id: &str) -> GenerationSemanticContract {
+    if let Some(binding) = super::MESSAGES_BINDINGS.iter().find(|b| b.model == id) {
+        return binding.canonical_model().contract;
+    }
     let definition = MODELS
         .iter()
         .find(|m| m.id == id)

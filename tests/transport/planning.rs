@@ -210,9 +210,12 @@ mod candidates {
                 .map(|e| morphiecore::execution::plan::representable(e, &request).is_ok())
                 .collect::<Vec<_>>()
         };
-        assert_eq!(representable(ProtocolProfile::OpenAiResponses), [true]);
+        assert_eq!(
+            representable(ProtocolProfile::OpenAiResponses),
+            [true, true]
+        );
         // Standard Chat has no tool-result media carrier, so Chat targets reject it.
-        assert_eq!(representable(ProtocolProfile::OpenAiChat), [false]);
+        assert_eq!(representable(ProtocolProfile::OpenAiChat), [false, false]);
         let text_only = topology.model("qwen3.8-flash").unwrap();
         assert!(morphiecore::execution::admit(text_only, &read("qwen3.8-flash")).is_err());
     }

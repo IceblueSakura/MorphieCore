@@ -20,3 +20,4 @@ pub mod openrouter_images;
 pub mod openrouter_speech;
 pub(crate) mod reasoning;
 pub mod replay_envelope;
+pub mod xiaomi_audio;

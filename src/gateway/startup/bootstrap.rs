@@ -118,6 +118,10 @@ impl Bootstrap {
                 || providers.iter().any(|provider| {
                     !catalog::API_KEY_BINDINGS.iter().any(|binding| {
                         binding.model == model && (binding.provider)().id.as_str() == provider
+                    }) && !catalog::SUBSCRIPTION_BINDINGS.iter().any(|binding| {
+                        binding.model == model && (binding.provider)().id.as_str() == provider
+                    }) && !catalog::MESSAGES_BINDINGS.iter().any(|binding| {
+                        binding.model == model && binding.provider().id.as_str() == provider
                     })
                 })
         }) {
@@ -203,12 +207,17 @@ impl Bootstrap {
                 if !selected
                     .as_ref()
                     .is_some_and(|set| set.contains(binding.model))
+                    || configuration
+                        .failover
+                        .get(binding.model)
+                        .is_some_and(|order| !order.contains(&provider))
                 {
                     continue;
                 }
                 used = true;
                 activated.insert(binding.model.to_owned());
                 let endpoint = binding.endpoint().id;
+                serving.insert((binding.model.to_owned(), provider.clone()));
                 entries.extend([Profile::Responses, Profile::Chat].map(|protocol| Entry {
                     model: binding.model.into(),
                     protocol,
@@ -316,11 +325,17 @@ impl Bootstrap {
                 if selected
                     .as_ref()
                     .is_some_and(|set| !set.contains(binding.model))
+                    || configuration
+                        .failover
+                        .get(binding.model)
+                        .is_some_and(|order| !order.contains(&provider))
+                    || bridges.contains(binding.model)
                 {
                     continue;
                 }
                 used = true;
                 activated.insert(binding.model.to_owned());
+                serving.insert((binding.model.to_owned(), provider.clone()));
                 entries.push(Entry {
                     model: binding.model.into(),
                     protocol: Profile::Responses,

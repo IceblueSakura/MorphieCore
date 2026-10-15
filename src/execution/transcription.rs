@@ -27,15 +27,18 @@ pub fn prepare(
         .encode_request(request, &endpoint.upstream_model)?;
     crate::semantic::value::json_size(&value, endpoint.execution.request_body_limit)
         .map_err(|_| AttemptError::Limit)?;
+    let mut headers = vec![
+        ("content-type".into(), "application/json".into()),
+        ("accept".into(), "application/json".into()),
+    ];
+    if endpoint.profile == crate::adapter::transcription::Profile::AliyunFlash {
+        headers.push(("x-dashscope-sse".into(), "disable".into()));
+    }
     Ok(UpstreamRequest {
         origin: endpoint.target.origin.as_str().into(),
         method: "POST",
         path: endpoint.target.path.as_str().into(),
-        safe_headers: vec![
-            ("content-type".into(), "application/json".into()),
-            ("accept".into(), "application/json".into()),
-            ("x-dashscope-sse".into(), "disable".into()),
-        ],
+        safe_headers: headers,
         auth_header: provider.auth.auth_header(secret),
         body: serde_json::to_vec(&value)
             .map_err(|_| AttemptError::Protocol("transcription serialization"))?,
