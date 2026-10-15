@@ -28,9 +28,9 @@ Reconnection is a later explicitly scheduled integration step. It must verify pr
 
 ### IR and codec migration
 
-This is an implementation plan. Only accurate IR, declared loss, verbosity omission and the routing freeze are settled here; recommendations in the decision queue are not silently activated.
+This is an implementation plan. Accurate IR, declared loss, verbosity omission and the routing freeze are selected. P1/P2/P4/P5 now follow the [recorded architecture decisions](architecture.md#settled-decisions); P3 uses explicit presets and P6 permits configurable business-message capture with mandatory credential redaction. P7/P8/D3 remain pending, together with the numeric details of P3.
 
-Use the sequence below. S1 repairs can be split by independent contract. S2 establishes one working codec-level path before broader abstractions. S3/S4 do not wait for S5's unresolved policies; no slice depends on reconnecting the routing layer.
+Use the sequence below. S1 repairs can be split by independent contract. S2 establishes one working codec-level path before broader abstractions. S3/S4 do not wait for P3's unresolved bins or P8's legacy-rule review; no slice depends on reconnecting the routing layer.
 
 | Slice | Dependency | Deliverable |
 |---|---|---|
@@ -38,7 +38,7 @@ Use the sequence below. S1 repairs can be split by independent contract. S2 esta
 | S2: First declared-loss path | Relevant S1 guards | Responses verbosity reaches a Messages projection with explicit omission and unchanged source IR |
 | S3: Advisory controls and text carriers | S2 | Per-field text handling across current protocols; exact carriers used before omission |
 | S4: Existing-IR constrained carriers | Relevant S1 guards; S2 contract split | Selected schema/tool/output carriers without weakening required semantics |
-| S5: Quality-sensitive approximation | S2; relevant P decisions | Individually selected scope/allocation/sampling policies, not a universal fallback |
+| S5: Quality-sensitive approximation | S2; declared target data; P3a/P8 where applicable | Selected scope/allocation/sampling policies, not a universal fallback |
 | S6: Reports, SSE and history | S2; each selected S3–S5 rule | Source facts stay distinct from delivery losses and retained history |
 | S7: Diagnostic and contract closure | S2–S6, excluding explicitly deferred decisions | Bounded end-to-end evidence at codec/delivery boundaries and an explicit integration handoff |
 
@@ -88,12 +88,13 @@ Exit: existing independent request and response expectations preserve the releva
 
 #### S5: Quality-sensitive approximation
 
-Goal: allow useful, deliberate approximations without losing the source's meaning. Implement each family only after its decision and concrete target policy are selected.
+Goal: implement the selected approximations without losing the source's meaning. Concrete target tables must still be declared and validated; do not treat an approved policy direction as automatic support on every model.
 
 1. Keep activation, scoped effort, budget, mode, display and verbosity separate. Implement selected cross-scope conversion on a private target copy, not by relabeling source IR or reusing a same-scope table as an implicit conversion.
-2. Keep level calibration directional, same-model and explicitly declared, including identities. Do not infer nearest levels, inverses or policies from upstream errors. P1 selects the target pairs and behavior of unmapped values.
-3. Resolve disabled-plus-response-effort handling (P2), numeric guidance/allocation (P3), and sampling (P4) separately. No rule may enable explicitly disabled reasoning or discard a hard output cap.
-4. Review existing summary/context/display, media-option and instruction-authority losses under P8. Hiding reasoning must not become disclosure; a summary display preference must not invent activation.
+2. Implement P1 as trusted directional cross-scope approximation with named loss. Keep model-local level mappings explicit, including identities; undeclared entries reject. Do not infer nearest levels, inverses or policies from upstream errors.
+3. Implement P2 by preserving a supported off carrier and omitting only independent unrepresentable response effort. Under P4, retain supported sampling and name omission only for declared fixed/ignored controls; unknown model behavior remains a gap.
+4. Implement P3 with separate preset data for level-to-budget and budget-to-level approximation, based on the [pi reference](refs/2026-10-15-generation-projections.md#pi-thinking-budget-presets). Preserve original numeric intent and explicit output ceilings. Resolve P3a before quantizing arbitrary budgets or changing preset values to fit a cap.
+5. Review existing summary/context/display, media-option and instruction-authority losses under P8. Hiding reasoning must not become disclosure; a summary display preference must not invent activation.
 
 Exit: selected rules run once, report source/target controls and preserve unchanged input. Unselected combinations retain explicit rejection. Native request/intake wiring and [configuration-history policy](#reasoning-repair-slices) follow the selected directions rather than inferring effective settings.
 
@@ -102,7 +103,7 @@ Exit: selected rules run once, report source/target controls and preserve unchan
 Goal: make response-side tolerance independent of request-control admission without weakening source or delivery truth.
 
 1. Validate upstream reports and raw repeated snapshots before normalization or omission. Fix [reported-settings observation](../src/protocol/openai/events/decode.rs) so many-to-one mappings cannot hide conflicts.
-2. Classify target-unrepresentable settings echoes and auxiliary reports independently from generated content. Preserve required output evidence under P5; never reconstruct actual effort, usage or tool execution from request settings.
+2. Apply P5 independently from request-control admission: preserve output evidence required by request controls, source contract or continuation, and allow named loss of selected incidental reports after validation. Missing request flags alone do not establish that an annotation is optional. Never reconstruct actual effort, usage or tool execution from request settings.
 3. Apply the same selected projection to static encoding and incremental events. Reject unsupported content before publishing it when known; later discoveries terminate honestly, without replaying the request after publication.
 4. Keep [delivery snapshots](../src/execution/delivery.rs), [client encoding](../src/adapter/downstream.rs) and [stored history](../src/gateway/generation/history.rs) aligned. Source input remains canonical; retained response history reflects the delivered projection. Fidelity cannot resurrect a dropped field or owner.
 5. Distinguish control loss from ordered configuration history. Keep non-identity history mappings rejected until source-snapshot validation and the selected policy are complete.
@@ -113,12 +114,13 @@ Exit: JSON and materialized SSE agree for each affected contract; generated cont
 
 Goal: explain each selected loss without making routing or a logging backend part of codec semantics.
 
-1. Extend [diagnostics](../src/gateway/diagnostics.rs) using the typed evidence introduced in S2. Distinguish source intent, sent controls, upstream reports and delivered facts. Include the fixed rule, field category, direction, action and bounded safe before/after values chosen in P6.
+1. Extend [diagnostics](../src/gateway/diagnostics.rs) using the typed evidence introduced in S2. Distinguish source intent, sent controls, upstream reports and delivered facts. Include fixed rule, field category, direction, action and bounded control summaries without embedding bodies in those receipts.
 2. Propagate request, response and event losses; do not log only failures. Aggregate repeated SSE evidence and keep attempt attribution without changing candidate selection. Treat an unavailable gateway path as an integration gap, not proof that evidence is durably recorded.
-3. Keep credentials, bodies, schemas, arguments, URLs and opaque values out of logs. Review arbitrary ignored-field names; bounded strings are not necessarily safe strings.
-4. Audit capability descriptions against actual faithful carriers and approved acceptance. P7 governs publication/reconnection; do not change existing routing to satisfy the new contract.
+3. Implement P6 [exchange capture](architecture.md#configurable-exchange-capture) outside pure codecs, with independent header/body controls for client request, upstream request, upstream response and client response. Business content may be complete when enabled, but authentication material must be redacted before enqueue/write, including in headers, queries and known credential-bearing body fields.
+4. Keep capture opt-in, private, bounded and best-effort. Stream incrementally; record redacted, incomplete, truncated or dropped capture instead of claiming full retention. Extend existing diagnostic assertions for disabled capture, enabled synthetic content and non-optional credential redaction. Logs are not fixtures, replay inputs or tool output.
+5. Audit capability descriptions against actual faithful carriers and approved acceptance. P7 governs publication/reconnection; do not change existing routing to satisfy the new contract.
 
-Exit: the connected codec/delivery boundaries expose complete bounded evidence for selected losses, with disabled/overflow/error behavior checked under P6. Remaining route-facing gaps are explicitly listed; no completion claim requires a live client-to-Provider loop.
+Exit: connected codec/delivery boundaries expose bounded loss evidence; selected I/O capture retains configured business content with correct attribution and credential redaction. Disabled/overflow/error paths do not change request semantics. Remaining route-facing gaps are explicitly listed; no completion claim requires a live client-to-Provider loop.
 
 ### Verification and integration boundary
 
@@ -166,7 +168,7 @@ Use the [verification and integration boundary](#verification-and-integration-bo
 
 ### Reasoning repair slices
 
-S5/S6 own the remaining [effort-policy boundaries](../src/protocol/reasoning.rs). Keep the scoped IR and hypothetical A/B table separate from concrete target-policy decisions. D3 does not block these repairs; do not add an external configuration surface.
+S5/S6 own the remaining [effort-policy boundaries](../src/protocol/reasoning.rs). Keep the scoped IR and hypothetical A/B table separate from concrete target-policy decisions. D3 does not block these repairs; do not add an external mapping configuration surface. P6 capture switches do not select semantic mappings.
 
 1. Validate repeated reported reasoning settings before many-to-one normalization. Item-terminal equality is not evidence that created/in-progress/terminal settings agree.
 2. Extend non-identity calibration to ordered configuration items only with native snapshot validation before normalization. Until then, reject non-identity or undeclared entries rather than bypass a selected policy.
@@ -331,16 +333,11 @@ Real failover needs a controlled failure source, such as an exhausted key in a s
 
 ## Pending decisions
 
-The direction and verbosity omission are selected, but the following concrete policies are not. Continue independent slices; ask only for the decision that blocks the next affected contract. Existing rejection is a temporary fallback, not a claim that faithful conversion is impossible.
+P1/P2/P4/P5 are decided; P3's preset approach and P6's configurable capture are also selected in [Architecture](architecture.md#settled-decisions). Only the following details and deferred policies remain open. Continue independent slices; ask only when an unresolved choice blocks the affected contract. Unimplemented support is not a reason to reconsider an already selected policy.
 
 | Question | Unresolved choice and recommendation | Blocks |
 |---|---|---|
-| P1: Cross-scope effort | Select source/target scope pairs, exact model-local levels and behavior of unmapped values. Recommended: trusted directional approximation with explicit loss; no blanket same-label conversion, inferred inverse or implicit identity. The current same-scope table alone is insufficient | S5 cross-scope rules and related S6 reports/history |
-| P2: Disabled plus response-wide effort | A target may carry off but not independent response effort. Recommended: preserve explicit off and omit only the unrepresentable effort with a named loss; alternative: reject the combination. A target with no off carrier still cannot silently enable reasoning | S5 activation/effort conflicts |
-| P3: Numeric thinking guidance | Determine source guidance versus hard-limit semantics and eligible target allocation modes. Recommended: allow a specifically declared guidance-to-adaptive migration, with numeric intent retained in source IR; otherwise reject. No generic token thresholds or automatic budget-to-level table | S5 budget/allocation rules |
-| P4: Sampling and model-effective controls | Identify supported, fixed and ignored controls per selected target. Recommended: preserve supported controls; omit only under an explicit model policy when they are fixed/ignored. Decide separately whether unknown quality impact should permit omission | S5 sampling rules; not ordinary exact sampling carriers |
-| P5: Required versus incidental output evidence | Decide treatment of requested logprobs/citations, unsolicited annotations and settings echoes, including how requirement is established. Recommended: preserve explicitly required evidence; allow selected incidental report losses after source validation. Never omit content, falsify usage or fabricate terminal reasons | S6 optional reports; does not reopen deferred Messages citations |
-| P6: Diagnostic detail and durability | Select safe enum/numeric before/after fields, unknown-name handling and whether recording must succeed. Recommended: typed allowlisted summaries, counts for arbitrary unknown fields, bounded best-effort logs without bodies; a mandatory durable audit would be a separate availability decision | S7 final schema/behavior; S2 can return a body-free typed receipt |
+| P3a: Preset values and reverse quantization | Pi supplies level-to-budget values, not arbitrary-budget bins or a unique inverse. Select per-target presets, numeric intervals/rounding, canonical resolution of merged high/xhigh/max and insufficient-output-room behavior. Recommended: explicit directional tables/ranges, faithful numeric carriage where supported, no inferred nearest level or raised client cap. The pinned shared table is reference data, not an activated universal mapping | Only S5 numeric approximation and dependent S6 report/history mappings |
 | P7: Public capability publication and reconnection | Decide how the future public surface distinguishes native fidelity from accepted-with-loss controls and whether clients receive warnings. Recommended: no false native support claim, no per-request policy override in this slice. Current route/admission incompatibilities stay blocked until a separate integration decision | Route-facing publication and full-chain acceptance, not local IR/codec work |
 | P8: Existing loss rules with quality impact | Review default-strict-as-plain, reasoning-context omission, display suppression, developer-to-system and media-detail loss individually. Recommended: preserve explicit constraints and visibility intent, use faithful carriers first, and retain a legacy approximation only after its consequences are selected. Existing code is not evidence of equivalence | Affected S4–S6 rules only |
 

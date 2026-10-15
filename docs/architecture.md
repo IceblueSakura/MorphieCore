@@ -101,7 +101,7 @@ Classify losses by their effect on task constraints, output quality, execution a
 |---|---|
 | Exact representation | Preserve meaning; check source conflicts before alias normalization |
 | Advisory loss | Omit a selected preference or optimization through a named rule; verbosity omission is selected, other fields need individual classification |
-| Behavioral approximation | Use a trusted directional rule for the selected target, recording the changed control; concrete effort, budget and sampling policies remain explicit decisions |
+| Behavioral approximation | Use trusted directional effort rules and explicit budget presets; preserve supported sampling and omit fixed/ignored sampling only under a target policy. Record changes and validate target restrictions |
 | Protected meaning | Preserve task content, constraints, execution identity, security boundaries and result truth; reject when no faithful carrier exists |
 
 Decode according to the source protocol before target projection. Known types, variants and relations remain strict even when a later target may omit the field. A known but unsupported critical field is not an unknown field. A target profile's restriction must not prevent the client decoder from expressing a valid source concept already supported by the IR.
@@ -114,9 +114,19 @@ Request controls, upstream-reported settings and downstream delivery have differ
 
 Every selected loss produces bounded typed evidence with a stable rule, direction, semantic field category and action. Safe control summaries may show input/output enum values and presence; numeric fields need an explicit allowlist. Keep request intent, sent controls, upstream reports and delivered facts distinguishable. Evidence cannot restore omitted values, change semantic meaning or select an upstream.
 
-Reuse the existing diagnostics and protocol projection records rather than add a logging platform or a generic rule engine. Record losses once per affected control or aggregate repeated event occurrences within existing budgets. Do not serialize bodies, prompts, tool arguments, schemas, URLs, credentials or opaque replay values. Arbitrary input strings and unknown field names are not automatically safe diagnostic labels.
+Reuse the existing diagnostics and protocol projection records rather than add a logging platform or a generic rule engine. Record losses once per affected control or aggregate repeated event occurrences within existing budgets. These summary records do not contain bodies, prompts, schemas, arguments or opaque values; full business content belongs only to the separately controlled capture below. Arbitrary input strings and unknown field names are not automatically safe summary labels.
 
-The exact diagnostic schema and whether durable recording is required remain [pending decisions](roadmap.md#pending-decisions). Current diagnostics are optional and best-effort; adding evidence alone does not establish durable logging or authorize changing that availability contract.
+Required output evidence is established by explicit request controls, the source contract or continuation requirements. Preserve it or reject an incompatible target. Selected incidental settings echoes and auxiliary reports may be omitted after source validation, with evidence. Absence of a request flag alone does not prove that citations or other content are incidental; deferred citation support remains deferred.
+
+### Configurable exchange capture
+
+P6 selects configurable full business-message capture for this internal gateway, not just field summaries. Keep independent header/body controls for four boundaries: inbound client request, outbound upstream request, inbound upstream response and outbound client response. Body capture includes JSON, streamed application content, tool arguments/results and non-authentication opaque payloads when enabled. Capture is not a source of replay or semantic restoration.
+
+Capture is opt-in and off by default. Use private local storage, restrictive file permissions and finite queue, per-exchange and aggregate retention limits. Record redaction, truncation, dropped records and incomplete streams explicitly; do not label a partial record as complete. Keep the current best-effort availability contract: capture failure does not change the business response. Enabling content capture does not authorize remote export or printing captured business content into tool output.
+
+Credentials are excluded even in full mode. Redact Authorization/Proxy-Authorization, authentication cookies, API keys, token-bearing query values, known authentication body fields and credential material before enqueueing or writing. Configuration cannot disable this step. If a capture unit cannot be sanitized safely, omit it and record the reason. Complete business capture is not byte-for-byte credential-bearing wire capture.
+
+Capture belongs at gateway/transport I/O boundaries; codecs remain pure and only return bounded typed adaptation evidence. Stream incrementally within existing lifecycle bounds, sanitize at safe parsing boundaries and do not buffer the whole response or delay publication for logging. Associate upstream capture with the existing attempt identity without changing routing, retry or cancellation behavior. The configuration schema and storage plumbing are implementation work, not a new Provider/configuration discovery mechanism.
 
 ### Protocol baselines and Provider dialects
 
@@ -147,19 +157,23 @@ Activation distinguishes disabled from enabled reasoning; enabled permits reason
 
 Disabled activation plus response-wide high effort is valid IR. Disabled activation plus a positive reasoning-only effort, adaptive/budgeted allocation or numeric thinking budget is contradictory. Standard/pro execution mode is not an activation switch; validate its combinations against the target contract rather than banning it solely because reasoning is disabled. Validate official wire variants separately before constructing this contract.
 
-OpenAI non-off effort and Google levels have reasoning scope. Anthropic `output_config.effort` has response scope and must not change reasoning-object presence by itself. Preserve source scope in the IR. A target-private cross-scope approximation needs its own directional policy and loss evidence; equal level labels are not an equivalence. Current codecs reject that projection until a concrete policy is selected and implemented.
+OpenAI non-off effort and Google levels have reasoning scope. Anthropic `output_config.effort` has response scope and must not change reasoning-object presence by itself. Preserve source scope in the IR. P1 selects target-private cross-scope approximation through trusted directional policy with loss evidence; equal level labels are not an equivalence. Concrete target mappings must be declared, including identities, and undeclared entries reject rather than silently inherit a same-label conversion. Current codec rejection remains until that policy is implemented.
+
+P2 gives explicit disabled activation priority when the target can represent off but cannot represent independent response-wide effort. Preserve off and omit only that effort through a named rule. A target with no off carrier still rejects; the approximation never enables reasoning.
 
 Requirements and target contracts must distinguish response-wide effort from reasoning support. Reported settings use the same scoped types without acquiring request intent that was not reported. No Provider identifiers or mapping tables enter semantic types, and no compatibility-only effort field survives the migration.
 
 ### Reasoning level calibration
 
-The existing level interface performs explicit, hand-authored calibration for the same model under trusted binding/dialect selection. It is not a universal adapter for all reasoning controls. The new loss policy permits separately selected approximations, but their concrete scope, activation and budget behavior remains in the [decision queue](roadmap.md#pending-decisions). Until resolved, unsupported combinations keep their current rejection.
+The existing level interface performs explicit, hand-authored calibration for the same model under trusted binding/dialect selection. It is not a universal adapter for all reasoning controls. P1/P2 select scope approximation and disabled-priority handling; P3 selects preset-based numeric-budget conversion inspired by [pi's pinned implementation](refs/2026-10-15-generation-projections.md#pi-thinking-budget-presets). These are design decisions, not claims of implemented support.
 
-Different Providers may expose different labels for one model. A selected rule may map `low` to `medium`, for example. Without a declared rule, neither a nearest-level heuristic nor matching label spelling establishes equivalence. Calibration cannot turn disabled reasoning on or infer a positive level from a numeric budget. Any selected budget-to-adaptive migration is a distinct behavioral loss, not a level-table entry.
+Different Providers may expose different labels for one model. A selected rule may map `low` to `medium`, for example. Without a declared rule, neither a nearest-level heuristic nor matching label spelling establishes equivalence. Budget presets are separate named approximations: declare level-to-budget and budget-to-level directions independently, keep original numeric intent in source IR, and validate the target's mode, minimum and output ceiling. Do not infer a reverse table, apply generic nearest-level rounding or raise an explicit output cap. The exact bins and cap-conflict behavior remain [P3 detail](roadmap.md#pending-decisions).
+
+P4 preserves supported sampling controls. A named target policy may omit controls known to be fixed or ignored by that model. Unknown effectiveness does not justify guessing or dropping them; keep the rejection until a valid carrier or explicit target policy exists. Protocol grammar and model-effective support remain separate.
 
 Encode and decode mappings are directional. A many-to-one encode mapping has no automatic inverse; normalization of an upstream report needs its own explicit rule. Preserve request intent and reported effective settings separately, never synthesizing a reported setting from the request. Apply each mapping once at its boundary, record its named provenance, and validate the result against the target contract.
 
-Rules cannot expand accepted content types, bypass model restrictions, select a route or modify the source IR. No public request override is selected. The initial implementation uses hand-authored Rust policy data, not a new startup JSON schema or generic rule engine.
+Rules cannot expand accepted content types, bypass model restrictions, select a route or modify the source IR. No public request override is selected. Mapping data remains hand-authored Rust policy, not a new startup mapping schema or generic rule engine. P6's diagnostic switches configure capture, not semantic mapping.
 
 #### Initial mapping plan
 
@@ -192,7 +206,7 @@ Validate native types, alias conflicts and source-snapshot consistency before a 
 | Owner | Planned responsibility |
 |---|---|
 | [Semantic reasoning types](../src/semantic/task/generation/content/reasoning.rs), [settings](../src/semantic/task/generation/request/settings.rs), [requirements](../src/semantic/task/generation/requirements.rs) and [contract](../src/semantic/task/generation/contract.rs) | Activation and scoped effort only; no model-specific level policy |
-| [Protocol reasoning helper](../src/protocol/reasoning.rs) | Small immutable level-policy lookup and validation; no automatic budget-to-effort thresholds |
+| [Protocol reasoning helper](../src/protocol/reasoning.rs) | Small immutable directional policies and validation; explicit budget presets remain distinct from level calibration, with no inferred reverse thresholds |
 | [Catalog binding declarations](../src/topology/catalog/bindings.rs), [catalog construction](../src/topology/catalog.rs), native catalog constructors and [endpoint compilation](../src/topology/endpoint.rs) | Select policy by canonical model and binding, validate it and pass it through representation caps to the adapter; do not reuse a Provider-wide switch for model-specific levels |
 | [OpenAI adaptation](../src/protocol/openai/dialect/adaptation.rs), [request projection](../src/protocol/openai/adapter/request.rs), [Messages projection](../src/protocol/anthropic/semantic_request.rs), [generateContent projection](../src/protocol/google/request.rs) and [Interactions projection](../src/protocol/interactions/request.rs) | Preserve scope and apply a selected level policy once to candidate-private typed representation before final validation and serialization; no Provider-wide level calibration switch |
 | [Upstream adapter](../src/adapter/upstream.rs), [static response intake](../src/protocol/openai/static_response.rs), [event intake](../src/protocol/openai/events/decode.rs) and native decoders | Carry the selected decode policy into actual reported-setting parsing, including SSE; do not put policy in `ReplayTarget` or discover it from a response model string |
@@ -483,7 +497,12 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Two codec responsibilities | Normalize Provider dialects into an official API baseline plus declared extensions before semantic decoding; encode in reverse before serialization. Semantic extensions enter IR; eligible non-semantic fidelity stays scoped outside it |
 | Independent activation and scoped effort | Activation belongs to reasoning; a single scoped effort control belongs to generation settings. Response-wide effort is not reasoning-only effort, and off is not a positive level |
 | Accurate IR with declared lossy projection | Prefer exact carriers, permit approved advisory omissions and behavioral approximations, and reject loss of protected meaning. Preserve the source and record target-local changes; implementation follows the roadmap |
-| Explicit same-model level calibration | Hand-authored directional level mappings remain distinct from scope or allocation approximation. No automatic nearest-level conversion, inverse mapping, off-to-on conversion or budget-to-level substitution |
+| Explicit same-model level calibration | P1 permits declared directional scope approximation on target copies; level mappings stay model-local. No inferred nearest level, inverse or off-to-on conversion |
+| Disabled activation priority | P2 preserves a supported off carrier and names omission of independent unrepresentable response effort; a target without off support still rejects |
+| Preset-based thinking allocation | P3 permits explicit pi-inspired budget presets as approximations, not protocol equivalences. Preserve original intent and hard caps; independently specify reverse bins rather than invert a many-to-one table |
+| Target-effective sampling | P4 preserves supported controls and permits named omission only for declared fixed/ignored behavior; unknown effectiveness is not permission to discard a control |
+| Required and incidental output evidence | P5 preserves required output facts and allows selected incidental-report loss after validation; request intent never fabricates upstream reports |
+| Configurable internal exchange capture | P6 permits opt-in business headers/bodies at all four I/O boundaries with separate controls, finite retention and best-effort writes. Credentials are always redacted; no switch permits credential-bearing logs |
 | Equal downstream contracts | Chat Completions, Responses and Messages receive equal consideration for static delivery, streaming and history replay; a missing carrier needs an approved projection or explicit rejection |
 | Separate task contracts | Generation, Embeddings, Images, Speech and Transcription are not one universal message type |
 | Pure protocol boundaries | Encode from final typed input; no network in codecs or post-encoding JSON patches |

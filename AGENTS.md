@@ -16,7 +16,7 @@
 ## Security
 
 - Access credentials only through the project loader (default store: `src/credential/storage/directory.rs`). Never use `.env`, private `config/`, OAuth files or third-party auth caches as investigation or test input.
-- Real secrets, private config, sensitive bodies and opaque values never appear in source, fixtures, logs or tool output. Never print environment variable values.
+- Credentials and private config never appear in source, fixtures, logs or tool output. Never print environment variable values. The selected [exchange-capture design](docs/architecture.md#configurable-exchange-capture) permits business headers/bodies only in explicitly enabled private diagnostic capture, never in source, fixtures or tool output. Authentication material is always redacted before capture; configuration cannot disable that redaction.
 - Ingress listens on loopback only and authentication fails closed. Business data cannot select an upstream origin, credential, or auth/proxy header. Credential locators and trusted origins never reach clients.
 - Memory, frames, events and time are all bounded. Cancellation releases the upstream. After commit: no replay, no fabricated success terminal.
 

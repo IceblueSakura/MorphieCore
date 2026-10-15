@@ -108,7 +108,7 @@ The discovery descriptor and pinned SDK's [types](https://github.com/googleapis/
 
 `MINIMAL` is little or no thinking, not guaranteed disabled. Some models cannot disable reasoning, and allowed levels vary. Preserve numeric guidance on an eligible budget carrier; do not automatically replace it with a coarse level or treat lower levels as equivalent across models.
 
-The pinned Interactions [generation config](https://github.com/googleapis/python-genai/blob/78f6d3412caaaed44f99ce57be2d16d0b8c407cb/google/genai/_gaos/types/interactions/generationconfig.py) exposes thinking levels and summaries but no declared numeric budget or explicit off member. Hiding summaries is not a substitute. The selected [reasoning policy](../architecture.md#reasoning-level-calibration) rejects controls with no carrier, except for explicitly selected same-model level calibration.
+The pinned Interactions [generation config](https://github.com/googleapis/python-genai/blob/78f6d3412caaaed44f99ce57be2d16d0b8c407cb/google/genai/_gaos/types/interactions/generationconfig.py) exposes thinking levels and summaries but no declared numeric budget or explicit off member. Hiding summaries is not an off carrier. Any selected budget or scope approximation follows the [product policy](../architecture.md#reasoning-level-calibration); it is not an equivalence established by this protocol source.
 
 ### Cross-protocol activation and effort
 
@@ -128,17 +128,36 @@ Google's [thinking-level](https://github.com/googleapis/python-genai/blob/78f6d3
 
 Anthropic's [How effort works](https://platform.claude.com/docs/en/build-with-claude/effort#how-effort-works) explicitly applies effort to all response tokens, including tool arguments and text without thinking. Therefore it is broader than OpenAI's documented reasoning effort. Adding `enabled: false` next to an unchanged, supposedly universal reasoning-effort field would retain two wire values but would not by itself resolve their semantic scope.
 
-The value of independent activation is faithful expression of an official contract, even when only one API has that carrier. It is not evidence that off plus response-wide high effort can be translated to OpenAI `none` plus `high`, Google low/minimal, or a verbosity setting. The selected [IR direction](../architecture.md#reasoning-activation-and-effort-scope) models activation and one scope-qualified effort control. This preserves the official counterexample without adding parallel effort controls that no selected request requires together. Cross-scope conversion is not selected.
+The value of independent activation is faithful expression of an official contract, even when only one API has that carrier. It is not evidence that off plus response-wide high effort can be translated to OpenAI `none` plus `high`, Google low/minimal, or a verbosity setting. The selected [IR direction](../architecture.md#reasoning-activation-and-effort-scope) models activation and one scope-qualified effort control. This preserves the official counterexample without adding parallel effort controls that no selected request requires together. Any selected cross-scope conversion is a product approximation, not an equivalence established by these sources.
 
 ### Hand-authored same-model level calibration
 
 MiMo's Responses reference explicitly aliases `minimal` to `low`, and `xhigh`, `max` and its extra `ultra` label to `high`. It also states that all non-off levels currently enable the same thinking behavior: accepted labels are not evidence of distinct effective effort. A table can document those wire aliases without claiming performance calibration. Do not infer the same contract for an older Chat documentation page or another intermediary.
 
-The selected product policy rejects unrepresentable reasoning semantics while allowing deliberate level calibration in encode/decode for the same model. This is not an official claim that different Providers expose equivalent levels.
+Deliberate level calibration in encode/decode for the same model is a product policy, not an official claim that different Providers expose equivalent levels. Current approximation decisions belong in [Architecture](../architecture.md#reasoning-level-calibration), separately from protocol facts.
 
 For example, one Provider may expose medium/high and another medium/high/xhigh. A hand-authored encode rule may choose `low → medium`. It does not imply a decode rule `medium → low`, nor determine how to invert high/xhigh if both were mapped to one canonical level. Configure each intended direction explicitly under trusted binding selection.
 
-This exception is limited to qualitative levels. It does not permit automatic budget-to-level conversion, off-to-on conversion, or relabeling response-wide effort as reasoning-only effort. Keep request intent separate from what the upstream actually reports, and do not synthesize effective settings from the request. The rule belongs at the codec boundary, not in protocol-independent IR or arbitrary client JSON. The [initial mapping plan](../architecture.md#initial-mapping-plan) uses hand-authored Rust policies selected by trusted bindings; no external configuration interface is selected.
+The existing level interface is limited to qualitative levels. Scope or numeric-budget approximation needs a separate explicit rule, not an inferred extension of a level table. Keep request intent separate from what the upstream actually reports, and do not synthesize effective settings from the request. The rule belongs at the codec boundary, not in protocol-independent IR or arbitrary client JSON. The [initial mapping plan](../architecture.md#initial-mapping-plan) uses hand-authored Rust policies selected by trusted bindings; no external mapping configuration interface is selected.
+
+### Pi thinking-budget presets
+
+The pinned pi revision `4270522` supplies product-level presets, not a protocol equivalence. Its [simple-options helper](https://github.com/earendil-works/pi/blob/4270522473e677ddba7b093caa0064a3df51d459/packages/ai/src/api/simple-options.ts) defines:
+
+| Pi level | Shared default thinking tokens |
+|---|---|
+| minimal | 1024 |
+| low | 2048 |
+| medium | 8192 |
+| high | 16384 |
+
+That helper folds `xhigh` and `max` into `high` for budget lookup and accepts custom budget overrides. This many-to-one mapping supplies no unique inverse. It does not specify how an arbitrary incoming numeric budget should be quantized to a level.
+
+The [Anthropic codec](https://github.com/earendil-works/pi/blob/4270522473e677ddba7b093caa0064a3df51d459/packages/ai/src/api/anthropic-messages.ts) uses the helper for manual-budget models and a separate effort path for adaptive models. The [Google codec](https://github.com/earendil-works/pi/blob/4270522473e677ddba7b093caa0064a3df51d459/packages/ai/src/api/google-generative-ai.ts) has target-specific numeric tables and a separate discrete-level path. The shared table is therefore not a universal Google or Anthropic model contract.
+
+Pi's helper can add the thinking budget to a supplied response allowance, then cap it at the model limit; it reserves answer room when necessary. MorphieCore must not copy that adjustment onto an explicit client-owned total-output ceiling. Reusing preset values does not authorize raising a hard cap or converting disabled activation into positive thinking.
+
+The selected gateway approach uses explicit presets as approximations while preserving the original budget in IR. Target tables, numeric-to-level bins, duplicate-level resolution and insufficient-budget handling need independent definitions; see [the remaining P3 detail](../roadmap.md#pending-decisions).
 
 ## Sampling, schemas and service policy
 
