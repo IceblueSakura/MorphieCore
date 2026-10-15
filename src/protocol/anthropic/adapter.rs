@@ -5,7 +5,7 @@ use crate::{
     protocol::{
         CodecError,
         cache::CacheProjection,
-        native::{ReplayTarget, group_client_history},
+        native::{ReplayTarget, group_client_history, normalize_stateless_defaults},
     },
     semantic::{
         context::ExecutionHints, task::generation::GenerationSemanticContract, value::Presence,
@@ -44,23 +44,7 @@ impl TargetCaps {
         request.delivery.validate()?;
         let mut context = request.context.clone();
         self.cache.project(&mut context)?;
-        // Explicit stateless defaults do not ask the native Provider for storage.
-        if context.store == Presence::Value(false) {
-            context.store = Presence::Absent;
-        }
-        if context.background == Presence::Value(false) {
-            context.background = Presence::Absent;
-        }
-        for value in [
-            &mut context.previous_response_id,
-            &mut context.conversation,
-            &mut context.prompt,
-            &mut context.moderation,
-        ] {
-            if *value == Presence::Null {
-                *value = Presence::Absent;
-            }
-        }
+        normalize_stateless_defaults(&mut context);
         let go = self.dialect == Dialect::OpenCodeGo;
         if go {
             self.cache.opencode_session(

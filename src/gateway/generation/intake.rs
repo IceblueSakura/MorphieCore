@@ -121,35 +121,46 @@ async fn produce(
         ApiError::transport(crate::provider::ErrorClass::Upstream)
     })?;
     trace.stage(Stage::Projection);
-    let frames = if stream {
-        delivery.finish_stream(attempt).map_err(|error| {
+    let (frames, json_snapshot) = if stream {
+        let frames = delivery.finish_stream(attempt).map_err(|error| {
             trace.projection_error(&error);
             ApiError::upstream()
-        })?
+        })?;
+        (frames, None)
     } else {
         if let Some(usage) = attempt.response().ok().and_then(|r| r.semantic.usage()) {
             trace.reported_usage(usage);
         }
-        let bytes = delivery.encode_json(attempt).map_err(|error| {
+        let (response, bytes) = delivery.encode_json_snapshot(attempt).map_err(|error| {
             trace.projection_error(&error);
             ApiError::upstream()
         })?;
         if bytes.len() > limit {
             return Err(ApiError::upstream());
         }
-        vec![Bytes::from(bytes)]
+        let body = Bytes::from(bytes);
+        let snapshot = history
+            .filter(|h| h.input.is_some())
+            .map(|_| (response, body.clone()));
+        (vec![body], snapshot)
     };
     if let Some(buffer) = held.take() {
         send_frames(lane, delivery, buffer, trace).await?;
     }
     let reservation = if let Some(history) = history.filter(|h| h.input.is_some()) {
-        let (response, body) = delivery
-            .snapshot(attempt)
-            .map_err(|_| ApiError::upstream())?;
+        let (response, body) = match json_snapshot {
+            Some(snapshot) => snapshot,
+            None => {
+                let (response, body) = delivery
+                    .snapshot(attempt)
+                    .map_err(|_| ApiError::upstream())?;
+                (response, Bytes::from(body))
+            }
+        };
         if body.len() > limit {
             return Err(ApiError::upstream());
         }
-        Some(history.stage(response, Bytes::from(body))?)
+        Some(history.stage(response, body)?)
     } else {
         None
     };

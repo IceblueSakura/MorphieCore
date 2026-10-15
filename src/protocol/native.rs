@@ -1,10 +1,11 @@
-//! Helpers shared by native (non-OpenAI) upstream protocols: trusted replay labels and
-//! role grouping of client history. No wire shapes live here.
+//! Helpers shared by native (non-OpenAI) upstream protocols: trusted replay labels,
+//! stateless request defaults and role grouping of client history. No wire shapes live here.
 use crate::{
     protocol::CodecError,
     semantic::{
+        context::ExecutionHints,
         task::generation::*,
-        value::{ReplayOrigin, Text},
+        value::{Presence, ReplayOrigin, Text},
     },
 };
 
@@ -36,6 +37,26 @@ fn label(s: &str) -> Result<Text, CodecError> {
         return Err(CodecError::Invalid("native target label"));
     }
     Text::new(s, "native target label", 256).map_err(|_| CodecError::Limit)
+}
+
+/// Explicit stateless defaults do not ask the upstream for storage or context.
+pub(crate) fn normalize_stateless_defaults(context: &mut ExecutionHints) {
+    if context.store == Presence::Value(false) {
+        context.store = Presence::Absent;
+    }
+    if context.background == Presence::Value(false) {
+        context.background = Presence::Absent;
+    }
+    for value in [
+        &mut context.previous_response_id,
+        &mut context.conversation,
+        &mut context.prompt,
+        &mut context.moderation,
+    ] {
+        if *value == Presence::Null {
+            *value = Presence::Absent;
+        }
+    }
 }
 
 /// Assemble target messages from ordered items, without claiming source ownership:

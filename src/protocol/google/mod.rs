@@ -12,7 +12,7 @@ use crate::{
         CodecError,
         cache::CacheProjection,
         fidelity::FidelityRecords,
-        native::{ReplayTarget, group_client_history},
+        native::{ReplayTarget, group_client_history, normalize_stateless_defaults},
     },
     semantic::{
         context::ExecutionHints,
@@ -106,23 +106,7 @@ impl TargetCaps {
         request.delivery.validate()?;
         let mut context = request.context.clone();
         self.cache.project(&mut context)?;
-        // Explicit stateless defaults do not ask the Provider for storage.
-        if context.store == Presence::Value(false) {
-            context.store = Presence::Absent;
-        }
-        if context.background == Presence::Value(false) {
-            context.background = Presence::Absent;
-        }
-        for value in [
-            &mut context.previous_response_id,
-            &mut context.conversation,
-            &mut context.prompt,
-            &mut context.moderation,
-        ] {
-            if *value == Presence::Null {
-                *value = Presence::Absent;
-            }
-        }
+        normalize_stateless_defaults(&mut context);
         if context != ExecutionHints::default()
             || request.delivery.stream == Presence::Null
             || request.n.value().is_some_and(|n| *n != 1)

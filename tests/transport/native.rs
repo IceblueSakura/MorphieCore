@@ -207,6 +207,12 @@ mod native_bindings {
         let p = provider();
         let mut native = standard_native();
         let mut request = native_request();
+        request.context.store = Presence::Value(false);
+        request.context.background = Presence::Value(false);
+        request.context.previous_response_id = Presence::Null;
+        request.context.conversation = Presence::Null;
+        request.context.prompt = Presence::Null;
+        request.context.moderation = Presence::Null;
         let original = request.clone();
         representable(&native, &request).unwrap();
         let prepared = prepare(&native, &p, &secret(), &request).unwrap();
@@ -221,6 +227,11 @@ mod native_bindings {
         assert_eq!(header(&prepared, "x-opencode-session"), None);
         assert_eq!(body(&prepared), hello_wire());
         assert_eq!(request, original);
+
+        let mut unsupported = request.clone();
+        unsupported.context.store = Presence::Null;
+        assert!(representable(&native, &unsupported).is_err());
+        assert!(prepare(&native, &p, &secret(), &unsupported).is_err());
 
         request.delivery.stream = Presence::Value(true);
         assert!(representable(&native, &request).is_err());

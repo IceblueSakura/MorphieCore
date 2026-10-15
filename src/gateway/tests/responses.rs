@@ -112,18 +112,18 @@ async fn stored_json_and_sse_support_tool_continuation_retrieval_and_independent
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let gate = gateway(&format!("http://{}", listener.local_addr().unwrap()));
     let server = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
-    let first = value(
-        send(
-            &gate,
-            "POST",
-            "/v1/responses",
-            json!({
-                "model":"fixture-model","input":"first","instructions":"old"
-            }),
-        )
-        .await,
+    let first = send(
+        &gate,
+        "POST",
+        "/v1/responses",
+        json!({
+            "model":"fixture-model","input":"first","instructions":"old"
+        }),
     )
     .await;
+    assert_eq!(first.status(), 200);
+    let first_body = to_bytes(first.into_body(), 1 << 20).await.unwrap();
+    let first: Value = serde_json::from_slice(&first_body).unwrap();
     let parent = first["id"].as_str().unwrap();
     assert!(parent.starts_with("resp_mc_"));
     assert_eq!(first["store"], true);
@@ -133,17 +133,18 @@ async fn stored_json_and_sse_support_tool_continuation_retrieval_and_independent
             .unwrap()
             .starts_with("mc1.")
     );
+    let retrieved = send(
+        &gate,
+        "GET",
+        &format!("/v1/responses/{parent}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(retrieved.status(), 200);
+    let retrieved_body = to_bytes(retrieved.into_body(), 1 << 20).await.unwrap();
+    assert_eq!(retrieved_body, first_body);
     assert_eq!(
-        value(
-            send(
-                &gate,
-                "GET",
-                &format!("/v1/responses/{parent}"),
-                Value::Null
-            )
-            .await
-        )
-        .await,
+        serde_json::from_slice::<Value>(&retrieved_body).unwrap(),
         first
     );
 

@@ -264,11 +264,15 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         assert!(request.get("max_completion_tokens").is_none());
         state.0.lock().unwrap().push(request.clone());
         let inputs = request["input"].as_array().unwrap();
-        let first = inputs[0].as_str().unwrap();
-        let data: Vec<_> = (0..inputs.len()).rev().map(|index| json!({
-            "object":"embedding","index":if first == "wrong-index" { 7 } else { index },
-            "embedding":if first == "wrong-dimension" { json!([0.5]) } else { json!([0.5,-0.125]) }
-        })).collect();
+        let data: Vec<_> = (0..inputs.len())
+            .rev()
+            .map(|index| {
+                json!({
+                    "object":"embedding","index":index,
+                    "embedding":[0.5,-0.125]
+                })
+            })
+            .collect();
         let value = json!({"object":"list","model":"reported-vector","id":"synthetic-request-id","data":data,
             "usage":{"total_tokens":7}});
         Response::builder()

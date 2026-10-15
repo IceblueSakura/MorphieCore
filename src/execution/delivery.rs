@@ -205,16 +205,23 @@ impl ResponseDelivery {
         Some(successor)
     }
     pub fn encode_json(&mut self, attempt: &Attempt) -> Result<Vec<u8>, AttemptError> {
+        self.encode_json_snapshot(attempt).map(|(_, body)| body)
+    }
+    /// Finalize JSON delivery and retain the exact projection for stored history.
+    pub(crate) fn encode_json_snapshot(
+        &mut self,
+        attempt: &Attempt,
+    ) -> Result<(crate::protocol::DecodedResponse, Vec<u8>), AttemptError> {
         let result = (|| {
             self.ready()?;
             if self.encoder.is_some() {
                 return Err(AttemptError::Delivery("stream already started"));
             }
             self.bind(attempt)?;
-            let (_, body) = self.snapshot(attempt)?;
+            let snapshot = self.snapshot(attempt)?;
             self.rendered = true;
             self.terminal = true;
-            Ok(body)
+            Ok(snapshot)
         })();
         if result.is_err() {
             self.rejected = true;
