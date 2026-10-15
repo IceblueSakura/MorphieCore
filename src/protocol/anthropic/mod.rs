@@ -10,6 +10,7 @@ mod semantic_intake;
 mod semantic_request;
 mod shape;
 mod sse;
+mod strict_schema;
 pub use sse::MessageSseDecoder;
 mod events;
 mod media;
@@ -27,7 +28,7 @@ pub enum Profile {
     AdaptiveTextTools,
 }
 impl Profile {
-    /// The implemented semantic slice, not a Provider/model capability inventory.
+    /// Default binding admission, kept separate from codec carrier availability.
     pub fn semantic_contract(
         self,
     ) -> crate::semantic::task::generation::GenerationSemanticContract {
@@ -63,17 +64,23 @@ impl Profile {
             strict_tools: false,
         }
     }
+    /// Codec support does not activate strict tools on an existing binding.
+    pub fn representation_contract(
+        self,
+    ) -> crate::semantic::task::generation::GenerationSemanticContract {
+        let mut contract = self.semantic_contract();
+        contract.strict_tools = true;
+        contract
+    }
     pub fn decode_request(self, bytes: &[u8]) -> Result<Request, CodecError> {
         Request::read(&shape::parse(bytes)?)
     }
     pub fn encode_request(self, request: &Request) -> Result<Value, CodecError> {
         request.validate()?;
-        if request.tools.value().is_some_and(|tools| {
-            tools
-                .iter()
-                .any(|tool| tool.strict == crate::semantic::value::Presence::Value(true))
-        }) {
-            return Err(CodecError::Unsupported("Anthropic strict tools".into()));
+        if !strict_schema::admits_request(request) {
+            return Err(CodecError::Unsupported(
+                "Anthropic strict tool schema".into(),
+            ));
         }
         let wire = request.wire();
         shape::bounded(&wire)?;

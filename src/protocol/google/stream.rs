@@ -252,6 +252,43 @@ impl GenerationSseDecoder {
         {
             return Err(invalid("candidate index"));
         }
+        let mut probabilities = candidate
+            .get("logprobsResult")
+            .map(super::logprobs::read)
+            .transpose()?
+            .unwrap_or_default();
+        if let Some(value) = candidate.get("avgLogprobs")
+            && !value.as_f64().is_some_and(|n| n.is_finite() && n <= 0.0)
+        {
+            return Err(invalid("avgLogprobs"));
+        }
+        if !probabilities.is_empty() {
+            let parts = candidate
+                .get("content")
+                .and_then(|content| content.get("parts"))
+                .and_then(Value::as_array)
+                .ok_or_else(|| unsupported("logprob owner"))?;
+            let [part] = parts.as_slice() else {
+                return Err(unsupported("logprob owner"));
+            };
+            let part = object(part, "part")?;
+            let fragment = string(part, "text")?
+                .filter(|text| !text.is_empty())
+                .ok_or_else(|| unsupported("logprob owner"))?;
+            // Only chunk-local, unambiguous text reports are selected. Do not
+            // guess whether a mixed or cumulative report belongs to this delta.
+            if part
+                .get("thought")
+                .is_some_and(|thought| thought != &Value::Bool(false))
+                || probabilities
+                    .iter()
+                    .map(|p| p.token.as_str())
+                    .collect::<String>()
+                    != fragment
+            {
+                return Err(unsupported("logprob alignment"));
+            }
+        }
         if let Some(content) = candidate.get("content") {
             let content = object(content, "content")?;
             if string(content, "role")?.is_some_and(|r| r != "model") {
@@ -259,7 +296,11 @@ impl GenerationSseDecoder {
             }
             if let Some(parts) = content.get("parts") {
                 for part in parts.as_array().ok_or_else(|| invalid("parts"))? {
-                    self.part(object(part, "part")?, out)?;
+                    self.part(
+                        object(part, "part")?,
+                        std::mem::take(&mut probabilities),
+                        out,
+                    )?;
                 }
             }
         }
@@ -269,7 +310,12 @@ impl GenerationSseDecoder {
         }
         Ok(())
     }
-    fn part(&mut self, p: &Map<String, Value>, out: &mut Vec<StreamEvent>) -> Result<(), SseError> {
+    fn part(
+        &mut self,
+        p: &Map<String, Value>,
+        probabilities: Vec<Logprob>,
+        out: &mut Vec<StreamEvent>,
+    ) -> Result<(), SseError> {
         const UNMODELED: &[&str] = &[
             "inlineData",
             "fileData",
@@ -324,7 +370,7 @@ impl GenerationSseDecoder {
                 {
                     *kept = signature;
                 }
-                self.delta(fragment, PartKind::Summary, out)
+                self.delta(fragment, PartKind::Summary, vec![], out)
             }
             (Some(fragment), None) => {
                 if !fragment.is_empty() {
@@ -352,7 +398,7 @@ impl GenerationSseDecoder {
                             part_started: false,
                         });
                     }
-                    self.delta(fragment, PartKind::Text, out)?;
+                    self.delta(fragment, PartKind::Text, probabilities, out)?;
                 }
                 if let Some(signature) = signature {
                     self.signatures.push(Signed {
@@ -434,6 +480,7 @@ impl GenerationSseDecoder {
         &mut self,
         fragment: &str,
         kind: PartKind,
+        logprobs: Vec<Logprob>,
         out: &mut Vec<StreamEvent>,
     ) -> Result<(), SseError> {
         if fragment.is_empty() {
@@ -451,7 +498,7 @@ impl GenerationSseDecoder {
                 item,
                 part,
                 fragment: fragment.into(),
-                logprobs: vec![],
+                logprobs,
             },
             out,
         )

@@ -122,7 +122,7 @@ Request-wide `instructions` may use a leading role-bearing message when the targ
 
 Chat already supports system/developer/user messages, so this selector applies only to the leading message generated from request-wide instructions. It neither moves existing ordered instruction items to the front nor rewrites their explicit roles; those follow exact carriers or a separate selected role rule. Keep instruction text unchanged and emit it once. The current Chat encoder always uses a leading developer message; the target-local selector and system fallback remain implementation work. Keep the selector in trusted protocol/binding policy, outside semantic IR and the public request schema.
 
-These are selected policies, not claims that all codecs implement them. Concrete role mappings use trusted target policy, not client-selected fallback logic. Image/file detail, filename, reasoning-context omission and `DefaultStrictAsPlain` remain under individual P8 review.
+These are selected policies, not claims that all codecs implement them. Concrete role mappings use trusted target policy, not client-selected fallback logic. Image/file detail, filename and reasoning-context omission remain under individual P8 review. `DefaultStrictAsPlain` is unselected: native targets reject Responses normalization-default tools instead of treating the omitted flag as non-strict.
 
 ### Adaptation evidence
 
@@ -562,6 +562,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | SIWC cross-Provider fallback | A mixed route may contain one SIWC endpoint and advance to another Provider before publication within the route budget. SIWC pools remain single-account with no credential fallback; standalone SIWC routes remain single-attempt with fallback disabled |
 | Case-sensitive model labels | Public IDs may preserve upstream ASCII capitalization, but resolve only registered routes. Provider prefixes remain rejected; Provider, endpoint and route IDs keep their lowercase grammar |
 | Declared adaptation | Named candidate-local losses; known fields strict, unknown protocol fields ignored |
+| Native carrier availability is not activation | Native `representation_contract()` describes codec carriers; default `semantic_contract()` keeps binding admission unchanged. Frozen public/topology checks may remain narrower until the scheduled integration review |
 | Candidate-local tool errors | Messages admission preserves tool-result error flags regardless of the route. Native targets retain them; OpenAI targets apply a named loss on their private copy |
 | Explicit downstream identity | A closed client protocol and its adapter own decoding and delivery carriers. Messages keeps its Chat-candidate activation policy without a dummy OpenAI adapter |
 | Codec dispatch and execution | Adapters own upstream decoder and downstream encoder dispatch. Execution owns attempt identity, budgets, EOF validation and publication; candidate-transition rules are pure and independent of I/O |
@@ -587,7 +588,8 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Target carriers and protected content | Prefer official carriers or declared extensions. Selected role approximations change only the target representation; they do not invent content, assistant/tool speakers or call/result links. Do not drop task content or media merely to make a target accept the request |
 | Target-local image restrictions | Formats, encoded sizes, counts and unavailable per-use options are checked or projected at the protocol boundary, not encoded as Provider-specific IR fields |
 | Envelopes as grouping | Ordered message envelopes are the only IR grouping. Chat's call ownership is a view derived in the OpenAI codec, which also enforces Chat-only rules such as no calls on a refusal |
-| Schemas as data | The IR keeps any bounded JSON-object schema an official API accepts. The OpenAI strict subset is checked only for OpenAI targets. An unnamed output schema (Messages) gets the fixed name `response` only on OpenAI targets, which require one |
+| Schemas as data | The IR keeps any bounded JSON-object schema an official API accepts. Each target checks its selected subset without rewriting constraints. Google protocols keep distinct structured-output shells; native strict-tool checks do not restrict client parsing. An unnamed output schema gets the fixed name `response` only on OpenAI targets, which require one |
+| Strict tool constraints stay protected | Messages strict tools reject unsupported constraints and documented case-sensitive string enum/const fidelity gaps, and check native request-wide schema complexity. No SDK constraint-removal helper or implicit default-strict conversion is used |
 | Deferred stop sequences | Nonempty client `stop` and `stop_sequences` are rejected, not treated as unknown fields. No stop control enters the IR until implemented; a native `stop_sequence` stop still reports a finished turn |
 | Client-owned output caps | The gateway neither caps nor invents `max_tokens`; the upstream enforces its model limit. Only a protocol that requires the field fills a fixed default |
 

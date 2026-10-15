@@ -1,6 +1,7 @@
 //! Stateless Google Interactions v1 request projection.
 //! Source: <https://ai.google.dev/api/interactions-api-v1>.
 mod request;
+mod schema;
 mod signature;
 mod stream;
 pub use request::RequestRule;
@@ -38,7 +39,7 @@ pub fn encode_generation_request(
     Ok((value, rules.into_iter().collect()))
 }
 
-/// The implemented semantic slice, not a Provider/model capability inventory.
+/// Default binding admission, kept separate from codec carrier availability.
 pub fn semantic_contract() -> GenerationSemanticContract {
     GenerationSemanticContract {
         compaction: false,
@@ -69,6 +70,13 @@ pub fn semantic_contract() -> GenerationSemanticContract {
         parallel_tool_calls: true,
         strict_tools: false,
     }
+}
+
+/// Pure codec support does not activate a model or widen a public promise.
+pub fn representation_contract() -> GenerationSemanticContract {
+    let mut contract = semantic_contract();
+    contract.structured_output = true;
+    contract
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -127,7 +135,7 @@ impl TargetCaps {
             .with_settings(settings)
             .map_err(CodecError::from)?;
         admission.check_semantic(&self.semantics)?;
-        admission.check_semantic(&semantic_contract())?;
+        admission.check_semantic(&representation_contract())?;
         let semantic = &request.task.semantic;
         let mut settings = semantic.settings().clone();
         // Include selects the downstream opaque carrier, not a native control.

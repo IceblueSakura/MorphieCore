@@ -18,7 +18,7 @@ pub enum RequestRule {
     OmitForeignReplay,
     ReasoningAsText,
     DeveloperAsSystem,
-    DefaultStrictAsPlain,
+    OmitSchemaName,
     OmitCacheKey,
     /// Image detail, file detail and filename have no Interactions slot.
     OmitMediaOptions,
@@ -33,7 +33,7 @@ impl RequestRule {
             Self::OmitForeignReplay => "interactions.omit-foreign-replay.v1",
             Self::ReasoningAsText => "interactions.reasoning-as-text.v1",
             Self::DeveloperAsSystem => "interactions.developer-as-system.v1",
-            Self::DefaultStrictAsPlain => "interactions.default-strict-as-plain.v1",
+            Self::OmitSchemaName => "interactions.omit-schema-name.v1",
             Self::OmitCacheKey => "interactions.omit-cache-key.v1",
             Self::OmitMediaOptions => "interactions.omit-media-options.v1",
         }
@@ -62,12 +62,27 @@ pub(super) fn project(
     }
     match &s.text.format {
         Presence::Absent | Presence::Value(OutputConstraint::Text) => {}
+        Presence::Value(OutputConstraint::JsonSchema {
+            description: None, ..
+        }) => {}
         _ => return Err(unsupported()),
     }
     if !s.text.verbosity.is_absent() {
         rules.insert(RequestRule::OmitVerbosity);
     }
     let mut body = Map::new();
+    if let Presence::Value(OutputConstraint::JsonSchema { name, schema, .. }) = &s.text.format {
+        if !super::schema::admits(schema.root()) {
+            return Err(unsupported());
+        }
+        body.insert(
+            "response_format".into(),
+            json!({"type":"text","mime_type":"application/json","schema":schema.root()}),
+        );
+        if name.is_some() {
+            rules.insert(RequestRule::OmitSchemaName);
+        }
+    }
     body.insert("model".into(), target.model().into());
     body.insert("store".into(), false.into());
     body.insert("stream".into(), true.into());
@@ -118,10 +133,8 @@ pub(super) fn project(
                 match t.strict {
                     FunctionStrictness::Omitted(StrictDefault::NonStrict)
                     | FunctionStrictness::Explicit(false) => {}
-                    FunctionStrictness::Omitted(StrictDefault::NormalizeSchema) => {
-                        rules.insert(RequestRule::DefaultStrictAsPlain);
-                    }
-                    FunctionStrictness::Explicit(true) => return Err(unsupported()),
+                    FunctionStrictness::Omitted(StrictDefault::NormalizeSchema)
+                    | FunctionStrictness::Explicit(true) => return Err(unsupported()),
                 }
                 let parameters = t.parameters.as_ref().ok_or_else(unsupported)?;
                 let mut tool = json!({"type":"function","name":t.name.as_str(),
@@ -153,6 +166,14 @@ pub(super) fn project(
                 ToolChoice::Required => json!("any"),
                 ToolChoice::Specific(name) => {
                     json!({"allowed_tools":{"mode":"any","tools":[name.as_str()]}})
+                }
+                ToolChoice::Allowed { required, tools }
+                    if tools.iter().all(|tool| {
+                        tool.kind == ToolKind::Function && tool.namespace.is_none()
+                    }) =>
+                {
+                    json!({"allowed_tools":{"mode":if *required { "any" } else { "auto" },
+                        "tools":tools.iter().map(|tool| tool.name.as_str()).collect::<Vec<_>>()}})
                 }
                 _ => return Err(unsupported()),
             },

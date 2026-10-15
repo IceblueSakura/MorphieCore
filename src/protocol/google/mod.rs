@@ -1,6 +1,8 @@
 //! Google generateContent upstream: request projection and streamed intake over the shared
 //! IR. Upstream only; no client codec, OpenAI profile or wire switches.
+mod logprobs;
 mod request;
+mod schema;
 mod signature;
 mod stream;
 pub use request::RequestRule;
@@ -38,7 +40,7 @@ pub(crate) fn check_public_media_url(raw: &str) -> Result<(), CodecError> {
     Ok(())
 }
 
-/// The implemented semantic slice, not a Provider/model capability inventory.
+/// Default binding admission, kept separate from codec carrier availability.
 pub fn semantic_contract() -> GenerationSemanticContract {
     GenerationSemanticContract {
         compaction: false,
@@ -69,6 +71,14 @@ pub fn semantic_contract() -> GenerationSemanticContract {
         parallel_tool_calls: true,
         strict_tools: false,
     }
+}
+
+/// Pure codec support does not activate a model or widen a public promise.
+pub fn representation_contract() -> GenerationSemanticContract {
+    let mut contract = semantic_contract();
+    contract.structured_output = true;
+    contract.logprobs = true;
+    contract
 }
 
 /// Pure IR → `streamGenerateContent` body for one target, with the rules applied.
@@ -141,7 +151,7 @@ impl TargetCaps {
             .with_settings(settings)
             .map_err(CodecError::from)?;
         admission.check_semantic(&self.semantics)?;
-        admission.check_semantic(&semantic_contract())?;
+        admission.check_semantic(&representation_contract())?;
         let semantic = &request.task.semantic;
         let mut settings = semantic.settings().clone();
         // Include selects the downstream opaque carrier, not a native control.

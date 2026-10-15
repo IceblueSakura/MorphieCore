@@ -325,7 +325,7 @@ mod native_catalog {
         topology::catalog,
     };
     #[test]
-    fn pi_responses_requests_reach_the_native_binding_by_named_rules() {
+    fn native_binding_rejects_unselected_default_strictness_but_preserves_plain_tools() {
         use morphiecore::protocol::openai::{Adapter, Dialect, Profile as Client};
         let binding = &catalog::MESSAGES_BINDINGS[0];
         let topology = catalog::default_topology().unwrap();
@@ -343,6 +343,15 @@ mod native_catalog {
             morphiecore::semantic::context::ConversationContext::conversation("synthetic").unwrap(),
         );
         admit(topology.model(binding.model).unwrap(), &request).unwrap();
+        assert!(representable(&binding.endpoint(), &request).is_err());
+        let mut settings = request.task.semantic.settings().clone();
+        let morphiecore::semantic::task::generation::ToolDefinition::Function(tool) =
+            &mut settings.tools.as_mut().unwrap()[0]
+        else {
+            panic!()
+        };
+        tool.strict = morphiecore::semantic::task::generation::FunctionStrictness::Explicit(false);
+        request.task.semantic = request.task.semantic.with_settings(settings).unwrap();
         let (prepared, rules) = morphiecore::execution::prepare_with_rules(
             &binding.endpoint(),
             &binding.provider(),
@@ -355,14 +364,8 @@ mod native_catalog {
             wire["system"],
             serde_json::json!([{"type":"text","text":"Be brief."}])
         );
-        assert!(wire["tools"][0].get("strict").is_none());
-        assert_eq!(
-            rules,
-            [
-                "messages.developer-as-system.v1",
-                "messages.default-strict-as-plain.v1"
-            ]
-        );
+        assert_eq!(wire["tools"][0]["strict"], false);
+        assert_eq!(rules, ["messages.developer-as-system.v1"]);
     }
     #[test]
     fn declared_native_binding_prepares_the_messages_wire() {

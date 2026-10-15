@@ -32,9 +32,6 @@ pub enum RequestRule {
     ReasoningAsText,
     /// A leading developer instruction (pi, Codex) is the system prompt.
     DeveloperAsSystem,
-    /// An omitted `strict` defaulting to schema normalization (Responses) is sent
-    /// as a plain tool; Messages has no strict tools.
-    DefaultStrictAsPlain,
     /// Image detail, file detail and filename have no Messages slot.
     OmitMediaOptions,
     /// A Messages output format has no name; OpenAI requires one as a label.
@@ -52,7 +49,6 @@ impl RequestRule {
             Self::OmitForeignReplay => "messages.omit-foreign-replay.v1",
             Self::ReasoningAsText => "messages.reasoning-as-text.v1",
             Self::DeveloperAsSystem => "messages.developer-as-system.v1",
-            Self::DefaultStrictAsPlain => "messages.default-strict-as-plain.v1",
             Self::OmitMediaOptions => "messages.omit-media-options.v1",
             Self::OmitSchemaName => "messages.omit-schema-name.v1",
         }
@@ -138,11 +134,10 @@ pub(super) fn project(
                                 Presence::Absent
                             }
                             FunctionStrictness::Explicit(false) => Presence::Value(false),
+                            FunctionStrictness::Explicit(true) => Presence::Value(true),
                             FunctionStrictness::Omitted(StrictDefault::NormalizeSchema) => {
-                                rules.insert(RequestRule::DefaultStrictAsPlain);
-                                Presence::Absent
+                                return Err(unsupported());
                             }
-                            _ => return Err(unsupported()),
                         },
                     })
                 })

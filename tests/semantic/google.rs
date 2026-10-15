@@ -129,6 +129,30 @@ fn stream_maps_thoughts_text_calls_and_anchored_signatures() {
         usage.output_relation,
         OutputTokenRelation::IncludesReasoning
     );
+    let mut reported = frames();
+    reported[2]["candidates"][0]["logprobsResult"] = json!({
+        "chosenCandidates":[{"token":"Reading.","tokenId":42,"logProbability":-0.25}],
+        "topCandidates":[{"candidates":[{"token":"Reading.","tokenId":42,"logProbability":-0.25}]}]
+    });
+    let reported = decode(&wire(&reported)).unwrap();
+    let Item::Message(message) = &reported.semantic.items()[1].1 else {
+        panic!()
+    };
+    let ContentPart::Text(content) = &message.parts[0].content else {
+        panic!()
+    };
+    let probabilities = content.logprobs().value().unwrap();
+    assert_eq!(probabilities[0].token.as_str(), "Reading.");
+    assert_eq!(probabilities[0].logprob.as_f64(), Some(-0.25));
+    assert_eq!(probabilities[0].bytes, None);
+    assert_eq!(
+        probabilities[0].top_logprobs.as_ref().unwrap()[0]
+            .logprob
+            .as_ref()
+            .unwrap()
+            .as_f64(),
+        Some(-0.25)
+    );
     // A signature ends its thought; the next signed thought has another owner.
     let mut signed = frames();
     signed[0]["candidates"][0]["content"]["parts"][0]["thoughtSignature"] = json!("U0lHMQ==");
@@ -165,11 +189,16 @@ fn stream_rejects_unidentified_calls_late_chunks_and_unfinished_eof() {
     let unfinished = &frames()[..3];
     let mut known_type = frames();
     known_type[2]["candidates"][0]["content"]["parts"][0]["text"] = json!(7);
+    let mut probabilities = frames();
+    probabilities[2]["candidates"][0]["logprobsResult"] = json!({
+        "chosenCandidates":[{"token":"other text","logProbability":-0.25}]
+    });
     for bytes in [
         wire(&missing_id),
         wire(&late),
         wire(unfinished),
         wire(&known_type),
+        wire(&probabilities),
     ] {
         assert!(decode(&bytes).is_err());
     }
@@ -271,6 +300,60 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
         morphiecore::semantic::value::Presence::Value(OutputConstraint::JsonObject);
     let constrained = request.clone().with_settings(settings).unwrap();
     assert!(encode_generation_request(&constrained, &observed.fidelity, &target()).is_err());
+    let schema = json!({"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"],"additionalProperties":false});
+    let source = client(
+        Profile::Chat,
+        json!({
+            "model":"public","messages":[{"role":"user","content":"go"}],
+            "response_format":{"type":"json_schema","json_schema":{"name":"answer","schema":schema,"strict":true}},
+            "logprobs":true,"top_logprobs":1,
+            "tools":[{"type":"function","function":{"name":"read","parameters":{"type":"object"},"strict":false}}],
+            "tool_choice":{"type":"allowed_tools","allowed_tools":{"mode":"required","tools":[{"type":"function","function":{"name":"read"}}]}}
+        }),
+    );
+    assert!(
+        matches!(source.task.semantic.output(), OutputConstraint::JsonSchema { schema: s, strict: Some(true), .. } if s.root() == &schema)
+    );
+    let (body, rules) =
+        encode_generation_request(&source.task.semantic, &source.task.fidelity, &target()).unwrap();
+    assert_eq!(
+        body["generationConfig"],
+        json!({
+            "responseMimeType":"application/json","responseJsonSchema":schema,
+            "responseLogprobs":true,"logprobs":1
+        })
+    );
+    assert_eq!(
+        body["toolConfig"],
+        json!({"functionCallingConfig":{"mode":"ANY","allowedFunctionNames":["read"]}})
+    );
+    assert_eq!(
+        rules.iter().map(|r| r.name()).collect::<Vec<_>>(),
+        ["gemini.omit-schema-name.v1"]
+    );
+    let mut endpoint = morphiecore::topology::catalog::GOOGLE_BINDINGS[0].endpoint();
+    assert!(endpoint.encode_request_with_rules(&source).is_err());
+    endpoint.representation = morphiecore::protocol::google::TargetCaps {
+        semantics: morphiecore::protocol::google::representation_contract(),
+        ..Default::default()
+    }
+    .into();
+    assert_eq!(endpoint.encode_request_with_rules(&source).unwrap().0, body);
+    let mut settings = source.task.semantic.settings().clone();
+    let morphiecore::semantic::value::Presence::Value(OutputConstraint::JsonSchema {
+        schema, ..
+    }) = &mut settings.text.format
+    else {
+        panic!()
+    };
+    *schema = json!({"oneOf":[{"type":"object"},{"type":"object"}]}).into();
+    let invalid = source
+        .task
+        .semantic
+        .clone()
+        .with_settings(settings)
+        .unwrap();
+    assert!(encode_generation_request(&invalid, &source.task.fidelity, &target()).is_err());
 }
 
 fn client(profile: Profile, body: Value) -> Request {

@@ -237,13 +237,15 @@ fn rejects_orphaned_or_wrong_target_signatures() {
 
 #[test]
 fn projects_stateless_steps_tools_and_controls() {
+    let schema = json!({"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"],"additionalProperties":false});
     let request = Adapter::new(Profile::Responses, Dialect::Standard, None)
         .decode_request(json!({
             "model":"public", "instructions":"Be precise.", "max_output_tokens":128,
+            "text":{"format":{"type":"json_schema","name":"answer","schema":schema,"strict":true}},
             "reasoning":{"effort":"medium","summary":"auto"},
             "tools":[{"type":"function","name":"read","strict":false,
                 "parameters":{"type":"object","properties":{"path":{"type":"string"}}}}],
-            "tool_choice":"required",
+            "tool_choice":{"type":"allowed_tools","mode":"auto","tools":[{"type":"function","name":"read"}]},
             "input":[{"role":"user","content":"Read."},
                 {"type":"function_call","call_id":"c1","name":"read","arguments":"{\"path\":\"a\"}"},
                 {"type":"function_call_output","call_id":"c1","output":"done"}]
@@ -256,16 +258,47 @@ fn projects_stateless_steps_tools_and_controls() {
         json!({
             "model":"gemini-synthetic","store":false,"stream":true,
             "system_instruction":"Be precise.",
+            "response_format":{"type":"text","mime_type":"application/json","schema":schema},
             "input":[{"type":"user_input","content":[{"type":"text","text":"Read."}]},
                 {"type":"function_call","id":"c1","name":"read","arguments":{"path":"a"}},
                 {"type":"function_result","call_id":"c1","name":"read","result":"done"}],
             "tools":[{"type":"function","name":"read",
                 "parameters":{"type":"object","properties":{"path":{"type":"string"}}}}],
             "generation_config":{"max_output_tokens":128,"thinking_level":"medium",
-                "thinking_summaries":"auto","tool_choice":"any"}
+                "thinking_summaries":"auto","tool_choice":{"allowed_tools":{"mode":"auto","tools":["read"]}}}
         })
     );
-    assert!(rules.is_empty());
+    assert_eq!(
+        rules.iter().map(|r| r.name()).collect::<Vec<_>>(),
+        ["interactions.omit-schema-name.v1"]
+    );
+    let mut endpoint = morphiecore::topology::catalog::GOOGLE_BINDINGS[0].interactions_endpoint();
+    assert!(endpoint.encode_request_with_rules(&request).is_err());
+    endpoint.representation = morphiecore::protocol::interactions::TargetCaps {
+        semantics: morphiecore::protocol::interactions::representation_contract(),
+        ..Default::default()
+    }
+    .into();
+    let prepared = endpoint.encode_request_with_rules(&request).unwrap().0;
+    assert_eq!(prepared["response_format"], wire["response_format"]);
+    assert!(
+        matches!(request.task.semantic.output(), OutputConstraint::JsonSchema { schema: s, strict: Some(true), .. } if s.root() == &schema)
+    );
+    let mut settings = request.task.semantic.settings().clone();
+    let morphiecore::semantic::value::Presence::Value(OutputConstraint::JsonSchema {
+        schema, ..
+    }) = &mut settings.text.format
+    else {
+        panic!()
+    };
+    *schema = json!({"type":"string","pattern":"^protected$"}).into();
+    let invalid = request
+        .task
+        .semantic
+        .clone()
+        .with_settings(settings)
+        .unwrap();
+    assert!(encode_generation_request(&invalid, &request.task.fidelity, &target).is_err());
 }
 
 #[test]

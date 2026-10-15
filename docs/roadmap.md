@@ -30,25 +30,13 @@ P7 keeps routing frozen until the selected Generation IR, codec and protocol-con
 
 This is an implementation plan. Accurate IR, declared loss, verbosity omission and the routing freeze are selected. P1/P2/P4/P5 follow the [recorded architecture decisions](architecture.md#settled-decisions); P3 selects six thinking-budget presets with nearest-token/highest-level-tie quantization, and P3b permits named downward adjustment of conversion-generated budgets. P6 selects configurable business capture with mandatory credential redaction; P7 defers routing until IR/codec/conversion completion. P8 selects summary-granularity and role approximation, and D3 selects named prediction omission. Remaining budget details and P8 rules stay in [Pending decisions](#pending-decisions).
 
-Use the sequence below. Reuse the source-integrity guards, existing verbosity projections and control receipts before adding abstractions. S4 does not wait for P3b's remaining adjustment details or P8's remaining rule review; no slice depends on reconnecting the routing layer.
+Use the sequence below. Reuse the source-integrity guards, existing verbosity projections and control receipts before adding abstractions. Continue independent work while P3b/P8 details remain open; no slice depends on reconnecting the routing layer.
 
 | Slice | Dependency | Deliverable |
 |---|---|---|
-| S4: Existing-IR constrained carriers | Source-integrity guards; existing contract split | Selected schema/tool/output carriers without weakening required semantics |
 | S5: Quality-sensitive approximation | Existing declared-loss contract; declared target data; remaining P3b/P8 details where applicable | Selected scope/allocation/sampling, summary and role policies, not a universal fallback |
 | S6: Reports, SSE and history | Each selected request projection rule | Source facts stay distinct from delivery losses and retained history |
-| S7: Diagnostic and contract closure | S4–S6, excluding explicitly deferred decisions | Bounded end-to-end evidence at codec/delivery boundaries and an explicit integration handoff |
-
-#### S4: Existing-IR constrained carriers
-
-Goal: fix missing representations before considering degradation of required output.
-
-1. Add selected Google structured-output carriers and verify their schema restrictions without rewriting user schemas. Treat generateContent and Interactions as separate protocols.
-2. Complete eligible Messages strict-tool representation after separating client parsing from profile admission. Audit `DefaultStrictAsPlain` under P8 rather than treating the existing rule as proof of acceptable quality.
-3. Complete selected existing-IR logprob and allowed-tool carriers where the official target supports them. A declaration in an SDK does not activate every model or binding.
-4. Keep parameter schemas, required tool selection, explicit strictness, parallel prohibition, arguments, call/result links and necessary media protected. Missing target implementations remain explicit gaps until their carrier is completed.
-
-Exit: existing independent request and response expectations preserve the relevant constraint. Unsupported targets reject that constraint rather than remove it; official protocol support and activated model support remain separate claims.
+| S7: Diagnostic and contract closure | S5/S6 and existing carrier rules, excluding explicitly deferred decisions | Bounded end-to-end evidence at codec/delivery boundaries and an explicit integration handoff |
 
 #### S5: Quality-sensitive approximation
 
@@ -99,6 +87,12 @@ For every implementation slice:
 
 Phase completion means the selected policies and carriers pass their local gates and unresolved decisions/integration boundaries are explicit. Restoring and accepting the full client loop belongs to a later routing/integration phase, not a hidden exit condition for IR/codec work.
 
+Native `representation_contract()` carrier availability is separate from default `semantic_contract()` binding admission. Google structured output/logprobs and Messages strict tools are not enabled by completing their codecs. [Topology compilation](../src/topology/compile.rs) still checks the narrower default contracts; widening a synthetic endpoint for a codec test does not establish a compiled public route.
+
+Remaining constrained-carrier gaps are explicit rejections: Google JSON-object mode, schema references and unselected schema keywords; generateContent optional allowed-tool subsets; Interactions logprobs; and Messages strict string enum/const, references and regex. Google probability intake selects only unambiguous chunk-local text reports; mixed or cumulative reports reject rather than guess ownership. Google reports no token bytes, so the current Responses probability carrier cannot deliver that evidence. Non-identity history projection and static/SSE delivery alignment remain S6 work.
+
+Responses normalization-default strictness cannot become a plain native tool. That conversion now rejects pending P8 selection; pi-shaped requests that omit `strict` therefore do not reach those native bindings. Explicit non-strict tools retain their separate carrier.
+
 ### Projection repair
 
 These are the remaining repair obligations consumed by S5/S6, not a second competing schedule. Finish independent work while [semantic decisions](#pending-decisions) remain open; do not choose an approximation or IR contract implicitly.
@@ -123,9 +117,9 @@ Exit condition: static/SSE metadata and supported history receive the selected s
 
 ### Support queue after projection repair
 
-S4 promotes selected existing-IR carriers into the current migration. The remaining queue follows its local repair and contract gates, not successful route reconnection. Before each IR extension, present a minimal counterexample and structural options. An official carrier alone does not activate a binding.
+The remaining queue follows its local repair and contract gates, not successful route reconnection. Before each IR extension, present a minimal counterexample and structural options. An official carrier alone does not activate a binding.
 
-1. Complete the remaining existing-IR carriers after S4: Chat custom tools and explicit cache breakpoints/TTL. Keep each contract separate; unimplemented output or tool semantics do not become advisory omissions.
+1. Complete the remaining existing-IR carriers: Chat custom tools and explicit cache breakpoints/TTL. Keep each contract separate; unimplemented output or tool semantics do not become advisory omissions.
 2. Add missing generation controls: `top_k`, then stopping sequences with honest stop reporting, then penalties/seed. Treat `logit_bias` token identities as model-dependent; do not forward them blindly across tokenizers.
 3. Design execution-policy semantics separately: service tiers, native cache resources/prewarming and safety settings. Preserve native distinctions; equal names do not establish equivalent billing, capacity or safety behavior. `max_tokens: 0` prewarming is not ordinary zero-length generation.
 
@@ -212,7 +206,7 @@ IR completeness does not mean every upstream can carry every modality. Protocol-
 
 ## Planned order
 
-1. **Generation IR completeness.** Execute the remaining S4–S7 slices under the temporary routing freeze, complete the remaining non-tool support queue, then continue tool discovery and `web_search` in that order. Keep deferred concepts explicit; a disconnected client loop does not invalidate correct IR/codec work.
+1. **Generation IR completeness.** Execute the remaining S5–S7 slices under the temporary routing freeze, complete the remaining non-tool support queue, then continue tool discovery and `web_search` in that order. Keep deferred concepts explicit; a disconnected client loop does not invalidate correct IR/codec work.
 2. **Coverage improvement.** Start the coverage pass only after IR completeness. Keep focused regressions and safety invariants throughout implementation.
 3. **Failover.** The feature remains in early design. Its priority is undecided, lowest for now; design, implementation improvement and real acceptance follow the second stage.
 4. **Other agent acceptance.** Codex, Claude Code and other agents follow failover. Their priority is undecided, lowest for now.
@@ -285,7 +279,7 @@ P1/P2/P4/P5/P6, P3's six-budget quantization, P3b's permission for named downwar
 |---|---|---|
 | P3b details: Reduction and answer room | Named downward adjustment of conversion-generated budgets is selected. Choose a lower preset versus an arbitrary fitting integer, and protocol-minimum versus additional reserved answer room. Never raise the client ceiling, repair an invalid source request, silently reduce its explicit numeric budget or turn a positive budget into off. Until these details are selected, retain target-validation failure on the conflicting projection | Only conflicting level-to-budget projection, not ordinary P3 lookup or quantization |
 | P7 follow-up: Public surface and reconnection | Revisit only after the selected IR/codec/protocol-conversion scope is complete. Decide the public native-versus-lossy capability representation and whether/how to warn clients; then schedule reconnection. No false native support claim or per-request policy override is selected | Later route-facing publication and full-chain acceptance, not the current migration |
-| P8 remainder: Media, context and default strictness | Image/file detail, filename and reasoning-context omission remain open; `DefaultStrictAsPlain` was not selected and remains under review. Summary-granularity approximation with unchanged visibility and named developer/system/user mappings are already selected. Preserve exact carriers and explicit constraints; existing loss rules are not approval | Only the affected remaining S4–S6 rules |
+| P8 remainder: Media, context and default strictness | Image/file detail, filename and reasoning-context omission remain open; `DefaultStrictAsPlain` was not selected and the corresponding conversion rejects pending review. Summary-granularity approximation with unchanged visibility and named developer/system/user mappings are already selected. Preserve exact carriers and explicit constraints; existing loss rules are not approval | Only the affected remaining S5/S6 rules and normalization-default tool conversion |
 
 | Question | Current behavior | Options |
 |---|---|---|

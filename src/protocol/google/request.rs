@@ -25,9 +25,7 @@ pub enum RequestRule {
     ReasoningAsText,
     /// A leading developer instruction (pi, Codex) is the system instruction.
     DeveloperAsSystem,
-    /// An omitted `strict` defaulting to schema normalization (Responses) is sent
-    /// as a plain declaration.
-    DefaultStrictAsPlain,
+    OmitSchemaName,
     /// Gemini caches implicitly and has no cache-key carrier.
     OmitCacheKey,
     /// `functionResponse.response` holds one string; text parts are concatenated.
@@ -45,7 +43,7 @@ impl RequestRule {
             Self::OmitForeignReplay => "gemini.omit-foreign-replay.v1",
             Self::ReasoningAsText => "gemini.reasoning-as-text.v1",
             Self::DeveloperAsSystem => "gemini.developer-as-system.v1",
-            Self::DefaultStrictAsPlain => "gemini.default-strict-as-plain.v1",
+            Self::OmitSchemaName => "gemini.omit-schema-name.v1",
             Self::OmitCacheKey => "gemini.omit-cache-key.v1",
             Self::JoinResultParts => "gemini.join-result-parts.v1",
             Self::OmitMediaOptions => "gemini.omit-media-options.v1",
@@ -60,19 +58,13 @@ pub(super) fn project(
     rules: &mut BTreeSet<RequestRule>,
 ) -> Result<Value, CodecError> {
     let s = request.settings();
-    if s.controls.top_logprobs.is_some()
-        || !s.controls.logprobs.is_absent()
-        || s.controls.truncation.is_some()
+    if s.controls.truncation.is_some()
         || !s.output_modalities.is_absent()
         || !s.audio.is_absent()
         || s.parallel_tool_calls == Some(false)
         || fidelity.has_strict_image_sizes(request.items())
     {
         return Err(unsupported());
-    }
-    match &s.text.format {
-        Presence::Absent | Presence::Value(OutputConstraint::Text) => {}
-        _ => return Err(unsupported()),
     }
     if !s.text.verbosity.is_absent() {
         rules.insert(RequestRule::OmitVerbosity);
@@ -122,10 +114,8 @@ pub(super) fn project(
                 match t.strict {
                     FunctionStrictness::Omitted(StrictDefault::NonStrict)
                     | FunctionStrictness::Explicit(false) => {}
-                    FunctionStrictness::Omitted(StrictDefault::NormalizeSchema) => {
-                        rules.insert(RequestRule::DefaultStrictAsPlain);
-                    }
-                    FunctionStrictness::Explicit(true) => return Err(unsupported()),
+                    FunctionStrictness::Omitted(StrictDefault::NormalizeSchema)
+                    | FunctionStrictness::Explicit(true) => return Err(unsupported()),
                 }
                 let mut d = Map::new();
                 d.insert("name".into(), t.name.as_str().into());
@@ -150,6 +140,15 @@ pub(super) fn project(
             ToolChoice::Specific(name) => {
                 json!({"mode": "ANY", "allowedFunctionNames": [name.as_str()]})
             }
+            ToolChoice::Allowed {
+                required: true,
+                tools,
+            } if tools
+                .iter()
+                .all(|tool| tool.kind == ToolKind::Function && tool.namespace.is_none()) =>
+            {
+                json!({"mode":"ANY","allowedFunctionNames":tools.iter().map(|tool| tool.name.as_str()).collect::<Vec<_>>()})
+            }
             _ => return Err(unsupported()),
         };
         body.insert(
@@ -158,6 +157,35 @@ pub(super) fn project(
         );
     }
     let mut generation = Map::new();
+    match &s.text.format {
+        Presence::Absent | Presence::Value(OutputConstraint::Text) => {}
+        Presence::Value(OutputConstraint::JsonSchema {
+            name,
+            description: None,
+            schema,
+            ..
+        }) if super::schema::admits(schema.root()) => {
+            generation.insert("responseMimeType".into(), json!("application/json"));
+            generation.insert("responseJsonSchema".into(), schema.root().clone());
+            if name.is_some() {
+                rules.insert(RequestRule::OmitSchemaName);
+            }
+        }
+        _ => return Err(unsupported()),
+    }
+    match &s.controls.logprobs {
+        Presence::Absent => {}
+        Presence::Value(value) => {
+            generation.insert("responseLogprobs".into(), json!(value));
+        }
+        Presence::Null => return Err(unsupported()),
+    }
+    if let Some(count) = s.controls.top_logprobs {
+        if s.controls.logprobs != Presence::Value(true) {
+            return Err(unsupported());
+        }
+        generation.insert("logprobs".into(), count.into());
+    }
     if let Some(n) = s.controls.max_output_tokens {
         generation.insert("maxOutputTokens".into(), n.into());
     }

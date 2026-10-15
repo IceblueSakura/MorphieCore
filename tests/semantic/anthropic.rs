@@ -71,6 +71,41 @@ mod anthropic_profile {
         assert!(p.decode_request(body.to_string().as_bytes()).is_err());
         body["tools"][0]["strict"] = json!(true);
         let decoded = p.decode_request(body.to_string().as_bytes()).unwrap();
+        // Native strict string enums have a documented capitalization loss.
+        assert!(p.encode_request(&decoded).is_err());
+        body["tools"][0]["input_schema"]["properties"]["key"] =
+            json!({"type":"integer","enum":[1,2]});
+        let decoded = p.decode_request(body.to_string().as_bytes()).unwrap();
+        assert_eq!(p.encode_request(&decoded).unwrap(), body);
+        let mut too_many = body.clone();
+        too_many["tools"] = json!(
+            (0..21)
+                .map(|n| {
+                    let mut tool = body["tools"][0].clone();
+                    tool["name"] = json!(format!("tool_{n}"));
+                    tool
+                })
+                .collect::<Vec<_>>()
+        );
+        let decoded = p.decode_request(too_many.to_string().as_bytes()).unwrap();
+        assert!(p.encode_request(&decoded).is_err());
+        let mut complex = body.clone();
+        let properties = (0..25)
+            .map(|n| (format!("p{n}"), json!({"type":"boolean"})))
+            .collect::<serde_json::Map<_, _>>();
+        complex["output_config"] = json!({"format":{"type":"json_schema","schema":{
+            "type":"object","properties":properties,"additionalProperties":false
+        }}});
+        let decoded = p.decode_request(complex.to_string().as_bytes()).unwrap();
+        assert!(p.encode_request(&decoded).is_err());
+        let properties = (0..17)
+            .map(|n| (format!("p{n}"), json!({"type":["boolean","null"]})))
+            .collect::<serde_json::Map<_, _>>();
+        complex["output_config"]["format"]["schema"]["properties"] = json!(properties);
+        let decoded = p.decode_request(complex.to_string().as_bytes()).unwrap();
+        assert!(p.encode_request(&decoded).is_err());
+        body["tools"][0]["input_schema"]["properties"]["key"]["minimum"] = json!(2);
+        let decoded = p.decode_request(body.to_string().as_bytes()).unwrap();
         assert!(p.encode_request(&decoded).is_err());
         let mut body = request();
         body["tools"][0]
@@ -1112,6 +1147,25 @@ mod client_fidelity {
         let decoded = decode_client_request(strict.to_string().as_bytes()).unwrap();
         assert!(matches!(&decoded.task.semantic.tools()[0],
             ToolDefinition::Function(t) if t.strict == FunctionStrictness::Explicit(true)));
+        use morphiecore::protocol::{anthropic, native::ReplayTarget};
+        let target = ReplayTarget::new("synthetic", "synthetic").unwrap();
+        let mut caps = anthropic::TargetCaps::new(
+            anthropic::Profile::AdaptiveTextTools,
+            anthropic::Dialect::Standard,
+        );
+        assert!(caps.encode_request(&decoded, &target).is_err());
+        caps.semantics.strict_tools = true;
+        assert!(caps.encode_request(&decoded, &target).is_err());
+        strict["tools"][0]["input_schema"]["additionalProperties"] = json!(false);
+        let eligible = decode_client_request(strict.to_string().as_bytes()).unwrap();
+        let projected = caps.encode_request(&eligible, &target).unwrap();
+        assert_eq!(
+            projected.value["tools"],
+            json!([
+                {"name":"lookup","input_schema":{"type":"object","additionalProperties":false},"strict":true}
+            ])
+        );
+        assert!(projected.rules.is_empty());
         for (key, value) in [
             ("defer_loading", json!(true)),
             ("allowed_callers", json!(["code_execution_20250825"])),

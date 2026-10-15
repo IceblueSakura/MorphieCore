@@ -101,7 +101,7 @@ impl TargetCaps {
         let request = stripped.as_ref().unwrap_or(request);
         self.check_context(request)?;
         request.check_semantic(&self.semantics)?;
-        request.check_semantic(&self.profile.semantic_contract())?;
+        request.check_semantic(&self.profile.representation_contract())?;
         let mut semantic = group_client_history(&request.task.semantic)?;
         let mut settings = semantic.settings().clone();
         // Include selects the downstream opaque carrier, not a native control.
