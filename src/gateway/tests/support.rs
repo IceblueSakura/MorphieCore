@@ -19,11 +19,14 @@ pub(in crate::gateway) const KEY: &str = "synthetic-gateway-client-token-0001";
 pub(in crate::gateway) fn gateway(limits: Limits) -> Gateway {
     Gateway::new(
         topology(),
-        vec![Entry {
-            model: "fixture-model".into(),
-            protocol: Profile::Chat,
-            endpoint: EndpointId::new("fixture-chat").unwrap(),
-        }],
+        crate::gateway::TaskEntries {
+            generation: vec![Entry {
+                model: "fixture-model".into(),
+                protocol: Profile::Chat,
+                endpoint: EndpointId::new("fixture-chat").unwrap(),
+            }],
+            ..Default::default()
+        },
         BTreeMap::from([(
             CredentialBindingId::new("fixture-key").unwrap(),
             Arc::new(SecretMaterial::new("synthetic-upstream-credential-0001").unwrap()),

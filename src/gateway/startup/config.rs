@@ -35,6 +35,15 @@ pub struct TranscriptionEntry {
 pub struct EmbeddingEntry {
     pub model: String,
 }
+/// Explicit task activation. Empty task lists activate nothing.
+#[derive(Clone, Debug, Default)]
+pub struct TaskEntries {
+    pub generation: Vec<Entry>,
+    pub images: Vec<ImageEntry>,
+    pub speech: Vec<SpeechEntry>,
+    pub transcriptions: Vec<TranscriptionEntry>,
+    pub embeddings: Vec<EmbeddingEntry>,
+}
 #[derive(Clone, Debug)]
 pub struct Limits {
     /// Disposable implicit affinity only; explicit grouping remains available when disabled.
@@ -136,92 +145,15 @@ impl Gateway {
     }
     pub fn new(
         topology: CompiledTopology,
-        entries: Vec<Entry>,
+        entries: TaskEntries,
         credentials: impl Into<Credentials>,
         client_key: SecretMaterial,
         limits: Limits,
         proxy: Option<&str>,
     ) -> Result<Self, StartupError> {
-        Self::new_with_images(
+        Self::bind(
             topology,
             entries,
-            vec![],
-            credentials,
-            client_key,
-            limits,
-            proxy,
-        )
-    }
-    /// Explicit embedded activation; no image catalog or private-file discovery is implied.
-    #[allow(clippy::too_many_arguments)]
-    pub fn new_with_images(
-        topology: CompiledTopology,
-        entries: Vec<Entry>,
-        image_entries: Vec<ImageEntry>,
-        credentials: impl Into<Credentials>,
-        client_key: SecretMaterial,
-        limits: Limits,
-        proxy: Option<&str>,
-    ) -> Result<Self, StartupError> {
-        Self::new_with_media(
-            topology,
-            entries,
-            image_entries,
-            vec![],
-            vec![],
-            credentials,
-            client_key,
-            limits,
-            proxy,
-        )
-    }
-    /// Explicit task activation. No product catalog, file discovery or implicit media permission.
-    #[allow(clippy::too_many_arguments)]
-    pub fn new_with_media(
-        topology: CompiledTopology,
-        entries: Vec<Entry>,
-        image_entries: Vec<ImageEntry>,
-        speech_entries: Vec<SpeechEntry>,
-        transcription_entries: Vec<TranscriptionEntry>,
-        credentials: impl Into<Credentials>,
-        client_key: SecretMaterial,
-        limits: Limits,
-        proxy: Option<&str>,
-    ) -> Result<Self, StartupError> {
-        Self::new_with_embeddings(
-            topology,
-            entries,
-            image_entries,
-            speech_entries,
-            transcription_entries,
-            vec![],
-            credentials,
-            client_key,
-            limits,
-            proxy,
-        )
-    }
-    /// Explicit embedding activation alongside existing tasks; old constructors activate none.
-    #[allow(clippy::too_many_arguments)]
-    pub fn new_with_embeddings(
-        topology: CompiledTopology,
-        entries: Vec<Entry>,
-        image_entries: Vec<ImageEntry>,
-        speech_entries: Vec<SpeechEntry>,
-        transcription_entries: Vec<TranscriptionEntry>,
-        embedding_entries: Vec<EmbeddingEntry>,
-        credentials: impl Into<Credentials>,
-        client_key: SecretMaterial,
-        limits: Limits,
-        proxy: Option<&str>,
-    ) -> Result<Self, StartupError> {
-        Self::new_with_media_and_environment_proxy(
-            topology,
-            entries,
-            image_entries,
-            speech_entries,
-            transcription_entries,
-            embedding_entries,
             credentials,
             client_key,
             limits,
@@ -229,20 +161,22 @@ impl Gateway {
             false,
         )
     }
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new_with_media_and_environment_proxy(
+    pub(crate) fn bind(
         topology: CompiledTopology,
-        entries: Vec<Entry>,
-        image_entries: Vec<ImageEntry>,
-        speech_entries: Vec<SpeechEntry>,
-        transcription_entries: Vec<TranscriptionEntry>,
-        embedding_entries: Vec<EmbeddingEntry>,
+        entries: TaskEntries,
         credentials: impl Into<Credentials>,
         client_key: SecretMaterial,
         limits: Limits,
         proxy: Option<&str>,
         environment: bool,
     ) -> Result<Self, StartupError> {
+        let TaskEntries {
+            generation: entries,
+            images: image_entries,
+            speech: speech_entries,
+            transcriptions: transcription_entries,
+            embeddings: embedding_entries,
+        } = entries;
         let credentials = credentials.into();
         let images = crate::gateway::tasks::images::bind(&topology, image_entries, &credentials)?;
         let speech = crate::gateway::tasks::speech::bind(&topology, speech_entries, &credentials)?;

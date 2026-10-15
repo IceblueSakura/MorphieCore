@@ -247,37 +247,39 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool) -> Gateway {
             Arc::new(SecretMaterial::new("synthetic-tokenplan-credential-0001").unwrap()),
         ),
     ]);
-    Gateway::new_with_embeddings(
+    Gateway::new(
         topology,
-        entries,
-        vec![
-            morphiecore::gateway::ImageEntry {
-                model: "public-image".into(),
+        morphiecore::gateway::TaskEntries {
+            generation: entries,
+            images: vec![
+                morphiecore::gateway::ImageEntry {
+                    model: "public-image".into(),
+                },
+                morphiecore::gateway::ImageEntry {
+                    model: "router-image".into(),
+                },
+            ],
+            speech: vec![
+                morphiecore::gateway::SpeechEntry {
+                    model: "public-speech".into(),
+                },
+                morphiecore::gateway::SpeechEntry {
+                    model: "router-speech".into(),
+                },
+                morphiecore::gateway::SpeechEntry {
+                    model: "native-speech".into(),
+                },
+            ],
+            transcriptions: vec![morphiecore::gateway::TranscriptionEntry {
+                model: "native-transcription".into(),
+            }],
+            embeddings: if embeddings {
+                vec![morphiecore::gateway::EmbeddingEntry {
+                    model: "public-vector".into(),
+                }]
+            } else {
+                vec![]
             },
-            morphiecore::gateway::ImageEntry {
-                model: "router-image".into(),
-            },
-        ],
-        vec![
-            morphiecore::gateway::SpeechEntry {
-                model: "public-speech".into(),
-            },
-            morphiecore::gateway::SpeechEntry {
-                model: "router-speech".into(),
-            },
-            morphiecore::gateway::SpeechEntry {
-                model: "native-speech".into(),
-            },
-        ],
-        vec![morphiecore::gateway::TranscriptionEntry {
-            model: "native-transcription".into(),
-        }],
-        if embeddings {
-            vec![morphiecore::gateway::EmbeddingEntry {
-                model: "public-vector".into(),
-            }]
-        } else {
-            vec![]
         },
         credentials,
         SecretMaterial::new(CLIENT_KEY).unwrap(),

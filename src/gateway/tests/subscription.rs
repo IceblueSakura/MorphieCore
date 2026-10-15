@@ -62,7 +62,7 @@ async fn consume(
         policy: original.policy.clone(),
         candidates: vec![candidate.clone()],
     });
-    let request = entry.client.decode_request(json!({"model":"fixture-model","input":"hello","stream":stream,"stream_options":if stream {json!({"include_obfuscation":false})} else {serde_json::Value::Null}}).to_string().as_bytes()).unwrap();
+    let request = entry.client.as_openai().unwrap().0.decode_request(json!({"model":"fixture-model","input":"hello","stream":stream,"stream_options":if stream {json!({"include_obfuscation":false})} else {serde_json::Value::Null}}).to_string().as_bytes()).unwrap();
     let mut builder = axum::http::Response::builder().status(200);
     for media in media {
         builder = builder.header(

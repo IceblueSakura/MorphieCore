@@ -68,7 +68,7 @@ async fn response(
     deadline: Instant,
 ) -> Result<Response, ApiError> {
     let entry = gate.state.entries[&(family(Profile::Chat), "fixture-model".into())].clone();
-    let request=entry.client.decode_request(serde_json::json!({"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"stream":stream,"stream_options":if stream {serde_json::json!({"include_usage":true,"include_obfuscation":false})}else{serde_json::Value::Null}}).to_string().as_bytes()).unwrap();
+    let request=entry.client.as_openai().unwrap().0.decode_request(serde_json::json!({"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"stream":stream,"stream_options":if stream {serde_json::json!({"include_usage":true,"include_obfuscation":false})}else{serde_json::Value::Null}}).to_string().as_bytes()).unwrap();
     let candidate = entry.candidates[0].clone();
     respond(
         entry,

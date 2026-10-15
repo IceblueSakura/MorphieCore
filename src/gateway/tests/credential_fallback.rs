@@ -145,11 +145,14 @@ async fn same_provider_fallback_is_ordered_bounded_and_never_crosses_publication
         .unwrap();
         let gateway = Gateway::new(
             topology,
-            vec![Entry {
-                model: "public".into(),
-                protocol: Profile::Responses,
-                endpoint: EndpointId::new("single").unwrap(),
-            }],
+            crate::gateway::TaskEntries {
+                generation: vec![Entry {
+                    model: "public".into(),
+                    protocol: Profile::Responses,
+                    endpoint: EndpointId::new("single").unwrap(),
+                }],
+                ..Default::default()
+            },
             credentials,
             SecretMaterial::new(crate::gateway::tests::support::KEY).unwrap(),
             Limits::default(),

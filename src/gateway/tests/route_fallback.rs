@@ -186,14 +186,17 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
         .unwrap();
         let gateway = Gateway::new(
             topology,
-            ["b", "a"]
-                .into_iter()
-                .map(|id| Entry {
-                    model: "public".into(),
-                    protocol: Profile::Responses,
-                    endpoint: EndpointId::new(id).unwrap(),
-                })
-                .collect(),
+            TaskEntries {
+                generation: ["b", "a"]
+                    .into_iter()
+                    .map(|id| Entry {
+                        model: "public".into(),
+                        protocol: Profile::Responses,
+                        endpoint: EndpointId::new(id).unwrap(),
+                    })
+                    .collect(),
+                ..Default::default()
+            },
             credentials,
             SecretMaterial::new(crate::gateway::tests::support::KEY).unwrap(),
             Limits {

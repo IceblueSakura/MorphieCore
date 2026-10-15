@@ -369,13 +369,15 @@ impl Bootstrap {
         {
             return Err(StartupError::Binding);
         }
-        let mut gateway = Gateway::new_with_media_and_environment_proxy(
+        let mut gateway = Gateway::bind(
             catalog::topology(&configuration.failover).map_err(|_| StartupError::Binding)?,
-            entries,
-            image_entries,
-            speech_entries,
-            transcription_entries,
-            embedding_entries,
+            crate::gateway::TaskEntries {
+                generation: entries,
+                images: image_entries,
+                speech: speech_entries,
+                transcriptions: transcription_entries,
+                embeddings: embedding_entries,
+            },
             credentials,
             SecretMaterial::new(configuration.client_key.expose())
                 .map_err(|_| StartupError::Credentials)?,

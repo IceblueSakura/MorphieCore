@@ -409,16 +409,19 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
     let diagnostics = directory.path().join("diagnostics.jsonl");
     let gate = Gateway::new(
         topology,
-        [Profile::Responses, Profile::Chat]
-            .into_iter()
-            .flat_map(|protocol| {
-                endpoint_ids.iter().map(move |endpoint| Entry {
-                    model: binding.model.into(),
-                    protocol,
-                    endpoint: endpoint.clone(),
+        morphiecore::gateway::TaskEntries {
+            generation: [Profile::Responses, Profile::Chat]
+                .into_iter()
+                .flat_map(|protocol| {
+                    endpoint_ids.iter().map(move |endpoint| Entry {
+                        model: binding.model.into(),
+                        protocol,
+                        endpoint: endpoint.clone(),
+                    })
                 })
-            })
-            .collect(),
+                .collect(),
+            ..Default::default()
+        },
         BTreeMap::from([(
             CredentialBindingId::new(binding.credential).unwrap(),
             Arc::new(SecretMaterial::new("synthetic-upstream").unwrap()),

@@ -30,7 +30,10 @@ async fn activated_members_keep_route_order_with_a_shared_client_carrier() {
         .collect();
     let gate = Gateway::new(
         topology(),
-        entries,
+        TaskEntries {
+            generation: entries,
+            ..Default::default()
+        },
         BTreeMap::from([(
             CredentialBindingId::new("fixture-key").unwrap(),
             Arc::new(SecretMaterial::new("synthetic-upstream-credential-0001").unwrap()),
@@ -54,6 +57,9 @@ async fn activated_members_keep_route_order_with_a_shared_client_carrier() {
     );
     let request = entry
         .client
+        .as_openai()
+        .unwrap()
+        .0
         .decode_request(br#"{"model":"fixture-model","input":"x"}"#)
         .unwrap();
     assert_eq!(
@@ -67,6 +73,9 @@ async fn activated_members_keep_route_order_with_a_shared_client_carrier() {
     );
     let opaque = entry
         .client
+        .as_openai()
+        .unwrap()
+        .0
         .decode_request(
             br#"{"model":"fixture-model","input":"x","include":["reasoning.encrypted_content"]}"#,
         )
@@ -81,11 +90,14 @@ fn ingress_unwraps_only_the_candidate_compatible_opaque_and_never_selects_a_targ
     use serde_json::json;
     let gate = Gateway::new(
         topology(),
-        vec![Entry {
-            model: "fixture-model".into(),
-            protocol: Profile::Responses,
-            endpoint: EndpointId::new("fixture-responses").unwrap(),
-        }],
+        TaskEntries {
+            generation: vec![Entry {
+                model: "fixture-model".into(),
+                protocol: Profile::Responses,
+                endpoint: EndpointId::new("fixture-responses").unwrap(),
+            }],
+            ..Default::default()
+        },
         BTreeMap::from([(
             CredentialBindingId::new("fixture-key").unwrap(),
             Arc::new(SecretMaterial::new("synthetic-upstream-credential-0001").unwrap()),
@@ -141,11 +153,14 @@ async fn model_request_limits_do_not_suppress_client_reported_facts() {
     use serde_json::json;
     let gate = Gateway::new(
         topology(),
-        vec![Entry {
-            model: "limited-model".into(),
-            protocol: Profile::Responses,
-            endpoint: EndpointId::new("limited-responses").unwrap(),
-        }],
+        TaskEntries {
+            generation: vec![Entry {
+                model: "limited-model".into(),
+                protocol: Profile::Responses,
+                endpoint: EndpointId::new("limited-responses").unwrap(),
+            }],
+            ..Default::default()
+        },
         BTreeMap::from([(
             CredentialBindingId::new("fixture-key").unwrap(),
             Arc::new(SecretMaterial::new("synthetic-upstream-credential-0001").unwrap()),
@@ -158,6 +173,9 @@ async fn model_request_limits_do_not_suppress_client_reported_facts() {
     let entry = &gate.state.entries[&(family(Profile::Responses), "limited-model".into())];
     let request = entry
         .client
+        .as_openai()
+        .unwrap()
+        .0
         .decode_request(
             &serde_json::to_vec(&json!({
                 "model":"limited-model","input":"synthetic","temperature":0.5
@@ -332,14 +350,17 @@ fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
     // Activate one Chat target for both client wire families without I/O.
     let gate = Gateway::new(
         topology(),
-        [Profile::Chat, Profile::Responses]
-            .into_iter()
-            .map(|protocol| Entry {
-                model: "fixture-model".into(),
-                protocol,
-                endpoint: EndpointId::new("fixture-chat").unwrap(),
-            })
-            .collect(),
+        TaskEntries {
+            generation: [Profile::Chat, Profile::Responses]
+                .into_iter()
+                .map(|protocol| Entry {
+                    model: "fixture-model".into(),
+                    protocol,
+                    endpoint: EndpointId::new("fixture-chat").unwrap(),
+                })
+                .collect(),
+            ..Default::default()
+        },
         BTreeMap::from([(
             CredentialBindingId::new("fixture-key").unwrap(),
             Arc::new(SecretMaterial::new("synthetic-upstream-credential-0001").unwrap()),
@@ -468,11 +489,14 @@ fn entries_cannot_escape_compiled_route_or_credential_ownership() {
     let topo = topology();
     let result = Gateway::new(
         topo,
-        vec![Entry {
-            model: "fixture-model".into(),
-            protocol: Profile::Chat,
-            endpoint: EndpointId::new("limited-responses").unwrap(),
-        }],
+        TaskEntries {
+            generation: vec![Entry {
+                model: "fixture-model".into(),
+                protocol: Profile::Chat,
+                endpoint: EndpointId::new("limited-responses").unwrap(),
+            }],
+            ..Default::default()
+        },
         BTreeMap::new(),
         SecretMaterial::new(KEY).unwrap(),
         Limits::default(),
@@ -485,11 +509,14 @@ fn entries_cannot_escape_compiled_route_or_credential_ownership() {
         .clone();
     let other = Gateway::new(
         topology(),
-        vec![Entry {
-            model: "fixture-model".into(),
-            protocol: Profile::Chat,
-            endpoint: EndpointId::new("fixture-chat").unwrap(),
-        }],
+        TaskEntries {
+            generation: vec![Entry {
+                model: "fixture-model".into(),
+                protocol: Profile::Chat,
+                endpoint: EndpointId::new("fixture-chat").unwrap(),
+            }],
+            ..Default::default()
+        },
         BTreeMap::from([(
             CredentialBindingId::new("fixture-key").unwrap(),
             Arc::new(SecretMaterial::new("different-synthetic-upstream-key").unwrap()),

@@ -24,11 +24,14 @@ use tower::ServiceExt;
 fn gateway(origin: &str) -> Gateway {
     Gateway::new(
         super::topology::topology_at(origin),
-        vec![Entry {
-            model: "fixture-model".into(),
-            protocol: Profile::Responses,
-            endpoint: EndpointId::new("fixture-responses").unwrap(),
-        }],
+        crate::gateway::TaskEntries {
+            generation: vec![Entry {
+                model: "fixture-model".into(),
+                protocol: Profile::Responses,
+                endpoint: EndpointId::new("fixture-responses").unwrap(),
+            }],
+            ..Default::default()
+        },
         BTreeMap::from([(
             CredentialBindingId::new("fixture-key").unwrap(),
             Arc::new(SecretMaterial::new("synthetic-upstream-credential-0001").unwrap()),

@@ -153,13 +153,16 @@ async fn stateless_json_and_sse_replay_signatures_and_cancel_upstream() {
     .unwrap();
     let gateway = Gateway::new(
         topology,
-        [Profile::Chat, Profile::Responses]
-            .map(|protocol| Entry {
-                model: binding.model.into(),
-                protocol,
-                endpoint: endpoint.id.clone(),
-            })
-            .to_vec(),
+        morphiecore::gateway::TaskEntries {
+            generation: [Profile::Chat, Profile::Responses]
+                .map(|protocol| Entry {
+                    model: binding.model.into(),
+                    protocol,
+                    endpoint: endpoint.id.clone(),
+                })
+                .to_vec(),
+            ..Default::default()
+        },
         BTreeMap::from([(
             CredentialBindingId::new(binding.credential).unwrap(),
             Arc::new(SecretMaterial::new("synthetic-upstream").unwrap()),

@@ -53,7 +53,7 @@ downstream HTTP: authenticate and collect within bounds
 | `semantic` | Task types, validation, requirements and stream reduction | No protocol, Provider or execution dependency |
 | `protocol` | Codecs, dialects, capabilities and named projections | No network, credentials or registry |
 | `lowering` | Cross-protocol capability dispatch and representation errors | Protocols own their representation checks |
-| `adapter` | Generic requests, replay isolation and upstream dispatch | Trusted bindings select rules |
+| `adapter` | Requests with protocol provenance, replay isolation and codec dispatch | Trusted bindings select rules; no I/O or publication state |
 | `topology` | Compile public model → route → endpoints | Endpoints fix origin, path, model and credential scope |
 | `execution` | Candidate planning, preparation, intake and delivery state | No agent planning or tool execution |
 | `transport` | HTTP I/O and SSE framing | Prepared trusted requests only |
@@ -329,6 +329,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Candidate-local tool errors | Messages admission preserves tool-result error flags regardless of the route. Native targets retain them; OpenAI targets apply a named loss on their private copy |
 | Explicit downstream identity | A closed client protocol and its adapter own decoding and delivery carriers. Messages keeps its Chat-candidate activation policy without a dummy OpenAI adapter |
 | Codec dispatch and execution | Adapters own upstream decoder and downstream encoder dispatch. Execution owns attempt identity, budgets, EOF validation and publication; candidate-transition rules are pure and independent of I/O |
+| Typed startup activation | One `TaskEntries` input selects Generation and each standalone task explicitly. Empty lists activate nothing; embedding does not discover catalogs, credentials or environment proxies |
 | Official intake fields | Pinned client request fields are carried, ignored by name or rejected. Fields that change model input, tools, the output contract or the output cap are never ignored; execution, billing, telemetry, cache and sampling preferences may be |
 | Append-only history projection | Earlier content does not change when a later turn is added |
 | Reported tool results | Responses carries function/custom results in static output and item snapshots. Missing call references stay unreported; request history still requires matching preceding calls. Chat and Messages reject ordinary tool results as assistant output, not their supported history forms |

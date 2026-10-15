@@ -48,19 +48,22 @@ async fn models_list_and_retrieve_use_the_same_standard_public_object() {
 
 #[tokio::test]
 async fn activated_protocols_are_deduplicated_and_images_share_the_directory() {
-    let gate = Gateway::new_with_images(
+    let gate = Gateway::new(
         crate::gateway::tests::topology::topology(),
-        [Profile::Responses, Profile::Chat]
-            .into_iter()
-            .map(|protocol| Entry {
-                model: "fixture-model".into(),
-                protocol,
-                endpoint: crate::topology::EndpointId::new("fixture-chat").unwrap(),
-            })
-            .collect(),
-        vec![ImageEntry {
-            model: "fixture-image".into(),
-        }],
+        TaskEntries {
+            generation: [Profile::Responses, Profile::Chat]
+                .into_iter()
+                .map(|protocol| Entry {
+                    model: "fixture-model".into(),
+                    protocol,
+                    endpoint: crate::topology::EndpointId::new("fixture-chat").unwrap(),
+                })
+                .collect(),
+            images: vec![ImageEntry {
+                model: "fixture-image".into(),
+            }],
+            ..Default::default()
+        },
         BTreeMap::from([(
             crate::provider::CredentialBindingId::new("fixture-key").unwrap(),
             Arc::new(SecretMaterial::new("synthetic-upstream-credential").unwrap()),

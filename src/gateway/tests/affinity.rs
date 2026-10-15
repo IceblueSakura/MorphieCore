@@ -176,11 +176,14 @@ fn gateway(origin: &str, profile: Profile, dialect: Dialect) -> Gateway {
     .unwrap();
     Gateway::new(
         topology,
-        vec![Entry {
-            model: "public".into(),
-            protocol: profile,
-            endpoint: EndpointId::new("endpoint").unwrap(),
-        }],
+        crate::gateway::TaskEntries {
+            generation: vec![Entry {
+                model: "public".into(),
+                protocol: profile,
+                endpoint: EndpointId::new("endpoint").unwrap(),
+            }],
+            ..Default::default()
+        },
         BTreeMap::from([(
             CredentialBindingId::new("key").unwrap(),
             Arc::new(SecretMaterial::new("synthetic-upstream").unwrap()),

@@ -218,7 +218,7 @@ mod tests {
     use crate::{protocol::openai::Profile, semantic::context::ConversationContext};
 
     fn request(entry: &crate::gateway::BoundEntry, seed: &str) -> crate::adapter::Request {
-        let mut request = entry.client.decode_request(
+        let mut request = entry.client.as_openai().unwrap().0.decode_request(
             br#"{"model":"fixture-model","messages":[{"role":"system","content":"rules"},{"role":"user","content":"hello"}]}"#
         ).unwrap();
         request.conversation = Some(ConversationContext::independent_request(seed).unwrap());
@@ -261,6 +261,9 @@ mod tests {
             }
             edited.task = entry
                 .client
+                .as_openai()
+                .unwrap()
+                .0
                 .decode_request(&serde_json::to_vec(&wire).unwrap())
                 .unwrap()
                 .task;

@@ -153,6 +153,8 @@ Proxy precedence is CLI → config → environment proxy settings. A failing exp
 
 Ctrl-C shuts down the listener and cancels in-flight upstream work.
 
+For Rust embedding, `Gateway::new` takes a compiled topology and one `TaskEntries` value with separate Generation, Images, Speech, Transcription and Embeddings lists. Empty lists activate nothing. Credentials and limits remain explicit; the embedded constructor does not opt into environment proxies. See [startup configuration](../src/gateway/startup/config.rs).
+
 ## Send a request
 
 Set the SDK `base_url` to `http://127.0.0.1:8080/v1` and `api_key` to the ingress `client_key`. Anthropic clients use the bare origin, `http://127.0.0.1:8080`.

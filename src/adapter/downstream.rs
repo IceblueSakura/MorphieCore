@@ -48,9 +48,6 @@ impl ClientAdapter {
             contract.replay_origin = Some(origin.clone());
         }
     }
-    pub fn decode_request(&self, bytes: &[u8]) -> Result<Request, CodecError> {
-        self.as_openai()?.0.decode_request(bytes)
-    }
     pub fn decode_client_request(&self, bytes: &[u8]) -> Result<Request, CodecError> {
         match self {
             Self::OpenAi { adapter, .. } => adapter.decode_client_request(bytes),
