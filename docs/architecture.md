@@ -72,7 +72,7 @@ Execution is typed dataflow coordinated by scoped state machines. Semantic reduc
 
 The IR is neither a protocol DTO nor a union of vendor fields.
 
-Generation semantics come from the official OpenAI, Anthropic and Google APIs. One official API is enough to justify a concept; a target without its carrier rejects it. Provider dialects and lossy mappings, including budget-to-effort thresholds, belong to protocol codecs and projection rules, not the semantic types. Realtime and standalone tasks do not determine Generation completeness.
+Generation semantics come from the official OpenAI, Anthropic and Google APIs. One official API is enough to justify a concept; a target without its carrier rejects it. Provider dialects and explicitly chosen adaptations belong to protocol codecs and projection rules, not the semantic types. Reasoning activation, numeric budgets and qualitative effort are not interchangeable. Realtime and standalone tasks do not determine Generation completeness.
 
 - **Ordered items:** instructions, messages, tool calls/results, reasoning, compaction and Provider tool observations share one ordered history. A message is one container, not the whole conversation.
 - **Explicit links:** calls and results link by call ID, never position or name. Item IDs, part IDs, wire IDs and stream indexes remain distinct.
@@ -109,6 +109,16 @@ Trusted adapters select dialects. Apply the same extension admission to requests
 Encode from the current typed meaning. A source extension cannot override canonical output, restore a deleted owner or cross an incompatible target. Dialect representation precedes final serialization; there are no post-encoding JSON patches. Projection need not be invertible: named approximations remain losses, not equivalent mappings.
 
 Introduce this seam incrementally around concrete mappings. Do not add a universal protocol DTO, arbitrary extension bag, plugin registry, second stream reducer or whole-stream buffering. Existing framing limits, conflict validation, EOF-gated terminals and replay authority remain unchanged.
+
+### Reasoning level calibration
+
+Reject a candidate that cannot represent the requested reasoning semantics. The exception is an explicit, hand-authored level mapping for the same model, scoped by trusted binding/dialect selection. This is the selected correction policy; existing automatic approximations are not evidence that it has shipped.
+
+Different Providers may expose different labels for one model. A selected rule may map `low` to `medium`, for example. Without a declared rule, neither a nearest-level heuristic nor matching label spelling establishes equivalence. This exception does not authorize converting disabled reasoning into enabled reasoning or replacing a numeric budget with an effort level.
+
+Encode and decode mappings are directional. A many-to-one encode mapping has no automatic inverse; normalization of an upstream report needs its own explicit rule. Preserve request intent and reported effective settings separately, never synthesizing a reported setting from the request. Apply each mapping once at its boundary, record its named provenance, and validate the result against the target contract.
+
+Rules cannot expand accepted content types, bypass model restrictions, select a route or modify the source IR. No public request override or new configuration interface is selected by this decision. Thinking activation and the scope of effort remain a separate [pending IR decision](roadmap.md#pending-decisions).
 
 ### Field handling
 
@@ -318,6 +328,8 @@ Native requests preserve thinking, tool-use/result order and call IDs. Messages 
 
 ### Request rules
 
+These describe existing projections. Automatic reasoning approximations are scheduled for correction under [Reasoning level calibration](#reasoning-level-calibration); they are not accepted equivalences or a claim that the selected policy is already implemented.
+
 - Effort maps to adaptive thinking. `none`/`minimal` map to `low`; budgets use a named effort projection.
 - Summary intent maps to summarized or omitted display. Unsupported reasoning context and sampling controls are dropped by named rules.
 - Client `thinking.display` is preserved independently of effort and budget, using the same display parser as native intake.
@@ -386,6 +398,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | One semantic core | Gateway and future agent library share the IR; callers own agent behavior. Beyond context edits and response continuation, agent-only machinery joins the IR when the library needs it |
 | Official Generation vocabulary | OpenAI, Anthropic and Google define semantic concepts; dialect carriers and approximation policies stay in protocol modules. Semantic expression, codec support and activated bindings are separate claims |
 | Two codec responsibilities | Normalize Provider dialects into an official API baseline plus declared extensions before semantic decoding; encode in reverse before serialization. Semantic extensions enter IR; eligible non-semantic fidelity stays scoped outside it |
+| Explicit same-model level calibration | Reject unrepresentable reasoning except for hand-authored, trusted, directional level mappings for the same model. No automatic nearest-level conversion, inverse mapping, off-to-on conversion or budget-to-level substitution |
 | Equal downstream contracts | Chat Completions, Responses and Messages receive equal consideration for static delivery, streaming and history replay; a missing carrier requires explicit rejection |
 | Separate task contracts | Generation, Embeddings, Images, Speech and Transcription are not one universal message type |
 | Pure protocol boundaries | Encode from final typed input; no network in codecs or post-encoding JSON patches |

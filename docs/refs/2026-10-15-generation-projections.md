@@ -93,7 +93,7 @@ Minimal independent-intent example for an eligible target:
 {"thinking":{"type":"disabled"},"output_config":{"effort":"high"}}
 ```
 
-A single effort enum cannot use `none` for disabled and `high` for response effort simultaneously. Low effort is not off. D1 selects an orthogonal representation or explicit rejection; an extension bag must not conceal the missing semantic dimension.
+A single effort enum cannot use `none` for disabled and `high` for response effort simultaneously. Low effort is not off. D1 must also resolve the scope of effort, not merely add a boolean; an extension bag must not conceal the missing semantic dimension.
 
 The [extended-thinking guide](https://platform.claude.com/docs/en/build-with-claude/extended-thinking), read 2026-10-15, requires manual `budget_tokens >= 1024` and normally `< max_tokens`, with an interleaved-thinking exception. Validate the selected variant before normalization: budget zero is not Anthropic's disabled spelling, and unsupported known members must not disappear while changing modes.
 
@@ -107,7 +107,35 @@ The discovery descriptor and pinned SDK's [types](https://github.com/googleapis/
 
 `MINIMAL` is little or no thinking, not guaranteed disabled. Some models cannot disable reasoning, and allowed levels vary. Preserve numeric guidance on an eligible budget carrier; do not automatically replace it with a coarse level or treat lower levels as equivalent across models.
 
-The pinned Interactions [generation config](https://github.com/googleapis/python-genai/blob/78f6d3412caaaed44f99ce57be2d16d0b8c407cb/google/genai/_gaos/types/interactions/generationconfig.py) exposes thinking levels and summaries but no declared numeric budget or explicit off member. Hiding summaries is not a substitute. D2 governs targets that cannot express the requested control.
+The pinned Interactions [generation config](https://github.com/googleapis/python-genai/blob/78f6d3412caaaed44f99ce57be2d16d0b8c407cb/google/genai/_gaos/types/interactions/generationconfig.py) exposes thinking levels and summaries but no declared numeric budget or explicit off member. Hiding summaries is not a substitute. The selected [reasoning policy](../architecture.md#reasoning-level-calibration) rejects controls with no carrier, except for explicitly selected same-model level calibration.
+
+### Cross-protocol activation and effort
+
+The following comparison uses the pinned SDKs above and the linked guides read on 2026-10-15. It describes wire controls, not the model capabilities of every binding.
+
+| API | Activation or off representation | Strength and other controls | Independent off plus non-off effort? |
+|---|---|---|---|
+| OpenAI Chat | `reasoning_effort: none` on eligible models; no separate declared `enabled` field | The same enum selects reasoning effort | Not in the selected schema: one field cannot simultaneously be `none` and `high` |
+| OpenAI Responses | `reasoning.effort: none` on eligible models; no separate declared `enabled` field | `effort` selects reasoning strength; `mode` selects standard/pro execution; `summary` controls a returned view | Mode and effort are independent, but standard/pro is not an on/off switch |
+| Google generateContent | Eligible budget-based models use `thinkingBudget: 0`; dynamic allocation uses `-1` | A positive numeric budget or a model-supported thinking level guides reasoning; `includeThoughts` selects returned summaries | No documented independent off-plus-nonzero-strength contract established here; budget zero is a value of the allocation control |
+| Google Interactions v1 | No documented off member in the selected generation config | Levels `minimal/low/medium/high`; summaries `auto/none` | No documented independent switch; `minimal` and hidden summaries do not establish off |
+| Anthropic Messages | Distinct disabled/enabled/adaptive thinking variants, subject to model restrictions | `output_config.effort` affects response text, tool calls and thinking when active | Yes on eligible models; disabled plus high effort is a meaningful counterexample |
+
+OpenAI's pinned [reasoning type](https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/shared_params/reasoning.py) says effort constrains reasoning. Its [reasoning guide](https://developers.openai.com/api/docs/guides/reasoning) distinguishes execution mode from effort. Supported efforts vary by model; the existence of `none` in the SDK enum is not universal off support. OpenRouter's `reasoning.enabled` is a separate router extension, not proof that OpenAI has that official field.
+
+Google's [thinking-level](https://github.com/googleapis/python-genai/blob/78f6d3412caaaed44f99ce57be2d16d0b8c407cb/google/genai/_gaos/types/interactions/thinkinglevel.py) and [summary](https://github.com/googleapis/python-genai/blob/78f6d3412caaaed44f99ce57be2d16d0b8c407cb/google/genai/_gaos/types/interactions/thinkingsummaries.py) types are distinct. Neither a hidden summary nor the lowest level supplies an independent activation contract. Do not infer that every combination of budget and level fields is valid merely because a generated type declares both.
+
+Anthropic's [How effort works](https://platform.claude.com/docs/en/build-with-claude/effort#how-effort-works) explicitly applies effort to all response tokens, including tool arguments and text without thinking. Therefore it is broader than OpenAI's documented reasoning effort. Adding `enabled: false` next to an unchanged, supposedly universal reasoning-effort field would retain two wire values but would not by itself resolve their semantic scope.
+
+The value of independent activation is faithful expression of an official contract, even when only one API has that carrier. It is not evidence that off plus response-wide high effort can be translated to OpenAI `none` plus `high`, Google low/minimal, or a verbosity setting. D1 can either model activation and effort scope explicitly or reject the currently unrepresentable combination. A scoped effort control or separate reasoning/response effort are structural options; no new type or cross-scope mapping is selected here.
+
+### Hand-authored same-model level calibration
+
+The selected product policy rejects unrepresentable reasoning semantics while allowing deliberate level calibration in encode/decode for the same model. This is not an official claim that different Providers expose equivalent levels.
+
+For example, one Provider may expose medium/high and another medium/high/xhigh. A hand-authored encode rule may choose `low → medium`. It does not imply a decode rule `medium → low`, nor determine how to invert high/xhigh if both were mapped to one canonical level. Configure each intended direction explicitly under trusted binding selection.
+
+This exception is limited to qualitative levels. It does not permit automatic budget-to-level conversion, off-to-on conversion, or relabeling response-wide effort as reasoning-only effort. Keep request intent separate from what the upstream actually reports, and do not synthesize effective settings from the request. The rule belongs at the codec boundary, not in protocol-independent IR or arbitrary client JSON; the configuration interface remains unselected.
 
 ## Sampling, schemas and service policy
 
