@@ -13,20 +13,21 @@ pub fn resolve_store_directory(explicit: Option<PathBuf>) -> Result<PathBuf, Cre
     match explicit {
         Some(path) if path.as_os_str().is_empty() => Err(CredentialError::InvalidInput),
         Some(path) => Ok(path),
-        None => home_store(std::env::var_os(HOME_VARIABLE)),
+        None => Ok(default_config_directory()?.join("credentials")),
     }
 }
 
-fn home_store(home: Option<OsString>) -> Result<PathBuf, CredentialError> {
+/// Resolve the default application configuration directory without filesystem I/O.
+pub fn default_config_directory() -> Result<PathBuf, CredentialError> {
+    home_directory(std::env::var_os(HOME_VARIABLE))
+}
+
+fn home_directory(home: Option<OsString>) -> Result<PathBuf, CredentialError> {
     let home = home
         .map(PathBuf::from)
         .filter(|path| path.is_absolute())
         .ok_or(CredentialError::DefaultStoreUnavailable)?;
-    Ok(home
-        .join(".local")
-        .join("share")
-        .join("morphiecore")
-        .join("credentials"))
+    Ok(home.join(".local").join("share").join("morphiecore"))
 }
 
 #[cfg(test)]
@@ -34,15 +35,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_store_is_a_fixed_child_of_an_absolute_home() {
+    fn default_config_is_a_fixed_child_of_an_absolute_home() {
         let home = PathBuf::from(if cfg!(windows) {
             r"C:\synthetic-home"
         } else {
             "/synthetic-home"
         });
         assert_eq!(
-            home_store(Some(home.clone().into_os_string())).unwrap(),
-            home.join(".local/share/morphiecore/credentials")
+            home_directory(Some(home.clone().into_os_string())).unwrap(),
+            home.join(".local/share/morphiecore")
         );
     }
 
@@ -50,7 +51,7 @@ mod tests {
     fn missing_empty_or_relative_home_never_selects_the_working_directory() {
         for home in [None, Some("".into()), Some("relative-home".into())] {
             assert_eq!(
-                home_store(home).unwrap_err(),
+                home_directory(home).unwrap_err(),
                 CredentialError::DefaultStoreUnavailable
             );
         }

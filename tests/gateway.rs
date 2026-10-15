@@ -802,7 +802,14 @@ async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
     }));
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join(".local/share/morphiecore/credentials");
-    std::fs::create_dir_all(root.parent().unwrap()).unwrap();
+    let mut directories = std::fs::DirBuilder::new();
+    directories.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        directories.mode(0o700);
+    }
+    directories.create(root.parent().unwrap()).unwrap();
     let manager = morphiecore::credential::CredentialManager::new(&root, vec![]).unwrap();
     manager
         .add_api_key(
@@ -825,7 +832,7 @@ async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
             },
         )
         .unwrap();
-    let path = root.join("gateway.json");
+    let path = root.parent().unwrap().join("gateway.json");
     manager
         .add_api_key(
             "openrouter",

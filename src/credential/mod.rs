@@ -8,7 +8,7 @@ pub(crate) mod tests;
 pub use api_key::{ApiKeyAccess, ApiKeyState, ApiKeyStatus};
 mod access;
 pub use access::{AccessBinding, AccessGrant};
-pub use storage::directory::resolve_store_directory;
+pub use storage::directory::{default_config_directory, resolve_store_directory};
 mod manager;
 mod model;
 mod pool;
@@ -79,7 +79,9 @@ pub enum CredentialError {
     InvalidInput,
     #[error("credential store is unavailable or unsafe")]
     Storage,
-    #[error("default credential directory is unavailable; specify --store or --credentials-dir")]
+    #[error(
+        "default application directory is unavailable; specify --config and --credentials-dir for the gateway, or --store for the credential CLI"
+    )]
     DefaultStoreUnavailable,
     #[error("credential store is busy")]
     Busy,

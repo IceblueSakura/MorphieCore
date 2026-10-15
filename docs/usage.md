@@ -28,7 +28,7 @@ Build the CLIs:
 
 ```sh
 cargo build --locked --offline --bins
-install -d -m 700 "$HOME/.local/share/morphiecore/credentials"
+install -d -m 700 "$HOME/.local/share/morphiecore" "$HOME/.local/share/morphiecore/credentials"
 ```
 
 The examples below use `morphiecore-auth` as shorthand for `cargo run --locked --offline --bin morphiecore-auth --`. Replace placeholders with catalog identities. Provider definitions are in [src/provider/catalog.rs](../src/provider/catalog.rs); model and credential bindings are in [src/topology/catalog.rs](../src/topology/catalog.rs) and its modules.
@@ -101,7 +101,7 @@ Callbacks listen on `127.0.0.1`. Login checks issuer, client and subject. Infere
 
 ## Configure the gateway
 
-Create a private `gateway.json` in the store, or select a different file with `--config`. This example uses a synthetic ingress token; replace it with a private random token of 32–4096 bytes:
+Create a private `$HOME/.local/share/morphiecore/gateway.json` (use `%USERPROFILE%` on Windows), or select a different file with `--config`. Its parent directory must also be private on Unix. This example uses a synthetic ingress token; replace it with a private random token of 32–4096 bytes:
 
 ```json
 {
@@ -139,6 +139,8 @@ cargo run --locked --offline --bin morphiecore
 ```
 
 Override paths or proxy when needed:
+
+`--config` and `--credentials-dir` are independent: changing either leaves the other's default unchanged. The credential CLI's `--store` selects only its credential directory. The former `credentials/gateway.json` location is not searched or migrated; select it explicitly with `--config` if needed.
 
 ```sh
 cargo run --locked --offline --bin morphiecore -- \

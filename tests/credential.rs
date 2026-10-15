@@ -137,7 +137,7 @@ mod unix {
             assert!(!output.status.success());
             assert!(output.stdout.is_empty());
             assert!(
-                String::from_utf8_lossy(&output.stderr).contains("default credential directory")
+                String::from_utf8_lossy(&output.stderr).contains("default application directory")
             );
         }
         let home = Directory::existing();

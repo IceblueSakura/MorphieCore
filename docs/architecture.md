@@ -339,6 +339,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Delivery-local identity | Generated client IDs/timestamps are not upstream facts. Responses allocates a gateway-owned ID; only a stored, fully delivered snapshot makes it a history key |
 | Stateless Google Interactions | `store: false` and full history; no `previous_interaction_id` or revision header. Signatures keep their native formats |
 | Separate credential lifecycle | Private file store and ordered pools; no inference-triggered login or refresh |
+| Independent CLI paths | Default configuration lives in the home-relative application directory, with credentials in its `credentials` child. Explicit config and credential paths override independently; no legacy path discovery or automatic migration |
 | Agent-sized bounds | Bodies, IR budgets and deadlines fit whole-history agent sessions and long turns: tens of MiB and one hour per exchange. Upstreams enforce their own maxima |
 | Inert, credential-free media | Inline data or URLs only; no gateway fetch or file service, and no client-supplied Provider file references |
 | Standard carriers only | A target without a standard carrier for a semantic rejects it. The gateway does not move content to another role or add model-visible text to make it fit; for example, Chat targets reject tool-result media |
