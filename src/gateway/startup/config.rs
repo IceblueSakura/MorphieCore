@@ -259,7 +259,8 @@ impl Gateway {
         let auth = auth::Auth::new(client_key)?;
         let transport = HttpTransport::with_environment_proxy(proxy, environment)
             .map_err(|_| StartupError::Transport)?;
-        let mut bound: BTreeMap<(u8, String), BoundEntry> = BTreeMap::new();
+        let mut bound: BTreeMap<(crate::adapter::ClientProtocol, String), BoundEntry> =
+            BTreeMap::new();
         for entry in entries {
             let public = topology
                 .model(&entry.model)
@@ -352,9 +353,7 @@ impl Gateway {
                     .entry((family(entry.protocol), entry.model.clone()))
                     .or_insert_with(|| BoundEntry {
                         public: public.clone(),
-                        messages: false,
-                        client,
-                        downstream,
+                        client: crate::adapter::ClientAdapter::openai(client, downstream),
                         policy: route.policy.clone(),
                         candidates: vec![],
                     });
@@ -392,7 +391,7 @@ impl Gateway {
             });
             if key.0 == family(Profile::Chat) {
                 let messages = BoundEntry {
-                    messages: true,
+                    client: crate::adapter::ClientAdapter::Messages,
                     ..group.clone()
                 };
                 activated.insert(

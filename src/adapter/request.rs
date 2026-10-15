@@ -1,4 +1,4 @@
-//! Protocol-neutral generation input, context validation and replay isolation.
+//! Generation input, protocol provenance, context validation and replay isolation.
 use super::{AdapterError, ClientProtocol};
 use crate::{
     lowering::generation::RepresentationError,

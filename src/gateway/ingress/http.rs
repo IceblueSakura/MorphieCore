@@ -176,7 +176,6 @@ fn failed_stream(
 ) -> Result<Response, ApiError> {
     let mut delivery = crate::execution::ResponseDelivery::new(
         entry.client.clone(),
-        entry.downstream.clone(),
         entry.public.id.as_str(),
         Default::default(),
         Default::default(),

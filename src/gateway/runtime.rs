@@ -7,7 +7,8 @@ use super::{
     tasks::{embeddings, images, speech, transcription},
 };
 use crate::{
-    protocol::openai::{Adapter, Profile, TargetCaps},
+    adapter::{ClientAdapter, ClientProtocol},
+    protocol::openai::Profile,
     provider::ProviderDefinition,
     topology::{Endpoint, PublicModel},
     transport::http::HttpTransport,
@@ -25,10 +26,7 @@ pub(super) struct BoundCandidate {
 #[derive(Clone)]
 pub(super) struct BoundEntry {
     pub(super) public: PublicModel,
-    /// Messages clients (Claude Code) share the Chat entry's candidates.
-    pub(super) messages: bool,
-    pub(super) client: Adapter,
-    pub(super) downstream: TargetCaps,
+    pub(super) client: ClientAdapter,
     pub(super) policy: crate::topology::RoutePolicy,
     pub(super) candidates: Vec<Arc<BoundCandidate>>,
 }
@@ -56,7 +54,7 @@ pub(super) struct Runtime {
     pub(super) affinity: affinity::Index,
     pub(super) executors: executors::Executors,
     pub(super) auth: auth::Auth,
-    pub(super) entries: BTreeMap<(u8, String), Arc<BoundEntry>>,
+    pub(super) entries: BTreeMap<(ClientProtocol, String), Arc<BoundEntry>>,
     pub(super) images: BTreeMap<String, Arc<images::BoundImage>>,
     pub(super) speech: BTreeMap<String, Arc<speech::BoundSpeech>>,
     pub(super) transcriptions: BTreeMap<String, Arc<transcription::BoundTranscription>>,
@@ -67,10 +65,7 @@ pub(super) struct Runtime {
     pub(super) transport: HttpTransport,
     pub(super) shutdown: CancellationToken,
 }
-pub(super) fn family(profile: Profile) -> u8 {
-    match profile {
-        Profile::Chat => 0,
-        Profile::Responses => 1,
-    }
+pub(super) fn family(profile: Profile) -> ClientProtocol {
+    profile.into()
 }
-pub(super) const MESSAGES_FAMILY: u8 = 2;
+pub(super) const MESSAGES_FAMILY: ClientProtocol = ClientProtocol::Messages;

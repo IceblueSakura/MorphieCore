@@ -223,17 +223,46 @@ mod candidates {
 mod fallback_policy {
     //! Classification and commit/attempt budgets, not Provider quality, govern fallback.
     use morphiecore::{
-        execution::{DeliveryState, fallback::may_advance},
+        execution::{DeliveryState, fallback::Transition},
         provider::ErrorClass,
         topology::{FallbackPolicy, RoutePolicy},
     };
     #[test]
     fn fixed_route_policy_never_replays_visible_or_exhausted_attempts() {
+        let may_advance = |policy: &RoutePolicy, state, error, attempts, remaining| {
+            Transition::Provider.may_advance(policy, state, error, attempts, remaining)
+        };
         let policy = RoutePolicy {
             fallback: FallbackPolicy::BeforeCommit,
             max_attempts: 2,
             ..RoutePolicy::default()
         };
+        assert!(Transition::Credential { enabled: true }.may_advance(
+            &policy,
+            DeliveryState::Uncommitted,
+            ErrorClass::CredentialUnavailable,
+            1,
+            true,
+        ));
+        assert!(!Transition::Provider.may_advance(
+            &policy,
+            DeliveryState::Uncommitted,
+            ErrorClass::CredentialUnavailable,
+            1,
+            true,
+        ));
+        for transition in [
+            Transition::Credential { enabled: true },
+            Transition::SameProvider,
+        ] {
+            assert!(!transition.may_advance(
+                &policy,
+                DeliveryState::Uncommitted,
+                ErrorClass::RateLimit,
+                1,
+                true,
+            ));
+        }
         for error in [
             ErrorClass::RateLimit,
             ErrorClass::Server,

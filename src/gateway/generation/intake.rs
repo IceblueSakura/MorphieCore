@@ -261,13 +261,11 @@ pub(in crate::gateway) async fn produce_candidate(
     };
     let mut delivery = ResponseDelivery::new(
         entry.client.clone(),
-        entry.downstream.clone(),
         entry.public.id.as_str(),
         sse,
         options,
         padding,
-    )
-    .for_messages(entry.messages);
+    );
     if let Some(history) = history {
         delivery = delivery.with_storage(&history.id, history.options.metadata());
     }

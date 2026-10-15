@@ -7,7 +7,7 @@ use crate::gateway::{
 };
 use crate::{
     adapter::Request,
-    execution::{DeliveryState, fallback::may_advance},
+    execution::{DeliveryState, fallback::Transition},
 };
 use axum::response::Response;
 use std::{
@@ -194,26 +194,18 @@ pub(in crate::gateway) async fn produce_chain(
                 let advance = index + 1 < candidates.len()
                     && error.fallback.is_some_and(|class| {
                         let next = &candidates[index + 1];
-                        let remaining =
-                            index + 1 < entry.policy.max_attempts && Instant::now() < deadline;
-                        if candidate.endpoint.id == next.endpoint.id {
-                            crate::execution::fallback::may_advance_credential(
-                                candidate.credential_fallback,
-                                visibility,
-                                class,
-                                remaining,
-                            )
-                        } else if candidate.provider.id == next.provider.id
-                            && matches!(
-                                class,
-                                crate::provider::ErrorClass::RateLimit
-                                    | crate::provider::ErrorClass::Quota
-                            )
-                        {
-                            false
-                        } else {
-                            may_advance(&entry.policy, visibility, class, index + 1, remaining)
-                        }
+                        Transition::between(
+                            &candidate.endpoint,
+                            &next.endpoint,
+                            candidate.credential_fallback,
+                        )
+                        .may_advance(
+                            &entry.policy,
+                            visibility,
+                            class,
+                            index + 1,
+                            Instant::now() < deadline,
+                        )
                     });
                 trace.end_candidate(Some(error.code), advance);
                 if !advance {

@@ -132,7 +132,7 @@ pub(in crate::gateway) fn prepare_responses(
     let mut input = None;
     let (entry, request) = prepare_in(state, family(Profile::Responses), bytes, |entry| {
         let (request, _) = managed::decode(
-            &entry.client,
+            entry.client.as_openai()?.0,
             bytes,
             previous.as_ref().map(|old| (&old.input, &old.response)),
         )?;
@@ -149,13 +149,13 @@ pub(in crate::gateway) fn prepare_messages(
     state: &Runtime,
     bytes: &[u8],
 ) -> Result<(Arc<BoundEntry>, Request), ApiError> {
-    prepare_in(state, crate::gateway::MESSAGES_FAMILY, bytes, |_| {
-        crate::protocol::anthropic::client::decode_client_request(bytes)
+    prepare_in(state, crate::gateway::MESSAGES_FAMILY, bytes, |entry| {
+        entry.client.decode_client_request(bytes)
     })
 }
 fn prepare_in(
     state: &Runtime,
-    family: u8,
+    family: crate::adapter::ClientProtocol,
     bytes: &[u8],
     decode: impl FnOnce(&BoundEntry) -> Result<Request, crate::protocol::CodecError>,
 ) -> Result<(Arc<BoundEntry>, Request), ApiError> {

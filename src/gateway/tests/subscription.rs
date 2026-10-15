@@ -51,13 +51,14 @@ async fn consume(
     });
     let entry = Arc::new(BoundEntry {
         public: original.public.clone(),
-        messages: false,
-        client: Adapter::new(
-            Profile::Responses,
-            crate::protocol::openai::Dialect::MorphieCore,
-            None,
+        client: crate::adapter::ClientAdapter::openai(
+            Adapter::new(
+                Profile::Responses,
+                crate::protocol::openai::Dialect::MorphieCore,
+                None,
+            ),
+            crate::protocol::openai::TargetCaps::full(),
         ),
-        downstream: crate::protocol::openai::TargetCaps::full(),
         policy: original.policy.clone(),
         candidates: vec![candidate.clone()],
     });

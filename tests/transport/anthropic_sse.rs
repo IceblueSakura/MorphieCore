@@ -309,8 +309,7 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
             let mut attempt = native_attempt(target);
             let client = Adapter::new(profile, Dialect::MorphieCore, None);
             let mut delivery = ResponseDelivery::new(
-                client.clone(),
-                TargetCaps::full(),
+                morphiecore::adapter::ClientAdapter::openai(client.clone(), TargetCaps::full()),
                 "public",
                 SseLimits::default(),
                 morphiecore::semantic::context::StreamOptions {
@@ -421,8 +420,7 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
             // The same native SSE intake can also supply a non-streaming client.
             let native = attempt.response().unwrap().clone();
             let mut json_delivery = ResponseDelivery::new(
-                client.clone(),
-                TargetCaps::full(),
+                morphiecore::adapter::ClientAdapter::openai(client.clone(), TargetCaps::full()),
                 "public",
                 SseLimits::default(),
                 Default::default(),

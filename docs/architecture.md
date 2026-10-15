@@ -327,6 +327,8 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Case-sensitive model labels | Public IDs may preserve upstream ASCII capitalization, but resolve only registered routes. Provider prefixes remain rejected; Provider, endpoint and route IDs keep their lowercase grammar |
 | Declared adaptation | Named candidate-local losses; known fields strict, unknown protocol fields ignored |
 | Candidate-local tool errors | Messages admission preserves tool-result error flags regardless of the route. Native targets retain them; OpenAI targets apply a named loss on their private copy |
+| Explicit downstream identity | A closed client protocol and its adapter own decoding and delivery carriers. Messages keeps its Chat-candidate activation policy without a dummy OpenAI adapter |
+| Codec dispatch and execution | Adapters own upstream decoder and downstream encoder dispatch. Execution owns attempt identity, budgets, EOF validation and publication; candidate-transition rules are pure and independent of I/O |
 | Official intake fields | Pinned client request fields are carried, ignored by name or rejected. Fields that change model input, tools, the output contract or the output cap are never ignored; execution, billing, telemetry, cache and sampling preferences may be |
 | Append-only history projection | Earlier content does not change when a later turn is added |
 | Reported tool results | Responses carries function/custom results in static output and item snapshots. Missing call references stay unreported; request history still requires matching preceding calls. Chat and Messages reject ordinary tool results as assistant output, not their supported history forms |

@@ -1,12 +1,16 @@
 //! Protocol-neutral requests, failures and selected upstream dispatch.
 use crate::{lowering::generation::RepresentationError, protocol::CodecError};
+mod downstream;
 pub mod embeddings;
 pub mod images;
 mod request;
 pub mod speech;
 pub mod transcription;
 mod upstream;
+pub use downstream::ClientAdapter;
+pub(crate) use downstream::ClientEncoder;
 pub use request::Request;
+pub(crate) use upstream::GenerationDecoder;
 pub use upstream::UpstreamAdapter;
 /// Downstream wire identity, independent of the selected upstream endpoint.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]

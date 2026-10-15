@@ -67,8 +67,8 @@ fn bootstrap_loads_selected_key_and_requires_reactivation_after_rotation() {
         "deepseek-flash".into(),
     )];
     assert_eq!(
-        entry.downstream.replay_origin,
-        next.downstream.replay_origin
+        entry.client.as_openai().unwrap().1.replay_origin,
+        next.client.as_openai().unwrap().1.replay_origin
     );
     assert_ne!(candidate.cache_scope, next.candidates[0].cache_scope);
     assert_eq!(

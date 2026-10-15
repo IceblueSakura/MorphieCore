@@ -1,14 +1,8 @@
 //! Incremental projection and explicit I/O-owned commit. Encoding is not delivery.
 use crate::{
+    adapter::{ClientAdapter, ClientEncoder, ClientProtocol},
     execution::{Attempt, AttemptError, Lifecycle},
-    protocol::{
-        ResponseMetadata,
-        openai::{
-            Adapter, Profile, TargetCaps, chat::sse::ChatSseEncoder,
-            responses::sse::ResponsesSseEncoder, stream::Obfuscation,
-        },
-        stream::SseLimits,
-    },
+    protocol::{ResponseMetadata, openai::stream::Obfuscation, stream::SseLimits},
     semantic::{context::StreamOptions, task::generation::StreamEvent},
 };
 use bytes::Bytes;
@@ -37,12 +31,6 @@ fn delivery_item_id(
     )
 }
 
-enum Encoder {
-    Responses(ResponsesSseEncoder),
-    Chat(ChatSseEncoder),
-    Messages(crate::protocol::anthropic::client_events::ClientEventEncoder),
-}
-
 fn response_id() -> Result<String, AttemptError> {
     let mut bytes = [0; 16];
     getrandom::fill(&mut bytes).map_err(|_| AttemptError::Protocol("entropy"))?;
@@ -53,13 +41,12 @@ fn response_id() -> Result<String, AttemptError> {
 }
 
 pub struct ResponseDelivery {
-    adapter: Adapter,
-    contract: TargetCaps,
+    client: ClientAdapter,
     public_label: String,
     limits: SseLimits,
     options: StreamOptions,
     padding: Option<Obfuscation>,
-    encoder: Option<Encoder>,
+    encoder: Option<ClientEncoder>,
     source: Option<std::sync::Arc<()>>,
     lifecycle: Lifecycle,
     rendered: bool,
@@ -69,26 +56,18 @@ pub struct ResponseDelivery {
     /// Request-local envelope identity, never stored as upstream metadata or history.
     generated_id: Option<String>,
     storage: Option<(String, crate::protocol::ResponseStorage)>,
-    native_projection: Option<crate::protocol::openai::lowering::native_messages::EventProjection>,
-    /// Encode for an Anthropic Messages client instead of the OpenAI adapter.
-    messages: bool,
 }
 impl ResponseDelivery {
     pub fn new(
-        adapter: Adapter,
-        contract: TargetCaps,
+        mut client: ClientAdapter,
         public_label: &str,
         limits: SseLimits,
         options: StreamOptions,
         padding: Obfuscation,
     ) -> Self {
-        let mut adapter = adapter;
-        let mut contract = contract;
-        adapter.adaptation.scope = Some(super::replay::CLIENT_ORIGIN.clone());
-        contract.replay_origin = Some(super::replay::CLIENT_ORIGIN.clone());
+        client.bind_replay_origin(&super::replay::CLIENT_ORIGIN);
         Self {
-            adapter,
-            contract,
+            client,
             public_label: public_label.into(),
             limits,
             options,
@@ -103,14 +82,12 @@ impl ResponseDelivery {
                 .duration_since(std::time::UNIX_EPOCH)
                 .ok()
                 .map(|time| time.as_secs().into()),
-            native_projection: None,
             generated_id: None,
             storage: None,
-            messages: false,
         }
     }
     pub fn is_messages(&self) -> bool {
-        self.messages
+        self.client.protocol() == ClientProtocol::Messages
     }
     pub(crate) fn with_storage(
         mut self,
@@ -118,11 +95,6 @@ impl ResponseDelivery {
         storage: crate::protocol::ResponseStorage,
     ) -> Self {
         self.storage = Some((id.into(), storage));
-        self
-    }
-    /// Deliver to an Anthropic Messages client (Claude Code) when `messages`.
-    pub fn for_messages(mut self, messages: bool) -> Self {
-        self.messages = messages;
         self
     }
     pub fn lifecycle(&self) -> &Lifecycle {
@@ -191,13 +163,10 @@ impl ResponseDelivery {
         let mut decoded = attempt.response()?.clone();
         decoded.metadata = self.metadata(attempt)?;
         super::replay::seal_for_client(&mut decoded, &super::replay::CLIENT_ORIGIN)?;
-        if attempt.is_native() && !self.messages {
-            crate::protocol::openai::lowering::native_messages::project(
-                &mut decoded,
-                self.adapter.protocol,
-            )?;
+        if attempt.is_native() {
+            self.client.project_native(&mut decoded)?;
         }
-        if self.adapter.protocol == Profile::Responses || attempt.is_native() {
+        if self.client.protocol() == ClientProtocol::Responses || attempt.is_native() {
             for (owner, _) in decoded.semantic.items() {
                 if decoded.fidelity.response_item_id(*owner).is_none() {
                     decoded.fidelity.record_response_item_id(
@@ -219,9 +188,8 @@ impl ResponseDelivery {
         attempt: &Attempt,
         request: &crate::adapter::Request,
     ) -> Option<crate::adapter::Request> {
-        use crate::protocol::cache_affinity::{MAX_PROMPT_BYTES, prefixes};
         if self.rejected
-            || self.messages
+            || self.is_messages()
             || self.lifecycle.state() != crate::execution::DeliveryState::Terminal
             || attempt.response().ok()?.semantic.outcome()
                 != crate::semantic::task::generation::Outcome::Completed
@@ -231,31 +199,8 @@ impl ResponseDelivery {
         {
             return None;
         }
-        let mut input = self
-            .adapter
-            .encode_request(request, &self.public_label, &self.contract)
-            .ok()?;
-        prefixes(&input, self.adapter.protocol)?;
         let decoded = self.client_response(attempt).ok()?;
-        let output = self
-            .adapter
-            .encode_response(&decoded, &self.contract)
-            .ok()?;
-        crate::semantic::value::json_size(&output, MAX_PROMPT_BYTES).ok()?;
-        let (field, items) = match self.adapter.protocol {
-            Profile::Chat => (
-                "messages",
-                vec![output.get("choices")?.get(0)?.get("message")?.clone()],
-            ),
-            Profile::Responses => ("input", output.get("output")?.as_array()?.clone()),
-        };
-        input.get_mut(field)?.as_array_mut()?.extend(items);
-        prefixes(&input, self.adapter.protocol)?;
-        crate::semantic::value::json_size(&input, MAX_PROMPT_BYTES).ok()?;
-        let mut successor = self
-            .adapter
-            .decode_request(&serde_json::to_vec(&input).ok()?)
-            .ok()?;
+        let mut successor = self.client.cache_successor(request, &decoded)?;
         super::replay::open_from_client(&mut successor).ok()?;
         Some(successor)
     }
@@ -281,33 +226,7 @@ impl ResponseDelivery {
         &self,
         attempt: &Attempt,
     ) -> Result<(crate::protocol::DecodedResponse, Vec<u8>), AttemptError> {
-        let mut decoded = self.client_response(attempt)?;
-        let value = if self.messages {
-            crate::protocol::anthropic::client::encode_client_response(
-                &decoded,
-                &self.public_label,
-            )?
-        } else {
-            let target = crate::protocol::openai::lowering::lower_response(
-                &decoded.semantic,
-                &decoded.fidelity,
-                &decoded.metadata,
-                self.adapter.protocol,
-                self.adapter.contract(&self.contract),
-            )
-            .map_err(crate::adapter::AdapterError::from)?;
-            let value = match self.adapter.protocol {
-                Profile::Chat => crate::protocol::openai::chat::envelope::encode_response(&target)?,
-                Profile::Responses => {
-                    crate::protocol::openai::responses::envelope::encode_response(&target)?
-                }
-            };
-            let semantic = target.semantic().clone();
-            let metadata = target.metadata().clone();
-            decoded.semantic = semantic;
-            decoded.metadata = metadata;
-            value
-        };
+        let (decoded, value) = self.client.snapshot(self.client_response(attempt)?)?;
         let body =
             serde_json::to_vec(&value).map_err(|_| AttemptError::Protocol("body serialization"))?;
         Ok((decoded, body))
@@ -343,12 +262,10 @@ impl ResponseDelivery {
             self.ready()?;
             let terminal = attempt.terminal_event()?;
             let frames = self.encode(attempt, std::slice::from_ref(terminal))?;
-            match self.encoder.as_ref() {
-                Some(Encoder::Responses(e)) => e.finish()?,
-                Some(Encoder::Chat(e)) => e.finish()?,
-                Some(Encoder::Messages(e)) => e.finish()?,
-                None => return Err(AttemptError::Delivery("missing stream encoder")),
-            }
+            self.encoder
+                .as_ref()
+                .ok_or(AttemptError::Delivery("missing stream encoder"))?
+                .finish()?;
             self.terminal = true;
             Ok(frames)
         })();
@@ -363,68 +280,33 @@ impl ResponseDelivery {
         events: &[StreamEvent],
     ) -> Result<Vec<Bytes>, AttemptError> {
         self.bind(attempt)?;
-        if self.messages {
-            let metadata = self.metadata(attempt)?;
-            let id = metadata.required_id()?;
-            let label = self.public_label.clone();
-            let Encoder::Messages(encoder) = self.encoder.get_or_insert_with(|| {
-                Encoder::Messages(
-                    crate::protocol::anthropic::client_events::ClientEventEncoder::new(id, &label),
-                )
-            }) else {
-                return Err(AttemptError::Delivery("profile mismatch"));
-            };
-            let mut frames = vec![];
-            for event in events {
-                let event =
-                    super::replay::seal_event(event.clone(), &super::replay::CLIENT_ORIGIN)?;
-                frames.extend(encoder.encode(&event)?);
-            }
-            self.rendered |= !frames.is_empty();
-            return Ok(frames);
-        }
-        let projected;
-        let events = if attempt.is_native() {
-            projected = self
-                .native_projection
-                .get_or_insert_with(|| {
-                    crate::protocol::openai::lowering::native_messages::EventProjection::new(
-                        self.adapter.protocol,
-                    )
-                })
-                .project(events)?;
-            projected.as_slice()
-        } else {
-            events
-        };
         let metadata = self.metadata(attempt)?;
         if self.encoder.is_none() {
-            let contract = self.adapter.contract(&self.contract);
             let padding = self
                 .padding
                 .take()
                 .ok_or(AttemptError::Delivery("padding consumed"))?;
-            self.encoder = Some(match self.adapter.protocol {
-                Profile::Responses => Encoder::Responses(ResponsesSseEncoder::new(
-                    metadata.clone(),
-                    contract,
-                    self.limits,
-                    padding,
-                )?),
-                Profile::Chat => Encoder::Chat(ChatSseEncoder::new(
-                    metadata.clone(),
-                    contract,
-                    self.limits,
-                    self.options.clone(),
-                    padding,
-                )?),
-            });
+            self.encoder = Some(self.client.stream_encoder(
+                metadata.clone(),
+                self.limits,
+                self.options.clone(),
+                padding,
+            )?);
         }
+        let encoder = self.encoder.as_mut().expect("encoder initialized");
+        let projected = if attempt.is_native() {
+            encoder.project_native(events)?
+        } else {
+            None
+        };
+        let events = projected.as_deref().unwrap_or(events);
         let source = attempt
             .fidelity()
             .ok_or(AttemptError::Protocol("missing response fidelity"))?;
         let mut source = std::borrow::Cow::Borrowed(source);
-        if self.adapter.protocol == Profile::Responses || attempt.is_native() {
+        if self.client.protocol() != ClientProtocol::Messages
+            && (self.client.protocol() == ClientProtocol::Responses || attempt.is_native())
+        {
             for event in events {
                 if let StreamEvent::ItemStarted { item, .. } = event
                     && source.response_item_id(*item).is_none()
@@ -437,24 +319,10 @@ impl ResponseDelivery {
             }
         }
         let mut frames = vec![];
-        match self.encoder.as_mut().expect("encoder initialized") {
-            Encoder::Responses(encoder) => {
-                encoder.update_metadata(metadata)?;
-                for event in events {
-                    let event =
-                        super::replay::seal_event(event.clone(), &super::replay::CLIENT_ORIGIN)?;
-                    frames.extend(encoder.encode(&event, &source)?);
-                }
-            }
-            Encoder::Chat(encoder) => {
-                encoder.update_metadata(metadata)?;
-                for event in events {
-                    let event =
-                        super::replay::seal_event(event.clone(), &super::replay::CLIENT_ORIGIN)?;
-                    frames.extend(encoder.encode(&event, &source)?);
-                }
-            }
-            Encoder::Messages(_) => return Err(AttemptError::Delivery("profile mismatch")),
+        encoder.update_metadata(metadata)?;
+        for event in events {
+            let event = super::replay::seal_event(event.clone(), &super::replay::CLIENT_ORIGIN)?;
+            frames.extend(encoder.encode(&event, &source)?);
         }
         self.rendered |= !frames.is_empty();
         Ok(frames)
@@ -464,66 +332,25 @@ impl ResponseDelivery {
     /// was sent, since Codex reads `context_length_exceeded` and `insufficient_quota`
     /// only there; Chat gets an error chunk and no `[DONE]`, as OpenAI sends.
     pub fn fail_stream(&mut self, error: &serde_json::Value) -> Result<Vec<Bytes>, AttemptError> {
-        use crate::semantic::{
-            task::generation::{ResponseError, StreamTerminal, TerminalDetails},
-            value::Text,
-        };
         let result = (|| {
             self.ready()?;
-            if self.messages {
-                self.terminal = true;
-                return Ok(vec![Bytes::from(format!(
-                    "event: error\ndata: {error}\n\n"
-                ))]);
-            }
-            if self.adapter.protocol == Profile::Chat {
-                return Ok(vec![Bytes::from(format!("data: {error}\n\n"))]);
-            }
-            let field = |key: &str| {
-                error["error"][key]
-                    .as_str()
-                    .and_then(|v| Text::new(v, "error", 4096).ok())
-            };
-            let failed = StreamEvent::Terminal {
-                terminal: StreamTerminal::Failed,
-                details: TerminalDetails {
-                    error: Some(ResponseError {
-                        code: field("code"),
-                        message: field("message")
-                            .ok_or(AttemptError::Protocol("failure message"))?,
-                        param: None,
-                    }),
-                    incomplete: None,
-                },
-            };
-            // Wire identities of started items already live in the encoder.
-            let source = Default::default();
-            let frames = match self.encoder.as_mut() {
-                Some(Encoder::Responses(encoder)) => encoder.encode(&failed, &source)?,
-                None => {
-                    let metadata = ResponseMetadata {
+            let unopened =
+                if self.client.protocol() == ClientProtocol::Responses && self.encoder.is_none() {
+                    Some(ResponseMetadata {
                         storage: None,
                         id: Some(response_id()?),
                         model: self.public_label.clone(),
                         created: self.native_created.clone(),
                         context: Default::default(),
                         instruction_fidelity: Default::default(),
-                    };
-                    let mut encoder = ResponsesSseEncoder::new(
-                        metadata,
-                        self.adapter.contract(&self.contract),
-                        self.limits,
-                        Obfuscation::Disabled,
-                    )?;
-                    let mut frames = encoder.encode(&StreamEvent::Started, &source)?;
-                    frames.extend(encoder.encode(&failed, &source)?);
-                    frames
-                }
-                Some(Encoder::Chat(_) | Encoder::Messages(_)) => {
-                    return Err(AttemptError::Delivery("profile mismatch"));
-                }
-            };
-            self.terminal = true;
+                    })
+                } else {
+                    None
+                };
+            let (frames, terminal) =
+                self.client
+                    .failure_frames(self.encoder.as_mut(), error, unopened, self.limits)?;
+            self.terminal = terminal;
             Ok(frames)
         })();
         if result.is_err() {

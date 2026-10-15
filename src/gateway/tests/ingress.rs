@@ -42,7 +42,14 @@ async fn activated_members_keep_route_order_with_a_shared_client_carrier() {
     .unwrap();
     let entry = &gate.state.entries[&(family(Profile::Responses), "fixture-model".into())];
     assert_eq!(
-        entry.client.adaptation.scope.as_ref(),
+        entry
+            .client
+            .as_openai()
+            .unwrap()
+            .0
+            .adaptation
+            .scope
+            .as_ref(),
         Some(&*crate::execution::replay::CLIENT_ORIGIN)
     );
     let request = entry
@@ -161,6 +168,9 @@ async fn model_request_limits_do_not_suppress_client_reported_facts() {
     assert!(
         entry
             .client
+            .as_openai()
+            .unwrap()
+            .0
             .encode_request(
                 &request,
                 "synthetic",
@@ -188,10 +198,7 @@ async fn model_request_limits_do_not_suppress_client_reported_facts() {
             "content":[{"type":"output_text","text":"x","annotations":[],"logprobs":[]}]}],
         "temperature":1,"top_p":1,"parallel_tool_calls":true
     })).unwrap()).unwrap();
-    let encoded = entry
-        .client
-        .encode_response(&response, &entry.downstream)
-        .unwrap();
+    let (_, encoded) = entry.client.snapshot(response).unwrap();
     assert_eq!(encoded["output"][0]["content"][0]["logprobs"], json!([]));
     assert_eq!(encoded["temperature"].as_f64(), Some(1.0));
     assert_eq!(encoded["top_p"].as_f64(), Some(1.0));

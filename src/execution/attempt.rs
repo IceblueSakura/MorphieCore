@@ -1,16 +1,15 @@
 //! Attempt preparation and bounded intake. Wire projection belongs to adapters;
 //! transport I/O and downstream commit belong to their respective owners.
 use crate::{
-    adapter::{AdapterError, Request, UpstreamAdapter},
+    adapter::{AdapterError, GenerationDecoder, Request, UpstreamAdapter},
     lowering::generation::RepresentationError,
     protocol::{
         CodecError, DecodedResponse, ResponseMetadata,
         fidelity::FidelityRecords,
-        openai::{Profile, chat::sse::ChatSseDecoder, responses::sse::ResponsesSseDecoder},
         stream::{SseError, SseLimits},
     },
     provider::{ErrorClass, ProviderDefinition, SecretMaterial, StatusClass, classify_status},
-    semantic::task::generation::{GenerationRequirements, LocalScope, StreamEvent},
+    semantic::task::generation::{GenerationRequirements, StreamEvent},
     topology::{Endpoint, PublicModel},
 };
 
@@ -161,11 +160,7 @@ pub fn prepare_with_rules(
 enum Intake {
     Pending,
     Static(Vec<u8>),
-    Responses(ResponsesSseDecoder),
-    Chat(ChatSseDecoder),
-    Messages(crate::protocol::anthropic::GenerationSseDecoder),
-    Google(crate::protocol::google::GenerationSseDecoder),
-    Interactions(crate::protocol::interactions::GenerationSseDecoder),
+    Stream(Box<GenerationDecoder>),
     Closed,
 }
 
@@ -181,18 +176,11 @@ pub struct Attempt {
     terminal: Option<StreamEvent>,
     rejected: bool,
 }
-/// Native response IDs stay distinct from the client request scope.
-const NATIVE_SCOPE: LocalScope = LocalScope::new(2);
 impl Attempt {
     /// Native observations (structured arguments, native stops) need projection
     /// before OpenAI delivery.
     pub(crate) fn is_native(&self) -> bool {
-        matches!(
-            self.adapter,
-            UpstreamAdapter::AnthropicMessages { .. }
-                | UpstreamAdapter::GoogleGenerateContent { .. }
-                | UpstreamAdapter::GoogleInteractions { .. }
-        )
+        self.adapter.is_native()
     }
     pub fn new(adapter: impl Into<UpstreamAdapter>, body_limit: usize, limits: SseLimits) -> Self {
         Self {
@@ -220,83 +208,16 @@ impl Attempt {
                 .unwrap_or_default()
                 .trim()
                 .to_ascii_lowercase();
-            if let UpstreamAdapter::GoogleInteractions { target } = &self.adapter {
-                if media != "text/event-stream" {
-                    return Err(AttemptError::Protocol("Interactions intake requires SSE"));
-                }
-                self.intake =
-                    Intake::Interactions(crate::protocol::interactions::GenerationSseDecoder::new(
-                        status,
-                        content_type,
-                        SseLimits {
-                            max_wire_bytes: self.limits.max_wire_bytes.min(self.body_limit),
-                            max_event_bytes: self.limits.max_event_bytes.min(self.body_limit),
-                            ..self.limits
-                        },
-                        NATIVE_SCOPE,
-                        target.clone(),
-                    )?);
-                return Ok(());
-            }
-            if let UpstreamAdapter::GoogleGenerateContent { target } = &self.adapter {
-                if media != "text/event-stream" {
-                    return Err(AttemptError::Protocol("Gemini intake requires SSE"));
-                }
-                self.intake = Intake::Google(crate::protocol::google::GenerationSseDecoder::new(
+            self.intake = if media == "text/event-stream" {
+                Intake::Stream(Box::new(self.adapter.stream_decoder(
                     status,
                     content_type,
-                    SseLimits {
-                        max_wire_bytes: self.limits.max_wire_bytes.min(self.body_limit),
-                        max_event_bytes: self.limits.max_event_bytes.min(self.body_limit),
-                        ..self.limits
-                    },
-                    NATIVE_SCOPE,
-                    target.clone(),
-                )?);
-                return Ok(());
-            }
-            if let UpstreamAdapter::AnthropicMessages { target, .. } = &self.adapter {
-                if media == "text/event-stream" {
-                    self.intake =
-                        Intake::Messages(crate::protocol::anthropic::GenerationSseDecoder::new(
-                            status,
-                            content_type,
-                            SseLimits {
-                                max_wire_bytes: self.limits.max_wire_bytes.min(self.body_limit),
-                                max_event_bytes: self.limits.max_event_bytes.min(self.body_limit),
-                                ..self.limits
-                            },
-                            NATIVE_SCOPE,
-                            target.clone(),
-                        )?);
-                    return Ok(());
-                }
-                if media != "application/json"
-                    && !(media.starts_with("application/") && media.ends_with("+json"))
-                {
-                    return Err(AttemptError::Protocol("native intake requires JSON"));
-                }
-                self.intake = Intake::Static(vec![]);
-                return Ok(());
-            }
-            let adapter = self.adapter.openai()?;
-            self.intake = if media == "text/event-stream" {
-                match adapter.protocol {
-                    Profile::Chat => Intake::Chat(ChatSseDecoder::with_decoder(
-                        status,
-                        content_type,
-                        self.limits,
-                        adapter.event_decoder(),
-                    )?),
-                    Profile::Responses => Intake::Responses(ResponsesSseDecoder::with_decoder(
-                        status,
-                        content_type,
-                        self.limits,
-                        adapter.event_decoder(),
-                    )?),
-                }
-            } else if media == "application/json"
-                || media.starts_with("application/") && media.ends_with("+json")
+                    self.limits,
+                    self.body_limit,
+                )?))
+            } else if self.adapter.accepts_json()
+                && (media == "application/json"
+                    || media.starts_with("application/") && media.ends_with("+json"))
             {
                 Intake::Static(vec![])
             } else {
@@ -324,11 +245,7 @@ impl Attempt {
                     body.extend_from_slice(chunk);
                     (chunk.len(), vec![])
                 }
-                Intake::Responses(decoder) => decoder.consume(chunk)?,
-                Intake::Chat(decoder) => decoder.consume(chunk)?,
-                Intake::Messages(decoder) => decoder.consume(chunk)?,
-                Intake::Google(decoder) => decoder.consume(chunk)?,
-                Intake::Interactions(decoder) => decoder.consume(chunk)?,
+                Intake::Stream(decoder) => decoder.consume(chunk)?,
                 _ => return Err(AttemptError::Protocol("attempt is closed")),
             };
             if matches!(events.last(), Some(StreamEvent::Terminal { .. })) {
@@ -347,7 +264,7 @@ impl Attempt {
     /// Unregistered upstream event types skipped so far.
     pub fn ignored_events(&self) -> usize {
         match &self.intake {
-            Intake::Responses(d) => d.ignored_events(),
+            Intake::Stream(d) => d.ignored_events(),
             _ => 0,
         }
     }
@@ -356,11 +273,7 @@ impl Attempt {
             return Some(&decoded.metadata);
         }
         match &self.intake {
-            Intake::Responses(d) => d.metadata(),
-            Intake::Chat(d) => d.metadata(),
-            Intake::Messages(d) => d.metadata(),
-            Intake::Google(d) => d.metadata(),
-            Intake::Interactions(d) => d.metadata(),
+            Intake::Stream(d) => d.metadata(),
             _ => None,
         }
     }
@@ -369,11 +282,7 @@ impl Attempt {
             return Some(&decoded.fidelity);
         }
         match &self.intake {
-            Intake::Responses(d) => Some(d.fidelity()),
-            Intake::Chat(d) => Some(d.fidelity()),
-            Intake::Messages(d) => Some(d.fidelity()),
-            Intake::Google(d) => Some(d.fidelity()),
-            Intake::Interactions(d) => Some(d.fidelity()),
+            Intake::Stream(d) => Some(d.fidelity()),
             _ => None,
         }
     }
@@ -384,33 +293,8 @@ impl Attempt {
         if self.decoded.is_none() {
             let result = (|| -> Result<DecodedResponse, AttemptError> {
                 Ok(match &mut self.intake {
-                    Intake::Static(body) => match &self.adapter {
-                        UpstreamAdapter::AnthropicMessages { profile, target } => {
-                            profile.decode_generation_response(body, NATIVE_SCOPE, target)?
-                        }
-                        UpstreamAdapter::OpenAi(adapter) => adapter.decode_response(body)?,
-                        UpstreamAdapter::GoogleGenerateContent { .. }
-                        | UpstreamAdapter::GoogleInteractions { .. } => {
-                            return Err(AttemptError::Protocol("Google intake requires SSE"));
-                        }
-                    },
-                    Intake::Responses(d) => {
-                        d.finish()?;
-                        d.materialize()?
-                    }
-                    Intake::Chat(d) => {
-                        d.finish()?;
-                        d.materialize()?
-                    }
-                    Intake::Messages(d) => {
-                        let UpstreamAdapter::AnthropicMessages { profile, target } = &self.adapter
-                        else {
-                            return Err(AttemptError::Protocol("native intake"));
-                        };
-                        profile.decode_generation_message(d.finish()?, NATIVE_SCOPE, target)?
-                    }
-                    Intake::Google(d) => d.finish()?,
-                    Intake::Interactions(d) => d.finish()?,
+                    Intake::Static(body) => self.adapter.decode_response(body)?,
+                    Intake::Stream(d) => d.finish()?,
                     _ => return Err(AttemptError::Protocol("attempt is closed")),
                 })
             })();
@@ -461,7 +345,7 @@ mod identity_tests {
         execution::ResponseDelivery,
         protocol::{
             native::ReplayTarget,
-            openai::{Adapter, Dialect, TargetCaps, stream::Obfuscation},
+            openai::{Adapter, Dialect, Profile, TargetCaps, stream::Obfuscation},
         },
         semantic::context::StreamOptions,
     };
@@ -491,8 +375,10 @@ mod identity_tests {
         let observed = attempt.response().unwrap().clone();
         let delivery = || {
             ResponseDelivery::new(
-                Adapter::new(Profile::Responses, Dialect::MorphieCore, None),
-                TargetCaps::full(),
+                crate::adapter::ClientAdapter::openai(
+                    Adapter::new(Profile::Responses, Dialect::MorphieCore, None),
+                    TargetCaps::full(),
+                ),
                 "public",
                 SseLimits::default(),
                 StreamOptions::default(),

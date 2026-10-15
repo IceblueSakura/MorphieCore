@@ -31,8 +31,7 @@ fn options() -> StreamOptions {
 }
 fn delivery(adapter: Adapter, contract: Contract) -> ResponseDelivery {
     ResponseDelivery::new(
-        adapter,
-        contract,
+        morphiecore::adapter::ClientAdapter::openai(adapter, contract),
         "public-model",
         SseLimits::default(),
         options(),

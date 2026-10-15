@@ -46,8 +46,10 @@ fn deliver(bytes: &[u8], profile: Profile, stream: bool) -> Result<Value, String
         SseLimits::default(),
     );
     let mut delivery = ResponseDelivery::new(
-        Adapter::new(profile, Dialect::MorphieCore, None),
-        TargetCaps::full(),
+        morphiecore::adapter::ClientAdapter::openai(
+            Adapter::new(profile, Dialect::MorphieCore, None),
+            TargetCaps::full(),
+        ),
         "public",
         SseLimits::default(),
         StreamOptions {
