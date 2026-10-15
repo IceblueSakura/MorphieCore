@@ -175,21 +175,23 @@ Encode and decode mappings are directional. A many-to-one encode mapping has no 
 
 #### Thinking-budget quantization
 
-The initial shared preset follows pi's current helper, verified at [`4a5d372`](refs/2026-10-15-generation-projections.md#pi-thinking-budget-presets), and expands its high-budget alias to the full positive OpenAI/IR level vocabulary:
+The selected shared preset uses six distinct budgets across the positive OpenAI/IR level vocabulary. It follows pi's preset-based approach but deliberately differs from [pi's default values](refs/2026-10-15-generation-projections.md#pi-thinking-budget-presets). These are MorphieCore approximation settings, not official OpenAI token equivalents or universal target limits:
 
 | Level | Thinking tokens |
 |---|---|
 | none / disabled | Activation only; not a positive budget entry |
 | minimal | 1024 |
 | low | 2048 |
-| medium | 8192 |
-| high | 16384 |
+| medium | 4096 |
+| high | 8192 |
 | xhigh | 16384 |
-| max | 16384 |
+| max | 24576 |
 
 A trusted target policy selects this shared preset or an explicitly declared target-specific table. Duplicate token values are valid. For a positive numeric budget `b`, choose the entry with the smallest absolute token distance `abs(b - tokens(level))`; among every entry with that minimum distance, choose the highest level in `minimal < low < medium < high < xhigh < max`. Table iteration order must not affect the result. Use overflow-safe integer distance, not floating-point midpoints.
 
-For `{low: 500, medium: 500, high: 1000, xhigh: 1000}`, budget `750` selects `xhigh`. An exact `500` selects `medium`, and exact `1000` selects `xhigh`. With the shared preset, `1536` selects `low`, `5120` selects `medium`, and both `12288` and `16384` select `max`. Thus `high -> 16384 -> max` is intentionally not an identity; this is approved quantization, not recovery of the originally requested level.
+For a target-specific table `{low: 500, medium: 500, high: 1000, xhigh: 1000}`, budget `750` selects `xhigh`. An exact `500` selects `medium`, and exact `1000` selects `xhigh`; duplicate budgets can intentionally make a level round trip non-identical.
+
+The shared preset's upward tie boundaries are `1536 -> low`, `3072 -> medium`, `6144 -> high`, `12288 -> xhigh` and `20480 -> max`. Exact preset values retain their level, including `8192 -> high`, `16384 -> xhigh` and `24576 -> max`. Arbitrary numeric budgets remain lossy: the representative tokens do not replace the original source value.
 
 Absent controls stay absent. Off is decoded into activation before matching; protocol-specific zero/automatic sentinels never enter positive-budget quantization. If a target can preserve the requested native numeric budget, prefer that carrier instead of quantizing unnecessarily. Qualitative requests with an exact target carrier likewise need no budget round trip.
 
@@ -521,7 +523,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Accurate IR with declared lossy projection | Prefer exact carriers, permit approved advisory omissions and behavioral approximations, and reject loss of protected meaning. Preserve the source and record target-local changes; implementation follows the roadmap |
 | Explicit same-model level calibration | P1 permits declared directional scope approximation on target copies; level mappings stay model-local. No inferred nearest level, inverse or off-to-on conversion |
 | Disabled activation priority | P2 preserves a supported off carrier and names omission of independent unrepresentable response effort; a target without off support still rejects |
-| Preset-based thinking allocation | P3 uses pi-inspired presets expanded through max; duplicate budgets are allowed. Numeric conversion minimizes absolute token distance and chooses the highest level on every tie. Preserve original intent and hard caps; this is explicit lossy quantization, not an inferred qualitative inverse |
+| Preset-based thinking allocation | P3 uses six distinct shared budgets from 1024 to 24576; target-specific tables may contain duplicates. Numeric conversion minimizes absolute token distance and chooses the highest level on every tie. Preserve original intent and hard caps; this is explicit lossy quantization, not an inferred qualitative inverse |
 | Target-effective sampling | P4 preserves supported controls and permits named omission only for declared fixed/ignored behavior; unknown effectiveness is not permission to discard a control |
 | Required and incidental output evidence | P5 preserves required output facts and allows selected incidental-report loss after validation; request intent never fabricates upstream reports |
 | Configurable internal exchange capture | P6 permits opt-in business headers/bodies at all four I/O boundaries with separate controls, finite retention and best-effort writes. Credentials are always redacted; no switch permits credential-bearing logs |

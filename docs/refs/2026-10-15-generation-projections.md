@@ -157,7 +157,7 @@ The [current Anthropic codec](https://github.com/earendil-works/pi/blob/4a5d3729
 
 Pi's helper can add the thinking budget to a supplied response allowance, then cap it at the model limit; it reserves answer room when necessary. MorphieCore must not copy that adjustment onto an explicit client-owned total-output ceiling. Reusing preset values does not authorize raising a hard cap or converting disabled activation into positive thinking.
 
-The selected gateway rule expands the shared high-budget alias into explicit `high/xhigh/max` rows, then matches a positive numeric budget by minimum absolute distance with the highest level winning every tie. This reverse quantization is a MorphieCore product decision, not behavior established by pi's forward helper. Original numeric intent stays in IR; see [the complete P3 contract](../architecture.md#thinking-budget-quantization). Insufficient-output-room handling remains a separate decision.
+MorphieCore selects a finer six-budget preset rather than copying pi's collapsed high-budget alias. The gateway matches a positive numeric budget by minimum absolute distance with the highest level winning every tie; target-specific tables may still contain duplicates. Both the selected values and reverse quantization are product decisions, not official level equivalences or behavior established by pi's forward helper. Original numeric intent stays in IR; see [the complete P3 contract](../architecture.md#thinking-budget-quantization). Insufficient-output-room handling remains a separate decision.
 
 ## Sampling, schemas and service policy
 
