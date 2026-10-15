@@ -250,6 +250,7 @@ impl Dialect {
         Adaptation {
             rules,
             effort_mapping: None,
+            reasoning_policy: None,
             images,
             files: match self {
                 Self::Standard | Self::MorphieCore | Self::Siwc => {

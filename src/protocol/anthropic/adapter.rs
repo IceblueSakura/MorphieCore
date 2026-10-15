@@ -24,6 +24,7 @@ pub struct TargetCaps {
     pub dialect: Dialect,
     pub semantics: GenerationSemanticContract,
     pub cache: CacheProjection,
+    pub reasoning_policy: Option<&'static crate::protocol::reasoning::ReasoningRequestPolicy>,
 }
 impl TargetCaps {
     pub fn new(profile: Profile, dialect: Dialect) -> Self {
@@ -31,6 +32,7 @@ impl TargetCaps {
             profile,
             dialect,
             semantics: profile.semantic_contract(),
+            reasoning_policy: None,
             cache: CacheProjection {
                 session_id: dialect == Dialect::OpenCodeGo,
                 ..Default::default()
@@ -69,6 +71,13 @@ impl TargetCaps {
     ) -> Result<NativeProjection, AdapterError> {
         request.task.semantic.validate().map_err(CodecError::from)?;
         let mut projected = std::borrow::Cow::Borrowed(request);
+        let mut reasoning_rule = None;
+        if let Some(policy) = self.reasoning_policy
+            && let Some(semantic) = policy.project_request(&request.task.semantic)?
+        {
+            projected.to_mut().task.semantic = semantic;
+            reasoning_rule = Some(policy.rule);
+        }
         let verbosity = request.task.semantic.text_options().verbosity.clone();
         let loss = if verbosity.is_absent() {
             None
@@ -116,6 +125,9 @@ impl TargetCaps {
         if let Some(loss) = loss {
             projection.control_losses.push(loss);
             projection.rules.push(RequestRule::OmitVerbosity);
+        }
+        if let Some(rule) = reasoning_rule {
+            projection.rules.push(RequestRule::ReasoningPolicy(rule));
         }
         if foreign {
             projection.rules.push(RequestRule::OmitForeignReplay);

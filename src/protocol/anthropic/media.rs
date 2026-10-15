@@ -192,18 +192,19 @@ impl Media {
         resource.validate()?;
         Ok(resource)
     }
-    /// The native carrier for one IR resource. `omitted` reports a dropped per-use option.
+    /// The native carrier for one IR resource; uncalibrated detail cannot disappear.
     pub(super) fn from_resource(
         resource: ResourceView<'_>,
         reject_oversized: bool,
-        omitted: &mut bool,
     ) -> Result<Self, CodecError> {
         let unsupported = || CodecError::Unsupported("Anthropic media".into());
-        *omitted |= match resource.description {
+        if match resource.description {
             ResourceDescription::Image { detail } => detail.is_some(),
             ResourceDescription::File(file) => file.detail.is_some(),
             _ => false,
-        };
+        } {
+            return Err(unsupported());
+        }
         let source = match resource.location {
             // Anthropic fetches URL sources and validates their type itself.
             ResourceLocation::Url(url) => Source::Url(url.as_str().into()),

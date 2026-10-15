@@ -57,6 +57,17 @@ impl Endpoint {
                 openai::{Adapter, Profile},
             },
         };
+        let reasoning_policy = match &self.representation {
+            TargetCaps::OpenAi(caps) => caps.adaptation.reasoning_policy,
+            TargetCaps::AnthropicMessages(caps) => caps.reasoning_policy,
+            TargetCaps::GoogleGenerateContent(caps) => caps.reasoning_policy,
+            TargetCaps::GoogleInteractions(caps) => caps.reasoning_policy,
+        };
+        if reasoning_policy
+            .is_some_and(|policy| policy.canonical_model != self.canonical_model.as_str())
+        {
+            return Err(CodecError::Invalid("reasoning policy model"));
+        }
         Ok(match (&self.protocol, &self.representation) {
             (ProtocolProfile::AnthropicMessages, TargetCaps::AnthropicMessages(caps)) => {
                 UpstreamAdapter::AnthropicMessages {

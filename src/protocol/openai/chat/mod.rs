@@ -535,7 +535,12 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         target.semantic.resources(),
     );
     if let Some(t) = target.semantic.instructions().value() {
-        messages.insert(0, json!({"role":"developer","content":t.as_str()}));
+        let role = if target.adaptation.rules.chat_system_instructions {
+            "system"
+        } else {
+            "developer"
+        };
+        messages.insert(0, json!({"role":role,"content":t.as_str()}));
     }
     let mut v = json!({"messages": messages});
     let o = v.as_object_mut().expect("object literal");

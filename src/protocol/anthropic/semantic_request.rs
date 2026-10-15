@@ -18,11 +18,11 @@ pub(super) fn unsupported() -> CodecError {
 /// Named degradable rules applied to one candidate's request copy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum RequestRule {
+    ReasoningPolicy(&'static str),
     Cache(crate::protocol::cache::CacheRule),
     OmitVerbosity,
     /// Messages has one summarized display, without concise or detailed variants.
     SummarizeReasoning,
-    OmitReasoningContext,
     /// Claude 5.x models reject non-default `temperature` and `top_p`.
     OmitSampling,
     ProjectCallIds,
@@ -32,24 +32,21 @@ pub enum RequestRule {
     ReasoningAsText,
     /// A leading developer instruction (pi, Codex) is the system prompt.
     DeveloperAsSystem,
-    /// Image detail, file detail and filename have no Messages slot.
-    OmitMediaOptions,
     /// A Messages output format has no name; OpenAI requires one as a label.
     OmitSchemaName,
 }
 impl RequestRule {
     pub const fn name(self) -> &'static str {
         match self {
+            Self::ReasoningPolicy(rule) => rule,
             Self::Cache(rule) => rule.name(),
             Self::OmitVerbosity => "messages.omit-verbosity.v1",
             Self::SummarizeReasoning => "messages.summarize-reasoning.v1",
-            Self::OmitReasoningContext => "messages.omit-reasoning-context.v1",
             Self::OmitSampling => "messages.omit-sampling.v1",
             Self::ProjectCallIds => "messages.project-call-ids.v1",
             Self::OmitForeignReplay => "messages.omit-foreign-replay.v1",
             Self::ReasoningAsText => "messages.reasoning-as-text.v1",
             Self::DeveloperAsSystem => "messages.developer-as-system.v1",
-            Self::OmitMediaOptions => "messages.omit-media-options.v1",
             Self::OmitSchemaName => "messages.omit-schema-name.v1",
         }
     }
@@ -177,7 +174,7 @@ pub(super) fn project(
         return Err(unsupported());
     }
     if !reasoning.context.is_absent() {
-        rules.insert(RequestRule::OmitReasoningContext);
+        return Err(unsupported());
     }
     // An OpenAI summary request selects the display; without one the field stays absent,
     // which equals the 5.x default (`omitted`).
@@ -379,19 +376,13 @@ pub(super) fn item_blocks(
     target: &ReplayTarget,
     normalized: &mut Vec<ItemId>,
     omitted: &mut Vec<ItemId>,
-    rules: &mut BTreeSet<RequestRule>,
+    _rules: &mut BTreeSet<RequestRule>,
 ) -> Result<Vec<Block>, CodecError> {
-    let mut media = |part: PartId, resource: &ResourceUse| {
-        let mut dropped = false;
-        let value = Media::from_resource(
+    let media = |part: PartId, resource: &ResourceUse| {
+        Media::from_resource(
             resource.media(request.resources())?,
             fidelity.strict_image_size(part),
-            &mut dropped,
-        )?;
-        if dropped {
-            rules.insert(RequestRule::OmitMediaOptions);
-        }
-        Ok::<_, CodecError>(value)
+        )
     };
     Ok(match item {
         Item::Message(m) => {

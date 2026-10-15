@@ -47,45 +47,6 @@ fn with_effort_mapping(
     Ok(Some(copy))
 }
 
-fn without_image_detail(request: &Request) -> Result<Option<Request>, CodecError> {
-    use crate::semantic::task::generation::{
-        ContentPart, InputPart, Item, ResourceDescription, ResourceUse, ToolOutput,
-    };
-    let mut items = request.task.semantic.items().to_vec();
-    let mut changed = false;
-    let mut omit = |resource: &mut ResourceUse| {
-        if let ResourceDescription::Image { detail } = &mut resource.description {
-            changed |= detail.take().is_some();
-        }
-    };
-    for (_, item) in &mut items {
-        match item {
-            Item::Message(message) => {
-                for part in &mut message.parts {
-                    if let ContentPart::Resource(resource) = &mut part.content {
-                        omit(resource);
-                    }
-                }
-            }
-            Item::ToolResult(result) | Item::CustomResult(result) => {
-                if let ToolOutput::Parts(parts) = &mut result.output {
-                    for (_, part) in parts {
-                        if let InputPart::Resource(resource) = part {
-                            omit(resource);
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    if !changed {
-        return Ok(None);
-    }
-    let mut copy = request.clone();
-    copy.task.semantic = copy.task.semantic.with_items(items)?;
-    Ok(Some(copy))
-}
 /// OpenAI requires a schema name; Messages and Gemini formats have none. The fixed
 /// name is a wire label, like the fixed `max_tokens` default on Messages targets.
 fn with_schema_name(request: &Request) -> Result<Option<Request>, CodecError> {
@@ -280,6 +241,20 @@ impl Adapter {
             }
         }
         let request = stripped.as_ref().map_or(request, |(copy, _)| copy);
+        let mut projected = std::borrow::Cow::Borrowed(request);
+        if let Some(policy) = self.adaptation.reasoning_policy
+            && let Some(semantic) = policy.project_request(&request.task.semantic)?
+        {
+            projected.to_mut().task.semantic = semantic;
+            rules.push(policy.rule);
+        }
+        let request = projected.as_ref();
+        if self.protocol == Profile::Chat
+            && self.adaptation.rules.chat_system_instructions
+            && request.task.semantic.instructions().value().is_some()
+        {
+            rules.push("chat.instructions-as-system.v1");
+        }
         if self.adaptation.rules.reject_disabled_reasoning
             && (request.task.semantic.reasoning().activation.value()
                 == Some(&crate::semantic::task::generation::ReasoningActivation::Disabled)
@@ -308,15 +283,26 @@ impl Adapter {
             );
         }
         let request = mapped.as_ref().unwrap_or(request);
-        let media = if self.adaptation.rules.omit_image_detail {
-            without_image_detail(request)?
-        } else {
-            None
-        };
-        if media.is_some() {
-            rules.push("openai.omit-image-detail.v1");
+        if self.adaptation.rules.omit_image_detail
+            && request
+                .task
+                .semantic
+                .items()
+                .iter()
+                .flat_map(|(_, item)| item.resource_uses())
+                .any(|resource| {
+                    matches!(
+                        resource.description,
+                        crate::semantic::task::generation::ResourceDescription::Image {
+                            detail: Some(_)
+                        }
+                    )
+                })
+        {
+            return Err(
+                CodecError::Unsupported("image detail without target policy".into()).into(),
+            );
         }
-        let request = media.as_ref().unwrap_or(request);
         let named = with_schema_name(request)?;
         if named.is_some() {
             rules.push("openai.default-schema-name.v1");

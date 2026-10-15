@@ -424,6 +424,15 @@ mod native_catalog {
         settings.reasoning =
             morphiecore::semantic::task::generation::ReasoningRequest::present(None);
         settings.reasoning.budget_tokens = Some(1024);
+        assert!(
+            controlled
+                .task
+                .semantic
+                .clone()
+                .with_settings(settings.clone())
+                .is_err()
+        );
+        settings.controls.max_output_tokens = Some(2048);
         controlled.task.semantic = controlled.task.semantic.with_settings(settings).unwrap();
         // This native profile has no numeric carrier; do not substitute an effort.
         assert!(representable(&endpoint, &controlled).is_err());

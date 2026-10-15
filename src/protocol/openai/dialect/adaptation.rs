@@ -31,7 +31,7 @@ pub struct WireRules {
     /// Chat standard has auto/low/high; this profile additionally represents original.
     /// Source: <https://api-docs.deepseek.com/guides/vision>.
     pub chat_original_image_detail: bool,
-    /// This target has no image-detail carrier; omit the per-use option by name.
+    /// This target has no image-detail carrier; explicit detail needs a selected policy.
     /// https://mimo.mi.com/docs/zh-CN/api/chat/responses
     pub omit_image_detail: bool,
     /// DeepSeek Chat cache-hit/miss aliases; canonical counts must agree.
@@ -92,6 +92,8 @@ pub struct WireRules {
     pub require_parameters: bool,
     /// Provider request spelling; downstream still uses max_completion_tokens.
     pub legacy_max_tokens: bool,
+    /// Trusted compatibility choice for request-wide instructions, not ordered history.
+    pub chat_system_instructions: bool,
     /// Fixed client identity and an explicit session header for OpenCode Go.
     /// Never forwards inbound headers or invents a conversation identity.
     /// Source: <https://opencode.ai/docs/go/#where-can-i-use-it>.
@@ -144,6 +146,7 @@ pub struct WireRules {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Adaptation {
     pub rules: WireRules,
+    pub reasoning_policy: Option<&'static crate::protocol::reasoning::ReasoningRequestPolicy>,
     pub effort_mapping: Option<&'static crate::protocol::reasoning::ReasoningEffortMapping>,
     /// Profile image admission is intersected with independently configured Endpoint limits.
     pub images: crate::protocol::image_constraints::ImageConstraints,

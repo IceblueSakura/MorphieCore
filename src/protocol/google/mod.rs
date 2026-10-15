@@ -101,12 +101,14 @@ pub fn encode_generation_request(
 pub struct TargetCaps {
     pub semantics: GenerationSemanticContract,
     pub cache: CacheProjection,
+    pub reasoning_policy: Option<&'static crate::protocol::reasoning::ReasoningRequestPolicy>,
 }
 impl Default for TargetCaps {
     fn default() -> Self {
         Self {
             semantics: semantic_contract(),
             cache: CacheProjection::default(),
+            reasoning_policy: None,
         }
     }
 }
@@ -132,6 +134,20 @@ impl TargetCaps {
         request: &Request,
         target: &ReplayTarget,
     ) -> Result<(Value, Vec<&'static str>), AdapterError> {
+        let mut projected = std::borrow::Cow::Borrowed(request);
+        let mut reasoning_rule = None;
+        if let Some(policy) = self.reasoning_policy
+            && let Some(semantic) = policy.project_request(&request.task.semantic)?
+        {
+            projected.to_mut().task.semantic = semantic;
+            reasoning_rule = Some(policy.rule);
+        }
+        let request = projected.as_ref();
+        if request.task.semantic.reasoning().budget_tokens.is_some()
+            && self.reasoning_policy.is_none()
+        {
+            return Err(CodecError::Unsupported("undeclared model thinking budget".into()).into());
+        }
         // Reasoning without this target's value is converted inside the projection.
         let stripped = request
             .without_foreign_replay(Some(&target.origin()), false)?
@@ -176,7 +192,9 @@ impl TargetCaps {
         );
         rules.sort();
         rules.dedup();
-        Ok((wire, rules.iter().map(|r| r.name()).collect()))
+        let mut rules: Vec<_> = rules.iter().map(|r| r.name()).collect();
+        rules.extend(reasoning_rule);
+        Ok((wire, rules))
     }
     pub(crate) fn request_headers(&self) -> Vec<(String, String)> {
         vec![(

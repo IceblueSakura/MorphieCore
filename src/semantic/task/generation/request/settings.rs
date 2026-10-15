@@ -64,6 +64,14 @@ impl GenerationSettings {
         {
             return Err(GenerationError::InvalidControl);
         }
+        if self
+            .reasoning
+            .budget_tokens
+            .zip(self.controls.max_output_tokens)
+            .is_some_and(|(budget, ceiling)| budget > ceiling)
+        {
+            return Err(GenerationError::InvalidControl);
+        }
         // An absent container cannot hide explicit values or null children.
         if !self.text.presence
             && (!self.text.format.is_absent() || !self.text.verbosity.is_absent())

@@ -409,7 +409,7 @@ fn tool_media_ride_inline_in_the_function_response() {
             {"type":"function_call","call_id":"c1","name":"shot","arguments":"{}"},
             {"type":"function_call_output","call_id":"c1","output":[
                 {"type":"input_text","text":"screen"},
-                {"type":"input_image","image_url":image,"detail":"auto"}]}],
+                {"type":"input_image","image_url":image}]}],
             "tools":[{"type":"function","name":"shot","strict":false,"parameters":{"type":"object"}}]})
     };
     let request = client(Profile::Responses, input("data:image/png;base64,AQID"));
@@ -422,9 +422,22 @@ fn tool_media_ride_inline_in_the_function_response() {
             "response":{"output":"screen"},
             "parts":[{"inlineData":{"mimeType":"image/png","data":"AQID"}}]}}]})
     );
-    assert_eq!(
-        rules.iter().map(|r| r.name()).collect::<Vec<_>>(),
-        ["gemini.omit-media-options.v1"]
+    assert!(rules.is_empty());
+    let mut detailed = input("data:image/png;base64,AQID");
+    detailed["input"][1]["output"][1]["detail"] = json!("auto");
+    let detailed = client(Profile::Responses, detailed);
+    assert!(
+        encode_generation_request(&detailed.task.semantic, &detailed.task.fidelity, &target())
+            .is_err()
+    );
+    let named = client(
+        Profile::Responses,
+        json!({"model":"gemini","input":[
+        {"role":"user","content":[{"type":"input_file","filename":"report.pdf",
+        "file_data":"data:application/pdf;base64,AQID"}]}]}),
+    );
+    assert!(
+        encode_generation_request(&named.task.semantic, &named.task.fidelity, &target()).is_err()
     );
     // FunctionResponsePart has no fileData.
     let remote = client(Profile::Responses, input("https://example.invalid/a.png"));

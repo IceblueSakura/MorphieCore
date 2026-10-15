@@ -18,7 +18,6 @@ pub enum RequestRule {
     Cache(crate::protocol::cache::CacheRule),
     /// Gemini has one summary form, without concise or detailed variants.
     SummarizeReasoning,
-    OmitReasoningContext,
     /// Opaque reasoning issued for another target or Google format is dropped.
     OmitForeignReplay,
     /// Reasoning without this target's value is sent as model text, as pi does.
@@ -30,8 +29,6 @@ pub enum RequestRule {
     OmitCacheKey,
     /// `functionResponse.response` holds one string; text parts are concatenated.
     JoinResultParts,
-    /// Image detail, file detail and filename have no Gemini slot.
-    OmitMediaOptions,
 }
 impl RequestRule {
     pub const fn name(self) -> &'static str {
@@ -39,14 +36,12 @@ impl RequestRule {
             Self::OmitVerbosity => "gemini.omit-verbosity.v1",
             Self::Cache(rule) => rule.name(),
             Self::SummarizeReasoning => "gemini.summarize-reasoning.v1",
-            Self::OmitReasoningContext => "gemini.omit-reasoning-context.v1",
             Self::OmitForeignReplay => "gemini.omit-foreign-replay.v1",
             Self::ReasoningAsText => "gemini.reasoning-as-text.v1",
             Self::DeveloperAsSystem => "gemini.developer-as-system.v1",
             Self::OmitSchemaName => "gemini.omit-schema-name.v1",
             Self::OmitCacheKey => "gemini.omit-cache-key.v1",
             Self::JoinResultParts => "gemini.join-result-parts.v1",
-            Self::OmitMediaOptions => "gemini.omit-media-options.v1",
         }
     }
 }
@@ -211,14 +206,16 @@ fn thinking(
     let reasoning = &settings.reasoning;
     if reasoning.presence == ReasoningPresence::Null
         || !reasoning.display.is_absent() && !reasoning.summary.is_absent()
-        || reasoning.budget_tokens.is_some()
+        || reasoning
+            .budget_tokens
+            .is_some_and(|budget| budget > i64::MAX as u64)
         || reasoning.activation == Presence::Null
         || reasoning.activation.value() == Some(&ReasoningActivation::Disabled)
     {
         return Err(unsupported());
     }
     if !reasoning.context.is_absent() {
-        rules.insert(RequestRule::OmitReasoningContext);
+        return Err(unsupported());
     }
     let include = match (&reasoning.display, &reasoning.summary) {
         (Presence::Value(ReasoningDisplay::Summary), _)
@@ -233,11 +230,13 @@ fn thinking(
     };
     match reasoning.mode {
         Presence::Absent | Presence::Value(ReasoningMode::Adaptive) => {}
+        Presence::Value(ReasoningMode::Budgeted) if reasoning.budget_tokens.is_some() => {}
         _ => return Err(unsupported()),
     }
     let effort = settings.effort.value();
     if effort.is_some_and(|e| e.scope != EffortScope::Reasoning)
         || settings.effort == Presence::Null
+        || effort.is_some() && reasoning.budget_tokens.is_some()
     {
         return Err(unsupported());
     }
@@ -262,6 +261,9 @@ fn thinking(
         Some(_) => return Err(unsupported()),
     };
     let mut config = Map::new();
+    if let Some(budget) = reasoning.budget_tokens {
+        config.insert("thinkingBudget".into(), budget.into());
+    }
     if let Some(level) = level {
         config.insert("thinkingLevel".into(), level.into());
     }
@@ -507,14 +509,14 @@ fn item_parts(
 fn media(
     resource: ResourceView<'_>,
     tool: bool,
-    rules: &mut BTreeSet<RequestRule>,
+    _rules: &mut BTreeSet<RequestRule>,
 ) -> Result<Value, CodecError> {
     if match resource.description {
         ResourceDescription::Image { detail } => detail.is_some(),
         ResourceDescription::File(file) => file.filename.is_some() || file.detail.is_some(),
         _ => false,
     } {
-        rules.insert(RequestRule::OmitMediaOptions);
+        return Err(unsupported());
     }
     match resource.location {
         ResourceLocation::Inline {

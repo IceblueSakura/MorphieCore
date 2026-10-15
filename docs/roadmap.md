@@ -93,7 +93,7 @@ Remaining constrained-carrier gaps are explicit rejections: Google JSON-object m
 
 Responses normalization-default strictness cannot become a plain native tool. P8 selects continued rejection of that conversion; pi-shaped requests that omit `strict` therefore do not reach those native bindings. Explicit non-strict tools retain their separate carrier. No new schema-normalization implementation is selected.
 
-P8 policy selection is complete, not its implementation. Broad media-detail, filename and reasoning-context omission paths remain S5 repair work. Each selected target still needs carrier/default evidence; missing evidence means rejection, not an implicit approximation or a reopened policy decision.
+P8 policy selection is complete. Native codecs reject uncalibrated media detail/context and filenames without carriers. No concrete cross-scope or numeric conversion is activated by adding the trusted request-policy interface; each binding still needs model-level evidence. Missing evidence means rejection, not an implicit approximation or a reopened policy decision.
 
 Explicit cache retention also rejects targets without an exact carrier. No cross-Provider retention approximation or route-policy change is selected.
 

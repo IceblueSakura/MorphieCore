@@ -284,6 +284,146 @@ mod reasoning_controls {
     #[test]
     fn each_new_control_independently_rejects_request_echo_and_stream_projection() {
         use morphiecore::protocol::openai::{events::EventEncoder, lowering::lower_response};
+        use morphiecore::protocol::reasoning::{
+            ReasoningConversion, ReasoningRequestPolicy, SHARED_BUDGETS, ThinkingBudgets,
+        };
+        assert_eq!(
+            SHARED_BUDGETS.nearest(12288).unwrap(),
+            (EffortLevel::XHigh, 16384)
+        );
+        assert_eq!(
+            SHARED_BUDGETS.nearest(8192).unwrap(),
+            (EffortLevel::High, 8192)
+        );
+        assert!(SHARED_BUDGETS.nearest(0).is_err());
+        let repeated = ThinkingBudgets {
+            entries: &[
+                (EffortLevel::XHigh, 1000),
+                (EffortLevel::Low, 500),
+                (EffortLevel::High, 1000),
+                (EffortLevel::Medium, 500),
+            ],
+        };
+        assert_eq!(repeated.nearest(750).unwrap().0, EffortLevel::XHigh);
+        assert_eq!(repeated.nearest(500).unwrap().0, EffortLevel::Medium);
+        assert_eq!(repeated.nearest(u64::MAX).unwrap().0, EffortLevel::XHigh);
+        static QUANTIZE: ReasoningRequestPolicy = ReasoningRequestPolicy {
+            canonical_model: "m",
+            rule: "synthetic.budget-to-effort.v1",
+            conversion: ReasoningConversion::BudgetToEffort {
+                scope: EffortScope::Reasoning,
+                table: SHARED_BUDGETS,
+            },
+        };
+        let mut settings = GenerationSettings {
+            instructions: Presence::Value(Text::new("hello", "test", 32).unwrap()),
+            reasoning: ReasoningRequest::present(None),
+            ..Default::default()
+        };
+        settings.reasoning.budget_tokens = Some(12288);
+        settings.reasoning.mode = Presence::Value(ReasoningMode::Budgeted);
+        settings.controls.max_output_tokens = Some(16384);
+        let request = GenerationRequest::from_settings(vec![], settings.clone()).unwrap();
+        let source = request.clone();
+        let semantic = QUANTIZE.project_request(&request).unwrap().unwrap();
+        assert_eq!(
+            semantic.settings().effort.value().unwrap().level,
+            EffortLevel::XHigh
+        );
+        assert_eq!(request, source);
+        let mut adapter = morphiecore::protocol::openai::Adapter::new(
+            Profile::Responses,
+            morphiecore::protocol::openai::Dialect::Standard,
+            None,
+        );
+        adapter.adaptation.reasoning_policy = Some(&QUANTIZE);
+        let mut envelope = adapter
+            .decode_request(br#"{"model":"m","input":"hi"}"#)
+            .unwrap();
+        envelope.task.semantic = request;
+        let (wire, rules) = adapter
+            .encode_request_with_rules(&envelope, "m", &TargetCaps::full())
+            .unwrap();
+        assert_eq!(wire["reasoning"]["effort"], "xhigh");
+        assert_eq!(rules, ["synthetic.budget-to-effort.v1"]);
+        let allocate = ReasoningRequestPolicy {
+            canonical_model: "m",
+            rule: "synthetic.effort-to-budget.v1",
+            conversion: ReasoningConversion::EffortToBudget {
+                scope: EffortScope::Reasoning,
+                table: SHARED_BUDGETS,
+            },
+        };
+        let mut effort = semantic.settings().clone();
+        effort.controls.max_output_tokens = Some(4096);
+        assert!(allocate.project(&effort).is_err());
+        effort.controls.max_output_tokens = Some(16384);
+        let allocated = allocate.project(&effort).unwrap();
+        assert_eq!(allocated.reasoning.budget_tokens, Some(16384));
+        let allocated = GenerationRequest::from_settings(vec![], allocated).unwrap();
+        let (wire, _) = morphiecore::protocol::google::encode_generation_request(
+            &allocated,
+            &FidelityRecords::default(),
+            &morphiecore::protocol::native::ReplayTarget::new("synthetic", "m").unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            wire["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            16384
+        );
+        let scoped = ReasoningRequestPolicy {
+            canonical_model: "m",
+            rule: "synthetic.scope.v1",
+            conversion: ReasoningConversion::Scope {
+                from: EffortScope::Reasoning,
+                to: EffortScope::Response,
+                levels: &[(EffortLevel::XHigh, EffortLevel::High)],
+            },
+        }
+        .project(&effort)
+        .unwrap();
+        assert_eq!(scoped.effort.value().unwrap().scope, EffortScope::Response);
+        let mut disabled = scoped;
+        disabled.reasoning.activation = Presence::Value(ReasoningActivation::Disabled);
+        let disabled = ReasoningRequestPolicy {
+            canonical_model: "m",
+            rule: "synthetic.preserve-off.v1",
+            conversion: ReasoningConversion::PreserveDisabled,
+        }
+        .project(&disabled)
+        .unwrap();
+        assert!(disabled.effort.is_absent());
+        assert_eq!(
+            disabled.reasoning.activation.value(),
+            Some(&ReasoningActivation::Disabled)
+        );
+        let mut client = morphiecore::protocol::openai::Adapter::new(
+            Profile::Chat,
+            morphiecore::protocol::openai::Dialect::Standard,
+            None,
+        );
+        let instruction = client
+            .decode_request(br#"{"model":"m","messages":[{"role":"user","content":"hi"}]}"#)
+            .unwrap();
+        let mut instruction = instruction;
+        let mut settings = instruction.task.semantic.settings().clone();
+        settings.instructions = Presence::Value(Text::new("instructions", "test", 32).unwrap());
+        instruction.task.semantic = instruction.task.semantic.with_settings(settings).unwrap();
+        assert_eq!(
+            client
+                .encode_request(&instruction, "m", &TargetCaps::full())
+                .unwrap()["messages"][0]["role"],
+            "developer"
+        );
+        client.adaptation.rules.chat_system_instructions = true;
+        let (wire, rules) = client
+            .encode_request_with_rules(&instruction, "m", &TargetCaps::full())
+            .unwrap();
+        assert_eq!(
+            wire["messages"][0],
+            serde_json::json!({"role":"system","content":"instructions"})
+        );
+        assert_eq!(rules, ["chat.instructions-as-system.v1"]);
         for dimension in 0..4 {
             let mut control = ReasoningRequest::present(None);
             match dimension {

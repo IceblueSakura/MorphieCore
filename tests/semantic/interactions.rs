@@ -365,7 +365,7 @@ fn media_become_v1_content_and_video_has_no_carrier() {
         json!({"model":"public","tools":[{"type":"function","name":"shot","strict":false,"parameters":{"type":"object"}}],
             "input":[{"role":"user","content":[
                 {"type":"input_image","image_url":"https://example.invalid/a.png"},
-                {"type":"input_file","file_data":"data:application/pdf;base64,AQID","filename":"a.pdf"},
+                {"type":"input_file","file_data":"data:application/pdf;base64,AQID"},
                 {"type":"input_text","text":"Compare."}]},
             {"type":"function_call","call_id":"c1","name":"shot","arguments":"{}"},
             {"type":"function_call_output","call_id":"c1","output":[
@@ -384,7 +384,23 @@ fn media_become_v1_content_and_video_has_no_carrier() {
             {"type":"function_result","call_id":"c1","name":"shot","result":[
                 {"type":"image","data":"BAUG","mime_type":"image/png"}]}])
     );
-    assert_eq!(rules, [RequestRule::OmitMediaOptions]);
+    assert!(rules.is_empty());
+    let mut named = request.clone();
+    let mut items = named.task.semantic.items().to_vec();
+    let Item::Message(message) = &mut items[0].1 else {
+        panic!()
+    };
+    let ContentPart::Resource(resource) = &mut message.parts[1].content else {
+        panic!()
+    };
+    let ResourceDescription::File(file) = &mut resource.description else {
+        panic!()
+    };
+    file.filename = Some(Text::new("a.pdf", "test", 32).unwrap());
+    named.task.semantic = named.task.semantic.with_items(items).unwrap();
+    assert!(
+        encode_generation_request(&named.task.semantic, &named.task.fidelity, &target).is_err()
+    );
     let video = decode(
         Profile::Chat,
         json!({"model":"public","messages":[{"role":"user","content":[

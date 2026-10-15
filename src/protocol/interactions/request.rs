@@ -14,14 +14,11 @@ pub enum RequestRule {
     OmitVerbosity,
     Cache(crate::protocol::cache::CacheRule),
     SummarizeReasoning,
-    OmitReasoningContext,
     OmitForeignReplay,
     ReasoningAsText,
     DeveloperAsSystem,
     OmitSchemaName,
     OmitCacheKey,
-    /// Image detail, file detail and filename have no Interactions slot.
-    OmitMediaOptions,
 }
 impl RequestRule {
     pub const fn name(self) -> &'static str {
@@ -29,13 +26,11 @@ impl RequestRule {
             Self::OmitVerbosity => "interactions.omit-verbosity.v1",
             Self::Cache(rule) => rule.name(),
             Self::SummarizeReasoning => "interactions.summarize-reasoning.v1",
-            Self::OmitReasoningContext => "interactions.omit-reasoning-context.v1",
             Self::OmitForeignReplay => "interactions.omit-foreign-replay.v1",
             Self::ReasoningAsText => "interactions.reasoning-as-text.v1",
             Self::DeveloperAsSystem => "interactions.developer-as-system.v1",
             Self::OmitSchemaName => "interactions.omit-schema-name.v1",
             Self::OmitCacheKey => "interactions.omit-cache-key.v1",
-            Self::OmitMediaOptions => "interactions.omit-media-options.v1",
         }
     }
 }
@@ -201,7 +196,7 @@ fn thinking(
         return Err(unsupported());
     }
     if !r.context.is_absent() {
-        rules.insert(RequestRule::OmitReasoningContext);
+        return Err(unsupported());
     }
     let summary = match (&r.display, &r.summary) {
         (Presence::Value(ReasoningDisplay::Summary), _)
@@ -442,7 +437,7 @@ fn steps(
 fn media(
     resource: ResourceView<'_>,
     tool: bool,
-    rules: &mut BTreeSet<RequestRule>,
+    _rules: &mut BTreeSet<RequestRule>,
 ) -> Result<Value, CodecError> {
     let kind = match resource.kind() {
         ResourceKind::Image => "image",
@@ -455,7 +450,7 @@ fn media(
         ResourceDescription::File(file) => file.filename.is_some() || file.detail.is_some(),
         _ => false,
     } {
-        rules.insert(RequestRule::OmitMediaOptions);
+        return Err(unsupported());
     }
     match resource.location {
         ResourceLocation::Inline {

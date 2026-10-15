@@ -1462,14 +1462,11 @@ mod images {
                 .is_err()
         );
         let xiaomi = Adapter::new(Profile::Responses, Dialect::Xiaomi, None);
-        let (encoded, rules) = xiaomi
-            .encode_request_with_rules(&request, "synthetic", &TargetCaps::full())
-            .unwrap();
-        assert_eq!(
-            encoded["input"][0]["content"][1],
-            json!({"type":"input_image","image_url":"https://example.test/a.png"})
+        assert!(
+            xiaomi
+                .encode_request_with_rules(&request, "synthetic", &TargetCaps::full())
+                .is_err()
         );
-        assert_eq!(rules, ["openai.omit-image-detail.v1"]);
         assert_eq!(
             adapter(Profile::Responses)
                 .encode_request(&request, "synthetic", &TargetCaps::full())
@@ -1484,14 +1481,11 @@ mod images {
                     {"type":"input_image","image_url":"data:image/png;base64,AQID","detail":"auto"}]}]})
                 .to_string().as_bytes(),
         ).unwrap();
-        let (encoded, rules) = xiaomi
-            .encode_request_with_rules(&tool, "synthetic", &TargetCaps::full())
-            .unwrap();
-        assert_eq!(
-            encoded["input"][1]["output"],
-            json!([{"type":"input_image","image_url":"data:image/png;base64,AQID"}])
+        assert!(
+            xiaomi
+                .encode_request_with_rules(&tool, "synthetic", &TargetCaps::full())
+                .is_err()
         );
-        assert_eq!(rules, ["openai.omit-image-detail.v1"]);
         let original = wire(
             Profile::Responses,
             json!([{"type":"input_image","image_url":"https://example.test/x","detail":"original"}]),

@@ -728,12 +728,16 @@ mod anthropic_media {
         };
         let request = decode(json!([
             {"type":"image_url","image_url":{"url":"https://example.invalid/a.png","detail":"low"}}]));
-        let (wire, rules) = endpoint.encode_request_with_rules(&request).unwrap();
-        assert_eq!(
-            wire["messages"][0]["content"],
-            json!([{"type":"image","source":{"type":"url","url":"https://example.invalid/a.png"}}])
+        assert!(endpoint.encode_request_with_rules(&request).is_err());
+        let mut context = decode(json!("hello"));
+        let mut settings = context.task.semantic.settings().clone();
+        settings.reasoning =
+            morphiecore::semantic::task::generation::ReasoningRequest::present(None);
+        settings.reasoning.context = morphiecore::semantic::value::Presence::Value(
+            morphiecore::semantic::task::generation::ReasoningContext::CurrentTurn,
         );
-        assert_eq!(rules, ["messages.omit-media-options.v1"]);
+        context.task.semantic = context.task.semantic.with_settings(settings).unwrap();
+        assert!(endpoint.encode_request_with_rules(&context).is_err());
         let named = decode(json!([{"type":"file","file":{
             "file_data":"data:application/pdf;base64,AQID","filename":"report.pdf"}}]));
         let (wire, rules) = endpoint.encode_request_with_rules(&named).unwrap();
