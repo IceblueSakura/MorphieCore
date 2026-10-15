@@ -36,9 +36,9 @@ Implement small slices in this order. These are planned corrections, not shipped
 
    Exit condition: legal partial options survive decode and supported re-encoding without adding defaults; Responses-only controls cannot leak through Chat. Existing cache-key and retention advisory policy remains explicit. Usage mappings preserve reported zero versus absent and reject inconsistent totals. New cache breakpoint/TTL carriers wait for the support queue.
 
-5. **Correct reasoning controls.** Implement the selected [activation/scoped-effort contract](architecture.md#reasoning-activation-and-effort-scope) and [same-model calibration plan](architecture.md#initial-mapping-plan) through the slices below. Validate thinking variants before normalization. Preserve disabled activation, effort scope and numeric budget intent where the selected target has a carrier; never equate hidden summaries with disabled reasoning. Check model restrictions separately from protocol grammar and do not claim a guidance budget is a hard cap.
+5. **Complete target-specific reasoning admission.** Check model restrictions separately from the [activation/scoped-effort contract](architecture.md#reasoning-activation-and-effort-scope) and [explicit calibration](architecture.md#initial-mapping-plan). Assess remaining display/context losses separately from level calibration. Do not claim effective sampling or exact reasoning budgets solely from SDK field presence.
 
-   Exit condition: the disabled-plus-effort counterexample has the selected representation or an explicit rejection. Off never becomes low/minimal/adaptive and numeric budgets never automatically become levels. Unsupported intent rejects the candidate. Explicit encode/decode level rules apply once for the same model, with independent directions and target validation; no inverse is inferred from a many-to-one map. Sampling admission does not claim effective support solely because an SDK field exists.
+   Exit condition: each selected binding has sourced model-level admission for the controls it promises. Unsupported off, numeric allocation and effort scopes reject; display/context losses have an explicit policy rather than entering a level table. Extend native policy wiring only for a concretely selected mapping.
 
 6. **Reproduce terminal-projection suspicion independently.** Feed a synthetic Gemini `MAX_TOKENS` finish through [the decoder](../src/protocol/google/stream.rs) and reducer. Inspect the predicted `Progress(Unreported)` rejection before changing lifecycle behavior.
 
@@ -50,19 +50,13 @@ Run affected targets before the [full offline baseline](development.md#offline-b
 
 ### Reasoning repair slices
 
-These implement projection-repair step 5 after the earlier boundary slices. D1's direction is selected, not shipped; D2's table is an initial design, not a live binding change. D3 does not block these independent repairs.
+Finish the remaining [effort-policy boundaries](../src/protocol/reasoning.rs) without changing the scoped IR. D3 does not block these independent repairs. Keep the hypothetical A/B table out of live bindings unless its values are explicitly chosen; do not add an external configuration surface.
 
-1. **Separate activation and effort scope.** Extend the existing IR with explicit activation and one scoped effort control, with no Provider state or compatibility shim. Migrate requirements, contracts and reported-setting owners together. Update codecs so Anthropic disabled plus response-wide high survives, off aliases remain off, and incompatible effort scopes reject instead of changing meaning.
+1. Validate repeated reported reasoning settings before many-to-one normalization. Item-terminal equality is not evidence that created/in-progress/terminal settings agree.
+2. Extend non-identity calibration to ordered configuration items only with native snapshot validation before normalization. Until then, reject non-identity or undeclared entries rather than bypass a selected policy.
+3. Propagate selected policy into native request/intake paths only for a concrete binding that needs it.
 
-   Exit condition: independent wire-to-IR and IR-to-wire expectations cover the approved counterexample, and a target without a scope/carrier rejects it. An effort-only Messages request does not fabricate a thinking object. Existing JSON/SSE/history paths compile and preserve meaningful presence and unchanged-source projection. Remove automatic budget-to-effort and off-to-level behavior; an unsupported numeric/mode carrier rejects.
-
-2. **Complete scoped directional level policy.** Migrate the [explicit effort mapping interface](../src/protocol/reasoning.rs) to the D1 scoped types. Replace remaining ad hoc transforms with hand-authored tables, and propagate selected policy into native intake as needed. Keep protocol-specific binding selection, independent encode/decode directions and rejection of every undeclared entry, including identities. Do not add an external configuration surface.
-
-   Exit condition: a synthetic same-model A/B binding demonstrates low-to-medium encode calibration and an independently declared decode result. A many-to-one encode map never creates an inverse. Duplicate/conflicting keys and invalid target levels fail trusted validation; unknown/unmapped unsupported levels reject. Absent reports remain absent, and source-wire conflicts remain detectable before normalization. Verify that preflight and preparation agree without changing the source request or mapping twice.
-
-3. **Migrate only explicitly selected bindings.** Inventory existing model-specific effort transforms in code, replace each with an individually chosen policy or strict rejection, and delete obsolete switches/helpers and their unused tests. Keep the hypothetical A/B table out of real bindings unless a concrete mapping is selected.
-
-   Exit condition: static response, SSE and history use the same chosen scope/directions; shared dialects cannot leak one model's calibration to another. Record applied rules without sensitive values. Run the SDK loopback gate at the boundary milestone; any real acceptance run has a fixed target, request count, cap and timeout.
+Exit condition: static/SSE metadata and supported history receive the selected scoped, directional policy without inferring an inverse or fabricating absent reports. Invalid native levels fail trusted validation. Preserve pre-normalization source conflicts, unchanged-source candidate projection and existing lifecycle safety. Use the SDK loopback gate at the boundary milestone; any real acceptance run has a fixed target, request count, cap and timeout.
 
 ### Support queue after projection repair
 

@@ -26,8 +26,9 @@ pub use content::item::{
     MessageRole, Part, Phase,
 };
 pub use content::reasoning::{
-    ReasoningContent, ReasoningContext, ReasoningDisplay, ReasoningEffort, ReasoningItem,
-    ReasoningMode, ReasoningPresence, ReasoningRequest, ReasoningSummary,
+    EffortControl, EffortLevel, EffortScope, ReasoningActivation, ReasoningContent,
+    ReasoningContext, ReasoningDisplay, ReasoningItem, ReasoningMode, ReasoningPresence,
+    ReasoningRequest, ReasoningSummary,
 };
 pub use content::structured::StructuredValue;
 pub use content::text::{

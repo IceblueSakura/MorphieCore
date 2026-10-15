@@ -247,9 +247,8 @@ async fn messages_clients_get_anthropic_shapes_from_an_openai_target() {
     let entry =
         gate.state.entries[&(crate::gateway::MESSAGES_FAMILY, "fixture-model".into())].clone();
     // A failed tool result keeps its text toward an OpenAI target; the flag is named.
-    // A thinking budget becomes an effort toward an OpenAI target.
+    // Reasoning history is independent of active thinking controls.
     let body = serde_json::json!({"model":"fixture-model","max_tokens":32,
-        "thinking":{"type":"enabled","budget_tokens":10000},
         "tools":[{"name":"lookup","input_schema":{"type":"object","properties":{}}}],"messages":[
         {"role":"user","content":"q"},
         {"role":"assistant","content":[{"type":"thinking","thinking":"plan","signature":""},

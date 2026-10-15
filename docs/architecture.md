@@ -112,11 +112,11 @@ Introduce this seam incrementally around concrete mappings. Do not add a univers
 
 ### Reasoning activation and effort scope
 
-The selected IR direction separates activation from a scope-qualified effort control. This is a design contract; migrate the existing types and codecs in the [reasoning repair slices](roadmap.md#reasoning-repair-slices) after the earlier boundary repairs.
+The IR separates activation from a scope-qualified effort control. [Reasoning types](../src/semantic/task/generation/content/reasoning.rs), [settings](../src/semantic/task/generation/request/settings.rs) and their codecs own the contract; remaining target-specific work is in [Roadmap](roadmap.md#reasoning-repair-slices).
 
 Put activation on `ReasoningRequest` and one optional `EffortControl { scope, level }` on `GenerationSettings`. The initial scopes are `Reasoning` and `Response`. One scoped control is sufficient for the selected contracts; do not add two parallel effort fields without a counterexample requiring both at once. Keep protocol-relevant absence and null separate from active intent.
 
-Activation distinguishes disabled from enabled reasoning; enabled permits reasoning and does not promise a nonzero token count. Keep execution/allocation mode, numeric budget, summary, display and replay separate. Remove `None` from the positive effort-level vocabulary when migrating: native off spellings normalize to activation, not a minimum effort. An omitted activation does not invent enabled behavior.
+Activation distinguishes disabled from enabled reasoning; enabled permits reasoning and does not promise a nonzero token count. Execution/allocation mode, numeric budget, summary, display and replay stay separate. `EffortLevel` contains only positive levels: native off spellings normalize to activation, not a minimum effort. An omitted activation does not invent enabled behavior.
 
 Disabled activation plus response-wide high effort is valid IR. Disabled activation plus a positive reasoning-only effort, adaptive/budgeted allocation or numeric thinking budget is contradictory. Standard/pro execution mode is not an activation switch; validate its combinations against the target contract rather than banning it solely because reasoning is disabled. Validate official wire variants separately before constructing this contract.
 
@@ -126,7 +126,7 @@ Requirements and target contracts must distinguish response-wide effort from rea
 
 ### Reasoning level calibration
 
-Reject a candidate that cannot represent the requested reasoning semantics. The exception is an explicit, hand-authored level mapping for the same model, scoped by trusted binding/dialect selection. This is the selected correction policy; existing automatic approximations are not evidence that it has shipped.
+Reject a candidate that cannot represent the requested reasoning semantics. The exception is an explicit, hand-authored level mapping for the same model, scoped by trusted binding/dialect selection. Numeric budgets and off controls are not converted to positive levels.
 
 Different Providers may expose different labels for one model. A selected rule may map `low` to `medium`, for example. Without a declared rule, neither a nearest-level heuristic nor matching label spelling establishes equivalence. This exception does not authorize converting disabled reasoning into enabled reasoning or replacing a numeric budget with an effort level.
 
@@ -150,22 +150,24 @@ The following is a hypothetical reasoning-scope encode policy, not an activated 
 
 For this example, decode explicitly declares identity on each native level: a reported medium remains medium, even when the request was low. A separately authored decode rule may normalize it differently; never infer that rule from encode. Every handled entry, including an identity, must be declared. Missing entries reject, with no supported-level fallback. Do not chain table entries or apply the encode table to an already adapted candidate.
 
-The initial code interface is [ReasoningEffortMapping](../src/protocol/reasoning.rs): hand-authored encode/decode pairs selected by `ApiKeyBinding.effort_mappings` for an exact protocol member. Endpoint construction carries the policy into request encoding and static/SSE metadata intake; adapter selection validates its canonical-model identity. Bindings without a selected policy keep their existing codec behavior. D1's scoped IR migration remains separate.
+The code interface is [ReasoningEffortMapping](../src/protocol/reasoning.rs): hand-authored encode/decode pairs, effort scope and declared native levels selected by `ApiKeyBinding.effort_mappings` for an exact protocol member. Endpoint construction carries the policy into request encoding and static/SSE metadata intake; adapter selection validates its canonical-model identity. Bindings without a selected policy use their protocol's representation rules, not a generated mapping.
 
-With the current pre-D1 enum, `None` may appear only as an explicitly declared `None → None` entry. This preserves an off carrier, not an effort calibration. Cross-activation entries are invalid; absence and null never create a level. The interface does not add Provider-only level labels to the standard IR.
+Activation is outside the positive-level table, so a table cannot turn off into on. Absence and null never create a level. The interface does not add Provider-only level labels to the standard IR.
+
+Selected policies currently calibrate settings. Ordered configuration items must declare an identity in the selected direction; a non-identity projection is rejected until native snapshot conflicts can be checked before normalization. Always-reasoning bindings also reject disabled configuration history. A settings policy must not silently bypass historical native-level admission.
 
 Validate duplicate keys, output levels, effort scope and binding identity when compiling topology. Preflight and preparation each project afresh from unchanged input through the same pure path; they need not share a mutable adapted request. Calibration precedes the final supported-level check, but cannot bypass mode, budget, semantic or scope validation.
 
-Validate native types, alias conflicts and source-snapshot consistency before a many-to-one normalization can hide a disagreement. Normalize only fields actually reported. Static and streamed metadata use the same rule, and downstream delivery does not reapply the source Provider's encode map.
+Validate native types, alias conflicts and source-snapshot consistency before a many-to-one normalization can hide a disagreement. Normalize only fields actually reported. Static and streamed metadata use the same rule, and downstream delivery does not reapply the source Provider's encode map. Comparing repeated reported reasoning settings before normalization remains a [boundary repair](roadmap.md#reasoning-repair-slices), not a guarantee supplied by item-snapshot checks.
 
 #### Implementation owners
 
 | Owner | Planned responsibility |
 |---|---|
 | [Semantic reasoning types](../src/semantic/task/generation/content/reasoning.rs), [settings](../src/semantic/task/generation/request/settings.rs), [requirements](../src/semantic/task/generation/requirements.rs) and [contract](../src/semantic/task/generation/contract.rs) | Activation and scoped effort only; no model-specific level policy |
-| [Protocol reasoning helper](../src/protocol/reasoning.rs) | Small immutable level-policy lookup and validation; retire automatic budget-to-effort thresholds after migrating their callers |
+| [Protocol reasoning helper](../src/protocol/reasoning.rs) | Small immutable level-policy lookup and validation; no automatic budget-to-effort thresholds |
 | [Catalog binding declarations](../src/topology/catalog/bindings.rs), [catalog construction](../src/topology/catalog.rs), native catalog constructors and [endpoint compilation](../src/topology/endpoint.rs) | Select policy by canonical model and binding, validate it and pass it through representation caps to the adapter; do not reuse a Provider-wide switch for model-specific levels |
-| [OpenAI adaptation](../src/protocol/openai/dialect/adaptation.rs), [request projection](../src/protocol/openai/adapter/request.rs), [Messages projection](../src/protocol/anthropic/semantic_request.rs), [generateContent projection](../src/protocol/google/request.rs) and [Interactions projection](../src/protocol/interactions/request.rs) | Carry the selected encode policy and apply it once to the candidate-private typed representation before final target validation and serialization; replace broad `low_high_max_effort` behavior rather than keeping both paths |
+| [OpenAI adaptation](../src/protocol/openai/dialect/adaptation.rs), [request projection](../src/protocol/openai/adapter/request.rs), [Messages projection](../src/protocol/anthropic/semantic_request.rs), [generateContent projection](../src/protocol/google/request.rs) and [Interactions projection](../src/protocol/interactions/request.rs) | Preserve scope and apply a selected level policy once to candidate-private typed representation before final validation and serialization; no Provider-wide level calibration switch |
 | [Upstream adapter](../src/adapter/upstream.rs), [static response intake](../src/protocol/openai/static_response.rs), [event intake](../src/protocol/openai/events/decode.rs) and native decoders | Carry the selected decode policy into actual reported-setting parsing, including SSE; do not put policy in `ReplayTarget` or discover it from a response model string |
 | [Fidelity](../src/protocol/fidelity.rs) and existing named request rules | Record bounded normalization provenance and actual encode adaptation, without restoring unsupported controls or synthesizing effective settings |
 
@@ -381,10 +383,9 @@ Native requests preserve thinking, tool-use/result order and call IDs. Messages 
 
 ### Request rules
 
-These describe existing projections. Automatic reasoning approximations are scheduled for correction under [Reasoning level calibration](#reasoning-level-calibration); they are not accepted equivalences or a claim that the selected policy is already implemented.
-
-- Effort maps to adaptive thinking. `none`/`minimal` map to `low`; budgets use a named effort projection.
-- Summary intent maps to summarized or omitted display. Unsupported reasoning context and sampling controls are dropped by named rules.
+- Disabled and adaptive activation have distinct carriers. This selected profile rejects numeric thinking budgets instead of replacing them with effort.
+- Response-wide effort maps to `output_config.effort` independently of thinking. Reasoning-only effort is rejected, not broadened to response-wide effort.
+- Summary intent maps to summarized or omitted display only with a representable activation/allocation. Display alone does not enable thinking. Unsupported reasoning context and sampling controls still have named projection rules.
 - Client `thinking.display` is preserved independently of effort and budget, using the same display parser as native intake.
 - A leading developer instruction maps to the system prompt by name.
 - Call IDs outside the native grammar map to stable digests; collisions fail rather than merge calls.

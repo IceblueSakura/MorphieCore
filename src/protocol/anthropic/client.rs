@@ -202,23 +202,35 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                 let budget = t
                     .get("budget_tokens")
                     .and_then(Value::as_u64)
-                    .filter(|n| *n > 0)
+                    .filter(|n| *n >= 1024)
                     .ok_or(CodecError::Invalid("thinking budget"))?;
-                settings.reasoning = ReasoningRequest::present(None, None);
+                settings.reasoning = ReasoningRequest::present(None);
+                settings.reasoning.activation = Presence::Value(ReasoningActivation::Enabled);
                 settings.reasoning.mode = Presence::Value(ReasoningMode::Budgeted);
                 settings.reasoning.budget_tokens = Some(budget);
             }
             Some("adaptive") => {
-                settings.reasoning = ReasoningRequest::present(None, None);
+                if t.contains_key("budget_tokens") {
+                    return Err(CodecError::Invalid("adaptive thinking budget"));
+                }
+                settings.reasoning = ReasoningRequest::present(None);
+                settings.reasoning.activation = Presence::Value(ReasoningActivation::Enabled);
                 settings.reasoning.mode = Presence::Value(ReasoningMode::Adaptive);
             }
             Some("disabled") => {
-                settings.reasoning = ReasoningRequest::present(Some(ReasoningEffort::None), None);
+                if t.contains_key("budget_tokens") || t.contains_key("display") {
+                    return Err(CodecError::Invalid("disabled thinking controls"));
+                }
+                settings.reasoning = ReasoningRequest::present(None);
+                settings.reasoning.activation = Presence::Value(ReasoningActivation::Disabled);
             }
             _ => return Err(CodecError::Unsupported("Anthropic thinking mode".into())),
         }
         settings.reasoning.display =
             super::semantic::display(&super::shape::presence(t, "display", super::Display::read)?);
+        if settings.reasoning.display == Presence::Null {
+            return Err(CodecError::Invalid("thinking display"));
+        }
     }
     if let Some(config) = o.get("output_config").filter(|v| !v.is_null()) {
         let mut config = config.clone();

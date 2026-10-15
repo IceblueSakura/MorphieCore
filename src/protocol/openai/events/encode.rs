@@ -271,10 +271,12 @@ impl EventEncoder {
                     ItemKind::Compaction => {
                         json!({"id":id,"type":"compaction"})
                     }
-                    ItemKind::ConfigurationUpdate { effort } => {
+                    ItemKind::ConfigurationUpdate(update) => {
                         let mut v = json!({"id":id,"type":"configuration_update"});
-                        if let Some(effort) = effort {
-                            v["reasoning"] = json!({"effort": crate::protocol::openai::reasoning::effort_label(*effort)});
+                        if let Some(effort) =
+                            crate::protocol::openai::reasoning::effort_label(update)?
+                        {
+                            v["reasoning"] = json!({"effort": effort});
                         }
                         v
                     }
@@ -489,6 +491,14 @@ impl EventEncoder {
     }
 }
 fn validate_metadata(profile: Profile, metadata: &ResponseMetadata) -> Result<(), CodecError> {
+    if let Some(settings) = &metadata.context.settings {
+        settings.validate()?;
+        if super::super::reasoning::requires_extended_controls(settings) {
+            return Err(CodecError::Unsupported(
+                "reported reasoning controls".into(),
+            ));
+        }
+    }
     metadata.required_id()?;
     let created = metadata
         .created

@@ -205,7 +205,7 @@ pub fn items(
                     CallKind::Custom,
                 )?;
             }
-            Item::ConfigurationUpdate(_) => {}
+            Item::ConfigurationUpdate(update) => update.validate()?,
             Item::Compaction(value) => {
                 value.validate_compaction()?;
                 if !response && value.replay_token().is_none() {

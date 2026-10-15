@@ -247,25 +247,36 @@ impl Display {
     }
 }
 #[derive(Clone, Eq, PartialEq)]
-pub struct Thinking {
-    pub display: Presence<Display>,
+pub enum Thinking {
+    Disabled,
+    Adaptive { display: Presence<Display> },
 }
 impl Thinking {
     fn read(v: &Value) -> Result<Self, CodecError> {
-        let o = closed(v, &["type", "display"])?;
-        if required(o, "type")?.as_str() != Some("adaptive") {
-            return Err(CodecError::Unsupported("Anthropic thinking mode".into()));
+        let o = object(v)?;
+        match required(o, "type")?.as_str() {
+            Some("disabled") => {
+                closed(v, &["type"])?;
+                Ok(Self::Disabled)
+            }
+            Some("adaptive") => {
+                let o = closed(v, &["type", "display"])?;
+                let display = presence(o, "display", Display::read)?;
+                nonnull(&display)?;
+                Ok(Self::Adaptive { display })
+            }
+            _ => Err(CodecError::Unsupported("Anthropic thinking mode".into())),
         }
-        Ok(Self {
-            display: presence(o, "display", Display::read)?,
-        })
     }
     fn wire(&self) -> Value {
+        let Self::Adaptive { display } = self else {
+            return json!({"type":"disabled"});
+        };
         let mut v = json!({"type":"adaptive"});
         put(
             v.as_object_mut().expect("object"),
             "display",
-            &self.display,
+            display,
             |d| {
                 json!(match d {
                     Display::Summarized => "summarized",
@@ -429,6 +440,9 @@ impl Request {
         nonnull(&self.tools)?;
         nonnull(&self.tool_choice)?;
         nonnull(&self.thinking)?;
+        if let Presence::Value(Thinking::Adaptive { display }) = &self.thinking {
+            nonnull(display)?;
+        }
         nonnull(&self.output_config)?;
         nonnull(&self.cache_control)?;
         nonnull(&self.stream)?;

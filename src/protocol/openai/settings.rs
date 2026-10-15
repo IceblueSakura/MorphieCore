@@ -37,9 +37,9 @@ pub(super) fn read(
     let mut s = GenerationSettings {
         instructions,
         controls: controls(o, "max_output_tokens")?,
-        reasoning: reasoning::request(o, reported, direction)?,
         ..Default::default()
     };
+    reasoning::request(o, reported, direction, &mut s)?;
     if let Some(v) = o.get("top_p").filter(|v| !v.is_null()) {
         s.controls = s
             .controls
@@ -191,7 +191,7 @@ pub(super) fn write(s: &GenerationSettings, o: &mut Map<String, Value>) -> Resul
         );
     }
     function_tools::write_settings(s, Profile::Responses, o)?;
-    reasoning::write_request(&s.reasoning, o, Profile::Responses)?;
+    reasoning::write_request(s, o, Profile::Responses)?;
     if s.controls.logprobs == crate::semantic::value::Presence::Value(true) {
         let a = o.entry("include").or_insert_with(|| json!([]));
         a.as_array_mut()

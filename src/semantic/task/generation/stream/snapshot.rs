@@ -138,9 +138,7 @@ impl StreamItem {
                     .value
                     .clone(),
             ),
-            ItemKind::ConfigurationUpdate { effort } => {
-                Item::ConfigurationUpdate(ConfigurationUpdate { effort: *effort })
-            }
+            ItemKind::ConfigurationUpdate(update) => Item::ConfigurationUpdate(*update),
             ItemKind::Program {
                 call_id,
                 code,

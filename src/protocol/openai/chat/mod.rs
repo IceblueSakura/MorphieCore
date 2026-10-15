@@ -99,9 +99,9 @@ pub(crate) fn decode_generation_with(
             format,
             verbosity,
         },
-        reasoning: crate::protocol::openai::reasoning::chat_request(o)?,
         ..Default::default()
     };
+    crate::protocol::openai::reasoning::chat_request(o, &mut settings)?;
     crate::protocol::openai::chat::audio::settings(o, &mut settings, direction)?;
     let groups = owners::envelopes(&b.message_owners)?;
     let r = GenerationRequest::from_resources(b.items, settings, b.resources)?
@@ -538,7 +538,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     crate::protocol::openai::chat::audio::write_settings(target.semantic.settings(), o);
     function_tools::encode(&target.semantic, Profile::Chat, o)?;
     crate::protocol::openai::reasoning::write_request(
-        target.semantic.reasoning(),
+        target.semantic.settings(),
         o,
         Profile::Chat,
     )?;

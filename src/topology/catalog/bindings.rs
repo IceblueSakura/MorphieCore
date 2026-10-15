@@ -2,7 +2,7 @@
 use crate::{
     protocol::{openai::Dialect, reasoning::ReasoningEffortMapping},
     provider::{ProviderDefinition, catalog},
-    semantic::task::generation::ReasoningEffort as E,
+    semantic::task::generation::{EffortLevel as E, EffortScope},
     topology::ProtocolProfile,
 };
 #[derive(Clone, Copy)]
@@ -76,8 +76,9 @@ const RESPONSES: &[ProtocolProfile] = &[ProtocolProfile::OpenAiResponses];
 const MIMO_FLASH_RESPONSES_EFFORT: ReasoningEffortMapping = ReasoningEffortMapping {
     canonical_model: "mimo-v2.6-flash",
     rule: "mimo-v2.6-flash.responses.effort.v1",
+    scope: EffortScope::Reasoning,
+    native_levels: &[E::Minimal, E::Low, E::Medium, E::High, E::XHigh, E::Max],
     encode: &[
-        (E::None, E::None),
         (E::Minimal, E::Low),
         (E::Low, E::Low),
         (E::Medium, E::Medium),
@@ -86,7 +87,6 @@ const MIMO_FLASH_RESPONSES_EFFORT: ReasoningEffortMapping = ReasoningEffortMappi
         (E::Max, E::High),
     ],
     decode: &[
-        (E::None, E::None),
         (E::Minimal, E::Low),
         (E::Low, E::Low),
         (E::Medium, E::Medium),
@@ -94,6 +94,28 @@ const MIMO_FLASH_RESPONSES_EFFORT: ReasoningEffortMapping = ReasoningEffortMappi
         (E::XHigh, E::High),
         (E::Max, E::High),
     ],
+};
+// Preserve the previously declared positive calibration, without a Provider-wide
+// switch or an off-to-low conversion. Reports use their own explicit direction.
+const ZHIPU_GLM_EFFORT: ReasoningEffortMapping = ReasoningEffortMapping {
+    canonical_model: "glm-5.3",
+    rule: "zhipu.glm-5.3.effort.v1",
+    scope: EffortScope::Reasoning,
+    native_levels: &[E::Low, E::High, E::Max],
+    encode: &[
+        (E::Minimal, E::Low),
+        (E::Low, E::Low),
+        (E::Medium, E::High),
+        (E::High, E::High),
+        (E::XHigh, E::Max),
+        (E::Max, E::Max),
+    ],
+    decode: &[(E::Low, E::Low), (E::High, E::High), (E::Max, E::Max)],
+};
+const ZHIPU_GLM_FLASH_EFFORT: ReasoningEffortMapping = ReasoningEffortMapping {
+    canonical_model: "glm-5.3-flash",
+    rule: "zhipu.glm-5.3-flash.effort.v1",
+    ..ZHIPU_GLM_EFFORT
 };
 /// Only declared protocol members are activated by the environment bootstrap.
 pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
@@ -456,7 +478,10 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         provider: catalog::zhipu,
         dialect: Dialect::Zhipu,
         endpoint_prefix: "zhipu",
-        effort_mappings: &[],
+        effort_mappings: &[
+            (ProtocolProfile::OpenAiChat, &ZHIPU_GLM_EFFORT),
+            (ProtocolProfile::OpenAiResponses, &ZHIPU_GLM_EFFORT),
+        ],
         model: "glm-5.3",
         canonical_model: "glm-5.3",
         upstream: "glm-5.3",
@@ -487,7 +512,10 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         provider: catalog::zhipu,
         dialect: Dialect::Zhipu,
         endpoint_prefix: "zhipu-flash",
-        effort_mappings: &[],
+        effort_mappings: &[
+            (ProtocolProfile::OpenAiChat, &ZHIPU_GLM_FLASH_EFFORT),
+            (ProtocolProfile::OpenAiResponses, &ZHIPU_GLM_FLASH_EFFORT),
+        ],
         model: "glm-5.3-flash",
         canonical_model: "glm-5.3-flash",
         upstream: "glm-5.3-flash",

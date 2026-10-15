@@ -22,6 +22,7 @@ pub enum GenerationFeature {
     ToolResultMedia,
     StructuredOutput,
     Reasoning,
+    ResponseEffort,
     Compaction,
     ImageInput,
     AudioInput,
@@ -49,6 +50,7 @@ pub struct GenerationSemanticContract {
     pub truncation: bool,
     pub structured_output: bool,
     pub reasoning: bool,
+    pub response_effort: bool,
     pub compaction: bool,
     pub image_input: bool,
     pub audio_input: bool,
@@ -63,6 +65,7 @@ impl GenerationSemanticContract {
     /// Complete vocabulary, useful for codecs and synthetic fixtures, not model discovery.
     pub fn full() -> Self {
         Self {
+            response_effort: true,
             compaction: true,
             instructions: true,
             temperature: true,
@@ -94,6 +97,7 @@ impl GenerationSemanticContract {
     /// Explicit currently admitted text/image slice; new fields require a decision here.
     pub fn text_images() -> Self {
         Self {
+            response_effort: false,
             compaction: false,
             instructions: true,
             temperature: true,
@@ -144,6 +148,7 @@ impl GenerationSemanticContract {
             (promise.truncation, self.truncation),
             (promise.structured_output, self.structured_output),
             (promise.reasoning, self.reasoning),
+            (promise.response_effort, self.response_effort),
             (promise.compaction, self.compaction),
             (promise.image_input, self.image_input),
             (promise.audio_input, self.audio_input),
@@ -198,6 +203,7 @@ impl GenerationSemanticContract {
             ),
             (q.tool_result_media, self.tool_result_media, ToolResultMedia),
             (q.reasoning, self.reasoning, Reasoning),
+            (q.response_effort, self.response_effort, ResponseEffort),
             (q.text_metadata, self.text_metadata, TextMetadata),
             (q.logprobs, self.logprobs, Controls),
         ] {
@@ -284,6 +290,7 @@ impl GenerationSemanticContract {
                 StructuredOutput,
             ),
             (q.reasoning, self.reasoning, Reasoning),
+            (q.response_effort, self.response_effort, ResponseEffort),
             (q.image_inputs > 0, self.image_input, ImageInput),
             (q.audio_inputs > 0, self.audio_input, AudioInput),
             (q.video_inputs > 0, self.video_input, VideoInput),

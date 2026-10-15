@@ -51,9 +51,8 @@ pub struct WireRules {
     /// Preserve reasoning items while rejecting unverified active request controls.
     /// A readable history carrier does not establish reasoning-effort admission.
     pub reject_reasoning_controls: bool,
-    /// Zhipu's always-thinking models take only `low`, `high` and `max` (error
-    /// 1210 otherwise); other efforts move to the nearest of those.
-    pub low_high_max_effort: bool,
+    /// This profile always reasons; never project an off request into a level.
+    pub reject_disabled_reasoning: bool,
     /// SGLang-shaped Chat reports reasoning tokens beside totals, not inside details.
     /// Normalize one typed count; conflicting aliases fail and unknown is not zero.
     /// Source: https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/entrypoints/openai/protocol.py

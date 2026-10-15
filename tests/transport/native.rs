@@ -419,21 +419,20 @@ mod native_catalog {
         let mut controlled = request.clone();
         let mut settings = controlled.task.semantic.settings().clone();
         settings.reasoning =
-            morphiecore::semantic::task::generation::ReasoningRequest::present(None, None);
+            morphiecore::semantic::task::generation::ReasoningRequest::present(None);
         settings.reasoning.budget_tokens = Some(1024);
         controlled.task.semantic = controlled.task.semantic.with_settings(settings).unwrap();
-        // Claude 5.x has no token budget: it becomes the nearest effort.
-        assert!(representable(&endpoint, &controlled).is_ok());
-        let prepared = prepare(
-            &endpoint,
-            &provider,
-            &SecretMaterial::new("synthetic-key").unwrap(),
-            &controlled,
-        )
-        .unwrap();
-        let wire: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
-        assert_eq!(wire["output_config"], serde_json::json!({"effort":"low"}));
-        assert!(!prepared.body.windows(13).any(|w| w == b"budget_tokens"));
+        // This native profile has no numeric carrier; do not substitute an effort.
+        assert!(representable(&endpoint, &controlled).is_err());
+        assert!(
+            prepare(
+                &endpoint,
+                &provider,
+                &SecretMaterial::new("synthetic-key").unwrap(),
+                &controlled,
+            )
+            .is_err()
+        );
     }
     #[test]
     fn native_unknown_response_fields_are_ignored_and_request_errors_do_not_leak_keys() {

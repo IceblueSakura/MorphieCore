@@ -606,13 +606,17 @@ impl EventDecoder {
             }
             "configuration_update" => {
                 DecodeDirection::Upstream.fields(v, &["type", "id", "reasoning"])?;
-                ItemKind::ConfigurationUpdate {
-                    effort: crate::protocol::openai::responses::configuration_effort(
-                        v,
-                        true,
-                        DecodeDirection::Upstream,
-                    )?,
-                }
+                let update = crate::protocol::openai::responses::configuration_update(
+                    v,
+                    true,
+                    DecodeDirection::Upstream,
+                )?;
+                crate::protocol::openai::reasoning::admit_configuration_mapping(
+                    &update,
+                    self.adaptation.effort_mapping,
+                    true,
+                )?;
+                ItemKind::ConfigurationUpdate(update)
             }
             "compaction" => {
                 DecodeDirection::Upstream.fields(v, &["type", "id", "encrypted_content"])?;
@@ -1311,7 +1315,7 @@ impl EventDecoder {
             &decoded.fidelity,
             true,
             decoded.semantic.resources(),
-        );
+        )?;
         if normalized.first() != Some(&expected) {
             return Err(CodecError::Invalid("item snapshot"));
         }
@@ -1416,7 +1420,7 @@ impl EventDecoder {
                 &self.fidelity,
                 true,
                 self.state()?.resources()
-            ));
+            )?);
             &summary
         } else {
             r
@@ -1450,13 +1454,13 @@ impl EventDecoder {
             &self.fidelity,
             true,
             self.state()?.resources(),
-        );
+        )?;
         let actual = crate::protocol::openai::responses::encode_items(
             decoded.semantic.items(),
             &decoded.fidelity,
             true,
             decoded.semantic.resources(),
-        );
+        )?;
         if actual != expected {
             return Err(CodecError::Invalid(terminal_snapshot_difference(
                 &actual, &expected,

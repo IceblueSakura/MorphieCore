@@ -13,61 +13,35 @@ use crate::{
 };
 use serde_json::Value;
 
-/// Candidate-local loss of thinking mode/display/budget; the bool reports a budget mapping.
-fn without_extended_reasoning(request: &Request) -> Result<Option<(Request, bool)>, CodecError> {
-    let settings = request.task.semantic.settings();
-    let reasoning = &settings.reasoning;
-    if !openai::reasoning::requires_extended_controls(reasoning) {
-        return Ok(None);
-    }
-    let mut settings = settings.clone();
-    let budget = crate::protocol::reasoning::budget_as_effort(reasoning);
-    let mapped = reasoning.effort.is_absent() && budget.is_some();
-    if let (true, Some(effort)) = (mapped, budget) {
-        settings.reasoning.effort = Presence::Value(effort);
-    }
-    settings.reasoning.mode = Presence::Absent;
-    settings.reasoning.display = Presence::Absent;
-    settings.reasoning.budget_tokens = None;
-    let mut copy = request.clone();
-    copy.task.semantic = copy.task.semantic.with_settings(settings)?;
-    Ok(Some((copy, mapped)))
-}
-/// The selected dialect admits only low/high/max effort.
-fn with_effort_levels(request: &Request) -> Result<Option<Request>, CodecError> {
-    use crate::semantic::task::generation::ReasoningEffort as E;
-    let settings = request.task.semantic.settings();
-    let leveled = match settings.reasoning.effort.value() {
-        Some(E::None | E::Minimal) => E::Low,
-        Some(E::Medium) => E::High,
-        Some(E::XHigh) => E::Max,
-        _ => return Ok(None),
-    };
-    let mut settings = settings.clone();
-    settings.reasoning.effort = Presence::Value(leveled);
-    let mut copy = request.clone();
-    copy.task.semantic = copy.task.semantic.with_settings(settings)?;
-    Ok(Some(copy))
-}
-
 fn with_effort_mapping(
     request: &Request,
     mapping: &crate::protocol::reasoning::ReasoningEffortMapping,
 ) -> Result<Option<Request>, CodecError> {
     mapping.validate()?;
-    if openai::reasoning::requires_extended_controls(request.task.semantic.reasoning()) {
+    if openai::reasoning::requires_extended_controls(request.task.semantic.settings()) {
         return Err(CodecError::Unsupported("reasoning controls".into()));
     }
+    for (_, item) in request.task.semantic.items() {
+        if let crate::semantic::task::generation::Item::ConfigurationUpdate(update) = item {
+            openai::reasoning::admit_configuration_mapping(update, Some(mapping), false)?;
+        }
+    }
     let settings = request.task.semantic.settings();
-    let Some(level) = settings.reasoning.effort.value() else {
+    let Some(control) = settings.effort.value() else {
         return Ok(None);
     };
-    let mapped = mapping.encode(*level)?;
-    if mapped == *level {
+    if control.scope != mapping.scope {
+        return Err(CodecError::Unsupported("reasoning mapping scope".into()));
+    }
+    let mapped = mapping.encode(control.level)?;
+    if mapped == control.level {
         return Ok(None);
     }
     let mut settings = settings.clone();
-    settings.reasoning.effort = Presence::Value(mapped);
+    settings.effort = Presence::Value(crate::semantic::task::generation::EffortControl {
+        scope: control.scope,
+        level: mapped,
+    });
     let mut copy = request.clone();
     copy.task.semantic = copy.task.semantic.with_settings(settings)?;
     Ok(Some(copy))
@@ -306,6 +280,19 @@ impl Adapter {
             }
         }
         let request = stripped.as_ref().map_or(request, |(copy, _)| copy);
+        if self.adaptation.rules.reject_disabled_reasoning
+            && (request.task.semantic.reasoning().activation.value()
+                == Some(&crate::semantic::task::generation::ReasoningActivation::Disabled)
+                || request.task.semantic.items().iter().any(|(_, item)| matches!(
+                    item, crate::semantic::task::generation::Item::ConfigurationUpdate(update)
+                        if update.activation == Some(crate::semantic::task::generation::ReasoningActivation::Disabled)
+                )))
+        {
+            return Err(CodecError::Unsupported("reasoning activation".into()).into());
+        }
+        if openai::reasoning::requires_extended_controls(request.task.semantic.settings()) {
+            return Err(CodecError::Unsupported("reasoning controls".into()).into());
+        }
         let mapped = self
             .adaptation
             .effort_mapping
@@ -321,38 +308,6 @@ impl Adapter {
             );
         }
         let request = mapped.as_ref().unwrap_or(request);
-        let thinking = without_extended_reasoning(request)?;
-        if let Some((_, mapped)) = &thinking {
-            let chat = self.protocol == Profile::Chat;
-            rules.push(if chat {
-                "chat.omit-thinking-mode.v1"
-            } else {
-                "responses.omit-thinking-mode.v1"
-            });
-            if *mapped {
-                rules.push(if chat {
-                    "chat.budget-as-effort.v1"
-                } else {
-                    "responses.budget-as-effort.v1"
-                });
-            }
-        }
-        let request = thinking.as_ref().map_or(request, |(copy, _)| copy);
-        let leveled = if self.adaptation.effort_mapping.is_none()
-            && self.adaptation.rules.low_high_max_effort
-        {
-            with_effort_levels(request)?
-        } else {
-            None
-        };
-        if leveled.is_some() {
-            rules.push(if self.protocol == Profile::Chat {
-                "chat.zhipu-effort-levels.v1"
-            } else {
-                "responses.zhipu-effort-levels.v1"
-            });
-        }
-        let request = leveled.as_ref().unwrap_or(request);
         let media = if self.adaptation.rules.omit_image_detail {
             without_image_detail(request)?
         } else {
@@ -418,7 +373,8 @@ impl Adapter {
         if self.adaptation.rules.reject_reasoning_controls
             && (request.task.semantic.reasoning().presence()
                 == crate::semantic::task::generation::ReasoningPresence::Present
-                || request.task.semantic.reasoning().encrypted_output())
+                || request.task.semantic.reasoning().encrypted_output()
+                || !request.task.semantic.settings().effort.is_absent())
         {
             return Err(CodecError::Unsupported("reasoning controls".into()).into());
         }

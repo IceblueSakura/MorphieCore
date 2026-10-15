@@ -187,7 +187,7 @@ impl Dialect {
                 WireRules {
                     chat_video_url: true,
                     readable_reasoning: true,
-                    low_high_max_effort: true,
+                    reject_disabled_reasoning: true,
                     legacy_max_tokens: true,
                     reported_request_id: true,
                     responses_inactive_state: true,

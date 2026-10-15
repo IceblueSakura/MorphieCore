@@ -246,25 +246,25 @@ fn input_part(id: PartId, text: &str, fidelity: &FidelityRecords) -> Value {
     }
     v
 }
-pub(super) fn configuration_effort(
+pub(super) fn configuration_update(
     o: &Map<String, Value>,
     response: bool,
     direction: DecodeDirection,
-) -> Result<Option<ReasoningEffort>, CodecError> {
+) -> Result<ConfigurationUpdate, CodecError> {
     match o.get("reasoning") {
-        None => Ok(None),
-        Some(Value::Null) if response => Ok(None),
+        None => Ok(ConfigurationUpdate::default()),
+        Some(Value::Null) if response => Ok(ConfigurationUpdate::default()),
         Some(Value::Null) => Err(CodecError::Invalid("configuration reasoning")),
         Some(value) => {
             let reasoning = object(value)?;
             direction.fields(reasoning, &["effort"])?;
             match reasoning.get("effort") {
-                None | Some(Value::Null) => Ok(None),
-                Some(value) => Ok(Some(crate::protocol::openai::reasoning::effort(
+                None | Some(Value::Null) => Ok(ConfigurationUpdate::default()),
+                Some(value) => crate::protocol::openai::reasoning::effort(
                     value
                         .as_str()
                         .ok_or(CodecError::Invalid("configuration effort"))?,
-                )?)),
+                ),
             }
         }
     }
@@ -383,9 +383,7 @@ pub(super) fn decode_items(
                 {
                     return Err(CodecError::Invalid("configuration update id"));
                 }
-                Item::ConfigurationUpdate(ConfigurationUpdate {
-                    effort: configuration_effort(o, response, direction)?,
-                })
+                Item::ConfigurationUpdate(configuration_update(o, response, direction)?)
             }
             Some("compaction") => {
                 direction.fields(o, &["type", "id", "encrypted_content"])?;
@@ -631,7 +629,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     target
         .fidelity
         .check_wire_item_ids(target.semantic.items(), false)?;
-    let mut v = json!({"input":encode_items(target.semantic.items(), target.fidelity, false, target.semantic.resources())});
+    let mut v = json!({"input":encode_items(target.semantic.items(), target.fidelity, false, target.semantic.resources())?});
     settings::write(
         target.semantic.settings(),
         v.as_object_mut().expect("object"),
@@ -692,7 +690,7 @@ pub(super) fn encode_items(
     fidelity: &FidelityRecords,
     response: bool,
     resources: &ResourceTable,
-) -> Vec<Value> {
+) -> Result<Vec<Value>, CodecError> {
     let mut out = vec![];
     for (id, item) in items {
         let mut v = match item {
@@ -739,9 +737,8 @@ pub(super) fn encode_items(
             }
             Item::ConfigurationUpdate(update) => {
                 let mut v = json!({"type":"configuration_update"});
-                if let Some(effort) = update.effort {
-                    v["reasoning"] =
-                        json!({"effort": crate::protocol::openai::reasoning::effort_label(effort)});
+                if let Some(effort) = crate::protocol::openai::reasoning::effort_label(update)? {
+                    v["reasoning"] = json!({"effort": effort});
                 }
                 v
             }
@@ -790,5 +787,5 @@ pub(super) fn encode_items(
         }
         out.push(v);
     }
-    out
+    Ok(out)
 }

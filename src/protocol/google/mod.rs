@@ -59,6 +59,7 @@ pub fn semantic_contract() -> GenerationSemanticContract {
         truncation: false,
         structured_output: false,
         reasoning: true,
+        response_effort: false,
         image_input: true,
         audio_input: true,
         video_input: true,

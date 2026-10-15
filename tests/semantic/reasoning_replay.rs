@@ -21,12 +21,12 @@ mod reasoning {
 
     #[test]
     fn typed_disabled_summary_is_valid_semantics_without_a_responses_carrier() {
+        let mut reasoning = ReasoningRequest::present(Some(ReasoningSummary::Disabled));
+        reasoning.activation =
+            morphiecore::semantic::value::Presence::Value(ReasoningActivation::Disabled);
         let settings = GenerationSettings {
             instructions: morphiecore::semantic::value::Presence::Value(text("hello")),
-            reasoning: ReasoningRequest::present(
-                Some(ReasoningEffort::None),
-                Some(ReasoningSummary::Disabled),
-            ),
+            reasoning,
             ..Default::default()
         };
         let request = GenerationRequest::from_settings(vec![], settings.clone()).unwrap();
@@ -81,7 +81,7 @@ mod reasoning {
             let decoded =
                 responses::decode_generation(&json!({"input":"hello","reasoning":wire})).unwrap();
             assert_eq!(decoded.semantic.reasoning().summary, summary);
-            let mut reasoning = ReasoningRequest::present(None, None);
+            let mut reasoning = ReasoningRequest::present(None);
             reasoning.summary = summary;
             let request = GenerationRequest::from_settings(
                 vec![],
@@ -160,7 +160,7 @@ mod reasoning {
             {"role":"user","content":"next"}
         ]});
         let decoded = responses::decode_generation(&source).unwrap();
-        assert!(decoded.semantic.reasoning().effort().is_none());
+        assert!(decoded.semantic.settings().effort.is_absent());
         let encoded = responses::encode_generation(
             &lower_request(
                 &decoded.semantic,
@@ -179,7 +179,10 @@ mod reasoning {
         let Item::ConfigurationUpdate(update) = &mut items[0].1 else {
             panic!("configuration update")
         };
-        update.effort = Some(ReasoningEffort::High);
+        update.effort = Some(EffortControl {
+            scope: EffortScope::Reasoning,
+            level: EffortLevel::High,
+        });
         let replaced = decoded.semantic.clone().with_items(items).unwrap();
         let replaced_wire = responses::encode_generation(
             &lower_request(&replaced, &decoded.fidelity, Profile::Responses, contract()).unwrap(),
@@ -228,7 +231,13 @@ mod reasoning {
         let Item::ConfigurationUpdate(update) = &response.semantic.items()[0].1 else {
             panic!("response update")
         };
-        assert_eq!(update.effort, Some(ReasoningEffort::Max));
+        assert_eq!(
+            update.effort,
+            Some(EffortControl {
+                scope: EffortScope::Reasoning,
+                level: EffortLevel::Max
+            })
+        );
         let mut d = EventDecoder::new(Profile::Responses);
         d.push(&created()).unwrap();
         let item = json!({"id":"cu","type":"configuration_update","reasoning":{"effort":"low"}});
@@ -249,7 +258,13 @@ mod reasoning {
         let Item::ConfigurationUpdate(update) = &materialized.semantic.items()[0].1 else {
             panic!("stream update")
         };
-        assert_eq!(update.effort, Some(ReasoningEffort::Low));
+        assert_eq!(
+            update.effort,
+            Some(EffortControl {
+                scope: EffortScope::Reasoning,
+                level: EffortLevel::Low
+            })
+        );
     }
 }
 mod reasoning_controls {
@@ -270,7 +285,7 @@ mod reasoning_controls {
     fn each_new_control_independently_rejects_request_echo_and_stream_projection() {
         use morphiecore::protocol::openai::{events::EventEncoder, lowering::lower_response};
         for dimension in 0..4 {
-            let mut control = ReasoningRequest::present(Some(ReasoningEffort::High), None);
+            let mut control = ReasoningRequest::present(None);
             match dimension {
                 0 => control.budget_tokens = Some(1024),
                 1 => control.display = Presence::Value(ReasoningDisplay::Omitted),
@@ -280,6 +295,10 @@ mod reasoning_controls {
             let settings = GenerationSettings {
                 instructions: Presence::Value(Text::new("hello", "test", 32).unwrap()),
                 reasoning: control,
+                effort: Presence::Value(EffortControl {
+                    scope: EffortScope::Reasoning,
+                    level: EffortLevel::High,
+                }),
                 ..Default::default()
             };
             let request = GenerationRequest::from_settings(vec![], settings.clone()).unwrap();
@@ -297,10 +316,8 @@ mod reasoning_controls {
                         .err(),
                     Some(RepresentationError::Reasoning)
                 );
+                assert!(EventEncoder::new(profile, metadata.clone()).is_err());
             }
-            let mut encoder = EventEncoder::new(Profile::Responses, metadata).unwrap();
-            assert!(encoder.encode(&StreamEvent::Started, &fidelity).is_err());
-            assert!(encoder.encode(&StreamEvent::Started, &fidelity).is_err());
         }
     }
 }

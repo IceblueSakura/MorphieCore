@@ -80,13 +80,13 @@ pub fn decode(
             &input.fidelity,
             false,
             input.semantic.resources(),
-        );
+        )?;
         items.extend(super::encode_items(
             output.semantic.items(),
             &output.fidelity,
             false,
             output.semantic.resources(),
-        ));
+        )?);
         match o.remove("input") {
             Some(Value::Array(values)) => items.extend(values),
             Some(Value::String(text)) => items.push(json!({"role":"user","content":text})),
@@ -115,7 +115,7 @@ pub(crate) fn retained_size(
 ) -> Result<usize, CodecError> {
     let mut value = json!({"input":super::encode_items(
         input.semantic.items(), &input.fidelity, false, input.semantic.resources(),
-    )});
+    )?});
     crate::protocol::openai::settings::write(
         input.semantic.settings(),
         value.as_object_mut().expect("object"),
@@ -195,7 +195,7 @@ pub fn input_items(
         &request.fidelity,
         false,
         request.semantic.resources(),
-    );
+    )?;
     for (index, (value, (_, item))) in items.iter_mut().zip(request.semantic.items()).enumerate() {
         if value.get("id").is_none() {
             value["id"] = json!(format!("{response_id}_input_{index}"));

@@ -52,6 +52,7 @@ impl Profile {
             truncation: false,
             structured_output: true,
             reasoning: true,
+            response_effort: true,
             image_input: true,
             audio_input: false,
             video_input: false,

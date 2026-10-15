@@ -261,7 +261,7 @@ impl ResponseContext {
                     fidelity,
                     false,
                     &ResourceTable::default()
-                )),
+                )?),
             );
         }
         if completed {

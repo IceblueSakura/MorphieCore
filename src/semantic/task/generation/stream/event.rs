@@ -29,9 +29,7 @@ pub enum ItemKind {
     CustomResult(ToolResult),
     Reasoning,
     Compaction,
-    ConfigurationUpdate {
-        effort: Option<ReasoningEffort>,
-    },
+    ConfigurationUpdate(ConfigurationUpdate),
     Program {
         call_id: Text,
         code: String,

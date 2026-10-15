@@ -47,11 +47,17 @@ pub(super) fn metadata(
     if let Some(mapping) = adaptation.effort_mapping {
         mapping.validate()?;
         if let Some(settings) = &mut context.settings
-            && let Some(level) = settings.reasoning.effort.value()
+            && let Some(control) = settings.effort.value()
         {
-            let mapped = mapping.decode(*level)?;
-            if mapped != *level {
-                settings.reasoning.effort = crate::semantic::value::Presence::Value(mapped);
+            if control.scope != mapping.scope {
+                return Err(CodecError::Unsupported("reasoning mapping scope".into()));
+            }
+            let mapped = mapping.decode(control.level)?;
+            if mapped != control.level {
+                settings.effort = crate::semantic::value::Presence::Value(EffortControl {
+                    scope: control.scope,
+                    level: mapped,
+                });
                 settings.validate()?;
                 fidelity.record_effort_mapping(mapping.rule);
             }
@@ -523,6 +529,15 @@ pub(crate) fn decode_responses_with(
         "incomplete"
     };
     responses::decode_items(&mut b, output, true, item_status)?;
+    for (_, item) in &b.items {
+        if let Item::ConfigurationUpdate(update) = item {
+            crate::protocol::openai::reasoning::admit_configuration_mapping(
+                update,
+                adaptation.effort_mapping,
+                true,
+            )?;
+        }
+    }
     let usage = usage(
         o.get("usage"),
         Profile::Responses,
@@ -682,7 +697,7 @@ pub fn encode_responses(target: &ResponseRepresentation<'_>) -> Result<Value, Co
         target.fidelity,
         true,
         target.semantic.resources(),
-    );
+    )?;
     let m = &target.metadata;
     let created = m
         .created

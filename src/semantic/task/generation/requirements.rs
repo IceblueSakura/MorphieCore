@@ -34,6 +34,7 @@ pub struct GenerationRequirements {
     pub tool_result_media: usize,
     pub structured_output: bool,
     pub reasoning: bool,
+    pub response_effort: bool,
     pub reasoning_items: usize,
     pub compaction: bool,
     pub max_output_tokens: Option<u64>,
@@ -78,7 +79,9 @@ impl GenerationRequirements {
             tool_count: r.tools().iter().map(|t| t.leaves().len()).sum(),
             structured_output: !matches!(r.output(), OutputConstraint::Text),
             reasoning: r.reasoning().presence() == crate::semantic::task::generation::ReasoningPresence::Present
-                || r.reasoning().encrypted_output(),
+                || r.reasoning().encrypted_output()
+                || r.settings().effort.value().is_some_and(|e| e.scope == crate::semantic::task::generation::EffortScope::Reasoning),
+            response_effort: r.settings().effort.value().is_some_and(|e| e.scope == crate::semantic::task::generation::EffortScope::Response),
             ..Self::default()
         };
         for (_, i) in r.items() {
@@ -157,7 +160,16 @@ impl GenerationRequirements {
                     x.reasoning_items += 1;
                     x.reasoning = true;
                 }
-                Item::ConfigurationUpdate(_) => x.reasoning = true,
+                Item::ConfigurationUpdate(update) => {
+                    x.reasoning |= update.activation.is_some()
+                        || update.effort.is_none()
+                        || update.effort.is_some_and(|e| {
+                            e.scope == crate::semantic::task::generation::EffortScope::Reasoning
+                        });
+                    x.response_effort |= update.effort.is_some_and(|e| {
+                        e.scope == crate::semantic::task::generation::EffortScope::Response
+                    });
+                }
                 Item::Compaction(_) => x.compaction = true,
                 Item::ProviderTool(_) => x.provider_observations = true,
             }
@@ -182,6 +194,7 @@ pub struct GenerationResponseRequirements {
     pub tool_result_errors: bool,
     pub tool_result_media: bool,
     pub reasoning: bool,
+    pub response_effort: bool,
     pub text_metadata: bool,
     pub logprobs: bool,
 }
@@ -205,7 +218,17 @@ impl GenerationResponseRequirements {
                     q.custom_tools = true;
                 }
                 Item::Program(_) | Item::ProgramOutput(_) => q.tools = true,
-                Item::Reasoning(_) | Item::ConfigurationUpdate(_) => q.reasoning = true,
+                Item::Reasoning(_) => q.reasoning = true,
+                Item::ConfigurationUpdate(update) => {
+                    q.reasoning |= update.activation.is_some()
+                        || update.effort.is_none()
+                        || update.effort.is_some_and(|e| {
+                            e.scope == crate::semantic::task::generation::EffortScope::Reasoning
+                        });
+                    q.response_effort |= update.effort.is_some_and(|e| {
+                        e.scope == crate::semantic::task::generation::EffortScope::Response
+                    });
+                }
                 Item::Compaction(_) => q.compaction = true,
                 Item::Message(message) => {
                     for part in &message.parts {

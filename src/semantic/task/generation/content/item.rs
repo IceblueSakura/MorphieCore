@@ -90,10 +90,23 @@ pub enum Item {
     ProgramOutput(ProgramOutput),
     ProviderTool(ProviderToolObservation),
 }
-/// Ordered reasoning-effort update. It does not patch request settings.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// Ordered activation/effort update. It does not patch request settings.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ConfigurationUpdate {
-    pub effort: Option<ReasoningEffort>,
+    pub activation: Option<ReasoningActivation>,
+    pub effort: Option<EffortControl>,
+}
+impl ConfigurationUpdate {
+    pub fn validate(&self) -> Result<(), GenerationError> {
+        if self.activation == Some(ReasoningActivation::Disabled)
+            && self
+                .effort
+                .is_some_and(|e| e.scope == EffortScope::Reasoning)
+        {
+            return Err(GenerationError::InvalidControl);
+        }
+        Ok(())
+    }
 }
 impl Item {
     pub fn lifecycle(&self) -> Option<ItemLifecycle> {

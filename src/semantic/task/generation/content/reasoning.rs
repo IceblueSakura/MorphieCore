@@ -1,6 +1,6 @@
 //! Reasoning controls and readable reasoning items from official Generation APIs.
 //!
-//! An absent object, an omitted child, and explicit `none` are distinct.
+//! An absent object, an omitted child and disabled activation are distinct.
 //! Opaque continuation values belong to their typed item, never to readable parts.
 //! Source records bind provenance and dependencies without owning another payload.
 use crate::semantic::task::generation::PartId;
@@ -15,14 +15,28 @@ pub enum ReasoningPresence {
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, strum::EnumString, strum::IntoStaticStr)]
 #[strum(serialize_all = "lowercase")]
-pub enum ReasoningEffort {
-    None,
+pub enum EffortLevel {
     Minimal,
     Low,
     Medium,
     High,
     XHigh,
     Max,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EffortScope {
+    Reasoning,
+    Response,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EffortControl {
+    pub scope: EffortScope,
+    pub level: EffortLevel,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReasoningActivation {
+    Disabled,
+    Enabled,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReasoningSummary {
@@ -56,7 +70,7 @@ pub enum ReasoningDisplay {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ReasoningRequest {
     pub presence: ReasoningPresence,
-    pub effort: crate::semantic::value::Presence<ReasoningEffort>,
+    pub activation: crate::semantic::value::Presence<ReasoningActivation>,
     pub summary: crate::semantic::value::Presence<ReasoningSummary>,
     pub context: crate::semantic::value::Presence<ReasoningContext>,
     pub mode: crate::semantic::value::Presence<ReasoningMode>,
@@ -70,11 +84,10 @@ impl ReasoningRequest {
     pub fn absent() -> Self {
         Self::default()
     }
-    pub fn present(effort: Option<ReasoningEffort>, summary: Option<ReasoningSummary>) -> Self {
+    pub fn present(summary: Option<ReasoningSummary>) -> Self {
         use crate::semantic::value::Presence;
         Self {
             presence: ReasoningPresence::Present,
-            effort: effort.map_or(Presence::Absent, Presence::Value),
             summary: summary.map_or(Presence::Absent, Presence::Value),
             ..Default::default()
         }
@@ -89,9 +102,6 @@ impl ReasoningRequest {
     pub fn presence(&self) -> ReasoningPresence {
         self.presence
     }
-    pub fn effort(&self) -> Option<ReasoningEffort> {
-        self.effort.value().copied()
-    }
     pub fn summary(&self) -> Option<ReasoningSummary> {
         self.summary.value().copied()
     }
@@ -100,7 +110,7 @@ impl ReasoningRequest {
             return Err(crate::semantic::task::generation::GenerationError::InvalidControl);
         }
         if self.presence != ReasoningPresence::Present
-            && (!self.effort.is_absent()
+            && (!self.activation.is_absent()
                 || !self.summary.is_absent()
                 || !self.context.is_absent()
                 || !self.mode.is_absent()
@@ -109,7 +119,7 @@ impl ReasoningRequest {
         {
             return Err(crate::semantic::task::generation::GenerationError::InvalidControl);
         }
-        if self.effort() == Some(ReasoningEffort::None)
+        if self.activation.value() == Some(&ReasoningActivation::Disabled)
             && self
                 .summary()
                 .is_some_and(|s| s != ReasoningSummary::Disabled)
@@ -117,7 +127,7 @@ impl ReasoningRequest {
             return Err(crate::semantic::task::generation::GenerationError::InvalidControl);
         }
         if self.mode.value() == Some(&ReasoningMode::Budgeted) && self.budget_tokens.is_none()
-            || self.effort() == Some(ReasoningEffort::None)
+            || self.activation.value() == Some(&ReasoningActivation::Disabled)
                 && (self.budget_tokens.is_some()
                     || matches!(
                         self.mode.value(),

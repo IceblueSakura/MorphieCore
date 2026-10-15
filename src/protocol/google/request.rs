@@ -14,12 +14,6 @@ pub(super) fn unsupported() -> CodecError {
 /// Named degradable rules applied to one candidate's request copy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum RequestRule {
-    /// Gemini 3.8 Flash thinks at `low` at least; `none` and `minimal` become `low`.
-    LowerEffort,
-    /// `xhigh` and `max` become `high`, the highest Gemini level.
-    CapEffort,
-    /// A token budget becomes the nearest level.
-    BudgetAsEffort,
     /// Gemini has one summary form, without concise or detailed variants.
     SummarizeReasoning,
     OmitReasoningContext,
@@ -42,9 +36,6 @@ pub enum RequestRule {
 impl RequestRule {
     pub const fn name(self) -> &'static str {
         match self {
-            Self::LowerEffort => "gemini.lower-effort.v1",
-            Self::CapEffort => "gemini.cap-effort.v1",
-            Self::BudgetAsEffort => "gemini.budget-as-effort.v1",
             Self::SummarizeReasoning => "gemini.summarize-reasoning.v1",
             Self::OmitReasoningContext => "gemini.omit-reasoning-context.v1",
             Self::OmitForeignReplay => "gemini.omit-foreign-replay.v1",
@@ -166,7 +157,7 @@ pub(super) fn project(
     if let Some(p) = s.controls.top_p() {
         generation.insert("topP".into(), p.into());
     }
-    if let Some(thinking) = thinking(&s.reasoning, rules)? {
+    if let Some(thinking) = thinking(s, rules)? {
         generation.insert("thinkingConfig".into(), thinking);
     }
     if !generation.is_empty() {
@@ -176,11 +167,15 @@ pub(super) fn project(
 }
 
 fn thinking(
-    reasoning: &ReasoningRequest,
+    settings: &GenerationSettings,
     rules: &mut BTreeSet<RequestRule>,
 ) -> Result<Option<Value>, CodecError> {
+    let reasoning = &settings.reasoning;
     if reasoning.presence == ReasoningPresence::Null
         || !reasoning.display.is_absent() && !reasoning.summary.is_absent()
+        || reasoning.budget_tokens.is_some()
+        || reasoning.activation == Presence::Null
+        || reasoning.activation.value() == Some(&ReasoningActivation::Disabled)
     {
         return Err(unsupported());
     }
@@ -200,32 +195,33 @@ fn thinking(
     };
     match reasoning.mode {
         Presence::Absent | Presence::Value(ReasoningMode::Adaptive) => {}
-        Presence::Value(ReasoningMode::Budgeted) => {
-            rules.insert(RequestRule::BudgetAsEffort);
-        }
         _ => return Err(unsupported()),
     }
-    let effort = match (
-        reasoning.effort.clone(),
-        crate::protocol::reasoning::budget_as_effort(reasoning),
-    ) {
-        (Presence::Absent, Some(effort)) => Presence::Value(effort),
-        (effort, _) => effort,
-    };
+    let effort = settings.effort.value();
+    if effort.is_some_and(|e| e.scope != EffortScope::Reasoning)
+        || settings.effort == Presence::Null
+    {
+        return Err(unsupported());
+    }
     let level = match effort {
-        Presence::Absent => None,
-        Presence::Value(ReasoningEffort::None | ReasoningEffort::Minimal) => {
-            rules.insert(RequestRule::LowerEffort);
-            Some("LOW")
-        }
-        Presence::Value(ReasoningEffort::Low) => Some("LOW"),
-        Presence::Value(ReasoningEffort::Medium) => Some("MEDIUM"),
-        Presence::Value(ReasoningEffort::High) => Some("HIGH"),
-        Presence::Value(ReasoningEffort::XHigh | ReasoningEffort::Max) => {
-            rules.insert(RequestRule::CapEffort);
-            Some("HIGH")
-        }
-        Presence::Null => return Err(unsupported()),
+        None => None,
+        Some(EffortControl {
+            level: EffortLevel::Minimal,
+            ..
+        }) => Some("MINIMAL"),
+        Some(EffortControl {
+            level: EffortLevel::Low,
+            ..
+        }) => Some("LOW"),
+        Some(EffortControl {
+            level: EffortLevel::Medium,
+            ..
+        }) => Some("MEDIUM"),
+        Some(EffortControl {
+            level: EffortLevel::High,
+            ..
+        }) => Some("HIGH"),
+        Some(_) => return Err(unsupported()),
     };
     let mut config = Map::new();
     if let Some(level) = level {

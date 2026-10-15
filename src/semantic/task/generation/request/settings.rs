@@ -46,6 +46,7 @@ pub struct GenerationSettings {
     pub parallel_tool_calls: Option<bool>,
     pub text: TextOptions,
     pub reasoning: ReasoningRequest,
+    pub effort: Presence<EffortControl>,
     pub output_modalities: Presence<Vec<crate::semantic::task::generation::OutputModality>>,
     pub audio: Presence<crate::semantic::task::generation::AudioOutputOptions>,
 }
@@ -70,6 +71,15 @@ impl GenerationSettings {
             return Err(GenerationError::InvalidControl);
         }
         self.reasoning.validate()?;
+        if (self.reasoning.activation.value() == Some(&ReasoningActivation::Disabled)
+            || self.reasoning.presence == ReasoningPresence::Null)
+            && self
+                .effort
+                .value()
+                .is_some_and(|e| e.scope == EffortScope::Reasoning)
+        {
+            return Err(GenerationError::InvalidControl);
+        }
         if let Some(modalities) = self.output_modalities.value()
             && (modalities.is_empty()
                 || modalities.len() > 2

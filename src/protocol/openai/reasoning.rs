@@ -4,20 +4,60 @@ use crate::protocol::openai::{
     common::{DecodeDirection, object, put_presence, read_presence, string, text},
 };
 use crate::semantic::task::generation::{
-    ItemLifecycle, MAX_TEXT_BYTES, PartId, ReasoningContent, ReasoningContext, ReasoningEffort,
+    ConfigurationUpdate, EffortControl, EffortLevel, EffortScope, GenerationSettings,
+    ItemLifecycle, MAX_TEXT_BYTES, PartId, ReasoningActivation, ReasoningContent, ReasoningContext,
     ReasoningItem, ReasoningMode, ReasoningPresence, ReasoningRequest, ReasoningSummary,
     ReplayFormat, ReplayValue,
 };
 use serde_json::{Map, Value, json};
 
 /// Responses and Chat have no carrier for these independent thinking controls.
-pub(super) fn requires_extended_controls(value: &ReasoningRequest) -> bool {
+pub(super) fn requires_extended_controls(settings: &GenerationSettings) -> bool {
+    let value = &settings.reasoning;
     value.budget_tokens.is_some()
         || !value.display.is_absent()
+        || settings
+            .effort
+            .value()
+            .is_some_and(|e| e.scope != EffortScope::Reasoning)
+        || settings.effort == crate::semantic::value::Presence::Null
+            && (value.presence == ReasoningPresence::Null
+                || value.activation.value() == Some(&ReasoningActivation::Disabled))
+        || value.activation == crate::semantic::value::Presence::Null
+        || value.activation.value() == Some(&ReasoningActivation::Enabled)
+            && !settings
+                .effort
+                .value()
+                .is_some_and(|e| e.scope == EffortScope::Reasoning)
         || matches!(
             value.mode.value(),
             Some(ReasoningMode::Adaptive | ReasoningMode::Budgeted)
         )
+}
+
+pub(super) fn admit_configuration_mapping(
+    update: &ConfigurationUpdate,
+    mapping: Option<&crate::protocol::reasoning::ReasoningEffortMapping>,
+    decode: bool,
+) -> Result<(), CodecError> {
+    if let (Some(mapping), Some(control)) = (mapping, update.effort) {
+        if control.scope != mapping.scope {
+            return Err(CodecError::Unsupported("reasoning mapping scope".into()));
+        }
+        let level = if decode {
+            mapping.decode(control.level)?
+        } else {
+            mapping.encode(control.level)?
+        };
+        // Snapshot equality currently owns native configuration values. Do not
+        // conceal conflicts by normalizing their many-to-one aliases first.
+        if level != control.level {
+            return Err(CodecError::Unsupported(
+                "calibrated configuration history".into(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// `reported` distinguishes response-echo admission from request admission: the
@@ -26,7 +66,8 @@ pub(super) fn request(
     o: &Map<String, Value>,
     reported: bool,
     direction: DecodeDirection,
-) -> Result<ReasoningRequest, CodecError> {
+    settings: &mut GenerationSettings,
+) -> Result<(), CodecError> {
     let encrypted = match o.get("include") {
         None | Some(Value::Null) => false,
         Some(Value::Array(values))
@@ -42,12 +83,14 @@ pub(super) fn request(
         _ => return Err(CodecError::Unsupported("include".into())),
     };
     let Some(value) = o.get("reasoning") else {
-        return Ok(ReasoningRequest::absent().with_encrypted_output(encrypted));
+        settings.reasoning = ReasoningRequest::absent().with_encrypted_output(encrypted);
+        return Ok(());
     };
     if value.is_null() {
         let mut r = ReasoningRequest::absent().with_encrypted_output(encrypted);
         r.presence = ReasoningPresence::Null;
-        return Ok(r);
+        settings.reasoning = r;
+        return Ok(());
     }
     let reasoning = object(value)?;
     direction.fields(
@@ -57,8 +100,8 @@ pub(super) fn request(
     if !reported && reasoning.get("mode").is_some_and(Value::is_null) {
         return Err(CodecError::Invalid("mode"));
     }
-    let mut r = ReasoningRequest::present(None, None).with_encrypted_output(encrypted);
-    r.effort = optional_label(reasoning, "effort", effort)?;
+    let mut r = ReasoningRequest::present(None).with_encrypted_output(encrypted);
+    read_effort(reasoning, &mut r, &mut settings.effort, "effort")?;
     // The standard nullable enum has no boolean disabled carrier.
     // https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/shared_params/reasoning.py
     r.summary = optional_label(reasoning, "summary", summary)?;
@@ -79,31 +122,47 @@ pub(super) fn request(
         _ => Err(CodecError::Unsupported("reasoning mode".into())),
     })?;
     r.validate()?;
-    Ok(r)
+    settings.reasoning = r;
+    Ok(())
 }
-pub(super) fn chat_request(o: &Map<String, Value>) -> Result<ReasoningRequest, CodecError> {
-    let Some(value) = o.get("reasoning_effort") else {
-        return Ok(ReasoningRequest::absent());
+pub(super) fn chat_request(
+    o: &Map<String, Value>,
+    settings: &mut GenerationSettings,
+) -> Result<(), CodecError> {
+    if !o.contains_key("reasoning_effort") {
+        return Ok(());
     };
-    let mut reasoning = ReasoningRequest::present(None, None);
-    reasoning.effort = if value.is_null() {
-        crate::semantic::value::Presence::Null
-    } else {
-        crate::semantic::value::Presence::Value(effort(
-            value
-                .as_str()
-                .ok_or(CodecError::Invalid("reasoning_effort"))?,
-        )?)
-    };
-    Ok(reasoning)
+    let mut reasoning = ReasoningRequest::present(None);
+    read_effort(o, &mut reasoning, &mut settings.effort, "reasoning_effort")?;
+    settings.reasoning = reasoning;
+    Ok(())
+}
+fn read_effort(
+    o: &Map<String, Value>,
+    reasoning: &mut ReasoningRequest,
+    control: &mut crate::semantic::value::Presence<EffortControl>,
+    key: &'static str,
+) -> Result<(), CodecError> {
+    use crate::semantic::value::Presence;
+    match o.get(key) {
+        None => {}
+        Some(Value::Null) => *control = Presence::Null,
+        Some(value) => {
+            let update = effort(value.as_str().ok_or(CodecError::Invalid(key))?)?;
+            reasoning.activation = update.activation.map_or(Presence::Absent, Presence::Value);
+            *control = update.effort.map_or(Presence::Absent, Presence::Value);
+        }
+    }
+    Ok(())
 }
 pub(super) fn write_request(
-    value: &ReasoningRequest,
+    settings: &GenerationSettings,
     o: &mut Map<String, Value>,
     profile: Profile,
 ) -> Result<(), CodecError> {
-    value.validate()?;
-    if requires_extended_controls(value) {
+    settings.validate()?;
+    let value = &settings.reasoning;
+    if requires_extended_controls(settings) {
         return Err(CodecError::Unsupported("reasoning controls".into()));
     }
     if profile == Profile::Responses && value.summary() == Some(ReasoningSummary::Disabled) {
@@ -114,13 +173,22 @@ pub(super) fn write_request(
     if value.encrypted_output() {
         o.insert("include".into(), json!(["reasoning.encrypted_content"]));
     }
-    if value.presence() == ReasoningPresence::Absent {
+    let level = effort_label(&ConfigurationUpdate {
+        activation: value.activation.value().copied(),
+        effort: settings.effort.value().copied(),
+    })?;
+    let put_effort = |o: &mut Map<String, Value>, key: &str| {
+        if let Some(level) = level {
+            o.insert(key.into(), json!(level));
+        } else if settings.effort == crate::semantic::value::Presence::Null {
+            o.insert(key.into(), Value::Null);
+        }
+    };
+    if value.presence() == ReasoningPresence::Absent && settings.effort.is_absent() {
         return Ok(());
     }
     if profile == Profile::Chat {
-        put_presence(o, "reasoning_effort", &value.effort, |v| {
-            json!(effort_label(*v))
-        });
+        put_effort(o, "reasoning_effort");
         return Ok(());
     }
     if value.presence() == ReasoningPresence::Null {
@@ -128,9 +196,7 @@ pub(super) fn write_request(
         return Ok(());
     }
     let mut reasoning = Map::new();
-    put_presence(&mut reasoning, "effort", &value.effort, |v| {
-        json!(effort_label(*v))
-    });
+    put_effort(&mut reasoning, "effort");
     put_presence(&mut reasoning, "summary", &value.summary, |v| {
         json!(summary_label(*v))
     });
@@ -288,10 +354,23 @@ fn optional_label<T>(
         parse(v.as_str().ok_or(CodecError::Invalid(key))?)
     })
 }
-pub(super) fn effort(value: &str) -> Result<ReasoningEffort, CodecError> {
-    value
-        .parse::<ReasoningEffort>()
-        .map_err(|_| CodecError::Unsupported("reasoning effort".into()))
+pub(super) fn effort(value: &str) -> Result<ConfigurationUpdate, CodecError> {
+    Ok(if value == "none" {
+        ConfigurationUpdate {
+            activation: Some(ReasoningActivation::Disabled),
+            effort: None,
+        }
+    } else {
+        ConfigurationUpdate {
+            activation: None,
+            effort: Some(EffortControl {
+                scope: EffortScope::Reasoning,
+                level: value
+                    .parse::<EffortLevel>()
+                    .map_err(|_| CodecError::Unsupported("reasoning effort".into()))?,
+            }),
+        }
+    })
 }
 fn summary(value: &str) -> Result<ReasoningSummary, CodecError> {
     Ok(match value {
@@ -301,8 +380,23 @@ fn summary(value: &str) -> Result<ReasoningSummary, CodecError> {
         _ => return Err(CodecError::Unsupported("reasoning summary".into())),
     })
 }
-pub(super) fn effort_label(value: ReasoningEffort) -> &'static str {
-    value.into()
+pub(super) fn effort_label(
+    value: &ConfigurationUpdate,
+) -> Result<Option<&'static str>, CodecError> {
+    value.validate()?;
+    if let Some(effort) = value.effort {
+        if effort.scope != EffortScope::Reasoning {
+            return Err(CodecError::Unsupported("response effort".into()));
+        }
+        return Ok(Some(effort.level.into()));
+    }
+    match value.activation {
+        Some(ReasoningActivation::Disabled) => Ok(Some("none")),
+        Some(ReasoningActivation::Enabled) => {
+            Err(CodecError::Unsupported("reasoning activation".into()))
+        }
+        None => Ok(None),
+    }
 }
 fn summary_label(value: ReasoningSummary) -> &'static str {
     match value {

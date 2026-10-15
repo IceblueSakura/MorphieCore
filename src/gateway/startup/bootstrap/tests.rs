@@ -530,10 +530,14 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
     input.extend(call("call:1", "found"));
     input.extend(call("call_2", "again"));
     let body = |reasoning: serde_json::Value, input: &[serde_json::Value]| {
-        serde_json::json!({"model":"claude-haiku-5-5","instructions":"brief","max_output_tokens":64,
-        "temperature":0.2,"store":false,"include":["reasoning.encrypted_content"],"reasoning":reasoning,
+        let mut body = serde_json::json!({"model":"claude-haiku-5-5","instructions":"brief","max_output_tokens":64,
+        "temperature":0.2,"store":false,"include":["reasoning.encrypted_content"],
         "tools":[{"type":"function","name":"lookup","parameters":{"type":"object","properties":{}},"strict":false}],
-        "input":input})
+        "input":input});
+        if !reasoning.is_null() {
+            body["reasoning"] = reasoning;
+        }
+        body
     };
     let prepare = |reasoning, input: &[serde_json::Value]| {
         let (entry, mut request) = crate::gateway::ingress::admission::prepare(
@@ -556,17 +560,12 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
             rules,
         ))
     };
-    let (wire, rules) = prepare(
-        serde_json::json!({"effort":"minimal","summary":"detailed","context":"all_turns"}),
-        &input,
-    )
-    .unwrap();
+    let (wire, rules) = prepare(serde_json::Value::Null, &input).unwrap();
     let projected = "mc_0af6315558b41599b4a0fbfa5d31d4431b2e5c81";
     assert_eq!(
         wire,
         serde_json::json!({"model":"claude-haiku-5-5","max_tokens":64,"system":"brief",
         "tools":[{"name":"lookup","input_schema":{"type":"object","properties":{}},"strict":false}],
-        "thinking":{"type":"adaptive","display":"summarized"},"output_config":{"effort":"low"},
         "cache_control":{"type":"ephemeral"},"messages":[
             {"role":"user","content":[{"type":"text","text":"go"}]},
             {"role":"assistant","content":[{"type":"tool_use","id":projected,"name":"lookup","input":{}}]},
@@ -577,23 +576,12 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
     );
     assert_eq!(
         rules,
-        [
-            "messages.lower-effort.v1",
-            "messages.summarize-reasoning.v1",
-            "messages.omit-reasoning-context.v1",
-            "messages.omit-sampling.v1",
-            "messages.project-call-ids.v1",
-        ]
+        ["messages.omit-sampling.v1", "messages.project-call-ids.v1",]
     );
-    let (wire, _) = prepare(serde_json::json!({"effort":"xhigh"}), &input).unwrap();
-    assert_eq!(wire["output_config"], serde_json::json!({"effort":"xhigh"}));
-    assert!(wire.get("thinking").is_none());
-    let (wire, _) = prepare(serde_json::json!({"summary":"auto"}), &input).unwrap();
-    assert_eq!(
-        wire["thinking"],
-        serde_json::json!({"type":"adaptive","display":"summarized"})
-    );
-    assert!(wire.get("output_config").is_none());
+    // Reasoning-only effort cannot become response-wide effort, and display
+    // alone cannot enable adaptive thinking.
+    assert!(prepare(serde_json::json!({"effort":"xhigh"}), &input).is_err());
+    assert!(prepare(serde_json::json!({"summary":"auto"}), &input).is_err());
     // Foreign opaque values are dropped; readable reasoning without this target's
     // signature becomes assistant text in every turn.
     let foreign = crate::protocol::replay_envelope::seal(
@@ -617,7 +605,7 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
         reasoning("rs_3", &["Plan B"], None),
     ];
     history.extend(call("call_2", "again"));
-    let (wire, rules) = prepare(serde_json::json!({"effort":"low"}), &history).unwrap();
+    let (wire, rules) = prepare(serde_json::Value::Null, &history).unwrap();
     assert_eq!(
         wire["messages"],
         serde_json::json!([
@@ -638,7 +626,7 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
     // A client ID equal to a projected digest fails instead of merging two calls.
     input.truncate(3);
     input.extend(call(projected, "again"));
-    let error = prepare(serde_json::json!({"effort":"low"}), &input).unwrap_err();
+    let error = prepare(serde_json::Value::Null, &input).unwrap_err();
     assert!(format!("{error:?}").contains("duplicate call"), "{error:?}");
 }
 

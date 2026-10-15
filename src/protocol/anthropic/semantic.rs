@@ -110,9 +110,17 @@ impl Profile {
             settings.parallel_tool_calls = choice.disable_parallel_tool_use.value().map(|b| !b);
         }
         if let Presence::Value(thinking) = &wire.thinking {
-            settings.reasoning = ReasoningRequest::present(None, None);
-            settings.reasoning.mode = Presence::Value(ReasoningMode::Adaptive);
-            settings.reasoning.display = display(&thinking.display);
+            settings.reasoning = ReasoningRequest::present(None);
+            match thinking {
+                super::Thinking::Disabled => {
+                    settings.reasoning.activation = Presence::Value(ReasoningActivation::Disabled);
+                }
+                super::Thinking::Adaptive { display: view } => {
+                    settings.reasoning.activation = Presence::Value(ReasoningActivation::Enabled);
+                    settings.reasoning.mode = Presence::Value(ReasoningMode::Adaptive);
+                    settings.reasoning.display = display(view);
+                }
+            }
         }
         if let Presence::Value(config) = &wire.output_config {
             output_settings(config, &mut settings);
@@ -299,13 +307,15 @@ impl Profile {
 /// Effort and format of a Messages `output_config`; a null member is unset.
 pub(super) fn output_settings(config: &super::OutputConfig, settings: &mut GenerationSettings) {
     if let Presence::Value(effort) = config.effort {
-        settings.reasoning.presence = ReasoningPresence::Present;
-        settings.reasoning.effort = Presence::Value(match effort {
-            super::Effort::Low => ReasoningEffort::Low,
-            super::Effort::Medium => ReasoningEffort::Medium,
-            super::Effort::High => ReasoningEffort::High,
-            super::Effort::XHigh => ReasoningEffort::XHigh,
-            super::Effort::Max => ReasoningEffort::Max,
+        settings.effort = Presence::Value(EffortControl {
+            scope: EffortScope::Response,
+            level: match effort {
+                super::Effort::Low => EffortLevel::Low,
+                super::Effort::Medium => EffortLevel::Medium,
+                super::Effort::High => EffortLevel::High,
+                super::Effort::XHigh => EffortLevel::XHigh,
+                super::Effort::Max => EffortLevel::Max,
+            },
         });
     }
     if let Presence::Value(schema) = &config.format {

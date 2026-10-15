@@ -18,8 +18,6 @@ pub(super) fn unsupported() -> CodecError {
 /// Named degradable rules applied to one candidate's request copy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum RequestRule {
-    /// `none` and `minimal` have no Messages level; `low` is the least effort.
-    LowerEffort,
     /// Messages has one summarized display, without concise or detailed variants.
     SummarizeReasoning,
     OmitReasoningContext,
@@ -30,8 +28,6 @@ pub enum RequestRule {
     OmitForeignReplay,
     /// Reasoning without this target's signature is sent as assistant text, as pi does.
     ReasoningAsText,
-    /// Claude 5.x thinks adaptively; a token budget becomes the nearest effort.
-    BudgetAsEffort,
     /// A leading developer instruction (pi, Codex) is the system prompt.
     DeveloperAsSystem,
     /// An omitted `strict` defaulting to schema normalization (Responses) is sent
@@ -45,14 +41,12 @@ pub enum RequestRule {
 impl RequestRule {
     pub const fn name(self) -> &'static str {
         match self {
-            Self::LowerEffort => "messages.lower-effort.v1",
             Self::SummarizeReasoning => "messages.summarize-reasoning.v1",
             Self::OmitReasoningContext => "messages.omit-reasoning-context.v1",
             Self::OmitSampling => "messages.omit-sampling.v1",
             Self::ProjectCallIds => "messages.project-call-ids.v1",
             Self::OmitForeignReplay => "messages.omit-foreign-replay.v1",
             Self::ReasoningAsText => "messages.reasoning-as-text.v1",
-            Self::BudgetAsEffort => "messages.budget-as-effort.v1",
             Self::DeveloperAsSystem => "messages.developer-as-system.v1",
             Self::DefaultStrictAsPlain => "messages.default-strict-as-plain.v1",
             Self::OmitMediaOptions => "messages.omit-media-options.v1",
@@ -204,35 +198,41 @@ pub(super) fn project(
         (Presence::Null, _) => Presence::Null,
         (Presence::Absent, Presence::Absent) => Presence::Absent,
     };
-    let thinking = match reasoning.mode {
-        Presence::Absent if display.is_absent() => Presence::Absent,
-        Presence::Absent | Presence::Value(ReasoningMode::Adaptive) => {
-            Presence::Value(super::Thinking { display })
+    if reasoning.budget_tokens.is_some() {
+        return Err(unsupported());
+    }
+    let thinking = match (&reasoning.activation, &reasoning.mode) {
+        (Presence::Value(ReasoningActivation::Disabled), Presence::Absent)
+            if matches!(
+                display,
+                Presence::Absent | Presence::Value(super::Display::Omitted)
+            ) =>
+        {
+            Presence::Value(super::Thinking::Disabled)
         }
-        Presence::Value(ReasoningMode::Budgeted) => {
-            rules.insert(RequestRule::BudgetAsEffort);
-            Presence::Value(super::Thinking { display })
+        (
+            Presence::Absent | Presence::Value(ReasoningActivation::Enabled),
+            Presence::Value(ReasoningMode::Adaptive),
+        )
+        | (Presence::Value(ReasoningActivation::Enabled), Presence::Absent) => {
+            Presence::Value(super::Thinking::Adaptive { display })
         }
+        (Presence::Absent, Presence::Absent) if display.is_absent() => Presence::Absent,
         _ => return Err(unsupported()),
     };
-    let effort = match (
-        reasoning.effort.clone(),
-        crate::protocol::reasoning::budget_as_effort(reasoning),
-    ) {
-        (Presence::Absent, Some(effort)) => Presence::Value(effort),
-        (effort, _) => effort,
-    };
-    let effort = match effort {
+    let effort = match &s.effort {
         Presence::Absent => Presence::Absent,
-        Presence::Value(ReasoningEffort::None | ReasoningEffort::Minimal) => {
-            rules.insert(RequestRule::LowerEffort);
-            Presence::Value(super::Effort::Low)
+        Presence::Value(control) if control.scope == EffortScope::Response => {
+            Presence::Value(match control.level {
+                EffortLevel::Low => super::Effort::Low,
+                EffortLevel::Medium => super::Effort::Medium,
+                EffortLevel::High => super::Effort::High,
+                EffortLevel::XHigh => super::Effort::XHigh,
+                EffortLevel::Max => super::Effort::Max,
+                EffortLevel::Minimal => return Err(unsupported()),
+            })
         }
-        Presence::Value(ReasoningEffort::Low) => Presence::Value(super::Effort::Low),
-        Presence::Value(ReasoningEffort::Medium) => Presence::Value(super::Effort::Medium),
-        Presence::Value(ReasoningEffort::High) => Presence::Value(super::Effort::High),
-        Presence::Value(ReasoningEffort::XHigh) => Presence::Value(super::Effort::XHigh),
-        Presence::Value(ReasoningEffort::Max) => Presence::Value(super::Effort::Max),
+        Presence::Value(_) => return Err(unsupported()),
         Presence::Null => return Err(unsupported()),
     };
     if reasoning.presence == ReasoningPresence::Present

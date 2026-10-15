@@ -400,9 +400,9 @@ mod anthropic_semantics {
         }
     }
     #[test]
-    fn ordered_system_blocks_and_adaptive_controls_have_independent_semantic_owners() {
+    fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners() {
         let p = Profile::AdaptiveTextTools;
-        let raw = br#"{"model":"synthetic-model","max_tokens":32,"system":[{"type":"text","text":"one"},{"type":"text","text":"two"}],"thinking":{"type":"adaptive","display":"omitted"},"output_config":{"effort":"low"},"cache_control":{"type":"ephemeral"},"messages":[{"role":"user","content":"go"}]}"#;
+        let raw = br#"{"model":"synthetic-model","max_tokens":32,"system":[{"type":"text","text":"one"},{"type":"text","text":"two"}],"thinking":{"type":"disabled"},"output_config":{"effort":"high"},"cache_control":{"type":"ephemeral"},"messages":[{"role":"user","content":"go"}]}"#;
         let decoded = p
             .decode_generation_request(raw, LocalScope::new(1), &target())
             .unwrap();
@@ -426,21 +426,18 @@ mod anthropic_semantics {
             encoded.value["system"],
             json!([{"type":"text","text":"one"},{"type":"text","text":"two"}])
         );
-        assert_eq!(
-            encoded.value["thinking"],
-            json!({"type":"adaptive","display":"omitted"})
-        );
-        assert_eq!(encoded.value["output_config"], json!({"effort":"low"}));
+        assert_eq!(encoded.value["thinking"], json!({"type":"disabled"}));
+        assert_eq!(encoded.value["output_config"], json!({"effort":"high"}));
         assert_eq!(encoded.value["cache_control"], json!({"type":"ephemeral"}));
         assert_eq!(encoded.value["max_tokens"], 32);
         let client = morphiecore::protocol::anthropic::client::decode_client_request(raw).unwrap();
         assert_eq!(
-            client.task.semantic.reasoning().display,
-            Presence::Value(ReasoningDisplay::Omitted)
+            client.task.semantic.reasoning().activation,
+            Presence::Value(ReasoningActivation::Disabled)
         );
         let invalid = std::str::from_utf8(raw)
             .unwrap()
-            .replace("\"omitted\"", "7");
+            .replace("\"disabled\"", "7");
         assert!(
             morphiecore::protocol::anthropic::client::decode_client_request(invalid.as_bytes())
                 .is_err()
@@ -784,7 +781,7 @@ mod anthropic_output {
     #[test]
     fn messages_format_is_an_unnamed_strict_schema_with_native_and_openai_carriers() {
         let format = json!({"type":"json_schema","schema":schema()});
-        let source = messages(json!({"effort":"low","format":format})).unwrap();
+        let source = messages(json!({"format":format})).unwrap();
         let OutputConstraint::JsonSchema {
             name,
             description,
@@ -798,10 +795,7 @@ mod anthropic_output {
         assert_eq!(decoded.root().to_string(), schema().to_string());
         let endpoint = catalog::MESSAGES_BINDINGS[0].endpoint();
         let (wire, rules) = endpoint.encode_request_with_rules(&source).unwrap();
-        assert_eq!(
-            wire["output_config"],
-            json!({"effort":"low","format":format})
-        );
+        assert_eq!(wire["output_config"], json!({"format":format}));
         assert!(rules.is_empty());
         let (wire, rules) = Adapter::new(Profile::Chat, Dialect::Standard, None)
             .encode_request_with_rules(&source, "synthetic", &TargetCaps::full())

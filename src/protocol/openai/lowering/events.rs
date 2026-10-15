@@ -133,8 +133,10 @@ pub fn check_event(
                 {
                     return Err(RepresentationError::Tools);
                 }
-                ItemKind::ConfigurationUpdate { .. }
-                    if profile != Profile::Responses || !contract.semantics.reasoning =>
+                ItemKind::ConfigurationUpdate(update)
+                    if profile != Profile::Responses
+                        || !contract.semantics.reasoning
+                        || super::super::reasoning::effort_label(update).is_err() =>
                 {
                     return Err(RepresentationError::Reasoning);
                 }

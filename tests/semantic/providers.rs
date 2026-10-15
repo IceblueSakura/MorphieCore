@@ -21,21 +21,21 @@ mod provider_profiles {
 
     #[test]
     fn zhipu_effort_lands_on_its_three_levels_by_a_named_rule() {
-        use morphiecore::protocol::openai::TargetCaps as Caps;
+        use morphiecore::topology::{ProtocolProfile, catalog::API_KEY_BINDINGS};
+        let endpoint = API_KEY_BINDINGS
+            .iter()
+            .find(|binding| binding.endpoint_prefix == "zhipu")
+            .unwrap()
+            .endpoint(ProtocolProfile::OpenAiChat)
+            .unwrap();
         // glm-5.3 always thinks and takes only low, high or max (error 1210 otherwise).
         for (effort, sent) in [("medium", "high"), ("minimal", "low"), ("high", "high")] {
             let body = json!({"model":"m","messages":[{"role":"user","content":"q"}],"reasoning_effort":effort});
             let client = Adapter::new(Profile::Chat, Dialect::MorphieCore, None);
             let request = client.decode_request(body.to_string().as_bytes()).unwrap();
-            let zhipu = Adapter::new(Profile::Chat, Dialect::Zhipu, None);
-            let (wire, rules) = zhipu
-                .encode_request_with_rules(&request, "glm", &Caps::full())
-                .unwrap();
+            let (wire, rules) = endpoint.encode_request_with_rules(&request).unwrap();
             assert_eq!(wire["reasoning_effort"], sent, "{effort}");
-            assert_eq!(
-                rules.contains(&"chat.zhipu-effort-levels.v1"),
-                effort != "high"
-            );
+            assert_eq!(rules.contains(&"zhipu.glm-5.3.effort.v1"), effort != "high");
         }
     }
     #[test]

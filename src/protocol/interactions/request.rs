@@ -11,9 +11,6 @@ use std::collections::BTreeSet;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum RequestRule {
-    LowerEffort,
-    CapEffort,
-    BudgetAsEffort,
     SummarizeReasoning,
     OmitReasoningContext,
     OmitForeignReplay,
@@ -27,9 +24,6 @@ pub enum RequestRule {
 impl RequestRule {
     pub const fn name(self) -> &'static str {
         match self {
-            Self::LowerEffort => "interactions.lower-effort.v1",
-            Self::CapEffort => "interactions.cap-effort.v1",
-            Self::BudgetAsEffort => "interactions.budget-as-effort.v1",
             Self::SummarizeReasoning => "interactions.summarize-reasoning.v1",
             Self::OmitReasoningContext => "interactions.omit-reasoning-context.v1",
             Self::OmitForeignReplay => "interactions.omit-foreign-replay.v1",
@@ -154,7 +148,7 @@ pub(super) fn project(
             },
         );
     }
-    thinking(&s.reasoning, &mut config, rules)?;
+    thinking(s, &mut config, rules)?;
     if !config.is_empty() {
         body.insert("generation_config".into(), config.into());
     }
@@ -162,11 +156,17 @@ pub(super) fn project(
 }
 
 fn thinking(
-    r: &ReasoningRequest,
+    settings: &GenerationSettings,
     config: &mut Map<String, Value>,
     rules: &mut BTreeSet<RequestRule>,
 ) -> Result<(), CodecError> {
-    if r.presence == ReasoningPresence::Null || !r.display.is_absent() && !r.summary.is_absent() {
+    let r = &settings.reasoning;
+    if r.presence == ReasoningPresence::Null
+        || !r.display.is_absent() && !r.summary.is_absent()
+        || r.budget_tokens.is_some()
+        || r.activation == Presence::Null
+        || r.activation.value() == Some(&ReasoningActivation::Disabled)
+    {
         return Err(unsupported());
     }
     if !r.context.is_absent() {
@@ -192,33 +192,33 @@ fn thinking(
     }
     match r.mode {
         Presence::Absent | Presence::Value(ReasoningMode::Adaptive) => {}
-        Presence::Value(ReasoningMode::Budgeted) => {
-            rules.insert(RequestRule::BudgetAsEffort);
-        }
         _ => return Err(unsupported()),
     }
-    let effort = match (
-        r.effort.clone(),
-        crate::protocol::reasoning::budget_as_effort(r),
-    ) {
-        (Presence::Absent, Some(effort)) => Presence::Value(effort),
-        (effort, _) => effort,
-    };
+    let effort = settings.effort.value();
+    if effort.is_some_and(|e| e.scope != EffortScope::Reasoning)
+        || settings.effort == Presence::Null
+    {
+        return Err(unsupported());
+    }
     let level = match effort {
-        Presence::Absent => None,
-        Presence::Value(ReasoningEffort::None) => {
-            rules.insert(RequestRule::LowerEffort);
-            Some("minimal")
-        }
-        Presence::Value(ReasoningEffort::Minimal) => Some("minimal"),
-        Presence::Value(ReasoningEffort::Low) => Some("low"),
-        Presence::Value(ReasoningEffort::Medium) => Some("medium"),
-        Presence::Value(ReasoningEffort::High) => Some("high"),
-        Presence::Value(ReasoningEffort::XHigh | ReasoningEffort::Max) => {
-            rules.insert(RequestRule::CapEffort);
-            Some("high")
-        }
-        Presence::Null => return Err(unsupported()),
+        None => None,
+        Some(EffortControl {
+            level: EffortLevel::Minimal,
+            ..
+        }) => Some("minimal"),
+        Some(EffortControl {
+            level: EffortLevel::Low,
+            ..
+        }) => Some("low"),
+        Some(EffortControl {
+            level: EffortLevel::Medium,
+            ..
+        }) => Some("medium"),
+        Some(EffortControl {
+            level: EffortLevel::High,
+            ..
+        }) => Some("high"),
+        Some(_) => return Err(unsupported()),
     };
     if let Some(level) = level {
         config.insert("thinking_level".into(), level.into());

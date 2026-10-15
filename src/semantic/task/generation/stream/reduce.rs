@@ -165,6 +165,9 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             if matches!(kind, ItemKind::Compaction) && replay.is_none() {
                 return Err(EventError::Lifecycle);
             }
+            if let ItemKind::ConfigurationUpdate(update) = &kind {
+                update.validate().map_err(|_| EventError::Lifecycle)?;
+            }
             if let Some(r) = &replay {
                 r.validate(&kind)?;
                 state.charge(r.value.as_str().len())?;

@@ -102,7 +102,7 @@ pub fn lower_request<'a>(
         return Err(RepresentationError::Controls);
     }
     represent_reasoning(
-        r.reasoning(),
+        r.settings(),
         r.items(),
         fidelity,
         profile,
@@ -362,7 +362,7 @@ fn validate_response(
 ) -> Result<(), RepresentationError> {
     if let Some(settings) = &metadata.context.settings {
         settings.validate()?;
-        if super::reasoning::requires_extended_controls(&settings.reasoning) {
+        if super::reasoning::requires_extended_controls(settings) {
             return Err(RepresentationError::Reasoning);
         }
         check_tool_selection(settings.tool_choice.as_ref())?;
@@ -419,7 +419,7 @@ fn validate_response(
     }
     c.semantics.check_response(r)?;
     represent_reasoning(
-        &ReasoningRequest::absent(),
+        &GenerationSettings::default(),
         r.items(),
         fidelity,
         profile,
@@ -515,7 +515,7 @@ fn chat_reasoning_shape(items: &[(ItemId, Item)]) -> bool {
         })
 }
 fn represent_reasoning(
-    controls: &ReasoningRequest,
+    settings: &GenerationSettings,
     items: &[(ItemId, Item)],
     fidelity: &FidelityRecords,
     profile: Profile,
@@ -524,14 +524,20 @@ fn represent_reasoning(
     history: Option<&GenerationRequest>,
 ) -> Result<(), RepresentationError> {
     let structured_chat = adaptation.rules.structured_chat_reasoning;
+    let controls = &settings.reasoning;
     let request = history.is_some();
-    if super::reasoning::requires_extended_controls(controls) {
+    if super::reasoning::requires_extended_controls(settings) {
         return Err(RepresentationError::Reasoning);
     }
     if profile == Profile::Responses && controls.summary() == Some(ReasoningSummary::Disabled) {
         return Err(RepresentationError::Reasoning);
     }
     for (id, item) in items {
+        if let Item::ConfigurationUpdate(update) = item
+            && (profile != Profile::Responses || super::reasoning::effort_label(update).is_err())
+        {
+            return Err(RepresentationError::Reasoning);
+        }
         if let Item::Compaction(value) = item {
             if profile != Profile::Responses {
                 return Err(RepresentationError::UnmigratedSemantic);
@@ -575,7 +581,8 @@ fn represent_reasoning(
         return Err(RepresentationError::Reasoning);
     }
     let chat_control = controls.presence() == ReasoningPresence::Present
-        && (controls.effort.is_absent() || !controls.summary.is_absent());
+        && (settings.effort.is_absent() && controls.activation.is_absent()
+            || !controls.summary.is_absent());
     if has_reasoning_items
         && profile != Profile::Responses
         && !(profile == Profile::Chat

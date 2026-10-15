@@ -179,7 +179,7 @@ mod client_managed_composition {
     impl Sample {
         fn new(family: &str) -> Self {
             // Provider action/controls/accounting evidence is fixed in upstream-sync.md.
-            let mut reasoning = ReasoningRequest::present(Some(ReasoningEffort::High), None);
+            let mut reasoning = ReasoningRequest::present(None);
             let mut usage = Usage::operation(4106, 20, 4126);
             usage.cached_input_tokens = Some(4096);
             let action = match family {
@@ -212,6 +212,14 @@ mod client_managed_composition {
             };
             let settings = GenerationSettings {
                 instructions: Presence::Value(text("current configuration")),
+                effort: Presence::Value(EffortControl {
+                    scope: if family == "messages" {
+                        EffortScope::Response
+                    } else {
+                        EffortScope::Reasoning
+                    },
+                    level: EffortLevel::High,
+                }),
                 tools: Some(vec![ToolDefinition::Function(FunctionTool {
                     name: text("lookup"),
                     description: Some("original definition".into()),
@@ -667,7 +675,7 @@ mod request_edits {
     #[test]
     fn reasoning_edit_must_not_return_an_invalid_request() {
         let mut reasoning = ReasoningRequest::absent();
-        reasoning.effort = Presence::Value(ReasoningEffort::High);
+        reasoning.activation = Presence::Value(ReasoningActivation::Disabled);
         let edited = request().with_reasoning(reasoning);
         assert_eq!(edited.unwrap_err(), GenerationError::InvalidControl);
     }
