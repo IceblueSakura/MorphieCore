@@ -12,6 +12,32 @@ Chat Completions, Responses and Messages are equally important downstream contra
 
 The next Generation slices are selected below, with OpenAI Responses as the primary reference and Chat Completions as a supplement. Until the IR core is complete, add only minimal regressions for changed contracts and confirmed defects, preferably by extending existing tests. Keep safety invariants and the offline baseline; defer coverage expansion.
 
+An independent delivery-maintenance slice is designed below: [optional delta coalescing](#optional-delta-coalescing). This is an implementation plan, not a claim of shipped functionality or a change to the Generation semantic sequence. It does not reopen deferred failover or real-client acceptance.
+
+### Optional delta coalescing
+
+Goal: reduce downstream event/envelope and handoff overhead with an optional lossless text-delta stage. Follow the selected [ownership, merge and scheduling contract](architecture.md#optional-delta-coalescing-planned). Final-only delivery from forced-stream upstreams remains on existing materialization, without a duplicate accumulator.
+
+Implement these slices in order when this delivery work starts:
+
+1. **Separate event preparation from encoding.** Refine `execution/delivery.rs` and adapter projection so each event is projected once and deferred encoding cannot observe future metadata, fidelity or identity. Keep current output behavior with no coalescing.
+
+   Exit condition: existing static/stream/replay contracts pass; extend the lowest-owner test to cover a pending event followed by a context change. No new response reducer or generic stage framework.
+
+2. **Build a minimal end-to-end text coalescer.** Add a small synchronous delivery-local state machine, then drive it from `gateway/generation/intake.rs` with a monotonic timer in the existing task. Use explicit test-owned policy values before public configuration; disabled behavior remains unchanged.
+
+   Exit condition: one synthetic Messages-upstream to Responses-downstream conversation delivers fewer text events with identical materialized content, releases its first content batch without intentional delay, and flushes pending text during upstream silence. Test one mergeable run and one barrier at the lowest owner; avoid per-Provider copies.
+
+3. **Close lifecycle and budget boundaries.** Extend existing contracts for metadata/fidelity barriers, encoded-size expansion, tail drain, slow-client backpressure, cancellation and failure. Preserve original intake limits, attempt isolation and EOF-gated terminals.
+
+   Exit condition: no data crosses attempts, no post-publication replay becomes possible, and malformed/truncated input never ends successfully. A declared forced-SSE upstream still produces one correct final JSON response for `stream:false`, with no coalescing buffer or second accumulator. Check each downstream carrier's affected contract without creating a variant matrix.
+
+4. **Expose bounded opt-in configuration and measure.** Add the disabled-by-default startup policy and finite time/byte validation, then document the implemented fields in Usage. Preserve the existing HTTP request schema. Compare enabled/disabled behavior on fixed synthetic input, reporting events, encoded bytes, handoffs, first-content/update latency and peak pending bytes without bodies.
+
+   Exit condition: omission preserves the existing path; invalid bounds fail startup; the fixture demonstrates reduced downstream overhead with bounded buffering and semantic equivalence. Run the SDK loopback gate as a separate synthetic compatibility check before recommending opt-in use. Real Provider/client acceptance and deployment remain separate work; do not infer universal latency or packet-count improvements.
+
+For each slice, run affected tests before the [full offline baseline](development.md#offline-baseline), review the diff, then commit and push the passing slice. Extend existing tests rather than adding near-copies. Select finite implementation bounds using the synthetic measurements; broad performance tuning, non-text delta merging, live failover and keep-alives are outside this slice.
+
 ### Next Generation slices
 
 Implement in this order. This is a plan, not an implementation or acceptance result. Show the minimal counterexample and structural options before changing an IR contract.
@@ -74,7 +100,7 @@ IR completeness does not mean every upstream can carry every modality. Protocol-
 3. **Failover.** The feature remains in early design. Its priority is undecided, lowest for now; design, implementation improvement and real acceptance follow the second stage.
 4. **Other agent acceptance.** Codex, Claude Code and other agents follow failover. Their priority is undecided, lowest for now.
 
-The next Generation slices belong to the first stage. This plan does not start deferred acceptance runs; each later stage stays deferred until scheduled.
+The next Generation slices belong to the first stage. The optional delivery-maintenance slice above may proceed independently without changing these stage dependencies. This plan does not start deferred acceptance runs; each later stage stays deferred until scheduled.
 
 ## Target clients
 
