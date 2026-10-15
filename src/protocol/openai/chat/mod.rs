@@ -35,6 +35,7 @@ pub(super) const FIELDS: &[&str] = &[
     "functions",
     "function_call",
     "web_search_options",
+    "prediction",
 ];
 /// Official fields whose active value changes tools or output; ignoring them would be
 /// silent loss. Other unregistered client fields are ignored by name.
@@ -61,6 +62,26 @@ pub(crate) fn decode_generation_with(
         .and_then(Value::as_array)
         .ok_or(CodecError::Invalid("messages"))?;
     let mut b = Items::new(direction);
+    if let Some(prediction) = o.get("prediction").filter(|v| !v.is_null()) {
+        let prediction = object(prediction)?;
+        direction.fields(prediction, &["type", "content"])?;
+        if string(prediction, "type")? != "content" {
+            return Err(CodecError::Invalid("prediction type"));
+        }
+        let content = prediction
+            .get("content")
+            .ok_or(CodecError::Invalid("prediction content"))?;
+        match content {
+            Value::String(_) => {
+                raw_string(prediction, "content")?;
+            }
+            Value::Array(_) => {
+                request_text_parts(content, direction)?;
+            }
+            _ => return Err(CodecError::Invalid("prediction content")),
+        }
+        b.fidelity.record_prediction_omission();
+    }
     for message in messages {
         let message = crate::protocol::openai::chat::reasoning::decode_static(
             &mut b,

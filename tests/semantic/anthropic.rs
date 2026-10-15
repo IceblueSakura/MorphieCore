@@ -1176,6 +1176,33 @@ mod client_fidelity {
                 .max_output_tokens,
             Some(7)
         );
+        let mut prediction = body.clone();
+        prediction["prediction"] = json!({"type":"content","content":"synthetic predicted output"});
+        let decoded = decode(&prediction).unwrap();
+        assert_eq!(decoded.task.semantic, decode(&body).unwrap().task.semantic);
+        assert!(
+            decoded
+                .task
+                .fidelity
+                .normalizations()
+                .iter()
+                .any(|normalization| matches!(
+                    normalization,
+                    morphiecore::protocol::fidelity::Normalization::PredictionOmitted { rule }
+                        if *rule == "chat.omit-prediction.v1"
+                ))
+        );
+        assert!(!format!("{:?}", decoded.task.fidelity).contains("synthetic predicted output"));
+        let wire = chat
+            .encode_request(
+                &decoded,
+                "m",
+                &morphiecore::protocol::openai::TargetCaps::full(),
+            )
+            .unwrap();
+        assert!(wire.get("prediction").is_none());
+        prediction["prediction"]["content"] = json!(7);
+        assert!(decode(&prediction).is_err());
         for (key, value) in [
             ("max_completion_tokens", json!(7)),
             ("stop", json!(["END"])),

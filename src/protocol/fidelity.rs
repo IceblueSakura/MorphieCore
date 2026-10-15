@@ -35,6 +35,7 @@ pub(crate) fn declared_response_extras(
 pub enum Normalization {
     CacheWriteDefault { profile: &'static str },
     ReasoningEffortMapping { rule: &'static str },
+    PredictionOmitted { rule: &'static str },
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ResponseExtras {
@@ -480,6 +481,12 @@ impl FidelityRecords {
     pub(crate) fn record_effort_mapping(&mut self, rule: &'static str) {
         self.normalizations
             .insert(Normalization::ReasoningEffortMapping { rule });
+    }
+    pub(crate) fn record_prediction_omission(&mut self) {
+        self.normalizations
+            .insert(Normalization::PredictionOmitted {
+                rule: "chat.omit-prediction.v1",
+            });
     }
     pub(crate) fn copy_response_records(&mut self, source: &Self) {
         self.response_extras = source.response_extras.clone();

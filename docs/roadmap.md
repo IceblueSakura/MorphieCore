@@ -56,7 +56,7 @@ Goal: classify fields individually rather than reject a whole options container.
 1. Replace whole-`TextOptions` rejection in [generateContent](../src/protocol/google/request.rs) and [Interactions](../src/protocol/interactions/request.rs) with field-specific handling. Allow the selected verbosity omission without erasing `format` or a required schema.
 2. Implement the standard Chat verbosity carrier in [Chat encoding](../src/protocol/openai/chat/mod.rs) and [OpenAI lowering](../src/protocol/openai/lowering/mod.rs). Keep model eligibility separate from protocol grammar.
 3. Normalize empty/plain-text/inactive values only when the source and target semantics establish equivalence. Absence, null and defaults are not globally interchangeable.
-4. Inventory existing advisory cache losses and schema-label changes; make their evidence complete. Keep explicit cache modes, storage, prewarm, service tiers and other execution controls outside the advisory bucket. Implement D3's named Chat prediction omission after validating its known source shape; do not include predicted content in loss receipts or synthesize usage.
+4. Inventory existing advisory cache losses and schema-label changes; make their evidence complete. Keep explicit cache modes, storage, prewarm, service tiers and other execution controls outside the advisory bucket.
 
 Exit: supported fields survive exact encoding, selected unsupported preferences produce named loss, and unsupported constrained output still rejects. Standard carriers are not treated as dialect-only extensions. Malformed known fields remain invalid even if a target would omit them.
 
