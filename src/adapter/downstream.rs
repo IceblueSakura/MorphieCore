@@ -57,14 +57,14 @@ impl ClientAdapter {
     pub(crate) fn project_native(
         &self,
         response: &mut DecodedResponse,
-    ) -> Result<(), super::AdapterError> {
+    ) -> Result<Vec<crate::lowering::generation::LossEvidence>, super::AdapterError> {
         if let Self::OpenAi { adapter, .. } = self {
-            crate::protocol::openai::lowering::native_messages::project(
+            return Ok(crate::protocol::openai::lowering::native_messages::project(
                 response,
                 adapter.protocol,
-            )?;
+            )?);
         }
-        Ok(())
+        Ok(vec![])
     }
     /// Return exactly the representation encoded, so stored history agrees with delivery.
     pub fn snapshot(
@@ -274,15 +274,16 @@ impl ClientEncoder {
             Encoder::Responses(_) => Profile::Responses,
             Encoder::Messages(_) => return Ok(None),
         };
-        Ok(Some(
-            self.native_projection
-                .get_or_insert_with(|| {
-                    crate::protocol::openai::lowering::native_messages::EventProjection::new(
-                        profile,
-                    )
-                })
-                .project(events)?,
-        ))
+        let projection = self.native_projection.get_or_insert_with(|| {
+            crate::protocol::openai::lowering::native_messages::EventProjection::new(profile)
+        });
+        let result = projection.project(events);
+        for loss in projection.losses() {
+            if !self.losses.contains(loss) {
+                self.losses.push(loss.clone());
+            }
+        }
+        Ok(Some(result?))
     }
     pub(crate) fn update_metadata(&mut self, metadata: ResponseMetadata) -> Result<(), SseError> {
         match &mut self.encoder {

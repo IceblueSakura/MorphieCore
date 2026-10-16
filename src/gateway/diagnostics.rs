@@ -376,6 +376,11 @@ impl Trace {
     pub(super) fn request_rules(&mut self, rules: Vec<&'static str>) {
         if self.sink.is_some() {
             for rule in &rules {
+                if self.losses.iter().any(|loss| {
+                    loss.evidence.rule == *rule && loss.evidence.direction == "request.encode"
+                }) {
+                    continue;
+                }
                 self.loss(
                     crate::lowering::generation::LossEvidence {
                         rule,
@@ -418,6 +423,10 @@ impl Trace {
         }
         for loss in losses {
             let (input, output) = match loss {
+                Loss::Projection(evidence) => {
+                    self.loss(evidence.clone(), None, None);
+                    continue;
+                }
                 Loss::Reasoning {
                     input,
                     output,
@@ -782,6 +791,35 @@ mod tests {
         );
         assert!(!safe.to_string().contains("synthetic-private-prompt"));
         assert!(safe.get("reported_reasoning").is_none());
+        let grouped = Adapter::new(Profile::Chat,Dialect::Standard,None).decode_request(
+            br#"{"model":"m","messages":[{"role":"assistant","content":null,"tool_calls":[{"id":"c","type":"function","function":{"name":"lookup","arguments":"{}"}}]},{"role":"tool","tool_call_id":"c","content":"done"},{"role":"user","content":"go"}]}"#).unwrap();
+        let mut responses = endpoint.clone();
+        responses.protocol = crate::topology::ProtocolProfile::OpenAiResponses;
+        responses.representation = crate::protocol::openai::TargetCaps::full().into();
+        let mut provider = (binding.provider)();
+        provider.responses = Some(responses.target.path.clone());
+        let (_, rules, losses) = crate::execution::attempt::prepare_with_evidence(
+            &responses,
+            &provider,
+            &crate::provider::SecretMaterial::new("synthetic-key").unwrap(),
+            &grouped,
+        )
+        .unwrap();
+        assert!(rules.contains(&"responses.omit-message-envelopes.v1"));
+        trace.begin_candidate(2);
+        trace.request_controls(&losses);
+        trace.request_rules(rules);
+        trace.request_controls(&losses);
+        trace.end_candidate(None, false);
+        let exact: Vec<_> = trace.record.candidates[1]
+            .losses
+            .iter()
+            .filter(|loss| loss.evidence.rule == "responses.omit-message-envelopes.v1")
+            .collect();
+        assert_eq!(exact.len(), 1);
+        assert_eq!(exact[0].evidence.field, "generation.message_envelopes");
+        assert_eq!(exact[0].evidence.direction, "request.encode");
+        trace.record.candidates.pop();
         trace.begin_candidate(2);
         trace.stage(Stage::Connect);
         trace.end_candidate(Some("upstream_timeout"), false);

@@ -94,7 +94,9 @@ async fn produce(
                         } else {
                             failure.body()
                         };
-                        let frames = delivery.fail_stream(&body).map_err(|_| failure)?;
+                        let frames = delivery.fail_stream(&body);
+                        trace.delivery_losses(delivery.losses());
+                        let frames = frames.map_err(|_| failure)?;
                         for frame in frames {
                             crate::gateway::body::send_frame(lane, frame, trace).await?;
                         }
@@ -116,11 +118,12 @@ async fn produce(
             rest = &rest[used..];
             if stream {
                 trace.stage(Stage::Projection);
-                let frames = delivery.encode_events(attempt, &events).map_err(|error| {
+                let frames = delivery.encode_events(attempt, &events);
+                trace.delivery_losses(delivery.losses());
+                let frames = frames.map_err(|error| {
                     trace.projection_error(&error);
                     ApiError::upstream()
                 })?;
-                trace.delivery_losses(delivery.losses());
                 if let Some(buffer) = held.as_mut()
                     && events.iter().all(lifecycle_only)
                     && buffer.iter().chain(&frames).map(Bytes::len).sum::<usize>() <= HOLD_BYTES
@@ -156,7 +159,9 @@ async fn produce(
     );
     trace.stage(Stage::Projection);
     let (frames, json_snapshot) = if stream {
-        let frames = delivery.finish_stream(attempt).map_err(|error| {
+        let frames = delivery.finish_stream(attempt);
+        trace.delivery_losses(delivery.losses());
+        let frames = frames.map_err(|error| {
             trace.projection_error(&error);
             ApiError::upstream()
         })?;
@@ -165,7 +170,9 @@ async fn produce(
         if let Some(usage) = attempt.response().ok().and_then(|r| r.semantic.usage()) {
             trace.reported_usage(usage);
         }
-        let (response, bytes) = delivery.encode_json_snapshot(attempt).map_err(|error| {
+        let snapshot = delivery.encode_json_snapshot(attempt);
+        trace.delivery_losses(delivery.losses());
+        let (response, bytes) = snapshot.map_err(|error| {
             trace.projection_error(&error);
             ApiError::upstream()
         })?;
@@ -186,9 +193,9 @@ async fn produce(
         let (response, body) = match json_snapshot {
             Some(snapshot) => snapshot,
             None => {
-                let (response, body) = delivery
-                    .snapshot(attempt)
-                    .map_err(|_| ApiError::upstream())?;
+                let snapshot = delivery.snapshot(attempt);
+                trace.delivery_losses(delivery.losses());
+                let (response, body) = snapshot.map_err(|_| ApiError::upstream())?;
                 (response, Bytes::from(body))
             }
         };
@@ -367,6 +374,7 @@ pub(in crate::gateway) async fn produce_candidate(
         trace,
     )
     .await;
+    trace.delivery_losses(delivery.losses());
     if result.is_err() {
         attempt.cancel();
         delivery.cancel();

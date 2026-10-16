@@ -114,8 +114,8 @@ pub(in crate::gateway) async fn produce_chain(
                         &local,
                     )
                     .map_err(|_| ApiError::invalid())?;
-                trace.request_rules(rules);
                 trace.request_controls(&controls);
+                trace.request_rules(rules);
                 if let Some(grant) = grant {
                     prepared.safe_headers.extend(
                         crate::provider::subscription::headers(candidate.provider.auth, &grant)

@@ -69,7 +69,6 @@ impl EventEncoder {
     pub fn with_contract(mut self, contract: TargetCaps) -> Self {
         if self.target_locked && self.contract != contract {
             self.poisoned = true;
-            self.projection.clear();
         } else {
             self.contract = contract;
         }
@@ -84,6 +83,7 @@ impl EventEncoder {
             return Err(CodecError::Invalid("rejected stream"));
         }
         self.target_locked = true;
+        let checked_projection = self.projection.len();
         let result = (|| {
             if self.profile == Profile::Chat
                 && (self.metadata.context.settings.is_some()
@@ -179,11 +179,17 @@ impl EventEncoder {
                 }
                 bounded(v)?;
             }
+            if self.profile == Profile::Responses
+                && !values.is_empty()
+                && !self.metadata.context.system_fingerprint.is_absent()
+            {
+                self.record_loss(crate::protocol::openai::lowering::projection::LossRule::OmitResponsesSystemFingerprint);
+            }
             Ok(values)
         })();
         if result.is_err() {
             self.poisoned = true;
-            self.projection.clear();
+            self.projection.truncate(checked_projection);
         }
         result
     }
@@ -194,9 +200,21 @@ impl EventEncoder {
         end_of_stream(self.state()?)?;
         Ok(())
     }
-    /// Only a successfully checked terminal supplies response projection evidence.
+    /// Successful prefixes remain evidence even when a later event is rejected.
     pub fn projection(&self) -> &[crate::protocol::openai::lowering::projection::ProjectionStage] {
-        if self.poisoned { &[] } else { &self.projection }
+        &self.projection
+    }
+    fn record_loss(&mut self, loss: crate::protocol::openai::lowering::projection::LossRule) {
+        use crate::protocol::openai::lowering::projection::{ProjectionDirection, ProjectionStage};
+        let mut stage = ProjectionStage::response(
+            self.profile,
+            self.contract.adaptation.profile_id,
+            Some(loss),
+        );
+        stage.direction = ProjectionDirection::Event;
+        if !self.projection.contains(&stage) {
+            self.projection.push(stage);
+        }
     }
     pub(super) fn state(&self) -> Result<&StreamState, CodecError> {
         self.state.as_ref().ok_or(CodecError::Invalid("state"))
@@ -256,23 +274,19 @@ impl EventEncoder {
         {
             return Err(CodecError::Unsupported("required reported settings".into()));
         }
+        let fingerprint = if !delivered.context.system_fingerprint.is_absent() {
+            delivered.context.system_fingerprint = crate::semantic::value::Presence::Absent;
+            Some(crate::protocol::openai::lowering::projection::LossRule::OmitResponsesSystemFingerprint)
+        } else {
+            None
+        };
         crate::protocol::openai::responses::envelope::write_metadata(
             &delivered,
             v.as_object_mut().expect("object"),
             status == "completed",
         )?;
-        if let Some(loss) = loss {
-            let mut stage =
-                crate::protocol::openai::lowering::projection::ProjectionStage::response(
-                    self.profile,
-                    self.contract.adaptation.profile_id,
-                    Some(loss),
-                );
-            stage.direction =
-                crate::protocol::openai::lowering::projection::ProjectionDirection::Event;
-            if !self.projection.contains(&stage) {
-                self.projection.push(stage);
-            }
+        for loss in loss.into_iter().chain(fingerprint) {
+            self.record_loss(loss);
         }
         Ok(v)
     }

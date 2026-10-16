@@ -417,6 +417,18 @@ impl Adapter {
             self.protocol,
             contract,
         )?;
+        for evidence in target
+            .projection()
+            .iter()
+            .filter_map(|stage| stage.evidence())
+        {
+            if !rules.contains(&evidence.rule) {
+                rules.push(evidence.rule);
+            }
+            controls.push(crate::lowering::generation::RequestControlLoss::Projection(
+                evidence,
+            ));
+        }
         let mut value = match self.protocol {
             Profile::Chat => {
                 let mut options = request.delivery.options.clone();

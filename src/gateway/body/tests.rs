@@ -175,6 +175,81 @@ async fn diagnostic_status_and_final_intake_are_from_the_original_attempt() {
         .collect();
     assert!(last.iter().any(|value| value["status"] == "incomplete"));
     assert!(!last.iter().any(|value| value["status"] == "source_eof"));
+    let mut entry = (*gate.state.entries[&(family(Profile::Chat), "fixture-model".into())]).clone();
+    entry.client = crate::adapter::ClientAdapter::openai(
+        crate::protocol::openai::Adapter::new(
+            Profile::Responses,
+            crate::protocol::openai::Dialect::MorphieCore,
+            None,
+        ),
+        crate::protocol::openai::TargetCaps::full(),
+    );
+    let entry = Arc::new(entry);
+    let request = entry
+        .client
+        .as_openai()
+        .unwrap()
+        .0
+        .decode_request(br#"{"model":"fixture-model","input":"hello","stream":true}"#)
+        .unwrap();
+    let candidate =
+        gate.state.entries[&(family(Profile::Chat), "fixture-model".into())].candidates[0].clone();
+    let (tx, source, _, _) = upstream(200, "text/event-stream");
+    for (index, mut chunk) in wire::events(2).into_iter().take(2).enumerate() {
+        if index == 1 {
+            chunk["system_fingerprint"] = serde_json::json!("synthetic-private-fingerprint");
+        }
+        tx.send(Ok(Bytes::from(format!("data: {chunk}\n\n"))))
+            .await
+            .unwrap();
+    }
+    let response = respond(
+        entry,
+        candidate,
+        request,
+        source,
+        &gate.state.limits,
+        Instant::now() + Duration::from_secs(2),
+        gate.state.shutdown.clone(),
+        gate.state.permits.clone().acquire_owned().await.unwrap(),
+        super::Trace::new(gate.state.diagnostics.as_ref()),
+    )
+    .await
+    .unwrap();
+    tx.send(Err(std::io::Error::other("synthetic truncated stream")))
+        .await
+        .unwrap();
+    drop(tx);
+    let mut stream = response.into_body().into_data_stream();
+    let mut published = vec![];
+    while let Some(frame) = stream.next().await {
+        match frame {
+            Ok(bytes) => published.extend_from_slice(&bytes),
+            Err(_) => break,
+        }
+    }
+    drop(stream);
+    assert!(!published.is_empty());
+    assert!(
+        !published
+            .windows(b"response.completed".len())
+            .any(|value| value == b"response.completed")
+    );
+    gate.flush_diagnostics().await;
+    let raw = std::fs::read_to_string(&path).unwrap();
+    assert!(!raw.contains("synthetic-private-fingerprint"));
+    let record: serde_json::Value = serde_json::from_str(raw.lines().last().unwrap()).unwrap();
+    let losses = record["candidates"][0]["losses"].as_array().unwrap();
+    assert_eq!(
+        losses
+            .iter()
+            .filter(
+                |loss| loss["rule"] == "responses.omit-system-fingerprint.v1"
+                    && loss["direction"] == "event.encode"
+            )
+            .count(),
+        1
+    );
 }
 #[tokio::test]
 async fn upstream_failures_reach_clients_as_agent_error_classes() {

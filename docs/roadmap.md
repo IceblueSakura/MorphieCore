@@ -34,12 +34,6 @@ Request acceptance, upstream-reported settings and delivered history remain sepa
 
 Continue the support queue without reconnecting routing implicitly. Concrete target tables still need model-level evidence; a codec interface or passing synthetic test is not a new public capability promise.
 
-### S5–S7 review repairs
-
-Close these correctness gaps before continuing the support queue. Routing, credentials, endpoint activation and deferred public capability design remain frozen. Extend existing tests only.
-
-**Loss evidence closure.** Carry request lowering, native delivery and already-applied incremental losses through success and failure paths. Exit: connected boundaries report each selected rule once per direction and attempt without bodies or untrusted labels.
-
 ### Verification and integration boundary
 
 For every implementation slice:

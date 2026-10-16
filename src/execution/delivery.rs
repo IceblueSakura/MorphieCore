@@ -162,14 +162,18 @@ impl ResponseDelivery {
         }
     }
     pub(crate) fn client_response(
-        &self,
+        &mut self,
         attempt: &Attempt,
     ) -> Result<crate::protocol::DecodedResponse, AttemptError> {
         let mut decoded = attempt.response()?.clone();
         decoded.metadata = self.metadata(attempt)?;
         super::replay::seal_for_client(&mut decoded, &super::replay::CLIENT_ORIGIN)?;
         if attempt.is_native() {
-            self.client.project_native(&mut decoded)?;
+            for loss in self.client.project_native(&mut decoded)? {
+                if !self.losses.contains(&loss) {
+                    self.losses.push(loss);
+                }
+            }
         }
         if self.client.protocol() == ClientProtocol::Responses || attempt.is_native() {
             for (owner, _) in decoded.semantic.items() {
@@ -189,7 +193,7 @@ impl ResponseDelivery {
     }
     /// Bounded cache-only projection of exactly the delivered values; not stored history.
     pub(crate) fn cache_successor(
-        &self,
+        &mut self,
         attempt: &Attempt,
         request: &crate::adapter::Request,
     ) -> Option<crate::adapter::Request> {
@@ -238,9 +242,8 @@ impl ResponseDelivery {
         &mut self,
         attempt: &Attempt,
     ) -> Result<(crate::protocol::DecodedResponse, Vec<u8>), AttemptError> {
-        let (decoded, value, losses) = self
-            .client
-            .snapshot_with_evidence(self.client_response(attempt)?)?;
+        let response = self.client_response(attempt)?;
+        let (decoded, value, losses) = self.client.snapshot_with_evidence(response)?;
         for loss in losses {
             if !self.losses.contains(&loss) {
                 self.losses.push(loss);
@@ -303,56 +306,65 @@ impl ResponseDelivery {
     ) -> Result<Vec<Bytes>, AttemptError> {
         self.bind(attempt)?;
         let metadata = self.metadata(attempt)?;
-        if self.encoder.is_none() {
-            let padding = self
-                .padding
-                .take()
-                .ok_or(AttemptError::Delivery("padding consumed"))?;
-            self.encoder = Some(self.client.stream_encoder(
-                metadata.clone(),
-                self.limits,
-                self.options.clone(),
-                padding,
-            )?);
-        }
-        let encoder = self.encoder.as_mut().expect("encoder initialized");
-        let projected = if attempt.is_native() {
-            encoder.project_native(events)?
-        } else {
-            None
-        };
-        let events = projected.as_deref().unwrap_or(events);
-        let source = attempt
-            .fidelity()
-            .ok_or(AttemptError::Protocol("missing response fidelity"))?;
-        let mut source = std::borrow::Cow::Borrowed(source);
-        if self.client.protocol() != ClientProtocol::Messages
-            && (self.client.protocol() == ClientProtocol::Responses || attempt.is_native())
-        {
+        let result = (|| {
+            if self.encoder.is_none() {
+                let padding = self
+                    .padding
+                    .take()
+                    .ok_or(AttemptError::Delivery("padding consumed"))?;
+                self.encoder = Some(self.client.stream_encoder(
+                    metadata.clone(),
+                    self.limits,
+                    self.options.clone(),
+                    padding,
+                )?);
+            }
+            let encoder = self.encoder.as_mut().expect("encoder initialized");
+            let projected = if attempt.is_native() {
+                encoder.project_native(events)?
+            } else {
+                None
+            };
+            let events = projected.as_deref().unwrap_or(events);
+            let source = attempt
+                .fidelity()
+                .ok_or(AttemptError::Protocol("missing response fidelity"))?;
+            let mut source = std::borrow::Cow::Borrowed(source);
+            if self.client.protocol() != ClientProtocol::Messages
+                && (self.client.protocol() == ClientProtocol::Responses || attempt.is_native())
+            {
+                for event in events {
+                    if let StreamEvent::ItemStarted { item, .. } = event
+                        && source.response_item_id(*item).is_none()
+                    {
+                        source.to_mut().record_response_item_id(
+                            *item,
+                            &delivery_item_id(&self.public_label, metadata.required_id()?, *item),
+                        )?;
+                    }
+                }
+            }
+            let mut frames = vec![];
+            encoder.update_metadata(metadata)?;
             for event in events {
-                if let StreamEvent::ItemStarted { item, .. } = event
-                    && source.response_item_id(*item).is_none()
-                {
-                    source.to_mut().record_response_item_id(
-                        *item,
-                        &delivery_item_id(&self.public_label, metadata.required_id()?, *item),
-                    )?;
+                let event =
+                    super::replay::seal_event(event.clone(), &super::replay::CLIENT_ORIGIN)?;
+                frames.extend(encoder.encode(&event, &source)?);
+            }
+            self.rendered |= !frames.is_empty();
+            Ok(frames)
+        })();
+        self.collect_losses();
+        result
+    }
+    fn collect_losses(&mut self) {
+        if let Some(encoder) = &self.encoder {
+            for loss in encoder.losses() {
+                if !self.losses.contains(&loss) {
+                    self.losses.push(loss);
                 }
             }
         }
-        let mut frames = vec![];
-        encoder.update_metadata(metadata)?;
-        for event in events {
-            let event = super::replay::seal_event(event.clone(), &super::replay::CLIENT_ORIGIN)?;
-            frames.extend(encoder.encode(&event, &source)?);
-        }
-        for loss in encoder.losses() {
-            if !self.losses.contains(&loss) {
-                self.losses.push(loss);
-            }
-        }
-        self.rendered |= !frames.is_empty();
-        Ok(frames)
     }
     /// End a stream with a classified failure (`{"error":{...}}`), never a success
     /// terminal. Responses gets `response.failed`, opening the response when nothing
@@ -380,6 +392,7 @@ impl ResponseDelivery {
             self.terminal = terminal;
             Ok(frames)
         })();
+        self.collect_losses();
         if result.is_err() {
             self.rejected = true;
         }

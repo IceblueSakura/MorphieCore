@@ -676,6 +676,28 @@ mod projection {
             for event in text_events() {
                 encoder.encode(&event, &fidelity).unwrap();
             }
+            assert_eq!(
+                encoder
+                    .projection()
+                    .iter()
+                    .filter(|stage| stage.loss.is_some())
+                    .count(),
+                usize::from(!fingerprint.is_absent())
+            );
+            let mut failed = EventEncoder::new(Profile::Responses, meta.clone()).unwrap();
+            for event in text_events() {
+                failed.encode(&event, &fidelity).unwrap();
+            }
+            assert!(failed.encode(&StreamEvent::Started, &fidelity).is_err());
+            assert_eq!(
+                failed
+                    .projection()
+                    .iter()
+                    .filter(|stage| stage.loss.is_some())
+                    .count(),
+                usize::from(!fingerprint.is_absent())
+            );
+            assert!(failed.finish().is_err());
             let output = encoder
                 .encode(&terminal(StreamTerminal::Completed), &fidelity)
                 .unwrap();

@@ -52,6 +52,7 @@ pub struct LossEvidence {
 /// Request-side control evidence contains finite enums and presence, never prompt data.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RequestControlLoss {
+    Projection(LossEvidence),
     Verbosity {
         rule: &'static str,
         input: Presence<Verbosity>,
@@ -86,6 +87,7 @@ pub enum RequestControlLoss {
 impl RequestControlLoss {
     pub const fn rule(&self) -> &'static str {
         match self {
+            Self::Projection(evidence) => evidence.rule,
             Self::Reasoning { rule, .. }
             | Self::Summary { rule, .. }
             | Self::Role { rule, .. }
@@ -96,6 +98,7 @@ impl RequestControlLoss {
     }
     pub const fn field(&self) -> &'static str {
         match self {
+            Self::Projection(evidence) => evidence.field,
             Self::Reasoning { input, output, .. } => {
                 if input.budget_tokens.is_some() || output.budget_tokens.is_some() {
                     "generation.reasoning.allocation"
@@ -110,10 +113,14 @@ impl RequestControlLoss {
         }
     }
     pub const fn direction(&self) -> &'static str {
-        "request.encode"
+        match self {
+            Self::Projection(evidence) => evidence.direction,
+            _ => "request.encode",
+        }
     }
     pub fn action(&self) -> &'static str {
         match self {
+            Self::Projection(evidence) => evidence.action,
             Self::Reasoning { input, output, .. }
                 if !input.effort.is_absent()
                     && output.effort.is_absent()

@@ -4,7 +4,36 @@ use crate::{
     semantic::task::generation::*,
 };
 mod events;
+use crate::lowering::generation::LossEvidence;
 pub(crate) use events::EventProjection;
+
+fn envelope_loss(profile: Profile, direction: &'static str) -> LossEvidence {
+    LossEvidence {
+        rule: match profile {
+            Profile::Responses => "responses.omit-message-envelopes.v1",
+            Profile::Chat => "chat.regroup-native-message-envelopes.v1",
+        },
+        field: "generation.message_envelopes",
+        direction,
+        action: if profile == Profile::Responses {
+            "omit"
+        } else {
+            "regroup"
+        },
+    }
+}
+fn usage_loss(
+    before: Option<Usage>,
+    after: Option<Usage>,
+    direction: &'static str,
+) -> Option<LossEvidence> {
+    (before != after).then_some(LossEvidence {
+        rule: "openai.native-usage-view.v1",
+        field: "generation.usage",
+        direction,
+        action: if after.is_some() { "project" } else { "omit" },
+    })
+}
 
 fn client_usage(usage: Usage) -> Result<Option<Usage>, CodecError> {
     // Gemini already reports cache-inclusive input and its own total.
@@ -46,7 +75,10 @@ pub(super) fn anchored(item: &ReasoningItem) -> bool {
 /// The caller supplies a private delivery copy; the native observation stays intact.
 /// Container boundaries are omitted, object arguments are serialized exactly, and
 /// stop progress is represented by OpenAI outcome plus the preserved tool calls.
-pub(crate) fn project(decoded: &mut DecodedResponse, profile: Profile) -> Result<(), CodecError> {
+pub(crate) fn project(
+    decoded: &mut DecodedResponse,
+    profile: Profile,
+) -> Result<Vec<LossEvidence>, CodecError> {
     let source = &decoded.semantic;
     match source.progress() {
         InteractionProgress::Unreported | InteractionProgress::TurnFinished => {}
@@ -147,23 +179,32 @@ pub(crate) fn project(decoded: &mut DecodedResponse, profile: Profile) -> Result
             members,
         )?])?;
     }
+    let mut losses = vec![];
+    if source.message_envelopes() != projected.message_envelopes() {
+        losses.push(envelope_loss(profile, "response.encode"));
+    }
+    losses.extend(usage_loss(
+        source.usage(),
+        projected.usage(),
+        "response.encode",
+    ));
     decoded.semantic = projected;
     decoded.fidelity.retain_owners(decoded.semantic.items());
-    Ok(())
+    Ok(losses)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::protocol::{anthropic, replay_envelope};
+    const BODY: &[u8] = br#"{"id":"native","type":"message","role":"assistant","model":"model","content":[{"type":"thinking","thinking":"plan","signature":"synthetic-signature"},{"type":"tool_use","id":"c","name":"lookup","input":{"n":9007199254740993.125}}],"stop_reason":"tool_use","usage":{"input_tokens":11,"cache_read_input_tokens":3,"cache_creation_input_tokens":2,"output_tokens":7}}"#;
 
     fn fixture() -> DecodedResponse {
         let profile = anthropic::Profile::AdaptiveTextTools;
         let target = crate::protocol::native::ReplayTarget::new("provider", "model").unwrap();
-        profile.decode_generation_response(
-            br#"{"id":"native","type":"message","role":"assistant","model":"model","content":[{"type":"thinking","thinking":"plan","signature":"synthetic-signature"},{"type":"tool_use","id":"c","name":"lookup","input":{"n":9007199254740993.125}}],"stop_reason":"tool_use","usage":{"input_tokens":11,"cache_read_input_tokens":3,"cache_creation_input_tokens":2,"output_tokens":7}}"#,
-            LocalScope::new(3), &target,
-        ).unwrap()
+        profile
+            .decode_generation_response(BODY, LocalScope::new(3), &target)
+            .unwrap()
     }
     #[test]
     fn projection_keeps_native_observation_and_derives_only_the_client_view() {
@@ -188,6 +229,112 @@ mod tests {
                 ..crate::protocol::openai::TargetCaps::full()
             };
             let wire = adapter.encode_response(&client, &contract).unwrap();
+            let client_adapter =
+                crate::adapter::ClientAdapter::openai(adapter.clone(), contract.clone());
+            let mut attempt = crate::execution::Attempt::new(
+                crate::adapter::UpstreamAdapter::AnthropicMessages {
+                    profile: anthropic::Profile::AdaptiveTextTools,
+                    target: crate::protocol::native::ReplayTarget::new("provider", "model")
+                        .unwrap(),
+                },
+                4096,
+                crate::protocol::stream::SseLimits::default(),
+            );
+            attempt.begin(200, "application/json").unwrap();
+            attempt.push(BODY).unwrap();
+            attempt.finish().unwrap();
+            let mut delivery = crate::execution::ResponseDelivery::new(
+                client_adapter.clone(),
+                "public",
+                Default::default(),
+                Default::default(),
+                crate::protocol::openai::stream::Obfuscation::Disabled,
+            );
+            delivery.encode_json(&attempt).unwrap();
+            assert!(
+                delivery
+                    .losses()
+                    .iter()
+                    .any(|loss| loss.field == "generation.message_envelopes")
+            );
+            assert!(
+                delivery
+                    .losses()
+                    .iter()
+                    .any(|loss| loss.field == "generation.usage")
+            );
+            let mut metadata = source.metadata.clone();
+            metadata.created = Some(1.into());
+            let mut encoder = client_adapter
+                .stream_encoder(
+                    metadata.clone(),
+                    Default::default(),
+                    crate::semantic::context::StreamOptions {
+                        include_obfuscation: crate::semantic::value::Presence::Value(false),
+                        ..Default::default()
+                    },
+                    crate::protocol::openai::stream::Obfuscation::Disabled,
+                )
+                .unwrap();
+            encoder
+                .project_native(&[
+                    StreamEvent::Usage(source.semantic.usage().unwrap()),
+                    StreamEvent::MessageEnvelope(source.semantic.message_envelopes()[0].clone()),
+                ])
+                .unwrap();
+            assert!(
+                encoder
+                    .losses()
+                    .iter()
+                    .any(|loss| loss.field == "generation.message_envelopes"
+                        && loss.direction == "event.encode")
+            );
+            assert!(
+                encoder.losses().iter().any(
+                    |loss| loss.field == "generation.usage" && loss.direction == "event.encode"
+                )
+            );
+            if profile == Profile::Chat {
+                let mut failed = client_adapter
+                    .stream_encoder(
+                        metadata,
+                        Default::default(),
+                        crate::semantic::context::StreamOptions {
+                            include_obfuscation: crate::semantic::value::Presence::Value(false),
+                            ..Default::default()
+                        },
+                        crate::protocol::openai::stream::Obfuscation::Disabled,
+                    )
+                    .unwrap();
+                failed
+                    .project_native(&[StreamEvent::Usage(source.semantic.usage().unwrap())])
+                    .unwrap();
+                let before = failed.losses();
+                assert!(
+                    failed
+                        .project_native(&[
+                            StreamEvent::ItemStarted {
+                                item: ItemId::new(1),
+                                replay: None,
+                                kind: ItemKind::ToolCall {
+                                    format: ArgumentFormat::Json,
+                                    call_id: crate::semantic::value::Text::new("c", "test", 128)
+                                        .unwrap(),
+                                    name: crate::semantic::value::Text::new("lookup", "test", 128)
+                                        .unwrap(),
+                                    context: Default::default()
+                                }
+                            },
+                            StreamEvent::ItemStarted {
+                                item: ItemId::new(2),
+                                replay: None,
+                                kind: ItemKind::Message { phase: None }
+                            }
+                        ])
+                        .is_err()
+                );
+                assert_eq!(failed.losses(), before);
+            }
             let args = if profile == Profile::Responses {
                 &wire["output"][1]["arguments"]
             } else {
