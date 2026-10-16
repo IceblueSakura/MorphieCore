@@ -195,6 +195,11 @@ impl ReasoningRequestPolicy {
                     if control.scope != scope || source.reasoning.budget_tokens.is_some() {
                         return Err(CodecError::Unsupported("thinking allocation scope".into()));
                     }
+                    if !source.reasoning.mode.is_absent()
+                        && source.reasoning.mode != Presence::Value(ReasoningMode::Budgeted)
+                    {
+                        return Err(CodecError::Unsupported("thinking allocation mode".into()));
+                    }
                     target.reasoning.presence = ReasoningPresence::Present;
                     target.reasoning.mode = Presence::Value(ReasoningMode::Budgeted);
                     target.reasoning.budget_tokens = Some(table.budget(control.level)?);

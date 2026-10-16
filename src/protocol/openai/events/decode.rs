@@ -66,6 +66,7 @@ pub struct EventDecoder {
     pub(super) fidelity: FidelityRecords,
     pub(super) metadata: Option<ResponseMetadata>,
     native_settings: Option<GenerationSettings>,
+    native_instructions: Option<Vec<(ItemId, Item)>>,
     native_configurations: Vec<(usize, ConfigurationUpdate)>,
     pub(super) origin: Option<ReplayOrigin>,
     pub(super) ids: Vec<ItemId>,
@@ -95,6 +96,7 @@ impl EventDecoder {
             fidelity: FidelityRecords::default(),
             metadata: None,
             native_settings: None,
+            native_instructions: None,
             native_configurations: vec![],
             origin: None,
             ids: vec![],
@@ -370,6 +372,16 @@ impl EventDecoder {
             let (native, _) =
                 crate::semantic::context::ResponseContext::read(o, DecodeDirection::Upstream)?;
             native.validate()?;
+            if let Some(instructions) = native.instruction_messages {
+                if self
+                    .native_instructions
+                    .as_ref()
+                    .is_some_and(|old| old != &instructions)
+                {
+                    return Err(CodecError::Invalid("reported instructions changed"));
+                }
+                self.native_instructions = Some(instructions);
+            }
             if let Some(settings) = native.settings {
                 if self
                     .native_settings

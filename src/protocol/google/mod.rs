@@ -147,7 +147,12 @@ impl TargetCaps {
         }
         let request = projected.as_ref();
         if request.task.semantic.reasoning().budget_tokens.is_some()
-            && self.reasoning_policy.is_none()
+            && !self.reasoning_policy.is_some_and(|policy| {
+                matches!(
+                    policy.conversion,
+                    crate::protocol::reasoning::ReasoningConversion::EffortToBudget { .. }
+                )
+            })
         {
             return Err(CodecError::Unsupported("undeclared model thinking budget".into()).into());
         }

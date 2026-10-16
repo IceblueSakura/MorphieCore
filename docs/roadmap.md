@@ -38,8 +38,7 @@ Continue the support queue without reconnecting routing implicitly. Concrete tar
 
 Close these correctness gaps before continuing the support queue. Routing, credentials, endpoint activation and deferred public capability design remain frozen. Extend existing tests only.
 
-1. **Request policy and source reports.** Preserve independent reasoning modes, require specific numeric-budget authorization and validate array-form instruction snapshots before projection. Exit: unselected transformations reject without changing source intent, and conflicting native reports cannot be hidden.
-2. **Loss evidence closure.** Carry request lowering, native delivery and already-applied incremental losses through success and failure paths. Exit: connected boundaries report each selected rule once per direction and attempt without bodies or untrusted labels.
+**Loss evidence closure.** Carry request lowering, native delivery and already-applied incremental losses through success and failure paths. Exit: connected boundaries report each selected rule once per direction and attempt without bodies or untrusted labels.
 
 ### Verification and integration boundary
 

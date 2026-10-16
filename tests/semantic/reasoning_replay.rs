@@ -464,6 +464,10 @@ mod reasoning_controls {
         effort.controls.max_output_tokens = Some(16384);
         let allocated = allocate.project(&effort).unwrap();
         assert_eq!(allocated.reasoning.budget_tokens, Some(16384));
+        effort.reasoning.mode = Presence::Value(ReasoningMode::Pro);
+        assert!(allocate.project(&effort).is_err());
+        assert_eq!(effort.reasoning.mode, Presence::Value(ReasoningMode::Pro));
+        effort.reasoning.mode = Presence::Absent;
         let allocated = GenerationRequest::from_settings(vec![], allocated).unwrap();
         let (wire, _) = morphiecore::protocol::google::encode_generation_request(
             &allocated,

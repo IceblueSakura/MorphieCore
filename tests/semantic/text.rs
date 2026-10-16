@@ -528,6 +528,17 @@ mod text_admission {
                 .is_err()
         );
         assert!(decoder.materialize().is_err());
+        let mut decoder =
+            morphiecore::protocol::openai::events::EventDecoder::new(Profile::Responses);
+        let mut created = json!({"type":"response.created","response":{
+            "id":"r","object":"response","created_at":1,"model":"m","status":"in_progress",
+            "instructions":[{"role":"developer","content":"A"}],"output":[]}});
+        decoder.push(&created).unwrap();
+        created["type"] = json!("response.in_progress");
+        decoder.push(&created).unwrap();
+        created["response"]["instructions"][0]["content"] = json!("B");
+        assert!(decoder.push(&created).is_err());
+        assert!(decoder.materialize().is_err());
     }
 }
 mod text_events {

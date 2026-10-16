@@ -469,12 +469,64 @@ mod native_catalog {
         assert!(!error.to_string().contains("private-business-key"));
     }
     #[test]
-    fn native_caps_cannot_be_reinterpreted_as_an_openai_endpoint() {
+    fn native_caps_and_reasoning_policies_do_not_widen_unrelated_admission() {
         let mut endpoint = catalog::MESSAGES_BINDINGS[0].endpoint();
         endpoint.validate().unwrap();
         endpoint.protocol = morphiecore::topology::ProtocolProfile::OpenAiChat;
         assert!(endpoint.validate().is_err());
         endpoint.protocol = morphiecore::topology::ProtocolProfile::OpenAiResponses;
         assert!(endpoint.validate().is_err());
+        use morphiecore::protocol::reasoning::{
+            ReasoningConversion, ReasoningRequestPolicy, SHARED_BUDGETS,
+        };
+        use morphiecore::semantic::task::generation::{
+            EffortScope, ReasoningMode, ReasoningRequest,
+        };
+        static OFF: ReasoningRequestPolicy = ReasoningRequestPolicy {
+            canonical_model: "synthetic-model",
+            rule: "synthetic.off.v1",
+            conversion: ReasoningConversion::PreserveDisabled,
+        };
+        static ALLOCATE: ReasoningRequestPolicy = ReasoningRequestPolicy {
+            canonical_model: "synthetic-model",
+            rule: "synthetic.allocation.v1",
+            conversion: ReasoningConversion::EffortToBudget {
+                scope: EffortScope::Reasoning,
+                table: SHARED_BUDGETS,
+            },
+        };
+        let mut google = endpoint;
+        google.protocol = morphiecore::topology::ProtocolProfile::GoogleGenerateContent;
+        google.canonical_model = morphiecore::topology::ModelId::new("synthetic-model").unwrap();
+        let mut request = morphiecore::protocol::openai::Adapter::new(
+            morphiecore::protocol::openai::Profile::Responses,
+            morphiecore::protocol::openai::Dialect::Standard,
+            None,
+        )
+        .decode_request(br#"{"model":"m","input":"hello"}"#)
+        .unwrap();
+        let mut settings = request.task.semantic.settings().clone();
+        settings.reasoning = ReasoningRequest::present(None);
+        settings.reasoning.budget_tokens = Some(1024);
+        settings.reasoning.mode = Presence::Value(ReasoningMode::Budgeted);
+        settings.controls.max_output_tokens = Some(2048);
+        request.task.semantic = request
+            .task
+            .semantic
+            .clone()
+            .with_settings(settings)
+            .unwrap();
+        let mut caps = morphiecore::protocol::google::TargetCaps::default();
+        google.representation = caps.clone().into();
+        assert!(google.encode_request(&request).is_err());
+        caps.reasoning_policy = Some(&OFF);
+        google.representation = caps.clone().into();
+        assert!(google.encode_request(&request).is_err());
+        caps.reasoning_policy = Some(&ALLOCATE);
+        google.representation = caps.into();
+        assert_eq!(
+            google.encode_request(&request).unwrap()["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            1024
+        );
     }
 }
