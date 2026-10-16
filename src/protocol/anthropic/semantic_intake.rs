@@ -1,5 +1,5 @@
 //! Explicit block/container intake and Provider/model compatibility association.
-use super::{Block, Media, ResultBlock, ResultContent, Role};
+use super::{Block, Media, ResultBlock, ResultContent, Role, request::text_cache_eligible};
 use crate::protocol::native::ReplayTarget;
 use crate::{
     protocol::{CodecError, fidelity::FidelityRecords},
@@ -210,12 +210,38 @@ pub(super) fn validate_cache(request: &GenerationRequest) -> Result<(), CodecErr
             _ => None,
         })
         .collect::<Vec<_>>();
-    let mut last = None;
+    let mut last = request.tools().last().and_then(|tool| match tool {
+        ToolDefinition::Function(tool) => tool.cache,
+        _ => None,
+    });
+    if request
+        .settings()
+        .instructions
+        .value()
+        .is_some_and(|text| !text.as_str().is_empty())
+    {
+        last = None;
+    }
     for (_, item) in request.items() {
         match item {
-            Item::Instruction(i) => markers.extend(i.parts.iter().filter_map(|p| p.cache)),
+            Item::Instruction(i) => {
+                for part in &i.parts {
+                    if let InputPart::Text(text) = &part.content
+                        && !text_cache_eligible(text.as_str(), part.cache)?
+                    {
+                        continue;
+                    }
+                    markers.extend(part.cache);
+                    last = part.cache;
+                }
+            }
             Item::Message(m) => {
                 for part in &m.parts {
+                    if let ContentPart::Text(text) = &part.content
+                        && !text_cache_eligible(text.as_str(), part.cache)?
+                    {
+                        continue;
+                    }
                     markers.extend(part.cache);
                     last = part.cache;
                 }
@@ -226,7 +252,12 @@ pub(super) fn validate_cache(request: &GenerationRequest) -> Result<(), CodecErr
             }
             Item::ToolResult(r) => {
                 if let ToolOutput::Parts(parts) = &r.output {
-                    markers.extend(parts.iter().filter_map(|p| p.cache));
+                    for part in parts {
+                        if let InputPart::Text(text) = &part.content {
+                            text_cache_eligible(text.as_str(), part.cache)?;
+                        }
+                        markers.extend(part.cache);
+                    }
                 }
                 markers.extend(r.cache);
                 last = r.cache;

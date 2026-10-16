@@ -22,6 +22,8 @@ Goal: complete owner-local content breakpoints and separate automatic prefix-cac
 
 Exit condition: extend existing independent wire oracles for content, nested tool-result and automatic owners, edits, native TTL/count restrictions and incompatible-target rejection. Cover request controls and static/SSE terminal facts without guessing matched sequences. Preserve default binding admission, target-default automatic caching and routing. Run affected targets and the offline baseline; record frozen integration failures and block publication while the baseline fails.
 
+Cache validation repair: reject explicit cache markers on empty text owners, including system and nested tool-result blocks. Automatic placement must skip ineligible trailing blocks before checking TTL conflicts. Extend existing native/client intake and typed-edit encoding assertions; preserve unmarked empty text and the routing freeze.
+
 Selected structures: cache markers travel with their content owner, never a request-level reference table. An absent automatic control preserves target policy. Stop lists normalize absent, permitted null and empty values to no control; nonempty contents and order remain exact. Completion causes are separate from outcome and interaction progress. `logit_bias` and legacy Messages `top_k` remain rejected. Codec support does not activate bindings.
 
 The [Messages gateway smoke](../tests/gateway/anthropic.rs) sends both system-block and tool cache markers. Its success contract requires content-owner support and selected binding admission. Cache codecs do not select binding admission; keep this integration boundary explicit instead of removing fixture markers or restoring silent loss.
@@ -31,6 +33,8 @@ The [Messages gateway smoke](../tests/gateway/anthropic.rs) sends both system-bl
 During this IR/codec migration, do not change route construction, candidate membership/order/selection policy, cache affinity, cooling, failover eligibility, attempt budgets, credentials or public model routing. Do not rank targets by projection loss or add a fallback to hide an unsupported conversion.
 
 The selected [two-file configuration](usage.md#model-configuration) is a narrow exception for explicitly configured existing bindings and their deployment/policy parameters. It does not reopen affinity/cooling algorithms, retry eligibility, public semantic admission, new bindings or frozen-task contracts.
+
+Deferred defect: [credential binding](../src/gateway/startup/config.rs) truncates each pool by the route's per-exchange attempt ceiling before cooling and affinity can reorder candidates. Authorized pool members beyond that ceiling can never be selected. Leave this unchanged during the migration; resolve candidate membership and attempt-budget enforcement together in the later routing-rule review, including selection of healthy tail members after earlier members cool.
 
 IR/codec contracts take priority over keeping the full client-to-gateway-to-Provider chain connected. Existing public admission or topology checks may reject the new codec contract; record the exact incompatible boundary and leave integration disconnected rather than weakening IR or changing routing. Changed codec representability may affect an unchanged policy's result; it does not authorize changing that policy.
 

@@ -467,6 +467,17 @@ impl CacheControl {
         Self::breakpoint_wire(&self.ttl())
     }
 }
+/// Empty text cannot own an explicit or automatic cache breakpoint.
+/// https://platform.claude.com/docs/en/build-with-claude/prompt-caching#what-cannot-be-cached
+pub(super) fn text_cache_eligible(
+    text: &str,
+    cache: Option<PrefixCacheTtl>,
+) -> Result<bool, CodecError> {
+    if text.is_empty() && cache.is_some() {
+        return Err(CodecError::Invalid("Anthropic empty text cache owner"));
+    }
+    Ok(!text.is_empty())
+}
 /// Messages admits four ordered prefix breakpoints; longer TTLs must come first.
 /// https://platform.claude.com/docs/en/build-with-claude/prompt-caching
 pub(super) fn validate_cache_breakpoints(
@@ -605,13 +616,30 @@ impl Request {
             .flatten()
             .filter_map(|tool| tool.cache_control.value().copied())
             .collect::<Vec<_>>();
-        if let Some(TextContent::Blocks(blocks)) = self.system.value() {
-            breakpoints.extend(blocks.iter().filter_map(|b| b.cache));
+        let mut last_cache = self
+            .tools
+            .value()
+            .and_then(|tools| tools.last())
+            .and_then(|tool| tool.cache_control.value().copied());
+        match self.system.value() {
+            Some(TextContent::Text(s)) if !s.is_empty() => last_cache = None,
+            Some(TextContent::Blocks(blocks)) => {
+                for block in blocks {
+                    if text_cache_eligible(&block.content, block.cache)? {
+                        last_cache = block.cache;
+                    }
+                    breakpoints.extend(block.cache);
+                }
+            }
+            _ => {}
         }
-        let mut last_cache = None;
         for message in &self.messages {
             match &message.content {
-                MessageContent::Text(_) => last_cache = None,
+                MessageContent::Text(s) => {
+                    if text_cache_eligible(s, None)? {
+                        last_cache = None;
+                    }
+                }
                 MessageContent::Blocks(blocks) => {
                     for block in blocks {
                         if let Block::ToolResult {
@@ -619,12 +647,19 @@ impl Request {
                             ..
                         } = &block.content
                         {
-                            breakpoints.extend(parts.iter().filter_map(|p| p.cache));
+                            for part in parts {
+                                if let ResultBlock::Text(s) = &part.content {
+                                    text_cache_eligible(s, part.cache)?;
+                                }
+                                breakpoints.extend(part.cache);
+                            }
                         }
-                        if !matches!(
-                            block.content,
-                            Block::Thinking { .. } | Block::RedactedThinking(_)
-                        ) {
+                        let eligible = match &block.content {
+                            Block::Text(s) => text_cache_eligible(s, block.cache)?,
+                            Block::Thinking { .. } | Block::RedactedThinking(_) => false,
+                            _ => true,
+                        };
+                        if eligible {
                             last_cache = block.cache;
                         }
                         breakpoints.extend(block.cache);

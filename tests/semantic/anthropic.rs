@@ -724,6 +724,109 @@ mod anthropic_semantics {
             ])
         );
         assert!(p.decode_request(br#"{"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":[{"type":"text","text":"","cache_control":{"type":"ephemeral"}}]}]}"#).is_err());
+        let empty_wire = json!({
+            "model":"synthetic-model","max_tokens":32,
+            "system":[{"type":"text","text":"stable"},{"type":"text","text":""}],
+            "cache_control":{"type":"ephemeral","ttl":"1h"},
+            "messages":[{"role":"user","content":[
+                {"type":"text","text":"go","cache_control":{"type":"ephemeral","ttl":"1h"}},
+                {"type":"text","text":""}
+            ]}]
+        });
+        let empty = p
+            .decode_generation_request(
+                empty_wire.to_string().as_bytes(),
+                LocalScope::new(1),
+                &target(),
+            )
+            .unwrap();
+        assert!(
+            morphiecore::protocol::anthropic::client::decode_client_request(
+                empty_wire.to_string().as_bytes()
+            )
+            .is_ok()
+        );
+        let encoded = p
+            .encode_generation_request(&empty.semantic, &empty.fidelity, &target())
+            .unwrap();
+        assert_eq!(encoded.value, empty_wire);
+        let reject_empty_cache = |wire: &Value| {
+            let bytes = wire.to_string();
+            let error =
+                morphiecore::protocol::CodecError::Invalid("Anthropic empty text cache owner");
+            assert_eq!(
+                p.decode_request(bytes.as_bytes()).err(),
+                Some(error.clone())
+            );
+            assert_eq!(
+                morphiecore::protocol::anthropic::client::decode_client_request(bytes.as_bytes())
+                    .err(),
+                Some(error)
+            );
+        };
+        let mut cached_empty = empty_wire.clone();
+        cached_empty["messages"][0]["content"][1]["cache_control"] =
+            json!({"type":"ephemeral","ttl":"1h"});
+        reject_empty_cache(&cached_empty);
+        let mut cached_system = empty_wire.clone();
+        cached_system["system"][1]["cache_control"] = json!({"type":"ephemeral","ttl":"1h"});
+        reject_empty_cache(&cached_system);
+        let mut cached_nested: Value = serde_json::from_slice(nested_wire).unwrap();
+        cached_nested["messages"][2]["content"][0]["content"][0]["text"] = json!("");
+        reject_empty_cache(&cached_nested);
+        cached_nested["messages"][2]["content"][0]["content"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("cache_control");
+        assert!(
+            p.decode_generation_request(
+                cached_nested.to_string().as_bytes(),
+                LocalScope::new(1),
+                &target()
+            )
+            .is_ok()
+        );
+        let mut items = manual.items().to_vec();
+        let Item::Message(message) = &mut items[1].1 else {
+            panic!("message owner")
+        };
+        message.parts.push(Part {
+            id: PartId::new(4),
+            content: ContentPart::Text(Text::allowing_empty("", "fixture", 64).unwrap().into()),
+            cache: Some(PrefixCacheTtl::FiveMinutes),
+        });
+        let cached_edit = manual.clone().with_items(items).unwrap();
+        assert_eq!(
+            p.encode_generation_request(&cached_edit, &Default::default(), &target())
+                .err(),
+            Some(morphiecore::protocol::CodecError::Invalid(
+                "Anthropic empty text cache owner"
+            ))
+        );
+        let mut automatic_conflict = empty_wire.clone();
+        automatic_conflict["cache_control"]["ttl"] = json!("5m");
+        let conflict_error =
+            morphiecore::protocol::CodecError::Invalid("Anthropic automatic cache TTL conflict");
+        assert_eq!(
+            p.decode_request(automatic_conflict.to_string().as_bytes())
+                .err(),
+            Some(conflict_error.clone())
+        );
+        assert_eq!(
+            morphiecore::protocol::anthropic::client::decode_client_request(
+                automatic_conflict.to_string().as_bytes()
+            )
+            .err(),
+            Some(conflict_error.clone())
+        );
+        let mut settings = empty.semantic.settings().clone();
+        settings.automatic_prefix_cache = Some(PrefixCacheTtl::FiveMinutes);
+        let conflict_edit = empty.semantic.clone().with_settings(settings).unwrap();
+        assert_eq!(
+            p.encode_generation_request(&conflict_edit, &empty.fidelity, &target())
+                .err(),
+            Some(conflict_error)
+        );
         let cached_wire = br#"{"model":"synthetic-model","max_tokens":32,"tools":[{"name":"lookup","input_schema":{"type":"object"},"cache_control":{"type":"ephemeral","ttl":"1h"}}],"messages":[{"role":"user","content":"go"}]}"#;
         let cached = p
             .decode_generation_request(cached_wire, LocalScope::new(1), &target())
