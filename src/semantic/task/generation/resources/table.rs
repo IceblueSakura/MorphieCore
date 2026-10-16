@@ -137,8 +137,8 @@ impl ResourceTable {
                 },
                 _ => None,
             };
-            for (_, part) in parts.unwrap_or_default() {
-                if let InputPart::Resource(value) = part {
+            for part in parts.unwrap_or_default() {
+                if let InputPart::Resource(value) = &part.content {
                     ids.insert(value.id);
                 }
             }

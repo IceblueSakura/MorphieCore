@@ -11,6 +11,7 @@ pub use decoded::{CodecError, DecodedRequest, DecodedResponse, ResponseMetadata,
 pub mod extensions;
 pub mod fidelity;
 pub mod file_constraints;
+mod generation_controls;
 pub mod google;
 pub mod image_constraints;
 pub mod interactions;

@@ -115,6 +115,26 @@ fn stream_maps_thoughts_text_calls_and_anchored_signatures() {
     );
     let observed = decode(&wire(&frames())).unwrap();
     assert_eq!(observed.metadata.id.as_deref(), Some("resp-1"));
+    assert_eq!(
+        observed.semantic.details().completion,
+        Some(CompletionCause::NaturalOrStopSequence)
+    );
+    assert!(
+        Adapter::new(Profile::Chat, Dialect::MorphieCore, None)
+            .encode_response(
+                &observed,
+                &morphiecore::protocol::openai::TargetCaps::full()
+            )
+            .is_err()
+    );
+    assert!(
+        Adapter::new(Profile::Responses, Dialect::MorphieCore, None)
+            .encode_response(
+                &observed,
+                &morphiecore::protocol::openai::TargetCaps::full()
+            )
+            .is_err()
+    );
     assert_eq!(observed.metadata.created, None);
     let items = observed.semantic.items();
     assert_eq!(items.len(), 5);
@@ -248,6 +268,7 @@ fn next_request(observed: &DecodedResponse) -> GenerationRequest {
             ItemId::scoped(LocalScope::new(3), n),
             Item::ToolResult(ToolResult {
                 call_id: Some(Text::new(call, "call", 64).unwrap()),
+                cache: None,
                 name: None,
                 output: output.into(),
                 is_error: error.then_some(true),
@@ -396,6 +417,71 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
     }
     .into();
     assert_eq!(endpoint.encode_request_with_rules(&source).unwrap().0, body);
+    let mut controlled = source.task.semantic.settings().clone();
+    controlled.controls.top_k = Some(4);
+    controlled.controls.seed = Some(0);
+    controlled.controls.stop_sequences = vec![Text::new("END", "fixture", 64).unwrap()];
+    controlled.controls = controlled
+        .controls
+        .with_presence_penalty(0.25)
+        .unwrap()
+        .with_frequency_penalty(-0.5)
+        .unwrap();
+    let controlled = source
+        .task
+        .semantic
+        .clone()
+        .with_settings(controlled.clone())
+        .unwrap();
+    let (wire, _) =
+        encode_generation_request(&controlled, &source.task.fidelity, &target()).unwrap();
+    assert_eq!(
+        wire["generationConfig"],
+        json!({
+            "responseMimeType":"application/json","responseJsonSchema":schema,
+            "responseLogprobs":true,"logprobs":1,
+            "topK":4,"seed":0,"stopSequences":["END"],"presencePenalty":0.25,"frequencyPenalty":-0.5
+        })
+    );
+    assert!(
+        morphiecore::protocol::google::semantic_contract()
+            .check(&controlled)
+            .is_err()
+    );
+    assert!(
+        morphiecore::protocol::interactions::encode_generation_request(
+            &controlled,
+            &source.task.fidelity,
+            &target()
+        )
+        .is_err()
+    );
+    let mut invalid_controls = controlled.settings().clone();
+    invalid_controls.controls.seed = Some(i64::from(i32::MAX) + 1);
+    let out_of_range = controlled
+        .clone()
+        .with_settings(invalid_controls.clone())
+        .unwrap();
+    assert!(encode_generation_request(&out_of_range, &source.task.fidelity, &target()).is_err());
+    assert_eq!(out_of_range.controls().seed, Some(i64::from(i32::MAX) + 1));
+    invalid_controls.controls.seed = Some(i64::from(i32::MIN));
+    let signed = controlled
+        .clone()
+        .with_settings(invalid_controls.clone())
+        .unwrap();
+    assert_eq!(
+        encode_generation_request(&signed, &source.task.fidelity, &target())
+            .unwrap()
+            .0["generationConfig"]["seed"],
+        i32::MIN
+    );
+    invalid_controls.controls.top_k = Some(0);
+    assert!(controlled.clone().with_settings(invalid_controls).is_err());
+    assert!(
+        GenerationControls::default()
+            .with_presence_penalty(f64::NAN)
+            .is_err()
+    );
     let mut settings = source.task.semantic.settings().clone();
     let morphiecore::semantic::value::Presence::Value(OutputConstraint::JsonSchema {
         schema, ..

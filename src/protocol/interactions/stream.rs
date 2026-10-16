@@ -627,6 +627,7 @@ impl GenerationSseDecoder {
                 details: TerminalDetails {
                     error: None,
                     incomplete,
+                    completion: None,
                 },
             },
             out,

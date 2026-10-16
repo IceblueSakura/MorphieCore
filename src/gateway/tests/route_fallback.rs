@@ -157,6 +157,7 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
             policy: RoutePolicy {
                 fallback: policy,
                 max_attempts,
+                total_timeout_ms: (status == 1).then_some(50),
                 ..RoutePolicy::default()
             },
         };
@@ -200,11 +201,7 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
             credentials,
             SecretMaterial::new(crate::gateway::tests::support::KEY).unwrap(),
             Limits {
-                exchange_timeout: std::time::Duration::from_millis(if status == 1 {
-                    50
-                } else {
-                    3000
-                }),
+                exchange_timeout: std::time::Duration::from_millis(3000),
                 ..Limits::default()
             },
             None,

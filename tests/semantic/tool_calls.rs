@@ -115,8 +115,8 @@ mod tools {
                 unreachable!()
             };
             result.output = ToolOutput::Parts(vec![
-                (PartId::new(900), InputPart::Text(text("replacement"))),
-                (PartId::new(901), InputPart::Text(text("inserted"))),
+                Part::new(PartId::new(900), InputPart::Text(text("replacement"))),
+                Part::new(PartId::new(901), InputPart::Text(text("inserted"))),
             ]);
             decoded.semantic = decoded.semantic.with_items(items).unwrap();
             assert_eq!(
@@ -213,6 +213,7 @@ mod tools {
         let empty = Text::allowing_empty("", "fixture", 1).unwrap();
         let call = Item::ToolCall(ToolCall {
             call_id: empty.clone(),
+            cache: None,
             name: text("f"),
             arguments: "{}".into(),
             status: ItemLifecycle::Completed,
@@ -230,6 +231,7 @@ mod tools {
             parameters: None,
             strict: FunctionStrictness::Explicit(false),
             dispatch: ToolDispatch::default(),
+            cache: None,
         });
         assert!(
             d.semantic
@@ -522,6 +524,7 @@ mod tool_results {
             ItemId::new(1),
             Item::ToolCall(ToolCall {
                 call_id: text("c"),
+                cache: None,
                 name: text("lookup"),
                 arguments: "{}".into(),
                 status: ItemLifecycle::Completed,
@@ -573,6 +576,7 @@ mod tool_results {
                     Item::ToolResult(ToolResult {
                         is_error: None,
                         execution,
+                        cache: None,
                         call_id: Some(text("c")),
                         name: None,
                         output: output.value,
@@ -594,8 +598,8 @@ mod tool_results {
     fn media(url: &str) -> Payload {
         (
             ToolOutput::Parts(vec![
-                (PartId::new(10), InputPart::Text(text("caption"))),
-                (PartId::new(11), InputPart::Resource(resources::image(1))),
+                Part::new(PartId::new(10), InputPart::Text(text("caption"))),
+                Part::new(PartId::new(11), InputPart::Resource(resources::image(1))),
             ]),
             vec![(1, image(url))],
         )
@@ -648,8 +652,8 @@ mod tool_results {
             panic!("parts")
         };
         assert_eq!(result.required_call_id().unwrap(), "c");
-        assert!(matches!(&parts[0].1, InputPart::Text(t) if t.as_str() == "caption"));
-        let InputPart::Resource(resource) = &parts[1].1 else {
+        assert!(matches!(&parts[0].content, InputPart::Text(t) if t.as_str() == "caption"));
+        let InputPart::Resource(resource) = &parts[1].content else {
             panic!("image")
         };
         let view = resource.media(decoded.semantic.resources()).unwrap();
@@ -683,8 +687,8 @@ mod tool_results {
         assert!(
             request(
                 ToolOutput::Parts(vec![
-                    (PartId::new(10), InputPart::Text(text("one"))),
-                    (PartId::new(10), InputPart::Text(text("two")))
+                    Part::new(PartId::new(10), InputPart::Text(text("one"))),
+                    Part::new(PartId::new(10), InputPart::Text(text("two")))
                 ]),
                 None
             )
@@ -696,7 +700,7 @@ mod tool_results {
         assert!(
             request(
                 (
-                    ToolOutput::Parts(vec![(
+                    ToolOutput::Parts(vec![Part::new(
                         PartId::new(10),
                         InputPart::Resource(resources::image(1))
                     )]),
@@ -749,6 +753,7 @@ mod tool_result_errors {
                     ItemId::new(1),
                     Item::ToolCall(ToolCall {
                         call_id: text("c"),
+                        cache: None,
                         name: text("lookup"),
                         arguments: "{}".into(),
                         status: ItemLifecycle::Completed,
@@ -761,6 +766,7 @@ mod tool_result_errors {
                         call_id: Some(text("c")),
                         name: None,
                         output: "actual feedback".into(),
+                        cache: None,
                         is_error,
                         execution,
                         status: None,
@@ -1241,6 +1247,7 @@ mod turn_continuation {
             ItemId::new(id),
             Item::ToolCall(ToolCall {
                 call_id: text(name),
+                cache: None,
                 name: text("lookup"),
                 arguments: "{}".into(),
                 status: ItemLifecycle::Completed,
@@ -1255,6 +1262,7 @@ mod turn_continuation {
                 is_error: None,
                 execution: None,
                 call_id: Some(text(call_id)),
+                cache: None,
                 name: None,
                 output: "done".into(),
                 status: Some(status),
@@ -1371,6 +1379,7 @@ mod reported_tool_results {
                     Item::ToolResult(ToolResult {
                         call_id: Some(text("c")),
                         name: Some(text("lookup")),
+                        cache: None,
                         output: "42".into(),
                         status: Some(ItemLifecycle::Completed),
                         is_error: None,
@@ -1382,10 +1391,11 @@ mod reported_tool_results {
                     ItemId::new(2),
                     Item::CustomResult(ToolResult {
                         call_id: Some(text("custom")),
+                        cache: None,
                         name: None,
                         output: ToolOutput::Parts(vec![
-                            (PartId::new(1), InputPart::Text(text("caption"))),
-                            (
+                            Part::new(PartId::new(1), InputPart::Text(text("caption"))),
+                            Part::new(
                                 PartId::new(2),
                                 InputPart::Resource(crate::resources_support::image(1)),
                             ),
@@ -1461,6 +1471,7 @@ mod reported_tool_results {
                 ItemId::new(3),
                 Item::ToolCall(ToolCall {
                     call_id: text("c"),
+                    cache: None,
                     name: text("lookup"),
                     arguments: "{}".into(),
                     status: ItemLifecycle::Completed,

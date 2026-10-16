@@ -41,6 +41,23 @@ pub fn lower_request<'a>(
     }
     let r = semantic.as_ref();
     let q = check(r, c.clone())?;
+    if r.controls().top_k.is_some()
+        || profile == Profile::Responses && r.controls().has_extended_controls()
+        || profile == Profile::Chat
+            && (r.controls().stop_sequences.len() > 4
+                || [
+                    r.controls().presence_penalty(),
+                    r.controls().frequency_penalty(),
+                ]
+                .into_iter()
+                .flatten()
+                .any(|v| !(-2.0..=2.0).contains(&v)))
+    {
+        return Err(RepresentationError::Controls);
+    }
+    if q.automatic_prefix_cache {
+        return Err(RepresentationError::Controls);
+    }
     if q.tool_result_errors {
         return Err(RepresentationError::Tools);
     }
@@ -177,6 +194,9 @@ pub fn lower_request<'a>(
             return Err(RepresentationError::Tools);
         }
         if let ToolDefinition::Function(t) = tool {
+            if t.cache.is_some() {
+                return Err(RepresentationError::Controls);
+            }
             if matches!(t.strict, FunctionStrictness::Omitted(d) if d != expected_default) {
                 return Err(RepresentationError::StrictDefault);
             }
@@ -192,11 +212,14 @@ pub fn lower_request<'a>(
         return Err(RepresentationError::Tools);
     }
     for (_, item) in r.items() {
+        if item.has_cache_breakpoints() {
+            return Err(RepresentationError::Controls);
+        }
         let parts: Vec<_> = match item {
-            Item::Instruction(i) => i.parts.iter().map(|(id, _)| *id).collect(),
+            Item::Instruction(i) => i.parts.iter().map(|p| p.id).collect(),
             Item::Message(m) => m.parts.iter().map(|p| p.id).collect(),
             Item::ToolResult(r) | Item::CustomResult(r) => match &r.output {
-                ToolOutput::Parts(p) => p.iter().map(|(id, _)| *id).collect(),
+                ToolOutput::Parts(p) => p.iter().map(|p| p.id).collect(),
                 _ => vec![],
             },
             _ => vec![],
@@ -288,6 +311,12 @@ pub fn lower_response<'a>(
     profile: Profile,
     c: TargetCaps,
 ) -> Result<ResponseRepresentation<'a>, RepresentationError> {
+    crate::protocol::openai::terminal::check_completion(
+        r.details(),
+        profile,
+        matches!(r.continuation(), Continuation::ToolResults(_)),
+    )
+    .map_err(|_| RepresentationError::Terminal)?;
     metadata
         .context
         .validate()
@@ -660,8 +689,8 @@ fn text_items(
         if matches!(i, Item::ToolResult(result) | Item::CustomResult(result)
             if result.execution.is_some() || result.is_error.is_some() || matches!(result.output, ToolOutput::Structured(_))
                 || profile == Profile::Chat && !result.output.is_text_only()
-                || matches!(&result.output, ToolOutput::Parts(parts) if parts.iter().any(|(_, part)|
-                    matches!(part, InputPart::Resource(r) if r.media(resources).is_ok_and(|r|
+                || matches!(&result.output, ToolOutput::Parts(parts) if parts.iter().any(|part|
+                    matches!(&part.content, InputPart::Resource(r) if r.media(resources).is_ok_and(|r|
                         matches!(r.kind(), ResourceKind::Audio | ResourceKind::Video))))))
         {
             return Err(RepresentationError::Tools);

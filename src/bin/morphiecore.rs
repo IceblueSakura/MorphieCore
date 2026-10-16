@@ -1,6 +1,6 @@
 //! Minimal loopback bootstrap; startup never prints credential values.
 use clap::Parser;
-use morphiecore::credential::{CredentialError, default_config_directory, resolve_store_directory};
+use morphiecore::credential::{CredentialError, default_config_directory};
 use morphiecore::gateway::startup::bootstrap::Bootstrap;
 #[derive(Parser)]
 struct Options {
@@ -15,8 +15,8 @@ struct Options {
     proxy: Option<String>,
 }
 impl Options {
-    fn paths(self) -> Result<(std::path::PathBuf, std::path::PathBuf), CredentialError> {
-        let directory = resolve_store_directory(self.credentials_dir)?;
+    fn paths(self) -> Result<(Option<std::path::PathBuf>, std::path::PathBuf), CredentialError> {
+        let directory = self.credentials_dir;
         let config = match self.config {
             Some(path) => path,
             None => default_config_directory()?.join("gateway.json"),
@@ -48,7 +48,7 @@ async fn main() -> std::process::ExitCode {
             return std::process::ExitCode::FAILURE;
         }
     };
-    let bootstrap = match Bootstrap::from_files_with_proxy(&config, &directory, proxy.as_deref()) {
+    let bootstrap = match Bootstrap::from_options(&config, directory.as_deref(), proxy.as_deref()) {
         Ok(value) => value,
         Err(error) => {
             eprintln!("MorphieCore startup failed: {error}");
@@ -87,14 +87,14 @@ mod tests {
 
     #[test]
     fn credentials_directory_is_optional_and_overrides_keep_config_independent() {
-        let default_store = resolve_store_directory(None).unwrap();
+        let default_store = morphiecore::credential::resolve_store_directory(None).unwrap();
         let default_config = default_store.parent().unwrap().join("gateway.json");
         assert_eq!(
             Options::try_parse_from(["morphiecore"])
                 .unwrap()
                 .paths()
                 .unwrap(),
-            (default_store.clone(), default_config.clone())
+            (None, default_config.clone())
         );
         assert!(
             Options::try_parse_from(["morphiecore"])
@@ -107,7 +107,10 @@ mod tests {
                 .unwrap()
                 .paths()
                 .unwrap();
-        assert_eq!(selected, (PathBuf::from("selected-store"), default_config));
+        assert_eq!(
+            selected,
+            (Some(PathBuf::from("selected-store")), default_config)
+        );
         let selected = Options::try_parse_from([
             "morphiecore",
             "--credentials-dir",
@@ -121,7 +124,7 @@ mod tests {
         assert_eq!(
             selected,
             (
-                PathBuf::from("selected-store"),
+                Some(PathBuf::from("selected-store")),
                 PathBuf::from("separate-gateway.json")
             )
         );
@@ -130,7 +133,7 @@ mod tests {
                 .unwrap()
                 .paths()
                 .unwrap(),
-            (default_store, PathBuf::from("separate-gateway.json"))
+            (None, PathBuf::from("separate-gateway.json"))
         );
     }
 }

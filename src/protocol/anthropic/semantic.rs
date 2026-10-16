@@ -54,8 +54,16 @@ impl Profile {
             return Err(CodecError::Unsupported("native streaming mapping".into()));
         }
         let mut intake = Intake::new(scope);
-        let mut settings = GenerationSettings::default();
+        let mut settings = GenerationSettings {
+            automatic_prefix_cache: wire.cache_control.value().map(|c| c.ttl()),
+            ..Default::default()
+        };
         settings.controls.max_output_tokens = Some(wire.max_tokens);
+        settings.controls.stop_sequences = wire
+            .stop_sequences
+            .iter()
+            .map(|s| text(s))
+            .collect::<Result<_, _>>()?;
         match &wire.system {
             Presence::Value(WireText::Text(s)) => settings.instructions = Presence::Value(text(s)?),
             Presence::Value(WireText::Blocks(parts)) => {
@@ -71,10 +79,11 @@ impl Profile {
                             .iter()
                             .enumerate()
                             .map(|(i, s)| {
-                                Ok((
-                                    PartId::scoped(scope, i as u64 + 1),
-                                    InputPart::Text(text(s)?),
-                                ))
+                                Ok(Part {
+                                    id: PartId::scoped(scope, i as u64 + 1),
+                                    content: InputPart::Text(text(&s.content)?),
+                                    cache: s.cache,
+                                })
                             })
                             .collect::<Result<_, CodecError>>()?,
                     }),
@@ -97,6 +106,7 @@ impl Profile {
                             ),
                             output_schema: None,
                             dispatch: Default::default(),
+                            cache: t.cache_control.value().copied(),
                         }))
                     })
                     .collect::<Result<_, CodecError>>()?,
@@ -132,7 +142,7 @@ impl Profile {
                 MessageContent::Text(s) => {
                     intake.message(message.role, &[Block::Text(s.clone())])?
                 }
-                MessageContent::Blocks(blocks) => intake.message(message.role, blocks)?,
+                MessageContent::Blocks(blocks) => intake.request_message(message.role, blocks)?,
             }
         }
         let semantic = GenerationRequest::from_resources(intake.items, settings, intake.resources)?
@@ -166,8 +176,7 @@ impl Profile {
         }
         let mut intake = Intake::new(scope);
         intake.message(Role::Assistant, &wire.content)?;
-        let (outcome, progress, details) =
-            outcome(*wire.stop_reason.value().expect("validated stop"));
+        let (outcome, progress, details) = outcome(&wire)?;
         let usage = usage(&wire.usage);
         let semantic = GenerationResponse::new(intake.items, outcome)?
             .with_message_envelopes(intake.groups)?
@@ -263,7 +272,7 @@ impl Profile {
             .into_iter()
             .flatten()
             .collect();
-        let stop_reason = match (response.semantic.outcome(), response.semantic.progress()) {
+        let mut stop_reason = match (response.semantic.outcome(), response.semantic.progress()) {
             (Outcome::Completed, InteractionProgress::TurnFinished) => super::StopReason::EndTurn,
             (Outcome::Completed, InteractionProgress::AwaitingToolResults) => {
                 super::StopReason::ToolUse
@@ -275,6 +284,17 @@ impl Profile {
                 super::StopReason::MaxTokens
             }
             _ => return Err(unsupported()),
+        };
+        let stop_sequence = match &response.semantic.details().completion {
+            Some(CompletionCause::StopSequence(text))
+                if stop_reason == super::StopReason::EndTurn =>
+            {
+                stop_reason = super::StopReason::StopSequence;
+                Presence::Value(text.as_str().to_owned())
+            }
+            Some(CompletionCause::NaturalOrStopSequence) => return Err(unsupported()),
+            Some(_) if stop_reason != super::StopReason::EndTurn => return Err(unsupported()),
+            _ => Presence::Null,
         };
         let usage = response.semantic.usage().ok_or_else(unsupported)?;
         let mut selected = Usage::operation(0, 0, 0);
@@ -293,7 +313,7 @@ impl Profile {
             model: target.model().into(),
             content,
             stop_reason: Presence::Value(stop_reason),
-            stop_sequence: Presence::Null,
+            stop_sequence,
             usage: super::Usage {
                 input_tokens: usage.input_tokens.map_or(Presence::Absent, Presence::Value),
                 output_tokens: usage.output_tokens.ok_or_else(unsupported)?,
@@ -332,8 +352,14 @@ pub(super) fn output_settings(config: &super::OutputConfig, settings: &mut Gener
         });
     }
 }
-pub(super) fn outcome(stop: super::StopReason) -> (Outcome, InteractionProgress, TerminalDetails) {
-    match stop {
+pub(super) fn outcome(
+    message: &super::Message,
+) -> Result<(Outcome, InteractionProgress, TerminalDetails), CodecError> {
+    let stop = *message
+        .stop_reason
+        .value()
+        .ok_or(CodecError::Invalid("native stop"))?;
+    let (outcome, progress, mut details) = match stop {
         super::StopReason::EndTurn | super::StopReason::StopSequence => (
             Outcome::Completed,
             InteractionProgress::TurnFinished,
@@ -350,6 +376,7 @@ pub(super) fn outcome(stop: super::StopReason) -> (Outcome, InteractionProgress,
             TerminalDetails {
                 incomplete: Some(IncompleteReason::MaxOutputTokens),
                 error: None,
+                completion: None,
             },
         ),
         super::StopReason::Refusal => (
@@ -358,9 +385,21 @@ pub(super) fn outcome(stop: super::StopReason) -> (Outcome, InteractionProgress,
             TerminalDetails {
                 incomplete: Some(IncompleteReason::ContentFilter),
                 error: None,
+                completion: None,
             },
         ),
-    }
+    };
+    details.completion = match stop {
+        super::StopReason::EndTurn => Some(CompletionCause::Natural),
+        super::StopReason::StopSequence => Some(CompletionCause::StopSequence(text(
+            message
+                .stop_sequence
+                .value()
+                .ok_or(CodecError::Invalid("native stop sequence"))?,
+        )?)),
+        _ => None,
+    };
+    Ok((outcome, progress, details))
 }
 pub(super) fn usage(wire: &super::Usage) -> Usage {
     let mut usage = Usage::operation(0, 0, 0);

@@ -7,17 +7,47 @@ use super::{
 use crate::{
     protocol::CodecError,
     semantic::{
-        task::generation::{MAX_TOOLS, SchemaDocument},
+        task::generation::{MAX_TOOLS, PrefixCacheTtl, SchemaDocument},
         value::Presence,
     },
 };
 use serde_json::{Map, Value, json};
 use std::collections::BTreeSet;
 
+/// A request-local owner, independent of the response block representation.
+#[derive(Clone, Eq, PartialEq)]
+pub struct CacheMarked<T> {
+    pub content: T,
+    pub cache: Option<PrefixCacheTtl>,
+}
+impl<T> CacheMarked<T> {
+    pub(super) fn read(
+        value: &Value,
+        read: impl FnOnce(&Value) -> Result<T, CodecError>,
+    ) -> Result<Self, CodecError> {
+        let cache = presence(
+            object(value)?,
+            "cache_control",
+            CacheControl::read_breakpoint,
+        )?;
+        nonnull(&cache)?;
+        Ok(Self {
+            content: read(value)?,
+            cache: cache.value().copied(),
+        })
+    }
+    pub(super) fn wire(&self, encode: impl FnOnce(&T) -> Value) -> Value {
+        let mut value = encode(&self.content);
+        if let Some(ttl) = self.cache {
+            value["cache_control"] = CacheControl::breakpoint_wire(&ttl);
+        }
+        value
+    }
+}
 #[derive(Clone, Eq, PartialEq)]
 pub enum TextContent {
     Text(String),
-    Blocks(Vec<String>),
+    Blocks(Vec<CacheMarked<String>>),
 }
 impl TextContent {
     pub(super) fn read(v: &Value) -> Result<Self, CodecError> {
@@ -28,12 +58,14 @@ impl TextContent {
             list(v)?
                 .iter()
                 .map(|v| {
-                    let o = closed(v, &["type", "text", "citations"])?;
-                    uncited(o)?;
-                    if required(o, "type")?.as_str() != Some("text") {
-                        return Err(CodecError::Unsupported("Anthropic text content".into()));
-                    }
-                    string(required(o, "text")?)
+                    CacheMarked::read(v, |v| {
+                        let o = closed(v, &["type", "text", "citations", "cache_control"])?;
+                        uncited(o)?;
+                        if required(o, "type")?.as_str() != Some("text") {
+                            return Err(CodecError::Unsupported("Anthropic text content".into()));
+                        }
+                        string(required(o, "text")?)
+                    })
                 })
                 .collect::<Result<_, _>>()?,
         ))
@@ -45,7 +77,10 @@ impl TextContent {
             Self::Blocks(a) => {
                 count(a.len())?;
                 for s in a {
-                    charge(&mut n, text(s)?)?;
+                    charge(
+                        &mut n,
+                        text(&s.content)? + usize::from(s.cache.is_some()) * 32,
+                    )?;
                 }
             }
         }
@@ -54,7 +89,7 @@ impl TextContent {
     pub(super) fn nodes(&self) -> usize {
         match self {
             Self::Text(_) => 1,
-            Self::Blocks(a) => 1 + a.len() * 5,
+            Self::Blocks(a) => 1 + a.len() * 10,
         }
     }
     pub(super) fn wire(&self) -> Value {
@@ -62,7 +97,7 @@ impl TextContent {
             Self::Text(s) => json!(s),
             Self::Blocks(a) => json!(
                 a.iter()
-                    .map(|s| json!({"type":"text","text":s}))
+                    .map(|s| s.wire(|s| json!({"type":"text","text":s})))
                     .collect::<Vec<_>>()
             ),
         }
@@ -91,7 +126,7 @@ impl Role {
 #[derive(Clone, Eq, PartialEq)]
 pub enum MessageContent {
     Text(String),
-    Blocks(Vec<Block>),
+    Blocks(Vec<CacheMarked<Block>>),
 }
 #[derive(Clone, Eq, PartialEq)]
 pub struct InputMessage {
@@ -110,28 +145,43 @@ impl InputMessage {
                 MessageContent::Blocks(
                     list(content)?
                         .iter()
-                        .map(Block::read)
+                        .map(|v| CacheMarked::read(v, Block::read))
                         .collect::<Result<_, _>>()?,
                 )
             },
         })
     }
     fn bytes(&self) -> Result<usize, CodecError> {
+        let mut has_content = false;
         let bytes = match &self.content {
-            MessageContent::Text(s) => text(s)?,
+            MessageContent::Text(s) => {
+                has_content = !s.is_empty();
+                text(s)?
+            }
             MessageContent::Blocks(a) => {
                 count(a.len())?;
                 let mut bytes = 0;
                 for block in a {
-                    if !block.permits(self.role) {
+                    if !block.content.permits(self.role)
+                        || block.cache.is_some()
+                            && matches!(
+                                block.content,
+                                Block::Thinking { .. } | Block::RedactedThinking(_)
+                            )
+                    {
                         return Err(CodecError::Invalid("Anthropic block role"));
                     }
-                    charge(&mut bytes, block.bytes(false)?)?;
+                    let content_bytes = block.content.bytes(false)?;
+                    has_content |= content_bytes > 0;
+                    charge(
+                        &mut bytes,
+                        content_bytes + usize::from(block.cache.is_some()) * 32,
+                    )?;
                 }
                 bytes
             }
         };
-        if bytes == 0 {
+        if !has_content {
             return Err(CodecError::Invalid("Anthropic empty message"));
         }
         Ok(bytes)
@@ -139,7 +189,9 @@ impl InputMessage {
     fn wire(&self) -> Value {
         let content = match &self.content {
             MessageContent::Text(s) => json!(s),
-            MessageContent::Blocks(a) => json!(a.iter().map(Block::wire).collect::<Vec<_>>()),
+            MessageContent::Blocks(a) => {
+                json!(a.iter().map(|b| b.wire(Block::wire)).collect::<Vec<_>>())
+            }
         };
         json!({"role":self.role.wire(),"content":content})
     }
@@ -150,25 +202,40 @@ pub struct Tool {
     pub description: Presence<String>,
     pub input_schema: SchemaDocument,
     pub strict: Presence<bool>,
+    pub cache_control: Presence<PrefixCacheTtl>,
 }
 impl Tool {
     pub(super) fn read(v: &Value) -> Result<Self, CodecError> {
-        let o = closed(v, &["name", "description", "input_schema", "strict"])?;
+        let o = closed(
+            v,
+            &[
+                "name",
+                "description",
+                "input_schema",
+                "strict",
+                "cache_control",
+            ],
+        )?;
         Ok(Self {
             name: string(required(o, "name")?)?,
             description: presence(o, "description", string)?,
             input_schema: required(o, "input_schema")?.clone().into(),
             strict: presence(o, "strict", boolean)?,
+            cache_control: presence(o, "cache_control", CacheControl::read_breakpoint)?,
         })
     }
     pub(super) fn bytes(&self) -> Result<usize, CodecError> {
         name(&self.name, 128)?;
         nonnull(&self.description)?;
         nonnull(&self.strict)?;
+        nonnull(&self.cache_control)?;
         if self.input_schema.root().get("type").and_then(Value::as_str) != Some("object") {
             return Err(CodecError::Unsupported("Anthropic object schema".into()));
         }
         let mut bytes = self.input_schema.validate()?;
+        if self.cache_control.value().is_some() {
+            charge(&mut bytes, 32)?;
+        }
         charge(&mut bytes, self.name.len())?;
         if let Presence::Value(s) = &self.description {
             charge(&mut bytes, text(s)?)?;
@@ -180,6 +247,12 @@ impl Tool {
         let o = v.as_object_mut().expect("object");
         put(o, "description", &self.description, |s| json!(s));
         put(o, "strict", &self.strict, |b| json!(b));
+        put(
+            o,
+            "cache_control",
+            &self.cache_control,
+            CacheControl::breakpoint_wire,
+        );
         v
     }
 }
@@ -354,23 +427,96 @@ impl OutputConfig {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CacheControl {
     Ephemeral,
+    OneHour,
 }
 impl CacheControl {
-    fn read(v: &Value) -> Result<Self, CodecError> {
-        let o = closed(v, &["type"])?;
-        match required(o, "type")?.as_str() {
-            Some("ephemeral") => Ok(Self::Ephemeral),
-            _ => Err(CodecError::Unsupported("Anthropic cache control".into())),
+    pub(super) fn read_breakpoint(v: &Value) -> Result<PrefixCacheTtl, CodecError> {
+        let o = closed(v, &["type", "ttl"])?;
+        if required(o, "type")?.as_str() != Some("ephemeral") {
+            return Err(CodecError::Unsupported("Anthropic cache type".into()));
+        }
+        match o.get("ttl") {
+            None => Ok(PrefixCacheTtl::FiveMinutes),
+            Some(Value::String(ttl)) if ttl == "5m" => Ok(PrefixCacheTtl::FiveMinutes),
+            Some(Value::String(ttl)) if ttl == "1h" => Ok(PrefixCacheTtl::OneHour),
+            _ => Err(CodecError::Invalid("Anthropic cache TTL")),
+        }
+    }
+    fn breakpoint_wire(ttl: &PrefixCacheTtl) -> Value {
+        match ttl {
+            PrefixCacheTtl::FiveMinutes => json!({"type":"ephemeral"}),
+            PrefixCacheTtl::OneHour => json!({"type":"ephemeral","ttl":"1h"}),
+        }
+    }
+    pub(super) fn read(v: &Value) -> Result<Self, CodecError> {
+        Ok(Self::from_ttl(Self::read_breakpoint(v)?))
+    }
+    pub(super) fn from_ttl(ttl: PrefixCacheTtl) -> Self {
+        match ttl {
+            PrefixCacheTtl::FiveMinutes => Self::Ephemeral,
+            PrefixCacheTtl::OneHour => Self::OneHour,
+        }
+    }
+    pub(super) fn ttl(self) -> PrefixCacheTtl {
+        match self {
+            Self::Ephemeral => PrefixCacheTtl::FiveMinutes,
+            Self::OneHour => PrefixCacheTtl::OneHour,
         }
     }
     fn wire(self) -> Value {
-        json!({"type":"ephemeral"})
+        Self::breakpoint_wire(&self.ttl())
     }
+}
+/// Messages admits four ordered prefix breakpoints; longer TTLs must come first.
+/// https://platform.claude.com/docs/en/build-with-claude/prompt-caching
+pub(super) fn validate_cache_breakpoints(
+    ttls: impl IntoIterator<Item = PrefixCacheTtl>,
+) -> Result<(), CodecError> {
+    let ttls = ttls.into_iter();
+    let mut short = false;
+    for (index, ttl) in ttls.enumerate() {
+        if index >= 4 {
+            return Err(CodecError::Limit);
+        }
+        match ttl {
+            PrefixCacheTtl::FiveMinutes => short = true,
+            PrefixCacheTtl::OneHour if short => {
+                return Err(CodecError::Invalid("Anthropic cache TTL order"));
+            }
+            PrefixCacheTtl::OneHour => {}
+        }
+    }
+    Ok(())
+}
+pub(super) fn validate_automatic_cache(
+    breakpoints: &mut Vec<PrefixCacheTtl>,
+    last_cache: Option<PrefixCacheTtl>,
+    automatic: Option<PrefixCacheTtl>,
+) -> Result<(), CodecError> {
+    if let Some(ttl) = automatic {
+        // The API rejects four explicit markers with automatic caching enabled,
+        // independently of its same-TTL placement no-op.
+        // https://platform.claude.com/docs/en/build-with-claude/prompt-caching#automatic-caching
+        if breakpoints.len() >= 4 {
+            return Err(CodecError::Limit);
+        }
+        match last_cache {
+            Some(last) if last != ttl => {
+                return Err(CodecError::Invalid(
+                    "Anthropic automatic cache TTL conflict",
+                ));
+            }
+            Some(_) => {}
+            None => breakpoints.push(ttl),
+        }
+    }
+    validate_cache_breakpoints(breakpoints.iter().copied())
 }
 #[derive(Clone, Eq, PartialEq)]
 pub struct Request {
     pub model: String,
     pub max_tokens: u64,
+    pub stop_sequences: Vec<String>,
     pub messages: Vec<InputMessage>,
     pub system: Presence<TextContent>,
     pub tools: Presence<Vec<Tool>>,
@@ -392,6 +538,7 @@ impl Request {
             &[
                 "model",
                 "max_tokens",
+                "stop_sequences",
                 "messages",
                 "system",
                 "tools",
@@ -405,6 +552,14 @@ impl Request {
         let r = Self {
             model: string(required(o, "model")?)?,
             max_tokens: uint(required(o, "max_tokens")?)?,
+            stop_sequences: crate::protocol::generation_controls::stops(
+                o.get("stop_sequences"),
+                false,
+                crate::semantic::task::generation::MAX_ITEMS,
+            )?
+            .iter()
+            .map(|s| s.as_str().into())
+            .collect(),
             messages: list(required(o, "messages")?)?
                 .iter()
                 .map(InputMessage::read)
@@ -443,7 +598,53 @@ impl Request {
         nonnull(&self.output_config)?;
         nonnull(&self.cache_control)?;
         nonnull(&self.stream)?;
+        let mut breakpoints = self
+            .tools
+            .value()
+            .into_iter()
+            .flatten()
+            .filter_map(|tool| tool.cache_control.value().copied())
+            .collect::<Vec<_>>();
+        if let Some(TextContent::Blocks(blocks)) = self.system.value() {
+            breakpoints.extend(blocks.iter().filter_map(|b| b.cache));
+        }
+        let mut last_cache = None;
+        for message in &self.messages {
+            match &message.content {
+                MessageContent::Text(_) => last_cache = None,
+                MessageContent::Blocks(blocks) => {
+                    for block in blocks {
+                        if let Block::ToolResult {
+                            content: ResultContent::Blocks(parts),
+                            ..
+                        } = &block.content
+                        {
+                            breakpoints.extend(parts.iter().filter_map(|p| p.cache));
+                        }
+                        if !matches!(
+                            block.content,
+                            Block::Thinking { .. } | Block::RedactedThinking(_)
+                        ) {
+                            last_cache = block.cache;
+                        }
+                        breakpoints.extend(block.cache);
+                    }
+                }
+            }
+        }
+        validate_automatic_cache(
+            &mut breakpoints,
+            last_cache,
+            self.cache_control.value().map(|c| c.ttl()),
+        )?;
         let mut bytes = self.model.len();
+        count(self.stop_sequences.len())?;
+        for stop in &self.stop_sequences {
+            if stop.is_empty() {
+                return Err(CodecError::Invalid("Anthropic stop sequence"));
+            }
+            charge(&mut bytes, text(stop)?)?;
+        }
         // Conservative fixed-shape overhead bounds allocation before building wire Values.
         let mut nodes = 64;
         if let Presence::Value(s) = &self.system {
@@ -457,7 +658,7 @@ impl Request {
             }
             for tool in tools {
                 charge(&mut bytes, tool.bytes()?)?;
-                node_charge(&mut nodes, 16 + value_nodes(tool.input_schema.root())?)?;
+                node_charge(&mut nodes, 24 + value_nodes(tool.input_schema.root())?)?;
                 if !names.insert(tool.name.as_str()) {
                     return Err(CodecError::Invalid("Anthropic duplicate tool"));
                 }
@@ -502,6 +703,7 @@ impl Request {
                 block_count += blocks.len();
                 count(block_count)?;
                 for block in blocks {
+                    let block = &block.content;
                     image_count += match block {
                         Block::Media(Media::Image { .. }) => 1,
                         Block::ToolResult {
@@ -509,7 +711,9 @@ impl Request {
                             ..
                         } => parts
                             .iter()
-                            .filter(|p| matches!(p, ResultBlock::Media(Media::Image { .. })))
+                            .filter(|p| {
+                                matches!(p.content, ResultBlock::Media(Media::Image { .. }))
+                            })
                             .count(),
                         _ => 0,
                     };
@@ -548,7 +752,7 @@ impl Request {
             }
             if let MessageContent::Blocks(blocks) = &message.content {
                 for block in blocks {
-                    if let Block::ToolUse { id, .. } = block {
+                    if let Block::ToolUse { id, .. } = &block.content {
                         pending.insert(id.as_str());
                     }
                 }
@@ -562,6 +766,9 @@ impl Request {
     pub(super) fn wire(&self) -> Value {
         let mut v = json!({"model":self.model,"max_tokens":self.max_tokens,"messages":self.messages.iter().map(InputMessage::wire).collect::<Vec<_>>()});
         let o = v.as_object_mut().expect("object");
+        if !self.stop_sequences.is_empty() {
+            o.insert("stop_sequences".into(), json!(self.stop_sequences));
+        }
         put(o, "system", &self.system, TextContent::wire);
         put(o, "tools", &self.tools, |a| {
             json!(a.iter().map(Tool::wire).collect::<Vec<_>>())

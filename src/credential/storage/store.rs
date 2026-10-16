@@ -172,14 +172,6 @@ impl Store {
             fault: std::sync::atomic::AtomicU8::new(0),
         })
     }
-    #[cfg(test)]
-    pub fn test_config(&self, value: &Value) {
-        self.root
-            .write("gateway.json", &serde_json::to_vec(value).unwrap(), || {
-                Ok(())
-            })
-            .unwrap();
-    }
     pub fn transaction(&self) -> Result<Transaction<'_>, Error> {
         Ok(Transaction {
             store: self,

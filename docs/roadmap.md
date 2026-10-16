@@ -16,9 +16,21 @@ For this migration, update existing tests and independent wire expectations only
 
 Optional delta coalescing remains a separate planned slice. Do not combine it with loss-policy, routing or codec repair work.
 
+### Cache owners and generation controls
+
+Goal: complete owner-local content breakpoints and separate automatic prefix-cache TTL controls after function-tool markers. Then carry positive `top_k`, ordered stop sequences, separate presence/frequency penalties and best-effort sampling seeds, with independently reported terminal stop facts.
+
+Exit condition: extend existing independent wire oracles for content, nested tool-result and automatic owners, edits, native TTL/count restrictions and incompatible-target rejection. Cover request controls and static/SSE terminal facts without guessing matched sequences. Preserve default binding admission, target-default automatic caching and routing. Run affected targets and the offline baseline; record frozen integration failures and block publication while the baseline fails.
+
+Selected structures: cache markers travel with their content owner, never a request-level reference table. An absent automatic control preserves target policy. Stop lists normalize absent, permitted null and empty values to no control; nonempty contents and order remain exact. Completion causes are separate from outcome and interaction progress. `logit_bias` and legacy Messages `top_k` remain rejected. Codec support does not activate bindings.
+
+The [Messages gateway smoke](../tests/gateway/anthropic.rs) sends both system-block and tool cache markers. Its success contract requires content-owner support and selected binding admission. Cache codecs do not select binding admission; keep this integration boundary explicit instead of removing fixture markers or restoring silent loss.
+
 ### Temporary routing freeze
 
 During this IR/codec migration, do not change route construction, candidate membership/order/selection policy, cache affinity, cooling, failover eligibility, attempt budgets, credentials or public model routing. Do not rank targets by projection loss or add a fallback to hide an unsupported conversion.
+
+The selected [two-file configuration](usage.md#model-configuration) is a narrow exception for explicitly configured existing bindings and their deployment/policy parameters. It does not reopen affinity/cooling algorithms, retry eligibility, public semantic admission, new bindings or frozen-task contracts.
 
 IR/codec contracts take priority over keeping the full client-to-gateway-to-Provider chain connected. Existing public admission or topology checks may reject the new codec contract; record the exact incompatible boundary and leave integration disconnected rather than weakening IR or changing routing. Changed codec representability may affect an unchanged policy's result; it does not authorize changing that policy.
 
@@ -58,6 +70,10 @@ P8 policy selection is complete. Native codecs reject uncalibrated media detail/
 
 Explicit cache retention also rejects targets without an exact carrier. No cross-Provider retention approximation or route-policy change is selected.
 
+Owner-local Messages cache markers and separate automatic TTL controls have codec carriers, but default binding admission remains unchanged. New generation-control carriers likewise do not establish model-effective support or public capability promises.
+
+Terminal completion causes are independent of turn progress and tool continuation. Messages can report natural completion or a matched stop sequence; Chat and generateContent `STOP` do not distinguish those causes. A target without an exact reported-cause carrier rejects, including Responses and ambiguous-stop delivery to Messages. Google `STOP` remains a reported fact even when function calls also require continuation. These rejections can disconnect previously successful delivery checks; do not remove those integration assertions to hide the boundary.
+
 Google directions remain upstream request encoding and SSE intake, not static intake or Google client endpoints. Native policy propagation requires a concrete binding and an actually reported carrier; absent reports are not supplied from request controls.
 
 Exchange capture covers authenticated client boundaries and Generation upstream I/O. Frozen standalone-task upstreams are not instrumented. Binary, multipart, fragmented argument carriers and other unsafe units are explicitly incomplete or omitted, never raw fallbacks. Capture EOF and drop counters do not establish semantic completion or durable full retention.
@@ -68,8 +84,8 @@ Chat custom tools have static JSON and history carriers, not a pinned custom-cal
 
 The remaining queue follows its local repair and contract gates, not successful route reconnection. Before each IR extension, present a minimal counterexample and structural options. An official carrier alone does not activate a binding.
 
-1. Complete explicit cache breakpoints/TTL carriers. Keep each contract separate; unsupported semantics do not become advisory omissions.
-2. Add missing generation controls: `top_k`, then stopping sequences with honest stop reporting, then penalties/seed. Treat `logit_bias` token identities as model-dependent; do not forward them blindly across tokenizers.
+1. Close the local verification and publication gates for [cache owners and automatic TTL controls](#cache-owners-and-generation-controls). Keep each contract separate; unsupported semantics do not become advisory omissions.
+2. Close the generation-control and honest-stop-reporting gates in the same [current slice](#cache-owners-and-generation-controls). Legacy Messages `top_k` and tokenizer-unbound `logit_bias` remain rejected; do not forward token identities blindly across tokenizers.
 3. Design execution-policy semantics separately: service tiers, native cache resources/prewarming and safety settings. Preserve native distinctions; equal names do not establish equivalent billing, capacity or safety behavior. `max_tokens: 0` prewarming is not ordinary zero-length generation.
 
 After these non-tool support slices, continue tool discovery and then `web_search` below. Other hosted tools, Messages citations, generated media, multi-candidate execution and file services retain their deferred boundaries.

@@ -89,7 +89,7 @@ pub(super) async fn handle(
                     matches!(item,
                 Item::CustomResult(result) if result.required_call_id().ok()==Some("call-custom")
                     && matches!(&result.output,ToolOutput::Parts(parts) if parts.len()==2
-                        && parts[0].1.as_text()==Some("1") && parts[1].1.as_text()==Some("")))
+                        && parts[0].content.as_text()==Some("1") && parts[1].content.as_text()==Some("")))
                 })
         {
             return failure(StatusCode::BAD_REQUEST, "Chat custom history", &state);
@@ -125,7 +125,7 @@ pub(super) async fn handle(
                 .semantic
                 .items()
                 .iter()
-                .any(|(_, i)| matches!(i, Item::ToolResult(r) if r.required_call_id().ok()==Some("call-local") && matches!(&r.output,ToolOutput::Parts(parts) if parts.len()==2 && parts[0].1.as_text()==Some("synthetic result") && parts[1].1.as_text()==Some(""))))
+                .any(|(_, i)| matches!(i, Item::ToolResult(r) if r.required_call_id().ok()==Some("call-local") && matches!(&r.output,ToolOutput::Parts(parts) if parts.len()==2 && parts[0].content.as_text()==Some("synthetic result") && parts[1].content.as_text()==Some(""))))
     {
         return failure(StatusCode::BAD_REQUEST, "Chat continuation", &state);
     }

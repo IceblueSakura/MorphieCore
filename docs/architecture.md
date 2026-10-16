@@ -99,6 +99,8 @@ Classify losses by their effect on task constraints, output quality, execution a
 
 Cache grouping keys are advisory. Explicit cache retention constrains storage, so preserve its exact carrier or reject a target without one; automatic caching does not establish a compatible retention policy. Null request cache-options containers are invalid, independently of nullable upstream echoes.
 
+Explicit prefix-cache breakpoints belong to the content or tool-definition owner, not a separate request-wide reference plan. Keep TTL intent typed and independent of resource identity, cache affinity and replay. Owner edits carry or remove their own marker; no fidelity record restores a deleted marker. Request-wide automatic caching is a separate control.
+
 | Treatment | Contract |
 |---|---|
 | Exact representation | Preserve meaning; check source conflicts before alias normalization |
@@ -235,7 +237,7 @@ P3b rejects a request when its applicable explicit output-token ceiling is small
 
 Passing this comparison is necessary, not sufficient. Equality is accepted only if the target contract permits it; stricter budget/output relations, protocol minima and required answer room still apply. Reject a target-invalid combination without automatic adjustment. No extra gateway-defined answer reservation or budget-reduction policy is selected. Ordinary preset lookup and nearest-budget quantization remain unchanged.
 
-Rules cannot expand accepted content types, bypass model restrictions, select a route or modify the source IR. No public request override is selected. Mapping data remains hand-authored Rust policy, not a new startup mapping schema or generic rule engine. P6's diagnostic switches configure capture, not semantic mapping.
+Rules cannot expand accepted content types, bypass model restrictions, select a route or modify the source IR. No public request override is selected. Qualitative level calibration remains hand-authored Rust policy. Trusted startup configuration may supply a public model's six numeric thinking budgets; each candidate explicitly selects budget-to-effort or effort-to-budget conversion. Omission selects no conversion. The existing algorithms, target restrictions and output-ceiling checks remain authoritative; there is no generic rule engine. P6's diagnostic switches configure capture, not semantic mapping.
 
 #### Initial mapping plan
 
@@ -327,19 +329,19 @@ Opaque upstream values reach clients in a tagged envelope:
 mc1. + base64url JSON: {o: issuer fingerprint, f: native format, d: payload}
 ```
 
-The fingerprint binds Provider and upstream model. It does not include public aliases, credentials or ingress keys. Clients must treat the whole value as opaque.
+Runtime fingerprints bind Provider, upstream model and the normalized trusted deployment origin/path. They do not include public aliases, credentials or ingress keys, and reveal no URL or credential locator. Changing a deployment does not authorize replay of another deployment's opaque values. Clients must treat the whole value as opaque.
 
-1. Restore the native payload only for the matching Provider/model and carrier.
+1. Restore the native payload only for the matching deployment/model and carrier.
 2. Drop foreign payloads and reasoning items left empty by that drop.
-3. Preserve readable foreign reasoning as assistant text through a named rule.
+3. Preserve readable foreign reasoning as assistant text only when the target explicitly enables the named rule; otherwise reject a required conversion.
 4. Never send bare, malformed or unsupported-version envelopes upstream.
 5. Reject a same-target value if its required carrier is unavailable.
 
-Native Messages sends unsigned or foreign thinking as text. OpenAI targets do so when an opaque replay value was dropped; reasoning that never carried a value keeps its kind when representable. A changed item kind gets a derived identity in the candidate copy, not the issuer's identity.
+Reasoning-as-text defaults to disabled. When enabled, native Messages sends unsigned or foreign thinking as text. OpenAI targets do so when an opaque replay value was dropped; reasoning that never carried a value keeps its kind when representable. Disabling the conversion neither discards readable content nor disables a valid native carrier. A changed item kind gets a derived identity in the candidate copy, not the issuer's identity.
 
 The envelope is not encryption, authentication or local proof. It cannot choose a route, origin or credential. The issuing upstream validates its payload.
 
-Some native thinking is account-bound. Exact-credential affinity helps preserve it, but Provider/model compatibility alone cannot guarantee replay after credential fallback.
+Some native thinking is account-bound. Exact-credential affinity helps preserve it, but deployment/model compatibility alone cannot guarantee replay after credential fallback.
 
 Carriers include Responses `encrypted_content`, Chat encrypted reasoning details, Anthropic thinking signatures and redacted thinking `data`, Gemini `thoughtSignature` and Interactions signatures.
 
@@ -359,7 +361,7 @@ Google signatures travel as reasoning items. The IR has no part- or call-level r
 
 A compaction item owns opaque context at one position in the ordered history. It is not a readable summary, reasoning or a message with an invented role. Responses preserves its identity and `encrypted_content` in input, static output and streamed item snapshots. Only a completed opaque value can enter replay history; an unfinished stream cannot become a static compaction item.
 
-Compaction uses the [replay envelope](#reasoning-replay) with a distinct format tag. The gateway restores the native payload only for the matching Provider/model and Responses carrier. Bare, malformed, foreign or unbound values are rejected, never stripped: unlike optional reasoning, removing compacted context would lose history. Chat Completions, Messages and Google targets reject it in the absence of a carrier.
+Compaction uses the [replay envelope](#reasoning-replay) with a distinct format tag. The gateway restores the native payload only for the matching deployment/model and Responses carrier. Bare, malformed, foreign or unbound values are rejected, never stripped: unlike optional reasoning, removing compacted context would lose history. Chat Completions, Messages and Google targets reject it in the absence of a carrier.
 
 Compaction admission is separate from reasoning support. Codec support does not activate existing model bindings. This contract receives and replays compacted history; it does not schedule compaction, expose `/responses/compact` or store conversations. The [official guide](https://developers.openai.com/api/docs/guides/compaction) and [pinned SDK](references.md#pinned-sources) define the selected wire contract.
 
@@ -583,7 +585,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Pure protocol boundaries | Encode from final typed input; no network in codecs or post-encoding JSON patches |
 | Functional ownership | Keep root layers; organize internals by domain, without compatibility aliases or plugin frameworks |
 | Layered capabilities | Source validity, acceptance through approved adaptation and faithful target support are distinct. Do not advertise lossy acceptance as native support or infer public promises from a union of candidates |
-| Temporary routing freeze | P7 keeps routing, affinity, candidate policy and failover frozen until the selected Generation IR, codec and protocol-conversion work is complete. Only then reopen routing/integration design; incompatible integration stays explicitly blocked in the meantime |
+| Temporary routing freeze | P7 keeps routing/integration redesign frozen until the selected Generation IR, codec and protocol-conversion work is complete. The approved two-file startup configuration may select existing bindings and deployment parameters; it does not change affinity, cooling, retry eligibility or public semantic admission |
 | Shared model identities across protocols | Compatible API-key, OAuth and native Messages bindings share one public model and ordered route. Endpoint protocols and credential domains stay distinct; narrower candidates reject requests they cannot represent |
 | SIWC cross-Provider fallback | A mixed route may contain one SIWC endpoint and advance to another Provider before publication within the route budget. SIWC pools remain single-account with no credential fallback; standalone SIWC routes remain single-attempt with fallback disabled |
 | Case-sensitive model labels | Public IDs may preserve upstream ASCII capitalization, but resolve only registered routes. Provider prefixes remain rejected; Provider, endpoint and route IDs keep their lowercase grammar |
@@ -596,11 +598,14 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Dataflow and scoped state | Typed stages have separate semantic, protocol, attempt and delivery authorities; optional stages do not introduce a generic pipeline framework |
 | Delta coalescing (planned) | Optional, disabled-by-default delivery optimization after client projection and before encoding. Final-only clients retain existing materialization; original intake validation and publication safety remain authoritative |
 | Typed startup activation | One `TaskEntries` input selects Generation and each standalone task explicitly. Empty lists activate nothing; embedding does not discover catalogs, credentials or environment proxies |
+| Two-file startup configuration | `gateway.json` owns service settings; `models.json` explicitly selects catalog models and ordered candidates. Candidate-local trusted deployment declarations may override URLs, wire model names and credential pools without changing Provider identity or dialects. All Generation client protocols use the configured route; frozen tasks keep their single catalog binding |
+| Configurable reasoning parameters | Numeric thinking tables belong to public models; candidate-local conversion direction is explicit. Reasoning-as-text defaults to false and requires opt-in. Configuration cannot alter dialect implementations, infer qualitative mappings or widen semantic admission |
 | Official intake fields | Decode registered source semantics accurately. Unsupported preferences need selected omission rules; critical content and execution intent cannot masquerade as unknown fields. Optionality alone does not authorize dropping billing, storage or quality controls |
 | Append-only history projection | Earlier content does not change when a later turn is added |
 | Reported tool results | Responses carries function/custom results in static output and item snapshots. Missing call references stay unreported; request history still requires matching preceding calls. Chat and Messages reject ordinary tool results as assistant output, not their supported history forms |
-| Scoped opaque replay | Restore only compatible native values; foreign readable reasoning becomes text |
+| Scoped opaque replay | Restore only compatible native values; foreign readable reasoning becomes text only with explicit target permission, otherwise the conversion rejects |
 | Replay dependencies | Validate the original reasoning dependency before client sealing. generateContent tail signatures also bind the actual text carrier by digest, outside semantic IR |
+| Prefix-cache ownership | Typed breakpoints and TTL belong to their content or tool-definition owner, including separate inner and outer tool-result boundaries. Automatic caching is a separate setting; absence preserves target policy. Unsupported targets reject rather than substitute cache keys or retention |
 | Compacted context is required history | A distinct ordered compaction item preserves opaque content and identity. Incompatible targets reject it rather than apply the foreign-reasoning strip rule |
 | Failover, not balancing | Legal candidates, bounded advancement and exact-credential affinity |
 | Conversation routing | No inferred turn, branch or message routing |
@@ -610,7 +615,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Delivery-local identity | Generated client IDs/timestamps are not upstream facts. Responses allocates a gateway-owned ID; only a stored, fully delivered snapshot makes it a history key |
 | Stateless Google Interactions | `store: false` and full history; no `previous_interaction_id` or revision header. Signatures keep their native formats |
 | Separate credential lifecycle | Private file store and ordered pools; no inference-triggered login or refresh |
-| Independent CLI paths | Default configuration lives in the home-relative application directory, with credentials in its `credentials` child. Explicit config and credential paths override independently; no legacy path discovery or automatic migration |
+| Independent CLI paths | Default configuration lives in the home-relative application directory, with credentials in its `credentials` child. CLI credential/proxy overrides beat file settings; omitted credential paths retain their independent home-relative default. File-relative paths resolve beside the declaring file; no legacy discovery or automatic migration |
 | Agent-sized bounds | Bodies, IR budgets and deadlines fit whole-history agent sessions and long turns: tens of MiB and one hour per exchange. Upstreams enforce their own maxima |
 | Inert, credential-free media | Inline data or URLs only; no gateway fetch or file service, and no client-supplied Provider file references |
 | Target carriers and protected content | Prefer official carriers or declared extensions. Selected role approximations change only the target representation; they do not invent content, assistant/tool speakers or call/result links. Do not drop task content or media merely to make a target accept the request |
@@ -618,7 +623,8 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Envelopes as grouping | Ordered message envelopes are the only IR grouping. Chat's call ownership is a view derived in the OpenAI codec, which also enforces Chat-only rules such as no calls on a refusal |
 | Schemas as data | The IR keeps any bounded JSON-object schema an official API accepts. Each target checks its selected subset without rewriting constraints. Google protocols keep distinct structured-output shells; native strict-tool checks do not restrict client parsing. An unnamed output schema gets the fixed name `response` only on OpenAI targets, which require one |
 | Strict tool constraints stay protected | Messages strict tools reject unsupported constraints and documented case-sensitive string enum/const fidelity gaps. Native request-wide schema complexity includes output-only schemas and combined strict-tool/output schemas. No SDK constraint-removal helper or implicit default-strict conversion is used |
-| Deferred stop sequences | Nonempty client `stop` and `stop_sequences` are rejected, not treated as unknown fields. No stop control enters the IR until implemented; a native `stop_sequence` stop still reports a finished turn |
+| Generation controls | Positive top-k, ordered exact stop sequences, independent presence/frequency coefficients and best-effort seeds have separate carriers. Absent, permitted null and empty stop lists mean no control; target limits remain codec-local. Legacy Messages top-k and unbound tokenizer-specific logit bias remain rejected |
+| Terminal stop evidence | Completion cause is separate from outcome and turn progress, including when Google reports STOP alongside function calls. Preserve natural, sequence-matched and ambiguous stop reports without deriving them from sent controls or output text. Reject delivery without a carrier for necessary evidence; no new lossy stop policy is selected |
 | Client-owned output caps | The gateway neither caps nor invents `max_tokens`; the upstream enforces its model limit. Only a protocol that requires the field fills a fixed default |
 
 Pinned clients and protocol sources are in [References](references.md). Observed client behavior is an oracle, not permission to weaken security or fabricate semantics.

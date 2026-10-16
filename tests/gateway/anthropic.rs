@@ -391,6 +391,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
         contract.clone(),
     );
     public.standard_context = false;
+    let replay_origin = endpoint.replay_origin();
     let topology = topology::compile(
         vec![provider],
         vec![endpoint, secondary],
@@ -535,10 +536,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                     };
                     let (issuer, format, payload) =
                         replay_envelope::open(token.as_str().unwrap()).unwrap();
-                    assert_eq!(
-                        issuer,
-                        replay_envelope::issuer("opencode-go", binding.upstream)
-                    );
+                    assert_eq!(issuer, replay_origin);
                     assert_eq!(format,morphiecore::semantic::task::generation::ReplayFormat::AnthropicMessagesThinking);
                     assert_eq!(payload.as_str(), "synthetic-native-signature");
                     let redacted = if responses {

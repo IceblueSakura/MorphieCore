@@ -14,12 +14,14 @@ use crate::{
 pub struct ReplayTarget {
     provider: Text,
     model: Text,
+    origin: ReplayOrigin,
 }
 impl ReplayTarget {
     pub fn new(provider: &str, model: &str) -> Result<Self, CodecError> {
         Ok(Self {
             provider: label(provider)?,
             model: label(model)?,
+            origin: crate::protocol::replay_envelope::issuer(provider, model),
         })
     }
     pub fn provider(&self) -> &str {
@@ -28,8 +30,12 @@ impl ReplayTarget {
     pub fn model(&self) -> &str {
         self.model.as_str()
     }
+    pub(crate) fn with_origin(mut self, origin: ReplayOrigin) -> Self {
+        self.origin = origin;
+        self
+    }
     pub(crate) fn origin(&self) -> ReplayOrigin {
-        crate::protocol::replay_envelope::issuer(self.provider(), self.model())
+        self.origin.clone()
     }
 }
 fn label(s: &str) -> Result<Text, CodecError> {

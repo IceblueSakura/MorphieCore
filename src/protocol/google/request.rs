@@ -53,6 +53,14 @@ pub(super) fn project(
     rules: &mut BTreeSet<RequestRule>,
 ) -> Result<Value, CodecError> {
     let s = request.settings();
+    if s.automatic_prefix_cache.is_some()
+        || request
+            .items()
+            .iter()
+            .any(|(_, i)| i.has_cache_breakpoints())
+    {
+        return Err(unsupported());
+    }
     if s.controls.truncation.is_some()
         || !s.output_modalities.is_absent()
         || !s.audio.is_absent()
@@ -103,7 +111,7 @@ pub(super) fn project(
                 let ToolDefinition::Function(t) = tool else {
                     return Err(unsupported());
                 };
-                if !t.dispatch.is_inactive() || t.output_schema.is_some() {
+                if !t.dispatch.is_inactive() || t.output_schema.is_some() || t.cache.is_some() {
                     return Err(unsupported());
                 }
                 match t.strict {
@@ -189,6 +197,39 @@ pub(super) fn project(
     }
     if let Some(p) = s.controls.top_p() {
         generation.insert("topP".into(), p.into());
+    }
+    if let Some(k) = s.controls.top_k {
+        generation.insert(
+            "topK".into(),
+            i32::try_from(k).map_err(|_| unsupported())?.into(),
+        );
+    }
+    if s.controls.stop_sequences.len() > 5 {
+        return Err(unsupported());
+    }
+    if !s.controls.stop_sequences.is_empty() {
+        generation.insert(
+            "stopSequences".into(),
+            json!(
+                s.controls
+                    .stop_sequences
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+            ),
+        );
+    }
+    if let Some(seed) = s.controls.seed {
+        generation.insert(
+            "seed".into(),
+            i32::try_from(seed).map_err(|_| unsupported())?.into(),
+        );
+    }
+    if let Some(penalty) = s.controls.presence_penalty() {
+        generation.insert("presencePenalty".into(), penalty.into());
+    }
+    if let Some(penalty) = s.controls.frequency_penalty() {
+        generation.insert("frequencyPenalty".into(), penalty.into());
     }
     if let Some(thinking) = thinking(s, rules)? {
         generation.insert("thinkingConfig".into(), thinking);
@@ -459,8 +500,8 @@ fn item_parts(
                 ToolOutput::Text(s) => s.clone(),
                 ToolOutput::Parts(list) => {
                     let mut text = vec![];
-                    for (_, part) in list {
-                        match part {
+                    for part in list {
+                        match &part.content {
                             InputPart::Text(t) => text.push(t.as_str()),
                             InputPart::Resource(r) => {
                                 media_parts.push(media(r.media(request.resources())?, true, rules)?)

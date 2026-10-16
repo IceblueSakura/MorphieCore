@@ -24,7 +24,8 @@ pub struct TargetCaps {
     pub dialect: Dialect,
     pub semantics: GenerationSemanticContract,
     pub cache: CacheProjection,
-    pub reasoning_policy: Option<&'static crate::protocol::reasoning::ReasoningRequestPolicy>,
+    pub reasoning_policy: Option<crate::protocol::reasoning::ReasoningRequestPolicy>,
+    pub reasoning_as_text: bool,
 }
 impl TargetCaps {
     pub fn new(profile: Profile, dialect: Dialect) -> Self {
@@ -33,6 +34,7 @@ impl TargetCaps {
             dialect,
             semantics: profile.semantic_contract(),
             reasoning_policy: None,
+            reasoning_as_text: false,
             cache: CacheProjection {
                 session_id: dialect == Dialect::OpenCodeGo,
                 ..Default::default()
@@ -73,7 +75,7 @@ impl TargetCaps {
         let mut projected = std::borrow::Cow::Borrowed(request);
         let mut reasoning_rule = None;
         let mut controls = vec![];
-        if let Some(policy) = self.reasoning_policy
+        if let Some(policy) = &self.reasoning_policy
             && let Some(semantic) = policy.project_request(&request.task.semantic)?
         {
             controls.push(policy.receipt(&request.task.semantic, &semantic)?);
@@ -121,6 +123,9 @@ impl TargetCaps {
         let mut projection =
             self.profile
                 .encode_generation_request(&semantic, &request.task.fidelity, target)?;
+        if !self.reasoning_as_text && projection.rules.contains(&RequestRule::ReasoningAsText) {
+            return Err(CodecError::Unsupported("reasoning as text disabled".into()).into());
+        }
         if let Some(stream) = request.delivery.stream.value() {
             projection.value["stream"] = serde_json::json!(stream);
         }

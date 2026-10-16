@@ -238,12 +238,7 @@ impl GenerationSseDecoder {
                 };
                 out.push(StreamEvent::MessageEnvelope(group));
                 out.push(StreamEvent::Usage(super::semantic::usage(&message.usage)));
-                let (outcome, progress, details) = super::semantic::outcome(
-                    *message
-                        .stop_reason
-                        .value()
-                        .ok_or(CodecError::Invalid("native stop"))?,
-                );
+                let (outcome, progress, details) = super::semantic::outcome(message)?;
                 out.push(StreamEvent::Progress(progress));
                 out.push(StreamEvent::Terminal {
                     terminal: if outcome == Outcome::Incomplete {

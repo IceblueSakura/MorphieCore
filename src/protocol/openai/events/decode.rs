@@ -797,12 +797,12 @@ impl EventDecoder {
             return Ok(result);
         }
         if let ToolOutput::Parts(parts) = &mut result.output {
-            for (id, _) in parts {
+            for part in parts {
                 let next = self.allocate_part()?;
-                if sources.fidelity.cache_breakpoint(*id) {
+                if sources.fidelity.cache_breakpoint(part.id) {
                     self.fidelity.record_cache_breakpoint(next)?;
                 }
-                *id = next;
+                part.id = next;
             }
         }
         self.declare_sources(&sources.resources, out)?;

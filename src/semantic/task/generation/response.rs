@@ -29,6 +29,14 @@ pub struct ResponseError {
 pub struct TerminalDetails {
     pub error: Option<ResponseError>,
     pub incomplete: Option<IncompleteReason>,
+    pub completion: Option<CompletionCause>,
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CompletionCause {
+    Natural,
+    StopSequence(Text),
+    /// The source reports normal termination without distinguishing a matched sequence.
+    NaturalOrStopSequence,
 }
 impl TerminalDetails {
     pub fn bytes(&self) -> usize {
@@ -38,6 +46,11 @@ impl TerminalDetails {
                 + e.param.as_ref().map_or(0, |p| p.as_str().len())
         });
         error
+            + match &self.completion {
+                Some(CompletionCause::StopSequence(text)) => text.as_str().len(),
+                Some(_) => 1,
+                None => 0,
+            }
             + match &self.incomplete {
                 Some(IncompleteReason::Other(t)) => t.as_str().len(),
                 Some(_) => 32,
@@ -47,6 +60,12 @@ impl TerminalDetails {
     pub fn validate(&self, outcome: Outcome) -> Result<(), GenerationError> {
         if self.error.is_some() && outcome != Outcome::Failed
             || self.incomplete.is_some() && outcome != Outcome::Incomplete
+            || self.completion.is_some() && outcome != Outcome::Completed
+        {
+            return Err(GenerationError::InvalidResponse);
+        }
+        if let Some(CompletionCause::StopSequence(text)) = &self.completion
+            && (text.as_str().is_empty() || text.as_str().len() > MAX_TEXT_BYTES)
         {
             return Err(GenerationError::InvalidResponse);
         }

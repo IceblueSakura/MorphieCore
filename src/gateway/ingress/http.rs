@@ -198,7 +198,14 @@ async fn handle_client(
     semantic.conversation = Some(conversation);
     trace.request_intake(&semantic.task.fidelity);
     trace.ignored_fields(std::mem::take(&mut semantic.ignored_fields));
-    let deadline = tokio::time::Instant::now() + state.limits.exchange_timeout;
+    let timeout = entry
+        .policy
+        .total_timeout_ms
+        .map(std::time::Duration::from_millis)
+        .map_or(state.limits.exchange_timeout, |timeout| {
+            timeout.min(state.limits.exchange_timeout)
+        });
+    let deadline = tokio::time::Instant::now() + timeout;
     let failed = (profile == Some(Profile::Responses) && semantic.delivery.streaming())
         .then(|| entry.clone());
     match exchange::run(state, entry, semantic, history, deadline, permit, trace).await {

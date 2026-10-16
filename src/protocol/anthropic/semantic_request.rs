@@ -72,6 +72,13 @@ pub(super) fn project(
     rules: &mut BTreeSet<RequestRule>,
 ) -> Result<super::Request, CodecError> {
     let s = request.settings();
+    if s.controls.top_k.is_some()
+        || s.controls.presence_penalty().is_some()
+        || s.controls.frequency_penalty().is_some()
+        || s.controls.seed.is_some()
+    {
+        return Err(unsupported());
+    }
     if s.controls.temperature().is_some() || s.controls.top_p().is_some() {
         rules.insert(RequestRule::OmitSampling);
     }
@@ -100,11 +107,15 @@ pub(super) fn project(
             }
         }
         system = Presence::Value(WireText::Blocks(
-            i.texts()
-                .ok_or_else(unsupported)?
-                .into_iter()
-                .map(|(_, t)| t.into())
-                .collect(),
+            i.parts
+                .iter()
+                .map(|p| {
+                    Ok(super::CacheMarked {
+                        content: p.content.as_text().ok_or_else(unsupported)?.into(),
+                        cache: p.cache,
+                    })
+                })
+                .collect::<Result<_, CodecError>>()?,
         ));
     }
     let tools = if s.tools.is_some() {
@@ -136,6 +147,7 @@ pub(super) fn project(
                                 return Err(unsupported());
                             }
                         },
+                        cache_control: t.cache.map_or(Presence::Absent, Presence::Value),
                     })
                 })
                 .collect::<Result<_, _>>()?,
@@ -290,7 +302,10 @@ pub(super) fn project(
                     let (ReasoningContent::Summary(t) | ReasoningContent::Text(t)) = part;
                     if !t.as_str().trim().is_empty() {
                         rules.insert(RequestRule::ReasoningAsText);
-                        blocks.push(Block::Text(t.as_str().into()));
+                        blocks.push(super::CacheMarked {
+                            content: Block::Text(t.as_str().into()),
+                            cache: None,
+                        });
                     }
                 }
                 continue;
@@ -300,28 +315,37 @@ pub(super) fn project(
                     *owner, item, request, fidelity, target, normalized, omitted, rules,
                 )?
                 .into_iter()
-                .map(|block| match block {
-                    Block::ToolUse {
-                        id,
-                        name,
-                        input,
-                        caller,
-                    } => Block::ToolUse {
-                        id: call_id(&id, rules),
-                        name,
-                        input,
-                        caller,
+                .enumerate()
+                .map(|(index, block)| super::CacheMarked {
+                    cache: match item {
+                        Item::Message(m) => m.parts[index].cache,
+                        Item::ToolCall(c) => c.cache,
+                        Item::ToolResult(r) => r.cache,
+                        _ => None,
                     },
-                    Block::ToolResult {
-                        tool_use_id,
-                        content,
-                        is_error,
-                    } => Block::ToolResult {
-                        tool_use_id: call_id(&tool_use_id, rules),
-                        content,
-                        is_error,
+                    content: match block {
+                        Block::ToolUse {
+                            id,
+                            name,
+                            input,
+                            caller,
+                        } => Block::ToolUse {
+                            id: call_id(&id, rules),
+                            name,
+                            input,
+                            caller,
+                        },
+                        Block::ToolResult {
+                            tool_use_id,
+                            content,
+                            is_error,
+                        } => Block::ToolResult {
+                            tool_use_id: call_id(&tool_use_id, rules),
+                            content,
+                            is_error,
+                        },
+                        other => other,
                     },
-                    other => other,
                 }),
             );
         }
@@ -355,6 +379,12 @@ pub(super) fn project(
         model: target.model().into(),
         // Messages requires max_tokens; other sources may leave the cap to the model.
         max_tokens: s.controls.max_output_tokens.unwrap_or(DEFAULT_MAX_TOKENS),
+        stop_sequences: s
+            .controls
+            .stop_sequences
+            .iter()
+            .map(|s| s.as_str().into())
+            .collect(),
         system,
         tools,
         tool_choice,
@@ -362,7 +392,10 @@ pub(super) fn project(
         output_config,
         // Always requested, like OpenAI's implicit caching; below the model's minimum
         // prompt length nothing is cached or charged.
-        cache_control: Presence::Value(super::CacheControl::Ephemeral),
+        cache_control: Presence::Value(super::CacheControl::from_ttl(
+            s.automatic_prefix_cache
+                .unwrap_or(PrefixCacheTtl::FiveMinutes),
+        )),
         messages,
         stream: Presence::Absent,
     })
@@ -476,10 +509,15 @@ pub(super) fn item_blocks(
                 ToolOutput::Parts(parts) => ResultContent::Blocks(
                     parts
                         .iter()
-                        .map(|(id, part)| {
-                            Ok(match part {
-                                InputPart::Text(t) => ResultBlock::Text(t.as_str().into()),
-                                InputPart::Resource(r) => ResultBlock::Media(media(*id, r)?),
+                        .map(|part| {
+                            Ok(super::CacheMarked {
+                                cache: part.cache,
+                                content: match &part.content {
+                                    InputPart::Text(t) => ResultBlock::Text(t.as_str().into()),
+                                    InputPart::Resource(r) => {
+                                        ResultBlock::Media(media(part.id, r)?)
+                                    }
+                                },
                             })
                         })
                         .collect::<Result<_, CodecError>>()?,

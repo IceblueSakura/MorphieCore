@@ -167,6 +167,10 @@ The pinned Interactions SDK still declares and serializes `temperature` and `top
 
 generateContent has top-k, stopping sequences, seed and penalties; Interactions declares seed and stopping sequences. They are not interchangeable field inventories. The pinned Anthropic create type no longer declares sampling controls, while broader live references retain model-dependent legacy parameters. Do not call a selected profile's sampling omission a universal Messages protocol rule.
 
+Rechecked 2026-10-16: [generateContent](https://ai.google.dev/api/generate-content#v1beta.GenerationConfig) permits up to five stop sequences. The [v1beta discovery schema](https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta) declares signed `int32` carriers for `seed` and `topK`; an IR integer outside that target range needs rejection, not truncation. A sampling seed is a best-effort control, not a cross-model determinism promise.
+
+Messages reports a matched `stop_sequence` separately from `stop_reason`. Chat `finish_reason: "stop"` and Google `finishReason: "STOP"` do not identify the matched text or distinguish natural completion from sequence stopping. Google's report remains independent of any function calls in the same candidate. Do not reconstruct these facts from the requested stop list or generated suffix.
+
 ### Function schemas and choices
 
 Google's descriptor distinguishes `parameters` from `parametersJsonSchema`; these are mutually exclusive and the latter describes a JSON object instance. A JSON-object schema document such as `{"type":"string"}` does not satisfy that instance requirement. Check the declared target contract without implementing a general JSON Schema theorem prover.

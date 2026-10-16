@@ -30,7 +30,7 @@ Code and tests define behavior. The [roadmap](docs/roadmap.md) separates impleme
 
 ## Run
 
-Prepare credentials, a pool and `gateway.json` as described in [Usage](docs/usage.md), then run:
+Prepare credentials, a pool, `gateway.json` and `models.json` as described in [Usage](docs/usage.md), then run:
 
 ```sh
 cargo run --locked --offline --bin morphiecore

@@ -95,8 +95,8 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 }
                 // Declarations prepay each body once; repeated uses still charge expansion.
                 if let Some(ToolOutput::Parts(parts)) = &observed.output {
-                    for (_, part) in parts {
-                        if let InputPart::Resource(value) = part
+                    for part in parts {
+                        if let InputPart::Resource(value) = &part.content
                             && state.used_resources.insert(value.id)
                         {
                             bytes = bytes
@@ -605,8 +605,8 @@ fn charge_tool_result(
         ..
     }) = previous
     {
-        for (id, _) in old {
-            parts.remove(id);
+        for part in old {
+            parts.remove(&part.id);
         }
     }
     let mut bytes = 0;
@@ -622,8 +622,8 @@ fn charge_tool_result(
         return Err(EventError::Limit);
     }
     if let ToolOutput::Parts(parts) = &result.output {
-        for (_, part) in parts {
-            if let InputPart::Resource(value) = part
+        for part in parts {
+            if let InputPart::Resource(value) = &part.content
                 && state.used_resources.insert(value.id)
             {
                 bytes = bytes

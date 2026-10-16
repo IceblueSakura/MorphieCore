@@ -101,37 +101,106 @@ Callbacks listen on `127.0.0.1`. Login checks issuer, client and subject. Infere
 
 ## Configure the gateway
 
-Create a private `$HOME/.local/share/morphiecore/gateway.json` (use `%USERPROFILE%` on Windows), or select a different file with `--config`. Its parent directory must also be private on Unix. This example uses a synthetic ingress token; replace it with a private random token of 32–4096 bytes:
+Create private `gateway.json` and `models.json` files in `$HOME/.local/share/morphiecore` (use `%USERPROFILE%` on Windows), or select a different service file with `--config`. Their parent directories must also be private on Unix. Keep configuration outside the credential store. Each file is bounded to 64 KiB and rejects unknown fields and duplicate JSON keys. Changes take effect at startup; there is no hot reload.
+
+`gateway.json` owns service settings. This example uses a synthetic ingress token; replace it with a private random token of 32–4096 bytes:
 
 ```json
 {
   "client_key": "synthetic-local-ingress-token-00000001",
   "bind": "127.0.0.1:8080",
-  "models": ["configured-public-model"],
-  "max_attempts": 2
+  "models_file": "models.json",
+  "credentials_dir": "credentials"
 }
 ```
-
-Replace `configured-public-model` with a catalog label whose credential pool is configured.
 
 | Field | Meaning |
 |---|---|
 | `client_key` | Required ingress token, separate from upstream credentials |
 | `bind` | Loopback listener; default `127.0.0.1:8080` |
+| `models_file` | Model configuration path; default `models.json` beside this file |
+| `credentials_dir` | Optional credential-store path; omission retains the independent home-relative default |
 | `proxy` | Outbound proxy |
-| `models` | Public labels to activate |
-| `max_attempts` | Optional global attempt ceiling, 1–64 |
-| `responses_via_chat` | Listed models whose Responses entry uses their Chat endpoint |
-| `failover` | Map from a listed model to its ordered Provider IDs; each needs a pool |
-| `implicit_cache_affinity` | Best-effort prefix index; default `true` |
+| `concurrency` | Concurrent exchanges; default 16, range 1–256 |
+| `exchange_timeout_ms` | Service-wide exchange ceiling; default 3600000, range 1–86400000 |
 | `diagnostics` | Path for a new private diagnostics file; no bodies are recorded |
 | `capture` | Optional private exchange capture; omitted or all-disabled selections record no content |
 
-Explicit `models` selection is recommended. If omitted, eligible generation bindings with pools are activated. Standalone media, Embeddings, audio-input and native Messages bindings require explicit selection.
+Paths in the service file resolve relative to that file, not the process working directory. CLI paths remain explicit process-relative or absolute paths.
 
-For models covered by `failover`, only the named Providers are used. Otherwise available bindings follow catalog order. Configuration is not an upstream parameter bag: unknown fields, duplicate or unknown models, and models without a matching pool fail startup.
+### Model configuration
 
-Exact activation rules are in [bootstrap.rs](../src/gateway/startup/bootstrap.rs).
+`models.json` owns explicit public-model selection and ordered upstream candidates:
+
+```json
+{
+  "implicit_cache_affinity": true,
+  "models": {
+    "configured-public-model": {
+      "max_attempts": 2,
+      "total_timeout_ms": 120000,
+      "candidates": [
+        {
+          "binding": "existing-catalog-endpoint",
+          "base_url": "https://upstream.example/v1",
+          "upstream_model": "upstream-model-name",
+          "credential": "configured-pool",
+          "attempt_timeout_ms": 60000,
+          "reasoning_as_text": false
+        }
+      ]
+    }
+  }
+}
+```
+
+Replace the placeholders with a registered public label, one of its catalog endpoint IDs and a pool in that endpoint's Provider domain. Binding definitions are in [the catalog](../src/topology/catalog.rs). `credential` is a pool reference, never an inline key; manage its key/account members through the existing credential CLI. Omitted deployment fields retain the selected binding's values.
+
+| Scope | Field | Meaning |
+|---|---|---|
+| File | `implicit_cache_affinity` | Best-effort prefix affinity; default `true` |
+| Model | `candidates` | Nonempty ordered array of existing bindings for this public model |
+| Model | `max_attempts` | Optional total attempt ceiling, including the first attempt; range 1–64, otherwise the route default |
+| Model | `total_timeout_ms` | Optional exchange deadline after request intake; bounded by the service ceiling |
+| Model | `thinking_tokens` | Optional six-level numeric table shared by this model's candidates |
+| Candidate | `binding` | Required catalog endpoint ID; fixes protocol, dialect, canonical model and authentication kind |
+| Candidate | `base_url` | Trusted origin plus API prefix, without the operation suffix |
+| Candidate | `upstream_model` | Wire spelling only; does not change canonical identity or model capabilities |
+| Candidate | `credential` | Pool reference; defaults to the binding's catalog pool |
+| Candidate | `attempt_timeout_ms` | One upstream attempt's timeout, further bounded by the remaining exchange deadline |
+| Candidate | `reasoning_as_text` | Permit the existing named history conversion; default `false` |
+| Candidate | `thinking_conversion` | `budget_to_effort` or `effort_to_budget`; omission performs no numeric conversion |
+
+Timeout values accept 1–86400000 milliseconds. Attempt ceilings span all endpoint and credential candidates; they do not multiply each other or schedule extra retries of an exhausted candidate list. Array order is the default failover order; existing affinity and cooling may prefer a successful executor or defer a cooling one. Retry eligibility and the prohibition on replay after publication remain unchanged.
+
+All Generation client protocols use the same configured candidate array. To send Responses clients through Chat, select a Chat binding; there is no separate `responses_via_chat` switch. The old service-file `models`, `failover` and attempt fields are rejected, not automatically migrated.
+
+`base_url` includes the API prefix: `/v1` plus a Chat binding produces `/v1/chat/completions`; a Messages binding produces `/v1/messages`. Google generateContent appends `/models/{upstream_model}:streamGenerateContent`, while Interactions appends `/interactions`. HTTPS is required except for literal loopback HTTP. Userinfo, query strings, fragments and ambiguous path escapes are rejected. Business requests cannot override these trusted targets.
+
+Replay fingerprints include the normalized deployment origin/path. Changing either makes existing opaque replay foreign; the URL itself never reaches clients. This also replaces the former Provider/model-only fingerprints. Required compacted history cannot migrate across that boundary.
+
+For `thinking_tokens`, provide all six positive values, for example:
+
+```json
+{
+  "minimal": 1024,
+  "low": 2048,
+  "medium": 3072,
+  "high": 8192,
+  "xhigh": 16384,
+  "max": 24576
+}
+```
+
+Place this object on the public model, alongside `candidates`. At least one candidate must select a conversion when a custom table is supplied. A conversion without a custom table uses the [shared preset](architecture.md#thinking-budget-quantization). Duplicate token values are allowed; nearest-budget matching and highest-level ties retain the existing algorithm.
+
+`budget_to_effort` uses the target's declared effort scope: response-wide for Messages, reasoning-only for the other current protocols. `effort_to_budget` accepts reasoning-scoped effort and currently requires a generateContent binding. An existing qualitative effort calibration cannot be combined with a numeric conversion. Unsupported target levels, incompatible controls and over-ceiling budgets still reject; the table does not widen model admission or change dialects.
+
+`reasoning_as_text` controls conversion of history reasoning into assistant text, not visibility of new reasoning output. With the default `false`, a candidate that needs that conversion rejects rather than deleting readable content. Valid native reasoning/replay carriers remain available.
+
+Only listed models are activated. Frozen Images, Speech, Transcription and Embeddings entries use an empty object (`"configured-frozen-model": {}`); they retain their existing single catalog target and pool constraints, without Generation overrides.
+
+The file supports at most 64 models and 64 candidates per model; expanded credential candidates retain the existing runtime bound. Unknown bindings, mismatched model identities, duplicate deployments, missing pools and invalid bounds fail startup. See [service loading](../src/gateway/startup/bootstrap.rs) and [model assembly](../src/gateway/startup/models.rs).
 
 ### Private exchange capture
 
@@ -172,7 +241,7 @@ cargo run --locked --offline --bin morphiecore
 
 Override paths or proxy when needed:
 
-`--config` and `--credentials-dir` are independent: changing either leaves the other's default unchanged. The credential CLI's `--store` selects only its credential directory. The former `credentials/gateway.json` location is not searched or migrated; select it explicitly with `--config` if needed.
+`--credentials-dir` overrides the service file's `credentials_dir`; when both are omitted, changing `--config` does not relocate the default credential store. The credential CLI's `--store` selects only its credential directory. Legacy configuration is not searched or migrated.
 
 ```sh
 cargo run --locked --offline --bin morphiecore -- \

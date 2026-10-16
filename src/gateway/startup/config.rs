@@ -115,6 +115,8 @@ impl Limits {
 }
 #[derive(Clone, Copy, Debug, thiserror::Error)]
 pub enum StartupError {
+    #[error("invalid {0} configuration")]
+    Configuration(&'static str),
     #[error("invalid gateway limits")]
     Limits,
     #[error("missing or invalid credential configuration")]
@@ -233,7 +235,7 @@ impl Gateway {
                 .ok_or(StartupError::Binding)?
                 .clone();
             let provider = topology
-                .provider(endpoint.provider.as_str())
+                .endpoint_provider(&endpoint)
                 .ok_or(StartupError::Binding)?
                 .clone();
             let binding = credentials
@@ -253,11 +255,12 @@ impl Gateway {
             for source in &binding.sources {
                 source.check(endpoint.execution.credential_kind, provider.id.as_str())?;
             }
-            let count = if binding.fallback {
+            let count = (if binding.fallback {
                 binding.max_attempts
             } else {
                 1
-            };
+            })
+            .min(route.policy.max_attempts);
             for secret in binding.sources.iter().take(count) {
                 let secret = secret.clone();
                 let mut endpoint = endpoint.clone();
@@ -270,6 +273,8 @@ impl Gateway {
                     provenance.as_str(),
                     public.id.as_str(),
                     provider.id.as_str(),
+                    endpoint.target.origin.as_str(),
+                    endpoint.target.path.as_str(),
                     endpoint.upstream_model.as_str(),
                 ] {
                     hash.update((value.len() as u64).to_le_bytes());
@@ -282,10 +287,7 @@ impl Gateway {
                     .collect();
                 let cache_scope = ReplayOrigin::new(&format!("gateway-{digest}"))
                     .map_err(|_| StartupError::Binding)?;
-                let scope = crate::protocol::replay_envelope::issuer(
-                    provider.id.as_str(),
-                    &endpoint.upstream_model,
-                );
+                let scope = endpoint.replay_origin();
                 if let Some(caps) = endpoint.representation.openai_mut() {
                     caps.adaptation.scope = Some(scope.clone());
                     if caps.replay_origin.is_some() {

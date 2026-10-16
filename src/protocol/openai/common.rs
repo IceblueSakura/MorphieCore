@@ -238,6 +238,7 @@ impl<'a> Items<'a> {
         Ok(Part {
             id: PartId::new(self.next_part),
             content: ContentPart::Refusal(text.into()),
+            cache: None,
         })
     }
     pub fn part(&mut self, s: &str) -> Result<Part, CodecError> {
@@ -247,6 +248,7 @@ impl<'a> Items<'a> {
         }
         Ok(Part {
             id: PartId::new(self.next_part),
+            cache: None,
             content: ContentPart::Text(
                 Text::allowing_empty(s, "text", MAX_TEXT_BYTES)
                     .map_err(|_| CodecError::Limit)?
@@ -370,6 +372,7 @@ pub(super) fn tool_call(
     };
     Ok(ToolCall {
         call_id: text(id, "call_id", 256)?,
+        cache: None,
         name: text(string(f, "name")?, "function name", 128)?,
         arguments: raw_string(f, "arguments")?.into(),
         status,

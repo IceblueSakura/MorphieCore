@@ -234,6 +234,7 @@ impl ClientAdapter {
                     param: None,
                 }),
                 incomplete: None,
+                completion: None,
             },
         };
         let source = FidelityRecords::default();

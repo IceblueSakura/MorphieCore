@@ -130,12 +130,12 @@ fn index(items: &[(ItemId, Item)], owner: ItemId) -> Result<usize, GenerationErr
 fn contains_part(items: &[(ItemId, Item)], part: PartId) -> bool {
     items.iter().any(|(_, item)| match item {
         Item::Message(m) => m.parts.iter().any(|p| p.id == part),
-        Item::Instruction(i) => i.parts.iter().any(|(id, _)| *id == part),
+        Item::Instruction(i) => i.parts.iter().any(|p| p.id == part),
         Item::Reasoning(r) => r.parts.iter().any(|(id, _)| *id == part),
         Item::ToolResult(r) | Item::CustomResult(r) => matches!(&r.output,
-            ToolOutput::Parts(parts) if parts.iter().any(|(id,_)| *id == part)),
+            ToolOutput::Parts(parts) if parts.iter().any(|p| p.id == part)),
         Item::ProviderTool(p) => matches!(&p.output,
-            Some(ToolOutput::Parts(parts)) if parts.iter().any(|(id,_)| *id == part)),
+            Some(ToolOutput::Parts(parts)) if parts.iter().any(|p| p.id == part)),
         _ => false,
     })
 }
@@ -200,7 +200,7 @@ impl GenerationRequest {
                         let sources: Vec<_> = values.iter().map(|(id,_)| *id).collect();
                         request.items.retain(|(id,_)| !sources.contains(id));
                         request.items.insert(position, (owner, Item::Message(Message {
-                            role: MessageRole::User, parts: vec![Part { id: part, content: ContentPart::Text(text.into()) }],
+                            role: MessageRole::User, parts: vec![Part::new(part, ContentPart::Text(text.into()))],
                             status: ItemLifecycle::Completed, phase: None,
                         })));
                         ContextChange::Summarized { sources, owner }

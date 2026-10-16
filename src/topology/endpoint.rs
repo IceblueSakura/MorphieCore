@@ -49,6 +49,15 @@ pub struct Endpoint {
 }
 
 impl Endpoint {
+    pub fn replay_origin(&self) -> crate::semantic::value::ReplayOrigin {
+        crate::protocol::replay_envelope::deployment_issuer(
+            self.provider.as_str(),
+            &self.upstream_model,
+            self.target.origin.as_str(),
+            self.target.path.as_str(),
+        )
+    }
+
     pub fn adapter(&self) -> Result<crate::adapter::UpstreamAdapter, crate::protocol::CodecError> {
         use crate::{
             adapter::UpstreamAdapter,
@@ -58,10 +67,10 @@ impl Endpoint {
             },
         };
         let reasoning_policy = match &self.representation {
-            TargetCaps::OpenAi(caps) => caps.adaptation.reasoning_policy,
-            TargetCaps::AnthropicMessages(caps) => caps.reasoning_policy,
-            TargetCaps::GoogleGenerateContent(caps) => caps.reasoning_policy,
-            TargetCaps::GoogleInteractions(caps) => caps.reasoning_policy,
+            TargetCaps::OpenAi(caps) => caps.adaptation.reasoning_policy.as_ref(),
+            TargetCaps::AnthropicMessages(caps) => caps.reasoning_policy.as_ref(),
+            TargetCaps::GoogleGenerateContent(caps) => caps.reasoning_policy.as_ref(),
+            TargetCaps::GoogleInteractions(caps) => caps.reasoning_policy.as_ref(),
         };
         if reasoning_policy
             .is_some_and(|policy| policy.canonical_model != self.canonical_model.as_str())
@@ -75,7 +84,8 @@ impl Endpoint {
                     target: crate::protocol::native::ReplayTarget::new(
                         self.provider.as_str(),
                         &self.upstream_model,
-                    )?,
+                    )?
+                    .with_origin(self.replay_origin()),
                 }
             }
             (ProtocolProfile::GoogleGenerateContent, TargetCaps::GoogleGenerateContent(_)) => {
@@ -83,7 +93,8 @@ impl Endpoint {
                     target: crate::protocol::native::ReplayTarget::new(
                         self.provider.as_str(),
                         &self.upstream_model,
-                    )?,
+                    )?
+                    .with_origin(self.replay_origin()),
                 }
             }
             (ProtocolProfile::GoogleInteractions, TargetCaps::GoogleInteractions(_)) => {
@@ -91,7 +102,8 @@ impl Endpoint {
                     target: crate::protocol::native::ReplayTarget::new(
                         self.provider.as_str(),
                         &self.upstream_model,
-                    )?,
+                    )?
+                    .with_origin(self.replay_origin()),
                 }
             }
             (
@@ -110,7 +122,10 @@ impl Endpoint {
                     } else {
                         Profile::Responses
                     },
-                    adaptation: caps.adaptation.clone(),
+                    adaptation: crate::protocol::openai::dialect::adaptation::Adaptation {
+                        scope: Some(self.replay_origin()),
+                        ..caps.adaptation.clone()
+                    },
                 }))
             }
             _ => return Err(CodecError::ProfileMismatch),
@@ -139,7 +154,9 @@ impl Endpoint {
         use crate::adapter::UpstreamAdapter;
         match (self.adapter()?, &self.representation) {
             (UpstreamAdapter::OpenAi(adapter), TargetCaps::OpenAi(caps)) => {
-                adapter.encode_request_with_evidence(request, &self.upstream_model, caps)
+                let mut contract = caps.as_ref().clone();
+                contract.replay_origin = contract.replay_origin.map(|_| self.replay_origin());
+                adapter.encode_request_with_evidence(request, &self.upstream_model, &contract)
             }
             (
                 UpstreamAdapter::AnthropicMessages { target, .. },

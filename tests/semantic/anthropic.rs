@@ -299,6 +299,7 @@ mod anthropic_semantics {
                 id,
                 Item::ToolResult(ToolResult {
                     call_id: Some(Text::new("c", "call", 64).unwrap()),
+                    cache: None,
                     name: None,
                     output: "actual feedback".into(),
                     is_error: if matches!(&execution, ToolExecution::Succeeded) {
@@ -395,9 +396,115 @@ mod anthropic_semantics {
             assert_eq!(observed.semantic.outcome(), outcome, "{stop}");
             assert_eq!(observed.semantic.progress(), progress, "{stop}");
             assert_eq!(observed.semantic.details().incomplete, incomplete, "{stop}");
+            if stop == "stop_sequence" {
+                let source = p
+                    .decode_generation_request(request(), LocalScope::new(1), &target())
+                    .unwrap();
+                let wire = p
+                    .encode_generation_response(&observed, &source, &target())
+                    .unwrap();
+                assert_eq!(wire["stop_reason"], "stop_sequence");
+                assert_eq!(wire["stop_sequence"], "END");
+            }
         }
         assert!(decode("end_turn", json!("END")).is_err());
         assert!(decode("stop_sequence", Value::Null).is_err());
+        assert_eq!(
+            decode("end_turn", Value::Null)
+                .unwrap()
+                .semantic
+                .details()
+                .completion,
+            Some(CompletionCause::Natural)
+        );
+        let expected = decode("stop_sequence", json!("END")).unwrap();
+        assert_eq!(
+            expected.semantic.details().completion,
+            Some(CompletionCause::StopSequence(
+                Text::new("END", "fixture", 64).unwrap()
+            ))
+        );
+        assert!(
+            morphiecore::protocol::openai::Adapter::new(
+                morphiecore::protocol::openai::Profile::Responses,
+                morphiecore::protocol::openai::Dialect::Standard,
+                None
+            )
+            .encode_response(
+                &expected,
+                &morphiecore::protocol::openai::TargetCaps::full()
+            )
+            .is_err()
+        );
+        let frames = vec![
+            json!({"type":"message_start","message":{"id":"msg_synthetic","type":"message","role":"assistant","model":"synthetic-model","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":0}}}),
+            json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":"partial"}}),
+            json!({"type":"content_block_stop","index":0}),
+            json!({"type":"message_delta","delta":{"stop_reason":"stop_sequence","stop_sequence":"END"},"usage":{"output_tokens":7}}),
+            json!({"type":"message_stop"}),
+        ];
+        let bytes = frames
+            .iter()
+            .map(|v| format!("event: {}\ndata: {v}\n\n", v["type"].as_str().unwrap()))
+            .collect::<String>();
+        let mut decoder = morphiecore::protocol::anthropic::GenerationSseDecoder::new(
+            200,
+            "text/event-stream",
+            Default::default(),
+            LocalScope::new(2),
+            target(),
+        )
+        .unwrap();
+        let mut state = StreamState::new();
+        let mut client =
+            morphiecore::protocol::anthropic::client_events::ClientEventEncoder::new("r", "m");
+        let mut output = Vec::new();
+        let mut rest = bytes.as_bytes();
+        while !rest.is_empty() {
+            let (used, events) = decoder.consume(rest).unwrap();
+            assert!(used > 0);
+            rest = &rest[used..];
+            for event in events {
+                state = reduce(state, event.clone()).unwrap();
+                output.extend(client.encode(&event).unwrap().into_iter().flatten());
+            }
+        }
+        decoder.finish().unwrap();
+        client.finish().unwrap();
+        assert_eq!(materialize(&state).unwrap(), expected.semantic);
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("\"stop_reason\":\"stop_sequence\""));
+        assert!(output.contains("\"stop_sequence\":\"END\""));
+        let static_wire =
+            morphiecore::protocol::anthropic::client::encode_client_response(&expected, "m")
+                .unwrap();
+        assert_eq!(static_wire["stop_sequence"], "END");
+        let mut conflict = frames;
+        conflict.insert(4, json!({"type":"message_delta","delta":{"stop_reason":"stop_sequence","stop_sequence":"DIFFERENT"},"usage":{"output_tokens":7}}));
+        let bytes = conflict
+            .iter()
+            .map(|v| format!("event: {}\ndata: {v}\n\n", v["type"].as_str().unwrap()))
+            .collect::<String>();
+        let mut decoder = morphiecore::protocol::anthropic::MessageSseDecoder::new(
+            200,
+            "text/event-stream",
+            Default::default(),
+        )
+        .unwrap();
+        let mut rest = bytes.as_bytes();
+        let rejected = loop {
+            match decoder.consume(rest) {
+                Ok(used) if used > 0 => {
+                    rest = &rest[used..];
+                    if rest.is_empty() {
+                        break false;
+                    }
+                }
+                _ => break true,
+            }
+        };
+        assert!(rejected);
+        assert!(decoder.finish().is_err());
     }
     #[test]
     fn saved_observation_and_appended_error_encode_the_independent_native_history() {
@@ -457,7 +564,294 @@ mod anthropic_semantics {
     #[test]
     fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners() {
         let p = Profile::AdaptiveTextTools;
-        let raw = br#"{"model":"synthetic-model","max_tokens":32,"system":[{"type":"text","text":"one"},{"type":"text","text":"two"}],"thinking":{"type":"disabled"},"output_config":{"effort":"high"},"cache_control":{"type":"ephemeral"},"messages":[{"role":"user","content":"go"}]}"#;
+        let content_wire = br#"{"model":"synthetic-model","max_tokens":32,"system":[{"type":"text","text":"stable","cache_control":{"type":"ephemeral","ttl":"1h"}},{"type":"text","text":"changing"}],"cache_control":{"type":"ephemeral"},"messages":[{"role":"user","content":[{"type":"text","text":"go","cache_control":{"type":"ephemeral"}}]}]}"#;
+        let content = p
+            .decode_generation_request(content_wire, LocalScope::new(1), &target())
+            .unwrap();
+        let content_client =
+            morphiecore::protocol::anthropic::client::decode_client_request(content_wire).unwrap();
+        assert_eq!(
+            content.semantic.settings(),
+            content_client.task.semantic.settings()
+        );
+        let encoded = p
+            .encode_generation_request(&content.semantic, &content.fidelity, &target())
+            .unwrap();
+        assert_eq!(
+            encoded.value["system"],
+            json!([
+                {"type":"text","text":"stable","cache_control":{"type":"ephemeral","ttl":"1h"}},
+                {"type":"text","text":"changing"}
+            ])
+        );
+        assert_eq!(
+            encoded.value["messages"],
+            json!([
+                {"role":"user","content":[{"type":"text","text":"go","cache_control":{"type":"ephemeral"}}]}
+            ])
+        );
+        assert_eq!(encoded.value["cache_control"], json!({"type":"ephemeral"}));
+        let Item::Instruction(instruction) = &content.semantic.items()[0].1 else {
+            panic!("system owner")
+        };
+        assert_eq!(instruction.parts[0].cache, Some(PrefixCacheTtl::OneHour));
+        assert_eq!(instruction.parts[1].cache, None);
+        assert_eq!(
+            content.semantic.settings().automatic_prefix_cache,
+            Some(PrefixCacheTtl::FiveMinutes)
+        );
+        let text = |value| Text::new(value, "fixture", 64).unwrap();
+        let mut settings = GenerationSettings {
+            automatic_prefix_cache: Some(PrefixCacheTtl::FiveMinutes),
+            ..Default::default()
+        };
+        settings.controls.max_output_tokens = Some(32);
+        let manual = GenerationRequest::from_settings(
+            vec![
+                (
+                    ItemId::new(1),
+                    Item::Instruction(Instruction {
+                        authority: InstructionAuthority::System,
+                        status: None,
+                        parts: vec![
+                            Part {
+                                id: PartId::new(1),
+                                content: InputPart::Text(text("stable")),
+                                cache: Some(PrefixCacheTtl::OneHour),
+                            },
+                            Part::new(PartId::new(2), InputPart::Text(text("changing"))),
+                        ],
+                    }),
+                ),
+                (
+                    ItemId::new(2),
+                    Item::Message(Message {
+                        role: MessageRole::User,
+                        status: ItemLifecycle::Completed,
+                        phase: None,
+                        parts: vec![Part {
+                            id: PartId::new(3),
+                            content: ContentPart::Text(text("go").into()),
+                            cache: Some(PrefixCacheTtl::FiveMinutes),
+                        }],
+                    }),
+                ),
+            ],
+            settings,
+        )
+        .unwrap()
+        .with_message_envelopes(vec![
+            MessageEnvelope::new(
+                GroupId::new(LocalScope::ROOT, 1),
+                MessageEnvelopeRole::User,
+                vec![ItemId::new(2)],
+            )
+            .unwrap(),
+        ])
+        .unwrap();
+        assert_eq!(
+            p.encode_generation_request(&manual, &Default::default(), &target())
+                .unwrap()
+                .value,
+            serde_json::from_slice::<Value>(content_wire).unwrap()
+        );
+        assert!(
+            morphiecore::protocol::openai::lowering::lower_request(
+                &manual,
+                &Default::default(),
+                morphiecore::protocol::openai::Profile::Chat,
+                morphiecore::protocol::openai::TargetCaps::full()
+            )
+            .is_err()
+        );
+        let mut conflict: Value = serde_json::from_slice(content_wire).unwrap();
+        conflict["cache_control"]["ttl"] = json!("1h");
+        assert_eq!(
+            p.decode_request(conflict.to_string().as_bytes())
+                .err()
+                .unwrap(),
+            morphiecore::protocol::CodecError::Invalid("Anthropic automatic cache TTL conflict")
+        );
+        let mut full: Value = serde_json::from_slice(content_wire).unwrap();
+        full["tools"] = json!([
+            {"name":"first","input_schema":{"type":"object"},"cache_control":{"type":"ephemeral","ttl":"1h"}},
+            {"name":"second","input_schema":{"type":"object"},"cache_control":{"type":"ephemeral","ttl":"1h"}}
+        ]);
+        assert_eq!(
+            p.decode_request(full.to_string().as_bytes()).err(),
+            Some(morphiecore::protocol::CodecError::Limit)
+        );
+        let mut items = content.semantic.items().to_vec();
+        let Item::Instruction(instruction) = &mut items[0].1 else {
+            unreachable!()
+        };
+        instruction.parts[0].cache = None;
+        let edited = content.semantic.clone().with_items(items).unwrap();
+        let encoded = p
+            .encode_generation_request(&edited, &content.fidelity, &target())
+            .unwrap();
+        assert!(encoded.value["system"][0].get("cache_control").is_none());
+        assert!(GenerationRequirements::derive(&edited).explicit_cache);
+        let nested_wire = br#"{"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":"lookup"},{"role":"assistant","content":[{"type":"tool_use","id":"c","name":"lookup","input":{},"cache_control":{"type":"ephemeral","ttl":"1h"}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"c","cache_control":{"type":"ephemeral"},"content":[{"type":"text","text":"stable","cache_control":{"type":"ephemeral","ttl":"1h"}},{"type":"text","text":"tail"}]}]}]}"#;
+        let nested = p
+            .decode_generation_request(nested_wire, LocalScope::new(1), &target())
+            .unwrap();
+        let Item::ToolCall(call) = &nested.semantic.items()[1].1 else {
+            panic!("call owner")
+        };
+        assert_eq!(call.cache, Some(PrefixCacheTtl::OneHour));
+        let Item::ToolResult(result) = &nested.semantic.items()[2].1 else {
+            panic!("result owner")
+        };
+        assert_eq!(result.cache, Some(PrefixCacheTtl::FiveMinutes));
+        let ToolOutput::Parts(parts) = &result.output else {
+            panic!("inner owners")
+        };
+        assert_eq!(parts[0].cache, Some(PrefixCacheTtl::OneHour));
+        assert_eq!(parts[1].cache, None);
+        let encoded = p
+            .encode_generation_request(&nested.semantic, &nested.fidelity, &target())
+            .unwrap();
+        assert_eq!(
+            encoded.value["messages"],
+            json!([
+                {"role":"user","content":[{"type":"text","text":"lookup"}]},
+                {"role":"assistant","content":[{"type":"tool_use","id":"c","name":"lookup","input":{},"cache_control":{"type":"ephemeral","ttl":"1h"}}]},
+                {"role":"user","content":[{"type":"tool_result","tool_use_id":"c","cache_control":{"type":"ephemeral"},"content":[
+                    {"type":"text","text":"stable","cache_control":{"type":"ephemeral","ttl":"1h"}},
+                    {"type":"text","text":"tail"}
+                ]}]}
+            ])
+        );
+        assert!(p.decode_request(br#"{"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":[{"type":"text","text":"","cache_control":{"type":"ephemeral"}}]}]}"#).is_err());
+        let cached_wire = br#"{"model":"synthetic-model","max_tokens":32,"tools":[{"name":"lookup","input_schema":{"type":"object"},"cache_control":{"type":"ephemeral","ttl":"1h"}}],"messages":[{"role":"user","content":"go"}]}"#;
+        let cached = p
+            .decode_generation_request(cached_wire, LocalScope::new(1), &target())
+            .unwrap();
+        assert!(
+            matches!(&cached.semantic.tools()[0], ToolDefinition::Function(tool)
+            if tool.cache == Some(PrefixCacheTtl::OneHour)
+                && tool.strict == FunctionStrictness::Omitted(StrictDefault::NonStrict)
+                && tool.parameters.as_ref().unwrap().root() == &json!({"type":"object"}))
+        );
+        let client =
+            morphiecore::protocol::anthropic::client::decode_client_request(cached_wire).unwrap();
+        assert_eq!(client.task.semantic.settings(), cached.semantic.settings());
+        assert!(GenerationRequirements::derive(&client.task.semantic).explicit_cache);
+        let encoded = p
+            .encode_generation_request(&cached.semantic, &cached.fidelity, &target())
+            .unwrap();
+        assert_eq!(
+            encoded.value["tools"],
+            json!([{"name":"lookup","input_schema":{"type":"object"},"cache_control":{"type":"ephemeral","ttl":"1h"}}])
+        );
+        let mut settings = cached.semantic.settings().clone();
+        let ToolDefinition::Function(tool) = &mut settings.tools.as_mut().unwrap()[0] else {
+            panic!("function tool")
+        };
+        tool.cache = Some(PrefixCacheTtl::FiveMinutes);
+        let short = cached
+            .semantic
+            .clone()
+            .with_settings(settings.clone())
+            .unwrap();
+        let encoded = p
+            .encode_generation_request(&short, &cached.fidelity, &target())
+            .unwrap();
+        assert_eq!(
+            encoded.value["tools"],
+            json!([{"name":"lookup","input_schema":{"type":"object"},"cache_control":{"type":"ephemeral"}}])
+        );
+        let ToolDefinition::Function(tool) = &mut settings.tools.as_mut().unwrap()[0] else {
+            panic!("function tool")
+        };
+        tool.cache = None;
+        let removed = cached.semantic.clone().with_settings(settings).unwrap();
+        let encoded = p
+            .encode_generation_request(&removed, &cached.fidelity, &target())
+            .unwrap();
+        assert!(encoded.value["tools"][0].get("cache_control").is_none());
+        assert!(!GenerationRequirements::derive(&removed).explicit_cache);
+        for profile in [
+            morphiecore::protocol::openai::Profile::Chat,
+            morphiecore::protocol::openai::Profile::Responses,
+        ] {
+            assert_eq!(
+                morphiecore::protocol::openai::lowering::lower_request(
+                    &client.task.semantic,
+                    &client.task.fidelity,
+                    profile,
+                    morphiecore::protocol::openai::TargetCaps::full(),
+                )
+                .err()
+                .unwrap(),
+                morphiecore::lowering::generation::RepresentationError::Controls
+            );
+        }
+        assert!(
+            morphiecore::protocol::google::encode_generation_request(
+                &client.task.semantic,
+                &client.task.fidelity,
+                &target()
+            )
+            .is_err()
+        );
+        assert!(
+            morphiecore::protocol::interactions::encode_generation_request(
+                &client.task.semantic,
+                &client.task.fidelity,
+                &target()
+            )
+            .is_err()
+        );
+        let invalid = std::str::from_utf8(cached_wire)
+            .unwrap()
+            .replace("\"1h\"", "\"1d\"");
+        assert!(
+            morphiecore::protocol::anthropic::client::decode_client_request(invalid.as_bytes())
+                .is_err()
+        );
+        let mut bounded: Value = serde_json::from_slice(cached_wire).unwrap();
+        bounded["tools"] = json!(
+            (0..4)
+                .map(|index| json!({
+                    "name":format!("lookup_{index}"),"input_schema":{"type":"object"},
+                    "cache_control":{"type":"ephemeral","ttl":"1h"}
+                }))
+                .collect::<Vec<_>>()
+        );
+        let four = p
+            .decode_generation_request(
+                bounded.to_string().as_bytes(),
+                LocalScope::new(1),
+                &target(),
+            )
+            .unwrap();
+        assert!(
+            p.encode_generation_request(&four.semantic, &four.fidelity, &target())
+                .is_err()
+        );
+        bounded["tools"].as_array_mut().unwrap().push(json!({
+            "name":"extra","input_schema":{"type":"object"},
+            "cache_control":{"type":"ephemeral"}
+        }));
+        assert!(
+            p.decode_generation_request(
+                bounded.to_string().as_bytes(),
+                LocalScope::new(1),
+                &target()
+            )
+            .is_err()
+        );
+        bounded["tools"].as_array_mut().unwrap().truncate(2);
+        bounded["tools"][0]["cache_control"]["ttl"] = json!("5m");
+        assert!(
+            morphiecore::protocol::anthropic::client::decode_client_request(
+                bounded.to_string().as_bytes()
+            )
+            .is_err()
+        );
+        let raw = br#"{"model":"synthetic-model","max_tokens":32,"system":[{"type":"text","text":"one"},{"type":"text","text":"two"}],"thinking":{"type":"disabled"},"output_config":{"effort":"high"},"messages":[{"role":"user","content":"go"}]}"#;
         let decoded = p
             .decode_generation_request(raw, LocalScope::new(1), &target())
             .unwrap();
@@ -485,6 +879,54 @@ mod anthropic_semantics {
         assert_eq!(encoded.value["output_config"], json!({"effort":"high"}));
         assert_eq!(encoded.value["cache_control"], json!({"type":"ephemeral"}));
         assert_eq!(encoded.value["max_tokens"], 32);
+        let mut stopped: Value = serde_json::from_slice(raw).unwrap();
+        stopped["stop_sequences"] = json!(["END"]);
+        let stopped = p
+            .decode_generation_request(
+                stopped.to_string().as_bytes(),
+                LocalScope::new(1),
+                &target(),
+            )
+            .unwrap();
+        assert_eq!(
+            stopped
+                .semantic
+                .controls()
+                .stop_sequences
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>(),
+            ["END"]
+        );
+        let encoded = p
+            .encode_generation_request(&stopped.semantic, &stopped.fidelity, &target())
+            .unwrap();
+        assert_eq!(encoded.value["stop_sequences"], json!(["END"]));
+        assert!(
+            morphiecore::protocol::openai::lowering::lower_request(
+                &stopped.semantic,
+                &stopped.fidelity,
+                morphiecore::protocol::openai::Profile::Responses,
+                morphiecore::protocol::openai::TargetCaps::full()
+            )
+            .is_err()
+        );
+        let mut automatic: Value = serde_json::from_slice(raw).unwrap();
+        automatic["cache_control"] = json!({"type":"ephemeral"});
+        assert!(
+            p.decode_generation_request(
+                automatic.to_string().as_bytes(),
+                LocalScope::new(1),
+                &target()
+            )
+            .is_ok()
+        );
+        assert!(
+            morphiecore::protocol::anthropic::client::decode_client_request(
+                automatic.to_string().as_bytes()
+            )
+            .is_ok()
+        );
         let client = morphiecore::protocol::anthropic::client::decode_client_request(raw).unwrap();
         assert_eq!(
             client.task.semantic.reasoning().activation,
@@ -505,13 +947,33 @@ mod anthropic_semantics {
             .encode_generation_request(&uncapped, &decoded.fidelity, &target())
             .unwrap();
         assert_eq!(encoded.value["max_tokens"], 32_000);
-        let ttl = std::str::from_utf8(raw).unwrap().replace(
-            r#"{"type":"ephemeral"}"#,
-            r#"{"type":"ephemeral","ttl":"1h"}"#,
+        automatic["cache_control"]["ttl"] = json!("1h");
+        let long = p
+            .decode_generation_request(
+                automatic.to_string().as_bytes(),
+                LocalScope::new(1),
+                &target(),
+            )
+            .unwrap();
+        assert_eq!(
+            long.semantic.settings().automatic_prefix_cache,
+            Some(PrefixCacheTtl::OneHour)
         );
+        let encoded = p
+            .encode_generation_request(&long.semantic, &long.fidelity, &target())
+            .unwrap();
+        assert_eq!(
+            encoded.value["cache_control"],
+            json!({"type":"ephemeral","ttl":"1h"})
+        );
+        automatic["cache_control"]["ttl"] = json!("1d");
         assert!(
-            p.decode_generation_request(ttl.as_bytes(), LocalScope::new(1), &target())
-                .is_err()
+            p.decode_generation_request(
+                automatic.to_string().as_bytes(),
+                LocalScope::new(1),
+                &target()
+            )
+            .is_err()
         );
     }
 }
@@ -556,7 +1018,7 @@ mod anthropic_media {
         let MessageContent::Blocks(blocks) = &mut request.messages[0].content else {
             panic!("image blocks")
         };
-        blocks[0] = Block::Media(Media::Image {
+        blocks[0].content = Block::Media(Media::Image {
             source: Source::Base64 {
                 media_type: "image/png".into(),
                 data: "AAAA".repeat(10_000_000 / 4),
@@ -570,7 +1032,7 @@ mod anthropic_media {
         let Block::Media(Media::Image {
             source: Source::Base64 { data, .. },
             ..
-        }) = &mut blocks[0]
+        }) = &mut blocks[0].content
         else {
             unreachable!()
         };
@@ -668,7 +1130,7 @@ mod anthropic_media {
         let ToolOutput::Parts(parts) = &result.output else {
             panic!("parts")
         };
-        let InputPart::Resource(shot) = &parts[1].1 else {
+        let InputPart::Resource(shot) = &parts[1].content else {
             panic!("tool image")
         };
         assert_eq!(view(semantic, shot).kind(), ResourceKind::Image);
@@ -974,15 +1436,38 @@ mod client_fidelity {
     use serde_json::json;
 
     fn response() -> DecodedResponse {
-        Adapter::new(Profile::Chat, Dialect::Standard, None)
-            .decode_response(
-                json!({"id":"r","object":"chat.completion","model":"synthetic","created":1,
-                "choices":[{"index":0,"finish_reason":"stop",
-                    "message":{"role":"assistant","content":"answer"}}]})
-                .to_string()
-                .as_bytes(),
+        // These delivery fixtures assert content and usage, not a reported stop cause.
+        DecodedResponse {
+            semantic: GenerationResponse::new(
+                vec![(
+                    ItemId::new(1),
+                    Item::Message(Message {
+                        role: MessageRole::Assistant,
+                        status: ItemLifecycle::Completed,
+                        phase: None,
+                        parts: vec![Part::new(
+                            PartId::new(1),
+                            ContentPart::Text(
+                                morphiecore::semantic::value::Text::new("answer", "fixture", 64)
+                                    .unwrap()
+                                    .into(),
+                            ),
+                        )],
+                    }),
+                )],
+                Outcome::Completed,
             )
-            .unwrap()
+            .unwrap(),
+            fidelity: Default::default(),
+            metadata: morphiecore::protocol::ResponseMetadata {
+                id: Some("r".into()),
+                model: "synthetic".into(),
+                storage: None,
+                created: None,
+                context: Default::default(),
+                instruction_fidelity: Default::default(),
+            },
+        }
     }
     fn terminal() -> StreamEvent {
         StreamEvent::Terminal {
@@ -1007,6 +1492,26 @@ mod client_fidelity {
             encode_client_response(&response, "m").unwrap()["usage"],
             json!({"input_tokens":8,"output_tokens":3,
                 "cache_read_input_tokens":2,"cache_creation_input_tokens":0})
+        );
+        let mut ambiguous = response.clone();
+        ambiguous.semantic = ambiguous
+            .semantic
+            .clone()
+            .with_details(TerminalDetails {
+                completion: Some(CompletionCause::NaturalOrStopSequence),
+                ..Default::default()
+            })
+            .unwrap();
+        assert!(encode_client_response(&ambiguous, "m").is_err());
+        let mut ambiguous_stream = ClientEventEncoder::new("r", "m");
+        ambiguous_stream.encode(&StreamEvent::Usage(usage)).unwrap();
+        assert!(
+            ambiguous_stream
+                .encode(&StreamEvent::Terminal {
+                    terminal: StreamTerminal::Completed,
+                    details: ambiguous.semantic.details().clone(),
+                })
+                .is_err()
         );
         let original = response.clone();
         let (retained, wire) = morphiecore::adapter::ClientAdapter::Messages
@@ -1112,6 +1617,7 @@ mod client_fidelity {
         for (id, value) in [(2, ""), (3, "tail")] {
             message.parts.push(Part {
                 id: PartId::new(id),
+                cache: None,
                 content: ContentPart::Text(
                     morphiecore::semantic::value::Text::allowing_empty(value, "test", 128)
                         .unwrap()
@@ -1172,6 +1678,7 @@ mod client_fidelity {
         );
         let mut call = ToolCall {
             call_id: text("c"),
+            cache: None,
             name: text("lookup"),
             arguments: ToolArguments::Raw("{}".into()),
             status: ItemLifecycle::Completed,
@@ -1329,6 +1836,15 @@ mod client_fidelity {
         assert!(decode_client_request(thinking.to_string().as_bytes()).is_err());
         thinking["messages"][0]["role"] = json!("assistant");
         assert!(decode_client_request(thinking.to_string().as_bytes()).is_ok());
+        let mut cached_content = body.clone();
+        cached_content["messages"][0]["content"] = json!([
+            {"type":"text","text":"go","cache_control":{"type":"ephemeral","ttl":"1h"}}
+        ]);
+        let cached = decode_client_request(cached_content.to_string().as_bytes()).unwrap();
+        cached_content["messages"][0]["content"][0]["cache_control"]["future_cache_metadata"] =
+            json!(true);
+        let unknown = decode_client_request(cached_content.to_string().as_bytes()).unwrap();
+        assert_eq!(unknown.task.semantic, cached.task.semantic);
         let mut calls = body.clone();
         calls["messages"] = json!([
             {"role":"assistant","content":[{"type":"tool_use","id":"c","name":"lookup","input":{},
@@ -1339,7 +1855,7 @@ mod client_fidelity {
             json!({"type":"code_execution_20250825","tool_id":"program_1"});
         assert!(decode_client_request(calls.to_string().as_bytes()).is_err());
         for (key, value) in [
-            ("stop_sequences", json!(["END"])),
+            ("stop_sequences", json!([7])),
             ("top_k", json!(4)),
             ("service_tier", json!("standard_only")),
             ("container", json!("container_1")),
@@ -1405,18 +1921,55 @@ mod client_fidelity {
         assert!(wire.get("prediction").is_none());
         prediction["prediction"]["content"] = json!(7);
         assert!(decode(&prediction).is_err());
+        let mut controlled = body.clone();
+        controlled["stop"] = json!(["END", "DONE"]);
+        controlled["seed"] = json!(0);
+        controlled["presence_penalty"] = json!(0.25);
+        controlled["frequency_penalty"] = json!(-0.5);
+        let controlled = decode(&controlled).unwrap();
+        assert_eq!(controlled.task.semantic.controls().seed, Some(0));
+        assert_eq!(
+            controlled.task.semantic.controls().presence_penalty(),
+            Some(0.25)
+        );
+        assert_eq!(
+            controlled.task.semantic.controls().frequency_penalty(),
+            Some(-0.5)
+        );
+        assert_eq!(
+            controlled
+                .task
+                .semantic
+                .controls()
+                .stop_sequences
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>(),
+            ["END", "DONE"]
+        );
+        let wire = chat
+            .encode_request(
+                &controlled,
+                "m",
+                &morphiecore::protocol::openai::TargetCaps::full(),
+            )
+            .unwrap();
+        assert_eq!(wire["stop"], json!(["END", "DONE"]));
+        assert_eq!(wire["seed"], 0);
+        assert_eq!(wire["presence_penalty"], 0.25);
+        assert_eq!(wire["frequency_penalty"], -0.5);
         for (key, value) in [
             ("max_completion_tokens", json!(7)),
-            ("stop", json!(["END"])),
+            ("stop", json!([7])),
             (
                 "functions",
                 json!([{"name":"lookup","parameters":{"type":"object"}}]),
             ),
             ("function_call", json!("auto")),
             ("web_search_options", json!({})),
-            ("seed", json!(0)),
-            ("frequency_penalty", json!(0.25)),
-            ("presence_penalty", json!(0.25)),
+            ("seed", json!("0")),
+            ("frequency_penalty", json!(3)),
+            ("presence_penalty", json!(3)),
             ("logit_bias", json!({"1": 1})),
         ] {
             let mut active = body.clone();

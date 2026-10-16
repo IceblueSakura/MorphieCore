@@ -5,8 +5,8 @@
 use crate::{
     protocol::CodecError,
     semantic::task::generation::{
-        IncompleteReason, InputTokenRelation, ItemId, ItemKind, OutputTokenRelation, PartId,
-        PartKind, StreamEvent, StreamTerminal, Usage,
+        InputTokenRelation, ItemId, ItemKind, Outcome, OutputTokenRelation, PartId, PartKind,
+        StreamEvent, StreamTerminal, Usage,
     },
 };
 use bytes::Bytes;
@@ -265,22 +265,18 @@ impl ClientEventEncoder {
             }
             StreamEvent::Terminal { terminal, details } => {
                 self.start(&mut out);
-                let stop = match (terminal, &details.incomplete) {
-                    (StreamTerminal::Completed, _) if self.calls => "tool_use",
-                    (StreamTerminal::Completed, _) => "end_turn",
-                    (StreamTerminal::Incomplete, Some(IncompleteReason::MaxOutputTokens)) => {
-                        "max_tokens"
-                    }
-                    (StreamTerminal::Incomplete, Some(IncompleteReason::ContentFilter)) => {
-                        "refusal"
-                    }
-                    _ => return Err(CodecError::Unsupported("Messages terminal".into())),
+                let outcome = match terminal {
+                    StreamTerminal::Completed => Outcome::Completed,
+                    StreamTerminal::Incomplete => Outcome::Incomplete,
+                    StreamTerminal::Failed | StreamTerminal::Error => Outcome::Failed,
+                    StreamTerminal::Cancelled => Outcome::Cancelled,
                 };
+                let (stop, sequence) = super::client::terminal(outcome, self.calls, details)?;
                 for (_, (index, _, _)) in std::mem::take(&mut self.open) {
                     out.push(frame(&json!({"type":"content_block_stop","index":index})));
                 }
                 out.push(frame(&json!({"type":"message_delta",
-                    "delta":{"stop_reason":stop,"stop_sequence":null},
+                    "delta":{"stop_reason":stop,"stop_sequence":sequence},
                     "usage":usage_json(self.usage.as_ref())?})));
                 out.push(frame(&json!({"type":"message_stop"})));
                 self.finished = true;

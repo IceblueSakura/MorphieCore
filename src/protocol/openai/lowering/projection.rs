@@ -145,6 +145,15 @@ pub(crate) fn reported_settings(
     let Some(settings) = &mut metadata.context.settings else {
         return Ok(None);
     };
+    if settings
+        .tools
+        .iter()
+        .flatten()
+        .flat_map(ToolDefinition::leaves)
+        .any(|tool| matches!(tool, ToolDefinition::Function(tool) if tool.cache.is_some()))
+    {
+        return Err(RepresentationError::Controls);
+    }
     let before = settings.clone();
     settings.reasoning.budget_tokens = None;
     settings.reasoning.display = Presence::Absent;

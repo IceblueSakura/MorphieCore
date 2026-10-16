@@ -11,6 +11,7 @@ mod client_managed {
     fn call() -> Item {
         Item::ToolCall(ToolCall {
             call_id: text("C"),
+            cache: None,
             name: text("lookup"),
             arguments: "{}".into(),
             status: ItemLifecycle::Completed,
@@ -20,6 +21,7 @@ mod client_managed {
     fn result() -> Item {
         Item::ToolResult(ToolResult {
             is_error: None,
+            cache: None,
             call_id: Some(text("C")),
             name: None,
             output: "reported".into(),
@@ -84,6 +86,7 @@ mod client_managed {
                         role: MessageRole::Assistant,
                         parts: vec![Part {
                             id: PartId::new(5),
+                            cache: None,
                             content: ContentPart::Text(text("reported text").into()),
                         }],
                         status: ItemLifecycle::Completed,
@@ -163,6 +166,7 @@ mod client_managed_composition {
                 parts: vec![Part {
                     id: PartId::new(id),
                     content: ContentPart::Text(text(value).into()),
+                    cache: None,
                 }],
                 status: ItemLifecycle::Completed,
                 phase: None,
@@ -230,6 +234,7 @@ mod client_managed_composition {
                     strict: FunctionStrictness::Explicit(false),
                     output_schema: None,
                     dispatch: Default::default(),
+                    cache: None,
                 })]),
                 reasoning,
                 ..Default::default()
@@ -253,6 +258,7 @@ mod client_managed_composition {
                             role: MessageRole::Assistant,
                             parts: vec![Part {
                                 id: PartId::scoped(LocalScope::new(1), 1),
+                                cache: None,
                                 content: ContentPart::Text(text("reported commentary").into()),
                             }],
                             status: ItemLifecycle::Completed,
@@ -274,6 +280,7 @@ mod client_managed_composition {
                         owner(1, 3),
                         Item::ToolCall(ToolCall {
                             call_id: text("C"),
+                            cache: None,
                             name: text("lookup"),
                             arguments,
                             status: ItemLifecycle::Completed,
@@ -327,6 +334,7 @@ mod client_managed_composition {
                 owner(2, 2),
                 Item::ToolResult(ToolResult {
                     is_error: None,
+                    cache: None,
                     call_id: Some(text("C")),
                     name: None,
                     output: "client-reported result".into(),
@@ -350,7 +358,7 @@ mod client_managed_composition {
                         ItemId::new(10),
                         Item::Instruction(Instruction {
                             authority: InstructionAuthority::Developer,
-                            parts: vec![(
+                            parts: vec![Part::new(
                                 PartId::new(10),
                                 InputPart::Text(text("observe; do not execute")),
                             )],
@@ -452,6 +460,7 @@ mod context_transforms {
                 parts: vec![Part {
                     id: PartId::new(id),
                     content: ContentPart::Text(text(s).into()),
+                    cache: None,
                 }],
                 status: ItemLifecycle::Completed,
                 phase: None,
@@ -547,7 +556,10 @@ mod context_transforms {
         let mut items = source.items().to_vec();
         items[0].1 = Item::Instruction(Instruction {
             authority: InstructionAuthority::Developer,
-            parts: vec![(PartId::new(1), InputPart::Text(text("protected")))],
+            parts: vec![Part::new(
+                PartId::new(1),
+                InputPart::Text(text("protected")),
+            )],
             status: None,
         });
         let protected = GenerationRequest::new(items, GenerationControls::default()).unwrap();
@@ -603,6 +615,7 @@ mod context_transforms {
         let call = |alias| {
             Item::ToolCall(ToolCall {
                 call_id: text(alias),
+                cache: None,
                 name: text("lookup"),
                 arguments: "{}".into(),
                 status: ItemLifecycle::Completed,
@@ -622,6 +635,7 @@ mod context_transforms {
                     ItemId::new(2),
                     Item::ToolResult(ToolResult {
                         is_error: None,
+                        cache: None,
                         call_id: Some(text("C")),
                         name: None,
                         output: "reported".into(),
@@ -708,14 +722,14 @@ mod resource_table {
             execution: None,
             artifact_status: Some(ItemLifecycle::Completed),
             output: Some(ToolOutput::Parts(vec![
-                (
+                Part::new(
                     PartId::new(1),
                     InputPart::Resource(ResourceUse {
                         id,
                         description: ResourceDescription::Image { detail: None },
                     }),
                 ),
-                (
+                Part::new(
                     PartId::new(2),
                     InputPart::Resource(ResourceUse {
                         id,
@@ -787,6 +801,7 @@ mod resource_table {
                     phase: None,
                     parts: vec![Part {
                         id: PartId::new(1),
+                        cache: None,
                         content: ContentPart::Resource(ResourceUse {
                             id,
                             description: ResourceDescription::Image { detail: None },

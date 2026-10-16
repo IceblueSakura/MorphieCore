@@ -1,5 +1,5 @@
 //! Downstream Messages clients (Claude Code): requests to the IR, responses from it.
-//! Unregistered fields and `cache_control` are ignored and named, as for OpenAI clients.
+//! Unregistered fields are ignored and named; protected controls keep typed owners.
 use super::{
     Block, OutputConfig, Role, Selection, TextContent as WireText, Tool, ToolChoice as WireChoice,
     semantic_intake::{Intake, text},
@@ -26,12 +26,13 @@ const TOP: &[&str] = &[
     "output_config",
     "temperature",
     "top_p",
+    "cache_control",
+    "stop_sequences",
     "stream",
 ];
 /// Official fields (including beta) whose active value changes model input, tools or
 /// output; ignoring them would be silent loss. Other unregistered fields are ignored by name.
 const UNSUPPORTED: &[&str] = &[
-    "stop_sequences",
     "container",
     "mcp_servers",
     "context_management",
@@ -54,15 +55,28 @@ fn keep(v: &mut Value, allowed: &[&str], ignored: &mut BTreeSet<String>) {
 fn block_fields(kind: Option<&str>) -> &'static [&'static str] {
     match kind {
         // `citations` is kept so readers reject a non-empty list.
-        Some("text") => &["type", "text", "citations"],
+        Some("text") => &["type", "text", "citations", "cache_control"],
         Some("thinking") => &["type", "thinking", "signature"],
         Some("redacted_thinking") => &["type", "data"],
-        Some("tool_use") => &["type", "id", "name", "input", "caller"],
-        Some("tool_result") => &["type", "tool_use_id", "content", "is_error"],
-        Some("image") => &["type", "source", "transformations"],
+        Some("tool_use") => &["type", "id", "name", "input", "caller", "cache_control"],
+        Some("tool_result") => &[
+            "type",
+            "tool_use_id",
+            "content",
+            "is_error",
+            "cache_control",
+        ],
+        Some("image") => &["type", "source", "transformations", "cache_control"],
         // `context` and `citations` are kept so `Media::read` rejects them; they
         // change model-visible content.
-        Some("document") => &["type", "source", "title", "context", "citations"],
+        Some("document") => &[
+            "type",
+            "source",
+            "title",
+            "context",
+            "citations",
+            "cache_control",
+        ],
         // Unknown block types stay closed and fail in `Block::read`.
         _ => &[
             "type",
@@ -75,18 +89,32 @@ fn block_fields(kind: Option<&str>) -> &'static [&'static str] {
         ],
     }
 }
-fn blocks(v: &mut Value, ignored: &mut BTreeSet<String>) {
+fn blocks(v: &mut Value, ignored: &mut BTreeSet<String>) -> Result<(), CodecError> {
     if let Some(list) = v.as_array_mut() {
         for block in list {
+            if block.get("cache_control").is_some()
+                && !matches!(
+                    block.get("type").and_then(Value::as_str),
+                    Some("text" | "image" | "document" | "tool_use" | "tool_result")
+                )
+            {
+                return Err(CodecError::Unsupported(
+                    "Anthropic content cache breakpoint".into(),
+                ));
+            }
             let kind = block.get("type").and_then(Value::as_str).map(str::to_owned);
             keep(block, block_fields(kind.as_deref()), ignored);
+            if let Some(cache) = block.get_mut("cache_control") {
+                keep(cache, &["type", "ttl"], ignored);
+            }
             if kind.as_deref() == Some("tool_result")
                 && let Some(content) = block.get_mut("content")
             {
-                blocks(content, ignored);
+                blocks(content, ignored)?;
             }
         }
     }
+    Ok(())
 }
 
 /// Decode a client request; the model is a public label, never an upstream name.
@@ -107,10 +135,18 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     }
     let mut ignored = BTreeSet::new();
     keep(&mut v, TOP, &mut ignored);
+    if let Some(cache) = v.get_mut("cache_control") {
+        keep(cache, &["type", "ttl"], &mut ignored);
+    }
     let o = object(&v)?.clone();
     let model = string(required(&o, "model")?)?;
     label(&model)?;
     let mut settings = GenerationSettings::default();
+    settings.controls.stop_sequences =
+        crate::protocol::generation_controls::stops(o.get("stop_sequences"), false, MAX_ITEMS)?;
+    if let Some(cache) = o.get("cache_control") {
+        settings.automatic_prefix_cache = Some(super::CacheControl::read(cache)?.ttl());
+    }
     settings.controls.max_output_tokens = Some(
         required(&o, "max_tokens")?
             .as_u64()
@@ -132,7 +168,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     let scope = LocalScope::ROOT;
     let mut intake = Intake::new(scope);
     if let Some(mut system) = o.get("system").filter(|v| !v.is_null()).cloned() {
-        blocks(&mut system, &mut ignored);
+        blocks(&mut system, &mut ignored)?;
         match WireText::read(&system)? {
             WireText::Text(s) => settings.instructions = Presence::Value(text(&s)?),
             WireText::Blocks(parts) if !parts.is_empty() => intake.items.push((
@@ -144,10 +180,11 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                         .iter()
                         .enumerate()
                         .map(|(i, s)| {
-                            Ok((
-                                PartId::scoped(scope, i as u64 + 1),
-                                InputPart::Text(text(s)?),
-                            ))
+                            Ok(Part {
+                                id: PartId::scoped(scope, i as u64 + 1),
+                                content: InputPart::Text(text(&s.content)?),
+                                cache: s.cache,
+                            })
                         })
                         .collect::<Result<_, CodecError>>()?,
                 }),
@@ -171,9 +208,18 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                         let mut t = t.clone();
                         keep(
                             &mut t,
-                            &["name", "description", "input_schema", "strict"],
+                            &[
+                                "name",
+                                "description",
+                                "input_schema",
+                                "strict",
+                                "cache_control",
+                            ],
                             &mut ignored,
                         );
+                        if let Some(cache) = t.get_mut("cache_control") {
+                            keep(cache, &["type", "ttl"], &mut ignored);
+                        }
                         let tool = Tool::read(&t)?;
                         tool.bytes()?;
                         Ok(ToolDefinition::Function(FunctionTool {
@@ -186,10 +232,17 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                             ),
                             output_schema: None,
                             dispatch: Default::default(),
+                            cache: tool.cache_control.value().copied(),
                         }))
                     })
                     .collect::<Result<_, CodecError>>()?,
             );
+        super::request::validate_cache_breakpoints(settings.tools.iter().flatten().filter_map(
+            |tool| match tool {
+                ToolDefinition::Function(tool) => tool.cache,
+                _ => None,
+            },
+        ))?;
     }
     if let Some(choice) = o.get("tool_choice").filter(|v| !v.is_null()) {
         let choice = WireChoice::read(choice)?;
@@ -262,18 +315,21 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         let role = Role::read(required(m, "role")?)?;
         let content = required(m, "content")?;
         let parsed = if content.is_string() {
-            vec![Block::Text(string(content)?)]
+            vec![super::CacheMarked {
+                content: Block::Text(string(content)?),
+                cache: None,
+            }]
         } else {
             let mut content = content.clone();
-            blocks(&mut content, &mut ignored);
+            blocks(&mut content, &mut ignored)?;
             content
                 .as_array()
                 .ok_or(CodecError::Invalid("content"))?
                 .iter()
-                .map(Block::read)
+                .map(|v| super::CacheMarked::read(v, Block::read))
                 .collect::<Result<_, _>>()?
         };
-        intake.message(role, &parsed)?;
+        intake.request_message(role, &parsed)?;
     }
     // Messages turns are not kept as envelopes: each target regroups items its own
     // way (native by role, Chat by assistant text and calls).
@@ -297,6 +353,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         })
         .collect();
     let semantic = GenerationRequest::from_resources(items, settings, intake.resources)?;
+    super::semantic_intake::validate_cache(&semantic)?;
     let mut fidelity = FidelityRecords::default();
     fidelity.bind_replay_origin(&crate::execution::replay::CLIENT_ORIGIN)?;
     for part in intake.strict_images {
@@ -483,13 +540,7 @@ pub fn encode_client_response(
             _ => return Err(CodecError::Unsupported("Messages item".into())),
         }
     }
-    let stop_reason = match (semantic.outcome(), &semantic.details().incomplete) {
-        (Outcome::Completed, _) if calls => "tool_use",
-        (Outcome::Completed, _) => "end_turn",
-        (Outcome::Incomplete, Some(IncompleteReason::MaxOutputTokens)) => "max_tokens",
-        (Outcome::Incomplete, Some(IncompleteReason::ContentFilter)) => "refusal",
-        _ => return Err(CodecError::Unsupported("Messages terminal".into())),
-    };
+    let (stop_reason, stop_sequence) = terminal(semantic.outcome(), calls, semantic.details())?;
     let mut v = Map::new();
     v.insert("id".into(), json!(response.metadata.required_id()?));
     v.insert("type".into(), json!("message"));
@@ -497,10 +548,34 @@ pub fn encode_client_response(
     v.insert("model".into(), json!(model));
     v.insert("content".into(), json!(content));
     v.insert("stop_reason".into(), json!(stop_reason));
-    v.insert("stop_sequence".into(), Value::Null);
+    v.insert("stop_sequence".into(), json!(stop_sequence));
     v.insert(
         "usage".into(),
         super::client_events::usage_json(semantic.usage().as_ref())?,
     );
     Ok(Value::Object(v))
+}
+pub(super) fn terminal(
+    outcome: Outcome,
+    calls: bool,
+    details: &TerminalDetails,
+) -> Result<(&'static str, Option<&str>), CodecError> {
+    details.validate(outcome)?;
+    if let Some(cause) = &details.completion {
+        return match cause {
+            CompletionCause::Natural if !calls => Ok(("end_turn", None)),
+            CompletionCause::StopSequence(text) if !calls => {
+                Ok(("stop_sequence", Some(text.as_str())))
+            }
+            _ => Err(CodecError::Unsupported("Messages completion cause".into())),
+        };
+    }
+    let stop_reason = match (outcome, &details.incomplete) {
+        (Outcome::Completed, _) if calls => "tool_use",
+        (Outcome::Completed, _) => "end_turn",
+        (Outcome::Incomplete, Some(IncompleteReason::MaxOutputTokens)) => "max_tokens",
+        (Outcome::Incomplete, Some(IncompleteReason::ContentFilter)) => "refusal",
+        _ => return Err(CodecError::Unsupported("Messages terminal".into())),
+    };
+    Ok((stop_reason, None))
 }

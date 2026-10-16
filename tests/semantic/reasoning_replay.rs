@@ -310,7 +310,7 @@ mod reasoning {
         assert_eq!(rules, ["synthetic.configuration-effort.v1"]);
         assert_eq!(request, before);
         let scoped = morphiecore::protocol::reasoning::ReasoningRequestPolicy {
-            canonical_model: "m",
+            canonical_model: "m".into(),
             rule: "synthetic.configuration-scope.v1",
             conversion: morphiecore::protocol::reasoning::ReasoningConversion::Scope {
                 from: EffortScope::Reasoning,
@@ -376,7 +376,7 @@ mod reasoning_controls {
             ReasoningConversion, ReasoningRequestPolicy, SHARED_BUDGETS, ThinkingBudgets,
         };
         assert_eq!(
-            SHARED_BUDGETS.entries,
+            SHARED_BUDGETS.entries.as_ref(),
             &[
                 (EffortLevel::Minimal, 1024),
                 (EffortLevel::Low, 2048),
@@ -400,19 +400,20 @@ mod reasoning_controls {
         );
         assert!(SHARED_BUDGETS.nearest(0).is_err());
         let repeated = ThinkingBudgets {
-            entries: &[
+            entries: vec![
                 (EffortLevel::XHigh, 1000),
                 (EffortLevel::Low, 500),
                 (EffortLevel::High, 1000),
                 (EffortLevel::Medium, 500),
-            ],
+            ]
+            .into(),
         };
         assert_eq!(repeated.nearest(750).unwrap().0, EffortLevel::XHigh);
         assert_eq!(repeated.nearest(500).unwrap().0, EffortLevel::Medium);
         assert_eq!(repeated.nearest(1000).unwrap().0, EffortLevel::XHigh);
         assert_eq!(repeated.nearest(u64::MAX).unwrap().0, EffortLevel::XHigh);
         static QUANTIZE: ReasoningRequestPolicy = ReasoningRequestPolicy {
-            canonical_model: "m",
+            canonical_model: std::borrow::Cow::Borrowed("m"),
             rule: "synthetic.budget-to-effort.v1",
             conversion: ReasoningConversion::BudgetToEffort {
                 scope: EffortScope::Reasoning,
@@ -440,7 +441,7 @@ mod reasoning_controls {
             morphiecore::protocol::openai::Dialect::Standard,
             None,
         );
-        adapter.adaptation.reasoning_policy = Some(&QUANTIZE);
+        adapter.adaptation.reasoning_policy = Some(QUANTIZE.clone());
         let mut envelope = adapter
             .decode_request(br#"{"model":"m","input":"hi"}"#)
             .unwrap();
@@ -451,7 +452,7 @@ mod reasoning_controls {
         assert_eq!(wire["reasoning"]["effort"], "xhigh");
         assert_eq!(rules, ["synthetic.budget-to-effort.v1"]);
         let allocate = ReasoningRequestPolicy {
-            canonical_model: "m",
+            canonical_model: "m".into(),
             rule: "synthetic.effort-to-budget.v1",
             conversion: ReasoningConversion::EffortToBudget {
                 scope: EffortScope::Reasoning,
@@ -480,7 +481,7 @@ mod reasoning_controls {
             16384
         );
         let scoped = ReasoningRequestPolicy {
-            canonical_model: "m",
+            canonical_model: "m".into(),
             rule: "synthetic.scope.v1",
             conversion: ReasoningConversion::Scope {
                 from: EffortScope::Reasoning,
@@ -494,7 +495,7 @@ mod reasoning_controls {
         let mut disabled = scoped;
         disabled.reasoning.activation = Presence::Value(ReasoningActivation::Disabled);
         let disabled = ReasoningRequestPolicy {
-            canonical_model: "m",
+            canonical_model: "m".into(),
             rule: "synthetic.preserve-off.v1",
             conversion: ReasoningConversion::PreserveDisabled,
         }
@@ -562,6 +563,7 @@ mod reasoning_controls {
                         parts: vec![Part {
                             id: PartId::new(1),
                             content: ContentPart::Text(Text::new("ok", "test", 32).unwrap().into()),
+                            cache: None,
                         }],
                     }),
                 )],
@@ -762,8 +764,15 @@ mod replay_carrier {
             .unwrap();
         open_from_client(&mut request).unwrap();
         let before = request.clone();
+        assert!(
+            upstream("other/model-b")
+                .encode_request_with_rules(&request, "model-b", &contract("other/model-b"))
+                .is_err()
+        );
+        let mut allowed = contract("other/model-b");
+        allowed.reasoning_as_text = true;
         let (wire, rules) = upstream("other/model-b")
-            .encode_request_with_rules(&request, "model-b", &contract("other/model-b"))
+            .encode_request_with_rules(&request, "model-b", &allowed)
             .unwrap();
         // The readable summary reaches the new target as assistant text without the
         // issuer's item ID; the shared request is unchanged.

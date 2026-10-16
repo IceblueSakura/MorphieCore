@@ -89,14 +89,24 @@ pub fn items(
         if !ids.insert(*id) {
             return Err(GenerationError::DuplicateItemId);
         }
+        if response && item.has_cache_breakpoints() {
+            return Err(GenerationError::InvalidResponse);
+        }
+        charge(&mut bytes, usize::from(item.has_cache_breakpoints()) * 32)?;
         match item {
             Item::Instruction(i) => {
                 if response {
                     return Err(GenerationError::InvalidResponse);
                 }
-                for (id, value) in &i.parts {
-                    part_id(&mut parts, *id)?;
-                    input_part(value, resources, &mut bytes, &mut file_decoded_bytes)?;
+                for part in &i.parts {
+                    part_id(&mut parts, part.id)?;
+                    charge(&mut bytes, usize::from(part.cache.is_some()) * 32)?;
+                    input_part(
+                        &part.content,
+                        resources,
+                        &mut bytes,
+                        &mut file_decoded_bytes,
+                    )?;
                 }
                 if i.parts.is_empty() {
                     return Err(GenerationError::EmptyMessage);
@@ -114,6 +124,7 @@ pub fn items(
                 }
                 for p in &m.parts {
                     part_id(&mut parts, p.id)?;
+                    charge(&mut bytes, usize::from(p.cache.is_some()) * 32)?;
                     match &p.content {
                         ContentPart::Text(t) => {
                             t.validate()?;
@@ -346,9 +357,10 @@ pub(super) fn tool_result(
     match &r.output {
         ToolOutput::Text(t) => add(bytes, t)?,
         ToolOutput::Parts(p) => {
-            for (id, value) in p {
-                part_id(parts, *id)?;
-                input_part(value, resources, bytes, file_decoded_bytes)?;
+            for part in p {
+                part_id(parts, part.id)?;
+                charge(bytes, usize::from(part.cache.is_some()) * 32)?;
+                input_part(&part.content, resources, bytes, file_decoded_bytes)?;
             }
         }
         ToolOutput::Structured(value) => charge(bytes, value.bytes()?)?,
@@ -491,9 +503,12 @@ fn provider_observation_value(
             if values.len() > MAX_ITEMS {
                 return Err(GenerationError::Limit);
             }
-            for (id, value) in values {
-                part_id(parts, *id)?;
-                match value {
+            for part in values {
+                if part.cache.is_some() {
+                    return Err(GenerationError::InvalidProviderObservation);
+                }
+                part_id(parts, part.id)?;
+                match &part.content {
                     InputPart::Text(value) => add(bytes, value.as_str())?,
                     InputPart::Resource(resource) => {
                         let resource = resource.media(resources)?;
@@ -638,6 +653,10 @@ pub fn tools(
         match t {
             ToolDefinition::Function(t) => {
                 charge(&mut bytes, t.dispatch.validate()?)?;
+                charge(
+                    &mut bytes,
+                    usize::from(t.cache.is_some()) * std::mem::size_of::<PrefixCacheTtl>(),
+                )?;
                 if let Some(d) = &t.description {
                     add(&mut bytes, d)?;
                 }

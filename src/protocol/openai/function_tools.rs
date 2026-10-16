@@ -264,6 +264,7 @@ pub(super) fn read_tool(
             None
         },
         dispatch,
+        cache: None,
     }))
 }
 fn reference(

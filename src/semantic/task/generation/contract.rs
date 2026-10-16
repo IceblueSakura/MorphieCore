@@ -16,6 +16,8 @@ pub enum GenerationFeature {
     ParallelTools,
     StrictTools,
     ToolSchemaNormalization,
+    ExplicitCache,
+    AutomaticPrefixCache,
     StructuredArguments,
     StructuredToolResult,
     ToolExecutionReport,
@@ -46,6 +48,11 @@ pub struct GenerationSemanticContract {
     pub tool_result_media: bool,
     pub text_metadata: bool,
     pub top_p: bool,
+    pub top_k: bool,
+    pub stop_sequences: bool,
+    pub presence_penalty: bool,
+    pub frequency_penalty: bool,
+    pub seed: bool,
     pub logprobs: bool,
     pub verbosity: bool,
     pub truncation: bool,
@@ -63,6 +70,8 @@ pub struct GenerationSemanticContract {
     pub strict_tools: bool,
     /// Omitted strictness that requests schema normalization, not an explicit strict tool.
     pub normalization_default_tools: bool,
+    pub explicit_cache: bool,
+    pub automatic_prefix_cache: bool,
 }
 impl GenerationSemanticContract {
     /// Complete vocabulary, useful for codecs and synthetic fixtures, not model discovery.
@@ -82,6 +91,11 @@ impl GenerationSemanticContract {
             tool_result_media: true,
             text_metadata: true,
             top_p: true,
+            top_k: true,
+            stop_sequences: true,
+            presence_penalty: true,
+            frequency_penalty: true,
+            seed: true,
             logprobs: true,
             verbosity: true,
             truncation: true,
@@ -96,6 +110,8 @@ impl GenerationSemanticContract {
             parallel_tool_calls: true,
             strict_tools: true,
             normalization_default_tools: true,
+            explicit_cache: true,
+            automatic_prefix_cache: true,
         }
     }
     /// Explicit currently admitted text/image slice; new fields require a decision here.
@@ -115,6 +131,11 @@ impl GenerationSemanticContract {
             tool_result_media: false,
             text_metadata: true,
             top_p: true,
+            top_k: false,
+            stop_sequences: false,
+            presence_penalty: false,
+            frequency_penalty: false,
+            seed: false,
             logprobs: true,
             verbosity: true,
             truncation: true,
@@ -130,6 +151,8 @@ impl GenerationSemanticContract {
             strict_tools: false,
             // Preserve the admitted default separately from explicit strict-tool support.
             normalization_default_tools: true,
+            explicit_cache: false,
+            automatic_prefix_cache: false,
         }
     }
     pub fn supports(&self, promise: &Self) -> bool {
@@ -149,6 +172,11 @@ impl GenerationSemanticContract {
             (promise.tool_result_media, self.tool_result_media),
             (promise.text_metadata, self.text_metadata),
             (promise.top_p, self.top_p),
+            (promise.top_k, self.top_k),
+            (promise.stop_sequences, self.stop_sequences),
+            (promise.presence_penalty, self.presence_penalty),
+            (promise.frequency_penalty, self.frequency_penalty),
+            (promise.seed, self.seed),
             (promise.logprobs, self.logprobs),
             (promise.verbosity, self.verbosity),
             (promise.truncation, self.truncation),
@@ -168,6 +196,8 @@ impl GenerationSemanticContract {
                 promise.normalization_default_tools,
                 self.normalization_default_tools,
             ),
+            (promise.explicit_cache, self.explicit_cache),
+            (promise.automatic_prefix_cache, self.automatic_prefix_cache),
         ]
         .into_iter()
         .all(|(required, supported)| !required || supported)
@@ -281,6 +311,11 @@ impl GenerationSemanticContract {
             ),
             (q.text_metadata, self.text_metadata, TextMetadata),
             (q.top_p, self.top_p, Controls),
+            (q.top_k, self.top_k, Controls),
+            (q.stop_sequences, self.stop_sequences, Controls),
+            (q.presence_penalty, self.presence_penalty, Controls),
+            (q.frequency_penalty, self.frequency_penalty, Controls),
+            (q.seed, self.seed, Controls),
             (q.logprobs, self.logprobs, Controls),
             (q.truncation, self.truncation, Controls),
             (q.verbosity, self.verbosity, Controls),
@@ -294,6 +329,12 @@ impl GenerationSemanticContract {
                 q.normalization_default_tools,
                 self.normalization_default_tools,
                 ToolSchemaNormalization,
+            ),
+            (q.explicit_cache, self.explicit_cache, ExplicitCache),
+            (
+                q.automatic_prefix_cache,
+                self.automatic_prefix_cache,
+                AutomaticPrefixCache,
             ),
             (
                 q.structured_output,

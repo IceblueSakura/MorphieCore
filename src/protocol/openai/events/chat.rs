@@ -631,6 +631,7 @@ impl EventDecoder {
                 if terminal == StreamTerminal::Incomplete {
                     TerminalDetails {
                         error: None,
+                        completion: None,
                         incomplete: Some(if reason.as_str() == Some("content_filter") {
                             IncompleteReason::ContentFilter
                         } else {
@@ -638,7 +639,11 @@ impl EventDecoder {
                         }),
                     }
                 } else {
-                    TerminalDetails::default()
+                    TerminalDetails {
+                        completion: (reason.as_str() == Some("stop"))
+                            .then_some(CompletionCause::NaturalOrStopSequence),
+                        ..Default::default()
+                    }
                 },
             ));
             if let Some(value) = terminal_usage {

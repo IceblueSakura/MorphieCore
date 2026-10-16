@@ -43,7 +43,7 @@ pub(super) const FIELDS: &[&str] = &[
 ];
 /// Official fields whose active value changes tools or output; ignoring them would be
 /// silent loss. Other unregistered client fields are ignored by name.
-const UNSUPPORTED: &[&str] = &["stop", "functions", "function_call", "web_search_options"];
+const UNSUPPORTED: &[&str] = &["functions", "function_call", "web_search_options"];
 pub fn decode_generation(v: &Value) -> Result<DecodedRequest, CodecError> {
     decode_generation_with(v, &Default::default(), DecodeDirection::Request)
 }
@@ -55,15 +55,7 @@ pub(crate) fn decode_generation_with(
     bounded(v)?;
     let o = object(v)?;
     direction.fields(o, FIELDS)?;
-    if let Some(key) = [
-        "seed",
-        "frequency_penalty",
-        "presence_penalty",
-        "logit_bias",
-    ]
-    .into_iter()
-    .find(|key| o.contains_key(*key))
-    {
+    if let Some(key) = ["logit_bias"].into_iter().find(|key| o.contains_key(*key)) {
         return Err(CodecError::Unsupported(key.into()));
     }
     if let Some(key) = UNSUPPORTED.iter().find(|key| {
@@ -106,6 +98,30 @@ pub(crate) fn decode_generation_with(
         decode_message(&mut b, &message, true)?;
     }
     let mut controls = controls(o, "max_completion_tokens")?;
+    controls.stop_sequences = crate::protocol::generation_controls::stops(o.get("stop"), true, 4)?;
+    controls.seed = o
+        .get("seed")
+        .filter(|v| !v.is_null())
+        .map(|v| v.as_i64().ok_or(CodecError::Invalid("seed")))
+        .transpose()?;
+    for (key, apply) in [
+        (
+            "presence_penalty",
+            GenerationControls::with_presence_penalty as fn(_, f64) -> _,
+        ),
+        (
+            "frequency_penalty",
+            GenerationControls::with_frequency_penalty,
+        ),
+    ] {
+        if let Some(value) = o.get(key).filter(|v| !v.is_null()) {
+            let value = value
+                .as_f64()
+                .filter(|v| (-2.0..=2.0).contains(v))
+                .ok_or(CodecError::Invalid("penalty"))?;
+            controls = apply(controls, value)?;
+        }
+    }
     if let Some(v) = o.get("top_p").filter(|v| !v.is_null()) {
         controls = controls.with_top_p(v.as_f64().ok_or(CodecError::Invalid("top_p"))?)?;
     }
@@ -308,7 +324,7 @@ pub(super) fn decode_message(
                     };
                     let mut parts = Vec::new();
                     for value in texts {
-                        parts.push((
+                        parts.push(Part::new(
                             b.part_id()?,
                             InputPart::Text(
                                 crate::semantic::value::Text::allowing_empty(
@@ -331,6 +347,7 @@ pub(super) fn decode_message(
                 Item::CustomCall(call) if call.call_id == call_id)
             });
             let result = ToolResult {
+                cache: None,
                 is_error: None,
                 execution: None,
                 call_id: Some(call_id),
@@ -357,7 +374,7 @@ pub(super) fn decode_message(
                 m.get("content").ok_or(CodecError::Invalid("content"))?,
                 direction,
             )? {
-                parts.push((
+                parts.push(Part::new(
                     b.part_id()?,
                     InputPart::Text(
                         crate::semantic::value::Text::allowing_empty(
@@ -434,6 +451,7 @@ pub(super) fn decode_message(
                                 parts.push(b.part(string(part, "text")?)?);
                             }
                             "image_url" => parts.push(Part {
+                                cache: None,
                                 id: b.part_id()?,
                                 content: ContentPart::Resource(b.resource(
                                     crate::protocol::openai::content::image::read(
@@ -444,12 +462,14 @@ pub(super) fn decode_message(
                                 )?),
                             }),
                             "video_url" => parts.push(Part {
+                                cache: None,
                                 id: b.part_id()?,
                                 content: ContentPart::Resource(b.resource(
                                     crate::protocol::openai::content::video::read(part, direction)?,
                                 )?),
                             }),
                             "file" => parts.push(Part {
+                                cache: None,
                                 id: b.part_id()?,
                                 content: ContentPart::Resource(b.resource(
                                     crate::protocol::openai::content::file::read_chat(
@@ -458,6 +478,7 @@ pub(super) fn decode_message(
                                 )?),
                             }),
                             "input_audio" => parts.push(Part {
+                                cache: None,
                                 id: b.part_id()?,
                                 content: ContentPart::Resource(b.resource(
                                     crate::protocol::openai::content::input_audio::read(
@@ -494,6 +515,7 @@ pub(super) fn decode_message(
                 parts.push(Part {
                     id: b.part_id()?,
                     content: crate::protocol::openai::chat::audio::read(audio, replay, direction)?,
+                    cache: None,
                 });
             }
             b.items.push((
@@ -604,6 +626,28 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     );
     if let Some(p) = target.semantic.controls().top_p() {
         o.insert("top_p".into(), json!(p));
+    }
+    let controls = target.semantic.controls();
+    if !controls.stop_sequences.is_empty() {
+        o.insert(
+            "stop".into(),
+            json!(
+                controls
+                    .stop_sequences
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+            ),
+        );
+    }
+    if let Some(seed) = controls.seed {
+        o.insert("seed".into(), seed.into());
+    }
+    if let Some(penalty) = controls.presence_penalty() {
+        o.insert("presence_penalty".into(), penalty.into());
+    }
+    if let Some(penalty) = controls.frequency_penalty() {
+        o.insert("frequency_penalty".into(), penalty.into());
     }
     put_presence(o, "logprobs", &target.semantic.controls().logprobs, |v| {
         json!(v)
@@ -798,7 +842,7 @@ pub(super) fn encode_items_with(
                 messages.push(
                     json!({"role":"tool","tool_call_id":r.required_call_id().expect("validated request history"),"content":match &r.output {
                         ToolOutput::Text(s)=>json!(s),
-                        ToolOutput::Parts(parts)=>json!(parts.iter().map(|(_,t)|json!({"type":"text","text":t.as_text().expect("lowering admits text-only tool parts")})).collect::<Vec<_>>()),
+                        ToolOutput::Parts(parts)=>json!(parts.iter().map(|p|json!({"type":"text","text":p.content.as_text().expect("lowering admits text-only tool parts")})).collect::<Vec<_>>()),
                         ToolOutput::Structured(_) => unreachable!("lowering rejects tool result semantics without a carrier"),
                     }}),
                 );

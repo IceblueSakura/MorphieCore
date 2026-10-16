@@ -57,10 +57,19 @@ pub(super) fn decode_details(o: &Map<String, Value>) -> Result<TerminalDetails, 
             })
         })
         .transpose()?;
-    Ok(TerminalDetails { error, incomplete })
+    Ok(TerminalDetails {
+        error,
+        incomplete,
+        completion: None,
+    })
 }
 /// Chat has two distinct non-success finish reasons; neither is a successful stop.
 pub(super) fn chat_finish(response: &GenerationResponse) -> Result<&'static str, CodecError> {
+    check_completion(
+        response.details(),
+        crate::protocol::openai::Profile::Chat,
+        matches!(response.continuation(), Continuation::ToolResults(_)),
+    )?;
     match (response.outcome(), response.details().incomplete.as_ref()) {
         (Outcome::Completed, _) => Ok(match response.continuation() {
             Continuation::Unreported => "stop",
@@ -70,6 +79,20 @@ pub(super) fn chat_finish(response: &GenerationResponse) -> Result<&'static str,
         (Outcome::Incomplete, Some(IncompleteReason::ContentFilter)) => Ok("content_filter"),
         _ => Err(CodecError::Unsupported("Chat terminal".into())),
     }
+}
+pub(super) fn check_completion(
+    details: &TerminalDetails,
+    profile: crate::protocol::openai::Profile,
+    pending_tools: bool,
+) -> Result<(), CodecError> {
+    if details.completion.is_some()
+        && !(profile == crate::protocol::openai::Profile::Chat
+            && details.completion == Some(CompletionCause::NaturalOrStopSequence)
+            && !pending_tools)
+    {
+        return Err(CodecError::Unsupported("completion cause".into()));
+    }
+    Ok(())
 }
 pub(super) fn encode_error(error: Option<&ResponseError>) -> Value {
     error

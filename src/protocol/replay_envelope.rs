@@ -1,7 +1,7 @@
 //! Downstream carrier for upstream-issued reasoning and compaction content.
 //! The envelope is tagged, not encrypted or authenticated: the upstream
 //! issuer validates the payload, and the tag only decides whether a value may return
-//! to the same Provider/model. Clients must treat the whole string as opaque.
+//! to the same trusted target. Clients must treat the whole string as opaque.
 use crate::semantic::{
     task::generation::{MAX_TEXT_BYTES, ReplayFormat},
     value::{ReplayOrigin, Text},
@@ -14,9 +14,23 @@ const PREFIX: &str = "mc1.";
 
 /// Stable compatibility label; neither credentials nor public aliases participate.
 pub fn issuer(provider: &str, model: &str) -> ReplayOrigin {
+    fingerprint(&[provider, model])
+}
+
+/// Runtime deployment identity. Only the digest may cross the client boundary.
+pub(crate) fn deployment_issuer(
+    provider: &str,
+    model: &str,
+    origin: &str,
+    path: &str,
+) -> ReplayOrigin {
+    fingerprint(&["deployment-v1", provider, model, origin, path])
+}
+
+fn fingerprint(parts: &[&str]) -> ReplayOrigin {
     use sha2::{Digest, Sha256};
     let mut hash = Sha256::new();
-    for value in [provider, model] {
+    for value in parts {
         hash.update((value.len() as u64).to_le_bytes());
         hash.update(value.as_bytes());
     }

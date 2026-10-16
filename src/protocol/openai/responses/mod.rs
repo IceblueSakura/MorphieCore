@@ -174,7 +174,7 @@ fn output(b: &mut Items, v: &Value) -> Result<ToolOutput, CodecError> {
     Ok(ToolOutput::Parts(input_parts(b, a)?))
 }
 /// Text, image and file input content shared by tool results and instructions.
-fn input_parts(b: &mut Items, a: &[Value]) -> Result<Vec<(PartId, InputPart)>, CodecError> {
+fn input_parts(b: &mut Items, a: &[Value]) -> Result<Vec<Part<InputPart>>, CodecError> {
     let direction = b.direction;
     if a.len() > MAX_ITEMS {
         return Err(CodecError::Limit);
@@ -222,7 +222,7 @@ fn input_parts(b: &mut Items, a: &[Value]) -> Result<Vec<(PartId, InputPart)>, C
             }
             _ => return Err(CodecError::Unsupported("input content part".into())),
         };
-        p.push(part);
+        p.push(Part::new(part.0, part.1));
     }
     Ok(p)
 }
@@ -306,6 +306,7 @@ pub(super) fn tool_result(
     }
     Ok(ToolResult {
         call_id,
+        cache: None,
         name: optional("name", 128)?,
         output: output(
             b,
@@ -558,6 +559,7 @@ pub(super) fn decode_items(
                             _ => {}
                         }
                         parts.push(Part {
+                            cache: None,
                             id: part_id,
                             content,
                         });
@@ -658,16 +660,16 @@ fn media_part(
     v
 }
 fn input_wire(
-    parts: &[(PartId, InputPart)],
+    parts: &[Part<InputPart>],
     fidelity: &FidelityRecords,
     resources: &ResourceTable,
 ) -> Value {
     json!(
         parts
             .iter()
-            .map(|(id, part)| match part {
-                InputPart::Text(text) => input_part(*id, text.as_str(), fidelity),
-                InputPart::Resource(resource) => media_part(*id, resource, fidelity, resources),
+            .map(|part| match &part.content {
+                InputPart::Text(text) => input_part(part.id, text.as_str(), fidelity),
+                InputPart::Resource(resource) => media_part(part.id, resource, fidelity, resources),
             })
             .collect::<Vec<_>>()
     )
@@ -695,7 +697,7 @@ pub(super) fn encode_items(
     for (id, item) in items {
         let mut v = match item {
             Item::Instruction(i) => {
-                let mut v = json!({"role":match i.authority{InstructionAuthority::System=>"system",InstructionAuthority::Developer=>"developer"},"content":if let [(id,InputPart::Text(t))]=i.parts.as_slice() && !fidelity.cache_breakpoint(*id){json!(t.as_str())}else{input_wire(&i.parts,fidelity,resources)}});
+                let mut v = json!({"role":match i.authority{InstructionAuthority::System=>"system",InstructionAuthority::Developer=>"developer"},"content":if let [Part {id, content:InputPart::Text(t), ..}]=i.parts.as_slice() && !fidelity.cache_breakpoint(*id){json!(t.as_str())}else{input_wire(&i.parts,fidelity,resources)}});
                 if let Some(status) = i.status {
                     v["type"] = json!("message");
                     v["status"] = json!(status_label(status));

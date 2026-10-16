@@ -8,6 +8,16 @@ pub fn check_event(
     profile: Profile,
     contract: &TargetCaps,
 ) -> Result<(), RepresentationError> {
+    if let StreamEvent::Terminal { details, .. } = event {
+        let pending_tools = state.items().iter().any(|item| {
+            matches!(
+                item.kind,
+                ItemKind::ToolCall { .. } | ItemKind::CustomCall { .. } | ItemKind::Program { .. }
+            )
+        });
+        crate::protocol::openai::terminal::check_completion(details, profile, pending_tools)
+            .map_err(|_| RepresentationError::Terminal)?;
+    }
     if matches!(event, StreamEvent::ItemStarted { replay: Some(replay), .. } | StreamEvent::ItemFinished { replay: Some(replay), .. }
         if !matches!(replay.value.format(), ReplayFormat::ResponsesEncrypted | ReplayFormat::ResponsesCompaction))
     {

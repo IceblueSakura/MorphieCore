@@ -263,7 +263,7 @@ mod text_profile {
         ));
         assert!(
             matches!(&decoded.semantic.items()[4].1,Item::CustomResult(result)
-            if matches!(&result.output,ToolOutput::Parts(parts) if parts.len()==2 && parts[1].1.as_text()==Some("")))
+            if matches!(&result.output,ToolOutput::Parts(parts) if parts.len()==2 && parts[1].content.as_text()==Some("")))
         );
         assert!(
             matches!(&decoded.semantic.tools()[1],ToolDefinition::Custom(tool)
@@ -759,10 +759,12 @@ mod text_events {
                         param: None,
                     }),
                     incomplete: None,
+                    completion: None,
                 },
                 StreamTerminal::Incomplete => TerminalDetails {
                     error: None,
                     incomplete: Some(IncompleteReason::MaxOutputTokens),
+                    completion: None,
                 },
                 _ => TerminalDetails::default(),
             };

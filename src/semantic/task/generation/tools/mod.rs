@@ -58,6 +58,11 @@ impl CallContext {
         self.namespace.is_none() && !self.async_call && self.caller.is_none()
     }
 }
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PrefixCacheTtl {
+    FiveMinutes,
+    OneHour,
+}
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionTool {
     pub name: Text,
@@ -66,6 +71,8 @@ pub struct FunctionTool {
     pub strict: FunctionStrictness,
     pub output_schema: Option<crate::semantic::task::generation::SchemaDocument>,
     pub dispatch: ToolDispatch,
+    /// An explicit prefix boundary ending at this tool definition, not cache affinity.
+    pub cache: Option<PrefixCacheTtl>,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CustomFormat {
@@ -242,6 +249,7 @@ pub struct ToolCall {
     pub arguments: ToolArguments,
     pub status: ItemLifecycle,
     pub context: CallContext,
+    pub cache: Option<PrefixCacheTtl>,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CustomCall {

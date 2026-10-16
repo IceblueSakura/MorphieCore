@@ -82,6 +82,7 @@ mod message_envelopes {
                     role: MessageRole::Assistant,
                     parts: vec![Part {
                         id: part,
+                        cache: None,
                         content: ContentPart::Text(
                             morphiecore::semantic::value::Text::new("Plan", "synthetic", 64)
                                 .unwrap()
@@ -282,6 +283,7 @@ mod message_ownership_owner {
                 ItemId::new(3),
                 Item::ToolCall(ToolCall {
                     call_id: text("C"),
+                    cache: None,
                     name: text("lookup"),
                     arguments: "{}".into(),
                     status: ItemLifecycle::Completed,
@@ -433,6 +435,7 @@ mod scoped_identity {
             ItemId::scoped(LocalScope::new(scope), 1),
             Item::ToolCall(ToolCall {
                 call_id: text("same"),
+                cache: None,
                 name: text("lookup"),
                 arguments: "{}".into(),
                 status: ItemLifecycle::Completed,
@@ -449,6 +452,7 @@ mod scoped_identity {
             Item::ToolResult(ToolResult {
                 is_error: None,
                 call_id: Some(text("same")),
+                cache: None,
                 name: None,
                 output: "synthetic result".into(),
                 execution: None,

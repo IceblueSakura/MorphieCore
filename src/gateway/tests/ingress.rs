@@ -112,8 +112,14 @@ fn ingress_unwraps_only_the_candidate_compatible_opaque_and_never_selects_a_targ
         ("other", "private-fixture", false),
         ("fixture", "other", false),
     ] {
+        let mut issuer = gate.state.entries[&(family(Profile::Responses), "fixture-model".into())]
+            .candidates[0]
+            .endpoint
+            .clone();
+        issuer.provider = crate::provider::ProviderId::new(provider).unwrap();
+        issuer.upstream_model = model.into();
         let token = replay_envelope::seal(
-            &replay_envelope::issuer(provider, model),
+            &issuer.replay_origin(),
             ReplayFormat::ResponsesEncrypted,
             "synthetic-client-payload",
         )

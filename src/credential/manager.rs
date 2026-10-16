@@ -16,10 +16,6 @@ pub struct CredentialManager {
     drivers: BTreeMap<String, Arc<dyn AuthDriver>>,
 }
 impl CredentialManager {
-    #[cfg(test)]
-    pub(crate) fn write_gateway_config_for_test(&self, value: &serde_json::Value) {
-        self.store.test_config(value);
-    }
     pub fn new(root: impl AsRef<Path>, drivers: Vec<Arc<dyn AuthDriver>>) -> Result<Self, Error> {
         if drivers.len() > 16 {
             return Err(Error::InvalidInput);

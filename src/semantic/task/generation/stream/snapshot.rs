@@ -47,6 +47,7 @@ impl StreamItem {
                     .map(|p| {
                         Ok(Part {
                             id: p.id,
+                            cache: None,
                             content: match p.kind {
                                 PartKind::Audio => match &p.data {
                                     StreamPartValue::Audio(value) => {
@@ -77,6 +78,7 @@ impl StreamItem {
                 ..
             } => Item::ToolCall(ToolCall {
                 call_id: call_id.clone(),
+                cache: None,
                 name: name.clone(),
                 status,
                 arguments: i

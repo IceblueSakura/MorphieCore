@@ -106,11 +106,11 @@ Before each run:
 
 1. Fix the target model/Provider, request count, output cap and timeout.
 2. Use the project loader and application-owned store. Do not source private environment files or third-party auth caches.
-3. Use an explicitly selected `models` list so unrelated pools are not activated.
-4. Run serially with no hidden retries. For a single-attempt check, set the gateway attempt ceiling to one.
+3. Use explicit model/candidate entries in `models.json` so unrelated pools are not activated.
+4. Run serially with no hidden retries. For a single-attempt check, set the selected model's attempt ceiling to one.
 5. Report only redacted status, counts and error codes. Never print credentials or request/response bodies.
 
-The gateway CLI loads `gateway.json` and pools through the project loader. A test harness must do the same; do not hand-parse credential files.
+The gateway CLI loads `gateway.json`, its selected `models.json` and pools through the project loader. A test harness must do the same; do not hand-parse credential files.
 
 Local byte, event and deadline limits do not prove bounded upstream charges when a target has no output-token control. Real checks supplement synthetic regression; they do not replace it.
 

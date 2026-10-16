@@ -6,6 +6,8 @@ use crate::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TargetCaps {
     pub adaptation: crate::protocol::openai::dialect::adaptation::Adaptation,
+    /// Permit the named projection of foreign readable reasoning into assistant text.
+    pub reasoning_as_text: bool,
     pub replay_origin: Option<crate::semantic::value::ReplayOrigin>,
     /// Caller-supplied clock for checking a reported remote-resource expiry.
     pub resource_time: Option<u64>,
@@ -25,6 +27,7 @@ impl TargetCaps {
     pub fn full() -> Self {
         Self {
             adaptation: Default::default(),
+            reasoning_as_text: false,
             replay_origin: None,
             resource_time: None,
             reported_facts: ReportedFactPolicy::Faithful,

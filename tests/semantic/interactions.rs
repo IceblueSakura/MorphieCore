@@ -281,6 +281,31 @@ fn projects_stateless_steps_tools_and_controls() {
     .into();
     let prepared = endpoint.encode_request_with_rules(&request).unwrap().0;
     assert_eq!(prepared["response_format"], wire["response_format"]);
+    let mut controlled = request.task.semantic.settings().clone();
+    controlled.controls.seed = Some(0);
+    controlled.controls.stop_sequences =
+        vec![morphiecore::semantic::value::Text::new("END", "fixture", 64).unwrap()];
+    let controlled = request
+        .task
+        .semantic
+        .clone()
+        .with_settings(controlled)
+        .unwrap();
+    let (wire, _) =
+        encode_generation_request(&controlled, &request.task.fidelity, &target).unwrap();
+    assert_eq!(
+        wire["generation_config"],
+        json!({
+            "max_output_tokens":128,"thinking_level":"medium","thinking_summaries":"auto",
+            "tool_choice":{"allowed_tools":{"mode":"auto","tools":["read"]}},
+            "seed":0,"stop_sequences":["END"]
+        })
+    );
+    assert!(
+        morphiecore::protocol::interactions::semantic_contract()
+            .check(&controlled)
+            .is_err()
+    );
     assert!(
         matches!(request.task.semantic.output(), OutputConstraint::JsonSchema { schema: s, strict: Some(true), .. } if s.root() == &schema)
     );

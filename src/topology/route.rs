@@ -26,6 +26,8 @@ pub struct RoutePolicy {
     pub candidates: CandidatePolicy,
     pub fallback: FallbackPolicy,
     pub max_attempts: usize,
+    /// Model-local exchange deadline, still bounded by the service ceiling.
+    pub total_timeout_ms: Option<u64>,
 }
 impl Default for RoutePolicy {
     fn default() -> Self {
@@ -33,6 +35,7 @@ impl Default for RoutePolicy {
             candidates: CandidatePolicy::RequireAll,
             fallback: FallbackPolicy::Disabled,
             max_attempts: 4,
+            total_timeout_ms: None,
         }
     }
 }

@@ -146,7 +146,7 @@ pub struct WireRules {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Adaptation {
     pub rules: WireRules,
-    pub reasoning_policy: Option<&'static crate::protocol::reasoning::ReasoningRequestPolicy>,
+    pub reasoning_policy: Option<crate::protocol::reasoning::ReasoningRequestPolicy>,
     pub effort_mapping: Option<&'static crate::protocol::reasoning::ReasoningEffortMapping>,
     /// Profile image admission is intersected with independently configured Endpoint limits.
     pub images: crate::protocol::image_constraints::ImageConstraints,

@@ -173,6 +173,11 @@ pub(super) fn write_format(f: &OutputConstraint) -> Result<Value, CodecError> {
     })
 }
 pub(super) fn write(s: &GenerationSettings, o: &mut Map<String, Value>) -> Result<(), CodecError> {
+    if s.controls.has_extended_controls() || s.automatic_prefix_cache.is_some() {
+        return Err(CodecError::Unsupported(
+            "Responses generation controls".into(),
+        ));
+    }
     put_presence(o, "instructions", &s.instructions, |t| json!(t.as_str()));
     write_control_values(&s.controls, o, "max_output_tokens");
     if let Some(v) = s.controls.top_p() {

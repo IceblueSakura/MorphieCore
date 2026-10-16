@@ -68,14 +68,16 @@ pub use tools::provider::{
 pub use tools::result::{ToolExecution, ToolOutput, ToolResult};
 pub use tools::{
     ArgumentFormat, CallContext, CallOrigin, CallerMode, CustomCall, CustomFormat, CustomTool,
-    FunctionStrictness, FunctionTool, GrammarSyntax, ItemLifecycle, Program, ProgramOutput,
-    StrictDefault, ToolArguments, ToolCall, ToolChoice, ToolDefinition, ToolDispatch, ToolKind,
-    ToolNamespace, ToolReference,
+    FunctionStrictness, FunctionTool, GrammarSyntax, ItemLifecycle, PrefixCacheTtl, Program,
+    ProgramOutput, StrictDefault, ToolArguments, ToolCall, ToolChoice, ToolDefinition,
+    ToolDispatch, ToolKind, ToolNamespace, ToolReference,
 };
 pub use usage::views::{DerivedTokenCount, UsageFormula};
 pub use usage::{InputTokenRelation, OutputTokenRelation, TotalTokenRelation, Usage};
 
-pub use response::{GenerationResponse, IncompleteReason, Outcome, ResponseError, TerminalDetails};
+pub use response::{
+    CompletionCause, GenerationResponse, IncompleteReason, Outcome, ResponseError, TerminalDetails,
+};
 pub use stream::{
     EventError, ItemKind, PartKind, StreamEvent, StreamItem, StreamPart, StreamState,
     StreamTerminal, end_of_stream, materialize, reduce, snapshot_items,

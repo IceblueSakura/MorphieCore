@@ -231,6 +231,11 @@ impl MessageSseDecoder {
                     message.stop_reason = stop_reason;
                 }
                 if !stop_sequence.is_absent() {
+                    if message.stop_sequence.value().is_some()
+                        && message.stop_sequence != stop_sequence
+                    {
+                        return Err(invalid());
+                    }
                     message.stop_sequence = stop_sequence;
                 }
                 if !usage.input_tokens.is_absent() {

@@ -45,6 +45,20 @@ pub(super) fn project(
     rules: &mut BTreeSet<RequestRule>,
 ) -> Result<Value, CodecError> {
     let s = request.settings();
+    if s.controls.top_k.is_some()
+        || s.controls.presence_penalty().is_some()
+        || s.controls.frequency_penalty().is_some()
+    {
+        return Err(unsupported());
+    }
+    if s.automatic_prefix_cache.is_some()
+        || request
+            .items()
+            .iter()
+            .any(|(_, i)| i.has_cache_breakpoints())
+    {
+        return Err(unsupported());
+    }
     if s.controls.top_logprobs.is_some()
         || !s.controls.logprobs.is_absent()
         || s.controls.truncation.is_some()
@@ -122,7 +136,7 @@ pub(super) fn project(
                 let ToolDefinition::Function(t) = tool else {
                     return Err(unsupported());
                 };
-                if !t.dispatch.is_inactive() || t.output_schema.is_some() {
+                if !t.dispatch.is_inactive() || t.output_schema.is_some() || t.cache.is_some() {
                     return Err(unsupported());
                 }
                 match t.strict {
@@ -173,6 +187,21 @@ pub(super) fn project(
                 _ => return Err(unsupported()),
             },
         );
+    }
+    if !s.controls.stop_sequences.is_empty() {
+        config.insert(
+            "stop_sequences".into(),
+            json!(
+                s.controls
+                    .stop_sequences
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+            ),
+        );
+    }
+    if let Some(seed) = s.controls.seed {
+        config.insert("seed".into(), seed.into());
     }
     thinking(s, &mut config, rules)?;
     if !config.is_empty() {
@@ -386,7 +415,7 @@ fn steps(
                         ToolOutput::Parts(parts) => Value::Array(
                             parts
                                 .iter()
-                                .map(|(_, p)| match p {
+                                .map(|p| match &p.content {
                                     InputPart::Text(t) => {
                                         Ok(json!({"type":"text","text":t.as_str()}))
                                     }

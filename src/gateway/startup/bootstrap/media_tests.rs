@@ -1,4 +1,5 @@
 //! Frozen media activation needs explicit selection and a single non-fallback source.
+use super::tests::{selected_models, write_configuration};
 use super::*;
 use crate::credential::{CredentialPool, CredentialRef};
 use serde_json::json;
@@ -8,7 +9,7 @@ fn embeddings_need_explicit_selection_and_a_single_nonfallback_key() {
     for binding in catalog::EMBEDDING_BINDINGS {
         let provider = (binding.provider)();
         let dir = crate::credential::tests::support::private_directory();
-        let manager = CredentialManager::new(dir.path(), vec![]).unwrap();
+        let manager = CredentialManager::new(dir.path().join("credentials"), vec![]).unwrap();
         manager
             .add_api_key(
                 provider.id.as_str(),
@@ -30,19 +31,33 @@ fn embeddings_need_explicit_selection_and_a_single_nonfallback_key() {
                 },
             )
             .unwrap();
-        manager.write_gateway_config_for_test(&serde_json::json!({
-            "client_key":"synthetic-gateway-key-at-least-32-bytes","models":[binding.model]}));
+        let service = serde_json::json!({"client_key":"synthetic-gateway-key-at-least-32-bytes"});
+        write_configuration(
+            dir.path(),
+            service.clone(),
+            selected_models(&[binding.model], &[provider.id.as_str()]),
+        );
         let boot = Bootstrap::from_directory(dir.path()).unwrap();
         assert!(boot.gateway.state.entries.is_empty());
         assert_eq!(boot.gateway.state.embeddings.len(), 1);
         assert!(boot.gateway.state.models.models.contains_key(binding.model));
-        manager.write_gateway_config_for_test(&serde_json::json!({
-            "client_key":"synthetic-gateway-key-at-least-32-bytes"}));
+        let text = catalog::API_KEY_BINDINGS
+            .iter()
+            .find(|b| b.credential == binding.credential && !b.public_model().contract.audio_input)
+            .unwrap();
+        write_configuration(
+            dir.path(),
+            service.clone(),
+            selected_models(&[text.model], &[provider.id.as_str()]),
+        );
         let boot = Bootstrap::from_directory(dir.path()).unwrap();
         assert!(boot.gateway.state.embeddings.is_empty());
         assert!(!boot.gateway.state.entries.is_empty());
-        manager.write_gateway_config_for_test(&serde_json::json!({
-            "client_key":"synthetic-gateway-key-at-least-32-bytes","models":[binding.model]}));
+        write_configuration(
+            dir.path(),
+            service,
+            selected_models(&[binding.model], &[provider.id.as_str()]),
+        );
         manager
             .add_api_key(
                 provider.id.as_str(),
@@ -93,12 +108,19 @@ fn tokenplan_audio_requires_explicit_selection_and_nonfallback_single_source() {
         (Some(vec!["qwen-audio-3.0-tts-plus"]), 1, true, false),
     ] {
         let directory = crate::credential::tests::support::private_directory();
-        let manager = CredentialManager::new(directory.path(), vec![]).unwrap();
-        let mut config = json!({"client_key":"synthetic-entry-key-at-least-32-bytes"});
-        if let Some(models) = &models {
-            config["models"] = json!(models);
-        }
-        manager.write_gateway_config_for_test(&config);
+        let manager = CredentialManager::new(directory.path().join("credentials"), vec![]).unwrap();
+        let text = catalog::API_KEY_BINDINGS
+            .iter()
+            .find(|b| b.credential == "aliyun-tokenplan-cn-api-key")
+            .unwrap();
+        write_configuration(
+            directory.path(),
+            json!({"client_key":"synthetic-entry-key-at-least-32-bytes"}),
+            selected_models(
+                models.as_deref().unwrap_or(&[text.model]),
+                &["aliyun-tokenplan-cn"],
+            ),
+        );
         let mut sources = vec![];
         for index in 0..members {
             let alias = format!("synthetic-{index}");
@@ -164,12 +186,19 @@ fn openrouter_speech_requires_explicit_selection_and_single_nonfallback_pool() {
         (Some(vec!["qwen-audio-3.0-tts-flash"]), 2, false, false),
     ] {
         let dir = crate::credential::tests::support::private_directory();
-        let manager = CredentialManager::new(dir.path(), vec![]).unwrap();
-        let mut config = json!({"client_key":"synthetic-gateway-key-at-least-32-bytes"});
-        if let Some(models) = &selection {
-            config["models"] = json!(models);
-        }
-        manager.write_gateway_config_for_test(&config);
+        let manager = CredentialManager::new(dir.path().join("credentials"), vec![]).unwrap();
+        let text = catalog::API_KEY_BINDINGS
+            .iter()
+            .find(|b| b.credential == "openrouter-api-key")
+            .unwrap();
+        write_configuration(
+            dir.path(),
+            json!({"client_key":"synthetic-gateway-key-at-least-32-bytes"}),
+            selected_models(
+                selection.as_deref().unwrap_or(&[text.model]),
+                &["openrouter"],
+            ),
+        );
         let mut pool_members = Vec::new();
         for index in 0..members {
             let alias = format!("source-{index}");

@@ -650,6 +650,9 @@ impl GenerationSseDecoder {
                 terminal,
                 details: TerminalDetails {
                     error: None,
+                    completion: incomplete
+                        .is_none()
+                        .then_some(CompletionCause::NaturalOrStopSequence),
                     incomplete,
                 },
             },

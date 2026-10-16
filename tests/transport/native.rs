@@ -378,6 +378,40 @@ mod native_catalog {
         );
         assert_eq!(wire["tools"][0]["strict"], false);
         assert_eq!(rules, ["messages.developer-as-system.v1"]);
+        let mut settings = request.task.semantic.settings().clone();
+        let morphiecore::semantic::task::generation::ToolDefinition::Function(tool) =
+            &mut settings.tools.as_mut().unwrap()[0]
+        else {
+            panic!("function tool")
+        };
+        tool.cache = Some(morphiecore::semantic::task::generation::PrefixCacheTtl::OneHour);
+        request.task.semantic = request.task.semantic.with_settings(settings).unwrap();
+        assert!(matches!(
+            admit(topology.model(binding.model).unwrap(), &request),
+            Err(AttemptError::Adapter(AdapterError::Representation(
+                RepresentationError::Admission(GenerationFeature::ExplicitCache)
+            )))
+        ));
+        assert!(representable(&binding.endpoint(), &request).is_err());
+        let mut synthetic = binding.endpoint();
+        synthetic
+            .representation
+            .messages_mut()
+            .unwrap()
+            .semantics
+            .explicit_cache = true;
+        let prepared = prepare(
+            &synthetic,
+            &binding.provider(),
+            &SecretMaterial::new("synthetic-key").unwrap(),
+            &request,
+        )
+        .unwrap();
+        let wire: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
+        assert_eq!(
+            wire["tools"][0]["cache_control"],
+            serde_json::json!({"type":"ephemeral","ttl":"1h"})
+        );
     }
     #[test]
     fn declared_native_binding_prepares_the_messages_wire() {
@@ -495,12 +529,12 @@ mod native_catalog {
             EffortScope, ReasoningMode, ReasoningRequest,
         };
         static OFF: ReasoningRequestPolicy = ReasoningRequestPolicy {
-            canonical_model: "synthetic-model",
+            canonical_model: std::borrow::Cow::Borrowed("synthetic-model"),
             rule: "synthetic.off.v1",
             conversion: ReasoningConversion::PreserveDisabled,
         };
         static ALLOCATE: ReasoningRequestPolicy = ReasoningRequestPolicy {
-            canonical_model: "synthetic-model",
+            canonical_model: std::borrow::Cow::Borrowed("synthetic-model"),
             rule: "synthetic.allocation.v1",
             conversion: ReasoningConversion::EffortToBudget {
                 scope: EffortScope::Reasoning,
@@ -531,10 +565,10 @@ mod native_catalog {
         let mut caps = morphiecore::protocol::google::TargetCaps::default();
         google.representation = caps.clone().into();
         assert!(google.encode_request(&request).is_err());
-        caps.reasoning_policy = Some(&OFF);
+        caps.reasoning_policy = Some(OFF.clone());
         google.representation = caps.clone().into();
         assert!(google.encode_request(&request).is_err());
-        caps.reasoning_policy = Some(&ALLOCATE);
+        caps.reasoning_policy = Some(ALLOCATE.clone());
         google.representation = caps.into();
         assert_eq!(
             google.encode_request(&request).unwrap()["generationConfig"]["thinkingConfig"]["thinkingBudget"],

@@ -248,6 +248,9 @@ impl Adapter {
                 "responses.omit-foreign-replay.v1"
             });
             if *converted {
+                if !contract.reasoning_as_text {
+                    return Err(CodecError::Unsupported("reasoning as text disabled".into()).into());
+                }
                 rules.push(if chat {
                     "chat.reasoning-as-text.v1"
                 } else {
@@ -260,7 +263,7 @@ impl Adapter {
             return Err(CodecError::Invalid("overlapping reasoning policies").into());
         }
         let mut projected = std::borrow::Cow::Borrowed(request);
-        if let Some(policy) = self.adaptation.reasoning_policy
+        if let Some(policy) = &self.adaptation.reasoning_policy
             && let Some(semantic) = policy.project_request(&request.task.semantic)?
         {
             controls.push(policy.receipt(&request.task.semantic, &semantic)?);

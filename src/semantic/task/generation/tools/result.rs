@@ -1,6 +1,6 @@
 //! Closed tool result values. Error reporting never changes a generation outcome.
 use crate::semantic::task::generation::{
-    CallContext, GenerationError, InputPart, ItemLifecycle, PartId,
+    CallContext, GenerationError, InputPart, ItemLifecycle, Part, PrefixCacheTtl,
 };
 use crate::semantic::value::Text;
 /// Execution conclusion is independent of the result value and artifact lifecycle.
@@ -15,7 +15,7 @@ pub enum ToolExecution {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ToolOutput {
     Text(String),
-    Parts(Vec<(PartId, InputPart)>),
+    Parts(Vec<Part<InputPart>>),
     Structured(crate::semantic::task::generation::StructuredValue),
 }
 impl ToolOutput {
@@ -24,7 +24,7 @@ impl ToolOutput {
             Self::Text(_) => true,
             Self::Parts(parts) => parts
                 .iter()
-                .all(|(_, part)| matches!(part, InputPart::Text(_))),
+                .all(|part| matches!(part.content, InputPart::Text(_))),
             Self::Structured(_) => false,
         }
     }
@@ -53,6 +53,7 @@ pub struct ToolResult {
     /// Artifact lifecycle, not tool success; absent remains unreported.
     pub status: Option<ItemLifecycle>,
     pub context: CallContext,
+    pub cache: Option<PrefixCacheTtl>,
 }
 impl ToolResult {
     pub fn required_call_id(&self) -> Result<&str, GenerationError> {

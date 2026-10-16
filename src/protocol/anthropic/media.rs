@@ -256,7 +256,7 @@ impl Media {
 #[derive(Clone, Eq, PartialEq)]
 pub enum ResultContent {
     Text(String),
-    Blocks(Vec<ResultBlock>),
+    Blocks(Vec<super::CacheMarked<ResultBlock>>),
 }
 #[derive(Clone, Eq, PartialEq)]
 pub enum ResultBlock {
@@ -271,18 +271,20 @@ impl ResultContent {
         Ok(Self::Blocks(
             list(v)?
                 .iter()
-                .map(|v| match required(object(v)?, "type")?.as_str() {
-                    Some("text") => {
-                        let o = closed(v, &["type", "text", "citations"])?;
-                        uncited(o)?;
-                        Ok(ResultBlock::Text(string(required(o, "text")?)?))
-                    }
-                    Some(kind @ ("image" | "document")) => {
-                        Ok(ResultBlock::Media(Media::read(kind, v)?))
-                    }
-                    _ => Err(CodecError::Unsupported(
-                        "Anthropic tool result content".into(),
-                    )),
+                .map(|v| {
+                    super::CacheMarked::read(v, |v| match required(object(v)?, "type")?.as_str() {
+                        Some("text") => {
+                            let o = closed(v, &["type", "text", "citations", "cache_control"])?;
+                            uncited(o)?;
+                            Ok(ResultBlock::Text(string(required(o, "text")?)?))
+                        }
+                        Some(kind @ ("image" | "document")) => {
+                            Ok(ResultBlock::Media(Media::read(kind, v)?))
+                        }
+                        _ => Err(CodecError::Unsupported(
+                            "Anthropic tool result content".into(),
+                        )),
+                    })
                 })
                 .collect::<Result<_, _>>()?,
         ))
@@ -296,11 +298,12 @@ impl ResultContent {
                 for block in blocks {
                     charge(
                         &mut n,
-                        match block {
+                        match &block.content {
                             ResultBlock::Text(s) => text(s)?,
                             ResultBlock::Media(m) => m.bytes()?,
                         },
                     )?;
+                    charge(&mut n, usize::from(block.cache.is_some()) * 32)?;
                 }
             }
         }
@@ -309,7 +312,7 @@ impl ResultContent {
     pub(super) fn nodes(&self) -> usize {
         match self {
             Self::Text(_) => 1,
-            Self::Blocks(blocks) => 1 + blocks.len() * 8,
+            Self::Blocks(blocks) => 1 + blocks.len() * 16,
         }
     }
     pub(super) fn wire(&self) -> Value {
@@ -318,10 +321,10 @@ impl ResultContent {
             Self::Blocks(blocks) => json!(
                 blocks
                     .iter()
-                    .map(|b| match b {
+                    .map(|b| b.wire(|b| match b {
                         ResultBlock::Text(s) => json!({"type":"text","text":s}),
                         ResultBlock::Media(m) => m.wire(),
-                    })
+                    }))
                     .collect::<Vec<_>>()
             ),
         }

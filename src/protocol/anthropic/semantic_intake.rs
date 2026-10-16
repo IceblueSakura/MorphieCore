@@ -63,6 +63,7 @@ impl Intake {
                 parts: vec![Part {
                     id: part,
                     content: ContentPart::Text(text(s)?.into()),
+                    cache: None,
                 }],
                 status: ItemLifecycle::Completed,
                 phase: None,
@@ -72,6 +73,7 @@ impl Intake {
                 parts: vec![Part {
                     id: part,
                     content: ContentPart::Resource(self.resource(part, media)?),
+                    cache: None,
                 }],
                 status: ItemLifecycle::Completed,
                 phase: None,
@@ -106,6 +108,7 @@ impl Intake {
                 ..
             } => Item::ToolCall(ToolCall {
                 call_id: text(call)?,
+                cache: None,
                 name: text(name)?,
                 arguments: ToolArguments::Structured(input.clone()),
                 status: ItemLifecycle::Completed,
@@ -117,6 +120,7 @@ impl Intake {
                 is_error,
             } => Item::ToolResult(ToolResult {
                 call_id: Some(text(tool_use_id)?),
+                cache: None,
                 name: None,
                 output: match content {
                     ResultContent::Text(s) => ToolOutput::Text(s.clone()),
@@ -129,15 +133,16 @@ impl Intake {
                                 .enumerate()
                                 .map(|(i, block)| {
                                     let part = PartId::scoped(self.scope, base + i as u64);
-                                    Ok((
-                                        part,
-                                        match block {
+                                    Ok(Part {
+                                        id: part,
+                                        cache: block.cache,
+                                        content: match &block.content {
                                             ResultBlock::Text(s) => InputPart::Text(text(s)?),
                                             ResultBlock::Media(m) => {
                                                 InputPart::Resource(self.resource(part, m)?)
                                             }
                                         },
-                                    ))
+                                    })
                                 })
                                 .collect::<Result<_, CodecError>>()?,
                         )
@@ -157,6 +162,31 @@ impl Intake {
             .iter()
             .map(|b| self.block(b, role))
             .collect::<Result<Vec<_>, _>>()?;
+        self.envelope(role, members)
+    }
+    pub(super) fn request_message(
+        &mut self,
+        role: Role,
+        blocks: &[super::CacheMarked<Block>],
+    ) -> Result<(), CodecError> {
+        let mut members = Vec::new();
+        for block in blocks {
+            let id = self.block(&block.content, role)?;
+            let item = &mut self.items.last_mut().expect("inserted block").1;
+            match item {
+                Item::Message(m) => m.parts[0].cache = block.cache,
+                Item::ToolCall(c) => c.cache = block.cache,
+                Item::ToolResult(r) => r.cache = block.cache,
+                _ if block.cache.is_some() => {
+                    return Err(CodecError::Unsupported("Anthropic cache owner".into()));
+                }
+                _ => {}
+            }
+            members.push(id);
+        }
+        self.envelope(role, members)
+    }
+    fn envelope(&mut self, role: Role, members: Vec<ItemId>) -> Result<(), CodecError> {
         let id = GroupId::new(self.scope, self.groups.len() as u64 + 1);
         let role = if role == Role::User {
             MessageEnvelopeRole::User
@@ -170,6 +200,45 @@ impl Intake {
         });
         Ok(())
     }
+}
+pub(super) fn validate_cache(request: &GenerationRequest) -> Result<(), CodecError> {
+    let mut markers = request
+        .tools()
+        .iter()
+        .filter_map(|t| match t {
+            ToolDefinition::Function(t) => t.cache,
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let mut last = None;
+    for (_, item) in request.items() {
+        match item {
+            Item::Instruction(i) => markers.extend(i.parts.iter().filter_map(|p| p.cache)),
+            Item::Message(m) => {
+                for part in &m.parts {
+                    markers.extend(part.cache);
+                    last = part.cache;
+                }
+            }
+            Item::ToolCall(c) => {
+                markers.extend(c.cache);
+                last = c.cache;
+            }
+            Item::ToolResult(r) => {
+                if let ToolOutput::Parts(parts) = &r.output {
+                    markers.extend(parts.iter().filter_map(|p| p.cache));
+                }
+                markers.extend(r.cache);
+                last = r.cache;
+            }
+            _ => {}
+        }
+    }
+    super::request::validate_automatic_cache(
+        &mut markers,
+        last,
+        request.settings().automatic_prefix_cache,
+    )
 }
 pub(super) fn bind(
     fidelity: &mut FidelityRecords,

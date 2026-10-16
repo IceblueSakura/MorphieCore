@@ -48,6 +48,11 @@ impl Profile {
             tool_result_media: true,
             text_metadata: false,
             top_p: true,
+            top_k: false,
+            stop_sequences: false,
+            presence_penalty: false,
+            frequency_penalty: false,
+            seed: false,
             logprobs: false,
             verbosity: false,
             truncation: false,
@@ -63,6 +68,8 @@ impl Profile {
             parallel_tool_calls: true,
             strict_tools: false,
             normalization_default_tools: false,
+            explicit_cache: false,
+            automatic_prefix_cache: false,
         }
     }
     /// Codec support does not activate strict tools on an existing binding.
@@ -71,6 +78,9 @@ impl Profile {
     ) -> crate::semantic::task::generation::GenerationSemanticContract {
         let mut contract = self.semantic_contract();
         contract.strict_tools = true;
+        contract.explicit_cache = true;
+        contract.automatic_prefix_cache = true;
+        contract.stop_sequences = true;
         contract
     }
     pub fn decode_request(self, bytes: &[u8]) -> Result<Request, CodecError> {

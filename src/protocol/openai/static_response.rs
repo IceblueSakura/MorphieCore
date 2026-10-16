@@ -485,6 +485,7 @@ pub(crate) fn decode_chat_with(
         .with_details(if outcome == Outcome::Incomplete {
             TerminalDetails {
                 error: None,
+                completion: None,
                 incomplete: Some(if c["finish_reason"] == "content_filter" {
                     IncompleteReason::ContentFilter
                 } else {
@@ -492,7 +493,11 @@ pub(crate) fn decode_chat_with(
                 }),
             }
         } else {
-            TerminalDetails::default()
+            TerminalDetails {
+                completion: (c["finish_reason"] == "stop")
+                    .then_some(CompletionCause::NaturalOrStopSequence),
+                ..Default::default()
+            }
         })?;
     // Chat's finish label must agree with content even though response outcome
     // no longer encodes a call/no-call distinction.

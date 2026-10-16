@@ -543,14 +543,14 @@ impl FidelityRecords {
 fn part_exists(items: &[(ItemId, Item)], owner: PartId) -> bool {
     items.iter().take(MAX_ITEMS).any(|(_, item)| {
         let output = match item {
-            Item::Instruction(value) => return value.parts.iter().take(MAX_ITEMS).any(|(id, _)| *id == owner),
+            Item::Instruction(value) => return value.parts.iter().take(MAX_ITEMS).any(|p| p.id == owner),
             Item::Message(value) => return value.parts.iter().take(MAX_ITEMS).any(|part| part.id == owner),
             Item::Reasoning(value) => return value.parts.iter().take(MAX_ITEMS).any(|(id, _)| *id == owner),
             Item::ToolResult(value) | Item::CustomResult(value) => Some(&value.output),
             Item::ProviderTool(value) => value.output.as_ref(),
             _ => None,
         };
-        matches!(output, Some(ToolOutput::Parts(parts)) if parts.iter().take(MAX_ITEMS).any(|(id, _)| *id == owner))
+        matches!(output, Some(ToolOutput::Parts(parts)) if parts.iter().take(MAX_ITEMS).any(|p| p.id == owner))
     })
 }
 // This in-process fingerprint is not persisted or exposed as a wire identity.

@@ -871,8 +871,24 @@ async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
         .unwrap()
         .write_all(
             &serde_json::to_vec(
-                &json!({"client_key":support::CLIENT_KEY,"bind":"127.0.0.1:0","proxy":"unsupported://invalid","models":["deepseek-flash","qwen-audio-3.0-tts-flash"]}),
+                &json!({"client_key":support::CLIENT_KEY,"bind":"127.0.0.1:0","proxy":"unsupported://invalid"}),
             )
+            .unwrap(),
+        )
+        .unwrap();
+    let binding = morphiecore::topology::catalog::API_KEY_BINDINGS
+        .iter()
+        .find(|b| b.model == "deepseek-flash")
+        .unwrap()
+        .endpoint_id(morphiecore::topology::ProtocolProfile::OpenAiResponses);
+    options
+        .open(root.parent().unwrap().join("models.json"))
+        .unwrap()
+        .write_all(
+            &serde_json::to_vec(&json!({"models":{
+                "deepseek-flash":{"candidates":[{"binding":binding.as_str()}]},
+                "qwen-audio-3.0-tts-flash":{}
+            }}))
             .unwrap(),
         )
         .unwrap();

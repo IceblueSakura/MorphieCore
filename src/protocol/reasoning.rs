@@ -1,21 +1,22 @@
 //! Explicit reasoning adaptation selected by trusted bindings.
 use crate::protocol::CodecError;
 use crate::semantic::{task::generation::*, value::Presence};
+use std::borrow::Cow;
 
 /// Explicit numeric presets, not official token equivalents of qualitative effort.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ThinkingBudgets {
-    pub entries: &'static [(EffortLevel, u64)],
+    pub entries: Cow<'static, [(EffortLevel, u64)]>,
 }
 pub const SHARED_BUDGETS: ThinkingBudgets = ThinkingBudgets {
-    entries: &[
+    entries: Cow::Borrowed(&[
         (EffortLevel::Minimal, 1024),
         (EffortLevel::Low, 2048),
         (EffortLevel::Medium, 4096),
         (EffortLevel::High, 8192),
         (EffortLevel::XHigh, 16384),
         (EffortLevel::Max, 24576),
-    ],
+    ]),
 };
 fn rank(level: EffortLevel) -> u8 {
     match level {
@@ -63,7 +64,7 @@ impl ThinkingBudgets {
 }
 
 /// One selected direction. No inverse, qualitative nearest level or fallback is inferred.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReasoningConversion {
     Scope {
         from: EffortScope,
@@ -80,9 +81,9 @@ pub enum ReasoningConversion {
     },
     PreserveDisabled,
 }
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReasoningRequestPolicy {
-    pub canonical_model: &'static str,
+    pub canonical_model: Cow<'static, str>,
     pub rule: &'static str,
     pub conversion: ReasoningConversion,
 }
@@ -92,7 +93,7 @@ impl ReasoningRequestPolicy {
         source: &GenerationRequest,
         target: &GenerationRequest,
     ) -> Result<crate::lowering::generation::RequestControlLoss, CodecError> {
-        let preset_tokens = match self.conversion {
+        let preset_tokens = match &self.conversion {
             ReasoningConversion::BudgetToEffort { table, .. } => target
                 .settings()
                 .effort
@@ -147,7 +148,7 @@ impl ReasoningRequestPolicy {
             return Err(CodecError::Invalid("reasoning policy identity"));
         }
         let mut target = source.clone();
-        match self.conversion {
+        match &self.conversion {
             ReasoningConversion::Scope { from, to, levels } => {
                 if from == to
                     || levels.is_empty()
@@ -160,7 +161,7 @@ impl ReasoningRequestPolicy {
                     return Err(CodecError::Invalid("reasoning scope policy"));
                 }
                 if let Some(control) = source.effort.value() {
-                    if control.scope != from {
+                    if control.scope != *from {
                         return Err(CodecError::Unsupported("reasoning scope".into()));
                     }
                     let level = levels
@@ -170,7 +171,7 @@ impl ReasoningRequestPolicy {
                         .ok_or_else(|| {
                             CodecError::Unsupported("unmapped reasoning scope".into())
                         })?;
-                    target.effort = Presence::Value(EffortControl { scope: to, level });
+                    target.effort = Presence::Value(EffortControl { scope: *to, level });
                 }
             }
             ReasoningConversion::BudgetToEffort { scope, table } => {
@@ -186,13 +187,16 @@ impl ReasoningRequestPolicy {
                     if target.reasoning.mode == Presence::Value(ReasoningMode::Budgeted) {
                         target.reasoning.mode = Presence::Absent;
                     }
-                    target.effort = Presence::Value(EffortControl { scope, level });
+                    target.effort = Presence::Value(EffortControl {
+                        scope: *scope,
+                        level,
+                    });
                 }
             }
             ReasoningConversion::EffortToBudget { scope, table } => {
                 table.validate()?;
                 if let Some(control) = source.effort.value() {
-                    if control.scope != scope || source.reasoning.budget_tokens.is_some() {
+                    if control.scope != *scope || source.reasoning.budget_tokens.is_some() {
                         return Err(CodecError::Unsupported("thinking allocation scope".into()));
                     }
                     if !source.reasoning.mode.is_absent()

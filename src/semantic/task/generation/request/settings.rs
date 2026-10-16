@@ -11,6 +11,12 @@ pub struct GenerationControls {
     pub max_output_tokens: Option<u64>,
     temperature_bits: Option<u64>,
     top_p_bits: Option<u64>,
+    pub top_k: Option<u32>,
+    pub stop_sequences: Vec<Text>,
+    presence_penalty_bits: Option<u64>,
+    frequency_penalty_bits: Option<u64>,
+    /// Best-effort sampling reproducibility, not a determinism guarantee.
+    pub seed: Option<i64>,
     pub top_logprobs: Option<u8>,
     pub logprobs: Presence<bool>,
     pub truncation: Option<Truncation>,
@@ -36,11 +42,40 @@ impl GenerationControls {
     pub fn top_p(&self) -> Option<f64> {
         self.top_p_bits.map(f64::from_bits)
     }
+    pub fn with_presence_penalty(mut self, value: f64) -> Result<Self, GenerationError> {
+        if !value.is_finite() {
+            return Err(GenerationError::InvalidControl);
+        }
+        self.presence_penalty_bits = Some(value.to_bits());
+        Ok(self)
+    }
+    pub fn presence_penalty(&self) -> Option<f64> {
+        self.presence_penalty_bits.map(f64::from_bits)
+    }
+    pub fn with_frequency_penalty(mut self, value: f64) -> Result<Self, GenerationError> {
+        if !value.is_finite() {
+            return Err(GenerationError::InvalidControl);
+        }
+        self.frequency_penalty_bits = Some(value.to_bits());
+        Ok(self)
+    }
+    pub fn frequency_penalty(&self) -> Option<f64> {
+        self.frequency_penalty_bits.map(f64::from_bits)
+    }
+    pub fn has_extended_controls(&self) -> bool {
+        self.top_k.is_some()
+            || !self.stop_sequences.is_empty()
+            || self.presence_penalty().is_some()
+            || self.frequency_penalty().is_some()
+            || self.seed.is_some()
+    }
 }
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct GenerationSettings {
     pub instructions: Presence<Text>,
     pub controls: GenerationControls,
+    /// Moving prefix boundary. Absence leaves the target's caching policy unchanged.
+    pub automatic_prefix_cache: Option<PrefixCacheTtl>,
     pub tools: Option<Vec<ToolDefinition>>,
     pub tool_choice: Option<ToolChoice>,
     pub parallel_tool_calls: Option<bool>,
@@ -56,6 +91,7 @@ impl GenerationSettings {
     }
     pub fn validate(&self) -> Result<usize, GenerationError> {
         if self.controls.max_output_tokens == Some(0)
+            || self.controls.top_k == Some(0)
             || self.controls.top_logprobs.is_some_and(|n| n > 20)
             || self
                 .controls
@@ -63,6 +99,21 @@ impl GenerationSettings {
                 .is_some_and(|v| !(0.0..=2.0).contains(&v))
         {
             return Err(GenerationError::InvalidControl);
+        }
+        if self.controls.stop_sequences.len() > MAX_ITEMS {
+            return Err(GenerationError::Limit);
+        }
+        let mut stop_bytes = 0usize;
+        for stop in &self.controls.stop_sequences {
+            if stop.as_str().is_empty() || stop.as_str().len() > MAX_TEXT_BYTES {
+                return Err(GenerationError::InvalidControl);
+            }
+            stop_bytes = stop_bytes
+                .checked_add(stop.as_str().len())
+                .ok_or(GenerationError::Limit)?;
+            if stop_bytes > MAX_TOTAL_BYTES {
+                return Err(GenerationError::Limit);
+            }
         }
         if self
             .reasoning
@@ -110,6 +161,8 @@ impl GenerationSettings {
             return Err(GenerationError::Limit);
         }
         let bytes = instructions
+            + stop_bytes
+            + usize::from(self.automatic_prefix_cache.is_some()) * 32
             + self
                 .audio
                 .value()

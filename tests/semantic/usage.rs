@@ -114,6 +114,7 @@ mod usage_relations {
                 parts: vec![Part {
                     id: PartId::new(2),
                     content: ContentPart::Text(text("a").into()),
+                    cache: None,
                 }],
                 status: ItemLifecycle::Completed,
                 phase: None,
@@ -600,6 +601,7 @@ mod projection {
                     parts: vec![Part {
                         id: PartId::new(2),
                         content: ContentPart::Text(text("answer").into()),
+                        cache: None,
                     }],
                     status: ItemLifecycle::Completed,
                     phase: None,
@@ -829,6 +831,7 @@ mod projection {
         message.parts.push(Part {
             id: PartId::new(3),
             content: ContentPart::Text(text("second").into()),
+            cache: None,
         });
         variants.push(original.clone().with_items(items).unwrap());
         let mut items = original.items().to_vec();

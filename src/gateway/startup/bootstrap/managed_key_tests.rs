@@ -1,11 +1,14 @@
 //! File activation and replay epoch rebinding, without inference traffic.
+use super::tests::{selected_models, write_configuration};
 use super::*;
 use crate::credential::{CredentialPool, CredentialRef};
 fn setup() -> (tempfile::TempDir, CredentialManager) {
     let dir = crate::credential::tests::support::private_directory();
-    let manager = CredentialManager::new(dir.path(), vec![]).unwrap();
-    manager.write_gateway_config_for_test(
-        &serde_json::json!({"client_key":"synthetic-gateway-key-at-least-32-bytes"}),
+    let manager = CredentialManager::new(dir.path().join("credentials"), vec![]).unwrap();
+    write_configuration(
+        dir.path(),
+        serde_json::json!({"client_key":"synthetic-gateway-key-at-least-32-bytes"}),
+        selected_models(&["deepseek-flash"], &["deepseek"]),
     );
     manager
         .add_api_key(

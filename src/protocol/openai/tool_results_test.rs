@@ -9,6 +9,7 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
             ItemId::new(1),
             Item::ToolCall(ToolCall {
                 call_id: text("c"),
+                cache: None,
                 name: text("lookup"),
                 arguments: "{}".into(),
                 status: ItemLifecycle::Completed,
@@ -86,6 +87,7 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
             ItemId::new(1),
             Item::ToolResult(ToolResult {
                 call_id: None,
+                cache: None,
                 name: None,
                 output: ToolOutput::Structured(
                     StructuredValue::new(serde_json::json!({"n":1})).unwrap(),
@@ -147,7 +149,7 @@ fn request_codecs_enforce_result_carriers_before_rendering() {
             Some(ToolExecution::Succeeded),
         ),
         (
-            ToolOutput::Parts(vec![(
+            ToolOutput::Parts(vec![Part::new(
                 PartId::new(1),
                 InputPart::Resource(ResourceUse {
                     id: ResourceId::new(1),
@@ -164,6 +166,7 @@ fn request_codecs_enforce_result_carriers_before_rendering() {
                     ItemId::new(1),
                     Item::ToolCall(ToolCall {
                         call_id: text("c"),
+                        cache: None,
                         name: text("lookup"),
                         arguments: "{}".into(),
                         status: ItemLifecycle::Completed,
@@ -174,6 +177,7 @@ fn request_codecs_enforce_result_carriers_before_rendering() {
                     ItemId::new(2),
                     Item::ToolResult(ToolResult {
                         is_error: None,
+                        cache: None,
                         execution,
                         call_id: Some(text("c")),
                         name: None,

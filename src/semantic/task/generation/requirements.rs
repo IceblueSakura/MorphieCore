@@ -19,6 +19,11 @@ pub struct GenerationRequirements {
     pub custom_tools: bool,
     pub text_metadata: bool,
     pub top_p: bool,
+    pub top_k: bool,
+    pub stop_sequences: bool,
+    pub presence_penalty: bool,
+    pub frequency_penalty: bool,
+    pub seed: bool,
     pub verbosity: bool,
     /// Requested output probabilities; reported history slots belong to text_metadata.
     pub logprobs: bool,
@@ -27,6 +32,8 @@ pub struct GenerationRequirements {
     pub parallel_tool_calls: Option<bool>,
     pub strict_function_tools: bool,
     pub normalization_default_tools: bool,
+    pub explicit_cache: bool,
+    pub automatic_prefix_cache: bool,
     pub tool_history: bool,
     pub provider_observations: bool,
     pub structured_arguments: bool,
@@ -67,6 +74,12 @@ impl GenerationRequirements {
     }
     pub fn derive(r: &GenerationRequest) -> Self {
         let mut x = Self {
+            top_k: r.controls().top_k.is_some(),
+            stop_sequences: !r.controls().stop_sequences.is_empty(),
+            presence_penalty: r.controls().presence_penalty().is_some(),
+            frequency_penalty: r.controls().frequency_penalty().is_some(),
+            seed: r.controls().seed.is_some(),
+            automatic_prefix_cache: r.settings().automatic_prefix_cache.is_some(),
             audio_output: r.settings().audio.value().is_some(),
             tool_choice: r.tool_choice().cloned(),
             parallel_tool_calls: r.parallel_tool_calls(),
@@ -78,6 +91,7 @@ impl GenerationRequirements {
             truncation: r.controls().truncation.is_some(),
             strict_function_tools: r.tools().iter().flat_map(crate::semantic::task::generation::ToolDefinition::leaves).any(|t| matches!(t,crate::semantic::task::generation::ToolDefinition::Function(t) if matches!(t.strict,crate::semantic::task::generation::FunctionStrictness::Explicit(true)))),
             normalization_default_tools: r.tools().iter().flat_map(crate::semantic::task::generation::ToolDefinition::leaves).any(|t| matches!(t,crate::semantic::task::generation::ToolDefinition::Function(t) if t.strict == crate::semantic::task::generation::FunctionStrictness::Omitted(crate::semantic::task::generation::StrictDefault::NormalizeSchema))),
+            explicit_cache: r.tools().iter().flat_map(crate::semantic::task::generation::ToolDefinition::leaves).any(|t| matches!(t,crate::semantic::task::generation::ToolDefinition::Function(t) if t.cache.is_some())),
             max_output_tokens: r.controls().max_output_tokens,
             temperature: r.controls().temperature().is_some(),
             tool_count: r.tools().iter().map(|t| t.leaves().len()).sum(),
@@ -90,6 +104,7 @@ impl GenerationRequirements {
         };
         for (_, i) in r.items() {
             x.assistant_media |= i.has_assistant_media();
+            x.explicit_cache |= i.has_cache_breakpoints();
             match i {
                 Item::Instruction(_) => {
                     x.instruction_count += 1;
@@ -139,10 +154,10 @@ impl GenerationRequirements {
                             x.structured_tool_results = true
                         }
                         crate::semantic::task::generation::ToolOutput::Parts(parts) => {
-                            for (_, part) in parts {
+                            for part in parts {
                                 let crate::semantic::task::generation::InputPart::Resource(
                                     resource,
-                                ) = part
+                                ) = &part.content
                                 else {
                                     continue;
                                 };

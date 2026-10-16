@@ -67,6 +67,7 @@ fn promised(
 #[derive(Clone, Debug, PartialEq)]
 pub struct CompiledTopology {
     providers: BTreeMap<String, ProviderDefinition>,
+    endpoint_providers: BTreeMap<String, ProviderDefinition>,
     endpoints: BTreeMap<String, Endpoint>,
     routes: BTreeMap<String, Route>,
     models: BTreeMap<String, PublicModel>,
@@ -85,6 +86,47 @@ impl CompiledTopology {
 
     pub fn endpoint(&self, id: &EndpointId) -> Option<&Endpoint> {
         self.endpoints.get(id.as_str())
+    }
+
+    /// Deployment-local declarations preserve the credential domain without
+    /// retargeting another binding that uses the same Provider.
+    pub fn endpoint_provider(&self, endpoint: &Endpoint) -> Option<&ProviderDefinition> {
+        self.endpoint_providers
+            .get(endpoint.id.as_str())
+            .or_else(|| self.provider(endpoint.provider.as_str()))
+    }
+
+    pub(crate) fn with_generation(
+        self,
+        candidates: Vec<(Endpoint, ProviderDefinition)>,
+        routes: Vec<Route>,
+        models: Vec<PublicModel>,
+    ) -> Result<Self, TopologyError> {
+        let mut declarations = BTreeMap::new();
+        let mut endpoints = Vec::new();
+        for (endpoint, provider) in candidates {
+            if declarations
+                .insert(endpoint.id.as_str().to_owned(), provider)
+                .is_some()
+            {
+                return Err(TopologyError::DuplicateEndpoint);
+            }
+            endpoints.push(endpoint);
+        }
+        let mut compiled = compile_deployments(
+            self.providers.into_values().collect(),
+            endpoints,
+            routes,
+            models,
+            self.canonical_models.into_values().collect(),
+            declarations,
+        )?;
+        compiled.image_routes = self.image_routes;
+        compiled.speech_routes = self.speech_routes;
+        compiled.transcription_routes = self.transcription_routes;
+        compiled.embedding_routes = self.embedding_routes;
+        compiled.model_metadata = self.model_metadata;
+        Ok(compiled)
     }
 
     pub fn route(&self, id: &RouteId) -> Option<&Route> {
@@ -131,6 +173,24 @@ pub fn compile(
     models: Vec<PublicModel>,
     canonical_models: Vec<CanonicalModel>,
 ) -> Result<CompiledTopology, TopologyError> {
+    compile_deployments(
+        providers,
+        endpoints,
+        routes,
+        models,
+        canonical_models,
+        BTreeMap::new(),
+    )
+}
+
+fn compile_deployments(
+    providers: Vec<ProviderDefinition>,
+    endpoints: Vec<Endpoint>,
+    routes: Vec<Route>,
+    models: Vec<PublicModel>,
+    canonical_models: Vec<CanonicalModel>,
+    endpoint_providers: BTreeMap<String, ProviderDefinition>,
+) -> Result<CompiledTopology, TopologyError> {
     let mut canonical_map = BTreeMap::new();
     for model in canonical_models {
         if canonical_map
@@ -158,10 +218,11 @@ pub fn compile(
         if canonical.task != endpoint.task {
             return Err(TopologyError::TaskMismatch);
         }
-        let definition = provider_map
-            .get(endpoint.provider.as_str())
+        let definition = endpoint_providers
+            .get(endpoint.id.as_str())
+            .or_else(|| provider_map.get(endpoint.provider.as_str()))
             .ok_or(TopologyError::UnknownProvider)?;
-        if definition.origin != endpoint.target.origin {
+        if definition.id != endpoint.provider || definition.origin != endpoint.target.origin {
             return Err(TopologyError::TargetMismatch);
         }
         let operation = definition
@@ -187,6 +248,10 @@ pub fn compile(
         }
         if route.endpoints.len() > super::route::MAX_ROUTE_CANDIDATES
             || !(1..=super::route::MAX_ROUTE_CANDIDATES).contains(&route.policy.max_attempts)
+            || route
+                .policy
+                .total_timeout_ms
+                .is_some_and(|ms| !(1..=86_400_000).contains(&ms))
         {
             return Err(TopologyError::InvalidRoutePolicy);
         }
@@ -284,6 +349,7 @@ pub fn compile(
     }
     Ok(CompiledTopology {
         providers: provider_map,
+        endpoint_providers,
         endpoints: endpoint_map,
         routes: route_map,
         models: model_map,

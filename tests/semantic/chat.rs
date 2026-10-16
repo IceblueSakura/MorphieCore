@@ -580,11 +580,33 @@ mod chat_media {
             encoded["choices"][0]["message"]["annotations"],
             wire["choices"][0]["message"]["annotations"]
         );
-        let responses = standard(Profile::Responses)
-            .encode_response(&decoded, &Contract::full())
-            .unwrap();
+        assert!(
+            standard(Profile::Responses)
+                .encode_response(&decoded, &Contract::full())
+                .is_err()
+        );
         assert_eq!(
-            responses["output"][0]["content"][0]["annotations"][0],
+            decoded.semantic.details().completion,
+            Some(CompletionCause::NaturalOrStopSequence)
+        );
+        // Returned history carries the citation without pretending its terminal was representable.
+        let history = GenerationRequest::from_resources(
+            decoded.semantic.items().to_vec(),
+            GenerationSettings::default(),
+            decoded.semantic.resources().clone(),
+        )
+        .unwrap();
+        let target = morphiecore::protocol::openai::lowering::lower_request(
+            &history,
+            &decoded.fidelity,
+            Profile::Responses,
+            Contract::full(),
+        )
+        .unwrap();
+        let responses =
+            morphiecore::protocol::openai::responses::encode_generation(&target).unwrap();
+        assert_eq!(
+            responses["input"][0]["content"][0]["annotations"][0],
             json!({"type":"url_citation","start_index":0,"end_index":5,"title":"Synthetic","url":"https://example.invalid/source"})
         );
     }
@@ -805,6 +827,7 @@ mod citation_bindings {
                 phase: None,
                 parts: vec![Part {
                     id: PartId::new(id),
+                    cache: None,
                     content: ContentPart::Text(
                         TextContent::new(text("claim"), annotations, Presence::Absent).unwrap(),
                     ),
@@ -1062,6 +1085,7 @@ mod files {
             .enumerate()
             .map(|(i, value)| Part {
                 id: PartId::new(i as u64 + 1),
+                cache: None,
                 content: ContentPart::Resource(ResourceUse {
                     description: value.description.clone(),
                     ..resources::image(i as u64 + 1)
@@ -1165,7 +1189,7 @@ mod files {
         let ToolOutput::Parts(parts) = &result.output else {
             panic!("parts")
         };
-        let InputPart::Resource(pdf) = &parts[0].1 else {
+        let InputPart::Resource(pdf) = &parts[0].content else {
             panic!("file part")
         };
         assert_eq!(
@@ -1235,9 +1259,9 @@ mod files {
         };
         assert_eq!(instruction.authority, InstructionAuthority::Developer);
         assert!(
-            matches!(&instruction.parts[0].1, InputPart::Text(t) if t.as_str() == "Follow the attached guide.")
+            matches!(&instruction.parts[0].content, InputPart::Text(t) if t.as_str() == "Follow the attached guide.")
         );
-        let InputPart::Resource(guide) = &instruction.parts[1].1 else {
+        let InputPart::Resource(guide) = &instruction.parts[1].content else {
             panic!("file part")
         };
         assert_eq!(
@@ -1568,6 +1592,7 @@ mod client_carrier {
         let call = |arguments| {
             Item::ToolCall(ToolCall {
                 call_id: event::text("c"),
+                cache: None,
                 name: event::text("lookup"),
                 arguments,
                 status: ItemLifecycle::Completed,
