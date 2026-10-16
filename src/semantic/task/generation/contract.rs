@@ -15,6 +15,7 @@ pub enum GenerationFeature {
     Controls,
     ParallelTools,
     StrictTools,
+    ToolSchemaNormalization,
     StructuredArguments,
     StructuredToolResult,
     ToolExecutionReport,
@@ -60,6 +61,8 @@ pub struct GenerationSemanticContract {
     pub file_input: bool,
     pub parallel_tool_calls: bool,
     pub strict_tools: bool,
+    /// Omitted strictness that requests schema normalization, not an explicit strict tool.
+    pub normalization_default_tools: bool,
 }
 impl GenerationSemanticContract {
     /// Complete vocabulary, useful for codecs and synthetic fixtures, not model discovery.
@@ -92,6 +95,7 @@ impl GenerationSemanticContract {
             file_input: true,
             parallel_tool_calls: true,
             strict_tools: true,
+            normalization_default_tools: true,
         }
     }
     /// Explicit currently admitted text/image slice; new fields require a decision here.
@@ -124,6 +128,8 @@ impl GenerationSemanticContract {
             file_input: false,
             parallel_tool_calls: true,
             strict_tools: false,
+            // Preserve the admitted default separately from explicit strict-tool support.
+            normalization_default_tools: true,
         }
     }
     pub fn supports(&self, promise: &Self) -> bool {
@@ -158,6 +164,10 @@ impl GenerationSemanticContract {
             (promise.file_input, self.file_input),
             (promise.parallel_tool_calls, self.parallel_tool_calls),
             (promise.strict_tools, self.strict_tools),
+            (
+                promise.normalization_default_tools,
+                self.normalization_default_tools,
+            ),
         ]
         .into_iter()
         .all(|(required, supported)| !required || supported)
@@ -280,6 +290,11 @@ impl GenerationSemanticContract {
                 ParallelTools,
             ),
             (q.strict_function_tools, self.strict_tools, StrictTools),
+            (
+                q.normalization_default_tools,
+                self.normalization_default_tools,
+                ToolSchemaNormalization,
+            ),
             (
                 q.structured_output,
                 self.structured_output,

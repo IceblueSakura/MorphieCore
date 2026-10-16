@@ -70,6 +70,7 @@ pub fn semantic_contract() -> GenerationSemanticContract {
         file_input: true,
         parallel_tool_calls: true,
         strict_tools: false,
+        normalization_default_tools: false,
     }
 }
 

@@ -143,6 +143,34 @@ mod schema_admission {
         };
         assert!(!tool(None));
         assert!(tool(Some(false)));
+
+        let normalized = responses::decode_generation(
+            &json!({"input":"go","tools":[{"type":"function","name":"lookup","parameters":{"type":"object"}}]}),
+        )
+        .unwrap();
+        let mut native = morphiecore::protocol::google::semantic_contract();
+        native.strict_tools = true;
+        assert_eq!(
+            native.check(&normalized.semantic),
+            Err(GenerationFeature::ToolSchemaNormalization)
+        );
+        let requirements = GenerationRequirements::derive(&normalized.semantic);
+        assert!(requirements.normalization_default_tools);
+        assert!(!requirements.strict_function_tools);
+        let mut contract = GenerationSemanticContract::full();
+        contract.strict_tools = false;
+        assert!(contract.check(&normalized.semantic).is_ok());
+        let mut without_normalization = contract.clone();
+        without_normalization.normalization_default_tools = false;
+        assert!(!without_normalization.supports(&contract));
+        assert!(contract.supports(&without_normalization));
+        let mut settings = normalized.semantic.settings().clone();
+        let ToolDefinition::Function(tool) = &mut settings.tools.as_mut().unwrap()[0] else {
+            panic!("function tool")
+        };
+        tool.strict = FunctionStrictness::Explicit(false);
+        let non_strict = normalized.semantic.with_settings(settings).unwrap();
+        assert!(native.check(&non_strict).is_ok());
     }
 
     #[test]

@@ -29,6 +29,16 @@ impl ToolDispatch {
     pub fn is_inactive(&self) -> bool {
         !self.async_call && !self.defer_loading && self.allowed_callers.is_none()
     }
+    pub(in crate::semantic::task::generation) fn validate(&self) -> Result<usize, GenerationError> {
+        let Some(callers) = &self.allowed_callers else {
+            return Ok(0);
+        };
+        if callers.is_empty() || callers.len() > 2 || callers.len() == 2 && callers[0] == callers[1]
+        {
+            return Err(GenerationError::InvalidToolDefinition);
+        }
+        Ok(std::mem::size_of_val(callers.as_slice()))
+    }
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CallOrigin {

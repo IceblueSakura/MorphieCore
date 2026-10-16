@@ -132,6 +132,8 @@ P8 permits omission of an explicit reasoning-context control only when the selec
 
 P8 rejects `DefaultStrictAsPlain`. Keep omitted normalization-default strictness distinct from omitted non-strict defaults and explicit `strict: false`. Responses normalization-default tools must not become plain native tools; reject when their source semantics cannot be preserved. This decision does not select a new schema-normalization implementation or permit removal of explicit schema constraints.
 
+Schema normalization and explicit strict tools have separate semantic requirements and capability checks. Supporting one does not imply the other. Native contracts reject normalization-default tools even when their codec carries explicit strict tools.
+
 These are selected policies, not claims that all bindings support every conversion. Concrete mappings and default-equivalence checks use trusted target policy with source evidence, not client-selected fallback logic or upstream-error discovery. Native targets reject uncalibrated detail/context controls and filenames without carriers; a named rule alone does not establish approval.
 
 ### Adaptation evidence

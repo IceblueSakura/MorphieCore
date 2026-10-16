@@ -326,7 +326,13 @@ mod native_catalog {
     };
     #[test]
     fn native_binding_rejects_unselected_default_strictness_but_preserves_plain_tools() {
-        use morphiecore::protocol::openai::{Adapter, Dialect, Profile as Client};
+        use morphiecore::{
+            adapter::AdapterError,
+            execution::AttemptError,
+            lowering::generation::RepresentationError,
+            protocol::openai::{Adapter, Dialect, Profile as Client},
+            semantic::task::generation::GenerationFeature,
+        };
         let binding = &catalog::MESSAGES_BINDINGS[0];
         let topology = catalog::default_topology().unwrap();
         // pi's shape: a developer prompt and a tool whose `strict` is omitted.
@@ -342,7 +348,12 @@ mod native_catalog {
         request.conversation = Some(
             morphiecore::semantic::context::ConversationContext::conversation("synthetic").unwrap(),
         );
-        admit(topology.model(binding.model).unwrap(), &request).unwrap();
+        assert!(matches!(
+            admit(topology.model(binding.model).unwrap(), &request),
+            Err(AttemptError::Adapter(AdapterError::Representation(
+                RepresentationError::Admission(GenerationFeature::ToolSchemaNormalization)
+            )))
+        ));
         assert!(representable(&binding.endpoint(), &request).is_err());
         let mut settings = request.task.semantic.settings().clone();
         let morphiecore::semantic::task::generation::ToolDefinition::Function(tool) =
@@ -352,6 +363,7 @@ mod native_catalog {
         };
         tool.strict = morphiecore::semantic::task::generation::FunctionStrictness::Explicit(false);
         request.task.semantic = request.task.semantic.with_settings(settings).unwrap();
+        admit(topology.model(binding.model).unwrap(), &request).unwrap();
         let (prepared, rules) = morphiecore::execution::prepare_with_rules(
             &binding.endpoint(),
             &binding.provider(),

@@ -240,6 +240,15 @@ mod tools {
         let mut controls = GenerationControls::default();
         controls.max_output_tokens = Some(0);
         assert!(GenerationRequest::new(d.semantic.items().to_vec(), controls).is_err());
+        let mut settings = d.semantic.settings().clone();
+        let ToolDefinition::Function(tool) = &mut settings.tools.as_mut().unwrap()[0] else {
+            panic!("function tool")
+        };
+        tool.dispatch.allowed_callers = Some(vec![]);
+        assert!(matches!(
+            d.semantic.with_settings(settings),
+            Err(GenerationError::InvalidToolDefinition)
+        ));
     }
     #[test]
     fn active_tool_dispatch_and_instruction_lifecycle_round_trip_without_chat_projection() {

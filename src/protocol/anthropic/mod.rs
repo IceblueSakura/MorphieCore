@@ -62,6 +62,7 @@ impl Profile {
             file_input: true,
             parallel_tool_calls: true,
             strict_tools: false,
+            normalization_default_tools: false,
         }
     }
     /// Codec support does not activate strict tools on an existing binding.

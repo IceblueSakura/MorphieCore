@@ -16,12 +16,6 @@ For this migration, update existing tests and independent wire expectations only
 
 Optional delta coalescing remains a separate planned slice. Do not combine it with loss-policy, routing or codec repair work.
 
-### IR contract repairs
-
-Goal: align typed tool validation and strictness requirements with codec contracts.
-
-Exit condition: extend existing lowest-owner tests with independent rejection and replay expectations, then pass the offline baseline for each repair. Keep routing frozen and do not activate new controls or bindings.
-
 ### Temporary routing freeze
 
 During this IR/codec migration, do not change route construction, candidate membership/order/selection policy, cache affinity, cooling, failover eligibility, attempt budgets, credentials or public model routing. Do not rank targets by projection loss or add a fallback to hide an unsupported conversion.

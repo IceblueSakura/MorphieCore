@@ -637,6 +637,7 @@ pub fn tools(
         }
         match t {
             ToolDefinition::Function(t) => {
+                charge(&mut bytes, t.dispatch.validate()?)?;
                 if let Some(d) = &t.description {
                     add(&mut bytes, d)?;
                 }
@@ -645,6 +646,7 @@ pub fn tools(
                 }
             }
             ToolDefinition::Custom(t) => {
+                charge(&mut bytes, t.dispatch.validate()?)?;
                 if let Some(d) = &t.description {
                     add(&mut bytes, d)?;
                 }
