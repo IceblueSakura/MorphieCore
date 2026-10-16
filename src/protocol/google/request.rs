@@ -1,6 +1,6 @@
 //! Candidate-local generateContent request projection.
 //! Source: <https://ai.google.dev/api/generate-content>.
-use super::signature::{Anchor, Signed};
+use super::signature::{Anchor, Signed, text_hash};
 use crate::{
     protocol::{CodecError, fidelity::FidelityRecords, native::ReplayTarget},
     semantic::{task::generation::*, value::Presence},
@@ -556,26 +556,28 @@ fn media(
 }
 
 /// Restores a signature onto the part it was issued with, independent of item order.
-fn attach(parts: &mut Vec<Value>, value: Signed) -> Result<(), CodecError> {
+fn attach(parts: &mut [Value], value: Signed) -> Result<(), CodecError> {
     let signature = value.signature.ok_or_else(unsupported)?;
     let slot = match &value.anchor {
         Anchor::Call(id) => parts
             .iter_mut()
             .find(|p| p["functionCall"]["id"].as_str() == Some(id.as_str()))
             .ok_or(CodecError::Invalid("Gemini signature without its call"))?,
-        Anchor::Tail => match parts.last_mut() {
-            Some(last)
-                if last.get("text").is_some()
-                    && last.get("thought").is_none()
-                    && last.get("thoughtSignature").is_none() =>
-            {
-                last
+        Anchor::Tail {
+            text_hash: expected,
+        } => {
+            let last = parts
+                .last_mut()
+                .filter(|part| part.get("thought").is_none())
+                .ok_or(CodecError::Invalid("Gemini text signature owner"))?;
+            let text = last["text"]
+                .as_str()
+                .ok_or(CodecError::Invalid("Gemini text signature owner"))?;
+            if text_hash(text) != *expected {
+                return Err(CodecError::Invalid("Gemini text signature dependency"));
             }
-            _ => {
-                parts.push(json!({"text": ""}));
-                parts.last_mut().expect("pushed")
-            }
-        },
+            last
+        }
         Anchor::Thought => return Err(unsupported()),
     };
     if slot.get("thoughtSignature").is_some() {

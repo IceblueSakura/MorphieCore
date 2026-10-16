@@ -345,7 +345,7 @@ Redacted thinking is an opaque-only reasoning item with its own replay format, s
 
 Google signatures travel as reasoning items. The IR has no part- or call-level replay slots; Provider-tool replay stays separate.
 
-- A generateContent value names its anchor: call ID, thought or tail. The encoder restores it by anchor, not position.
+- A generateContent value names its anchor: call ID, thought or tail. A tail anchor binds the final text part by digest; changed or missing text rejects instead of receiving the signature. No empty carrier is invented.
 - A signed thought closes its owner. Later thought text starts another item, so adjacent signed parts never overwrite one another.
 - An Interactions value is a thought signature or a call-ID-anchored signature.
 - Signature-only items trail the response, so a message stays contiguous with its calls. Chat carries them ahead of the message.
@@ -597,6 +597,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Append-only history projection | Earlier content does not change when a later turn is added |
 | Reported tool results | Responses carries function/custom results in static output and item snapshots. Missing call references stay unreported; request history still requires matching preceding calls. Chat and Messages reject ordinary tool results as assistant output, not their supported history forms |
 | Scoped opaque replay | Restore only compatible native values; foreign readable reasoning becomes text |
+| Replay dependencies | Validate the original reasoning dependency before client sealing. generateContent tail signatures also bind the actual text carrier by digest, outside semantic IR |
 | Compacted context is required history | A distinct ordered compaction item preserves opaque content and identity. Incompatible targets reject it rather than apply the foreign-reasoning strip rule |
 | Failover, not balancing | Legal candidates, bounded advancement and exact-credential affinity |
 | Conversation routing | No inferred turn, branch or message routing |

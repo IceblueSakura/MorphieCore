@@ -18,7 +18,7 @@ Optional delta coalescing remains a separate planned slice. Do not combine it wi
 
 ### IR contract repairs
 
-Goal: preserve replay dependencies across history edits and client sealing, and align typed tool validation and strictness requirements with codec contracts.
+Goal: align typed tool validation and strictness requirements with codec contracts.
 
 Exit condition: extend existing lowest-owner tests with independent rejection and replay expectations, then pass the offline baseline for each repair. Keep routing frozen and do not activate new controls or bindings.
 

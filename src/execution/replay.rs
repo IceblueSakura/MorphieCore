@@ -60,7 +60,15 @@ pub fn seal_for_client(
             continue;
         };
         reasoning.replay = match decoded.fidelity.replay_origin(*id) {
-            Some(origin) => Some(seal(value, origin)?),
+            Some(origin) => {
+                if !decoded
+                    .fidelity
+                    .replay_matches(*id, reasoning, Some(origin))
+                {
+                    return Err(CodecError::Invalid("reasoning dependency"));
+                }
+                Some(seal(value, origin)?)
+            }
             None => None,
         };
         changed = true;

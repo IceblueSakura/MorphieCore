@@ -2,7 +2,7 @@
 //! fragment. Known fields are strict and unknown ones ignored; the aggregate is the reduced
 //! event state, released only at strict EOF.
 //! Source: <https://ai.google.dev/api/generate-content>.
-use super::signature::{Anchor, Signed};
+use super::signature::{Anchor, Signed, text_hash};
 use crate::{
     protocol::{
         CodecError, DecodedResponse, ResponseMetadata,
@@ -401,10 +401,24 @@ impl GenerationSseDecoder {
                     self.delta(fragment, PartKind::Text, probabilities, out)?;
                 }
                 if let Some(signature) = signature {
+                    let open = self
+                        .open
+                        .as_ref()
+                        .filter(|open| matches!(open.kind, OpenKind::Text))
+                        .ok_or_else(|| invalid("Gemini text signature owner"))?;
+                    let text = self
+                        .state
+                        .part(open.item, open.part)
+                        .map_err(CodecError::from)?
+                        .text()
+                        .ok_or_else(|| invalid("Gemini text signature owner"))?;
                     self.signatures.push(Signed {
-                        anchor: Anchor::Tail,
+                        anchor: Anchor::Tail {
+                            text_hash: text_hash(text),
+                        },
                         signature: Some(signature),
                     });
+                    self.close(out)?;
                 }
                 Ok(())
             }

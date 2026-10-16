@@ -719,6 +719,22 @@ mod replay_carrier {
 
     #[test]
     fn same_issuer_receives_its_original_value() {
+        let mut edited = upstream("openai/model-a")
+            .decode_response(wire::response(1).to_string().as_bytes())
+            .unwrap();
+        let mut items = edited.semantic.items().to_vec();
+        let Item::Reasoning(reasoning) = &mut items[0].1 else {
+            panic!("reasoning")
+        };
+        let (_, content) = &mut reasoning.parts[0];
+        *content = morphiecore::semantic::task::generation::ReasoningContent::Summary(
+            morphiecore::semantic::value::Text::new("edited", "synthetic", 64).unwrap(),
+        );
+        edited.semantic = edited.semantic.with_items(items).unwrap();
+        let before = edited.clone();
+        assert!(seal_for_client(&mut edited, &CLIENT_ORIGIN).is_err());
+        assert_eq!(edited, before);
+
         let body = client_round_trip("openai/model-a");
         let mut request = client()
             .decode_request(body.to_string().as_bytes())

@@ -247,6 +247,34 @@ fn next_request(observed: &DecodedResponse) -> GenerationRequest {
 
 #[test]
 fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
+    let tail = decode(&wire(&[json!({
+        "responseId":"tail","modelVersion":"gemini-synthetic",
+        "candidates":[{"content":{"role":"model","parts":[
+            {"text":"A","thoughtSignature":"U0lH"}]},"finishReason":"STOP"}]
+    })]))
+    .unwrap();
+    let source = client(Profile::Responses, json!({"model":"m","input":"go"}));
+    let history = ClientManaged::new(source.task.semantic.settings().clone())
+        .unwrap()
+        .select_request(&source.task.semantic)
+        .unwrap()
+        .select_response(&tail.semantic)
+        .unwrap()
+        .build()
+        .unwrap();
+    let (body, _) = encode_generation_request(&history, &tail.fidelity, &target()).unwrap();
+    assert_eq!(
+        body["contents"][1]["parts"],
+        json!([{"text":"A","thoughtSignature":"U0lH"}])
+    );
+    let mut edited = history.items().to_vec();
+    let Item::Message(message) = &mut edited[1].1 else {
+        panic!("signed text")
+    };
+    message.parts[0].content = ContentPart::Text(Text::new("B", "edited", 64).unwrap().into());
+    let edited = history.with_items(edited).unwrap();
+    assert!(encode_generation_request(&edited, &tail.fidelity, &target()).is_err());
+
     let observed = decode(&wire(&frames())).unwrap();
     let request = next_request(&observed);
     let expected = json!({
