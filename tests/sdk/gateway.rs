@@ -437,7 +437,16 @@ async fn sdk_uses_gateway_for_both_protocols_and_deliveries() {
         .unwrap();
     });
     let _upstream = ServerGuard(upstream.abort_handle());
-    let gateway = support::gateway(&origin, Limits::default());
+    let gateway = support::gateway(
+        &origin,
+        Limits {
+            delta_coalescing: Some(morphiecore::gateway::DeltaCoalescing {
+                max_delay_ms: 10,
+                max_pending_bytes: 16384,
+            }),
+            ..Limits::default()
+        },
+    );
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/v1", listener.local_addr().unwrap());
     let (stop, stopped) = oneshot::channel();

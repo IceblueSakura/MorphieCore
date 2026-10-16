@@ -189,6 +189,9 @@ struct Record {
     upstream_head_ms: Option<u64>,
     first_upstream_bytes_ms: Option<u64>,
     candidates: Vec<CandidateRecord>,
+    /// Maximum accounted delivery buffer bytes observed at an attempt's exit.
+    #[serde(skip_serializing_if = "is_zero")]
+    coalescing_peak_bytes: u64,
     /// Why candidates left compiled order: `affinity`, `cooling`, both, or `compiled`.
     #[serde(skip_serializing_if = "Option::is_none")]
     executor_order: Option<&'static str>,
@@ -299,6 +302,7 @@ impl Trace {
                 elapsed_ms: 0,
                 upstream_head_ms: None,
                 first_upstream_bytes_ms: None,
+                coalescing_peak_bytes: 0,
                 candidates: vec![],
                 executor_order: None,
                 decode_failure: None,
@@ -652,6 +656,9 @@ impl Trace {
     pub(super) fn handed_off(&mut self, n: usize) {
         self.record.handed_off_bytes = self.record.handed_off_bytes.saturating_add(n as u64);
     }
+    pub(super) fn coalescing_peak(&mut self, bytes: usize) {
+        self.record.coalescing_peak_bytes = self.record.coalescing_peak_bytes.max(bytes as u64);
+    }
     pub(super) fn affinity(&mut self, source: &'static str, key: bool, session: bool) {
         if self.sink.is_some() {
             self.record.affinity = AffinityObservation {
@@ -688,6 +695,7 @@ impl Drop for Trace {
                 elapsed_ms: 0,
                 upstream_head_ms: None,
                 first_upstream_bytes_ms: None,
+                coalescing_peak_bytes: 0,
                 candidates: vec![],
                 executor_order: None,
                 decode_failure: None,

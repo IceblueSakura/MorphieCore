@@ -11,6 +11,7 @@ pub mod startup;
 mod tasks;
 #[cfg(test)]
 mod tests;
+pub use crate::execution::delivery::DeltaCoalescing;
 #[cfg(test)]
 use crate::{
     protocol::openai::{Adapter, Profile, TargetCaps},

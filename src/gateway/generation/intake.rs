@@ -28,6 +28,18 @@ fn lifecycle_only(event: &crate::semantic::task::generation::StreamEvent) -> boo
         _ => false,
     }
 }
+async fn flush_pending(
+    lane: &Lane<'_>,
+    delivery: &mut ResponseDelivery,
+    trace: &mut Trace,
+) -> Result<(), ApiError> {
+    let frames = delivery.flush_pending().map_err(|error| {
+        trace.projection_error(&error);
+        ApiError::upstream()
+    })?;
+    trace.delivery_losses(delivery.losses());
+    send_frames(lane, delivery, frames, trace).await
+}
 #[allow(clippy::too_many_arguments)]
 async fn produce(
     mut upstream: reqwest::Response,
@@ -55,13 +67,30 @@ async fn produce(
     let started = std::time::Instant::now();
     let mut held: Option<Vec<Bytes>> = (stream && hold).then(Vec::new);
     let mut used_bytes = 0usize;
-    while let Some(chunk) = upstream.chunk().await.map_err(|e| {
-        ApiError::transport(if e.is_timeout() {
-            crate::provider::ErrorClass::Timeout
-        } else {
-            crate::provider::ErrorClass::Upstream
-        })
-    })? {
+    loop {
+        let deadline = delivery
+            .flush_deadline()
+            .map(tokio::time::Instant::from_std);
+        let chunk = tokio::select! {
+            biased;
+            _ = async {
+                match deadline {
+                    Some(deadline) => tokio::time::sleep_until(deadline).await,
+                    None => std::future::pending::<()>().await,
+                }
+            } => {
+                flush_pending(lane, delivery, trace).await?;
+                continue;
+            }
+            chunk = upstream.chunk() => chunk.map_err(|e| {
+                ApiError::transport(if e.is_timeout() {
+                    crate::provider::ErrorClass::Timeout
+                } else {
+                    crate::provider::ErrorClass::Upstream
+                })
+            })?,
+        };
+        let Some(chunk) = chunk else { break };
         trace.stage(Stage::Intake);
         trace.received(chunk.len());
         if !json && let Some(capture) = &mut capture {
@@ -73,6 +102,12 @@ async fn produce(
         }
         let mut rest = chunk.as_ref();
         while !rest.is_empty() {
+            if delivery
+                .flush_deadline()
+                .is_some_and(|deadline| deadline <= std::time::Instant::now())
+            {
+                flush_pending(lane, delivery, trace).await?;
+            }
             let (used, events) = match attempt.push(rest) {
                 Ok(pushed) => pushed,
                 Err(error) => {
@@ -89,6 +124,7 @@ async fn produce(
                             .published
                             .load(std::sync::atomic::Ordering::Acquire)
                     {
+                        flush_pending(lane, delivery, trace).await?;
                         let body = if delivery.is_messages() {
                             failure.messages_error().1
                         } else {
@@ -118,23 +154,36 @@ async fn produce(
             rest = &rest[used..];
             if stream {
                 trace.stage(Stage::Projection);
-                let frames = delivery.encode_events(attempt, &events);
+                if delivery.must_flush_before(attempt, &events) {
+                    flush_pending(lane, delivery, trace).await?;
+                }
+                let batches = delivery.queue_events(attempt, &events, std::time::Instant::now());
                 trace.delivery_losses(delivery.losses());
-                let frames = frames.map_err(|error| {
+                let batches = batches.map_err(|error| {
                     trace.projection_error(&error);
                     ApiError::upstream()
                 })?;
-                if let Some(buffer) = held.as_mut()
-                    && events.iter().all(lifecycle_only)
-                    && buffer.iter().chain(&frames).map(Bytes::len).sum::<usize>() <= HOLD_BYTES
-                    && started.elapsed() < HOLD_TIME
-                {
-                    buffer.extend(frames);
-                } else {
-                    if let Some(buffer) = held.take() {
-                        send_frames(lane, delivery, buffer, trace).await?;
+                // Handoff each drained run before encoding a following barrier:
+                // a later target error must not erase validated pending content.
+                for batch in batches {
+                    let frames = delivery.encode_prepared(batch);
+                    trace.delivery_losses(delivery.losses());
+                    let frames = frames.map_err(|error| {
+                        trace.projection_error(&error);
+                        ApiError::upstream()
+                    })?;
+                    if let Some(buffer) = held.as_mut()
+                        && events.iter().all(lifecycle_only)
+                        && buffer.iter().chain(&frames).map(Bytes::len).sum::<usize>() <= HOLD_BYTES
+                        && started.elapsed() < HOLD_TIME
+                    {
+                        buffer.extend(frames);
+                    } else {
+                        if let Some(buffer) = held.take() {
+                            send_frames(lane, delivery, buffer, trace).await?;
+                        }
+                        send_frames(lane, delivery, frames, trace).await?;
                     }
-                    send_frames(lane, delivery, frames, trace).await?;
                 }
                 trace.stage(Stage::Intake);
             }
@@ -158,6 +207,9 @@ async fn produce(
         attempt.fidelity(),
     );
     trace.stage(Stage::Projection);
+    if stream {
+        flush_pending(lane, delivery, trace).await?;
+    }
     let (frames, json_snapshot) = if stream {
         let frames = delivery.finish_stream(attempt);
         trace.delivery_losses(delivery.losses());
@@ -358,7 +410,8 @@ pub(in crate::gateway) async fn produce_candidate(
         sse,
         options,
         padding,
-    );
+    )
+    .with_coalescing(stream.then_some(limits.delta_coalescing).flatten());
     if let Some(history) = history {
         delivery = delivery.with_storage(&history.id, history.options.metadata());
     }
@@ -374,8 +427,18 @@ pub(in crate::gateway) async fn produce_candidate(
         trace,
     )
     .await;
+    trace.coalescing_peak(delivery.coalescing_peak_bytes());
     trace.delivery_losses(delivery.losses());
     if result.is_err() {
+        // An unpublished failed attempt must not acquire commitment by flushing.
+        if stream
+            && lane
+                .state
+                .published
+                .load(std::sync::atomic::Ordering::Acquire)
+        {
+            let _ = flush_pending(lane, &mut delivery, trace).await;
+        }
         attempt.cancel();
         delivery.cancel();
     }

@@ -84,6 +84,26 @@ pub struct FidelityRecords {
     normalizations: std::collections::BTreeSet<Normalization>,
 }
 impl FidelityRecords {
+    /// Conservative retained-context accounting for the optional delivery buffer.
+    pub(crate) fn retained_bytes(&self) -> usize {
+        std::mem::size_of::<Self>()
+            + self
+                .response_item_ids
+                .values()
+                .map(|id| 1024 + id.as_str().len())
+                .sum::<usize>()
+            + (self.cache_breakpoints.len()
+                + self.strict_image_sizes.len()
+                + self.input_text_forms.len())
+                * 512
+            + (self.item_replay.len() + self.audio.len()) * 2048
+            + self.normalizations.len() * 1024
+            + [self.response_extras.as_ref(), self.routing_extras.as_ref()]
+                .into_iter()
+                .flatten()
+                .count()
+                * (RESPONSE_EXTRAS_BUDGET * 128 + 1024)
+    }
     /// Trusted intake association, never issuer authentication or a client-supplied scope.
     pub fn record_audio(
         &mut self,

@@ -123,10 +123,32 @@ Create private `gateway.json` and `models.json` files in `$HOME/.local/share/mor
 | `proxy` | Outbound proxy |
 | `concurrency` | Concurrent exchanges; default 16, range 1–256 |
 | `exchange_timeout_ms` | Service-wide exchange ceiling; default 3600000, range 1–86400000 |
+| `delta_coalescing` | Optional bounded text delivery batching; omitted or `null` disables it. See [Delta coalescing](#delta-coalescing) |
 | `diagnostics` | Path for a new private diagnostics file; no bodies are recorded |
 | `capture` | Optional private exchange capture; omitted or all-disabled selections record no content |
 
 Paths in the service file resolve relative to that file, not the process working directory. CLI paths remain explicit process-relative or absolute paths.
+
+### Delta coalescing
+
+To opt in, add this field to `gateway.json`:
+
+```json
+{
+  "delta_coalescing": {
+    "max_delay_ms": 10,
+    "max_pending_bytes": 16384
+  }
+}
+```
+
+Both fields are required. `max_delay_ms` must be 1–100 milliseconds; `max_pending_bytes` must be 1024–1048576 bytes. Invalid bounds or unknown fields fail startup. Omission preserves immediate delivery. Rust embedding uses the same optional `Limits::delta_coalescing` policy.
+
+Only adjacent nonempty text deltas with the same projected owner, part and encoding context, and no probabilities, are merged. The first content batch is not intentionally delayed. Other events and context changes flush pending text in order. A fixed deadline flushes during upstream silence; later fragments do not extend it. The delay bounds intentional buffering, not client backpressure or end-to-end latency.
+
+The byte bound includes conservatively accounted retained metadata, fidelity and text storage/escaping, not process RSS. Contexts or fragments that cannot fit pass through; reported instruction-message trees also bypass buffering. Upstream intake limits remain unchanged. Cancellation drops pending state; successful terminals still require validated upstream EOF. `stream:false`, including a declared forced-SSE upstream, uses existing final-response materialization without a coalescing buffer.
+
+This service policy adds no HTTP request fields, changes no routing rules and reduces neither upstream traffic nor token usage. Optional diagnostics report the peak accounted pending bytes observed when an attempt returns, without content. Synthetic measurements demonstrate overhead reduction only for their fixture; SDK, real-client and Provider acceptance remain separate gates.
 
 ### Model configuration
 

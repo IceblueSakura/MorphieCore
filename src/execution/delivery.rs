@@ -1,12 +1,17 @@
 //! Incremental projection and explicit I/O-owned commit. Encoding is not delivery.
+mod coalescing;
 use crate::{
     adapter::{ClientAdapter, ClientEncoder, ClientProtocol},
     execution::{Attempt, AttemptError, Lifecycle},
-    protocol::{ResponseMetadata, openai::stream::Obfuscation, stream::SseLimits},
+    protocol::{
+        ResponseMetadata, fidelity::FidelityRecords, openai::stream::Obfuscation, stream::SseLimits,
+    },
     semantic::{context::StreamOptions, task::generation::StreamEvent},
 };
 use bytes::Bytes;
+pub use coalescing::DeltaCoalescing;
 use sha2::{Digest, Sha256};
+use std::sync::Arc;
 
 /// Outgoing carrier identity, not an upstream item fact or replay credential.
 /// Local decoder counters restart for every response; a history can contain many.
@@ -40,6 +45,30 @@ fn response_id() -> Result<String, AttemptError> {
     ))
 }
 
+#[derive(Clone)]
+struct EventContext {
+    metadata: ResponseMetadata,
+    fidelity: Arc<FidelityRecords>,
+    accounted_bytes: std::sync::OnceLock<Option<usize>>,
+    frame_bytes: std::sync::OnceLock<usize>,
+}
+
+/// Raw intake values let unchanged batches reuse the effective delivery context.
+/// Generated aliases must not make every following delta look like a source change.
+struct PreparedSource {
+    metadata: ResponseMetadata,
+    fidelity: Arc<FidelityRecords>,
+    context: Arc<EventContext>,
+}
+
+/// Already projected and sealed. Consume in order on the delivery that prepared it.
+pub(crate) struct PreparedEvents {
+    pub(crate) events: Vec<StreamEvent>,
+    context: Arc<EventContext>,
+    /// Preserve barriers even when native projection omits their wire event.
+    barrier: bool,
+}
+
 pub struct ResponseDelivery {
     losses: Vec<crate::lowering::generation::LossEvidence>,
     client: ClientAdapter,
@@ -48,6 +77,8 @@ pub struct ResponseDelivery {
     options: StreamOptions,
     padding: Option<Obfuscation>,
     encoder: Option<ClientEncoder>,
+    prepared_source: Option<PreparedSource>,
+    coalescer: Option<coalescing::Coalescer>,
     source: Option<std::sync::Arc<()>>,
     lifecycle: Lifecycle,
     rendered: bool,
@@ -75,6 +106,8 @@ impl ResponseDelivery {
             options,
             padding: Some(padding),
             encoder: None,
+            prepared_source: None,
+            coalescer: None,
             source: None,
             lifecycle: Lifecycle::new(),
             rendered: false,
@@ -90,6 +123,68 @@ impl ResponseDelivery {
     }
     pub fn is_messages(&self) -> bool {
         self.client.protocol() == ClientProtocol::Messages
+    }
+    pub(crate) fn with_coalescing(mut self, policy: Option<DeltaCoalescing>) -> Self {
+        self.coalescer = policy.map(coalescing::Coalescer::new);
+        self
+    }
+    pub(crate) fn flush_deadline(&self) -> Option<std::time::Instant> {
+        self.coalescer
+            .as_ref()
+            .and_then(coalescing::Coalescer::deadline)
+    }
+    pub(crate) fn coalescing_peak_bytes(&self) -> usize {
+        self.coalescer.as_ref().map_or(0, |c| c.peak_bytes)
+    }
+    pub(crate) fn must_flush_before(&self, attempt: &Attempt, events: &[StreamEvent]) -> bool {
+        self.flush_deadline().is_some()
+            && (events.iter().any(|event| {
+                !matches!(
+                    event, StreamEvent::Delta { fragment, logprobs, .. }
+                        if !fragment.is_empty() && logprobs.is_empty()
+                )
+            }) || self.prepared_source.as_ref().is_none_or(|source| {
+                attempt.metadata() != Some(&source.metadata)
+                    || attempt.fidelity() != Some(source.fidelity.as_ref())
+            }))
+    }
+    #[cfg(test)]
+    pub(crate) fn coalesce_events(
+        &mut self,
+        attempt: &Attempt,
+        events: &[StreamEvent],
+        now: std::time::Instant,
+    ) -> Result<Vec<Bytes>, AttemptError> {
+        let mut frames = vec![];
+        for batch in self.queue_events(attempt, events, now)? {
+            frames.extend(self.encode_prepared(batch)?);
+        }
+        Ok(frames)
+    }
+    pub(crate) fn queue_events(
+        &mut self,
+        attempt: &Attempt,
+        events: &[StreamEvent],
+        now: std::time::Instant,
+    ) -> Result<Vec<PreparedEvents>, AttemptError> {
+        let Some(prepared) = self.prepare_events(attempt, events)? else {
+            return Ok(vec![]);
+        };
+        match &mut self.coalescer {
+            Some(coalescer) => Ok(coalescer.push(prepared, now, self.limits.max_event_bytes)),
+            None => Ok(vec![prepared]),
+        }
+    }
+    pub(crate) fn flush_pending(&mut self) -> Result<Vec<Bytes>, AttemptError> {
+        self.ready()?;
+        match self
+            .coalescer
+            .as_mut()
+            .and_then(coalescing::Coalescer::flush)
+        {
+            Some(batch) => self.encode_prepared(batch),
+            None => Ok(vec![]),
+        }
     }
     pub(crate) fn losses(&self) -> &[crate::lowering::generation::LossEvidence] {
         &self.losses
@@ -258,10 +353,21 @@ impl ResponseDelivery {
         attempt: &Attempt,
         events: &[StreamEvent],
     ) -> Result<Vec<Bytes>, AttemptError> {
+        match self.prepare_events(attempt, events)? {
+            Some(prepared) => self.encode_prepared(prepared),
+            None => Ok(vec![]),
+        }
+    }
+    /// Freeze nonterminal projection before intake can advance metadata or fidelity.
+    pub(crate) fn prepare_events(
+        &mut self,
+        attempt: &Attempt,
+        events: &[StreamEvent],
+    ) -> Result<Option<PreparedEvents>, AttemptError> {
         let result = (|| {
             self.ready()?;
             if events.is_empty() {
-                return Ok(vec![]);
+                return Ok(None);
             }
             if events
                 .iter()
@@ -271,8 +377,9 @@ impl ResponseDelivery {
                     "terminal requires validated upstream EOF",
                 ));
             }
-            self.encode(attempt, events)
+            self.prepare(attempt, events).map(Some)
         })();
+        self.collect_losses();
         if result.is_err() {
             self.rejected = true;
         }
@@ -286,12 +393,16 @@ impl ResponseDelivery {
             if self.is_messages() {
                 crate::protocol::anthropic::client::validate_tool_calls(attempt.response()?)?;
             }
-            let frames = self.encode(attempt, std::slice::from_ref(terminal))?;
+            let mut frames = self.flush_pending()?;
+            frames.extend(self.encode(attempt, std::slice::from_ref(terminal))?);
             self.encoder
                 .as_ref()
                 .ok_or(AttemptError::Delivery("missing stream encoder"))?
                 .finish()?;
             self.terminal = true;
+            if let Some(coalescer) = &mut self.coalescer {
+                coalescer.close();
+            }
             Ok(frames)
         })();
         if result.is_err() {
@@ -304,57 +415,124 @@ impl ResponseDelivery {
         attempt: &Attempt,
         events: &[StreamEvent],
     ) -> Result<Vec<Bytes>, AttemptError> {
+        let prepared = self.prepare(attempt, events);
+        self.collect_losses();
+        self.encode_prepared(prepared?)
+    }
+    fn prepare(
+        &mut self,
+        attempt: &Attempt,
+        events: &[StreamEvent],
+    ) -> Result<PreparedEvents, AttemptError> {
         self.bind(attempt)?;
-        let metadata = self.metadata(attempt)?;
-        let result = (|| {
-            if self.encoder.is_none() {
-                let padding = self
-                    .padding
-                    .take()
-                    .ok_or(AttemptError::Delivery("padding consumed"))?;
-                self.encoder = Some(self.client.stream_encoder(
-                    metadata.clone(),
-                    self.limits,
-                    self.options.clone(),
-                    padding,
-                )?);
-            }
-            let encoder = self.encoder.as_mut().expect("encoder initialized");
-            let projected = if attempt.is_native() {
-                encoder.project_native(events)?
-            } else {
-                None
-            };
-            let events = projected.as_deref().unwrap_or(events);
-            let source = attempt
-                .fidelity()
-                .ok_or(AttemptError::Protocol("missing response fidelity"))?;
-            let mut source = std::borrow::Cow::Borrowed(source);
-            if self.client.protocol() != ClientProtocol::Messages
-                && (self.client.protocol() == ClientProtocol::Responses || attempt.is_native())
-            {
-                for event in events {
-                    if let StreamEvent::ItemStarted { item, .. } = event
-                        && source.response_item_id(*item).is_none()
-                    {
-                        source.to_mut().record_response_item_id(
-                            *item,
-                            &delivery_item_id(&self.public_label, metadata.required_id()?, *item),
-                        )?;
-                    }
+        let barrier = events.iter().any(|event| {
+            !matches!(
+                event, StreamEvent::Delta { fragment, logprobs, .. }
+                    if !fragment.is_empty() && logprobs.is_empty()
+            )
+        });
+        let metadata = attempt
+            .metadata()
+            .ok_or(AttemptError::Protocol("missing response metadata"))?;
+        let fidelity = attempt
+            .fidelity()
+            .ok_or(AttemptError::Protocol("missing response fidelity"))?;
+        if self.prepared_source.as_ref().is_none_or(|source| {
+            source.metadata != *metadata || source.fidelity.as_ref() != fidelity
+        }) {
+            let fidelity = Arc::new(fidelity.clone());
+            self.prepared_source = Some(PreparedSource {
+                metadata: metadata.clone(),
+                fidelity: fidelity.clone(),
+                context: Arc::new(EventContext {
+                    metadata: self.metadata(attempt)?,
+                    fidelity,
+                    accounted_bytes: Default::default(),
+                    frame_bytes: Default::default(),
+                }),
+            });
+        }
+        let mut context = self
+            .prepared_source
+            .as_ref()
+            .expect("preparation context initialized")
+            .context
+            .clone();
+        if self.encoder.is_none() {
+            let padding = self
+                .padding
+                .take()
+                .ok_or(AttemptError::Delivery("padding consumed"))?;
+            self.encoder = Some(self.client.stream_encoder(
+                context.metadata.clone(),
+                self.limits,
+                self.options.clone(),
+                padding,
+            )?);
+        }
+        let encoder = self.encoder.as_mut().expect("encoder initialized");
+        let projected = if attempt.is_native() {
+            encoder.project_native(events)?
+        } else {
+            None
+        };
+        let events = projected.as_deref().unwrap_or(events);
+        if self.client.protocol() != ClientProtocol::Messages
+            && (self.client.protocol() == ClientProtocol::Responses || attempt.is_native())
+        {
+            for event in events {
+                if let StreamEvent::ItemStarted { item, .. } = event
+                    && context.fidelity.response_item_id(*item).is_none()
+                {
+                    let id = delivery_item_id(
+                        &self.public_label,
+                        context.metadata.required_id()?,
+                        *item,
+                    );
+                    let context = Arc::make_mut(&mut context);
+                    context.accounted_bytes = Default::default();
+                    Arc::make_mut(&mut context.fidelity).record_response_item_id(*item, &id)?;
                 }
             }
+        }
+        self.prepared_source
+            .as_mut()
+            .expect("preparation context initialized")
+            .context = context.clone();
+        let events = events
+            .iter()
+            .cloned()
+            .map(|event| super::replay::seal_event(event, &super::replay::CLIENT_ORIGIN))
+            .collect::<Result<_, _>>()?;
+        Ok(PreparedEvents {
+            events,
+            context,
+            barrier,
+        })
+    }
+    /// Encoding uses only the prepared context; it never reads or reprojects intake.
+    pub(crate) fn encode_prepared(
+        &mut self,
+        prepared: PreparedEvents,
+    ) -> Result<Vec<Bytes>, AttemptError> {
+        let result = (|| {
+            self.ready()?;
+            let encoder = self
+                .encoder
+                .as_mut()
+                .ok_or(AttemptError::Delivery("missing stream encoder"))?;
             let mut frames = vec![];
-            encoder.update_metadata(metadata)?;
-            for event in events {
-                let event =
-                    super::replay::seal_event(event.clone(), &super::replay::CLIENT_ORIGIN)?;
-                frames.extend(encoder.encode(&event, &source)?);
+            encoder.update_metadata(prepared.context.metadata.clone())?;
+            for event in &prepared.events {
+                frames.extend(encoder.encode(event, &prepared.context.fidelity)?);
             }
             self.rendered |= !frames.is_empty();
             Ok(frames)
         })();
         self.collect_losses();
+        if result.is_err() {
+            self.rejected = true;
+        }
         result
     }
     fn collect_losses(&mut self) {
@@ -373,6 +551,7 @@ impl ResponseDelivery {
     pub fn fail_stream(&mut self, error: &serde_json::Value) -> Result<Vec<Bytes>, AttemptError> {
         let result = (|| {
             self.ready()?;
+            let mut pending = self.flush_pending()?;
             let unopened =
                 if self.client.protocol() == ClientProtocol::Responses && self.encoder.is_none() {
                     Some(ResponseMetadata {
@@ -389,8 +568,15 @@ impl ResponseDelivery {
             let (frames, terminal) =
                 self.client
                     .failure_frames(self.encoder.as_mut(), error, unopened, self.limits)?;
+            pending.extend(frames);
+            if let Some(coalescer) = &mut self.coalescer {
+                coalescer.close();
+            }
             self.terminal = terminal;
-            Ok(frames)
+            if !terminal {
+                self.rejected = true;
+            }
+            Ok(pending)
         })();
         self.collect_losses();
         if result.is_err() {
@@ -417,6 +603,10 @@ impl ResponseDelivery {
     pub fn cancel(&mut self) {
         self.rejected = true;
         self.encoder = None;
+        self.prepared_source = None;
+        if let Some(coalescer) = &mut self.coalescer {
+            coalescer.close();
+        }
         self.padding = None;
         self.source = None;
         let _ = self.lifecycle.terminal();

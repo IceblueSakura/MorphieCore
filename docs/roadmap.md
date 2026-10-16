@@ -6,6 +6,8 @@ This page owns direction and current scope. Code and tests define behavior; [Arc
 
 Complete the Generation IR against selected semantics accepted by the official OpenAI, Anthropic and Google APIs. Provider dialects remain codec concerns. Realtime and standalone tasks do not need complete integration for this phase. Each slice must state its goal and exit condition before code changes.
 
+Phase completeness covers the selected non-tool support scope, not all official Generation semantics. [Cache prewarming](#deferred-cache-prewarming) and [tool discovery and native `web_search`](#deferred-tool-discovery-and-web-search) are deferred, with priority and scheduling undecided. None blocks phase completion, coverage improvement or the P7 boundary review. Unsupported semantics remain explicit gaps, not silent losses or support claims.
+
 Track semantic expression, codec representation and enabled bindings separately. Preserve accurate IR, prefer exact carriers, and allow explicitly selected advisory losses or behavioral approximations on target-private copies. Reject loss of protected task, execution or security semantics. Client compatibility does not define the semantic vocabulary. Protocol sources are pinned in [References](references.md).
 
 Chat Completions, Responses and Messages are equally important downstream contracts. Assess static delivery, streaming and history replay for all three. Google generateContent and Interactions currently supply upstream request encoding and SSE intake, not Google client endpoints or static intake. This migration does not expand that direction set.
@@ -14,9 +16,7 @@ Follow the [IR and codec contract](#ir-and-codec-migration) and preserve its [in
 
 For this migration, update existing tests and independent wire expectations only; do not add test functions, suites or variant matrices. Preserve safety assertions. Record uncovered contracts rather than claiming coverage from compilation or a round trip.
 
-Optional delta coalescing remains a separate planned slice. Do not combine it with loss-policy, routing or codec repair work.
-
-The next design slice is native cache resources and prewarming in the [support queue](#support-queue-after-projection-repair). Cache-owner, generation-control and service-policy carriers are not pending feature work; their remaining admission and delivery constraints belong to the [integration handoff](#integration-handoff). Keep established contracts under regression without reopening them as implementation goals.
+The next design slice is native cache resource references in the [support queue](#support-queue-after-projection-repair), separate from deferred prewarming. Cache-owner, generation-control and service-policy carriers are not pending feature work; their remaining admission and delivery constraints belong to the [integration handoff](#integration-handoff). Keep established contracts under regression without reopening them as implementation goals.
 
 ### Temporary routing freeze
 
@@ -97,15 +97,15 @@ Chat custom tools have static JSON and history carriers, not a pinned custom-cal
 
 The remaining queue advances through local contract gates, not publication or successful route reconnection. Before each IR extension, present a minimal counterexample and structural options. An official carrier alone does not activate a binding. Legacy Messages `top_k` and tokenizer-unbound `logit_bias` remain rejected.
 
-1. **Native cache resources and prewarming.** First select how to express resource scope/lifetime and a cache-only operation without treating it as ordinary generation. `max_tokens: 0` is not an ordinary zero-length answer.
+1. **Native cache resource references.** First select how to express an existing resource's identity, scope and lifetime, separately from advisory cache keys and prewarming.
 
-   Exit condition: preserve the selected resource and operation semantics in typed IR and exact codecs, reject targets without carriers, and distinguish prewarming completion from generated output. Do not add resource creation, fetching, credential authority or service lifecycle operations implicitly.
+   Exit condition: preserve the selected resource-reference semantics in typed IR and exact codecs, and reject targets without carriers rather than dropping cached task context. Do not add resource creation, fetching, credential authority, service lifecycle operations or cache-only prewarming implicitly.
 
 2. **Safety settings.** First select typed ownership for safety categories, thresholds and reported outcomes. A caller identity hint is not a moderation policy, and equal native threshold names are not an equivalence rule.
 
    Exit condition: preserve the selected input policy and separately reported facts with independent wire expectations; reject unsupported conversions without dropping or weakening a safety control. Do not infer outcomes from requested settings or enable bindings.
 
-After these non-tool support slices, continue tool discovery and then `web_search` below. Other hosted tools, Messages citations, generated media, multi-candidate execution and file services retain their deferred boundaries.
+These non-tool support slices complete the remaining first-stage feature queue, subject to its local contract gates and explicit integration handoff. Cache prewarming, tool discovery, native `web_search`, other hosted tools, Messages citations, generated media, multi-candidate execution and file services retain their deferred boundaries.
 
 #### Model-name service-policy carriers
 
@@ -115,41 +115,27 @@ When alias selection is scheduled, extend existing tests with an independent ali
 
 The current [endpoint contract](../src/topology/endpoint.rs) fixes the upstream model at binding time. Static model-name overrides are not request-dependent service-policy selection. Choosing between predeclared deployment variants or resolving a trusted alias during preparation remains an integration design question; do not bypass the routing freeze through a codec-only string rewrite.
 
-### Optional delta coalescing
+### Deferred cache prewarming
 
-Goal: reduce downstream event/envelope and handoff overhead with an optional lossless text-delta stage. Follow the selected [ownership, merge and scheduling contract](architecture.md#optional-delta-coalescing-planned). Final-only delivery from forced-stream upstreams remains on existing materialization, without a duplicate accumulator.
+Native cache-only prewarming is deferred, with priority and scheduling undecided. It is not a prerequisite for first-stage completion, coverage improvement or the P7 boundary review. Native cache resource references remain in the current support queue.
 
-Implement these slices in order when this delivery work starts:
+The [pinned pi cache warmer](https://github.com/earendil-works/pi/blob/4270522473e677ddba7b093caa0064a3df51d459/packages/coding-agent/src/core/cache-warmer.ts) replays a real request with a one-token output cap and keeps refresh usage outside model history. Scheduling, context validity and refresh economics belong to that client strategy; no gateway-owned background warmer is selected. Such requests remain ordinary generation, not evidence of native cache-only support, and a one-token cap does not identify a warming request.
 
-1. **Separate event preparation from encoding.** Refine `execution/delivery.rs` and adapter projection so each event is projected once and deferred encoding cannot observe future metadata, fidelity or identity. Keep current output behavior with no coalescing.
+When reopened, first select the cache-only operation and result contract using pi's strategy and official native carriers as separate references. Exit condition: preserve the selected operation, usage and reported cache facts through exact codecs, distinguish prewarming completion from generated output, and reject targets without carriers. `max_tokens: 0` is not an ordinary zero-length answer; do not silently replace explicit no-output prewarming with one-token generation. Preserve existing cache-option handling without claiming a complete cache-only contract.
 
-   Exit condition: existing static/stream/replay contracts pass; extend the lowest-owner test to cover a pending event followed by a context change. No new response reducer or generic stage framework.
+### Deferred tool discovery and web search
 
-2. **Build a minimal end-to-end text coalescer.** Add a small synchronous delivery-local state machine, then drive it from `gateway/generation/intake.rs` with a monotonic timer in the existing task. Use explicit test-owned policy values before public configuration; disabled behavior remains unchanged.
+Both slices are deferred, with priority and scheduling undecided. Select their IR ownership and execution/replay contracts before implementation; the goals below do not select an implementation design or require a relative order. They are not prerequisites for first-stage completion, coverage improvement or the P7 boundary review. Show the minimal counterexample and structural options when either slice reopens.
 
-   Exit condition: one synthetic Messages-upstream to Responses-downstream conversation delivers fewer text events with identical materialized content, releases its first content batch without intentional delay, and flushes pending text during upstream silence. Test one mergeable run and one barrier at the lowest owner; avoid per-Provider copies.
-
-3. **Close lifecycle and budget boundaries.** Extend existing contracts for metadata/fidelity barriers, encoded-size expansion, tail drain, slow-client backpressure, cancellation and failure. Preserve original intake limits, attempt isolation and EOF-gated terminals.
-
-   Exit condition: no data crosses attempts, no post-publication replay becomes possible, and malformed/truncated input never ends successfully. A declared forced-SSE upstream still produces one correct final JSON response for `stream:false`, with no coalescing buffer or second accumulator. Check each downstream carrier's affected contract without creating a variant matrix.
-
-4. **Expose bounded opt-in configuration and measure.** Add the disabled-by-default startup policy and finite time/byte validation, then document the implemented fields in Usage. Preserve the existing HTTP request schema. Compare enabled/disabled behavior on fixed synthetic input, reporting events, encoded bytes, handoffs, first-content/update latency and peak pending bytes without bodies.
-
-   Exit condition: omission preserves the existing path; invalid bounds fail startup; the fixture demonstrates reduced downstream overhead with bounded buffering and semantic equivalence. Run the SDK loopback gate as a separate synthetic compatibility check before recommending opt-in use. Real Provider/client acceptance and deployment remain separate work; do not infer universal latency or packet-count improvements.
-
-For each slice, run affected tests before the [full offline baseline](development.md#offline-baseline), review the diff, then commit and push the passing slice. Extend existing tests rather than adding near-copies. Select finite implementation bounds using the synthetic measurements; broad performance tuning, non-text delta merging, live failover and keep-alives are outside this slice.
-
-### Next Generation slices
-
-These tool slices follow the projection-repair gate and the non-tool support queue above. Keep their relative order. This is a plan, not an implementation or acceptance result. Show the minimal counterexample and structural options before changing an IR contract.
-
-1. **Tool discovery and ordered availability updates.** Complete the semantics and codecs for `tool_search`, its call/output items and `additional_tools`, building on existing deferred-loading and namespace types. Tools discovered later must not be retroactively added to earlier history through top-level settings.
+- **Tool discovery and ordered availability updates.** When scheduled, complete the semantics and codecs for `tool_search`, its call/output items and `additional_tools`, building on existing deferred-loading and namespace types. Tools discovered later must not be retroactively added to earlier history through top-level settings.
 
    Exit condition: discovery results and availability changes retain order, definitions and references through decode, encode and history replay. Client/server execution remains explicit. This slice models the interaction; it does not add a gateway tool registry, search executor or activate another hosted tool.
 
-2. **First built-in tool: OpenAI `web_search`.** Complete the first end-to-end official built-in tool path through Generation: declaration and supported controls, Provider-executed search observations, reported sources and URL citations, streamed lifecycle and subsequent history. Reuse the existing observation and citation foundations; keep native wire shapes in the OpenAI codec.
+- **Native OpenAI `web_search`.** When scheduled, complete the selected end-to-end official built-in tool path through Generation: declaration and supported controls, Provider-executed search observations, reported sources and URL citations, streamed lifecycle and subsequent history. Reuse the existing observation and citation foundations; keep native wire shapes in the OpenAI codec.
 
    Exit condition: the selected Responses path preserves search operations, reported results, citation associations and honest terminals in JSON and SSE. Targets without a carrier reject explicitly. Select and verify a trusted binding's capability before activation; the gateway does not fetch search URLs or execute searches itself. Other built-in tools remain deferred.
+
+Keep existing deferred-loading, namespace, observation and citation foundations under regression; they do not establish either end-to-end contract. Unsupported discovery and native search semantics remain rejected, not converted to plain text or ordinary function calls.
 
 Use the pinned official API sources in [References](references.md). These slices do not reopen generated-media delivery, file services, new Provider/model bindings, Realtime or Embeddings. Real Provider and client acceptance remain separate, explicitly scoped steps.
 
@@ -157,10 +143,12 @@ Use the pinned official API sources in [References](references.md). These slices
 
 These are explicit gaps, not claims of complete official API coverage:
 
+- [Native cache-only prewarming](#deferred-cache-prewarming) has undecided priority and scheduling. It is outside this phase's completeness claim; client-driven replay warming does not establish this contract.
+- [Tool discovery and native `web_search`](#deferred-tool-discovery-and-web-search) have undecided priority, scheduling and implementation designs. They are outside this phase's completeness claim.
 - Messages citations (1C) are deferred to Claude Code acceptance; requests and responses that carry them are rejected, not dropped. The [design](#1c-design-messages-citations) records the IR change for when it reopens.
 - Messages document `context` stays rejected until its model-visible semantics have an IR owner. Its lack of a carrier on other targets is not a reason to exclude it permanently.
 - Generated media beyond the existing Chat audio contract need a selected output, stream and replay design. Standalone media tasks remain frozen.
-- Hosted tools other than the selected OpenAI `web_search` path remain deferred. Existing observation types do not imply an admitted end-to-end contract.
+- Other hosted tools remain deferred. Existing observation types do not imply an admitted end-to-end contract.
 - Tool-result video has no carrier on any bound target: OpenAI and Interactions results have no video part, and Gemini function responses admit only images, PDF and plain text.
 
 ### 1C design: Messages citations
@@ -196,12 +184,12 @@ IR completeness does not mean every upstream can carry every modality. Protocol-
 
 ## Planned order
 
-1. **Generation IR completeness.** Complete the remaining non-tool support queue under the temporary routing freeze, then continue tool discovery and `web_search` in that order. Preserve the explicit integration handoff and deferred concepts; a disconnected client loop does not invalidate correct IR/codec work.
-2. **Coverage improvement.** Start the coverage pass only after IR completeness. Keep focused regressions and safety invariants throughout implementation.
+1. **Selected Generation IR completeness.** Complete native cache resource references and safety settings under the temporary routing freeze. Cache prewarming, tool discovery and native `web_search` are deferred, not exit conditions. Preserve the explicit integration handoff and deferred concepts; a disconnected client loop does not invalidate correct IR/codec work.
+2. **Coverage improvement.** Start the coverage pass only after selected first-stage IR completeness. Keep focused regressions and safety invariants throughout implementation; deferred cache and tool slices do not block this stage.
 3. **Routing rules and failover improvement.** Review candidate membership, credential-pool truncation, cooling/affinity ordering and per-exchange budgets together. Implementation improvement and real acceptance follow the second stage; their priority remains undecided, lowest for now.
 4. **Other agent acceptance.** Codex, Claude Code and other agents follow failover. Their priority is undecided, lowest for now.
 
-The next Generation slices belong to the first stage. Optional delivery maintenance remains separate. The [P7 boundary review](#p7-boundary-review) becomes eligible after first-stage local completion and is required before route-facing acceptance. Codec-only coverage can proceed independently. This plan does not start routing changes or deferred acceptance runs.
+The [P7 boundary review](#p7-boundary-review) becomes eligible after first-stage local completion, without waiting for the deferred cache and tool slices, and is required before route-facing acceptance. Codec-only coverage can proceed independently. This plan does not start routing changes or deferred acceptance runs.
 
 ### P7 boundary review
 
@@ -281,6 +269,8 @@ P1/P2/P4/P5/P6, P3's six-budget quantization, P3b's rejection of over-ceiling bu
 | Question | Unresolved choice and recommendation | Blocks |
 |---|---|---|
 | P7 follow-up: Public surface and reconnection | Use the [boundary review](#p7-boundary-review) after first-stage local completion. Select the public native-versus-lossy capability representation and whether/how to warn clients, then schedule reconnection. No false native support claim or per-request policy override is selected | Later route-facing publication and full-chain acceptance, not the current migration |
+| Deferred native cache-only prewarming | Priority and scheduling are undecided. Select the operation and result contract when reopening the [slice](#deferred-cache-prewarming); client replay warming remains separate | Native cache-only implementation only, not native cache resource references, first-stage completion, coverage improvement or the P7 boundary review |
+| Deferred tool discovery and native `web_search` | Priority, scheduling and implementation designs are undecided. Select the affected IR and execution/replay contracts when reopening each [slice](#deferred-tool-discovery-and-web-search) | Implementation of those slices only, not first-stage completion, coverage improvement or the P7 boundary review |
 
 | Question | Current behavior | Options |
 |---|---|---|

@@ -828,6 +828,26 @@ fn configured_failover_orders_and_limits_a_models_providers() {
     }}});
     private_write(&models_file, model_config.clone());
     let configured = Bootstrap::from_files(&gateway_file, &store).unwrap();
+    assert!(configured.gateway.state.limits.delta_coalescing.is_none());
+    let mut service = serde_json::json!({
+        "client_key":"synthetic-gateway-client-token-0001",
+        "bind":"127.0.0.1:0","models_file":"models.json",
+        "delta_coalescing":{"max_delay_ms":10,"max_pending_bytes":16384}
+    });
+    private_write(&gateway_file, service.clone());
+    let enabled = Bootstrap::from_files(&gateway_file, &store).unwrap();
+    let policy = enabled.gateway.state.limits.delta_coalescing.unwrap();
+    assert_eq!((policy.max_delay_ms, policy.max_pending_bytes), (10, 16384));
+    for invalid in [
+        serde_json::json!({"max_delay_ms":0,"max_pending_bytes":16384}),
+        serde_json::json!({"max_delay_ms":10,"max_pending_bytes":0}),
+    ] {
+        service["delta_coalescing"] = invalid;
+        private_write(&gateway_file, service.clone());
+        assert!(Bootstrap::from_files(&gateway_file, &store).is_err());
+    }
+    service.as_object_mut().unwrap().remove("delta_coalescing");
+    private_write(&gateway_file, service);
     let entry = &configured.gateway.state.entries[&(
         crate::gateway::family(Profile::Chat),
         "claude-haiku-5-5".into(),

@@ -46,6 +46,8 @@ pub struct TaskEntries {
 }
 #[derive(Clone, Debug)]
 pub struct Limits {
+    /// Optional bounded text delivery batching; omission preserves immediate encoding.
+    pub delta_coalescing: Option<crate::execution::delivery::DeltaCoalescing>,
     /// Disposable implicit affinity only; explicit grouping remains available when disabled.
     pub implicit_cache_affinity: bool,
     pub request_bytes: usize,
@@ -71,6 +73,7 @@ pub struct Limits {
 impl Default for Limits {
     fn default() -> Self {
         Self {
+            delta_coalescing: None,
             implicit_cache_affinity: true,
             request_bytes: 32 << 20,
             response_bytes: 64 << 20,
@@ -91,7 +94,8 @@ impl Default for Limits {
 }
 impl Limits {
     fn validate(&self) -> bool {
-        (1..=64 << 20).contains(&self.request_bytes)
+        self.delta_coalescing.is_none_or(|policy| policy.valid())
+            && (1..=64 << 20).contains(&self.request_bytes)
             && (1..=64 << 20).contains(&self.response_bytes)
             && (1..=crate::semantic::task::image_generation::MAX_IMAGE_BYTES)
                 .contains(&self.image_bytes)

@@ -448,9 +448,11 @@ Upstream streaming and client delivery are independent. JSON clients receive a b
 
 Bodies, frames, event counts and deadlines are bounded. Client disconnect, timeout or shutdown cancels upstream work. Held-stream keep-alives remain [deferred](roadmap.md#only-if-needed).
 
-### Optional delta coalescing (planned)
+### Optional delta coalescing
 
-Status: design selected; not implemented or configurable yet. The goal is fewer downstream events, repeated envelopes and body handoffs without changing semantic content. It does not reduce upstream traffic or token usage, and fewer handoffs do not imply proportionally fewer network packets.
+Delta coalescing is implemented and disabled by default. Prepared batches retain shared immutable metadata and fidelity, with projection and replay sealing performed once. The disabled path encodes each batch immediately.
+
+The goal is fewer downstream events, repeated envelopes and body handoffs without changing semantic content. It does not reduce upstream traffic or token usage, and fewer handoffs do not imply proportionally fewer network packets.
 
 ```text
 upstream decoding and original-event validation/reduction
@@ -493,7 +495,9 @@ The coalescer has empty, pending and closed states. An eligible event starts or 
 5. Publication forbids advancement; acknowledgement advances the delivery lifecycle. Do not flush merely to manufacture commitment or create a new fallback permission. A failed unpublished attempt loses its buffer before legal advancement; cancellation discards it. On a published classified failure, handle already validated pending content in order before the failure frame when delivery remains possible; malformed intake still cannot create a success terminal.
 6. Normal completion drains pending content before terminal encoding, but the terminal itself remains gated by validated upstream EOF. Final-only delivery, stored response snapshots and replay retain their existing authority.
 
-The policy belongs to trusted startup configuration and defaults to disabled. Enabling it requires finite maximum waiting time and pending-byte bounds; choose and validate conservative bounds during implementation rather than claiming an unmeasured universal tuning value. It is not an IR field or a downstream request extension. The implementation sequence and verification gates are in the [roadmap](roadmap.md#optional-delta-coalescing).
+The policy belongs to trusted startup configuration and defaults to disabled. Both finite time and accounted-byte bounds are required; invalid bounds fail startup. Retained context counts against the pending budget, and oversized contexts/fragments pass through rather than being truncated. Reported instruction-message trees bypass buffering. Conservative escaped-text and envelope allowances keep merged frames within the target event ceiling; the encoder still enforces aggregate output budgets.
+
+Configuration is documented in [Usage](usage.md#delta-coalescing). It is not an IR field or a downstream request extension. The [offline baseline](development.md#offline-baseline), [SDK loopback gate](development.md#sdk-loopback-gate) and separately scoped real acceptance remain distinct; synthetic overhead reductions do not establish universal latency or packet-count improvements.
 
 ## Native Messages projection
 
@@ -571,6 +575,8 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 |---|---|
 | One semantic core | Gateway and future agent library share the IR; callers own agent behavior. Beyond context edits and response continuation, agent-only machinery joins the IR when the library needs it |
 | Official Generation vocabulary | OpenAI, Anthropic and Google define semantic concepts; dialect carriers and approximation policies stay in protocol modules. Semantic expression, codec support and activated bindings are separate claims |
+| Tool discovery and native web search (deferred) | Implementation designs remain unresolved; priority and scheduling are undecided. Exclude these slices from first-stage IR completeness and do not block coverage improvement or the P7 boundary review on them. Preserve existing foundations and reject unsupported semantics; deferral does not claim complete official API coverage. Goals and reopening boundaries stay in the [roadmap](roadmap.md#deferred-tool-discovery-and-web-search) |
+| Cache prewarming (deferred) | Client replay warming already has an owner in pi; no gateway-owned background warmer is selected. Defer native cache-only support with priority and scheduling undecided, without blocking first-stage completion, coverage improvement or the P7 boundary review. Native cache resource references remain in scope. Ordinary one-token generation is not native no-output prewarming; preserve existing cache handling without claiming that contract. See the [roadmap](roadmap.md#deferred-cache-prewarming) |
 | Two codec responsibilities | Normalize Provider dialects into an official API baseline plus declared extensions before semantic decoding; encode in reverse before serialization. Semantic extensions enter IR; eligible non-semantic fidelity stays scoped outside it |
 | Independent activation and scoped effort | Activation belongs to reasoning; a single scoped effort control belongs to generation settings. Response-wide effort is not reasoning-only effort, and off is not a positive level |
 | Accurate IR with declared lossy projection | Prefer exact carriers, permit approved advisory omissions and behavioral approximations, and reject loss of protected meaning. Preserve the source and record target-local changes; implementation follows the roadmap |
@@ -607,7 +613,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Explicit downstream identity | A closed client protocol and its adapter own decoding and delivery carriers. Messages keeps its Chat-candidate activation policy without a dummy OpenAI adapter |
 | Codec dispatch and execution | Adapters own upstream decoder and downstream encoder dispatch. Execution owns attempt identity, budgets, EOF validation and publication; candidate-transition rules are pure and independent of I/O |
 | Dataflow and scoped state | Typed stages have separate semantic, protocol, attempt and delivery authorities; optional stages do not introduce a generic pipeline framework |
-| Delta coalescing (planned) | Optional, disabled-by-default delivery optimization after client projection and before encoding. Final-only clients retain existing materialization; original intake validation and publication safety remain authoritative |
+| Bounded text-delta coalescing | Startup-only, disabled-by-default optimization after client projection and before encoding. One pending run retains its prepared context and fixed deadline; invalid bounds fail startup. Final-only clients retain existing materialization; original intake validation and publication safety remain authoritative |
 | Typed startup activation | One `TaskEntries` input selects Generation and each standalone task explicitly. Empty lists activate nothing; embedding does not discover catalogs, credentials or environment proxies |
 | Two-file startup configuration | `gateway.json` owns service settings; `models.json` explicitly selects catalog models and ordered candidates. Candidate-local trusted deployment declarations may override URLs, wire model names and credential pools without changing Provider identity or dialects. All Generation client protocols use the configured route; frozen tasks keep their single catalog binding |
 | Configurable reasoning parameters | Numeric thinking tables belong to public models; candidate-local conversion direction is explicit. Reasoning-as-text defaults to false and requires opt-in. Configuration cannot alter dialect implementations, infer qualitative mappings or widen semantic admission |

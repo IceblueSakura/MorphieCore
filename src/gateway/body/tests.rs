@@ -1,5 +1,6 @@
 //! Delivery owner tests use an instrumented HTTP body, not a second Router.
 use super::*;
+use crate::gateway::tests::responses_wire;
 use crate::{
     gateway::{family, tests::support::gateway},
     protocol::openai::Profile,
@@ -86,6 +87,72 @@ async fn response(
         gate.state.shutdown.clone(),
         gate.state.permits.clone().acquire_owned().await.unwrap(),
         trace,
+    )
+    .await
+}
+async fn observed_response(
+    gate: &crate::gateway::Gateway,
+    upstream: reqwest::Response,
+    stream: bool,
+) -> Result<Response, ApiError> {
+    // Test-owned codec pair, not activation of an additional public binding.
+    let mut entry = gate.state.entries[&(family(Profile::Chat), "fixture-model".into())]
+        .as_ref()
+        .clone();
+    entry.client = crate::adapter::ClientAdapter::openai(
+        crate::protocol::openai::Adapter::new(
+            Profile::Responses,
+            crate::protocol::openai::Dialect::Standard,
+            None,
+        ),
+        crate::protocol::openai::TargetCaps::full(),
+    );
+    let entry = Arc::new(entry);
+    let template = &entry.candidates[0];
+    let mut endpoint = template.endpoint.clone();
+    if stream {
+        endpoint.protocol = crate::topology::ProtocolProfile::AnthropicMessages;
+        endpoint.representation = crate::protocol::anthropic::TargetCaps::new(
+            crate::protocol::anthropic::Profile::AdaptiveTextTools,
+            crate::protocol::anthropic::Dialect::Standard,
+        )
+        .into();
+    } else {
+        endpoint.protocol = crate::topology::ProtocolProfile::OpenAiResponses;
+        let mut caps = crate::protocol::openai::TargetCaps::full();
+        caps.adaptation.rules.responses_forced_stream = true;
+        endpoint.representation = caps.into();
+    }
+    let candidate = Arc::new(BoundCandidate {
+        endpoint,
+        provider: template.provider.clone(),
+        secret: template.secret.clone(),
+        credential_fallback: false,
+        cache_scope: template.cache_scope.clone(),
+    });
+    let mut request = entry
+        .client
+        .decode_client_request(
+            serde_json::json!({"model":"fixture-model","input":"hello","stream":stream})
+                .to_string()
+                .as_bytes(),
+        )
+        .unwrap();
+    request.delivery.options =
+        crate::semantic::value::Presence::Value(crate::semantic::context::StreamOptions {
+            include_obfuscation: crate::semantic::value::Presence::Value(false),
+            ..Default::default()
+        });
+    respond(
+        entry,
+        candidate,
+        request,
+        upstream,
+        &gate.state.limits,
+        Instant::now() + Duration::from_secs(3),
+        gate.state.shutdown.clone(),
+        gate.state.permits.clone().acquire_owned().await.unwrap(),
+        super::Trace::new(gate.state.diagnostics.as_ref()),
     )
     .await
 }
@@ -470,7 +537,13 @@ async fn bounded<T>(future: impl std::future::Future<Output = T>) -> T {
 }
 #[tokio::test]
 async fn first_frame_precedes_terminal_and_ack_gates_upstream_progress() {
-    let gate = gateway(Limits::default());
+    let gate = gateway(Limits {
+        delta_coalescing: Some(crate::gateway::DeltaCoalescing {
+            max_delay_ms: 10,
+            max_pending_bytes: 16384,
+        }),
+        ..Limits::default()
+    });
     let (tx, upstream, dropped, reads) = upstream(200, "text/event-stream");
     let frames = frames();
     tx.send(Ok(Bytes::from(frames[..2].concat())))
@@ -505,13 +578,179 @@ async fn first_frame_precedes_terminal_and_ack_gates_upstream_progress() {
     assert!(String::from_utf8_lossy(&all).contains("old "));
     assert_eq!(String::from_utf8_lossy(&all).matches("[DONE]").count(), 1);
     bounded(dropped).await.unwrap();
+    let mut measurements = vec![];
+    for enabled in [false, true] {
+        let directory = crate::test_files::private_directory();
+        let path = directory.path().join("events.jsonl");
+        let policy = crate::gateway::DeltaCoalescing {
+            max_delay_ms: 10,
+            max_pending_bytes: 16384,
+        };
+        let gate = gateway(Limits {
+            delta_coalescing: enabled.then_some(policy),
+            ..Limits::default()
+        })
+        .with_diagnostics(&path)
+        .unwrap();
+        let event = |value: serde_json::Value| {
+            format!(
+                "event: {}\ndata: {value}\n\n",
+                value["type"].as_str().unwrap()
+            )
+        };
+        let text = |fragment: &str| {
+            event(serde_json::json!({
+                "type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":fragment}
+            }))
+        };
+        let prefix = [
+            event(serde_json::json!({"type":"message_start","message":{
+                "id":"native","type":"message","role":"assistant","model":"private-fixture",
+                "content":[],"stop_reason":null,"stop_sequence":null,
+                "usage":{"input_tokens":11,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}
+            }})),
+            event(serde_json::json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}})),
+            text("start"),
+        ].concat();
+        let (tx, source, dropped, reads) = self::upstream(200, "text/event-stream");
+        let started = Instant::now();
+        tx.send(Ok(Bytes::from(prefix))).await.unwrap();
+        let response = bounded(observed_response(&gate, source, true))
+            .await
+            .unwrap();
+        assert_eq!(reads.load(Ordering::SeqCst), 1);
+        let mut body = response.into_body().into_data_stream();
+        let mut all = vec![];
+        let mut handoffs = 0;
+        let mut fragments = vec![];
+        let collect = |chunk: &[u8], fragments: &mut Vec<String>| {
+            for line in std::str::from_utf8(chunk).unwrap().lines() {
+                if let Some(data) = line.strip_prefix("data: ")
+                    && let Ok(value) = serde_json::from_str::<serde_json::Value>(data)
+                    && value["type"] == "response.output_text.delta"
+                {
+                    fragments.push(value["delta"].as_str().unwrap().to_owned());
+                }
+            }
+        };
+        while fragments.concat() != "start" {
+            let chunk = bounded(body.next()).await.unwrap().unwrap();
+            collect(&chunk, &mut fragments);
+            all.extend_from_slice(&chunk);
+            handoffs += 1;
+        }
+        let first_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let update = Instant::now();
+        tx.send(Ok(Bytes::from(text("x").repeat(32))))
+            .await
+            .unwrap();
+        // No further upstream input or EOF: a timer must release this run.
+        while fragments.concat().len() < 37 {
+            let chunk = bounded(body.next()).await.unwrap().unwrap();
+            collect(&chunk, &mut fragments);
+            all.extend_from_slice(&chunk);
+            handoffs += 1;
+        }
+        let update_ms = update.elapsed().as_secs_f64() * 1000.0;
+        assert_eq!(fragments.concat(), format!("start{}", "x".repeat(32)));
+        let suffix = [
+            event(serde_json::json!({"type":"content_block_stop","index":0})),
+            event(serde_json::json!({"type":"message_delta","delta":{"stop_reason":"max_tokens","stop_sequence":null},"usage":{"output_tokens":7}})),
+            event(serde_json::json!({"type":"message_stop"})),
+        ].concat();
+        tx.send(Ok(Bytes::from(suffix))).await.unwrap();
+        drop(tx);
+        while let Some(chunk) = bounded(body.next()).await {
+            all.extend_from_slice(&chunk.unwrap());
+            handoffs += 1;
+        }
+        bounded(dropped).await.unwrap();
+        let wire = std::str::from_utf8(&all).unwrap();
+        let mut decoder = crate::protocol::openai::Adapter::new(
+            Profile::Responses,
+            crate::protocol::openai::Dialect::Standard,
+            None,
+        )
+        .event_decoder();
+        for line in wire.lines().filter_map(|line| line.strip_prefix("data: ")) {
+            decoder.push(&serde_json::from_str(line).unwrap()).unwrap();
+        }
+        decoder.finish().unwrap();
+        let decoded = decoder.materialize().unwrap();
+        assert_eq!(
+            decoded.semantic.outcome(),
+            crate::semantic::task::generation::Outcome::Incomplete
+        );
+        assert_eq!(decoded.semantic.usage().unwrap().total_tokens, Some(18));
+        gate.flush_diagnostics().await;
+        let record: serde_json::Value = serde_json::from_str(
+            std::fs::read_to_string(&path)
+                .unwrap()
+                .lines()
+                .last()
+                .unwrap(),
+        )
+        .unwrap();
+        let peak = record["coalescing_peak_bytes"].as_u64().unwrap_or(0) as usize;
+        assert!(peak <= policy.max_pending_bytes);
+        assert_eq!(peak > 0, enabled);
+        println!(
+            "coalescing={enabled} text_events={} encoded_bytes={} handoffs={handoffs} first_content_ms={first_ms:.3} update_ms={update_ms:.3} peak_pending_bytes={peak}",
+            fragments.len(),
+            all.len()
+        );
+        measurements.push((fragments.len(), all.len(), handoffs));
+    }
+    assert!(measurements[1].0 < measurements[0].0);
+    assert!(measurements[1].1 < measurements[0].1);
+    assert!(measurements[1].2 < measurements[0].2);
+    let gate = gateway(Limits {
+        delta_coalescing: Some(crate::gateway::DeltaCoalescing {
+            max_delay_ms: 10,
+            max_pending_bytes: 16384,
+        }),
+        ..Limits::default()
+    });
+    let (tx, source, dropped, _) = self::upstream(200, "text/event-stream");
+    let wire = responses_wire::events(2)
+        .iter()
+        .map(|value| {
+            format!(
+                "event: {}\ndata: {value}\n\n",
+                value["type"].as_str().unwrap()
+            )
+        })
+        .collect::<String>();
+    tx.send(Ok(Bytes::from(wire))).await.unwrap();
+    drop(tx);
+    let response = bounded(observed_response(&gate, source, false))
+        .await
+        .unwrap();
+    assert_eq!(response.headers()["content-type"], "application/json");
+    let bytes = bounded(axum::body::to_bytes(response.into_body(), 65536))
+        .await
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(value["output"][0]["content"][0]["text"], "{\"ok\":false}");
+    assert_eq!(value["usage"]["total_tokens"], 8);
+    bounded(dropped).await.unwrap();
 }
 #[tokio::test]
 async fn late_truncation_and_trailing_payload_never_emit_success_terminal() {
     for trailing in [false, true] {
-        let gate = gateway(Limits::default());
+        let gate = gateway(Limits {
+            delta_coalescing: Some(crate::gateway::DeltaCoalescing {
+                max_delay_ms: 10,
+                max_pending_bytes: 16384,
+            }),
+            ..Limits::default()
+        });
         let (tx, upstream, _, _) = upstream(200, "text/event-stream");
-        let mut bytes = frames().concat();
+        let mut bytes = if trailing {
+            frames().concat()
+        } else {
+            frames()[..3].concat()
+        };
         if trailing {
             bytes.extend_from_slice(b"data: [DONE]\n\ndata: {}\n\n");
         }
@@ -541,15 +780,78 @@ async fn late_truncation_and_trailing_payload_never_emit_success_terminal() {
         })
         .await;
         assert!(failed);
-        assert!(String::from_utf8_lossy(&seen).contains("old "));
+        assert!(String::from_utf8_lossy(&seen).contains("🧪"));
         assert!(!String::from_utf8_lossy(&seen).contains("[DONE]"));
     }
+    // Six downstream frames fit through pending text; a classified failure's
+    // envelope then exceeds the event budget. The pending prefix still arrives.
+    let gate = gateway(Limits {
+        max_events: 6,
+        delta_coalescing: Some(crate::gateway::DeltaCoalescing {
+            max_delay_ms: 100,
+            max_pending_bytes: 16384,
+        }),
+        ..Limits::default()
+    });
+    let event = |value: serde_json::Value| {
+        format!(
+            "event: {}\ndata: {value}\n\n",
+            value["type"].as_str().unwrap()
+        )
+    };
+    let prefix = [
+        event(serde_json::json!({"type":"message_start","message":{
+            "id":"native","type":"message","role":"assistant","model":"private-fixture",
+            "content":[],"stop_reason":null,"stop_sequence":null,
+            "usage":{"input_tokens":11,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}
+        }})),
+        event(serde_json::json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}})),
+        event(serde_json::json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"first"}})),
+    ].concat();
+    let (tx, source, dropped, _) = upstream(200, "text/event-stream");
+    tx.send(Ok(Bytes::from(prefix))).await.unwrap();
+    let response = bounded(observed_response(&gate, source, true))
+        .await
+        .unwrap();
+    let tail = [
+        event(serde_json::json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"pending"}})),
+        event(serde_json::json!({"type":"error","error":{"type":"overloaded_error","message":"synthetic"}})),
+    ].concat();
+    tx.send(Ok(Bytes::from(tail))).await.unwrap();
+    drop(tx);
+    let mut body = response.into_body().into_data_stream();
+    let mut seen = vec![];
+    let mut failed = false;
+    while let Some(chunk) = bounded(body.next()).await {
+        match chunk {
+            Ok(bytes) => seen.extend_from_slice(&bytes),
+            Err(_) => {
+                failed = true;
+                break;
+            }
+        }
+    }
+    assert!(failed);
+    bounded(dropped).await.unwrap();
+    let wire = std::str::from_utf8(&seen).unwrap();
+    let pending = wire
+        .lines()
+        .filter_map(|line| line.strip_prefix("data: "))
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|v| v["type"] == "response.output_text.delta" && v["delta"] == "pending")
+        .count();
+    assert_eq!(pending, 1);
+    assert!(!wire.contains("response.completed"));
 }
 #[tokio::test]
 async fn drop_deadline_and_shutdown_release_upstream_even_when_body_is_unpolled() {
     for mode in ["drop", "deadline", "shutdown", "server-drop"] {
         let gate = gateway(Limits {
             concurrency: 1,
+            delta_coalescing: Some(crate::gateway::DeltaCoalescing {
+                max_delay_ms: 10,
+                max_pending_bytes: 16384,
+            }),
             ..Limits::default()
         });
         let (tx, upstream, dropped, _) = upstream(200, "text/event-stream");
@@ -598,6 +900,42 @@ async fn drop_deadline_and_shutdown_release_upstream_even_when_body_is_unpolled(
             .await
             .unwrap();
     }
+    // A timer flush blocked on acknowledgement cannot read ahead; dropping the
+    // body cancels that flush and releases its upstream and exchange permit.
+    let gate = gateway(Limits {
+        concurrency: 1,
+        delta_coalescing: Some(crate::gateway::DeltaCoalescing {
+            max_delay_ms: 10,
+            max_pending_bytes: 16384,
+        }),
+        ..Limits::default()
+    });
+    let (tx, source, dropped, reads) = upstream(200, "text/event-stream");
+    tx.send(Ok(Bytes::from(frames()[..2].concat())))
+        .await
+        .unwrap();
+    let response = bounded(response(
+        &gate,
+        source,
+        true,
+        Instant::now() + Duration::from_secs(3),
+    ))
+    .await
+    .unwrap();
+    let mut body = response.into_body().into_data_stream();
+    let mut prefix = vec![];
+    while !String::from_utf8_lossy(&prefix).contains("old ") {
+        prefix.extend_from_slice(&bounded(body.next()).await.unwrap().unwrap());
+    }
+    tx.send(Ok(frames()[2].clone())).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    tx.send(Ok(frames()[2].clone())).await.unwrap();
+    assert_eq!(reads.load(Ordering::SeqCst), 2);
+    drop(body);
+    bounded(dropped).await.unwrap();
+    let _released = bounded(gate.state.permits.clone().acquire_owned())
+        .await
+        .unwrap();
 }
 #[tokio::test]
 async fn invalid_heads_and_static_overflow_fail_without_exposing_provider_data() {

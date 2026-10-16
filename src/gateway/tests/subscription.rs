@@ -1,13 +1,11 @@
 //! SSE-only upstream delivery is independent of client JSON/SSE selection.
+use super::responses_wire as wire;
 use crate::gateway::generation::exchange;
 use crate::gateway::*;
 use crate::protocol::openai::Profile;
 use axum::body::to_bytes;
 use serde_json::json;
 use std::time::Duration;
-#[allow(dead_code)]
-#[path = "../../../tests/support/responses_profile.rs"]
-mod wire;
 
 fn sse(complete: bool) -> Vec<u8> {
     let mut events = wire::events(2);

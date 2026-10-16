@@ -33,6 +33,7 @@ struct Configuration {
     capture: Option<crate::gateway::CaptureConfig>,
     concurrency: Option<usize>,
     exchange_timeout_ms: Option<u64>,
+    delta_coalescing: Option<crate::execution::delivery::DeltaCoalescing>,
 }
 fn listen() -> SocketAddr {
     ([127, 0, 0, 1], 8080).into()
@@ -111,6 +112,7 @@ impl Bootstrap {
             read_configuration(&relative(parent, &configuration.models_file)?, "models")?;
         let defaults = Limits::default();
         let limits = Limits {
+            delta_coalescing: configuration.delta_coalescing,
             implicit_cache_affinity: models.implicit_cache_affinity,
             concurrency: configuration.concurrency.unwrap_or(defaults.concurrency),
             exchange_timeout: configuration
