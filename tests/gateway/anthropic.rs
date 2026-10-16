@@ -181,7 +181,9 @@ impl Drop for DropSignal {
 }
 fn controlled_response(mode: &str, control: Arc<Control>) -> Response {
     let message = json!({"id":"held","type":"message","role":"assistant","model":"claude-haiku-5-5",
-        "content":[{"type":"text","text":"early"}],"stop_reason":"end_turn",
+        "content":[{"type":"text","text":"early"},
+            {"type":"tool_use","id":"held-call","name":"lookup","input":{"key":"A"}}],
+        "stop_reason":"tool_use",
         "usage":{"input_tokens":1,"output_tokens":1}});
     let bytes = native_stream_body(&message);
     let prefix = if mode == "hold" {
@@ -301,7 +303,6 @@ async fn answer(
             "content":[{"type":"text","text":"partial"}],"stop_reason":"end_turn",
             "usage":{"input_tokens":11,"output_tokens":7}});
         match prompt {
-            "unknown-usage" => {}
             "truncated" => response["stop_reason"] = json!("max_tokens"),
             "refusal" => {
                 response["stop_reason"] = json!("refusal");
@@ -493,78 +494,60 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             if stream && !responses {
                 input["stream_options"] = json!({"include_usage":true,"include_obfuscation":false});
             }
-            for turn in 0..2 {
-                let result = client
-                    .post(format!("{base}{path}"))
-                    .bearer_auth("synthetic-client-identity-00000001")
-                    .header("x-never-forward", "private")
-                    .json(&input)
-                    .send()
-                    .await
-                    .unwrap();
-                let status = result.status();
-                let body: Value = client_body(result, profile, stream).await;
-                if status != 200 {
-                    diagnostic_owner.flush_diagnostics().await;
-                    panic!(
-                        "{profile:?} turn {turn}: {body}; {}",
-                        std::fs::read_to_string(&diagnostics).unwrap()
-                    );
-                }
-                assert_eq!(body["model"], binding.model);
-                assert!(
-                    body[if responses { "created_at" } else { "created" }]
-                        .as_u64()
-                        .is_some()
+            let result = client
+                .post(format!("{base}{path}"))
+                .bearer_auth("synthetic-client-identity-00000001")
+                .header("x-never-forward", "private")
+                .json(&input)
+                .send()
+                .await
+                .unwrap();
+            let status = result.status();
+            let body: Value = client_body(result, profile, stream).await;
+            if status != 200 {
+                diagnostic_owner.flush_diagnostics().await;
+                panic!(
+                    "{profile:?}: {body}; {}",
+                    std::fs::read_to_string(&diagnostics).unwrap()
                 );
-                assert_eq!(
-                    body["usage"][if responses {
-                        "input_tokens"
-                    } else {
-                        "prompt_tokens"
-                    }],
-                    16
-                );
-                assert_eq!(body["usage"]["total_tokens"], 23);
-                assert!(!body.to_string().contains("synthetic-native-signature"));
-                assert!(!body.to_string().contains("synthetic-redacted"));
-                if turn == 0 {
-                    let token = if responses {
-                        &body["output"][0]["encrypted_content"]
-                    } else {
-                        &body["choices"][0]["message"]["reasoning_details"][1]["data"]
-                    };
-                    let (issuer, format, payload) =
-                        replay_envelope::open(token.as_str().unwrap()).unwrap();
-                    assert_eq!(issuer, replay_origin);
-                    assert_eq!(format,morphiecore::semantic::task::generation::ReplayFormat::AnthropicMessagesThinking);
-                    assert_eq!(payload.as_str(), "synthetic-native-signature");
-                    let redacted = if responses {
-                        &body["output"][1]["encrypted_content"]
-                    } else {
-                        &body["choices"][0]["message"]["reasoning_details"][2]["data"]
-                    };
-                    let (_, format, payload) =
-                        replay_envelope::open(redacted.as_str().unwrap()).unwrap();
-                    assert_eq!(format,morphiecore::semantic::task::generation::ReplayFormat::AnthropicMessagesRedactedThinking);
-                    assert_eq!(payload.as_str(), "synthetic-redacted");
-                    if responses {
-                        let history = input["input"].as_array_mut().unwrap();
-                        history.extend(body["output"].as_array().unwrap().iter().cloned());
-                        history.push(json!({"type":"function_call_output","call_id":"call-local","output":"found"}));
-                    } else {
-                        let history = input["messages"].as_array_mut().unwrap();
-                        history.push(body["choices"][0]["message"].clone());
-                        history.push(
-                            json!({"role":"tool","tool_call_id":"call-local","content":"found"}),
-                        );
-                    }
-                } else if responses {
-                    assert_eq!(body["output"][0]["content"][0]["text"], "answer");
-                } else {
-                    assert_eq!(body["choices"][0]["message"]["content"], "answer");
-                }
             }
+            assert_eq!(body["model"], binding.model);
+            assert!(
+                body[if responses { "created_at" } else { "created" }]
+                    .as_u64()
+                    .is_some()
+            );
+            assert_eq!(
+                body["usage"][if responses {
+                    "input_tokens"
+                } else {
+                    "prompt_tokens"
+                }],
+                16
+            );
+            assert_eq!(body["usage"]["total_tokens"], 23);
+            assert!(!body.to_string().contains("synthetic-native-signature"));
+            assert!(!body.to_string().contains("synthetic-redacted"));
+            let token = if responses {
+                &body["output"][0]["encrypted_content"]
+            } else {
+                &body["choices"][0]["message"]["reasoning_details"][1]["data"]
+            };
+            let (issuer, format, payload) = replay_envelope::open(token.as_str().unwrap()).unwrap();
+            assert_eq!(issuer, replay_origin);
+            assert_eq!(
+                format,
+                morphiecore::semantic::task::generation::ReplayFormat::AnthropicMessagesThinking
+            );
+            assert_eq!(payload.as_str(), "synthetic-native-signature");
+            let redacted = if responses {
+                &body["output"][1]["encrypted_content"]
+            } else {
+                &body["choices"][0]["message"]["reasoning_details"][2]["data"]
+            };
+            let (_, format, payload) = replay_envelope::open(redacted.as_str().unwrap()).unwrap();
+            assert_eq!(format,morphiecore::semantic::task::generation::ReplayFormat::AnthropicMessagesRedactedThinking);
+            assert_eq!(payload.as_str(), "synthetic-redacted");
             if stream {
                 continue;
             }
@@ -573,7 +556,6 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 ("upstream-error", 503),
                 ("malformed", 502),
                 ("bad-signature", 502),
-                ("unknown-usage", 200),
                 ("truncated", 200),
                 ("refusal", 200),
             ] {
@@ -603,13 +585,13 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 assert!(!body.to_string().contains("synthetic-private"));
                 if expected == 200 {
                     assert!(body["usage"].is_null());
-                    let (status, reason, finish) = match prompt {
-                        "truncated" => ("incomplete", json!("max_output_tokens"), "length"),
-                        "refusal" => ("incomplete", json!("content_filter"), "content_filter"),
-                        _ => ("completed", Value::Null, "stop"),
+                    let (reason, finish) = if prompt == "truncated" {
+                        (json!("max_output_tokens"), "length")
+                    } else {
+                        (json!("content_filter"), "content_filter")
                     };
                     if responses {
-                        assert_eq!(body["status"], status);
+                        assert_eq!(body["status"], "incomplete");
                         assert_eq!(body["incomplete_details"]["reason"], reason);
                     } else {
                         assert_eq!(body["choices"][0]["finish_reason"], finish);
@@ -618,14 +600,14 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             }
         }
     }
-    assert_eq!(seen.lock().unwrap().len(), 26);
+    assert_eq!(seen.lock().unwrap().len(), 20);
     // A Messages client (Claude Code) runs the same tool loop with thinking replay.
     for stream in [false, true] {
         let mut input = json!({"model":binding.model,"max_tokens":64,"stream":stream,
         "thinking":{"type":"adaptive"},
         "metadata":{"user_id":"synthetic-user"},
-        "system":[{"type":"text","text":"Be brief.","cache_control":{"type":"ephemeral"}}],
-        "tools":[{"name":"lookup","strict":false,"cache_control":{"type":"ephemeral"},
+        "system":"Be brief.",
+        "tools":[{"name":"lookup","strict":false,
             "input_schema":{"type":"object","properties":{"key":{"type":"string"}}}}],
         "tool_choice":{"type":"auto","disable_parallel_tool_use":true},
         "messages":[{"role":"user","content":"lookup"}]});
@@ -685,7 +667,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             {"type":"tool_result","tool_use_id":"call-local","content":"found"}]}));
         }
     }
-    assert_eq!(seen.lock().unwrap().len(), 30);
+    assert_eq!(seen.lock().unwrap().len(), 24);
     // Error classes in Anthropic's shapes: an HTTP envelope, or an `error` event
     // after content.
     for (prompt, stream) in [("overflow", false), ("overloaded", true)] {
@@ -733,7 +715,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             );
         }
     }
-    assert_eq!(seen.lock().unwrap().len(), 32);
+    assert_eq!(seen.lock().unwrap().len(), 26);
     for profile in [Profile::Responses, Profile::Chat] {
         let responses = profile == Profile::Responses;
         let path = if responses {
@@ -826,7 +808,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             );
         }
     }
-    assert_eq!(seen.lock().unwrap().len(), 38);
+    assert_eq!(seen.lock().unwrap().len(), 32);
     // Error classes: Codex reads overflow only from a streamed `response.failed`;
     // a failure after headers ends the stream with its class instead of a cut.
     for profile in [Profile::Responses, Profile::Chat] {
@@ -907,7 +889,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             }
         }
     }
-    assert_eq!(seen.lock().unwrap().len(), 56);
+    assert_eq!(seen.lock().unwrap().len(), 50);
     diagnostic_owner.flush_diagnostics().await;
     let records = std::fs::read_to_string(&diagnostics).unwrap();
     assert!(

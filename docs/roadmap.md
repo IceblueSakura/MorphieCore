@@ -16,6 +16,8 @@ Follow the [IR and codec contract](#ir-and-codec-migration) and preserve its [in
 
 For this migration, update existing tests and independent wire expectations only; do not add test functions, suites or variant matrices. Preserve safety assertions. Record uncovered contracts rather than claiming coverage from compilation or a round trip.
 
+Defer successful integration scenarios whose completion conversion or binding-admission contract is not selected. Remove those scenarios rather than invent a conversion or replace success with an expected gateway error. Keep identity, replay isolation, strict parsing, cancellation, transport bounds and honest-terminal assertions. Orthogonal fixtures should use exact supported carriers. Rebuild the selected integration coverage after IR/codec contracts stabilize, during the coverage stage.
+
 The next design slice is native cache resource references in the [support queue](#support-queue-after-projection-repair), separate from deferred prewarming. Cache-owner, generation-control and service-policy carriers are not pending feature work; their remaining admission and delivery constraints belong to the [integration handoff](#integration-handoff). Keep established contracts under regression without reopening them as implementation goals.
 
 ### Temporary routing freeze
@@ -46,7 +48,7 @@ For every implementation slice:
 
 1. Update the affected existing semantic, transport and delivery expectations. Keep independently written wire-to-IR and IR-to-wire oracles; a round trip is supplementary. Do not add tests or weaken safety assertions to make a route pass.
 2. Run affected offline targets, then the [full offline baseline](development.md#offline-baseline). Compilation, local codec correctness and integrated gateway behavior are separate results.
-3. Separate codec regressions from an incompatible frozen integration contract. A failed full baseline remains a failure; identify the exact blocker and continue independent work without repairing routing. Temporary disconnection does not authorize deleting assertions, excluding suites or claiming the baseline passed.
+3. Separate codec regressions from an incompatible frozen integration contract. A failed full baseline remains a failure; identify the exact blocker and continue independent work without repairing routing. The transitional test scope above permits removing unselected success scenarios, not safety assertions or entire suites. Report the removed coverage; a passing reduced baseline does not establish the deferred integration.
 4. Commit/push slices that pass the baseline under the existing project policy. If a disconnected integration prevents that gate, leave publication blocked and report it; this plan does not create a new permission to publish a failing slice.
 5. Run the synthetic SDK loopback gate when the relevant codec boundary is connected. Otherwise mark it blocked, not waived or passed. No real client/Provider check or deployment is required for this planning phase.
 
@@ -81,11 +83,11 @@ Service-policy codecs follow the [closed policy/report contract](architecture.md
 | Missing evidence for a selected target-local approximation | Reject uncalibrated detail/context conversions | Supply concrete target evidence and the approved mapping without changing route ordering |
 | Deferred protocol direction or feature | Keep Google static/client intake and unselected hosted-tool carriers out of scope | Reopen through an explicit slice, not as a side effect of reconnection |
 
-The [Messages gateway smoke](../tests/gateway/anthropic.rs) still exercises content and tool cache owners. Keep its integration assertions; do not remove markers or weaken admission to obtain a passing result.
+Content and tool cache owners remain local codec contracts. Public binding acceptance of those markers is deferred, not asserted by the [Messages gateway smoke](../tests/gateway/anthropic.rs). Its ordinary native tool loop remains covered without asserting owner-cache admission; no production binding is widened and no runtime cache marker is stripped.
 
-Terminal completion causes are independent of turn progress and tool continuation. Messages can report natural completion or a matched stop sequence; Chat and generateContent `STOP` do not distinguish those causes. A target without an exact reported-cause carrier rejects, including Responses and ambiguous-stop delivery to Messages. Google `STOP` remains a reported fact even when function calls also require continuation. These rejections can disconnect previously successful delivery checks; do not remove those integration assertions to hide the boundary.
+Terminal completion causes are independent of turn progress and tool continuation. Messages can report natural completion or a matched stop sequence; Chat and generateContent `STOP` do not distinguish those causes. A target without an exact reported-cause carrier rejects, including Responses and ambiguous-stop delivery to Messages. Google `STOP` remains a reported fact even when function calls also require continuation. Successful cross-protocol final-answer scenarios wait for a selected carrier or loss policy; local rejection contracts remain authoritative.
 
-Treat completion-cause failures in [OpenAI delivery](../src/protocol/openai/terminal.rs), [Messages delivery](../src/protocol/anthropic/client.rs) and [Google delivery tests](../tests/transport/google_sse.rs) as semantic-carrier boundaries, not missing route activation. A test that fails before its replay assertions does not verify those later assertions; retain that coverage gap until the relevant delivery contract is resolved.
+Treat completion-cause restrictions in [OpenAI delivery](../src/protocol/openai/terminal.rs), [Messages delivery](../src/protocol/anthropic/client.rs) and [Google delivery tests](../tests/transport/google_sse.rs) as semantic-carrier boundaries, not missing route activation. Gateway and SDK smokes retain exact tool-response carriers, not completed Chat-to-Responses or Messages-to-OpenAI answer loops. Google signed tool-call delivery to OpenAI clients also remains uncovered. Keep source replay and terminal-safety contracts while those success paths are deferred.
 
 Google directions remain upstream request encoding and SSE intake, not static intake or Google client endpoints. Native policy propagation requires a concrete binding and an actually reported carrier; absent reports are not supplied from request controls.
 

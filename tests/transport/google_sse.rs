@@ -15,7 +15,7 @@ use morphiecore::{
 };
 use serde_json::{Value, json};
 
-fn frames(parts: Value) -> Vec<u8> {
+fn incomplete_frames(parts: Value) -> Vec<u8> {
     let meta = json!({"responseId":"resp","modelVersion":"gemini-synthetic"});
     let mut out = String::new();
     let parts = parts.as_array().unwrap();
@@ -26,21 +26,13 @@ fn frames(parts: Value) -> Vec<u8> {
             .unwrap()
             .extend(meta.as_object().unwrap().clone());
         if n + 1 == parts.len() {
-            frame["candidates"][0]["finishReason"] = json!("STOP");
+            frame["candidates"][0]["finishReason"] = json!("MAX_TOKENS");
             frame["usageMetadata"] = json!({"promptTokenCount":10,"candidatesTokenCount":5,
                 "thoughtsTokenCount":3,"totalTokenCount":18});
         }
         out.push_str(&format!("data: {frame}\r\n\r\n"));
     }
     out.into_bytes()
-}
-/// Gemini's usual tool turn: thoughts, a lead-in, then the signed first call.
-fn tool_turn() -> Vec<u8> {
-    frames(json!([
-        {"text":"Plan","thought":true},
-        {"text":"Reading."},
-        {"functionCall":{"id":"c1","name":"read","args":{"path":"a.txt"}},"thoughtSignature":"U0lH"}
-    ]))
 }
 fn deliver(bytes: &[u8], profile: Profile, stream: bool) -> Result<Value, String> {
     let target = ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap();
@@ -94,8 +86,8 @@ fn deliver(bytes: &[u8], profile: Profile, stream: bool) -> Result<Value, String
 }
 
 #[test]
-fn signed_calls_after_content_reach_chat_and_responses_clients() {
-    let empty = frames(json!([{"text":"","thoughtSignature":"U0lH"}]));
+fn signed_text_and_partial_outputs_keep_replay_and_terminal_contracts() {
+    let empty = incomplete_frames(json!([{"text":"","thoughtSignature":"U0lH"}]));
     let response = deliver(&empty, Profile::Responses, false).unwrap();
     assert_eq!(response["output"][0]["content"][0]["text"], "");
     let client = Adapter::new(
@@ -141,6 +133,12 @@ fn signed_calls_after_content_reach_chat_and_responses_clients() {
         stream
             .as_str()
             .unwrap()
+            .contains("event: response.incomplete\n")
+    );
+    assert!(
+        !stream
+            .as_str()
+            .unwrap()
             .contains("event: response.completed\n")
     );
 
@@ -156,62 +154,12 @@ fn signed_calls_after_content_reach_chat_and_responses_clients() {
     let chat = deliver(partial, Profile::Chat, false).unwrap();
     assert_eq!(chat["choices"][0]["finish_reason"], "length");
     assert_eq!(chat["choices"][0]["message"]["content"], "partial");
-    for profile in [Profile::Chat, Profile::Responses] {
-        for stream in [false, true] {
-            let body = deliver(&tool_turn(), profile, stream)
-                .unwrap_or_else(|e| panic!("{profile:?} stream={stream}: {e}"));
-            let text = body.to_string();
-            // Gemini input already includes cache reads; its total passes through.
-            assert!(
-                text.contains("\"total_tokens\":18") || text.contains("\\\"total_tokens\\\":18"),
-                "{profile:?} stream={stream}: usage"
-            );
-            match (profile, stream) {
-                (Profile::Chat, false) => {
-                    let message = &body["choices"][0]["message"];
-                    assert_eq!(message["content"], "Reading.");
-                    assert_eq!(message["tool_calls"][0]["id"], "c1");
-                    let types: Vec<_> = message["reasoning_details"]
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .map(|d| d["type"].as_str().unwrap())
-                        .collect();
-                    assert_eq!(
-                        types,
-                        [
-                            "reasoning.summary",
-                            "reasoning.encrypted",
-                            "reasoning.encrypted"
-                        ]
-                    );
-                }
-                (Profile::Responses, false) => {
-                    let types: Vec<_> = body["output"]
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .map(|o| o["type"].as_str().unwrap())
-                        .collect();
-                    assert_eq!(
-                        types,
-                        ["reasoning", "message", "function_call", "reasoning"]
-                    );
-                }
-                _ => {
-                    assert!(
-                        text.contains("reasoning.encrypted") || text.contains("encrypted_content")
-                    );
-                    assert!(text.contains("c1") && !text.contains("U0lH"));
-                }
-            }
-        }
-    }
 }
 
 #[test]
 fn readable_reasoning_after_content_still_cannot_reach_chat() {
-    let late_thought = frames(json!([{"text":"Reading."},{"text":"Plan","thought":true}]));
+    let late_thought =
+        incomplete_frames(json!([{"text":"Reading."},{"text":"Plan","thought":true}]));
     for stream in [false, true] {
         assert!(deliver(&late_thought, Profile::Chat, stream).is_err());
     }

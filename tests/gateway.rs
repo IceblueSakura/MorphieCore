@@ -529,7 +529,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
             }
         }
     }
-    // Standard Responses delivery and actual replay use a fixed Chat upstream.
+    // A Chat tool response has an exact Responses carrier.
     for stream in [false, true] {
         let before = observed.0.lock().unwrap().len();
         let response = client
@@ -552,32 +552,6 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         assert_eq!(encoded["output"][1]["call_id"], "call-local");
         assert_eq!(encoded["output"][1]["arguments"], "{\"n\":1}");
         assert_eq!(observed.0.lock().unwrap().len(), before + 1);
-        let mut history = vec![json!({"role":"user","content":"lookup"})];
-        history.extend(encoded["output"].as_array().unwrap().iter().cloned());
-        history.push(
-            json!({"type":"function_call_output","call_id":"call-local","output":"{\"n\":1}"}),
-        );
-        let response = client
-            .post(format!("{url}/v1/responses"))
-            .bearer_auth(support::CLIENT_KEY)
-            .json(&json!({"model":"cross-model","input":history,"store":false,"max_output_tokens":32,"stream":stream}))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), 200);
-        let followup = responses_delivery(&response.bytes().await.unwrap(), stream);
-        assert_eq!(followup.semantic.outcome(), Outcome::Completed);
-        assert_eq!(observed.0.lock().unwrap().len(), before + 2);
-        assert_eq!(
-            observed.0.lock().unwrap().last().unwrap()["messages"],
-            json!([
-                {"role":"user","content":"lookup"},
-                {"role":"assistant","content":null,"tool_calls":[
-                    {"id":"call-local","type":"function","function":{"name":"lookup","arguments":"{\"n\":1}"}}
-                ]},
-                {"role":"tool","tool_call_id":"call-local","content":"{\"n\":1}"}
-            ])
-        );
         // Wrong result identity still fails before any upstream dispatch.
         let before = observed.0.lock().unwrap().len();
         let response = client

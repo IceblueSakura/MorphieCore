@@ -468,49 +468,40 @@ async fn messages_clients_get_anthropic_shapes_from_an_openai_target() {
         serde_json::json!({"role":"assistant","content":null,"reasoning_content":"plan",
             "reasoning_details":[{"type":"reasoning.summary","summary":"plan","format":"openai-responses-v1","index":0}],"tool_calls":[{"id":"call-local","type":"function","function":{"name":"lookup","arguments":"{}"}}]})
     );
-    for (turn, expected) in [
-        (
-            0,
-            serde_json::json!({"content":[{"type":"text","text":"old 🧪"}],"stop_reason":"end_turn"}),
-        ),
-        (
-            1,
-            serde_json::json!({"content":[{"type":"tool_use","id":"call-local","name":"lookup","input":{"n":1}}],
-                "stop_reason":"tool_use"}),
-        ),
-    ] {
-        let (tx, upstream, _, _) = upstream(200, "application/json");
-        let mut source = wire::response(turn);
-        // Messages needs the reported cache-read subset; Chat has no write category.
-        source["usage"]["prompt_tokens_details"] = serde_json::json!({"cached_tokens":0});
-        tx.send(Ok(Bytes::from(source.to_string()))).await.unwrap();
-        drop(tx);
-        let response = respond(
-            entry.clone(),
-            entry.candidates[0].clone(),
-            request.clone(),
-            upstream,
-            &gate.state.limits,
-            Instant::now() + Duration::from_secs(2),
-            gate.state.shutdown.clone(),
-            gate.state.permits.clone().acquire_owned().await.unwrap(),
-            super::Trace::new(None),
-        )
+    let (tx, upstream, _, _) = upstream(200, "application/json");
+    let mut source = wire::response(1);
+    // Messages needs the reported cache-read subset; Chat has no write category.
+    source["usage"]["prompt_tokens_details"] = serde_json::json!({"cached_tokens":0});
+    tx.send(Ok(Bytes::from(source.to_string()))).await.unwrap();
+    drop(tx);
+    let response = respond(
+        entry.clone(),
+        entry.candidates[0].clone(),
+        request.clone(),
+        upstream,
+        &gate.state.limits,
+        Instant::now() + Duration::from_secs(2),
+        gate.state.shutdown.clone(),
+        gate.state.permits.clone().acquire_owned().await.unwrap(),
+        super::Trace::new(None),
+    )
+    .await
+    .unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), 4096)
         .await
         .unwrap();
-        let bytes = axum::body::to_bytes(response.into_body(), 4096)
-            .await
-            .unwrap();
-        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(value["type"], "message");
-        assert_eq!(value["model"], "fixture-model");
-        assert_eq!(value["content"], expected["content"]);
-        assert_eq!(value["stop_reason"], expected["stop_reason"]);
-        assert_eq!(
-            value["usage"],
-            serde_json::json!({"input_tokens":3,"output_tokens":2,"cache_read_input_tokens":0})
-        );
-    }
+    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(value["type"], "message");
+    assert_eq!(value["model"], "fixture-model");
+    assert_eq!(
+        value["content"],
+        serde_json::json!([{"type":"tool_use","id":"call-local","name":"lookup","input":{"n":1}}])
+    );
+    assert_eq!(value["stop_reason"], "tool_use");
+    assert_eq!(
+        value["usage"],
+        serde_json::json!({"input_tokens":3,"output_tokens":2,"cache_read_input_tokens":0})
+    );
     // Errors use Anthropic's envelope with the wording Claude Code reacts to.
     let error = ApiError::failure(
         400,

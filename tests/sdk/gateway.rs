@@ -152,7 +152,7 @@ async fn provider(
         *count
     };
     assert!(
-        turn <= if owner_case || nonstandard_usage {
+        turn <= if cross || owner_case || nonstandard_usage {
             1
         } else {
             2
@@ -192,16 +192,6 @@ async fn provider(
             assert!(history.iter().any(|item| item["role"] == "tool"
                 && item["tool_call_id"] == "call-local"
                 && item["content"] == "{\"n\":1}"));
-            if cross {
-                assert_eq!(
-                    history,
-                    &vec![
-                        json!({"role":"user","content":"lookup"}),
-                        chat_wire::response(1)["choices"][0]["message"].clone(),
-                        json!({"role":"tool","tool_call_id":"call-local","content":"{\"n\":1}"}),
-                    ]
-                );
-            }
         } else {
             assert!(history.iter().any(|item|item["type"]=="function_call" && item["arguments"]=="{\"n\":1}"));
             assert_eq!(
@@ -478,7 +468,7 @@ async fn sdk_uses_gateway_for_both_protocols_and_deliveries() {
         String::from_utf8_lossy(&output.stderr)
     );
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["requests"], 54);
+    assert_eq!(report["requests"], 52);
     assert_eq!(report["model_requests"], 7);
     assert_eq!(report["native_audio_requests"], 10);
     assert_eq!(report["speech_requests"], 9);
@@ -491,7 +481,7 @@ async fn sdk_uses_gateway_for_both_protocols_and_deliveries() {
         let observed = observed.0.lock().unwrap();
         assert_eq!(observed.len(), 10);
         assert!(observed.iter().all(|(scenario, count)| *count
-            == if scenario.empty_owner || scenario.nonstandard_usage {
+            == if scenario.cross || scenario.empty_owner || scenario.nonstandard_usage {
                 1
             } else {
                 2

@@ -393,7 +393,7 @@ mod identity_tests {
             "data: {}\n\n",
             json!({
                 "responseId":"reported","modelVersion":"model",
-                "candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}]
+                "candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"MAX_TOKENS"}]
             })
         );
         let (_, events) = attempt.push(wire.as_bytes()).unwrap();
