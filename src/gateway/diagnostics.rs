@@ -1012,6 +1012,24 @@ mod tests {
                 .body(Boundary::ClientResponse, None, "application/json")
                 .is_none()
         );
+        let mut nested_headers = HeaderMap::new();
+        nested_headers.insert("location", "https://example.invalid/redirect?next=https%3A%2F%2Fexample.invalid%2F%3Fapi_key%3Dsynthetic-nested-secret".parse().unwrap());
+        capture.head(Boundary::ClientRequest, None, &nested_headers, None);
+        let double = serde_json::to_string(
+            &serde_json::to_string(&serde_json::json!({"api_key":"synthetic-double-secret"}))
+                .unwrap(),
+        )
+        .unwrap();
+        let named_headers = serde_json::to_string(&serde_json::json!({"headers":[{"name":"Authorization","value":"Bearer synthetic-header-secret"}]})).unwrap();
+        assert!(
+            capture.json(
+                Boundary::ClientRequest,
+                None,
+                serde_json::json!({"double":double,"output":named_headers})
+                    .to_string()
+                    .as_bytes()
+            )
+        );
         sink.flush().await;
         let captured = std::fs::read_to_string(&capture_path).unwrap();
         assert!(
@@ -1037,6 +1055,9 @@ mod tests {
             "synthetic-relative-secret",
             "synthetic-fragment-token",
             "synthetic-challenge-secret",
+            "synthetic-nested-secret",
+            "synthetic-double-secret",
+            "synthetic-header-secret",
         ] {
             assert!(!captured.contains(secret));
         }

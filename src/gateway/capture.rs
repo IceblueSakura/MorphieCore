@@ -279,6 +279,16 @@ fn sanitize(value: &mut Value, redacted: &mut bool, depth: usize) -> bool {
     }
     match value {
         Value::Object(values) => {
+            if values
+                .get("name")
+                .or_else(|| values.get("key"))
+                .and_then(Value::as_str)
+                .is_some_and(authentication)
+                && let Some(value) = values.get_mut("value")
+            {
+                *value = json!("[REDACTED]");
+                *redacted = true;
+            }
             for (name, value) in values {
                 if authentication(name) {
                     *value = json!("[REDACTED]");
@@ -300,7 +310,10 @@ fn sanitize(value: &mut Value, redacted: &mut bool, depth: usize) -> bool {
                 return true;
             }
             // Function arguments/results can contain serialized authentication objects.
-            if matches!(text.trim_start().as_bytes().first(), Some(b'{' | b'[')) {
+            if matches!(
+                text.trim_start().as_bytes().first(),
+                Some(b'{' | b'[' | b'"')
+            ) {
                 let Ok(mut nested) = crate::protocol::json::decode(text.as_bytes()) else {
                     return false;
                 };
@@ -319,18 +332,20 @@ fn sanitize(value: &mut Value, redacted: &mut bool, depth: usize) -> bool {
                 let mut changed = !url.username().is_empty() || url.password().is_some();
                 let _ = url.set_username("");
                 let _ = url.set_password(None);
-                let query: Vec<_> = url
-                    .query_pairs()
-                    .map(|(key, value)| {
-                        let value = if authentication_query(&key) {
-                            changed = true;
-                            "[REDACTED]".into()
-                        } else {
-                            value.into_owned()
-                        };
-                        (key.into_owned(), value)
-                    })
-                    .collect();
+                let mut query = vec![];
+                for (key, value) in url.query_pairs() {
+                    let mut value = Value::String(value.into_owned());
+                    if authentication_query(&key) {
+                        value = json!("[REDACTED]");
+                        changed = true;
+                    } else if !sanitize(&mut value, &mut changed, depth + 1) {
+                        return false;
+                    }
+                    let Value::String(value) = value else {
+                        return false;
+                    };
+                    query.push((key.into_owned(), value));
+                }
                 if url.fragment().is_some_and(|fragment| {
                     url::form_urlencoded::parse(fragment.as_bytes())
                         .any(|(key, _)| authentication_query(&key))
