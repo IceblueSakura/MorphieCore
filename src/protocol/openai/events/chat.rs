@@ -438,6 +438,9 @@ impl EventDecoder {
             for call in calls.as_array().ok_or(CodecError::Invalid("tool calls"))? {
                 let call = object(call)?;
                 reject_chat_orchestration(call)?;
+                if call.contains_key("custom") {
+                    return Err(CodecError::Unsupported("Chat custom tool streaming".into()));
+                }
                 DecodeDirection::Upstream.fields(call, &["index", "id", "type", "function"])?;
                 let n = index(call, "index")?;
                 match call.get("type") {

@@ -575,6 +575,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Predicted-output optimization | D3 selects named omission of Chat prediction after source validation until supported. Record the loss without changing generated text or fabricating usage |
 | Registered reasoning-view presence | Absent/null/empty plaintext views make no assertion; nonempty duplicates must agree. Explicit structured parts and replay ownership remain intact |
 | Equal downstream contracts | Chat Completions, Responses and Messages receive equal consideration for static delivery, streaming and history replay; a missing carrier needs an approved projection or explicit rejection |
+| Chat custom-tool identity | Use the official nested JSON carriers and preserve raw input/grammar. Resolve a result's function/custom kind only from its preceding call ID. The pinned Chat SSE schema has no custom delta carrier: reject rather than invent one or cast custom calls to functions; see [protocol sources](refs/2026-10-16-chat-custom-tools.md) |
 | Separate task contracts | Generation, Embeddings, Images, Speech and Transcription are not one universal message type |
 | Pure protocol boundaries | Encode from final typed input; no network in codecs or post-encoding JSON patches |
 | Functional ownership | Keep root layers; organize internals by domain, without compatibility aliases or plugin frameworks |

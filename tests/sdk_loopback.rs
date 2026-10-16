@@ -424,11 +424,20 @@ async fn sdk_case(sse: bool, profile: Profile, without_opaque: bool) {
         observed.0.lock().unwrap().1,
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(observed.0.lock().unwrap().0, 3);
+    assert_eq!(
+        observed.0.lock().unwrap().0,
+        if profile == Profile::Chat && !sse {
+            5
+        } else {
+            3
+        }
+    );
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["turns"], 3);
     if profile == Profile::Responses {
         assert_eq!(report["opaque"], !without_opaque);
+    } else {
+        assert_eq!(report["custom_turns"], if sse { 0 } else { 2 });
     }
     if sse && profile == Profile::Responses {
         assert!(report["event_counts"][0].as_u64().unwrap() > 5);

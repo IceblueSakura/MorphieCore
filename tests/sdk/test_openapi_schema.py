@@ -51,6 +51,14 @@ class OpenApiSchemaTests(unittest.TestCase):
         chat = {"model": "synthetic", "messages": [], "max_tokens": 8}
         validator("ChatRequest").validate(chat)
         self.assertFalse(validator("ChatRequest").is_valid({**chat, "max_completion_tokens": 8}))
+        custom = {"model": "synthetic", "messages": [],
+                  "tools": [{"type": "custom", "custom": {"name": "sql", "format": {
+                      "type": "grammar", "grammar": {"syntax": "regex", "definition": "SELECT [0-9]+"}}}}],
+                  "tool_choice": {"type": "custom", "custom": {"name": "sql"}}}
+        validator("ChatRequest").validate(custom)
+        malformed = copy.deepcopy(custom)
+        malformed["tools"][0]["custom"]["format"]["grammar"]["syntax"] = "unknown"
+        self.assertFalse(validator("ChatRequest").is_valid(malformed))
 
     def test_all_component_schemas_and_local_references_are_valid(self):
         for schema in SCHEMAS.values():

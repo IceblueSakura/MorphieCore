@@ -62,11 +62,13 @@ Google directions remain upstream request encoding and SSE intake, not static in
 
 Exchange capture covers authenticated client boundaries and Generation upstream I/O. Frozen standalone-task upstreams are not instrumented. Binary, multipart, fragmented argument carriers and other unsafe units are explicitly incomplete or omitted, never raw fallbacks. Capture EOF and drop counters do not establish semantic completion or durable full retention.
 
+Chat custom tools have static JSON and history carriers, not a pinned custom-call SSE delta carrier. Custom Chat streams reject explicitly; Responses custom streaming remains separate. Codec support does not activate custom tools on a binding or expand its public contract.
+
 ### Support queue after projection repair
 
 The remaining queue follows its local repair and contract gates, not successful route reconnection. Before each IR extension, present a minimal counterexample and structural options. An official carrier alone does not activate a binding.
 
-1. Complete the remaining existing-IR carriers: Chat custom tools and explicit cache breakpoints/TTL. Keep each contract separate; unimplemented output or tool semantics do not become advisory omissions.
+1. Complete explicit cache breakpoints/TTL carriers. Keep each contract separate; unsupported semantics do not become advisory omissions.
 2. Add missing generation controls: `top_k`, then stopping sequences with honest stop reporting, then penalties/seed. Treat `logit_bias` token identities as model-dependent; do not forward them blindly across tokenizers.
 3. Design execution-policy semantics separately: service tiers, native cache resources/prewarming and safety settings. Preserve native distinctions; equal names do not establish equivalent billing, capacity or safety behavior. `max_tokens: 0` prewarming is not ordinary zero-length generation.
 

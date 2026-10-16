@@ -50,7 +50,7 @@ pub(super) fn project(
     for (id, item) in items {
         match item {
             Item::Message(message) if message.role == MessageRole::Assistant => current = Some(*id),
-            Item::ToolCall(_) => {
+            Item::ToolCall(_) | Item::CustomCall(_) => {
                 if let Some(owner) = owners.get(id) {
                     if current != Some(*owner) {
                         return Err(RepresentationError::MessageGrouping);

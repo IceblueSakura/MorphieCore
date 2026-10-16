@@ -192,6 +192,15 @@ fn malformed_late_or_unfinished_chat_streams_cannot_recover() {
     consume(&mut d, b"data: [DONE]\n\n", 1);
     assert!(d.consume(b"data: [DONE]\n\n").is_err());
     assert!(d.finish().is_err());
+    let mut d = decoder();
+    let function = wire::events(1);
+    for chunk in &function[..2] {
+        consume(&mut d, &frame(chunk), 4096);
+    }
+    let mut mixed = function[2].clone();
+    mixed["choices"][0]["delta"]["tool_calls"][0]["custom"] = json!({"input":"SELECT 1"});
+    assert!(d.consume(&frame(&mixed)).is_err());
+    assert!(d.materialize().is_err());
     for (status, content) in [
         (201, "text/event-stream"),
         (200, "application/json"),

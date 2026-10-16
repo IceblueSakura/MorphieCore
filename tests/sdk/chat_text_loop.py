@@ -119,7 +119,29 @@ def run(base_url: str, stream: bool) -> dict[str, object]:
                 history.append(message)
             else:
                 check(finish == "stop" and message["content"] == "old 🧪")
-        return {"turns": 3, "stream": stream, "event_counts": counts}
+        custom_turns = 0
+        if not stream:
+            custom_history = [{"role": "user", "content": "synthetic custom call"}]
+            custom_tools = [{"type": "custom", "custom": {"name": "sql",
+                "format": {"type": "grammar", "grammar": {
+                    "syntax": "regex", "definition": "SELECT [0-9]+"}}}}]
+            result = client.chat.completions.create(model="fixture-model",
+                messages=custom_history, tools=custom_tools,
+                tool_choice={"type": "custom", "custom": {"name": "sql"}})
+            check(result.choices[0].finish_reason == "tool_calls")
+            message = result.choices[0].message
+            call = message.tool_calls[0]
+            check(call.type == "custom" and call.id == "call-custom")
+            check(call.custom.name == "sql" and call.custom.input == "SELECT 1")
+            custom_history.extend([message.model_dump(exclude_none=True),
+                {"role": "tool", "tool_call_id": call.id, "content": [
+                    {"type": "text", "text": "1"}, {"type": "text", "text": ""}]}])
+            result = client.chat.completions.create(model="fixture-model",
+                messages=custom_history, tools=custom_tools, tool_choice="none")
+            check(result.choices[0].finish_reason == "stop")
+            check(result.choices[0].message.content == "custom done")
+            custom_turns = 2
+        return {"turns": 3, "custom_turns": custom_turns, "stream": stream, "event_counts": counts}
     finally:
         client.close()
 

@@ -840,6 +840,8 @@
           "model": {"$ref": "#/components/schemas/PublicModelLabel"},
           "prompt_cache_key": {"type": ["string", "null"], "maxLength": 256, "description": "Cache-grouping intent, separate from conversation identity. Null is not filled from conversation context; no value guarantees a cache hit."},
           "messages": {"type": "array", "items": {"type": "object", "not": {"required": ["_openbridge"]}}, "description": "Ordered history. Text and selected user image/audio inputs require codec and target admission. Tool results retain call links. Unbound audio IDs and unsupported media are rejected."},
+          "tools": {"type": "array", "maxItems": 128, "items": {"$ref": "#/components/schemas/ChatTool"}, "description": "Function and custom definitions use their official nested shells. Custom inputs stay raw strings; grammar is not evaluated by the gateway. Binding and streaming admission remain separate."},
+          "tool_choice": {"oneOf": [{"enum": ["none", "auto", "required"]}, {"type": "object", "required": ["type"], "properties": {"type": {"enum": ["function", "custom", "allowed_tools"]}}}], "description": "Named custom choice uses custom.name; allowed_tools nests mode and typed references. The owning codec validates names and membership."},
           "modalities": {"type": ["array", "null"], "items": {"enum": ["text", "audio"]}, "minItems": 1, "maxItems": 2, "uniqueItems": true, "description": "Output intent; audio also requires matching options and explicit public/endpoint admission. This schema activates no audio model."},
           "audio": {"type": ["object", "null"], "required": ["format", "voice"], "properties": {"format": {"enum": ["wav", "aac", "mp3", "flac", "opus", "pcm16"]}, "voice": {"type": "string", "minLength": 1, "maxLength": 128}}, "description": "Named-voice output options. Requires audio modality; streaming requires pcm16. Target admission is separate."},
           "stream": {"type": ["boolean", "null"], "default": false},
@@ -857,6 +859,24 @@
         ],
         "additionalProperties": true,
         "description": "Envelope subset, not an arbitrary upstream parameter bag. Known fields follow the codec; active stop, functions, function_call and web_search_options are rejected; other unknown fields are ignored by name. Return reasoning_details unchanged for opaque replay. Named projection may omit container boundaries, not call/result identity."
+      },
+      "ChatTool": {
+        "oneOf": [
+          {"type": "object", "required": ["type", "function"], "properties": {
+            "type": {"const": "function"}, "function": {"type": "object", "required": ["name"],
+              "properties": {"name": {"type": "string", "minLength": 1, "maxLength": 128}}}}},
+          {"type": "object", "required": ["type", "custom"], "properties": {
+            "type": {"const": "custom"}, "custom": {"type": "object", "required": ["name"],
+              "properties": {"name": {"type": "string", "minLength": 1, "maxLength": 128},
+                "description": {"type": "string"},
+                "format": {"oneOf": [
+                  {"type": "object", "required": ["type"], "properties": {"type": {"const": "text"}}},
+                  {"type": "object", "required": ["type", "grammar"], "properties": {
+                    "type": {"const": "grammar"}, "grammar": {"type": "object", "required": ["syntax", "definition"],
+                      "properties": {"syntax": {"enum": ["lark", "regex"]}, "definition": {"type": "string", "minLength": 1}}}}}
+                ]}}}}}
+        ],
+        "description": "Envelope subset, not a binding activation promise. Chat has no pinned custom-call SSE delta carrier. Qualified or active orchestration contexts remain rejected."
       },
       "ResponsesReasoningSummary": {
         "type": ["string", "null"],

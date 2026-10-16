@@ -1,5 +1,5 @@
 //! Chat call ownership, a view of IR message envelopes. A Chat-shaped envelope is
-//! an assistant message followed by the function calls it carries.
+//! an assistant message followed by the function/custom calls it carries.
 use crate::{protocol::CodecError, semantic::task::generation::*};
 use std::collections::BTreeMap;
 
@@ -14,7 +14,7 @@ pub(in crate::protocol::openai) fn owner(
         && matches!(kind(owner), Some(Item::Message(m)) if m.role == MessageRole::Assistant)
         && calls
             .iter()
-            .all(|id| matches!(kind(id), Some(Item::ToolCall(_)))))
+            .all(|id| matches!(kind(id), Some(Item::ToolCall(_) | Item::CustomCall(_)))))
     .then_some(*owner)
 }
 

@@ -128,7 +128,16 @@ pub(super) fn read_tool(
             tools: leaves,
         }));
     }
-    if string(o, "type")? == "custom" && profile == Profile::Responses {
+    if string(o, "type")? == "custom" {
+        let o = if profile == Profile::Chat {
+            reject_chat_orchestration(o)?;
+            direction.fields(o, &["type", "custom"])?;
+            let custom = object(o.get("custom").ok_or(CodecError::Invalid("custom tool"))?)?;
+            reject_chat_orchestration(custom)?;
+            custom
+        } else {
+            o
+        };
         direction.fields(
             o,
             &[
@@ -141,7 +150,11 @@ pub(super) fn read_tool(
                 "allowed_callers",
             ],
         )?;
-        let dispatch = dispatch(o)?;
+        let dispatch = if profile == Profile::Chat {
+            ToolDispatch::default()
+        } else {
+            dispatch(o)?
+        };
         let format = o
             .get("format")
             .map(|v| {
@@ -152,14 +165,29 @@ pub(super) fn read_tool(
                         CustomFormat::Text
                     }
                     "grammar" => {
-                        direction.fields(f, &["type", "syntax", "definition"])?;
+                        let grammar = if profile == Profile::Chat {
+                            direction.fields(f, &["type", "grammar"])?;
+                            let grammar = object(
+                                f.get("grammar")
+                                    .ok_or(CodecError::Invalid("custom grammar"))?,
+                            )?;
+                            direction.fields(grammar, &["syntax", "definition"])?;
+                            grammar
+                        } else {
+                            direction.fields(f, &["type", "syntax", "definition"])?;
+                            f
+                        };
                         CustomFormat::Grammar {
-                            syntax: match string(f, "syntax")? {
+                            syntax: match string(grammar, "syntax")? {
                                 "lark" => GrammarSyntax::Lark,
                                 "regex" => GrammarSyntax::Regex,
                                 _ => return Err(CodecError::Invalid("grammar syntax")),
                             },
-                            definition: text(string(f, "definition")?, "grammar", MAX_TEXT_BYTES)?,
+                            definition: text(
+                                string(grammar, "definition")?,
+                                "grammar",
+                                MAX_TEXT_BYTES,
+                            )?,
                         }
                     }
                     _ => return Err(CodecError::Invalid("custom format")),
@@ -245,17 +273,18 @@ fn reference(
 ) -> Result<ToolReference, CodecError> {
     let o = object(v)?;
     if profile == Profile::Chat {
-        direction.fields(o, &["type", "function"])?;
-        if string(o, "type")? != "function" {
-            return Err(CodecError::Unsupported("tool reference".into()));
-        }
-        let f = object(
-            o.get("function")
-                .ok_or(CodecError::Invalid("function reference"))?,
-        )?;
+        let (kind, field) = match string(o, "type")? {
+            "function" => (ToolKind::Function, "function"),
+            "custom" => (ToolKind::Custom, "custom"),
+            _ => return Err(CodecError::Unsupported("tool reference".into())),
+        };
+        reject_chat_orchestration(o)?;
+        direction.fields(o, &["type", field])?;
+        let f = object(o.get(field).ok_or(CodecError::Invalid("tool reference"))?)?;
+        reject_chat_orchestration(f)?;
         direction.fields(f, &["name"])?;
         return Ok(ToolReference {
-            kind: ToolKind::Function,
+            kind,
             name: text(string(f, "name")?, "tool reference", 128)?,
             namespace: None,
         });
@@ -402,7 +431,7 @@ pub(super) fn write_tool(t: &ToolDefinition, profile: Profile) -> Result<Value, 
             }
         }
         ToolDefinition::Custom(t) => {
-            let mut v = json!({"type":"custom","name":t.name.as_str()});
+            let mut v = json!({"name":t.name.as_str()});
             if let Some(d) = &t.description {
                 v["description"] = json!(d);
             }
@@ -410,12 +439,24 @@ pub(super) fn write_tool(t: &ToolDefinition, profile: Profile) -> Result<Value, 
                 v["format"] = match format {
                     CustomFormat::Text => json!({"type":"text"}),
                     CustomFormat::Grammar { syntax, definition } => {
-                        json!({"type":"grammar","syntax":match syntax{GrammarSyntax::Lark=>"lark",GrammarSyntax::Regex=>"regex"},"definition":definition.as_str()})
+                        let grammar = json!({"syntax":match syntax{GrammarSyntax::Lark=>"lark",GrammarSyntax::Regex=>"regex"},"definition":definition.as_str()});
+                        if profile == Profile::Chat {
+                            json!({"type":"grammar","grammar":grammar})
+                        } else {
+                            let mut grammar = grammar;
+                            grammar["type"] = json!("grammar");
+                            grammar
+                        }
                     }
                 };
             }
-            write_dispatch(&t.dispatch, v.as_object_mut().expect("object"));
-            v
+            if profile == Profile::Chat {
+                json!({"type":"custom","custom":v})
+            } else {
+                write_dispatch(&t.dispatch, v.as_object_mut().expect("object"));
+                v["type"] = json!("custom");
+                v
+            }
         }
     })
 }
@@ -428,6 +469,9 @@ pub(super) fn write_choice(c: &ToolChoice, profile: Profile) -> Result<Value, Co
             json!({"type":"function","function":{"name":n.as_str()}})
         }
         ToolChoice::Specific(n) => json!({"type":"function","name":n.as_str()}),
+        ToolChoice::Custom(n) if profile == Profile::Chat => {
+            json!({"type":"custom","custom":{"name":n.as_str()}})
+        }
         ToolChoice::Custom(n) => json!({"type":"custom","name":n.as_str()}),
         ToolChoice::Qualified(_) => {
             return Err(CodecError::Unsupported("qualified tool choice".into()));
@@ -440,7 +484,14 @@ pub(super) fn write_choice(c: &ToolChoice, profile: Profile) -> Result<Value, Co
                 .iter()
                 .map(|r| {
                     if profile == Profile::Chat {
-                        json!({"type":"function","function":{"name":r.name.as_str()}})
+                        match r.kind {
+                            ToolKind::Function => {
+                                json!({"type":"function","function":{"name":r.name.as_str()}})
+                            }
+                            ToolKind::Custom => {
+                                json!({"type":"custom","custom":{"name":r.name.as_str()}})
+                            }
+                        }
                     } else {
                         write_reference(r)
                     }

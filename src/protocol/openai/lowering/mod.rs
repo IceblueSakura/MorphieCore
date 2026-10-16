@@ -183,15 +183,11 @@ pub fn lower_request<'a>(
             if profile == Profile::Chat && t.output_schema.is_some() {
                 return Err(RepresentationError::Tools);
             }
-        } else if profile == Profile::Chat {
-            return Err(RepresentationError::Tools);
         }
     }
     if profile == Profile::Chat
-        && (matches!(
-            r.tool_choice(),
-            Some(ToolChoice::Custom(_) | ToolChoice::Qualified(_))
-        ) || matches!(r.tool_choice(), Some(ToolChoice::Allowed { tools, .. }) if tools.iter().any(|r| r.kind != ToolKind::Function || r.namespace.is_some())))
+        && (matches!(r.tool_choice(), Some(ToolChoice::Qualified(_)))
+            || matches!(r.tool_choice(), Some(ToolChoice::Allowed { tools, .. }) if tools.iter().any(|r| r.namespace.is_some())))
     {
         return Err(RepresentationError::Tools);
     }
@@ -511,8 +507,10 @@ fn chat_reasoning_shape(items: &[(ItemId, Item)]) -> bool {
                         if !text.as_str().is_empty()
                 ) && matches!(items.get(index + 1),
                     Some((_, Item::Message(message))) if message.role == MessageRole::Assistant)
-                    || matches!(items.get(index + 1), Some((_, Item::ToolCall(_))))
-                        && !reasoning.parts.is_empty()
+                    || matches!(
+                        items.get(index + 1),
+                        Some((_, Item::ToolCall(_) | Item::CustomCall(_)))
+                    ) && !reasoning.parts.is_empty()
                         && reasoning.replay.is_none()
             }
             _ => true,
@@ -600,7 +598,7 @@ fn represent_reasoning(
                     && match items.get(n+1) {
                         Some((_,Item::Reasoning(_))) => true,
                         Some((_,Item::Message(m))) => m.role==MessageRole::Assistant,
-                        Some((_,Item::ToolCall(_))) => true,
+                        Some((_,Item::ToolCall(_) | Item::CustomCall(_))) => true,
                         _ => false,
                     },
                 _ => true,
@@ -674,9 +672,6 @@ fn text_items(
                     return Err(RepresentationError::Tools);
                 }
                 Item::CustomResult(r) if !r.context.is_direct() => {
-                    return Err(RepresentationError::Tools);
-                }
-                Item::CustomCall(_) | Item::CustomResult(_) => {
                     return Err(RepresentationError::Tools);
                 }
                 Item::Program(_) | Item::ProgramOutput(_) => {
@@ -854,7 +849,7 @@ fn text_items(
     }
     Ok(())
 }
-/// Explicit normalization: a contiguous run of independent function calls is one Chat call message.
+/// Explicit normalization: a contiguous run of independent calls is one Chat call message.
 /// Independent text messages are never merged into that run by positional guessing.
 fn chat_message_count(
     items: &[(ItemId, Item)],
@@ -864,13 +859,13 @@ fn chat_message_count(
     let mut run = false;
     for (id, item) in items {
         match item {
-            Item::ToolCall(_) if !owners.contains_key(id) => {
+            Item::ToolCall(_) | Item::CustomCall(_) if !owners.contains_key(id) => {
                 if !run {
                     count += 1;
                 }
                 run = true;
             }
-            Item::ToolCall(_) => run = false,
+            Item::ToolCall(_) | Item::CustomCall(_) => run = false,
             // Readable reasoning rides its carrier message and is validated as
             // part of that message's representable shape.
             Item::Reasoning(_) => {}

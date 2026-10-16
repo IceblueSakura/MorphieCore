@@ -472,7 +472,8 @@ pub(super) fn check_message_carriers(
             .ok_or(CodecError::Invalid("message member"))?;
         if last <= first
             || items[first + 1..=last].iter().any(|(id, item)| {
-                !matches!(item, Item::ToolCall(_)) || owners.get(id) != Some(parent)
+                !matches!(item, Item::ToolCall(_) | Item::CustomCall(_))
+                    || owners.get(id) != Some(parent)
             })
         {
             return Err(CodecError::Unsupported(

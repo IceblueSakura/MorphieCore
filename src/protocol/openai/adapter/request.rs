@@ -8,6 +8,7 @@ use crate::{
     },
     semantic::{
         context::{DeliveryIntent, ExecutionHints, StreamOptions},
+        task::generation::{ToolChoice, ToolDefinition, ToolKind},
         value::Presence,
     },
 };
@@ -376,6 +377,26 @@ impl Adapter {
             return Err(CodecError::Unsupported("streaming audio requires pcm16".into()).into());
         }
         let contract = self.contract(contract);
+        let custom_output = match request.task.semantic.tool_choice() {
+            Some(ToolChoice::None | ToolChoice::Specific(_)) => false,
+            Some(ToolChoice::Allowed { tools, .. }) => {
+                tools.iter().any(|tool| tool.kind == ToolKind::Custom)
+            }
+            _ => true,
+        };
+        if self.protocol == Profile::Chat
+            && (request.delivery.streaming() || contract.adaptation.rules.responses_forced_stream)
+            && custom_output
+            && request
+                .task
+                .semantic
+                .tools()
+                .iter()
+                .flat_map(ToolDefinition::leaves)
+                .any(|tool| matches!(tool, ToolDefinition::Custom(_)))
+        {
+            return Err(CodecError::Unsupported("Chat custom tool streaming".into()).into());
+        }
         let mut context = request.context.clone();
         contract.cache.project_request(
             &mut context,

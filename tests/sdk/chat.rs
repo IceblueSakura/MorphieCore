@@ -23,8 +23,8 @@ use morphiecore::{
     },
     semantic::{
         task::generation::{
-            ContentPart, Item, MAX_TEXT_BYTES, OutputConstraint, StreamEvent, ToolChoice, ToolKind,
-            ToolOutput,
+            ContentPart, CustomFormat, GrammarSyntax, Item, MAX_TEXT_BYTES, OutputConstraint,
+            StreamEvent, ToolChoice, ToolDefinition, ToolKind, ToolOutput,
         },
         value::Text,
     },
@@ -74,6 +74,50 @@ pub(super) async fn handle(
         seen.0 += 1;
         seen.0
     };
+    if turn > 3 {
+        let grammar = request.task.semantic.tools().iter().any(|tool| matches!(tool,
+            ToolDefinition::Custom(custom) if custom.name.as_str()=="sql"
+                && matches!(&custom.format,Some(CustomFormat::Grammar{syntax:GrammarSyntax::Regex,definition})
+                    if definition.as_str()=="SELECT [0-9]+")));
+        if turn > 5
+            || request.context.streaming()
+            || !grammar
+            || turn == 4
+                && !matches!(request.task.semantic.tool_choice(),Some(ToolChoice::Custom(name)) if name.as_str()=="sql")
+            || turn == 5
+                && !request.task.semantic.items().iter().any(|(_, item)| {
+                    matches!(item,
+                Item::CustomResult(result) if result.required_call_id().ok()==Some("call-custom")
+                    && matches!(&result.output,ToolOutput::Parts(parts) if parts.len()==2
+                        && parts[0].1.as_text()==Some("1") && parts[1].1.as_text()==Some("")))
+                })
+        {
+            return failure(StatusCode::BAD_REQUEST, "Chat custom history", &state);
+        }
+        let response = serde_json::json!({
+            "id":"chat-custom","object":"chat.completion","created":1,"model":"fixture-model",
+            "choices":[{"index":0,"message":if turn==4 {
+                serde_json::json!({"role":"assistant","content":null,"tool_calls":[
+                    {"id":"call-custom","type":"custom","custom":{"name":"sql","input":"SELECT 1"}}]})
+            } else {serde_json::json!({"role":"assistant","content":"custom done"})},
+                "finish_reason":if turn==4 {"tool_calls"} else {"stop"}}],
+            "usage":usage()
+        });
+        let decoded = envelope::decode_response_bytes(response.to_string().as_bytes()).unwrap();
+        let target = lower_response(
+            &decoded.semantic,
+            &decoded.fidelity,
+            &decoded.metadata,
+            Profile::Chat,
+            Contract::full(),
+        )
+        .unwrap();
+        let wire = envelope::encode_response(&target).unwrap();
+        return Response::builder()
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(wire.to_string()))
+            .unwrap();
+    }
     if turn > 3
         || turn == 2
             && !request

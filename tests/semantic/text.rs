@@ -213,7 +213,7 @@ mod text_profile {
         let Item::CustomCall(c) = &mut items[0].1 else {
             panic!()
         };
-        c.input = "not JSON, not executed".into();
+        c.input = "  not JSON,\nnot executed  ".into();
         c.call_id = text("edited-custom-call");
         let Item::CustomResult(r) = &mut items[1].1 else {
             panic!()
@@ -223,10 +223,179 @@ mod text_profile {
         r.output = ToolOutput::Text("changed".into());
         d.semantic = d.semantic.with_items(items).unwrap();
         let out = request_wire(&d);
-        assert_eq!(out["input"][0]["input"], "not JSON, not executed");
+        assert_eq!(out["input"][0]["input"], "  not JSON,\nnot executed  ");
         assert!(out["input"][0].get("arguments").is_none());
         assert_eq!(out["input"][1]["output"], "changed");
-        assert!(lower_request(&d.semantic, &d.fidelity, Profile::Chat, contract()).is_err());
+        let chat = lower_request(&d.semantic, &d.fidelity, Profile::Chat, contract()).unwrap();
+        let encoded = morphiecore::protocol::openai::chat::encode_generation(&chat).unwrap();
+        assert_eq!(
+            encoded["messages"][0]["tool_calls"],
+            json!([
+                {"id":"edited-custom-call","type":"custom","custom":{"name":"sql","input":"  not JSON,\nnot executed  "}}
+            ])
+        );
+        assert_eq!(
+            encoded["messages"][1],
+            json!({"role":"tool","tool_call_id":"edited-custom-call","content":"changed"})
+        );
+        let chat_wire = json!({
+            "messages":[
+                {"role":"assistant","content":null,"tool_calls":[
+                    {"id":"f","type":"function","function":{"name":"sql","arguments":"{}"}},
+                    {"id":"c","type":"custom","custom":{"name":"sql","input":"SELECT 1"}}]},
+                {"role":"tool","tool_call_id":"f","content":"function result"},
+                {"role":"tool","tool_call_id":"c","content":[{"type":"text","text":"1"},{"type":"text","text":""}]}],
+            "tools":[{"type":"function","function":{"name":"sql","strict":false}},
+                {"type":"custom","custom":{"name":"sql","format":{"type":"grammar",
+                    "grammar":{"syntax":"regex","definition":"SELECT [0-9]+"}}}}],
+            "tool_choice":{"type":"custom","custom":{"name":"sql"}}
+        });
+        let decoded = morphiecore::protocol::openai::chat::decode_generation(&chat_wire).unwrap();
+        assert!(
+            matches!(&decoded.semantic.items()[1].1,Item::ToolCall(call) if call.call_id.as_str()=="f")
+        );
+        assert!(
+            matches!(&decoded.semantic.items()[2].1,Item::CustomCall(call) if call.call_id.as_str()=="c" && call.input=="SELECT 1")
+        );
+        assert!(matches!(
+            &decoded.semantic.items()[3].1,
+            Item::ToolResult(_)
+        ));
+        assert!(
+            matches!(&decoded.semantic.items()[4].1,Item::CustomResult(result)
+            if matches!(&result.output,ToolOutput::Parts(parts) if parts.len()==2 && parts[1].1.as_text()==Some("")))
+        );
+        assert!(
+            matches!(&decoded.semantic.tools()[1],ToolDefinition::Custom(tool)
+            if matches!(&tool.format,Some(CustomFormat::Grammar{syntax:GrammarSyntax::Regex,definition}) if definition.as_str()=="SELECT [0-9]+"))
+        );
+        let target = lower_request(
+            &decoded.semantic,
+            &decoded.fidelity,
+            Profile::Chat,
+            contract(),
+        )
+        .unwrap();
+        assert_eq!(
+            morphiecore::protocol::openai::chat::encode_generation(&target).unwrap(),
+            chat_wire
+        );
+        let mut denied = contract();
+        denied.semantics.custom_tools = false;
+        assert!(
+            lower_request(&decoded.semantic, &decoded.fidelity, Profile::Chat, denied).is_err()
+        );
+        let mut malformed = chat_wire.clone();
+        malformed["messages"][0]["tool_calls"][1]["function"] =
+            json!({"name":"sql","arguments":"{}"});
+        assert!(morphiecore::protocol::openai::chat::decode_generation(&malformed).is_err());
+        let mut unsupported = chat_wire.clone();
+        unsupported["tools"][1]["custom"]["defer_loading"] = json!(true);
+        assert!(morphiecore::protocol::openai::chat::decode_generation(&unsupported).is_err());
+        let mut allowed = chat_wire.clone();
+        allowed["tool_choice"] = json!({"type":"allowed_tools","allowed_tools":{"mode":"required",
+            "tools":[{"type":"custom","custom":{"name":"sql"}}]}});
+        let decoded = morphiecore::protocol::openai::chat::decode_generation(&allowed).unwrap();
+        let target = lower_request(
+            &decoded.semantic,
+            &decoded.fidelity,
+            Profile::Chat,
+            contract(),
+        )
+        .unwrap();
+        assert_eq!(
+            morphiecore::protocol::openai::chat::encode_generation(&target).unwrap()["tool_choice"],
+            allowed["tool_choice"]
+        );
+        let response_wire = json!({"id":"r","object":"chat.completion","created":1,"model":"m",
+            "choices":[{"index":0,"message":{"role":"assistant","content":null,
+                "tool_calls":[{"id":"c","type":"custom","custom":{"name":"sql","input":"SELECT 1"}}]},
+                "finish_reason":"tool_calls"}]});
+        let response =
+            morphiecore::protocol::openai::chat::decode_response(&response_wire).unwrap();
+        assert!(
+            matches!(&response.semantic.items()[1].1,Item::CustomCall(call) if call.input=="SELECT 1")
+        );
+        let target = lower_response(
+            &response.semantic,
+            &response.fidelity,
+            &response.metadata,
+            Profile::Chat,
+            contract(),
+        )
+        .unwrap();
+        assert_eq!(
+            morphiecore::protocol::openai::chat::encode_response(&target).unwrap()["choices"][0]["message"],
+            response_wire["choices"][0]["message"]
+        );
+        let mut stream = morphiecore::protocol::openai::events::EventEncoder::new(
+            Profile::Chat,
+            response.metadata,
+        )
+        .unwrap();
+        stream
+            .encode(&StreamEvent::Started, &Default::default())
+            .unwrap();
+        assert!(
+            stream
+                .encode(
+                    &crate::events_support::start(
+                        1,
+                        ItemKind::CustomCall {
+                            call_id: text("c"),
+                            name: text("sql"),
+                            context: Default::default()
+                        }
+                    ),
+                    &Default::default()
+                )
+                .is_err()
+        );
+        let adapter = morphiecore::protocol::openai::Adapter::new(
+            Profile::Chat,
+            morphiecore::protocol::openai::Dialect::Standard,
+            None,
+        );
+        let mut streaming = chat_wire.clone();
+        streaming["model"] = json!("m");
+        streaming["stream"] = json!(true);
+        let request = adapter
+            .decode_request(streaming.to_string().as_bytes())
+            .unwrap();
+        assert!(
+            adapter
+                .encode_request_with_rules(&request, "m", &contract())
+                .is_err()
+        );
+        let mut forced = adapter.clone();
+        forced.adaptation.rules.responses_forced_stream = true;
+        let mut json_request = request.clone();
+        json_request.delivery.stream = Presence::Value(false);
+        assert!(
+            forced
+                .encode_request_with_rules(&json_request, "m", &contract())
+                .unwrap_err()
+                .to_string()
+                .contains("Chat custom tool streaming")
+        );
+        streaming["tool_choice"] = json!("none");
+        let disabled = adapter
+            .decode_request(streaming.to_string().as_bytes())
+            .unwrap();
+        assert!(
+            adapter
+                .encode_request_with_rules(&disabled, "m", &contract())
+                .is_ok()
+        );
+        streaming["tools"] = json!([]);
+        let history = adapter
+            .decode_request(streaming.to_string().as_bytes())
+            .unwrap();
+        assert!(
+            adapter
+                .encode_request_with_rules(&history, "m", &contract())
+                .is_ok()
+        );
         let mut mismatch = out;
         mismatch["input"][1]["type"] = json!("function_call_output");
         assert!(responses::decode_generation(&mismatch).is_err());

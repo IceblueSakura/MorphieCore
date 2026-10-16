@@ -309,17 +309,28 @@ pub(super) fn decode_message(
                 }
                 _ => return Err(CodecError::Invalid("tool content")),
             };
+            let call_id = text(string(m, "tool_call_id")?, "call_id", 256)?;
+            // The result shell has no kind; its preceding typed call owns that fact.
+            let custom = b.items.iter().any(|(_, item)| {
+                matches!(item,
+                Item::CustomCall(call) if call.call_id == call_id)
+            });
+            let result = ToolResult {
+                is_error: None,
+                execution: None,
+                call_id: Some(call_id),
+                name: None,
+                output,
+                status: None,
+                context: CallContext::default(),
+            };
             b.items.push((
                 id,
-                Item::ToolResult(ToolResult {
-                    is_error: None,
-                    execution: None,
-                    call_id: Some(text(string(m, "tool_call_id")?, "call_id", 256)?),
-                    name: None,
-                    output,
-                    status: None,
-                    context: CallContext::default(),
-                }),
+                if custom {
+                    Item::CustomResult(result)
+                } else {
+                    Item::ToolResult(result)
+                },
             ));
         }
         "system" | "developer" => {
@@ -494,10 +505,33 @@ pub(super) fn decode_message(
                         Some(v) if v.as_u64() == Some(position as u64) => {}
                         _ => return Err(CodecError::Invalid("tool index")),
                     }
-                    let call = tool_call(call, Profile::Chat, None, replay, direction)?;
+                    let item = if string(call, "type")? == "custom" {
+                        reject_chat_orchestration(call)?;
+                        direction.fields(call, &["id", "type", "custom", "index"])?;
+                        if call.contains_key("function") {
+                            return Err(CodecError::Invalid("mixed tool call"));
+                        }
+                        let custom = object(
+                            call.get("custom")
+                                .ok_or(CodecError::Invalid("custom call"))?,
+                        )?;
+                        reject_chat_orchestration(custom)?;
+                        direction.fields(custom, &["name", "input"])?;
+                        Item::CustomCall(CustomCall {
+                            call_id: text(string(call, "id")?, "call id", 256)?,
+                            name: text(string(custom, "name")?, "custom name", 128)?,
+                            input: raw_string(custom, "input")?,
+                            context: Default::default(),
+                        })
+                    } else {
+                        if call.contains_key("custom") {
+                            return Err(CodecError::Invalid("mixed tool call"));
+                        }
+                        Item::ToolCall(tool_call(call, Profile::Chat, None, replay, direction)?)
+                    };
                     let cid = b.id()?;
                     b.message_owners.push((cid, id));
-                    b.items.push((cid, Item::ToolCall(call)));
+                    b.items.push((cid, item));
                 }
             }
         }
@@ -595,6 +629,9 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
 }
 pub(super) fn call_wire(c: &ToolCall) -> Value {
     json!({"id":c.call_id.as_str(),"type":"function","function":{"name":c.name.as_str(),"arguments":c.arguments.as_raw().expect("checked raw arguments")}})
+}
+fn custom_call_wire(c: &CustomCall) -> Value {
+    json!({"id":c.call_id.as_str(),"type":"custom","custom":{"name":c.name.as_str(),"input":c.input}})
 }
 pub(super) fn encode_items_with(
     items: &[(ItemId, Item)],
@@ -708,7 +745,7 @@ pub(super) fn encode_items_with(
                 }
                 messages.push(message);
             }
-            Item::ToolCall(c) => {
+            Item::ToolCall(_) | Item::CustomCall(_) => {
                 if !owners.contains_key(id) && !standalone_calls {
                     let mut message = json!({"role":"assistant","content":null});
                     crate::protocol::openai::chat::reasoning::write_carrier(
@@ -727,19 +764,21 @@ pub(super) fn encode_items_with(
                     .expect("message")
                     .entry("tool_calls")
                     .or_insert_with(|| json!([]));
-                calls.as_array_mut().expect("calls").push(call_wire(c));
+                calls.as_array_mut().expect("calls").push(match item {
+                    Item::ToolCall(call) => call_wire(call),
+                    Item::CustomCall(call) => custom_call_wire(call),
+                    _ => unreachable!("call"),
+                });
                 standalone_calls = !owners.contains_key(id);
             }
-            Item::CustomCall(_)
-            | Item::ProviderTool(_)
-            | Item::CustomResult(_)
+            Item::ProviderTool(_)
             | Item::ConfigurationUpdate(_)
             | Item::Compaction(_)
             | Item::Program(_)
             | Item::ProgramOutput(_) => {
                 unreachable!("lowering rejects unsupported Chat items")
             }
-            Item::ToolResult(r) => {
+            Item::ToolResult(r) | Item::CustomResult(r) => {
                 standalone_calls = false;
                 messages.push(
                     json!({"role":"tool","tool_call_id":r.required_call_id().expect("validated request history"),"content":match &r.output {

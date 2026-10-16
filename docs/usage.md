@@ -220,6 +220,10 @@ Use `"stream": true` for SSE. Send the full history each turn, or use [stored Re
 
 Return reasoning carriers unchanged in later history. Chat clients must preserve `reasoning_details`, not just readable text. See [Reasoning replay](architecture.md#reasoning-replay).
 
+For custom-capable targets, Chat JSON uses `{"type":"custom","custom":{"name":"sql","format":{"type":"text"}}}` definitions and `{"type":"custom","custom":{"name":"sql"}}` choices. Calls retain raw `custom.input`; return their ID through an ordinary `role:"tool"` message. Preserve the preceding typed call in history so the result cannot be mistaken for a function result. Grammar definitions use the nested carrier described in [protocol sources](refs/2026-10-16-chat-custom-tools.md).
+
+The pinned Chat SSE contract has no custom-call delta carrier. Chat upstream streaming that enables custom selection and downstream custom-call deltas reject explicitly; use an admitted Responses streaming path instead. Custom history and declarations remain usable for a later stream when tool choice excludes custom output. Codec support does not activate models or execute tools.
+
 Chat accepts the deprecated `max_tokens` as the output cap, but not together with `max_completion_tokens`. Chat `verbosity` reaches admitted Responses targets; Chat targets reject it. Active Chat `stop`, `functions`, `function_call` and `web_search_options`, and Messages `stop_sequences`, `container`, `mcp_servers`, `context_management` and `compaction` are unsupported and rejected. Other unrecognized fields are ignored by name. Messages `thinking.display` is preserved. Messages responses with citations or missing/ambiguous final usage fail projection rather than dropping annotations or inventing zero counts; a failure after streaming starts aborts delivery without a success terminal.
 
 ### Image input
