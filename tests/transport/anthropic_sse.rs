@@ -197,7 +197,6 @@ fn unknown_upstream_fields_and_event_types_are_ignored() {
     // Fields Anthropic reports today but the gateway does not model.
     frames[0]["message"]["usage"]["cache_creation"] =
         json!({"ephemeral_5m_input_tokens":4,"ephemeral_1h_input_tokens":0});
-    frames[0]["message"]["usage"]["service_tier"] = json!("standard");
     frames[0]["message"]["container"] = Value::Null;
     frames[2]["content_block"]["extra"] = json!({"nested":true});
     frames[15]["usage"]["server_tool_use"] = json!({"web_search_requests":0});
@@ -222,6 +221,8 @@ fn unknown_upstream_fields_and_event_types_are_ignored() {
 fn known_upstream_fields_stay_strict() {
     for edit in [
         |f: &mut Vec<Value>| f[15]["usage"]["output_tokens"] = json!("9"),
+        |f: &mut Vec<Value>| f[0]["message"]["usage"]["service_tier"] = json!("auto"),
+        |f: &mut Vec<Value>| f[15]["usage"]["service_tier"] = json!("standard"),
         |f: &mut Vec<Value>| f[15]["delta"]["stop_reason"] = json!(7),
         |f: &mut Vec<Value>| f[3]["delta"]["type"] = json!("citations_delta"),
         |f: &mut Vec<Value>| f[2]["content_block"]["type"] = json!("redacted_thinking"),
@@ -243,6 +244,10 @@ fn incremental_native_events_reduce_to_the_independent_static_semantics() {
         let mut native = frames();
         let mut final_wire = expected();
         match variant {
+            0 => {
+                native[0]["message"]["usage"]["service_tier"] = json!("priority");
+                final_wire["usage"]["service_tier"] = json!("priority");
+            }
             1 => {
                 native[3]["delta"]["thinking"] = json!("");
                 final_wire["content"][0]["thinking"] = json!("");
@@ -441,4 +446,47 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
             assert_eq!(attempt.response().unwrap(), &native);
         }
     }
+    let target = ReplayTarget::new("synthetic-provider", "synthetic-model").unwrap();
+    let mut attempt = native_attempt(target);
+    attempt.begin(200, "text/event-stream").unwrap();
+    let mut native = frames();
+    native[0]["message"]["usage"]["service_tier"] = json!("priority");
+    let mut delivery = ResponseDelivery::new(
+        morphiecore::adapter::ClientAdapter::Messages,
+        "public",
+        SseLimits::default(),
+        Default::default(),
+        Obfuscation::Disabled,
+    );
+    let mut output = vec![];
+    let bytes = wire(&native);
+    let mut rest = bytes.as_slice();
+    while !rest.is_empty() {
+        let (used, events) = attempt.push(rest).unwrap();
+        rest = &rest[used..];
+        let produced = delivery.encode_events(&attempt, &events).unwrap();
+        if !produced.is_empty() && delivery.lifecycle().may_retry_or_fallback() {
+            delivery.commit().unwrap();
+        }
+        output.extend(produced.into_iter().flatten());
+    }
+    assert!(!String::from_utf8_lossy(&output).contains("event: message_stop"));
+    attempt.finish().unwrap();
+    output.extend(
+        delivery
+            .finish_stream(&attempt)
+            .unwrap()
+            .into_iter()
+            .flatten(),
+    );
+    delivery.complete(&attempt).unwrap();
+    let mut decoded =
+        MessageSseDecoder::new(200, "text/event-stream", SseLimits::default()).unwrap();
+    feed(&mut decoded, &output).unwrap();
+    assert_eq!(
+        decoded.finish().unwrap().usage.service_class,
+        morphiecore::semantic::value::Presence::Value(
+            morphiecore::semantic::context::ServiceClass::PriorityCapacity
+        )
+    );
 }

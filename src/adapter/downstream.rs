@@ -168,12 +168,15 @@ impl ClientAdapter {
         padding: Obfuscation,
     ) -> Result<ClientEncoder, SseError> {
         let encoder = match self {
-            Self::Messages => Encoder::Messages(
-                crate::protocol::anthropic::client_events::ClientEventEncoder::new(
-                    metadata.required_id()?,
-                    &metadata.model,
-                ),
-            ),
+            Self::Messages => {
+                let mut encoder =
+                    crate::protocol::anthropic::client_events::ClientEventEncoder::new(
+                        metadata.required_id()?,
+                        &metadata.model,
+                    );
+                encoder.update_service_class(metadata.context.service_class)?;
+                Encoder::Messages(encoder)
+            }
             Self::OpenAi { adapter, contract } => match adapter.protocol {
                 Profile::Chat => Encoder::Chat(ChatSseEncoder::new(
                     metadata,
@@ -290,7 +293,7 @@ impl ClientEncoder {
         match &mut self.encoder {
             Encoder::Chat(e) => e.update_metadata(metadata),
             Encoder::Responses(e) => e.update_metadata(metadata),
-            Encoder::Messages(_) => {
+            Encoder::Messages(e) => {
                 metadata.context.validate().map_err(CodecError::from)?;
                 if metadata.context.execution != crate::semantic::context::ExecutionHints::default()
                 {
@@ -299,6 +302,7 @@ impl ClientEncoder {
                     )
                     .into());
                 }
+                e.update_service_class(metadata.context.service_class.clone())?;
                 for mut loss in crate::protocol::anthropic::client::metadata_losses(&metadata) {
                     loss.direction = "event.encode";
                     if !self.losses.contains(&loss) {

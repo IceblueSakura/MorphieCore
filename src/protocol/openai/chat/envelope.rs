@@ -4,7 +4,7 @@ use crate::protocol::openai::{
     chat, common::*,
 };
 use crate::semantic::{
-    context::{CacheHints, ClientIdentityHints, ExecutionHints, ServiceTier, StreamOptions},
+    context::{CacheHints, ClientIdentityHints, ExecutionHints, ServicePolicy, StreamOptions},
     value::Presence,
 };
 use serde_json::{Map, Value, json};
@@ -42,7 +42,7 @@ pub struct RequestContext {
     pub cache: CacheHints,
     pub identity: ClientIdentityHints,
     pub metadata: Presence<std::collections::BTreeMap<String, String>>,
-    pub service_tier: Presence<ServiceTier>,
+    pub service_policy: Presence<ServicePolicy>,
 }
 impl RequestContext {
     pub fn streaming(&self) -> bool {
@@ -59,17 +59,18 @@ impl RequestContext {
             }
             options.validate()?;
         }
+        if let Some(policy) = self.service_policy.value() {
+            super::super::service::policy_wire(*policy, super::super::Profile::Chat)?;
+        }
         validate_context(&ExecutionHints {
             cache: self.cache.clone(),
             identity: self.identity.clone(),
             metadata: self.metadata.clone(),
-            service_tier: self.service_tier.clone(),
             ..Default::default()
         })
     }
 }
-/// The pinned Chat schema is narrower than the shared Responses tier vocabulary.
-/// https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/chat/completion_create_params.py
+/// Chat has no carrier for Responses-only cache operations.
 pub(crate) fn validate_context(context: &ExecutionHints) -> Result<(), CodecError> {
     context.validate()?;
     if context
@@ -83,9 +84,6 @@ pub(crate) fn validate_context(context: &ExecutionHints) -> Result<(), CodecErro
         return Err(CodecError::Unsupported(
             "Responses-only cache options".into(),
         ));
-    }
-    if context.service_tier == Presence::Value(ServiceTier::Ultrafast) {
-        return Err(CodecError::Unsupported("Chat service tier".into()));
     }
     Ok(())
 }
@@ -155,7 +153,7 @@ pub(crate) fn decode_request_with(
         cache: hints.cache,
         identity: hints.identity,
         metadata: hints.metadata,
-        service_tier: hints.service_tier,
+        service_policy: super::super::service::read_policy(o, super::super::Profile::Chat)?,
     };
     context.validate()?;
     let task: Map<_, _> = o
@@ -204,7 +202,7 @@ pub fn encode_request(
     };
     o.extend(identity);
     put_presence(o, "metadata", &context.metadata, |v| json!(v));
-    put_presence(o, "service_tier", &context.service_tier, |v| json!(v));
+    super::super::service::write_policy(o, &context.service_policy, super::super::Profile::Chat)?;
     bounded(&v)?;
     Ok(v)
 }

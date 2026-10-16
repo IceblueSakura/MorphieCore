@@ -696,12 +696,12 @@ impl EventEncoder {
             &self.metadata.context.system_fingerprint,
             |v| json!(v),
         );
-        put_presence(
+        crate::protocol::openai::service::write_class(
             value.as_object_mut().expect("object"),
-            "service_tier",
-            &self.metadata.context.execution.service_tier,
-            |v| json!(v),
-        );
+            &self.metadata.context.service_class,
+            Profile::Chat,
+        )
+        .expect("validated reported service");
         value
     }
     fn call_index(&self, item: ItemId) -> Result<usize, CodecError> {

@@ -503,6 +503,10 @@ fn validate_response(
     {
         return Err(RepresentationError::Terminal);
     }
+    if let Some(class) = metadata.context.service_class.value() {
+        crate::protocol::openai::service::class_wire(*class, profile)
+            .map_err(|_| RepresentationError::Metadata)?;
+    }
     if profile == Profile::Chat
         && crate::protocol::openai::chat::envelope::validate_context(&metadata.context.execution)
             .is_err()

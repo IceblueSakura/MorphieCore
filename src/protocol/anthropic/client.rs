@@ -17,6 +17,7 @@ use std::collections::BTreeSet;
 
 const TOP: &[&str] = &[
     "model",
+    "service_tier",
     "max_tokens",
     "messages",
     "system",
@@ -121,10 +122,7 @@ fn blocks(v: &mut Value, ignored: &mut BTreeSet<String>) -> Result<(), CodecErro
 pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     let mut v = parse(bytes)?;
     let o = object(&v)?;
-    if let Some(key) = ["top_k", "service_tier"]
-        .into_iter()
-        .find(|key| o.contains_key(*key))
-    {
+    if let Some(key) = ["top_k"].into_iter().find(|key| o.contains_key(*key)) {
         return Err(CodecError::Unsupported(key.into()));
     }
     if let Some(key) = UNSUPPORTED.iter().find(|key| {
@@ -360,6 +358,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         fidelity.record_strict_image_size(part)?;
     }
     let mut request = Request::from_generation(DecodedRequest { semantic, fidelity }, &model)?;
+    request.service_policy = super::service::read_policy(&o)?;
     request.source = Some(crate::adapter::ClientProtocol::Messages);
     if let Some(stream) = o.get("stream").filter(|v| !v.is_null()) {
         request.delivery.stream =
@@ -380,6 +379,9 @@ pub(super) fn redacted(sealed: &str) -> bool {
 /// Retained metadata and accounting reflect the actual Messages carrier.
 pub(crate) fn project_snapshot(response: &mut DecodedResponse) -> Result<(), CodecError> {
     response.metadata.context.validate()?;
+    if let Some(class) = response.metadata.context.service_class.value() {
+        super::service::class_wire(*class)?;
+    }
     if response.metadata.context.execution != crate::semantic::context::ExecutionHints::default() {
         return Err(CodecError::Unsupported(
             "Messages reported execution context".into(),
@@ -436,6 +438,7 @@ pub(crate) fn project_usage(source: Usage) -> Result<Usage, CodecError> {
             .ok_or(CodecError::Invalid("Messages projected usage"))
     };
     let selected = super::semantic::usage(&super::Usage {
+        service_class: Presence::Absent,
         input_tokens: Presence::Value(count("input_tokens")?),
         output_tokens: count("output_tokens")?,
         cache_read_input_tokens: wire
@@ -549,10 +552,12 @@ pub fn encode_client_response(
     v.insert("content".into(), json!(content));
     v.insert("stop_reason".into(), json!(stop_reason));
     v.insert("stop_sequence".into(), json!(stop_sequence));
-    v.insert(
-        "usage".into(),
-        super::client_events::usage_json(semantic.usage().as_ref())?,
-    );
+    let mut usage = super::client_events::usage_json(semantic.usage().as_ref())?;
+    super::service::write_class(
+        usage.as_object_mut().expect("usage object"),
+        &response.metadata.context.service_class,
+    )?;
+    v.insert("usage".into(), usage);
     Ok(Value::Object(v))
 }
 pub(super) fn terminal(

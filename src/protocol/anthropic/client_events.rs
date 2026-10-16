@@ -2,6 +2,7 @@
 //! Readable deltas stream; an opaque value (already sealed for the client) arrives
 //! as one `signature_delta` when its thinking block closes. A reasoning block opens on
 //! its first delta or at its end, so a redacted value can still open `redacted_thinking`.
+use crate::semantic::{context::ServiceClass, value::Presence};
 use crate::{
     protocol::CodecError,
     semantic::task::generation::{
@@ -25,6 +26,8 @@ pub struct ClientEventEncoder {
     model: String,
     started: bool,
     finished: bool,
+    rejected: bool,
+    service_class: Presence<ServiceClass>,
     /// Wire index once the block has opened, kind, and a replay value seen at start.
     open: BTreeMap<ItemId, (Option<usize>, Kind, Option<String>)>,
     text_parts: BTreeMap<(ItemId, PartId), usize>,
@@ -93,6 +96,8 @@ impl ClientEventEncoder {
             model: model.into(),
             started: false,
             finished: false,
+            rejected: false,
+            service_class: Presence::Absent,
             open: BTreeMap::new(),
             text_parts: BTreeMap::new(),
             next: 0,
@@ -100,16 +105,47 @@ impl ClientEventEncoder {
             usage: None,
         }
     }
+    /// Messages reports the assigned service in opening usage, not a late delta.
+    pub fn update_service_class(
+        &mut self,
+        class: Presence<ServiceClass>,
+    ) -> Result<(), CodecError> {
+        let result = (|| {
+            if self.rejected || self.finished {
+                return Err(CodecError::Invalid("Messages stream closed"));
+            }
+            if let Some(value) = class.value() {
+                super::service::class_wire(*value)?;
+            }
+            if (self.started || !self.service_class.is_absent()) && self.service_class != class {
+                return Err(CodecError::Unsupported(
+                    "Messages late service report".into(),
+                ));
+            }
+            self.service_class = class;
+            Ok(())
+        })();
+        if result.is_err() {
+            self.rejected = true;
+        }
+        result
+    }
     fn start(&mut self, out: &mut Vec<Bytes>) {
         if !self.started {
             self.started = true;
+            let mut usage = json!({"input_tokens":0,"output_tokens":0});
+            super::service::write_class(
+                usage.as_object_mut().expect("usage object"),
+                &self.service_class,
+            )
+            .expect("validated reported service");
             out.push(frame(&json!({"type":"message_start","message":{
                 "id":self.id,"type":"message","role":"assistant","model":self.model,"content":[],
-                "stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":0,"output_tokens":0}}})));
+                "stop_reason":null,"stop_sequence":null,"usage":usage}})));
         }
     }
     pub fn encode(&mut self, event: &StreamEvent) -> Result<Vec<Bytes>, CodecError> {
-        if self.finished {
+        if self.finished || self.rejected {
             return Err(CodecError::Invalid("Messages stream closed"));
         }
         let mut out = vec![];
@@ -287,7 +323,7 @@ impl ClientEventEncoder {
     }
     /// A terminal was encoded.
     pub fn finish(&self) -> Result<(), CodecError> {
-        if self.finished {
+        if self.finished && !self.rejected {
             Ok(())
         } else {
             Err(CodecError::Invalid("Messages stream unfinished"))

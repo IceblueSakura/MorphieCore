@@ -32,6 +32,7 @@ pub(super) fn metadata(
     } else {
         (
             crate::semantic::context::ResponseContext {
+                service_class: super::service::read_class(o, Profile::Chat)?,
                 execution: crate::semantic::context::ExecutionHints::read(
                     o,
                     Profile::Chat,
@@ -680,12 +681,11 @@ pub fn encode_chat(target: &ResponseRepresentation<'_>) -> Result<Value, CodecEr
         &m.context.system_fingerprint,
         |v| json!(v),
     );
-    put_presence(
+    super::service::write_class(
         value.as_object_mut().expect("object"),
-        "service_tier",
-        &m.context.execution.service_tier,
-        |v| json!(v),
-    );
+        &m.context.service_class,
+        Profile::Chat,
+    )?;
     crate::protocol::openai::responses::envelope::write_response_extras(
         target.fidelity,
         target.profile,

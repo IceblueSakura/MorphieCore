@@ -48,14 +48,17 @@ impl EventEncoder {
             validate_metadata(self.profile, &metadata)?;
             if self.profile == Profile::Chat && self.state()?.started() {
                 let old = &self.metadata.context;
-                if (!old.system_fingerprint.is_absent()
-                    && old.system_fingerprint != metadata.context.system_fingerprint)
-                    || (!old.execution.service_tier.is_absent()
-                        && old.execution.service_tier != metadata.context.execution.service_tier)
+                if !old.system_fingerprint.is_absent()
+                    && old.system_fingerprint != metadata.context.system_fingerprint
                 {
                     // Intake normalization is not permission to rewrite already emitted facts.
                     return Err(CodecError::Invalid("bound Chat metadata changed"));
                 }
+            }
+            if !self.metadata.context.service_class.is_absent()
+                && self.metadata.context.service_class != metadata.context.service_class
+            {
+                return Err(CodecError::Invalid("reported service changed"));
             }
             Ok(())
         })();
@@ -557,6 +560,9 @@ impl EventEncoder {
     }
 }
 fn validate_metadata(profile: Profile, metadata: &ResponseMetadata) -> Result<(), CodecError> {
+    if let Some(class) = metadata.context.service_class.value() {
+        crate::protocol::openai::service::class_wire(*class, profile)?;
+    }
     if let Some(settings) = &metadata.context.settings {
         settings.validate()?;
     }

@@ -26,6 +26,12 @@ mod anthropic_profile {
             .decode_request(&request().to_string().into_bytes())
             .unwrap();
         assert_eq!(p.encode_request(&decoded).unwrap(), request());
+        let mut selected = request();
+        selected["service_tier"] = json!("standard_only");
+        let decoded = p.decode_request(selected.to_string().as_bytes()).unwrap();
+        assert_eq!(p.encode_request(&decoded).unwrap(), selected);
+        selected["service_tier"] = json!("priority");
+        assert!(p.decode_request(selected.to_string().as_bytes()).is_err());
         let decoded = p
             .decode_response(&message().to_string().into_bytes())
             .unwrap();
@@ -44,7 +50,11 @@ mod anthropic_profile {
         unknown["usage"]["cache_creation"] = json!({"ephemeral_5m_input_tokens":0});
         unknown["content"][2]["extra"] = json!(null);
         let decoded = p.decode_response(unknown.to_string().as_bytes()).unwrap();
-        assert_eq!(p.encode_response(&decoded).unwrap(), message());
+        let mut expected = message();
+        expected["usage"]["service_tier"] = json!("standard");
+        assert_eq!(p.encode_response(&decoded).unwrap(), expected);
+        unknown["usage"]["service_tier"] = json!("auto");
+        assert!(p.decode_response(unknown.to_string().as_bytes()).is_err());
         let mut edited = p.decode_request(request().to_string().as_bytes()).unwrap();
         edited.max_tokens = 0;
         assert!(p.encode_request(&edited).is_err());
@@ -357,6 +367,33 @@ mod anthropic_semantics {
             p.encode_generation_response(&observed, &source, &target())
                 .unwrap(),
             serde_json::from_slice::<Value>(response()).unwrap()
+        );
+        use morphiecore::semantic::context::ServiceClass;
+        assert_eq!(observed.metadata.context.service_class, Presence::Absent);
+        let mut reported: Value = serde_json::from_slice(response()).unwrap();
+        reported["usage"]["service_tier"] = json!("priority");
+        let decoded = p
+            .decode_generation_response(
+                reported.to_string().as_bytes(),
+                LocalScope::new(2),
+                &target(),
+            )
+            .unwrap();
+        assert_eq!(
+            decoded.metadata.context.service_class,
+            Presence::Value(ServiceClass::PriorityCapacity)
+        );
+        let mut manual = observed.clone();
+        manual.metadata.context.service_class = Presence::Value(ServiceClass::PriorityCapacity);
+        assert_eq!(
+            p.encode_generation_response(&manual, &source, &target())
+                .unwrap(),
+            reported
+        );
+        manual.metadata.context.service_class = Presence::Value(ServiceClass::PriorityProcessing);
+        assert!(
+            p.encode_generation_response(&manual, &source, &target())
+                .is_err()
         );
     }
     #[test]
@@ -1596,6 +1633,25 @@ mod client_fidelity {
             json!({"input_tokens":8,"output_tokens":3,
                 "cache_read_input_tokens":2,"cache_creation_input_tokens":0})
         );
+        use morphiecore::semantic::context::ServiceClass;
+        response.metadata.context.service_class = Presence::Value(ServiceClass::StandardCapacity);
+        assert_eq!(
+            encode_client_response(&response, "m").unwrap()["usage"]["service_tier"],
+            "standard"
+        );
+        let mut wrong_service = response.clone();
+        wrong_service.metadata.context.service_class =
+            Presence::Value(ServiceClass::StandardProcessing);
+        assert!(encode_client_response(&wrong_service, "m").is_err());
+        let mut late_service = ClientEventEncoder::new("r", "m");
+        late_service.encode(&StreamEvent::Started).unwrap();
+        assert!(
+            late_service
+                .update_service_class(Presence::Value(ServiceClass::StandardCapacity))
+                .is_err()
+        );
+        assert!(late_service.encode(&terminal()).is_err());
+        assert!(late_service.finish().is_err());
         let mut ambiguous = response.clone();
         ambiguous.semantic = ambiguous
             .semantic
@@ -1621,6 +1677,11 @@ mod client_fidelity {
             .snapshot(response.clone())
             .unwrap();
         assert_eq!(wire["usage"]["input_tokens"], 8);
+        assert_eq!(wire["usage"]["service_tier"], "standard");
+        assert_eq!(
+            retained.metadata.context.service_class,
+            response.metadata.context.service_class
+        );
         let retained_usage = retained.semantic.usage().unwrap();
         assert_eq!(retained_usage.input_tokens, Some(8));
         assert_eq!(
@@ -1630,8 +1691,24 @@ mod client_fidelity {
         assert_eq!(retained_usage.total_tokens, None);
         assert_eq!(response, original);
         let mut stream = ClientEventEncoder::new("r", "m");
+        stream
+            .update_service_class(response.metadata.context.service_class.clone())
+            .unwrap();
         stream.encode(&StreamEvent::Usage(usage)).unwrap();
         let frames = stream.encode(&terminal()).unwrap();
+        let values: Vec<serde_json::Value> = frames
+            .iter()
+            .map(|frame| {
+                let data = std::str::from_utf8(frame)
+                    .unwrap()
+                    .lines()
+                    .find_map(|line| line.strip_prefix("data: "))
+                    .unwrap();
+                serde_json::from_str(data).unwrap()
+            })
+            .collect();
+        assert_eq!(values[0]["message"]["usage"]["service_tier"], "standard");
+        assert!(values[1]["usage"].get("service_tier").is_none());
         assert!(frames.iter().any(|frame| {
             std::str::from_utf8(frame)
                 .unwrap()
@@ -1640,6 +1717,7 @@ mod client_fidelity {
         stream.finish().unwrap();
 
         // Inclusive cache categories may overlap; their sum cannot be subtracted.
+        response.metadata.context.service_class = Presence::Absent;
         usage.input_cache_write_tokens = Some(1);
         response.semantic = response.semantic.with_usage(Some(usage)).unwrap();
         assert!(encode_client_response(&response, "m").is_err());
@@ -1909,6 +1987,39 @@ mod client_fidelity {
             anthropic::Profile::AdaptiveTextTools,
             anthropic::Dialect::Standard,
         );
+        use morphiecore::semantic::context::ServicePolicy;
+        let mut selected = body.clone();
+        selected["service_tier"] = json!("standard_only");
+        let selected = decode_client_request(selected.to_string().as_bytes()).unwrap();
+        assert_eq!(
+            selected.service_policy,
+            Presence::Value(ServicePolicy::StandardCapacityOnly)
+        );
+        assert!(selected.check_context(false).is_err());
+        assert_eq!(
+            caps.encode_request(&selected, &target).unwrap().value["service_tier"],
+            "standard_only"
+        );
+        let mut manual = decode_client_request(body.to_string().as_bytes()).unwrap();
+        manual.service_policy = Presence::Value(ServicePolicy::PreferCommittedCapacity);
+        let wire = caps.encode_request(&manual, &target).unwrap().value;
+        assert_eq!(wire["service_tier"], "auto");
+        assert!(
+            anthropic::Profile::AdaptiveTextTools
+                .decode_generation_request(wire.to_string().as_bytes(), LocalScope::ROOT, &target)
+                .is_err()
+        );
+        assert!(
+            Adapter::new(Profile::Responses, Dialect::Standard, None)
+                .encode_request(
+                    &manual,
+                    "synthetic",
+                    &morphiecore::protocol::openai::TargetCaps::full()
+                )
+                .is_err()
+        );
+        manual.service_policy = Presence::Value(ServicePolicy::ProjectConfigured);
+        assert!(caps.encode_request(&manual, &target).is_err());
         assert!(caps.encode_request(&decoded, &target).is_err());
         caps.semantics.strict_tools = true;
         assert!(caps.encode_request(&decoded, &target).is_err());
@@ -1960,7 +2071,7 @@ mod client_fidelity {
         for (key, value) in [
             ("stop_sequences", json!([7])),
             ("top_k", json!(4)),
-            ("service_tier", json!("standard_only")),
+            ("service_tier", json!("priority")),
             ("container", json!("container_1")),
             (
                 "mcp_servers",

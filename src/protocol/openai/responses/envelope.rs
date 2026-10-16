@@ -4,7 +4,7 @@ use crate::protocol::openai::{
     settings,
 };
 use crate::semantic::{
-    context::{CacheHints, ExecutionHints, ResponseContext},
+    context::{CacheHints, ExecutionHints, ResponseContext, ServicePolicy},
     task::generation::*,
     value::Presence,
 };
@@ -53,12 +53,13 @@ impl ExecutionHints {
         let mut fields: Map<_, _> = o
             .iter()
             .filter(|(k, _)| {
-                CACHE_FIELDS.contains(&k.as_str())
-                    || if profile == Profile::Chat {
-                        ["metadata", "service_tier"].contains(&k.as_str())
-                    } else {
-                        EXEC_FIELDS.contains(&k.as_str())
-                    }
+                k.as_str() != "service_tier"
+                    && (CACHE_FIELDS.contains(&k.as_str())
+                        || if profile == Profile::Chat {
+                            k.as_str() == "metadata"
+                        } else {
+                            EXEC_FIELDS.contains(&k.as_str())
+                        })
             })
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
@@ -142,6 +143,7 @@ pub struct RequestContext {
     pub model: String,
     pub delivery: Delivery,
     pub execution: ExecutionHints,
+    pub service_policy: Presence<ServicePolicy>,
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct DecodedResponsesRequest {
@@ -152,6 +154,9 @@ impl RequestContext {
     pub fn validate(&self) -> Result<(), CodecError> {
         text(&self.model, "model", 256)?;
         self.delivery.validate()?;
+        if let Some(policy) = self.service_policy.value() {
+            super::super::service::policy_wire(*policy, Profile::Responses)?;
+        }
         Ok(self.execution.validate()?)
     }
 }
@@ -190,6 +195,7 @@ pub(crate) fn decode_request_in(
             })?,
         },
         execution: ExecutionHints::read(o, Profile::Responses, direction)?,
+        service_policy: super::super::service::read_policy(o, Profile::Responses)?,
     };
     context.validate()?;
     let task: Map<_, _> = o
@@ -217,6 +223,7 @@ pub fn encode_request(
     let mut v = crate::protocol::openai::responses::encode_generation(target)?;
     let o = v.as_object_mut().expect("object");
     context.execution.write(o)?;
+    super::super::service::write_policy(o, &context.service_policy, Profile::Responses)?;
     o.insert("store".into(), json!(false));
     o.insert("model".into(), json!(context.model));
     put_presence(o, "stream", &context.delivery.stream, |s| json!(s));
@@ -273,6 +280,7 @@ impl ResponseContext {
             settings: s,
             instruction_messages,
             execution: ExecutionHints::read(&execution, Profile::Responses, direction)?,
+            service_class: super::super::service::read_class(o, Profile::Responses)?,
             completed_at: read_presence(o, "completed_at", timestamp)?,
             cache_diagnostics: read_presence(o, "prompt_cache_diagnostics", |v| {
                 serde_json::from_value(v.clone())
@@ -296,6 +304,7 @@ impl ResponseContext {
             settings::write(s, o)?;
         }
         self.execution.write(o)?;
+        super::super::service::write_class(o, &self.service_class, Profile::Responses)?;
         if let Some(messages) = &self.instruction_messages {
             o.insert(
                 "instructions".into(),

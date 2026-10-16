@@ -16,6 +16,7 @@ pub mod embeddings;
 mod function_tools;
 pub mod images;
 mod reasoning;
+mod service;
 mod settings;
 pub mod speech;
 pub(crate) mod static_response;

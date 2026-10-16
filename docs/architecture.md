@@ -114,6 +114,16 @@ Keep source validation, acceptance with approved adaptation, and faithful target
 
 Request controls, upstream-reported settings and downstream delivery have different authority. Sent controls do not prove effective settings. A response-only echo can be omitted under a selected delivery rule without discarding generated content; validate source facts and repeated snapshots before that omission. JSON, SSE and retained delivered history must agree on the applied loss.
 
+### Service policies and reports
+
+Service selection uses closed request-policy variants, separate from the reported service class. They belong to request execution intent and response metadata, not generation settings or token accounting. Keep native spellings in codecs; do not infer a report from the requested policy, configured target or model alias.
+
+[Messages service tiers](https://platform.claude.com/docs/en/api/service-tiers) distinguishes standard-capacity-only intent from preferring available committed capacity. [OpenAI Responses](https://developers.openai.com/api/reference/resources/responses/methods/create) resolves `auto` through project settings. These policies, and their reported capacity/processing classes, are not interchangeable merely because native names overlap. Reject conversions without a selected exact carrier.
+
+Messages carries a service report in full-message usage, including stream opening usage. The [pinned delta usage](https://github.com/anthropics/anthropic-sdk-python/blob/b4b7916deaf4e5570cd627b1ae7ee4394a4de39f/src/anthropic/types/message_delta_usage.py) has no such carrier. Reject tier-bearing deltas and downstream reports introduced or changed after opening; never manufacture an opening value or emit a successful terminal after rejection. Other repeated native reports must agree, and absent reports stay absent.
+
+Model names may encode a service policy only through an evidence-backed trusted binding declaration. Keep canonical model identity, semantic policy and wire spelling distinct. Effective deployment identity must agree across preparation, cache and replay. Request-dependent alias selection remains deferred with routing integration.
+
 ### Selected request approximations
 
 D3 selects named omission of Chat `prediction` until a faithful carrier is implemented. Validate its known source shape before omitting the optimization, and record the omission rather than treating it as an unknown field. Predicted content is not a constraint on generated text. Neither output text nor reported accepted/rejected prediction counts may be synthesized from it; loss receipts do not contain the predicted body.
@@ -625,6 +635,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Schemas as data | The IR keeps any bounded JSON-object schema an official API accepts. Each target checks its selected subset without rewriting constraints. Google protocols keep distinct structured-output shells; native strict-tool checks do not restrict client parsing. An unnamed output schema gets the fixed name `response` only on OpenAI targets, which require one |
 | Strict tool constraints stay protected | Messages strict tools reject unsupported constraints and documented case-sensitive string enum/const fidelity gaps. Native request-wide schema complexity includes output-only schemas and combined strict-tool/output schemas. No SDK constraint-removal helper or implicit default-strict conversion is used |
 | Generation controls | Positive top-k, ordered exact stop sequences, independent presence/frequency coefficients and best-effort seeds have separate carriers. Absent, permitted null and empty stop lists mean no control; target limits remain codec-local. Legacy Messages top-k and unbound tokenizer-specific logit bias remain rejected |
+| Service-policy intent and reports | [Closed policies and separate reported classes](#service-policies-and-reports), not speculative field combinations. Native names and model aliases never establish cross-service equivalence or effective reports; dynamic alias selection remains deferred with routing integration |
 | Terminal stop evidence | Completion cause is separate from outcome and turn progress, including when Google reports STOP alongside function calls. Preserve natural, sequence-matched and ambiguous stop reports without deriving them from sent controls or output text. Reject delivery without a carrier for necessary evidence; no new lossy stop policy is selected |
 | Client-owned output caps | The gateway neither caps nor invents `max_tokens`; the upstream enforces its model limit. Only a protocol that requires the field fills a fixed default |
 

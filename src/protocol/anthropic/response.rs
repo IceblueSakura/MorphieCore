@@ -239,6 +239,7 @@ impl StopReason {
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Usage {
+    pub service_class: Presence<crate::semantic::context::ServiceClass>,
     pub input_tokens: Presence<u64>,
     pub output_tokens: u64,
     pub cache_creation_input_tokens: Presence<u64>,
@@ -248,6 +249,7 @@ impl Usage {
     fn read(v: &Value) -> Result<Self, CodecError> {
         let o = object(v)?;
         Ok(Self {
+            service_class: super::service::read_class(o)?,
             input_tokens: presence(o, "input_tokens", uint)?,
             output_tokens: uint(required(o, "output_tokens")?)?,
             cache_creation_input_tokens: presence(o, "cache_creation_input_tokens", uint)?,
@@ -258,6 +260,7 @@ impl Usage {
         let mut v = json!({"output_tokens":self.output_tokens});
         let o = v.as_object_mut().expect("object");
         put(o, "input_tokens", &self.input_tokens, |n| json!(n));
+        super::service::write_class(o, &self.service_class).expect("validated reported service");
         put(
             o,
             "cache_creation_input_tokens",
@@ -311,6 +314,9 @@ impl Message {
     }
     pub fn validate(&self, opening: bool) -> Result<(), CodecError> {
         label(&self.id)?;
+        if let Some(class) = self.usage.service_class.value() {
+            super::service::class_wire(*class)?;
+        }
         label(&self.model)?;
         count(self.content.len())?;
         let matched = self.stop_reason == Presence::Value(StopReason::StopSequence);
@@ -361,7 +367,10 @@ impl Message {
             id: Some(self.id.clone()),
             model: self.model.clone(),
             created: None,
-            context: Default::default(),
+            context: crate::semantic::context::ResponseContext {
+                service_class: self.usage.service_class.clone(),
+                ..Default::default()
+            },
             instruction_fidelity: Default::default(),
         };
         metadata.validate()?;
@@ -527,8 +536,15 @@ impl Event {
             Self::MessageDelta {
                 stop_reason,
                 stop_sequence,
-                ..
+                usage,
             } => {
+                // The pinned MessageDeltaUsage has no service-tier carrier.
+                // https://github.com/anthropics/anthropic-sdk-python/blob/b4b7916deaf4e5570cd627b1ae7ee4394a4de39f/src/anthropic/types/message_delta_usage.py
+                if !usage.service_class.is_absent() {
+                    return Err(CodecError::Unsupported(
+                        "Messages delta service report".into(),
+                    ));
+                }
                 if stop_sequence.value().is_some()
                     != (*stop_reason == Presence::Value(StopReason::StopSequence))
                 {

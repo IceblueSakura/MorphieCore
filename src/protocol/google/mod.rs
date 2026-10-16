@@ -136,6 +136,7 @@ impl TargetCaps {
         self.cache.project(&mut context)?;
         normalize_stateless_defaults(&mut context);
         if context != ExecutionHints::default()
+            || !request.service_policy.is_absent()
             || request.delivery.stream == Presence::Null
             || request.n.value().is_some_and(|n| *n != 1)
         {

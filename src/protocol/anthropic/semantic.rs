@@ -47,6 +47,11 @@ impl Profile {
         target: &ReplayTarget,
     ) -> Result<DecodedRequest, CodecError> {
         let wire = self.decode_request(bytes)?;
+        if !wire.service_policy.is_absent() {
+            return Err(CodecError::Unsupported(
+                "execution policy requires request envelope".into(),
+            ));
+        }
         if wire.model != target.model() {
             return Err(CodecError::Invalid("native model binding"));
         }
@@ -197,12 +202,21 @@ impl Profile {
         fidelity: &FidelityRecords,
         target: &ReplayTarget,
     ) -> Result<NativeProjection, CodecError> {
+        self.encode_request_envelope(request, fidelity, target, &Presence::Absent)
+    }
+    pub(super) fn encode_request_envelope(
+        self,
+        request: &GenerationRequest,
+        fidelity: &FidelityRecords,
+        target: &ReplayTarget,
+        policy: &Presence<crate::semantic::context::ServicePolicy>,
+    ) -> Result<NativeProjection, CodecError> {
         request.validate()?;
         fidelity.require_reasoning_replay(request, &target.origin())?;
         let mut normalized = vec![];
         let mut omitted = vec![];
         let mut rules = Default::default();
-        let wire = project(
+        let mut wire = project(
             request,
             fidelity,
             target,
@@ -210,6 +224,7 @@ impl Profile {
             &mut omitted,
             &mut rules,
         )?;
+        wire.service_policy = policy.clone();
         let value = self.encode_request(&wire)?;
         Ok(NativeProjection {
             value,
@@ -226,9 +241,11 @@ impl Profile {
         target: &ReplayTarget,
     ) -> Result<Value, CodecError> {
         response.metadata.validate()?;
+        let mut context = response.metadata.context.clone();
+        let service_class = std::mem::take(&mut context.service_class);
         if response.metadata.model != target.model()
             || response.metadata.created.is_some()
-            || response.metadata.context != Default::default()
+            || context != Default::default()
         {
             return Err(unsupported());
         }
@@ -315,6 +332,7 @@ impl Profile {
             stop_reason: Presence::Value(stop_reason),
             stop_sequence,
             usage: super::Usage {
+                service_class,
                 input_tokens: usage.input_tokens.map_or(Presence::Absent, Presence::Value),
                 output_tokens: usage.output_tokens.ok_or_else(unsupported)?,
                 cache_creation_input_tokens: usage

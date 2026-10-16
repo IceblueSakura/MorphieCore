@@ -526,6 +526,7 @@ pub(super) fn validate_automatic_cache(
 #[derive(Clone, Eq, PartialEq)]
 pub struct Request {
     pub model: String,
+    pub service_policy: Presence<crate::semantic::context::ServicePolicy>,
     pub max_tokens: u64,
     pub stop_sequences: Vec<String>,
     pub messages: Vec<InputMessage>,
@@ -548,6 +549,7 @@ impl Request {
             v,
             &[
                 "model",
+                "service_tier",
                 "max_tokens",
                 "stop_sequences",
                 "messages",
@@ -562,6 +564,7 @@ impl Request {
         )?;
         let r = Self {
             model: string(required(o, "model")?)?,
+            service_policy: super::service::read_policy(o)?,
             max_tokens: uint(required(o, "max_tokens")?)?,
             stop_sequences: crate::protocol::generation_controls::stops(
                 o.get("stop_sequences"),
@@ -590,6 +593,10 @@ impl Request {
     }
     pub fn validate(&self) -> Result<(), CodecError> {
         label(&self.model)?;
+        nonnull(&self.service_policy)?;
+        if let Some(policy) = self.service_policy.value() {
+            super::service::policy_wire(*policy)?;
+        }
         if self.max_tokens == 0 {
             return Err(CodecError::Invalid("Anthropic max_tokens"));
         }
@@ -805,6 +812,9 @@ impl Request {
             o.insert("stop_sequences".into(), json!(self.stop_sequences));
         }
         put(o, "system", &self.system, TextContent::wire);
+        put(o, "service_tier", &self.service_policy, |policy| {
+            json!(super::service::policy_wire(*policy).expect("validated service policy"))
+        });
         put(o, "tools", &self.tools, |a| {
             json!(a.iter().map(Tool::wire).collect::<Vec<_>>())
         });

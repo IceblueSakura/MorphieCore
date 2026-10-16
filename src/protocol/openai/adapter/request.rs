@@ -114,9 +114,9 @@ impl Adapter {
                         cache: decoded.context.cache,
                         identity: decoded.context.identity,
                         metadata: decoded.context.metadata,
-                        service_tier: decoded.context.service_tier,
                         ..Default::default()
                     },
+                    service_policy: decoded.context.service_policy,
                     delivery: DeliveryIntent {
                         stream: decoded.context.stream,
                         options: decoded.context.stream_options,
@@ -143,6 +143,7 @@ impl Adapter {
                     task: decoded.task,
                     model: decoded.context.model,
                     context: decoded.context.execution,
+                    service_policy: decoded.context.service_policy,
                     delivery: DeliveryIntent {
                         stream: decoded.context.delivery.stream,
                         options,
@@ -477,7 +478,7 @@ impl Adapter {
                         cache: context.cache,
                         identity: context.identity,
                         metadata: context.metadata,
-                        service_tier: context.service_tier,
+                        service_policy: request.service_policy.clone(),
                     },
                 )?
             }
@@ -494,6 +495,7 @@ impl Adapter {
                     &envelope::RequestContext {
                         model: model.into(),
                         execution: context,
+                        service_policy: request.service_policy.clone(),
                         delivery: envelope::Delivery {
                             stream: request.delivery.stream.clone(),
                             options,

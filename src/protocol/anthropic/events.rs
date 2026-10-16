@@ -80,7 +80,10 @@ impl GenerationSseDecoder {
                     id: Some(message.id),
                     model: message.model,
                     created: None,
-                    context: Default::default(),
+                    context: crate::semantic::context::ResponseContext {
+                        service_class: message.usage.service_class,
+                        ..Default::default()
+                    },
                     instruction_fidelity: Default::default(),
                 });
                 out.push(StreamEvent::Started);

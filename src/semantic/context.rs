@@ -51,16 +51,32 @@ impl ConversationContext {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ServiceTier {
-    Auto,
-    Default,
-    Flex,
-    Fast,
-    Priority,
-    Scale,
-    Ultrafast,
+/// Complete execution policies, not interchangeable native tier names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ServicePolicy {
+    ProjectConfigured,
+    StandardProcessing,
+    FlexibleProcessing,
+    FastProcessing,
+    PriorityProcessing,
+    ScaleProcessing,
+    UltraFastProcessing,
+    PreferCommittedCapacity,
+    StandardCapacityOnly,
+}
+/// An upstream-reported service class, never inferred from request intent.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ServiceClass {
+    ConfiguredProcessing,
+    StandardProcessing,
+    FlexibleProcessing,
+    FastProcessing,
+    PriorityProcessing,
+    ScaleProcessing,
+    UltraFastProcessing,
+    StandardCapacity,
+    PriorityCapacity,
+    BatchProcessing,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -163,8 +179,6 @@ pub struct ExecutionHints {
     #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub metadata: Presence<BTreeMap<String, String>>,
     #[serde(default, skip_serializing_if = "Presence::is_absent")]
-    pub service_tier: Presence<ServiceTier>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub max_tool_calls: Presence<u64>,
     #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub store: Presence<bool>,
@@ -246,6 +260,7 @@ pub struct ResponseContext {
         )>,
     >,
     pub execution: ExecutionHints,
+    pub service_class: Presence<ServiceClass>,
     pub completed_at: Presence<serde_json::Number>,
     pub cache_diagnostics: Presence<CacheDiagnostics>,
     pub system_fingerprint: Presence<String>,

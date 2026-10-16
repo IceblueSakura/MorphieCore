@@ -4,7 +4,7 @@ use crate::{
     lowering::generation::RepresentationError,
     protocol::{CodecError, DecodedRequest},
     semantic::{
-        context::{ConversationContext, DeliveryIntent, ExecutionHints},
+        context::{ConversationContext, DeliveryIntent, ExecutionHints, ServicePolicy},
         value::Presence,
     },
 };
@@ -13,6 +13,7 @@ pub struct Request {
     pub task: DecodedRequest,
     pub model: String,
     pub context: ExecutionHints,
+    pub service_policy: Presence<ServicePolicy>,
     pub delivery: DeliveryIntent,
     pub conversation: Option<ConversationContext>,
     pub(crate) inferred_affinity: Option<crate::protocol::cache::InferredAffinity>,
@@ -39,6 +40,7 @@ impl Request {
             task,
             model: model.into(),
             context: Default::default(),
+            service_policy: Presence::Absent,
             delivery: Default::default(),
             conversation: None,
             cache_session: None,
@@ -63,7 +65,7 @@ impl Request {
         self.delivery.validate().map_err(CodecError::from)?;
         if !standard_context
             && (!self.context.metadata.is_absent()
-                || !self.context.service_tier.is_absent()
+                || !self.service_policy.is_absent()
                 || !self.context.max_tool_calls.is_absent())
         {
             return Err(RepresentationError::UnmigratedSemantic.into());

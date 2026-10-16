@@ -45,6 +45,12 @@ impl TargetCaps {
         request.check_grouping()?;
         request.context.validate()?;
         request.delivery.validate()?;
+        if request.service_policy == Presence::Null {
+            return Err(CodecError::Invalid("Messages service policy"));
+        }
+        if let Some(policy) = request.service_policy.value() {
+            super::service::policy_wire(*policy)?;
+        }
         let mut context = request.context.clone();
         self.cache.project(&mut context)?;
         normalize_stateless_defaults(&mut context);
@@ -120,9 +126,12 @@ impl TargetCaps {
         // Include selects the downstream opaque carrier, not a native control.
         settings.reasoning = settings.reasoning.with_encrypted_output(false);
         semantic = semantic.with_settings(settings).map_err(CodecError::from)?;
-        let mut projection =
-            self.profile
-                .encode_generation_request(&semantic, &request.task.fidelity, target)?;
+        let mut projection = self.profile.encode_request_envelope(
+            &semantic,
+            &request.task.fidelity,
+            target,
+            &request.service_policy,
+        )?;
         if !self.reasoning_as_text && projection.rules.contains(&RequestRule::ReasoningAsText) {
             return Err(CodecError::Unsupported("reasoning as text disabled".into()).into());
         }

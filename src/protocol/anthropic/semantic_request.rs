@@ -377,6 +377,7 @@ pub(super) fn project(
     }
     Ok(super::Request {
         model: target.model().into(),
+        service_policy: Presence::Absent,
         // Messages requires max_tokens; other sources may leave the cap to the model.
         max_tokens: s.controls.max_output_tokens.unwrap_or(DEFAULT_MAX_TOKENS),
         stop_sequences: s

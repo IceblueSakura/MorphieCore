@@ -8,6 +8,7 @@ mod response;
 mod semantic;
 mod semantic_intake;
 mod semantic_request;
+mod service;
 mod shape;
 mod sse;
 mod strict_schema;

@@ -417,13 +417,13 @@ impl EventDecoder {
                 }
                 m.created = old.created.clone();
             }
-            if self.profile == Profile::Chat && !old.context.execution.service_tier.is_absent() {
-                if !m.context.execution.service_tier.is_absent()
-                    && old.context.execution.service_tier != m.context.execution.service_tier
+            if !old.context.service_class.is_absent() {
+                if !m.context.service_class.is_absent()
+                    && old.context.service_class != m.context.service_class
                 {
                     return Err(CodecError::Invalid("service tier changed"));
                 }
-                m.context.execution.service_tier = old.context.execution.service_tier.clone();
+                m.context.service_class = old.context.service_class.clone();
             }
             if !old.context.system_fingerprint.is_absent() {
                 if !m.context.system_fingerprint.is_absent()

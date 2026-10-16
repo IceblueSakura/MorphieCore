@@ -540,6 +540,48 @@ mod text_profile {
             responses_round_trip(&wire::request(false))["service_tier"],
             json!("auto")
         );
+        use morphiecore::semantic::context::{ServiceClass, ServicePolicy};
+        use morphiecore::semantic::value::Presence;
+        let mut requested = envelope::decode_request(&wire::request(false)).unwrap();
+        assert_eq!(
+            requested.context.service_policy,
+            Presence::Value(ServicePolicy::ProjectConfigured)
+        );
+        assert_eq!(
+            decoded.metadata.context.service_class,
+            Presence::Value(ServiceClass::StandardProcessing)
+        );
+        requested.context.service_policy = Presence::Value(ServicePolicy::PriorityProcessing);
+        let target = lower_request(
+            &requested.task.semantic,
+            &requested.task.fidelity,
+            Profile::Responses,
+            morphiecore::protocol::openai::TargetCaps::full(),
+        )
+        .unwrap();
+        assert_eq!(
+            envelope::encode_request(&target, &requested.context).unwrap()["service_tier"],
+            "priority"
+        );
+        requested.context.service_policy = Presence::Value(ServicePolicy::PreferCommittedCapacity);
+        assert!(envelope::encode_request(&target, &requested.context).is_err());
+        let mut invalid = wire::response(2);
+        invalid["service_tier"] = json!("standard");
+        assert!(envelope::decode_response(&invalid).is_err());
+        let mut reported = decoded.clone();
+        reported.metadata.context.service_class = Presence::Value(ServiceClass::PriorityProcessing);
+        let target = lower_response(
+            &reported.semantic,
+            &reported.fidelity,
+            &reported.metadata,
+            Profile::Responses,
+            morphiecore::protocol::openai::TargetCaps::full(),
+        )
+        .unwrap();
+        assert_eq!(
+            envelope::encode_response(&target).unwrap()["service_tier"],
+            "priority"
+        );
         // Nothing is invented for absent echoes.
         let mut bare = wire::response(2);
         for key in [
@@ -550,6 +592,7 @@ mod text_profile {
             "safety_identifier",
             "user",
             "metadata",
+            "service_tier",
         ] {
             bare.as_object_mut().unwrap().remove(key);
         }
@@ -562,6 +605,7 @@ mod text_profile {
             "safety_identifier",
             "user",
             "metadata",
+            "service_tier",
         ] {
             assert!(out.get(key).is_none(), "{key}");
         }
@@ -615,7 +659,7 @@ mod text_admission {
                 openai::{ResponseMetadata, events::EventEncoder},
             },
             semantic::{
-                context::ServiceTier,
+                context::ServiceClass,
                 task::generation::*,
                 value::{Presence, Text},
             },
@@ -660,10 +704,10 @@ mod text_admission {
             assert!(encoder.finish().is_err());
         }
         let mut metadata = metadata;
-        metadata.context.execution.service_tier = Presence::Value(ServiceTier::Default);
+        metadata.context.service_class = Presence::Value(ServiceClass::StandardProcessing);
         let mut encoder = EventEncoder::new(Profile::Chat, metadata.clone()).unwrap();
         encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
-        metadata.context.execution.service_tier = Presence::Value(ServiceTier::Priority);
+        metadata.context.service_class = Presence::Value(ServiceClass::PriorityProcessing);
         assert!(encoder.update_metadata(metadata).is_err());
         assert!(encoder.finish().is_err());
         use morphiecore::protocol::{

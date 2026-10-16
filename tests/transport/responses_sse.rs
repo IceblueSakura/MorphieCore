@@ -252,7 +252,7 @@ fn rejected_metadata_update_poisoned_stream_cannot_emit_success() {
         Obfuscation::Disabled,
     )
     .unwrap();
-    let mut changed = metadata;
+    let mut changed = metadata.clone();
     changed.id = Some("different-response".into());
     assert!(encoder.update_metadata(changed).is_err());
     assert!(
@@ -260,6 +260,32 @@ fn rejected_metadata_update_poisoned_stream_cannot_emit_success() {
             .encode(&StreamEvent::Started, &FidelityRecords::default())
             .is_err()
     );
+    assert!(encoder.finish().is_err());
+
+    let mut update = wire::events(2)[0].clone();
+    update["type"] = json!("response.in_progress");
+    update["sequence_number"] = json!(1);
+    decoder.push(&update).unwrap();
+    update["sequence_number"] = json!(2);
+    update["response"]["service_tier"] = json!("priority");
+    assert!(decoder.push(&update).is_err());
+    assert!(decoder.finish().is_err());
+
+    let mut encoder = ResponsesSseEncoder::new(
+        metadata.clone(),
+        TargetCaps::full(),
+        SseLimits::default(),
+        Obfuscation::Disabled,
+    )
+    .unwrap();
+    encoder
+        .encode(&StreamEvent::Started, &FidelityRecords::default())
+        .unwrap();
+    let mut changed = metadata;
+    changed.context.service_class = morphiecore::semantic::value::Presence::Value(
+        morphiecore::semantic::context::ServiceClass::PriorityProcessing,
+    );
+    assert!(encoder.update_metadata(changed).is_err());
     assert!(encoder.finish().is_err());
 }
 
