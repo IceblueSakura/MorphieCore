@@ -36,6 +36,10 @@ pub(super) const FIELDS: &[&str] = &[
     "function_call",
     "web_search_options",
     "prediction",
+    "seed",
+    "frequency_penalty",
+    "presence_penalty",
+    "logit_bias",
 ];
 /// Official fields whose active value changes tools or output; ignoring them would be
 /// silent loss. Other unregistered client fields are ignored by name.
@@ -51,6 +55,17 @@ pub(crate) fn decode_generation_with(
     bounded(v)?;
     let o = object(v)?;
     direction.fields(o, FIELDS)?;
+    if let Some(key) = [
+        "seed",
+        "frequency_penalty",
+        "presence_penalty",
+        "logit_bias",
+    ]
+    .into_iter()
+    .find(|key| o.contains_key(*key))
+    {
+        return Err(CodecError::Unsupported(key.into()));
+    }
     if let Some(key) = UNSUPPORTED.iter().find(|key| {
         o.get(**key)
             .is_some_and(|v| !v.is_null() && v != &json!([]) && v != &json!(""))

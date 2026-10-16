@@ -1340,6 +1340,8 @@ mod client_fidelity {
         assert!(decode_client_request(calls.to_string().as_bytes()).is_err());
         for (key, value) in [
             ("stop_sequences", json!(["END"])),
+            ("top_k", json!(4)),
+            ("service_tier", json!("standard_only")),
             ("container", json!("container_1")),
             (
                 "mcp_servers",
@@ -1412,6 +1414,10 @@ mod client_fidelity {
             ),
             ("function_call", json!("auto")),
             ("web_search_options", json!({})),
+            ("seed", json!(0)),
+            ("frequency_penalty", json!(0.25)),
+            ("presence_penalty", json!(0.25)),
+            ("logit_bias", json!({"1": 1})),
         ] {
             let mut active = body.clone();
             active[key] = value;

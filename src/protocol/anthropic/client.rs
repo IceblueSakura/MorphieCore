@@ -93,6 +93,12 @@ fn blocks(v: &mut Value, ignored: &mut BTreeSet<String>) {
 pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     let mut v = parse(bytes)?;
     let o = object(&v)?;
+    if let Some(key) = ["top_k", "service_tier"]
+        .into_iter()
+        .find(|key| o.contains_key(*key))
+    {
+        return Err(CodecError::Unsupported(key.into()));
+    }
     if let Some(key) = UNSUPPORTED.iter().find(|key| {
         o.get(**key)
             .is_some_and(|v| !v.is_null() && v != &json!([]))
