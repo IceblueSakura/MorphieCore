@@ -5,8 +5,8 @@
 use crate::{
     protocol::CodecError,
     semantic::task::generation::{
-        IncompleteReason, InputTokenRelation, ItemId, ItemKind, OutputTokenRelation, PartKind,
-        StreamEvent, StreamTerminal, Usage,
+        IncompleteReason, InputTokenRelation, ItemId, ItemKind, OutputTokenRelation, PartId,
+        PartKind, StreamEvent, StreamTerminal, Usage,
     },
 };
 use bytes::Bytes;
@@ -27,6 +27,7 @@ pub struct ClientEventEncoder {
     finished: bool,
     /// Wire index once the block has opened, kind, and a replay value seen at start.
     open: BTreeMap<ItemId, (Option<usize>, Kind, Option<String>)>,
+    text_parts: BTreeMap<(ItemId, PartId), usize>,
     next: usize,
     calls: bool,
     usage: Option<Usage>,
@@ -93,6 +94,7 @@ impl ClientEventEncoder {
             started: false,
             finished: false,
             open: BTreeMap::new(),
+            text_parts: BTreeMap::new(),
             next: 0,
             calls: false,
             usage: None,
@@ -116,12 +118,18 @@ impl ClientEventEncoder {
             StreamEvent::ItemStarted { item, kind, replay } => {
                 self.start(&mut out);
                 let (kind, block) = match kind {
-                    ItemKind::Message { phase: None } => {
-                        (Kind::Text, Some(json!({"type":"text","text":""})))
-                    }
+                    ItemKind::Message { phase: None } => (Kind::Text, None),
                     // Opens on its first delta or at its end, once a redacted value is known.
                     ItemKind::Reasoning => (Kind::Thinking, None),
-                    ItemKind::ToolCall { call_id, name, .. } => {
+                    ItemKind::ToolCall {
+                        call_id,
+                        name,
+                        context,
+                        ..
+                    } => {
+                        if !context.is_direct() || context.alias_domain.is_some() {
+                            return Err(CodecError::Unsupported("Messages call context".into()));
+                        }
                         self.calls = true;
                         (
                             Kind::ToolUse,
@@ -136,6 +144,30 @@ impl ClientEventEncoder {
                 let signature = replay.as_ref().map(|r| r.value.as_str().to_owned());
                 self.open.insert(*item, (index, kind, signature));
             }
+            StreamEvent::PartStarted {
+                item,
+                part,
+                kind: PartKind::Text | PartKind::Refusal,
+            } if self
+                .open
+                .get(item)
+                .is_some_and(|(_, kind, _)| *kind == Kind::Text) =>
+            {
+                let index = open_block(&mut self.next, &mut out, json!({"type":"text","text":""}));
+                self.text_parts.insert((*item, *part), index);
+            }
+            StreamEvent::PartFinished { item, part }
+                if self
+                    .open
+                    .get(item)
+                    .is_some_and(|(_, kind, _)| *kind == Kind::Text) =>
+            {
+                let index = self
+                    .text_parts
+                    .remove(&(*item, *part))
+                    .ok_or(CodecError::Invalid("Messages text part"))?;
+                out.push(frame(&json!({"type":"content_block_stop","index":index})));
+            }
             StreamEvent::Delta { logprobs, .. } if !logprobs.is_empty() => {
                 return Err(CodecError::Unsupported("Messages probabilities".into()));
             }
@@ -145,13 +177,26 @@ impl ClientEventEncoder {
             StreamEvent::TextMetadata { logprobs, .. } if !logprobs.is_absent() => {
                 return Err(CodecError::Unsupported("Messages probabilities".into()));
             }
-            StreamEvent::Delta { item, fragment, .. } if !fragment.is_empty() => {
+            StreamEvent::Delta {
+                item,
+                part,
+                fragment,
+                ..
+            } if !fragment.is_empty() => {
                 let (index, kind, _) = self
                     .open
                     .get_mut(item)
                     .ok_or(CodecError::Invalid("Messages block"))?;
-                let index = *index
-                    .get_or_insert_with(|| open_block(&mut self.next, &mut out, thinking_block()));
+                let index = if *kind == Kind::Text {
+                    *self
+                        .text_parts
+                        .get(&(*item, *part))
+                        .ok_or(CodecError::Invalid("Messages text part"))?
+                } else {
+                    *index.get_or_insert_with(|| {
+                        open_block(&mut self.next, &mut out, thinking_block())
+                    })
+                };
                 let delta = match kind {
                     Kind::Text => json!({"type":"text_delta","text":fragment}),
                     Kind::Thinking => json!({"type":"thinking_delta","thinking":fragment}),
@@ -166,6 +211,12 @@ impl ClientEventEncoder {
                     .open
                     .remove(item)
                     .ok_or(CodecError::Invalid("Messages block"))?;
+                if kind == Kind::Text {
+                    if self.text_parts.keys().any(|(owner, _)| owner == item) {
+                        return Err(CodecError::Invalid("Messages open text part"));
+                    }
+                    return Ok(out);
+                }
                 let signature = replay
                     .as_ref()
                     .map(|r| r.value.as_str().to_owned())

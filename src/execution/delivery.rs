@@ -280,6 +280,9 @@ impl ResponseDelivery {
         let result = (|| {
             self.ready()?;
             let terminal = attempt.terminal_event()?;
+            if self.is_messages() {
+                crate::protocol::anthropic::client::validate_tool_calls(attempt.response()?)?;
+            }
             let frames = self.encode(attempt, std::slice::from_ref(terminal))?;
             self.encoder
                 .as_ref()

@@ -389,6 +389,31 @@ pub(crate) fn project_usage(source: Usage) -> Result<Usage, CodecError> {
     Ok(selected)
 }
 
+fn tool_input(call: &ToolCall) -> Result<Value, CodecError> {
+    if !call.context.is_direct() || call.context.alias_domain.is_some() {
+        return Err(CodecError::Unsupported("Messages call context".into()));
+    }
+    let input = match &call.arguments {
+        ToolArguments::Structured(value) => value.clone(),
+        ToolArguments::Raw(raw) => StructuredValue::from_bytes(raw.as_bytes())?,
+        ToolArguments::StructuredPartial(_) => {
+            return Err(CodecError::Unsupported("Messages tool input".into()));
+        }
+    };
+    if !input.value().is_object() {
+        return Err(CodecError::Unsupported("Messages object input".into()));
+    }
+    Ok(input.value().clone())
+}
+/// Reuse the existing EOF-validated materialization; never buffer streamed arguments again.
+pub(crate) fn validate_tool_calls(response: &DecodedResponse) -> Result<(), CodecError> {
+    for (_, item) in response.semantic.items() {
+        if let Item::ToolCall(call) = item {
+            tool_input(call)?;
+        }
+    }
+    Ok(())
+}
 /// Encode a sealed response for a Messages client under the public label.
 pub fn encode_client_response(
     response: &DecodedResponse,
@@ -445,12 +470,7 @@ pub fn encode_client_response(
             }
             Item::ToolCall(call) => {
                 calls = true;
-                let input = match &call.arguments {
-                    ToolArguments::Structured(v) => v.value().clone(),
-                    ToolArguments::Raw(s) => serde_json::from_str(s)
-                        .map_err(|_| CodecError::Invalid("tool arguments"))?,
-                    _ => return Err(CodecError::Unsupported("Messages tool input".into())),
-                };
+                let input = tool_input(call)?;
                 content.push(json!({"type":"tool_use","id":call.call_id.as_str(),
                     "name":call.name.as_str(),"input":input}));
             }

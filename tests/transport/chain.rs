@@ -252,6 +252,35 @@ fn strict_completeness_can_fail_late_without_fabricating_a_terminal() {
     intake.finish().unwrap();
     assert!(output.finish_stream(&intake).is_err());
     assert!(!output.lifecycle().may_retry_or_fallback());
+    let mut intake = Attempt::new(standard(Profile::Chat), 4096, SseLimits::default());
+    let mut output = ResponseDelivery::new(
+        morphiecore::adapter::ClientAdapter::Messages,
+        "public",
+        SseLimits::default(),
+        options(),
+        Obfuscation::Disabled,
+    );
+    intake.begin(200, "text/event-stream").unwrap();
+    let mut chunks = chat_wire::events(1);
+    chunks[1]["choices"][0]["delta"]["tool_calls"][0]["function"]["arguments"] = json!("{\"x\":1,");
+    chunks[2]["choices"][0]["delta"]["tool_calls"][0]["function"]["arguments"] = json!("\"x\":2}");
+    chunks.last_mut().unwrap()["usage"]["prompt_tokens_details"] = json!({"cached_tokens":0});
+    let mut body: Vec<u8> = chunks
+        .iter()
+        .flat_map(|chunk| format!("data: {chunk}\n\n").into_bytes())
+        .collect();
+    body.extend_from_slice(b"data: [DONE]\n\n");
+    let encoded = consume(&mut intake, &mut output, &body).unwrap();
+    assert!(!encoded.is_empty());
+    output.commit().unwrap();
+    intake.finish().unwrap();
+    assert!(output.finish_stream(&intake).is_err());
+    assert!(output.complete(&intake).is_err());
+    assert!(
+        !encoded
+            .windows(b"message_stop".len())
+            .any(|bytes| bytes == b"message_stop")
+    );
 }
 #[test]
 fn static_delivery_wraps_the_issuer_value_and_commit_is_explicit() {

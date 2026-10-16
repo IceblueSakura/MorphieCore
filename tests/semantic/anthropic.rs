@@ -1049,7 +1049,7 @@ mod client_fidelity {
         assert!(encode_client_response(&response, "m").is_err());
     }
     #[test]
-    fn messages_rejects_citations_instead_of_silently_removing_them() {
+    fn messages_preserves_parts_and_rejects_unrepresentable_output() {
         let mut response = response();
         let mut usage = Usage::operation(0, 3, 3);
         usage.input_relation = InputTokenRelation::ExcludesCacheReadAndWrite;
@@ -1104,6 +1104,116 @@ mod client_fidelity {
             encode_client_response(&response, "m").unwrap()["content"],
             json!([{"type":"text","text":"answer"}])
         );
+        let mut split = response.clone();
+        let mut items = split.semantic.items().to_vec();
+        let Item::Message(message) = &mut items[0].1 else {
+            panic!("message")
+        };
+        for (id, value) in [(2, ""), (3, "tail")] {
+            message.parts.push(Part {
+                id: PartId::new(id),
+                content: ContentPart::Text(
+                    morphiecore::semantic::value::Text::allowing_empty(value, "test", 128)
+                        .unwrap()
+                        .into(),
+                ),
+            });
+        }
+        split.semantic = split.semantic.with_items(items).unwrap();
+        let (retained, wire) = morphiecore::adapter::ClientAdapter::Messages
+            .snapshot(split.clone())
+            .unwrap();
+        assert_eq!(retained.semantic.items(), split.semantic.items());
+        assert_eq!(
+            wire["content"],
+            json!([
+            {"type":"text","text":"answer"},{"type":"text","text":""},{"type":"text","text":"tail"}])
+        );
+        let mut stream = ClientEventEncoder::new("r", "m");
+        let mut frames = stream
+            .encode(&crate::events_support::start(
+                1,
+                ItemKind::Message { phase: None },
+            ))
+            .unwrap();
+        for (id, value) in [(1, "answer"), (2, ""), (3, "tail")] {
+            for event in crate::events_support::part(1, id, PartKind::Text, value) {
+                frames.extend(stream.encode(&event).unwrap());
+            }
+        }
+        frames.extend(
+            stream
+                .encode(&crate::events_support::close(1, ItemLifecycle::Completed))
+                .unwrap(),
+        );
+        let blocks: Vec<serde_json::Value> = frames
+            .iter()
+            .filter_map(|frame| {
+                std::str::from_utf8(frame)
+                    .unwrap()
+                    .lines()
+                    .find_map(|line| line.strip_prefix("data: "))
+                    .map(|data| serde_json::from_str(data).unwrap())
+            })
+            .filter(|value: &serde_json::Value| value["type"] != "message_start")
+            .collect();
+        assert_eq!(
+            blocks,
+            vec![
+                json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}),
+                json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"answer"}}),
+                json!({"type":"content_block_stop","index":0}),
+                json!({"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}),
+                json!({"type":"content_block_stop","index":1}),
+                json!({"type":"content_block_start","index":2,"content_block":{"type":"text","text":""}}),
+                json!({"type":"content_block_delta","index":2,"delta":{"type":"text_delta","text":"tail"}}),
+                json!({"type":"content_block_stop","index":2}),
+            ]
+        );
+        let mut call = ToolCall {
+            call_id: text("c"),
+            name: text("lookup"),
+            arguments: ToolArguments::Raw("{}".into()),
+            status: ItemLifecycle::Completed,
+            context: Default::default(),
+        };
+        let tool_response = |call: ToolCall| {
+            let mut value = response.clone();
+            value.semantic = GenerationResponse::from_resources(
+                vec![(ItemId::new(1), Item::ToolCall(call))],
+                Outcome::Completed,
+                ResourceTable::default(),
+            )
+            .unwrap()
+            .with_usage(Some(usage))
+            .unwrap();
+            value
+        };
+        assert_eq!(
+            encode_client_response(&tool_response(call.clone()), "m").unwrap()["content"],
+            json!([{"type":"tool_use","id":"c","name":"lookup","input":{}}])
+        );
+        call.context.namespace = Some(text("private"));
+        assert!(encode_client_response(&tool_response(call.clone()), "m").is_err());
+        let mut stream = ClientEventEncoder::new("r", "m");
+        assert!(
+            stream
+                .encode(&crate::events_support::start(
+                    1,
+                    ItemKind::ToolCall {
+                        format: ArgumentFormat::Raw,
+                        call_id: call.call_id.clone(),
+                        name: call.name.clone(),
+                        context: call.context.clone()
+                    }
+                ))
+                .is_err()
+        );
+        call.context = Default::default();
+        call.arguments = ToolArguments::Raw(r#"{"x":1,"x":2}"#.into());
+        assert!(encode_client_response(&tool_response(call.clone()), "m").is_err());
+        call.arguments = ToolArguments::Raw("1".into());
+        assert!(encode_client_response(&tool_response(call), "m").is_err());
         let resource = ResourceId::scoped(LocalScope::ROOT, 1);
         let resources = ResourceTable::default()
             .insert(
