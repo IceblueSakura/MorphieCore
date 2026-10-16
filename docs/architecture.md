@@ -348,6 +348,7 @@ Redacted thinking is an opaque-only reasoning item with its own replay format, s
 Google signatures travel as reasoning items. The IR has no part- or call-level replay slots; Provider-tool replay stays separate.
 
 - A generateContent value names its anchor: call ID, thought or tail. A tail anchor binds the final text part by digest; changed or missing text rejects instead of receiving the signature. No empty carrier is invented.
+- An explicitly observed empty signed text part keeps its text owner. A signature on an empty streaming fragment may also close accumulated text. Both differ from a missing carrier.
 - A signed thought closes its owner. Later thought text starts another item, so adjacent signed parts never overwrite one another.
 - An Interactions value is a thought signature or a call-ID-anchored signature.
 - Signature-only items trail the response, so a message stays contiguous with its calls. Chat carries them ahead of the message.

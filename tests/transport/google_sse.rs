@@ -7,7 +7,11 @@ use morphiecore::{
         openai::{Adapter, Dialect, Profile, TargetCaps, stream::Obfuscation},
         stream::SseLimits,
     },
-    semantic::{context::StreamOptions, value::Presence},
+    semantic::{
+        context::StreamOptions,
+        task::generation::{ContentPart, Item},
+        value::{Presence, Text},
+    },
 };
 use serde_json::{Value, json};
 
@@ -91,6 +95,55 @@ fn deliver(bytes: &[u8], profile: Profile, stream: bool) -> Result<Value, String
 
 #[test]
 fn signed_calls_after_content_reach_chat_and_responses_clients() {
+    let empty = frames(json!([{"text":"","thoughtSignature":"U0lH"}]));
+    let response = deliver(&empty, Profile::Responses, false).unwrap();
+    assert_eq!(response["output"][0]["content"][0]["text"], "");
+    let client = Adapter::new(
+        Profile::Responses,
+        Dialect::Standard,
+        Some(morphiecore::execution::replay::CLIENT_ORIGIN.clone()),
+    );
+    let mut returned = client
+        .decode_request(
+            json!({"model":"m","input":response["output"]})
+                .to_string()
+                .as_bytes(),
+        )
+        .unwrap();
+    morphiecore::execution::replay::open_from_client(&mut returned).unwrap();
+    let (encoded, _) = morphiecore::protocol::google::encode_generation_request(
+        &returned.task.semantic,
+        &returned.task.fidelity,
+        &ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        encoded["contents"][0]["parts"],
+        json!([{"text":"","thoughtSignature":"U0lH"}])
+    );
+    let mut items = returned.task.semantic.items().to_vec();
+    let Item::Message(message) = &mut items[0].1 else {
+        panic!("signed text")
+    };
+    message.parts[0].content =
+        ContentPart::Text(Text::new("edited", "synthetic", 64).unwrap().into());
+    returned.task.semantic = returned.task.semantic.with_items(items).unwrap();
+    assert!(
+        morphiecore::protocol::google::encode_generation_request(
+            &returned.task.semantic,
+            &returned.task.fidelity,
+            &ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap(),
+        )
+        .is_err()
+    );
+    let stream = deliver(&empty, Profile::Responses, true).unwrap();
+    assert!(
+        stream
+            .as_str()
+            .unwrap()
+            .contains("event: response.completed\n")
+    );
+
     let partial = b"data: {\"responseId\":\"resp\",\"modelVersion\":\"gemini-synthetic\",\"candidates\":[{\"index\":0,\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"partial\"}]},\"finishReason\":\"MAX_TOKENS\"}],\"usageMetadata\":{\"promptTokenCount\":1,\"candidatesTokenCount\":1,\"totalTokenCount\":2}}\n\n";
     let json = deliver(partial, Profile::Responses, false).unwrap();
     assert_eq!(json["status"], "incomplete");

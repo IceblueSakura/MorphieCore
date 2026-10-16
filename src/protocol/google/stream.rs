@@ -373,7 +373,7 @@ impl GenerationSseDecoder {
                 self.delta(fragment, PartKind::Summary, vec![], out)
             }
             (Some(fragment), None) => {
-                if !fragment.is_empty() {
+                if !fragment.is_empty() || signature.is_some() {
                     if !matches!(
                         self.open,
                         Some(Open {
@@ -401,14 +401,22 @@ impl GenerationSseDecoder {
                     self.delta(fragment, PartKind::Text, probabilities, out)?;
                 }
                 if let Some(signature) = signature {
-                    let open = self
-                        .open
-                        .as_ref()
-                        .filter(|open| matches!(open.kind, OpenKind::Text))
-                        .ok_or_else(|| invalid("Gemini text signature owner"))?;
+                    let open = self.open.as_mut().expect("text opened");
+                    let (item, part) = (open.item, open.part);
+                    if !open.part_started {
+                        open.part_started = true;
+                        self.emit(
+                            StreamEvent::PartStarted {
+                                item,
+                                part,
+                                kind: PartKind::Text,
+                            },
+                            out,
+                        )?;
+                    }
                     let text = self
                         .state
-                        .part(open.item, open.part)
+                        .part(item, part)
                         .map_err(CodecError::from)?
                         .text()
                         .ok_or_else(|| invalid("Gemini text signature owner"))?;

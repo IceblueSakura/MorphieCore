@@ -73,6 +73,33 @@ fn signature(item: &Item) -> Value {
 
 #[test]
 fn stream_maps_thoughts_text_calls_and_anchored_signatures() {
+    let empty = decode(&wire(&[json!({
+        "responseId":"empty","modelVersion":"gemini-synthetic",
+        "candidates":[{"content":{"role":"model","parts":[
+            {"text":"","thoughtSignature":"U0lH"}]},"finishReason":"STOP"}]
+    })]))
+    .unwrap();
+    assert!(
+        matches!(&empty.semantic.items()[0].1, Item::Message(message)
+        if matches!(&message.parts[0].content, ContentPart::Text(text) if text.as_str().is_empty()))
+    );
+    let history = GenerationRequest::new(
+        empty.semantic.items().to_vec(),
+        GenerationControls::default(),
+    )
+    .unwrap()
+    .with_message_envelopes(empty.semantic.message_envelopes().to_vec())
+    .unwrap();
+    let (body, _) = encode_generation_request(&history, &empty.fidelity, &target()).unwrap();
+    assert_eq!(
+        body["contents"][0]["parts"],
+        json!([{"text":"","thoughtSignature":"U0lH"}])
+    );
+    let missing = history
+        .retain_items(|_, item| !matches!(item, Item::Message(_)))
+        .unwrap();
+    assert!(encode_generation_request(&missing, &empty.fidelity, &target()).is_err());
+
     let partial = decode(&wire(&[json!({
         "responseId":"partial","modelVersion":"gemini-synthetic",
         "candidates":[{"index":0,"content":{"role":"model","parts":[{"text":"partial"}]},
@@ -247,11 +274,13 @@ fn next_request(observed: &DecodedResponse) -> GenerationRequest {
 
 #[test]
 fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
-    let tail = decode(&wire(&[json!({
-        "responseId":"tail","modelVersion":"gemini-synthetic",
-        "candidates":[{"content":{"role":"model","parts":[
-            {"text":"A","thoughtSignature":"U0lH"}]},"finishReason":"STOP"}]
-    })]))
+    let tail = decode(&wire(&[
+        json!({"responseId":"tail","modelVersion":"gemini-synthetic",
+            "candidates":[{"content":{"role":"model","parts":[{"text":"A"}]}}]}),
+        json!({"responseId":"tail","modelVersion":"gemini-synthetic",
+            "candidates":[{"content":{"role":"model","parts":[
+                {"text":"","thoughtSignature":"U0lH"}]},"finishReason":"STOP"}]}),
+    ]))
     .unwrap();
     let source = client(Profile::Responses, json!({"model":"m","input":"go"}));
     let history = ClientManaged::new(source.task.semantic.settings().clone())
