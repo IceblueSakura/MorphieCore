@@ -172,7 +172,13 @@ impl EventProjection {
                     }
                     StreamEvent::UsageReport(report) => {
                         report.validate()?;
-                        self.record(crate::protocol::usage::report_loss("event.encode"));
+                        if report.scope != UsageScope::Operation
+                            || report.stage != UsageStage::Final
+                            || report.accounting != UsageAccounting::Direct
+                            || report.details != UsageDetails::default()
+                        {
+                            self.record(crate::protocol::usage::report_loss("event.encode"));
+                        }
                         if report.scope != UsageScope::Operation
                             || report.stage != UsageStage::Final
                         {
@@ -181,7 +187,13 @@ impl EventProjection {
                         let Some(source) = report.scalar_summary() else {
                             continue;
                         };
-                        let Some(usage) = super::client_usage(source)? else {
+                        let projected = super::client_usage(source)?;
+                        if let Some(loss) =
+                            super::usage_loss(Some(source), projected, "event.encode")
+                        {
+                            self.record(loss);
+                        }
+                        let Some(usage) = projected else {
                             continue;
                         };
                         event = StreamEvent::Usage(usage);

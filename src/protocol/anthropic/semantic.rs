@@ -200,12 +200,13 @@ impl Profile {
         let mut intake = Intake::new(scope);
         intake.message(Role::Assistant, &wire.content)?;
         let (outcome, progress, details) = outcome(&wire)?;
-        let usage = usage(&wire.usage);
+        let mut reports = UsageReports::default();
+        reports.replace(super::accounting::report(&wire.usage, UsageStage::Final))?;
         let semantic = GenerationResponse::new(intake.items, outcome)?
             .with_message_envelopes(intake.groups)?
             .with_progress(progress)?
             .with_details(details)?
-            .with_usage(Some(usage))?;
+            .with_usage_reports(reports)?;
         let mut fidelity = FidelityRecords::default();
         bind(&mut fidelity, semantic.items(), target)?;
         Ok(DecodedResponse {
@@ -269,7 +270,14 @@ impl Profile {
         target: &ReplayTarget,
     ) -> Result<Value, CodecError> {
         response.metadata.validate()?;
-        if response.semantic.usage_reports().has_details() {
+        let report = response
+            .semantic
+            .usage_reports()
+            .operation()
+            .ok_or_else(unsupported)?;
+        if response.semantic.usage_reports().reports().len() != 1
+            || report.stage != UsageStage::Final
+        {
             return Err(unsupported());
         }
         let mut context = response.metadata.context.clone();
@@ -334,39 +342,13 @@ impl Profile {
         let stop_sequence = stop_sequence
             .map(|value| Presence::Value(value.to_owned()))
             .unwrap_or(Presence::Null);
-        let usage = response.semantic.usage().ok_or_else(unsupported)?;
-        let mut selected = Usage::operation(0, 0, 0);
-        selected.input_tokens = usage.input_tokens;
-        selected.output_tokens = usage.output_tokens;
-        selected.total_tokens = None;
-        selected.input_relation = InputTokenRelation::ExcludesCacheReadAndWrite;
-        selected.total_relation = TotalTokenRelation::Unreported;
-        selected.cached_input_tokens = usage.cached_input_tokens;
-        selected.input_cache_write_tokens = usage.input_cache_write_tokens;
-        selected.reasoning_tokens = usage.reasoning_tokens;
-        if selected != usage {
-            return Err(unsupported());
-        }
         self.encode_response(&super::Message {
             id: response.metadata.required_id()?.into(),
             model: target.model().into(),
             content,
             stop_reason: Presence::Value(stop_reason),
             stop_sequence,
-            usage: super::Usage {
-                service_class,
-                input_tokens: usage.input_tokens.map_or(Presence::Absent, Presence::Value),
-                output_tokens: usage.output_tokens.ok_or_else(unsupported)?,
-                cache_creation_input_tokens: usage
-                    .input_cache_write_tokens
-                    .map_or(Presence::Absent, Presence::Value),
-                cache_read_input_tokens: usage
-                    .cached_input_tokens
-                    .map_or(Presence::Absent, Presence::Value),
-                thinking_tokens: usage
-                    .reasoning_tokens
-                    .map_or(Presence::Absent, Presence::Value),
-            },
+            usage: super::accounting::wire(report, service_class)?,
         })
     }
 }
@@ -452,16 +434,4 @@ pub(super) fn outcome(
         _ => None,
     };
     Ok((outcome, progress, details))
-}
-pub(super) fn usage(wire: &super::Usage) -> Usage {
-    let mut usage = Usage::operation(0, 0, 0);
-    usage.input_tokens = wire.input_tokens.value().copied();
-    usage.output_tokens = Some(wire.output_tokens);
-    usage.total_tokens = None;
-    usage.input_relation = InputTokenRelation::ExcludesCacheReadAndWrite;
-    usage.total_relation = TotalTokenRelation::Unreported;
-    usage.cached_input_tokens = wire.cache_read_input_tokens.value().copied();
-    usage.input_cache_write_tokens = wire.cache_creation_input_tokens.value().copied();
-    usage.reasoning_tokens = wire.thinking_tokens.value().copied();
-    usage
 }

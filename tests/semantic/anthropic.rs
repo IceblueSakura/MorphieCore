@@ -106,7 +106,7 @@ mod anthropic_profile {
         let mut unknown = message();
         unknown["created_at"] = json!(0);
         unknown["usage"]["service_tier"] = json!("standard");
-        unknown["usage"]["cache_creation"] = json!({"ephemeral_5m_input_tokens":0});
+        unknown["usage"]["synthetic_future_usage"] = json!({"count":0});
         unknown["content"][2]["extra"] = json!(null);
         let decoded = p.decode_response(unknown.to_string().as_bytes()).unwrap();
         let mut expected = message();
@@ -1921,11 +1921,13 @@ mod client_fidelity {
         stream
             .update_service_class(response.metadata.context.service_class.clone())
             .unwrap();
-        stream.encode(&StreamEvent::Usage(usage)).unwrap();
-        stream
-            .encode(&StreamEvent::Progress(InteractionProgress::TurnFinished))
-            .unwrap();
-        let frames = stream.encode(&terminal()).unwrap();
+        let mut frames = stream.encode(&StreamEvent::Usage(usage)).unwrap();
+        frames.extend(
+            stream
+                .encode(&StreamEvent::Progress(InteractionProgress::TurnFinished))
+                .unwrap(),
+        );
+        frames.extend(stream.encode(&terminal()).unwrap());
         let values: Vec<serde_json::Value> = frames
             .iter()
             .map(|frame| {

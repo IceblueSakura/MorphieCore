@@ -242,12 +242,24 @@ impl StopReason {
     }
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CacheCreation {
+    pub ephemeral_5m_input_tokens: u64,
+    pub ephemeral_1h_input_tokens: u64,
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ServerToolUsage {
+    pub web_search_requests: u64,
+    pub web_fetch_requests: u64,
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Usage {
     pub service_class: Presence<crate::semantic::context::ServiceClass>,
     pub input_tokens: Presence<u64>,
     pub output_tokens: u64,
     pub cache_creation_input_tokens: Presence<u64>,
     pub cache_read_input_tokens: Presence<u64>,
+    pub cache_creation: Presence<CacheCreation>,
+    pub server_tool_use: Presence<ServerToolUsage>,
     /// `output_tokens_details.thinking_tokens`, a subset of `output_tokens`.
     /// https://github.com/anthropics/anthropic-sdk-python/blob/b4b7916deaf4e5570cd627b1ae7ee4394a4de39f/src/anthropic/types/output_tokens_details.py
     pub thinking_tokens: Presence<u64>,
@@ -261,20 +273,39 @@ impl Usage {
             output_tokens: uint(required(o, "output_tokens")?)?,
             cache_creation_input_tokens: presence(o, "cache_creation_input_tokens", uint)?,
             cache_read_input_tokens: presence(o, "cache_read_input_tokens", uint)?,
+            cache_creation: presence(o, "cache_creation", |value| {
+                let fields = object(value)?;
+                Ok(CacheCreation {
+                    ephemeral_5m_input_tokens: uint(required(
+                        fields,
+                        "ephemeral_5m_input_tokens",
+                    )?)?,
+                    ephemeral_1h_input_tokens: uint(required(
+                        fields,
+                        "ephemeral_1h_input_tokens",
+                    )?)?,
+                })
+            })?,
+            server_tool_use: presence(o, "server_tool_use", |value| {
+                let fields = object(value)?;
+                Ok(ServerToolUsage {
+                    web_search_requests: uint(required(fields, "web_search_requests")?)?,
+                    web_fetch_requests: uint(required(fields, "web_fetch_requests")?)?,
+                })
+            })?,
             thinking_tokens: presence(o, "output_tokens_details", |v| {
                 uint(required(object(v)?, "thinking_tokens")?)
             })?,
         };
-        if usage
-            .thinking_tokens
-            .value()
-            .is_some_and(|thinking| *thinking > usage.output_tokens)
-        {
-            return Err(CodecError::Invalid("Anthropic thinking tokens"));
-        }
+        usage.validate()?;
         Ok(usage)
     }
-    fn wire(&self) -> Value {
+    pub(super) fn validate(&self) -> Result<(), CodecError> {
+        super::accounting::report(self, crate::semantic::task::generation::UsageStage::Final)
+            .validate()?;
+        Ok(())
+    }
+    pub(super) fn wire(&self) -> Value {
         let mut v = json!({"output_tokens":self.output_tokens});
         let o = v.as_object_mut().expect("object");
         put(o, "input_tokens", &self.input_tokens, |n| json!(n));
@@ -297,6 +328,18 @@ impl Usage {
             &self.thinking_tokens,
             |n| json!({ "thinking_tokens": n }),
         );
+        put(o, "cache_creation", &self.cache_creation, |counts| {
+            json!({
+                "ephemeral_5m_input_tokens": counts.ephemeral_5m_input_tokens,
+                "ephemeral_1h_input_tokens": counts.ephemeral_1h_input_tokens,
+            })
+        });
+        put(o, "server_tool_use", &self.server_tool_use, |counts| {
+            json!({
+                "web_search_requests": counts.web_search_requests,
+                "web_fetch_requests": counts.web_fetch_requests,
+            })
+        });
         v
     }
 }
@@ -338,6 +381,7 @@ impl Message {
     }
     pub fn validate(&self, opening: bool) -> Result<(), CodecError> {
         label(&self.id)?;
+        self.usage.validate()?;
         if let Some(class) = self.usage.service_class.value() {
             super::service::class_wire(*class)?;
         }
@@ -562,6 +606,12 @@ impl Event {
                 stop_sequence,
                 usage,
             } => {
+                usage.validate()?;
+                if !usage.cache_creation.is_absent() {
+                    return Err(CodecError::Unsupported(
+                        "Messages delta cache breakdown".into(),
+                    ));
+                }
                 // The pinned MessageDeltaUsage has no service-tier carrier.
                 // https://github.com/anthropics/anthropic-sdk-python/blob/b4b7916deaf4e5570cd627b1ae7ee4394a4de39f/src/anthropic/types/message_delta_usage.py
                 if !usage.service_class.is_absent() {

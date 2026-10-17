@@ -96,7 +96,11 @@ For P=100/U=30/O=20/R=7/C=40/T=157, generateContent yields a derived input of 13
 
 The named `generation.usage-report-view.v1` delivery projection preserves the source report and records loss of unrepresented detail/scope/provenance on the target copy. OpenAI's scalar usage requires its known inclusion relation; an Interactions exchange may consequently deliver no scalar usage. Static and streamed omission agree, including reports containing only auxiliary detail. No downstream custom usage event is introduced.
 
-Anthropic's [cache documentation](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) gives disjoint input/read/write categories and `cache_creation = five-minute + one-hour writes`; tool-request counts are separately priced observations. The IR has these detail owners, but their Anthropic codec mapping and input-transformation reports remain follow-up work, not completed support.
+Anthropic's [cache documentation](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) gives disjoint input/read/write categories and `cache_creation = five-minute + one-hour writes`; tool-request counts are separately priced observations. Native JSON and SSE now map these into operation reports. `output_tokens_details.thinking_tokens` remains an output subset, including internal delimiters; subtraction does not establish a visible-text token count.
+
+The pinned `MessageDeltaUsage` has server-tool/thinking reports but no `cache_creation` TTL object. Full TTL and server-tool objects require both children. Optional null means no observation; non-null nested objects replace rather than field-merge or sum. Messages JSON and opening SSE preserve native TTL detail; late new/changed TTL detail rejects, while supported tool/thinking reports use delta fields. Missing generic children are not filled with zero. Exact details stay in the Messages delivery copy; OpenAI keeps its derivable scalar/reasoning view and records omitted breakdowns.
+
+The pinned SDK fixture `tests/lib/streaming/fixtures/message_delta_fields_response.txt` changes the cache-write parent from 10 to 12 without another TTL report, while its reducer retains 10+0. That demonstrates SDK replacement behavior, not a valid exception to the documented arithmetic. The codec rejects the contradictory accumulated report instead of changing a source fact or weakening the global relationship. Input-transformation reports remain separate execution work.
 
 ## Selected visible-history transfer
 
@@ -129,7 +133,7 @@ Keep the inspected protections for normalization-default tools, no automatic thi
 | Generated media | Existing Chat audio owner and lifecycle tests | General generated image/audio/video needs a selected contract |
 | Content evidence | Text-owned probabilities/citations; static and SSE tests | Citation licence, request-source associations and newer point anchors remain gaps |
 | Safety and completion | Ordered safety reports; separate outcome/progress/cause; terminal tests | Current downstream safety-report rejection still blocks ordinary full-loop delivery |
-| Usage | Typed source-scoped reports, declared derivations, Google/Interactions modality and step intake; usage/SSE tests | Anthropic TTL/server-tool codec mapping and additional downstream detail carriers remain incomplete |
+| Usage | Typed source-scoped reports, Google/Interactions modality/step intake, Messages TTL/tool/thinking reports and exact native carriers | Interactions mode-specific total relationships remain unestablished; downstream carriers do not express all source scope/detail |
 | Execution policy | Separate service intent/report and cache ownership | Geography, access programs, replay enforcement and several returned execution reports lack complete owners |
 
 This map does not claim all official semantics are represented or all protocol pairs are usable. Offline codec checks, synthetic SDK loops, live Provider behavior and public binding admission remain separate evidence.

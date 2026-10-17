@@ -7,7 +7,7 @@ use crate::{
     protocol::CodecError,
     semantic::task::generation::{
         InputTokenRelation, InteractionProgress, ItemId, ItemKind, Outcome, OutputTokenRelation,
-        PartId, PartKind, StreamEvent, StreamTerminal, Usage,
+        PartId, PartKind, StreamEvent, StreamTerminal, Usage, UsageReport, UsageScope, UsageStage,
     },
 };
 use bytes::Bytes;
@@ -25,6 +25,7 @@ pub struct ClientEventEncoder {
     id: String,
     model: String,
     started: bool,
+    seen_start: bool,
     finished: bool,
     rejected: bool,
     service_class: Presence<ServiceClass>,
@@ -34,7 +35,9 @@ pub struct ClientEventEncoder {
     next: usize,
     calls: bool,
     progress: InteractionProgress,
-    usage: Option<Usage>,
+    usage: Option<UsageReport>,
+    /// Already published optional observations cannot be erased by absent delta fields.
+    opening_usage: Option<super::Usage>,
 }
 fn thinking_block() -> Value {
     json!({"type":"thinking","thinking":"","signature":""})
@@ -99,6 +102,7 @@ impl ClientEventEncoder {
             id: id.into(),
             model: model.into(),
             started: false,
+            seen_start: false,
             finished: false,
             rejected: false,
             service_class: Presence::Absent,
@@ -108,6 +112,7 @@ impl ClientEventEncoder {
             calls: false,
             progress: InteractionProgress::Unreported,
             usage: None,
+            opening_usage: None,
         }
     }
     pub(crate) fn reject(&mut self) {
@@ -125,7 +130,9 @@ impl ClientEventEncoder {
             if let Some(value) = class.value() {
                 super::service::class_wire(*value)?;
             }
-            if (self.started || !self.service_class.is_absent()) && self.service_class != class {
+            if (self.started || self.seen_start || !self.service_class.is_absent())
+                && self.service_class != class
+            {
                 return Err(CodecError::Unsupported(
                     "Messages late service report".into(),
                 ));
@@ -141,7 +148,16 @@ impl ClientEventEncoder {
     fn start(&mut self, out: &mut Vec<Bytes>) {
         if !self.started {
             self.started = true;
-            let mut usage = json!({"input_tokens":0,"output_tokens":0});
+            let mut usage = match &self.usage {
+                Some(report) => {
+                    let wire = super::accounting::wire(report, Presence::Absent)
+                        .expect("selected Messages report");
+                    let value = wire.wire();
+                    self.opening_usage = Some(wire);
+                    value
+                }
+                None => json!({"input_tokens":0,"output_tokens":0}),
+            };
             super::service::write_class(
                 usage.as_object_mut().expect("usage object"),
                 &self.service_class,
@@ -152,13 +168,81 @@ impl ClientEventEncoder {
                 "stop_reason":null,"stop_sequence":null,"usage":usage}})));
         }
     }
+    fn report(&mut self, source: &UsageReport, out: &mut Vec<Bytes>) -> Result<(), CodecError> {
+        source.validate()?;
+        let selected = match super::accounting::project(source) {
+            Ok(selected) => selected,
+            // An incomplete checkpoint need not have a representable delivery view yet.
+            Err(_) if source.stage == UsageStage::Checkpoint => None,
+            Err(error) => return Err(error),
+        };
+        if selected.as_ref() != Some(source) {
+            let mut loss = if source.details != Default::default()
+                || source.scope != UsageScope::Operation
+                || source.accounting != crate::semantic::task::generation::UsageAccounting::Direct
+            {
+                crate::protocol::usage::report_loss("event.encode")
+            } else {
+                super::client::usage_loss()
+            };
+            loss.direction = "event.encode";
+            if !self.losses.contains(&loss) {
+                self.losses.push(loss);
+            }
+        }
+        if let Some(selected) = selected {
+            let wire = super::accounting::wire(&selected, Presence::Absent)?;
+            if self.started {
+                if wire.cache_creation.value()
+                    != self
+                        .opening_usage
+                        .as_ref()
+                        .and_then(|u| u.cache_creation.value())
+                {
+                    return Err(CodecError::Unsupported(
+                        "Messages late cache breakdown".into(),
+                    ));
+                }
+                if let Some(opening) = &self.opening_usage
+                    && (opening.cache_read_input_tokens.value().is_some()
+                        && wire.cache_read_input_tokens.value().is_none()
+                        || opening.cache_creation_input_tokens.value().is_some()
+                            && wire.cache_creation_input_tokens.value().is_none()
+                        || opening.thinking_tokens.value().is_some()
+                            && wire.thinking_tokens.value().is_none()
+                        || opening.server_tool_use.value().is_some()
+                            && wire.server_tool_use.value().is_none())
+                {
+                    return Err(CodecError::Unsupported(
+                        "Messages erased usage observation".into(),
+                    ));
+                }
+            }
+            self.usage = Some(selected);
+            self.start(out);
+        } else if source.scope == UsageScope::Operation {
+            self.usage = None;
+            if source.stage == UsageStage::Final {
+                return Err(CodecError::Unsupported("Messages usage".into()));
+            }
+        }
+        Ok(())
+    }
     pub fn encode(&mut self, event: &StreamEvent) -> Result<Vec<Bytes>, CodecError> {
         if self.finished || self.rejected {
             return Err(CodecError::Invalid("Messages stream closed"));
         }
+        let result = self.encode_open(event);
+        if result.is_err() {
+            self.reject();
+        }
+        result
+    }
+    fn encode_open(&mut self, event: &StreamEvent) -> Result<Vec<Bytes>, CodecError> {
         let mut out = vec![];
         match event {
-            StreamEvent::Started => self.start(&mut out),
+            // Wait for opening accounting or the first content owner, without buffering content.
+            StreamEvent::Started => self.seen_start = true,
             StreamEvent::ItemStarted { item, kind, replay } => {
                 self.start(&mut out);
                 let (kind, block) = match kind {
@@ -309,31 +393,11 @@ impl ClientEventEncoder {
                 return Err(CodecError::Unsupported("Messages safety report".into()));
             }
             StreamEvent::Usage(usage) => {
-                let selected = super::client::project_usage(*usage)?;
-                if selected != *usage {
-                    let mut loss = super::client::usage_loss();
-                    loss.direction = "event.encode";
-                    if !self.losses.contains(&loss) {
-                        self.losses.push(loss);
-                    }
-                }
-                self.usage = Some(selected);
+                self.report(&UsageReport::operation(*usage), &mut out)?;
             }
             StreamEvent::Progress(progress) => self.progress = *progress,
             StreamEvent::UsageReport(report) => {
-                report.validate()?;
-                if report.scope == crate::semantic::task::generation::UsageScope::Operation
-                    && report.stage == crate::semantic::task::generation::UsageStage::Final
-                {
-                    self.usage = report
-                        .scalar_summary()
-                        .map(super::client::project_usage)
-                        .transpose()?;
-                }
-                let loss = crate::protocol::usage::report_loss("event.encode");
-                if !self.losses.contains(&loss) {
-                    self.losses.push(loss);
-                }
+                self.report(report, &mut out)?;
             }
             StreamEvent::Terminal { terminal, details } => {
                 self.start(&mut out);
@@ -358,9 +422,21 @@ impl ClientEventEncoder {
                 for index in started {
                     out.push(frame(&json!({"type":"content_block_stop","index":index})));
                 }
+                let mut usage = super::accounting::wire(
+                    self.usage
+                        .as_ref()
+                        .ok_or(CodecError::Invalid("Messages usage"))?,
+                    Presence::Absent,
+                )?
+                .wire();
+                // TTL detail has only an opening carrier in the pinned delta schema.
+                usage
+                    .as_object_mut()
+                    .expect("usage")
+                    .remove("cache_creation");
                 out.push(frame(&json!({"type":"message_delta",
                     "delta":{"stop_reason":stop,"stop_sequence":sequence},
-                    "usage":usage_json(self.usage.as_ref())?})));
+                    "usage":usage})));
                 out.push(frame(&json!({"type":"message_stop"})));
                 self.finished = true;
             }

@@ -442,13 +442,11 @@ pub(crate) fn project_snapshot(response: &mut DecodedResponse) -> Result<(), Cod
     response.metadata.context.instruction_messages = None;
     response.metadata.instruction_fidelity = Default::default();
     response.metadata.context.system_fingerprint = Presence::Absent;
-    let selected = project_usage(
-        response
-            .semantic
-            .usage()
-            .ok_or(CodecError::Invalid("Messages usage"))?,
-    )?;
-    response.semantic = response.semantic.clone().with_usage(Some(selected))?;
+    let selected = super::accounting::project_reports(response.semantic.usage_reports())?;
+    if selected.operation().is_none() {
+        return Err(CodecError::Invalid("Messages usage"));
+    }
+    response.semantic = response.semantic.clone().with_usage_reports(selected)?;
     Ok(())
 }
 pub(crate) fn metadata_losses(
@@ -487,7 +485,14 @@ pub(crate) fn content_losses(
     response: &GenerationResponse,
 ) -> Vec<crate::lowering::generation::LossEvidence> {
     let mut losses = Vec::new();
-    if response.usage_reports().has_details() {
+    if super::accounting::project_reports(response.usage_reports())
+        .is_ok_and(|selected| selected != *response.usage_reports())
+        && (response.usage_reports().has_details()
+            || response
+                .usage_reports()
+                .operation()
+                .is_some_and(|r| r.stage != UsageStage::Final))
+    {
         losses.push(crate::protocol::usage::report_loss("response.encode"));
     }
     let refusal = response.items().iter().any(|(_, item)| {
@@ -512,8 +517,10 @@ pub(crate) fn project_usage(source: Usage) -> Result<Usage, CodecError> {
             .as_u64()
             .ok_or(CodecError::Invalid("Messages projected usage"))
     };
-    let selected = super::semantic::usage(&super::Usage {
+    let selected = super::accounting::counts(&super::Usage {
         service_class: Presence::Absent,
+        cache_creation: Presence::Absent,
+        server_tool_use: Presence::Absent,
         input_tokens: Presence::Value(count("input_tokens")?),
         output_tokens: count("output_tokens")?,
         cache_read_input_tokens: wire
@@ -645,7 +652,8 @@ pub fn encode_client_response(
     v.insert("content".into(), json!(content));
     v.insert("stop_reason".into(), json!(stop_reason));
     v.insert("stop_sequence".into(), json!(stop_sequence));
-    let mut usage = super::client_events::usage_json(semantic.usage().as_ref())?;
+    let selected = super::accounting::project_reports(semantic.usage_reports())?;
+    let mut usage = super::accounting::json(&selected)?;
     super::service::write_class(
         usage.as_object_mut().expect("usage object"),
         &response.metadata.context.service_class,

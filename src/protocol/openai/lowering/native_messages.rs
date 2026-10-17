@@ -54,6 +54,7 @@ fn client_usage(usage: Usage) -> Result<Option<Usage>, CodecError> {
             Some(Usage {
                 cached_input_tokens: usage.cached_input_tokens,
                 input_cache_write_tokens: usage.input_cache_write_tokens,
+                reasoning_tokens: usage.reasoning_tokens,
                 ..Usage::operation(input, output, total)
             })
         } else {

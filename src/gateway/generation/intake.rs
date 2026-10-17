@@ -15,12 +15,14 @@ use bytes::Bytes;
 const HOLD_BYTES: usize = 64 << 10;
 const HOLD_TIME: std::time::Duration = std::time::Duration::from_secs(20);
 fn lifecycle_only(event: &crate::semantic::task::generation::StreamEvent) -> bool {
-    use crate::semantic::task::generation::{ItemKind, StreamEvent};
+    use crate::semantic::task::generation::{ItemKind, StreamEvent, UsageStage};
     match event {
         StreamEvent::Started
         | StreamEvent::Queued
         | StreamEvent::PartStarted { .. }
         | StreamEvent::MessageEnvelope(_) => true,
+        // Opening accounting is not generated content and must not end the existing hold.
+        StreamEvent::UsageReport(report) if report.stage == UsageStage::Checkpoint => true,
         // A started tool call already names its tool: that is content.
         StreamEvent::ItemStarted { kind, .. } => {
             matches!(kind, ItemKind::Message { .. } | ItemKind::Reasoning)

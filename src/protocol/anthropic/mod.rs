@@ -1,4 +1,5 @@
 //! Selected native wire types, not a second semantic model or an execution API.
+mod accounting;
 mod adapter;
 pub mod client;
 pub mod client_events;

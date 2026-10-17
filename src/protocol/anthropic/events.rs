@@ -75,6 +75,7 @@ impl GenerationSseDecoder {
                 if message.model != self.target.model() {
                     return Err(CodecError::Invalid("native model binding").into());
                 }
+                let usage = super::accounting::report(&message.usage, UsageStage::Checkpoint);
                 self.metadata = Some(ResponseMetadata {
                     storage: None,
                     id: Some(message.id),
@@ -87,6 +88,7 @@ impl GenerationSseDecoder {
                     instruction_fidelity: Default::default(),
                 });
                 out.push(StreamEvent::Started);
+                out.push(StreamEvent::UsageReport(usage));
             }
             Event::BlockStart { index, block } => {
                 let (item, part) = self.ids(index);
@@ -240,7 +242,10 @@ impl GenerationSseDecoder {
                         .map_err(CodecError::from)?
                 };
                 out.push(StreamEvent::MessageEnvelope(group));
-                out.push(StreamEvent::Usage(super::semantic::usage(&message.usage)));
+                out.push(StreamEvent::UsageReport(super::accounting::report(
+                    &message.usage,
+                    UsageStage::Final,
+                )));
                 let (outcome, progress, details) = super::semantic::outcome(message)?;
                 if progress != InteractionProgress::Unreported {
                     out.push(StreamEvent::Progress(progress));
@@ -254,7 +259,17 @@ impl GenerationSseDecoder {
                     details,
                 });
             }
-            Event::Ping | Event::MessageDelta { .. } => {}
+            Event::MessageDelta { .. } => {
+                let message = self
+                    .wire
+                    .message()
+                    .ok_or(CodecError::Invalid("native stream"))?;
+                out.push(StreamEvent::UsageReport(super::accounting::report(
+                    &message.usage,
+                    UsageStage::Checkpoint,
+                )));
+            }
+            Event::Ping => {}
             Event::Error { kind, .. } => {
                 return Err(CodecError::StreamFailure(super::sse::error_status(&kind)).into());
             }

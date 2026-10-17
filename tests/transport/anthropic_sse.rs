@@ -236,12 +236,11 @@ fn limits_http_and_attempt_cancellation_are_independent_boundaries() {
 #[test]
 fn unknown_upstream_fields_and_event_types_are_ignored() {
     let mut frames = frames();
-    // Fields Anthropic reports today but the gateway does not model.
-    frames[0]["message"]["usage"]["cache_creation"] =
-        json!({"ephemeral_5m_input_tokens":4,"ephemeral_1h_input_tokens":0});
+    // Unknown extensions are distinct from modeled accounting details.
+    frames[0]["message"]["usage"]["synthetic_future_usage"] = json!({"count":4});
     frames[0]["message"]["container"] = Value::Null;
     frames[2]["content_block"]["extra"] = json!({"nested":true});
-    frames[15]["usage"]["server_tool_use"] = json!({"web_search_requests":0});
+    frames[15]["usage"]["synthetic_future_count"] = json!(0);
     frames[16]["future_field"] = json!(1);
     // Unknown event types carry no modeled content and are skipped.
     frames.insert(
@@ -257,6 +256,144 @@ fn unknown_upstream_fields_and_event_types_are_ignored() {
             .encode_response(&message)
             .unwrap(),
         expected()
+    );
+}
+#[test]
+fn scoped_accounting_preserves_opening_ttls_and_replaces_cumulative_tool_reports() {
+    use morphiecore::{
+        adapter::ClientAdapter,
+        execution::ResponseDelivery,
+        protocol::openai::stream::Obfuscation,
+        semantic::task::generation::{StreamEvent, ToolUsageKind, UsageStage},
+    };
+    let mut values = frames();
+    values[0]["message"]["usage"]["cache_creation"] =
+        json!({"ephemeral_5m_input_tokens":1,"ephemeral_1h_input_tokens":3});
+    values[0]["message"]["usage"]["server_tool_use"] =
+        json!({"web_search_requests":0,"web_fetch_requests":2});
+    values[14]["usage"]["server_tool_use"] =
+        json!({"web_search_requests":1,"web_fetch_requests":3});
+    values[14]["usage"]["output_tokens_details"] = json!({"thinking_tokens":2});
+    values[15]["usage"]["server_tool_use"] = Value::Null;
+    values[15]["usage"]["output_tokens_details"] = Value::Null;
+    let mut attempt = native_attempt(ReplayTarget::new("provider", "synthetic-model").unwrap());
+    attempt.begin(200, "text/event-stream").unwrap();
+    let mut delivery = ResponseDelivery::new(
+        ClientAdapter::Messages,
+        "public",
+        SseLimits::default(),
+        Default::default(),
+        Obfuscation::Disabled,
+    );
+    let mut output = vec![];
+    let mut reports = vec![];
+    for chunk in wire(&values).chunks(17) {
+        let mut rest = chunk;
+        while !rest.is_empty() {
+            let (n, events) = attempt.push(rest).unwrap();
+            rest = &rest[n..];
+            reports.extend(events.iter().filter_map(|event| match event {
+                StreamEvent::UsageReport(report) => Some(report.clone()),
+                _ => None,
+            }));
+            let produced = delivery.encode_events(&attempt, &events).unwrap();
+            if !produced.is_empty() && delivery.lifecycle().may_retry_or_fallback() {
+                delivery.commit().unwrap();
+            }
+            output.extend(produced.into_iter().flatten());
+        }
+    }
+    assert!(!String::from_utf8_lossy(&output).contains("message_stop"));
+    attempt.finish().unwrap();
+    output.extend(
+        delivery
+            .finish_stream(&attempt)
+            .unwrap()
+            .into_iter()
+            .flatten(),
+    );
+    delivery.complete(&attempt).unwrap();
+    assert_eq!(
+        reports.iter().map(|r| r.stage).collect::<Vec<_>>(),
+        [
+            UsageStage::Checkpoint,
+            UsageStage::Checkpoint,
+            UsageStage::Checkpoint,
+            UsageStage::Final
+        ]
+    );
+    assert_eq!(
+        reports
+            .iter()
+            .map(|r| r.counts.output_tokens)
+            .collect::<Vec<_>>(),
+        [Some(0), Some(7), Some(9), Some(9)]
+    );
+    let source = attempt.response().unwrap();
+    let report = source.semantic.usage_reports().operation().unwrap();
+    assert_eq!(report.counts.reasoning_tokens, Some(2));
+    assert_eq!(
+        report
+            .details
+            .tool_requests
+            .iter()
+            .find(|r| r.kind == ToolUsageKind::WebSearch)
+            .unwrap()
+            .count,
+        Some(1)
+    );
+    let frames: Vec<Value> = std::str::from_utf8(&output)
+        .unwrap()
+        .lines()
+        .filter_map(|line| line.strip_prefix("data: "))
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(
+        frames[0]["message"]["usage"]["cache_creation"],
+        json!({"ephemeral_5m_input_tokens":1,"ephemeral_1h_input_tokens":3})
+    );
+    let final_usage = &frames
+        .iter()
+        .find(|f| f["type"] == "message_delta")
+        .unwrap()["usage"];
+    assert!(final_usage.get("cache_creation").is_none());
+    assert_eq!(
+        final_usage["server_tool_use"],
+        json!({"web_search_requests":1,"web_fetch_requests":3})
+    );
+    let mut decoder =
+        MessageSseDecoder::new(200, "text/event-stream", SseLimits::default()).unwrap();
+    feed(&mut decoder, &output).unwrap();
+    let native = Profile::AdaptiveTextTools
+        .encode_response(&decoder.finish().unwrap())
+        .unwrap();
+    let mut expected_usage = json!({"input_tokens":11,"output_tokens":9,
+        "cache_read_input_tokens":3,"cache_creation_input_tokens":4,
+        "cache_creation":{"ephemeral_5m_input_tokens":1,"ephemeral_1h_input_tokens":3},
+        "server_tool_use":{"web_search_requests":1,"web_fetch_requests":3},
+        "output_tokens_details":{"thinking_tokens":2}});
+    assert_eq!(native["usage"], expected_usage);
+    let (_, static_wire) = ClientAdapter::Messages.snapshot(source.clone()).unwrap();
+    assert_eq!(static_wire["usage"], expected_usage);
+
+    // An updated parent cannot make the opening TTL report silently change its meaning.
+    values[15]["usage"]["cache_creation_input_tokens"] = json!(5);
+    let mut contradictory =
+        MessageSseDecoder::new(200, "text/event-stream", SseLimits::default()).unwrap();
+    assert!(feed(&mut contradictory, &wire(&values)).is_err());
+    assert!(contradictory.finish().is_err());
+    // Explicit zero replaces a nested report; null above did not erase it.
+    values[15]["usage"]["cache_creation_input_tokens"] = json!(4);
+    values[15]["usage"]["server_tool_use"] =
+        json!({"web_search_requests":0,"web_fetch_requests":0});
+    let mut zero = MessageSseDecoder::new(200, "text/event-stream", SseLimits::default()).unwrap();
+    feed(&mut zero, &wire(&values)).unwrap();
+    expected_usage["server_tool_use"] = json!({"web_search_requests":0,"web_fetch_requests":0});
+    assert_eq!(
+        Profile::AdaptiveTextTools
+            .encode_response(&zero.finish().unwrap())
+            .unwrap()["usage"],
+        expected_usage
     );
 }
 #[test]
@@ -371,6 +508,7 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
             );
             attempt.begin(200, "text/event-stream").unwrap();
             let mut native = frames();
+            native[15]["usage"]["output_tokens_details"] = json!({"thinking_tokens":2});
             if incomplete {
                 native[15]["delta"]["stop_reason"] = json!("max_tokens");
             }
@@ -438,6 +576,7 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
                 }
             );
             assert_eq!(decoded.semantic.usage().unwrap().total_tokens, Some(27));
+            assert_eq!(decoded.semantic.usage().unwrap().reasoning_tokens, Some(2));
             let Item::Reasoning(reasoning) = &decoded.semantic.items()[0].1 else {
                 panic!("reasoning");
             };
@@ -480,6 +619,12 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
             let body: Value =
                 serde_json::from_slice(&json_delivery.encode_json(&attempt).unwrap()).unwrap();
             assert_eq!(body["usage"]["total_tokens"], 27);
+            let output_details = if profile == ClientProfile::Responses {
+                "output_tokens_details"
+            } else {
+                "completion_tokens_details"
+            };
+            assert_eq!(body["usage"][output_details]["reasoning_tokens"], 2);
             let args = if profile == ClientProfile::Responses {
                 &body["output"][2]["arguments"]
             } else {

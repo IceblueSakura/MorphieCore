@@ -251,8 +251,12 @@ impl MessageSseDecoder {
                 if usage.thinking_tokens.value().is_some() {
                     message.usage.thinking_tokens = usage.thinking_tokens;
                 }
+                if usage.server_tool_use.value().is_some() {
+                    message.usage.server_tool_use = usage.server_tool_use;
+                }
                 // Native counts are cumulative snapshots, never deltas to sum.
                 message.usage.output_tokens = usage.output_tokens;
+                message.usage.validate()?;
             }
             Event::MessageStop => {
                 if self.open.is_some() || !self.ending {
