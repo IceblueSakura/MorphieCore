@@ -429,6 +429,20 @@ Register new extension shapes here one at a time. The old `_openbridge` attachme
 
 ## Failover
 
+### Selected routing revision
+
+The [approved implementation](roadmap.md#approved-stable-routing-implementation) replaces soft cooling and startup pool truncation. The following is the selected target until that slice completes:
+
+- Bind all pool members, at most 64 expanded candidates per entry. A pool's per-endpoint runtime ceiling is `max_attempts` with credential fallback enabled, otherwise one. The route ceiling spans all endpoints; beginning credential resolution consumes an attempt, while selection skips do not. Neither budget resets or multiplies, and no candidate is revisited.
+- Preserve stable compiled order, promoting only an eligible healthy conversation preference. Scan past illegal successors under every earlier failure restriction. Unknown-scope rate limits cannot rotate credentials within the request; across requests they gate the configured deployment/model pool, not all Providers or unrelated pools.
+- Separate private health digests from cache/replay identity: authentication and locally unavailable material affect credential plus Provider origin; permission, quota and upstream failures affect the exact credential/deployment/model; unknown rate limits affect the configured pool at that deployment/model. Public aliases do not split these health domains. No error text invents a wider quota scope.
+- Authentication/permission HTTP statuses remain authoritative even if body classification or reading fails. Standard `Retry-After` is retained for failed statuses, parsed within one day, and used without the former one-hour truncation. Provider-specific reset dialects are not inferred.
+- Cooling is a dispatch gate, not a last-resort ordering hint. Before `not_before`, no attempt is made. Once it expires, one foreground request may own recovery per affected scope; no background calls, waiting queue or repeated candidate cycle. If every legal remaining target is cooling or probing, return sanitized HTTP 503 `upstream_unavailable`, with a bounded `Retry-After` when known.
+- Without a valid reported delay, transient upstream failures back off from one second to one minute; credential, quota and rate failures from one minute to thirty minutes. Failures during an active cooldown do not multiply its backoff. A failure after thirty minutes without a recent cooldown starts fresh. Active deadlines never shorten. A captured failure generation fences successful cleanup and affinity updates; cancellation releases any probe without inventing success or failure.
+- An upstream timeout or broken stream affects subsequent health, even after publication; a slow downstream, client cancellation, projection failure or semantic refusal does not. The final EOF/handoff success boundary and prohibition on published replay remain unchanged.
+- Keep exact-credential, public-model/conversation affinity and its existing bounds. Successful failover becomes the current preference, without automatic failback. `x-session-affinity` is a final ingress alias after the existing headers. Cache grouping never becomes conversation authority.
+- Diagnostics report bounded reason/scope classes, probe ownership and delay sources, never health keys, credential fingerprints, conversations or business content. Keep the implicit prefix index disposable and independent of selection.
+
 ### Legal candidates
 
 Startup compiles a public model to a route with legal endpoints and credential candidates. Business input cannot create candidates or name an executor.
@@ -632,8 +646,8 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Pure protocol boundaries | Encode from final typed input; no network in codecs or post-encoding JSON patches |
 | Functional ownership | Keep root layers; organize internals by domain, without compatibility aliases or plugin frameworks |
 | Layered capabilities | Source validity, acceptance through approved adaptation and faithful target support are distinct. Do not advertise lossy acceptance as native support or infer public promises from a union of candidates |
-| Temporary routing freeze | P7 keeps routing/integration redesign frozen until the selected Generation IR, codec and protocol-conversion work is complete. The approved two-file startup configuration may select existing bindings and deployment parameters; it does not change affinity, cooling, retry eligibility or public semantic admission |
-| Credential-pool truncation repair (deferred) | Startup currently truncates pool membership by the route attempt ceiling. Defer this known defect to the routing-rule review so candidate membership, cooling/affinity ordering and per-exchange attempt budgets are resolved together; do not change it in a codec repair |
+| Scoped routing reopening | The approved stable routing revision reopens Generation membership, budget enforcement, health and affinity only. Public semantic admission, bindings, credentials, standalone execution and unresolved client reconnection remain unchanged |
+| Stable routing revision | Bind complete bounded pools; scan legal successors under accumulated restrictions; gate dispatch on generation-fenced cooling with exclusive foreground recovery. Preserve stable order, exact-credential affinity, one exchange budget and no replay after publication |
 | Shared model identities across protocols | Compatible API-key, OAuth and native Messages bindings share one public model and ordered route. Endpoint protocols and credential domains stay distinct; narrower candidates reject requests they cannot represent |
 | SIWC cross-Provider fallback | A mixed route may contain one SIWC endpoint and advance to another Provider before publication within the route budget. SIWC pools remain single-account with no credential fallback; standalone SIWC routes remain single-attempt with fallback disabled |
 | Case-sensitive model labels | Public IDs may preserve upstream ASCII capitalization, but resolve only registered routes. Provider prefixes remain rejected; Provider, endpoint and route IDs keep their lowercase grammar |

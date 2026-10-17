@@ -4,6 +4,25 @@ This page owns direction and current scope. Code and tests define behavior; [Arc
 
 ## Current focus
 
+Execute the approved Generation routing review below. This explicitly reopens the named routing slice; unresolved IR/codec admission, public capabilities, standalone tasks and full-client reconnection remain outside it.
+
+### Approved stable routing implementation
+
+Goal: stable, cache-affine failover with reachable authorized pool members, bounded successor scanning and concurrency-safe cooling. No weights, rotations, inferred conversations, persistence, background Provider probes or multi-round retries.
+
+Implement and verify these coherent parts:
+
+1. **Membership and advancement.** Bind every authorized pool member within the existing expanded-candidate bound. Enforce the pool ceiling per endpoint and the route ceiling per exchange at runtime, including local credential-resolution failures. Scan the stable suffix under all earlier failure restrictions; skipped candidates consume no attempt. Preserve authentication/permission, publication and immutable-input boundaries.
+2. **Health ownership.** Separate credential, execution-target and configured deployment/pool health from cache identity. Preserve raw authentication classifications and bounded standard `Retry-After`. Hard cooling rejects dispatch until expiry; expiry permits one request-owned probe per affected scope. Generation-fenced success cannot clear a newer failure or replace its affinity; cancellation releases probe ownership. Continuous failures back off without shortening an active deadline.
+3. **Affinity and delivery.** Keep the last honestly completed executor, with no automatic return to a recovered old preference. Upstream failures affect subsequent requests, never replay a published response. Distinguish upstream waiting from downstream handoff timeouts. Add the verified Pi `x-session-affinity` alias after existing headers, without interpreting cache keys or message content as conversations. Make lifecycle-only hold time a real timer.
+4. **Evidence and diagnostics.** Extend existing Router and lifecycle assertions; add focused deterministic state/selection tests where no responsible-layer test exists. Record bounded reason classes, not identities or payloads. Run the full offline baseline and connected SDK gate; separately verify the installed Pi carrier with synthetic intercepted transport. Do not claim real Provider effectiveness or full-client acceptance from these checks.
+
+Exit conditions: healthy pool tails are selectable under a small attempt budget; an ineligible adjacent candidate cannot block a legal later Provider or allow a previously excluded scope back in; cooling causes zero dispatch before expiry and at most one concurrent recovery probe; stale successes/shorter hints cannot erase newer cooling; cancellation and slow downstreams do not poison health; published failures never retry; Pi session aliases reach the existing context; diagnostics remain bounded and redacted.
+
+The selected contract is in [Failover](architecture.md#failover). Provider-specific reset dialects, persistence and further tuning require separate evidence; standard `Retry-After`, bounded local backoff and passive business-request probes are the complete recovery scope of this slice.
+
+### Remaining codec and integration work
+
 Improve coverage of the locally completed selected Generation IR/codec scope, and prepare the P7 boundary review. Provider dialects remain codec concerns. Realtime and standalone tasks do not need complete integration for this phase. Each behavior slice must state its goal and exit condition before code changes.
 
 Phase completeness covers the selected non-tool support scope, not all official Generation semantics. [Cache prewarming](#deferred-cache-prewarming) and [tool discovery and native `web_search`](#deferred-tool-discovery-and-web-search) are deferred, with priority and scheduling undecided. None blocks phase completion, coverage improvement or the P7 boundary review. Unsupported semantics remain explicit gaps, not silent losses or support claims.
@@ -22,13 +41,13 @@ Next, identify assertion and carrier gaps in the existing codec-only coverage wi
 
 ### Temporary routing freeze
 
-During this IR/codec migration, do not change route construction, candidate membership/order/selection policy, cache affinity, cooling, failover eligibility, attempt budgets, credentials or public model routing. Do not rank targets by projection loss or add a fallback to hide an unsupported conversion.
+The approved stable routing implementation above is an explicit exception for Generation membership, stable selection, affinity, cooling and attempt-budget enforcement. Outside that slice, do not change route construction, credentials, public model routing or standalone execution. Do not rank targets by projection loss or add a fallback to hide an unsupported conversion.
 
 The selected [two-file configuration](usage.md#model-configuration) is a narrow exception for explicitly configured existing bindings and their deployment/policy parameters. It does not reopen affinity/cooling algorithms, retry eligibility, public semantic admission, new bindings or frozen-task contracts.
 
-Deferred defect: [credential binding](../src/gateway/startup/config.rs) truncates each pool by the route's per-exchange attempt ceiling before cooling and affinity can reorder candidates. Authorized pool members beyond that ceiling can never be selected. Leave this unchanged during the migration; resolve candidate membership and attempt-budget enforcement together in the later routing-rule review, including selection of healthy tail members after earlier members cool.
+The approved slice resolves [credential binding](../src/gateway/startup/config.rs) truncating each pool before cooling and affinity can select healthy tail members. Resolve membership and runtime budget enforcement together.
 
-Deferred selection gap: the [exchange loop](../src/gateway/generation/exchange.rs) checks only the immediately following candidate against the failure scope. With `[A/key1, A/key2, B/key3]`, an unknown-scope rate limit from A cannot rotate to its second key, but that rejected hop also prevents reaching Provider B. The routing-rule review must decide how to skip ineligible successors without weakening the ban on rate-limit key rotation. Verify the composition with cooling/affinity, pool/route budgets and publication holding before changing selection.
+The approved slice also resolves the [exchange loop](../src/gateway/generation/exchange.rs) checking only the immediately following candidate. With `[A/key1, A/key2, B/key3]`, skip the ineligible second key and retain access to Provider B without weakening prior failure restrictions. Verify composition with cooling/affinity, pool/route budgets and publication holding.
 
 IR/codec contracts take priority over keeping the full client-to-gateway-to-Provider chain connected. Existing public admission or topology checks may reject the new codec contract; record the exact incompatible boundary and leave integration disconnected rather than weakening IR or changing routing. Changed codec representability may affect an unchanged policy's result; it does not authorize changing that policy.
 
@@ -185,10 +204,10 @@ IR completeness does not mean every upstream can carry every modality. Protocol-
 ## Planned order
 
 2. **Coverage improvement.** Strengthen existing codec-only assertions and safety boundaries after selected first-stage local completion. Preserve the explicit integration handoff and deferred concepts; deferred cache and tool slices do not block this stage.
-3. **Routing rules and failover improvement.** Review candidate membership, credential-pool truncation, cooling/affinity ordering and per-exchange budgets together. Implementation improvement and real acceptance follow coverage improvement; their priority remains undecided, lowest for now.
+3. **Routing rules and failover improvement.** The approved stable routing implementation is active. Provider and full-client acceptance remain separately scheduled, not implied by offline recovery checks.
 4. **Other agent acceptance.** Codex, Claude Code and other agents follow failover. Their priority is undecided, lowest for now.
 
-The [P7 boundary review](#p7-boundary-review) becomes eligible after first-stage local completion, without waiting for the deferred cache and tool slices, and is required before route-facing acceptance. Codec-only coverage can proceed independently. This plan does not start routing changes or deferred acceptance runs.
+The [P7 boundary review](#p7-boundary-review) becomes eligible after first-stage local completion, without waiting for the deferred cache and tool slices, and is required before route-facing acceptance. Codec-only coverage can proceed independently. The approved routing slice starts routing changes only; deferred acceptance runs remain separate.
 
 ### P7 boundary review
 
