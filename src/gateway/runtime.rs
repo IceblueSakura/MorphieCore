@@ -1,7 +1,7 @@
 //! Bound entries and request-independent gateway state.
 use super::{
     ApiError, Limits, diagnostics,
-    ingress::{auth, models},
+    ingress::{auth, capabilities, models},
     routing::{executors, prefix_cache as affinity},
     startup::credentials,
     tasks::{embeddings, images, speech, transcription},
@@ -61,6 +61,7 @@ pub(super) struct Runtime {
     pub(super) transcriptions: BTreeMap<String, Arc<transcription::BoundTranscription>>,
     pub(super) embeddings: BTreeMap<String, Arc<embeddings::BoundEmbedding>>,
     pub(super) models: models::ModelView,
+    pub(super) capabilities: capabilities::CapabilityView,
     pub(super) limits: Limits,
     pub(super) permits: Arc<Semaphore>,
     pub(super) transport: HttpTransport,

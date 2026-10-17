@@ -214,6 +214,38 @@ class ModelsSchemaTests(unittest.TestCase):
             self.assertIn("503", method["responses"])
         for status in ("403", "404"):
             self.assertIn(status, single["delete"]["responses"])
+        capabilities = paths["/v1/morphiecore/capabilities"]["get"]
+        self.assertEqual(capabilities["responses"]["200"]["content"]["application/json"]
+                         ["schema"]["$ref"], "#/components/schemas/CapabilitySnapshot")
+        self.assertIn("401", capabilities["responses"])
+        self.assertIn("503", capabilities["responses"])
+        case = {"feature": "response.reported.settings",
+                "domain": "incidental_settings_without_safety",
+                "treatment": "approved_adaptation",
+                "rules": ["chat.omit-incidental-settings.v1"]}
+        entry = {"model": "synthetic-model", "protocol": "chat_completions",
+                 "delivery_modes": ["json", "sse"], "request": [],
+                 "delivery": [case], "history": []}
+        snapshot = {"object": "morphiecore.capabilities", "version": 1,
+                    "scope": "gateway_contract", "coverage": "partial",
+                    "unlisted": "not_assessed", "provider_effectiveness": "not_asserted",
+                    "full_loop": "not_asserted", "data": [entry]}
+        validator("CapabilitySnapshot").validate(snapshot)
+        validator("CapabilitySnapshot").validate({**snapshot, "data": []})
+        for changed in ({"full_loop": "supported"}, {"provider_effectiveness": "supported"},
+                        {"data": [entry] * 193}, {"credential": "synthetic"}):
+            self.assertFalse(validator("CapabilitySnapshot").is_valid({**snapshot, **changed}))
+        check = validator("CapabilityCase")
+        for changed in ({"rules": []}, {"treatment": "faithful"},
+                        {"treatment": "unknown"}, {"body": "synthetic"}):
+            self.assertFalse(check.is_valid({**case, **changed}))
+        missing = {k: v for k, v in case.items() if k != "rules"}
+        self.assertFalse(check.is_valid(missing))
+        check.validate({**missing, "treatment": "rejected"})
+        for response in ("Generation", "MessagesGeneration"):
+            self.assertEqual(DOCUMENT["components"]["responses"][response]["headers"]
+                             ["X-MorphieCore-Adaptation"]["$ref"],
+                             "#/components/headers/PossibleAdaptation")
 
 
 class ResponsesSchemaTests(unittest.TestCase):

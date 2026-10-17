@@ -8,6 +8,23 @@
   "servers": [{"url": "http://127.0.0.1:8080"}],
   "security": [{"bearerAuth": []}, {"apiKeyAuth": []}],
   "paths": {
+    "/v1/morphiecore/capabilities": {
+      "get": {
+        "operationId": "generationCapabilities",
+        "summary": "Inspect partial gateway contracts for activated Generation clients",
+        "description": "Startup-immutable, authenticated discovery with no request-body or upstream I/O. Unlisted cases are not assessed. Claims describe individual gateway boundaries, not complete exchange success or Provider-effective support. HEAD returns headers without a body.",
+        "responses": {
+          "200": {
+            "description": "Complete snapshot within min(response_bytes, 256 KiB); oversized snapshots fail startup, never truncate.",
+            "headers": {"Cache-Control": {"schema": {"const": "no-store"}}},
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CapabilitySnapshot"}}}
+          },
+          "401": {"$ref": "#/components/responses/Error"},
+          "405": {"$ref": "#/components/responses/Error"},
+          "503": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
     "/v1/models": {
       "get": {
         "operationId": "listModels",
@@ -378,6 +395,16 @@
     }
   },
   "components": {
+    "headers": {
+      "PossibleAdaptation": {
+        "description": "Conservative notice on Generation JSON/SSE responses, including pre-frame Responses failure streams. Not an actual-loss receipt or a success assertion. Missing on pre-response errors and discovery/history operations; absence does not certify exactness.",
+        "schema": {"const": "possible"}
+      },
+      "CapabilityLink": {
+        "description": "Gateway contract discovery, not a per-exchange receipt.",
+        "schema": {"const": "</v1/morphiecore/capabilities>; rel=\"describedby\""}
+      }
+    },
     "parameters": {
       "ResponseId": {
         "in": "path", "name": "response_id", "required": true,
@@ -395,6 +422,51 @@
       "apiKeyAuth": {"type": "apiKey", "in": "header", "name": "x-api-key", "description": "The same ingress token, not an upstream key. Duplicates and simultaneous Bearer auth are rejected."}
     },
     "schemas": {
+      "CapabilitySnapshot": {
+        "type": "object", "additionalProperties": false,
+        "required": ["object", "version", "scope", "coverage", "unlisted", "provider_effectiveness", "full_loop", "data"],
+        "properties": {
+          "object": {"const": "morphiecore.capabilities"},
+          "version": {"const": 1},
+          "scope": {"const": "gateway_contract"},
+          "coverage": {"const": "partial"},
+          "unlisted": {"const": "not_assessed"},
+          "provider_effectiveness": {"const": "not_asserted"},
+          "full_loop": {"const": "not_asserted"},
+          "data": {"type": "array", "maxItems": 192, "items": {"$ref": "#/components/schemas/CapabilityEntry"}}
+        }
+      },
+      "CapabilityEntry": {
+        "type": "object", "additionalProperties": false,
+        "required": ["model", "protocol", "delivery_modes", "request", "delivery", "history"],
+        "properties": {
+          "model": {"$ref": "#/components/schemas/PublicModelLabel"},
+          "protocol": {"enum": ["chat_completions", "responses", "messages"]},
+          "delivery_modes": {"const": ["json", "sse"]},
+          "request": {"$ref": "#/components/schemas/CapabilityCases"},
+          "delivery": {"$ref": "#/components/schemas/CapabilityCases"},
+          "history": {"$ref": "#/components/schemas/CapabilityCases"}
+        }
+      },
+      "CapabilityCases": {
+        "type": "array", "maxItems": 16,
+        "items": {"$ref": "#/components/schemas/CapabilityCase"}
+      },
+      "CapabilityCase": {
+        "type": "object", "additionalProperties": false,
+        "required": ["feature", "domain", "treatment"],
+        "properties": {
+          "feature": {"type": "string", "minLength": 1, "maxLength": 128},
+          "domain": {"type": "string", "minLength": 1, "maxLength": 128},
+          "treatment": {"enum": ["faithful", "approved_adaptation", "rejected"]},
+          "rules": {"type": "array", "minItems": 1, "maxItems": 16,
+            "items": {"type": "string", "minLength": 1, "maxLength": 128}}
+        },
+        "if": {"properties": {"treatment": {"const": "approved_adaptation"}}},
+        "then": {"required": ["rules"]},
+        "else": {"not": {"required": ["rules"]}},
+        "description": "Treatment of this feature/domain only, assuming other validation succeeds. Request lists selected public-admission rejections. Delivery rules apply equally to JSON/SSE. History preserves the delivered projection, not pre-projection facts or cross-target replay."
+      },
       "EmbeddingRequest": {
         "type": "object", "required": ["model", "input"], "additionalProperties": false,
         "properties": {
@@ -980,7 +1052,11 @@
     "responses": {
       "MessagesGeneration": {
         "description": "Anthropic-shaped JSON or SSE under the public model label. Tool calls and reasoning use client block carriers. Completion waits for validated EOF; late failures never become a successful message_stop.",
-        "headers": {"Cache-Control": {"schema": {"type": "string", "const": "no-store"}}},
+        "headers": {
+          "Cache-Control": {"schema": {"type": "string", "const": "no-store"}},
+          "X-MorphieCore-Adaptation": {"$ref": "#/components/headers/PossibleAdaptation"},
+          "Link": {"$ref": "#/components/headers/CapabilityLink"}
+        },
         "content": {"application/json": {"schema": {"type": "object"}}, "text/event-stream": {"schema": {"type": "string"}}}
       },
       "MessagesError": {
@@ -989,7 +1065,11 @@
       },
       "Generation": {
         "description": "JSON or incremental SSE under the public model label. Codecs define typed output and named losses. HTTP 200 is not semantic success: classified errors may use failure frames, and late failures may abort the body. No fabricated successful terminal.",
-        "headers": {"Cache-Control": {"schema": {"type": "string", "const": "no-store"}}},
+        "headers": {
+          "Cache-Control": {"schema": {"type": "string", "const": "no-store"}},
+          "X-MorphieCore-Adaptation": {"$ref": "#/components/headers/PossibleAdaptation"},
+          "Link": {"$ref": "#/components/headers/CapabilityLink"}
+        },
         "content": {"application/json": {"schema": {"type": "object", "not": {"required": ["_openbridge"]}}}, "text/event-stream": {"schema": {"type": "string"}}}
       },
       "Error": {

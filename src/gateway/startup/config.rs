@@ -378,6 +378,10 @@ impl Gateway {
                 .chain(embeddings.keys().map(String::as_str)),
             limits.response_bytes,
         )?;
+        let capabilities = crate::gateway::ingress::capabilities::CapabilityView::bind(
+            &activated,
+            limits.response_bytes,
+        )?;
         Ok(Self {
             state: Arc::new(Runtime {
                 diagnostics: None,
@@ -394,6 +398,7 @@ impl Gateway {
                 transcriptions,
                 embeddings,
                 models,
+                capabilities,
                 limits,
                 permits,
                 transport,

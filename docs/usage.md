@@ -390,6 +390,7 @@ History is process-local and is lost at shutdown or restart. A declared conversa
 | `GET /v1/models` | List activated public models |
 | `GET /v1/models/{model}` | Retrieve an activated public model |
 | `DELETE /v1/models/{model}` | Denied: 403 for an activated model, 404 otherwise |
+| `GET /v1/morphiecore/capabilities` | Inspect partial gateway contracts for activated Generation clients |
 | `POST /v1/responses` | Responses, JSON or SSE |
 | `GET /v1/responses/{response_id}` | Retrieve a stored response |
 | `DELETE /v1/responses/{response_id}` | Delete a stored response |
@@ -407,6 +408,16 @@ Frozen endpoints require explicit model activation:
 | `POST /v1/audio/transcriptions` | One WAV/MP3 multipart upload |
 
 The [OpenAPI summary](openapi.json) describes envelopes and selected constraints, not full vendor API conformance. Codecs define exact admission. Business input cannot choose an upstream origin, credential or auth header; inbound headers are not forwarded.
+
+### Capability discovery and adaptation notice
+
+`GET /v1/morphiecore/capabilities` uses the ordinary ingress token. It returns a startup-immutable `version: 1` snapshot with `scope: "gateway_contract"` and `coverage: "partial"`. Each entry names an activated public model and client protocol, with separate `request`, `delivery` and `history` case lists. Frozen standalone tasks are not assessed. No upstream request or request-body collection occurs; HEAD omits the body. The complete snapshot must fit both `response_bytes` and 256 KiB or startup fails.
+
+Each case names a `feature`, a limited `domain`, and `faithful`, `approved_adaptation` or `rejected` treatment. Approved adaptations include stable `rules` IDs. Unlisted cases are `not_assessed`, not implicitly supported or rejected. Statements concern that feature/domain only, assuming all other validation succeeds; neither model-effective settings nor full client loops are asserted.
+
+The first request slice lists explicit public-admission rejection of safety policy, cached-context references and normalization-default tools where applicable; absence does not establish support. Delivery lists selected incidental-settings omissions, protected safety rejection and completion-cause carriers equally for JSON/SSE. Natural or sequence-matched completion differs from ambiguous stop, and these cases exclude pending tool continuation. Responses history preserves a successfully delivered stored projection within its TTL, not facts omitted before delivery or a promise of compatible replay to every target.
+
+Generation JSON/SSE responses carry `X-MorphieCore-Adaptation: possible` and `Link: </v1/morphiecore/capabilities>; rel="describedby"`. This is deliberately conservative, including when no adaptation occurs and when Responses returns a pre-frame failure stream. It is not an actual-loss receipt, a success assertion or proof of Provider-effective behavior. Clients may not display it. Pre-response auth/admission errors, discovery, history operations and standalone tasks do not receive the notice; missing headers do not prove exactness. Standard response bodies and SSE are unchanged; actual receipts remain internal diagnostics.
 
 ## Conversation and cache affinity
 

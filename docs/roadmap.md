@@ -205,12 +205,12 @@ Exit condition: a selected boundary design and an explicit implementation/reconn
 
 #### Public capability and reconnection sequence
 
-The [selected contract](architecture.md#public-capability-and-adaptation-notice) uses a capability snapshot and possible-adaptation notice, with actual receipts internal. Neither surface is implemented yet. An acceptance boolean cannot distinguish exact verbosity support from the approved `gemini.omit-verbosity.v1` omission; streamed usage may introduce losses after headers. Keep both limitations explicit.
+The [selected contract](architecture.md#public-capability-and-adaptation-notice) has an [initial partial gateway surface](usage.md#capability-discovery-and-adaptation-notice), with actual receipts internal. It does not establish model-effective request support or full-loop availability. An acceptance boolean cannot distinguish exact verbosity support from the approved `gemini.omit-verbosity.v1` omission; streamed usage may introduce losses after headers. Keep both limitations explicit.
 
 Schedule implementation and reconnection in this order:
 
 1. Establish model-level evidence and preflight/preparation agreement for each selected existing binding; reject uncalibrated values and stop at interfaces that require routing-policy changes.
-2. Specify endpoint/header names and implement the selected capability/notice surface without activating new bindings or widening admission implicitly.
+2. Extend the partial capability view only with independently verified feature/domain declarations. Do not activate new bindings, widen admission implicitly or treat an unlisted case as rejection.
 3. Reconnect selected exact-carrier client loops first, then already-approved adapted paths. Verify tool calls, returned results, final answers and replay for JSON and SSE. Incompatible completion/safety carriers remain blocked; neither wider admission nor a notice resolves them.
 4. Require the full offline baseline and connected SDK gate for each implementation slice, then separately schedule bounded pi/opencode and Provider acceptance. Keep routing-rule changes in the third stage.
 

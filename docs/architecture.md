@@ -182,13 +182,13 @@ Chat omits incidental settings echoes because its response has no settings carri
 
 #### Public capability and adaptation notice
 
-P7 selects a small authenticated read-only capability snapshot and a conservative HTTP response-header notice of possible adaptation. This is a selected contract, not an implemented endpoint or an activated binding. Actual per-exchange loss receipts remain in internal diagnostics; no public receipt store, custom SSE events or response-body extensions are selected.
+P7 selects an authenticated read-only capability snapshot and a conservative HTTP response-header notice of possible adaptation. The [initial partial surface](usage.md#capability-discovery-and-adaptation-notice) publishes gateway-boundary contracts for activated Generation clients, not model-effective support or full-loop availability. Unlisted cases are unassessed. Actual per-exchange loss receipts remain in internal diagnostics; no public receipt store, custom SSE events or response-body extensions are selected.
 
 Publish by public model and distinguish request acceptance, downstream delivery and history replay, including JSON/SSE limits. Describe faithful support, approved adaptation with stable rule IDs, and rejection. Reuse typed contracts and policies; do not serialize admission booleans or union candidate capabilities. Reveal no credentials, deployment origins or internal candidate identities. Keep `/v1/models` as model discovery rather than overloading its standard fields.
 
 The notice means possible adaptation, not applied loss or proof of Provider-effective settings. Its absence does not certify an exact full loop, and clients may not display it. Late stream reports make response headers unsuitable as complete actual-loss receipts. Do not buffer a complete stream to collect receipts, rely on trailers, add per-request loss-policy overrides or change routing. Neither a notice nor a receipt authorizes dropping completion causes, safety reports or other protected facts.
 
-The [P7 boundary review](roadmap.md#p7-boundary-review) owns implementation and reconnection sequencing. Exact endpoint/header names, binding evidence and selected client loops must be specified before their implementation slice.
+The [P7 boundary review](roadmap.md#p7-boundary-review) owns further capability expansion and reconnection sequencing. Model-level binding evidence and selected client loops must be specified before activating additional support; publishing a gateway rejection or delivery policy does not activate it.
 
 ### Configurable exchange capture
 

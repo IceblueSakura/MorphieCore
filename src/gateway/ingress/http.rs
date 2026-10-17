@@ -17,6 +17,10 @@ impl Gateway {
     /// Embedding callers own listener security; `serve` enforces loopback itself.
     pub fn router(&self) -> Router {
         Router::new()
+            .route(
+                "/v1/morphiecore/capabilities",
+                get(crate::gateway::ingress::capabilities::retrieve),
+            )
             .route("/v1/models", get(crate::gateway::ingress::models::list))
             .route(
                 "/v1/models/{model}",
@@ -214,6 +218,7 @@ async fn handle_client(
         }
         result => result,
     }
+    .map(crate::gateway::ingress::capabilities::notice)
 }
 /// A Responses stream that failed before its first frame still answers as a
 /// stream, ending in `response.failed`.

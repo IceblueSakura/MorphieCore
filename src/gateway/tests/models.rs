@@ -24,6 +24,7 @@ async fn request(gate: &Gateway, method: &str, path: &str) -> (StatusCode, Value
         .await
         .unwrap();
     let status = response.status();
+    assert!(!response.headers().contains_key("x-morphiecore-adaptation"));
     assert_eq!(response.headers()["content-type"], "application/json");
     assert_eq!(response.headers()["cache-control"], "no-store");
     let bytes = to_bytes(response.into_body(), 32 << 10).await.unwrap();
@@ -44,6 +45,54 @@ async fn models_list_and_retrieve_use_the_same_standard_public_object() {
     let (status, model) = request(&gate, "GET", "/v1/models/fixture-model").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(model, expected);
+    let (status, capabilities) = request(&gate, "GET", "/v1/morphiecore/capabilities").await;
+    assert_eq!(status, StatusCode::OK);
+    let settings = json!({
+        "feature":"response.reported.settings",
+        "domain":"incidental_settings_without_safety",
+        "treatment":"approved_adaptation",
+        "rules":["chat.omit-incidental-settings.v1"]
+    });
+    let safety = json!({
+        "feature":"generation.safety","domain":"nonempty_reports_or_settings_echoes",
+        "treatment":"rejected"
+    });
+    let natural = json!({
+        "feature":"generation.completion_cause",
+        "domain":"natural_or_matched_stop_without_tool_continuation","treatment":"rejected"
+    });
+    let ambiguous = json!({
+        "feature":"generation.completion_cause",
+        "domain":"ambiguous_stop_without_tool_continuation","treatment":"faithful"
+    });
+    assert_eq!(
+        capabilities,
+        json!({
+            "object":"morphiecore.capabilities", "version":1,
+            "scope":"gateway_contract", "coverage":"partial", "unlisted":"not_assessed",
+            "provider_effectiveness":"not_asserted", "full_loop":"not_asserted",
+            "data":[
+                {"model":"fixture-model","protocol":"chat_completions",
+                    "delivery_modes":["json","sse"],"request":[],
+                    "delivery":[settings,safety.clone(),natural,ambiguous],"history":[]},
+                {"model":"fixture-model","protocol":"messages",
+                    "delivery_modes":["json","sse"],"request":[],
+                    "delivery":[
+                        {"feature":"response.reported.settings",
+                            "domain":"incidental_settings_without_safety",
+                            "treatment":"approved_adaptation",
+                            "rules":["messages.omit-incidental-settings.v1"]},
+                        safety,
+                        {"feature":"generation.completion_cause",
+                            "domain":"natural_or_matched_stop_without_tool_continuation",
+                            "treatment":"faithful"},
+                        {"feature":"generation.completion_cause",
+                            "domain":"ambiguous_stop_without_tool_continuation",
+                            "treatment":"rejected"}
+                    ],"history":[]}
+            ]
+        })
+    );
 }
 
 #[tokio::test]
@@ -85,6 +134,42 @@ async fn activated_protocols_are_deduplicated_and_images_share_the_directory() {
     let (status, image) = request(&gate, "GET", "/v1/models/fixture-image").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(image, list["data"][0]);
+    let (_, capabilities) = request(&gate, "GET", "/v1/morphiecore/capabilities").await;
+    assert_eq!(capabilities["data"].as_array().unwrap().len(), 3);
+    assert!(
+        capabilities["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|entry| entry["model"] == "fixture-model")
+    );
+    let responses = &capabilities["data"][1];
+    assert_eq!(responses["protocol"], "responses");
+    assert_eq!(
+        responses["delivery"][0],
+        json!({
+            "feature":"response.reported.settings",
+            "domain":"independent_reasoning_controls_without_carrier",
+            "treatment":"approved_adaptation",
+            "rules":["responses.omit-incidental-reasoning-controls.v1"]
+        })
+    );
+    assert_eq!(
+        responses["history"],
+        json!([{
+            "feature":"generation.delivered_projection",
+            "domain":"completed_stored_response_within_ttl","treatment":"faithful"
+        }])
+    );
+    for private in [
+        "private-fixture",
+        "fixture-chat",
+        "fixture-key",
+        "synthetic-upstream-credential",
+        "127.0.0.1",
+    ] {
+        assert!(!capabilities.to_string().contains(private));
+    }
     for method in ["GET", "DELETE"] {
         for label in [
             "unknown",
@@ -112,6 +197,8 @@ async fn discovery_authentication_and_path_failures_never_poll_or_reflect_input(
         ("GET", "/v1/models/fixture-model"),
         ("DELETE", "/v1/models/fixture-model"),
         ("POST", "/v1/models"),
+        ("GET", "/v1/morphiecore/capabilities"),
+        ("POST", "/v1/morphiecore/capabilities"),
     ] {
         for auth in [0, 1, 2, 3] {
             let mut request = Request::builder().method(method).uri(path);
@@ -175,6 +262,8 @@ async fn discovery_obeys_methods_and_shutdown_without_mutating_the_directory() {
         ("DELETE", "/v1/models"),
         ("PUT", "/v1/models/fixture-model"),
         ("POST", "/v1/models/fixture-model"),
+        ("POST", "/v1/morphiecore/capabilities"),
+        ("DELETE", "/v1/morphiecore/capabilities"),
     ] {
         assert_eq!(
             request(&gate, method, path).await.0,
@@ -204,11 +293,32 @@ async fn discovery_obeys_methods_and_shutdown_without_mutating_the_directory() {
             .unwrap()
             .is_empty()
     );
+    let head = gate
+        .router()
+        .oneshot(
+            Request::builder()
+                .method("HEAD")
+                .uri("/v1/morphiecore/capabilities")
+                .header("x-api-key", crate::gateway::tests::support::KEY)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(head.status(), StatusCode::OK);
+    assert_eq!(head.headers()["cache-control"], "no-store");
+    assert!(
+        to_bytes(head.into_body(), 32 << 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
     gate.shutdown();
     for (method, path) in [
         ("GET", "/v1/models"),
         ("GET", "/v1/models/fixture-model"),
         ("DELETE", "/v1/models/fixture-model"),
+        ("GET", "/v1/morphiecore/capabilities"),
     ] {
         let (status, error) = request(&gate, method, path).await;
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
@@ -352,4 +462,45 @@ fn local_directory_encodes_empty_and_alias_views_with_inclusive_resource_limits(
         ModelView::bind(&aliases(1, false), ["alias-00"], 32 << 10),
         Err(StartupError::Binding)
     ));
+
+    use crate::gateway::ingress::capabilities::CapabilityView;
+    let empty = CapabilityView::bind(&BTreeMap::new(), 256 << 10).unwrap();
+    let snapshot: Value = serde_json::from_slice(&empty.0).unwrap();
+    assert_eq!(snapshot["data"], json!([]));
+    let gate = crate::gateway::tests::support::gateway(Limits::default());
+    let view = CapabilityView::bind(&gate.state.entries, 256 << 10).unwrap();
+    assert!(CapabilityView::bind(&gate.state.entries, view.0.len()).is_ok());
+    assert!(matches!(
+        CapabilityView::bind(&gate.state.entries, view.0.len() - 1),
+        Err(StartupError::Limits)
+    ));
+    let mut entry = (*gate.state.entries.values().next().unwrap().as_ref()).clone();
+    entry.public.contract.safety = false;
+    entry.public.contract.cached_context = false;
+    entry.public.contract.normalization_default_tools = false;
+    let crate::adapter::ClientAdapter::OpenAi { contract, .. } = &mut entry.client else {
+        panic!("OpenAI entry")
+    };
+    contract.reported_facts = crate::lowering::generation::ReportedFactPolicy::StrictComplete;
+    let entries = BTreeMap::from([(
+        (family(Profile::Chat), "fixture-model".into()),
+        Arc::new(entry),
+    )]);
+    let view = CapabilityView::bind(&entries, 256 << 10).unwrap();
+    let snapshot: Value = serde_json::from_slice(&view.0).unwrap();
+    assert_eq!(
+        snapshot["data"][0]["request"],
+        json!([
+            {"feature":"generation.safety","domain":"explicit_policy","treatment":"rejected"},
+            {"feature":"generation.cached_context","domain":"existing_reference","treatment":"rejected"},
+            {"feature":"generation.tools","domain":"normalization_default_strictness","treatment":"rejected"}
+        ])
+    );
+    assert_eq!(
+        snapshot["data"][0]["delivery"][0],
+        json!({
+            "feature":"response.reported.settings","domain":"incidental_settings_without_safety",
+            "treatment":"rejected"
+        })
+    );
 }

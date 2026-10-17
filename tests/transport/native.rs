@@ -228,6 +228,38 @@ mod native_bindings {
         assert_eq!(body(&prepared), hello_wire());
         assert_eq!(request, original);
 
+        // Count escaped UTF-8 wire bytes, not characters or the unescaped source.
+        let text = "中文 \"quoted\"\\path";
+        let capped = Adapter::new(Profile::Chat, Dialect::Standard, None)
+            .decode_request(
+                &serde_json::to_vec(&json!({
+                    "model":"public", "max_tokens":32,
+                    "messages":[{"role":"user","content":text}]
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        let expected = json!({
+            "model":"synthetic-model", "max_tokens":32,
+            "cache_control":{"type":"ephemeral"},
+            "messages":[{"role":"user","content":[{"type":"text","text":text}]}]
+        });
+        let mut bounded = native.clone();
+        bounded.execution.request_body_limit = serde_json::to_vec(&expected).unwrap().len();
+        representable(&bounded, &capped).unwrap();
+        let encoded = prepare(&bounded, &p, &secret(), &capped).unwrap();
+        assert_eq!(body(&encoded), expected);
+        assert_eq!(encoded.body.len(), bounded.execution.request_body_limit);
+        bounded.execution.request_body_limit -= 1;
+        assert_eq!(
+            representable(&bounded, &capped),
+            Err(morphiecore::execution::plan::RejectionReason::BodyLimit)
+        );
+        assert!(matches!(
+            prepare(&bounded, &p, &secret(), &capped),
+            Err(morphiecore::execution::AttemptError::Limit)
+        ));
+
         let mut unsupported = request.clone();
         unsupported.context.store = Presence::Null;
         assert!(representable(&native, &unsupported).is_err());
@@ -340,6 +372,7 @@ mod native_catalog {
         let mut request = client
             .decode_client_request(
                 br#"{"model":"claude-haiku-5-5","max_output_tokens":64,"store":false,
+                "temperature":0.5,"top_p":0.8,
                 "input":[{"role":"developer","content":"Be brief."},{"role":"user","content":"hi"}],
                 "tools":[{"type":"function","name":"read","description":"Read a file.",
                     "parameters":{"type":"object","properties":{"path":{"type":"string"}}}}]}"#,
@@ -364,6 +397,8 @@ mod native_catalog {
         tool.strict = morphiecore::semantic::task::generation::FunctionStrictness::Explicit(false);
         request.task.semantic = request.task.semantic.with_settings(settings).unwrap();
         admit(topology.model(binding.model).unwrap(), &request).unwrap();
+        representable(&binding.endpoint(), &request).unwrap();
+        let original = request.clone();
         let (prepared, rules) = morphiecore::execution::prepare_with_rules(
             &binding.endpoint(),
             &binding.provider(),
@@ -373,11 +408,24 @@ mod native_catalog {
         .unwrap();
         let wire: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
         assert_eq!(
-            wire["system"],
-            serde_json::json!([{"type":"text","text":"Be brief."}])
+            wire,
+            serde_json::json!({
+                "model":"claude-haiku-5-5", "max_tokens":64,
+                "cache_control":{"type":"ephemeral"},
+                "system":[{"type":"text","text":"Be brief."}],
+                "messages":[{"role":"user","content":[{"type":"text","text":"hi"}]}],
+                "tools":[{"name":"read","description":"Read a file.","strict":false,
+                    "input_schema":{"type":"object","properties":{"path":{"type":"string"}}}}]
+            })
         );
-        assert_eq!(wire["tools"][0]["strict"], false);
-        assert_eq!(rules, ["messages.developer-as-system.v1"]);
+        assert_eq!(
+            rules,
+            [
+                "messages.omit-sampling.v1",
+                "messages.developer-as-system.v1"
+            ]
+        );
+        assert_eq!(request, original);
         let mut settings = request.task.semantic.settings().clone();
         let morphiecore::semantic::task::generation::ToolDefinition::Function(tool) =
             &mut settings.tools.as_mut().unwrap()[0]
@@ -459,10 +507,14 @@ mod native_catalog {
                     .any(|(n, v)| n == "x-opencode-session" && v.len() == 64)
             );
             let wire: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
-            assert_eq!(wire["model"], binding.upstream);
-            assert_eq!(wire["stream"], stream);
-            assert!(wire.get("thinking").is_none());
-            assert!(wire.get("session_id").is_none());
+            assert_eq!(
+                wire,
+                serde_json::json!({
+                    "model":"claude-haiku-5-5", "max_tokens":32, "stream":stream,
+                    "cache_control":{"type":"ephemeral"},
+                    "messages":[{"role":"user","content":[{"type":"text","text":"synthetic"}]}]
+                })
+            );
             assert_eq!(original, request);
         }
         let mut controlled = request.clone();

@@ -621,6 +621,11 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 .await
                 .unwrap();
             let status = result.status();
+            assert_eq!(result.headers()["x-morphiecore-adaptation"], "possible");
+            assert_eq!(
+                result.headers()["link"],
+                "</v1/morphiecore/capabilities>; rel=\"describedby\""
+            );
             let body = if stream {
                 messages_stream_body(&result.text().await.unwrap())
             } else {

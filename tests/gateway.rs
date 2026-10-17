@@ -120,6 +120,18 @@ async fn answer(
             && i["arguments"] == "{\"n\":1}"));
     }
     state.0.lock().unwrap().push(request.clone());
+    if request.to_string().contains("synthetic-overflow") {
+        return Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .header("content-type", "application/json")
+            .body(Body::from(
+                json!({"error":{
+                    "code":"context_length_exceeded","message":"maximum context length"
+                }})
+                .to_string(),
+            ))
+            .unwrap();
+    }
     let stream = request["stream"] == true;
     let mut output = if chat {
         chat_wire::response(turn)
@@ -397,6 +409,11 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
                 .await
                 .unwrap();
             assert_eq!(response.status(), 200);
+            assert_eq!(response.headers()["x-morphiecore-adaptation"], "possible");
+            assert_eq!(
+                response.headers()["link"],
+                "</v1/morphiecore/capabilities>; rel=\"describedby\""
+            );
             assert!(
                 !response
                     .headers()
@@ -563,8 +580,27 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
             ]}))
             .send().await.unwrap();
         assert_eq!(response.status(), 400);
+        assert!(!response.headers().contains_key("x-morphiecore-adaptation"));
         assert_eq!(observed.0.lock().unwrap().len(), before);
     }
+    // A pre-frame Responses failure is still a stream, not a successful exchange.
+    let response = client
+        .post(format!("{url}/v1/responses"))
+        .bearer_auth(support::CLIENT_KEY)
+        .json(&json!({"model":"public-model","input":"synthetic-overflow",
+            "store":false,"max_output_tokens":32,"stream":true}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.headers()["x-morphiecore-adaptation"], "possible");
+    assert_eq!(
+        response.headers()["link"],
+        "</v1/morphiecore/capabilities>; rel=\"describedby\""
+    );
+    let failed = response.text().await.unwrap();
+    assert!(failed.contains("response.failed") && failed.contains("context_length_exceeded"));
+    assert!(!failed.contains("response.completed"));
     let before = observed.0.lock().unwrap().len();
     let response = client
         .post(format!("{url}/v1/responses"))
@@ -573,6 +609,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         .await
         .unwrap();
     assert_eq!(response.status(), 401);
+    assert!(!response.headers().contains_key("x-morphiecore-adaptation"));
     let response = client
         .post(format!("{url}/v1/responses"))
         .bearer_auth(support::CLIENT_KEY)
@@ -642,6 +679,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         .send().await.unwrap();
     assert_eq!(response.status(), 200);
     assert_eq!(response.headers()["cache-control"], "no-store");
+    assert!(!response.headers().contains_key("x-morphiecore-adaptation"));
     assert_eq!(
         response.json::<Value>().await.unwrap(),
         json!({"created":123,"data":[{"b64_json":"AQID"}],"output_format":"png","size":"1024x1024"})
