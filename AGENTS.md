@@ -2,53 +2,45 @@
 
 ## Project and sources of truth
 
-- MorphieCore is a gateway built on one typed IR. It hides Provider differences from agent clients: pi and opencode first, Codex and Claude Code second. Routing is cache-affine failover, never load balancing.
-- Principles and decisions: [Architecture](docs/architecture.md). Scope and current focus: [Roadmap](docs/roadmap.md). Local setup and API use: [Usage](docs/usage.md).
-- Code and tests define behavior; docs record only concepts, decisions and direction. For available Providers, models and bindings read `src/provider/catalog.rs`, `src/topology/catalog*` and `src/gateway/startup/bootstrap.rs`; never keep lists in docs or memory.
+- MorphieCore hides Provider differences behind one typed IR. pi and opencode are the primary clients. Routing is cache-affine failover, not load balancing.
+- [Architecture](docs/architecture.md) owns principles and decisions; [Roadmap](docs/roadmap.md) owns scope and priorities; [Usage](docs/usage.md) and [Development](docs/development.md) own procedures. Code and tests define behavior; read catalogs and startup code for current Providers, models and bindings.
+
+## Working approach
+
+- Investigate proactively: trace actual client workflows, primary protocol sources and existing implementations. Challenge weak premises, compare alternatives and recommend simpler designs with concrete trade-offs.
+- Own implementation choices within the agreed scope. Explore and propose architectural improvements; when a semantic or structural decision is unresolved, show a minimal counterexample and a recommendation for user selection. Continue independent work meanwhile. Research does not reopen frozen implementation scope.
+- Develop small, coherent slices. State consequential behavior goals and exit conditions in the roadmap, but choose the investigation, prototyping and verification sequence that fits the uncertainty. Do not turn every change into a test-first ritual or a new framework.
 
 ## Authorization
 
-- Before editing, check the branch, `git status` and the target diff. Preserve others' changes; stop if they overlap yours.
-- Work directly on `main`. Commit and push every slice that passes the offline baseline to `origin/main` (standing authorization). Without explicit approval: no deployment, no publishing elsewhere, no credential lifecycle operations (login, refresh, revoke, migrate).
-- Real Provider calls needed for current development are authorized without per-call confirmation or a spending cap. Before each run, fix the target, request count, output cap and timeout; run serially with no hidden retries; obtain credentials only through the project loader; print only redacted status and counts.
-- Within a roadmap-approved phase, large deletions and breaking rewrites are allowed; keep no compatibility shims. Frozen scope gets only the maintenance a refactor requires.
+- Work on `main`; preserve unrelated changes. Commit and push completed slices to `origin/main` after the verification below. Deployment, other publication and credential lifecycle operations require explicit approval.
+- Development-related real Provider calls are authorized without per-call confirmation or a spending cap. Fix the target, request count, output cap and timeout before each run; run serially without hidden retries, using the project loader and redacted reporting only.
+- Approved phases allow large deletions and breaking rewrites without compatibility shims. Frozen implementation gets only necessary maintenance.
 
 ## Security
 
-- Access credentials only through the project loader (default store: `src/credential/storage/directory.rs`). Never use `.env`, private `config/`, OAuth files or third-party auth caches as investigation or test input.
-- Credentials and private config never appear in source, fixtures, logs or tool output. Never print environment variable values. The selected [exchange-capture design](docs/architecture.md#configurable-exchange-capture) permits business headers/bodies only in explicitly enabled private diagnostic capture, never in source, fixtures or tool output. Authentication material is always redacted before capture; configuration cannot disable that redaction.
-- Ingress listens on loopback only and authentication fails closed. Business data cannot select an upstream origin, credential, or auth/proxy header. Credential locators and trusted origins never reach clients.
-- Memory, frames, events and time are all bounded. Cancellation releases the upstream. After commit: no replay, no fabricated success terminal.
+- Access credentials only through the project loader. Never inspect `.env`, private configuration, OAuth files or third-party auth caches as investigation/test input, or print environment values.
+- Keep credentials, private config and business payloads out of source, fixtures, logs and tool output. Only explicitly enabled [private exchange capture](docs/architecture.md#configurable-exchange-capture) may retain business headers/bodies; authentication is always redacted before capture.
+- Preserve loopback-only ingress, fail-closed auth and trusted target selection. Business data cannot choose origins, credentials or auth/proxy headers; credential locators and trusted origins never reach clients. Bound resources and time, release upstreams on cancellation, and never replay after publication or fabricate successful termination.
 
 ## Engineering
 
-- **One IR**: `src/semantic` does not depend on protocols, Providers or execution. Codecs and lowering are pure: no network, credentials or registry. Runtime targets, credentials and retry state stay out of the IR.
-- **Protocol differences stay in protocol modules**: no Provider-specific IR fields, no raw JSON request bags. When the IR cannot express a concept, first show the user a minimal counterexample and structural options, then implement.
-- **Parsing**: upstream responses are strict on known fields and ignore unknown ones. Downstream requests reject critical semantics they cannot express; degradable fields are removed by named rules and recorded. See [Adaptation](docs/architecture.md#adaptation).
-- **Keep it simple**: no prebuilt generic frameworks, extra defensive layers or speculative abstractions. Delete code that is no longer needed instead of keeping old paths. Every new check or limit needs a concrete failure scenario.
-- **Process**: for behavior changes, first state the goal and exit condition in the roadmap's current focus, then write tests first. Dependency changes update `Cargo.lock` and are verified with `--locked`.
-- Docs, code comments, docstrings and commit messages use concise, direct English. Keep one main point per paragraph; use ordered steps for procedures and tables for comparisons. Comments explain only non-obvious reasons, with source URLs when useful. Non-ASCII test inputs are data, not prose.
-- Never inspect or edit `target/`, `.venv/` or `__pycache__/` by hand; never commit `testdata/{generated,reports,dist,runtime}/`.
+- `src/semantic` stays independent of protocols, Providers and execution. Keep runtime targets, credentials and retry state outside the IR; codecs and lowering are pure. Protocol-specific fields and raw wire handling belong in codecs, not IR request bags.
+- Keep known upstream fields strict and ignore unknown ones. Reject unrepresentable critical semantics; use named, recorded rules for approved degradations. Follow [Adaptation](docs/architecture.md#adaptation).
+- Prefer existing solutions and direct code over speculative abstractions. Add checks for concrete failures and remove obsolete code. Update `Cargo.lock` for dependency changes and verify with `--locked`.
+- Use concise English for documentation, comments and commits. Do not inspect/edit build caches by hand or commit `testdata/{generated,reports,dist,runtime}/`.
 
 ## Tests
 
-The suite is deliberately lean. Keep it that way; do not regrow it.
-
-- One positive and one negative case per contract, at the lowest responsible layer. No variant matrices, exhaustive presence combinations, or per-Provider/per-model duplicates.
-- Before adding a test, check that no same-layer test already asserts it; extend or replace an existing test rather than adding a near-copy.
-- Protocol mappings need independently hand-written wire→IR and IR→wire expectations; a round trip alone is not evidence.
-- Frozen tasks keep contract smoke only: one wire oracle, binding preparation and cancellation per task.
-- Always keep safety-invariant tests, whose value is in their assertions rather than line coverage: credentials, ingress auth, body lifecycle and cancellation, transport bounds, origin checks, strict JSON, replay isolation, terminal honesty.
-- When code is deleted, delete its tests and any helpers left unused. To prune, use per-test coverage (procedure in [docs/development.md](docs/development.md)) and report the coverage change.
+- Keep valuable assertions, not a test-count target. Prefer focused checks at the responsible layer and extend existing tests over duplicate cases or matrices. Follow the roadmap's phase-specific scope.
+- Protocol mappings need independent wire→IR and IR→wire expectations; a round trip alone is not evidence. Check that a negative case reaches its intended failure, not an earlier rejection.
+- Preserve credential/auth, lifecycle/cancellation, bounds, origin, strict-JSON, replay-isolation and terminal-honesty assertions. Remove obsolete tests/helpers with deleted code; use [coverage and pruning](docs/development.md#coverage-and-pruning) for deliberate pruning passes, not routine edits.
 
 ## Verification
 
-- Default checks are offline and synthetic-only (commands in [docs/development.md](docs/development.md)): run the affected targets first, then the full baseline: `cargo test`, `cargo clippy --all-targets -D warnings`, `cargo fmt --check`, `git diff --check`.
-- The SDK loopback gate and real Provider calls are separate explicit steps; they supplement, never replace, offline regression.
-- Report the checks actually run, failures and uncovered layers. Passing compilation or synthetic tests does not prove real Provider, SDK or production behavior.
+- Use focused offline checks while iterating; reuse valid evidence instead of rerunning the suite after every edit. Before publishing an implementation slice, run the [full offline baseline](docs/development.md#offline-baseline) and applicable roadmap gates. Documentation-only changes need [documentation checks](docs/development.md#documentation-checks), not Rust/SDK runs.
+- Keep SDK, real-client and Provider acceptance separate from offline regression. Report actual checks, failures and unverified contracts; compilation, coverage percentages and synthetic success do not prove full-chain behavior.
 
 ## Documentation
 
-- The doc set is fixed: `README.md`, `AGENTS.md`, `docs/architecture.md`, `docs/roadmap.md`, `docs/usage.md`, `docs/development.md`, `docs/references.md`, `docs/openapi.json`, plus dated protocol research notes in `docs/refs/` that cite their sources. No analysis pages, run reports or history (use Git).
-- Remove finished slices from the roadmap; record new decisions in the architecture decision table.
-- For Markdown changes, check local paths and heading anchors and run `git diff --check`. For OpenAPI changes, also run the schema checks in [Development](docs/development.md#sdk-loopback-gate) and compare the summary with gateway code.
+Keep the existing document set: `README.md`, `AGENTS.md`, `docs/{architecture,roadmap,usage,development,references}.md`, `docs/openapi.json`, and sourced, dated protocol notes in `docs/refs/`. Do not add run reports or history pages. Remove finished roadmap slices and record meaningful decisions in the architecture decision table.
