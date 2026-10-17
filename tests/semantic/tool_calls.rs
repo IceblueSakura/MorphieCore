@@ -284,14 +284,33 @@ mod tools {
         assert!(decode(&audio).is_err());
         let source = json!({"input":[
         {"type":"message","id":"ins","role":"developer","status":"in_progress","content":"hold"},
-        {"type":"function_call","call_id":"c","name":"lookup","arguments":"{}","namespace":"pkg","async":true,"caller":{"type":"program","caller_id":"prog"}}
+        {"type":"program","id":"p","call_id":"prog","code":"return lookup();","fingerprint":"fp"},
+        {"type":"function_call","call_id":"c","name":"lookup","arguments":"{}","namespace":"pkg","async":true,"caller":{"type":"program","caller_id":"prog"}},
+        {"type":"function_call_output","call_id":"c","output":"ok","caller":{"type":"program","caller_id":"prog"}},
+        {"type":"program_output","id":"po","call_id":"prog","result":"ok","status":"completed"}
     ],"tools":[{"type":"function","name":"lookup","async":true,"defer_loading":true,"allowed_callers":["programmatic"]}]});
         let decoded = responses::decode_generation(&source).unwrap();
+        let mut orphan = source.clone();
+        orphan["input"].as_array_mut().unwrap().remove(1);
+        assert!(matches!(
+            responses::decode_generation(&orphan),
+            Err(morphiecore::protocol::CodecError::Semantic(
+                GenerationError::InvalidDependency
+            ))
+        ));
+        let mut mismatch = source.clone();
+        mismatch["input"][3]["caller"]["caller_id"] = json!("different-program");
+        assert!(matches!(
+            responses::decode_generation(&mismatch),
+            Err(morphiecore::protocol::CodecError::Semantic(
+                GenerationError::InvalidToolResult
+            ))
+        ));
         let Item::Instruction(instruction) = &decoded.semantic.items()[0].1 else {
             panic!("instruction")
         };
         assert_eq!(instruction.status, Some(ItemLifecycle::InProgress));
-        let Item::ToolCall(call) = &decoded.semantic.items()[1].1 else {
+        let Item::ToolCall(call) = &decoded.semantic.items()[2].1 else {
             panic!("call")
         };
         assert_eq!(
@@ -335,8 +354,9 @@ mod tools {
             json!("output_text")
         );
         assert_eq!(assistant["input"][1]["content"][0]["text"], json!("hello"));
-        assert_eq!(encoded["input"][1]["namespace"], json!("pkg"));
-        assert_eq!(encoded["input"][1]["caller"]["type"], json!("program"));
+        assert_eq!(encoded["input"][2]["namespace"], json!("pkg"));
+        assert_eq!(encoded["input"][2]["caller"]["type"], json!("program"));
+        assert_eq!(encoded["input"][3]["caller"], encoded["input"][2]["caller"]);
         assert_eq!(encoded["tools"][0]["defer_loading"], json!(true));
         assert!(
             lower_request(

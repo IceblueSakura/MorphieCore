@@ -6,8 +6,8 @@ use crate::semantic::{context::ServiceClass, value::Presence};
 use crate::{
     protocol::CodecError,
     semantic::task::generation::{
-        InputTokenRelation, ItemId, ItemKind, Outcome, OutputTokenRelation, PartId, PartKind,
-        StreamEvent, StreamTerminal, Usage,
+        InputTokenRelation, InteractionProgress, ItemId, ItemKind, Outcome, OutputTokenRelation,
+        PartId, PartKind, StreamEvent, StreamTerminal, Usage,
     },
 };
 use bytes::Bytes;
@@ -33,6 +33,7 @@ pub struct ClientEventEncoder {
     text_parts: BTreeMap<(ItemId, PartId), usize>,
     next: usize,
     calls: bool,
+    progress: InteractionProgress,
     usage: Option<Usage>,
 }
 fn thinking_block() -> Value {
@@ -105,6 +106,7 @@ impl ClientEventEncoder {
             text_parts: BTreeMap::new(),
             next: 0,
             calls: false,
+            progress: InteractionProgress::Unreported,
             usage: None,
         }
     }
@@ -308,13 +310,16 @@ impl ClientEventEncoder {
             }
             StreamEvent::Usage(usage) => {
                 let selected = super::client::project_usage(*usage)?;
-                if selected != *usage && self.losses.is_empty() {
+                if selected != *usage {
                     let mut loss = super::client::usage_loss();
                     loss.direction = "event.encode";
-                    self.losses.push(loss);
+                    if !self.losses.contains(&loss) {
+                        self.losses.push(loss);
+                    }
                 }
                 self.usage = Some(selected);
             }
+            StreamEvent::Progress(progress) => self.progress = *progress,
             StreamEvent::Terminal { terminal, details } => {
                 self.start(&mut out);
                 let outcome = match terminal {
@@ -323,7 +328,8 @@ impl ClientEventEncoder {
                     StreamTerminal::Failed | StreamTerminal::Error => Outcome::Failed,
                     StreamTerminal::Cancelled => Outcome::Cancelled,
                 };
-                let (stop, sequence) = super::client::terminal(outcome, self.calls, details)?;
+                let (stop, sequence) =
+                    super::client::terminal(outcome, self.progress, self.calls, details)?;
                 // Close every started block by its wire index. Text items own no block;
                 // a thinking item without content has not opened one yet.
                 let mut started: Vec<usize> =

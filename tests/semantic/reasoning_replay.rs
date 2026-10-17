@@ -793,6 +793,24 @@ mod replay_carrier {
             ]
         );
         assert_eq!(request, before);
+        let target = morphiecore::protocol::native::ReplayTarget::new("other", "model-b").unwrap();
+        let mut native = morphiecore::protocol::anthropic::TargetCaps::new(
+            morphiecore::protocol::anthropic::Profile::AdaptiveTextTools,
+            morphiecore::protocol::anthropic::Dialect::Standard,
+        );
+        native.reasoning_as_text = true;
+        native.encode_request(&request, &target).unwrap();
+        let mut partial = body;
+        partial["input"][1]["status"] = json!("incomplete");
+        let mut partial = client()
+            .decode_request(partial.to_string().as_bytes())
+            .unwrap();
+        open_from_client(&mut partial).unwrap();
+        let (wire, _) = upstream("other/model-b")
+            .encode_request_with_rules(&partial, "model-b", &allowed)
+            .unwrap();
+        assert_eq!(wire["input"][1]["status"], "incomplete");
+        assert!(native.encode_request(&partial, &target).is_err());
     }
 
     #[test]

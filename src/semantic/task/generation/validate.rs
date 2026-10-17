@@ -37,6 +37,17 @@ enum CallKind {
     Provider,
 }
 type AliasKey<'a> = (Option<&'a NativeAliasDomain>, &'a str);
+fn caller_reference(
+    context: &CallContext,
+    calls: &BTreeMap<AliasKey<'_>, CallKind>,
+) -> Result<(), GenerationError> {
+    if let Some(CallOrigin::Program { caller_id }) = &context.caller
+        && calls.get(&(None, caller_id.as_str())) != Some(&CallKind::Program)
+    {
+        return Err(GenerationError::InvalidDependency);
+    }
+    Ok(())
+}
 /// Input media is inert URL/inline content of any kind. Opaque references need an
 /// issuer/lifecycle contract first.
 fn input_part(
@@ -49,6 +60,13 @@ fn input_part(
         InputPart::Text(text) => return add(bytes, text.as_str()),
         InputPart::Resource(resource) => resource.media(resources)?,
     };
+    input_resource(resource, bytes, file_decoded_bytes)
+}
+fn input_resource(
+    resource: ResourceView<'_>,
+    bytes: &mut usize,
+    file_decoded_bytes: &mut usize,
+) -> Result<(), GenerationError> {
     if matches!(
         resource.location,
         ResourceLocation::OpaqueReference(_) | ResourceLocation::NamespacedReference { .. }
@@ -80,7 +98,7 @@ pub fn items(
     let mut ids = BTreeSet::new();
     let mut parts = BTreeSet::new();
     let mut calls = BTreeMap::new();
-    let mut namespaces = BTreeMap::new();
+    let mut contexts = BTreeMap::new();
     let mut results = BTreeSet::new();
     let mut bytes = 0usize;
     let mut file_decoded_bytes = 0usize;
@@ -163,25 +181,23 @@ pub fn items(
                             if m.role == MessageRole::Assistant {
                                 return Err(GenerationError::InvalidResource);
                             }
-                            let resource = resource.media(resources)?;
-                            charge(&mut bytes, resource.validate()?)?;
-                            if resource.kind() == ResourceKind::File {
-                                file_decoded_bytes = file_decoded_bytes
-                                    .checked_add(resource.inline_decoded_bytes()?.unwrap_or(0))
-                                    .ok_or(GenerationError::Limit)?;
-                                if file_decoded_bytes > MAX_TOTAL_FILE_DECODED_BYTES {
-                                    return Err(GenerationError::Limit);
-                                }
-                            }
+                            input_resource(
+                                resource.media(resources)?,
+                                &mut bytes,
+                                &mut file_decoded_bytes,
+                            )?;
                         }
                     }
                 }
             }
             Item::ToolCall(c) => {
                 call_context(&c.context, &mut bytes)?;
-                namespaces.insert(
+                if !response {
+                    caller_reference(&c.context, &calls)?;
+                }
+                contexts.insert(
                     (c.context.alias_domain.as_ref(), c.call_id.as_str()),
-                    c.context.namespace.as_ref(),
+                    &c.context,
                 );
                 validate_call(
                     &mut calls,
@@ -201,9 +217,12 @@ pub fn items(
             }
             Item::CustomCall(c) => {
                 call_context(&c.context, &mut bytes)?;
-                namespaces.insert(
+                if !response {
+                    caller_reference(&c.context, &calls)?;
+                }
+                contexts.insert(
                     (c.context.alias_domain.as_ref(), c.call_id.as_str()),
-                    c.context.namespace.as_ref(),
+                    &c.context,
                 );
                 validate_call(
                     &mut calls,
@@ -299,8 +318,11 @@ pub fn items(
                     if linked && preceding != Some(&kind)
                         || !results.insert(reference)
                         || linked
-                            && r.context.namespace.as_ref().is_some_and(|namespace| {
-                                namespaces.get(&reference).copied().flatten() != Some(namespace)
+                            && contexts.get(&reference).is_none_or(|context| {
+                                context.caller != r.context.caller
+                                    || r.context.namespace.as_ref().is_some_and(|namespace| {
+                                        context.namespace.as_ref() != Some(namespace)
+                                    })
                             })
                     {
                         return Err(GenerationError::InvalidToolResult);

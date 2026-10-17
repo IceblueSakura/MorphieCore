@@ -1671,7 +1671,7 @@ mod client_fidelity {
     use serde_json::json;
 
     fn response() -> DecodedResponse {
-        // These delivery fixtures assert content and usage, not a reported stop cause.
+        // Orthogonal content/usage fixtures carry an explicit, representable terminal.
         DecodedResponse {
             semantic: GenerationResponse::new(
                 vec![(
@@ -1692,6 +1692,13 @@ mod client_fidelity {
                 )],
                 Outcome::Completed,
             )
+            .unwrap()
+            .with_progress(InteractionProgress::TurnFinished)
+            .unwrap()
+            .with_details(TerminalDetails {
+                completion: Some(CompletionCause::Natural),
+                ..Default::default()
+            })
             .unwrap(),
             fidelity: Default::default(),
             metadata: morphiecore::protocol::ResponseMetadata {
@@ -1707,7 +1714,10 @@ mod client_fidelity {
     fn terminal() -> StreamEvent {
         StreamEvent::Terminal {
             terminal: StreamTerminal::Completed,
-            details: TerminalDetails::default(),
+            details: TerminalDetails {
+                completion: Some(CompletionCause::Natural),
+                ..Default::default()
+            },
         }
     }
     #[test]
@@ -1716,6 +1726,9 @@ mod client_fidelity {
         assert!(encode_client_response(&response, "m").is_err());
         let mut stream = ClientEventEncoder::new("r", "m");
         stream.encode(&StreamEvent::Started).unwrap();
+        stream
+            .encode(&StreamEvent::Progress(InteractionProgress::TurnFinished))
+            .unwrap();
         assert!(stream.encode(&terminal()).is_err());
         assert!(stream.finish().is_err());
 
@@ -1723,6 +1736,51 @@ mod client_fidelity {
         usage.cached_input_tokens = Some(2);
         usage.input_cache_write_tokens = Some(0);
         response.semantic = response.semantic.with_usage(Some(usage)).unwrap();
+        let mut unknown = response.clone();
+        unknown.semantic = unknown
+            .semantic
+            .with_details(TerminalDetails::default())
+            .unwrap()
+            .with_progress(InteractionProgress::Unreported)
+            .unwrap();
+        assert!(matches!(
+            encode_client_response(&unknown, "m"),
+            Err(morphiecore::protocol::CodecError::Unsupported(reason))
+                if reason == "Messages terminal"
+        ));
+        let mut unknown_stream = ClientEventEncoder::new("r", "m");
+        unknown_stream.encode(&StreamEvent::Usage(usage)).unwrap();
+        assert!(matches!(
+            unknown_stream.encode(&StreamEvent::Terminal {
+                terminal: StreamTerminal::Completed,
+                details: TerminalDetails::default(),
+            }),
+            Err(morphiecore::protocol::CodecError::Unsupported(reason))
+                if reason == "Messages terminal"
+        ));
+        unknown.semantic = unknown
+            .semantic
+            .with_progress(InteractionProgress::NeedsContinuation)
+            .unwrap();
+        assert!(
+            morphiecore::adapter::ClientAdapter::Messages
+                .snapshot(unknown)
+                .is_err()
+        );
+        let mut continuation_stream = ClientEventEncoder::new("r", "m");
+        continuation_stream
+            .encode(&StreamEvent::Usage(usage))
+            .unwrap();
+        continuation_stream
+            .encode(&StreamEvent::Progress(
+                InteractionProgress::NeedsContinuation,
+            ))
+            .unwrap();
+        assert!(matches!(
+            continuation_stream.encode(&terminal()),
+            Err(morphiecore::protocol::CodecError::Unsupported(reason))
+                if reason == "Messages continuation"
+        ));
         assert_eq!(
             encode_client_response(&response, "m").unwrap()["usage"],
             json!({"input_tokens":8,"output_tokens":3,
@@ -1759,6 +1817,9 @@ mod client_fidelity {
         assert!(encode_client_response(&ambiguous, "m").is_err());
         let mut ambiguous_stream = ClientEventEncoder::new("r", "m");
         ambiguous_stream.encode(&StreamEvent::Usage(usage)).unwrap();
+        ambiguous_stream
+            .encode(&StreamEvent::Progress(InteractionProgress::TurnFinished))
+            .unwrap();
         assert!(
             ambiguous_stream
                 .encode(&StreamEvent::Terminal {
@@ -1790,6 +1851,9 @@ mod client_fidelity {
             .update_service_class(response.metadata.context.service_class.clone())
             .unwrap();
         stream.encode(&StreamEvent::Usage(usage)).unwrap();
+        stream
+            .encode(&StreamEvent::Progress(InteractionProgress::TurnFinished))
+            .unwrap();
         let frames = stream.encode(&terminal()).unwrap();
         let values: Vec<serde_json::Value> = frames
             .iter()
@@ -2000,6 +2064,46 @@ mod client_fidelity {
             status: ItemLifecycle::Completed,
             context: Default::default(),
         };
+        let mut unknown_call = response.clone();
+        unknown_call.semantic = GenerationResponse::new(
+            vec![(ItemId::new(1), Item::ToolCall(call.clone()))],
+            Outcome::Completed,
+        )
+        .unwrap()
+        .with_usage(Some(usage))
+        .unwrap();
+        let (retained, wire) = morphiecore::adapter::ClientAdapter::Messages
+            .snapshot(unknown_call)
+            .unwrap();
+        assert_eq!(wire["stop_reason"], "tool_use");
+        assert_eq!(
+            retained.semantic.progress(),
+            InteractionProgress::Unreported
+        );
+        let mut unknown_stream = ClientEventEncoder::new("r", "m");
+        unknown_stream
+            .encode(&crate::events_support::start(
+                1,
+                ItemKind::ToolCall {
+                    format: ArgumentFormat::Raw,
+                    call_id: call.call_id.clone(),
+                    name: call.name.clone(),
+                    context: call.context.clone(),
+                },
+            ))
+            .unwrap();
+        unknown_stream.encode(&StreamEvent::Usage(usage)).unwrap();
+        let terminal_frames = unknown_stream
+            .encode(&StreamEvent::Terminal {
+                terminal: StreamTerminal::Completed,
+                details: TerminalDetails::default(),
+            })
+            .unwrap();
+        assert!(terminal_frames.iter().any(|frame| {
+            std::str::from_utf8(frame)
+                .unwrap()
+                .contains(r#""stop_reason":"tool_use""#)
+        }));
         let tool_response = |call: ToolCall| {
             let mut value = response.clone();
             value.semantic = GenerationResponse::from_resources(
@@ -2007,6 +2111,8 @@ mod client_fidelity {
                 Outcome::Completed,
                 ResourceTable::default(),
             )
+            .unwrap()
+            .with_progress(InteractionProgress::AwaitingToolResults)
             .unwrap()
             .with_usage(Some(usage))
             .unwrap();
@@ -2171,6 +2277,7 @@ mod client_fidelity {
         for (key, value) in [
             ("defer_loading", json!(true)),
             ("allowed_callers", json!(["code_execution_20250825"])),
+            ("input_examples", json!([{}])),
         ] {
             let mut active = strict.clone();
             active["tools"][0][key] = value;

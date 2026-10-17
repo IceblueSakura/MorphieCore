@@ -204,6 +204,11 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                 tools
                     .iter()
                     .map(|t| {
+                        if t.get("input_examples").is_some() {
+                            return Err(CodecError::Unsupported(
+                                "Anthropic tool input examples".into(),
+                            ));
+                        }
                         if ["defer_loading", "allowed_callers"]
                             .iter()
                             .any(|key| t.get(key).is_some())
@@ -617,7 +622,12 @@ pub fn encode_client_response(
             _ => return Err(CodecError::Unsupported("Messages item".into())),
         }
     }
-    let (stop_reason, stop_sequence) = terminal(semantic.outcome(), calls, semantic.details())?;
+    let (stop_reason, stop_sequence) = terminal(
+        semantic.outcome(),
+        semantic.progress(),
+        calls,
+        semantic.details(),
+    )?;
     let mut v = Map::new();
     v.insert("id".into(), json!(response.metadata.required_id()?));
     v.insert("type".into(), json!("message"));
@@ -636,27 +646,52 @@ pub fn encode_client_response(
 }
 pub(super) fn terminal(
     outcome: Outcome,
+    progress: InteractionProgress,
     calls: bool,
     details: &TerminalDetails,
 ) -> Result<(&'static str, Option<&str>), CodecError> {
     details.validate(outcome)?;
+    if progress == InteractionProgress::NeedsContinuation {
+        return Err(CodecError::Unsupported("Messages continuation".into()));
+    }
     if let Some(cause) = &details.completion {
-        return match cause {
-            CompletionCause::Natural if !calls => Ok(("end_turn", None)),
-            CompletionCause::StopSequence(text) if !calls => {
+        return match (cause, progress, calls) {
+            (CompletionCause::Natural, InteractionProgress::TurnFinished, false) => {
+                Ok(("end_turn", None))
+            }
+            (CompletionCause::StopSequence(text), InteractionProgress::TurnFinished, false) => {
                 Ok(("stop_sequence", Some(text.as_str())))
             }
             _ => Err(CodecError::Unsupported("Messages completion cause".into())),
         };
     }
-    let stop_reason = match (outcome, &details.incomplete) {
-        (Outcome::Completed, _) if calls => "tool_use",
-        (Outcome::Completed, _) => "end_turn",
-        (Outcome::Incomplete, Some(IncompleteReason::MaxOutputTokens)) => "max_tokens",
-        (Outcome::Incomplete, Some(IncompleteReason::ContextWindowExceeded)) => {
-            "model_context_window_exceeded"
-        }
-        (Outcome::Incomplete, Some(IncompleteReason::ContentFilter)) => "refusal",
+    let stop_reason = match (outcome, progress, calls, &details.incomplete) {
+        // Completed calls are pending result dependencies in this carrier (ordinary
+        // result items reject above), independently of a reported disposition.
+        (
+            Outcome::Completed,
+            InteractionProgress::Unreported | InteractionProgress::AwaitingToolResults,
+            true,
+            _,
+        ) => "tool_use",
+        (
+            Outcome::Incomplete,
+            InteractionProgress::Unreported,
+            _,
+            Some(IncompleteReason::MaxOutputTokens),
+        ) => "max_tokens",
+        (
+            Outcome::Incomplete,
+            InteractionProgress::Unreported,
+            _,
+            Some(IncompleteReason::ContextWindowExceeded),
+        ) => "model_context_window_exceeded",
+        (
+            Outcome::Incomplete,
+            InteractionProgress::Unreported,
+            _,
+            Some(IncompleteReason::ContentFilter),
+        ) => "refusal",
         _ => return Err(CodecError::Unsupported("Messages terminal".into())),
     };
     Ok((stop_reason, None))

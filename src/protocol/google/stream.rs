@@ -209,17 +209,19 @@ impl GenerationSseDecoder {
         if self.finished {
             return Err(invalid("Gemini chunk after finish"));
         }
-        if self.metadata.is_none() {
+        let id = string(o, "responseId")?;
+        let model = string(o, "modelVersion")?;
+        if let Some(metadata) = &self.metadata {
+            if id.is_some_and(|id| Some(id) != metadata.id.as_deref())
+                || model.is_some_and(|model| model != metadata.model)
+            {
+                return Err(invalid("Gemini response identity changed"));
+            }
+        } else {
             let metadata = ResponseMetadata {
                 storage: None,
-                id: Some(
-                    string(o, "responseId")?
-                        .ok_or_else(|| invalid("responseId"))?
-                        .into(),
-                ),
-                model: string(o, "modelVersion")?
-                    .ok_or_else(|| invalid("modelVersion"))?
-                    .into(),
+                id: Some(id.ok_or_else(|| invalid("responseId"))?.into()),
+                model: model.ok_or_else(|| invalid("modelVersion"))?.into(),
                 created: None,
                 context: Default::default(),
                 instruction_fidelity: Default::default(),

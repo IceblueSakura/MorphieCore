@@ -516,6 +516,11 @@ fn stream_rejects_unidentified_calls_late_chunks_and_unfinished_eof() {
     }]);
     let mut blocked_with_output = frames();
     blocked_with_output[0]["promptFeedback"] = json!({"blockReason":"SAFETY"});
+    let mut drift = frames();
+    drift[1]["responseId"] = json!("different-response");
+    drift[1]["modelVersion"] = json!("different-model");
+    let mut malformed_identity = frames();
+    malformed_identity[1]["modelVersion"] = json!(7);
     for bytes in [
         wire(&missing_id),
         wire(&late),
@@ -524,6 +529,8 @@ fn stream_rejects_unidentified_calls_late_chunks_and_unfinished_eof() {
         wire(&probabilities),
         wire(&safety),
         wire(&blocked_with_output),
+        wire(&drift),
+        wire(&malformed_identity),
     ] {
         assert!(decode(&bytes).is_err());
     }
@@ -641,6 +648,18 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
         body["tools"],
         json!([{"functionDeclarations":[{"name":"read"}]}])
     );
+    let mut scalar = bare.settings().clone();
+    let Some(ToolDefinition::Function(tool)) = scalar.tools.as_mut().and_then(|v| v.first_mut())
+    else {
+        panic!("function");
+    };
+    tool.parameters = Some(json!({"type":"string"}).into());
+    let scalar = bare.with_settings(scalar).unwrap();
+    assert!(matches!(
+        encode_generation_request(&scalar, &observed.fidelity, &target(), None),
+        Err(morphiecore::protocol::CodecError::Unsupported(reason))
+            if reason == "Gemini semantic carrier"
+    ));
     // Chat delivers reasoning ahead of the message; the anchor, not the position, binds it.
     let mut items = request.items().to_vec();
     let signed = items.remove(5);

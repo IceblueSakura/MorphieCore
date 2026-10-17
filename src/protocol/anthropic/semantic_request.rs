@@ -357,6 +357,9 @@ pub(super) fn project(
             if let Item::Reasoning(r) = item
                 && r.replay.is_none()
             {
+                if r.status != ItemLifecycle::Completed {
+                    return Err(unsupported());
+                }
                 for (_, part) in &r.parts {
                     let (ReasoningContent::Summary(t) | ReasoningContent::Text(t)) = part;
                     if !t.as_str().trim().is_empty() {

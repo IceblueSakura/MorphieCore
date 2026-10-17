@@ -194,7 +194,7 @@ impl GenerationRequest {
     }
     /// Candidate copy: listed reasoning becomes assistant text under a fresh derived ID,
     /// since an item's kind is protected under its ID; envelope membership follows the
-    /// new ID. Listed reasoning without non-blank text is removed.
+    /// new ID and lifecycle is preserved. Listed reasoning without non-blank text is removed.
     pub fn with_reasoning_as_text(mut self, owners: &[ItemId]) -> Result<Self, GenerationError> {
         let mut items = Vec::with_capacity(self.items.len());
         for (position, (id, item)) in self.items.iter().enumerate() {
@@ -227,7 +227,7 @@ impl GenerationRequest {
                 Item::Message(Message {
                     role: MessageRole::Assistant,
                     parts,
-                    status: ItemLifecycle::Completed,
+                    status: reasoning.status,
                     phase: None,
                 }),
             ));

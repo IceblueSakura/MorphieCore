@@ -222,7 +222,7 @@ Place this object on the public model, alongside `candidates`. At least one cand
 
 `budget_to_effort` uses the target's declared effort scope: response-wide for Messages, reasoning-only for the other current protocols. `effort_to_budget` accepts reasoning-scoped effort and currently requires a generateContent binding. An existing qualitative effort calibration cannot be combined with a numeric conversion. Unsupported target levels, incompatible controls and over-ceiling budgets still reject; the table does not widen model admission or change dialects.
 
-`reasoning_as_text` controls conversion of history reasoning into assistant text, not visibility of new reasoning output. With the default `false`, a candidate that needs that conversion rejects rather than deleting readable content. Valid native reasoning/replay carriers remain available.
+`reasoning_as_text` controls conversion of history reasoning into assistant text, not visibility of new reasoning output. With the default `false`, a candidate that needs that conversion rejects rather than deleting readable content. Conversion preserves the source lifecycle; a target without a partial-history carrier rejects unfinished reasoning. Valid native reasoning/replay carriers remain available.
 
 Only listed models are activated. Frozen Images, Speech, Transcription and Embeddings entries use an empty object (`"configured-frozen-model": {}`); they retain their existing single catalog target and pool constraints, without Generation overrides.
 
@@ -326,6 +326,8 @@ The pinned Chat SSE contract has no custom-call delta carrier. Chat upstream str
 Chat accepts the deprecated `max_tokens` as the output cap, but not together with `max_completion_tokens`. Chat and Responses codecs carry `verbosity`; native Messages and Google projections use selected, recorded omission rules. A codec carrier does not establish model-effective support or binding admission. Chat `stop` and Messages `stop_sequences` decode into ordered stop controls, but unchanged default binding admission does not enable them merely because the codecs have carriers.
 
 Active Chat `functions`, `function_call` and `web_search_options`, and Messages `container`, `mcp_servers`, `context_management` and `compaction` remain unsupported and rejected. Other unrecognized fields are ignored by name. Messages `thinking.display` is preserved; Messages `top_k` decodes, but the native Messages target rejects it. Messages responses with citations or missing/ambiguous final usage fail projection rather than dropping annotations or inventing zero counts; a failure after streaming starts aborts delivery without a success terminal.
+
+Chat `moderation` and Messages tool `input_examples` are known unsupported semantics and reject whenever present, before unknown-field filtering. Messages delivery requires terminal evidence: a finished turn plus a natural/matched cause, completed pending tool calls with no completion cause, or a supported incomplete reason. Pending calls can carry `tool_use` even when source disposition is unreported; this does not synthesize a source progress report. Unknown completed terminals without pending calls and explicit continuation reject in JSON and SSE; a completed Responses response alone does not establish a Messages `end_turn`.
 
 ### Image input
 

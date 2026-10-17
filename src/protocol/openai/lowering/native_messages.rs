@@ -466,10 +466,42 @@ mod tests {
             .unwrap();
         messages
             .encode(
-                &StreamEvent::Usage(source.semantic.usage().unwrap()),
+                &StreamEvent::ItemStarted {
+                    item: ItemId::new(1),
+                    kind: ItemKind::Message { phase: None },
+                    replay: None,
+                },
                 &source.fidelity,
             )
             .unwrap();
+        messages
+            .encode(
+                &StreamEvent::PartStarted {
+                    item: ItemId::new(1),
+                    part: PartId::new(1),
+                    kind: PartKind::Refusal,
+                },
+                &source.fidelity,
+            )
+            .unwrap();
+        let mut inclusive = Usage::operation(10, 3, 13);
+        inclusive.cached_input_tokens = Some(2);
+        inclusive.input_cache_write_tokens = Some(0);
+        messages
+            .encode(&StreamEvent::Usage(inclusive), &source.fidelity)
+            .unwrap();
+        assert!(
+            messages
+                .losses()
+                .iter()
+                .any(|loss| loss.rule == "messages.refusal-as-text.v1")
+        );
+        assert!(
+            messages
+                .losses()
+                .iter()
+                .any(|loss| loss.rule == "messages.usage-view.v1")
+        );
         metadata.context.settings = Some(safety_settings);
         assert!(messages.update_metadata(metadata).is_err());
         assert!(messages.encode(&terminal, &source.fidelity).is_err());

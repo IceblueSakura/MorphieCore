@@ -64,6 +64,24 @@ fn complete_chat_envelope_separates_delivery_and_rejects_unsupported_admission()
     )
     .unwrap();
     assert_eq!(out, source);
+    let client = morphiecore::protocol::openai::Adapter::new(
+        Profile::Chat,
+        morphiecore::protocol::openai::Dialect::Standard,
+        None,
+    );
+    client
+        .decode_client_request(source.to_string().as_bytes())
+        .unwrap();
+    let mut moderated = source.clone();
+    moderated["moderation"] = json!({
+        "model":"omni-moderation-latest",
+        "policy":{"input":{"mode":"block"},"output":{"mode":"block"}}
+    });
+    assert!(matches!(
+        client.decode_client_request(moderated.to_string().as_bytes()),
+        Err(morphiecore::protocol::CodecError::Unsupported(reason))
+            if reason == "Chat moderation"
+    ));
     let projected = responses::encode_generation(
         &lower_request(
             &d.task.semantic,

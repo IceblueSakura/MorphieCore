@@ -242,7 +242,9 @@ impl GenerationSseDecoder {
                 out.push(StreamEvent::MessageEnvelope(group));
                 out.push(StreamEvent::Usage(super::semantic::usage(&message.usage)));
                 let (outcome, progress, details) = super::semantic::outcome(message)?;
-                out.push(StreamEvent::Progress(progress));
+                if progress != InteractionProgress::Unreported {
+                    out.push(StreamEvent::Progress(progress));
+                }
                 out.push(StreamEvent::Terminal {
                     terminal: if outcome == Outcome::Incomplete {
                         StreamTerminal::Incomplete

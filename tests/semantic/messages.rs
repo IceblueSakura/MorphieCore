@@ -50,7 +50,7 @@ mod message_envelopes {
     #[test]
     fn reasoning_as_text_takes_a_derived_id_inside_its_envelope() {
         let source = responses::decode_generation(&json!({"input":[
-            {"type":"reasoning","id":"rs","summary":[
+            {"type":"reasoning","id":"rs","status":"incomplete","summary":[
                 {"type":"summary_text","text":"Plan"},{"type":"summary_text","text":" "}]},
             {"type":"function_call","call_id":"c","name":"lookup","arguments":"{}"},
             {"type":"function_call_output","call_id":"c","output":"result"}
@@ -89,7 +89,7 @@ mod message_envelopes {
                                 .into()
                         ),
                     }],
-                    status: ItemLifecycle::Completed,
+                    status: ItemLifecycle::Incomplete,
                     phase: None,
                 })
             )

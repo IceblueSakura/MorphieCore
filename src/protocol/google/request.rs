@@ -154,6 +154,11 @@ pub(super) fn project(
                 // An omitted schema declares a function without parameters, as in the source.
                 // https://ai.google.dev/api/caching#FunctionDeclaration
                 if let Some(parameters) = &t.parameters {
+                    // This carrier describes named parameters, not a scalar/union input.
+                    // Do not infer or inject an object constraint into the source schema.
+                    if parameters.root().get("type").and_then(Value::as_str) != Some("object") {
+                        return Err(unsupported());
+                    }
                     d.insert("parametersJsonSchema".into(), parameters.root().clone());
                 }
                 Ok(Value::Object(d))

@@ -124,6 +124,10 @@ pub(crate) fn decode_request_with(
         v
     };
     let o = object(v)?;
+    // Known security intent is not an unregistered extension.
+    if o.contains_key("moderation") {
+        return Err(CodecError::Unsupported("Chat moderation".into()));
+    }
     let allowed: Vec<_> = chat::FIELDS
         .iter()
         .copied()

@@ -256,6 +256,10 @@ fn incremental_native_events_reduce_to_the_independent_static_semantics() {
                 native.remove(12);
                 native.remove(11);
                 final_wire["content"][2]["input"] = json!({});
+                // Incomplete streams do not report a disposition; no Unreported
+                // progress event may be emitted into the shared grammar.
+                native[13]["delta"]["stop_reason"] = json!("max_tokens");
+                final_wire["stop_reason"] = json!("max_tokens");
             }
             3 => {
                 native[7]["content_block"]["text"] = json!("start ");

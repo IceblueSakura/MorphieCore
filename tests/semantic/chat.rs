@@ -1436,11 +1436,13 @@ mod files {
         };
         assert_eq!(resource.validate(), Err(GenerationError::Limit));
         assert!(ResourceTable::new(vec![(ResourceId::new(1), resource.location)]).is_err());
-        // Generic IDs remain typed but have no issuer-bound file carrier.
+        // Media uses cannot borrow generic citation identities as input files.
         let mut resource = typed_file(None);
         resource.location = ResourceLocation::OpaqueReference(text("file-synthetic"));
-        let request = typed_request(vec![resource]).unwrap();
-        assert!(encode_typed(&request, Contract::full()).is_err());
+        assert_eq!(
+            typed_request(vec![resource]),
+            Err(GenerationError::InvalidResource)
+        );
     }
 
     #[test]
