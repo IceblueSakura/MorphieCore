@@ -1,5 +1,5 @@
 //! Typed terminal details, shared by static and event codecs.
-use crate::protocol::openai::{CodecError, common::*};
+use crate::protocol::openai::{CodecError, common::*, lowering::projection::LossRule};
 use crate::semantic::task::generation::*;
 use serde_json::{Map, Value, json};
 pub(super) fn decode_details(o: &Map<String, Value>) -> Result<TerminalDetails, CodecError> {
@@ -64,35 +64,46 @@ pub(super) fn decode_details(o: &Map<String, Value>) -> Result<TerminalDetails, 
     })
 }
 /// Chat has two distinct non-success finish reasons; neither is a successful stop.
+/// Completion-cause approximations are recorded by [`terminal_losses`].
 pub(super) fn chat_finish(response: &GenerationResponse) -> Result<&'static str, CodecError> {
-    check_completion(
-        response.details(),
-        crate::protocol::openai::Profile::Chat,
-        matches!(response.continuation(), Continuation::ToolResults(_)),
-    )?;
     match (response.outcome(), response.details().incomplete.as_ref()) {
+        // `stop` reports a natural or matched stop, also beside forced tool calls.
+        (Outcome::Completed, _) if response.details().completion.is_some() => Ok("stop"),
         (Outcome::Completed, _) => Ok(match response.continuation() {
             Continuation::Unreported => "stop",
             Continuation::ToolResults(_) => "tool_calls",
         }),
         (Outcome::Incomplete, Some(IncompleteReason::MaxOutputTokens)) => Ok("length"),
-        (Outcome::Incomplete, Some(IncompleteReason::ContentFilter)) => Ok("content_filter"),
+        (
+            Outcome::Incomplete,
+            Some(IncompleteReason::ContentFilter | IncompleteReason::Recitation),
+        ) => Ok("content_filter"),
         _ => Err(CodecError::Unsupported("Chat terminal".into())),
     }
 }
-pub(super) fn check_completion(
+/// Selected terminal approximations for a profile; an empty list means exact.
+/// Chat `stop` officially covers a natural stop and a matched stop sequence:
+/// https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/chat/chat_completion.py
+pub(super) fn terminal_losses(
     details: &TerminalDetails,
     profile: crate::protocol::openai::Profile,
-    pending_tools: bool,
-) -> Result<(), CodecError> {
-    if details.completion.is_some()
-        && !(profile == crate::protocol::openai::Profile::Chat
-            && details.completion == Some(CompletionCause::NaturalOrStopSequence)
-            && !pending_tools)
-    {
-        return Err(CodecError::Unsupported("completion cause".into()));
+) -> Result<Vec<LossRule>, CodecError> {
+    use crate::protocol::openai::Profile;
+    let mut losses = vec![];
+    match (&details.completion, profile) {
+        (None, _) => {}
+        (Some(CompletionCause::NaturalOrStopSequence), Profile::Chat) => {}
+        (Some(_), Profile::Chat) => losses.push(LossRule::CoarsenChatCompletionCause),
+        (Some(_), Profile::Responses) => losses.push(LossRule::OmitResponsesCompletionCause),
     }
-    Ok(())
+    match details.incomplete {
+        Some(IncompleteReason::ContextWindowExceeded) => {
+            return Err(CodecError::Unsupported("context-window terminal".into()));
+        }
+        Some(IncompleteReason::Recitation) => losses.push(LossRule::RecitationAsContentFilter),
+        _ => {}
+    }
+    Ok(losses)
 }
 pub(super) fn encode_error(error: Option<&ResponseError>) -> Value {
     error
@@ -106,6 +117,18 @@ pub(super) fn encode_error(error: Option<&ResponseError>) -> Value {
         })
         .unwrap_or(Value::Null)
 }
-pub(super) fn encode_incomplete(reason: Option<&IncompleteReason>) -> Value {
-    reason.map(|r|json!({"reason":match r {IncompleteReason::Unspecified=>Value::Null,IncompleteReason::MaxOutputTokens=>json!("max_output_tokens"),IncompleteReason::ContentFilter=>json!("content_filter"),IncompleteReason::Other(t)=>json!(t.as_str())}})).unwrap_or(Value::Null)
+pub(super) fn encode_incomplete(reason: Option<&IncompleteReason>) -> Result<Value, CodecError> {
+    let Some(reason) = reason else {
+        return Ok(Value::Null);
+    };
+    let reason = match reason {
+        IncompleteReason::Unspecified => Value::Null,
+        IncompleteReason::MaxOutputTokens => json!("max_output_tokens"),
+        IncompleteReason::ContentFilter | IncompleteReason::Recitation => json!("content_filter"),
+        IncompleteReason::ContextWindowExceeded => {
+            return Err(CodecError::Unsupported("context-window terminal".into()));
+        }
+        IncompleteReason::Other(t) => json!(t.as_str()),
+    };
+    Ok(json!({ "reason": reason }))
 }

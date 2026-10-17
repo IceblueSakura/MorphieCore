@@ -44,8 +44,42 @@ impl Intake {
             description: resource.description,
         })
     }
+    /// A mid-conversation system message becomes one ordered, text-only instruction.
+    pub(super) fn instruction(
+        &mut self,
+        parts: &[super::CacheMarked<String>],
+    ) -> Result<(), CodecError> {
+        if parts.is_empty() {
+            return Err(CodecError::Invalid("Anthropic empty system message"));
+        }
+        if self.items.len() >= MAX_ITEMS {
+            return Err(CodecError::Limit);
+        }
+        let id = ItemId::scoped(self.scope, self.items.len() as u64 + 1);
+        let base = id.get() * (MAX_ITEMS as u64 + 1);
+        let parts = parts
+            .iter()
+            .enumerate()
+            .map(|(i, part)| {
+                Ok(Part {
+                    id: PartId::scoped(self.scope, base + i as u64),
+                    content: text(&part.content)?,
+                    cache: part.cache,
+                })
+            })
+            .collect::<Result<_, CodecError>>()?;
+        self.items.push((
+            id,
+            Item::Instruction(Instruction {
+                authority: InstructionAuthority::System,
+                parts,
+                status: None,
+            }),
+        ));
+        Ok(())
+    }
     fn block(&mut self, block: &Block, role: Role) -> Result<ItemId, CodecError> {
-        if !block.permits(role) {
+        if role == Role::System || !block.permits(role) {
             return Err(CodecError::Invalid("Anthropic block role"));
         }
         if self.items.len() >= MAX_ITEMS {

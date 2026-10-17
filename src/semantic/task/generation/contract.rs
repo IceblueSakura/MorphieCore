@@ -6,11 +6,11 @@ use crate::semantic::task::generation::{
 #[strum(serialize_all = "snake_case")]
 pub enum GenerationFeature {
     Instructions,
+    OrderedInstructions,
     Temperature,
     MaxOutputTokens,
     Tools,
     ProviderObservation,
-    ImageOutput,
     TextMetadata,
     Controls,
     ParallelTools,
@@ -39,6 +39,8 @@ pub enum GenerationFeature {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GenerationSemanticContract {
     pub instructions: bool,
+    /// Instruction items after conversation content keep their position.
+    pub ordered_instructions: bool,
     pub temperature: bool,
     pub max_output_tokens: bool,
     pub tools: bool,
@@ -84,6 +86,7 @@ impl GenerationSemanticContract {
             response_effort: true,
             compaction: true,
             instructions: true,
+            ordered_instructions: true,
             temperature: true,
             max_output_tokens: true,
             tools: true,
@@ -126,6 +129,7 @@ impl GenerationSemanticContract {
             response_effort: false,
             compaction: false,
             instructions: true,
+            ordered_instructions: true,
             temperature: true,
             max_output_tokens: true,
             tools: true,
@@ -166,6 +170,7 @@ impl GenerationSemanticContract {
     pub fn supports(&self, promise: &Self) -> bool {
         [
             (promise.instructions, self.instructions),
+            (promise.ordered_instructions, self.ordered_instructions),
             (promise.temperature, self.temperature),
             (promise.max_output_tokens, self.max_output_tokens),
             (promise.tools, self.tools),
@@ -219,9 +224,6 @@ impl GenerationSemanticContract {
     ) -> Result<GenerationResponseRequirements, GenerationFeature> {
         use GenerationFeature::*;
         let q = GenerationResponseRequirements::derive(response);
-        if q.assistant_media {
-            return Err(ImageOutput);
-        }
         if q.provider_observations {
             return Err(ProviderObservation);
         }
@@ -271,9 +273,6 @@ impl GenerationSemanticContract {
     ) -> Result<GenerationRequirements, GenerationFeature> {
         use GenerationFeature::*;
         let q = GenerationRequirements::derive(r);
-        if q.assistant_media {
-            return Err(ImageOutput);
-        }
         if q.provider_observations {
             return Err(ProviderObservation);
         }
@@ -281,6 +280,11 @@ impl GenerationSemanticContract {
             (q.safety_settings, self.safety, Safety),
             (q.compaction, self.compaction, Compaction),
             (q.instruction_count > 0, self.instructions, Instructions),
+            (
+                q.ordered_instructions,
+                self.ordered_instructions,
+                OrderedInstructions,
+            ),
             (q.temperature, self.temperature, Temperature),
             (
                 q.max_output_tokens.is_some(),

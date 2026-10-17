@@ -107,12 +107,16 @@ impl TextContent {
 pub enum Role {
     User,
     Assistant,
+    /// Mid-conversation system message; only text blocks are carried.
+    /// https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages
+    System,
 }
 impl Role {
     pub(super) fn read(v: &Value) -> Result<Self, CodecError> {
         match v.as_str() {
             Some("user") => Ok(Self::User),
             Some("assistant") => Ok(Self::Assistant),
+            Some("system") => Ok(Self::System),
             _ => Err(CodecError::Invalid("Anthropic role")),
         }
     }
@@ -120,8 +124,24 @@ impl Role {
         match self {
             Self::User => "user",
             Self::Assistant => "assistant",
+            Self::System => "system",
         }
     }
+}
+/// A run of system messages follows a user turn and precedes an assistant turn or
+/// ends the list; it is never first and never separates a call from its results.
+pub(super) fn validate_system_placement(roles: &[Role]) -> Result<(), CodecError> {
+    for (index, role) in roles.iter().enumerate() {
+        if *role != Role::System {
+            continue;
+        }
+        let before = roles[..index].iter().rev().find(|r| **r != Role::System);
+        let after = roles[index + 1..].iter().find(|r| **r != Role::System);
+        if before != Some(&Role::User) || after.is_some_and(|r| *r != Role::Assistant) {
+            return Err(CodecError::Invalid("Anthropic system message placement"));
+        }
+    }
+    Ok(())
 }
 #[derive(Clone, Eq, PartialEq)]
 pub enum MessageContent {
@@ -601,11 +621,13 @@ impl Request {
             return Err(CodecError::Invalid("Anthropic max_tokens"));
         }
         count(self.messages.len())?;
-        if self.messages.first().map(|m| m.role) != Some(Role::User)
-            || self.messages.last().map(|m| m.role) != Some(Role::User)
+        let roles: Vec<_> = self.messages.iter().map(|m| m.role).collect();
+        if roles.first() != Some(&Role::User)
+            || roles.iter().rev().find(|r| **r != Role::System) != Some(&Role::User)
         {
             return Err(CodecError::Invalid("Anthropic user boundary"));
         }
+        validate_system_placement(&roles)?;
         nonnull(&self.system)?;
         nonnull(&self.tools)?;
         nonnull(&self.tool_choice)?;

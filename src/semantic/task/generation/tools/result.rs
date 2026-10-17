@@ -16,6 +16,8 @@ pub enum ToolExecution {
 pub enum ToolOutput {
     Text(String),
     Parts(Vec<Part<InputPart>>),
+    /// JSON result value, as in structured Provider observations and Gemini
+    /// `functionResponse.response`; text-only result carriers reject it.
     Structured(crate::semantic::task::generation::StructuredValue),
 }
 impl ToolOutput {

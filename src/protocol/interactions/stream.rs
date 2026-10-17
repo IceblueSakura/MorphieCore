@@ -587,10 +587,11 @@ impl GenerationSseDecoder {
                 InteractionProgress::AwaitingToolResults,
                 None,
             ),
+            // The status names no cause; a token limit is only one documented example.
             "incomplete" => (
                 StreamTerminal::Incomplete,
                 InteractionProgress::Unreported,
-                Some(IncompleteReason::MaxOutputTokens),
+                Some(IncompleteReason::Unspecified),
             ),
             "failed" | "cancelled" => return Err(CodecError::StreamFailure(500).into()),
             _ => return Err(invalid("Interactions terminal status")),

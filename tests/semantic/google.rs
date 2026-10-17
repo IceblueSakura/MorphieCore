@@ -113,6 +113,17 @@ fn stream_maps_thoughts_text_calls_and_anchored_signatures() {
         partial.semantic.details().incomplete,
         Some(IncompleteReason::MaxOutputTokens)
     );
+    let recited = decode(&wire(&[json!({
+        "responseId":"recited","modelVersion":"gemini-synthetic",
+        "candidates":[{"index":0,"content":{"role":"model","parts":[{"text":"partial"}]},
+            "finishReason":"RECITATION"}],
+        "usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}
+    })]))
+    .unwrap();
+    assert_eq!(
+        recited.semantic.details().incomplete,
+        Some(IncompleteReason::Recitation)
+    );
     let observed = decode(&wire(&frames())).unwrap();
     assert_eq!(observed.metadata.id.as_deref(), Some("resp-1"));
     assert_eq!(
@@ -613,6 +624,23 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
         encode_generation_request(&request, &observed.fidelity, &target(), None).unwrap();
     assert_eq!(body, expected);
     assert!(rules.is_empty());
+    // A function without a parameter schema keeps that shape.
+    let mut bare = request.settings().clone();
+    bare.tools = Some(vec![ToolDefinition::Function(FunctionTool {
+        name: Text::new("read", "fixture", 64).unwrap(),
+        description: None,
+        parameters: None,
+        strict: FunctionStrictness::Omitted(StrictDefault::NonStrict),
+        output_schema: None,
+        dispatch: Default::default(),
+        cache: None,
+    })]);
+    let bare = request.clone().with_settings(bare).unwrap();
+    let (body, _) = encode_generation_request(&bare, &observed.fidelity, &target(), None).unwrap();
+    assert_eq!(
+        body["tools"],
+        json!([{"functionDeclarations":[{"name":"read"}]}])
+    );
     // Chat delivers reasoning ahead of the message; the anchor, not the position, binds it.
     let mut items = request.items().to_vec();
     let signed = items.remove(5);

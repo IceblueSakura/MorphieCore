@@ -151,8 +151,11 @@ pub(super) fn project(
                 if let Some(description) = &t.description {
                     d.insert("description".into(), description.as_str().into());
                 }
-                let parameters = t.parameters.as_ref().ok_or_else(unsupported)?;
-                d.insert("parametersJsonSchema".into(), parameters.root().clone());
+                // An omitted schema declares a function without parameters, as in the source.
+                // https://ai.google.dev/api/caching#FunctionDeclaration
+                if let Some(parameters) = &t.parameters {
+                    d.insert("parametersJsonSchema".into(), parameters.root().clone());
+                }
                 Ok(Value::Object(d))
             })
             .collect::<Result<Vec<_>, _>>()?;

@@ -256,6 +256,7 @@ pub(super) fn decode_message(
     let allowed: &[&str] = match role {
         "assistant" if replay => &[
             "role",
+            "name",
             "content",
             "tool_calls",
             "refusal",
@@ -266,6 +267,7 @@ pub(super) fn decode_message(
         ],
         "assistant" => &[
             "role",
+            "name",
             "content",
             "tool_calls",
             "refusal",
@@ -274,10 +276,14 @@ pub(super) fn decode_message(
             "audio",
         ],
         "tool" => &["role", "content", "tool_call_id"],
-        "system" | "developer" | "user" => &["role", "content"],
+        "system" | "developer" | "user" => &["role", "name", "content"],
         _ => return Err(CodecError::Unsupported("message role".into())),
     };
     direction.fields(m, allowed)?;
+    // A participant name is model-visible, and no IR or target carrier owns it.
+    if m.get("name").is_some_and(|v| !v.is_null()) {
+        return Err(CodecError::Unsupported("message name".into()));
+    }
     if replay && role != "assistant" && m.contains_key("parsed") {
         // The pinned SDK attaches its parsed view to assistant messages only.
         return Err(CodecError::Invalid("parsed"));
@@ -486,6 +492,36 @@ pub(super) fn decode_message(
                             }),
                             _ => return Err(CodecError::Unsupported("user content part".into())),
                         }
+                    }
+                    parts
+                }
+                (Some(Value::Array(values)), None)
+                    if replay && role == "assistant" && !values.is_empty() =>
+                {
+                    let mut parts = Vec::with_capacity(values.len());
+                    for value in values {
+                        let part = object(value)?;
+                        parts.push(match string(part, "type")? {
+                            "text" => {
+                                direction.fields(part, &["type", "text"])?;
+                                b.part(string(part, "text")?)?
+                            }
+                            "refusal" if calls.is_none() => {
+                                direction.fields(part, &["type", "refusal"])?;
+                                b.refusal(
+                                    crate::semantic::value::Text::allowing_empty(
+                                        string(part, "refusal")?,
+                                        "refusal",
+                                        MAX_TEXT_BYTES,
+                                    )
+                                    .map_err(|_| CodecError::Limit)?,
+                                )?
+                            }
+                            "refusal" => return Err(CodecError::Invalid("refusal")),
+                            _ => {
+                                return Err(CodecError::Unsupported("message content part".into()));
+                            }
+                        });
                     }
                     parts
                 }
@@ -789,6 +825,8 @@ pub(super) fn encode_items_with(
                                 .map(|part| match &part.content {
                                     ContentPart::Text(text) =>
                                         json!({"type":"text","text":text.as_str()}),
+                                    ContentPart::Refusal(text) =>
+                                        json!({"type":"refusal","refusal":text.as_str()}),
                                     ContentPart::Resource(resource) => write_input_resource(
                                         resource.media(resources).expect("validated resource")
                                     ),

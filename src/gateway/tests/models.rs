@@ -59,7 +59,8 @@ async fn models_list_and_retrieve_use_the_same_standard_public_object() {
     });
     let natural = json!({
         "feature":"generation.completion_cause",
-        "domain":"natural_or_matched_stop_without_tool_continuation","treatment":"rejected"
+        "domain":"natural_or_matched_stop_without_tool_continuation",
+        "treatment":"approved_adaptation","rules":["chat.coarsen-completion-cause.v1"]
     });
     let ambiguous = json!({
         "feature":"generation.completion_cause",
@@ -161,6 +162,16 @@ async fn activated_protocols_are_deduplicated_and_images_share_the_directory() {
             "domain":"completed_stored_response_within_ttl","treatment":"faithful"
         }])
     );
+    for domain in [
+        "natural_or_matched_stop_without_tool_continuation",
+        "ambiguous_stop_without_tool_continuation",
+    ] {
+        assert!(responses["delivery"].as_array().unwrap().contains(&json!({
+            "feature":"generation.completion_cause","domain":domain,
+            "treatment":"approved_adaptation",
+            "rules":["responses.omit-completion-cause.v1"]
+        })));
+    }
     for private in [
         "private-fixture",
         "fixture-chat",

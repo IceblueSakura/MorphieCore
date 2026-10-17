@@ -881,7 +881,7 @@
             "items": {
               "type": "object", "required": ["role", "content"],
               "properties": {
-                "role": {"enum": ["user", "assistant"]},
+                "role": {"enum": ["user", "assistant", "system"]},
                 "content": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "object"}}]}
               },
               "additionalProperties": true
@@ -890,7 +890,7 @@
           "stream": {"type": ["boolean", "null"], "default": false}
         },
         "additionalProperties": true,
-        "description": "Envelope subset. The client codec admits text, thinking, redacted_thinking, tool_use and tool_result blocks plus text-only system, tools, reasoning controls and output_config (effort and a json_schema format). Media-bearing instructions reject at decoding. Known values stay strict; stop_sequences have a codec carrier but unchanged default binding admission remains narrower. Active container, mcp_servers, context_management and compaction are rejected; other unknown fields and client cache markers are ignored by name. Return thinking signatures and redacted thinking data unchanged. Target projection remains separate."
+        "description": "Envelope subset. The client codec admits text, thinking, redacted_thinking, tool_use and tool_result blocks plus text-only system and mid-conversation system messages, tools, reasoning controls and output_config (effort and a json_schema format). Media-bearing instructions reject at decoding; clear_at, tool_addition/tool_removal and per-message output_config reject. top_k decodes into the IR and target projection decides representability. Known values stay strict; stop_sequences have a codec carrier but unchanged default binding admission remains narrower. Active container, mcp_servers, context_management and compaction are rejected; other unknown fields and client cache markers are ignored by name. Return thinking signatures and redacted thinking data unchanged. Target projection remains separate."
       },
       "MessagesError": {
         "type": "object", "required": ["type", "error"], "additionalProperties": false,
@@ -911,7 +911,7 @@
         "properties": {
           "model": {"$ref": "#/components/schemas/PublicModelLabel"},
           "prompt_cache_key": {"type": ["string", "null"], "maxLength": 256, "description": "Cache-grouping intent, separate from conversation identity. Null is not filled from conversation context; no value guarantees a cache hit."},
-          "messages": {"type": "array", "items": {"type": "object", "not": {"required": ["_openbridge"]}}, "description": "Ordered history. System/developer instructions are text-only; media-bearing instructions reject at decoding. Text and selected user image/audio inputs require codec and target admission. Tool results retain call links. Unbound audio IDs and unsupported media are rejected."},
+          "messages": {"type": "array", "items": {"type": "object", "not": {"required": ["_openbridge"]}}, "description": "Ordered history. System/developer instructions are text-only and keep their position; media-bearing instructions and participant names reject at decoding. Assistant history may mix text and refusal parts. Text and selected user image/audio inputs require codec and target admission. Tool results retain call links. Unbound audio IDs and unsupported media are rejected."},
           "tools": {"type": "array", "maxItems": 128, "items": {"$ref": "#/components/schemas/ChatTool"}, "description": "Function and custom definitions use their official nested shells. Custom inputs stay raw strings; grammar is not evaluated by the gateway. Binding and streaming admission remain separate."},
           "tool_choice": {"oneOf": [{"enum": ["none", "auto", "required"]}, {"type": "object", "required": ["type"], "properties": {"type": {"enum": ["function", "custom", "allowed_tools"]}}}], "description": "Named custom choice uses custom.name; allowed_tools nests mode and typed references. The owning codec validates names and membership."},
           "modalities": {"type": ["array", "null"], "items": {"enum": ["text", "audio"]}, "minItems": 1, "maxItems": 2, "uniqueItems": true, "description": "Output intent; audio also requires matching options and explicit public/endpoint admission. This schema activates no audio model."},
@@ -930,7 +930,7 @@
           {"not": {"required": ["max_tokens", "max_completion_tokens"]}}
         ],
         "additionalProperties": true,
-        "description": "Envelope subset, not an arbitrary upstream parameter bag. Known fields follow the codec; stop has a codec carrier but unchanged default binding admission remains narrower. Active functions, function_call and web_search_options are rejected; other unknown fields are ignored by name. Return reasoning_details unchanged for opaque replay. Named projection may omit container boundaries, not call/result identity."
+        "description": "Envelope subset, not an arbitrary upstream parameter bag. Known fields follow the codec; stop has a codec carrier but unchanged default binding admission remains narrower. Active functions, function_call, web_search_options and store:true are rejected; other unknown fields are ignored by name. Return reasoning_details unchanged for opaque replay. Named projection may omit container boundaries, not call/result identity."
       },
       "ChatTool": {
         "oneOf": [

@@ -139,6 +139,7 @@ pub(crate) fn decode_request_with(
             "stream_options",
             "metadata",
             "service_tier",
+            "store",
         ])
         .collect();
     direction.fields(o, &allowed)?;

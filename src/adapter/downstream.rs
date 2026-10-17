@@ -91,6 +91,9 @@ impl ClientAdapter {
                 losses.extend(crate::protocol::anthropic::client::metadata_losses(
                     &decoded.metadata,
                 ));
+                losses.extend(crate::protocol::anthropic::client::content_losses(
+                    &decoded.semantic,
+                ));
                 let usage = decoded.semantic.usage();
                 crate::protocol::anthropic::client::project_snapshot(&mut decoded)?;
                 if usage != decoded.semantic.usage() {

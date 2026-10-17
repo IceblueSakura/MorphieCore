@@ -55,8 +55,9 @@ impl ExecutionHints {
             .filter(|(k, _)| {
                 k.as_str() != "service_tier"
                     && (CACHE_FIELDS.contains(&k.as_str())
+                        // Chat `store` persists completions; only false/null is admitted.
                         || if profile == Profile::Chat {
-                            k.as_str() == "metadata"
+                            matches!(k.as_str(), "metadata" | "store")
                         } else {
                             EXEC_FIELDS.contains(&k.as_str())
                         })

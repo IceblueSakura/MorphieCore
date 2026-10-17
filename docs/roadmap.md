@@ -22,7 +22,7 @@ Before human approval, preserve existing tests and independent wire expectations
 
 Defer successful integration scenarios whose completion conversion or binding-admission contract is not selected. Remove those scenarios rather than invent a conversion or replace success with an expected gateway error. Keep identity, replay isolation, strict parsing, cancellation, transport bounds and honest-terminal assertions. Orthogonal fixtures should use exact supported carriers. Rebuild the selected integration coverage after IR/codec contracts stabilize, during the coverage stage.
 
-Next, request human review of the selected Generation IR/codec design using the contract map below. The selected text-only instruction correction is implemented; incompatible carriers and integration limits remain explicit. Exit condition: address review feedback and obtain explicit human approval before coverage work. Keep default admission, HTTP schemas and routing unchanged. P7 analysis may proceed in parallel, but neither an agent audit nor its selected public capability contract substitutes for human approval.
+Next, request human review of the selected Generation IR/codec design using the contract map below. The text-only instruction correction and the follow-up official-semantics audit corrections are implemented: role-scoped content validation, distinct context-window and recitation reasons, selected Chat/Responses terminal approximations, Messages mid-conversation system messages, and rejection of unowned known fields. Incompatible carriers and integration limits remain explicit. Exit condition: address review feedback and obtain explicit human approval before coverage work. Keep default admission, HTTP schemas and routing unchanged. P7 analysis may proceed in parallel, but neither an agent audit nor its selected public capability contract substitutes for human approval.
 
 ### Generation design review gate
 
@@ -107,9 +107,11 @@ Service-policy codecs follow the [closed policy/report contract](architecture.md
 
 Content and tool cache owners remain local codec contracts. Public binding acceptance of those markers is deferred, not asserted by the [Messages gateway smoke](../tests/gateway/anthropic.rs). Its ordinary native tool loop remains covered without asserting owner-cache admission; no production binding is widened and no runtime cache marker is stripped.
 
-Terminal completion causes are independent of turn progress and tool continuation. Messages can report natural completion or a matched stop sequence; Chat and generateContent `STOP` do not distinguish those causes. A target without an exact reported-cause carrier rejects, including Responses and ambiguous-stop delivery to Messages. Google `STOP` remains a reported fact even when function calls also require continuation. Successful cross-protocol final-answer scenarios wait for a selected carrier or loss policy; local rejection contracts remain authoritative.
+Terminal completion causes are independent of turn progress and tool continuation. Messages can report natural completion or a matched stop sequence; Chat and generateContent `STOP` do not distinguish those causes. Chat and Responses delivery use the [selected terminal approximations](architecture.md#selected-request-approximations); Messages still rejects ambiguous stops. Google `STOP` remains a reported fact even when function calls also require continuation, and Chat delivers it as `stop` beside the calls.
 
-Treat completion-cause restrictions in [OpenAI delivery](../src/protocol/openai/terminal.rs), [Messages delivery](../src/protocol/anthropic/client.rs) and [Google delivery tests](../tests/transport/google_sse.rs) as semantic-carrier boundaries, not missing route activation. Gateway and SDK smokes retain exact tool-response carriers, not completed Chat-to-Responses or Messages-to-OpenAI answer loops. Google signed tool-call delivery to OpenAI clients also remains uncovered. Keep source replay and terminal-safety contracts while those success paths are deferred.
+Cross-protocol final-answer delivery to OpenAI clients now has selected local codec contracts; Messages ambiguous-stop and recitation delivery remain [rejections](../src/protocol/anthropic/client.rs). Gateway and SDK smokes still retain exact tool-response carriers, not completed Chat-to-Responses or Messages-to-OpenAI answer loops. Google signed tool-call delivery to OpenAI clients also remains uncovered. Rebuilding those success scenarios belongs to the coverage and reconnection stages.
+
+Messages [mid-conversation system messages](architecture.md#native-messages-projection) have client and upstream codec carriers. The Messages default `semantic_contract()` keeps `ordered_instructions` closed; only `representation_contract()` declares it. Activating it on the OpenCode Go binding needs model-level and proxy evidence.
 
 Google directions remain upstream request encoding and SSE intake, not static intake or Google client endpoints. Native policy propagation requires a concrete binding and an actually reported carrier; absent reports are not supplied from request controls.
 
@@ -121,7 +123,7 @@ Chat custom tools have static JSON and history carriers, not a pinned custom-cal
 
 The selected non-tool feature queue is locally complete; retain its contracts under regression and carry the explicit integration handoff into coverage improvement and P7. An official carrier alone does not activate a binding. Before a future IR extension, present a minimal counterexample and structural options.
 
-Legacy Messages `top_k` and tokenizer-unbound `logit_bias` remain rejected. Cache prewarming, tool discovery, native `web_search`, other hosted tools, Messages citations, generated media, multi-candidate execution and file services retain their deferred boundaries.
+Messages-client `top_k` decodes into the IR and the selected Messages profile rejects it at projection. Tokenizer-unbound `logit_bias` remains rejected. Cache prewarming, tool discovery, native `web_search`, other hosted tools, Messages citations, generated media, multi-candidate execution and file services retain their deferred boundaries.
 
 #### Model-name service-policy carriers
 
@@ -165,6 +167,9 @@ These are explicit gaps, not claims of complete official API coverage:
 - Messages document `context` stays rejected until its model-visible semantics have an IR owner. Its lack of a carrier on other targets is not a reason to exclude it permanently.
 - Generated media beyond the existing Chat audio contract need a selected output, stream and replay design. Standalone media tasks remain frozen.
 - Other hosted tools remain deferred. Existing observation types do not imply an admitted end-to-end contract.
+- Messages turn-scoped system messages (`clear_at`), `tool_addition`/`tool_removal` blocks and per-message `output_config` have no IR owner and reject. Tool changes belong to the deferred tool-discovery slice.
+- Chat participant `name` has no IR owner and rejects. Chat `store: true` rejects; the gateway provides no stored completions.
+- Gemini finish reasons without content semantics (`MALFORMED_FUNCTION_CALL`, `UNEXPECTED_TOOL_CALL`, `TOO_MANY_TOOL_CALLS`, `LANGUAGE`, `OTHER`) stay attempt failures under the routing freeze.
 - Tool-result video has no carrier on any bound target: OpenAI and Interactions results have no video part, and Gemini function responses admit only images, PDF and plain text.
 
 ### 1C design: Messages citations

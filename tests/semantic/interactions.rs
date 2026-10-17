@@ -121,7 +121,7 @@ fn step_stream_rejects_missing_call_identity_and_unfinished_or_late_data() {
     assert_eq!(decoded.semantic.outcome(), Outcome::Incomplete);
     assert_eq!(
         decoded.semantic.details().incomplete,
-        Some(IncompleteReason::MaxOutputTokens)
+        Some(IncompleteReason::Unspecified)
     );
     assert!(decoded.semantic.items().is_empty());
     let mut missing = interaction_frames();
@@ -271,6 +271,18 @@ fn projects_stateless_steps_tools_and_controls() {
     assert_eq!(
         rules.iter().map(|r| r.name()).collect::<Vec<_>>(),
         ["interactions.omit-schema-name.v1"]
+    );
+    let parts = Adapter::new(Profile::Responses, Dialect::Standard, None)
+        .decode_request(json!({"model":"public","input":[
+            {"role":"system","content":[{"type":"input_text","text":"A"},{"type":"input_text","text":"B"}]},
+            {"role":"user","content":"Hi"}]}).to_string().as_bytes())
+        .unwrap();
+    let (joined, rules) =
+        encode_generation_request(&parts.task.semantic, &parts.task.fidelity, &target).unwrap();
+    assert_eq!(joined["system_instruction"], "A\n\nB");
+    assert_eq!(
+        rules.iter().map(|r| r.name()).collect::<Vec<_>>(),
+        ["interactions.join-instruction-parts.v1"]
     );
     let mut endpoint = morphiecore::topology::catalog::GOOGLE_BINDINGS[0].interactions_endpoint();
     assert!(endpoint.encode_request_with_rules(&request).is_err());

@@ -314,6 +314,27 @@ mod tools {
         let encoded = request_wire(&decoded, Profile::Responses);
         assert_eq!(encoded["input"][0]["status"], json!("in_progress"));
         assert_eq!(encoded["input"][0]["id"], json!("ins"));
+        // An input instruction message has no id field; none is minted for it.
+        let mut unnamed = source.clone();
+        unnamed["input"][0].as_object_mut().unwrap().remove("id");
+        let unnamed = request_wire(
+            &responses::decode_generation(&unnamed).unwrap(),
+            Profile::Responses,
+        );
+        assert_eq!(unnamed["input"][0]["status"], json!("in_progress"));
+        assert!(unnamed["input"][0].get("id").is_none());
+        // Assistant `input_text` is the SDK's spelling; the API accepts only output text.
+        let assistant = responses::decode_generation(&json!({"input":[
+            {"role":"user","content":"hi"},
+            {"role":"assistant","content":[{"type":"input_text","text":"hello"}]},
+            {"role":"user","content":"again"}]}))
+        .unwrap();
+        let assistant = request_wire(&assistant, Profile::Responses);
+        assert_eq!(
+            assistant["input"][1]["content"][0]["type"],
+            json!("output_text")
+        );
+        assert_eq!(assistant["input"][1]["content"][0]["text"], json!("hello"));
         assert_eq!(encoded["input"][1]["namespace"], json!("pkg"));
         assert_eq!(encoded["input"][1]["caller"]["type"], json!("program"));
         assert_eq!(encoded["tools"][0]["defer_loading"], json!(true));
@@ -1219,16 +1240,25 @@ mod continuation {
     #[test]
     fn chat_retains_its_wire_finish_consistency_after_outcome_separation() {
         let chat = Adapter::new(Profile::Chat, Dialect::Standard, None);
-        for (finish, message) in [
-            (
-                "stop",
-                json!({"role":"assistant","content":null,"tool_calls":[{"id":"c","type":"function","function":{"name":"lookup","arguments":"{}"}}]}),
-            ),
-            ("tool_calls", json!({"role":"assistant","content":"done"})),
-        ] {
-            let wire = json!({"id":"r","object":"chat.completion","created":0,"model":"synthetic","choices":[{"index":0,"message":message,"finish_reason":finish}]});
-            assert!(chat.decode_response(wire.to_string().as_bytes()).is_err());
-        }
+        let response = |finish: &str, message: Value| json!({"id":"r","object":"chat.completion","created":0,"model":"synthetic","choices":[{"index":0,"message":message,"finish_reason":finish}]});
+        let wire = response("tool_calls", json!({"role":"assistant","content":"done"}));
+        assert!(chat.decode_response(wire.to_string().as_bytes()).is_err());
+        // A forced tool choice reports `stop` beside its calls; the cause stays exact.
+        let forced = response(
+            "stop",
+            json!({"role":"assistant","content":null,"tool_calls":[{"id":"c","type":"function","function":{"name":"lookup","arguments":"{}"}}]}),
+        );
+        let forced = chat.decode_response(forced.to_string().as_bytes()).unwrap();
+        assert_eq!(
+            forced.semantic.details().completion,
+            Some(CompletionCause::NaturalOrStopSequence)
+        );
+        assert!(matches!(
+            forced.semantic.continuation(),
+            Continuation::ToolResults(_)
+        ));
+        let encoded = chat.encode_response(&forced, &Contract::full()).unwrap();
+        assert_eq!(encoded["choices"][0]["finish_reason"], "stop");
         let decoded = decode(
             "completed",
             json!([call_item("a", "ca", "{}", "completed")]),

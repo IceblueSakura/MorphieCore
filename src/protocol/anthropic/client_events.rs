@@ -86,6 +86,9 @@ pub(super) fn usage_json(u: Option<&Usage>) -> Result<Value, CodecError> {
     if let Some(write) = u.input_cache_write_tokens {
         v["cache_creation_input_tokens"] = json!(write);
     }
+    if let Some(thinking) = u.reasoning_tokens {
+        v["output_tokens_details"] = json!({ "thinking_tokens": thinking });
+    }
     Ok(v)
 }
 impl ClientEventEncoder {
@@ -186,12 +189,18 @@ impl ClientEventEncoder {
             StreamEvent::PartStarted {
                 item,
                 part,
-                kind: PartKind::Text | PartKind::Refusal,
+                kind: kind @ (PartKind::Text | PartKind::Refusal),
             } if self
                 .open
                 .get(item)
                 .is_some_and(|(_, kind, _)| *kind == Kind::Text) =>
             {
+                if *kind == PartKind::Refusal {
+                    let loss = super::client::refusal_loss("event.encode");
+                    if !self.losses.contains(&loss) {
+                        self.losses.push(loss);
+                    }
+                }
                 let index = open_block(&mut self.next, &mut out, json!({"type":"text","text":""}));
                 self.text_parts.insert((*item, *part), index);
             }
@@ -315,7 +324,17 @@ impl ClientEventEncoder {
                     StreamTerminal::Cancelled => Outcome::Cancelled,
                 };
                 let (stop, sequence) = super::client::terminal(outcome, self.calls, details)?;
-                for (_, (index, _, _)) in std::mem::take(&mut self.open) {
+                // Close every started block by its wire index. Text items own no block;
+                // a thinking item without content has not opened one yet.
+                let mut started: Vec<usize> =
+                    std::mem::take(&mut self.text_parts).into_values().collect();
+                started.extend(
+                    std::mem::take(&mut self.open)
+                        .into_values()
+                        .filter_map(|(index, _, _)| index),
+                );
+                started.sort_unstable();
+                for index in started {
                     out.push(frame(&json!({"type":"content_block_stop","index":index})));
                 }
                 out.push(frame(&json!({"type":"message_delta",

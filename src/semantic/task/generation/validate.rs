@@ -122,6 +122,11 @@ pub fn items(
                     charge(&mut bytes, usize::from(p.cache.is_some()) * 32)?;
                     match &p.content {
                         ContentPart::Text(t) => {
+                            // Citations and probabilities describe generated text; no
+                            // official request carrier attaches them to user input.
+                            if m.role != MessageRole::Assistant && !t.is_plain() {
+                                return Err(GenerationError::TextMetadataInUserMessage);
+                            }
                             t.validate()?;
                             citations += t.annotations().len();
                             if citations > MAX_ITEMS {
@@ -153,13 +158,12 @@ pub fn items(
                             charge(&mut bytes, reference.bytes())?;
                         }
                         ContentPart::Resource(resource) => {
-                            let resource = resource.media(resources)?;
-                            // Assistant images are observations, not public carrier admission.
-                            if m.role == MessageRole::Assistant
-                                && resource.kind() != ResourceKind::Image
-                            {
+                            // Input media belong to user turns. Generated assistant media
+                            // need their own output owner, not an input resource use.
+                            if m.role == MessageRole::Assistant {
                                 return Err(GenerationError::InvalidResource);
                             }
+                            let resource = resource.media(resources)?;
                             charge(&mut bytes, resource.validate()?)?;
                             if resource.kind() == ResourceKind::File {
                                 file_decoded_bytes = file_decoded_bytes

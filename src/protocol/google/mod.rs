@@ -46,6 +46,8 @@ pub fn semantic_contract() -> GenerationSemanticContract {
     GenerationSemanticContract {
         compaction: false,
         instructions: true,
+        // One leading system instruction only.
+        ordered_instructions: false,
         temperature: true,
         max_output_tokens: true,
         tools: true,

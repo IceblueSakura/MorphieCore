@@ -98,13 +98,12 @@ fn finish_reason(reason: &str) -> Result<Option<IncompleteReason>, SseError> {
         "STOP" => None,
         "MAX_TOKENS" => Some(IncompleteReason::MaxOutputTokens),
         "SAFETY"
-        | "RECITATION"
         | "BLOCKLIST"
         | "PROHIBITED_CONTENT"
         | "SPII"
         | "IMAGE_SAFETY"
-        | "IMAGE_PROHIBITED_CONTENT"
-        | "IMAGE_RECITATION" => Some(IncompleteReason::ContentFilter),
+        | "IMAGE_PROHIBITED_CONTENT" => Some(IncompleteReason::ContentFilter),
+        "RECITATION" | "IMAGE_RECITATION" => Some(IncompleteReason::Recitation),
         // The request lacked a signature the gateway should have restored.
         "MISSING_THOUGHT_SIGNATURE" => return Err(CodecError::StreamFailure(400).into()),
         "PUP_LIMITED_DISABLED" => return Err(CodecError::StreamFailure(403).into()),

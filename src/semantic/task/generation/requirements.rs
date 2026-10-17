@@ -4,8 +4,9 @@ use crate::semantic::task::generation::{
 };
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct GenerationRequirements {
-    pub assistant_media: bool,
     pub instruction_count: usize,
+    /// An instruction item follows conversation content, as a mid-conversation system message.
+    pub ordered_instructions: bool,
     pub message_count: usize,
     pub text_part_count: usize,
     pub resource_count: usize,
@@ -106,9 +107,11 @@ impl GenerationRequirements {
             response_effort: r.settings().effort.value().is_some_and(|e| e.scope == crate::semantic::task::generation::EffortScope::Response),
             ..Self::default()
         };
+        let mut conversation = false;
         for (_, i) in r.items() {
-            x.assistant_media |= i.has_assistant_media();
             x.explicit_cache |= i.has_cache_breakpoints();
+            x.ordered_instructions |= conversation && matches!(i, Item::Instruction(_));
+            conversation |= !matches!(i, Item::Instruction(_));
             match i {
                 Item::Instruction(_) => {
                     x.instruction_count += 1;
@@ -202,7 +205,6 @@ impl GenerationRequirements {
 pub struct GenerationResponseRequirements {
     pub safety_reports: bool,
     pub compaction: bool,
-    pub assistant_media: bool,
     pub provider_observations: bool,
     pub audio_output: bool,
     pub instructions: bool,
@@ -225,7 +227,6 @@ impl GenerationResponseRequirements {
             ..Self::default()
         };
         for (_, item) in response.items() {
-            q.assistant_media |= item.has_assistant_media();
             match item {
                 Item::Instruction(_) => q.instructions = true,
                 Item::ProviderTool(_) => q.provider_observations = true,

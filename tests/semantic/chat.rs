@@ -580,16 +580,21 @@ mod chat_media {
             encoded["choices"][0]["message"]["annotations"],
             wire["choices"][0]["message"]["annotations"]
         );
-        assert!(
-            standard(Profile::Responses)
-                .encode_response(&decoded, &Contract::full())
-                .is_err()
+        // Responses omits the ambiguous stop cause by rule; the citation keeps its carrier.
+        let responses = standard(Profile::Responses)
+            .encode_response(&decoded, &Contract::full())
+            .unwrap();
+        assert_eq!(responses["status"], "completed");
+        assert_eq!(
+            responses["output"][0]["content"][0]["annotations"],
+            json!([{"type":"url_citation","start_index":0,"end_index":5,
+                "title":"Synthetic","url":"https://example.invalid/source"}])
         );
         assert_eq!(
             decoded.semantic.details().completion,
             Some(CompletionCause::NaturalOrStopSequence)
         );
-        // Returned history carries the citation without pretending its terminal was representable.
+        // Returned history carries the citation independently of the terminal.
         let history = GenerationRequest::from_resources(
             decoded.semantic.items().to_vec(),
             GenerationSettings::default(),
@@ -877,6 +882,21 @@ mod citation_bindings {
                 TargetCaps::full()
             )
             .is_ok()
+        );
+        // Citations describe generated text; no request carrier attaches them to user input.
+        let (id, Item::Message(mut user)) =
+            message(1, vec![Annotation::new(native.clone(), &table).unwrap()])
+        else {
+            panic!("message")
+        };
+        user.role = MessageRole::User;
+        assert_eq!(
+            GenerationRequest::from_resources(
+                vec![(id, Item::Message(user))],
+                GenerationSettings::default(),
+                table.clone()
+            ),
+            Err(GenerationError::TextMetadataInUserMessage)
         );
         for coordinates in [
             SourceCoordinates::Pages { start: 1, end: 3 },

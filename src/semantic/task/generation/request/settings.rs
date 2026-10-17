@@ -72,6 +72,8 @@ impl GenerationControls {
 }
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct GenerationSettings {
+    /// Request-wide plain-text instructions. They precede every ordered item,
+    /// including ordered instruction items; history composition does not inherit them.
     pub instructions: Presence<Text>,
     pub controls: GenerationControls,
     /// Moving prefix boundary. Absence leaves the target's caching policy unchanged.

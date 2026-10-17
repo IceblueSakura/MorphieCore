@@ -759,7 +759,7 @@ pub fn encode_responses(target: &ResponseRepresentation<'_>) -> Result<Value, Co
     }
     if target.semantic.details().incomplete.is_some() {
         value["incomplete_details"] =
-            encode_incomplete(target.semantic.details().incomplete.as_ref());
+            encode_incomplete(target.semantic.details().incomplete.as_ref())?;
     }
     bounded(&value)?;
     Ok(value)

@@ -556,7 +556,8 @@ impl EventDecoder {
                 )?;
             }
             let terminal = match reason.as_str() {
-                Some("stop") if self.chat_calls.is_empty() => StreamTerminal::Completed,
+                // Forced tool choice can report `stop` beside its calls.
+                Some("stop") => StreamTerminal::Completed,
                 Some("tool_calls") if !self.chat_calls.is_empty() => StreamTerminal::Completed,
                 Some("length" | "content_filter") => StreamTerminal::Incomplete,
                 _ => return Err(CodecError::Unsupported("finish reason".into())),

@@ -46,6 +46,7 @@ Protocol research notes with dated findings live in `refs/`: [Multimodal carrier
 - [Tool calls](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls)
 - [Stop reasons](https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons)
 - [Prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)
+- [Mid-conversation system messages](https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages)
 - [Vision](https://platform.claude.com/docs/en/build-with-claude/vision)
 - [PDF support](https://platform.claude.com/docs/en/build-with-claude/pdf-support)
 - [Files API](https://platform.claude.com/docs/en/build-with-claude/files)

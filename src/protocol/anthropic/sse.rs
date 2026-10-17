@@ -247,6 +247,9 @@ impl MessageSseDecoder {
                 if !usage.cache_read_input_tokens.is_absent() {
                     message.usage.cache_read_input_tokens = usage.cache_read_input_tokens;
                 }
+                if !usage.thinking_tokens.is_absent() {
+                    message.usage.thinking_tokens = usage.thinking_tokens;
+                }
                 // Native counts are cumulative snapshots, never deltas to sum.
                 message.usage.output_tokens = usage.output_tokens;
             }

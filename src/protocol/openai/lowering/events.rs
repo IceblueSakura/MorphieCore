@@ -12,13 +12,8 @@ pub fn check_event(
         return Err(RepresentationError::Safety);
     }
     if let StreamEvent::Terminal { details, .. } = event {
-        let pending_tools = state.items().iter().any(|item| {
-            matches!(
-                item.kind,
-                ItemKind::ToolCall { .. } | ItemKind::CustomCall { .. } | ItemKind::Program { .. }
-            )
-        });
-        crate::protocol::openai::terminal::check_completion(details, profile, pending_tools)
+        // Selected approximations are recorded when the terminal is lowered.
+        crate::protocol::openai::terminal::terminal_losses(details, profile)
             .map_err(|_| RepresentationError::Terminal)?;
     }
     if matches!(event, StreamEvent::ItemStarted { replay: Some(replay), .. } | StreamEvent::ItemFinished { replay: Some(replay), .. }
@@ -287,7 +282,11 @@ pub fn check_event(
                 && (*terminal == StreamTerminal::Incomplete
                     && !matches!(
                         details.incomplete,
-                        Some(IncompleteReason::MaxOutputTokens | IncompleteReason::ContentFilter)
+                        Some(
+                            IncompleteReason::MaxOutputTokens
+                                | IncompleteReason::ContentFilter
+                                | IncompleteReason::Recitation
+                        )
                     )
                     || matches!(
                         terminal,
@@ -296,7 +295,9 @@ pub fn check_event(
                     || details.incomplete.as_ref().is_some_and(|r| {
                         !matches!(
                             r,
-                            IncompleteReason::MaxOutputTokens | IncompleteReason::ContentFilter
+                            IncompleteReason::MaxOutputTokens
+                                | IncompleteReason::ContentFilter
+                                | IncompleteReason::Recitation
                         )
                     })) =>
         {

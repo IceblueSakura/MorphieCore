@@ -49,6 +49,8 @@ pub enum GenerationError {
     PhaseInUserMessage,
     #[error("refusal requires assistant role")]
     RefusalInUserMessage,
+    #[error("text citations and probabilities require assistant role")]
+    TextMetadataInUserMessage,
     #[error("program output has no matching program, duplicates one, or lacks a terminal status")]
     InvalidProgramOutput,
 }

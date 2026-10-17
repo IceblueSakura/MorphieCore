@@ -18,6 +18,9 @@ pub enum LossRule {
     OmitResponsesRejectedPredictionTokens,
     OmitResponsesMessageEnvelopes,
     RegroupChatMessageItems,
+    CoarsenChatCompletionCause,
+    OmitResponsesCompletionCause,
+    RecitationAsContentFilter,
 }
 impl LossRule {
     pub const fn name(self) -> &'static str {
@@ -40,6 +43,9 @@ impl LossRule {
             }
             Self::OmitResponsesMessageEnvelopes => "responses.omit-message-envelopes.v1",
             Self::RegroupChatMessageItems => "chat.regroup-message-items.v1",
+            Self::CoarsenChatCompletionCause => "chat.coarsen-completion-cause.v1",
+            Self::OmitResponsesCompletionCause => "responses.omit-completion-cause.v1",
+            Self::RecitationAsContentFilter => "openai.recitation-as-content-filter.v1",
         }
     }
     pub const fn owner(self) -> &'static str {
@@ -61,6 +67,10 @@ impl LossRule {
             Self::OmitResponsesMessageEnvelopes | Self::RegroupChatMessageItems => {
                 "generation.message_envelopes"
             }
+            Self::CoarsenChatCompletionCause | Self::OmitResponsesCompletionCause => {
+                "response.terminal.completion"
+            }
+            Self::RecitationAsContentFilter => "response.terminal.incomplete",
         }
     }
     pub const fn consequence(self) -> &'static str {
@@ -76,6 +86,15 @@ impl LossRule {
             }
             Self::RegroupChatMessageItems => {
                 "Independent message and call items are assembled for Chat; native ownership is not inferred."
+            }
+            Self::CoarsenChatCompletionCause => {
+                "A natural or stop-sequence completion becomes Chat's combined stop, or tool_calls when calls are pending; a matched sequence is not reported."
+            }
+            Self::OmitResponsesCompletionCause => {
+                "Responses completed status has no cause carrier; the outcome and content are unchanged."
+            }
+            Self::RecitationAsContentFilter => {
+                "A recitation stop is reported as the closest OpenAI content_filter reason; the response stays incomplete."
             }
             Self::OmitResponsesInputImageTokens
             | Self::OmitResponsesInputTextTokens
@@ -111,6 +130,9 @@ impl std::str::FromStr for LossRule {
             }
             "responses.omit-message-envelopes.v1" => Ok(Self::OmitResponsesMessageEnvelopes),
             "chat.regroup-message-items.v1" => Ok(Self::RegroupChatMessageItems),
+            "chat.coarsen-completion-cause.v1" => Ok(Self::CoarsenChatCompletionCause),
+            "responses.omit-completion-cause.v1" => Ok(Self::OmitResponsesCompletionCause),
+            "openai.recitation-as-content-filter.v1" => Ok(Self::RecitationAsContentFilter),
             _ => Err(RepresentationError::UnknownProjectionRule),
         }
     }
@@ -212,10 +234,12 @@ impl ProjectionStage {
                 ProjectionDirection::Response => "response.encode",
                 ProjectionDirection::Event => "event.encode",
             },
-            action: if loss == LossRule::RegroupChatMessageItems {
-                "regroup"
-            } else {
-                "omit"
+            action: match loss {
+                LossRule::RegroupChatMessageItems => "regroup",
+                LossRule::CoarsenChatCompletionCause | LossRule::RecitationAsContentFilter => {
+                    "approximate"
+                }
+                _ => "omit",
             },
         })
     }

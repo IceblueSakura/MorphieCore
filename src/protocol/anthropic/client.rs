@@ -27,6 +27,7 @@ const TOP: &[&str] = &[
     "output_config",
     "temperature",
     "top_p",
+    "top_k",
     "cache_control",
     "stop_sequences",
     "stream",
@@ -122,9 +123,6 @@ fn blocks(v: &mut Value, ignored: &mut BTreeSet<String>) -> Result<(), CodecErro
 pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     let mut v = parse(bytes)?;
     let o = object(&v)?;
-    if let Some(key) = ["top_k"].into_iter().find(|key| o.contains_key(*key)) {
-        return Err(CodecError::Unsupported(key.into()));
-    }
     if let Some(key) = UNSUPPORTED.iter().find(|key| {
         o.get(**key)
             .is_some_and(|v| !v.is_null() && v != &json!([]))
@@ -162,6 +160,15 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
             let value = value.as_f64().ok_or(CodecError::Invalid("sampling"))?;
             settings.controls = apply(settings.controls, value)?;
         }
+    }
+    // The IR owns top_k; Messages targets that reject it do so at projection.
+    if let Some(value) = o.get("top_k").filter(|v| !v.is_null()) {
+        settings.controls.top_k = Some(
+            value
+                .as_u64()
+                .and_then(|n| u32::try_from(n).ok())
+                .ok_or(CodecError::Invalid("top_k"))?,
+        );
     }
     let scope = LocalScope::ROOT;
     let mut intake = Intake::new(scope);
@@ -306,12 +313,33 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     let messages = required(&o, "messages")?
         .as_array()
         .ok_or(CodecError::Invalid("messages"))?;
+    let mut roles = Vec::with_capacity(messages.len());
     for message in messages {
         let mut message = message.clone();
+        // Turn-scoped clearing and per-message output settings change the model contract.
+        if let Some(key) = ["clear_at", "output_config"]
+            .into_iter()
+            .find(|key| message.get(*key).is_some_and(|v| !v.is_null()))
+        {
+            return Err(CodecError::Unsupported(format!("message {key}")));
+        }
         keep(&mut message, &["role", "content"], &mut ignored);
         let m = object(&message)?;
         let role = Role::read(required(m, "role")?)?;
+        roles.push(role);
         let content = required(m, "content")?;
+        if role == Role::System {
+            let mut content = content.clone();
+            blocks(&mut content, &mut ignored)?;
+            match WireText::read(&content)? {
+                WireText::Text(s) => intake.instruction(&[super::CacheMarked {
+                    content: s,
+                    cache: None,
+                }])?,
+                WireText::Blocks(parts) => intake.instruction(&parts)?,
+            }
+            continue;
+        }
         let parsed = if content.is_string() {
             vec![super::CacheMarked {
                 content: Block::Text(string(content)?),
@@ -329,6 +357,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         };
         intake.request_message(role, &parsed)?;
     }
+    super::request::validate_system_placement(&roles)?;
     // Messages turns are not kept as envelopes: each target regroups items its own
     // way (native by role, Chat by assistant text and calls).
     // Calls carry their input as raw JSON text, as every client protocol's calls do.
@@ -432,6 +461,28 @@ pub(crate) fn metadata_losses(
     }
     losses
 }
+/// Messages has no refusal content block; `stop_reason: "refusal"` reports classifier
+/// intervention, not a model-authored refusal message, so the text is kept as text.
+pub(crate) fn refusal_loss(direction: &'static str) -> crate::lowering::generation::LossEvidence {
+    crate::lowering::generation::LossEvidence {
+        rule: "messages.refusal-as-text.v1",
+        field: "generation.content.refusal",
+        direction,
+        action: "approximate",
+    }
+}
+pub(crate) fn content_losses(
+    response: &GenerationResponse,
+) -> Vec<crate::lowering::generation::LossEvidence> {
+    let refusal = response.items().iter().any(|(_, item)| {
+        matches!(item, Item::Message(m)
+            if m.parts.iter().any(|p| matches!(p.content, ContentPart::Refusal(_))))
+    });
+    refusal
+        .then(|| refusal_loss("response.encode"))
+        .into_iter()
+        .collect()
+}
 pub(crate) fn usage_loss() -> crate::lowering::generation::LossEvidence {
     crate::lowering::generation::LossEvidence {
         rule: "messages.usage-view.v1",
@@ -460,6 +511,9 @@ pub(crate) fn project_usage(source: Usage) -> Result<Usage, CodecError> {
             .get("cache_creation_input_tokens")
             .map(|_| count("cache_creation_input_tokens"))
             .transpose()?
+            .map_or(Presence::Absent, Presence::Value),
+        thinking_tokens: source
+            .reasoning_tokens
             .map_or(Presence::Absent, Presence::Value),
     });
     Ok(selected)
@@ -599,6 +653,9 @@ pub(super) fn terminal(
         (Outcome::Completed, _) if calls => "tool_use",
         (Outcome::Completed, _) => "end_turn",
         (Outcome::Incomplete, Some(IncompleteReason::MaxOutputTokens)) => "max_tokens",
+        (Outcome::Incomplete, Some(IncompleteReason::ContextWindowExceeded)) => {
+            "model_context_window_exceeded"
+        }
         (Outcome::Incomplete, Some(IncompleteReason::ContentFilter)) => "refusal",
         _ => return Err(CodecError::Unsupported("Messages terminal".into())),
     };

@@ -37,6 +37,8 @@ impl Profile {
         GenerationSemanticContract {
             compaction: false,
             instructions: true,
+            // Mid-conversation system messages need model-level binding evidence.
+            ordered_instructions: false,
             // Accepted, then dropped by `RequestRule::OmitSampling`.
             temperature: true,
             max_output_tokens: true,
@@ -84,6 +86,7 @@ impl Profile {
         contract.explicit_cache = true;
         contract.automatic_prefix_cache = true;
         contract.stop_sequences = true;
+        contract.ordered_instructions = true;
         contract
     }
     pub fn decode_request(self, bytes: &[u8]) -> Result<Request, CodecError> {

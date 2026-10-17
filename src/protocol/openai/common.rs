@@ -401,9 +401,6 @@ pub(super) fn check_response_carriers(response: &GenerationResponse) -> Result<(
 }
 
 pub(super) fn check_item_carriers(items: &[(ItemId, Item)]) -> Result<(), CodecError> {
-    if items.iter().any(|(_, item)| item.has_assistant_media()) {
-        return Err(CodecError::Unsupported("assistant media carrier".into()));
-    }
     if items
         .iter()
         .any(|(_, item)| matches!(item, Item::ProviderTool(_)))

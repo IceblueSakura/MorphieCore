@@ -114,7 +114,9 @@ impl<'a> Entry<'a> {
                 Treatment::Rejected,
             ),
         ];
-        for (domain, faithful) in [
+        // Messages keeps exact natural/matched causes but cannot name an ambiguous
+        // stop; OpenAI targets use the selected coarsening or omission rules.
+        for (domain, exact) in [
             (
                 "natural_or_matched_stop_without_tool_continuation",
                 protocol == ClientProtocol::Messages,
@@ -124,15 +126,26 @@ impl<'a> Entry<'a> {
                 protocol == ClientProtocol::Chat,
             ),
         ] {
-            delivery.push(Case::new(
+            let mut case = Case::new(
                 "generation.completion_cause",
                 domain,
-                if faithful {
-                    Treatment::Faithful
-                } else {
-                    Treatment::Rejected
+                match (exact, protocol) {
+                    (true, _) => Treatment::Faithful,
+                    (false, ClientProtocol::Messages) => Treatment::Rejected,
+                    (false, _) => Treatment::ApprovedAdaptation,
                 },
-            ));
+            );
+            match (exact, protocol) {
+                (false, ClientProtocol::Chat) => {
+                    case.rules.push(LossRule::CoarsenChatCompletionCause.name());
+                }
+                (false, ClientProtocol::Responses) => {
+                    case.rules
+                        .push(LossRule::OmitResponsesCompletionCause.name());
+                }
+                _ => {}
+            }
+            delivery.push(case);
         }
         let history = if protocol == ClientProtocol::Responses {
             vec![Case::new(

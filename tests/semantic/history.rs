@@ -890,18 +890,28 @@ mod resource_table {
         let response = GenerationResponse::from_resources(
             vec![(
                 ItemId::new(1),
-                Item::Message(Message {
-                    role: MessageRole::Assistant,
-                    status: ItemLifecycle::Completed,
-                    phase: None,
-                    parts: vec![Part {
-                        id: PartId::new(1),
-                        cache: None,
-                        content: ContentPart::Resource(ResourceUse {
+                // Responses carry media through observations, not assistant input uses.
+                Item::ProviderTool(ProviderToolObservation {
+                    source: NativeAliasDomain {
+                        source: text("synthetic"),
+                        scope: LocalScope::ROOT,
+                    },
+                    operation: ProviderOperation::Reported {
+                        tool: text("search"),
+                        alias: None,
+                        requester: ProviderRequester::Unreported,
+                        action: None,
+                    },
+                    progress: None,
+                    execution: None,
+                    artifact_status: Some(ItemLifecycle::Completed),
+                    output: Some(ToolOutput::Parts(vec![Part::new(
+                        PartId::new(1),
+                        InputPart::Resource(ResourceUse {
                             id,
                             description: ResourceDescription::Image { detail: None },
                         }),
-                    }],
+                    )])),
                 }),
             )],
             Outcome::Completed,
@@ -910,6 +920,29 @@ mod resource_table {
         .unwrap()
         .with_usage(Some(Usage::operation(3, 5, 8)))
         .unwrap();
+        // Input media belong to user turns; generated media need their own owner.
+        assert_eq!(
+            GenerationResponse::from_resources(
+                vec![(
+                    ItemId::new(1),
+                    Item::Message(Message {
+                        role: MessageRole::Assistant,
+                        status: ItemLifecycle::Completed,
+                        phase: None,
+                        parts: vec![Part::new(
+                            PartId::new(1),
+                            ContentPart::Resource(ResourceUse {
+                                id,
+                                description: ResourceDescription::Image { detail: None },
+                            }),
+                        )],
+                    }),
+                )],
+                Outcome::Completed,
+                ResourceTable::new(vec![(id, declaration())]).unwrap(),
+            ),
+            Err(GenerationError::InvalidResource)
+        );
         let changed = ResourceLocation::Url(text("https://example.test/edited.png"));
         let edited = response
             .clone()

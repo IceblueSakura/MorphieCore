@@ -120,10 +120,3 @@ impl ItemReplay {
         self.origin.is_some() && self.origin.as_ref() == target
     }
 }
-
-impl crate::semantic::task::generation::Item {
-    pub(crate) fn has_assistant_media(&self) -> bool {
-        matches!(self, Self::Message(m) if m.role == crate::semantic::task::generation::MessageRole::Assistant
-            && m.parts.iter().any(|p| matches!(p.content, crate::semantic::task::generation::ContentPart::Resource(_))))
-    }
-}

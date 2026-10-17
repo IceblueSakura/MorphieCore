@@ -143,11 +143,29 @@ impl Profile {
             output_settings(config, &mut settings);
         }
         for message in &wire.messages {
-            match &message.content {
-                MessageContent::Text(s) => {
-                    intake.message(message.role, &[Block::Text(s.clone())])?
+            match (&message.content, message.role) {
+                (MessageContent::Text(s), super::Role::System) => {
+                    intake.instruction(&[super::CacheMarked {
+                        content: s.clone(),
+                        cache: None,
+                    }])?
                 }
-                MessageContent::Blocks(blocks) => intake.request_message(message.role, blocks)?,
+                (MessageContent::Blocks(blocks), super::Role::System) => intake.instruction(
+                    &blocks
+                        .iter()
+                        .map(|block| match &block.content {
+                            Block::Text(s) => Ok(super::CacheMarked {
+                                content: s.clone(),
+                                cache: block.cache,
+                            }),
+                            _ => Err(CodecError::Invalid("Anthropic block role")),
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                )?,
+                (MessageContent::Text(s), role) => {
+                    intake.message(role, &[Block::Text(s.clone())])?
+                }
+                (MessageContent::Blocks(blocks), role) => intake.request_message(role, blocks)?,
             }
         }
         let semantic = GenerationRequest::from_resources(intake.items, settings, intake.resources)?
@@ -300,6 +318,12 @@ impl Profile {
             {
                 super::StopReason::MaxTokens
             }
+            (Outcome::Incomplete, InteractionProgress::Unreported)
+                if response.semantic.details().incomplete
+                    == Some(IncompleteReason::ContextWindowExceeded) =>
+            {
+                super::StopReason::ModelContextWindowExceeded
+            }
             _ => return Err(unsupported()),
         };
         let stop_sequence = match &response.semantic.details().completion {
@@ -322,6 +346,7 @@ impl Profile {
         selected.total_relation = TotalTokenRelation::Unreported;
         selected.cached_input_tokens = usage.cached_input_tokens;
         selected.input_cache_write_tokens = usage.input_cache_write_tokens;
+        selected.reasoning_tokens = usage.reasoning_tokens;
         if selected != usage {
             return Err(unsupported());
         }
@@ -340,6 +365,9 @@ impl Profile {
                     .map_or(Presence::Absent, Presence::Value),
                 cache_read_input_tokens: usage
                     .cached_input_tokens
+                    .map_or(Presence::Absent, Presence::Value),
+                thinking_tokens: usage
+                    .reasoning_tokens
                     .map_or(Presence::Absent, Presence::Value),
             },
         })
@@ -388,11 +416,20 @@ pub(super) fn outcome(
             InteractionProgress::AwaitingToolResults,
             TerminalDetails::default(),
         ),
-        super::StopReason::MaxTokens | super::StopReason::ModelContextWindowExceeded => (
+        super::StopReason::MaxTokens => (
             Outcome::Incomplete,
             InteractionProgress::Unreported,
             TerminalDetails {
                 incomplete: Some(IncompleteReason::MaxOutputTokens),
+                error: None,
+                completion: None,
+            },
+        ),
+        super::StopReason::ModelContextWindowExceeded => (
+            Outcome::Incomplete,
+            InteractionProgress::Unreported,
+            TerminalDetails {
+                incomplete: Some(IncompleteReason::ContextWindowExceeded),
                 error: None,
                 completion: None,
             },
@@ -428,5 +465,6 @@ pub(super) fn usage(wire: &super::Usage) -> Usage {
     usage.total_relation = TotalTokenRelation::Unreported;
     usage.cached_input_tokens = wire.cache_read_input_tokens.value().copied();
     usage.input_cache_write_tokens = wire.cache_creation_input_tokens.value().copied();
+    usage.reasoning_tokens = wire.thinking_tokens.value().copied();
     usage
 }

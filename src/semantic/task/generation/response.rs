@@ -16,7 +16,11 @@ pub enum Outcome {
 pub enum IncompleteReason {
     Unspecified,
     MaxOutputTokens,
+    /// The model context window, not the requested output ceiling, was exhausted.
+    ContextWindowExceeded,
     ContentFilter,
+    /// Output stopped by a recitation check, distinct from safety filtering.
+    Recitation,
     Other(Text),
 }
 #[derive(Clone, Debug, Eq, PartialEq)]

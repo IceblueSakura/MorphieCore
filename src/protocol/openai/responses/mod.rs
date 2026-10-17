@@ -572,6 +572,15 @@ pub(super) fn decode_items(
                         };
                         let part_id = b.part_id()?;
                         match kind {
+                            // The SDK union admits assistant `input_text`, but the API accepts
+                            // only `output_text`; it is the same assistant text, re-spelled.
+                            "input_text" if role == MessageRole::Assistant => {
+                                if p.contains_key("prompt_cache_breakpoint") {
+                                    return Err(CodecError::Unsupported(
+                                        "assistant input_text breakpoint".into(),
+                                    ));
+                                }
+                            }
                             "input_text" => record_input_form(b, part_id, p)?,
                             "input_image" | "input_file" => record_breakpoint(b, part_id, p)?,
                             _ => {}
@@ -804,9 +813,9 @@ pub(super) fn encode_items(
             } else if matches!(
                 item,
                 Item::Reasoning(_) | Item::Program(_) | Item::ProgramOutput(_)
-            ) || matches!(item, Item::Instruction(i) if i.status.is_some())
-            {
-                // Typed snapshots require identity; fresh task items assign it.
+            ) {
+                // Typed snapshots require identity; fresh task items assign it. An input
+                // instruction message has no `id` field, so none is minted for it.
                 v["id"] = json!(crate::protocol::fidelity::generated_item_id(*id));
             }
             if item

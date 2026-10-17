@@ -34,6 +34,8 @@ pub enum RequestRule {
     DeveloperAsSystem,
     /// A Messages output format has no name; OpenAI requires one as a label.
     OmitSchemaName,
+    /// Messages requires `max_tokens`; a source without a ceiling gets the fixed default.
+    DefaultMaxTokens,
 }
 impl RequestRule {
     pub const fn name(self) -> &'static str {
@@ -48,6 +50,7 @@ impl RequestRule {
             Self::ReasoningAsText => "messages.reasoning-as-text.v1",
             Self::DeveloperAsSystem => "messages.developer-as-system.v1",
             Self::OmitSchemaName => "messages.omit-schema-name.v1",
+            Self::DefaultMaxTokens => "messages.default-max-tokens.v1",
         }
     }
 }
@@ -275,10 +278,65 @@ pub(super) fn project(
     };
     let mut included = BTreeSet::new();
     let mut messages = vec![];
+    // Later instruction items become mid-conversation system messages at their
+    // envelope boundary; placement is validated with the complete wire request.
+    let position = |owner: &ItemId| request.items().iter().position(|(id, _)| id == owner);
+    let mut instructions = request
+        .items()
+        .iter()
+        .enumerate()
+        .skip(usize::from(matches!(
+            request.items().first(),
+            Some((_, Item::Instruction(_)))
+        )))
+        .filter_map(|(index, (_, item))| match item {
+            Item::Instruction(i) => Some((index, i)),
+            _ => None,
+        })
+        .peekable();
+    let system_message = |i: &Instruction, rules: &mut BTreeSet<RequestRule>| {
+        if i.status.is_some() {
+            return Err(unsupported());
+        }
+        if i.authority == InstructionAuthority::Developer {
+            rules.insert(RequestRule::DeveloperAsSystem);
+        }
+        Ok(InputMessage {
+            role: Role::System,
+            content: MessageContent::Blocks(
+                i.parts
+                    .iter()
+                    .map(|p| super::CacheMarked {
+                        content: Block::Text(p.content.as_str().into()),
+                        cache: p.cache,
+                    })
+                    .collect(),
+            ),
+        })
+    };
+    let mut previous_end = None;
     for group in request.message_envelopes() {
         if group.members().is_empty() {
             return Err(unsupported());
         }
+        let first = group
+            .members()
+            .first()
+            .and_then(position)
+            .ok_or_else(unsupported)?;
+        let last = group
+            .members()
+            .last()
+            .and_then(position)
+            .ok_or_else(unsupported)?;
+        while let Some((index, i)) = instructions.next_if(|(index, _)| *index < first) {
+            // An instruction inside another envelope would split a native message.
+            if previous_end.is_some_and(|end| index < end) {
+                return Err(unsupported());
+            }
+            messages.push(system_message(i, rules)?);
+        }
+        previous_end = Some(last);
         let role = match group.role() {
             MessageEnvelopeRole::User => Role::User,
             MessageEnvelopeRole::Assistant => Role::Assistant,
@@ -355,6 +413,12 @@ pub(super) fn project(
             content: MessageContent::Blocks(blocks),
         });
     }
+    for (index, i) in instructions {
+        if previous_end.is_some_and(|end| index < end) {
+            return Err(unsupported());
+        }
+        messages.push(system_message(i, rules)?);
+    }
     let expected = request
         .items()
         .iter()
@@ -367,20 +431,20 @@ pub(super) fn project(
         .flat_map(|g| g.members())
         .copied()
         .collect::<Vec<_>>();
-    if actual != expected
-        || request
-            .items()
-            .iter()
-            .skip(1)
-            .any(|(_, i)| matches!(i, Item::Instruction(_)))
-    {
+    if actual != expected {
         return Err(unsupported());
     }
     Ok(super::Request {
         model: target.model().into(),
         service_policy: Presence::Absent,
         // Messages requires max_tokens; other sources may leave the cap to the model.
-        max_tokens: s.controls.max_output_tokens.unwrap_or(DEFAULT_MAX_TOKENS),
+        max_tokens: match s.controls.max_output_tokens {
+            Some(limit) => limit,
+            None => {
+                rules.insert(RequestRule::DefaultMaxTokens);
+                DEFAULT_MAX_TOKENS
+            }
+        },
         stop_sequences: s
             .controls
             .stop_sequences

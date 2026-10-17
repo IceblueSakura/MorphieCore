@@ -419,7 +419,7 @@ mod anthropic_semantics {
                 Value::Null,
                 Outcome::Incomplete,
                 InteractionProgress::Unreported,
-                Some(IncompleteReason::MaxOutputTokens),
+                Some(IncompleteReason::ContextWindowExceeded),
             ),
             (
                 "refusal",
@@ -461,16 +461,73 @@ mod anthropic_semantics {
                 Text::new("END", "fixture", 64).unwrap()
             ))
         );
+        // Responses has no completion-cause carrier: the cause is omitted under a named rule.
+        // Native progress is removed by the separate native client projection.
+        let delivered = GenerationResponse::new(
+            expected.semantic.items().to_vec(),
+            expected.semantic.outcome(),
+        )
+        .unwrap()
+        .with_details(expected.semantic.details().clone())
+        .unwrap();
+        let (fidelity, metadata) = (Default::default(), crate::events_support::metadata());
+        let projected = morphiecore::protocol::openai::lowering::lower_response(
+            &delivered,
+            &fidelity,
+            &metadata,
+            morphiecore::protocol::openai::Profile::Responses,
+            morphiecore::protocol::openai::TargetCaps::full(),
+        )
+        .unwrap();
+        assert!(projected.projection().iter().any(|stage| {
+            stage
+                .loss
+                .is_some_and(|rule| rule.name() == "responses.omit-completion-cause.v1")
+        }));
+        let responses =
+            morphiecore::protocol::openai::responses::encode_response(&projected).unwrap();
+        assert_eq!(responses["status"], "completed");
+        assert!(responses["incomplete_details"].is_null());
+        let chat = morphiecore::protocol::openai::lowering::lower_response(
+            &delivered,
+            &fidelity,
+            &metadata,
+            morphiecore::protocol::openai::Profile::Chat,
+            morphiecore::protocol::openai::TargetCaps::full(),
+        )
+        .unwrap();
+        assert!(chat.projection().iter().any(|stage| {
+            stage
+                .loss
+                .is_some_and(|rule| rule.name() == "chat.coarsen-completion-cause.v1")
+        }));
+        assert_eq!(
+            morphiecore::protocol::openai::chat::encode_response(&chat).unwrap()["choices"][0]["finish_reason"],
+            "stop"
+        );
+        // The reported thinking subset of output tokens is kept, never derived.
+        let thinking = json!({"id":"msg_synthetic","type":"message","role":"assistant","model":"synthetic-model",
+            "content":[{"type":"text","text":"partial"}],"stop_reason":"end_turn","stop_sequence":null,
+            "usage":{"input_tokens":11,"output_tokens":7,"output_tokens_details":{"thinking_tokens":5}}});
+        let thinking = p
+            .decode_generation_response(
+                thinking.to_string().as_bytes(),
+                LocalScope::new(2),
+                &target(),
+            )
+            .unwrap();
+        assert_eq!(thinking.semantic.usage().unwrap().reasoning_tokens, Some(5));
+        let window = decode("model_context_window_exceeded", Value::Null).unwrap();
+        let window_wire =
+            morphiecore::protocol::anthropic::client::encode_client_response(&window, "m").unwrap();
+        assert_eq!(window_wire["stop_reason"], "model_context_window_exceeded");
         assert!(
             morphiecore::protocol::openai::Adapter::new(
-                morphiecore::protocol::openai::Profile::Responses,
+                morphiecore::protocol::openai::Profile::Chat,
                 morphiecore::protocol::openai::Dialect::Standard,
                 None
             )
-            .encode_response(
-                &expected,
-                &morphiecore::protocol::openai::TargetCaps::full()
-            )
+            .encode_response(&window, &morphiecore::protocol::openai::TargetCaps::full())
             .is_err()
         );
         let frames = vec![
@@ -1344,7 +1401,43 @@ mod anthropic_media {
             wire["messages"][0]["content"],
             json!([{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"AQID"},"title":"report.pdf"}])
         );
-        assert!(rules.is_empty());
+        // The Chat source has no cap; Messages requires one and records the default.
+        assert_eq!(wire["max_tokens"], 32_000);
+        assert_eq!(rules, ["messages.default-max-tokens.v1"]);
+        // A later developer message becomes a mid-conversation system message once the
+        // binding's representation declares it; default admission stays closed.
+        let ordered = |messages: Value| {
+            let mut request = chat
+                .decode_client_request(
+                    &serde_json::to_vec(&json!({"model":"m","messages":messages})).unwrap(),
+                )
+                .unwrap();
+            request.conversation = Some(
+                morphiecore::semantic::context::ConversationContext::conversation("synthetic")
+                    .unwrap(),
+            );
+            request
+        };
+        let later = ordered(json!([{"role":"user","content":"go"},
+            {"role":"developer","content":"Be brief."}]));
+        assert!(endpoint.encode_request_with_rules(&later).is_err());
+        let mut widened = endpoint.clone();
+        let mut caps = morphiecore::protocol::anthropic::TargetCaps::new(
+            Profile::AdaptiveTextTools,
+            morphiecore::protocol::anthropic::Dialect::OpenCodeGo,
+        );
+        caps.semantics = Profile::AdaptiveTextTools.representation_contract();
+        widened.representation = caps.into();
+        let (wire, rules) = widened.encode_request_with_rules(&later).unwrap();
+        assert_eq!(
+            wire["messages"],
+            json!([{"role":"user","content":[{"type":"text","text":"go"}]},
+                {"role":"system","content":[{"type":"text","text":"Be brief."}]}])
+        );
+        assert!(rules.contains(&"messages.developer-as-system.v1"));
+        let between = ordered(json!([{"role":"user","content":"go"},
+            {"role":"developer","content":"Be brief."},{"role":"user","content":"again"}]));
+        assert!(widened.encode_request_with_rules(&between).is_err());
         // Messages has no audio or video carrier, and its system prompt is text.
         let audio =
             decode(json!([{"type":"input_audio","input_audio":{"data":"AQID","format":"wav"}}]));
@@ -1554,7 +1647,13 @@ mod anthropic_output {
             wire["output_config"],
             json!({"format":{"type":"json_schema","schema":schema()}})
         );
-        assert_eq!(rules, ["messages.omit-schema-name.v1"]);
+        assert_eq!(
+            rules,
+            [
+                "messages.omit-schema-name.v1",
+                "messages.default-max-tokens.v1"
+            ]
+        );
     }
 }
 mod client_fidelity {
@@ -1725,6 +1824,13 @@ mod client_fidelity {
             encode_client_response(&response, "m").unwrap()["usage"],
             json!({"input_tokens":8,"output_tokens":3,"cache_read_input_tokens":2})
         );
+        usage.reasoning_tokens = Some(1);
+        response.semantic = response.semantic.with_usage(Some(usage)).unwrap();
+        assert_eq!(
+            encode_client_response(&response, "m").unwrap()["usage"]["output_tokens_details"],
+            json!({"thinking_tokens":1})
+        );
+        usage.reasoning_tokens = None;
         // Without the read subset, input cannot be split.
         usage.cached_input_tokens = None;
         response.semantic = response.semantic.with_usage(Some(usage)).unwrap();
@@ -1786,6 +1892,39 @@ mod client_fidelity {
             encode_client_response(&response, "m").unwrap()["content"],
             json!([{"type":"text","text":"answer"}])
         );
+        // An incomplete terminal closes the started text block by its wire index.
+        let mut truncated = ClientEventEncoder::new("r", "m");
+        let mut frames = vec![];
+        for event in [
+            StreamEvent::Started,
+            StreamEvent::ItemStarted {
+                item: ItemId::new(1),
+                kind: ItemKind::Message { phase: None },
+                replay: None,
+            },
+            StreamEvent::PartStarted {
+                item: ItemId::new(1),
+                part: PartId::new(1),
+                kind: PartKind::Refusal,
+            },
+            StreamEvent::Usage(usage),
+            StreamEvent::Terminal {
+                terminal: StreamTerminal::Incomplete,
+                details: TerminalDetails {
+                    incomplete: Some(IncompleteReason::MaxOutputTokens),
+                    ..Default::default()
+                },
+            },
+        ] {
+            frames.extend(truncated.encode(&event).unwrap());
+        }
+        truncated.finish().unwrap();
+        let frames: String = frames
+            .iter()
+            .map(|frame| std::str::from_utf8(frame).unwrap())
+            .collect();
+        assert!(frames.contains(r#"{"type":"content_block_stop","index":0}"#));
+        assert!(!frames.contains(r#""index":null"#));
         let mut split = response.clone();
         let mut items = split.semantic.items().to_vec();
         let Item::Message(message) = &mut items[0].1 else {
@@ -2040,6 +2179,33 @@ mod client_fidelity {
                 "{key}"
             );
         }
+        // The IR owns top_k; a Messages target rejects it at projection, not intake.
+        let mut sampled = body.clone();
+        sampled["top_k"] = json!(4);
+        let sampled = decode_client_request(sampled.to_string().as_bytes()).unwrap();
+        assert_eq!(sampled.task.semantic.controls().top_k, Some(4));
+        // Mid-conversation system messages are ordered, text-only instructions.
+        let mut system = body.clone();
+        system["messages"] = json!([{"role":"user","content":"go"},
+            {"role":"system","content":[{"type":"text","text":"Be brief."}]}]);
+        let decoded = decode_client_request(system.to_string().as_bytes()).unwrap();
+        assert!(
+            matches!(&decoded.task.semantic.items()[1].1, Item::Instruction(i)
+            if i.authority == InstructionAuthority::System
+                && i.texts().map(|(_, t)| t).collect::<Vec<_>>() == ["Be brief."])
+        );
+        for messages in [
+            json!([{"role":"system","content":"first"},{"role":"user","content":"go"}]),
+            json!([{"role":"user","content":"go"},{"role":"system","content":"x"},
+                {"role":"user","content":"again"}]),
+            json!([{"role":"user","content":"go"},{"role":"system","content":[
+                {"type":"image","source":{"type":"url","url":"https://example.invalid/a.png"}}]}]),
+            json!([{"role":"user","content":"go"},{"role":"system","content":"x",
+                "clear_at":"next_user_message"}]),
+        ] {
+            system["messages"] = messages;
+            assert!(decode_client_request(system.to_string().as_bytes()).is_err());
+        }
         let mut thinking = body.clone();
         thinking["messages"][0]["content"] =
             json!([{"type":"thinking","thinking":"plan","signature":"synthetic"}]);
@@ -2061,12 +2227,21 @@ mod client_fidelity {
                 "caller":{"type":"direct"}}]},
             {"role":"user","content":[{"type":"tool_result","tool_use_id":"c","content":"ok"}]}]);
         assert!(decode_client_request(calls.to_string().as_bytes()).is_ok());
+        // `content` is optional on a tool result; absence is an empty result.
+        let mut bare = calls.clone();
+        bare["messages"][1]["content"] =
+            json!([{"type":"tool_result","tool_use_id":"c","is_error":true}]);
+        let bare = decode_client_request(bare.to_string().as_bytes()).unwrap();
+        assert!(
+            matches!(&bare.task.semantic.items()[1].1, Item::ToolResult(r)
+            if matches!(&r.output, ToolOutput::Parts(parts) if parts.is_empty())
+                && r.is_error == Some(true))
+        );
         calls["messages"][0]["content"][0]["caller"] =
             json!({"type":"code_execution_20250825","tool_id":"program_1"});
         assert!(decode_client_request(calls.to_string().as_bytes()).is_err());
         for (key, value) in [
             ("stop_sequences", json!([7])),
-            ("top_k", json!(4)),
             ("service_tier", json!("priority")),
             ("container", json!("container_1")),
             (
@@ -2181,10 +2356,46 @@ mod client_fidelity {
             ("frequency_penalty", json!(3)),
             ("presence_penalty", json!(3)),
             ("logit_bias", json!({"1": 1})),
+            // Stored completions need storage the gateway does not provide.
+            ("store", json!(true)),
         ] {
             let mut active = body.clone();
             active[key] = value;
             assert!(decode(&active).is_err(), "{key}");
         }
+        let mut stored = body.clone();
+        stored["store"] = json!(false);
+        assert!(decode(&stored).is_ok());
+        // A participant name is model-visible and has no carrier.
+        let mut named = body.clone();
+        named["messages"][0]["name"] = json!("alice");
+        assert!(decode(&named).is_err());
+        named["messages"][0]["name"] = serde_json::Value::Null;
+        assert!(decode(&named).is_ok());
+        // Assistant history may mix text and refusal parts; both keep their kinds.
+        let mut refused = body.clone();
+        refused["messages"] = json!([{"role":"user","content":"go"},
+            {"role":"assistant","content":[{"type":"text","text":"partial"},
+                {"type":"refusal","refusal":"no"}]},
+            {"role":"user","content":"again"}]);
+        let refused = decode(&refused).unwrap();
+        assert!(
+            matches!(&refused.task.semantic.items()[1].1, Item::Message(m)
+            if matches!(m.parts.as_slice(), [
+                Part { content: ContentPart::Text(_), .. },
+                Part { content: ContentPart::Refusal(_), .. }
+            ]))
+        );
+        let wire = chat
+            .encode_request(
+                &refused,
+                "m",
+                &morphiecore::protocol::openai::TargetCaps::full(),
+            )
+            .unwrap();
+        assert_eq!(
+            wire["messages"][1]["content"],
+            json!([{"type":"text","text":"partial"},{"type":"refusal","refusal":"no"}])
+        );
     }
 }

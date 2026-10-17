@@ -80,7 +80,11 @@ impl Block {
                 let o = object(v)?;
                 Self::ToolResult {
                     tool_use_id: string(required(o, "tool_use_id")?)?,
-                    content: super::ResultContent::read(required(o, "content")?)?,
+                    // Optional in the pinned ToolResultBlockParam; absence is no content.
+                    content: match o.get("content") {
+                        None => super::ResultContent::Blocks(vec![]),
+                        Some(v) => super::ResultContent::read(v)?,
+                    },
                     is_error: presence(o, "is_error", boolean)?,
                 }
             }
@@ -244,17 +248,31 @@ pub struct Usage {
     pub output_tokens: u64,
     pub cache_creation_input_tokens: Presence<u64>,
     pub cache_read_input_tokens: Presence<u64>,
+    /// `output_tokens_details.thinking_tokens`, a subset of `output_tokens`.
+    /// https://github.com/anthropics/anthropic-sdk-python/blob/b4b7916deaf4e5570cd627b1ae7ee4394a4de39f/src/anthropic/types/output_tokens_details.py
+    pub thinking_tokens: Presence<u64>,
 }
 impl Usage {
     fn read(v: &Value) -> Result<Self, CodecError> {
         let o = object(v)?;
-        Ok(Self {
+        let usage = Self {
             service_class: super::service::read_class(o)?,
             input_tokens: presence(o, "input_tokens", uint)?,
             output_tokens: uint(required(o, "output_tokens")?)?,
             cache_creation_input_tokens: presence(o, "cache_creation_input_tokens", uint)?,
             cache_read_input_tokens: presence(o, "cache_read_input_tokens", uint)?,
-        })
+            thinking_tokens: presence(o, "output_tokens_details", |v| {
+                uint(required(object(v)?, "thinking_tokens")?)
+            })?,
+        };
+        if usage
+            .thinking_tokens
+            .value()
+            .is_some_and(|thinking| *thinking > usage.output_tokens)
+        {
+            return Err(CodecError::Invalid("Anthropic thinking tokens"));
+        }
+        Ok(usage)
     }
     fn wire(&self) -> Value {
         let mut v = json!({"output_tokens":self.output_tokens});
@@ -272,6 +290,12 @@ impl Usage {
             "cache_read_input_tokens",
             &self.cache_read_input_tokens,
             |n| json!(n),
+        );
+        put(
+            o,
+            "output_tokens_details",
+            &self.thinking_tokens,
+            |n| json!({ "thinking_tokens": n }),
         );
         v
     }

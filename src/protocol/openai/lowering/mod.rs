@@ -317,19 +317,20 @@ pub fn lower_response<'a>(
     if !r.safety_reports().is_empty() {
         return Err(RepresentationError::Safety);
     }
-    crate::protocol::openai::terminal::check_completion(
-        r.details(),
-        profile,
-        matches!(r.continuation(), Continuation::ToolResults(_)),
-    )
-    .map_err(|_| RepresentationError::Terminal)?;
+    let terminal_losses = crate::protocol::openai::terminal::terminal_losses(r.details(), profile)
+        .map_err(|_| RepresentationError::Terminal)?;
     metadata
         .context
         .validate()
         .map_err(|_| RepresentationError::Metadata)?;
     let mut metadata = std::borrow::Cow::Borrowed(metadata);
     let mut semantic = std::borrow::Cow::Borrowed(r);
-    let mut projection = Vec::new();
+    let mut projection: Vec<_> = terminal_losses
+        .into_iter()
+        .map(|loss| {
+            projection::ProjectionStage::response(profile, c.adaptation.profile_id, Some(loss))
+        })
+        .collect();
     if let Some(loss) = projection::reported_settings(metadata.to_mut(), profile)? {
         if c.reported_facts == ReportedFactPolicy::StrictComplete {
             return Err(RepresentationError::ReportedFacts);
@@ -497,13 +498,19 @@ fn validate_response(
             || r.outcome() == Outcome::Incomplete
                 && !matches!(
                     r.details().incomplete,
-                    Some(IncompleteReason::MaxOutputTokens | IncompleteReason::ContentFilter)
+                    Some(
+                        IncompleteReason::MaxOutputTokens
+                            | IncompleteReason::ContentFilter
+                            | IncompleteReason::Recitation
+                    )
                 )
             || r.details().error.is_some()
             || r.details().incomplete.as_ref().is_some_and(|reason| {
                 !matches!(
                     reason,
-                    IncompleteReason::MaxOutputTokens | IncompleteReason::ContentFilter
+                    IncompleteReason::MaxOutputTokens
+                        | IncompleteReason::ContentFilter
+                        | IncompleteReason::Recitation
                 )
             }))
     {
@@ -866,7 +873,12 @@ fn text_items(
                     > 1
                 && (!request
                     || m.parts.iter().any(|p| {
-                        !matches!(p.content, ContentPart::Text(_) | ContentPart::Resource(_))
+                        !matches!(
+                            p.content,
+                            ContentPart::Text(_)
+                                | ContentPart::Refusal(_)
+                                | ContentPart::Resource(_)
+                        )
                     }))
             {
                 return Err(RepresentationError::MessageGrouping);

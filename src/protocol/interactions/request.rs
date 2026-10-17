@@ -19,6 +19,7 @@ pub enum RequestRule {
     DeveloperAsSystem,
     OmitSchemaName,
     OmitCacheKey,
+    JoinInstructionParts,
 }
 impl RequestRule {
     pub const fn name(self) -> &'static str {
@@ -31,6 +32,7 @@ impl RequestRule {
             Self::DeveloperAsSystem => "interactions.developer-as-system.v1",
             Self::OmitSchemaName => "interactions.omit-schema-name.v1",
             Self::OmitCacheKey => "interactions.omit-cache-key.v1",
+            Self::JoinInstructionParts => "interactions.join-instruction-parts.v1",
         }
     }
 }
@@ -110,7 +112,12 @@ pub(super) fn project(
         if i.authority == InstructionAuthority::Developer {
             rules.insert(RequestRule::DeveloperAsSystem);
         }
-        system = Some(i.texts().map(|(_, t)| t).collect::<Vec<_>>().join("\n"));
+        // `system_instruction` is one string. Parts become paragraphs, as generateContent
+        // renders separate system parts: https://ai.google.dev/api/caching#CachedContent
+        if i.parts.len() > 1 {
+            rules.insert(RequestRule::JoinInstructionParts);
+        }
+        system = Some(i.texts().map(|(_, t)| t).collect::<Vec<_>>().join("\n\n"));
     }
     if request
         .items()
@@ -141,9 +148,11 @@ pub(super) fn project(
                     FunctionStrictness::Omitted(StrictDefault::NormalizeSchema)
                     | FunctionStrictness::Explicit(true) => return Err(unsupported()),
                 }
-                let parameters = t.parameters.as_ref().ok_or_else(unsupported)?;
-                let mut tool = json!({"type":"function","name":t.name.as_str(),
-                "parameters":parameters.root()});
+                // `parameters` is optional on the pinned Interactions Function type.
+                let mut tool = json!({"type":"function","name":t.name.as_str()});
+                if let Some(parameters) = &t.parameters {
+                    tool["parameters"] = parameters.root().clone();
+                }
                 if let Some(description) = &t.description {
                     tool["description"] = description.as_str().into();
                 }
