@@ -31,6 +31,11 @@ pub fn encode_generation_request(
 ) -> Result<(Value, Vec<RequestRule>), CodecError> {
     let request = group_client_history(request)?;
     request.validate()?;
+    if request.cached_context().is_some() {
+        return Err(CodecError::Unsupported(
+            "Interactions cached context".into(),
+        ));
+    }
     fidelity.require_reasoning_replay(&request, &target.origin())?;
     let mut rules = Default::default();
     let value = request::project(&request, fidelity, target, &mut rules)?;
@@ -76,6 +81,7 @@ pub fn semantic_contract() -> GenerationSemanticContract {
         strict_tools: false,
         normalization_default_tools: false,
         explicit_cache: false,
+        cached_context: false,
         automatic_prefix_cache: false,
     }
 }

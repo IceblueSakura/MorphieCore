@@ -9,10 +9,13 @@ pub use context_transform::{
 };
 mod settings;
 pub use settings::{GenerationControls, GenerationSettings, Truncation};
+mod cached_context;
+pub use cached_context::CachedContextReference;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GenerationRequest {
     items: Vec<(ItemId, Item)>,
     resources: ResourceTable,
+    cached_context: Option<CachedContextReference>,
     settings: std::sync::Arc<GenerationSettings>,
     envelopes: crate::semantic::task::generation::history::envelope::MessageEnvelopes,
 }
@@ -43,6 +46,7 @@ impl GenerationRequest {
         let r = Self {
             items,
             resources,
+            cached_context: None,
             settings: std::sync::Arc::new(settings),
             envelopes: Default::default(),
         };
@@ -57,10 +61,15 @@ impl GenerationRequest {
             crate::semantic::task::generation::validate::items(&self.items, false, &self.resources)?
         };
         let resources = self.resources.uncharged_bytes(&self.items)?;
+        let cached_context = self
+            .cached_context
+            .as_ref()
+            .map_or(0, CachedContextReference::bytes);
         let envelopes = self.envelopes.validate(&self.items)?;
         if items
             .saturating_add(settings)
             .saturating_add(resources)
+            .saturating_add(cached_context)
             .saturating_add(envelopes)
             > MAX_TOTAL_BYTES
         {
@@ -73,6 +82,17 @@ impl GenerationRequest {
     }
     pub fn resources(&self) -> &ResourceTable {
         &self.resources
+    }
+    pub fn cached_context(&self) -> Option<&CachedContextReference> {
+        self.cached_context.as_ref()
+    }
+    pub fn with_cached_context(
+        mut self,
+        reference: Option<CachedContextReference>,
+    ) -> Result<Self, GenerationError> {
+        self.cached_context = reference;
+        self.validate()?;
+        Ok(self)
     }
     pub fn with_resources(mut self, resources: ResourceTable) -> Result<Self, GenerationError> {
         self.resources = resources;

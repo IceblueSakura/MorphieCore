@@ -89,6 +89,14 @@ Clients may resend full history or use [gateway-managed Responses history](#stat
 
 When a concept cannot be expressed, show a minimal counterexample and structural options before changing the IR. Do not hide it in private adapter fields.
 
+### Cached context references
+
+`GenerationRequest` may name one existing cached input base, separately from settings and ordered items. The reference carries bounded opaque identity and an optional reported expiry with subsecond precision. It is required task context, not an advisory optimization. Item edits preserve it; history composition may share an identical base but rejects incompatible bases or retroactive introduction after selected input.
+
+Boundary fidelity records associate the complete reference with a logical issuer scope. This is compatibility evidence, not resource authorization, credential selection or a trusted origin. A changed identity or expiry needs a new association. Known expiry requires an explicit caller-supplied clock and rejects at the expiration instant; missing expiry remains unknown, not unlimited retention. Pure codecs read no clock and perform no I/O.
+
+The generateContent carrier encodes the bound reference without expanding its content. Cached instructions/tools cannot be overlaid implicitly. Other carriers reject without support; default binding admission and public HTTP schemas remain unchanged. Cache creation, fetching, renewal, resource authorization and cache-only prewarming are separate work. See [Google's resource contract](https://ai.google.dev/api/caching).
+
 ## Adaptation
 
 ### Accurate IR and declared loss
@@ -643,6 +651,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Generation controls | Positive top-k, ordered exact stop sequences, independent presence/frequency coefficients and best-effort seeds have separate carriers. Absent, permitted null and empty stop lists mean no control; target limits remain codec-local. Legacy Messages top-k and unbound tokenizer-specific logit bias remain rejected |
 | Service-policy intent and reports | [Closed policies and separate reported classes](#service-policies-and-reports), not speculative field combinations. Native names and model aliases never establish cross-service equivalence or effective reports; dynamic alias selection remains deferred with routing integration |
 | Terminal stop evidence | Completion cause is separate from outcome and turn progress, including when Google reports STOP alongside function calls. Preserve natural, sequence-matched and ambiguous stop reports without deriving them from sent controls or output text. Reject delivery without a carrier for necessary evidence; no new lossy stop policy is selected |
+| Existing cached context | A typed optional reference belongs to `GenerationRequest` as its input base, not settings, an ordered item or advisory cache hints. Preserve resource identity and reported expiry; unreported expiry is not unlimited retention. Boundary records hold provenance and an explicit target clock checks known expiry. Never fetch, expand, renew or silently omit the reference. Default binding admission and public request schemas stay unchanged |
 | Transitional test scope | While IR/codec contracts are incomplete, defer success scenarios that assume unselected completion conversions or binding admission. Keep established local contracts and safety assertions, measure pruning coverage, and rebuild selected integration coverage after the contracts stabilize. A green reduced suite does not establish the deferred client loops |
 | Client-owned output caps | The gateway neither caps nor invents `max_tokens`; the upstream enforces its model limit. Only a protocol that requires the field fills a fixed default |
 

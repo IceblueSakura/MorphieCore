@@ -18,7 +18,7 @@ For this migration, update existing tests and independent wire expectations only
 
 Defer successful integration scenarios whose completion conversion or binding-admission contract is not selected. Remove those scenarios rather than invent a conversion or replace success with an expected gateway error. Keep identity, replay isolation, strict parsing, cancellation, transport bounds and honest-terminal assertions. Orthogonal fixtures should use exact supported carriers. Rebuild the selected integration coverage after IR/codec contracts stabilize, during the coverage stage.
 
-The next design slice is native cache resource references in the [support queue](#support-queue-after-projection-repair), separate from deferred prewarming. Cache-owner, generation-control and service-policy carriers are not pending feature work; their remaining admission and delivery constraints belong to the [integration handoff](#integration-handoff). Keep established contracts under regression without reopening them as implementation goals.
+The next design slice is safety settings and reported outcomes in the [support queue](#support-queue-after-projection-repair). Existing cached-context references, cache-owner, generation-control and service-policy carriers remain under local regression; their admission and delivery constraints belong to the [integration handoff](#integration-handoff), not new implementation goals.
 
 ### Temporary routing freeze
 
@@ -74,6 +74,8 @@ Explicit cache retention also rejects targets without an exact carrier. No cross
 
 Owner-local Messages cache markers and separate automatic TTL controls have codec carriers, but default binding admission remains unchanged. New generation-control carriers likewise do not establish model-effective support or public capability promises.
 
+Existing [cached-context references](architecture.md#cached-context-references) have a generateContent request carrier with exact identity/expiry association and explicit clock checks. Other carriers reject; default binding admission remains closed. There is no new HTTP request field, resource authorization service or cache lifecycle operation. This is separate from cache-only prewarming.
+
 Service-policy codecs follow the [closed policy/report contract](architecture.md#service-policies-and-reports); default binding admission remains unchanged. The native generation-only decode helper rejects an execution policy rather than dropping it; full request envelopes retain it. Messages service reports require full-message or opening usage. Cross-contract classes and late reports without a target carrier reject instead of being reclassified or omitted.
 
 | Boundary | Current treatment | Exit condition when reopened |
@@ -99,15 +101,11 @@ Chat custom tools have static JSON and history carriers, not a pinned custom-cal
 
 The remaining queue advances through local contract gates, not publication or successful route reconnection. Before each IR extension, present a minimal counterexample and structural options. An official carrier alone does not activate a binding. Legacy Messages `top_k` and tokenizer-unbound `logit_bias` remain rejected.
 
-1. **Native cache resource references.** First select how to express an existing resource's identity, scope and lifetime, separately from advisory cache keys and prewarming.
-
-   Exit condition: preserve the selected resource-reference semantics in typed IR and exact codecs, and reject targets without carriers rather than dropping cached task context. Do not add resource creation, fetching, credential authority, service lifecycle operations or cache-only prewarming implicitly.
-
-2. **Safety settings.** First select typed ownership for safety categories, thresholds and reported outcomes. A caller identity hint is not a moderation policy, and equal native threshold names are not an equivalence rule.
+1. **Safety settings.** First select typed ownership for safety categories, thresholds and reported outcomes. A caller identity hint is not a moderation policy, and equal native threshold names are not an equivalence rule.
 
    Exit condition: preserve the selected input policy and separately reported facts with independent wire expectations; reject unsupported conversions without dropping or weakening a safety control. Do not infer outcomes from requested settings or enable bindings.
 
-These non-tool support slices complete the remaining first-stage feature queue, subject to its local contract gates and explicit integration handoff. Cache prewarming, tool discovery, native `web_search`, other hosted tools, Messages citations, generated media, multi-candidate execution and file services retain their deferred boundaries.
+This non-tool support slice completes the remaining first-stage feature queue, subject to its local contract gates and explicit integration handoff. Cache prewarming, tool discovery, native `web_search`, other hosted tools, Messages citations, generated media, multi-candidate execution and file services retain their deferred boundaries.
 
 #### Model-name service-policy carriers
 
@@ -119,7 +117,7 @@ The current [endpoint contract](../src/topology/endpoint.rs) fixes the upstream 
 
 ### Deferred cache prewarming
 
-Native cache-only prewarming is deferred, with priority and scheduling undecided. It is not a prerequisite for first-stage completion, coverage improvement or the P7 boundary review. Native cache resource references remain in the current support queue.
+Native cache-only prewarming is deferred, with priority and scheduling undecided. It is not a prerequisite for first-stage completion, coverage improvement or the P7 boundary review. Existing cached-context references retain their separate local contract.
 
 The [pinned pi cache warmer](https://github.com/earendil-works/pi/blob/4270522473e677ddba7b093caa0064a3df51d459/packages/coding-agent/src/core/cache-warmer.ts) replays a real request with a one-token output cap and keeps refresh usage outside model history. Scheduling, context validity and refresh economics belong to that client strategy; no gateway-owned background warmer is selected. Such requests remain ordinary generation, not evidence of native cache-only support, and a one-token cap does not identify a warming request.
 
@@ -186,7 +184,7 @@ IR completeness does not mean every upstream can carry every modality. Protocol-
 
 ## Planned order
 
-1. **Selected Generation IR completeness.** Complete native cache resource references and safety settings under the temporary routing freeze. Cache prewarming, tool discovery and native `web_search` are deferred, not exit conditions. Preserve the explicit integration handoff and deferred concepts; a disconnected client loop does not invalidate correct IR/codec work.
+1. **Selected Generation IR completeness.** Complete safety settings under the temporary routing freeze; retain established cache-reference and other local contracts. Cache prewarming, tool discovery and native `web_search` are deferred, not exit conditions. Preserve the explicit integration handoff and deferred concepts; a disconnected client loop does not invalidate correct IR/codec work.
 2. **Coverage improvement.** Start the coverage pass only after selected first-stage IR completeness. Keep focused regressions and safety invariants throughout implementation; deferred cache and tool slices do not block this stage.
 3. **Routing rules and failover improvement.** Review candidate membership, credential-pool truncation, cooling/affinity ordering and per-exchange budgets together. Implementation improvement and real acceptance follow the second stage; their priority remains undecided, lowest for now.
 4. **Other agent acceptance.** Codex, Claude Code and other agents follow failover. Their priority is undecided, lowest for now.

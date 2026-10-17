@@ -17,6 +17,7 @@ pub enum GenerationFeature {
     StrictTools,
     ToolSchemaNormalization,
     ExplicitCache,
+    CachedContext,
     AutomaticPrefixCache,
     StructuredArguments,
     StructuredToolResult,
@@ -71,6 +72,7 @@ pub struct GenerationSemanticContract {
     /// Omitted strictness that requests schema normalization, not an explicit strict tool.
     pub normalization_default_tools: bool,
     pub explicit_cache: bool,
+    pub cached_context: bool,
     pub automatic_prefix_cache: bool,
 }
 impl GenerationSemanticContract {
@@ -111,6 +113,7 @@ impl GenerationSemanticContract {
             strict_tools: true,
             normalization_default_tools: true,
             explicit_cache: true,
+            cached_context: true,
             automatic_prefix_cache: true,
         }
     }
@@ -152,6 +155,7 @@ impl GenerationSemanticContract {
             // Preserve the admitted default separately from explicit strict-tool support.
             normalization_default_tools: true,
             explicit_cache: false,
+            cached_context: false,
             automatic_prefix_cache: false,
         }
     }
@@ -197,6 +201,7 @@ impl GenerationSemanticContract {
                 self.normalization_default_tools,
             ),
             (promise.explicit_cache, self.explicit_cache),
+            (promise.cached_context, self.cached_context),
             (promise.automatic_prefix_cache, self.automatic_prefix_cache),
         ]
         .into_iter()
@@ -331,6 +336,7 @@ impl GenerationSemanticContract {
                 ToolSchemaNormalization,
             ),
             (q.explicit_cache, self.explicit_cache, ExplicitCache),
+            (q.cached_context, self.cached_context, CachedContext),
             (
                 q.automatic_prefix_cache,
                 self.automatic_prefix_cache,

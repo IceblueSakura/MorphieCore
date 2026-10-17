@@ -33,6 +33,7 @@ pub struct GenerationRequirements {
     pub strict_function_tools: bool,
     pub normalization_default_tools: bool,
     pub explicit_cache: bool,
+    pub cached_context: bool,
     pub automatic_prefix_cache: bool,
     pub tool_history: bool,
     pub provider_observations: bool,
@@ -74,6 +75,7 @@ impl GenerationRequirements {
     }
     pub fn derive(r: &GenerationRequest) -> Self {
         let mut x = Self {
+            cached_context: r.cached_context().is_some(),
             top_k: r.controls().top_k.is_some(),
             stop_sequences: !r.controls().stop_sequences.is_empty(),
             presence_penalty: r.controls().presence_penalty().is_some(),

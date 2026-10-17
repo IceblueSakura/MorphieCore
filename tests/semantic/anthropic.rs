@@ -932,7 +932,8 @@ mod anthropic_semantics {
             morphiecore::protocol::google::encode_generation_request(
                 &client.task.semantic,
                 &client.task.fidelity,
-                &target()
+                &target(),
+                None,
             )
             .is_err()
         );

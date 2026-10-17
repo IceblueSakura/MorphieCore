@@ -69,6 +69,11 @@ struct AudioBinding {
     reference: [u8; 32],
     body: Option<[u8; 32]>,
 }
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CachedContextBinding {
+    reference: CachedContextReference,
+    origin: ReplayOrigin,
+}
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct FidelityRecords {
@@ -79,6 +84,7 @@ pub struct FidelityRecords {
     input_text_forms: std::collections::BTreeSet<PartId>,
     item_replay: BTreeMap<ItemId, ReplayBinding>,
     audio: BTreeMap<PartId, AudioBinding>,
+    cached_context: Option<CachedContextBinding>,
     response_extras: Option<ResponseExtras>,
     routing_extras: Option<ResponseExtras>,
     normalizations: std::collections::BTreeSet<Normalization>,
@@ -97,12 +103,54 @@ impl FidelityRecords {
                 + self.input_text_forms.len())
                 * 512
             + (self.item_replay.len() + self.audio.len()) * 2048
+            + self
+                .cached_context
+                .as_ref()
+                .map_or(0, |binding| binding.reference.bytes() + 512)
             + self.normalizations.len() * 1024
             + [self.response_extras.as_ref(), self.routing_extras.as_ref()]
                 .into_iter()
                 .flatten()
                 .count()
                 * (RESPONSE_EXTRAS_BUDGET * 128 + 1024)
+    }
+    /// Compatibility association only, not resource authorization or target selection.
+    pub fn record_cached_context(
+        &mut self,
+        reference: &CachedContextReference,
+        origin: ReplayOrigin,
+    ) -> Result<(), CodecError> {
+        let binding = CachedContextBinding {
+            reference: reference.clone(),
+            origin,
+        };
+        if self
+            .cached_context
+            .as_ref()
+            .is_some_and(|old| old != &binding)
+        {
+            return Err(CodecError::Invalid("cached context binding"));
+        }
+        self.cached_context = Some(binding);
+        Ok(())
+    }
+    pub(crate) fn check_cached_context(
+        &self,
+        reference: &CachedContextReference,
+        origin: &ReplayOrigin,
+        now: Option<std::time::SystemTime>,
+    ) -> Result<(), CodecError> {
+        let binding = self
+            .cached_context
+            .as_ref()
+            .ok_or(CodecError::Invalid("cached context binding"))?;
+        if &binding.reference != reference || &binding.origin != origin {
+            return Err(CodecError::Invalid("cached context binding"));
+        }
+        if reference.expires_at().is_some() {
+            reference.check_at(now.ok_or(CodecError::Invalid("cached context clock"))?)?;
+        }
+        Ok(())
     }
     /// Trusted intake association, never issuer authentication or a client-supplied scope.
     pub fn record_audio(

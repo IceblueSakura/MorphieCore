@@ -72,6 +72,9 @@ pub(super) fn project(
     rules: &mut BTreeSet<RequestRule>,
 ) -> Result<super::Request, CodecError> {
     let s = request.settings();
+    if request.cached_context().is_some() {
+        return Err(unsupported());
+    }
     if s.controls.top_k.is_some()
         || s.controls.presence_penalty().is_some()
         || s.controls.frequency_penalty().is_some()

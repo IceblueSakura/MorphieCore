@@ -73,6 +73,32 @@ pub(super) fn project(
         rules.insert(RequestRule::OmitVerbosity);
     }
     let mut body = Map::new();
+    if let Some(reference) = request.cached_context() {
+        // Cached resources may fix these controls. Do not invent an overlay.
+        // https://ai.google.dev/api/caching#CachedContent
+        if !s.instructions.is_absent()
+            || s.tools.is_some()
+            || s.tool_choice.is_some()
+            || request
+                .items()
+                .iter()
+                .any(|(_, item)| matches!(item, Item::Instruction(_)))
+        {
+            return Err(unsupported());
+        }
+        let name = reference.id();
+        let id = name
+            .strip_prefix("cachedContents/")
+            .ok_or_else(unsupported)?;
+        if id.is_empty()
+            || id
+                .chars()
+                .any(|c| c.is_control() || c.is_whitespace() || matches!(c, '/' | '\\' | '?' | '#'))
+        {
+            return Err(unsupported());
+        }
+        body.insert("cachedContent".into(), name.into());
+    }
     let mut system = match &s.instructions {
         Presence::Absent => None,
         Presence::Value(t) => Some(vec![t.as_str().to_owned()]),

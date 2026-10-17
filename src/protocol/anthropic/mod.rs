@@ -70,6 +70,7 @@ impl Profile {
             strict_tools: false,
             normalization_default_tools: false,
             explicit_cache: false,
+            cached_context: false,
             automatic_prefix_cache: false,
         }
     }

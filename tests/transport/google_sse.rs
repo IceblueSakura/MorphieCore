@@ -107,6 +107,7 @@ fn signed_text_and_partial_outputs_keep_replay_and_terminal_contracts() {
         &returned.task.semantic,
         &returned.task.fidelity,
         &ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap(),
+        None,
     )
     .unwrap();
     assert_eq!(
@@ -125,6 +126,7 @@ fn signed_text_and_partial_outputs_keep_replay_and_terminal_contracts() {
             &returned.task.semantic,
             &returned.task.fidelity,
             &ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap(),
+            None,
         )
         .is_err()
     );

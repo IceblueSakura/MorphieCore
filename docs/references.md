@@ -9,7 +9,7 @@ Primary sources used in design, with pinned revisions and licenses. Web pages ar
 | OpenAI Python SDK | [`be9d666`](https://github.com/openai/openai-python/tree/be9d66628ad7377bd36fe5a76ae6d735843f0e76) (3.19.0) | Apache-2.0 | Required, nullable and union checks for Responses, Chat and Embeddings types; Responses continuation and input-item pagination |
 | OpenAI Codex | [`a9b0815`](https://github.com/openai/codex/tree/a9b0815167c27ab13719dd12d13b63e02b70d221) | Apache-2.0 | Codex/SIWC product profile (not a public API); target agent: request shape, session headers, `response.failed` error codes |
 | Anthropic Python SDK | [`b4b7916`](https://github.com/anthropics/anthropic-sdk-python/tree/b4b7916deaf4e5570cd627b1ae7ee4394a4de39f) (1.13.0) | MIT | Message, event, thinking and tool types |
-| Google Gen AI Python SDK | [`78f6d34`](https://github.com/googleapis/python-genai/tree/78f6d3412caaaed44f99ce57be2d16d0b8c407cb) | Apache-2.0 | generateContent thinking types and Interactions v1 generation controls; deprecated SDK fields remain distinct from effective model support |
+| Google Gen AI Python SDK | [`78f6d34`](https://github.com/googleapis/python-genai/tree/78f6d3412caaaed44f99ce57be2d16d0b8c407cb) | Apache-2.0 | generateContent thinking and cached-context types, plus Interactions v1 generation controls; deprecated SDK fields remain distinct from effective model support |
 | pi | [`4270522`](https://github.com/earendil-works/pi/tree/4270522473e677ddba7b093caa0064a3df51d459) | MIT | Tool constraints and execution layering, history transforms (`transform-messages.ts`), Anthropic/Responses codecs and [thinking-budget presets](refs/2026-10-15-generation-projections.md#pi-thinking-budget-presets) |
 | pi thinking allocation | [`4a5d372`](https://github.com/earendil-works/pi/tree/4a5d37291531ad48b8e536c892557877d219463c) | MIT | Current thinking-budget helpers and target-specific budget branches, rechecked for P3; does not replace the broader client pin above |
 | OpenCode | [`e5a557e`](https://github.com/anomalyco/opencode/tree/e5a557efeee02c94486d391afc48f24a49ebc9a5) | MIT | Tool error feedback, history projection, Go Messages routing (`x-api-key`, `anthropic-version: 2023-06-01`) |
@@ -54,6 +54,8 @@ Protocol research notes with dated findings live in `refs/`: [Multimodal carrier
 Documentation: CC-BY-4.0. Samples: Apache-2.0.
 
 - [generateContent](https://ai.google.dev/api/generate-content)
+- [CachedContent resources](https://ai.google.dev/api/caching)
+- [Context caching](https://ai.google.dev/gemini-api/docs/caching)
 - [Thought signatures](https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures)
 - [Function calling](https://ai.google.dev/gemini-api/docs/generate-content/function-calling)
 - [Interactions overview](https://ai.google.dev/gemini-api/docs/interactions-overview)

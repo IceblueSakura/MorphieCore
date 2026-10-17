@@ -77,6 +77,7 @@ pub fn semantic_contract() -> GenerationSemanticContract {
         strict_tools: false,
         normalization_default_tools: false,
         explicit_cache: false,
+        cached_context: false,
         automatic_prefix_cache: false,
     }
 }
@@ -91,6 +92,7 @@ pub fn representation_contract() -> GenerationSemanticContract {
     contract.presence_penalty = true;
     contract.frequency_penalty = true;
     contract.seed = true;
+    contract.cached_context = true;
     contract
 }
 
@@ -99,9 +101,13 @@ pub fn encode_generation_request(
     request: &GenerationRequest,
     fidelity: &FidelityRecords,
     target: &ReplayTarget,
+    resource_time: Option<std::time::SystemTime>,
 ) -> Result<(Value, Vec<RequestRule>), CodecError> {
     let request = group_client_history(request)?;
     request.validate()?;
+    if let Some(reference) = request.cached_context() {
+        fidelity.check_cached_context(reference, &target.origin(), resource_time)?;
+    }
     fidelity.require_reasoning_replay(&request, &target.origin())?;
     let mut rules = Default::default();
     let value = request::project(&request, fidelity, target, &mut rules)?;
@@ -113,6 +119,8 @@ pub fn encode_generation_request(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TargetCaps {
     pub semantics: GenerationSemanticContract,
+    /// Supplied by the boundary; pure codecs never read a clock.
+    pub resource_time: Option<std::time::SystemTime>,
     pub cache: CacheProjection,
     pub reasoning_policy: Option<crate::protocol::reasoning::ReasoningRequestPolicy>,
     pub reasoning_as_text: bool,
@@ -121,6 +129,7 @@ impl Default for TargetCaps {
     fn default() -> Self {
         Self {
             semantics: semantic_contract(),
+            resource_time: None,
             cache: CacheProjection::default(),
             reasoning_policy: None,
             reasoning_as_text: false,
@@ -200,8 +209,12 @@ impl TargetCaps {
             .clone()
             .with_settings(settings)
             .map_err(CodecError::from)?;
-        let (wire, mut rules) =
-            encode_generation_request(&semantic, &request.task.fidelity, target)?;
+        let (wire, mut rules) = encode_generation_request(
+            &semantic,
+            &request.task.fidelity,
+            target,
+            self.resource_time,
+        )?;
         if !self.reasoning_as_text && rules.contains(&RequestRule::ReasoningAsText) {
             return Err(CodecError::Unsupported("reasoning as text disabled".into()).into());
         }

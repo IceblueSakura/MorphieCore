@@ -47,8 +47,9 @@ pub use history::turn::{
 pub use identity::{ItemId, LocalScope, NativeAliasDomain, PartId};
 pub use output::{OutputConstraint, TextOptions, Verbosity};
 pub use request::{
-    ClientManaged, ContextBuild, ContextChange, ContextEdit, ContextError, ContextStage,
-    GenerationControls, GenerationRequest, GenerationSettings, SelectedHistory, Truncation,
+    CachedContextReference, ClientManaged, ContextBuild, ContextChange, ContextEdit, ContextError,
+    ContextStage, GenerationControls, GenerationRequest, GenerationSettings, SelectedHistory,
+    Truncation,
 };
 pub use requirements::{GenerationRequirements, GenerationResponseRequirements};
 pub use resources::table::{ResourceDependency, ResourceId, ResourceTable, ResourceUse};

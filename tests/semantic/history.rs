@@ -70,6 +70,104 @@ mod client_managed {
         let mut invalid = GenerationSettings::default();
         invalid.controls.max_output_tokens = Some(0);
         assert!(ClientManaged::new(invalid).is_err());
+
+        let reference = CachedContextReference::new(text("cache-a"), None).unwrap();
+        let source = GenerationRequest::new(
+            vec![(
+                ItemId::new(60),
+                Item::Message(Message {
+                    role: MessageRole::User,
+                    parts: vec![Part::new(
+                        PartId::new(60),
+                        ContentPart::Text(text("question").into()),
+                    )],
+                    status: ItemLifecycle::Completed,
+                    phase: None,
+                }),
+            )],
+            GenerationControls::default(),
+        )
+        .unwrap()
+        .with_cached_context(Some(reference.clone()))
+        .unwrap();
+        let selected = ClientManaged::new(Default::default())
+            .unwrap()
+            .select_request(&source)
+            .unwrap()
+            .build()
+            .unwrap();
+        assert_eq!(selected.cached_context(), Some(&reference));
+        let edited = selected
+            .clone()
+            .transform(vec![ContextEdit::Replace {
+                owner: ItemId::new(60),
+                item: Item::Message(Message {
+                    role: MessageRole::User,
+                    parts: vec![Part::new(
+                        PartId::new(60),
+                        ContentPart::Text(text("edited").into()),
+                    )],
+                    status: ItemLifecycle::Completed,
+                    phase: None,
+                }),
+            }])
+            .unwrap()
+            .into_request();
+        assert_eq!(edited.cached_context(), Some(&reference));
+        assert_eq!(source.cached_context(), Some(&reference));
+        let other = GenerationRequest::new(
+            vec![(
+                ItemId::new(61),
+                Item::Message(Message {
+                    role: MessageRole::User,
+                    parts: vec![Part::new(
+                        PartId::new(61),
+                        ContentPart::Text(text("next").into()),
+                    )],
+                    status: ItemLifecycle::Completed,
+                    phase: None,
+                }),
+            )],
+            GenerationControls::default(),
+        )
+        .unwrap()
+        .with_cached_context(Some(
+            CachedContextReference::new(text("cache-b"), None).unwrap(),
+        ))
+        .unwrap();
+        assert!(matches!(
+            ClientManaged::new(Default::default())
+                .unwrap()
+                .select_request(&source)
+                .unwrap()
+                .select_request(&other),
+            Err(GenerationError::InvalidContextTransform)
+        ));
+        let same_base = other.with_cached_context(Some(reference.clone())).unwrap();
+        let combined = ClientManaged::new(Default::default())
+            .unwrap()
+            .select_request(&source)
+            .unwrap()
+            .select_request(&same_base)
+            .unwrap()
+            .build()
+            .unwrap();
+        assert_eq!(combined.cached_context(), Some(&reference));
+        assert_eq!(combined.items().len(), 2);
+        let no_base = source.clone().with_cached_context(None).unwrap();
+        assert!(matches!(
+            ClientManaged::new(Default::default())
+                .unwrap()
+                .select_request(&no_base)
+                .unwrap()
+                .select_request(&same_base),
+            Err(GenerationError::InvalidContextTransform)
+        ));
+        assert!(
+            CachedContextReference::new(Text::allowing_empty("", "fixture", 1).unwrap(), None)
+                .is_err()
+        );
+        assert!(!format!("{reference:?}").contains("cache-a"));
     }
 
     #[test]

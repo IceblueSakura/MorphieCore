@@ -55,7 +55,7 @@ pub fn lower_request<'a>(
     {
         return Err(RepresentationError::Controls);
     }
-    if q.automatic_prefix_cache {
+    if q.automatic_prefix_cache || q.cached_context {
         return Err(RepresentationError::Controls);
     }
     if q.tool_result_errors {

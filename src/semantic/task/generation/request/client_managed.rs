@@ -22,6 +22,7 @@ impl ClientManaged {
             request: GenerationRequest {
                 items: vec![],
                 resources: ResourceTable::default(),
+                cached_context: None,
                 settings: std::sync::Arc::new(settings),
                 envelopes: Default::default(),
             },
@@ -30,6 +31,17 @@ impl ClientManaged {
     pub fn select_request(mut self, source: &GenerationRequest) -> Result<Self, GenerationError> {
         source.validate()?;
         self.reserve_selection(source.items())?;
+        if let Some(reference) = source.cached_context() {
+            match self.request.cached_context() {
+                Some(current) if current != reference => {
+                    return Err(GenerationError::InvalidContextTransform);
+                }
+                None if !self.request.items.is_empty() => {
+                    return Err(GenerationError::InvalidContextTransform);
+                }
+                _ => self.request.cached_context = Some(reference.clone()),
+            }
+        }
         self.request.resources = self
             .request
             .resources

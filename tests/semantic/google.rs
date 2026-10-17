@@ -90,7 +90,7 @@ fn stream_maps_thoughts_text_calls_and_anchored_signatures() {
     .unwrap()
     .with_message_envelopes(empty.semantic.message_envelopes().to_vec())
     .unwrap();
-    let (body, _) = encode_generation_request(&history, &empty.fidelity, &target()).unwrap();
+    let (body, _) = encode_generation_request(&history, &empty.fidelity, &target(), None).unwrap();
     assert_eq!(
         body["contents"][0]["parts"],
         json!([{"text":"","thoughtSignature":"U0lH"}])
@@ -98,7 +98,7 @@ fn stream_maps_thoughts_text_calls_and_anchored_signatures() {
     let missing = history
         .retain_items(|_, item| !matches!(item, Item::Message(_)))
         .unwrap();
-    assert!(encode_generation_request(&missing, &empty.fidelity, &target()).is_err());
+    assert!(encode_generation_request(&missing, &empty.fidelity, &target(), None).is_err());
 
     let partial = decode(&wire(&[json!({
         "responseId":"partial","modelVersion":"gemini-synthetic",
@@ -213,8 +213,13 @@ fn stream_maps_thoughts_text_calls_and_anchored_signatures() {
         signature(&observed.semantic.items()[1].1),
         json!({"anchor":"thought","signature":"U0lHMg=="})
     );
-    let (encoded, _) =
-        encode_generation_request(&next_request(&observed), &observed.fidelity, &target()).unwrap();
+    let (encoded, _) = encode_generation_request(
+        &next_request(&observed),
+        &observed.fidelity,
+        &target(),
+        None,
+    )
+    .unwrap();
     assert_eq!(
         &encoded["contents"][1]["parts"].as_array().unwrap()[..2],
         &[
@@ -312,7 +317,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
         .unwrap()
         .build()
         .unwrap();
-    let (body, _) = encode_generation_request(&history, &tail.fidelity, &target()).unwrap();
+    let (body, _) = encode_generation_request(&history, &tail.fidelity, &target(), None).unwrap();
     assert_eq!(
         body["contents"][1]["parts"],
         json!([{"text":"A","thoughtSignature":"U0lH"}])
@@ -323,7 +328,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
     };
     message.parts[0].content = ContentPart::Text(Text::new("B", "edited", 64).unwrap().into());
     let edited = history.with_items(edited).unwrap();
-    assert!(encode_generation_request(&edited, &tail.fidelity, &target()).is_err());
+    assert!(encode_generation_request(&edited, &tail.fidelity, &target(), None).is_err());
 
     let observed = decode(&wire(&frames())).unwrap();
     let request = next_request(&observed);
@@ -342,7 +347,8 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
             "parametersJsonSchema":{"type":"object","properties":{"path":{"type":"string"}}}}]}],
         "generationConfig":{"maxOutputTokens":1024,
             "thinkingConfig":{"thinkingLevel":"HIGH","includeThoughts":true}}});
-    let (body, rules) = encode_generation_request(&request, &observed.fidelity, &target()).unwrap();
+    let (body, rules) =
+        encode_generation_request(&request, &observed.fidelity, &target(), None).unwrap();
     assert_eq!(body, expected);
     assert!(rules.is_empty());
     // Chat delivers reasoning ahead of the message; the anchor, not the position, binds it.
@@ -355,10 +361,11 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
         .unwrap()
         .with_items(items)
         .unwrap();
-    let (body, _) = encode_generation_request(&hoisted, &observed.fidelity, &target()).unwrap();
+    let (body, _) =
+        encode_generation_request(&hoisted, &observed.fidelity, &target(), None).unwrap();
     assert_eq!(body, expected);
     let other = ReplayTarget::new("synthetic-google", "gemini-other").unwrap();
-    assert!(encode_generation_request(&request, &observed.fidelity, &other).is_err());
+    assert!(encode_generation_request(&request, &observed.fidelity, &other, None).is_err());
     let mut settings = request.settings().clone();
     settings.text = TextOptions {
         presence: true,
@@ -367,7 +374,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
     };
     let advisory = request.clone().with_settings(settings.clone()).unwrap();
     let (body, rules) =
-        encode_generation_request(&advisory, &observed.fidelity, &target()).unwrap();
+        encode_generation_request(&advisory, &observed.fidelity, &target(), None).unwrap();
     assert_eq!(body, expected);
     assert_eq!(
         rules.iter().map(|r| r.name()).collect::<Vec<_>>(),
@@ -377,7 +384,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
     settings.text.format =
         morphiecore::semantic::value::Presence::Value(OutputConstraint::JsonObject);
     let constrained = request.clone().with_settings(settings).unwrap();
-    assert!(encode_generation_request(&constrained, &observed.fidelity, &target()).is_err());
+    assert!(encode_generation_request(&constrained, &observed.fidelity, &target(), None).is_err());
     let schema = json!({"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"],"additionalProperties":false});
     let source = client(
         Profile::Chat,
@@ -392,8 +399,13 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
     assert!(
         matches!(source.task.semantic.output(), OutputConstraint::JsonSchema { schema: s, strict: Some(true), .. } if s.root() == &schema)
     );
-    let (body, rules) =
-        encode_generation_request(&source.task.semantic, &source.task.fidelity, &target()).unwrap();
+    let (body, rules) = encode_generation_request(
+        &source.task.semantic,
+        &source.task.fidelity,
+        &target(),
+        None,
+    )
+    .unwrap();
     assert_eq!(
         body["generationConfig"],
         json!({
@@ -434,7 +446,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
         .with_settings(controlled.clone())
         .unwrap();
     let (wire, _) =
-        encode_generation_request(&controlled, &source.task.fidelity, &target()).unwrap();
+        encode_generation_request(&controlled, &source.task.fidelity, &target(), None).unwrap();
     assert_eq!(
         wire["generationConfig"],
         json!({
@@ -462,7 +474,9 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
         .clone()
         .with_settings(invalid_controls.clone())
         .unwrap();
-    assert!(encode_generation_request(&out_of_range, &source.task.fidelity, &target()).is_err());
+    assert!(
+        encode_generation_request(&out_of_range, &source.task.fidelity, &target(), None).is_err()
+    );
     assert_eq!(out_of_range.controls().seed, Some(i64::from(i32::MAX) + 1));
     invalid_controls.controls.seed = Some(i64::from(i32::MIN));
     let signed = controlled
@@ -470,7 +484,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
         .with_settings(invalid_controls.clone())
         .unwrap();
     assert_eq!(
-        encode_generation_request(&signed, &source.task.fidelity, &target())
+        encode_generation_request(&signed, &source.task.fidelity, &target(), None)
             .unwrap()
             .0["generationConfig"]["seed"],
         i32::MIN
@@ -496,7 +510,176 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
         .clone()
         .with_settings(settings)
         .unwrap();
-    assert!(encode_generation_request(&invalid, &source.task.fidelity, &target()).is_err());
+    assert!(encode_generation_request(&invalid, &source.task.fidelity, &target(), None).is_err());
+
+    let now = std::time::UNIX_EPOCH + std::time::Duration::from_secs(10);
+    let expiry = now + std::time::Duration::from_nanos(1);
+    let reference = CachedContextReference::new(
+        Text::new("cachedContents/example", "fixture", 256).unwrap(),
+        Some(expiry),
+    )
+    .unwrap();
+    let mut cached = client(
+        Profile::Responses,
+        json!({"model":"public","input":"question","max_output_tokens":16}),
+    );
+    cached.task.semantic = cached
+        .task
+        .semantic
+        .with_cached_context(Some(reference.clone()))
+        .unwrap();
+    assert!(
+        encode_generation_request(
+            &cached.task.semantic,
+            &cached.task.fidelity,
+            &target(),
+            Some(now)
+        )
+        .is_err()
+    );
+    cached
+        .task
+        .fidelity
+        .record_cached_context(
+            &reference,
+            morphiecore::protocol::replay_envelope::issuer("synthetic-google", "gemini-synthetic"),
+        )
+        .unwrap();
+    let observed = cached.clone();
+    let (wire, rules) = encode_generation_request(
+        &cached.task.semantic,
+        &cached.task.fidelity,
+        &target(),
+        Some(now),
+    )
+    .unwrap();
+    assert_eq!(
+        wire,
+        json!({
+            "cachedContent":"cachedContents/example",
+            "contents":[{"role":"user","parts":[{"text":"question"}]}],
+            "generationConfig":{"maxOutputTokens":16}
+        })
+    );
+    assert!(rules.is_empty());
+    assert_eq!(cached, observed);
+    assert!(
+        encode_generation_request(
+            &cached.task.semantic,
+            &cached.task.fidelity,
+            &target(),
+            None
+        )
+        .is_err()
+    );
+    assert!(
+        encode_generation_request(
+            &cached.task.semantic,
+            &cached.task.fidelity,
+            &target(),
+            Some(expiry)
+        )
+        .is_err()
+    );
+    assert!(
+        encode_generation_request(
+            &cached.task.semantic,
+            &cached.task.fidelity,
+            &ReplayTarget::new("other", "gemini-synthetic").unwrap(),
+            Some(now)
+        )
+        .is_err()
+    );
+    let changed = cached
+        .task
+        .semantic
+        .clone()
+        .with_cached_context(Some(
+            CachedContextReference::new(
+                Text::new("cachedContents/other", "fixture", 256).unwrap(),
+                Some(expiry),
+            )
+            .unwrap(),
+        ))
+        .unwrap();
+    assert!(
+        encode_generation_request(&changed, &cached.task.fidelity, &target(), Some(now)).is_err()
+    );
+    let unreported_expiry = CachedContextReference::new(
+        Text::new("cachedContents/example", "fixture", 256).unwrap(),
+        None,
+    )
+    .unwrap();
+    let no_expiry = cached
+        .task
+        .semantic
+        .clone()
+        .with_cached_context(Some(unreported_expiry.clone()))
+        .unwrap();
+    assert!(encode_generation_request(&no_expiry, &cached.task.fidelity, &target(), None).is_err());
+    let mut unreported = morphiecore::protocol::fidelity::FidelityRecords::default();
+    unreported
+        .record_cached_context(
+            &unreported_expiry,
+            morphiecore::protocol::replay_envelope::issuer("synthetic-google", "gemini-synthetic"),
+        )
+        .unwrap();
+    assert_eq!(
+        encode_generation_request(&no_expiry, &unreported, &target(), None)
+            .unwrap()
+            .0,
+        wire
+    );
+    let mut settings = cached.task.semantic.settings().clone();
+    settings.instructions = morphiecore::semantic::value::Presence::Value(
+        Text::new("replacement instruction", "fixture", 256).unwrap(),
+    );
+    assert!(
+        encode_generation_request(
+            &cached
+                .task
+                .semantic
+                .clone()
+                .with_settings(settings)
+                .unwrap(),
+            &cached.task.fidelity,
+            &target(),
+            Some(now)
+        )
+        .is_err()
+    );
+    assert!(
+        morphiecore::protocol::google::semantic_contract()
+            .check(&cached.task.semantic)
+            .is_err()
+    );
+    assert!(
+        morphiecore::protocol::google::representation_contract()
+            .check(&cached.task.semantic)
+            .is_ok()
+    );
+    assert!(
+        Adapter::new(Profile::Responses, Dialect::Standard, None)
+            .encode_request(
+                &cached,
+                "upstream",
+                &morphiecore::protocol::openai::TargetCaps::full()
+            )
+            .is_err()
+    );
+    assert!(
+        morphiecore::protocol::anthropic::Profile::AdaptiveTextTools
+            .encode_generation_request(&cached.task.semantic, &cached.task.fidelity, &target())
+            .is_err()
+    );
+    assert!(
+        morphiecore::protocol::interactions::encode_generation_request(
+            &cached.task.semantic,
+            &cached.task.fidelity,
+            &target()
+        )
+        .is_err()
+    );
 }
 
 fn client(profile: Profile, body: Value) -> Request {
@@ -516,9 +699,13 @@ fn user_media_become_inline_or_file_data_parts() {
             {"type":"video_url","video_url":{"url":"data:video/mp4;base64,BAUG"}},
             {"type":"text","text":"Describe."}]}]}),
     );
-    let (body, rules) =
-        encode_generation_request(&request.task.semantic, &request.task.fidelity, &target())
-            .unwrap();
+    let (body, rules) = encode_generation_request(
+        &request.task.semantic,
+        &request.task.fidelity,
+        &target(),
+        None,
+    )
+    .unwrap();
     assert_eq!(
         body["contents"],
         json!([{"role":"user","parts":[
@@ -539,8 +726,13 @@ fn user_media_become_inline_or_file_data_parts() {
                 {"type":"image_url","image_url":{"url":url}}]}]}),
         );
         assert!(
-            encode_generation_request(&invalid.task.semantic, &invalid.task.fidelity, &target())
-                .is_err()
+            encode_generation_request(
+                &invalid.task.semantic,
+                &invalid.task.fidelity,
+                &target(),
+                None
+            )
+            .is_err()
         );
     }
 }
@@ -556,9 +748,13 @@ fn tool_media_ride_inline_in_the_function_response() {
             "tools":[{"type":"function","name":"shot","strict":false,"parameters":{"type":"object"}}]})
     };
     let request = client(Profile::Responses, input("data:image/png;base64,AQID"));
-    let (body, rules) =
-        encode_generation_request(&request.task.semantic, &request.task.fidelity, &target())
-            .unwrap();
+    let (body, rules) = encode_generation_request(
+        &request.task.semantic,
+        &request.task.fidelity,
+        &target(),
+        None,
+    )
+    .unwrap();
     assert_eq!(
         body["contents"][1],
         json!({"role":"user","parts":[{"functionResponse":{"id":"c1","name":"shot",
@@ -570,8 +766,13 @@ fn tool_media_ride_inline_in_the_function_response() {
     detailed["input"][1]["output"][1]["detail"] = json!("auto");
     let detailed = client(Profile::Responses, detailed);
     assert!(
-        encode_generation_request(&detailed.task.semantic, &detailed.task.fidelity, &target())
-            .is_err()
+        encode_generation_request(
+            &detailed.task.semantic,
+            &detailed.task.fidelity,
+            &target(),
+            None
+        )
+        .is_err()
     );
     let named = client(
         Profile::Responses,
@@ -580,19 +781,27 @@ fn tool_media_ride_inline_in_the_function_response() {
         "file_data":"data:application/pdf;base64,AQID"}]}]}),
     );
     assert!(
-        encode_generation_request(&named.task.semantic, &named.task.fidelity, &target()).is_err()
+        encode_generation_request(&named.task.semantic, &named.task.fidelity, &target(), None)
+            .is_err()
     );
     // FunctionResponsePart has no fileData.
     let remote = client(Profile::Responses, input("https://example.invalid/a.png"));
     assert!(
-        encode_generation_request(&remote.task.semantic, &remote.task.fidelity, &target()).is_err()
+        encode_generation_request(
+            &remote.task.semantic,
+            &remote.task.fidelity,
+            &target(),
+            None
+        )
+        .is_err()
     );
     let unsupported = client(Profile::Responses, input("data:image/gif;base64,AQID"));
     assert!(
         encode_generation_request(
             &unsupported.task.semantic,
             &unsupported.task.fidelity,
-            &target()
+            &target(),
+            None,
         )
         .is_err()
     );
@@ -604,14 +813,15 @@ fn tool_media_ride_inline_in_the_function_response() {
     };
     let pdf = part(json!({"type":"input_file","file_data":"data:application/pdf;base64,BAUG"}));
     let (body, _) =
-        encode_generation_request(&pdf.task.semantic, &pdf.task.fidelity, &target()).unwrap();
+        encode_generation_request(&pdf.task.semantic, &pdf.task.fidelity, &target(), None).unwrap();
     assert_eq!(
         body["contents"][1]["parts"][0]["functionResponse"]["parts"],
         json!([{"inlineData":{"mimeType":"application/pdf","data":"BAUG"}}])
     );
     let video = part(json!({"type":"input_video","video_url":"data:video/mp4;base64,BAUG"}));
     assert!(
-        encode_generation_request(&video.task.semantic, &video.task.fidelity, &target()).is_err()
+        encode_generation_request(&video.task.semantic, &video.task.fidelity, &target(), None)
+            .is_err()
     );
 }
 
@@ -635,8 +845,12 @@ fn instruction_media_and_strict_image_sizes_have_no_gemini_carrier() {
         (messages("downsize"), true),
         (messages("error"), false),
     ] {
-        let result =
-            encode_generation_request(&request.task.semantic, &request.task.fidelity, &target());
+        let result = encode_generation_request(
+            &request.task.semantic,
+            &request.task.fidelity,
+            &target(),
+            None,
+        );
         assert_eq!(result.is_ok(), ok);
     }
 }

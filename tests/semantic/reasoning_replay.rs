@@ -474,6 +474,7 @@ mod reasoning_controls {
             &allocated,
             &FidelityRecords::default(),
             &morphiecore::protocol::native::ReplayTarget::new("synthetic", "m").unwrap(),
+            None,
         )
         .unwrap();
         assert_eq!(
