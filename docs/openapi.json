@@ -1060,7 +1060,8 @@
         "content": {"application/json": {"schema": {"type": "object"}}, "text/event-stream": {"schema": {"type": "string"}}}
       },
       "MessagesError": {
-        "description": "Sanitized Messages handler error. Exhausted quota maps to 402; upstream overload maps to 529. Ingress auth and router method errors use the shared OpenAI envelope.",
+        "description": "Sanitized Messages handler error. Exhausted quota maps to 402; upstream overload maps to 529. All legal remaining targets cooling/probing returns 503 upstream_unavailable. Ingress auth and router method errors use the shared OpenAI envelope.",
+        "headers": {"Retry-After": {"description": "Optional bounded upstream or local recovery delay in seconds; not a guarantee of recovery.", "schema": {"type": "integer", "minimum": 0, "maximum": 86400}}},
         "content": {"application/json": {"schema": {"$ref": "#/components/schemas/MessagesError"}}}
       },
       "Generation": {
@@ -1073,7 +1074,8 @@
         "content": {"application/json": {"schema": {"type": "object", "not": {"required": ["_openbridge"]}}}, "text/event-stream": {"schema": {"type": "string"}}}
       },
       "Error": {
-        "description": "Sanitized OpenAI error. Ingress authentication uses this envelope on every route; 401 includes WWW-Authenticate: Bearer. No upstream bodies, origins or credentials are echoed.",
+        "description": "Sanitized OpenAI error. Ingress authentication uses this envelope on every route; 401 includes WWW-Authenticate: Bearer. All legal remaining targets cooling/probing returns 503 upstream_unavailable. No upstream bodies, origins or credentials are echoed.",
+        "headers": {"Retry-After": {"description": "Optional bounded upstream or local recovery delay in seconds; not a guarantee of recovery.", "schema": {"type": "integer", "minimum": 0, "maximum": 86400}}},
         "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
       }
     }

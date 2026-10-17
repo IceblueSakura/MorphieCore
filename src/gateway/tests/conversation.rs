@@ -76,14 +76,43 @@ fn neutral_context_reads_agent_session_headers_but_never_provider_sessions() {
     assert_ne!(one.id(), two.id());
     assert_eq!(one.id().len(), 32);
     // Declared agent sessions: pi, opencode, Codex.
-    for name in ["session_id", "x-session-id", "session-id"] {
+    headers.insert(
+        "x-client-request-id",
+        HeaderValue::from_static("not-a-conversation"),
+    );
+    assert!(
+        !admission::conversation(&headers)
+            .unwrap()
+            .is_conversation_scoped()
+    );
+    for name in [
+        "session_id",
+        "x-session-id",
+        "session-id",
+        "x-session-affinity",
+    ] {
         headers.insert(name, HeaderValue::from_static("pi-session"));
         let group = admission::conversation(&headers).unwrap();
         assert!(group.is_conversation_scoped());
         assert_eq!(group.id(), "pi-session");
         headers.remove(name);
     }
+    headers.insert(
+        "x-session-affinity",
+        HeaderValue::from_static("pi-messages-session"),
+    );
+    headers.append("x-session-affinity", HeaderValue::from_static("duplicate"));
+    assert_eq!(admission::conversation(&headers).unwrap_err().status, 400);
+    headers.remove("x-session-affinity");
+    headers.insert(
+        "x-session-affinity",
+        HeaderValue::from_static("pi-messages-session"),
+    );
     headers.insert("x-session-id", HeaderValue::from_static("pi-session"));
+    assert_eq!(
+        admission::conversation(&headers).unwrap().id(),
+        "pi-session"
+    );
     headers.insert(
         "x-morphiecore-conversation-id",
         HeaderValue::from_static("conversation-one"),

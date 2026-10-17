@@ -429,35 +429,24 @@ Register new extension shapes here one at a time. The old `_openbridge` attachme
 
 ## Failover
 
-### Selected routing revision
-
-The [approved implementation](roadmap.md#approved-stable-routing-implementation) replaces soft cooling and startup pool truncation. The following is the selected target until that slice completes:
-
-- Bind all pool members, at most 64 expanded candidates per entry. A pool's per-endpoint runtime ceiling is `max_attempts` with credential fallback enabled, otherwise one. The route ceiling spans all endpoints; beginning credential resolution consumes an attempt, while selection skips do not. Neither budget resets or multiplies, and no candidate is revisited.
-- Preserve stable compiled order, promoting only an eligible healthy conversation preference. Scan past illegal successors under every earlier failure restriction. Unknown-scope rate limits cannot rotate credentials within the request; across requests they gate the configured deployment/model pool, not all Providers or unrelated pools.
-- Separate private health digests from cache/replay identity: authentication and locally unavailable material affect credential plus Provider origin; permission, quota and upstream failures affect the exact credential/deployment/model; unknown rate limits affect the configured pool at that deployment/model. Public aliases do not split these health domains. No error text invents a wider quota scope.
-- Authentication/permission HTTP statuses remain authoritative even if body classification or reading fails. Standard `Retry-After` is retained for failed statuses, parsed within one day, and used without the former one-hour truncation. Provider-specific reset dialects are not inferred.
-- Cooling is a dispatch gate, not a last-resort ordering hint. Before `not_before`, no attempt is made. Once it expires, one foreground request may own recovery per affected scope; no background calls, waiting queue or repeated candidate cycle. If every legal remaining target is cooling or probing, return sanitized HTTP 503 `upstream_unavailable`, with a bounded `Retry-After` when known.
-- Without a valid reported delay, transient upstream failures back off from one second to one minute; credential, quota and rate failures from one minute to thirty minutes. Failures during an active cooldown do not multiply its backoff. A failure after thirty minutes without a recent cooldown starts fresh. Active deadlines never shorten. A captured failure generation fences successful cleanup and affinity updates; cancellation releases any probe without inventing success or failure.
-- An upstream timeout or broken stream affects subsequent health, even after publication; a slow downstream, client cancellation, projection failure or semantic refusal does not. The final EOF/handoff success boundary and prohibition on published replay remain unchanged.
-- Keep exact-credential, public-model/conversation affinity and its existing bounds. Successful failover becomes the current preference, without automatic failback. `x-session-affinity` is a final ingress alias after the existing headers. Cache grouping never becomes conversation authority.
-- Diagnostics report bounded reason/scope classes, probe ownership and delay sources, never health keys, credential fingerprints, conversations or business content. Keep the implicit prefix index disposable and independent of selection.
-
 ### Legal candidates
 
-Startup compiles a public model to a route with legal endpoints and credential candidates. Business input cannot create candidates or name an executor.
+Startup compiles a public model to a route with legal endpoints and all authorized credential-pool members, at most 64 expanded candidates per entry. Business input cannot create candidates or name an executor. Request representability is checked before selection; it does not widen public admission.
 
-Compiled order is the default. Runtime policy may prefer the conversation's last successful executor and move cooling executors to the end. Cooling candidates remain a last resort. This is failover, not load balancing.
+Compiled order is stable. Runtime policy promotes an available conversation preference and defers unavailable targets, then rechecks health atomically before dispatch. Cooling is a dispatch gate, not a last resort. This is failover, not load balancing.
 
-An executor is the exact credential × Provider × upstream model. API-key rotation changes its identity; OAuth token refresh preserves the verified principal. A different credential is a different cache domain.
+The exact executor/cache identity includes ingress principal, credential provenance, public model, Provider, deployment origin/path and upstream model. API-key rotation changes it; OAuth token refresh preserves the verified principal. A different credential is a different cache domain. Health uses separate private digests so public aliases do not isolate a shared failure.
 
 ### Advancement
 
-Advancement requires enabled policy, an unpublished body, a remaining candidate and remaining attempt/time budget.
+Advancement requires enabled policy, an unpublished body, a legal remaining candidate and remaining attempt/time budget. Scan the stable suffix under every earlier failure restriction; an ineligible adjacent key cannot block a later Provider, and another Provider's failure cannot erase an earlier exclusion.
+
+The pool's runtime ceiling applies per endpoint: `max_attempts` with credential fallback enabled, otherwise one. The route ceiling spans all endpoints. Beginning credential resolution consumes an attempt; representability, health and policy skips do not. Neither budget resets or multiplies, and no candidate is revisited. Transport has no hidden retry or redirect. A retained tail member can be the first attempt even when the pool or route ceiling is one.
 
 | Failure | Advancement |
 |---|---|
-| Transport/connect failure, timeout, server failure, unavailable credential | Advance where the route or credential policy permits |
+| Transport/connect failure, upstream timeout, server failure | Next key or endpoint where its credential/route policy permits |
+| Locally unavailable credential | Next credential of that endpoint where enabled; no new cross-Provider permission |
 | Exhausted quota | Next key or another Provider, where enabled |
 | Rate limit | Another Provider; do not rotate keys for unknown quota scope |
 | Authentication/permission failure, context overflow, request projection failure | Do not advance |
@@ -465,17 +454,35 @@ Advancement requires enabled policy, an unpublished body, a remaining candidate 
 
 A non-API 2xx reply, such as HTML or an empty body, is not success. Invalid or truncated upstream intake can advance while unpublished. Downstream projection failures do not acquire retry permission.
 
-Rate limits, exhausted quota and rejected credentials cool an executor. Server errors and timeouts do not. Health and conversation affinity are bounded in-memory state.
+Authentication/permission HTTP statuses remain authoritative: error wording cannot reinterpret them as quota, and reading an optional error body cannot turn them into a timeout. For other failed heads, a body-read timeout retains the known status classification.
+
+### Health and recovery
+
+| Failure | Health domain |
+|---|---|
+| Authentication, locally unavailable credential | Credential provenance + Provider + trusted origin |
+| Permission, quota, upstream server/transport/intake failure | Exact credential + Provider + deployment origin/path + upstream model |
+| Unknown-scope rate limit | Configured pool membership + Provider + deployment origin/path + upstream model |
+
+Pool identity is a digest of its ordered-independent member provenance set, not its display name. An unknown rate limit gates that deployment's pool across requests, without inventing a global Provider/account quota scope. Health keys come only from bound candidates; they and the bounded conversation table remain in process memory.
+
+Before `not_before`, no dispatch occurs. At expiry, one foreground request atomically acquires recovery ownership across all affected scopes. The lease lasts through EOF and final handoff; cancellation releases it. No background probes, waiting queues or repeated candidate cycles run. If every otherwise-legal remaining target is cooling or probing, return sanitized HTTP 503 `upstream_unavailable` with the earliest candidate's remaining delay (one second when only a probe is pending). Policy/budget exhaustion instead preserves the last attempted failure.
+
+Standard `Retry-After` accepts seconds or an HTTP date within one day. A valid delay, including zero, is used without a one-hour truncation. Without it, consecutive transient upstream failures back off from one second to one minute; credential, quota and rate failures from one minute to thirty minutes. Failures during an active cooldown do not multiply the backoff; thirty minutes after the previous cooldown resets the sequence. Active deadlines never shorten. No Provider-specific reset dialect is guessed.
+
+Each attempt captures health generations. Successful cleanup and affinity publication require all captured generations still to match; a late success cannot erase a newer failure. Already observed upstream failures survive interrupted error-frame delivery. Slow downstreams, cancellation alone, local projection failures and semantic refusals do not create upstream health failures.
+
+Diagnostics record bounded skip/stop reasons, scope classes, probe ownership and delay sources, never health keys, credential fingerprints, conversation IDs or business content.
 
 ### Routing unit
 
 The declared conversation is the routing unit. Turns, messages, branches and inferred subtasks are not routing keys.
 
-After honest completion, later requests prefer that executor. A successful failover updates affinity. There are no weights, rotations, concurrency lanes or load-spreading rules.
+After honest completion, later requests for the same public model and conversation prefer that executor. Successful failover updates affinity without automatically returning to the old target when it recovers. The table holds at most 4,096 pairs for one hour after completion; reads do not extend it. There are no weights, rotations, concurrency lanes or load-spreading rules.
 
 ## Streaming and delivery
 
-When another candidate could answer, lifecycle-only frames are held before publication. Content releases the buffer; byte and elapsed-time bounds also release it. This lets a pre-publication failure advance without exposing the attempt.
+When another candidate could answer, lifecycle-only frames are held before publication. Content, a 64 KiB bound or a real 20-second timer releases held frames, including during upstream silence. Empty buffers produce no invented keepalive or terminal. This lets a pre-publication failure advance without exposing the attempt.
 
 Publishing any body frame freezes advancement. Body handoff acknowledges commit. Completion requires validated upstream EOF and the final handoff.
 

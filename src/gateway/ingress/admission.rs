@@ -12,13 +12,15 @@ pub(in crate::gateway) fn conversation(
 ) -> Result<crate::semantic::context::ConversationContext, ApiError> {
     use crate::semantic::context::ConversationContext;
     // The explicit header wins, then the agents' declared sessions: opencode
-    // `X-Session-Id`, pi `session_id`, Codex `session-id`. Provider session
+    // `X-Session-Id`, pi `session_id`, Codex `session-id`, then pi's
+    // Chat/Messages `x-session-affinity`. Provider session
     // headers (`x-opencode-session`) are never read.
     let name = [
         "x-morphiecore-conversation-id",
         "x-session-id",
         "session_id",
         "session-id",
+        "x-session-affinity",
     ]
     .into_iter()
     .find(|name| headers.contains_key(*name));

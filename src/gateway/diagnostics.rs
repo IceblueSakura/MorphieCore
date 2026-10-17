@@ -134,6 +134,8 @@ fn reasoning_controls(
 }
 #[derive(Serialize)]
 struct CandidateRecord {
+    #[serde(flatten)]
+    routing: RoutingObservation,
     #[serde(skip_serializing_if = "Option::is_none")]
     reported_reasoning: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -171,6 +173,10 @@ struct ImageAccountingObservation {
 }
 #[derive(Serialize)]
 struct Record {
+    #[serde(flatten)]
+    routing: RoutingObservation,
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    selection_skips: std::collections::BTreeMap<&'static str, u64>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     input_losses: Vec<LossObservation>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -211,6 +217,17 @@ struct Record {
     events: EventCounts,
     #[serde(flatten)]
     image: ImageAccountingObservation,
+}
+#[derive(Clone, Copy, Default, Serialize)]
+struct RoutingObservation {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stop_reason: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    health: Option<crate::gateway::routing::executors::Observation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recovery_probe: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    completion_state: Option<&'static str>,
 }
 #[derive(Clone, Copy, Default, Serialize)]
 struct AffinityObservation {
@@ -289,6 +306,8 @@ impl Trace {
             capture_attempt: 0,
             sink: sink.cloned(),
             record: Record {
+                routing: RoutingObservation::default(),
+                selection_skips: Default::default(),
                 input_losses: vec![],
                 capture_exchange: None,
                 affinity: AffinityObservation::default(),
@@ -320,6 +339,7 @@ impl Trace {
         }
     }
     pub(super) fn begin_candidate(&mut self, ordinal: usize) {
+        self.record.routing = RoutingObservation::default();
         self.capture_attempt = ordinal;
         self.losses.clear();
         self.reported_reasoning = None;
@@ -344,6 +364,7 @@ impl Trace {
             && self.record.candidates.len() < crate::topology::route::MAX_ROUTE_CANDIDATES
         {
             self.record.candidates.push(CandidateRecord {
+                routing: self.record.routing,
                 reported_reasoning: self.reported_reasoning.take(),
                 losses: std::mem::take(&mut self.losses),
                 affinity: self.record.affinity,
@@ -363,6 +384,23 @@ impl Trace {
     }
     pub(super) fn executor_order(&mut self, label: &'static str) {
         self.record.executor_order = Some(label);
+    }
+    pub(super) fn selection_skip(&mut self, reason: &'static str) {
+        if self.sink.is_some() {
+            *self.record.selection_skips.entry(reason).or_default() += 1;
+        }
+    }
+    pub(super) fn health(&mut self, observation: crate::gateway::routing::executors::Observation) {
+        self.record.routing.health = Some(observation);
+    }
+    pub(super) fn probe(&mut self, probing: bool) {
+        self.record.routing.recovery_probe = probing.then_some(true);
+    }
+    pub(super) fn affinity_commit(&mut self, fresh: bool) {
+        self.record.routing.completion_state = Some(if fresh { "committed" } else { "stale" });
+    }
+    pub(super) fn selection_stop(&mut self, reason: &'static str) {
+        self.record.routing.stop_reason = Some(reason);
     }
     pub(super) fn executor(&mut self, provider: &str) {
         if self.sink.is_some() {
@@ -683,6 +721,8 @@ impl Drop for Trace {
             self.record.capture_exchange = self.capture.as_ref().map(super::capture::Exchange::id);
             self.record.elapsed_ms = self.start.elapsed().as_millis().min(u64::MAX as u128) as u64;
             let placeholder = Record {
+                routing: RoutingObservation::default(),
+                selection_skips: Default::default(),
                 input_losses: vec![],
                 capture_exchange: None,
                 affinity: AffinityObservation::default(),
@@ -751,6 +791,14 @@ mod tests {
         let mut trace = Trace::new(Some(&sink));
         trace.executor_order("affinity");
         trace.begin_candidate(1);
+        trace.probe(true);
+        trace.health(crate::gateway::routing::executors::Observation {
+            reason: "failure",
+            scope: "pool",
+            source: "retry_after",
+            retry_after_seconds: 7,
+        });
+        trace.selection_skip("failure_scope");
         trace.executor("zhipu");
         trace.head(429, &HeaderMap::new());
         trace.received(7);
@@ -830,8 +878,9 @@ mod tests {
         assert_eq!(exact[0].evidence.direction, "request.encode");
         trace.record.candidates.pop();
         trace.begin_candidate(2);
-        trace.stage(Stage::Connect);
-        trace.end_candidate(Some("upstream_timeout"), false);
+        trace.stage(Stage::Prepare);
+        trace.selection_stop("no_successor");
+        trace.end_candidate(Some("credential_unavailable"), false);
         assert_eq!(trace.record.candidates[0].upstream_status, Some(429));
         assert_eq!(trace.record.candidates[0].received_bytes, 7);
         assert_eq!(trace.record.candidates[1].upstream_status, None);
@@ -855,6 +904,17 @@ mod tests {
             "affinity"
         );
         assert_eq!(wire["advanced"], true);
+        assert_eq!(wire["health"]["scope"], "pool");
+        assert_eq!(wire["recovery_probe"], true);
+        let local = serde_json::to_value(&trace.record.candidates[1]).unwrap();
+        assert_eq!(local["stage"], "prepare");
+        assert_eq!(local["stop_reason"], "no_successor");
+        assert!(local.get("health").is_none());
+        assert!(local.get("recovery_probe").is_none());
+        assert_eq!(
+            serde_json::to_value(&trace.record).unwrap()["selection_skips"]["failure_scope"],
+            1
+        );
         assert!(wire.get("endpoint").is_none());
         assert!(wire.get("body").is_none());
     }

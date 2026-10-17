@@ -231,7 +231,10 @@ async fn answer(
     Json(body): Json<Value>,
 ) -> Response {
     assert_eq!(headers["anthropic-version"], "2023-06-01");
-    assert_eq!(headers["x-api-key"], "synthetic-upstream");
+    assert!(matches!(
+        headers["x-api-key"].to_str().unwrap(),
+        "synthetic-upstream" | "synthetic-secondary"
+    ));
     assert!(!headers.contains_key("authorization"));
     assert!(headers.contains_key("x-opencode-session"));
     assert!(!headers.contains_key("x-never-forward"));
@@ -371,6 +374,9 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
     let endpoint_id = endpoint.id.clone();
     let mut secondary = endpoint.clone();
     secondary.id = topology::EndpointId::new("native-secondary").unwrap();
+    // Independent credential targets may fail over; a duplicate alias of the
+    // same credential/deployment now intentionally shares its health.
+    secondary.credential = CredentialBindingId::new("native-secondary-key").unwrap();
     let endpoint_ids = vec![endpoint_id.clone(), secondary.id.clone()];
     let model = endpoint.canonical_model.clone();
     let route = topology::Route {
@@ -424,10 +430,16 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 .collect(),
             ..Default::default()
         },
-        BTreeMap::from([(
-            CredentialBindingId::new(binding.credential).unwrap(),
-            Arc::new(SecretMaterial::new("synthetic-upstream").unwrap()),
-        )]),
+        BTreeMap::from([
+            (
+                CredentialBindingId::new(binding.credential).unwrap(),
+                Arc::new(SecretMaterial::new("synthetic-upstream").unwrap()),
+            ),
+            (
+                CredentialBindingId::new("native-secondary-key").unwrap(),
+                Arc::new(SecretMaterial::new("synthetic-secondary").unwrap()),
+            ),
+        ]),
         SecretMaterial::new("synthetic-client-identity-00000001").unwrap(),
         Limits::default(),
         None,
@@ -559,6 +571,11 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 ("truncated", 200),
                 ("refusal", 200),
             ] {
+                // Each negative codec case must reach its own upstream failure,
+                // not be rejected by the preceding case's cooldown.
+                tokio::time::pause();
+                tokio::time::advance(Duration::from_secs(60)).await;
+                tokio::time::resume();
                 input[if responses { "input" } else { "messages" }] =
                     json!([{"role":"user","content":prompt}]);
                 let count = seen.lock().unwrap().len();
@@ -676,6 +693,9 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
     // Error classes in Anthropic's shapes: an HTTP envelope, or an `error` event
     // after content.
     for (prompt, stream) in [("overflow", false), ("overloaded", true)] {
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(60)).await;
+        tokio::time::resume();
         let result = client
             .post(format!("{base}/v1/messages"))
             .header("x-api-key", "synthetic-client-identity-00000001")
@@ -729,6 +749,9 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             "/v1/chat/completions"
         };
         for mode in ["hold", "cut", "cancel"] {
+            tokio::time::pause();
+            tokio::time::advance(Duration::from_secs(60)).await;
+            tokio::time::resume();
             let function = json!({"name":"lookup","parameters":{"type":"object","properties":{"key":{"type":"string"}}},"strict":false});
             let input = if responses {
                 let mut tool = function.clone();
@@ -820,6 +843,9 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
         let responses = profile == Profile::Responses;
         for stream in [false, true] {
             for prompt in ["overflow", "overloaded", "overloaded-early"] {
+                tokio::time::pause();
+                tokio::time::advance(Duration::from_secs(60)).await;
+                tokio::time::resume();
                 let function = json!({"name":"lookup","parameters":{"type":"object","properties":{"key":{"type":"string"}}},"strict":false});
                 let input = if responses {
                     let mut tool = function.clone();

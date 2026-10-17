@@ -64,15 +64,24 @@ async fn produce(
             },
         )
     });
-    let started = std::time::Instant::now();
+    let started = tokio::time::Instant::now();
     let mut held: Option<Vec<Bytes>> = (stream && hold).then(Vec::new);
     let mut used_bytes = 0usize;
     loop {
         let deadline = delivery
             .flush_deadline()
             .map(tokio::time::Instant::from_std);
+        lane.state
+            .waiting_upstream
+            .store(true, std::sync::atomic::Ordering::Release);
         let chunk = tokio::select! {
             biased;
+            _ = tokio::time::sleep_until(started + HOLD_TIME), if held.is_some() => {
+                if let Some(buffer) = held.take() {
+                    send_frames(lane, delivery, buffer, trace).await?;
+                }
+                continue;
+            }
             _ = async {
                 match deadline {
                     Some(deadline) => tokio::time::sleep_until(deadline).await,
@@ -90,6 +99,9 @@ async fn produce(
                 })
             })?,
         };
+        lane.state
+            .waiting_upstream
+            .store(false, std::sync::atomic::Ordering::Release);
         let Some(chunk) = chunk else { break };
         trace.stage(Stage::Intake);
         trace.received(chunk.len());
@@ -117,6 +129,7 @@ async fn produce(
                         return Err(ApiError::transport(crate::provider::ErrorClass::Upstream));
                     };
                     let failure = ApiError::failure(status, b"", None);
+                    *lane.state.failure_head.lock().expect("upstream failure") = Some(failure);
                     // After headers the class still reaches the client, as a failure frame.
                     if stream
                         && lane
@@ -336,11 +349,21 @@ pub(in crate::gateway) async fn produce_candidate(
             return Err(ApiError::status(status));
         }
         let retry_after = crate::gateway::error::retry_after(upstream.headers());
-        return Err(ApiError::failure(
-            status,
-            &error_body(upstream, trace).await,
-            retry_after,
-        ));
+        *lane.state.failure_head.lock().expect("failure head") =
+            Some(ApiError::failure(status, b"", retry_after));
+        // These statuses are authoritative. Reading an optional error body must
+        // not turn an auth refusal into quota or timeout retry permission.
+        if matches!(status, 401 | 403) {
+            return Err(ApiError::failure(status, b"", retry_after));
+        }
+        lane.state
+            .waiting_upstream
+            .store(true, std::sync::atomic::Ordering::Release);
+        let body = error_body(upstream, trace).await;
+        lane.state
+            .waiting_upstream
+            .store(false, std::sync::atomic::Ordering::Release);
+        return Err(ApiError::failure(status, &body, retry_after));
     }
     // A 2xx that is not an API reply (an HTML page, a missing or foreign type)
     // fails over like a 5xx.
@@ -427,6 +450,13 @@ pub(in crate::gateway) async fn produce_candidate(
         trace,
     )
     .await;
+    if let Err(error) = result
+        && error.health
+    {
+        // Error delivery can itself stall or be cancelled. Preserve the failure
+        // before flushing pending output, not only when this future returns.
+        *lane.state.failure_head.lock().expect("upstream failure") = Some(error);
+    }
     trace.coalescing_peak(delivery.coalescing_peak_bytes());
     trace.delivery_losses(delivery.losses());
     if result.is_err() {

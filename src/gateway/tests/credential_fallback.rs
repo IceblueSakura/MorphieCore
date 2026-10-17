@@ -19,8 +19,11 @@ async fn same_provider_fallback_is_ordered_bounded_and_never_crosses_publication
     for (status, stream, enabled, cap, expected_calls, expected_status) in [
         (503, false, true, 2, vec!["first", "second"], 200),
         (0, false, true, 2, vec!["second"], 200),
+        // Local credential resolution consumes the sole route attempt.
+        (1, false, true, 2, vec![], 503),
         (503, false, false, 2, vec!["first"], 503),
         (503, false, true, 1, vec!["first"], 503),
+        (502, false, true, 2, vec!["first", "second"], 502),
         (401, false, true, 2, vec!["first"], 502),
         (403, false, true, 2, vec!["first"], 502),
         (429, false, true, 2, vec!["first"], 429),
@@ -31,7 +34,7 @@ async fn same_provider_fallback_is_ordered_bounded_and_never_crosses_publication
     ] {
         let dir = crate::credential::tests::support::private_directory();
         let manager = CredentialManager::new(dir.path(), vec![]).unwrap();
-        for alias in ["first", "second"] {
+        for alias in ["first", "second", "third"] {
             manager
                 .add_api_key(
                     "fixture",
@@ -40,13 +43,13 @@ async fn same_provider_fallback_is_ordered_bounded_and_never_crosses_publication
                 )
                 .unwrap();
         }
-        if status == 0 {
+        if status <= 1 {
             manager
                 .set_api_key_enabled("fixture", "first", 1, false)
                 .unwrap();
         }
         let config = CredentialPool {
-            members: ["first", "second"]
+            members: ["first", "second", "third"]
                 .into_iter()
                 .map(|s| CredentialRef::ApiKey { alias: s.into() })
                 .collect(),
@@ -72,6 +75,8 @@ async fn same_provider_fallback_is_ordered_bounded_and_never_crosses_publication
                     observed.lock().unwrap().push(alias);
                     assert_eq!(body["model"],"upstream-model");
                     assert_eq!(body["input"][0]["content"][0]["text"],"unchanged");
+                    if matches!(status,401|403) {return (StatusCode::from_u16(status).unwrap(),Json(json!({"error":{"message":"billing required"}}))).into_response();}
+                    if status==502 && alias=="second" {return StatusCode::BAD_GATEWAY.into_response();}
                     if alias=="first" && status!=200 {return StatusCode::from_u16(status).unwrap().into_response();}
                     if stream {
                         let initial=json!({"type":"response.created","sequence_number":1,"response":{"object":"response","id":"r","model":"upstream-model","created_at":1,"status":"in_progress","output":[]}});
@@ -117,7 +122,10 @@ async fn same_provider_fallback_is_ordered_bounded_and_never_crosses_publication
             id: RouteId::new("route").unwrap(),
             task: TaskKind::Generation,
             endpoints: vec![endpoint.id.clone()],
-            policy: RoutePolicy::default(),
+            policy: RoutePolicy {
+                max_attempts: if status == 1 { 1 } else { 4 },
+                ..Default::default()
+            },
         };
         let model = PublicModel::new(
             ModelId::new("public").unwrap(),
@@ -159,22 +167,37 @@ async fn same_provider_fallback_is_ordered_bounded_and_never_crosses_publication
             None,
         )
         .unwrap();
+        assert_eq!(
+            gateway
+                .state
+                .entries
+                .values()
+                .next()
+                .unwrap()
+                .candidates
+                .len(),
+            3
+        );
         use tower::ServiceExt;
-        let request = axum::http::Request::builder()
-            .method("POST")
-            .uri("/v1/responses")
-            .header(
-                "authorization",
-                format!("Bearer {}", crate::gateway::tests::support::KEY),
-            )
-            .header("content-type", "application/json")
-            .body(axum::body::Body::from(
-                serde_json::to_vec(&json!({"model":"public","input":"unchanged","stream":stream}))
+        let request = || {
+            axum::http::Request::builder()
+                .method("POST")
+                .uri("/v1/responses")
+                .header(
+                    "authorization",
+                    format!("Bearer {}", crate::gateway::tests::support::KEY),
+                )
+                .header("content-type", "application/json")
+                .body(axum::body::Body::from(
+                    serde_json::to_vec(
+                        &json!({"model":"public","input":"unchanged","stream":stream}),
+                    )
                     .unwrap(),
-            ))
-            .unwrap();
+                ))
+                .unwrap()
+        };
         let response =
-            tokio::time::timeout(Duration::from_secs(5), gateway.router().oneshot(request))
+            tokio::time::timeout(Duration::from_secs(5), gateway.router().oneshot(request()))
                 .await
                 .unwrap()
                 .unwrap();
@@ -187,6 +210,25 @@ async fn same_provider_fallback_is_ordered_bounded_and_never_crosses_publication
         .unwrap();
         assert_eq!(body.is_err(), stream);
         assert_eq!(*calls.lock().unwrap(), expected_calls);
+        if status == 503 && (!enabled || cap == 1) {
+            // The pool ceiling limits attempts, not membership: a later member
+            // is now the first eligible target, even with fallback disabled.
+            calls.lock().unwrap().clear();
+            let response = gateway.router().oneshot(request()).await.unwrap();
+            assert_eq!(response.status(), 200);
+            axum::body::to_bytes(response.into_body(), 8192)
+                .await
+                .unwrap();
+            assert_eq!(*calls.lock().unwrap(), ["second"]);
+        }
+        if status == 429 {
+            // Unknown quota scope gates this configured pool across requests.
+            calls.lock().unwrap().clear();
+            let response = gateway.router().oneshot(request()).await.unwrap();
+            assert_eq!(response.status(), 503);
+            assert!(response.headers().contains_key("retry-after"));
+            assert!(calls.lock().unwrap().is_empty());
+        }
         gateway.shutdown();
         upstream.abort();
         let _ = upstream.await;

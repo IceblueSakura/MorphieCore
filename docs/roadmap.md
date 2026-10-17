@@ -4,24 +4,7 @@ This page owns direction and current scope. Code and tests define behavior; [Arc
 
 ## Current focus
 
-Execute the approved Generation routing review below. This explicitly reopens the named routing slice; unresolved IR/codec admission, public capabilities, standalone tasks and full-client reconnection remain outside it.
-
-### Approved stable routing implementation
-
-Goal: stable, cache-affine failover with reachable authorized pool members, bounded successor scanning and concurrency-safe cooling. No weights, rotations, inferred conversations, persistence, background Provider probes or multi-round retries.
-
-Implement and verify these coherent parts:
-
-1. **Membership and advancement.** Bind every authorized pool member within the existing expanded-candidate bound. Enforce the pool ceiling per endpoint and the route ceiling per exchange at runtime, including local credential-resolution failures. Scan the stable suffix under all earlier failure restrictions; skipped candidates consume no attempt. Preserve authentication/permission, publication and immutable-input boundaries.
-2. **Health ownership.** Separate credential, execution-target and configured deployment/pool health from cache identity. Preserve raw authentication classifications and bounded standard `Retry-After`. Hard cooling rejects dispatch until expiry; expiry permits one request-owned probe per affected scope. Generation-fenced success cannot clear a newer failure or replace its affinity; cancellation releases probe ownership. Continuous failures back off without shortening an active deadline.
-3. **Affinity and delivery.** Keep the last honestly completed executor, with no automatic return to a recovered old preference. Upstream failures affect subsequent requests, never replay a published response. Distinguish upstream waiting from downstream handoff timeouts. Add the verified Pi `x-session-affinity` alias after existing headers, without interpreting cache keys or message content as conversations. Make lifecycle-only hold time a real timer.
-4. **Evidence and diagnostics.** Extend existing Router and lifecycle assertions; add focused deterministic state/selection tests where no responsible-layer test exists. Record bounded reason classes, not identities or payloads. Run the full offline baseline and connected SDK gate; separately verify the installed Pi carrier with synthetic intercepted transport. Do not claim real Provider effectiveness or full-client acceptance from these checks.
-
-Exit conditions: healthy pool tails are selectable under a small attempt budget; an ineligible adjacent candidate cannot block a legal later Provider or allow a previously excluded scope back in; cooling causes zero dispatch before expiry and at most one concurrent recovery probe; stale successes/shorter hints cannot erase newer cooling; cancellation and slow downstreams do not poison health; published failures never retry; Pi session aliases reach the existing context; diagnostics remain bounded and redacted.
-
-The selected contract is in [Failover](architecture.md#failover). Provider-specific reset dialects, persistence and further tuning require separate evidence; standard `Retry-After`, bounded local backoff and passive business-request probes are the complete recovery scope of this slice.
-
-### Remaining codec and integration work
+Use the selected [stable routing baseline](architecture.md#failover) for subsequent integration. Provider-specific reset dialects, persistence and cooldown tuning need separate evidence; no background probes, balancing or multi-round retries are scheduled.
 
 Improve coverage of the locally completed selected Generation IR/codec scope, and prepare the P7 boundary review. Provider dialects remain codec concerns. Realtime and standalone tasks do not need complete integration for this phase. Each behavior slice must state its goal and exit condition before code changes.
 
@@ -41,19 +24,15 @@ Next, identify assertion and carrier gaps in the existing codec-only coverage wi
 
 ### Temporary routing freeze
 
-The approved stable routing implementation above is an explicit exception for Generation membership, stable selection, affinity, cooling and attempt-budget enforcement. Outside that slice, do not change route construction, credentials, public model routing or standalone execution. Do not rank targets by projection loss or add a fallback to hide an unsupported conversion.
+The [stable routing baseline](architecture.md#failover) is the selected Generation contract. Codec work must not change membership, stable selection, health scopes, affinity, budgets, credentials or public model routing. Further routing changes need their own selected scope. Do not rank targets by projection loss or add a fallback to hide an unsupported conversion.
 
 The selected [two-file configuration](usage.md#model-configuration) is a narrow exception for explicitly configured existing bindings and their deployment/policy parameters. It does not reopen affinity/cooling algorithms, retry eligibility, public semantic admission, new bindings or frozen-task contracts.
-
-The approved slice resolves [credential binding](../src/gateway/startup/config.rs) truncating each pool before cooling and affinity can select healthy tail members. Resolve membership and runtime budget enforcement together.
-
-The approved slice also resolves the [exchange loop](../src/gateway/generation/exchange.rs) checking only the immediately following candidate. With `[A/key1, A/key2, B/key3]`, skip the ineligible second key and retain access to Provider B without weakening prior failure restrictions. Verify composition with cooling/affinity, pool/route budgets and publication holding.
 
 IR/codec contracts take priority over keeping the full client-to-gateway-to-Provider chain connected. Existing public admission or topology checks may reject the new codec contract; record the exact incompatible boundary and leave integration disconnected rather than weakening IR or changing routing. Changed codec representability may affect an unchanged policy's result; it does not authorize changing that policy.
 
 Work may change semantic requirements, faithful representation checks, target-local projection policy, client/upstream codecs, delivery representation and diagnostics. Necessary call-site/type maintenance is allowed only without route-policy changes. Trusted target policy data may evolve without activating endpoints or changing route membership. If an old public-contract check cannot consume the new distinction without a routing decision, stop at that interface.
 
-P7 keeps routing frozen until the selected Generation IR, codec and protocol-conversion work is complete. Only then reopen routing/integration design; deferred features remain deferred rather than becoming new freeze prerequisites. Reconnection is a later explicitly scheduled integration step, not an automatic effect of finishing a codec slice. It must verify preflight/preparation agreement, public capability publication and the full client loop against the then-selected routing design. No compatibility shim, weakened test or live deployment is required to conceal the temporary gap.
+Reconnection remains a separately scheduled integration step, not an automatic effect of codec or routing completion. It must verify preflight/preparation agreement, public capability publication and the full client loop against the selected routing contract. Deferred features remain deferred. No compatibility shim, weakened assertion or live deployment is required to conceal the temporary gap.
 
 ### IR and codec migration
 
@@ -204,10 +183,10 @@ IR completeness does not mean every upstream can carry every modality. Protocol-
 ## Planned order
 
 2. **Coverage improvement.** Strengthen existing codec-only assertions and safety boundaries after selected first-stage local completion. Preserve the explicit integration handoff and deferred concepts; deferred cache and tool slices do not block this stage.
-3. **Routing rules and failover improvement.** The approved stable routing implementation is active. Provider and full-client acceptance remain separately scheduled, not implied by offline recovery checks.
+3. **Integration acceptance.** Reconnect selected exact carriers against the stable routing contract, then already-approved adaptations. Provider and full-client acceptance remain separately scheduled, not implied by offline recovery checks.
 4. **Other agent acceptance.** Codex, Claude Code and other agents follow failover. Their priority is undecided, lowest for now.
 
-The [P7 boundary review](#p7-boundary-review) becomes eligible after first-stage local completion, without waiting for the deferred cache and tool slices, and is required before route-facing acceptance. Codec-only coverage can proceed independently. The approved routing slice starts routing changes only; deferred acceptance runs remain separate.
+The [P7 boundary review](#p7-boundary-review) becomes eligible after first-stage local completion, without waiting for the deferred cache and tool slices, and is required before route-facing acceptance. Codec-only coverage can proceed independently; deferred acceptance runs remain separate.
 
 ### P7 boundary review
 
@@ -217,10 +196,10 @@ The review must:
 
 1. Separate exact capability, approved lossy acceptance and explicit rejection in the proposed public contract.
 2. Check preflight/preparation agreement and identify which model-level evidence is needed before activating existing codec support.
-3. Carry candidate membership, pool truncation, cooling/affinity and attempt-budget questions into the third-stage routing-rule work as one problem; do not fix the pool independently.
+3. Verify the selected stable routing contract alongside the candidate's binding evidence; cache/recovery success does not establish representability or authorize wider admission.
 4. Specify the selected client-loop contracts and the offline, SDK loopback and separately scoped real-acceptance gates.
 
-Exit condition: a selected boundary design and an explicit implementation/reconnection schedule. The review itself neither changes routes nor promises that an unrepresentable protocol conversion will become supported. Routing-rule changes remain in the third stage unless separately rescheduled; full-chain coverage remains blocked where its required boundary is unresolved.
+Exit condition: a selected boundary design and an explicit implementation/reconnection schedule. The review itself neither changes routes nor promises that an unrepresentable protocol conversion will become supported. Full-chain coverage remains blocked where its required boundary is unresolved.
 
 #### Public capability and reconnection sequence
 
@@ -231,7 +210,7 @@ Schedule implementation and reconnection in this order:
 1. Establish model-level evidence and preflight/preparation agreement for each selected existing binding; reject uncalibrated values and stop at interfaces that require routing-policy changes.
 2. Extend the partial capability view only with independently verified feature/domain declarations. Do not activate new bindings, widen admission implicitly or treat an unlisted case as rejection.
 3. Reconnect selected exact-carrier client loops first, then already-approved adapted paths. Verify tool calls, returned results, final answers and replay for JSON and SSE. Incompatible completion/safety carriers remain blocked; neither wider admission nor a notice resolves them.
-4. Require the full offline baseline and connected SDK gate for each implementation slice, then separately schedule bounded pi/opencode and Provider acceptance. Keep routing-rule changes in the third stage.
+4. Require the full offline baseline and connected SDK gate for each implementation slice, then separately schedule bounded pi/opencode and Provider acceptance. Preserve the selected routing contract during carrier reconnection.
 
 ## Target clients
 

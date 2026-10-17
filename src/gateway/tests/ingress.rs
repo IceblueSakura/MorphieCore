@@ -567,4 +567,72 @@ fn entries_cannot_escape_compiled_route_or_credential_ownership() {
         scope,
         other.state.entries.values().next().unwrap().candidates[0].cache_scope
     );
+    // Bind the entire authorized pool even when both runtime ceilings are
+    // smaller. The expanded-entry bound, not a pool validator, rejects #65.
+    let directory = crate::credential::tests::support::private_directory();
+    let manager = crate::credential::CredentialManager::new(directory.path(), vec![]).unwrap();
+    let mut members = Vec::new();
+    for index in 0..64 {
+        let alias = format!("key-{index}");
+        manager
+            .add_api_key(
+                "fixture",
+                &alias,
+                crate::credential::Secret::new(format!("synthetic-key-{index}")).unwrap(),
+            )
+            .unwrap();
+        members.push(crate::credential::CredentialRef::ApiKey { alias });
+    }
+    for endpoints in [
+        vec!["fixture-chat"],
+        vec!["fixture-chat", "fixture-responses"],
+    ] {
+        let mut credentials = Credentials::new();
+        credentials
+            .insert_pool(
+                CredentialBindingId::new("fixture-key").unwrap(),
+                manager
+                    .bind_pool(
+                        "fixture",
+                        &crate::credential::CredentialPool {
+                            members: members.clone(),
+                            fallback: false,
+                            max_attempts: 1,
+                        },
+                    )
+                    .unwrap(),
+            )
+            .unwrap();
+        let bound = Gateway::new(
+            topology(),
+            TaskEntries {
+                generation: endpoints
+                    .iter()
+                    .map(|id| Entry {
+                        model: "fixture-model".into(),
+                        protocol: Profile::Chat,
+                        endpoint: EndpointId::new(id).unwrap(),
+                    })
+                    .collect(),
+                ..Default::default()
+            },
+            credentials,
+            SecretMaterial::new(KEY).unwrap(),
+            Limits::default(),
+            None,
+        );
+        if endpoints.len() == 1 {
+            let bound = bound.unwrap();
+            let candidates =
+                &bound.state.entries[&(family(Profile::Chat), "fixture-model".into())].candidates;
+            assert_eq!(candidates.len(), 64);
+            assert!(
+                candidates
+                    .iter()
+                    .all(|candidate| candidate.credential_attempts == 1)
+            );
+        } else {
+            assert!(matches!(bound, Err(StartupError::Binding)));
+        }
+    }
 }

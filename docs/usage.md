@@ -74,9 +74,11 @@ morphiecore-auth pool list
 
 Members are ordered. To allow credential fallback, add members, set `fallback: true` and raise `max_attempts`. Exhausted quota, unavailable credentials, transport failures, timeouts and server failures may advance before publication. Authentication failures and rate limits of unknown scope do not rotate keys. See [Failover](architecture.md#failover).
 
+All authorized members remain selectable; pool `max_attempts` is a runtime ceiling per endpoint, not a startup membership cutoff. With `fallback: false`, one member may be tried, but affinity/health can make a later member the first choice. Expanded candidates remain bounded to 64 per entry. Unknown-scope rate limits cool the configured pool at that deployment/model across requests; unrelated pools are not globally disabled.
+
 An OAuth member uses `{"kind":"oauth","profile":"openai","alias":"personal"}`. An `openai` subscription pool must have one member, no fallback and `max_attempts: 1`.
 
-That pool limit does not disable cross-Provider fallback on a mixed model route. Such a route may contain one SIWC endpoint; its public contract stays shared, while requests containing unsupported SIWC controls skip that candidate. The route budget and optional global `max_attempts` still bound all attempts, and publication ends fallback.
+That pool limit does not disable cross-Provider fallback on a mixed model route. Such a route may contain one SIWC endpoint; its public contract stays shared, while requests containing unsupported SIWC controls skip that candidate. The model route's `max_attempts` bounds all attempts, and publication ends fallback. There is no separate service-wide attempt field.
 
 ### OAuth
 
@@ -193,7 +195,9 @@ Replace the placeholders with a registered public label, one of its catalog endp
 | Candidate | `reasoning_as_text` | Permit the existing named history conversion; default `false` |
 | Candidate | `thinking_conversion` | `budget_to_effort` or `effort_to_budget`; omission performs no numeric conversion |
 
-Timeout values accept 1–86400000 milliseconds. Attempt ceilings span all endpoint and credential candidates; they do not multiply each other or schedule extra retries of an exhausted candidate list. Array order is the default failover order; existing affinity and cooling may prefer a successful executor or defer a cooling one. Retry eligibility and the prohibition on replay after publication remain unchanged.
+Timeout values accept 1–86400000 milliseconds. Attempt ceilings span all endpoint and credential candidates; they do not multiply each other or schedule extra retries of an exhausted candidate list. Beginning local credential resolution counts as an attempt; skipped candidates do not. Array order remains stable, except for an available conversation preference and health gating. Selection scans past ineligible successors while preserving every prior failure restriction. Publication always prohibits replay.
+
+Cooling targets are not tried before their deadline, even as a last resort. An expired scope admits one foreground recovery probe, held through final delivery. All otherwise-legal targets cooling/probing returns `503 upstream_unavailable` with `Retry-After`; no background probes or long waits are added. Standard upstream delays up to one day are retained. Without one, transient failures back off from 1–60 seconds and credential/quota/rate failures from 60–1800 seconds. Cancellation releases probe ownership; a late success cannot erase a newer cooldown.
 
 All Generation client protocols use the same configured candidate array. To send Responses clients through Chat, select a Chat binding; there is no separate `responses_via_chat` switch. The old service-file `models`, `failover` and attempt fields are rejected, not automatically migrated.
 
@@ -428,8 +432,9 @@ The ID must be 1–256 visible ASCII characters, without commas, in one header. 
 1. opencode: `X-Session-Id`
 2. pi: `session_id`
 3. Codex: `session-id`
+4. pi Chat/Messages: `x-session-affinity`
 
-pi's Chat integration sends its session header only with `compat.sendSessionAffinityHeaders: true`.
+For pi's ordinary API-key Chat and Messages integrations, enable `compat.sendSessionAffinityHeaders: true`; automatic session headers also require `cacheRetention` other than `none`. Responses normally sends `session_id` without that compatibility flag. Installed pi 1.3.0 transport carrier checks corroborate the pinned-source behavior; they do not establish full-client or Provider acceptance. Existing header precedence is unchanged; an invalid selected header rejects rather than falling through. `x-client-request-id` is not a conversation source.
 
 This ID groups routing and cache affinity; it does not store history. Body `session_id` is rejected. Standard `prompt_cache_key` is a separate cache-grouping intent. Without a declared conversation, the optional prefix index offers best-effort cache reuse, not executor affinity or replay permission.
 
@@ -445,9 +450,9 @@ OpenAI routes return `{"error":{"message","type","param","code"}}`. Messages han
 | 408 / 413 / 415 | Body timeout / body too large / unsupported media type |
 | 429 | Gateway busy, history capacity exhausted, upstream rate limit or exhausted quota |
 | 502 / 504 | Upstream or projection failure / upstream timeout |
-| 503 / 500 | Shutdown, unavailable credentials or upstream overload / local fault |
+| 503 / 500 | Shutdown, unavailable credentials/targets or upstream overload / local fault |
 
-Messages maps exhausted quota to 402 and upstream overload to 529. Reported rate-limit resets may appear as `Retry-After`.
+Messages maps exhausted quota to 402 and upstream overload to 529. Reported delays and local `upstream_unavailable` recovery delays may appear as `Retry-After`; they are not promises of recovery.
 
 A Responses stream with classified context overflow or exhausted quota may return HTTP 200 with `response.failed`. HTTP 200 alone does not mean success. After body publication, errors can only report failure or abort delivery; no candidate replay or fabricated success terminal is allowed.
 

@@ -104,6 +104,7 @@ fn unavailable(error: crate::credential::CredentialError) -> crate::gateway::Api
         Error::KeyUnavailable | Error::LoginRequired | Error::Expired
     ) {
         response.fallback = Some(crate::provider::ErrorClass::CredentialUnavailable);
+        response.health = true;
     }
     response
 }

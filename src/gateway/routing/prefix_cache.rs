@@ -282,6 +282,8 @@ mod tests {
             provider: candidate.provider.clone(),
             secret: candidate.secret.clone(),
             credential_fallback: candidate.credential_fallback,
+            credential_attempts: candidate.credential_attempts,
+            health: candidate.health.clone(),
             cache_scope: candidate.cache_scope.clone(),
         };
         let original = other.endpoint.encode_request(&first).unwrap();

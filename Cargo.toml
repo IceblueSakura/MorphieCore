@@ -46,4 +46,4 @@ proptest = { version = "1.11.0", default-features = false, features = ["std"] }
 tempfile = "3.27.0"
 reqwest = { version = "0.13.5", default-features = false, features = ["json"] }
 tower = { version = "0.5.3", features = ["util"] }
-tokio = { version = "1.53.2", default-features = false, features = ["process", "io-util"] }
+tokio = { version = "1.53.2", default-features = false, features = ["process", "io-util", "test-util"] }

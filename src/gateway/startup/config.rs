@@ -259,16 +259,26 @@ impl Gateway {
             for source in &binding.sources {
                 source.check(endpoint.execution.credential_kind, provider.id.as_str())?;
             }
-            let count = (if binding.fallback {
+            let credential_attempts = if binding.fallback {
                 binding.max_attempts
             } else {
                 1
-            })
-            .min(route.policy.max_attempts);
-            for secret in binding.sources.iter().take(count) {
+            };
+            let pool: Vec<_> = binding
+                .sources
+                .iter()
+                .map(|source| source.provenance())
+                .collect();
+            for secret in &binding.sources {
                 let secret = secret.clone();
                 let mut endpoint = endpoint.clone();
                 let provenance = secret.provenance();
+                let health = crate::gateway::routing::executors::Scopes::bind(
+                    &auth.digest,
+                    &endpoint,
+                    &provenance,
+                    &pool,
+                );
                 // Length prefixes avoid ambiguous concatenation. Internal provenance
                 // is neither a credential locator nor attestation of token issuance.
                 let mut hash = Sha256::new();
@@ -329,6 +339,8 @@ impl Gateway {
                     provider: provider.clone(),
                     secret,
                     credential_fallback: binding.fallback,
+                    credential_attempts,
+                    health,
                     cache_scope,
                 }));
             }

@@ -128,6 +128,8 @@ async fn observed_response(
         provider: template.provider.clone(),
         secret: template.secret.clone(),
         credential_fallback: false,
+        credential_attempts: 1,
+        health: template.health.clone(),
         cache_scope: template.cache_scope.clone(),
     });
     let mut request = entry
@@ -929,10 +931,115 @@ async fn drop_deadline_and_shutdown_release_upstream_even_when_body_is_unpolled(
         .unwrap();
 }
 #[tokio::test]
+async fn attempt_wait_attribution_and_hold_deadline_are_explicit() {
+    let gate = gateway(Limits::default());
+    let entry = gate.state.entries[&(family(Profile::Chat), "fixture-model".into())].clone();
+    let request = entry.client.decode_client_request(
+        br#"{"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"stream":true,"stream_options":{"include_obfuscation":false}}"#,
+    ).unwrap();
+    for downstream in [true, false] {
+        let mut candidate = entry.candidates[0].as_ref().clone();
+        candidate.endpoint.execution.timeout_ms = 50;
+        let (input, source, dropped, _) = upstream(200, "text/event-stream");
+        input
+            .send(Ok(Bytes::from(frames()[..2].concat())))
+            .await
+            .unwrap();
+        let state = Status::default();
+        let (tx, mut rx) = mpsc::channel(1);
+        let mut trace = Trace::new(None);
+        tokio::time::pause();
+        let work = produce_chain(
+            Upstreams::Observed {
+                candidate: Arc::new(candidate),
+                response: source,
+            },
+            &entry,
+            &request,
+            &gate.state.limits,
+            Instant::now() + Duration::from_secs(60),
+            &tx,
+            &state,
+            &mut trace,
+        );
+        tokio::pin!(work);
+        assert!(futures_util::poll!(&mut work).is_pending());
+        assert!(state.published.load(Ordering::Acquire));
+        assert!(!state.waiting_upstream.load(Ordering::Acquire));
+        if !downstream {
+            // Acknowledgement is not a permanent Delivery stage: after every
+            // handed-off frame, awaiting the next upstream chunk is upstream I/O.
+            while let Ok(Message::Chunk(chunk)) = rx.try_recv() {
+                chunk.ack.send(()).unwrap();
+                assert!(futures_util::poll!(&mut work).is_pending());
+            }
+            assert!(state.waiting_upstream.load(Ordering::Acquire));
+        }
+        tokio::time::advance(Duration::from_millis(50)).await;
+        let error = work.await.unwrap_err();
+        assert_eq!(error.code, "upstream_timeout");
+        assert_eq!(error.health, !downstream);
+        tokio::time::resume();
+        bounded(dropped).await.unwrap();
+    }
+    // Lifecycle-only output must be released on a real timer even if the
+    // upstream stays silent; there is no fabricated terminal or keepalive.
+    let mut held_entry = entry.as_ref().clone();
+    held_entry.client = crate::adapter::ClientAdapter::openai(
+        crate::protocol::openai::Adapter::new(
+            Profile::Responses,
+            crate::protocol::openai::Dialect::Standard,
+            None,
+        ),
+        crate::protocol::openai::TargetCaps::full(),
+    );
+    let candidate = &entry.candidates[0];
+    let (input, source, dropped, _) = upstream(200, "text/event-stream");
+    input.send(Ok(frames()[0].clone())).await.unwrap();
+    let state = Status::default();
+    let (tx, mut rx) = mpsc::channel(1);
+    let lane = Lane {
+        tx: &tx,
+        state: &state,
+    };
+    let mut trace = Trace::new(None);
+    tokio::time::pause();
+    {
+        let work = crate::gateway::generation::intake::produce_candidate(
+            &held_entry,
+            candidate,
+            &request,
+            source,
+            &gate.state.limits,
+            &lane,
+            true,
+            None,
+            &mut trace,
+        );
+        tokio::pin!(work);
+        assert!(futures_util::poll!(&mut work).is_pending());
+        assert!(rx.try_recv().is_err());
+        // Cross the timer wheel's millisecond boundary as well as the deadline.
+        tokio::time::advance(Duration::from_millis(20_001)).await;
+        assert!(futures_util::poll!(&mut work).is_pending());
+        let Message::Chunk(chunk) = rx.try_recv().unwrap() else {
+            panic!("held lifecycle frame");
+        };
+        assert!(!String::from_utf8_lossy(&chunk.bytes).contains("[DONE]"));
+        assert!(state.published.load(Ordering::Acquire));
+        assert!(!state.waiting_upstream.load(Ordering::Acquire));
+    }
+    tokio::time::resume();
+    bounded(dropped).await.unwrap();
+}
+
+#[tokio::test]
 async fn invalid_heads_and_static_overflow_fail_without_exposing_provider_data() {
     // Error bodies are read for classification; redirects and bad media are not.
     for (status, media) in [
         (302, "application/json"),
+        (401, "application/json"),
+        (403, "application/json"),
         (200, "text/plain"),
         (200, "text/event-stream"),
     ] {

@@ -16,11 +16,14 @@ use crate::{
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
+#[derive(Clone)]
 pub(super) struct BoundCandidate {
     pub(super) endpoint: Endpoint,
     pub(super) provider: ProviderDefinition,
     pub(super) secret: credentials::Source,
     pub(super) credential_fallback: bool,
+    pub(super) credential_attempts: usize,
+    pub(super) health: executors::Scopes,
     pub(super) cache_scope: crate::semantic::value::ReplayOrigin,
 }
 #[derive(Clone)]

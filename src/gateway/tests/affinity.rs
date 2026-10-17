@@ -282,6 +282,11 @@ async fn implicit_affinity_preserves_full_requests_and_only_publishes_complete_t
             broken[field] = json!([{"role":"user","content":"new failed prefix"}]);
             assert!(send(&gate,profile,&broken).await.is_err());
             let (first_head,first) = observed.lock().unwrap().last().unwrap().clone();
+            // Recovery is now a dispatch gate; retry only after the transient
+            // cooldown, without sleeping in this prefix-publication test.
+            tokio::time::pause();
+            tokio::time::advance(Duration::from_secs(1)).await;
+            tokio::time::resume();
             assert!(send(&gate,profile,&broken).await.is_err());
             let (second_head,second) = observed.lock().unwrap().last().unwrap().clone();
             if profile == Profile::Chat {

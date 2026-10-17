@@ -100,6 +100,7 @@ pub fn classify_failure(status: u16, body: &[u8]) -> FailureKind {
         .to_lowercase();
     let has = |fragments: &[&str]| fragments.iter().any(|f| text.contains(f));
     match status {
+        401 | 403 => FailureKind::Other,
         402 => FailureKind::Quota,
         400..=499 if has(QUOTA) => FailureKind::Quota,
         429 => FailureKind::RateLimit,

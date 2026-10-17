@@ -18,7 +18,7 @@ use futures_util::Stream;
 use std::{
     pin::Pin,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     task::{Context, Poll},
@@ -48,6 +48,21 @@ pub(super) struct Status {
     failed: AtomicBool,
     complete: AtomicBool,
     pub(super) published: AtomicBool,
+    /// Explicit wait attribution; the last trace stage is not a wait state.
+    pub(super) waiting_upstream: AtomicBool,
+    /// Failed HTTP heads or stream failures survive interrupted error delivery.
+    pub(super) failure_head: Mutex<Option<ApiError>>,
+}
+impl Status {
+    pub(super) fn timeout_error(&self) -> ApiError {
+        if let Some(failure) = *self.failure_head.lock().expect("failure head") {
+            failure
+        } else if self.waiting_upstream.load(Ordering::Acquire) {
+            ApiError::transport(crate::provider::ErrorClass::Timeout)
+        } else {
+            ApiError::timeout()
+        }
+    }
 }
 struct Output {
     first: Option<Message>,
@@ -157,6 +172,7 @@ async fn send_chunk(
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
     trace.stage(Stage::Delivery);
+    lane.state.waiting_upstream.store(false, Ordering::Release);
     let size = bytes.len();
     let (ack, seen) = oneshot::channel();
     // Publication freezes advancement; acknowledgement alone proves body handoff.
@@ -357,9 +373,11 @@ pub(super) async fn respond_producer(
         let result = tokio::select! {
             biased;
             _=shutdown.cancelled()=>Err(ApiError::shutdown()),
-            _=tokio::time::sleep_until(deadline)=>Err(ApiError::timeout()),
             _=tx.closed()=>Err(ApiError::upstream()),
             result=producer.produce(&limits,deadline,&tx,&worker_state,&mut trace)=>result,
+            // Generation's own attempt deadline must record upstream evidence
+            // before the outer safety deadline cancels its recovery lease.
+            _=tokio::time::sleep_until(deadline)=>Err(ApiError::timeout()),
         };
         match result {
             Ok(()) => {

@@ -11,6 +11,8 @@ pub(super) struct ApiError {
     pub code: &'static str,
     /// Execution-only classification; never part of the downstream error body.
     pub fallback: Option<crate::provider::ErrorClass>,
+    /// Only upstream/local-credential evidence may affect executor health.
+    pub health: bool,
     /// Upstream-reported reset in seconds, sent as `Retry-After` on rate limits.
     pub retry_after: Option<u64>,
 }
@@ -20,6 +22,7 @@ impl ApiError {
             status,
             code,
             fallback: None,
+            health: false,
             retry_after: None,
         }
     }
@@ -45,6 +48,7 @@ impl ApiError {
             Self::upstream()
         };
         error.fallback = Some(class);
+        error.health = true;
         error
     }
     pub fn status(status: u16) -> Self {
@@ -75,7 +79,15 @@ impl ApiError {
         if error.code == "insufficient_quota" {
             error.fallback = Some(crate::provider::ErrorClass::Quota);
         }
+        error.retry_after = retry_after;
+        error.health = true;
         error
+    }
+    pub fn unavailable(seconds: u64) -> Self {
+        Self {
+            retry_after: Some(seconds),
+            ..Self::new(StatusCode::SERVICE_UNAVAILABLE, "upstream_unavailable")
+        }
     }
 }
 impl ApiError {
@@ -202,6 +214,9 @@ impl IntoResponse for ApiError {
 }
 /// Upstream `Retry-After` in seconds (delta or HTTP date), at most one day.
 pub(super) fn retry_after(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    retry_after_at(headers, std::time::SystemTime::now())
+}
+fn retry_after_at(headers: &reqwest::header::HeaderMap, now: std::time::SystemTime) -> Option<u64> {
     headers
         .get("retry-after")
         .and_then(|v| v.to_str().ok())
@@ -211,11 +226,39 @@ pub(super) fn retry_after(headers: &reqwest::header::HeaderMap) -> Option<u64> {
                 v.parse::<u64>().ok()
             } else {
                 httpdate::parse_http_date(v).ok().map(|date| {
-                    date.duration_since(std::time::SystemTime::now())
-                        .unwrap_or_default()
-                        .as_secs()
+                    let wait = date.duration_since(now).unwrap_or_default();
+                    // A dispatch gate must not round a not-before date down.
+                    wait.as_secs() + u64::from(wait.subsec_nanos() != 0)
                 })
             }
         })
         .filter(|n| *n <= 86400)
+}
+
+#[cfg(test)]
+#[test]
+fn retry_after_dates_never_round_dispatch_earlier_and_stay_bounded() {
+    use std::time::{Duration, UNIX_EPOCH};
+    let mut headers = reqwest::header::HeaderMap::new();
+    for (value, expected) in [
+        ("0", Some(0)),
+        ("86400", Some(86400)),
+        ("86401", None),
+        ("-1", None),
+    ] {
+        headers.insert("retry-after", value.parse().unwrap());
+        assert_eq!(retry_after_at(&headers, UNIX_EPOCH), expected);
+    }
+    headers.insert(
+        "retry-after",
+        "Fri, 02 Jan 1970 00:00:00 GMT".parse().unwrap(),
+    );
+    assert_eq!(
+        retry_after_at(&headers, UNIX_EPOCH + Duration::from_millis(86_398_500)),
+        Some(2)
+    );
+    assert_eq!(
+        retry_after_at(&headers, UNIX_EPOCH + Duration::from_secs(86401)),
+        Some(0)
+    );
 }

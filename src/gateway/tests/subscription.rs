@@ -45,6 +45,8 @@ async fn consume(
         provider: base.provider.clone(),
         secret: base.secret.clone(),
         credential_fallback: false,
+        credential_attempts: 1,
+        health: base.health.clone(),
         cache_scope: base.cache_scope.clone(),
     });
     let entry = Arc::new(BoundEntry {
