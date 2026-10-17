@@ -60,6 +60,8 @@ Shared builders live in `tests/support/`. Test selection follows the lean policy
 
 Protocol mappings need independently hand-written wire→IR and IR→wire expectations. Do not generate an oracle with the encoder under test. Round trips are supplementary.
 
+The current [Generation design review gate](roadmap.md#generation-design-review-gate) requires design closure and explicit human approval before comprehensive coverage work. Before approval, run existing regression checks and update expectations only as necessary for selected design corrections; do not start coverage expansion or pruning. An agent audit or passing baseline is not human approval. After approval, scope coverage slices against the reviewed contracts; integration, SDK and real acceptance remain separate gates.
+
 ## Coverage and pruning
 
 `cargo-llvm-cov` needs LLVM tools matching rustc's LLVM major version. Check `rustc -vV` and use scoped Nix tooling, not a global install:

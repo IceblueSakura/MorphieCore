@@ -30,7 +30,7 @@ This page records design principles and settled decisions. Code and tests define
 
 Generation supports JSON and SSE. Google upstreams use streaming intake even for downstream JSON delivery. Interactions uses stateless, full-history requests.
 
-Downstream Messages uses a public model's Chat candidates; it does not imply a native Anthropic upstream. Standalone Embeddings, Images, Speech and Transcription have separate contracts and are frozen.
+All three Generation client protocols use the public model's configured ordered candidates. A Messages client does not imply a native Anthropic upstream. Standalone Embeddings, Images, Speech and Transcription have separate contracts and are frozen.
 
 Provider definitions, public models and bindings are maintained in [provider/catalog.rs](../src/provider/catalog.rs), [topology/catalog.rs](../src/topology/catalog.rs) and [gateway bootstrap](../src/gateway/startup/bootstrap.rs). Registration does not prove activation or live account access.
 
@@ -241,7 +241,7 @@ Requirements and target contracts must distinguish response-wide effort from rea
 
 ### Reasoning level calibration
 
-The existing level interface performs explicit, hand-authored calibration for the same model under trusted binding/dialect selection. It is not a universal adapter for all reasoning controls. P1/P2 select scope approximation and disabled-priority handling; P3 selects preset-based numeric-budget conversion inspired by [pi's pinned implementation](refs/2026-10-15-generation-projections.md#pi-thinking-budget-presets). These are design decisions, not claims of implemented support.
+The existing level interface performs explicit, hand-authored calibration for the same model under trusted binding/dialect selection. It is not a universal adapter for all reasoning controls. P1/P2 select scope approximation and disabled-priority handling; P3 selects preset-based numeric-budget conversion inspired by [pi's pinned implementation](refs/2026-10-15-generation-projections.md#pi-thinking-budget-presets). Request-policy machinery exists for OpenAI and native projections, and OpenAI intake has directional reported-level calibration. Those interfaces do not establish model-effective support or activate a binding.
 
 Different Providers may expose different labels for one model. A selected rule may map `low` to `medium`, for example. Qualitative level-to-level calibration still requires explicit pairs; equal labels or ordinal proximity do not establish equivalence. P3 separately selects nearest-budget quantization as a named numeric approximation, defined below. Preserve original numeric intent and validate the target's mode, minimum and output ceiling.
 
@@ -295,7 +295,7 @@ The following is a hypothetical reasoning-scope encode policy, not an activated 
 
 For this example, decode explicitly declares identity on each native level: a reported medium remains medium, even when the request was low. A separately authored decode rule may normalize it differently; never infer that rule from encode. Every handled entry, including an identity, must be declared. Missing entries reject, with no supported-level fallback. Do not chain table entries or apply the encode table to an already adapted candidate.
 
-The code interface is [ReasoningEffortMapping](../src/protocol/reasoning.rs): hand-authored encode/decode pairs, effort scope and declared native levels selected by `ApiKeyBinding.effort_mappings` for an exact protocol member. Endpoint construction carries the policy into request encoding and static/SSE metadata intake; adapter selection validates its canonical-model identity. Bindings without a selected policy use their protocol's representation rules, not a generated mapping.
+The code interface is [ReasoningEffortMapping](../src/protocol/reasoning.rs): hand-authored encode/decode pairs, effort scope and declared native levels selected by `ApiKeyBinding.effort_mappings` for an exact OpenAI protocol member. OpenAI endpoint construction carries that mapping into request encoding and static/SSE metadata intake; adapter selection validates its canonical-model identity. Bindings without a selected mapping use their protocol's representation rules, not a generated mapping. Native request-policy projection is separate from this qualitative encode/decode mapping.
 
 Activation is outside the positive-level table, so a table cannot turn off into on. Absence and null never create a level. The interface does not add Provider-only level labels to the standard IR.
 
@@ -307,16 +307,16 @@ Validate native types, alias conflicts and source-snapshot consistency before a 
 
 #### Implementation owners
 
-| Owner | Planned responsibility |
+| Owner | Responsibility |
 |---|---|
 | [Semantic reasoning types](../src/semantic/task/generation/content/reasoning.rs), [settings](../src/semantic/task/generation/request/settings.rs), [requirements](../src/semantic/task/generation/requirements.rs) and [contract](../src/semantic/task/generation/contract.rs) | Activation and scoped effort only; no model-specific level policy |
 | [Protocol reasoning helper](../src/protocol/reasoning.rs) | Explicit qualitative mapping pairs plus separate P3 preset lookup and nearest-budget quantization with highest-level ties; no inferred qualitative inverse |
 | [Catalog binding declarations](../src/topology/catalog/bindings.rs), [catalog construction](../src/topology/catalog.rs), native catalog constructors and [endpoint compilation](../src/topology/endpoint.rs) | Select policy by canonical model and binding, validate it and pass it through representation caps to the adapter; do not reuse a Provider-wide switch for model-specific levels |
 | [OpenAI adaptation](../src/protocol/openai/dialect/adaptation.rs), [request projection](../src/protocol/openai/adapter/request.rs), [Messages projection](../src/protocol/anthropic/semantic_request.rs), [generateContent projection](../src/protocol/google/request.rs) and [Interactions projection](../src/protocol/interactions/request.rs) | Preserve scope and apply a selected level policy once to candidate-private typed representation before final validation and serialization; no Provider-wide level calibration switch |
-| [Upstream adapter](../src/adapter/upstream.rs), [static response intake](../src/protocol/openai/static_response.rs), [event intake](../src/protocol/openai/events/decode.rs) and native decoders | Carry the selected decode policy into actual reported-setting parsing, including SSE; do not put policy in `ReplayTarget` or discover it from a response model string |
+| [Upstream adapter](../src/adapter/upstream.rs), [static response intake](../src/protocol/openai/static_response.rs), [event intake](../src/protocol/openai/events/decode.rs) and native decoders | OpenAI carries its selected decode mapping into actual reported-setting parsing, including SSE. Any future native report calibration needs independent policy propagation; do not put it in `ReplayTarget` or discover it from a response model string |
 | [Fidelity](../src/protocol/fidelity.rs) and existing named request rules | Record bounded normalization provenance and actual encode adaptation, without restoring unsupported controls or synthesizing effective settings |
 
-Native `Endpoint::adapter()` currently carries profile/replay labels rather than all representation caps. Propagate the selected reasoning policy explicitly into native intake when implementing this plan; storing it only in request caps would leave decode uncalibrated. The ordinary downstream client decoder uses its declared client contract, not a guessed Provider policy chosen from business JSON.
+Native `Endpoint::adapter()` currently carries profile/replay labels rather than all representation caps. Native request conversions do not supply an implicit inverse for reported settings. If a concrete native binding needs reported-level calibration, select an independent decode policy and propagate it explicitly into intake before claiming support; request projection alone does not establish it. The ordinary downstream client decoder uses its declared client contract, not a guessed Provider policy chosen from business JSON.
 
 Keep [candidate preflight](../src/execution/plan.rs) and transport free of mapping tables. Preflight already invokes endpoint encoding, so preparation must reuse that same codec path rather than add a second execution-layer mapper.
 

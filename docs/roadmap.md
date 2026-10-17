@@ -8,7 +8,7 @@ This page owns direction and current scope. Code and tests define behavior; [Arc
 
 The remaining [routing acceptance](#routing-acceptance--pending) does not reopen feature scope. Provider-specific reset dialects, persistence and cooldown tuning need separate evidence and approval; no background probes, balancing or multi-round retries are scheduled.
 
-Improve coverage of the locally completed selected Generation IR/codec scope, and prepare the P7 boundary review. Provider dialects remain codec concerns. Realtime and standalone tasks do not need complete integration for this phase. Each behavior slice must state its goal and exit condition before code changes.
+Complete the selected Generation IR/codec design, then stop for [human review and explicit approval](#generation-design-review-gate) before comprehensive coverage work. Prior local completion does not certify design closure; resolve confirmed ownership or contract defects and keep unsupported boundaries explicit. Provider dialects remain codec concerns. Realtime and standalone tasks do not need complete integration for this phase. Each behavior slice must state its goal and exit condition before code changes.
 
 Phase completeness covers the selected non-tool support scope, not all official Generation semantics. [Cache prewarming](#deferred-cache-prewarming) and [tool discovery and native `web_search`](#deferred-tool-discovery-and-web-search) are deferred, with priority and scheduling undecided. None blocks phase completion, coverage improvement or the P7 boundary review. Unsupported semantics remain explicit gaps, not silent losses or support claims.
 
@@ -18,11 +18,37 @@ Chat Completions, Responses and Messages are equally important downstream contra
 
 Follow the [IR and codec contract](#ir-and-codec-migration) and preserve its [integration boundary](#integration-handoff). The selected [support queue](#support-queue-after-projection-repair) has no remaining feature slices. The [architecture contract](architecture.md#accurate-ir-and-declared-loss) and [public capability/notice contract](architecture.md#public-capability-and-adaptation-notice) are selected; remaining reconnection choices stay in [Pending decisions](#pending-decisions).
 
-For this migration, update existing tests and independent wire expectations only; do not add test functions, suites or variant matrices. Preserve safety assertions. Record uncovered contracts rather than claiming coverage from compilation or a round trip.
+Before human approval, preserve existing tests and independent wire expectations. Update them only as necessary for a selected design correction; do not add test functions, suites, variant matrices or conduct a coverage-improvement pass. Record uncovered contracts rather than claiming coverage from compilation or a round trip. Design approval opens a separately scoped coverage stage, not a test-count target or an automatic expansion of integration.
 
 Defer successful integration scenarios whose completion conversion or binding-admission contract is not selected. Remove those scenarios rather than invent a conversion or replace success with an expected gateway error. Keep identity, replay isolation, strict parsing, cancellation, transport bounds and honest-terminal assertions. Orthogonal fixtures should use exact supported carriers. Rebuild the selected integration coverage after IR/codec contracts stabilize, during the coverage stage.
 
-Next, identify assertion and carrier gaps in the existing codec-only coverage without regrowing the suite. Goal: strengthen independent expectations and safety boundaries, not reconnect unresolved conversions. Exit condition: selected gaps are covered in existing tests or explicitly recorded; the offline baseline and connected SDK gate pass. Keep default admission, HTTP schemas and routing unchanged. P7 may review unresolved public boundaries in parallel, but its choices must precede full-chain reconnection.
+Next, resolve the reported-instruction resource-ownership defect below, reconcile design documentation with implemented codec boundaries, and prepare a reviewable contract map. Exit condition: selected design defects are resolved, remaining choices and integration limits are explicit, and the human reviewer can inspect their implementation owners. Keep default admission, HTTP schemas and routing unchanged. P7 analysis may proceed in parallel, but neither an agent audit nor its selected public capability contract substitutes for human approval.
+
+### Generation design review gate
+
+**Status: design closure in progress; human review and approval pending.** Comprehensive coverage work has not started. The review covers the selected Generation scope, not every official API feature or a green full-client loop.
+
+| Review area | Contract and implementation entry points | Question for closure |
+|---|---|---|
+| Semantic ownership and bounds | [Semantic IR](architecture.md#semantic-ir), [request](../src/semantic/task/generation/request/mod.rs), [response](../src/semantic/task/generation/response.rs), [context](../src/semantic/context.rs) | Do ordered content, resources, requested controls and reported facts have typed owners without runtime state or dangling references? |
+| Source parsing and target projection | [Adaptation](architecture.md#adaptation), [reasoning](../src/protocol/reasoning.rs), [OpenAI projection](../src/protocol/openai/lowering/projection.rs), native protocol modules | Are source validation, exact carriers, selected adaptations and rejection separate, with unchanged source IR and directional mappings? |
+| Tools and schemas | [Strictness handoff](#integration-handoff), [tool types](../src/semantic/task/generation/tools/mod.rs), [Messages strict schema](../src/protocol/anthropic/strict_schema.rs) | Are explicit strictness, normalization defaults, call/result identity and unsupported schema constraints preserved? |
+| Streaming, terminal and reported evidence | [Delivery](architecture.md#streaming-and-delivery), [OpenAI terminal](../src/protocol/openai/terminal.rs), [Messages delivery](../src/protocol/anthropic/client.rs), [Google safety](../src/protocol/google/safety.rs) | Do JSON/SSE agree on protected facts, repeated reports, continuation and honest termination, including explicit unrepresentable conversions? |
+| History and replay | [Replay](architecture.md#reasoning-replay), [context transforms](../src/semantic/task/generation/request/context_transform.rs), [Responses storage](architecture.md#stateful-history) | Are content ownership, deployment isolation and required replay preserved separately from TTL history and affinity? |
+| Public and integration boundary | [Integration handoff](#integration-handoff), [capability contract](architecture.md#public-capability-and-adaptation-notice), [topology compilation](../src/topology/compile.rs) | Is codec representation distinguished from default admission, model evidence and accepted client loops? |
+
+Review readiness is not approval. After design closure, request human review; address requested changes and wait for explicit approval before strengthening coverage. If review exposes another design defect, keep coverage blocked until its correction is reviewed. Existing regression, safety and publication gates remain in force throughout.
+
+#### Reported instruction resource ownership
+
+Minimal counterexample: a Responses response reports `instructions` containing a system message with an `input_image` URL. [Envelope decoding](../src/protocol/openai/responses/envelope.rs) constructs instruction resource uses but retains only the item list and fidelity, not its resource declarations. [ResponseContext](../src/semantic/context.rs) then validates that list as a request with an empty resource table; encoding also supplies an empty table. Text-only echoes do not expose the missing owner.
+
+Preserving and validating the reported source before any approved omission is already selected. The structural choice is pending:
+
+- **Recommended: a self-contained typed reported-instruction owner**, holding the ordered instruction items and their resource declarations. Validate and compare that owner before normalization/omission; encoding resolves its local resources. Keep it separate from output resources and from a new execution request.
+- **Alternative: response-wide shared resources**, remapping instruction and output references into one table and carrying that table through metadata/snapshot validation. This requires a broader response/metadata lifecycle change.
+
+Do not fix this by dropping the echo, inlining wire JSON into the IR or bypassing resource validation. Repeated snapshots must compare declared resource values as well as items, not just locally allocated IDs. Bound retained instruction resources and preserve their protocol fidelity. Exit condition: select the owner, implement its decode/validation/comparison/encode path, and include the result in human review; comprehensive coverage still waits for approval.
 
 ### Temporary routing freeze
 
@@ -48,7 +74,7 @@ Preserve completed local contracts without reconnecting routing implicitly. Conc
 
 For every implementation slice:
 
-1. Update the affected existing semantic, transport and delivery expectations. Keep independently written wire-to-IR and IR-to-wire oracles; a round trip is supplementary. Do not add tests or weaken safety assertions to make a route pass.
+1. Before human approval, maintain affected existing semantic, transport and delivery expectations only as necessary for the selected correction; defer coverage expansion. Keep independently written wire-to-IR and IR-to-wire oracles; a round trip is supplementary. Do not add tests or weaken safety assertions to make a route pass.
 2. Run affected offline targets, then the [full offline baseline](development.md#offline-baseline). Compilation, local codec correctness and integrated gateway behavior are separate results.
 3. Separate codec regressions from an incompatible frozen integration contract. A failed full baseline remains a failure; identify the exact blocker and continue independent work without repairing routing. The transitional test scope above permits removing unselected success scenarios, not safety assertions or entire suites. Report the removed coverage; a passing reduced baseline does not establish the deferred integration.
 4. Commit/push slices that pass the baseline under the existing project policy. If a disconnected integration prevents that gate, leave publication blocked and report it; this plan does not create a new permission to publish a failing slice.
@@ -59,6 +85,7 @@ Phase completion means the selected policies and carriers pass their local gates
 | Gate | Required evidence | Effect |
 |---|---|---|
 | Advance independent development | The current local contract passes its focused checks; full-baseline failures are classified and new regressions are fixed | Continue the next independent slice without changing frozen routing |
+| Start comprehensive coverage | Selected Generation IR/codec design closure and explicit human review approval | Schedule coverage work; neither passing regression nor agent review grants approval or reconnects routes |
 | Commit and push | Full offline baseline passes under the project policy, or the user explicitly authorizes a specific exception | A local completion claim does not grant publication; one exception does not change the standing gate |
 | Accept integration | The scheduled boundary review, admitted route contracts, full offline baseline and connected SDK loopback gate pass | Only then claim the selected full client loop works; real Provider acceptance remains separate |
 
@@ -178,17 +205,18 @@ Later and separate (1C-b): `search_result` blocks as a new input part with `Cita
 
 The alternative is to keep 1C rejected until Claude Code acceptance: pi never sends citations, and opencode sends them only from part metadata.
 
-The coverage-improvement pass starts only after IR completeness is established. Focused contract tests, safety invariants and the offline baseline remain required for every implementation slice; deferring the coverage pass does not defer those checks.
+The coverage-improvement pass starts only after selected Generation IR/codec design closure and explicit human approval. Existing focused contract checks, safety invariants and the offline baseline remain required for every implementation slice; deferring coverage expansion does not waive regression checks.
 
 IR completeness does not mean every upstream can carry every modality. Protocol-specific carrier limits and the [pending decisions](#pending-decisions) remain explicit. This phase does not open file services, generated-image delivery or new Provider bindings.
 
 ## Planned order
 
-2. **Coverage improvement.** Strengthen existing codec-only assertions and safety boundaries after selected first-stage local completion. Preserve the explicit integration handoff and deferred concepts; deferred cache and tool slices do not block this stage.
+1. **Generation design closure and human review.** Resolve confirmed IR/codec design defects, reconcile the contract map and request human review. Stop for explicit approval; agent review and a green baseline do not open coverage work.
+2. **Coverage improvement — blocked pending human approval.** After approval, schedule independent wire expectations, codec assertions and safety boundaries without a per-model/Provider matrix. Preserve the explicit integration handoff and deferred concepts; deferred cache and tool slices do not block this stage.
 3. **Integration acceptance — pending.** Reconnect selected exact carriers against the phase-complete routing contract, then already-approved adaptations. Perform the routing acceptance below; Provider and full-client acceptance are not implied by offline recovery checks.
 4. **Other agent acceptance.** Codex, Claude Code and other agents follow failover. Their priority is undecided, lowest for now.
 
-The [P7 boundary review](#p7-boundary-review) becomes eligible after first-stage local completion, without waiting for the deferred cache and tool slices, and is required before route-facing acceptance. Codec-only coverage can proceed independently; deferred acceptance runs remain separate.
+The [P7 boundary review](#p7-boundary-review) becomes eligible after first-stage local completion, without waiting for the deferred cache and tool slices, and is required before route-facing acceptance. Its analysis may proceed alongside design closure, but is distinct from the human approval gate. Codec-only coverage may proceed independently of route reconnection only after that approval; deferred acceptance runs remain separate.
 
 ### Routing acceptance — pending
 
@@ -263,7 +291,7 @@ Treat a bound upstream's in-stream error as a classified failure, not normal out
 
 | Work | Scheduling | Exit condition when reopened |
 |---|---|---|
-| Coverage pass | Second stage, only after IR completeness | Independent wire→IR and IR→wire fixtures, synthetic upstreams and chunked SSE intake |
+| Coverage pass | Second stage, only after selected IR/codec design closure and explicit human approval | Independent wire→IR and IR→wire fixtures, synthetic upstreams and chunked SSE intake |
 | Non-image multimodal real checks | Deferred acceptance after IR completeness | One bounded real check for each selected audio, video or document carrier, using model-issued history for tool results; no per-model or format matrix |
 | Pinned-client image replay | Deferred, conditional acceptance | If the installed binary differs from the pinned source, run the bounded image tool round trip with a binary built from that revision; do not infer it from installed-client acceptance |
 | Real failover | Third stage; priority undecided, lowest for now | One bounded real run for a model with two credentials or Providers and a reproducible advanceable failure |
@@ -288,6 +316,7 @@ P1/P2/P4/P5/P6, P3's six-budget quantization, P3b's rejection of over-ceiling bu
 
 | Question | Unresolved choice and recommendation | Blocks |
 |---|---|---|
+| Reported instruction resource ownership | Select a self-contained typed instruction/resource owner (recommended) or response-wide shared resources; see the [counterexample and alternatives](#reported-instruction-resource-ownership). Preserve source validation and repeated-report agreement | Design closure for media-bearing instruction echoes and readiness for human review |
 | P7 follow-up: Binding activation and reconnection | The public capability/notice contract is selected. Complete model-level evidence and preflight/preparation checks, then specify selected bindings and client loops under the [reconnection sequence](#public-capability-and-reconnection-sequence). Do not reinterpret unsupported completion/safety carriers or reopen P8 policies | Later binding activation and full-chain acceptance, not the current codec-only coverage work |
 | Deferred native cache-only prewarming | Priority and scheduling are undecided. Select the operation and result contract when reopening the [slice](#deferred-cache-prewarming); client replay warming remains separate | Native cache-only implementation only, not native cache resource references, first-stage completion, coverage improvement or the P7 boundary review |
 | Deferred tool discovery and native `web_search` | Priority, scheduling and implementation designs are undecided. Select the affected IR and execution/replay contracts when reopening each [slice](#deferred-tool-discovery-and-web-search) | Implementation of those slices only, not first-stage completion, coverage improvement or the P7 boundary review |

@@ -319,7 +319,9 @@ For custom-capable targets, Chat JSON uses `{"type":"custom","custom":{"name":"s
 
 The pinned Chat SSE contract has no custom-call delta carrier. Chat upstream streaming that enables custom selection and downstream custom-call deltas reject explicitly; use an admitted Responses streaming path instead. Custom history and declarations remain usable for a later stream when tool choice excludes custom output. Codec support does not activate models or execute tools.
 
-Chat accepts the deprecated `max_tokens` as the output cap, but not together with `max_completion_tokens`. Chat `verbosity` reaches admitted Responses targets; Chat targets reject it. Active Chat `stop`, `functions`, `function_call` and `web_search_options`, and Messages `stop_sequences`, `container`, `mcp_servers`, `context_management` and `compaction` are unsupported and rejected. Other unrecognized fields are ignored by name. Messages `thinking.display` is preserved. Messages responses with citations or missing/ambiguous final usage fail projection rather than dropping annotations or inventing zero counts; a failure after streaming starts aborts delivery without a success terminal.
+Chat accepts the deprecated `max_tokens` as the output cap, but not together with `max_completion_tokens`. Chat and Responses codecs carry `verbosity`; native Messages and Google projections use selected, recorded omission rules. A codec carrier does not establish model-effective support or binding admission. Chat `stop` and Messages `stop_sequences` decode into ordered stop controls, but unchanged default binding admission does not enable them merely because the codecs have carriers.
+
+Active Chat `functions`, `function_call` and `web_search_options`, and Messages `container`, `mcp_servers`, `context_management` and `compaction` remain unsupported and rejected. Other unrecognized fields are ignored by name. Messages `thinking.display` is preserved. Messages responses with citations or missing/ambiguous final usage fail projection rather than dropping annotations or inventing zero counts; a failure after streaming starts aborts delivery without a success terminal.
 
 ### Image input
 
@@ -331,7 +333,7 @@ Select an activated public model that admits image input. A tool-result image al
 | Responses | `input_image` | `function_call_output.output` array |
 | Messages | `image` with a base64 or URL source | `tool_result.content` array |
 
-Responses tool images require a Responses or native upstream carrier. Messages uses the model's Chat candidates, so a Messages tool image still fails on a Chat upstream. `responses_via_chat` has the same limitation. The gateway does not move tool media to another role, because standard Chat has no tool-media carrier.
+Responses tool images require a Responses or native upstream carrier. All Generation client protocols use the model's configured candidates, so a tool image still fails on a Chat upstream. The gateway does not move tool media to another role, because standard Chat has no tool-media carrier.
 
 For an inline Responses image, replace `<base64-image>` with valid base64 for the declared image type:
 
@@ -353,7 +355,7 @@ For a tool image, append a `function_call_output` with the returned `call_id` an
 
 Image sources stay inert: the gateway does not fetch URLs, decode pixels, resize or transcode. Public URL availability and actual image validity remain upstream concerns. Client Provider file references are rejected, including Google Files API URLs disguised as ordinary image URLs. File services remain deferred.
 
-Formats, encoded sizes and counts are target constraints, not a promise that every IR image fits every upstream. Per-use `detail` without a target slot is removed by a named rule on the candidate copy. The source request is unchanged. See [Media](architecture.md#media), [IR resource budgets](../src/semantic/task/generation/resources/mod.rs) and [Messages media limits](../src/protocol/anthropic/media.rs).
+Formats, encoded sizes and counts are target constraints, not a promise that every IR image fits every upstream. Preserve explicit per-use `detail` through an exact carrier; omission requires proven target-default equivalence, and other approximations require an evidence-backed selected rule. Without one, an unrepresentable detail rejects rather than disappearing. The example's explicit `auto` is not equivalent to absence and is not universally portable to native targets. Any approved projection changes only the candidate copy, not the source request. See [Media](architecture.md#media), [IR resource budgets](../src/semantic/task/generation/resources/mod.rs) and [Messages media limits](../src/protocol/anthropic/media.rs).
 
 ## Stored Responses
 
@@ -400,7 +402,7 @@ History is process-local and is lost at shutdown or restart. A declared conversa
 | `DELETE /v1/responses/{response_id}` | Delete a stored response |
 | `GET /v1/responses/{response_id}/input_items` | Cursor-paginated resolved input |
 | `POST /v1/chat/completions` | Chat Completions, JSON or SSE |
-| `POST /v1/messages` | Messages, JSON or SSE, using the model's Chat candidates |
+| `POST /v1/messages` | Messages, JSON or SSE, using the model's configured candidates |
 
 Frozen endpoints require explicit model activation:
 
