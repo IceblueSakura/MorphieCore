@@ -4,7 +4,7 @@ This page owns direction and current scope. Code and tests define behavior; [Arc
 
 ## Current focus
 
-Complete the Generation IR against selected semantics accepted by the official OpenAI, Anthropic and Google APIs. Provider dialects remain codec concerns. Realtime and standalone tasks do not need complete integration for this phase. Each slice must state its goal and exit condition before code changes.
+Improve coverage of the locally completed selected Generation IR/codec scope, and prepare the P7 boundary review. Provider dialects remain codec concerns. Realtime and standalone tasks do not need complete integration for this phase. Each behavior slice must state its goal and exit condition before code changes.
 
 Phase completeness covers the selected non-tool support scope, not all official Generation semantics. [Cache prewarming](#deferred-cache-prewarming) and [tool discovery and native `web_search`](#deferred-tool-discovery-and-web-search) are deferred, with priority and scheduling undecided. None blocks phase completion, coverage improvement or the P7 boundary review. Unsupported semantics remain explicit gaps, not silent losses or support claims.
 
@@ -12,13 +12,15 @@ Track semantic expression, codec representation and enabled bindings separately.
 
 Chat Completions, Responses and Messages are equally important downstream contracts. Assess static delivery, streaming and history replay for all three. Google generateContent and Interactions currently supply upstream request encoding and SSE intake, not Google client endpoints or static intake. This migration does not expand that direction set.
 
-Follow the [IR and codec contract](#ir-and-codec-migration) and preserve its [integration boundary](#integration-handoff). Continue with the remaining [support queue](#support-queue-after-projection-repair). The [architecture contract](architecture.md#accurate-ir-and-declared-loss) is selected; deferred public-surface and reconnection decisions stay in [Pending decisions](#pending-decisions).
+Follow the [IR and codec contract](#ir-and-codec-migration) and preserve its [integration boundary](#integration-handoff). The selected [support queue](#support-queue-after-projection-repair) has no remaining feature slices. The [architecture contract](architecture.md#accurate-ir-and-declared-loss) is selected; deferred public-surface and reconnection decisions stay in [Pending decisions](#pending-decisions).
 
 For this migration, update existing tests and independent wire expectations only; do not add test functions, suites or variant matrices. Preserve safety assertions. Record uncovered contracts rather than claiming coverage from compilation or a round trip.
 
 Defer successful integration scenarios whose completion conversion or binding-admission contract is not selected. Remove those scenarios rather than invent a conversion or replace success with an expected gateway error. Keep identity, replay isolation, strict parsing, cancellation, transport bounds and honest-terminal assertions. Orthogonal fixtures should use exact supported carriers. Rebuild the selected integration coverage after IR/codec contracts stabilize, during the coverage stage.
 
-The next design slice is safety settings and reported outcomes in the [support queue](#support-queue-after-projection-repair). Existing cached-context references, cache-owner, generation-control and service-policy carriers remain under local regression; their admission and delivery constraints belong to the [integration handoff](#integration-handoff), not new implementation goals.
+Next, identify assertion and carrier gaps in the existing codec-only coverage without regrowing the suite. Goal: strengthen independent expectations and safety boundaries, not reconnect unresolved conversions. Exit condition: selected gaps are covered in existing tests or explicitly recorded; the offline baseline and connected SDK gate pass. Keep default admission, HTTP schemas and routing unchanged. P7 may review unresolved public boundaries in parallel, but its choices must precede full-chain reconnection.
+
+Initial assertion gaps are omitted safety category/probability defaults and combined content/report byte boundaries. Extend the existing responsible-layer tests, not a presence matrix.
 
 ### Temporary routing freeze
 
@@ -38,9 +40,9 @@ P7 keeps routing frozen until the selected Generation IR, codec and protocol-con
 
 Preserve the [selected request policies](architecture.md#selected-request-approximations), [thinking-budget contract](architecture.md#thinking-budget-quantization), [reported-fact policy](architecture.md#adaptation-evidence) and [capture boundary](architecture.md#configurable-exchange-capture). Apply target-local conversions once, keep source IR unchanged and reject unselected combinations.
 
-Request acceptance, upstream-reported settings and delivered history remain separate. Repeated native reports must agree before normalization or omission. JSON and SSE use the same delivery policy; necessary continuation and EOF-gated terminals remain authoritative. Diagnostics expose body-free typed receipts; optional capture never selects a semantic mapping.
+Request acceptance, upstream-reported settings and delivered history remain separate. Repeated reports of a bound envelope fact must agree before normalization or omission; ordered safety assessments remain separate observations. JSON and SSE use the same delivery policy; necessary continuation and EOF-gated terminals remain authoritative. Diagnostics expose body-free typed receipts; optional capture never selects a semantic mapping.
 
-Continue the support queue without reconnecting routing implicitly. Concrete target tables still need model-level evidence; a codec interface or passing synthetic test is not a new public capability promise.
+Preserve completed local contracts without reconnecting routing implicitly. Concrete target tables still need model-level evidence; a codec interface or passing synthetic test is not a new public capability promise.
 
 ### Verification and integration boundary
 
@@ -76,6 +78,8 @@ Owner-local Messages cache markers and separate automatic TTL controls have code
 
 Existing [cached-context references](architecture.md#cached-context-references) have a generateContent request carrier with exact identity/expiry association and explicit clock checks. Other carriers reject; default binding admission remains closed. There is no new HTTP request field, resource authorization service or cache lifecycle operation. This is separate from cache-only prewarming.
 
+[Safety policies and reports](architecture.md#safety-policy-and-reports) have a classic generateContent probability-policy and streamed-assessment contract. Current downstream carriers reject nonempty reports and safety-bearing settings echoes rather than dropping security facts. Requests without an explicit policy may still receive such reports upstream; those exchanges are not an established full client loop. Default admission, HTTP schemas and routing remain unchanged. Vertex severity/method carriers are not part of this contract.
+
 Service-policy codecs follow the [closed policy/report contract](architecture.md#service-policies-and-reports); default binding admission remains unchanged. The native generation-only decode helper rejects an execution policy rather than dropping it; full request envelopes retain it. Messages service reports require full-message or opening usage. Cross-contract classes and late reports without a target carrier reject instead of being reclassified or omitted.
 
 | Boundary | Current treatment | Exit condition when reopened |
@@ -99,13 +103,9 @@ Chat custom tools have static JSON and history carriers, not a pinned custom-cal
 
 ### Support queue after projection repair
 
-The remaining queue advances through local contract gates, not publication or successful route reconnection. Before each IR extension, present a minimal counterexample and structural options. An official carrier alone does not activate a binding. Legacy Messages `top_k` and tokenizer-unbound `logit_bias` remain rejected.
+The selected non-tool feature queue is locally complete; retain its contracts under regression and carry the explicit integration handoff into coverage improvement and P7. An official carrier alone does not activate a binding. Before a future IR extension, present a minimal counterexample and structural options.
 
-1. **Safety settings.** First select typed ownership for safety categories, thresholds and reported outcomes. A caller identity hint is not a moderation policy, and equal native threshold names are not an equivalence rule.
-
-   Exit condition: preserve the selected input policy and separately reported facts with independent wire expectations; reject unsupported conversions without dropping or weakening a safety control. Do not infer outcomes from requested settings or enable bindings.
-
-This non-tool support slice completes the remaining first-stage feature queue, subject to its local contract gates and explicit integration handoff. Cache prewarming, tool discovery, native `web_search`, other hosted tools, Messages citations, generated media, multi-candidate execution and file services retain their deferred boundaries.
+Legacy Messages `top_k` and tokenizer-unbound `logit_bias` remain rejected. Cache prewarming, tool discovery, native `web_search`, other hosted tools, Messages citations, generated media, multi-candidate execution and file services retain their deferred boundaries.
 
 #### Model-name service-policy carriers
 
@@ -184,9 +184,8 @@ IR completeness does not mean every upstream can carry every modality. Protocol-
 
 ## Planned order
 
-1. **Selected Generation IR completeness.** Complete safety settings under the temporary routing freeze; retain established cache-reference and other local contracts. Cache prewarming, tool discovery and native `web_search` are deferred, not exit conditions. Preserve the explicit integration handoff and deferred concepts; a disconnected client loop does not invalidate correct IR/codec work.
-2. **Coverage improvement.** Start the coverage pass only after selected first-stage IR completeness. Keep focused regressions and safety invariants throughout implementation; deferred cache and tool slices do not block this stage.
-3. **Routing rules and failover improvement.** Review candidate membership, credential-pool truncation, cooling/affinity ordering and per-exchange budgets together. Implementation improvement and real acceptance follow the second stage; their priority remains undecided, lowest for now.
+2. **Coverage improvement.** Strengthen existing codec-only assertions and safety boundaries after selected first-stage local completion. Preserve the explicit integration handoff and deferred concepts; deferred cache and tool slices do not block this stage.
+3. **Routing rules and failover improvement.** Review candidate membership, credential-pool truncation, cooling/affinity ordering and per-exchange budgets together. Implementation improvement and real acceptance follow coverage improvement; their priority remains undecided, lowest for now.
 4. **Other agent acceptance.** Codex, Claude Code and other agents follow failover. Their priority is undecided, lowest for now.
 
 The [P7 boundary review](#p7-boundary-review) becomes eligible after first-stage local completion, without waiting for the deferred cache and tool slices, and is required before route-facing acceptance. Codec-only coverage can proceed independently. This plan does not start routing changes or deferred acceptance runs.

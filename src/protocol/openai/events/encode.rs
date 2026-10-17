@@ -509,6 +509,9 @@ impl EventEncoder {
             StreamEvent::LogprobsSnapshot { .. }
             | StreamEvent::TextMetadata { .. }
             | StreamEvent::Usage(_) => vec![],
+            StreamEvent::SafetyReport(_) => {
+                return Err(CodecError::Unsupported("safety report".into()));
+            }
             StreamEvent::Progress(_) => {
                 return Err(CodecError::Unsupported("interaction progress".into()));
             }
@@ -565,6 +568,9 @@ fn validate_metadata(profile: Profile, metadata: &ResponseMetadata) -> Result<()
     }
     if let Some(settings) = &metadata.context.settings {
         settings.validate()?;
+        if !settings.safety.is_empty() {
+            return Err(CodecError::Unsupported("reported safety settings".into()));
+        }
     }
     metadata.required_id()?;
     let created = metadata

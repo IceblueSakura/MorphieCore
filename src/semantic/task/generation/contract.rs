@@ -18,6 +18,7 @@ pub enum GenerationFeature {
     ToolSchemaNormalization,
     ExplicitCache,
     CachedContext,
+    Safety,
     AutomaticPrefixCache,
     StructuredArguments,
     StructuredToolResult,
@@ -73,6 +74,7 @@ pub struct GenerationSemanticContract {
     pub normalization_default_tools: bool,
     pub explicit_cache: bool,
     pub cached_context: bool,
+    pub safety: bool,
     pub automatic_prefix_cache: bool,
 }
 impl GenerationSemanticContract {
@@ -114,6 +116,7 @@ impl GenerationSemanticContract {
             normalization_default_tools: true,
             explicit_cache: true,
             cached_context: true,
+            safety: true,
             automatic_prefix_cache: true,
         }
     }
@@ -156,6 +159,7 @@ impl GenerationSemanticContract {
             normalization_default_tools: true,
             explicit_cache: false,
             cached_context: false,
+            safety: false,
             automatic_prefix_cache: false,
         }
     }
@@ -202,6 +206,7 @@ impl GenerationSemanticContract {
             ),
             (promise.explicit_cache, self.explicit_cache),
             (promise.cached_context, self.cached_context),
+            (promise.safety, self.safety),
             (promise.automatic_prefix_cache, self.automatic_prefix_cache),
         ]
         .into_iter()
@@ -221,6 +226,7 @@ impl GenerationSemanticContract {
             return Err(ProviderObservation);
         }
         for (needed, supported, feature) in [
+            (q.safety_reports, self.safety, Safety),
             (q.compaction, self.compaction, Compaction),
             (q.audio_output, self.audio_output, AudioOutput),
             (q.instructions, self.instructions, Instructions),
@@ -272,6 +278,7 @@ impl GenerationSemanticContract {
             return Err(ProviderObservation);
         }
         for (required, supported, feature) in [
+            (q.safety_settings, self.safety, Safety),
             (q.compaction, self.compaction, Compaction),
             (q.instruction_count > 0, self.instructions, Instructions),
             (q.temperature, self.temperature, Temperature),

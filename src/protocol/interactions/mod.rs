@@ -82,6 +82,7 @@ pub fn semantic_contract() -> GenerationSemanticContract {
         normalization_default_tools: false,
         explicit_cache: false,
         cached_context: false,
+        safety: false,
         automatic_prefix_cache: false,
     }
 }

@@ -576,6 +576,7 @@ impl Trace {
                 R::Metadata => "metadata",
                 R::SystemFingerprint => "system_fingerprint",
                 R::Terminal => "terminal",
+                R::Safety => "safety",
                 _ => "other",
             },
             _ => "codec",

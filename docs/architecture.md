@@ -97,6 +97,18 @@ Boundary fidelity records associate the complete reference with a logical issuer
 
 The generateContent carrier encodes the bound reference without expanding its content. Cached instructions/tools cannot be overlaid implicitly. Other carriers reject without support; default binding admission and public HTTP schemas remain unchanged. Cache creation, fetching, renewal, resource authorization and cache-only prewarming are separate work. See [Google's resource contract](https://ai.google.dev/api/caching).
 
+### Safety policy and reports
+
+`GenerationSettings` holds requested per-category probability filtering. Target default, disabled filtering and no category blocking are distinct choices. A caller identity hint is not a safety policy. Threshold names do not establish equivalent calibration or enforcement across targets or models.
+
+`GenerationResponse` holds ordered `SafetyReport` observations independently of content and terminal details. Report events distinguish input from output assessment; they can represent blocked input without an output item. Successive assessments remain separate rather than overwriting or requiring agreement with an earlier assessment. Their arrival does not identify an exact content span. Reports never come from requested thresholds, and probability is not severity.
+
+Report counts, ratings, messages and aggregate response storage use the existing semantic bounds. Content edits and native client-view reconstruction preserve reports. Report debug output is redacted. Reports cannot follow the terminal; an assessment alone never computes the outcome. Codecs translate explicit native blocking signals separately under the existing terminal contract.
+
+The classic generateContent codec encodes probability policies and reads prompt feedback and candidate assessments. Omitted proto3 rating scalars use the [source-defined defaults](https://github.com/googleapis/googleapis/blob/8cc2927c2ea64e6876568683050deabf2b52ce56/google/ai/generativelanguage/v1beta/safety.proto), not guesses from the request. An empty native rating list is not an inferred safe verdict. Existing native envelope identity requirements remain unchanged; reports do not synthesize missing identities or models. This does not add Vertex severity/method carriers, Google static intake or Google client endpoints.
+
+Other request carriers reject these policies. Current downstream carriers reject nonempty safety reports and safety-bearing settings echoes, in JSON and SSE, rather than treating them as incidental settings or discarding them. Rejection prevents a later successful terminal. Default admission and public HTTP schemas stay unchanged; model-effective enforcement and report delivery remain integration work.
+
 ## Adaptation
 
 ### Accurate IR and declared loss
@@ -652,6 +664,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Service-policy intent and reports | [Closed policies and separate reported classes](#service-policies-and-reports), not speculative field combinations. Native names and model aliases never establish cross-service equivalence or effective reports; dynamic alias selection remains deferred with routing integration |
 | Terminal stop evidence | Completion cause is separate from outcome and turn progress, including when Google reports STOP alongside function calls. Preserve natural, sequence-matched and ambiguous stop reports without deriving them from sent controls or output text. Reject delivery without a carrier for necessary evidence; no new lossy stop policy is selected |
 | Existing cached context | A typed optional reference belongs to `GenerationRequest` as its input base, not settings, an ordered item or advisory cache hints. Preserve resource identity and reported expiry; unreported expiry is not unlimited retention. Boundary records hold provenance and an explicit target clock checks known expiry. Never fetch, expand, renew or silently omit the reference. Default binding admission and public request schemas stay unchanged |
+| Safety policy and reported assessment | Request probability-threshold settings belong to `GenerationSettings`; actual input/output assessments belong independently to `GenerationResponse` and report events. Preserve report order and source facts without deriving them from controls, confusing probability with severity or inferring an outcome. Default, disabled filtering and no category blocking remain distinct; unsupported policy/report carriers reject |
 | Transitional test scope | While IR/codec contracts are incomplete, defer success scenarios that assume unselected completion conversions or binding admission. Keep established local contracts and safety assertions, measure pruning coverage, and rebuild selected integration coverage after the contracts stabilize. A green reduced suite does not establish the deferred client loops |
 | Client-owned output caps | The gateway neither caps nor invents `max_tokens`; the upstream enforces its model limit. Only a protocol that requires the field fills a fixed default |
 

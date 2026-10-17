@@ -379,6 +379,16 @@ pub(super) fn redacted(sealed: &str) -> bool {
 /// Retained metadata and accounting reflect the actual Messages carrier.
 pub(crate) fn project_snapshot(response: &mut DecodedResponse) -> Result<(), CodecError> {
     response.metadata.context.validate()?;
+    if !response.semantic.safety_reports().is_empty()
+        || response
+            .metadata
+            .context
+            .settings
+            .as_ref()
+            .is_some_and(|settings| !settings.safety.is_empty())
+    {
+        return Err(CodecError::Unsupported("Messages safety report".into()));
+    }
     if let Some(class) = response.metadata.context.service_class.value() {
         super::service::class_wire(*class)?;
     }
@@ -486,6 +496,16 @@ pub fn encode_client_response(
     model: &str,
 ) -> Result<Value, CodecError> {
     let semantic = &response.semantic;
+    if !semantic.safety_reports().is_empty()
+        || response
+            .metadata
+            .context
+            .settings
+            .as_ref()
+            .is_some_and(|settings| !settings.safety.is_empty())
+    {
+        return Err(CodecError::Unsupported("Messages safety report".into()));
+    }
     let mut content = vec![];
     let mut calls = false;
     for (_, item) in semantic.items() {

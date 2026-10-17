@@ -2,6 +2,7 @@
 //! IR. Upstream only; no client codec, OpenAI profile or wire switches.
 mod logprobs;
 mod request;
+mod safety;
 mod schema;
 mod signature;
 mod stream;
@@ -78,6 +79,7 @@ pub fn semantic_contract() -> GenerationSemanticContract {
         normalization_default_tools: false,
         explicit_cache: false,
         cached_context: false,
+        safety: false,
         automatic_prefix_cache: false,
     }
 }
@@ -93,6 +95,7 @@ pub fn representation_contract() -> GenerationSemanticContract {
     contract.frequency_penalty = true;
     contract.seed = true;
     contract.cached_context = true;
+    contract.safety = true;
     contract
 }
 

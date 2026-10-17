@@ -233,9 +233,23 @@ impl GenerationSseDecoder {
             self.usage = Some(usage(v)?);
         }
         if let Some(feedback) = o.get("promptFeedback")
-            && string(object(feedback, "promptFeedback")?, "blockReason")?.is_some()
+            && let Some(report) =
+                super::safety::report(object(feedback, "promptFeedback")?, SafetySubject::Input)?
         {
-            return self.terminal(Some(IncompleteReason::ContentFilter), out);
+            let blocked = report
+                .reason
+                .is_some_and(|reason| reason != SafetyBlockReason::Unspecified);
+            if blocked
+                && (!self.members.is_empty()
+                    || o.get("candidates")
+                        .is_some_and(|v| !v.as_array().is_some_and(Vec::is_empty)))
+            {
+                return Err(invalid("blocked prompt with candidates"));
+            }
+            self.emit(StreamEvent::SafetyReport(report), out)?;
+            if blocked {
+                return self.terminal(Some(IncompleteReason::ContentFilter), out);
+            }
         }
         let candidates = match o.get("candidates") {
             None => return Ok(()),
@@ -305,8 +319,14 @@ impl GenerationSseDecoder {
             }
         }
         if let Some(reason) = string(candidate, "finishReason")? {
+            if let Some(report) = super::safety::report(candidate, SafetySubject::Output)? {
+                self.emit(StreamEvent::SafetyReport(report), out)?;
+            }
             let incomplete = finish_reason(reason)?;
             return self.terminal(incomplete, out);
+        }
+        if let Some(report) = super::safety::report(candidate, SafetySubject::Output)? {
+            self.emit(StreamEvent::SafetyReport(report), out)?;
         }
         Ok(())
     }

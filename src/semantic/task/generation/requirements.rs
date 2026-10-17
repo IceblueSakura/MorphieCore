@@ -34,6 +34,7 @@ pub struct GenerationRequirements {
     pub normalization_default_tools: bool,
     pub explicit_cache: bool,
     pub cached_context: bool,
+    pub safety_settings: bool,
     pub automatic_prefix_cache: bool,
     pub tool_history: bool,
     pub provider_observations: bool,
@@ -76,6 +77,7 @@ impl GenerationRequirements {
     pub fn derive(r: &GenerationRequest) -> Self {
         let mut x = Self {
             cached_context: r.cached_context().is_some(),
+            safety_settings: !r.settings().safety.is_empty(),
             top_k: r.controls().top_k.is_some(),
             stop_sequences: !r.controls().stop_sequences.is_empty(),
             presence_penalty: r.controls().presence_penalty().is_some(),
@@ -202,6 +204,7 @@ impl GenerationRequirements {
 /// Actual output domains, independent of input controls or tool declarations.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct GenerationResponseRequirements {
+    pub safety_reports: bool,
     pub compaction: bool,
     pub assistant_media: bool,
     pub provider_observations: bool,
@@ -221,7 +224,10 @@ pub struct GenerationResponseRequirements {
 }
 impl GenerationResponseRequirements {
     pub fn derive(response: &GenerationResponse) -> Self {
-        let mut q = Self::default();
+        let mut q = Self {
+            safety_reports: !response.safety_reports().is_empty(),
+            ..Self::default()
+        };
         for (_, item) in response.items() {
             q.assistant_media |= item.has_assistant_media();
             match item {

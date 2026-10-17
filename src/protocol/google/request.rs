@@ -73,6 +73,12 @@ pub(super) fn project(
         rules.insert(RequestRule::OmitVerbosity);
     }
     let mut body = Map::new();
+    if !s.safety.is_empty() {
+        body.insert(
+            "safetySettings".into(),
+            super::safety::settings(&s.safety).into(),
+        );
+    }
     if let Some(reference) = request.cached_context() {
         // Cached resources may fix these controls. Do not invent an overlay.
         // https://ai.google.dev/api/caching#CachedContent

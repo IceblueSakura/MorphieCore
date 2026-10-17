@@ -227,6 +227,148 @@ fn stream_maps_thoughts_text_calls_and_anchored_signatures() {
             json!({"thought":true,"text":" more","thoughtSignature":"U0lHMg=="}),
         ]
     );
+    let blocked = wire(&[json!({
+        "responseId":"blocked","modelVersion":"gemini-synthetic",
+        "promptFeedback":{"blockReason":"SAFETY","safetyRatings":[{
+            "category":"HARM_CATEGORY_HARASSMENT","probability":"HIGH","blocked":true
+        }]},"candidates":[]
+    })]);
+    let expected = SafetyReport {
+        subject: SafetySubject::Input,
+        ratings: vec![SafetyRating {
+            category: SafetyCategory::Harassment,
+            probability: Some(SafetyProbability::High),
+            blocked: Some(true),
+        }],
+        reason: Some(SafetyBlockReason::Safety),
+        message: None,
+    };
+    let mut decoder = GenerationSseDecoder::new(
+        200,
+        "text/event-stream",
+        SseLimits::default(),
+        LocalScope::new(2),
+        target(),
+    )
+    .unwrap();
+    let (_, events) = decoder.consume(&blocked).unwrap();
+    assert!(events.contains(&StreamEvent::SafetyReport(expected.clone())));
+    let denied = decoder.finish().unwrap();
+    assert!(denied.semantic.items().is_empty());
+    assert_eq!(denied.semantic.outcome(), Outcome::Incomplete);
+    assert_eq!(
+        denied.semantic.details().incomplete,
+        Some(IncompleteReason::ContentFilter)
+    );
+    assert_eq!(
+        denied.semantic.safety_reports(),
+        std::slice::from_ref(&expected)
+    );
+    assert_eq!(
+        denied
+            .semantic
+            .clone()
+            .with_items(vec![])
+            .unwrap()
+            .safety_reports(),
+        std::slice::from_ref(&expected)
+    );
+    assert_eq!(
+        morphiecore::protocol::openai::lowering::lower_response(
+            &denied.semantic,
+            &denied.fidelity,
+            &denied.metadata,
+            Profile::Responses,
+            morphiecore::protocol::openai::TargetCaps::full()
+        )
+        .err()
+        .unwrap(),
+        morphiecore::lowering::generation::RepresentationError::Safety
+    );
+    let mut metadata = denied.metadata.clone();
+    metadata.created = Some(1.into());
+    let mut openai =
+        morphiecore::protocol::openai::events::EventEncoder::new(Profile::Responses, metadata)
+            .unwrap();
+    openai
+        .encode(&StreamEvent::Started, &denied.fidelity)
+        .unwrap();
+    assert!(
+        openai
+            .encode(
+                &StreamEvent::SafetyReport(expected.clone()),
+                &denied.fidelity
+            )
+            .is_err()
+    );
+    assert!(
+        openai
+            .encode(events.last().unwrap(), &denied.fidelity)
+            .is_err()
+    );
+    let mut messages =
+        morphiecore::protocol::anthropic::client_events::ClientEventEncoder::new("r", "m");
+    messages.encode(&StreamEvent::Started).unwrap();
+    assert!(
+        messages
+            .encode(&StreamEvent::SafetyReport(expected.clone()))
+            .is_err()
+    );
+    assert!(messages.encode(events.last().unwrap()).is_err());
+    assert!(messages.finish().is_err());
+    assert!(
+        denied
+            .semantic
+            .clone()
+            .with_safety_reports(vec![expected.clone(); MAX_ITEMS + 1])
+            .is_err()
+    );
+    let mut reports_state = reduce(StreamState::new(), StreamEvent::Started).unwrap();
+    for _ in 0..MAX_ITEMS {
+        reports_state = reduce(reports_state, StreamEvent::SafetyReport(expected.clone())).unwrap();
+    }
+    assert!(matches!(
+        reduce(reports_state, StreamEvent::SafetyReport(expected.clone())),
+        Err(EventError::Limit)
+    ));
+    let mut private_report = expected;
+    private_report.message = Some(Text::new("private-assessment-detail", "fixture", 64).unwrap());
+    assert!(!format!("{private_report:?}").contains("private-assessment-detail"));
+
+    let mut reports = frames();
+    reports[0]["candidates"][0]["safetyRatings"] = json!([{
+        "category":"HARM_CATEGORY_HARASSMENT","probability":"LOW","blocked":false
+    }]);
+    reports[3]["candidates"][0]["safetyRatings"] = json!([{
+        "category":"HARM_CATEGORY_HARASSMENT","probability":"MEDIUM"
+    }]);
+    let evaluated = decode(&wire(&reports)).unwrap();
+    assert_eq!(
+        evaluated.semantic.safety_reports(),
+        &[
+            SafetyReport {
+                subject: SafetySubject::Output,
+                ratings: vec![SafetyRating {
+                    category: SafetyCategory::Harassment,
+                    probability: Some(SafetyProbability::Low),
+                    blocked: Some(false)
+                }],
+                reason: None,
+                message: None
+            },
+            SafetyReport {
+                subject: SafetySubject::Output,
+                ratings: vec![SafetyRating {
+                    category: SafetyCategory::Harassment,
+                    probability: Some(SafetyProbability::Medium),
+                    blocked: Some(false)
+                }],
+                reason: None,
+                message: None
+            },
+        ]
+    );
+    assert_eq!(evaluated.semantic.outcome(), Outcome::Completed);
 }
 
 #[test]
@@ -245,12 +387,20 @@ fn stream_rejects_unidentified_calls_late_chunks_and_unfinished_eof() {
     probabilities[2]["candidates"][0]["logprobsResult"] = json!({
         "chosenCandidates":[{"token":"other text","logProbability":-0.25}]
     });
+    let mut safety = frames();
+    safety[0]["candidates"][0]["safetyRatings"] = json!([{
+        "category":"HARM_CATEGORY_HARASSMENT","probability":7,"blocked":false
+    }]);
+    let mut blocked_with_output = frames();
+    blocked_with_output[0]["promptFeedback"] = json!({"blockReason":"SAFETY"});
     for bytes in [
         wire(&missing_id),
         wire(&late),
         wire(unfinished),
         wire(&known_type),
         wire(&probabilities),
+        wire(&safety),
+        wire(&blocked_with_output),
     ] {
         assert!(decode(&bytes).is_err());
     }
@@ -679,6 +829,90 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
             &target()
         )
         .is_err()
+    );
+    let mut policy = client(
+        Profile::Responses,
+        json!({"model":"public","input":"question","max_output_tokens":16}),
+    );
+    let mut settings = policy.task.semantic.settings().clone();
+    settings.safety = vec![
+        SafetySetting {
+            category: SafetyCategory::Harassment,
+            threshold: SafetyThreshold::MediumAndAbove,
+        },
+        SafetySetting {
+            category: SafetyCategory::HateSpeech,
+            threshold: SafetyThreshold::Disabled,
+        },
+        SafetySetting {
+            category: SafetyCategory::DangerousContent,
+            threshold: SafetyThreshold::BlockNone,
+        },
+    ];
+    policy.task.semantic = policy
+        .task
+        .semantic
+        .with_settings(settings.clone())
+        .unwrap();
+    assert_eq!(
+        encode_generation_request(
+            &policy.task.semantic,
+            &policy.task.fidelity,
+            &target(),
+            None
+        )
+        .unwrap()
+        .0,
+        json!({
+            "contents":[{"role":"user","parts":[{"text":"question"}]}],
+            "generationConfig":{"maxOutputTokens":16},
+            "safetySettings":[
+                {"category":"HARM_CATEGORY_HARASSMENT","threshold":"BLOCK_MEDIUM_AND_ABOVE"},
+                {"category":"HARM_CATEGORY_HATE_SPEECH","threshold":"OFF"},
+                {"category":"HARM_CATEGORY_DANGEROUS_CONTENT","threshold":"BLOCK_NONE"}
+            ]
+        })
+    );
+    assert!(
+        morphiecore::protocol::google::semantic_contract()
+            .check(&policy.task.semantic)
+            .is_err()
+    );
+    assert!(
+        morphiecore::protocol::google::representation_contract()
+            .check(&policy.task.semantic)
+            .is_ok()
+    );
+    assert!(
+        Adapter::new(Profile::Responses, Dialect::Standard, None)
+            .encode_request(
+                &policy,
+                "upstream",
+                &morphiecore::protocol::openai::TargetCaps::full()
+            )
+            .is_err()
+    );
+    assert!(
+        morphiecore::protocol::anthropic::Profile::AdaptiveTextTools
+            .encode_generation_request(&policy.task.semantic, &policy.task.fidelity, &target())
+            .is_err()
+    );
+    assert!(
+        morphiecore::protocol::interactions::encode_generation_request(
+            &policy.task.semantic,
+            &policy.task.fidelity,
+            &target()
+        )
+        .is_err()
+    );
+    settings.safety.push(settings.safety[0]);
+    assert!(
+        policy
+            .task
+            .semantic
+            .clone()
+            .with_settings(settings)
+            .is_err()
     );
 }
 

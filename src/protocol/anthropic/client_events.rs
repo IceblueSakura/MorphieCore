@@ -105,6 +105,9 @@ impl ClientEventEncoder {
             usage: None,
         }
     }
+    pub(crate) fn reject(&mut self) {
+        self.rejected = true;
+    }
     /// Messages reports the assigned service in opening usage, not a late delta.
     pub fn update_service_class(
         &mut self,
@@ -289,6 +292,10 @@ impl ClientEventEncoder {
             }
             | StreamEvent::AudioDelta { .. } => {
                 return Err(CodecError::Unsupported("Messages audio output".into()));
+            }
+            StreamEvent::SafetyReport(_) => {
+                self.reject();
+                return Err(CodecError::Unsupported("Messages safety report".into()));
             }
             StreamEvent::Usage(usage) => {
                 let selected = super::client::project_usage(*usage)?;

@@ -5,7 +5,10 @@ use crate::semantic::value::Text;
 pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState, EventError> {
     if state.terminal.is_some()
         || state.progress != InteractionProgress::Unreported
-            && !matches!(event, StreamEvent::Usage(_) | StreamEvent::Terminal { .. })
+            && !matches!(
+                event,
+                StreamEvent::Usage(_) | StreamEvent::SafetyReport(_) | StreamEvent::Terminal { .. }
+            )
     {
         return Err(EventError::Lifecycle);
     }
@@ -563,6 +566,13 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 std::mem::size_of::<MessageEnvelope>() + std::mem::size_of_val(group.members()),
             )?;
             state.message_envelopes.push(group);
+        }
+        StreamEvent::SafetyReport(report) => {
+            if state.safety_reports.len() >= MAX_ITEMS {
+                return Err(EventError::Limit);
+            }
+            state.charge(report.validate()?)?;
+            state.safety_reports.push(report);
         }
         StreamEvent::Usage(usage) => {
             usage.validate()?;

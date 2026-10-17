@@ -133,6 +133,14 @@ pub(crate) fn reported_settings(
         .context
         .validate()
         .map_err(|_| RepresentationError::Metadata)?;
+    if metadata
+        .context
+        .settings
+        .as_ref()
+        .is_some_and(|settings| !settings.safety.is_empty())
+    {
+        return Err(RepresentationError::Safety);
+    }
     if profile == Profile::Chat {
         if metadata.context.settings.is_none() && metadata.context.instruction_messages.is_none() {
             return Ok(None);

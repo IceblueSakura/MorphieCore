@@ -58,6 +58,9 @@ pub fn lower_request<'a>(
     if q.automatic_prefix_cache || q.cached_context {
         return Err(RepresentationError::Controls);
     }
+    if q.safety_settings {
+        return Err(RepresentationError::Safety);
+    }
     if q.tool_result_errors {
         return Err(RepresentationError::Tools);
     }
@@ -311,6 +314,9 @@ pub fn lower_response<'a>(
     profile: Profile,
     c: TargetCaps,
 ) -> Result<ResponseRepresentation<'a>, RepresentationError> {
+    if !r.safety_reports().is_empty() {
+        return Err(RepresentationError::Safety);
+    }
     crate::protocol::openai::terminal::check_completion(
         r.details(),
         profile,

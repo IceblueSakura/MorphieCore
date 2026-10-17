@@ -167,6 +167,14 @@ impl ClientAdapter {
         options: StreamOptions,
         padding: Obfuscation,
     ) -> Result<ClientEncoder, SseError> {
+        if metadata
+            .context
+            .settings
+            .as_ref()
+            .is_some_and(|settings| !settings.safety.is_empty())
+        {
+            return Err(CodecError::Unsupported("reported safety settings".into()).into());
+        }
         let encoder = match self {
             Self::Messages => {
                 let mut encoder =
@@ -295,6 +303,15 @@ impl ClientEncoder {
             Encoder::Responses(e) => e.update_metadata(metadata),
             Encoder::Messages(e) => {
                 metadata.context.validate().map_err(CodecError::from)?;
+                if metadata
+                    .context
+                    .settings
+                    .as_ref()
+                    .is_some_and(|settings| !settings.safety.is_empty())
+                {
+                    e.reject();
+                    return Err(CodecError::Unsupported("reported safety settings".into()).into());
+                }
                 if metadata.context.execution != crate::semantic::context::ExecutionHints::default()
                 {
                     return Err(CodecError::Unsupported(

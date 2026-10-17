@@ -84,6 +84,7 @@ pub struct GenerationSettings {
     pub effort: Presence<EffortControl>,
     pub output_modalities: Presence<Vec<crate::semantic::task::generation::OutputModality>>,
     pub audio: Presence<crate::semantic::task::generation::AudioOutputOptions>,
+    pub safety: Vec<SafetySetting>,
 }
 impl GenerationSettings {
     pub fn output(&self) -> &OutputConstraint {
@@ -162,6 +163,7 @@ impl GenerationSettings {
         }
         let bytes = instructions
             + stop_bytes
+            + crate::semantic::task::generation::safety::settings_bytes(&self.safety)?
             + usize::from(self.automatic_prefix_cache.is_some()) * 32
             + self
                 .audio

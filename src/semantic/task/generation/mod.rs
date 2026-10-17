@@ -9,6 +9,7 @@ mod request;
 mod requirements;
 mod resources;
 mod response;
+mod safety;
 mod schema;
 mod stream;
 mod tools;
@@ -78,6 +79,10 @@ pub use usage::{InputTokenRelation, OutputTokenRelation, TotalTokenRelation, Usa
 
 pub use response::{
     CompletionCause, GenerationResponse, IncompleteReason, Outcome, ResponseError, TerminalDetails,
+};
+pub use safety::{
+    SafetyBlockReason, SafetyCategory, SafetyProbability, SafetyRating, SafetyReport,
+    SafetySetting, SafetySubject, SafetyThreshold,
 };
 pub use stream::{
     EventError, ItemKind, PartKind, StreamEvent, StreamItem, StreamPart, StreamState,

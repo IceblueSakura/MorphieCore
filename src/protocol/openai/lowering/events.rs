@@ -8,6 +8,9 @@ pub fn check_event(
     profile: Profile,
     contract: &TargetCaps,
 ) -> Result<(), RepresentationError> {
+    if matches!(event, StreamEvent::SafetyReport(_)) || !state.safety_reports().is_empty() {
+        return Err(RepresentationError::Safety);
+    }
     if let StreamEvent::Terminal { details, .. } = event {
         let pending_tools = state.items().iter().any(|item| {
             matches!(

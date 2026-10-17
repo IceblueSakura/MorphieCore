@@ -95,6 +95,7 @@ pub struct GenerationResponse {
     outcome: Outcome,
     progress: crate::semantic::task::generation::InteractionProgress,
     usage: Option<Usage>,
+    safety_reports: Vec<crate::semantic::task::generation::SafetyReport>,
     details: TerminalDetails,
 }
 impl GenerationResponse {
@@ -136,6 +137,7 @@ impl GenerationResponse {
             outcome,
             progress: crate::semantic::task::generation::InteractionProgress::Unreported,
             usage: None,
+            safety_reports: vec![],
             details: TerminalDetails::default(),
         })
     }
@@ -173,6 +175,9 @@ impl GenerationResponse {
             .saturating_add(self.resources.uncharged_bytes(&self.items)?)
             .saturating_add(usize::from(self.usage.is_some()) * std::mem::size_of::<Usage>())
             .saturating_add(self.envelopes.validate(&self.items)?)
+            .saturating_add(crate::semantic::task::generation::safety::reports_bytes(
+                &self.safety_reports,
+            )?)
             > crate::semantic::task::generation::MAX_TOTAL_BYTES
         {
             return Err(GenerationError::Limit);
@@ -182,6 +187,17 @@ impl GenerationResponse {
     }
     pub fn items(&self) -> &[(ItemId, Item)] {
         &self.items
+    }
+    pub fn safety_reports(&self) -> &[crate::semantic::task::generation::SafetyReport] {
+        &self.safety_reports
+    }
+    pub fn with_safety_reports(
+        mut self,
+        reports: Vec<crate::semantic::task::generation::SafetyReport>,
+    ) -> Result<Self, GenerationError> {
+        self.safety_reports = reports;
+        let details = self.details.clone();
+        self.with_details(details)
     }
     pub fn message_envelopes(&self) -> &[crate::semantic::task::generation::MessageEnvelope] {
         self.envelopes.values()
@@ -237,6 +253,7 @@ impl GenerationResponse {
             response.items(),
         )?;
         response = response.with_usage(self.usage)?;
+        response = response.with_safety_reports(self.safety_reports)?;
         Ok(response)
     }
 }

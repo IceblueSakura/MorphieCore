@@ -106,6 +106,7 @@ pub(crate) fn project(
     let mut projected =
         GenerationResponse::from_resources(items, source.outcome(), source.resources().clone())?
             .with_details(source.details().clone())?
+            .with_safety_reports(source.safety_reports().to_vec())?
             // Derivation requires all disjoint input categories. Missing is not zero.
             .with_usage(source.usage().map(client_usage).transpose()?.flatten())?;
     if profile == Profile::Chat {
@@ -172,6 +173,7 @@ pub(crate) fn project(
             projected.resources().clone(),
         )?
         .with_details(projected.details().clone())?
+        .with_safety_reports(projected.safety_reports().to_vec())?
         .with_usage(projected.usage())?
         .with_message_envelopes(vec![MessageEnvelope::new(
             GroupId::new(owner.scope(), owner.get()),
@@ -210,6 +212,20 @@ mod tests {
     fn projection_keeps_native_observation_and_derives_only_the_client_view() {
         let source = fixture();
         let before = source.clone();
+        let safety_settings = GenerationSettings {
+            safety: vec![SafetySetting {
+                category: SafetyCategory::Harassment,
+                threshold: SafetyThreshold::MediumAndAbove,
+            }],
+            ..Default::default()
+        };
+        let terminal = StreamEvent::Terminal {
+            terminal: StreamTerminal::Incomplete,
+            details: TerminalDetails {
+                incomplete: Some(IncompleteReason::MaxOutputTokens),
+                ..Default::default()
+            },
+        };
         for profile in [Profile::Responses, Profile::Chat] {
             let mut client = source.clone();
             crate::execution::replay::seal_for_client(
@@ -365,6 +381,14 @@ mod tests {
                     |loss| loss.field == "generation.usage" && loss.direction == "event.encode"
                 )
             );
+            encoder
+                .encode(&StreamEvent::Started, &source.fidelity)
+                .unwrap();
+            let mut reported = metadata.clone();
+            reported.context.settings = Some(safety_settings.clone());
+            assert!(encoder.update_metadata(reported).is_err());
+            assert!(encoder.encode(&terminal, &source.fidelity).is_err());
+            assert!(encoder.finish().is_err());
             if profile == Profile::Chat {
                 let mut failed = client_adapter
                     .stream_encoder(
@@ -428,6 +452,28 @@ mod tests {
                 "synthetic-signature"
             );
         }
+        let mut metadata = source.metadata.clone();
+        let mut messages = crate::adapter::ClientAdapter::Messages
+            .stream_encoder(
+                metadata.clone(),
+                Default::default(),
+                Default::default(),
+                crate::protocol::openai::stream::Obfuscation::Disabled,
+            )
+            .unwrap();
+        messages
+            .encode(&StreamEvent::Started, &source.fidelity)
+            .unwrap();
+        messages
+            .encode(
+                &StreamEvent::Usage(source.semantic.usage().unwrap()),
+                &source.fidelity,
+            )
+            .unwrap();
+        metadata.context.settings = Some(safety_settings);
+        assert!(messages.update_metadata(metadata).is_err());
+        assert!(messages.encode(&terminal, &source.fidelity).is_err());
+        assert!(messages.finish().is_err());
         // A later report must not become visible in an earlier pending batch.
         let adapter = crate::protocol::openai::Adapter::new(
             Profile::Chat,

@@ -207,6 +207,8 @@ pub enum RepresentationError {
     Lifecycle,
     #[error("terminal cannot be represented by the target profile")]
     Terminal,
+    #[error("target has no safety policy or assessment carrier")]
+    Safety,
     #[error("usage conversion is not part of this migration slice")]
     UsageProjection,
     #[error("invalid or conflicting response representation metadata")]

@@ -45,6 +45,9 @@ pub(super) fn project(
     rules: &mut BTreeSet<RequestRule>,
 ) -> Result<Value, CodecError> {
     let s = request.settings();
+    if !s.safety.is_empty() {
+        return Err(unsupported());
+    }
     if s.controls.top_k.is_some()
         || s.controls.presence_penalty().is_some()
         || s.controls.frequency_penalty().is_some()
