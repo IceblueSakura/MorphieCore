@@ -39,6 +39,10 @@ const UNSUPPORTED: &[&str] = &[
     "mcp_servers",
     "context_management",
     "compaction",
+    "inference_geo",
+    "speed",
+    "fallbacks",
+    "fallback_credit_token",
 ];
 const MAX_IGNORED: usize = 32;
 
@@ -125,7 +129,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     let o = object(&v)?;
     if let Some(key) = UNSUPPORTED.iter().find(|key| {
         o.get(**key)
-            .is_some_and(|v| !v.is_null() && v != &json!([]))
+            .is_some_and(|v| !v.is_null() && !(**key == "mcp_servers" && v == &json!([])))
     }) {
         return Err(CodecError::Unsupported((*key).into()));
     }
@@ -265,6 +269,9 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         settings.parallel_tool_calls = choice.disable_parallel_tool_use.value().map(|b| !b);
     }
     if let Some(thinking) = o.get("thinking").filter(|v| !v.is_null()) {
+        if thinking.get("block_binding").is_some_and(|v| !v.is_null()) {
+            return Err(CodecError::Unsupported("thinking.block_binding".into()));
+        }
         let mut thinking = thinking.clone();
         keep(
             &mut thinking,

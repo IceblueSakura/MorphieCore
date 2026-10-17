@@ -307,36 +307,20 @@ impl Profile {
             .into_iter()
             .flatten()
             .collect();
-        let mut stop_reason = match (response.semantic.outcome(), response.semantic.progress()) {
-            (Outcome::Completed, InteractionProgress::TurnFinished) => super::StopReason::EndTurn,
-            (Outcome::Completed, InteractionProgress::AwaitingToolResults) => {
-                super::StopReason::ToolUse
-            }
-            (Outcome::Incomplete, InteractionProgress::Unreported)
-                if response.semantic.details().incomplete
-                    == Some(IncompleteReason::MaxOutputTokens) =>
-            {
-                super::StopReason::MaxTokens
-            }
-            (Outcome::Incomplete, InteractionProgress::Unreported)
-                if response.semantic.details().incomplete
-                    == Some(IncompleteReason::ContextWindowExceeded) =>
-            {
-                super::StopReason::ModelContextWindowExceeded
-            }
-            _ => return Err(unsupported()),
-        };
-        let stop_sequence = match &response.semantic.details().completion {
-            Some(CompletionCause::StopSequence(text))
-                if stop_reason == super::StopReason::EndTurn =>
-            {
-                stop_reason = super::StopReason::StopSequence;
-                Presence::Value(text.as_str().to_owned())
-            }
-            Some(CompletionCause::NaturalOrStopSequence) => return Err(unsupported()),
-            Some(_) if stop_reason != super::StopReason::EndTurn => return Err(unsupported()),
-            _ => Presence::Null,
-        };
+        let (stop_reason, stop_sequence) = super::client::terminal(
+            response.semantic.outcome(),
+            response.semantic.progress(),
+            response
+                .semantic
+                .items()
+                .iter()
+                .any(|(_, item)| item.is_call()),
+            response.semantic.details(),
+        )?;
+        let stop_reason = super::StopReason::read(&Value::String(stop_reason.into()))?;
+        let stop_sequence = stop_sequence
+            .map(|value| Presence::Value(value.to_owned()))
+            .unwrap_or(Presence::Null);
         let usage = response.semantic.usage().ok_or_else(unsupported)?;
         let mut selected = Usage::operation(0, 0, 0);
         selected.input_tokens = usage.input_tokens;

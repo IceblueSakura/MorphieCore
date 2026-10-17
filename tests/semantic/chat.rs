@@ -11,6 +11,42 @@ mod chat_media {
         json!({"id":"synthetic-response","object":"chat.completion.chunk","created":1,"model":"synthetic-model","choices":[{"index":0,"delta":delta,"finish_reason":finish}]})
     }
     #[test]
+    fn audit_responses_rejects_credential_owned_locators_even_with_a_public_source() {
+        use morphiecore::protocol::CodecError;
+        let adapter = standard(Profile::Responses);
+        for part in [
+            json!({"type":"input_image","image_url":"https://example.test/a.png","detail":"auto"}),
+            json!({"type":"input_file","file_url":"https://example.test/a.pdf"}),
+        ] {
+            let body = json!({"model":"m","input":[{"role":"user","content":[part]}]});
+            assert!(
+                adapter
+                    .decode_client_request(body.to_string().as_bytes())
+                    .is_ok()
+            );
+            let mut nullable = body.clone();
+            nullable["input"][0]["content"][0]["file_id"] = Value::Null;
+            assert!(
+                adapter
+                    .decode_client_request(nullable.to_string().as_bytes())
+                    .is_ok()
+            );
+            assert!(
+                adapter
+                    .decode_request(nullable.to_string().as_bytes())
+                    .is_ok()
+            );
+            for locator in [json!("file-other"), json!(7)] {
+                let mut mixed = body.clone();
+                mixed["input"][0]["content"][0]["file_id"] = locator;
+                assert!(matches!(
+                    adapter.decode_client_request(mixed.to_string().as_bytes()),
+                    Err(CodecError::Unsupported(field)) if field == "Responses file_id"
+                ));
+            }
+        }
+    }
+    #[test]
     fn input_audio_is_an_ordered_inline_resource_not_a_transcript_or_assistant_artifact() {
         let adapter = standard(Profile::Chat);
         for (format, mime) in [("wav", "audio/wav"), ("mp3", "audio/mpeg")] {
@@ -650,6 +686,46 @@ mod chat_logprobs {
     //! Independent Chat probability and context oracles against the pinned SDK contract.
     use morphiecore::protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract};
     use serde_json::{Value, json};
+
+    #[test]
+    fn audit_probability_extensions_do_not_weaken_known_field_validation() {
+        use morphiecore::semantic::{task::generation::*, value::Presence};
+        let mut p = probability("ok");
+        p["future_token_field"] = json!({"x":true});
+        p["top_logprobs"][0]["future_top_field"] = json!(42);
+        let body = response(false, json!({"content":[p.clone()],"refusal":null}));
+        let decoded = adapter(Profile::Chat)
+            .decode_response(body.to_string().as_bytes())
+            .unwrap();
+        let Item::Message(message) = &decoded.semantic.items()[0].1 else {
+            panic!("message")
+        };
+        let ContentPart::Text(text) = &message.parts[0].content else {
+            panic!("text")
+        };
+        assert_eq!(
+            text.logprobs(),
+            &Presence::Value(vec![Logprob {
+                token: "ok".into(),
+                logprob: serde_json::from_str("-0.1234567890123456").unwrap(),
+                bytes: None,
+                top_logprobs: Some(vec![TopLogprob {
+                    token: Some("ok".into()),
+                    logprob: Some(serde_json::from_str("-0.1234567890123456").unwrap()),
+                    bytes: Some(vec![111, 107]),
+                }]),
+            }])
+        );
+        for bad in [json!("not-a-number"), json!(true)] {
+            p["logprob"] = bad;
+            let body = response(false, json!({"content":[p.clone()],"refusal":null}));
+            assert!(
+                adapter(Profile::Chat)
+                    .decode_response(body.to_string().as_bytes())
+                    .is_err()
+            );
+        }
+    }
 
     fn adapter(profile: Profile) -> Adapter {
         Adapter::new(profile, Dialect::Standard, None)

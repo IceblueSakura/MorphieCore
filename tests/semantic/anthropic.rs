@@ -11,6 +11,65 @@ mod anthropic_profile {
             "required":["key"],"additionalProperties":false},"strict":false}],
         "tool_choice":{"type":"auto"},"messages":[{"role":"user","content":"Look up A."}]})
     }
+    #[test]
+    fn audit_consecutive_messages_share_tool_turn_validation_without_reordering() {
+        let p = Profile::AdaptiveTextTools;
+        let mut body = request();
+        body["messages"] = json!([
+            {"role":"user","content":"go"},
+            {"role":"assistant","content":[{"type":"tool_use","id":"c1","name":"lookup","input":{}}]},
+            {"role":"assistant","content":[{"type":"tool_use","id":"c2","name":"lookup","input":{}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"c1","content":"one"}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"c2","content":"two"},{"type":"text","text":"Continue."}]}
+        ]);
+        let decoded = p.decode_request(body.to_string().as_bytes()).unwrap();
+        assert_eq!(
+            p.encode_request(&decoded).unwrap()["messages"],
+            json!([
+                {"role":"user","content":"go"},
+                {"role":"assistant","content":[{"type":"tool_use","id":"c1","name":"lookup","input":{}}]},
+                {"role":"assistant","content":[{"type":"tool_use","id":"c2","name":"lookup","input":{}}]},
+                {"role":"user","content":[{"type":"tool_result","tool_use_id":"c1","content":"one"}]},
+                {"role":"user","content":[{"type":"tool_result","tool_use_id":"c2","content":"two"},{"type":"text","text":"Continue."}]}
+            ])
+        );
+        let mut missing = body.clone();
+        missing["messages"].as_array_mut().unwrap().remove(4);
+        assert!(matches!(
+            p.decode_request(missing.to_string().as_bytes()),
+            Err(CodecError::Invalid("Anthropic pending results"))
+        ));
+        body["messages"][3]["content"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"type":"text","text":"Too early."}));
+        assert!(matches!(
+            p.decode_request(body.to_string().as_bytes()),
+            Err(CodecError::Invalid("Anthropic result reference"))
+        ));
+    }
+    #[test]
+    fn audit_protected_client_controls_are_not_discarded() {
+        use morphiecore::protocol::anthropic::client::decode_client_request;
+        let base = json!({"model":"m","max_tokens":8,"messages":[{"role":"user","content":"go"}]});
+        assert!(decode_client_request(base.to_string().as_bytes()).is_ok());
+        for (key, value) in [
+            ("inference_geo", json!("us")),
+            ("speed", json!("fast")),
+            ("fallbacks", json!([{"model":"other"}])),
+            ("fallback_credit_token", json!("synthetic")),
+        ] {
+            let mut body = base.clone();
+            body[key] = value;
+            assert!(matches!(decode_client_request(body.to_string().as_bytes()),
+                Err(CodecError::Unsupported(field)) if field == key));
+        }
+        let mut body = base;
+        body["thinking"] =
+            json!({"type":"adaptive","block_binding":{"prefix_mismatch_behavior":"error"}});
+        assert!(matches!(decode_client_request(body.to_string().as_bytes()),
+            Err(CodecError::Unsupported(field)) if field == "thinking.block_binding"));
+    }
     fn message() -> Value {
         json!({"id":"msg_synthetic","type":"message","role":"assistant","model":"synthetic-model",
         "content":[{"type":"thinking","thinking":"","signature":"synthetic-signature"},
@@ -453,6 +512,18 @@ mod anthropic_semantics {
                 .details()
                 .completion,
             Some(CompletionCause::Natural)
+        );
+        let mut unreported = decode("end_turn", Value::Null).unwrap();
+        unreported.semantic = unreported
+            .semantic
+            .with_details(TerminalDetails::default())
+            .unwrap();
+        let source = p
+            .decode_generation_request(request(), LocalScope::new(1), &target())
+            .unwrap();
+        assert!(
+            p.encode_generation_response(&unreported, &source, &target())
+                .is_err()
         );
         let expected = decode("stop_sequence", json!("END")).unwrap();
         assert_eq!(

@@ -55,11 +55,7 @@ pub(in crate::protocol::openai) fn read_annotations(
         .enumerate()
         .map(|(index, value)| {
             if let Some(known) = existing.get(index) {
-                if crate::protocol::openai::content::citations::write(known, &items.resources)?
-                    != *value
-                {
-                    return Err(CodecError::Invalid("annotation snapshot"));
-                }
+                crate::protocol::openai::content::citations::check_snapshot(known, value, items)?;
                 Ok(known.clone())
             } else {
                 crate::protocol::openai::content::citations::read(value, items)
@@ -72,8 +68,30 @@ pub(in crate::protocol::openai) fn read_logprobs(v: &Value) -> Result<Vec<Logpro
     if a.len() > MAX_ITEMS {
         return Err(CodecError::Limit);
     }
+    // Protocol extensions are ignored; the semantic structs remain closed.
+    let mut known = a.clone();
+    for token in &mut known {
+        let token = token
+            .as_object_mut()
+            .ok_or(CodecError::Invalid("logprobs"))?;
+        token.retain(|key, _| {
+            matches!(key.as_str(), "token" | "logprob" | "bytes" | "top_logprobs")
+        });
+        if let Some(top) = token.get_mut("top_logprobs").filter(|v| !v.is_null()) {
+            let top = top.as_array_mut().ok_or(CodecError::Invalid("logprobs"))?;
+            if top.len() > MAX_ITEMS {
+                return Err(CodecError::Limit);
+            }
+            for entry in top {
+                let entry = entry
+                    .as_object_mut()
+                    .ok_or(CodecError::Invalid("logprobs"))?;
+                entry.retain(|key, _| matches!(key.as_str(), "token" | "logprob" | "bytes"));
+            }
+        }
+    }
     let p: Vec<Logprob> =
-        serde_json::from_value(v.clone()).map_err(|_| CodecError::Invalid("logprobs"))?;
+        serde_json::from_value(Value::Array(known)).map_err(|_| CodecError::Invalid("logprobs"))?;
     validate_logprobs(&p)?;
     Ok(p)
 }

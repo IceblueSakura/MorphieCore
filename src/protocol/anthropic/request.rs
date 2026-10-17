@@ -758,68 +758,68 @@ impl Request {
         let mut pending = BTreeSet::new();
         let mut block_count = 0;
         let mut image_count = 0;
-        for message in &self.messages {
-            charge(&mut bytes, message.bytes()?)?;
-            node_charge(&mut nodes, 8)?;
+        // The API combines consecutive same-role messages into one logical turn.
+        // Validate adjacency and result prefixes across the run, without rewriting it.
+        for turn in self.messages.chunk_by(|a, b| a.role == b.role) {
+            if !pending.is_empty() && turn[0].role != Role::User {
+                return Err(CodecError::Invalid("Anthropic pending results"));
+            }
             let mut results = BTreeSet::new();
             let mut saw_text = false;
-            if let MessageContent::Blocks(blocks) = &message.content {
-                block_count += blocks.len();
-                count(block_count)?;
-                for block in blocks {
-                    let block = &block.content;
-                    image_count += match block {
-                        Block::Media(Media::Image { .. }) => 1,
-                        Block::ToolResult {
-                            content: ResultContent::Blocks(parts),
-                            ..
-                        } => parts
-                            .iter()
-                            .filter(|p| {
-                                matches!(p.content, ResultBlock::Media(Media::Image { .. }))
-                            })
-                            .count(),
-                        _ => 0,
-                    };
-                    if image_count > MAX_IMAGES {
-                        return Err(CodecError::Limit);
+            for message in turn {
+                charge(&mut bytes, message.bytes()?)?;
+                node_charge(&mut nodes, 8)?;
+                if let MessageContent::Blocks(blocks) = &message.content {
+                    block_count += blocks.len();
+                    count(block_count)?;
+                    for block in blocks {
+                        let block = &block.content;
+                        image_count += match block {
+                            Block::Media(Media::Image { .. }) => 1,
+                            Block::ToolResult {
+                                content: ResultContent::Blocks(parts),
+                                ..
+                            } => parts
+                                .iter()
+                                .filter(|p| {
+                                    matches!(p.content, ResultBlock::Media(Media::Image { .. }))
+                                })
+                                .count(),
+                            _ => 0,
+                        };
+                        if image_count > MAX_IMAGES {
+                            return Err(CodecError::Limit);
+                        }
+                        node_charge(&mut nodes, block.nodes()?)?;
+                        match block {
+                            Block::ToolUse { id, .. } => {
+                                if !seen.insert(id.as_str()) {
+                                    return Err(CodecError::Invalid("Anthropic duplicate call"));
+                                }
+                                pending.insert(id.as_str());
+                            }
+                            Block::ToolResult { tool_use_id, .. } => {
+                                if saw_text
+                                    || !pending.contains(tool_use_id.as_str())
+                                    || !results.insert(tool_use_id.as_str())
+                                {
+                                    return Err(CodecError::Invalid("Anthropic result reference"));
+                                }
+                            }
+                            _ => {
+                                saw_text = true;
+                            }
+                        }
                     }
-                    node_charge(&mut nodes, block.nodes()?)?;
-                    match block {
-                        Block::ToolUse { id, .. } => {
-                            if !pending.is_empty() && message.role == Role::User {
-                                return Err(CodecError::Invalid("Anthropic pending results"));
-                            }
-                            if !seen.insert(id.as_str()) {
-                                return Err(CodecError::Invalid("Anthropic duplicate call"));
-                            }
-                        }
-                        Block::ToolResult { tool_use_id, .. } => {
-                            if saw_text
-                                || !pending.contains(tool_use_id.as_str())
-                                || !results.insert(tool_use_id.as_str())
-                            {
-                                return Err(CodecError::Invalid("Anthropic result reference"));
-                            }
-                        }
-                        _ => {
-                            saw_text = true;
-                        }
-                    }
+                } else {
+                    saw_text = true;
                 }
             }
-            if !pending.is_empty() {
-                if message.role != Role::User || results != pending {
+            if turn[0].role == Role::User {
+                if results != pending {
                     return Err(CodecError::Invalid("Anthropic pending results"));
                 }
                 pending.clear();
-            }
-            if let MessageContent::Blocks(blocks) = &message.content {
-                for block in blocks {
-                    if let Block::ToolUse { id, .. } = &block.content {
-                        pending.insert(id.as_str());
-                    }
-                }
             }
         }
         if !pending.is_empty() {

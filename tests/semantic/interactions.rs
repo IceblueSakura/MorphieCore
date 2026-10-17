@@ -63,6 +63,67 @@ fn decode_interaction(
 }
 
 #[test]
+fn audit_step_errors_and_unrepresented_lifecycle_facts_cannot_complete() {
+    let base = vec![
+        json!({"event_type":"interaction.created","interaction":{"id":"i","model":"gemini-synthetic"}}),
+        json!({"event_type":"step.start","index":0,"step":{"type":"model_output","content":[{"type":"text","text":"A"}]}}),
+        json!({"event_type":"step.stop","index":0}),
+        json!({"event_type":"interaction.completed","interaction":{"id":"i","model":"gemini-synthetic","status":"completed"}}),
+    ];
+    assert!(decode_interaction(&base, true).is_ok());
+    let mut error = base.clone();
+    error[1]["step"]["error"] = json!({"code":7,"message":"denied"});
+    assert!(
+        decode_interaction(&error, true)
+            .unwrap_err()
+            .contains("Interactions model_output error")
+    );
+    let mut cited = base.clone();
+    cited[1]["step"]["content"][0]["annotations"] = json!([{
+        "type":"url_citation","start_index":0,"end_index":1,"url":"https://example.test/source"}]);
+    assert!(
+        decode_interaction(&cited, true)
+            .unwrap_err()
+            .contains("Interactions annotations")
+    );
+    let mut cited_thought = interaction_frames();
+    cited_thought[3]["delta"]["content"]["annotations"] =
+        cited[1]["step"]["content"][0]["annotations"].clone();
+    assert!(
+        decode_interaction(&cited_thought, true)
+            .unwrap_err()
+            .contains("Interactions annotations")
+    );
+    cited_thought[3]["delta"]["content"]["annotations"] = json!([]);
+    assert!(decode_interaction(&cited_thought, true).is_ok());
+    for (key, value) in [
+        (
+            "steps",
+            json!([{"type":"model_output","content":[{"type":"text","text":"B"}]}]),
+        ),
+        ("continuation_token", json!("synthetic-token")),
+        ("service_tier", json!("flex")),
+    ] {
+        let mut unsupported = base.clone();
+        unsupported[3]["interaction"][key] = value.clone();
+        assert!(
+            decode_interaction(&unsupported, true)
+                .unwrap_err()
+                .contains(key),
+            "{key}"
+        );
+        unsupported = base.clone();
+        unsupported[0]["interaction"][key] = value;
+        assert!(
+            decode_interaction(&unsupported, true)
+                .unwrap_err()
+                .contains(key),
+            "{key}"
+        );
+    }
+}
+
+#[test]
 fn step_stream_preserves_usage_call_arguments_and_both_signatures() {
     let decoded = decode_interaction(&interaction_frames(), true).unwrap();
     assert!(decoded.metadata.id.is_none());

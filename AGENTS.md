@@ -33,7 +33,7 @@
 ## Tests
 
 - Keep valuable assertions, not a test-count target. Prefer focused checks at the responsible layer and extend existing tests over duplicate cases or matrices. Follow the roadmap's phase-specific scope.
-- Complete the selected Generation IR/codec design and obtain explicit human review approval before starting comprehensive coverage work. Before approval, preserve existing regression and safety checks; update expectations only as necessary for selected design corrections, not as a coverage-expansion pass.
+- Complete the selected Generation IR/codec design and obtain explicit human review approval before the ordinary comprehensive coverage stage. The [current roadmap](docs/roadmap.md#generation-design-review-gate) records explicit authorization to expand audit coverage before design approval; this does not approve unresolved designs or integration.
 - Protocol mappings need independent wire→IR and IR→wire expectations; a round trip alone is not evidence. Check that a negative case reaches its intended failure, not an earlier rejection.
 - Preserve credential/auth, lifecycle/cancellation, bounds, origin, strict-JSON, replay-isolation and terminal-honesty assertions. Remove obsolete tests/helpers with deleted code; use [coverage and pruning](docs/development.md#coverage-and-pruning) for deliberate pruning passes, not routine edits.
 

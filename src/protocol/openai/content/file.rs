@@ -8,12 +8,16 @@ pub(in crate::protocol::openai) fn read(
     part: &Map<String, Value>,
     direction: DecodeDirection,
 ) -> Result<Resource, CodecError> {
+    if part.get("file_id").is_some_and(|v| !v.is_null()) {
+        return Err(CodecError::Unsupported("Responses file_id".into()));
+    }
     direction.fields(
         part,
         &[
             "type",
             "file_data",
             "file_url",
+            "file_id",
             "filename",
             "detail",
             "prompt_cache_breakpoint",

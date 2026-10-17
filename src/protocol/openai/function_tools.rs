@@ -420,6 +420,10 @@ pub(super) fn write_tool(t: &ToolDefinition, profile: Profile) -> Result<Value, 
             }
             if let FunctionStrictness::Explicit(b) = t.strict {
                 f["strict"] = json!(b);
+            } else if profile == Profile::Responses
+                && t.strict == FunctionStrictness::Omitted(StrictDefault::NonStrict)
+            {
+                f["strict"] = json!(false);
             }
             if profile == Profile::Responses {
                 write_dispatch(&t.dispatch, f.as_object_mut().expect("object"));

@@ -52,6 +52,79 @@ fn consume_all(d: &mut ResponsesSseDecoder, bytes: &[u8], chunk_len: usize) -> u
 }
 
 #[test]
+fn audit_repeated_citations_ignore_extensions_but_reject_changed_evidence() {
+    for changed in [false, true] {
+        let mut values = wire::events(2);
+        for v in &mut values {
+            if v["type"] == "response.output_text.annotation.added" {
+                v["annotation"]["future_field"] = json!(true);
+            }
+            if v["type"] == "response.content_part.done" {
+                v["part"]["annotations"][0]["future_field"] = json!(true);
+                if changed {
+                    v["part"]["annotations"][0]["url"] = json!("https://example.test/changed");
+                }
+            }
+        }
+        let bytes: Vec<_> = values
+            .iter()
+            .flat_map(|v| encode_frame(v, SseLimits::default().max_event_bytes).unwrap())
+            .collect();
+        let mut d = decoder(SseLimits::default());
+        let mut rejected = false;
+        'chunks: for chunk in bytes.chunks(7) {
+            let mut rest = chunk;
+            while !rest.is_empty() {
+                match d.consume(rest) {
+                    Ok((n, events)) => {
+                        assert!(
+                            !changed
+                                || !events
+                                    .iter()
+                                    .any(|e| matches!(e, StreamEvent::Terminal { .. }))
+                        );
+                        rest = &rest[n..];
+                    }
+                    Err(e) => {
+                        assert!(changed, "{e}");
+                        assert!(e.to_string().contains("annotation snapshot"));
+                        rejected = true;
+                        break 'chunks;
+                    }
+                }
+            }
+        }
+        assert_eq!(rejected, changed);
+        if changed {
+            assert!(d.finish().is_err());
+            assert!(d.materialize().is_err());
+        } else {
+            d.finish().unwrap();
+            use morphiecore::semantic::task::generation::*;
+            let decoded = d.materialize().unwrap();
+            let Item::Message(message) = &decoded.semantic.items()[0].1 else {
+                panic!("message")
+            };
+            let ContentPart::Text(text) = &message.parts[0].content else {
+                panic!("text")
+            };
+            assert_eq!(text.as_str(), "{\"ok\":false}");
+            let citation = text.annotations()[0].value();
+            assert_eq!(
+                citation.claim,
+                ClaimAnchor::Range(TextRange {
+                    unit: TextUnit::UnicodeScalars,
+                    start: 0,
+                    end: 1
+                })
+            );
+            assert!(matches!(decoded.semantic.resources().get(citation.source),
+                Some(ResourceLocation::Url(url)) if url.as_str() == "https://example.test/source"));
+        }
+    }
+}
+
+#[test]
 fn opaque_replay_cannot_be_promoted_by_missing_done_conflicting_terminal_or_eof() {
     for failure in ["missing_item_done", "conflicting_token", "missing_terminal"] {
         let mut values = wire::events(1);

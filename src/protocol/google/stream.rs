@@ -267,6 +267,21 @@ impl GenerationSseDecoder {
         {
             return Err(invalid("candidate index"));
         }
+        if let Some(metadata) = candidate.get("citationMetadata").filter(|v| !v.is_null()) {
+            let metadata = object(metadata, "citationMetadata")?;
+            if metadata
+                .get("citationSources")
+                .is_some_and(|v| v.as_array().is_none_or(|sources| !sources.is_empty()))
+            {
+                return Err(unsupported("citationMetadata"));
+            }
+        }
+        if candidate
+            .get("groundingMetadata")
+            .is_some_and(|v| !v.is_null())
+        {
+            return Err(unsupported("groundingMetadata"));
+        }
         let mut probabilities = candidate
             .get("logprobsResult")
             .map(super::logprobs::read)
@@ -310,7 +325,17 @@ impl GenerationSseDecoder {
                 return Err(invalid("content role"));
             }
             if let Some(parts) = content.get("parts") {
-                for part in parts.as_array().ok_or_else(|| invalid("parts"))? {
+                for (index, part) in parts
+                    .as_array()
+                    .ok_or_else(|| invalid("parts"))?
+                    .iter()
+                    .enumerate()
+                {
+                    // Parts in one frame have explicit boundaries. Only the first
+                    // part may continue the last fragment of the previous frame.
+                    if index > 0 {
+                        self.close(out)?;
+                    }
                     self.part(
                         object(part, "part")?,
                         std::mem::take(&mut probabilities),

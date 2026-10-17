@@ -4,7 +4,7 @@ use crate::protocol::openai::{CodecError, Profile, common::*};
 use crate::semantic::{task::generation::*, value::Text};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-#[derive(Serialize, Deserialize)]
+#[derive(Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum WireAnnotation {
     UrlCitation {
@@ -204,6 +204,22 @@ pub(in crate::protocol::openai) fn write(
 ) -> Result<Value, CodecError> {
     serde_json::to_value(wire(annotation, resources)?)
         .map_err(|_| CodecError::Invalid("annotation"))
+}
+pub(in crate::protocol::openai) fn check_snapshot(
+    annotation: &Annotation,
+    value: &Value,
+    items: &Items,
+) -> Result<(), CodecError> {
+    let o = object(value)?;
+    let kind = o.get("type").and_then(Value::as_str).unwrap_or_default();
+    items.direction.fields(o, known_fields(kind))?;
+    let reported: WireAnnotation =
+        serde_json::from_value(value.clone()).map_err(|_| CodecError::Invalid("annotation"))?;
+    // Compare known facts, not raw extension keys, without redeclaring resources.
+    if wire(annotation, &items.resources)? != reported {
+        return Err(CodecError::Invalid("annotation snapshot"));
+    }
+    Ok(())
 }
 pub(crate) fn check(
     annotation: &Annotation,

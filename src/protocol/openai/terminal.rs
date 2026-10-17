@@ -8,6 +8,11 @@ pub(super) fn decode_details(o: &Map<String, Value>) -> Result<TerminalDetails, 
         .filter(|v| !v.is_null())
         .map(|v| {
             let e = object(v)?;
+            if e.get("misalignment").is_some_and(|v| !v.is_null()) {
+                return Err(CodecError::Unsupported(
+                    "Responses misalignment details".into(),
+                ));
+            }
             DecodeDirection::Upstream.fields(e, &["code", "message", "param"])?;
             Ok::<_, CodecError>(ResponseError {
                 code: e

@@ -66,6 +66,48 @@ fn expected() -> Value {
             "cache_creation_input_tokens":4,"cache_read_input_tokens":3}}"#).unwrap()
 }
 #[test]
+fn audit_nullable_usage_deltas_preserve_known_counts_but_zero_updates_them() {
+    for read in [Value::Null, json!(0), json!(5)] {
+        let mut values = frames();
+        values[0]["message"]["usage"]["output_tokens"] = json!(2);
+        values[0]["message"]["usage"]["output_tokens_details"] = json!({"thinking_tokens":2});
+        values[15]["usage"] = json!({"output_tokens":9,"input_tokens":null,
+            "cache_creation_input_tokens":null,"cache_read_input_tokens":read,
+            "output_tokens_details":null});
+        let target = ReplayTarget::new("synthetic-provider", "synthetic-model").unwrap();
+        let mut attempt = native_attempt(target);
+        attempt.begin(200, "text/event-stream").unwrap();
+        for chunk in wire(&values).chunks(7) {
+            let mut rest = chunk;
+            while !rest.is_empty() {
+                let (n, events) = attempt.push(rest).unwrap();
+                assert!(!events.iter().any(|e| matches!(
+                    e,
+                    morphiecore::semantic::task::generation::StreamEvent::Terminal { .. }
+                )));
+                rest = &rest[n..];
+            }
+        }
+        let usage = attempt.finish().unwrap().semantic.usage().unwrap();
+        assert_eq!(
+            (
+                usage.input_tokens,
+                usage.input_cache_write_tokens,
+                usage.cached_input_tokens,
+                usage.output_tokens,
+                usage.reasoning_tokens
+            ),
+            (
+                Some(11),
+                Some(4),
+                Some(read.as_u64().unwrap_or(3)),
+                Some(9),
+                Some(2)
+            )
+        );
+    }
+}
+#[test]
 fn malformed_unclosed_or_trailing_streams_never_recover_success() {
     let original = frames();
     let mut cases = Vec::new();

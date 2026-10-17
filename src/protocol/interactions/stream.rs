@@ -70,6 +70,23 @@ fn required<'a>(o: &'a Map<String, Value>, key: &'static str) -> Result<&'a str,
 fn field<'a>(o: &'a Map<String, Value>, key: &'static str) -> Result<&'a Value, SseError> {
     o.get(key).ok_or_else(|| invalid(key))
 }
+fn check_lifecycle(i: &Map<String, Value>) -> Result<(), SseError> {
+    // Full snapshots and provider-held continuation need explicit owners/checks.
+    for key in ["steps", "continuation_token", "service_tier"] {
+        if i.get(key).is_some_and(|v| !v.is_null()) {
+            return Err(CodecError::Unsupported(format!("Interactions {key}")).into());
+        }
+    }
+    Ok(())
+}
+fn check_annotations(p: &Map<String, Value>) -> Result<(), SseError> {
+    if p.get("annotations")
+        .is_some_and(|v| !v.is_null() && v.as_array().is_none_or(|a| !a.is_empty()))
+    {
+        return Err(CodecError::Unsupported("Interactions annotations".into()).into());
+    }
+    Ok(())
+}
 fn counter(o: &Map<String, Value>, key: &'static str) -> Result<Option<u64>, SseError> {
     match o.get(key) {
         None | Some(Value::Null) => Ok(None),
@@ -233,6 +250,7 @@ impl GenerationSseDecoder {
                 return Err(invalid("duplicate interaction"));
             }
             let i = object(field(o, "interaction")?, "interaction")?;
+            check_lifecycle(i)?;
             if string(i, "object")?.is_some_and(|v| v != "interaction") {
                 return Err(invalid("interaction object"));
             }
@@ -292,6 +310,9 @@ impl GenerationSseDecoder {
         }
         self.steps += 1;
         let s = object(field(o, "step")?, "step")?;
+        if s.get("error").is_some_and(|v| !v.is_null()) {
+            return Err(CodecError::Unsupported("Interactions model_output error".into()).into());
+        }
         string(s, "id")?;
         string(s, "name")?;
         if s.get("arguments").is_some_and(|v| !v.is_object()) {
@@ -371,6 +392,7 @@ impl GenerationSseDecoder {
                 }
                 for part in v.as_array().ok_or_else(|| invalid("step content"))? {
                     let p = object(part, "step content part")?;
+                    check_annotations(p)?;
                     if required(p, "type")? != "text" {
                         return Err(
                             CodecError::Unsupported("Interactions content type".into()).into()
@@ -443,6 +465,7 @@ impl GenerationSseDecoder {
             ),
             ("thought_summary", Kind::Thought) => {
                 let p = object(field(d, "content")?, "thought summary")?;
+                check_annotations(p)?;
                 if required(p, "type")? != "text" {
                     return Err(invalid("thought summary type"));
                 }
@@ -566,6 +589,7 @@ impl GenerationSseDecoder {
         if self.open.is_some() {
             return Err(invalid("unclosed Interactions step"));
         }
+        check_lifecycle(i)?;
         if let Some(id) = string(i, "id")?
             && self.metadata.as_ref().and_then(|m| m.id.as_deref()) != Some(id)
         {

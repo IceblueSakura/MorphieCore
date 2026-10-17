@@ -180,11 +180,6 @@ pub fn lower_request<'a>(
         return Err(RepresentationError::MessageGrouping);
     }
     text_items(r.items(), profile, true, r.resources())?;
-    let expected_default = if profile == Profile::Chat {
-        StrictDefault::NonStrict
-    } else {
-        StrictDefault::NormalizeSchema
-    };
     if profile == Profile::Chat
         && r.tools()
             .iter()
@@ -200,7 +195,11 @@ pub fn lower_request<'a>(
             if t.cache.is_some() {
                 return Err(RepresentationError::Controls);
             }
-            if matches!(t.strict, FunctionStrictness::Omitted(d) if d != expected_default) {
+            // Non-strict source defaults have an exact explicit-false carrier in
+            // Responses. The inverse requires schema normalization, not omission.
+            if profile == Profile::Chat
+                && t.strict == FunctionStrictness::Omitted(StrictDefault::NormalizeSchema)
+            {
                 return Err(RepresentationError::StrictDefault);
             }
             if profile == Profile::Chat && t.output_schema.is_some() {

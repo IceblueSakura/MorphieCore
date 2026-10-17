@@ -60,7 +60,7 @@ Shared builders live in `tests/support/`. Test selection follows the lean policy
 
 Protocol mappings need independently hand-written wire→IR and IR→wire expectations. Do not generate an oracle with the encoder under test. Round trips are supplementary.
 
-The current [Generation design review gate](roadmap.md#generation-design-review-gate) requires design closure and explicit human approval before comprehensive coverage work. Before approval, run existing regression checks and update expectations only as necessary for selected design corrections; do not start coverage expansion or pruning. An agent audit or passing baseline is not human approval. After approval, scope coverage slices against the reviewed contracts; integration, SDK and real acceptance remain separate gates.
+The [Generation design review gate](roadmap.md#generation-design-review-gate) records explicit authorization on 2026-10-17 to expand audit coverage before design approval. Use independent expectations and counterexamples to support human review; an agent audit or passing baseline is not design approval. Keep unresolved semantic choices explicit rather than encoding current defects as successful expectations. Integration, SDK and real acceptance remain separate gates.
 
 ## Coverage and pruning
 

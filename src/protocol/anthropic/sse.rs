@@ -238,16 +238,17 @@ impl MessageSseDecoder {
                     }
                     message.stop_sequence = stop_sequence;
                 }
-                if !usage.input_tokens.is_absent() {
+                // Optional null counters mean no update, not erasure of prior reports.
+                if usage.input_tokens.value().is_some() {
                     message.usage.input_tokens = usage.input_tokens;
                 }
-                if !usage.cache_creation_input_tokens.is_absent() {
+                if usage.cache_creation_input_tokens.value().is_some() {
                     message.usage.cache_creation_input_tokens = usage.cache_creation_input_tokens;
                 }
-                if !usage.cache_read_input_tokens.is_absent() {
+                if usage.cache_read_input_tokens.value().is_some() {
                     message.usage.cache_read_input_tokens = usage.cache_read_input_tokens;
                 }
-                if !usage.thinking_tokens.is_absent() {
+                if usage.thinking_tokens.value().is_some() {
                     message.usage.thinking_tokens = usage.thinking_tokens;
                 }
                 // Native counts are cumulative snapshots, never deltas to sum.

@@ -166,6 +166,8 @@ P8 permits omission of an explicit reasoning-context control only when the selec
 
 P8 rejects `DefaultStrictAsPlain`. Keep omitted normalization-default strictness distinct from omitted non-strict defaults and explicit `strict: false`. Responses normalization-default tools must not become plain native tools; reject when their source semantics cannot be preserved. This decision does not select a new schema-normalization implementation or permit removal of explicit schema constraints.
 
+The reverse direction has an exact carrier: an omitted non-strict source default becomes explicit `strict: false` on Responses. Materialize the effective default in the target wire without changing the source IR or schema. This is not a lossy rule and does not permit normalization-default-to-plain conversion.
+
 Schema normalization and explicit strict tools have separate semantic requirements and capability checks. Supporting one does not imply the other. Native contracts reject normalization-default tools even when their codec carries explicit strict tools.
 
 Terminal delivery has three selected approximations. Chat's `stop` officially covers a natural stop and a matched stop sequence, including beside forced tool calls, so natural and sequence-matched causes coarsen to it under `chat.coarsen-completion-cause.v1`; an ambiguous stop is exact. Responses `completed` has no cause carrier, so `responses.omit-completion-cause.v1` omits any cause. A recitation stop becomes OpenAI `content_filter` under `openai.recitation-as-content-filter.v1` and stays incomplete. A context-window stop has no OpenAI carrier and rejects; Messages still rejects ambiguous stops and recitation. These rules never turn a non-success outcome into success.
@@ -409,8 +411,11 @@ Redacted thinking is an opaque-only reasoning item with its own replay format, s
 
 Google signatures travel as reasoning items. The IR has no part- or call-level replay slots; Provider-tool replay stays separate.
 
+This representation and blanket foreign-replay omission remain under [semantic ownership review](refs/2026-10-17-generation-contracts.md#loss-policy-decisions-still-needed). Current compatibility rules are not a claim that every opaque value is optional history.
+
 - A generateContent value names its anchor: call ID, thought or tail. A tail anchor binds the final text part by digest; changed or missing text rejects instead of receiving the signature. No empty carrier is invented.
 - An explicitly observed empty signed text part keeps its text owner. A signature on an empty streaming fragment may also close accumulated text. Both differ from a missing carrier.
+- Distinct parts within one generateContent frame retain their boundaries; unsigned preceding text never becomes part of a later signed owner.
 - A signed thought closes its owner. Later thought text starts another item, so adjacent signed parts never overwrite one another.
 - An Interactions value is a thought signature or a call-ID-anchored signature.
 - Signature-only items trail the response, so a message stays contiguous with its calls. Chat carries them ahead of the message.
@@ -574,6 +579,8 @@ Configuration is documented in [Usage](usage.md#delta-coalescing). It is not an 
 
 Native requests preserve thinking, tool-use/result order and call IDs. Messages owns its profile, cache controls, limits and session headers.
 
+Consecutive same-role native messages form one logical turn for tool-result adjacency and prefix validation, without changing their wire grouping. Optional null usage-delta counters leave earlier reports intact; numeric zero replaces them. Native response encoding and client delivery share the completion-evidence checks.
+
 ### Request rules
 
 These describe current native behavior, not completion of the [loss-policy migration](roadmap.md#ir-and-codec-migration). A richer reasoning conversion requires a model-bound trusted request policy; absent policies retain rejection. Default-strict-to-plain conversion remains rejected by decision. Selected P8 behavior follows the [request policy](#selected-request-approximations).
@@ -675,6 +682,8 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Role-scoped content | IR validation rejects input media in assistant messages and citations or probabilities on user text. Generated assistant media wait for a selected output owner |
 | Unowned message fields | Chat participant `name` and Messages `clear_at`/per-message `output_config` are known official fields without IR owners; they reject instead of being ignored. Chat `store: true` rejects because the gateway provides no completion storage |
 | Unsupported known request semantics | Chat `moderation` and Messages tool `input_examples` reject before unknown-field filtering. Neither security policy nor model-visible tool examples may be silently discarded |
+| Protected controls and reports without owners | Messages geography/speed/fallback and beta replay-enforcement controls, Responses access programs and misalignment details, Google attribution and unsupported Interactions lifecycle/step-error carriers reject explicitly. Rejection is a temporary representation boundary, not complete IR support; see [contract gaps](refs/2026-10-17-generation-contracts.md#protected-semantics-without-complete-owners) |
+| Exact non-strict default materialization | Chat/Messages non-strict defaults can become Responses `strict: false` without schema rewriting. Responses normalization defaults cannot become plain tools |
 | Program caller dependencies | Request calls name preceding program calls and linked results preserve caller identity. Self-describing response snapshots do not relax complete request-history associations |
 | Gemini non-content stops | `MALFORMED_FUNCTION_CALL`, `UNEXPECTED_TOOL_CALL`, `TOO_MANY_TOOL_CALLS`, `LANGUAGE`, `OTHER` and unknown finish reasons remain attempt failures. They never become success; pre-publication failover stays available and the frozen routing classification is unchanged. Recitation has its own incomplete reason |
 | Chat custom-tool identity | Use the official nested JSON carriers and preserve raw input/grammar. Resolve a result's function/custom kind only from its preceding call ID. The pinned Chat SSE schema has no custom delta carrier: reject rather than invent one or cast custom calls to functions; see [protocol sources](refs/2026-10-16-chat-custom-tools.md) |

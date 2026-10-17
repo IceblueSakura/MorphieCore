@@ -44,12 +44,21 @@ pub(in crate::protocol::openai) const EXEC_FIELDS: &[&str] = &[
     "moderation",
     "context_management",
 ];
+fn check_access_programs(o: &Map<String, Value>) -> Result<(), CodecError> {
+    if o.get("access_programs").is_some_and(|v| !v.is_null()) {
+        return Err(CodecError::Unsupported("Responses access_programs".into()));
+    }
+    Ok(())
+}
 impl ExecutionHints {
     pub(in crate::protocol::openai) fn read(
         o: &Map<String, Value>,
         profile: Profile,
         direction: DecodeDirection<'_>,
     ) -> Result<Self, CodecError> {
+        if profile == Profile::Responses {
+            check_access_programs(o)?;
+        }
         let mut fields: Map<_, _> = o
             .iter()
             .filter(|(k, _)| {
@@ -237,6 +246,7 @@ impl ResponseContext {
         o: &Map<String, Value>,
         direction: DecodeDirection,
     ) -> Result<(Self, crate::protocol::fidelity::FidelityRecords), CodecError> {
+        check_access_programs(o)?;
         let mut controls = o.clone();
         // Storage facts belong to the API envelope, never upstream execution intent.
         let storage = super::managed::read_storage(o)?;

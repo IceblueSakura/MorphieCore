@@ -8,7 +8,9 @@ This page owns direction and current scope. Code and tests define behavior; [Arc
 
 The remaining [routing acceptance](#routing-acceptance--pending) does not reopen feature scope. Provider-specific reset dialects, persistence and cooldown tuning need separate evidence and approval; no background probes, balancing or multi-round retries are scheduled.
 
-Complete the selected Generation IR/codec design, then stop for [human review and explicit approval](#generation-design-review-gate) before comprehensive coverage work. Prior local completion does not certify design closure; resolve confirmed ownership or contract defects and keep unsupported boundaries explicit. Provider dialects remain codec concerns. Realtime and standalone tasks do not need complete integration for this phase. Each behavior slice must state its goal and exit condition before code changes.
+Audit the selected Generation IR/codec design with comprehensive coverage, explicitly authorized on 2026-10-17 to support human review. This authorization opens coverage before final design approval; it does not certify design closure, approve unresolved semantic designs or reconnect frozen integration. Resolve confirmed ownership or contract defects and keep unsupported boundaries explicit. Provider dialects remain codec concerns. Realtime and standalone tasks do not need complete integration for this phase.
+
+Use the sourced [contract inventory](refs/2026-10-17-generation-contracts.md) for the remaining semantic decisions. Coverage now includes independent counterexamples for protected fields, nullable usage, signed-part ownership, nested extensions and exact non-strict default conversion. Resolve the ownership gaps below before claiming all official Generation semantics are represented; explicit rejection is safer than silent loss but is not semantic completeness.
 
 Phase completeness covers the selected non-tool support scope, not all official Generation semantics. [Cache prewarming](#deferred-cache-prewarming) and [tool discovery and native `web_search`](#deferred-tool-discovery-and-web-search) are deferred, with priority and scheduling undecided. None blocks phase completion, coverage improvement or the P7 boundary review. Unsupported semantics remain explicit gaps, not silent losses or support claims.
 
@@ -18,15 +20,15 @@ Chat Completions, Responses and Messages are equally important downstream contra
 
 Follow the [IR and codec contract](#ir-and-codec-migration) and preserve its [integration boundary](#integration-handoff). The selected [support queue](#support-queue-after-projection-repair) has no remaining feature slices. The [architecture contract](architecture.md#accurate-ir-and-declared-loss) and [public capability/notice contract](architecture.md#public-capability-and-adaptation-notice) are selected; remaining reconnection choices stay in [Pending decisions](#pending-decisions).
 
-Before human approval, preserve existing tests and independent wire expectations. Update them only as necessary for a selected design correction; do not add test functions, suites, variant matrices or conduct a coverage-improvement pass. Record uncovered contracts rather than claiming coverage from compilation or a round trip. Design approval opens a separately scoped coverage stage, not a test-count target or an automatic expansion of integration.
+Expand independent wire expectations and focused safety coverage to support human review. Do not equate test counts, compilation or round trips with semantic completeness, and do not infer integration authorization from the coverage exception.
 
 Defer successful integration scenarios whose completion conversion or binding-admission contract is not selected. Remove those scenarios rather than invent a conversion or replace success with an expected gateway error. Keep identity, replay isolation, strict parsing, cancellation, transport bounds and honest-terminal assertions. Orthogonal fixtures should use exact supported carriers. Rebuild the selected integration coverage after IR/codec contracts stabilize, during the coverage stage.
 
-Next, request human review of the selected Generation IR/codec design using the contract map below and the explicit [integration handoff](#integration-handoff). Exit condition: address review feedback and obtain explicit human approval before coverage work. Keep default admission, HTTP schemas and routing unchanged. P7 analysis may proceed in parallel, but neither an agent audit nor its selected public capability contract substitutes for human approval.
+Next, request human review using the contract map, the new ownership gaps and the explicit [integration handoff](#integration-handoff). Exit condition: select the unresolved semantic designs and address review feedback. Keep default admission, HTTP schemas and routing unchanged. Neither an agent audit nor a public capability contract substitutes for human design approval.
 
 ### Generation design review gate
 
-**Status: awaiting human design review; approval pending.** Comprehensive coverage work has not started. The review covers the selected Generation scope, not every official API feature or a green full-client loop.
+**Status: human design review pending; comprehensive audit coverage explicitly authorized on 2026-10-17.** The coverage exception does not approve unresolved designs or integration. Existing loss policies may be reconsidered with evidence; consequential unresolved changes remain explicit decisions.
 
 | Review area | Contract and implementation entry points | Question for closure |
 |---|---|---|
@@ -63,7 +65,7 @@ Preserve completed local contracts without reconnecting routing implicitly. Conc
 
 For every implementation slice:
 
-1. Before human approval, maintain affected existing semantic, transport and delivery expectations only as necessary for the selected correction; defer coverage expansion. Keep independently written wire-to-IR and IR-to-wire oracles; a round trip is supplementary. Do not add tests or weaken safety assertions to make a route pass.
+1. Keep independently written wire-to-IR and IR-to-wire oracles; a round trip is supplementary. Add focused audit coverage under the explicit authorization, without weakening safety assertions to make a route pass.
 2. Run affected offline targets, then the [full offline baseline](development.md#offline-baseline). Compilation, local codec correctness and integrated gateway behavior are separate results.
 3. Separate codec regressions from an incompatible frozen integration contract. A failed full baseline remains a failure; identify the exact blocker and continue independent work without repairing routing. The transitional test scope above permits removing unselected success scenarios, not safety assertions or entire suites. Report the removed coverage; a passing reduced baseline does not establish the deferred integration.
 4. Commit/push slices that pass the baseline under the existing project policy. If a disconnected integration prevents that gate, leave publication blocked and report it; this plan does not create a new permission to publish a failing slice.
@@ -74,7 +76,7 @@ Phase completion means the selected policies and carriers pass their local gates
 | Gate | Required evidence | Effect |
 |---|---|---|
 | Advance independent development | The current local contract passes its focused checks; full-baseline failures are classified and new regressions are fixed | Continue the next independent slice without changing frozen routing |
-| Start comprehensive coverage | Selected Generation IR/codec design closure and explicit human review approval | Schedule coverage work; neither passing regression nor agent review grants approval or reconnects routes |
+| Start comprehensive coverage | Explicit audit-coverage authorization recorded on 2026-10-17 | Coverage may support design review; it does not certify design closure or reconnect routes |
 | Commit and push | Full offline baseline passes under the project policy, or the user explicitly authorizes a specific exception | A local completion claim does not grant publication; one exception does not change the standing gate |
 | Accept integration | The scheduled boundary review, admitted route contracts, full offline baseline and connected SDK loopback gate pass | Only then claim the selected full client loop works; real Provider acceptance remains separate |
 
@@ -201,18 +203,18 @@ Later and separate (1C-b): `search_result` blocks as a new input part with `Cita
 
 The alternative is to keep 1C rejected until Claude Code acceptance: pi never sends citations, and opencode sends them only from part metadata.
 
-The coverage-improvement pass starts only after selected Generation IR/codec design closure and explicit human approval. Existing focused contract checks, safety invariants and the offline baseline remain required for every implementation slice; deferring coverage expansion does not waive regression checks.
+Audit coverage is authorized before final design approval. Existing contract checks, safety invariants and the offline baseline remain required for every implementation slice; unresolved designs must not be hidden by expected-success fixtures.
 
 IR completeness does not mean every upstream can carry every modality. Protocol-specific carrier limits and the [pending decisions](#pending-decisions) remain explicit. This phase does not open file services, generated-image delivery or new Provider bindings.
 
 ## Planned order
 
-1. **Generation design closure and human review.** Resolve confirmed IR/codec design defects, reconcile the contract map and request human review. Stop for explicit approval; agent review and a green baseline do not open coverage work.
-2. **Coverage improvement — blocked pending human approval.** After approval, schedule independent wire expectations, codec assertions and safety boundaries without a per-model/Provider matrix. Preserve the explicit integration handoff and deferred concepts; deferred cache and tool slices do not block this stage.
+1. **Generation design closure and human review.** Resolve confirmed defects, select the remaining ownership/policy decisions and reconcile the contract map. An agent review or green baseline does not certify design approval.
+2. **Coverage improvement — authorized alongside review.** Continue independent wire expectations, codec assertions and safety boundaries without a per-model/Provider matrix. Preserve the integration handoff and deferred concepts; deferred cache and tool slices do not block coverage.
 3. **Integration acceptance — pending.** Reconnect selected exact carriers against the phase-complete routing contract, then already-approved adaptations. Perform the routing acceptance below; Provider and full-client acceptance are not implied by offline recovery checks.
 4. **Other agent acceptance.** Codex, Claude Code and other agents follow failover. Their priority is undecided, lowest for now.
 
-The [P7 boundary review](#p7-boundary-review) becomes eligible after first-stage local completion, without waiting for the deferred cache and tool slices, and is required before route-facing acceptance. Its analysis may proceed alongside design closure, but is distinct from the human approval gate. Codec-only coverage may proceed independently of route reconnection only after that approval; deferred acceptance runs remain separate.
+The [P7 boundary review](#p7-boundary-review) becomes eligible after first-stage local completion, without waiting for deferred cache and tool slices, and is required before route-facing acceptance. Its analysis may proceed alongside design closure. Authorized codec-only coverage proceeds independently of route reconnection; deferred acceptance runs remain separate.
 
 ### Routing acceptance — pending
 
@@ -287,7 +289,6 @@ Treat a bound upstream's in-stream error as a classified failure, not normal out
 
 | Work | Scheduling | Exit condition when reopened |
 |---|---|---|
-| Coverage pass | Second stage, only after selected IR/codec design closure and explicit human approval | Independent wire→IR and IR→wire fixtures, synthetic upstreams and chunked SSE intake |
 | Non-image multimodal real checks | Deferred acceptance after IR completeness | One bounded real check for each selected audio, video or document carrier, using model-issued history for tool results; no per-model or format matrix |
 | Pinned-client image replay | Deferred, conditional acceptance | If the installed binary differs from the pinned source, run the bounded image tool round trip with a binary built from that revision; do not infer it from installed-client acceptance |
 | Real failover | Third stage; priority undecided, lowest for now | One bounded real run for a model with two credentials or Providers and a reproducible advanceable failure |
@@ -308,7 +309,20 @@ Real failover needs a controlled failure source, such as an exhausted key in a s
 
 ## Pending decisions
 
-P1/P2/P4/P5/P6, P3's six-budget quantization, P3b's rejection of over-ceiling budgets without adjustment, all P8 policies and D3's prediction omission are selected in [Architecture](architecture.md#settled-decisions). P7 keeps routing frozen until the selected IR/codec/protocol-conversion work is complete. New execution-policy structures require selection as their slices start; they do not reopen settled adaptation policies. Continue independent work and ask only when an unresolved choice blocks the affected contract.
+The policies in [Architecture](architecture.md#settled-decisions) remain the implementation baseline, but the current audit explicitly permits evidence-backed reconsideration of lossy mappings. P7 keeps routing frozen. New semantic/execution-policy structures still require a selected design; continue independent work while unresolved choices block only their affected contracts.
+
+### Ownership and projection decisions from protocol research
+
+Minimal counterexamples and pinned sources are in [Generation contract boundaries](refs/2026-10-17-generation-contracts.md).
+
+| Question | Recommendation and exit condition |
+|---|---|
+| Required opaque continuation versus optional reasoning history | Add explicit purpose/requirement and actual part/call ownership; reject incompatible required continuation instead of blanket foreign stripping. Select the optional-history policy before changing existing failover projections |
+| Complete citations and source identity | Select licence/quote/request-source owners and output point anchors, including the changed OpenAI file-citation index contract. Then independently cover request, output, streaming and returned history; retain rejection until represented |
+| Scoped accounting | Preserve modality/cache/tool breakdowns and step versus operation observations with explicit inclusion relations. Current selected totals are not complete usage fidelity. Prove snapshot replacement and non-double-counting independently |
+| Execution controls and reports | Select bounded owners for geography, access programs, replay enforcement, safety/review details and Interactions reported service/continuation. Keep protected unsupported carriers rejected; do not add routing or continuation execution implicitly |
+| Interactions lifecycle snapshots | Compare supplied steps against streamed owners, including content/signatures/errors, or select snapshot-only materialization. Current rejection prevents contradiction loss but is not complete SSE support |
+| Messages model/product defaults | Move sampling omission and required output-cap insertion to explicit trusted target policy. Select a bounded default or require caller input; do not raise the cap automatically to a model maximum |
 
 | Question | Unresolved choice and recommendation | Blocks |
 |---|---|---|

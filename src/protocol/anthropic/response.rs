@@ -219,7 +219,7 @@ pub enum StopReason {
 }
 impl StopReason {
     /// `pause_turn` needs server tools, which no binding enables.
-    fn read(v: &Value) -> Result<Self, CodecError> {
+    pub(super) fn read(v: &Value) -> Result<Self, CodecError> {
         match v.as_str() {
             Some("end_turn") => Ok(Self::EndTurn),
             Some("tool_use") => Ok(Self::ToolUse),

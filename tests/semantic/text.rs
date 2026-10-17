@@ -40,6 +40,74 @@ mod text_profile {
     }
 
     #[test]
+    fn audit_protected_response_details_and_access_policy_are_not_ignored() {
+        use morphiecore::protocol::{
+            CodecError,
+            openai::{Adapter, Dialect},
+        };
+        let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+        let mut body = json!({"id":"r","object":"response","created_at":1,"model":"m",
+            "status":"failed","output":[],"error":{"code":"misalignment_policy_violation","message":"blocked"}});
+        assert_eq!(
+            adapter
+                .decode_response(body.to_string().as_bytes())
+                .unwrap()
+                .semantic
+                .outcome(),
+            Outcome::Failed
+        );
+        for details in [
+            json!({"error_type":"potentially_unintended_data_access","steer":{"message":"Use approved data only"}}),
+            json!(7),
+        ] {
+            body["error"]["misalignment"] = details;
+            assert!(
+                matches!(adapter.decode_response(body.to_string().as_bytes()),
+                Err(CodecError::Unsupported(field)) if field == "Responses misalignment details")
+            );
+        }
+        let body = json!({"model":"m","input":"go","access_programs":{"cyber":"standard"}});
+        assert!(
+            matches!(adapter.decode_client_request(body.to_string().as_bytes()),
+            Err(CodecError::Unsupported(field)) if field == "Responses access_programs")
+        );
+        let mut reported = wire::response(2);
+        reported["access_programs"] = json!({"cyber":"standard"});
+        assert!(
+            matches!(adapter.decode_response(reported.to_string().as_bytes()),
+            Err(CodecError::Unsupported(field)) if field == "Responses access_programs")
+        );
+        for late in [false, true] {
+            let mut values = wire::events(2);
+            let index = if late { values.len() - 1 } else { 0 };
+            values[index]["response"]["access_programs"] = json!({"cyber":"standard"});
+            let mut decoder = EventDecoder::new(Profile::Responses);
+            let mut rejected = false;
+            for value in &values {
+                match decoder.push(value) {
+                    Ok(events) => assert!(
+                        !events
+                            .iter()
+                            .any(|e| matches!(e, StreamEvent::Terminal { .. }))
+                    ),
+                    Err(CodecError::Unsupported(field)) if field == "Responses access_programs" => {
+                        rejected = true;
+                        break;
+                    }
+                    Err(error) => panic!("wrong rejection: {error}"),
+                }
+            }
+            assert!(rejected);
+        }
+        let body = json!({"model":"m","input":"go","unregistered_future_field":true});
+        assert!(
+            adapter
+                .decode_client_request(body.to_string().as_bytes())
+                .is_ok()
+        );
+    }
+
+    #[test]
     fn response_format_shells_map_to_one_owner_with_independent_shapes() {
         let closed = json!({"type":"object","properties":{"zeta":{"type":"string"}},"required":["zeta"],"additionalProperties":false});
         let full = OutputConstraint::JsonSchema {

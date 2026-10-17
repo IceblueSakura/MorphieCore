@@ -40,6 +40,44 @@ mod tools {
             Profile::Responses => responses::encode_generation(&t).unwrap(),
         }
     }
+    #[test]
+    fn audit_non_strict_defaults_use_exact_explicit_false_on_responses() {
+        let source = json!({"messages":[{"role":"user","content":"go"}],
+            "tools":[{"type":"function","function":{"name":"lookup","parameters":{
+                "type":"object","properties":{"key":{"type":"string"}}}}}]});
+        let decoded = chat::decode_generation(&source).unwrap();
+        assert!(
+            matches!(&decoded.semantic.tools()[0], ToolDefinition::Function(t)
+            if t.strict == FunctionStrictness::Omitted(StrictDefault::NonStrict))
+        );
+        let before = decoded.semantic.clone();
+        assert_eq!(
+            request_wire(&decoded, Profile::Responses)["tools"],
+            json!([{
+                "type":"function","name":"lookup","strict":false,
+                "parameters":{"type":"object","properties":{"key":{"type":"string"}}}
+            }])
+        );
+        assert_eq!(decoded.semantic, before);
+        assert_eq!(
+            request_wire(&decoded, Profile::Chat)["tools"],
+            source["tools"]
+        );
+        let normalized = responses::decode_generation(&json!({"input":"go","tools":[{
+            "type":"function","name":"lookup",
+            "parameters":{"type":"object","properties":{"key":{"type":"string"}}}
+        }]}))
+        .unwrap();
+        assert!(matches!(
+            lower_request(
+                &normalized.semantic,
+                &normalized.fidelity,
+                Profile::Chat,
+                Contract::full()
+            ),
+            Err(RepresentationError::StrictDefault)
+        ));
+    }
     fn expected_responses_history() -> Value {
         json!({"input":[
         {"type":"message","role":"user","content":[{"type":"input_text","text":"weather?"}]},

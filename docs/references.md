@@ -21,7 +21,7 @@ The SDK loopback gate uses the versions locked in `tests/sdk/uv.lock`, independe
 
 ## Protocol docs
 
-Protocol research notes with dated findings live in `refs/`: [Multimodal carriers](refs/multimodal.md), [Generation projection contracts](refs/2026-10-15-generation-projections.md) and [Chat custom tools](refs/2026-10-16-chat-custom-tools.md).
+Protocol research notes with dated findings live in `refs/`: [Multimodal carriers](refs/multimodal.md), [Generation projection contracts](refs/2026-10-15-generation-projections.md), [Chat custom tools](refs/2026-10-16-chat-custom-tools.md) and [Generation contract boundaries](refs/2026-10-17-generation-contracts.md). The latter pins supplemental SDK/reference-test sources and distinguishes newly observed semantics from the earlier baseline.
 
 ### OpenAI
 

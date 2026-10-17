@@ -10,9 +10,18 @@ pub(in crate::protocol::openai) fn read(
 ) -> Result<Resource, CodecError> {
     let image = match profile {
         Profile::Responses => {
+            if part.get("file_id").is_some_and(|v| !v.is_null()) {
+                return Err(CodecError::Unsupported("Responses file_id".into()));
+            }
             direction.fields(
                 part,
-                &["type", "image_url", "detail", "prompt_cache_breakpoint"],
+                &[
+                    "type",
+                    "image_url",
+                    "file_id",
+                    "detail",
+                    "prompt_cache_breakpoint",
+                ],
             )?;
             part
         }

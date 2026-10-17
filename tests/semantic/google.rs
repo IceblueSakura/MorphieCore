@@ -72,6 +72,63 @@ fn signature(item: &Item) -> Value {
 }
 
 #[test]
+fn audit_explicit_signed_part_boundaries_survive_intake_and_replay() {
+    let observed = decode(&wire(&[
+        json!({"responseId":"parts","modelVersion":"gemini-synthetic",
+        "candidates":[{"content":{"role":"model","parts":[
+            {"text":"A"},{"text":"B","thoughtSignature":"U0lH"}]},"finishReason":"STOP"}]}),
+    ]))
+    .unwrap();
+    let texts: Vec<_> = observed
+        .semantic
+        .items()
+        .iter()
+        .filter_map(|(_, item)| match item {
+            Item::Message(m) => Some(
+                m.parts
+                    .iter()
+                    .filter_map(|p| match &p.content {
+                        ContentPart::Text(t) => Some(t.as_str()),
+                        _ => None,
+                    })
+                    .collect::<String>(),
+            ),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(texts, ["A", "B"]);
+    let history = GenerationRequest::new(
+        observed.semantic.items().to_vec(),
+        GenerationControls::default(),
+    )
+    .unwrap()
+    .with_message_envelopes(observed.semantic.message_envelopes().to_vec())
+    .unwrap();
+    let (body, _) =
+        encode_generation_request(&history, &observed.fidelity, &target(), None).unwrap();
+    assert_eq!(
+        body["contents"][0]["parts"],
+        json!([
+            {"text":"A"},{"text":"B","thoughtSignature":"U0lH"}
+        ])
+    );
+}
+
+#[test]
+fn audit_citation_reports_are_not_successfully_erased() {
+    let mut value = json!({"responseId":"cited","modelVersion":"gemini-synthetic",
+        "candidates":[{"content":{"role":"model","parts":[{"text":"A"}]},"finishReason":"STOP"}]});
+    assert!(decode(&wire(&[value.clone()])).is_ok());
+    value["candidates"][0]["citationMetadata"] = json!({"citationSources":[{
+        "startIndex":0,"endIndex":1,"uri":"https://example.test/source","license":"MIT"}]});
+    assert!(
+        decode(&wire(&[value]))
+            .unwrap_err()
+            .contains("Gemini citationMetadata")
+    );
+}
+
+#[test]
 fn stream_maps_thoughts_text_calls_and_anchored_signatures() {
     let empty = decode(&wire(&[json!({
         "responseId":"empty","modelVersion":"gemini-synthetic",
