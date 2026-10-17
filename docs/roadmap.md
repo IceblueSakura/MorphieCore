@@ -4,7 +4,9 @@ This page owns direction and current scope. Code and tests define behavior; [Arc
 
 ## Current focus
 
-Use the selected [stable routing baseline](architecture.md#failover) for subsequent integration. Provider-specific reset dialects, persistence and cooldown tuning need separate evidence; no background probes, balancing or multi-round retries are scheduled.
+**Routing status: functional implementation phase complete; integration and real-client/Provider acceptance pending.** Use the selected [stable routing baseline](architecture.md#failover) for subsequent integration. Feature development is closed for this phase; only necessary maintenance and evidence-backed acceptance fixes belong to the baseline. Offline and synthetic SDK checks do not constitute real acceptance.
+
+The remaining [routing acceptance](#routing-acceptance--pending) does not reopen feature scope. Provider-specific reset dialects, persistence and cooldown tuning need separate evidence and approval; no background probes, balancing or multi-round retries are scheduled.
 
 Improve coverage of the locally completed selected Generation IR/codec scope, and prepare the P7 boundary review. Provider dialects remain codec concerns. Realtime and standalone tasks do not need complete integration for this phase. Each behavior slice must state its goal and exit condition before code changes.
 
@@ -183,10 +185,20 @@ IR completeness does not mean every upstream can carry every modality. Protocol-
 ## Planned order
 
 2. **Coverage improvement.** Strengthen existing codec-only assertions and safety boundaries after selected first-stage local completion. Preserve the explicit integration handoff and deferred concepts; deferred cache and tool slices do not block this stage.
-3. **Integration acceptance.** Reconnect selected exact carriers against the stable routing contract, then already-approved adaptations. Provider and full-client acceptance remain separately scheduled, not implied by offline recovery checks.
+3. **Integration acceptance — pending.** Reconnect selected exact carriers against the phase-complete routing contract, then already-approved adaptations. Perform the routing acceptance below; Provider and full-client acceptance are not implied by offline recovery checks.
 4. **Other agent acceptance.** Codex, Claude Code and other agents follow failover. Their priority is undecided, lowest for now.
 
 The [P7 boundary review](#p7-boundary-review) becomes eligible after first-stage local completion, without waiting for the deferred cache and tool slices, and is required before route-facing acceptance. Codec-only coverage can proceed independently; deferred acceptance runs remain separate.
+
+### Routing acceptance — pending
+
+Select a small set of admitted bindings and exact client carriers before running acceptance. Preserve unresolved protocol-conversion boundaries rather than weakening admission to make a loop pass.
+
+- Verify pi/opencode conversation identity, tool-result/final-answer loops and continued exact-credential affinity on the selected client protocols.
+- Use controlled synthetic failures to verify client-visible failover, affinity migration, all-cooling responses, `Retry-After`, cancellation and post-publication termination. Count client retries separately from gateway attempts so combined retry amplification remains visible.
+- Use separately bounded real Provider checks to verify applicable failure scopes and reported cache usage. Missing cache usage is unknown, not a miss; offline recovery tests do not establish cache savings or production recovery behavior.
+
+Exit condition: the selected full client loops and recovery scenarios have explicit results, the offline and connected SDK gates remain green, and unverified bindings/protocols remain identified. Follow [real-client and Provider procedures](development.md); this pending stage authorizes no deployment or new routing features by itself.
 
 ### P7 boundary review
 
