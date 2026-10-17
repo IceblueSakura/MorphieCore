@@ -180,6 +180,16 @@ Required output evidence is established by explicit request controls, the source
 
 Chat omits incidental settings echoes because its response has no settings carrier. Responses omits unsupported independent reasoning-control echoes while retaining representable settings. Strict-complete delivery rejects either loss. These rules never drop generated reasoning, probabilities, citations or continuation values. Messages rejects unsupported probabilities and citations; its retained usage uses the same explicit cache/total view as delivery.
 
+#### Public capability and adaptation notice
+
+P7 selects a small authenticated read-only capability snapshot and a conservative HTTP response-header notice of possible adaptation. This is a selected contract, not an implemented endpoint or an activated binding. Actual per-exchange loss receipts remain in internal diagnostics; no public receipt store, custom SSE events or response-body extensions are selected.
+
+Publish by public model and distinguish request acceptance, downstream delivery and history replay, including JSON/SSE limits. Describe faithful support, approved adaptation with stable rule IDs, and rejection. Reuse typed contracts and policies; do not serialize admission booleans or union candidate capabilities. Reveal no credentials, deployment origins or internal candidate identities. Keep `/v1/models` as model discovery rather than overloading its standard fields.
+
+The notice means possible adaptation, not applied loss or proof of Provider-effective settings. Its absence does not certify an exact full loop, and clients may not display it. Late stream reports make response headers unsuitable as complete actual-loss receipts. Do not buffer a complete stream to collect receipts, rely on trailers, add per-request loss-policy overrides or change routing. Neither a notice nor a receipt authorizes dropping completion causes, safety reports or other protected facts.
+
+The [P7 boundary review](roadmap.md#p7-boundary-review) owns implementation and reconnection sequencing. Exact endpoint/header names, binding evidence and selected client loops must be specified before their implementation slice.
+
 ### Configurable exchange capture
 
 P6 selects configurable full business-message capture for this internal gateway, not just field summaries. Keep independent header/body controls for four boundaries: inbound client request, outbound upstream request, inbound upstream response and outbound client response. Body capture includes JSON, streamed application content, tool arguments/results and non-authentication opaque payloads when enabled. Capture is not a source of replay or semantic restoration.
@@ -607,6 +617,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Target-effective sampling | P4 preserves supported controls and permits named omission only for declared fixed/ignored behavior; unknown effectiveness is not permission to discard a control |
 | Required and incidental output evidence | P5 preserves required output facts and allows selected incidental-report loss after validation; request intent never fabricates upstream reports |
 | Configurable internal exchange capture | P6 permits opt-in business headers/bodies at all four I/O boundaries with separate controls, finite retention and best-effort writes. Credentials are always redacted; no switch permits credential-bearing logs |
+| Public capability and adaptation notice | P7 selects an authenticated capability snapshot distinguishing faithful support, approved adaptation and rejection, plus a conservative possible-adaptation HTTP notice. Actual receipts remain internal; standard response bodies and SSE stay unchanged. Implementation and reconnection remain separately scheduled |
 | Summary granularity and visibility | P8 permits approximate summary granularity while preserving show/hide intent. Do not enable reasoning, fabricate summaries or expose hidden content |
 | Role and instruction approximation | P8 permits named developer/system/user mappings on target copies. A trusted Chat instruction-role selector uses developer for supported targets or system for compatibility fallback, before encoding and without error-triggered retry; existing ordered history stays ordered |
 | Target-local media detail | P8 prefers exact image/file detail carriers. Omission needs proven target-default equivalence; other approximations need evidence-backed named directional rules. No blanket media-option omission or inferred auto/absence equivalence |

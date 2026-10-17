@@ -12,7 +12,7 @@ Track semantic expression, codec representation and enabled bindings separately.
 
 Chat Completions, Responses and Messages are equally important downstream contracts. Assess static delivery, streaming and history replay for all three. Google generateContent and Interactions currently supply upstream request encoding and SSE intake, not Google client endpoints or static intake. This migration does not expand that direction set.
 
-Follow the [IR and codec contract](#ir-and-codec-migration) and preserve its [integration boundary](#integration-handoff). The selected [support queue](#support-queue-after-projection-repair) has no remaining feature slices. The [architecture contract](architecture.md#accurate-ir-and-declared-loss) is selected; deferred public-surface and reconnection decisions stay in [Pending decisions](#pending-decisions).
+Follow the [IR and codec contract](#ir-and-codec-migration) and preserve its [integration boundary](#integration-handoff). The selected [support queue](#support-queue-after-projection-repair) has no remaining feature slices. The [architecture contract](architecture.md#accurate-ir-and-declared-loss) and [public capability/notice contract](architecture.md#public-capability-and-adaptation-notice) are selected; remaining reconnection choices stay in [Pending decisions](#pending-decisions).
 
 For this migration, update existing tests and independent wire expectations only; do not add test functions, suites or variant matrices. Preserve safety assertions. Record uncovered contracts rather than claiming coverage from compilation or a round trip.
 
@@ -203,26 +203,14 @@ The review must:
 
 Exit condition: a selected boundary design and an explicit implementation/reconnection schedule. The review itself neither changes routes nor promises that an unrepresentable protocol conversion will become supported. Routing-rule changes remain in the third stage unless separately rescheduled; full-chain coverage remains blocked where its required boundary is unresolved.
 
-#### Public capability and notice proposal
+#### Public capability and reconnection sequence
 
-This proposal is not selected or implemented. The client-notice choice is whether callers need a complete receipt of actual per-exchange losses, or whether public capability declarations and a conservative possible-adaptation notice suffice.
+The [selected contract](architecture.md#public-capability-and-adaptation-notice) uses a capability snapshot and possible-adaptation notice, with actual receipts internal. Neither surface is implemented yet. An acceptance boolean cannot distinguish exact verbosity support from the approved `gemini.omit-verbosity.v1` omission; streamed usage may introduce losses after headers. Keep both limitations explicit.
 
-An acceptance boolean cannot distinguish exact verbosity support from the approved `gemini.omit-verbosity.v1` omission. A response header cannot be a complete actual-loss receipt either: streamed usage details may arrive after headers and trigger an approved delivery omission. Neither a notice nor a receipt authorizes dropping completion causes, safety reports or other protected facts.
-
-| Option | Client contract | Trade-off |
-|---|---|---|
-| Documentation only | Document faithful support, approved adaptation and rejection; keep actual receipts internal | No wire changes, but no machine-readable discovery tied to activated configuration |
-| Capability snapshot and possible-adaptation notice (recommended) | A small authenticated read-only capability view plus an explicitly conservative HTTP response-header notice; actual receipts stay in diagnostics | Preserve standard response bodies and SSE; notices may overstate actual adaptation and clients may not display them |
-| Capability snapshot and actual-loss receipts | Also provide a selected JSON/SSE extension or separate receipt retrieval contract | Stronger per-exchange visibility, but needs late-report, partial-failure and receipt-lifetime contracts before implementation |
-
-For the recommended option, publish by public model and distinguish request acceptance, delivery and history replay, including JSON/SSE limits. Describe faithful support, approved adaptation with stable rule IDs, and rejection without exposing credentials, deployment origins or internal candidate identities. Reuse typed contracts and policies; do not serialize the current admission booleans or union candidate capabilities. Keep `/v1/models` as model discovery rather than overloading its standard fields.
-
-The notice means possible adaptation, not applied loss or proof of Provider-effective settings. Its absence does not certify an exact full loop. Do not buffer a complete stream to collect receipts, rely on trailers, add per-request loss-policy overrides or change routing. Exact endpoint/header names remain part of a separately selected implementation slice.
-
-After selection, schedule reconnection in this order:
+Schedule implementation and reconnection in this order:
 
 1. Establish model-level evidence and preflight/preparation agreement for each selected existing binding; reject uncalibrated values and stop at interfaces that require routing-policy changes.
-2. Implement the selected capability/notice surface without activating new bindings or widening admission implicitly.
+2. Specify endpoint/header names and implement the selected capability/notice surface without activating new bindings or widening admission implicitly.
 3. Reconnect selected exact-carrier client loops first, then already-approved adapted paths. Verify tool calls, returned results, final answers and replay for JSON and SSE. Incompatible completion/safety carriers remain blocked; neither wider admission nor a notice resolves them.
 4. Require the full offline baseline and connected SDK gate for each implementation slice, then separately schedule bounded pi/opencode and Provider acceptance. Keep routing-rule changes in the third stage.
 
@@ -290,7 +278,7 @@ P1/P2/P4/P5/P6, P3's six-budget quantization, P3b's rejection of over-ceiling bu
 
 | Question | Unresolved choice and recommendation | Blocks |
 |---|---|---|
-| P7 follow-up: Public surface and reconnection | Select the [capability and notice proposal](#public-capability-and-notice-proposal): prefer a small capability snapshot and conservative possible-adaptation notice, with actual receipts internal, over a new per-exchange receipt contract. The proposal and reconnection order remain unselected; no false native support claim or per-request policy override is selected | Later route-facing publication and full-chain acceptance, not the current migration |
+| P7 follow-up: Binding activation and reconnection | The public capability/notice contract is selected. Complete model-level evidence and preflight/preparation checks, then specify selected bindings and client loops under the [reconnection sequence](#public-capability-and-reconnection-sequence). Do not reinterpret unsupported completion/safety carriers or reopen P8 policies | Later binding activation and full-chain acceptance, not the current codec-only coverage work |
 | Deferred native cache-only prewarming | Priority and scheduling are undecided. Select the operation and result contract when reopening the [slice](#deferred-cache-prewarming); client replay warming remains separate | Native cache-only implementation only, not native cache resource references, first-stage completion, coverage improvement or the P7 boundary review |
 | Deferred tool discovery and native `web_search` | Priority, scheduling and implementation designs are undecided. Select the affected IR and execution/replay contracts when reopening each [slice](#deferred-tool-discovery-and-web-search) | Implementation of those slices only, not first-stage completion, coverage improvement or the P7 boundary review |
 
