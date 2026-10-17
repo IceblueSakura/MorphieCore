@@ -112,10 +112,6 @@ impl GenerationRequirements {
             match i {
                 Item::Instruction(_) => {
                     x.instruction_count += 1;
-                    for resource in i.resource_uses() {
-                        x.resource_count += 1;
-                        x.input(resource, r);
-                    }
                 }
                 Item::Message(m) => {
                     // An empty assistant message only groups calls; it adds no content.

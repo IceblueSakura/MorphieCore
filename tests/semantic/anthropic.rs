@@ -653,10 +653,10 @@ mod anthropic_semantics {
                         parts: vec![
                             Part {
                                 id: PartId::new(1),
-                                content: InputPart::Text(text("stable")),
+                                content: text("stable"),
                                 cache: Some(PrefixCacheTtl::OneHour),
                             },
-                            Part::new(PartId::new(2), InputPart::Text(text("changing"))),
+                            Part::new(PartId::new(2), text("changing")),
                         ],
                     }),
                 ),
@@ -1002,11 +1002,7 @@ mod anthropic_semantics {
         };
         assert_eq!(i.authority, InstructionAuthority::System);
         assert_eq!(
-            i.texts()
-                .unwrap()
-                .into_iter()
-                .map(|(_, t)| t)
-                .collect::<Vec<_>>(),
+            i.texts().map(|(_, t)| t).collect::<Vec<_>>(),
             ["one", "two"]
         );
         let encoded = p
@@ -1356,19 +1352,18 @@ mod anthropic_media {
         let video =
             decode(json!([{"type":"video_url","video_url":{"url":"data:video/mp4;base64,AQID"}}]));
         assert!(endpoint.encode_request_with_rules(&video).is_err());
-        let mut instruction = Adapter::new(Client::Responses, Dialect::Standard, None)
-            .decode_client_request(
-                json!({"model":"m","input":[
+        assert_eq!(
+            Adapter::new(Client::Responses, Dialect::Standard, None)
+                .decode_client_request(
+                    json!({"model":"m","input":[
                     {"role":"developer","content":[{"type":"input_image","image_url":"data:image/png;base64,AQID"}]},
                     {"role":"user","content":"Describe."}]})
-                .to_string()
-                .as_bytes(),
-            )
-            .unwrap();
-        instruction.conversation = Some(
-            morphiecore::semantic::context::ConversationContext::conversation("synthetic").unwrap(),
+                    .to_string()
+                    .as_bytes(),
+                )
+                .unwrap_err(),
+            morphiecore::protocol::CodecError::Unsupported("instruction content".into())
         );
-        assert!(endpoint.encode_request_with_rules(&instruction).is_err());
         // `downsize` is the default; `error` survives only on a Messages target.
         let messages = |oversized: &str| {
             let raw = json!({"model":"m","max_tokens":8,"messages":[{"role":"user","content":[

@@ -180,7 +180,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                         .map(|(i, s)| {
                             Ok(Part {
                                 id: PartId::scoped(scope, i as u64 + 1),
-                                content: InputPart::Text(text(&s.content)?),
+                                content: text(&s.content)?,
                                 cache: s.cache,
                             })
                         })

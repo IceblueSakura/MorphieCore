@@ -313,6 +313,8 @@ Both forms work at ingress. Repeated headers or both forms together are rejected
 
 Use `"stream": true` for SSE. Send the full history each turn, or use [stored Responses](#stored-responses). Chat Completions and Messages remain full-history APIs.
 
+Instructions are plain text only: request-wide instructions, Messages `system`, and Chat/Responses system or developer messages cannot contain images, audio, video or files. Media-bearing instructions reject at decoding rather than being dropped or moved to a user message. The same restriction applies to reported instruction echoes from an upstream.
+
 Return reasoning carriers unchanged in later history. Chat clients must preserve `reasoning_details`, not just readable text. See [Reasoning replay](architecture.md#reasoning-replay).
 
 For custom-capable targets, Chat JSON uses `{"type":"custom","custom":{"name":"sql","format":{"type":"text"}}}` definitions and `{"type":"custom","custom":{"name":"sql"}}` choices. Calls retain raw `custom.input`; return their ID through an ordinary `role:"tool"` message. Preserve the preceding typed call in history so the result cannot be mistaken for a function result. Grammar definitions use the nested carrier described in [protocol sources](refs/2026-10-16-chat-custom-tools.md).

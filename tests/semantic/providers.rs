@@ -1748,7 +1748,7 @@ mod chat_wire {
             .decode_request(wire.to_string().as_bytes())
             .unwrap();
         assert!(
-            matches!(&request.task.semantic.items()[0].1, Item::Instruction(i) if i.parts.len()==2 && i.parts[1].content.as_text()==Some("second"))
+            matches!(&request.task.semantic.items()[0].1, Item::Instruction(i) if i.parts.len()==2 && i.parts[1].content.as_str()=="second")
         );
         assert!(
             matches!(&request.task.semantic.items()[1].1, Item::Message(m) if m.parts.len()==2 && matches!(&m.parts[1].content, ContentPart::Text(t) if t.as_str()=="beta"))

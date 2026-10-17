@@ -146,6 +146,13 @@ mod text_profile {
 
     #[test]
     fn instruction_status_is_checked_in_history_and_reported_echoes() {
+        let mut response = wire::response(2);
+        response["instructions"] = json!([{"role":"system","content":[
+            {"type":"input_image","image_url":"https://example.test/image.png"}]}]);
+        assert_eq!(
+            envelope::decode_response(&response).unwrap_err(),
+            morphiecore::protocol::CodecError::Unsupported("instruction content".into())
+        );
         for role in ["system", "developer"] {
             for status in [
                 None,

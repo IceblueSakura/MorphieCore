@@ -435,11 +435,17 @@ fn media_become_v1_content_and_video_has_no_carrier() {
         encode_generation_request(&video.task.semantic, &video.task.fidelity, &target).is_err()
     );
     // System instructions are text, and other targets may downsize an oversized image.
-    let instruction = decode(
-        Profile::Responses,
-        json!({"model":"public","input":[
+    assert_eq!(
+        Adapter::new(Profile::Responses, Dialect::Standard, None)
+            .decode_request(
+                json!({"model":"public","input":[
             {"role":"developer","content":[{"type":"input_image","image_url":"data:image/png;base64,AQID"}]},
-            {"role":"user","content":"Describe."}]}),
+            {"role":"user","content":"Describe."}]})
+                    .to_string()
+                    .as_bytes()
+            )
+            .unwrap_err(),
+        morphiecore::protocol::CodecError::Unsupported("instruction content".into())
     );
     let strict = morphiecore::protocol::anthropic::client::decode_client_request(
         json!({"model":"public","max_tokens":8,"messages":[{"role":"user","content":[
@@ -449,12 +455,9 @@ fn media_become_v1_content_and_video_has_no_carrier() {
         .as_bytes(),
     )
     .unwrap();
-    for request in [instruction, strict] {
-        assert!(
-            encode_generation_request(&request.task.semantic, &request.task.fidelity, &target)
-                .is_err()
-        );
-    }
+    assert!(
+        encode_generation_request(&strict.task.semantic, &strict.task.fidelity, &target).is_err()
+    );
     for tool in [false, true] {
         let uri = "https://generativelanguage.googleapis.com/v1beta/files/synthetic";
         let input = if tool {

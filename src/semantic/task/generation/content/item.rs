@@ -6,7 +6,7 @@ pub enum InstructionAuthority {
     System,
     Developer,
 }
-/// Input-only content of instructions and tool results: text or an inert resource.
+/// Input-only content of tool results: text or an inert resource.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum InputPart {
     Text(Text),
@@ -23,17 +23,15 @@ impl InputPart {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Instruction {
     pub authority: InstructionAuthority,
-    pub parts: Vec<Part<InputPart>>,
+    pub parts: Vec<Part<Text>>,
     /// Non-complete lifecycle only. Omitted and explicit `completed` stay absent.
     pub status: Option<ItemLifecycle>,
 }
 impl Instruction {
-    /// The text parts, or `None` when a resource part needs a media carrier.
-    pub fn texts(&self) -> Option<Vec<(PartId, &str)>> {
+    pub fn texts(&self) -> impl Iterator<Item = (PartId, &str)> {
         self.parts
             .iter()
-            .map(|part| part.content.as_text().map(|t| (part.id, t)))
-            .collect()
+            .map(|part| (part.id, part.content.as_str()))
     }
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -130,14 +128,13 @@ impl Item {
             _ => None,
         }
     }
-    /// Resource uses of message, instruction and tool-result parts.
+    /// Resource uses of message and tool-result parts.
     pub fn resource_uses(&self) -> impl Iterator<Item = &ResourceUse> {
         let message: &[Part] = match self {
             Self::Message(m) => &m.parts,
             _ => &[],
         };
         let input: &[Part<InputPart>] = match self {
-            Self::Instruction(i) => &i.parts,
             Self::ToolResult(r) | Self::CustomResult(r) => match &r.output {
                 ToolOutput::Parts(parts) => parts,
                 _ => &[],

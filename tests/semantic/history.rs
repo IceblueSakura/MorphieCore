@@ -458,7 +458,7 @@ mod client_managed_composition {
                             authority: InstructionAuthority::Developer,
                             parts: vec![Part::new(
                                 PartId::new(10),
-                                InputPart::Text(text("observe; do not execute")),
+                                text("observe; do not execute"),
                             )],
                             status: None,
                         }),
@@ -654,10 +654,7 @@ mod context_transforms {
         let mut items = source.items().to_vec();
         items[0].1 = Item::Instruction(Instruction {
             authority: InstructionAuthority::Developer,
-            parts: vec![Part::new(
-                PartId::new(1),
-                InputPart::Text(text("protected")),
-            )],
+            parts: vec![Part::new(PartId::new(1), text("protected"))],
             status: None,
         });
         let protected = GenerationRequest::new(items, GenerationControls::default()).unwrap();

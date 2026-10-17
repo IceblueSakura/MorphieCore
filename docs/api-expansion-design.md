@@ -97,7 +97,7 @@ The existing [Generation request](../src/semantic/task/generation/request/mod.rs
 
 Keep these concepts in conversation semantics:
 
-- User, instruction and tool-result media, with their existing role and carrier restrictions.
+- Text-only instructions, plus user and tool-result media with their existing role and carrier restrictions. Media-bearing instructions remain rejected.
 - Conversational audio output and necessary returned-history references.
 - Compaction items consumed as ordered context.
 - Tool calls/results, citations, and reported Provider-tool observations.

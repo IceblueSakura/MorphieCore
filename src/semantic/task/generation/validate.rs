@@ -101,12 +101,7 @@ pub fn items(
                 for part in &i.parts {
                     part_id(&mut parts, part.id)?;
                     charge(&mut bytes, usize::from(part.cache.is_some()) * 32)?;
-                    input_part(
-                        &part.content,
-                        resources,
-                        &mut bytes,
-                        &mut file_decoded_bytes,
-                    )?;
+                    add(&mut bytes, part.content.as_str())?;
                 }
                 if i.parts.is_empty() {
                     return Err(GenerationError::EmptyMessage);

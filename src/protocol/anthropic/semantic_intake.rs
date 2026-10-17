@@ -226,9 +226,7 @@ pub(super) fn validate_cache(request: &GenerationRequest) -> Result<(), CodecErr
         match item {
             Item::Instruction(i) => {
                 for part in &i.parts {
-                    if let InputPart::Text(text) = &part.content
-                        && !text_cache_eligible(text.as_str(), part.cache)?
-                    {
+                    if !text_cache_eligible(part.content.as_str(), part.cache)? {
                         continue;
                     }
                     markers.extend(part.cache);

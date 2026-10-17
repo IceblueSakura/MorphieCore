@@ -253,6 +253,7 @@ pub enum CacheMissReason {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ResponseContext {
     pub settings: Option<super::task::generation::GenerationSettings>,
+    /// Reported text-only instructions; no independent resource table is needed.
     pub instruction_messages: Option<
         Vec<(
             super::task::generation::ItemId,

@@ -126,7 +126,6 @@ impl ResourceTable {
                 }
             }
             let parts = match item {
-                Item::Instruction(value) => Some(value.parts.as_slice()),
                 Item::ToolResult(value) | Item::CustomResult(value) => match &value.output {
                     ToolOutput::Parts(parts) => Some(parts.as_slice()),
                     _ => None,

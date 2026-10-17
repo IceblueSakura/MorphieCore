@@ -22,11 +22,11 @@ Before human approval, preserve existing tests and independent wire expectations
 
 Defer successful integration scenarios whose completion conversion or binding-admission contract is not selected. Remove those scenarios rather than invent a conversion or replace success with an expected gateway error. Keep identity, replay isolation, strict parsing, cancellation, transport bounds and honest-terminal assertions. Orthogonal fixtures should use exact supported carriers. Rebuild the selected integration coverage after IR/codec contracts stabilize, during the coverage stage.
 
-Next, resolve the reported-instruction resource-ownership defect below, reconcile design documentation with implemented codec boundaries, and prepare a reviewable contract map. Exit condition: selected design defects are resolved, remaining choices and integration limits are explicit, and the human reviewer can inspect their implementation owners. Keep default admission, HTTP schemas and routing unchanged. P7 analysis may proceed in parallel, but neither an agent audit nor its selected public capability contract substitutes for human approval.
+Next, request human review of the selected Generation IR/codec design using the contract map below. The selected text-only instruction correction is implemented; incompatible carriers and integration limits remain explicit. Exit condition: address review feedback and obtain explicit human approval before coverage work. Keep default admission, HTTP schemas and routing unchanged. P7 analysis may proceed in parallel, but neither an agent audit nor its selected public capability contract substitutes for human approval.
 
 ### Generation design review gate
 
-**Status: design closure in progress; human review and approval pending.** Comprehensive coverage work has not started. The review covers the selected Generation scope, not every official API feature or a green full-client loop.
+**Status: awaiting human design review; approval pending.** Comprehensive coverage work has not started. The review covers the selected Generation scope, not every official API feature or a green full-client loop.
 
 | Review area | Contract and implementation entry points | Question for closure |
 |---|---|---|
@@ -38,17 +38,6 @@ Next, resolve the reported-instruction resource-ownership defect below, reconcil
 | Public and integration boundary | [Integration handoff](#integration-handoff), [capability contract](architecture.md#public-capability-and-adaptation-notice), [topology compilation](../src/topology/compile.rs) | Is codec representation distinguished from default admission, model evidence and accepted client loops? |
 
 Review readiness is not approval. After design closure, request human review; address requested changes and wait for explicit approval before strengthening coverage. If review exposes another design defect, keep coverage blocked until its correction is reviewed. Existing regression, safety and publication gates remain in force throughout.
-
-#### Reported instruction resource ownership
-
-Minimal counterexample: a Responses response reports `instructions` containing a system message with an `input_image` URL. [Envelope decoding](../src/protocol/openai/responses/envelope.rs) constructs instruction resource uses but retains only the item list and fidelity, not its resource declarations. [ResponseContext](../src/semantic/context.rs) then validates that list as a request with an empty resource table; encoding also supplies an empty table. Text-only echoes do not expose the missing owner.
-
-Preserving and validating the reported source before any approved omission is already selected. The structural choice is pending:
-
-- **Recommended: a self-contained typed reported-instruction owner**, holding the ordered instruction items and their resource declarations. Validate and compare that owner before normalization/omission; encoding resolves its local resources. Keep it separate from output resources and from a new execution request.
-- **Alternative: response-wide shared resources**, remapping instruction and output references into one table and carrying that table through metadata/snapshot validation. This requires a broader response/metadata lifecycle change.
-
-Do not fix this by dropping the echo, inlining wire JSON into the IR or bypassing resource validation. Repeated snapshots must compare declared resource values as well as items, not just locally allocated IDs. Bound retained instruction resources and preserve their protocol fidelity. Exit condition: select the owner, implement its decode/validation/comparison/encode path, and include the result in human review; comprehensive coverage still waits for approval.
 
 ### Temporary routing freeze
 
@@ -316,7 +305,6 @@ P1/P2/P4/P5/P6, P3's six-budget quantization, P3b's rejection of over-ceiling bu
 
 | Question | Unresolved choice and recommendation | Blocks |
 |---|---|---|
-| Reported instruction resource ownership | Select a self-contained typed instruction/resource owner (recommended) or response-wide shared resources; see the [counterexample and alternatives](#reported-instruction-resource-ownership). Preserve source validation and repeated-report agreement | Design closure for media-bearing instruction echoes and readiness for human review |
 | P7 follow-up: Binding activation and reconnection | The public capability/notice contract is selected. Complete model-level evidence and preflight/preparation checks, then specify selected bindings and client loops under the [reconnection sequence](#public-capability-and-reconnection-sequence). Do not reinterpret unsupported completion/safety carriers or reopen P8 policies | Later binding activation and full-chain acceptance, not the current codec-only coverage work |
 | Deferred native cache-only prewarming | Priority and scheduling are undecided. Select the operation and result contract when reopening the [slice](#deferred-cache-prewarming); client replay warming remains separate | Native cache-only implementation only, not native cache resource references, first-stage completion, coverage improvement or the P7 boundary review |
 | Deferred tool discovery and native `web_search` | Priority, scheduling and implementation designs are undecided. Select the affected IR and execution/replay contracts when reopening each [slice](#deferred-tool-discovery-and-web-search) | Implementation of those slices only, not first-stage completion, coverage improvement or the P7 boundary review |

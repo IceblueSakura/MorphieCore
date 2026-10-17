@@ -112,13 +112,11 @@ pub(super) fn project(
         system = Presence::Value(WireText::Blocks(
             i.parts
                 .iter()
-                .map(|p| {
-                    Ok(super::CacheMarked {
-                        content: p.content.as_text().ok_or_else(unsupported)?.into(),
-                        cache: p.cache,
-                    })
+                .map(|p| super::CacheMarked {
+                    content: p.content.as_str().into(),
+                    cache: p.cache,
                 })
-                .collect::<Result<_, CodecError>>()?,
+                .collect(),
         ));
     }
     let tools = if s.tools.is_some() {

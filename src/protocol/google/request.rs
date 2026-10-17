@@ -117,13 +117,7 @@ pub(super) fn project(
         if i.authority == InstructionAuthority::Developer {
             rules.insert(RequestRule::DeveloperAsSystem);
         }
-        system = Some(
-            i.texts()
-                .ok_or_else(unsupported)?
-                .into_iter()
-                .map(|(_, t)| t.to_owned())
-                .collect(),
-        );
+        system = Some(i.texts().map(|(_, t)| t.to_owned()).collect());
     }
     if let Some(parts) = system {
         body.insert(

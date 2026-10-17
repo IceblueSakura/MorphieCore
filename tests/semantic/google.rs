@@ -1172,12 +1172,18 @@ fn tool_media_ride_inline_in_the_function_response() {
 }
 
 #[test]
-fn instruction_media_and_strict_image_sizes_have_no_gemini_carrier() {
-    let instruction = client(
-        Profile::Responses,
-        json!({"model":"gemini","input":[
+fn instruction_media_rejects_before_target_and_image_sizes_remain_strict() {
+    assert_eq!(
+        Adapter::new(Profile::Responses, Dialect::Standard, None)
+            .decode_request(
+                json!({"model":"gemini","input":[
             {"role":"developer","content":[{"type":"input_image","image_url":"data:image/png;base64,AQID"}]},
-            {"role":"user","content":"Describe."}]}),
+            {"role":"user","content":"Describe."}]})
+                    .to_string()
+                    .as_bytes()
+            )
+            .unwrap_err(),
+        morphiecore::protocol::CodecError::Unsupported("instruction content".into())
     );
     let messages = |oversized: &str| {
         let raw = json!({"model":"gemini","max_tokens":8,"messages":[{"role":"user","content":[
@@ -1186,11 +1192,7 @@ fn instruction_media_and_strict_image_sizes_have_no_gemini_carrier() {
         morphiecore::protocol::anthropic::client::decode_client_request(raw.to_string().as_bytes())
             .unwrap()
     };
-    for (request, ok) in [
-        (instruction, false),
-        (messages("downsize"), true),
-        (messages("error"), false),
-    ] {
+    for (request, ok) in [(messages("downsize"), true), (messages("error"), false)] {
         let result = encode_generation_request(
             &request.task.semantic,
             &request.task.fidelity,

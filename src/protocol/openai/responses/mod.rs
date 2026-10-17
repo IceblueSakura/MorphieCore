@@ -173,7 +173,7 @@ fn output(b: &mut Items, v: &Value) -> Result<ToolOutput, CodecError> {
     let a = v.as_array().ok_or(CodecError::Invalid("tool output"))?;
     Ok(ToolOutput::Parts(input_parts(b, a)?))
 }
-/// Text, image and file input content shared by tool results and instructions.
+/// Text and media input content of tool results.
 fn input_parts(b: &mut Items, a: &[Value]) -> Result<Vec<Part<InputPart>>, CodecError> {
     let direction = b.direction;
     if a.len() > MAX_ITEMS {
@@ -480,7 +480,25 @@ pub(super) fn decode_items(
                     let instruction_status = status(o, ItemLifecycle::Completed)?;
                     let instruction_status = (instruction_status != ItemLifecycle::Completed)
                         .then_some(instruction_status);
-                    let parts = input_parts(b, &values)?;
+                    let mut parts = Vec::with_capacity(values.len());
+                    for value in &values {
+                        let part = object(value)?;
+                        if string(part, "type")? != "input_text" {
+                            return Err(CodecError::Unsupported("instruction content".into()));
+                        }
+                        direction.fields(part, &["type", "text", "prompt_cache_breakpoint"])?;
+                        let id = b.part_id()?;
+                        record_input_form(b, id, part)?;
+                        parts.push(Part::new(
+                            id,
+                            Text::allowing_empty(
+                                string(part, "text")?,
+                                "instruction",
+                                MAX_TEXT_BYTES,
+                            )
+                            .map_err(|_| CodecError::Limit)?,
+                        ));
+                    }
                     Item::Instruction(Instruction {
                         authority: if role == "system" {
                             InstructionAuthority::System
@@ -697,7 +715,18 @@ pub(super) fn encode_items(
     for (id, item) in items {
         let mut v = match item {
             Item::Instruction(i) => {
-                let mut v = json!({"role":match i.authority{InstructionAuthority::System=>"system",InstructionAuthority::Developer=>"developer"},"content":if let [Part {id, content:InputPart::Text(t), ..}]=i.parts.as_slice() && !fidelity.cache_breakpoint(*id){json!(t.as_str())}else{input_wire(&i.parts,fidelity,resources)}});
+                let content = if let [part] = i.parts.as_slice()
+                    && !fidelity.cache_breakpoint(part.id)
+                {
+                    json!(part.content.as_str())
+                } else {
+                    json!(
+                        i.texts()
+                            .map(|(id, text)| input_part(id, text, fidelity))
+                            .collect::<Vec<_>>()
+                    )
+                };
+                let mut v = json!({"role":match i.authority{InstructionAuthority::System=>"system",InstructionAuthority::Developer=>"developer"},"content":content});
                 if let Some(status) = i.status {
                     v["type"] = json!("message");
                     v["status"] = json!(status_label(status));

@@ -49,8 +49,8 @@ impl EventContext {
     fn account_context(&self) -> Option<usize> {
         let metadata = &self.metadata;
         let context = &metadata.context;
-        // Instruction trees may retain complete input resources. They remain valid,
-        // but bypass this small delivery buffer rather than receive a second budget.
+        // Large instruction trees bypass this small delivery buffer rather than
+        // receive a second budget.
         if context
             .instruction_messages
             .as_ref()

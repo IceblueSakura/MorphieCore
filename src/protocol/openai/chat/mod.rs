@@ -376,14 +376,12 @@ pub(super) fn decode_message(
             )? {
                 parts.push(Part::new(
                     b.part_id()?,
-                    InputPart::Text(
-                        crate::semantic::value::Text::allowing_empty(
-                            text,
-                            "instruction",
-                            MAX_TEXT_BYTES,
-                        )
-                        .map_err(|_| CodecError::Limit)?,
-                    ),
+                    crate::semantic::value::Text::allowing_empty(
+                        text,
+                        "instruction",
+                        MAX_TEXT_BYTES,
+                    )
+                    .map_err(|_| CodecError::Limit)?,
                 ));
             }
             b.items.push((
@@ -712,13 +710,11 @@ pub(super) fn encode_items_with(
             }
             Item::Instruction(i) => {
                 standalone_calls = false;
-                let texts = i.texts().expect("lowering rejects Chat instruction media");
-                let content = if let [(_, t)] = texts.as_slice() {
-                    json!(t)
+                let content = if let [part] = i.parts.as_slice() {
+                    json!(part.content.as_str())
                 } else {
                     json!(
-                        texts
-                            .iter()
+                        i.texts()
                             .map(|(_, t)| json!({"type":"text","text":t}))
                             .collect::<Vec<_>>()
                     )
