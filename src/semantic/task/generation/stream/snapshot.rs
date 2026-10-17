@@ -187,7 +187,7 @@ pub fn materialize(state: &StreamState) -> Result<GenerationResponse, EventError
     .with_message_envelopes(state.message_envelopes.clone())?
     .with_progress(state.progress)?
     .with_details(state.details.clone())?;
-    response = response.with_usage(state.usage)?;
+    response = response.with_usage_reports(state.usage.clone())?;
     response = response.with_safety_reports(state.safety_reports.clone())?;
     Ok(response)
 }

@@ -1,4 +1,161 @@
 //! Usage facts, views, scopes and named projections.
+mod scoped_reports {
+    use morphiecore::semantic::task::generation::*;
+
+    fn report(scope: UsageScope, stage: UsageStage, tokens: u64) -> UsageReport {
+        let mut report = UsageReport::operation(Usage::operation(tokens, 0, tokens));
+        report.scope = scope;
+        report.stage = stage;
+        report
+    }
+
+    #[test]
+    fn scoped_snapshots_replace_without_summing_and_edits_preserve_them() {
+        let mut reports = UsageReports::default();
+        reports
+            .replace(report(UsageScope::Operation, UsageStage::Checkpoint, 100))
+            .unwrap();
+        let bytes = reports.bytes();
+        reports
+            .replace(report(UsageScope::Step(0), UsageStage::Final, 100))
+            .unwrap();
+        reports
+            .replace(report(UsageScope::Operation, UsageStage::Checkpoint, 220))
+            .unwrap();
+        reports
+            .replace(report(UsageScope::Step(1), UsageStage::Final, 120))
+            .unwrap();
+        assert_eq!(reports.bytes(), bytes * 3);
+        reports
+            .replace(report(UsageScope::Operation, UsageStage::Final, 220))
+            .unwrap();
+        assert_eq!(reports.summary().unwrap().total_tokens, Some(220));
+        assert_eq!(
+            reports
+                .reports()
+                .map(|r| (r.scope, r.counts.total_tokens))
+                .collect::<Vec<_>>(),
+            [
+                (UsageScope::Operation, Some(220)),
+                (UsageScope::Step(0), Some(100)),
+                (UsageScope::Step(1), Some(120))
+            ]
+        );
+        let before = reports.clone();
+        assert!(
+            reports
+                .replace(report(UsageScope::Step(0), UsageStage::Checkpoint, 999))
+                .is_err()
+        );
+        assert_eq!(reports, before);
+        let response = GenerationResponse::new(vec![], Outcome::Completed)
+            .unwrap()
+            .with_usage_reports(reports.clone())
+            .unwrap()
+            .with_items(vec![])
+            .unwrap();
+        assert_eq!(response.usage_reports(), &reports);
+        let steps_only = {
+            let mut reports = UsageReports::default();
+            reports
+                .replace(report(UsageScope::Step(0), UsageStage::Final, 100))
+                .unwrap();
+            reports
+        };
+        assert!(steps_only.summary().is_none());
+    }
+
+    #[test]
+    fn details_have_bounded_unique_owners_and_sparse_breakdowns_are_not_totals() {
+        let mut report = report(UsageScope::Operation, UsageStage::Final, 100);
+        report.details.modalities = vec![ModalityTokens {
+            bucket: UsageBucket::Input,
+            modality: Some(TokenModality::Image),
+            tokens: Some(60),
+            defaulted: false,
+        }];
+        report.validate().unwrap();
+        assert_eq!(report.summary().input_tokens, Some(100));
+        let mut duplicate = report.clone();
+        duplicate
+            .details
+            .modalities
+            .push(duplicate.details.modalities[0]);
+        assert!(duplicate.validate().is_err());
+        report.details.modalities[0].tokens = Some(101);
+        assert!(report.validate().is_err());
+        report.details.modalities[0].tokens = Some(60);
+        report.details.modalities[0].defaulted = true;
+        assert!(report.validate().is_err());
+        report.details.modalities.clear();
+        report.counts.input_cache_write_tokens = Some(13);
+        report.details.cache_writes = vec![
+            CacheWriteTokens {
+                ttl: PrefixCacheTtl::FiveMinutes,
+                tokens: 8,
+            },
+            CacheWriteTokens {
+                ttl: PrefixCacheTtl::OneHour,
+                tokens: 5,
+            },
+        ];
+        report.details.tool_requests = vec![ToolUseCount {
+            kind: ToolUsageKind::WebSearch,
+            count: Some(2),
+        }];
+        report.validate().unwrap();
+        assert_eq!(report.summary().total_tokens, Some(100));
+        report.details.cache_writes[1].tokens = 4;
+        assert!(report.validate().is_err());
+    }
+
+    #[test]
+    fn stream_reports_cannot_update_a_final_scope_or_follow_a_terminal() {
+        let state = reduce(StreamState::new(), StreamEvent::Started).unwrap();
+        let state = reduce(
+            state,
+            StreamEvent::UsageReport(report(UsageScope::Operation, UsageStage::Checkpoint, 10)),
+        )
+        .unwrap();
+        let state = reduce(
+            state,
+            StreamEvent::UsageReport(report(UsageScope::Operation, UsageStage::Final, 20)),
+        )
+        .unwrap();
+        assert!(
+            reduce(
+                state.clone(),
+                StreamEvent::UsageReport(report(UsageScope::Operation, UsageStage::Final, 30))
+            )
+            .is_err()
+        );
+        let state = reduce(
+            state,
+            StreamEvent::UsageReport(report(UsageScope::Step(0), UsageStage::Final, 20)),
+        )
+        .unwrap();
+        let state = reduce(
+            state,
+            StreamEvent::Terminal {
+                terminal: StreamTerminal::Completed,
+                details: TerminalDetails::default(),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            materialize(&state).unwrap().usage().unwrap().total_tokens,
+            Some(20)
+        );
+        assert!(
+            reduce(
+                state,
+                StreamEvent::UsageReport(report(UsageScope::Step(1), UsageStage::Final, 20))
+            )
+            .is_err()
+        );
+    }
+}
+
 mod usage_views {
     //! Named subtraction views borrow reported facts and never add overlapping details.
     use morphiecore::semantic::task::generation::*;

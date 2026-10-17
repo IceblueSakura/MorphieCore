@@ -14,7 +14,7 @@ pub enum RequestRule {
     OmitVerbosity,
     Cache(crate::protocol::cache::CacheRule),
     SummarizeReasoning,
-    OmitForeignReplay,
+    TransferVisibleHistory,
     ReasoningAsText,
     DeveloperAsSystem,
     OmitSchemaName,
@@ -27,7 +27,7 @@ impl RequestRule {
             Self::OmitVerbosity => "interactions.omit-verbosity.v1",
             Self::Cache(rule) => rule.name(),
             Self::SummarizeReasoning => "interactions.summarize-reasoning.v1",
-            Self::OmitForeignReplay => "interactions.omit-foreign-replay.v1",
+            Self::TransferVisibleHistory => "interactions.transfer-visible-history.v1",
             Self::ReasoningAsText => "interactions.reasoning-as-text.v1",
             Self::DeveloperAsSystem => "interactions.developer-as-system.v1",
             Self::OmitSchemaName => "interactions.omit-schema-name.v1",
@@ -294,8 +294,6 @@ fn steps(
 ) -> Result<Value, CodecError> {
     let mut steps = vec![];
     for group in request.message_envelopes() {
-        let mut signed = vec![];
-        let start = steps.len();
         for id in group.members() {
             let item = &request
                 .items()
@@ -345,7 +343,7 @@ fn steps(
                         .filter(|v| v.format() == ReplayFormat::GoogleInteractionsV1Thought);
                     let Some(value) = own else {
                         if r.replay.is_some() {
-                            rules.insert(RequestRule::OmitForeignReplay);
+                            return Err(CodecError::Invalid("Interactions replay format"));
                         }
                         if !content.is_empty() {
                             rules.insert(RequestRule::ReasoningAsText);
@@ -359,21 +357,14 @@ fn steps(
                     let value = super::signature::Signed::decode(
                         value.replay_token().ok_or_else(unsupported)?,
                     )?;
-                    if let Some(call) = value.call {
-                        if !r.parts.is_empty() {
-                            return Err(CodecError::Invalid("Interactions signature owner"));
-                        }
-                        signed.push((call, value.signature.ok_or_else(unsupported)?));
-                    } else {
-                        let mut step = json!({"type":"thought"});
-                        if !content.is_empty() {
-                            step["summary"] = content.into();
-                        }
-                        if let Some(signature) = value.signature {
-                            step["signature"] = signature.into();
-                        }
-                        steps.push(step);
+                    let mut step = json!({"type":"thought"});
+                    if !content.is_empty() {
+                        step["summary"] = content.into();
                     }
+                    if let Some(signature) = value.signature {
+                        step["signature"] = signature.into();
+                    }
+                    steps.push(step);
                 }
                 Item::ToolCall(c) => {
                     if c.status != ItemLifecycle::Completed
@@ -451,16 +442,6 @@ fn steps(
                 }
                 _ => return Err(unsupported()),
             }
-        }
-        for (call, signature) in signed {
-            let step = steps[start..]
-                .iter_mut()
-                .find(|s| s["type"] == "function_call" && s["id"].as_str() == Some(call.as_str()))
-                .ok_or(CodecError::Invalid("Interactions signature without call"))?;
-            if step.get("signature").is_some() {
-                return Err(CodecError::Invalid("duplicate Interactions signature"));
-            }
-            step["signature"] = signature.into();
         }
     }
     Ok(steps.into())

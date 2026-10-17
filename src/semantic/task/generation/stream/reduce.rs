@@ -7,7 +7,10 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
         || state.progress != InteractionProgress::Unreported
             && !matches!(
                 event,
-                StreamEvent::Usage(_) | StreamEvent::SafetyReport(_) | StreamEvent::Terminal { .. }
+                StreamEvent::Usage(_)
+                    | StreamEvent::UsageReport(_)
+                    | StreamEvent::SafetyReport(_)
+                    | StreamEvent::Terminal { .. }
             )
     {
         return Err(EventError::Lifecycle);
@@ -577,11 +580,20 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
         StreamEvent::Usage(usage) => {
             usage.validate()?;
             // The report is final; a second one would contradict it.
-            if state.usage.is_some() {
+            if state.usage.operation().is_some() {
                 return Err(EventError::Lifecycle);
             }
-            state.charge(std::mem::size_of::<Usage>())?;
-            state.usage = Some(usage);
+            let report = UsageReport::operation(usage);
+            let before = state.usage.bytes();
+            state.usage.replace(report)?;
+            state.charge(state.usage.bytes() - before)?;
+        }
+        StreamEvent::UsageReport(report) => {
+            let before = state.usage.bytes();
+            state.usage.replace(report)?;
+            let after = state.usage.bytes();
+            state.bytes -= before;
+            state.charge(after)?;
         }
         StreamEvent::Terminal { terminal, details } => {
             if terminal == StreamTerminal::Completed

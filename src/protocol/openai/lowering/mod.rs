@@ -358,6 +358,17 @@ pub fn lower_response<'a>(
             Some(loss),
         ));
     }
+    if r.usage_reports().has_details() {
+        if c.reported_facts == ReportedFactPolicy::StrictComplete {
+            return Err(RepresentationError::ReportedFacts);
+        }
+        semantic = std::borrow::Cow::Owned(semantic.into_owned().with_usage(r.usage())?);
+        projection.push(projection::ProjectionStage::response(
+            profile,
+            c.adaptation.profile_id,
+            Some(projection::LossRule::UsageReportView),
+        ));
+    }
     if let Some(usage) = r.usage() {
         let (projected, losses) = match profile {
             Profile::Chat => (usage, vec![]),

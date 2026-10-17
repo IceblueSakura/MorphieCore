@@ -509,6 +509,9 @@ impl EventEncoder {
             StreamEvent::LogprobsSnapshot { .. }
             | StreamEvent::TextMetadata { .. }
             | StreamEvent::Usage(_) => vec![],
+            StreamEvent::UsageReport(_) => {
+                return Err(CodecError::Unsupported("scoped usage projection".into()));
+            }
             StreamEvent::SafetyReport(_) => {
                 return Err(CodecError::Unsupported("safety report".into()));
             }

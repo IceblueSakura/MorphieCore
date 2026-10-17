@@ -112,10 +112,7 @@ impl TargetCaps {
             )
         };
         let request = projected.as_ref();
-        // Native projection converts unsigned reasoning itself, inside the assistant turn.
-        let stripped = request
-            .without_foreign_replay(Some(&target.origin()), false)?
-            .map(|(copy, _)| copy);
+        let stripped = request.without_foreign_reasoning(Some(&target.origin()))?;
         let foreign = stripped.is_some();
         let request = stripped.as_ref().unwrap_or(request);
         self.check_context(request)?;
@@ -146,7 +143,7 @@ impl TargetCaps {
             projection.rules.push(RequestRule::ReasoningPolicy(rule));
         }
         if foreign {
-            projection.rules.push(RequestRule::OmitForeignReplay);
+            projection.rules.push(RequestRule::TransferVisibleHistory);
         }
         projection.rules.extend(
             self.cache

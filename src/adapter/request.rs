@@ -97,17 +97,16 @@ impl Request {
     }
 }
 impl Request {
-    /// Candidate-private copy without opaque reasoning issued for another target.
-    /// Reasoning items left with neither readable content nor replay are removed;
-    /// with `as_text` the readable rest becomes assistant text. The flag reports
-    /// that conversion. `None` means the request needs no change for this target.
-    pub(crate) fn without_foreign_replay(
+    /// Transfer visible history, not another model's internal reasoning state.
+    /// Only complete, demonstrably incompatible reasoning is omitted. Unattributed
+    /// readable reasoning is not inferred to be foreign. Required context remains.
+    pub(crate) fn without_foreign_reasoning(
         &self,
         target: Option<&crate::semantic::value::ReplayOrigin>,
-        as_text: bool,
-    ) -> Result<Option<(Request, bool)>, CodecError> {
-        use crate::semantic::task::generation::Item;
+    ) -> Result<Option<Request>, CodecError> {
+        use crate::semantic::task::generation::{Item, ItemLifecycle, MessageRole};
         let fidelity = &self.task.fidelity;
+        fidelity.check_target_replay(&self.task.semantic, target)?;
         // Compaction replaces context; losing a foreign value is not a safe projection.
         for (id, item) in self.task.semantic.items() {
             if let Item::Compaction(value) = item
@@ -132,40 +131,54 @@ impl Request {
         if foreign.is_empty() {
             return Ok(None);
         }
-        let stripped: Vec<_> = self
+        if self.task.semantic.items().iter().any(|(id, item)| {
+            foreign.contains(id)
+                && matches!(item, Item::Reasoning(r) if r.status != ItemLifecycle::Completed
+                    || r.replay.as_ref().is_some_and(|v| v.replay_token().is_none()))
+        }) {
+            return Err(CodecError::Unsupported("partial foreign reasoning".into()));
+        }
+        let mut copy = self.clone();
+        // Responses item IDs can be paired with discarded reasoning. Forget only
+        // call wire aliases in affected assistant runs; semantic call IDs and links
+        // stay unchanged. This also covers trailing Google signature carriers.
+        let assistant = |item: &Item| match item {
+            Item::Reasoning(_) | Item::ToolCall(_) | Item::CustomCall(_) => true,
+            Item::Message(message) => message.role == MessageRole::Assistant,
+            _ => false,
+        };
+        for run in self
             .task
             .semantic
             .items()
-            .iter()
-            .cloned()
-            .map(|(id, mut item)| {
-                if let Item::Reasoning(r) = &mut item
-                    && foreign.contains(&id)
-                {
-                    r.replay = None;
+            .chunk_by(|a, b| assistant(&a.1) && assistant(&b.1))
+        {
+            if run.iter().any(|(id, _)| foreign.contains(id)) {
+                if run.iter().any(|(id, item)| {
+                    !foreign.contains(id)
+                        && matches!(item, Item::Reasoning(reasoning) if reasoning.replay.is_some())
+                }) && run.iter().any(|(id, item)| {
+                    matches!(item, Item::ToolCall(_) | Item::CustomCall(_))
+                        && fidelity.response_item_id(*id).is_some()
+                }) {
+                    return Err(CodecError::Unsupported(
+                        "mixed replay call dependencies".into(),
+                    ));
                 }
-                (id, item)
-            })
-            .collect();
-        let readable = stripped.iter().any(|(id, item)| {
-            foreign.contains(id) && matches!(item, Item::Reasoning(r) if !r.parts.is_empty())
-        });
-        let without_empty: Vec<_> = stripped
-            .into_iter()
-            .filter(|(id, item)| {
-                !(foreign.contains(id) && matches!(item, Item::Reasoning(r) if r.parts.is_empty()))
-            })
-            .collect();
-        let mut semantic = self.task.semantic.clone().with_items(without_empty)?;
-        if as_text && readable {
-            semantic = semantic.with_reasoning_as_text(&foreign)?;
+                for (id, item) in run {
+                    if matches!(item, Item::ToolCall(_) | Item::CustomCall(_)) {
+                        copy.task.fidelity.remove_response_item_id(*id);
+                    }
+                }
+            }
         }
-        let mut copy = self.clone();
-        for id in &foreign {
-            copy.task.fidelity.remove_replay(*id);
-        }
+        let semantic = self
+            .task
+            .semantic
+            .clone()
+            .retain_items(|id, _| !foreign.contains(&id))?;
         copy.task.fidelity.retain_owners(semantic.items());
         copy.task.semantic = semantic;
-        Ok(Some((copy, as_text && readable)))
+        Ok(Some(copy))
     }
 }

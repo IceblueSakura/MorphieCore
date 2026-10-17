@@ -41,7 +41,7 @@ pub struct GenerationSseDecoder {
     open: Option<Open>,
     members: Vec<ItemId>,
     calls: Vec<String>,
-    usage: Option<Usage>,
+    usage: Option<UsageReport>,
     /// Call and tail signatures, emitted last: they bind by anchor, and trailing them
     /// keeps a message contiguous with its calls for every downstream carrier.
     signatures: Vec<Signed>,
@@ -77,20 +77,52 @@ fn counter(o: &Map<String, Value>, key: &'static str) -> Result<u64, SseError> {
         Some(_) => Err(invalid(key)),
     }
 }
-fn usage(v: &Value) -> Result<Usage, SseError> {
+fn usage(v: &Value) -> Result<UsageReport, SseError> {
     let o = object(v, "usageMetadata")?;
     let prompt = counter(o, "promptTokenCount")?;
     let tool_prompt = counter(o, "toolUsePromptTokenCount")?;
     let candidates = counter(o, "candidatesTokenCount")?;
     let thoughts = counter(o, "thoughtsTokenCount")?;
-    let overflow = || invalid("usageMetadata");
-    let input = prompt.checked_add(tool_prompt).ok_or_else(overflow)?;
-    let output = candidates.checked_add(thoughts).ok_or_else(overflow)?;
-    let mut usage = Usage::operation(input, output, counter(o, "totalTokenCount")?);
+    let mut usage = Usage::operation(prompt, candidates, counter(o, "totalTokenCount")?);
+    usage.output_relation = OutputTokenRelation::ExcludesReasoning;
+    usage.total_relation = TotalTokenRelation::Unreported;
     usage.reasoning_tokens = Some(thoughts);
     usage.cached_input_tokens = Some(counter(o, "cachedContentTokenCount")?);
-    usage.validate().map_err(CodecError::from)?;
-    Ok(usage)
+    let mut report = UsageReport::operation(usage);
+    report.accounting = UsageAccounting::SplitGeneration {
+        tool_input_tokens: Some(tool_prompt),
+        tool_input_relation: ToolInputRelation::Additional,
+        total_relation: SplitTotalRelation::InputToolOutputAndReasoning,
+    };
+    for (field, counter) in [
+        ("promptTokenCount", UsageCounter::Input),
+        ("toolUsePromptTokenCount", UsageCounter::ToolInput),
+        ("candidatesTokenCount", UsageCounter::Output),
+        ("thoughtsTokenCount", UsageCounter::Reasoning),
+        ("cachedContentTokenCount", UsageCounter::CacheRead),
+        ("totalTokenCount", UsageCounter::Total),
+    ] {
+        if !o.contains_key(field) {
+            report.details.defaulted.push(counter);
+        }
+    }
+    for (field, bucket) in [
+        ("promptTokensDetails", UsageBucket::Input),
+        ("toolUsePromptTokensDetails", UsageBucket::ToolInput),
+        ("candidatesTokensDetails", UsageBucket::Output),
+        ("cacheTokensDetails", UsageBucket::CacheRead),
+    ] {
+        if let Some(value) = o.get(field) {
+            report
+                .details
+                .modalities
+                .extend(crate::protocol::usage::modality_tokens(
+                    value, bucket, true,
+                )?);
+        }
+    }
+    report.validate().map_err(CodecError::from)?;
+    Ok(report)
 }
 /// Stops that end the turn honestly; the rest are failures of this attempt.
 fn finish_reason(reason: &str) -> Result<Option<IncompleteReason>, SseError> {
@@ -675,8 +707,8 @@ impl GenerationSseDecoder {
                 .map_err(CodecError::from)?
         };
         self.emit(StreamEvent::MessageEnvelope(envelope), out)?;
-        if let Some(usage) = self.usage {
-            self.emit(StreamEvent::Usage(usage), out)?;
+        if let Some(usage) = self.usage.take() {
+            self.emit(StreamEvent::UsageReport(usage), out)?;
         }
         let (terminal, progress) = match &incomplete {
             Some(_) => (StreamTerminal::Incomplete, InteractionProgress::Unreported),

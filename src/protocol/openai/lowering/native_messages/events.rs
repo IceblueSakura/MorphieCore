@@ -170,6 +170,22 @@ impl EventProjection {
                         };
                         *usage = projected;
                     }
+                    StreamEvent::UsageReport(report) => {
+                        report.validate()?;
+                        self.record(crate::protocol::usage::report_loss("event.encode"));
+                        if report.scope != UsageScope::Operation
+                            || report.stage != UsageStage::Final
+                        {
+                            continue;
+                        }
+                        let Some(source) = report.scalar_summary() else {
+                            continue;
+                        };
+                        let Some(usage) = super::client_usage(source)? else {
+                            continue;
+                        };
+                        event = StreamEvent::Usage(usage);
+                    }
                     StreamEvent::MessageEnvelope(envelope) => {
                         let members: Vec<_> = self
                             .message

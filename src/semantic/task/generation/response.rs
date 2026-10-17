@@ -1,6 +1,6 @@
 //! Completed or partial Generation output, independent of transport success.
 use crate::semantic::task::generation::{
-    GenerationError, Item, ItemId, ItemLifecycle, MAX_TEXT_BYTES, Usage,
+    GenerationError, Item, ItemId, ItemLifecycle, MAX_TEXT_BYTES, Usage, UsageReports,
 };
 use crate::semantic::value::Text;
 
@@ -98,7 +98,7 @@ pub struct GenerationResponse {
     envelopes: crate::semantic::task::generation::history::envelope::MessageEnvelopes,
     outcome: Outcome,
     progress: crate::semantic::task::generation::InteractionProgress,
-    usage: Option<Usage>,
+    usage: UsageReports,
     safety_reports: Vec<crate::semantic::task::generation::SafetyReport>,
     details: TerminalDetails,
 }
@@ -140,7 +140,7 @@ impl GenerationResponse {
             envelopes: Default::default(),
             outcome,
             progress: crate::semantic::task::generation::InteractionProgress::Unreported,
-            usage: None,
+            usage: UsageReports::default(),
             safety_reports: vec![],
             details: TerminalDetails::default(),
         })
@@ -156,10 +156,10 @@ impl GenerationResponse {
     pub const fn progress(&self) -> crate::semantic::task::generation::InteractionProgress {
         self.progress
     }
-    pub fn with_usage(mut self, usage: Option<Usage>) -> Result<Self, GenerationError> {
-        if let Some(usage) = usage {
-            usage.validate()?;
-        }
+    pub fn with_usage(self, usage: Option<Usage>) -> Result<Self, GenerationError> {
+        self.with_usage_reports(UsageReports::from_usage(usage)?)
+    }
+    pub fn with_usage_reports(mut self, usage: UsageReports) -> Result<Self, GenerationError> {
         self.usage = usage;
         let details = self.details.clone();
         self.with_details(details)
@@ -177,7 +177,7 @@ impl GenerationResponse {
         if bytes
             .saturating_add(details.bytes())
             .saturating_add(self.resources.uncharged_bytes(&self.items)?)
-            .saturating_add(usize::from(self.usage.is_some()) * std::mem::size_of::<Usage>())
+            .saturating_add(self.usage.bytes())
             .saturating_add(self.envelopes.validate(&self.items)?)
             .saturating_add(crate::semantic::task::generation::safety::reports_bytes(
                 &self.safety_reports,
@@ -222,7 +222,10 @@ impl GenerationResponse {
         self.outcome
     }
     pub fn usage(&self) -> Option<Usage> {
-        self.usage
+        self.usage.summary()
+    }
+    pub fn usage_reports(&self) -> &UsageReports {
+        &self.usage
     }
     pub fn resources(&self) -> &crate::semantic::task::generation::ResourceTable {
         &self.resources
@@ -256,7 +259,7 @@ impl GenerationResponse {
             &self.items,
             response.items(),
         )?;
-        response = response.with_usage(self.usage)?;
+        response = response.with_usage_reports(self.usage)?;
         response = response.with_safety_reports(self.safety_reports)?;
         Ok(response)
     }

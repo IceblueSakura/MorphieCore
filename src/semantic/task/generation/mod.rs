@@ -74,6 +74,11 @@ pub use tools::{
     ProgramOutput, StrictDefault, ToolArguments, ToolCall, ToolChoice, ToolDefinition,
     ToolDispatch, ToolKind, ToolNamespace, ToolReference,
 };
+pub use usage::reports::{
+    CacheWriteTokens, ModalityTokens, SplitTotalRelation, TokenModality, ToolInputRelation,
+    ToolUsageKind, ToolUseCount, UsageAccounting, UsageBucket, UsageCounter, UsageDetails,
+    UsageReport, UsageReports, UsageScope, UsageStage,
+};
 pub use usage::views::{DerivedTokenCount, UsageFormula};
 pub use usage::{InputTokenRelation, OutputTokenRelation, TotalTokenRelation, Usage};
 

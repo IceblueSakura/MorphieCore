@@ -6,6 +6,7 @@ pub const MAX_PROJECTION_STAGES: usize = 16;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LossRule {
+    UsageReportView,
     OmitReportedReasoningControls,
     OmitChatReportedSettings,
     OmitResponsesSystemFingerprint,
@@ -25,6 +26,7 @@ pub enum LossRule {
 impl LossRule {
     pub const fn name(self) -> &'static str {
         match self {
+            Self::UsageReportView => "generation.usage-report-view.v1",
             Self::OmitReportedReasoningControls => {
                 "responses.omit-incidental-reasoning-controls.v1"
             }
@@ -50,6 +52,7 @@ impl LossRule {
     }
     pub const fn owner(self) -> &'static str {
         match self {
+            Self::UsageReportView => "generation.usage.reports",
             Self::OmitReportedReasoningControls => "response.reported.reasoning",
             Self::OmitChatReportedSettings => "response.reported.settings",
             Self::OmitResponsesSystemFingerprint => "response.context.system_fingerprint",
@@ -75,6 +78,9 @@ impl LossRule {
     }
     pub const fn consequence(self) -> &'static str {
         match self {
+            Self::UsageReportView => {
+                "Only the representable operation accounting view is delivered; source buckets, scope and provenance stay in the original IR."
+            }
             Self::OmitReportedReasoningControls | Self::OmitChatReportedSettings => {
                 "Incidental settings echoes without a target carrier are omitted; content and required continuation are unchanged."
             }
@@ -112,6 +118,7 @@ impl std::str::FromStr for LossRule {
     type Err = RepresentationError;
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
+            "generation.usage-report-view.v1" => Ok(Self::UsageReportView),
             "responses.omit-incidental-reasoning-controls.v1" => {
                 Ok(Self::OmitReportedReasoningControls)
             }
@@ -239,6 +246,7 @@ impl ProjectionStage {
                 LossRule::CoarsenChatCompletionCause | LossRule::RecitationAsContentFilter => {
                     "approximate"
                 }
+                LossRule::UsageReportView => "project",
                 _ => "omit",
             },
         })

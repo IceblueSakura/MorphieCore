@@ -78,7 +78,10 @@ async fn answer(
                 body["input"][1],
                 json!({"type":"thought","summary":[{"type":"text","text":"Plan"}],"signature":"synthetic-thought"})
             );
-            assert!(body["input"].as_array().unwrap().iter().any(|i|i==&json!({"type":"function_call","id":"c1","name":"read","arguments":{},"signature":"synthetic-call"})));
+            assert!(
+                body["input"].as_array().unwrap().iter().any(|i| i
+                    == &json!({"type":"function_call","id":"c1","name":"read","arguments":{}}))
+            );
         }
         events.extend([
             json!({"event_type":"step.start","index":0,"step":{"type":"model_output"}}),
@@ -109,7 +112,7 @@ async fn answer(
             json!({"event_type":"step.delta","index":0,"delta":{"type":"thought_summary","content":{"type":"text","text":"Plan"}}}),
             json!({"event_type":"step.delta","index":0,"delta":{"type":"thought_signature","signature":"synthetic-thought"}}),
             json!({"event_type":"step.stop","index":0}),
-            json!({"event_type":"step.start","index":1,"step":{"type":"function_call","id":"c1","name":"read","signature":"synthetic-call","arguments":{}}}),
+            json!({"event_type":"step.start","index":1,"step":{"type":"function_call","id":"c1","name":"read","arguments":{}}}),
             json!({"event_type":"step.stop","index":1}),
         ]);
     }
@@ -197,8 +200,9 @@ async fn stateless_json_and_sse_replay_signatures_and_cancel_upstream() {
     assert_eq!(response.status(), 200);
     let response: Value = response.json().await.unwrap();
     assert!(response["id"].as_str().unwrap().starts_with("resp_"));
-    assert_eq!(response["usage"]["total_tokens"], 15);
-    assert!(!response.to_string().contains("synthetic-call"));
+    // The source total is retained, but its inclusion relation is not an OpenAI contract.
+    assert!(response["usage"].is_null());
+    assert!(!response.to_string().contains("synthetic-thought"));
     let mut next = request.clone();
     let input = next["input"].as_array_mut().unwrap();
     input.extend(response["output"].as_array().unwrap().clone());

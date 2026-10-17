@@ -26,9 +26,9 @@ pub enum RequestRule {
     /// Claude 5.x models reject non-default `temperature` and `top_p`.
     OmitSampling,
     ProjectCallIds,
-    /// Opaque reasoning issued for another target is dropped.
-    OmitForeignReplay,
-    /// Reasoning without this target's signature is sent as assistant text, as pi does.
+    /// Incompatible complete reasoning is omitted, retaining visible history.
+    TransferVisibleHistory,
+    /// Explicit opt-in for unattributed readable reasoning, not foreign-state transfer.
     ReasoningAsText,
     /// A leading developer instruction (pi, Codex) is the system prompt.
     DeveloperAsSystem,
@@ -46,7 +46,7 @@ impl RequestRule {
             Self::SummarizeReasoning => "messages.summarize-reasoning.v1",
             Self::OmitSampling => "messages.omit-sampling.v1",
             Self::ProjectCallIds => "messages.project-call-ids.v1",
-            Self::OmitForeignReplay => "messages.omit-foreign-replay.v1",
+            Self::TransferVisibleHistory => "messages.transfer-visible-history.v1",
             Self::ReasoningAsText => "messages.reasoning-as-text.v1",
             Self::DeveloperAsSystem => "messages.developer-as-system.v1",
             Self::OmitSchemaName => "messages.omit-schema-name.v1",

@@ -10,6 +10,7 @@ Sources checked on 2026-10-17. These are protocol findings and design inputs, no
 | [Anthropic Python](https://github.com/anthropics/anthropic-sdk-python/tree/bcd55fe1d3f0f1240765f8cef04295b67337f55a) | `bcd55fe1d3f0f1240765f8cef04295b67337f55a` (1.15.0) | MIT | Logical turns, nullable delta usage, inference geography and beta replay controls |
 | [Google Gen AI Python](https://github.com/googleapis/python-genai/tree/364889aafe40bfa8f3b9db847ba272d299f7d632) | `364889aafe40bfa8f3b9db847ba272d299f7d632` (2.31.0) | Apache-2.0 | Part signatures, citation metadata, Interactions lifecycle, step errors and usage |
 | [Vercel AI](https://github.com/vercel/ai/tree/fce9210c6405c0ad8452fee3f50717e8ea910b97) | `fce9210c6405c0ad8452fee3f50717e8ea910b97` | Apache-2.0 | Supplementary codec-test ideas: interleaved thinking, signatures, usage and execution controls |
+| [pi](https://github.com/earendil-works/pi/tree/8efd314fa3d3232ce197d8d7a6a5660530b9d83e) | `8efd314fa3d3232ce197d8d7a6a5660530b9d83e` | MIT | Actual cross-model history conversion, tool-turn regression and replay identity handling |
 
 Research checkouts live outside the repository under `/home/sakura/codespace/generation-codec-audit/`. No third-party test code or dataset is vendored. SDK shapes and official prose establish the contract; reference-library fixtures are not an oracle when they contradict required fields or arithmetic. These observations supplement, rather than silently replace, the baseline pins in [References](../references.md).
 
@@ -75,17 +76,42 @@ The SDK files under `google/genai/_gaos/types/interactions/` distinguish:
 
 A stream producing `"A"` followed by a lifecycle snapshot containing `"B"` is a concrete counterexample to ignoring lifecycle `steps`. A continuation-bearing incomplete result cannot be treated as ordinary truncation without retaining the token's purpose and scope.
 
-## Remaining accounting gap
+### Interactions signatures
 
-Google reports `promptTokensDetails`, `candidatesTokensDetails`, cached/tool-use modality details and tool-use totals. Interactions reports corresponding `*_tokens_by_modality` lists and optional step usage. Current intake retains selected operation totals but drops these breakdowns; this is an unresolved fidelity gap, not evidence that the reports were absent. Some text/image/audio counts have existing IR slots, while video, cache-by-modality, tool-use ownership and scoped reports do not.
+The [thinking guide](https://ai.google.dev/gemini-api/docs/thinking) distinguishes thought and built-in tool signatures from standard function calls. The pinned SDK's `functioncallstep.py` has no signature field; `thoughtstep.py` does. The codec preserves thought-owned signatures, rejects a signature on a standard function call, and does not mint a surrogate reasoning item for that nonexistent carrier. Built-in tool signatures remain deferred. A signature-only thought remains ordered thought content, not a movable part/call attachment.
 
-Recommendation: select a bounded typed usage breakdown with explicit measurement scope and inclusion relationships, then map observed facts independently. Keep absent counts unknown, distinguish source-reported zero/default from derived counts, and never mix step snapshots with cumulative operation snapshots. Delivery may omit specifically approved auxiliary details with receipts, but source intake should not erase facts first. Anthropic TTL cache breakdowns, server-tool usage and input transformations need the same ownership review.
+## Scoped accounting contract
+
+The IR retains one latest typed `UsageReport` per operation or response-local step, including sparse modality, cache-TTL and tool-request detail owners. Updates replace their own scope; steps never sum into the operation. Final seals observation updates rather than claiming exhaustive billing. Content edits preserve the reports, and the usual operation usage view is derived rather than independently stored.
+
+Let P = prompt input, U = tool-use prompt input, O = generated output excluding thoughts, R = thoughts, C = cached input:
+
+- [generateContent UsageMetadata](https://ai.google.dev/api/generate-content#UsageMetadata) and pinned SDK `types.py` explicitly give `total = P + U + O + R`, with C within P. Store P/U/O/R separately, derive inclusive input P+U and output O+R, and never add C twice.
+- Interactions `usage.py` describes `total_tokens` as prompt + responses + other internal tokens. The [function-calling reference example](https://ai.google.dev/api/interactions-api#CreateInteraction-function_calling) reports P=100, U=50, O=25, R=0, T=125, while supplementary reference fixtures use additive U. This does not establish one universal inclusion equation. Keep tool-input and total relationships unreported; do not choose a relation by arithmetic coincidence.
+- The [streaming guide](https://ai.google.dev/gemini-api/docs/streaming) distinguishes cumulative `step.stop.usage` from local `step_usage`. Opening/status updates and terminal usage are operation snapshots. A terminal without another usage value seals the latest observed operation snapshot without adding step counts.
+- Google modality lists belong separately to P, U, O and C. Interactions has corresponding `*_tokens_by_modality` fields. Missing categories do not establish zero or exhaustive coverage. Its `modalitytokens.py` permits missing/null category and count; retain unknowns. Google's omitted proto3 scalar zero retains explicit default provenance.
+- Grounding tool counts are requests, not token consumption; missing counts remain unknown. Duplicate categories and sums exceeding their own known parent reject, but sparse lists need not equal their parent.
+
+For P=100/U=30/O=20/R=7/C=40/T=157, generateContent yields a derived input of 130 and output of 27 while retaining every source bucket. The equivalent Interactions report preserves the numbers without claiming U's relation or rejecting T solely for not matching an assumed formula. O remains reported even when R is absent and an inclusive output cannot be derived.
+
+The named `generation.usage-report-view.v1` delivery projection preserves the source report and records loss of unrepresented detail/scope/provenance on the target copy. OpenAI's scalar usage requires its known inclusion relation; an Interactions exchange may consequently deliver no scalar usage. Static and streamed omission agree, including reports containing only auxiliary detail. No downstream custom usage event is introduced.
+
+Anthropic's [cache documentation](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) gives disjoint input/read/write categories and `cache_creation = five-minute + one-hour writes`; tool-request counts are separately priced observations. The IR has these detail owners, but their Anthropic codec mapping and input-transformation reports remain follow-up work, not completed support.
+
+## Selected visible-history transfer
+
+The user selected bounded visible-history transfer after reviewing [pi's actual transformer](https://github.com/earendil-works/pi/blob/8efd314fa3d3232ce197d8d7a6a5660530b9d83e/packages/ai/src/api/transform-messages.ts) and its [tool-turn test](https://github.com/earendil-works/pi/blob/8efd314fa3d3232ce197d8d7a6a5660530b9d83e/packages/ai/test/transform-messages-cross-model-thinking.test.ts). pi drops all foreign thinking rather than presenting it as assistant speech; it keeps ordinary content and call/results, and removes model-bound signatures. A local synthetic probe confirmed this behavior and source immutability without Provider calls.
+
+MorphieCore follows that transfer direction, not pi's synthetic orphan results, image placeholders or generic removal of failed assistant output. Compatible replay retains dependency checks. Incompatible reasoning must have both a completed owner and final opaque value before omission; the transfer can happen before a final assistant answer. Required compacted/cached input remains protected. Unattributed readable reasoning is not assumed foreign. Native cross-format omission occurs before grouping so an omitted reasoning-only turn does not leave a fabricated empty message.
+
+[Responses item-ID handling](https://github.com/earendil-works/pi/blob/8efd314fa3d3232ce197d8d7a6a5660530b9d83e/packages/ai/src/api/openai-responses-shared.ts#L313-L322) also matters: wire call-item IDs may be paired with removed reasoning. The target copy forgets those aliases in affected assistant runs without changing semantic call IDs or actual results. Damaged or missing compatible replay cannot be hidden by another owner's foreign omission.
+
+This policy supersedes the earlier recommendation to reject all active-tool-turn transfer by default. Native API replay requirements do not themselves forbid a different model receiving a visible transcript; transfer is an explicit loss of internal state, not equivalent continuation. Actual generateContent part/call replay slots still need a coordinated client-carrier migration.
 
 ## Loss-policy decisions still needed
 
 | Current rule | Counterexample | Recommendation |
 |---|---|---|
-| Drop all foreign opaque reasoning, deleting empty owners | An opaque-only continuation belongs to an unfinished tool turn; `reasoning_as_text: false` still allows its removal | Separate opaque purpose, actual content/call owner and required replay from readable reasoning. Keep target isolation; reject incompatible required continuation. Optional-history omission needs its own justified rule |
 | Messages profile always omits sampling | A sampling-capable model uses the same protocol profile | Keep official sampling carriers in codecs; select fixed/ignored sampling only through evidenced target policy. Current registered binding does not prove the protocol-wide assumption |
 | Absent output ceiling becomes `32000` | Target supports a larger cap, but a different client's product default limits the request | Make the mandatory inserted cap an explicit trusted target/product default, or require caller input. Do not automatically raise it to the model maximum |
 | File citation index retains older ordinal meaning | Updated official reference calls it an output insertion position | Select the protocol revision and a point anchor; do not reuse a list ordinal |
@@ -103,7 +129,7 @@ Keep the inspected protections for normalization-default tools, no automatic thi
 | Generated media | Existing Chat audio owner and lifecycle tests | General generated image/audio/video needs a selected contract |
 | Content evidence | Text-owned probabilities/citations; static and SSE tests | Citation licence, request-source associations and newer point anchors remain gaps |
 | Safety and completion | Ordered safety reports; separate outcome/progress/cause; terminal tests | Current downstream safety-report rejection still blocks ordinary full-loop delivery |
-| Usage | Typed totals, relations and selected subsets; usage/SSE tests | Complete modality, cache/tool and step-scoped reporting is not implemented |
+| Usage | Typed source-scoped reports, declared derivations, Google/Interactions modality and step intake; usage/SSE tests | Anthropic TTL/server-tool codec mapping and additional downstream detail carriers remain incomplete |
 | Execution policy | Separate service intent/report and cache ownership | Geography, access programs, replay enforcement and several returned execution reports lack complete owners |
 
 This map does not claim all official semantics are represented or all protocol pairs are usable. Offline codec checks, synthetic SDK loops, live Provider behavior and public binding admission remain separate evidence.

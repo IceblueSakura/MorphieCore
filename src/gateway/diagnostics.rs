@@ -652,6 +652,12 @@ impl Trace {
             if let StreamEvent::Usage(usage) = event {
                 self.reported_usage(*usage);
             }
+            if let StreamEvent::UsageReport(report) = event
+                && report.scope == crate::semantic::task::generation::UsageScope::Operation
+            {
+                // Only source-reported detail flags; derived inclusive totals are not reports.
+                self.reported_usage(report.counts);
+            }
             let counts = &mut self.record.events;
             match event {
                 StreamEvent::ItemStarted { kind, .. } => {

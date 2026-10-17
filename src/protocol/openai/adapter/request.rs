@@ -236,30 +236,18 @@ impl Adapter {
             .replay_origin
             .as_ref()
             .or(self.adaptation.scope.as_ref());
-        // Another target's readable reasoning travels as assistant text: a reasoning
-        // item would keep the issuer's ID, which a stateless upstream may reject.
-        let stripped = request.without_foreign_replay(issuer, true)?;
+        let stripped = request.without_foreign_reasoning(issuer)?;
         let mut rules = vec![];
         let mut controls = vec![];
-        if let Some((_, converted)) = &stripped {
+        if stripped.is_some() {
             let chat = self.protocol == Profile::Chat;
             rules.push(if chat {
-                "chat.omit-foreign-replay.v1"
+                "chat.transfer-visible-history.v1"
             } else {
-                "responses.omit-foreign-replay.v1"
+                "responses.transfer-visible-history.v1"
             });
-            if *converted {
-                if !contract.reasoning_as_text {
-                    return Err(CodecError::Unsupported("reasoning as text disabled".into()).into());
-                }
-                rules.push(if chat {
-                    "chat.reasoning-as-text.v1"
-                } else {
-                    "responses.reasoning-as-text.v1"
-                });
-            }
         }
-        let request = stripped.as_ref().map_or(request, |(copy, _)| copy);
+        let request = stripped.as_ref().unwrap_or(request);
         if self.adaptation.reasoning_policy.is_some() && self.adaptation.effort_mapping.is_some() {
             return Err(CodecError::Invalid("overlapping reasoning policies").into());
         }

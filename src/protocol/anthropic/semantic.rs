@@ -229,14 +229,24 @@ impl Profile {
         target: &ReplayTarget,
         policy: &Presence<crate::semantic::context::ServicePolicy>,
     ) -> Result<NativeProjection, CodecError> {
-        request.validate()?;
-        fidelity.require_reasoning_replay(request, &target.origin())?;
-        let mut normalized = vec![];
-        let mut omitted = vec![];
-        let mut rules = Default::default();
-        let mut wire = project(
+        let (request, fidelity, transferred) = crate::protocol::native::native_reasoning_history(
             request,
             fidelity,
+            target,
+            &[
+                ReplayFormat::AnthropicMessagesThinking,
+                ReplayFormat::AnthropicMessagesRedactedThinking,
+            ],
+        )?;
+        let mut normalized = vec![];
+        let mut omitted = vec![];
+        let mut rules = std::collections::BTreeSet::new();
+        if transferred {
+            rules.insert(RequestRule::TransferVisibleHistory);
+        }
+        let mut wire = project(
+            &request,
+            &fidelity,
             target,
             &mut normalized,
             &mut omitted,
@@ -259,6 +269,9 @@ impl Profile {
         target: &ReplayTarget,
     ) -> Result<Value, CodecError> {
         response.metadata.validate()?;
+        if response.semantic.usage_reports().has_details() {
+            return Err(unsupported());
+        }
         let mut context = response.metadata.context.clone();
         let service_class = std::mem::take(&mut context.service_class);
         if response.metadata.model != target.model()

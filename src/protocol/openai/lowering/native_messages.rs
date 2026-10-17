@@ -36,9 +36,15 @@ fn usage_loss(
 }
 
 fn client_usage(usage: Usage) -> Result<Option<Usage>, CodecError> {
-    // Gemini already reports cache-inclusive input and its own total.
+    usage.validate()?;
+    // An uncalibrated total relation cannot become OpenAI's exact sum contract.
     if usage.input_relation == InputTokenRelation::IncludesCache {
-        return Ok(Some(usage));
+        return Ok((usage.total_relation == TotalTokenRelation::InputAndOutput
+            && usage.output_relation == OutputTokenRelation::IncludesReasoning
+            && usage.input_tokens.is_some()
+            && usage.output_tokens.is_some()
+            && usage.total_tokens.is_some())
+        .then_some(usage));
     }
     let derived = usage.derive(UsageFormula::InputPlusCacheReadAndWrite)?;
     Ok(
@@ -61,14 +67,14 @@ fn client_usage(usage: Usage) -> Result<Option<Usage>, CodecError> {
 pub(super) fn anchored(item: &ReasoningItem) -> bool {
     item.parts.is_empty()
         && item.replay.as_ref().is_some_and(|value| {
-            let format = match crate::protocol::replay_envelope::open(value.as_str()) {
-                Some((_, sealed, _)) => sealed,
-                None => value.format(),
+            let attached = |format, payload: &str| {
+                format == ReplayFormat::GoogleGenerateContentPart
+                    && crate::protocol::google::attached_signature(payload)
             };
-            matches!(
-                format,
-                ReplayFormat::GoogleGenerateContentPart | ReplayFormat::GoogleInteractionsV1Thought
-            )
+            match crate::protocol::replay_envelope::open(value.as_str()) {
+                Some((_, format, payload)) => attached(format, payload.as_str()),
+                None => attached(value.format(), value.as_str()),
+            }
         })
 }
 
@@ -182,6 +188,9 @@ pub(crate) fn project(
         )?])?;
     }
     let mut losses = vec![];
+    if source.usage_reports().has_details() {
+        losses.push(crate::protocol::usage::report_loss("response.encode"));
+    }
     if source.message_envelopes() != projected.message_envelopes() {
         losses.push(envelope_loss(profile, "response.encode"));
     }
@@ -201,12 +210,94 @@ mod tests {
     use crate::protocol::{anthropic, replay_envelope};
     const BODY: &[u8] = br#"{"id":"native","type":"message","role":"assistant","model":"model","content":[{"type":"thinking","thinking":"plan","signature":"synthetic-signature"},{"type":"tool_use","id":"c","name":"lookup","input":{"n":9007199254740993.125}}],"stop_reason":"tool_use","usage":{"input_tokens":11,"cache_read_input_tokens":3,"cache_creation_input_tokens":2,"output_tokens":7}}"#;
 
+    #[test]
+    fn only_external_attachments_are_movable_reasoning_carriers() {
+        for (format, payload, expected) in [
+            (
+                ReplayFormat::GoogleGenerateContentPart,
+                r#"{"anchor":"call","call":"c","signature":"sig"}"#,
+                true,
+            ),
+            (
+                ReplayFormat::GoogleGenerateContentPart,
+                r#"{"anchor":"thought","signature":"sig"}"#,
+                false,
+            ),
+            (
+                ReplayFormat::GoogleInteractionsV1Thought,
+                r#"{"anchor":"thought","signature":"sig"}"#,
+                false,
+            ),
+        ] {
+            let item = ReasoningItem {
+                parts: vec![],
+                status: ItemLifecycle::Completed,
+                replay: Some(ReplayValue::final_value(
+                    format,
+                    crate::semantic::value::Text::new(payload, "synthetic", 1024).unwrap(),
+                )),
+            };
+            assert_eq!(anchored(&item), expected);
+        }
+    }
+
     fn fixture() -> DecodedResponse {
         let profile = anthropic::Profile::AdaptiveTextTools;
         let target = crate::protocol::native::ReplayTarget::new("provider", "model").unwrap();
         profile
             .decode_generation_response(BODY, LocalScope::new(3), &target)
             .unwrap()
+    }
+    #[test]
+    fn reports_without_scalar_views_have_equal_static_and_event_omission() {
+        for input in [Some(10), None] {
+            let mut counts = Usage::operation(0, 0, 0);
+            counts.input_tokens = input;
+            counts.output_tokens = None;
+            counts.total_tokens = None;
+            counts.output_relation = OutputTokenRelation::ExcludesReasoning;
+            counts.total_relation = TotalTokenRelation::Unreported;
+            let mut report = UsageReport::operation(counts);
+            report.accounting = UsageAccounting::SplitGeneration {
+                tool_input_tokens: None,
+                tool_input_relation: ToolInputRelation::Unreported,
+                total_relation: SplitTotalRelation::Unreported,
+            };
+            if input.is_none() {
+                report.details.tool_requests.push(ToolUseCount {
+                    kind: ToolUsageKind::WebSearch,
+                    count: Some(2),
+                });
+            }
+            report.validate().unwrap();
+            let mut reports = UsageReports::default();
+            reports.replace(report.clone()).unwrap();
+            let mut source = fixture();
+            source.semantic = source.semantic.with_usage_reports(reports).unwrap();
+            let before = source.clone();
+            let mut projected = source.clone();
+            let losses = project(&mut projected, Profile::Responses).unwrap();
+            assert!(projected.semantic.usage().is_none());
+            assert!(
+                losses
+                    .iter()
+                    .any(|r| r.rule == "generation.usage-report-view.v1")
+            );
+            let mut events = EventProjection::new(Profile::Responses);
+            assert!(
+                events
+                    .project(&[StreamEvent::UsageReport(report)])
+                    .unwrap()
+                    .is_empty()
+            );
+            assert!(
+                events
+                    .losses()
+                    .iter()
+                    .any(|r| r.rule == "generation.usage-report-view.v1")
+            );
+            assert_eq!(source, before);
+        }
     }
     #[test]
     fn projection_keeps_native_observation_and_derives_only_the_client_view() {

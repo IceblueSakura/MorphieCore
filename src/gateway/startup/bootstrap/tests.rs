@@ -735,7 +735,7 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
         wire["messages"],
         serde_json::json!([
             {"role":"user","content":[{"type":"text","text":"go"}]},
-            {"role":"assistant","content":[{"type":"text","text":"Plan A"},{"type":"text","text":"Plan B"},
+            {"role":"assistant","content":[{"type":"text","text":"Plan B"},
                 {"type":"tool_use","id":"call_2","name":"lookup","input":{}}]},
             {"role":"user","content":[{"type":"tool_result","tool_use_id":"call_2","content":"again"}]}
         ])
@@ -744,7 +744,7 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
         rules,
         [
             "messages.omit-sampling.v1",
-            "messages.omit-foreign-replay.v1",
+            "messages.transfer-visible-history.v1",
             "messages.reasoning-as-text.v1",
         ]
     );

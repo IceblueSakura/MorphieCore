@@ -9,6 +9,16 @@ mod stream;
 pub use request::RequestRule;
 pub use stream::GenerationSseDecoder;
 
+/// Only external attachments may use a movable downstream opaque carrier.
+pub(crate) fn attached_signature(payload: &str) -> bool {
+    signature::Signed::decode(payload).is_ok_and(|signed| {
+        matches!(
+            signed.anchor,
+            signature::Anchor::Call(_) | signature::Anchor::Tail { .. }
+        )
+    })
+}
+
 use crate::{
     adapter::{AdapterError, Request},
     protocol::{
@@ -108,14 +118,22 @@ pub fn encode_generation_request(
     target: &ReplayTarget,
     resource_time: Option<std::time::SystemTime>,
 ) -> Result<(Value, Vec<RequestRule>), CodecError> {
-    let request = group_client_history(request)?;
+    let (request, fidelity, transferred) = crate::protocol::native::native_reasoning_history(
+        request,
+        fidelity,
+        target,
+        &[crate::semantic::task::generation::ReplayFormat::GoogleGenerateContentPart],
+    )?;
+    let request = group_client_history(&request)?;
     request.validate()?;
     if let Some(reference) = request.cached_context() {
         fidelity.check_cached_context(reference, &target.origin(), resource_time)?;
     }
-    fidelity.require_reasoning_replay(&request, &target.origin())?;
-    let mut rules = Default::default();
-    let value = request::project(&request, fidelity, target, &mut rules)?;
+    let mut rules = std::collections::BTreeSet::new();
+    if transferred {
+        rules.insert(RequestRule::TransferVisibleHistory);
+    }
+    let value = request::project(&request, &fidelity, target, &mut rules)?;
     json_size(&value, crate::semantic::task::generation::MAX_TOTAL_BYTES)
         .map_err(|_| CodecError::Limit)?;
     Ok((value, rules.into_iter().collect()))
@@ -186,10 +204,7 @@ impl TargetCaps {
         {
             return Err(CodecError::Unsupported("undeclared model thinking budget".into()).into());
         }
-        // Reasoning without this target's value is converted inside the projection.
-        let stripped = request
-            .without_foreign_replay(Some(&target.origin()), false)?
-            .map(|(copy, _)| copy);
+        let stripped = request.without_foreign_reasoning(Some(&target.origin()))?;
         let foreign = stripped.is_some();
         let request = stripped.as_ref().unwrap_or(request);
         let cache_key = self.check_context(request)?;
@@ -224,7 +239,7 @@ impl TargetCaps {
             return Err(CodecError::Unsupported("reasoning as text disabled".into()).into());
         }
         if foreign {
-            rules.push(RequestRule::OmitForeignReplay);
+            rules.push(RequestRule::TransferVisibleHistory);
         }
         if cache_key {
             rules.push(RequestRule::OmitCacheKey);

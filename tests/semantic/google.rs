@@ -129,6 +129,136 @@ fn audit_citation_reports_are_not_successfully_erased() {
 }
 
 #[test]
+fn source_usage_keeps_tool_input_modalities_and_default_zero_provenance() {
+    let mut frame = json!({"responseId":"usage","modelVersion":"gemini-synthetic",
+        "candidates":[{"content":{"role":"model","parts":[{"text":"A"}]},"finishReason":"STOP"}],
+        "usageMetadata":{"promptTokenCount":100,"toolUsePromptTokenCount":30,
+            "candidatesTokenCount":20,"thoughtsTokenCount":7,"cachedContentTokenCount":40,"totalTokenCount":157,
+            "promptTokensDetails":[{"modality":"TEXT","tokenCount":60},{"modality":"IMAGE","tokenCount":20},
+                {"modality":"AUDIO","tokenCount":10},{"modality":"VIDEO","tokenCount":10}],
+            "toolUsePromptTokensDetails":[{"modality":"TEXT","tokenCount":12},{"modality":"AUDIO","tokenCount":18}],
+            "candidatesTokensDetails":[{"modality":"TEXT","tokenCount":15},{"modality":"AUDIO","tokenCount":5}],
+            "cacheTokensDetails":[{"modality":"TEXT","tokenCount":25},{"modality":"IMAGE","tokenCount":15}]}});
+    let decoded = decode(&wire(&[frame.clone()])).unwrap();
+    let report = decoded.semantic.usage_reports().operation().unwrap();
+    assert_eq!(
+        (
+            report.counts.input_tokens,
+            report.tool_input_tokens(),
+            report.counts.output_tokens,
+            report.counts.reasoning_tokens,
+            report.counts.total_tokens
+        ),
+        (Some(100), Some(30), Some(20), Some(7), Some(157))
+    );
+    assert_eq!(report.details.modalities.len(), 10);
+    assert!(report.details.defaulted.is_empty());
+    let summary = decoded.semantic.usage().unwrap();
+    assert_eq!(
+        (
+            summary.input_tokens,
+            summary.output_tokens,
+            summary.total_tokens
+        ),
+        (Some(130), Some(27), Some(157))
+    );
+    assert_eq!(
+        (
+            summary.input_text_tokens,
+            summary.input_audio_tokens,
+            summary.output_text_tokens
+        ),
+        (Some(72), Some(28), Some(15))
+    );
+    assert_eq!(summary.input_image_tokens, None);
+    frame["usageMetadata"]["totalTokenCount"] = json!(127);
+    assert!(decode(&wire(&[frame.clone()])).is_err());
+    frame["usageMetadata"] = json!({});
+    let defaulted = decode(&wire(&[frame.clone()])).unwrap();
+    assert_eq!(
+        defaulted
+            .semantic
+            .usage_reports()
+            .operation()
+            .unwrap()
+            .details
+            .defaulted
+            .len(),
+        6
+    );
+    frame.as_object_mut().unwrap().remove("usageMetadata");
+    assert!(
+        decode(&wire(&[frame]))
+            .unwrap()
+            .semantic
+            .usage_reports()
+            .operation()
+            .is_none()
+    );
+}
+
+#[test]
+fn cross_format_reasoning_is_removed_before_grouping_but_partial_values_reject() {
+    use morphiecore::protocol::{fidelity::FidelityRecords, replay_envelope::issuer};
+    let source = client(
+        Profile::Responses,
+        json!({"model":"m","input":[
+        {"role":"user","content":"first"},{"role":"user","content":"next"}]}),
+    );
+    let owner = ItemId::scoped(LocalScope::new(19), 1);
+    for (status, partial) in [
+        (ItemLifecycle::Completed, false),
+        (ItemLifecycle::Completed, true),
+        (ItemLifecycle::Incomplete, false),
+    ] {
+        let value = Text::new("opaque", "synthetic", 64).unwrap();
+        let reasoning = ReasoningItem {
+            status,
+            parts: vec![(
+                PartId::scoped(LocalScope::new(19), 1),
+                ReasoningContent::Summary(Text::new("Plan", "synthetic", 64).unwrap()),
+            )],
+            replay: Some(if partial {
+                ReplayValue::partial(ReplayFormat::GoogleInteractionsV1Thought, value)
+            } else {
+                ReplayValue::final_value(ReplayFormat::GoogleInteractionsV1Thought, value)
+            }),
+        };
+        let mut fidelity = FidelityRecords::default();
+        fidelity
+            .record_replay(
+                owner,
+                &reasoning,
+                Some(issuer("synthetic-google", "gemini-synthetic")),
+            )
+            .unwrap();
+        let mut items = source.task.semantic.items().to_vec();
+        items.insert(1, (owner, Item::Reasoning(reasoning)));
+        let request = source.task.semantic.clone().with_items(items).unwrap();
+        let result = encode_generation_request(&request, &fidelity, &target(), None);
+        if status == ItemLifecycle::Completed && !partial {
+            let (body, rules) = result.unwrap();
+            assert_eq!(
+                body["contents"],
+                json!([{"role":"user","parts":[{"text":"first"},{"text":"next"}]}])
+            );
+            assert_eq!(
+                rules,
+                [morphiecore::protocol::google::RequestRule::TransferVisibleHistory]
+            );
+            assert_eq!(request.items().len(), 3);
+        } else {
+            assert!(
+                result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("partial foreign reasoning")
+            );
+        }
+    }
+}
+
+#[test]
 fn stream_maps_thoughts_text_calls_and_anchored_signatures() {
     let empty = decode(&wire(&[json!({
         "responseId":"empty","modelVersion":"gemini-synthetic",

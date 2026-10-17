@@ -45,6 +45,43 @@ fn label(s: &str) -> Result<Text, CodecError> {
     Text::new(s, "native target label", 256).map_err(|_| CodecError::Limit)
 }
 
+/// Direct native codecs first verify issuer/dependencies, then omit complete
+/// reasoning in an incompatible carrier format before assembling target groups.
+pub(crate) fn native_reasoning_history(
+    request: &GenerationRequest,
+    fidelity: &crate::protocol::fidelity::FidelityRecords,
+    target: &ReplayTarget,
+    formats: &[ReplayFormat],
+) -> Result<
+    (
+        GenerationRequest,
+        crate::protocol::fidelity::FidelityRecords,
+        bool,
+    ),
+    CodecError,
+> {
+    request.validate()?;
+    fidelity.require_reasoning_replay(request, &target.origin())?;
+    let mut omitted = Vec::new();
+    for (id, item) in request.items() {
+        if let Item::Reasoning(reasoning) = item
+            && let Some(value) = &reasoning.replay
+            && !formats.contains(&value.format())
+        {
+            if reasoning.status != ItemLifecycle::Completed || value.replay_token().is_none() {
+                return Err(CodecError::Unsupported("partial foreign reasoning".into()));
+            }
+            omitted.push(*id);
+        }
+    }
+    let request = request
+        .clone()
+        .retain_items(|id, _| !omitted.contains(&id))?;
+    let mut fidelity = fidelity.clone();
+    fidelity.retain_owners(request.items());
+    Ok((request, fidelity, !omitted.is_empty()))
+}
+
 /// Explicit stateless defaults do not ask the upstream for storage or context.
 pub(crate) fn normalize_stateless_defaults(context: &mut ExecutionHints) {
     if context.store == Presence::Value(false) {

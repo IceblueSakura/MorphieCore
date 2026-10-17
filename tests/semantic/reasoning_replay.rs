@@ -758,47 +758,32 @@ mod replay_carrier {
     }
 
     #[test]
-    fn another_target_gets_a_copy_without_the_opaque_value() {
+    fn another_target_gets_visible_history_without_foreign_thinking() {
         let body = client_round_trip("openai/model-a");
         let mut request = client()
             .decode_request(body.to_string().as_bytes())
             .unwrap();
         open_from_client(&mut request).unwrap();
         let before = request.clone();
-        assert!(
-            upstream("other/model-b")
-                .encode_request_with_rules(&request, "model-b", &contract("other/model-b"))
-                .is_err()
-        );
-        let mut allowed = contract("other/model-b");
-        allowed.reasoning_as_text = true;
+        let allowed = contract("other/model-b");
         let (wire, rules) = upstream("other/model-b")
             .encode_request_with_rules(&request, "model-b", &allowed)
             .unwrap();
-        // The readable summary reaches the new target as assistant text without the
-        // issuer's item ID; the shared request is unchanged.
+        // Foreign thinking is not presented as an assistant answer.
         assert_eq!(
             wire["input"],
             json!([
                 {"type":"message","role":"user","content":[{"type":"input_text","text":"first"}]},
-                {"type":"message","role":"assistant","content":[{"type":"output_text","text":"Plan 🧪","annotations":[]}]},
                 {"type":"message","role":"user","content":[{"type":"input_text","text":"next"}]},
             ])
         );
-        assert_eq!(
-            rules,
-            [
-                "responses.omit-foreign-replay.v1",
-                "responses.reasoning-as-text.v1"
-            ]
-        );
+        assert_eq!(rules, ["responses.transfer-visible-history.v1"]);
         assert_eq!(request, before);
         let target = morphiecore::protocol::native::ReplayTarget::new("other", "model-b").unwrap();
-        let mut native = morphiecore::protocol::anthropic::TargetCaps::new(
+        let native = morphiecore::protocol::anthropic::TargetCaps::new(
             morphiecore::protocol::anthropic::Profile::AdaptiveTextTools,
             morphiecore::protocol::anthropic::Dialect::Standard,
         );
-        native.reasoning_as_text = true;
         native.encode_request(&request, &target).unwrap();
         let mut partial = body;
         partial["input"][1]["status"] = json!("incomplete");
@@ -806,11 +791,93 @@ mod replay_carrier {
             .decode_request(partial.to_string().as_bytes())
             .unwrap();
         open_from_client(&mut partial).unwrap();
-        let (wire, _) = upstream("other/model-b")
-            .encode_request_with_rules(&partial, "model-b", &allowed)
-            .unwrap();
-        assert_eq!(wire["input"][1]["status"], "incomplete");
+        assert!(
+            upstream("other/model-b")
+                .encode_request_with_rules(&partial, "model-b", &allowed)
+                .is_err()
+        );
         assert!(native.encode_request(&partial, &target).is_err());
+    }
+
+    #[test]
+    fn tool_turn_transfer_keeps_real_results_and_forgets_paired_wire_ids_only() {
+        let mut body = client_round_trip("openai/model-a");
+        body["input"].as_array_mut().unwrap().pop();
+        body["input"].as_array_mut().unwrap().extend([
+            json!({"role":"assistant","content":[{"type":"output_text","text":"Checking.","annotations":[]}]}),
+            json!({"type":"function_call","id":"fc_paired","call_id":"c","name":"read","arguments":"{}"}),
+            json!({"type":"function_call_output","call_id":"c","output":"42"}),
+        ]);
+        let mut request = client()
+            .decode_request(body.to_string().as_bytes())
+            .unwrap();
+        open_from_client(&mut request).unwrap();
+        let before = request.clone();
+        let (wire, rules) = upstream("other/model-b")
+            .encode_request_with_rules(&request, "model-b", &contract("other/model-b"))
+            .unwrap();
+        assert_eq!(
+            wire["input"],
+            json!([
+                {"type":"message","role":"user","content":[{"type":"input_text","text":"first"}]},
+                {"type":"message","role":"assistant","content":[{"type":"output_text","text":"Checking.","annotations":[]}]},
+                {"type":"function_call","call_id":"c","name":"read","arguments":"{}"},
+                {"type":"function_call_output","call_id":"c","output":"42"},
+            ])
+        );
+        assert_eq!(rules, ["responses.transfer-visible-history.v1"]);
+        assert_eq!(request, before);
+        let native = upstream("openai/model-a")
+            .encode_request(&request, "model-a", &contract("openai/model-a"))
+            .unwrap();
+        assert_eq!(native["input"][3]["id"], "fc_paired");
+        let mut mixed = before.clone();
+        let mut items = mixed.task.semantic.items().to_vec();
+        let Item::Reasoning(mut compatible) = items[1].1.clone() else {
+            panic!("reasoning")
+        };
+        for (index, (part, _)) in compatible.parts.iter_mut().enumerate() {
+            *part = morphiecore::semantic::task::generation::PartId::scoped(
+                morphiecore::semantic::task::generation::LocalScope::new(77),
+                index as u64,
+            );
+        }
+        let owner = morphiecore::semantic::task::generation::ItemId::new(999);
+        mixed
+            .task
+            .fidelity
+            .record_replay(owner, &compatible, Some(origin("other/model-b")))
+            .unwrap();
+        items.insert(2, (owner, Item::Reasoning(compatible)));
+        mixed.task.semantic = mixed.task.semantic.with_items(items).unwrap();
+        assert!(
+            upstream("other/model-b")
+                .encode_request(&mixed, "model-b", &contract("other/model-b"))
+                .unwrap_err()
+                .to_string()
+                .contains("mixed replay call dependencies")
+        );
+        assert_eq!(
+            native["input"][1]["encrypted_content"],
+            "synthetic-final-token"
+        );
+        let Item::Reasoning(value) = &request.task.semantic.items()[1].1 else {
+            panic!("reasoning")
+        };
+        request
+            .task
+            .fidelity
+            .record_replay(
+                morphiecore::semantic::task::generation::ItemId::new(999),
+                value,
+                Some(origin("other/model-b")),
+            )
+            .unwrap();
+        assert!(
+            upstream("other/model-b")
+                .encode_request(&request, "model-b", &contract("other/model-b"))
+                .is_err()
+        );
     }
 
     #[test]

@@ -18,7 +18,7 @@ fn interaction_frames() -> Vec<serde_json::Value> {
         json!({"event_type":"step.delta","index":0,"delta":{"type":"thought_summary","content":{"type":"text","text":"Plan"}}}),
         json!({"event_type":"step.delta","index":0,"delta":{"type":"thought_signature","signature":"synthetic-thought"}}),
         json!({"event_type":"step.stop","index":0}),
-        json!({"event_type":"step.start","index":1,"step":{"type":"function_call","id":"c1","name":"read","arguments":{},"signature":"synthetic-call"}}),
+        json!({"event_type":"step.start","index":1,"step":{"type":"function_call","id":"c1","name":"read","arguments":{}}}),
         json!({"event_type":"step.delta","index":1,"delta":{"type":"arguments_delta","arguments":"{\"path\":"}}),
         json!({"event_type":"step.delta","index":1,"delta":{"type":"arguments_delta","arguments":"\"a\"}"}}),
         json!({"event_type":"step.stop","index":1}),
@@ -124,7 +124,7 @@ fn audit_step_errors_and_unrepresented_lifecycle_facts_cannot_complete() {
 }
 
 #[test]
-fn step_stream_preserves_usage_call_arguments_and_both_signatures() {
+fn step_stream_preserves_usage_call_arguments_and_thought_signature() {
     let decoded = decode_interaction(&interaction_frames(), true).unwrap();
     assert!(decoded.metadata.id.is_none());
     assert_eq!(
@@ -132,31 +132,27 @@ fn step_stream_preserves_usage_call_arguments_and_both_signatures() {
         InteractionProgress::AwaitingToolResults
     );
     let items = decoded.semantic.items();
-    assert_eq!(items.len(), 3);
+    assert_eq!(items.len(), 2);
     assert!(matches!(&items[0].1, Item::Reasoning(r)
         if matches!(r.parts.as_slice(),[(_,ReasoningContent::Summary(t))] if t.as_str()=="Plan")));
     assert!(matches!(&items[1].1, Item::ToolCall(c)
         if c.call_id.as_str()=="c1" && c.arguments.as_structured().unwrap().value()==&json!({"path":"a"})));
-    for (index, expected) in [
-        (
-            0,
-            json!({"anchor":"thought","signature":"synthetic-thought"}),
-        ),
-        (
-            2,
-            json!({"anchor":"call","call":"c1","signature":"synthetic-call"}),
-        ),
-    ] {
-        let Item::Reasoning(r) = &items[index].1 else {
-            panic!()
-        };
-        let value = r.replay.as_ref().unwrap();
-        assert_eq!(value.format(), ReplayFormat::GoogleInteractionsV1Thought);
-        assert_eq!(
-            serde_json::from_str::<serde_json::Value>(value.replay_token().unwrap()).unwrap(),
-            expected
-        );
-    }
+    let Item::Reasoning(r) = &items[0].1 else {
+        panic!("thought")
+    };
+    let value = r.replay.as_ref().unwrap();
+    assert_eq!(value.format(), ReplayFormat::GoogleInteractionsV1Thought);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(value.replay_token().unwrap()).unwrap(),
+        json!({"anchor":"thought","signature":"synthetic-thought"})
+    );
+    let mut unsupported = interaction_frames();
+    unsupported[6]["step"]["signature"] = json!("not-an-official-call-carrier");
+    assert!(
+        decode_interaction(&unsupported, true)
+            .unwrap_err()
+            .contains("Interactions signature owner")
+    );
     let usage = decoded.semantic.usage().unwrap();
     assert_eq!(
         (
@@ -171,7 +167,126 @@ fn step_stream_preserves_usage_call_arguments_and_both_signatures() {
 }
 
 #[test]
+fn scoped_usage_keeps_uncalibrated_tool_counts_and_replaces_operation_snapshots() {
+    let usage = |total| {
+        json!({"total_input_tokens":total,"total_output_tokens":0,
+        "total_thought_tokens":0,"total_tool_use_tokens":0,"total_tokens":total})
+    };
+    let frames = vec![
+        json!({"event_type":"interaction.created","interaction":{"model":"gemini-synthetic"}}),
+        json!({"event_type":"interaction.status_update","status":"in_progress","usage":usage(50)}),
+        json!({"event_type":"step.start","index":0,"step":{"type":"model_output"}}),
+        json!({"event_type":"step.stop","index":0,"usage":usage(100),"step_usage":usage(100)}),
+        json!({"event_type":"step.start","index":1,"step":{"type":"model_output"}}),
+        json!({"event_type":"step.stop","index":1,"usage":usage(220),"step_usage":usage(120)}),
+        json!({"event_type":"interaction.completed","interaction":{"status":"completed"}}),
+    ];
+    let observed = decode_interaction(&frames, true).unwrap();
+    assert_eq!(observed.semantic.usage().unwrap().total_tokens, Some(220));
+    assert_eq!(
+        observed
+            .semantic
+            .usage_reports()
+            .reports()
+            .map(|r| (r.scope, r.stage, r.counts.total_tokens))
+            .collect::<Vec<_>>(),
+        [
+            (UsageScope::Operation, UsageStage::Final, Some(220)),
+            (UsageScope::Step(0), UsageStage::Final, Some(100)),
+            (UsageScope::Step(1), UsageStage::Final, Some(120)),
+        ]
+    );
+    for total in [125, 157] {
+        let mut frames = frames.clone();
+        frames[6]["interaction"]["usage"] = json!({"total_input_tokens":100,"total_tool_use_tokens":30,
+            "total_output_tokens":20,"total_thought_tokens":7,"total_tokens":total,
+            "input_tokens_by_modality":[{"modality":"text","tokens":60}],
+            "grounding_tool_count":[{"type":"google_search","count":2}]});
+        let decoded = decode_interaction(&frames, true).unwrap();
+        let report = decoded.semantic.usage_reports().operation().unwrap();
+        assert_eq!(
+            (
+                report.counts.input_tokens,
+                report.tool_input_tokens(),
+                report.counts.output_tokens
+            ),
+            (Some(100), Some(30), Some(20))
+        );
+        assert_eq!(report.details.tool_requests[0].count, Some(2));
+        assert_eq!(report.details.modalities[0].tokens, Some(60));
+        assert_eq!(decoded.semantic.usage().unwrap().input_tokens, None);
+        assert_eq!(
+            decoded.semantic.usage().unwrap().total_relation,
+            TotalTokenRelation::Unreported
+        );
+        frames[6]["interaction"]["usage"]
+            .as_object_mut()
+            .unwrap()
+            .remove("total_thought_tokens");
+        let decoded = decode_interaction(&frames, true).unwrap();
+        assert_eq!(
+            decoded
+                .semantic
+                .usage_reports()
+                .operation()
+                .unwrap()
+                .counts
+                .output_tokens,
+            Some(20)
+        );
+        assert_eq!(decoded.semantic.usage().unwrap().output_tokens, None);
+    }
+}
+
+#[test]
 fn step_stream_rejects_missing_call_identity_and_unfinished_or_late_data() {
+    let opening = vec![
+        json!({"event_type":"interaction.created","interaction":{"model":"gemini-synthetic","usage":{"total_tokens":7}}}),
+        json!({"event_type":"interaction.completed","interaction":{"status":"completed"}}),
+    ];
+    let observed = decode_interaction(&opening, true).unwrap();
+    assert_eq!(
+        observed
+            .semantic
+            .usage_reports()
+            .operation()
+            .unwrap()
+            .counts
+            .total_tokens,
+        Some(7)
+    );
+    let mut invalid_usage = opening.clone();
+    invalid_usage[0]["interaction"]["usage"] = json!({"total_input_tokens":-1});
+    assert!(
+        decode_interaction(&invalid_usage, true)
+            .unwrap_err()
+            .contains("total_input_tokens")
+    );
+    for entry in [
+        json!({"modality":"text"}),
+        json!({"modality":"text","tokens":null}),
+        json!({"tokens":3}),
+    ] {
+        let mut frames = opening.clone();
+        frames[0]["interaction"]["usage"]["input_tokens_by_modality"] = json!([entry.clone()]);
+        let decoded = decode_interaction(&frames, true).unwrap();
+        let part = &decoded
+            .semantic
+            .usage_reports()
+            .operation()
+            .unwrap()
+            .details
+            .modalities[0];
+        assert_eq!(
+            part.tokens,
+            entry.get("tokens").and_then(serde_json::Value::as_u64)
+        );
+        assert_eq!(
+            part.modality,
+            entry.get("modality").map(|_| TokenModality::Text)
+        );
+        assert!(!part.defaulted);
+    }
     let truncated = vec![
         json!({"event_type":"interaction.created","interaction":{"object":"interaction","model":"gemini-synthetic"}}),
         json!({"event_type":"step.start","index":0,"step":{"type":"model_output"}}),
@@ -199,7 +314,7 @@ fn step_stream_rejects_missing_call_identity_and_unfinished_or_late_data() {
     assert!(decode_interaction(&malformed, true).is_err());
 }
 
-fn signed_history(call_anchor: &str, format: ReplayFormat) -> (GenerationRequest, FidelityRecords) {
+fn signed_history(format: ReplayFormat) -> (GenerationRequest, FidelityRecords) {
     let source = Adapter::new(Profile::Responses, Dialect::Standard, None)
         .decode_request(
             json!({"model":"public","input":[
@@ -235,14 +350,8 @@ fn signed_history(call_anchor: &str, format: ReplayFormat) -> (GenerationRequest
             ReasoningContent::Summary(Text::new("Plan", "summary", 64).unwrap()),
         )],
     );
-    let call = signed(
-        2,
-        json!({"anchor":"call","call":call_anchor,"signature":"synthetic-call"}),
-        vec![],
-    );
     let mut items = source.task.semantic.items().to_vec();
-    // Chat returns opaque carriers ahead of calls; native anchoring must not use position.
-    items.splice(1..1, [thought, call]);
+    items.insert(1, thought);
     let request = source
         .task
         .semantic
@@ -256,42 +365,63 @@ fn signed_history(call_anchor: &str, format: ReplayFormat) -> (GenerationRequest
 #[test]
 fn restores_native_signatures_by_anchor_and_drops_the_other_google_format() {
     let target = ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap();
-    let (request, fidelity) = signed_history("c1", ReplayFormat::GoogleInteractionsV1Thought);
+    let (request, fidelity) = signed_history(ReplayFormat::GoogleInteractionsV1Thought);
     let (wire, rules) = encode_generation_request(&request, &fidelity, &target).unwrap();
     assert_eq!(
         wire["input"],
         json!([
             {"type":"user_input","content":[{"type":"text","text":"Read."}]},
             {"type":"thought","summary":[{"type":"text","text":"Plan"}],"signature":"synthetic-thought"},
-            {"type":"function_call","id":"c1","name":"read","arguments":{},"signature":"synthetic-call"},
+            {"type":"function_call","id":"c1","name":"read","arguments":{}},
             {"type":"function_result","call_id":"c1","name":"read","result":"done"}
         ])
     );
     assert!(rules.is_empty());
-    let (request, fidelity) = signed_history("c1", ReplayFormat::GoogleGenerateContentPart);
+    let (request, fidelity) = signed_history(ReplayFormat::GoogleGenerateContentPart);
     let (wire, rules) = encode_generation_request(&request, &fidelity, &target).unwrap();
     assert_eq!(
         wire["input"],
         json!([
             {"type":"user_input","content":[{"type":"text","text":"Read."}]},
-            {"type":"model_output","content":[{"type":"text","text":"Plan"}]},
             {"type":"function_call","id":"c1","name":"read","arguments":{}},
             {"type":"function_result","call_id":"c1","name":"read","result":"done"}
         ])
     );
-    assert_eq!(
-        rules,
-        [RequestRule::OmitForeignReplay, RequestRule::ReasoningAsText]
-    );
+    assert_eq!(rules, [RequestRule::TransferVisibleHistory]);
 }
 
 #[test]
 fn rejects_orphaned_or_wrong_target_signatures() {
-    let (request, fidelity) =
-        signed_history("missing-call", ReplayFormat::GoogleInteractionsV1Thought);
+    let (request, mut fidelity) = signed_history(ReplayFormat::GoogleInteractionsV1Thought);
+    let mut items = request.items().to_vec();
+    let (id, Item::Reasoning(reasoning)) = &mut items[1] else {
+        panic!("thought")
+    };
+    reasoning.replay = Some(ReplayValue::final_value(
+        ReplayFormat::GoogleInteractionsV1Thought,
+        Text::new(
+            json!({"anchor":"call","call":"c1","signature":"invented"}).to_string(),
+            "synthetic",
+            1024,
+        )
+        .unwrap(),
+    ));
+    fidelity
+        .record_replay(
+            *id,
+            reasoning,
+            Some(issuer("synthetic-google", "gemini-synthetic")),
+        )
+        .unwrap();
+    let request = request.with_items(items).unwrap();
     let target = ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap();
-    assert!(encode_generation_request(&request, &fidelity, &target).is_err());
-    let (request, fidelity) = signed_history("c1", ReplayFormat::GoogleInteractionsV1Thought);
+    assert!(
+        encode_generation_request(&request, &fidelity, &target)
+            .unwrap_err()
+            .to_string()
+            .contains("signature payload")
+    );
+    let (request, fidelity) = signed_history(ReplayFormat::GoogleInteractionsV1Thought);
     let other = ReplayTarget::new("synthetic-google", "other-model").unwrap();
     assert!(encode_generation_request(&request, &fidelity, &other).is_err());
 }

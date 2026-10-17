@@ -320,6 +320,21 @@ impl ClientEventEncoder {
                 self.usage = Some(selected);
             }
             StreamEvent::Progress(progress) => self.progress = *progress,
+            StreamEvent::UsageReport(report) => {
+                report.validate()?;
+                if report.scope == crate::semantic::task::generation::UsageScope::Operation
+                    && report.stage == crate::semantic::task::generation::UsageStage::Final
+                {
+                    self.usage = report
+                        .scalar_summary()
+                        .map(super::client::project_usage)
+                        .transpose()?;
+                }
+                let loss = crate::protocol::usage::report_loss("event.encode");
+                if !self.losses.contains(&loss) {
+                    self.losses.push(loss);
+                }
+            }
             StreamEvent::Terminal { terminal, details } => {
                 self.start(&mut out);
                 let outcome = match terminal {

@@ -11,6 +11,9 @@ pub fn check_event(
     if matches!(event, StreamEvent::SafetyReport(_)) || !state.safety_reports().is_empty() {
         return Err(RepresentationError::Safety);
     }
+    if matches!(event, StreamEvent::UsageReport(_)) || state.usage_reports().has_details() {
+        return Err(RepresentationError::ReportedFacts);
+    }
     if let StreamEvent::Terminal { details, .. } = event {
         // Selected approximations are recorded when the terminal is lowered.
         crate::protocol::openai::terminal::terminal_losses(details, profile)

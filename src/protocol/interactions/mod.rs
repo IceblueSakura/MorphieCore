@@ -29,16 +29,24 @@ pub fn encode_generation_request(
     fidelity: &FidelityRecords,
     target: &ReplayTarget,
 ) -> Result<(Value, Vec<RequestRule>), CodecError> {
-    let request = group_client_history(request)?;
+    let (request, fidelity, transferred) = crate::protocol::native::native_reasoning_history(
+        request,
+        fidelity,
+        target,
+        &[crate::semantic::task::generation::ReplayFormat::GoogleInteractionsV1Thought],
+    )?;
+    let request = group_client_history(&request)?;
     request.validate()?;
     if request.cached_context().is_some() {
         return Err(CodecError::Unsupported(
             "Interactions cached context".into(),
         ));
     }
-    fidelity.require_reasoning_replay(&request, &target.origin())?;
-    let mut rules = Default::default();
-    let value = request::project(&request, fidelity, target, &mut rules)?;
+    let mut rules = std::collections::BTreeSet::new();
+    if transferred {
+        rules.insert(RequestRule::TransferVisibleHistory);
+    }
+    let value = request::project(&request, &fidelity, target, &mut rules)?;
     json_size(&value, crate::semantic::task::generation::MAX_TOTAL_BYTES)
         .map_err(|_| CodecError::Limit)?;
     Ok((value, rules.into_iter().collect()))
@@ -152,10 +160,7 @@ impl TargetCaps {
             reasoning_rule = Some(policy.rule);
         }
         let request = projected.as_ref();
-        // Reasoning without this target's value is converted inside the projection.
-        let stripped = request
-            .without_foreign_replay(Some(&target.origin()), false)?
-            .map(|(copy, _)| copy);
+        let stripped = request.without_foreign_reasoning(Some(&target.origin()))?;
         let foreign = stripped.is_some();
         let request = stripped.as_ref().unwrap_or(request);
         let cache_key = self.check_context(request)?;
@@ -186,7 +191,7 @@ impl TargetCaps {
             return Err(CodecError::Unsupported("reasoning as text disabled".into()).into());
         }
         if foreign {
-            rules.push(RequestRule::OmitForeignReplay);
+            rules.push(RequestRule::TransferVisibleHistory);
         }
         if cache_key {
             rules.push(RequestRule::OmitCacheKey);

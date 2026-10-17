@@ -18,9 +18,9 @@ pub enum RequestRule {
     Cache(crate::protocol::cache::CacheRule),
     /// Gemini has one summary form, without concise or detailed variants.
     SummarizeReasoning,
-    /// Opaque reasoning issued for another target or Google format is dropped.
-    OmitForeignReplay,
-    /// Reasoning without this target's value is sent as model text, as pi does.
+    /// Incompatible complete reasoning is omitted, retaining visible history.
+    TransferVisibleHistory,
+    /// Explicit opt-in for unattributed readable reasoning.
     ReasoningAsText,
     /// A leading developer instruction (pi, Codex) is the system instruction.
     DeveloperAsSystem,
@@ -36,7 +36,7 @@ impl RequestRule {
             Self::OmitVerbosity => "gemini.omit-verbosity.v1",
             Self::Cache(rule) => rule.name(),
             Self::SummarizeReasoning => "gemini.summarize-reasoning.v1",
-            Self::OmitForeignReplay => "gemini.omit-foreign-replay.v1",
+            Self::TransferVisibleHistory => "gemini.transfer-visible-history.v1",
             Self::ReasoningAsText => "gemini.reasoning-as-text.v1",
             Self::DeveloperAsSystem => "gemini.developer-as-system.v1",
             Self::OmitSchemaName => "gemini.omit-schema-name.v1",
@@ -463,7 +463,7 @@ fn item_parts(
             let Some(value) = own else {
                 // Every turn converts alike, keeping the projection append-only.
                 if r.replay.is_some() {
-                    rules.insert(RequestRule::OmitForeignReplay);
+                    return Err(CodecError::Invalid("Gemini replay format"));
                 }
                 let text = readable();
                 if !text.trim().is_empty() {

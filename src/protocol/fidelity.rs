@@ -263,6 +263,9 @@ impl FidelityRecords {
     pub fn response_item_id(&self, owner: ItemId) -> Option<&str> {
         self.response_item_ids.get(&owner).map(Text::as_str)
     }
+    pub(crate) fn remove_response_item_id(&mut self, owner: ItemId) {
+        self.response_item_ids.remove(&owner);
+    }
     /// Source scopes may reuse aliases; a single target envelope may not.
     pub(crate) fn check_wire_item_ids(
         &self,
@@ -375,6 +378,31 @@ impl FidelityRecords {
             && request.items().iter().any(|(id, item)| {
                 *id == owner && matches!(item, Item::Reasoning(value) if value == semantic)
             })
+    }
+    /// Selected native history must not lose a required owner or its value.
+    pub(crate) fn check_target_replay(
+        &self,
+        request: &GenerationRequest,
+        target: Option<&ReplayOrigin>,
+    ) -> Result<(), CodecError> {
+        for (owner, binding) in &self.item_replay {
+            if target.is_none() || binding.origin.as_ref() != target {
+                continue;
+            }
+            let valid = match request.items().iter().find(|(id, _)| id == owner) {
+                Some((_, Item::Reasoning(value))) => {
+                    self.replay_matches_request(*owner, value, target, request)
+                }
+                Some((_, Item::Compaction(value))) => {
+                    self.compaction_matches(*owner, value, target)
+                }
+                _ => false,
+            };
+            if !valid {
+                return Err(CodecError::Invalid("native replay dependency"));
+            }
+        }
+        Ok(())
     }
     /// Selected native history must not lose a required owner or its value.
     pub(crate) fn require_reasoning_replay(

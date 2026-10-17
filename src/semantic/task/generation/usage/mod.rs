@@ -1,5 +1,6 @@
 //! The final token report of one operation. Missing counts and undeclared
 //! relationships stay unknown.
+pub(in crate::semantic::task::generation) mod reports;
 pub(in crate::semantic::task::generation) mod views;
 use crate::semantic::task::generation::GenerationError;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -91,6 +91,18 @@ Clients may resend full history or use [gateway-managed Responses history](#stat
 
 When a concept cannot be expressed, show a minimal counterexample and structural options before changing the IR. Do not hide it in private adapter fields.
 
+### Scoped accounting
+
+`UsageReports` is the sole stored accounting source. It retains the latest bounded snapshot per operation or response-local execution step; steps never synthesize an operation total. Checkpoints replace their scope without summation. A final observation seals that scope but does not certify exhaustive billing. Content edits retain the reports.
+
+`UsageReport` separates reported counters, accounting premises and sparse modality/cache/tool breakdowns. Missing counts remain unknown; source-defined default zeros are marked separately. Duplicate categories, overflowing known sums and breakdowns exceeding their own known parent reject. Sparse lists do not imply exhaustive coverage, and tool-request counts are not tokens.
+
+The existing `usage()` accessor derives an operation view from that source rather than storing independently mutable totals. generateContent has an explicit prompt + tool-input + output + thought relationship. Interactions retains these source buckets but leaves tool-input and total inclusion unreported because the official examples and generic descriptions do not establish one universal equation. Missing thoughts do not erase a reported non-reasoning output count; they leave the inclusive output view unknown.
+
+Google modality reports and Interactions opening/status/step/terminal snapshots use this contract. `step.stop.usage` is cumulative operation usage; `step_usage` is local to the step. Unknown category/count fields in the optional Interactions breakdown shape remain unknown, not zero. The source contract and conflicting examples are recorded in [protocol notes](refs/2026-10-17-generation-contracts.md#scoped-accounting-contract).
+
+OpenAI delivery requires its established input/output/total relationship. Native reports without that premise may have no deliverable scalar usage, even while the source retains counts. The named `generation.usage-report-view.v1` projection records loss of source scope, breakdowns or provenance on a delivery copy; static and event paths share the optional-view behavior. No custom downstream SSE event is introduced. Strict-complete direct OpenAI projection rejects report loss. Messages still requires representable input/output counts. Anthropic TTL/server-tool codec mapping remains follow-up work; adding typed accounting owners does not itself implement those carriers.
+
 ### Cached context references
 
 `GenerationRequest` may name one existing cached input base, separately from settings and ordered items. The reference carries bounded opaque identity and an optional reported expiry with subsecond precision. It is required task context, not an advisory optimization. Item edits preserve it; history composition may share an identical base but rejects incompatible bases or retroactive introduction after selected input.
@@ -392,12 +404,14 @@ mc1. + base64url JSON: {o: issuer fingerprint, f: native format, d: payload}
 Runtime fingerprints bind Provider, upstream model and the normalized trusted deployment origin/path. They do not include public aliases, credentials or ingress keys, and reveal no URL or credential locator. Changing a deployment does not authorize replay of another deployment's opaque values. Clients must treat the whole value as opaque.
 
 1. Restore the native payload only for the matching deployment/model and carrier.
-2. Drop foreign payloads and reasoning items left empty by that drop.
-3. Preserve readable foreign reasoning as assistant text only when the target explicitly enables the named rule; otherwise reject a required conversion.
+2. Transfer visible history to an incompatible target by omitting complete foreign reasoning, including its readable thinking and opaque value. Do not present another model's thinking as an assistant answer.
+3. Preserve visible messages, media and real call/result associations. A tool turn need not have a final assistant answer, but incomplete owners or partial replay cannot be repaired by omission. Compaction and cached context remain required input.
 4. Never send bare, malformed or unsupported-version envelopes upstream.
-5. Reject a same-target value if its required carrier is unavailable.
+5. Reject damaged compatible replay or an unavailable required-context carrier. A different native replay format is an explicit transfer case, not permission to weaken compatible replay checks.
 
-Reasoning-as-text defaults to disabled. When enabled, native Messages sends unsigned or foreign thinking as text. OpenAI targets do so when an opaque replay value was dropped; reasoning that never carried a value keeps its kind when representable. Disabling the conversion neither discards readable content nor disables a valid native carrier. A changed item kind gets a derived identity in the candidate copy, not the issuer's identity.
+The selected pi-inspired transfer uses `[chat,responses,messages,gemini,interactions].transfer-visible-history.v1`. It changes only the target copy and records the loss; it is not equivalent reasoning continuation. Dependencies bound to the selected target are checked before foreign removal, so transfer cannot hide a missing or edited compatible replay owner. Responses call-item wire IDs associated with removed reasoning are forgotten; semantic call IDs and results remain unchanged. A mixed assistant run with retained replay and potentially shared call-item aliases rejects rather than guessing which dependency may be removed. No tool results, validator-bypass values or replacement user messages are synthesized.
+
+Reasoning without provenance is not automatically foreign. `reasoning_as_text` remains disabled by default and controls the existing explicit conversion of unattributed readable reasoning when no exact native carrier is available. It does not enable or disable foreign-history transfer, nor change reasoning display controls. Valid native carriers remain available. A changed item kind gets a derived identity in the candidate copy, not the issuer's identity.
 
 Text conversion preserves the reasoning item's lifecycle. A partial or in-progress owner never becomes completed merely because its readable text has a carrier. Responses can retain that status; targets without a partial-history carrier, including native Messages, reject it.
 
@@ -411,15 +425,15 @@ Redacted thinking is an opaque-only reasoning item with its own replay format, s
 
 Google signatures travel as reasoning items. The IR has no part- or call-level replay slots; Provider-tool replay stays separate.
 
-This representation and blanket foreign-replay omission remain under [semantic ownership review](refs/2026-10-17-generation-contracts.md#loss-policy-decisions-still-needed). Current compatibility rules are not a claim that every opaque value is optional history.
+The transfer policy is selected. Actual part/call replay ownership still needs an end-to-end carrier migration; the current surrogate representation is not a claim of complete replay ownership. See [protocol notes](refs/2026-10-17-generation-contracts.md#selected-visible-history-transfer).
 
 - A generateContent value names its anchor: call ID, thought or tail. A tail anchor binds the final text part by digest; changed or missing text rejects instead of receiving the signature. No empty carrier is invented.
 - An explicitly observed empty signed text part keeps its text owner. A signature on an empty streaming fragment may also close accumulated text. Both differ from a missing carrier.
 - Distinct parts within one generateContent frame retain their boundaries; unsigned preceding text never becomes part of a later signed owner.
 - A signed thought closes its owner. Later thought text starts another item, so adjacent signed parts never overwrite one another.
-- An Interactions value is a thought signature or a call-ID-anchored signature.
+- The selected Interactions carrier is a thought signature. Standard function calls have no official signature field; such fields and call-signature payloads reject. Built-in tool signatures remain a separate deferred carrier.
 - Signature-only items trail the response, so a message stays contiguous with its calls. Chat carries them ahead of the message.
-- Preserve every signature, even when an upstream sample accepts an omitted one.
+- Preserve every compatible native signature, even when an upstream sample accepts an omitted one. Only genuine part/call attachments can move as opaque downstream carriers; an empty thought remains ordered reasoning.
 - generateContent and Interactions are separate formats. A value of the other format is dropped as foreign, not translated, so failover between the two bindings loses reasoning instead of failing.
 
 ## Compacted history
@@ -710,7 +724,8 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Official intake fields | Decode registered source semantics accurately. Unsupported preferences need selected omission rules; critical content and execution intent cannot masquerade as unknown fields. Optionality alone does not authorize dropping billing, storage or quality controls |
 | Append-only history projection | Earlier content does not change when a later turn is added |
 | Reported tool results | Responses carries function/custom results in static output and item snapshots. Missing call references stay unreported; request history still requires matching preceding calls. Chat and Messages reject ordinary tool results as assistant output, not their supported history forms |
-| Scoped opaque replay | Restore only compatible native values; foreign readable reasoning becomes text only with explicit target permission and unchanged lifecycle, otherwise the conversion rejects |
+| Scoped opaque replay and visible-history transfer | Preserve compatible replay. Omit complete incompatible reasoning on a target-private copy with a named transfer receipt; preserve visible content and actual call/results, reject partial or damaged compatible state, and never discard required compacted/cached context |
+| Scoped source accounting | Retain raw buckets and latest operation/step snapshots independently; derive delivery views without summing snapshots or inferring unknown inclusion relations. Source-default zeros and optional counts remain distinguishable |
 | Replay dependencies | Validate the original reasoning dependency before client sealing. generateContent tail signatures also bind the actual text carrier by digest, outside semantic IR |
 | Prefix-cache ownership | Typed breakpoints and TTL belong to their content or tool-definition owner, including separate inner and outer tool-result boundaries. Automatic caching is a separate setting; absence preserves target policy. Unsupported targets reject rather than substitute cache keys or retention |
 | Compacted context is required history | A distinct ordered compaction item preserves opaque content and identity. Incompatible targets reject it rather than apply the foreign-reasoning strip rule |

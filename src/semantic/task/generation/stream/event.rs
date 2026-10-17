@@ -152,6 +152,7 @@ pub enum StreamEvent {
         replay: Option<ItemReplay>,
     },
     Usage(Usage),
+    UsageReport(UsageReport),
     SafetyReport(SafetyReport),
     /// Complete container declaration after its members close, before response terminal.
     MessageEnvelope(MessageEnvelope),

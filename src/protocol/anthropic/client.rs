@@ -486,14 +486,16 @@ pub(crate) fn refusal_loss(direction: &'static str) -> crate::lowering::generati
 pub(crate) fn content_losses(
     response: &GenerationResponse,
 ) -> Vec<crate::lowering::generation::LossEvidence> {
+    let mut losses = Vec::new();
+    if response.usage_reports().has_details() {
+        losses.push(crate::protocol::usage::report_loss("response.encode"));
+    }
     let refusal = response.items().iter().any(|(_, item)| {
         matches!(item, Item::Message(m)
             if m.parts.iter().any(|p| matches!(p.content, ContentPart::Refusal(_))))
     });
-    refusal
-        .then(|| refusal_loss("response.encode"))
-        .into_iter()
-        .collect()
+    losses.extend(refusal.then(|| refusal_loss("response.encode")));
+    losses
 }
 pub(crate) fn usage_loss() -> crate::lowering::generation::LossEvidence {
     crate::lowering::generation::LossEvidence {

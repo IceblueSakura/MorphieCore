@@ -19,7 +19,7 @@ use serde_json::{Map, Value};
 enum Kind {
     Thought,
     Text,
-    Call { id: String, initial: Value },
+    Call { initial: Value },
 }
 struct Open {
     index: u64,
@@ -43,7 +43,6 @@ pub struct GenerationSseDecoder {
     steps: u64,
     members: Vec<ItemId>,
     calls: Vec<String>,
-    signatures: Vec<Signed>,
     completed: bool,
     done: bool,
     closed: bool,
@@ -93,7 +92,7 @@ fn counter(o: &Map<String, Value>, key: &'static str) -> Result<Option<u64>, Sse
         Some(v) => v.as_u64().map(Some).ok_or_else(|| invalid(key)),
     }
 }
-fn usage(v: &Value) -> Result<Usage, SseError> {
+fn usage(v: &Value, scope: UsageScope, stage: UsageStage) -> Result<UsageReport, SseError> {
     let o = object(v, "Interactions usage")?;
     let output = counter(o, "total_output_tokens")?;
     let thoughts = counter(o, "total_thought_tokens")?;
@@ -101,14 +100,38 @@ fn usage(v: &Value) -> Result<Usage, SseError> {
     u.input_tokens = counter(o, "total_input_tokens")?;
     u.cached_input_tokens = counter(o, "total_cached_tokens")?;
     u.reasoning_tokens = thoughts;
-    u.output_tokens = match (output, thoughts) {
-        (Some(a), Some(b)) => Some(a.checked_add(b).ok_or(SseError::Limit)?),
-        _ => None,
-    };
+    u.output_tokens = output;
+    u.output_relation = OutputTokenRelation::ExcludesReasoning;
+    u.total_relation = TotalTokenRelation::Unreported;
     u.total_tokens = counter(o, "total_tokens")?;
-    counter(o, "total_tool_use_tokens")?;
-    u.validate().map_err(CodecError::from)?;
-    Ok(u)
+    let mut report = UsageReport::operation(u);
+    report.scope = scope;
+    report.stage = stage;
+    report.accounting = UsageAccounting::SplitGeneration {
+        tool_input_tokens: counter(o, "total_tool_use_tokens")?,
+        tool_input_relation: ToolInputRelation::Unreported,
+        total_relation: SplitTotalRelation::Unreported,
+    };
+    for (field, bucket) in [
+        ("input_tokens_by_modality", UsageBucket::Input),
+        ("tool_use_tokens_by_modality", UsageBucket::ToolInput),
+        ("output_tokens_by_modality", UsageBucket::Output),
+        ("cached_tokens_by_modality", UsageBucket::CacheRead),
+    ] {
+        if let Some(value) = o.get(field).filter(|v| !v.is_null()) {
+            report
+                .details
+                .modalities
+                .extend(crate::protocol::usage::modality_tokens(
+                    value, bucket, false,
+                )?);
+        }
+    }
+    if let Some(value) = o.get("grounding_tool_count").filter(|v| !v.is_null()) {
+        report.details.tool_requests = crate::protocol::usage::grounding_counts(value)?;
+    }
+    report.validate().map_err(CodecError::from)?;
+    Ok(report)
 }
 impl GenerationSseDecoder {
     pub fn new(
@@ -134,7 +157,6 @@ impl GenerationSseDecoder {
             steps: 0,
             members: vec![],
             calls: vec![],
-            signatures: vec![],
             completed: false,
             done: false,
             closed: false,
@@ -264,7 +286,18 @@ impl GenerationSseDecoder {
             };
             metadata.validate()?;
             self.metadata = Some(metadata);
-            return self.emit(StreamEvent::Started, out);
+            self.emit(StreamEvent::Started, out)?;
+            if let Some(value) = i.get("usage").filter(|v| !v.is_null()) {
+                self.emit(
+                    StreamEvent::UsageReport(usage(
+                        value,
+                        UsageScope::Operation,
+                        UsageStage::Checkpoint,
+                    )?),
+                    out,
+                )?;
+            }
+            return Ok(());
         }
         if self.metadata.is_none() {
             return Err(invalid("Interactions event before creation"));
@@ -275,6 +308,16 @@ impl GenerationSseDecoder {
                     return Err(invalid("Interactions status update"));
                 }
                 string(o, "interaction_id")?;
+                if let Some(value) = o.get("usage").filter(|v| !v.is_null()) {
+                    self.emit(
+                        StreamEvent::UsageReport(usage(
+                            value,
+                            UsageScope::Operation,
+                            UsageStage::Checkpoint,
+                        )?),
+                        out,
+                    )?;
+                }
                 Ok(())
             }
             "step.start" => self.start(o, out),
@@ -286,7 +329,16 @@ impl GenerationSseDecoder {
                     return Err(invalid("Interactions step owner"));
                 }
                 if kind == "step.stop" {
-                    self.stop(out)
+                    self.stop(out)?;
+                    for (field, scope, stage) in [
+                        ("usage", UsageScope::Operation, UsageStage::Checkpoint),
+                        ("step_usage", UsageScope::Step(index), UsageStage::Final),
+                    ] {
+                        if let Some(value) = o.get(field).filter(|v| !v.is_null()) {
+                            self.emit(StreamEvent::UsageReport(usage(value, scope, stage)?), out)?;
+                        }
+                    }
+                    Ok(())
                 } else {
                     self.delta(object(field(o, "delta")?, "delta")?, out)
                 }
@@ -322,7 +374,11 @@ impl GenerationSseDecoder {
         if signature.as_ref().is_some_and(String::is_empty) {
             return Err(invalid("step signature"));
         }
-        let (kind, item_kind) = match required(s, "type")? {
+        let step_type = required(s, "type")?;
+        if signature.is_some() && step_type != "thought" {
+            return Err(CodecError::Unsupported("Interactions signature owner".into()).into());
+        }
+        let (kind, item_kind) = match step_type {
             "thought" => (Kind::Thought, ItemKind::Reasoning),
             "model_output" if signature.is_none() => {
                 (Kind::Text, ItemKind::Message { phase: None })
@@ -345,10 +401,7 @@ impl GenerationSseDecoder {
                     Text::new(v, "Interactions call", MAX_TEXT_BYTES).map_err(|_| SseError::Limit)
                 };
                 (
-                    Kind::Call {
-                        id: id.into(),
-                        initial,
-                    },
+                    Kind::Call { initial },
                     ItemKind::ToolCall {
                         format: ArgumentFormat::Json,
                         call_id: text(id)?,
@@ -451,7 +504,7 @@ impl GenerationSseDecoder {
     ) -> Result<(), SseError> {
         let open = self.open.as_mut().ok_or_else(|| invalid("step"))?;
         match (required(d, "type")?, &open.kind) {
-            ("thought_signature", Kind::Thought | Kind::Call { .. }) => {
+            ("thought_signature", Kind::Thought) => {
                 if open.signature.is_some() {
                     return Err(invalid("duplicate step signature"));
                 }
@@ -557,20 +610,11 @@ impl GenerationSseDecoder {
             self.reasoning(
                 open.item,
                 Signed {
-                    call: None,
                     signature: open.signature,
                 },
                 out,
             )
         } else {
-            if let Kind::Call { id, .. } = open.kind
-                && let Some(signature) = open.signature
-            {
-                self.signatures.push(Signed {
-                    call: Some(id),
-                    signature: Some(signature),
-                });
-            }
             self.emit(
                 StreamEvent::ItemFinished {
                     item: open.item,
@@ -620,18 +664,6 @@ impl GenerationSseDecoder {
             "failed" | "cancelled" => return Err(CodecError::StreamFailure(500).into()),
             _ => return Err(invalid("Interactions terminal status")),
         };
-        for signed in std::mem::take(&mut self.signatures) {
-            let (item, _) = self.ids()?;
-            self.emit(
-                StreamEvent::ItemStarted {
-                    item,
-                    kind: ItemKind::Reasoning,
-                    replay: None,
-                },
-                out,
-            )?;
-            self.reasoning(item, signed, out)?;
-        }
         let group = GroupId::new(self.scope, 1);
         let envelope = if self.members.is_empty() {
             MessageEnvelope::empty(group, MessageEnvelopeRole::Assistant, None)
@@ -640,8 +672,14 @@ impl GenerationSseDecoder {
                 .map_err(CodecError::from)?
         };
         self.emit(StreamEvent::MessageEnvelope(envelope), out)?;
-        if let Some(v) = i.get("usage") {
-            self.emit(StreamEvent::Usage(usage(v)?), out)?;
+        if let Some(v) = i.get("usage").filter(|v| !v.is_null()) {
+            self.emit(
+                StreamEvent::UsageReport(usage(v, UsageScope::Operation, UsageStage::Final)?),
+                out,
+            )?;
+        } else if let Some(mut latest) = self.state.usage_reports().operation().cloned() {
+            latest.stage = UsageStage::Final;
+            self.emit(StreamEvent::UsageReport(latest), out)?;
         }
         if progress != InteractionProgress::Unreported {
             self.emit(StreamEvent::Progress(progress), out)?;

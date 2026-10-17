@@ -21,6 +21,7 @@ pub mod openrouter_images;
 pub mod openrouter_speech;
 pub mod reasoning;
 pub mod replay_envelope;
+pub(crate) mod usage;
 pub mod xiaomi_audio;
 
 /// One pure upstream encoding and its body-free adaptation receipts.
