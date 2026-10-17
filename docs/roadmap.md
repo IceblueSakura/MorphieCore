@@ -20,8 +20,6 @@ Defer successful integration scenarios whose completion conversion or binding-ad
 
 Next, identify assertion and carrier gaps in the existing codec-only coverage without regrowing the suite. Goal: strengthen independent expectations and safety boundaries, not reconnect unresolved conversions. Exit condition: selected gaps are covered in existing tests or explicitly recorded; the offline baseline and connected SDK gate pass. Keep default admission, HTTP schemas and routing unchanged. P7 may review unresolved public boundaries in parallel, but its choices must precede full-chain reconnection.
 
-Initial assertion gaps are omitted safety category/probability defaults and combined content/report byte boundaries. Extend the existing responsible-layer tests, not a presence matrix.
-
 ### Temporary routing freeze
 
 During this IR/codec migration, do not change route construction, candidate membership/order/selection policy, cache affinity, cooling, failover eligibility, attempt budgets, credentials or public model routing. Do not rank targets by projection loss or add a fallback to hide an unsupported conversion.
@@ -29,6 +27,8 @@ During this IR/codec migration, do not change route construction, candidate memb
 The selected [two-file configuration](usage.md#model-configuration) is a narrow exception for explicitly configured existing bindings and their deployment/policy parameters. It does not reopen affinity/cooling algorithms, retry eligibility, public semantic admission, new bindings or frozen-task contracts.
 
 Deferred defect: [credential binding](../src/gateway/startup/config.rs) truncates each pool by the route's per-exchange attempt ceiling before cooling and affinity can reorder candidates. Authorized pool members beyond that ceiling can never be selected. Leave this unchanged during the migration; resolve candidate membership and attempt-budget enforcement together in the later routing-rule review, including selection of healthy tail members after earlier members cool.
+
+Deferred selection gap: the [exchange loop](../src/gateway/generation/exchange.rs) checks only the immediately following candidate against the failure scope. With `[A/key1, A/key2, B/key3]`, an unknown-scope rate limit from A cannot rotate to its second key, but that rejected hop also prevents reaching Provider B. The routing-rule review must decide how to skip ineligible successors without weakening the ban on rate-limit key rotation. Verify the composition with cooling/affinity, pool/route budgets and publication holding before changing selection.
 
 IR/codec contracts take priority over keeping the full client-to-gateway-to-Provider chain connected. Existing public admission or topology checks may reject the new codec contract; record the exact incompatible boundary and leave integration disconnected rather than weakening IR or changing routing. Changed codec representability may affect an unchanged policy's result; it does not authorize changing that policy.
 
@@ -203,6 +203,29 @@ The review must:
 
 Exit condition: a selected boundary design and an explicit implementation/reconnection schedule. The review itself neither changes routes nor promises that an unrepresentable protocol conversion will become supported. Routing-rule changes remain in the third stage unless separately rescheduled; full-chain coverage remains blocked where its required boundary is unresolved.
 
+#### Public capability and notice proposal
+
+This proposal is not selected or implemented. The client-notice choice is whether callers need a complete receipt of actual per-exchange losses, or whether public capability declarations and a conservative possible-adaptation notice suffice.
+
+An acceptance boolean cannot distinguish exact verbosity support from the approved `gemini.omit-verbosity.v1` omission. A response header cannot be a complete actual-loss receipt either: streamed usage details may arrive after headers and trigger an approved delivery omission. Neither a notice nor a receipt authorizes dropping completion causes, safety reports or other protected facts.
+
+| Option | Client contract | Trade-off |
+|---|---|---|
+| Documentation only | Document faithful support, approved adaptation and rejection; keep actual receipts internal | No wire changes, but no machine-readable discovery tied to activated configuration |
+| Capability snapshot and possible-adaptation notice (recommended) | A small authenticated read-only capability view plus an explicitly conservative HTTP response-header notice; actual receipts stay in diagnostics | Preserve standard response bodies and SSE; notices may overstate actual adaptation and clients may not display them |
+| Capability snapshot and actual-loss receipts | Also provide a selected JSON/SSE extension or separate receipt retrieval contract | Stronger per-exchange visibility, but needs late-report, partial-failure and receipt-lifetime contracts before implementation |
+
+For the recommended option, publish by public model and distinguish request acceptance, delivery and history replay, including JSON/SSE limits. Describe faithful support, approved adaptation with stable rule IDs, and rejection without exposing credentials, deployment origins or internal candidate identities. Reuse typed contracts and policies; do not serialize the current admission booleans or union candidate capabilities. Keep `/v1/models` as model discovery rather than overloading its standard fields.
+
+The notice means possible adaptation, not applied loss or proof of Provider-effective settings. Its absence does not certify an exact full loop. Do not buffer a complete stream to collect receipts, rely on trailers, add per-request loss-policy overrides or change routing. Exact endpoint/header names remain part of a separately selected implementation slice.
+
+After selection, schedule reconnection in this order:
+
+1. Establish model-level evidence and preflight/preparation agreement for each selected existing binding; reject uncalibrated values and stop at interfaces that require routing-policy changes.
+2. Implement the selected capability/notice surface without activating new bindings or widening admission implicitly.
+3. Reconnect selected exact-carrier client loops first, then already-approved adapted paths. Verify tool calls, returned results, final answers and replay for JSON and SSE. Incompatible completion/safety carriers remain blocked; neither wider admission nor a notice resolves them.
+4. Require the full offline baseline and connected SDK gate for each implementation slice, then separately schedule bounded pi/opencode and Provider acceptance. Keep routing-rule changes in the third stage.
+
 ## Target clients
 
 pi and opencode are the primary clients and real-client gates. Codex, Claude Code and other agent acceptance belong to the final planned stage, with priority undecided and lowest for now.
@@ -267,7 +290,7 @@ P1/P2/P4/P5/P6, P3's six-budget quantization, P3b's rejection of over-ceiling bu
 
 | Question | Unresolved choice and recommendation | Blocks |
 |---|---|---|
-| P7 follow-up: Public surface and reconnection | Use the [boundary review](#p7-boundary-review) after first-stage local completion. Select the public native-versus-lossy capability representation and whether/how to warn clients, then schedule reconnection. No false native support claim or per-request policy override is selected | Later route-facing publication and full-chain acceptance, not the current migration |
+| P7 follow-up: Public surface and reconnection | Select the [capability and notice proposal](#public-capability-and-notice-proposal): prefer a small capability snapshot and conservative possible-adaptation notice, with actual receipts internal, over a new per-exchange receipt contract. The proposal and reconnection order remain unselected; no false native support claim or per-request policy override is selected | Later route-facing publication and full-chain acceptance, not the current migration |
 | Deferred native cache-only prewarming | Priority and scheduling are undecided. Select the operation and result contract when reopening the [slice](#deferred-cache-prewarming); client replay warming remains separate | Native cache-only implementation only, not native cache resource references, first-stage completion, coverage improvement or the P7 boundary review |
 | Deferred tool discovery and native `web_search` | Priority, scheduling and implementation designs are undecided. Select the affected IR and execution/replay contracts when reopening each [slice](#deferred-tool-discovery-and-web-search) | Implementation of those slices only, not first-stage completion, coverage improvement or the P7 boundary review |
 

@@ -331,6 +331,111 @@ fn stream_maps_thoughts_text_calls_and_anchored_signatures() {
         reduce(reports_state, StreamEvent::SafetyReport(expected.clone())),
         Err(EventError::Limit)
     ));
+    {
+        let mut report = expected.clone();
+        report.message = Some(Text::new("assessment", "fixture", 64).unwrap());
+        let report_bytes = std::mem::size_of::<SafetyReport>()
+            + std::mem::size_of::<SafetyRating>()
+            + "assessment".len();
+        assert_eq!(report.validate().unwrap(), report_bytes);
+        // Each text part and the report fit alone; together they reach the shared limit.
+        let items = |tail_bytes| {
+            vec![(
+                ItemId::new(1),
+                Item::Message(Message {
+                    role: MessageRole::Assistant,
+                    status: ItemLifecycle::Completed,
+                    phase: None,
+                    parts: [MAX_TEXT_BYTES, tail_bytes]
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, bytes)| Part {
+                            id: PartId::new(index as u64 + 1),
+                            cache: None,
+                            content: ContentPart::Text(
+                                Text::new("x".repeat(bytes), "fixture", MAX_TEXT_BYTES)
+                                    .unwrap()
+                                    .into(),
+                            ),
+                        })
+                        .collect(),
+                }),
+            )]
+        };
+        let tail_bytes = MAX_TOTAL_BYTES - MAX_TEXT_BYTES - report_bytes;
+        let report_only = GenerationResponse::new(vec![], Outcome::Completed)
+            .unwrap()
+            .with_safety_reports(vec![report.clone()])
+            .unwrap();
+        let at_limit = report_only.with_items(items(tail_bytes)).unwrap();
+        assert_eq!(at_limit.safety_reports(), std::slice::from_ref(&report));
+        let item = ItemId::new(1);
+        let mut state = reduce(StreamState::new(), StreamEvent::Started).unwrap();
+        state = reduce(
+            state,
+            StreamEvent::ItemStarted {
+                item,
+                kind: ItemKind::Message { phase: None },
+                replay: None,
+            },
+        )
+        .unwrap();
+        let Item::Message(message) = &at_limit.items()[0].1 else {
+            panic!("message")
+        };
+        for part in &message.parts {
+            state = reduce(
+                state,
+                StreamEvent::PartStarted {
+                    item,
+                    part: part.id,
+                    kind: PartKind::Text,
+                },
+            )
+            .unwrap();
+            let ContentPart::Text(text) = &part.content else {
+                panic!("text")
+            };
+            state = reduce(
+                state,
+                StreamEvent::Delta {
+                    item,
+                    part: part.id,
+                    fragment: text.as_str().to_owned(),
+                    logprobs: vec![],
+                },
+            )
+            .unwrap();
+        }
+        let content_only =
+            GenerationResponse::new(items(tail_bytes + 1), Outcome::Completed).unwrap();
+        assert!(matches!(
+            at_limit.with_items(content_only.items().to_vec()),
+            Err(GenerationError::Limit)
+        ));
+        assert!(matches!(
+            content_only.with_safety_reports(vec![report.clone()]),
+            Err(GenerationError::Limit)
+        ));
+
+        let with_report = reduce(state.clone(), StreamEvent::SafetyReport(report.clone())).unwrap();
+        assert_eq!(with_report.safety_reports(), std::slice::from_ref(&report));
+        let extra = StreamEvent::Delta {
+            item,
+            part: PartId::new(2),
+            fragment: "x".into(),
+            logprobs: vec![],
+        };
+        assert!(matches!(
+            reduce(with_report, extra.clone()),
+            Err(EventError::Limit)
+        ));
+        let content_only = reduce(state, extra).unwrap();
+        assert!(matches!(
+            reduce(content_only, StreamEvent::SafetyReport(report)),
+            Err(EventError::Limit)
+        ));
+    }
     let mut private_report = expected;
     private_report.message = Some(Text::new("private-assessment-detail", "fixture", 64).unwrap());
     assert!(!format!("{private_report:?}").contains("private-assessment-detail"));
@@ -341,7 +446,7 @@ fn stream_maps_thoughts_text_calls_and_anchored_signatures() {
     }]);
     reports[3]["candidates"][0]["safetyRatings"] = json!([{
         "category":"HARM_CATEGORY_HARASSMENT","probability":"MEDIUM"
-    }]);
+    }, {}]);
     let evaluated = decode(&wire(&reports)).unwrap();
     assert_eq!(
         evaluated.semantic.safety_reports(),
@@ -358,11 +463,18 @@ fn stream_maps_thoughts_text_calls_and_anchored_signatures() {
             },
             SafetyReport {
                 subject: SafetySubject::Output,
-                ratings: vec![SafetyRating {
-                    category: SafetyCategory::Harassment,
-                    probability: Some(SafetyProbability::Medium),
-                    blocked: Some(false)
-                }],
+                ratings: vec![
+                    SafetyRating {
+                        category: SafetyCategory::Harassment,
+                        probability: Some(SafetyProbability::Medium),
+                        blocked: Some(false)
+                    },
+                    SafetyRating {
+                        category: SafetyCategory::Unspecified,
+                        probability: Some(SafetyProbability::Unspecified),
+                        blocked: Some(false)
+                    },
+                ],
                 reason: None,
                 message: None
             },
