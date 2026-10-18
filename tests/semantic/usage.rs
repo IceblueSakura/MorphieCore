@@ -1,12 +1,156 @@
 //! Usage facts, views, scopes and named projections.
 mod scoped_reports {
     use morphiecore::semantic::task::generation::*;
+    use proptest::prelude::*;
 
     fn report(scope: UsageScope, stage: UsageStage, tokens: u64) -> UsageReport {
         let mut report = UsageReport::operation(Usage::operation(tokens, 0, tokens));
         report.scope = scope;
         report.stage = stage;
         report
+    }
+
+    fn split_modalities(input: u64, tool: u64, relation: ToolInputRelation) -> UsageReport {
+        let mut counts = Usage::operation(0, 0, 0);
+        counts.input_tokens = None;
+        counts.output_tokens = None;
+        counts.total_tokens = None;
+        counts.output_relation = OutputTokenRelation::ExcludesReasoning;
+        counts.total_relation = TotalTokenRelation::Unreported;
+        let mut report = UsageReport::operation(counts);
+        report.accounting = UsageAccounting::SplitGeneration {
+            tool_input_tokens: None,
+            tool_input_relation: relation,
+            total_relation: SplitTotalRelation::Unreported,
+        };
+        report.details.modalities = vec![
+            ModalityTokens {
+                bucket: UsageBucket::Input,
+                modality: Some(TokenModality::Text),
+                tokens: Some(input),
+                defaulted: false,
+            },
+            ModalityTokens {
+                bucket: UsageBucket::ToolInput,
+                modality: Some(TokenModality::Text),
+                tokens: Some(tool),
+                defaulted: false,
+            },
+        ];
+        report
+    }
+
+    #[test]
+    fn split_modality_relations_do_not_turn_known_overflow_into_unknown() {
+        let valid = split_modalities(u64::MAX - 1, 1, ToolInputRelation::Additional);
+        valid.validate().unwrap();
+        assert_eq!(valid.summary().input_text_tokens, Some(u64::MAX));
+        assert_eq!(valid.summary().input_tokens, None);
+        assert_eq!(
+            split_modalities(u64::MAX, 1, ToolInputRelation::Additional).validate(),
+            Err(GenerationError::InvalidResponse)
+        );
+        assert_eq!(
+            split_modalities(1, 2, ToolInputRelation::Included).validate(),
+            Err(GenerationError::InvalidResponse)
+        );
+        let included = split_modalities(2, 1, ToolInputRelation::Included);
+        included.validate().unwrap();
+        assert_eq!(included.summary().input_text_tokens, Some(2));
+        let unknown = split_modalities(u64::MAX, 1, ToolInputRelation::Unreported);
+        unknown.validate().unwrap();
+        assert_eq!(unknown.summary().input_text_tokens, None);
+        let mut sparse = valid.clone();
+        sparse.details.modalities[1].tokens = None;
+        sparse.validate().unwrap();
+        assert_eq!(sparse.summary().input_text_tokens, None);
+        assert_eq!(valid.details.modalities[1].tokens, Some(1));
+    }
+
+    proptest! {
+        #![proptest_config(crate::test_properties::config())]
+        #[test]
+        fn property_split_modality_relationships_use_checked_arithmetic(
+            input in prop_oneof![Just(0u64), Just(u64::MAX), any::<u64>()],
+            tool in prop_oneof![Just(0u64), Just(u64::MAX), any::<u64>()],
+            relation in 0u8..3,
+            modality in prop::sample::select(vec![
+                TokenModality::Text, TokenModality::Image, TokenModality::Audio
+            ])
+        ) {
+            let relation = match relation {
+                0 => ToolInputRelation::Additional,
+                1 => ToolInputRelation::Included,
+                _ => ToolInputRelation::Unreported,
+            };
+            let mut report = split_modalities(input, tool, relation);
+            for part in &mut report.details.modalities {
+                part.modality = Some(modality);
+            }
+            let valid = match relation {
+                ToolInputRelation::Additional => input.checked_add(tool).is_some(),
+                ToolInputRelation::Included => tool <= input,
+                ToolInputRelation::Unreported => true,
+            };
+            prop_assert_eq!(report.validate().is_ok(), valid);
+            if valid {
+                let summary = report.summary();
+                let actual = match modality {
+                    TokenModality::Text => summary.input_text_tokens,
+                    TokenModality::Image => summary.input_image_tokens,
+                    TokenModality::Audio => summary.input_audio_tokens,
+                    _ => unreachable!(),
+                };
+                let expected = match relation {
+                    ToolInputRelation::Additional => input.checked_add(tool),
+                    ToolInputRelation::Included => Some(input),
+                    ToolInputRelation::Unreported => None,
+                };
+                prop_assert_eq!(actual, expected);
+                prop_assert_eq!(summary.input_tokens, None);
+            }
+        }
+    }
+
+    #[test]
+    fn replacement_is_atomic_and_clears_old_sparse_facts_and_charges() {
+        let mut first = report(UsageScope::Operation, UsageStage::Checkpoint, 10);
+        first.details.modalities.push(ModalityTokens {
+            bucket: UsageBucket::Input,
+            modality: Some(TokenModality::Text),
+            tokens: Some(4),
+            defaulted: false,
+        });
+        let step = report(UsageScope::Step(0), UsageStage::Final, 9);
+        let mut reports = UsageReports::default();
+        reports.replace(first.clone()).unwrap();
+        reports.replace(step.clone()).unwrap();
+        let before = reports.clone();
+        let mut invalid = first.clone();
+        invalid.counts.total_tokens = Some(9);
+        assert_eq!(
+            reports.replace(invalid),
+            Err(GenerationError::InvalidResponse)
+        );
+        assert_eq!(reports, before);
+        assert_eq!(reports.bytes(), before.bytes());
+
+        let mut replacement = report(UsageScope::Operation, UsageStage::Final, 0);
+        replacement.counts.input_tokens = None;
+        replacement.counts.total_tokens = None;
+        reports.replace(replacement.clone()).unwrap();
+        assert_eq!(reports.operation(), Some(&replacement));
+        assert_eq!(
+            reports.reports().find(|r| r.scope == step.scope),
+            Some(&step)
+        );
+        assert_eq!(reports.summary().unwrap().output_tokens, Some(0));
+        assert_eq!(reports.summary().unwrap().input_tokens, None);
+        assert_eq!(reports.summary().unwrap().total_tokens, None);
+        assert_eq!(
+            reports.bytes(),
+            before.bytes() - first.bytes() + replacement.bytes()
+        );
     }
 
     #[test]
@@ -254,6 +398,29 @@ mod usage_views {
 }
 mod usage_relations {
     //! Counting relationships remain explicit reported facts.
+    #[test]
+    fn prediction_subsets_obey_the_joint_bound_not_only_individual_bounds() {
+        use morphiecore::semantic::task::generation::*;
+        for (output, accepted, rejected, valid) in [
+            (10, 9, 1, true),
+            (10, 6, 6, false),
+            (u64::MAX, u64::MAX, 1, false),
+        ] {
+            let mut usage = Usage::operation(0, output, output);
+            usage.accepted_prediction_tokens = Some(accepted);
+            usage.rejected_prediction_tokens = Some(rejected);
+            assert!(accepted <= output && rejected <= output);
+            assert_eq!(
+                usage.validate(),
+                if valid {
+                    Ok(())
+                } else {
+                    Err(GenerationError::InvalidResponse)
+                }
+            );
+        }
+    }
+
     use crate::events_support::{self as events, text};
     use morphiecore::{
         lowering::generation::RepresentationError,

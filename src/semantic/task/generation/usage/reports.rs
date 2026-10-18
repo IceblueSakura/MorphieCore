@@ -223,6 +223,34 @@ impl UsageReport {
                 return Err(invalid());
             }
         }
+        if let UsageAccounting::SplitGeneration {
+            tool_input_relation,
+            ..
+        } = self.accounting
+        {
+            // Missing parent totals do not erase relationships between two known
+            // counts of the same reported modality. Unknown modality is not an identity.
+            for input in self
+                .details
+                .modalities
+                .iter()
+                .filter(|p| p.bucket == UsageBucket::Input && p.modality.is_some())
+            {
+                let tool =
+                    self.details.modalities.iter().find(|p| {
+                        p.bucket == UsageBucket::ToolInput && p.modality == input.modality
+                    });
+                if let Some((input, tool)) = input.tokens.zip(tool.and_then(|p| p.tokens)) {
+                    match tool_input_relation {
+                        ToolInputRelation::Additional => {
+                            input.checked_add(tool).ok_or_else(invalid)?;
+                        }
+                        ToolInputRelation::Included if tool > input => return Err(invalid()),
+                        _ => {}
+                    }
+                }
+            }
+        }
         if self.details.cache_writes.len() == 2
             && self.details.cache_writes[0].ttl == self.details.cache_writes[1].ttl
         {

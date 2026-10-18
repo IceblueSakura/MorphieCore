@@ -7,6 +7,8 @@ mod events_support;
 mod image_support;
 #[path = "support/resources.rs"]
 mod resources_support;
+#[path = "support/properties.rs"]
+mod test_properties;
 #[path = "support/responses_profile.rs"]
 mod wire;
 

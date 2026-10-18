@@ -72,6 +72,8 @@ nix shell --inputs-from . nixpkgs#cargo-llvm-cov nixpkgs#llvmPackages_21.llvm --
   cargo llvm-cov --locked --offline --lcov --output-path <out>.lcov'
 ```
 
+For foundation hardening, use the same test selection before and after changes, and keep reports under ignored `testdata/reports/`. `--json --output-path testdata/reports/coverage.json` exports machine-readable file summaries. Report the scope precisely: an aggregate of `src/` also includes unit tests embedded there; focused production-only modules are a clearer measure for local changes. Inspect uncovered paths for missing invariants before adding tests. Do not force defensive unreachable branches or count generated cases as separate contracts.
+
 For a pruning pass:
 
 1. Record `src/` line coverage before changes.

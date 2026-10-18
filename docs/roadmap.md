@@ -14,7 +14,23 @@ Use the sourced [contract inventory](refs/2026-10-17-generation-contracts.md) fo
 
 The selected [visible-history transfer](architecture.md#reasoning-replay) and [scoped accounting](architecture.md#scoped-accounting) contracts are now the local baseline. Remaining work is actual signed-part/call ownership, attribution and execution/report contracts, not another review of whether foreign thinking should become assistant speech. Routing and binding admission remain unchanged.
 
-The user authorized four implementation stages: real replay ownership/client carriers; Anthropic accounting carriers; citation/source-use/point ownership; and execution reports, lifecycle snapshots and Messages target policy. Implement independently verifiable slices, keeping routing/admission and Provider acceptance frozen. For replay return, the selected contract restores original segmentation only from unchanged visible content plus a bounded attachment envelope transported through existing opaque client carriers. It does not claim immutable edit identity for indistinguishable content or unverified opencode carrier support. Validate native owner boundaries and actual client transformations before removing the old surrogate path. Accounting work may proceed independently while that carrier migration is developed.
+The current priority is stability and meaningful coverage of implemented foundations. Citation/source-use/point owners, additional execution controls/reports, Interactions snapshots and Messages target-policy changes are deferred until the user resumes that feature work. This changes implementation order, not the known semantic gaps or the pending design review.
+
+### Foundation hardening — current
+
+Use measured coverage to locate unexercised branches, then prioritize concrete failure modes rather than a global percentage target:
+
+- Exact JSON, byte/node/depth limits and aggregate accounting.
+- Replay ownership and dependency integrity, history edits and target-copy isolation.
+- Sparse usage snapshots, scope separation, replacement failure atomicity and overflow.
+- Stream transitions, arbitrary fragmentation, cancellation, poisoned-state handling and EOF-gated termination.
+- Existing request/response codecs and declared projection policies, with independent directional expectations.
+
+Extend responsible-layer tests and use bounded property tests where they explore real state/fragmentation boundaries. Fix demonstrated defects without adding new semantic vocabulary, widening binding admission or reopening routing. Preserve credential/auth, origin, cancellation, replay isolation and terminal-honesty coverage.
+
+Exit condition for each slice: the selected invariant has a meaningful assertion, affected uncovered paths are reviewed, and focused plus full offline checks pass. Report measured coverage changes separately from SDK/client and Provider evidence. The replay migration still requires validated client carriers; foundation coverage does not authorize changing pi, inventing filler, weakening failed assertions or publishing blocked replay work.
+
+Replay return restores original segmentation only from unchanged visible content plus a bounded opaque manifest. This does not claim immutable edit identity, opencode carrier support or full-route acceptance.
 
 Phase completeness covers the selected non-tool support scope, not all official Generation semantics. [Cache prewarming](#deferred-cache-prewarming) and [tool discovery and native `web_search`](#deferred-tool-discovery-and-web-search) are deferred, with priority and scheduling undecided. None blocks phase completion, coverage improvement or the P7 boundary review. Unsupported semantics remain explicit gaps, not silent losses or support claims.
 
@@ -28,7 +44,7 @@ Expand independent wire expectations and focused safety coverage to support huma
 
 Defer successful integration scenarios whose completion conversion or binding-admission contract is not selected. Remove those scenarios rather than invent a conversion or replace success with an expected gateway error. Keep identity, replay isolation, strict parsing, cancellation, transport bounds and honest-terminal assertions. Orthogonal fixtures should use exact supported carriers. Rebuild the selected integration coverage after IR/codec contracts stabilize, during the coverage stage.
 
-Next, request human review using the contract map, the new ownership gaps and the explicit [integration handoff](#integration-handoff). Exit condition: select the unresolved semantic designs and address review feedback. Keep default admission, HTTP schemas and routing unchanged. Neither an agent audit nor a public capability contract substitutes for human design approval.
+Keep the contract map, remaining ownership gaps and [integration handoff](#integration-handoff) available for later human design review. Foundation hardening does not require solving deferred features or certify their completeness. Keep default admission, HTTP schemas and routing unchanged; neither an agent audit nor a passing coverage run substitutes for design approval.
 
 ### Generation design review gate
 
@@ -43,7 +59,7 @@ Next, request human review using the contract map, the new ownership gaps and th
 | History and replay | [Replay](architecture.md#reasoning-replay), [context transforms](../src/semantic/task/generation/request/context_transform.rs), [Responses storage](architecture.md#stateful-history) | Are content ownership, deployment isolation and required replay preserved separately from TTL history and affinity? |
 | Public and integration boundary | [Integration handoff](#integration-handoff), [capability contract](architecture.md#public-capability-and-adaptation-notice), [topology compilation](../src/topology/compile.rs) | Is codec representation distinguished from default admission, model evidence and accepted client loops? |
 
-Review readiness is not approval. After design closure, request human review; address requested changes and wait for explicit approval before strengthening coverage. If review exposes another design defect, keep coverage blocked until its correction is reviewed. Existing regression, safety and publication gates remain in force throughout.
+Review readiness is not approval. The existing audit-coverage authorization and current foundation-hardening direction permit stronger tests without closing the design gate. Consequential unresolved semantic choices still need review before implementation. Existing regression, safety and publication gates remain in force throughout.
 
 ### Temporary routing freeze
 
