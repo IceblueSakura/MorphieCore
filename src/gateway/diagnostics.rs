@@ -513,22 +513,26 @@ impl Trace {
             return;
         }
         for normalization in fidelity.normalizations() {
-            if let crate::protocol::fidelity::Normalization::PredictionOmitted { rule } =
-                normalization
-            {
-                let loss = LossObservation {
-                    evidence: crate::lowering::generation::LossEvidence {
-                        rule,
-                        field: "generation.prediction",
-                        direction: "request.decode",
-                        action: "omit",
-                    },
-                    input: None,
-                    output: None,
-                };
-                if !self.record.input_losses.contains(&loss) {
-                    self.record.input_losses.push(loss);
+            use crate::protocol::fidelity::Normalization;
+            let (rule, field) = match normalization {
+                Normalization::PredictionOmitted { rule } => (*rule, "generation.prediction"),
+                Normalization::ReplayManifestOmitted { rule } => {
+                    (*rule, "generation.replay.attachments")
                 }
+                _ => continue,
+            };
+            let loss = LossObservation {
+                evidence: crate::lowering::generation::LossEvidence {
+                    rule,
+                    field,
+                    direction: "request.decode",
+                    action: "omit",
+                },
+                input: None,
+                output: None,
+            };
+            if !self.record.input_losses.contains(&loss) {
+                self.record.input_losses.push(loss);
             }
         }
     }

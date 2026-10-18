@@ -373,25 +373,29 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         let mut marker = None;
         let mut content = Vec::new();
         for block in parsed {
-            if let Some(token) = crate::protocol::attachments::messages_marker(&block.content)? {
-                if role != Role::Assistant || marker.is_some() || block.cache.is_some() {
-                    return Err(CodecError::Invalid("attachment carrier"));
-                }
-                marker = Some(token.to_owned());
+            if let Some(carried) = crate::protocol::attachments::messages_marker(&block.content) {
+                use crate::protocol::attachments::Carried;
+                marker = Some(
+                    if role != Role::Assistant || marker.is_some() || block.cache.is_some() {
+                        Carried::Unusable
+                    } else {
+                        carried
+                    },
+                );
             } else {
                 content.push(block);
             }
         }
-        if marker.is_none() || !content.is_empty() {
+        // A carrier-only assistant message has no visible content of its own.
+        if marker.is_none() || role != Role::Assistant || !content.is_empty() {
             intake.request_message(role, &content)?;
         }
         if let Some(marker) = marker {
             attachments.push(crate::protocol::attachments::Marker::bounded(
-                &marker,
+                marker,
                 start,
                 intake.items.len(),
-                None,
-            )?);
+            ));
         }
     }
     super::request::validate_system_placement(&roles)?;

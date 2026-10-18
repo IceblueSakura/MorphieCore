@@ -44,6 +44,10 @@ pub enum Normalization {
     PredictionOmitted {
         rule: &'static str,
     },
+    /// A returned replay manifest no longer matched its visible history.
+    ReplayManifestOmitted {
+        rule: &'static str,
+    },
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ResponseExtras {
@@ -795,6 +799,12 @@ impl FidelityRecords {
         self.normalizations
             .insert(Normalization::PredictionOmitted {
                 rule: "chat.omit-prediction.v1",
+            });
+    }
+    pub(crate) fn record_replay_manifest_omission(&mut self) {
+        self.normalizations
+            .insert(Normalization::ReplayManifestOmitted {
+                rule: "generation.omit-unmatched-replay-manifest.v1",
             });
     }
     pub(crate) fn copy_response_records(&mut self, source: &Self) {

@@ -93,7 +93,7 @@ pub(crate) fn decode_generation_with(
         let start = b.items.len();
         let mut value = message.clone();
         let marker = if matches!(direction, DecodeDirection::Client(_)) {
-            crate::protocol::attachments::take_chat(&mut value)?
+            crate::protocol::attachments::take_chat(&mut value)
         } else {
             None
         };
@@ -106,11 +106,10 @@ pub(crate) fn decode_generation_with(
         if let Some(marker) = marker {
             b.attachments
                 .push(crate::protocol::attachments::Marker::bounded(
-                    &marker,
+                    marker,
                     start,
                     b.items.len(),
-                    None,
-                )?);
+                ));
         }
     }
     let mut controls = controls(o, "max_completion_tokens")?;

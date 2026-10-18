@@ -342,14 +342,14 @@ pub(super) fn decode_items(
         let o = object(value)?;
         if !response
             && matches!(direction, DecodeDirection::Client(_))
-            && let Some(token) = crate::protocol::attachments::responses_marker(o)?
+            && let Some(carried) = crate::protocol::attachments::responses_marker(o)
         {
             b.attachments
                 .push(crate::protocol::attachments::Marker::prefix(
-                    token,
+                    carried,
                     &b.items,
                     b.attachments.last(),
-                )?);
+                ));
             continue;
         }
         let id = b.id()?;

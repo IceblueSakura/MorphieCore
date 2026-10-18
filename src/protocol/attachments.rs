@@ -399,132 +399,114 @@ impl Packet {
 pub(crate) fn is_marker(value: &str) -> bool {
     value.starts_with("mca")
 }
-fn label(fields: &serde_json::Map<String, Value>) -> Result<(), CodecError> {
-    if fields.get("id").is_some_and(|id| {
-        !id.as_str()
+fn label(fields: &serde_json::Map<String, Value>) -> bool {
+    fields.get("id").is_none_or(|id| {
+        id.as_str()
             .is_some_and(|id| !id.is_empty() && id.len() <= 256)
-    }) || fields.get("index").is_some_and(|n| n.as_u64().is_none())
-    {
-        return Err(invalid());
-    }
-    Ok(())
+    }) && fields.get("index").is_none_or(|n| n.as_u64().is_some())
+}
+/// A recognized gateway carrier. An altered or misplaced one is dropped with its hidden
+/// state rather than rejecting the visible history that the client returned.
+pub(crate) enum Carried {
+    Manifest(String),
+    Unusable,
 }
 /// Recognized transport records are removed before ordinary reasoning decoding.
-pub(crate) fn take_chat(message: &mut Value) -> Result<Option<String>, CodecError> {
+pub(crate) fn take_chat(message: &mut Value) -> Option<Carried> {
     let assistant = message["role"] == "assistant";
-    let Some(details) = message
+    let details = message
         .get_mut("reasoning_details")
-        .and_then(Value::as_array_mut)
-    else {
-        return Ok(None);
+        .and_then(Value::as_array_mut)?;
+    let carrier = |d: &Value| {
+        d["type"] == "reasoning.encrypted"
+            && d.get("data").and_then(Value::as_str).is_some_and(is_marker)
     };
-    let mut found = None;
-    for detail in details.iter() {
-        if detail["type"] == "reasoning.encrypted"
-            && let Some(value) = detail
-                .get("data")
-                .and_then(Value::as_str)
-                .filter(|s| is_marker(s))
-        {
-            if !assistant || found.is_some() {
-                return Err(invalid());
-            }
-            let fields = detail.as_object().ok_or_else(invalid)?;
-            label(fields)?;
-            if fields
-                .get("format")
-                .is_some_and(|f| f.as_str() != Some("openai-responses-v1"))
-            {
-                return Err(invalid());
-            }
-            found = Some(value.to_owned());
-        }
-    }
-    if found.is_some() {
-        details.retain(|d| {
-            !(d["type"] == "reasoning.encrypted"
-                && d.get("data").and_then(Value::as_str).is_some_and(is_marker))
+    let mut found = details.iter().filter(|d| carrier(d));
+    let first = found.next()?;
+    let usable = assistant
+        && found.next().is_none()
+        && first.as_object().is_some_and(|fields| {
+            label(fields)
+                && fields
+                    .get("format")
+                    .is_none_or(|f| f.as_str() == Some("openai-responses-v1"))
         });
-    }
-    Ok(found)
+    let value = first["data"].as_str().unwrap_or_default().to_owned();
+    details.retain(|d| !carrier(d));
+    Some(if usable {
+        Carried::Manifest(value)
+    } else {
+        Carried::Unusable
+    })
 }
-pub(crate) fn responses_marker(
-    fields: &serde_json::Map<String, Value>,
-) -> Result<Option<&str>, CodecError> {
+pub(crate) fn responses_marker(fields: &serde_json::Map<String, Value>) -> Option<Carried> {
     if fields.get("type").and_then(Value::as_str) != Some("reasoning") {
-        return Ok(None);
+        return None;
     }
-    let Some(value) = fields
+    let value = fields
         .get("encrypted_content")
         .and_then(Value::as_str)
-        .filter(|s| is_marker(s))
-    else {
-        return Ok(None);
-    };
-    label(fields)?;
-    for field in ["summary", "content"] {
-        if fields
-            .get(field)
-            .is_some_and(|v| !v.as_array().is_some_and(Vec::is_empty))
-        {
-            return Err(invalid());
-        }
-    }
-    if fields
-        .get("status")
-        .is_some_and(|v| v.as_str() != Some("completed"))
-    {
-        return Err(invalid());
-    }
-    Ok(Some(value))
+        .filter(|s| is_marker(s))?;
+    let usable = label(fields)
+        && ["summary", "content"].iter().all(|field| {
+            fields
+                .get(*field)
+                .is_none_or(|v| v.as_array().is_some_and(Vec::is_empty))
+        })
+        && fields
+            .get("status")
+            .is_none_or(|v| v.as_str() == Some("completed"));
+    Some(if usable {
+        Carried::Manifest(value.to_owned())
+    } else {
+        Carried::Unusable
+    })
 }
-pub(crate) fn messages_marker(block: &super::anthropic::Block) -> Result<Option<&str>, CodecError> {
+pub(crate) fn messages_marker(block: &super::anthropic::Block) -> Option<Carried> {
     match block {
         super::anthropic::Block::Thinking {
             thinking,
             signature,
-        } if is_marker(signature) => {
-            if !thinking.is_empty() {
-                return Err(invalid());
-            }
-            Ok(Some(signature))
+        } if is_marker(signature) => Some(if thinking.is_empty() {
+            Carried::Manifest(signature.clone())
+        } else {
+            Carried::Unusable
+        }),
+        super::anthropic::Block::RedactedThinking(data) if is_marker(data) => {
+            Some(Carried::Unusable)
         }
-        super::anthropic::Block::RedactedThinking(data) if is_marker(data) => Err(invalid()),
-        _ => Ok(None),
+        _ => None,
     }
 }
 pub(crate) struct Marker {
     start: usize,
     end: usize,
-    group: Option<GroupId>,
-    packet: Packet,
+    /// `None` when the returned carrier cannot be decoded.
+    packet: Option<Packet>,
 }
 impl Marker {
-    pub(crate) fn bounded(
-        value: &str,
-        start: usize,
-        end: usize,
-        group: Option<GroupId>,
-    ) -> Result<Self, CodecError> {
-        Ok(Self {
+    pub(crate) fn bounded(carried: Carried, start: usize, end: usize) -> Self {
+        Self {
             start,
             end,
-            group,
-            packet: Packet::decode(value)?,
-        })
+            packet: match carried {
+                Carried::Manifest(value) => Packet::decode(&value).ok(),
+                Carried::Unusable => None,
+            },
+        }
     }
     pub(crate) fn prefix(
-        value: &str,
+        carried: Carried,
         items: &[(ItemId, Item)],
         previous: Option<&Self>,
-    ) -> Result<Self, CodecError> {
+    ) -> Self {
         let end = items.len();
         let mut start = end;
         let boundary = previous.map_or(0, |marker| marker.end);
         while start > boundary && assistant(&items[start - 1].1) {
             start -= 1;
         }
-        Self::bounded(value, start, end, None)
+        Self::bounded(carried, start, end)
     }
 }
 fn assistant(item: &Item) -> bool {
@@ -637,8 +619,238 @@ impl TextCursor<'_> {
     }
 }
 
+/// Fresh derived identities for restored owners; skipped values after a fallback are harmless.
+struct Ids {
+    item: u64,
+    part: u64,
+    group: u64,
+}
+impl Ids {
+    fn next(value: &mut u64) -> Result<u64, CodecError> {
+        *value = value.checked_add(1).ok_or(CodecError::Limit)?;
+        Ok(*value)
+    }
+    fn item(&mut self) -> Result<ItemId, CodecError> {
+        Ok(ItemId::scoped(
+            LocalScope::DERIVED,
+            Self::next(&mut self.item)?,
+        ))
+    }
+    fn part(&mut self) -> Result<PartId, CodecError> {
+        Ok(PartId::scoped(
+            LocalScope::DERIVED,
+            Self::next(&mut self.part)?,
+        ))
+    }
+    fn group(&mut self) -> Result<GroupId, CodecError> {
+        Ok(GroupId::new(
+            LocalScope::DERIVED,
+            Self::next(&mut self.group)?,
+        ))
+    }
+}
+type Restored = (Vec<(ItemId, Item)>, Vec<MessageEnvelope>);
+/// Rebuild one carrier's owners. Any mismatch with the returned visible history fails
+/// without touching the caller's records.
+fn restore_marker(
+    previous: &[(ItemId, Item)],
+    packet: Packet,
+    fidelity: &mut FidelityRecords,
+    ids: &mut Ids,
+) -> Result<Restored, CodecError> {
+    if previous.iter().any(|(_, i)| !assistant(i)) {
+        return Err(invalid());
+    }
+    let mut texts = TextCursor {
+        parts: vec![],
+        index: 0,
+        offset: 0,
+    };
+    let mut barriers = Vec::new();
+    let mut text_bytes = 0usize;
+    for (id, item) in previous {
+        match item {
+            Item::Message(m) => {
+                if m.parts
+                    .iter()
+                    .any(|p| !matches!(p.content, ContentPart::Text(_)) || p.replay.is_some())
+                {
+                    return Err(unsupported());
+                }
+                if m.parts.is_empty() && m.status != ItemLifecycle::Completed {
+                    return Err(invalid());
+                }
+                texts.parts.extend(m.parts.iter().map(|part| TextPiece {
+                    part,
+                    status: m.status,
+                    phase: m.phase,
+                }));
+                for part in &m.parts {
+                    let ContentPart::Text(text) = &part.content else {
+                        return Err(unsupported());
+                    };
+                    text_bytes = text_bytes
+                        .checked_add(text.as_str().len())
+                        .ok_or(CodecError::Limit)?;
+                }
+            }
+            Item::ToolCall(_) | Item::Reasoning(_) => {
+                barriers.push((*id, item.clone(), text_bytes))
+            }
+            _ => return Err(unsupported()),
+        }
+    }
+    let mut barriers = barriers.into_iter();
+    let mut consumed_text = 0usize;
+    let mut restored = Vec::new();
+    for entry in packet.items {
+        restored.push(match entry {
+            Entry::Message {
+                status,
+                phase,
+                parts,
+            } => {
+                let phase = phase
+                    .as_deref()
+                    .map(|p| match p {
+                        "commentary" => Ok(Phase::Commentary),
+                        "final_answer" => Ok(Phase::FinalAnswer),
+                        _ => Err(invalid()),
+                    })
+                    .transpose()?;
+                let owner = ids.item()?;
+                let mut content = Vec::new();
+                for spec in parts {
+                    let mut part = texts.take(spec.bytes, ids.part()?, status, phase, fidelity)?;
+                    let ContentPart::Text(text) = &part.content else {
+                        return Err(invalid());
+                    };
+                    if digest(&[text.as_str()]) != spec.hash {
+                        return Err(invalid());
+                    }
+                    consumed_text = consumed_text
+                        .checked_add(spec.bytes)
+                        .ok_or(CodecError::Limit)?;
+                    part.replay = replay(spec.replay.as_deref())?;
+                    fidelity.record_part_replay(
+                        owner,
+                        status.into(),
+                        content.len(),
+                        &part,
+                        None,
+                    )?;
+                    content.push(part);
+                }
+                (
+                    owner,
+                    Item::Message(Message {
+                        role: MessageRole::Assistant,
+                        status: status.into(),
+                        phase,
+                        parts: content,
+                    }),
+                )
+            }
+            Entry::Call {
+                status: described,
+                hash,
+                replay: sealed,
+            } => {
+                let (owner, Item::ToolCall(mut call), offset) =
+                    barriers.next().ok_or_else(invalid)?
+                else {
+                    return Err(invalid());
+                };
+                if offset != consumed_text {
+                    return Err(invalid());
+                }
+                if call.replay.is_some() || call_hash(&call)? != hash {
+                    return Err(invalid());
+                }
+                call.status = status(call.status, described)?;
+                call.replay = replay(sealed.as_deref())?;
+                fidelity.record_call_replay(owner, &call, None)?;
+                (owner, Item::ToolCall(call))
+            }
+            Entry::Reasoning {
+                status: described,
+                hash,
+                parts,
+            } => {
+                let (owner, Item::Reasoning(mut reasoning), offset) =
+                    barriers.next().ok_or_else(invalid)?
+                else {
+                    return Err(invalid());
+                };
+                if offset != consumed_text {
+                    return Err(invalid());
+                }
+                if reasoning_hash(&reasoning) != hash {
+                    return Err(invalid());
+                }
+                let text = reasoning_text(&reasoning);
+                let mut offset = 0usize;
+                let mut content = Vec::new();
+                for spec in parts {
+                    let end = offset.checked_add(spec.bytes).ok_or(CodecError::Limit)?;
+                    let value = text.get(offset..end).ok_or_else(invalid)?;
+                    let value = Text::allowing_empty(value, "attachment reasoning", MAX_TEXT_BYTES)
+                        .map_err(|_| invalid())?;
+                    content.push((
+                        ids.part()?,
+                        if spec.summary {
+                            ReasoningContent::Summary(value)
+                        } else {
+                            ReasoningContent::Text(value)
+                        },
+                    ));
+                    offset = end;
+                }
+                if offset != text.len() {
+                    return Err(invalid());
+                }
+                reasoning.parts = content;
+                reasoning.status = status(reasoning.status, described)?;
+                fidelity.remove_replay(owner);
+                fidelity.record_replay(owner, &reasoning, None)?;
+                (owner, Item::Reasoning(reasoning))
+            }
+        });
+    }
+    if !texts.finish() || barriers.next().is_some() {
+        return Err(invalid());
+    }
+    let mut groups = Vec::with_capacity(packet.groups.len());
+    for group in packet.groups {
+        let id = ids.group()?;
+        groups.push(if group.members.is_empty() {
+            MessageEnvelope::empty(
+                id,
+                MessageEnvelopeRole::Assistant,
+                group.before.map(|n| restored[n].0),
+            )
+        } else {
+            if group.before.is_some() {
+                return Err(invalid());
+            }
+            MessageEnvelope::new(
+                id,
+                MessageEnvelopeRole::Assistant,
+                group.members.iter().map(|n| restored[*n].0).collect(),
+            )
+            .map_err(|_| invalid())?
+        });
+    }
+    if restored.is_empty() {
+        return Err(invalid());
+    }
+    Ok((restored, groups))
+}
+
 /// Restore once, before constructing the validated request. Unchanged visible projection
 /// authorizes the original segmentation; this does not prove immutable client edit identity.
+/// A carrier that no longer matches is dropped with a receipt: the visible history proceeds
+/// without that turn's hidden state instead of rejecting the request.
 pub(crate) fn restore(
     items: &mut Vec<(ItemId, Item)>,
     groups: &mut Vec<MessageEnvelope>,
@@ -648,20 +860,20 @@ pub(crate) fn restore(
     if markers.is_empty() {
         return Ok(());
     }
-    let scope = LocalScope::DERIVED;
-    let mut next_item = items.iter().map(|(id, _)| id.get()).max().unwrap_or(0);
-    let mut next_part = items
-        .iter()
-        .flat_map(|(_, item)| match item {
-            Item::Message(m) => m.parts.iter().map(|p| p.id.get()).collect::<Vec<_>>(),
-            Item::Reasoning(r) => r.parts.iter().map(|(id, _)| id.get()).collect(),
-            _ => vec![],
-        })
-        .max()
-        .unwrap_or(0);
-    let mut next_group = groups.iter().map(|g| g.id().get()).max().unwrap_or(0);
+    let mut ids = Ids {
+        item: items.iter().map(|(id, _)| id.get()).max().unwrap_or(0),
+        part: items
+            .iter()
+            .flat_map(|(_, item)| match item {
+                Item::Message(m) => m.parts.iter().map(|p| p.id.get()).collect::<Vec<_>>(),
+                Item::Reasoning(r) => r.parts.iter().map(|(id, _)| id.get()).collect(),
+                _ => vec![],
+            })
+            .max()
+            .unwrap_or(0),
+        group: groups.iter().map(|g| g.id().get()).max().unwrap_or(0),
+    };
     let mut preceding = 0;
-    let mut final_items = items.len();
     let mut added_parts = 0usize;
     let mut added_groups = 0usize;
     for marker in &markers {
@@ -669,14 +881,13 @@ pub(crate) fn restore(
             return Err(invalid());
         }
         preceding = marker.end;
-        final_items = final_items
-            .checked_sub(marker.end - marker.start)
-            .and_then(|n| n.checked_add(marker.packet.items.len()))
-            .ok_or(CodecError::Limit)?;
+        let Some(packet) = &marker.packet else {
+            continue;
+        };
         added_groups = added_groups
-            .checked_add(marker.packet.groups.len())
+            .checked_add(packet.groups.len())
             .ok_or(CodecError::Limit)?;
-        for entry in &marker.packet.items {
+        for entry in &packet.items {
             let count = match entry {
                 Entry::Message { parts, .. } => parts.len(),
                 Entry::Reasoning { parts, .. } => parts.len(),
@@ -688,218 +899,40 @@ pub(crate) fn restore(
             return Err(CodecError::Limit);
         }
     }
-    if final_items > MAX_ITEMS {
-        return Err(CodecError::Limit);
-    }
+    let mut final_items = items.len();
     let mut replacements = Vec::with_capacity(markers.len());
     let mut removed_owners = BTreeMap::new();
-    let mut removed_groups = BTreeSet::new();
     let mut restored_groups = Vec::with_capacity(added_groups);
     for (marker_index, marker) in markers.into_iter().enumerate() {
         let previous = &items[marker.start..marker.end];
-        if previous.iter().any(|(_, i)| !assistant(i)) {
-            return Err(invalid());
-        }
-        let mut texts = TextCursor {
-            parts: vec![],
-            index: 0,
-            offset: 0,
-        };
-        let mut barriers = Vec::new();
-        let mut text_bytes = 0usize;
-        for (id, item) in previous {
-            match item {
-                Item::Message(m) => {
-                    if m.parts
-                        .iter()
-                        .any(|p| !matches!(p.content, ContentPart::Text(_)) || p.replay.is_some())
-                    {
-                        return Err(unsupported());
-                    }
-                    if m.parts.is_empty() && m.status != ItemLifecycle::Completed {
-                        return Err(invalid());
-                    }
-                    texts.parts.extend(m.parts.iter().map(|part| TextPiece {
-                        part,
-                        status: m.status,
-                        phase: m.phase,
-                    }));
-                    for part in &m.parts {
-                        let ContentPart::Text(text) = &part.content else {
-                            return Err(unsupported());
-                        };
-                        text_bytes = text_bytes
-                            .checked_add(text.as_str().len())
-                            .ok_or(CodecError::Limit)?;
-                    }
-                }
-                Item::ToolCall(_) | Item::Reasoning(_) => {
-                    barriers.push((*id, item.clone(), text_bytes))
-                }
-                _ => return Err(unsupported()),
+        let restored = marker.packet.map(|packet| {
+            let mut trial = fidelity.clone();
+            restore_marker(previous, packet, &mut trial, &mut ids).map(|value| (value, trial))
+        });
+        let ((restored, packet_groups), trial) = match restored {
+            Some(Ok(value)) => value,
+            Some(Err(CodecError::Invalid(_) | CodecError::Unsupported(_))) | None => {
+                fidelity.record_replay_manifest_omission();
+                continue;
             }
-        }
-        let mut barriers = barriers.into_iter();
-        let mut consumed_text = 0usize;
-        let mut restored = Vec::new();
-        for entry in marker.packet.items {
-            let mut part_id = || -> Result<PartId, CodecError> {
-                next_part = next_part.checked_add(1).ok_or(CodecError::Limit)?;
-                Ok(PartId::scoped(scope, next_part))
-            };
-            restored.push(match entry {
-                Entry::Message {
-                    status,
-                    phase,
-                    parts,
-                } => {
-                    let phase = phase
-                        .as_deref()
-                        .map(|p| match p {
-                            "commentary" => Ok(Phase::Commentary),
-                            "final_answer" => Ok(Phase::FinalAnswer),
-                            _ => Err(invalid()),
-                        })
-                        .transpose()?;
-                    next_item = next_item.checked_add(1).ok_or(CodecError::Limit)?;
-                    let owner = ItemId::scoped(scope, next_item);
-                    let mut content = Vec::new();
-                    for spec in parts {
-                        let mut part =
-                            texts.take(spec.bytes, part_id()?, status, phase, fidelity)?;
-                        let ContentPart::Text(text) = &part.content else {
-                            return Err(invalid());
-                        };
-                        if digest(&[text.as_str()]) != spec.hash {
-                            return Err(invalid());
-                        }
-                        consumed_text = consumed_text
-                            .checked_add(spec.bytes)
-                            .ok_or(CodecError::Limit)?;
-                        part.replay = replay(spec.replay.as_deref())?;
-                        fidelity.record_part_replay(
-                            owner,
-                            status.into(),
-                            content.len(),
-                            &part,
-                            None,
-                        )?;
-                        content.push(part);
-                    }
-                    (
-                        owner,
-                        Item::Message(Message {
-                            role: MessageRole::Assistant,
-                            status: status.into(),
-                            phase,
-                            parts: content,
-                        }),
-                    )
-                }
-                Entry::Call {
-                    status: described,
-                    hash,
-                    replay: sealed,
-                } => {
-                    let (owner, Item::ToolCall(mut call), offset) =
-                        barriers.next().ok_or_else(invalid)?
-                    else {
-                        return Err(invalid());
-                    };
-                    if offset != consumed_text {
-                        return Err(invalid());
-                    }
-                    if call.replay.is_some() || call_hash(&call)? != hash {
-                        return Err(invalid());
-                    }
-                    call.status = status(call.status, described)?;
-                    call.replay = replay(sealed.as_deref())?;
-                    fidelity.record_call_replay(owner, &call, None)?;
-                    (owner, Item::ToolCall(call))
-                }
-                Entry::Reasoning {
-                    status: described,
-                    hash,
-                    parts,
-                } => {
-                    let (owner, Item::Reasoning(mut reasoning), offset) =
-                        barriers.next().ok_or_else(invalid)?
-                    else {
-                        return Err(invalid());
-                    };
-                    if offset != consumed_text {
-                        return Err(invalid());
-                    }
-                    if reasoning_hash(&reasoning) != hash {
-                        return Err(invalid());
-                    }
-                    let text = reasoning_text(&reasoning);
-                    let mut offset = 0usize;
-                    let mut content = Vec::new();
-                    for spec in parts {
-                        let end = offset.checked_add(spec.bytes).ok_or(CodecError::Limit)?;
-                        let value = text.get(offset..end).ok_or_else(invalid)?;
-                        let value =
-                            Text::allowing_empty(value, "attachment reasoning", MAX_TEXT_BYTES)
-                                .map_err(|_| invalid())?;
-                        content.push((
-                            part_id()?,
-                            if spec.summary {
-                                ReasoningContent::Summary(value)
-                            } else {
-                                ReasoningContent::Text(value)
-                            },
-                        ));
-                        offset = end;
-                    }
-                    if offset != text.len() {
-                        return Err(invalid());
-                    }
-                    reasoning.parts = content;
-                    reasoning.status = status(reasoning.status, described)?;
-                    fidelity.remove_replay(owner);
-                    fidelity.record_replay(owner, &reasoning, None)?;
-                    (owner, Item::Reasoning(reasoning))
-                }
-            });
-        }
-        if !texts.finish() || barriers.next().is_some() {
-            return Err(invalid());
-        }
-        let first = restored.first().map(|(id, _)| *id).ok_or_else(invalid)?;
+            Some(Err(error)) => return Err(error),
+        };
+        final_items = final_items
+            .checked_sub(previous.len())
+            .and_then(|n| n.checked_add(restored.len()))
+            .ok_or(CodecError::Limit)?;
+        *fidelity = trial;
         for (id, _) in previous {
-            removed_owners.insert(*id, (marker_index, first));
+            removed_owners.insert(*id, (marker_index, restored[0].0));
         }
-        if let Some(group) = marker.group {
-            removed_groups.insert(group);
-        }
-        for group in marker.packet.groups {
-            next_group = next_group.checked_add(1).ok_or(CodecError::Limit)?;
-            let id = GroupId::new(scope, next_group);
-            restored_groups.push(if group.members.is_empty() {
-                MessageEnvelope::empty(
-                    id,
-                    MessageEnvelopeRole::Assistant,
-                    group.before.map(|n| restored[n].0),
-                )
-            } else {
-                if group.before.is_some() {
-                    return Err(invalid());
-                }
-                MessageEnvelope::new(
-                    id,
-                    MessageEnvelopeRole::Assistant,
-                    group.members.iter().map(|n| restored[*n].0).collect(),
-                )?
-            });
-        }
+        restored_groups.extend(packet_groups);
         replacements.push((marker.start, marker.end, restored));
+    }
+    if final_items > MAX_ITEMS {
+        return Err(CodecError::Limit);
     }
     let mut kept = Vec::new();
     for group in groups.drain(..) {
-        if removed_groups.contains(&group.id()) {
-            continue;
-        }
         if let Some((marker, _)) = group.members().iter().find_map(|id| removed_owners.get(id)) {
             if !group
                 .members()

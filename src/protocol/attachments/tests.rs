@@ -215,8 +215,56 @@ fn client_carriers_restore_distinct_equal_text_owners_and_calls() {
         );
     }
 }
+/// Client edits make the carrier unusable. Visible history still proceeds; only the
+/// replay it carried is dropped, and the receipt records that omission.
+fn assert_dropped(
+    client: &ClientAdapter,
+    request: &Value,
+    context: &str,
+) -> crate::adapter::Request {
+    let mut decoded = client
+        .decode_client_request(request.to_string().as_bytes())
+        .unwrap_or_else(|error| panic!("{context}: {error:?}"));
+    assert!(
+        decoded.task.fidelity.normalizations().contains(
+            &crate::protocol::fidelity::Normalization::ReplayManifestOmitted {
+                rule: "generation.omit-unmatched-replay-manifest.v1"
+            }
+        ),
+        "{context}"
+    );
+    assert!(
+        decoded
+            .task
+            .semantic
+            .items()
+            .iter()
+            .all(|(_, item)| !item.has_replay_attachment()),
+        "{context}"
+    );
+    open_from_client(&mut decoded).unwrap();
+    decoded
+}
+/// Only the thought keeps its own carrier; text and call signatures are gone.
+fn assert_unsigned_history(request: &crate::adapter::Request, context: &str) {
+    let (wire, _) = encode_generation_request(
+        &request.task.semantic,
+        &request.task.fidelity,
+        &target(),
+        None,
+    )
+    .unwrap();
+    let signatures: Vec<_> = wire["contents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|content| content["parts"].as_array().unwrap())
+        .filter_map(|part| part.get("thoughtSignature"))
+        .collect();
+    assert_eq!(signatures, [&json!("UjE=")], "{context}");
+}
 #[test]
-fn carrier_rejects_changed_visible_text_call_arguments_and_partial_claims() {
+fn changed_visible_history_drops_its_carrier_but_keeps_the_request() {
     let (source, _) = source();
     for protocol in [
         ClientProtocol::Chat,
@@ -236,13 +284,8 @@ fn carrier_rejects_changed_visible_text_call_arguments_and_partial_claims() {
                 changed["messages"][1]["content"][1]["text"] = json!("OKchanged")
             }
         }
-        assert!(
-            matches!(
-                client.decode_client_request(changed.to_string().as_bytes()),
-                Err(CodecError::Invalid("replay attachment manifest"))
-            ),
-            "{protocol:?}"
-        );
+        let context = format!("{protocol:?} text");
+        assert_unsigned_history(&assert_dropped(&client, &changed, &context), &context);
         let mut changed = request.clone();
         match protocol {
             ClientProtocol::Chat => {
@@ -256,32 +299,23 @@ fn carrier_rejects_changed_visible_text_call_arguments_and_partial_claims() {
                 changed["messages"][1]["content"][2]["input"]["n"] = json!(9007199254740992u64)
             }
         }
-        assert!(
-            matches!(
-                client.decode_client_request(changed.to_string().as_bytes()),
-                Err(CodecError::Invalid("replay attachment manifest"))
-            ),
-            "{protocol:?}"
-        );
+        let context = format!("{protocol:?} arguments");
+        assert_unsigned_history(&assert_dropped(&client, &changed, &context), &context);
         if protocol == ClientProtocol::Responses {
             let mut changed = request.clone();
             changed["input"].as_array_mut().unwrap().swap(2, 3);
-            assert!(matches!(
-                client.decode_client_request(changed.to_string().as_bytes()),
-                Err(CodecError::Invalid("replay attachment manifest"))
-            ));
+            assert_unsigned_history(&assert_dropped(&client, &changed, "reordered"), "reordered");
             let mut changed = request.clone();
             changed["input"][2]["status"] = json!("incomplete");
-            assert!(matches!(
-                client.decode_client_request(changed.to_string().as_bytes()),
-                Err(CodecError::Invalid("replay attachment manifest"))
-            ));
-            let mut deleted = request;
-            deleted["input"].as_array_mut().unwrap().remove(2);
-            assert!(matches!(
-                client.decode_client_request(deleted.to_string().as_bytes()),
-                Err(CodecError::Invalid("replay attachment manifest"))
-            ));
+            // generateContent has no partial-history carrier; that limit is independent.
+            assert_dropped(&client, &changed, "status");
+            let mut changed = request.clone();
+            changed["input"].as_array_mut().unwrap().remove(2);
+            assert_unsigned_history(&assert_dropped(&client, &changed, "deleted"), "deleted");
+            let mut changed = request.clone();
+            let carrier = changed["input"].as_array().unwrap().len() - 2;
+            changed["input"][carrier]["encrypted_content"] = json!("mca1.!");
+            assert_unsigned_history(&assert_dropped(&client, &changed, "malformed"), "malformed");
         }
     }
 }
@@ -585,19 +619,17 @@ fn pinned_pi_owned_replay() {
     assert_eq!(returned.len(), 9);
     for (n, body) in returned.iter().enumerate() {
         let protocol = protocols[n % 3];
-        let decoded = client(protocol).decode_client_request(body.to_string().as_bytes());
-        if (3..6).contains(&n) {
-            assert!(
-                matches!(
-                    decoded,
-                    Err(CodecError::Invalid("replay attachment manifest"))
-                ),
-                "{protocol:?}"
-            );
-            continue;
-        }
-        let mut decoded = decoded.unwrap();
-        open_from_client(&mut decoded).unwrap();
+        let rounded = (3..6).contains(&n);
+        let decoded = if rounded {
+            // pi rounds the large integer; the changed call drops the whole carrier.
+            assert_dropped(&client(protocol), body, &format!("{protocol:?} rounded"))
+        } else {
+            let mut decoded = client(protocol)
+                .decode_client_request(body.to_string().as_bytes())
+                .unwrap();
+            open_from_client(&mut decoded).unwrap();
+            decoded
+        };
         // Request controls/tools have separate frozen admission contracts; this probe
         // re-encodes the returned history, including the actual synthetic tool result.
         let history = GenerationRequest::from_resources(
@@ -610,6 +642,20 @@ fn pinned_pi_owned_replay() {
         .unwrap();
         let (wire, _) =
             encode_generation_request(&history, &decoded.task.fidelity, &target(), None).unwrap();
+        if rounded {
+            let parts = wire["contents"][1]["parts"].as_array().unwrap();
+            let signatures: Vec<_> = parts
+                .iter()
+                .filter_map(|part| part.get("thoughtSignature"))
+                .collect();
+            assert_eq!(signatures, [&json!("UjE=")], "{protocol:?}");
+            assert_eq!(
+                parts.last().unwrap()["functionCall"]["args"]["n"],
+                json!(9007199254740992u64),
+                "{protocol:?}"
+            );
+            continue;
+        }
         if n == 6 {
             // Accepted client limitation: pinned pi Chat drops an assistant turn with
             // neither text nor calls, so its signature is lost but the request proceeds.
@@ -830,7 +876,7 @@ fn independent_empty_carriers_rebuild_once_and_share_aggregate_budgets() {
                 )],
             }),
         ));
-        let marker = Marker::prefix(token, &items, markers.last()).unwrap();
+        let marker = Marker::prefix(Carried::Manifest(token.into()), &items, markers.last());
         assert_eq!((marker.start, marker.end), (n as usize - 1, n as usize));
         markers.push(marker);
     }
@@ -867,15 +913,14 @@ fn independent_empty_carriers_rebuild_once_and_share_aggregate_budgets() {
             vec![Marker {
                 start: 1,
                 end: 1,
-                group: None,
-                packet
+                packet: Some(packet)
             }]
         ),
         Err(CodecError::Limit)
     ));
 }
 #[test]
-fn restore_keeps_described_phase_and_rejects_unsplittable_boundaries() {
+fn restore_keeps_described_phase_and_drops_unsplittable_carriers() {
     let token = replay_envelope::seal(
         &CLIENT_ORIGIN,
         ReplayFormat::GoogleGenerateContentSignature,
@@ -890,15 +935,14 @@ fn restore_keeps_described_phase_and_rejects_unsplittable_boundaries() {
     let marker = |phase: Option<&str>, parts| Marker {
         start: 0,
         end: 1,
-        group: None,
-        packet: Packet {
+        packet: Some(Packet {
             items: vec![Entry::Message {
                 status: Status::Completed,
                 phase: phase.map(str::to_owned),
                 parts,
             }],
             groups: vec![],
-        },
+        }),
     };
     let history = |phase, parts: Vec<Part>| {
         vec![(
@@ -918,21 +962,42 @@ fn restore_keeps_described_phase_and_rejects_unsplittable_boundaries() {
         )
     };
     let run = |mut items: Vec<(ItemId, Item)>, marker| {
-        restore(
-            &mut items,
-            &mut vec![],
+        let mut fidelity = FidelityRecords::default();
+        restore(&mut items, &mut vec![], &mut fidelity, vec![marker]).unwrap();
+        (items, fidelity)
+    };
+    // A mismatch keeps the returned visible history unchanged and records the omission.
+    let dropped = |items: Vec<(ItemId, Item)>, marker: Marker, reason: &str| {
+        let failure = restore_marker(
+            &items,
+            Packet::decode(marker.packet.as_ref().unwrap().encode().unwrap().as_str()).unwrap(),
             &mut FidelityRecords::default(),
-            vec![marker],
-        )
-        .map(|()| items)
+            &mut Ids {
+                item: 9,
+                part: 9,
+                group: 0,
+            },
+        );
+        assert!(
+            matches!(&failure, Err(CodecError::Invalid(r)) if *r == reason)
+                || matches!(&failure, Err(CodecError::Unsupported(r)) if r == reason),
+            "{reason}"
+        );
+        let (restored, fidelity) = run(items.clone(), marker);
+        assert_eq!(restored, items);
+        assert!(fidelity.normalizations().contains(
+            &crate::protocol::fidelity::Normalization::ReplayManifestOmitted {
+                rule: "generation.omit-unmatched-replay-manifest.v1"
+            }
+        ));
     };
 
     // Responses-style returned history has no phase; the manifest supplies it.
-    let restored = run(
+    let (restored, fidelity) = run(
         history(None, vec![text(1, "OKOK")]),
         marker(Some("commentary"), vec![segment("OK"), segment("OK")]),
-    )
-    .unwrap();
+    );
+    assert!(fidelity.normalizations().is_empty());
     let Item::Message(message) = &restored[0].1 else {
         panic!("restored message")
     };
@@ -948,24 +1013,20 @@ fn restore_keeps_described_phase_and_rejects_unsplittable_boundaries() {
             .collect::<Vec<_>>(),
         [("OK", true), ("OK", true)]
     );
-    assert!(matches!(
-        run(
-            history(Some(Phase::FinalAnswer), vec![text(1, "OKOK")]),
-            marker(Some("commentary"), vec![segment("OK"), segment("OK")]),
-        ),
-        Err(CodecError::Invalid("replay attachment manifest"))
-    ));
+    dropped(
+        history(Some(Phase::FinalAnswer), vec![text(1, "OKOK")]),
+        marker(Some("commentary"), vec![segment("OK"), segment("OK")]),
+        "replay attachment manifest",
+    );
 
     // A cache marker ending inside a restored part has no faithful owner.
     let mut cached = text(1, "O");
     cached.cache = Some(PrefixCacheTtl::FiveMinutes);
-    assert!(matches!(
-        run(
-            history(None, vec![cached, text(2, "K")]),
-            marker(None, vec![segment("OK")]),
-        ),
-        Err(CodecError::Unsupported(reason)) if reason == "attachment cache boundary"
-    ));
+    dropped(
+        history(None, vec![cached, text(2, "K")]),
+        marker(None, vec![segment("OK")]),
+        "attachment cache boundary",
+    );
     // Splitting probabilities or citations would reassign them to guessed boundaries.
     let mut annotated = text(1, "OKOK");
     annotated.content = ContentPart::Text(
@@ -976,11 +1037,9 @@ fn restore_keeps_described_phase_and_rejects_unsplittable_boundaries() {
         )
         .unwrap(),
     );
-    assert!(matches!(
-        run(
-            history(None, vec![annotated]),
-            marker(None, vec![segment("OK"), segment("OK")]),
-        ),
-        Err(CodecError::Unsupported(reason)) if reason == "attachment metadata split"
-    ));
+    dropped(
+        history(None, vec![annotated]),
+        marker(None, vec![segment("OK"), segment("OK")]),
+        "attachment metadata split",
+    );
 }

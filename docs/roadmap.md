@@ -30,7 +30,15 @@ Extend responsible-layer tests and use bounded property tests where they explore
 
 Exit condition for each slice: the selected invariant has a meaningful assertion, affected uncovered paths are reviewed, and focused plus full offline checks pass. Report measured coverage changes separately from SDK/client and Provider evidence. Client-compatibility losses follow the [compatibility-before-rejection decision](architecture.md#settled-decisions); they never invent filler or replace hidden state.
 
-Replay return restores original segmentation only from unchanged visible content plus a bounded opaque manifest. This does not claim immutable edit identity, opencode carrier support or full-route acceptance.
+Replay return restores original segmentation only from unchanged visible content plus a bounded opaque manifest; an unmatched manifest is dropped with a receipt. This does not claim immutable edit identity, opencode carrier support or full-route acceptance.
+
+Next slices, in order:
+
+1. **Messages receipt parity.** Static Messages delivery records `messages.usage-view.v1` when its usage view differs from the IR; SSE records nothing. Derive both from one predicate. Exit: one assertion compares JSON and SSE receipts for all three clients.
+2. **Legacy signature payloads.** Envelopes issued before part/call ownership carry `call` or `tail` anchors, which now reject the whole request. Drop only that replay with a named receipt, following the compatibility decision. Exit: an independent old-format fixture returns visible history without the signature.
+3. **Codec coverage gaps.** Add hand-written directional expectations and failure-reaching negatives for generateContent tool-result execution status, Interactions request encoding, Messages strict schema and the OpenAI projection loss rules. Exit: each listed branch has an assertion; no coverage target.
+4. **Rejection audit.** Classify current client-visible rejections as protected meaning or client-compatibility loss. Present candidates for named degradation for selection; change none implicitly.
+5. **Readability pass.** Split the rustfmt-skipped single-line codec blocks into statements, and condense repeated roadmap disclaimers without changing decisions. Exit: no behavior change; anchors still resolve.
 
 Phase completeness covers the selected non-tool support scope, not all official Generation semantics. [Cache prewarming](#deferred-cache-prewarming) and [tool discovery and native `web_search`](#deferred-tool-discovery-and-web-search) are deferred, with priority and scheduling undecided. None blocks phase completion, coverage improvement or the P7 boundary review. Unsupported semantics remain explicit gaps, not silent losses or support claims.
 
