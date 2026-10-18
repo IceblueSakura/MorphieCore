@@ -72,7 +72,7 @@ nix shell --inputs-from . nixpkgs#cargo-llvm-cov nixpkgs#llvmPackages_21.llvm --
   cargo llvm-cov --locked --offline --lcov --output-path <out>.lcov'
 ```
 
-For foundation hardening, use the same test selection before and after changes, and keep reports under ignored `testdata/reports/`. `--json --output-path testdata/reports/coverage.json` exports machine-readable file summaries. Report the scope precisely: an aggregate of `src/` also includes unit tests embedded there; focused production-only modules are a clearer measure for local changes. Inspect uncovered paths for missing invariants before adding tests. Do not force defensive unreachable branches or count generated cases as separate contracts.
+When measuring coverage changes, use the same test selection before and after, and keep reports under ignored `testdata/reports/`. A run leaves startup-test `default_*.profraw` files in the repository root; remove them afterwards. `--json --output-path testdata/reports/coverage.json` exports machine-readable file summaries. Report the scope precisely: an aggregate of `src/` also includes unit tests embedded there; focused production-only modules are a clearer measure for local changes. Inspect uncovered paths for missing invariants before adding tests. Do not force defensive unreachable branches or count generated cases as separate contracts.
 
 For a pruning pass:
 
@@ -80,7 +80,6 @@ For a pruning pass:
 2. Build instrumented binaries using `cargo llvm-cov show-env`.
 3. Run each selected test with `--exact` and export its coverage.
 4. Compare coverage after pruning and inspect every newly uncovered line.
-5. Remove startup-test `default_*.profraw` artifacts from the repository root.
 
 Coverage proves execution, not assertions. Never remove safety-invariant tests just because their lines are covered elsewhere.
 
