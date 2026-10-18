@@ -35,3 +35,13 @@ impl Signed {
         Ok(Self { signature })
     }
 }
+/// A signature-only payload from the removed `call`/`tail` surrogate format. Its owner
+/// cannot be identified safely in returned history, so callers drop it with a receipt.
+pub(super) fn is_legacy(value: &str) -> bool {
+    parse_json(value.as_bytes(), JsonLimits::STRUCTURED).is_ok_and(|value| {
+        matches!(
+            value.get("anchor").and_then(Value::as_str),
+            Some("call" | "tail")
+        )
+    })
+}

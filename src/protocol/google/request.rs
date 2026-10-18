@@ -29,6 +29,8 @@ pub enum RequestRule {
     OmitCacheKey,
     /// `functionResponse.response` holds one string; text parts are concatenated.
     JoinResultParts,
+    /// A pre-ownership surrogate signature returned by an older gateway is dropped.
+    OmitLegacySignature,
 }
 impl RequestRule {
     pub const fn name(self) -> &'static str {
@@ -42,6 +44,7 @@ impl RequestRule {
             Self::OmitSchemaName => "gemini.omit-schema-name.v1",
             Self::OmitCacheKey => "gemini.omit-cache-key.v1",
             Self::JoinResultParts => "gemini.join-result-parts.v1",
+            Self::OmitLegacySignature => "gemini.omit-legacy-signature.v1",
         }
     }
 }
@@ -464,7 +467,12 @@ fn item_parts(
             if !fidelity.replay_matches_request(id, r, Some(&target.origin()), request) {
                 return Err(CodecError::Invalid("Gemini replay dependency"));
             }
-            let value = Signed::decode(value.replay_token().ok_or_else(unsupported)?)?;
+            let token = value.replay_token().ok_or_else(unsupported)?;
+            if r.parts.is_empty() && super::signature::is_legacy(token) {
+                rules.insert(RequestRule::OmitLegacySignature);
+                return Ok(());
+            }
+            let value = Signed::decode(token)?;
             let mut part = Map::new();
             part.insert("thought".into(), true.into());
             part.insert("text".into(), readable().into());

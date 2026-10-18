@@ -1048,3 +1048,70 @@ fn restore_keeps_described_phase_and_drops_unsplittable_carriers() {
         "attachment metadata split",
     );
 }
+/// Envelopes issued before part/call ownership trailed signature-only reasoning items
+/// anchored by call ID or text hash. They are dropped, not rejected or re-anchored.
+#[test]
+fn legacy_surrogate_signatures_are_dropped_with_a_receipt() {
+    let seal = |payload: &str| {
+        replay_envelope::seal(
+            &target().origin(),
+            ReplayFormat::GoogleGenerateContentPart,
+            payload,
+        )
+        .unwrap()
+    };
+    let hash = json!([7u8; 32].to_vec());
+    let request = json!({"model":"public","input":[
+        {"role":"user","content":"go"},
+        {"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"plan"}],
+            "encrypted_content":seal(r#"{"anchor":"thought","signature":"VEhU"}"#).as_str()},
+        {"type":"message","role":"assistant","content":[{"type":"output_text","text":"OK","annotations":[]}]},
+        {"type":"function_call","call_id":"c","name":"lookup","arguments":"{}"},
+        {"type":"reasoning","id":"rs_2","summary":[],
+            "encrypted_content":seal(r#"{"anchor":"call","call":"c","signature":"U0lH"}"#).as_str()},
+        {"type":"reasoning","id":"rs_3","summary":[],
+            "encrypted_content":seal(&format!(r#"{{"anchor":"tail","text_hash":{hash},"signature":"U0lH"}}"#)).as_str()},
+        {"type":"function_call_output","call_id":"c","output":"ok"}
+    ]});
+    let mut decoded = client(ClientProtocol::Responses)
+        .decode_client_request(request.to_string().as_bytes())
+        .unwrap();
+    open_from_client(&mut decoded).unwrap();
+    let (wire, rules) = encode_generation_request(
+        &decoded.task.semantic,
+        &decoded.task.fidelity,
+        &target(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        wire["contents"][1]["parts"],
+        json!([
+            {"thought":true,"text":"plan","thoughtSignature":"VEhU"},
+            {"text":"OK"},
+            {"functionCall":{"id":"c","name":"lookup","args":{}}}
+        ])
+    );
+    assert!(
+        rules
+            .iter()
+            .any(|rule| rule.name() == "gemini.omit-legacy-signature.v1")
+    );
+    // A malformed current payload is not a legacy surrogate and still rejects.
+    let mut damaged = request;
+    damaged["input"][4]["encrypted_content"] =
+        json!(seal(r#"{"anchor":"elsewhere","signature":"U0lH"}"#).as_str());
+    let mut decoded = client(ClientProtocol::Responses)
+        .decode_client_request(damaged.to_string().as_bytes())
+        .unwrap();
+    open_from_client(&mut decoded).unwrap();
+    assert!(matches!(
+        encode_generation_request(
+            &decoded.task.semantic,
+            &decoded.task.fidelity,
+            &target(),
+            None,
+        ),
+        Err(CodecError::Invalid("Gemini signature payload"))
+    ));
+}

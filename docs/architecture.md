@@ -441,7 +441,7 @@ Restoration requires unchanged text bytes and exact parsed call arguments, prese
 
 This is original-segmentation recovery, not authenticated edit identity: identical-content edits and complete removal of the manifest cannot be detected statelessly. Neither the manifest nor its dependency hashes authenticate the client. A stream builds the manifest from its existing EOF-validated materialization and publishes it with the withheld terminal; it does not add a second stream buffer. Static, SSE and retained history share the same owner contract. Standard Chat without structured reasoning support rejects this carrier in both delivery modes.
 
-- An attachment is never a tail-anchored or call-ID-anchored surrogate reasoning item. Moving or dropping its visible owner cannot silently move or erase required state.
+- An attachment is never a tail-anchored or call-ID-anchored surrogate reasoning item. Moving or dropping its visible owner cannot silently move or erase required state. Signature-only surrogates returned from earlier gateway history are dropped with `gemini.omit-legacy-signature.v1`; other malformed thought payloads still reject.
 - An explicitly observed empty signed text part keeps its text owner. A signature on an empty streaming fragment may also close accumulated text. Both differ from a missing carrier.
 - Distinct parts within one generateContent frame retain their boundaries; unsigned preceding text never becomes part of a later signed owner.
 - A signed thought closes its owner. Later thought text starts another item, so adjacent signed parts never overwrite one another.
