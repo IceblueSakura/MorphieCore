@@ -32,10 +32,9 @@ Exit condition for each slice: the selected invariant has a meaningful assertion
 
 Replay return restores original segmentation only from unchanged visible content plus a bounded opaque manifest; an unmatched manifest is dropped with a receipt. This does not claim immutable edit identity, opencode carrier support or full-route acceptance.
 
-Next slices, in order:
+Next slice:
 
-1. **Rejection audit.** Classify current client-visible rejections as protected meaning or client-compatibility loss. Present candidates for named degradation for selection; change none implicitly.
-2. **Readability pass.** Split the rustfmt-skipped single-line codec blocks into statements, and condense repeated roadmap disclaimers without changing decisions. Exit: no behavior change; anchors still resolve.
+1. **Readability pass.** Split the rustfmt-skipped single-line codec blocks into statements, and condense repeated roadmap disclaimers without changing decisions. Exit: no behavior change; anchors still resolve.
 
 Phase completeness covers the selected non-tool support scope, not all official Generation semantics. [Cache prewarming](#deferred-cache-prewarming) and [tool discovery and native `web_search`](#deferred-tool-discovery-and-web-search) are deferred, with priority and scheduling undecided. None blocks phase completion, coverage improvement or the P7 boundary review. Unsupported semantics remain explicit gaps, not silent losses or support claims.
 
@@ -346,6 +345,20 @@ Minimal counterexamples and pinned sources are in [Generation contract boundarie
 | Execution controls and reports | Select bounded owners for geography, access programs, replay enforcement, safety/review details and Interactions reported service/continuation. Keep protected unsupported carriers rejected; do not add routing or continuation execution implicitly |
 | Interactions lifecycle snapshots | Compare supplied steps against streamed owners, including content/signatures/errors, or select snapshot-only materialization. Current rejection prevents contradiction loss but is not complete SSE support |
 | Messages model/product defaults | Move sampling omission and required output-cap insertion to explicit trusted target policy. Select a bounded default or require caller input; do not raise the cap automatically to a model maximum |
+
+### Client-compatibility rejection candidates
+
+The rejection audit found these rejections reachable by supported clients or ordinary failover. Each needs a [compatibility-before-rejection](architecture.md#settled-decisions) selection; behavior is unchanged until then. Malformed or unknown wire shapes, request safety policies, tool dispatch/namespace and call context, partial tool input, continuation-bearing terminals, candidate multiplicity, credential-owned file IDs, execution controls and managed-state queries stay protected rejections. Client sources: pi [`4954d76`](https://github.com/earendil-works/pi/tree/4954d760504c11df9b2cbdc040346107b6a8153d), OpenCode `e5a557e`.
+
+| Rejection | Counterexample | Recommendation |
+|---|---|---|
+| Message `phase` outside Responses | pi Responses returns a gpt-5.x `phase` in history (`openai-responses-shared.ts`). Failover to a Chat, Messages, Gemini or Interactions target rejects the next turn; a Chat or Messages client rejects a phase-bearing response | Omit the label with a per-target named rule in both directions. Exact phase return to the client stays a later manifest option |
+| Messages `thinking.block_binding` | OpenCode adds `{"prefix_mismatch_behavior":"drop_block"}` for Claude 5.1+ and Opus 5+; pi adds it for mid-conversation effort models. Every such request rejects | Admit `drop_block` and record its omission; keep rejecting explicit `"error"` enforcement |
+| Gemini `citationMetadata` sources | A candidate that recites code carries source URIs and licences, so the attempt can fail after earlier content streamed | Omit the sources with a named rule until the citation owner is selected; keep `groundingMetadata` rejected because no grounding tool is sent |
+| Context-window terminal on OpenAI clients | An Anthropic `model_context_window_exceeded` stream ends in an error on Chat and Responses | Chat `length` under `chat.coarsen-completion-cause.v1`; Responses `incomplete` with a null reason under `responses.omit-completion-cause.v1` |
+| Non-blocking safety reports | Gemini assessments with no blocked rating and no block reason reject on every non-Google client | Omit assessment-only reports with a named rule; keep blocking reports protected |
+| Prompt cache retention | pi Chat and Responses send `prompt_cache_retention: "24h"` when long retention is configured; targets without a retention carrier reject | Omit retention with a named rule; shorter retention changes cost, not task meaning |
+| Identity hints | OpenCode sends a configured `safety_identifier`; targets without the carrier reject | Omit with a named rule; low priority |
 
 | Question | Unresolved choice and recommendation | Blocks |
 |---|---|---|
