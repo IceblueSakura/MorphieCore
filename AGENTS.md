@@ -44,4 +44,4 @@
 
 ## Documentation
 
-Keep the existing document set: `README.md`, `AGENTS.md`, `docs/{architecture,roadmap,usage,development,references}.md`, `docs/openapi.json`, and sourced, dated protocol notes in `docs/refs/`. Do not add run reports or history pages. Remove finished roadmap slices and record meaningful decisions in the architecture decision table.
+Keep the existing document set: `README.md`, `AGENTS.md`, `docs/{architecture,roadmap,usage,development,references}.md`, the [API expansion design](docs/api-expansion-design.md), `docs/openapi.json`, and sourced, dated protocol notes in `docs/refs/`. Do not add run reports or history pages. Remove finished roadmap slices and record meaningful decisions in the architecture decision table.
