@@ -414,7 +414,7 @@
       "ConversationId": {
         "in": "header", "name": "X-MorphieCore-Conversation-Id", "required": false,
         "schema": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[\\u0021-\\u002b\\u002d-\\u007e]+$"},
-        "description": "Logical conversation ID, stable across turns and model changes. Duplicate headers are rejected. Without it, ingress checks X-Session-Id, session_id, then session-id. It groups routing/cache affinity, not authorization or stored history. Optional prefix cache reuse is independent."
+        "description": "Logical conversation ID, stable across turns and model changes. Duplicate headers are rejected. Without it, ingress checks X-Session-Id, session_id, session-id, then x-session-affinity. It groups routing/cache affinity, not authorization or stored history. Optional prefix cache reuse is independent."
       }
     },
     "securitySchemes": {

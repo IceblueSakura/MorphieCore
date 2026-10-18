@@ -156,7 +156,7 @@ impl<'a> Entry<'a> {
             }
             delivery.push(case);
         }
-        let history = if protocol == ClientProtocol::Responses {
+        let mut history = if protocol == ClientProtocol::Responses {
             vec![Case::new(
                 "generation.delivered_projection",
                 "completed_stored_response_within_ttl",
@@ -165,6 +165,34 @@ impl<'a> Entry<'a> {
         } else {
             vec![]
         };
+        let native_phase = protocol == ClientProtocol::Responses;
+        let phase_carrier = entry.client.check_phase_carrier().is_ok();
+        delivery.push(Case::new(
+            "generation.message.phase",
+            if native_phase {
+                "assistant_commentary_or_final_answer"
+            } else {
+                "assistant_text_phase_via_bounded_manifest"
+            },
+            if phase_carrier {
+                Treatment::Faithful
+            } else {
+                Treatment::Rejected
+            },
+        ));
+        history.push(Case::new(
+            "generation.message.phase",
+            if native_phase {
+                "returned_native_assistant_phase"
+            } else {
+                "unchanged_returned_phase_manifest"
+            },
+            if phase_carrier {
+                Treatment::Faithful
+            } else {
+                Treatment::Rejected
+            },
+        ));
         Self {
             model: entry.public.id.as_str(),
             protocol: match protocol {

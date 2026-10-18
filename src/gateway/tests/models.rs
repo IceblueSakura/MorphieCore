@@ -70,6 +70,10 @@ async fn models_list_and_retrieve_use_the_same_standard_public_object() {
         "feature":"generation.completion_cause",
         "domain":"ambiguous_stop_without_tool_continuation","treatment":"faithful"
     });
+    let phase = json!({"feature":"generation.message.phase",
+        "domain":"assistant_text_phase_via_bounded_manifest","treatment":"faithful"});
+    let phase_history = json!({"feature":"generation.message.phase",
+        "domain":"unchanged_returned_phase_manifest","treatment":"faithful"});
     assert_eq!(
         capabilities,
         json!({
@@ -79,7 +83,8 @@ async fn models_list_and_retrieve_use_the_same_standard_public_object() {
             "data":[
                 {"model":"fixture-model","protocol":"chat_completions",
                     "delivery_modes":["json","sse"],"request":[],
-                    "delivery":[settings,assessments.clone(),safety.clone(),natural,ambiguous],"history":[]},
+                    "delivery":[settings,assessments.clone(),safety.clone(),natural,ambiguous,phase.clone()],
+                    "history":[phase_history.clone()]},
                 {"model":"fixture-model","protocol":"messages",
                     "delivery_modes":["json","sse"],"request":[],
                     "delivery":[
@@ -94,8 +99,9 @@ async fn models_list_and_retrieve_use_the_same_standard_public_object() {
                             "treatment":"faithful"},
                         {"feature":"generation.completion_cause",
                             "domain":"ambiguous_stop_without_tool_continuation",
-                            "treatment":"rejected"}
-                    ],"history":[]}
+                            "treatment":"rejected"},
+                        phase
+                    ],"history":[phase_history]}
             ]
         })
     );
@@ -165,8 +171,15 @@ async fn activated_protocols_are_deduplicated_and_images_share_the_directory() {
         json!([{
             "feature":"generation.delivered_projection",
             "domain":"completed_stored_response_within_ttl","treatment":"faithful"
+        },{
+            "feature":"generation.message.phase",
+            "domain":"returned_native_assistant_phase","treatment":"faithful"
         }])
     );
+    assert!(responses["delivery"].as_array().unwrap().contains(&json!({
+        "feature":"generation.message.phase","domain":"assistant_commentary_or_final_answer",
+        "treatment":"faithful"
+    })));
     for domain in [
         "natural_or_matched_stop_without_tool_continuation",
         "ambiguous_stop_without_tool_continuation",

@@ -77,7 +77,7 @@ impl TrustedOrigin {
     }
 }
 
-/// Relative entry path bound to one protocol profile of a provider.
+/// Concrete unescaped ASCII entry path, stable under HTTP URL parsing.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EndpointPath(String);
 
@@ -85,17 +85,14 @@ impl EndpointPath {
     pub fn new(path: &str) -> Result<Self, ProviderError> {
         if !path.starts_with('/')
             || path.len() > 256
-            || path.contains(['?', '#', ' ', '\t'])
+            || path.bytes().any(|b| !b.is_ascii_graphic())
+            || path.contains(['?', '#', '%', '\\', '"', '<', '>', '`', '{', '}'])
             || path.ends_with('/')
         {
             return Err(ProviderError::InvalidPath);
         }
-        let mut segments = path.split('/').skip(1).peekable();
-        while let Some(segment) = segments.next() {
+        for segment in path.split('/').skip(1) {
             if segment.is_empty() || matches!(segment, "." | "..") {
-                return Err(ProviderError::InvalidPath);
-            }
-            if segments.peek().is_none() && !segment.is_ascii() {
                 return Err(ProviderError::InvalidPath);
             }
         }
@@ -245,8 +242,17 @@ mod tests {
 
     #[test]
     fn endpoint_paths_are_concrete_relative_entries() {
-        for ok in ["/chat/completions", "/responses", "/v1/responses"] {
-            assert!(EndpointPath::new(ok).is_ok(), "expected ok: {ok}");
+        for ok in [
+            "/chat/completions",
+            "/responses",
+            "/v1/responses",
+            "/v1beta/models/gemini-3.8-flash:streamGenerateContent",
+        ] {
+            let path = EndpointPath::new(ok).unwrap();
+            let url =
+                url::Url::parse(&format!("https://fixture.invalid{}", path.as_str())).unwrap();
+            assert_eq!(url.path(), path.as_str());
+            assert_eq!(url.host_str(), Some("fixture.invalid"));
         }
         for bad in [
             "chat/completions",
@@ -256,9 +262,30 @@ mod tests {
             "/responses?beta=1",
             "/responses#frag",
             "/responses/",
+            "/v1/%2e%2e/responses",
+            "/v1/%2Fresponses",
+            "/v1/\nresponses",
+            "/v1/\rresponses",
+            "/v1/\0responses",
+            "/v1\\responses",
+            "/v1/quoted\"/responses",
+            "/v1/<model>/responses",
+            "/v1/{model}/responses",
+            "/模型/responses",
         ] {
-            assert!(EndpointPath::new(bad).is_err(), "expected err: {bad}");
+            assert_eq!(
+                EndpointPath::new(bad),
+                Err(ProviderError::InvalidPath),
+                "{bad:?}"
+            );
         }
+        // URL normalization would otherwise disagree with the path used for replay/cache identity.
+        assert_eq!(
+            url::Url::parse("https://fixture.invalid/v1/%2e%2e/responses")
+                .unwrap()
+                .path(),
+            "/responses"
+        );
     }
 
     #[test]

@@ -158,6 +158,63 @@ mod candidates {
         );
     }
     #[test]
+    fn dashscope_qwen_preserves_the_total_output_cap_in_preflight_and_preparation() {
+        use morphiecore::execution::{admit, plan::representable, prepare};
+        let topology = catalog::default_topology().unwrap();
+        let client = Adapter::new(Profile::Chat, Dialect::Standard, None);
+        let secret = morphiecore::provider::SecretMaterial::new("synthetic").unwrap();
+        for (model, binding) in [
+            ("qwen3.8-flash", "dashscope-flash-chat"),
+            ("qwen3.8-max", "aliyun-dashscope-cn-chat"),
+        ] {
+            let request = client
+                .decode_client_request(
+                    json!({"model":model,"messages":[{"role":"user","content":"go"}],
+                    "max_completion_tokens":64,"reasoning_effort":"low"})
+                    .to_string()
+                    .as_bytes(),
+                )
+                .unwrap();
+            // Independent wire -> IR expectation, not an encoder round trip.
+            assert_eq!(request.task.semantic.controls().max_output_tokens, Some(64));
+            let before = request.clone();
+            admit(topology.model(model).unwrap(), &request).unwrap();
+            let endpoint = topology
+                .endpoint(&EndpointId::new(binding).unwrap())
+                .unwrap();
+            representable(endpoint, &request).unwrap();
+            let wire = endpoint.encode_request(&request).unwrap();
+            assert_eq!(wire["max_completion_tokens"], 64);
+            assert!(wire.get("max_tokens").is_none());
+            assert_eq!(wire["reasoning_effort"], "low");
+            let prepared = prepare(
+                endpoint,
+                topology.endpoint_provider(endpoint).unwrap(),
+                &secret,
+                &request,
+            )
+            .unwrap();
+            assert_eq!(
+                serde_json::from_slice::<serde_json::Value>(&prepared.body).unwrap(),
+                wire
+            );
+            assert_eq!(request, before);
+        }
+        // GLM-5.3's documented legacy cap already includes thinking; do not change
+        // every target sharing the dialect or infer policy from an endpoint suffix.
+        let glm = topology
+            .endpoint(&EndpointId::new("dashscope-glm-chat").unwrap())
+            .unwrap();
+        assert!(
+            glm.representation
+                .openai()
+                .unwrap()
+                .adaptation
+                .rules
+                .legacy_max_tokens
+        );
+    }
+    #[test]
     fn a_narrower_native_candidate_is_skipped_not_admitted() {
         let topology = catalog::default_topology().unwrap();
         let model = catalog::GOOGLE_BINDINGS[0].model;

@@ -63,6 +63,15 @@ impl ApiKeyBinding {
         };
         let scope = crate::protocol::replay_envelope::issuer(provider.id.as_str(), self.upstream);
         let mut adapter = Adapter::new(family, self.dialect, Some(scope.clone()));
+        // Qwen3.8 max_tokens excludes thinking; preserve the total output ceiling.
+        // https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions
+        // This evidence covers the DashScope bindings, not every Bailian-compatible target.
+        if protocol == ProtocolProfile::OpenAiChat
+            && provider.id.as_str() == "aliyun-dashscope-cn"
+            && matches!(self.canonical_model, "qwen3.8-flash" | "qwen3.8-max")
+        {
+            adapter.adaptation.rules.legacy_max_tokens = false;
+        }
         let mut mappings = self
             .effort_mappings
             .iter()
