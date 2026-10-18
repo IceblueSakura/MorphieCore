@@ -312,7 +312,7 @@ mod message_ownership_owner {
     }
 }
 mod phase {
-    //! Assistant `phase` is typed, status-independent and preserved on every projection.
+    //! Assistant phase is exact on Responses and explicitly omitted on foreign requests.
     use crate::events_support::*;
     use morphiecore::{
         protocol::openai::{
@@ -334,6 +334,96 @@ mod phase {
             panic!()
         };
         m
+    }
+
+    #[test]
+    fn foreign_requests_omit_phase_without_editing_responses_history() {
+        use morphiecore::protocol::{
+            anthropic, google, interactions,
+            native::ReplayTarget,
+            openai::{Adapter, Dialect, TargetCaps},
+        };
+        let client = Adapter::new(Profile::Responses, Dialect::Standard, None);
+        let source = json!({"model":"fixture","max_output_tokens":64,"input":[
+            {"role":"user","content":"go"},
+            {"role":"assistant","content":"checking","phase":"commentary"},
+            {"role":"assistant","content":"done","phase":"final_answer"},
+            {"role":"user","content":"continue"}
+        ]});
+        let request = client
+            .decode_request(source.to_string().as_bytes())
+            .unwrap();
+        let saved = request.clone();
+        let chat = Adapter::new(Profile::Chat, Dialect::Standard, None);
+        let (wire, rules) = chat
+            .encode_request_with_rules(&request, "target", &TargetCaps::full())
+            .unwrap();
+        assert_eq!(
+            wire["messages"],
+            json!([
+                {"role":"user","content":"go"},
+                {"role":"assistant","content":"checking"},
+                {"role":"assistant","content":"done"},
+                {"role":"user","content":"continue"}
+            ])
+        );
+        assert_eq!(
+            rules
+                .iter()
+                .filter(|r| **r == "chat.omit-message-phase.v1")
+                .count(),
+            1
+        );
+        let target = ReplayTarget::new("fixture", "target").unwrap();
+        let messages = anthropic::TargetCaps::new(
+            anthropic::Profile::AdaptiveTextTools,
+            anthropic::Dialect::Standard,
+        )
+        .encode_request(&request, &target)
+        .unwrap();
+        assert!(
+            messages
+                .rules
+                .contains(&anthropic::RequestRule::OmitMessagePhase)
+        );
+        assert_eq!(
+            messages.value["messages"][1]["content"],
+            json!([{"type":"text","text":"checking"},{"type":"text","text":"done"}])
+        );
+        let (wire, rules) = google::encode_generation_request(
+            &request.task.semantic,
+            &request.task.fidelity,
+            &target,
+            None,
+        )
+        .unwrap();
+        assert!(rules.contains(&google::RequestRule::OmitMessagePhase));
+        assert_eq!(
+            wire["contents"][1],
+            json!({"role":"model","parts":[{"text":"checking"},{"text":"done"}]})
+        );
+        let (wire, rules) = interactions::encode_generation_request(
+            &request.task.semantic,
+            &request.task.fidelity,
+            &target,
+        )
+        .unwrap();
+        assert!(rules.contains(&interactions::RequestRule::OmitMessagePhase));
+        assert_eq!(
+            wire["input"],
+            json!([
+                {"type":"user_input","content":[{"type":"text","text":"go"}]},
+                {"type":"model_output","content":[{"type":"text","text":"checking"}]},
+                {"type":"model_output","content":[{"type":"text","text":"done"}]},
+                {"type":"user_input","content":[{"type":"text","text":"continue"}]}
+            ])
+        );
+        let exact = client
+            .encode_request(&request, "target", &TargetCaps::full())
+            .unwrap();
+        assert_eq!(exact["input"][1]["phase"], "commentary");
+        assert_eq!(exact["input"][2]["phase"], "final_answer");
+        assert_eq!(request, saved);
     }
 
     #[test]

@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 globalThis.fetch = async () => { throw new Error('Unexpected external fetch'); };
 const cases = JSON.parse(readFileSync(0, 'utf8'));
-assert.equal(cases.length, 9);
+assert.equal(cases.length, 12);
 const returned = [];
 for (const fixture of cases) {
   const api = fixture.api;
@@ -26,9 +26,10 @@ for (const fixture of cases) {
     tools:[{name:'lookup',description:'Synthetic fixture',parameters:{type:'object',properties:{n:{type:'integer'}}}}] };
   const first = await stream(model,context,options).result();
   assert.notEqual(first.stopReason,'error',first.errorMessage);
-  assert.equal(first.content.filter(b=>b.type==='text').map(b=>b.text).join(''),fixture.empty?'':'OKOK');
+  assert.equal(first.content.filter(b=>b.type==='text').map(b=>b.text).join(''),
+    fixture.phase ? 'prefixanothercheckingdone' : fixture.empty ? '' : 'OKOK');
   const call = first.content.find(b=>b.type==='toolCall');
-  assert.equal(Boolean(call),!fixture.empty);
+  assert.equal(Boolean(call),!fixture.empty && !fixture.phase);
   const original = structuredClone(first);
   const followup = call
     ? {role:'toolResult',toolCallId:call.id,toolName:'lookup',content:[{type:'text',text:'ok'}],isError:false,timestamp:1}

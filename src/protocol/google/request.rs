@@ -15,6 +15,7 @@ pub(super) fn unsupported() -> CodecError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum RequestRule {
     OmitVerbosity,
+    OmitMessagePhase,
     Hint(crate::protocol::cache::HintRule),
     /// Gemini has one summary form, without concise or detailed variants.
     SummarizeReasoning,
@@ -36,6 +37,7 @@ impl RequestRule {
     pub const fn name(self) -> &'static str {
         match self {
             Self::OmitVerbosity => "gemini.omit-verbosity.v1",
+            Self::OmitMessagePhase => "gemini.omit-message-phase.v1",
             Self::Hint(rule) => rule.name(),
             Self::SummarizeReasoning => "gemini.summarize-reasoning.v1",
             Self::TransferVisibleHistory => "gemini.transfer-visible-history.v1",

@@ -21,6 +21,7 @@ pub enum RequestRule {
     ReasoningPolicy(&'static str),
     Hint(crate::protocol::cache::HintRule),
     OmitVerbosity,
+    OmitMessagePhase,
     /// Messages has one summarized display, without concise or detailed variants.
     SummarizeReasoning,
     /// Claude 5.x models reject non-default `temperature` and `top_p`.
@@ -43,6 +44,7 @@ impl RequestRule {
             Self::ReasoningPolicy(rule) => rule,
             Self::Hint(rule) => rule.name(),
             Self::OmitVerbosity => "messages.omit-verbosity.v1",
+            Self::OmitMessagePhase => "messages.omit-message-phase.v1",
             Self::SummarizeReasoning => "messages.summarize-reasoning.v1",
             Self::OmitSampling => "messages.omit-sampling.v1",
             Self::ProjectCallIds => "messages.project-call-ids.v1",

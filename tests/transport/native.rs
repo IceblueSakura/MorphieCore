@@ -228,6 +228,28 @@ mod native_bindings {
         assert_eq!(body(&prepared), hello_wire());
         assert_eq!(request, original);
 
+        let mut extended = request.clone();
+        extended.context.cache.prompt_cache_retention =
+            Presence::Value(morphiecore::semantic::context::CacheRetention::Day);
+        assert!(representable(&native, &extended).is_err());
+        assert!(prepare(&native, &p, &secret(), &extended).is_err());
+        let mut approved = native.clone();
+        approved
+            .representation
+            .messages_mut()
+            .unwrap()
+            .cache
+            .omit_day_retention = true;
+        representable(&approved, &extended).unwrap();
+        assert_eq!(
+            body(&prepare(&approved, &p, &secret(), &extended).unwrap()),
+            hello_wire()
+        );
+        extended.context.cache.prompt_cache_retention =
+            Presence::Value(morphiecore::semantic::context::CacheRetention::InMemory);
+        assert!(representable(&approved, &extended).is_err());
+        assert!(prepare(&approved, &p, &secret(), &extended).is_err());
+
         // Count escaped UTF-8 wire bytes, not characters or the unescaped source.
         let text = "中文 \"quoted\"\\path";
         let capped = Adapter::new(Profile::Chat, Dialect::Standard, None)

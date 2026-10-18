@@ -12,6 +12,7 @@ use std::collections::BTreeSet;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum RequestRule {
     OmitVerbosity,
+    OmitMessagePhase,
     Hint(crate::protocol::cache::HintRule),
     SummarizeReasoning,
     TransferVisibleHistory,
@@ -25,6 +26,7 @@ impl RequestRule {
     pub const fn name(self) -> &'static str {
         match self {
             Self::OmitVerbosity => "interactions.omit-verbosity.v1",
+            Self::OmitMessagePhase => "interactions.omit-message-phase.v1",
             Self::Hint(rule) => rule.name(),
             Self::SummarizeReasoning => "interactions.summarize-reasoning.v1",
             Self::TransferVisibleHistory => "interactions.transfer-visible-history.v1",

@@ -161,6 +161,11 @@ impl TargetCaps {
             use crate::semantic::task::generation::{InstructionAuthority, ReasoningDisplay};
             let settings = request.task.semantic.settings();
             match rule {
+                RequestRule::Hint(hint) => {
+                    projection
+                        .control_losses
+                        .extend(hint.evidence().map(Loss::Projection));
+                }
                 RequestRule::SummarizeReasoning => projection.control_losses.push(Loss::Summary {
                     rule: rule.name(),
                     input: settings.reasoning.summary.clone(),

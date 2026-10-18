@@ -74,7 +74,8 @@ pub(crate) fn project(
     let attached = source
         .items()
         .iter()
-        .any(|(_, item)| item.has_replay_attachment());
+        .any(|(_, item)| item.has_replay_attachment())
+        || profile == Profile::Chat && crate::protocol::phase::has_phase(source.items());
     match source.progress() {
         InteractionProgress::Unreported | InteractionProgress::TurnFinished => {}
         InteractionProgress::AwaitingToolResults

@@ -397,14 +397,17 @@ impl ResponseDelivery {
             if self.is_messages() {
                 crate::protocol::anthropic::client::validate_tool_calls(attempt.response()?)?;
             }
+            if self
+                .encoder
+                .as_ref()
+                .is_some_and(|e| e.needs_phase_source_check())
+            {
+                self.client
+                    .check_chat_source(&self.client_view(attempt)?.0)?;
+            }
             let mut frames = self.flush_pending()?;
-            // Only owned replay needs the materialized client view at the terminal.
-            if attempt
-                .response()?
-                .semantic
-                .items()
-                .iter()
-                .any(|(_, item)| item.has_replay_attachment())
+            // Replay and phase return use the existing EOF-validated materialization.
+            if self.client.needs_attachment(&attempt.response()?.semantic)
                 // The streamed events already recorded their own projection losses.
                 && let Some(packet) = crate::protocol::attachments::Packet::from_response(
                     &self.client_view(attempt)?.0,
@@ -492,12 +495,25 @@ impl ResponseDelivery {
             )?);
         }
         let encoder = self.encoder.as_mut().expect("encoder initialized");
+        if events.iter().any(|event| {
+            matches!(
+                event,
+                StreamEvent::ItemStarted {
+                    kind: crate::semantic::task::generation::ItemKind::Message { phase: Some(_) },
+                    ..
+                }
+            )
+        }) {
+            self.client.check_phase_carrier()?;
+        }
         let wire_events: Vec<_> = events
             .iter()
             .filter_map(|event| crate::protocol::attachments::wire_event(event, &context.fidelity))
             .collect();
         let projected = if attempt.is_native() {
             encoder.project_native(&wire_events)?
+        } else if attempt.is_responses() {
+            encoder.project_phase(&wire_events)?
         } else {
             None
         };

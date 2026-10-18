@@ -8,11 +8,11 @@ This page owns direction and current scope. Code and tests define behavior; [Arc
 |---|---|---|
 | Routing | Functional phase complete under the [stable routing baseline](architecture.md#failover); feature development closed | [Routing acceptance](#routing-acceptance--pending) after the [P7 boundary review](#p7-boundary-review) |
 | Generation IR/codec | Selected design implemented locally, including [visible-history transfer](architecture.md#reasoning-replay), part/call replay with client manifests and [scoped accounting](architecture.md#scoped-accounting). Audit coverage authorized on 2026-10-17 | [Human design review](#generation-design-review-gate) |
-| Client compatibility | Rejection audit complete; the [selected losses](architecture.md#settled-decisions) of 2026-10-18 are implemented | User selection of the [remaining candidates](#client-compatibility-rejection-candidates) |
+| Client compatibility | Rejection audit and policy selection complete: [phase transfer/return](architecture.md#message-phase-transfer), guarded extended-retention omission and retained citation rejection | Client-carrier acceptance and target storage evidence during reconnection |
 | Integration | Disconnected where codec contracts outgrew frozen admission; see the [handoff](#integration-handoff) | Reconnection after P7, never as a side effect of codec work |
 | Real acceptance | Current codec work has offline and synthetic evidence only; client and Provider loops are not re-accepted | Routing acceptance, then [deferred acceptance](#deferred-acceptance) |
 
-No implementation slice is queued. Work proceeds from the pending selections, the design review and the P7 boundary review. Provider-specific reset dialects, persistence and cooldown tuning need separate evidence and approval; no background probes, balancing or multi-round retries are scheduled.
+No implementation slice is queued. Work proceeds from the design review, remaining ownership decisions and the P7 boundary review. Provider-specific reset dialects, persistence and cooldown tuning need separate evidence and approval; no background probes, balancing or multi-round retries are scheduled.
 
 The current priority is stability and meaningful coverage of implemented foundations. Citation/source-use/point owners, additional execution controls/reports, Interactions snapshots and Messages target-policy changes wait until the user resumes that feature work. This changes implementation order, not the known semantic gaps.
 
@@ -71,16 +71,6 @@ For every implementation slice:
 
 The [settled decisions](architecture.md#settled-decisions) remain the baseline; the audit permits evidence-backed reconsideration of lossy mappings. New semantic or execution-policy structures need a selected design. Continue independent work while a choice blocks only its own contracts.
 
-### Client-compatibility rejection candidates
-
-These rejections are reachable by supported clients or ordinary failover; behavior is unchanged until selected. Malformed or unknown wire shapes, request safety policies, tool dispatch/namespace and call context, partial tool input, continuation-bearing terminals, candidate multiplicity, credential-owned file IDs, execution controls and managed-state queries stay protected. Client sources: pi [`4954d76`](https://github.com/earendil-works/pi/tree/4954d760504c11df9b2cbdc040346107b6a8153d), OpenCode `e5a557e`.
-
-| Rejection | Counterexample | Recommendation |
-|---|---|---|
-| Message `phase` outside Responses | pi Responses returns a gpt-5.x `phase` in history (`openai-responses-shared.ts`). Failover to a Chat, Messages, Gemini or Interactions target rejects the next turn; a Chat or Messages client rejects a phase-bearing response | Omit the label with a per-target named rule in both directions. Exact phase return to the client stays a later manifest option |
-| Gemini `citationMetadata` sources | A candidate that recites code carries source URIs and licences, so the attempt can fail after earlier content streamed | Omit the sources with a named rule until the citation owner is selected; keep `groundingMetadata` rejected because no grounding tool is sent |
-| Prompt cache retention | pi Chat and Responses send `prompt_cache_retention: "24h"` when long retention is configured; targets without a retention carrier reject | Omit retention with a named rule; shorter retention changes cost, not task meaning |
-
 ### Ownership and projection decisions
 
 Minimal counterexamples and pinned sources are in [Generation contract boundaries](refs/2026-10-17-generation-contracts.md).
@@ -122,7 +112,7 @@ Codec carriers whose binding admission stays closed:
 - [Service policies](architecture.md#service-policies-and-reports). The native generation-only decode helper rejects an execution policy rather than dropping it. Messages service reports need full-message or opening usage; cross-contract classes and late reports without a carrier reject. Absent reports are never supplied from request controls.
 - Chat custom tools have static JSON and history carriers but no pinned custom-call SSE delta carrier; custom Chat streams reject.
 
-Explicit constrained-carrier rejections: Google JSON-object mode, schema references and unselected keywords; generateContent optional allowed-tool subsets and implicit object roots for function parameters; Interactions logprobs; Messages strict string enum/const, references and regex; explicit cache retention without an exact carrier. Google probability intake accepts only unambiguous chunk-local text reports and has no token bytes, so the Responses probability carrier cannot deliver it.
+Explicit constrained-carrier rejections: Google JSON-object mode, schema references and unselected keywords; generateContent optional allowed-tool subsets and implicit object roots for function parameters; Interactions logprobs; Messages strict string enum/const, references and regex; explicit cache retention without an exact carrier or the approved `"24h"` target policy. No registered target selects that policy yet. Google probability intake accepts only unambiguous chunk-local text reports and has no token bytes, so the Responses probability carrier cannot deliver it.
 
 P8 policy selection is complete. Responses normalization-default strictness never becomes a plain native tool, so pi-shaped requests omitting `strict` do not reach those bindings; explicit non-strict tools keep their carrier. Native codecs reject uncalibrated media detail/context and filenames without carriers. No cross-scope or numeric conversion activates without model-level evidence.
 
@@ -165,6 +155,7 @@ The [selected contract](architecture.md#public-capability-and-adaptation-notice)
 1. Establish model-level evidence and preflight/preparation agreement for each selected existing binding; reject uncalibrated values and stop at interfaces needing routing-policy changes.
 2. Extend the capability view only with independently verified declarations. Do not activate bindings implicitly or treat an unlisted case as rejection.
 3. Reconnect exact-carrier client loops first, then approved adapted paths. Verify tool calls, results, final answers and replay for JSON and SSE. Blocking safety reports and unsupported completion carriers remain rejected.
+   Verify phase-only manifest return through the selected pinned clients; the codec carrier does not prove clients retain it. Before enabling extended-retention omission, review each target's default storage policy without treating cache presence as retention evidence.
 4. Require the full offline baseline and connected SDK gate per slice, then schedule bounded pi/opencode and Provider acceptance.
 
 ### Routing acceptance — pending

@@ -1603,6 +1603,86 @@ mod cache_projection {
     //! Cache affinity is Provider functionality, not gateway sessions or route selection.
     use morphiecore::protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract};
     use serde_json::{Value, json};
+
+    #[test]
+    fn extended_retention_omission_is_explicit_value_specific_and_target_local() {
+        use morphiecore::{
+            protocol::cache::CacheProjection,
+            semantic::{context::CacheRetention, value::Presence},
+        };
+        assert!(!CacheProjection::all().omit_day_retention);
+        let mut approved = Contract::full();
+        approved.cache.omit_day_retention = true;
+        for profile in [Profile::Chat, Profile::Responses] {
+            let body = match profile {
+                Profile::Chat => {
+                    json!({"model":"fixture","messages":[{"role":"user","content":"go"}],"prompt_cache_retention":"24h"})
+                }
+                Profile::Responses => {
+                    json!({"model":"fixture","input":"go","prompt_cache_retention":"24h"})
+                }
+            };
+            let source = client(profile)
+                .decode_request(body.to_string().as_bytes())
+                .unwrap();
+            assert_eq!(
+                source.context.cache.prompt_cache_retention,
+                Presence::Value(CacheRetention::Day)
+            );
+            let before = source.clone();
+            let target = Adapter::new(profile, Dialect::OpenRouter, None);
+            assert!(
+                target
+                    .encode_request(&source, "target", &Contract::full())
+                    .is_err()
+            );
+            let (wire, rules) = target
+                .encode_request_with_rules(&source, "target", &approved)
+                .unwrap();
+            assert!(wire.get("prompt_cache_retention").is_none());
+            assert_eq!(
+                rules
+                    .iter()
+                    .filter(|r| **r == "cache.omit-day-retention.v1")
+                    .count(),
+                1
+            );
+            let (wire, rules) = client(profile)
+                .encode_request_with_rules(&source, "target", &approved)
+                .unwrap();
+            assert_eq!(wire["prompt_cache_retention"], "24h");
+            assert!(!rules.contains(&"cache.omit-day-retention.v1"));
+            assert_eq!(source, before);
+            for protected in [Presence::Value(CacheRetention::InMemory), Presence::Null] {
+                let mut source = source.clone();
+                source.context.cache.prompt_cache_retention = protected;
+                assert!(target.encode_request(&source, "target", &approved).is_err());
+            }
+        }
+        let mut policy = CacheProjection::all();
+        let selected = CacheProjection {
+            omit_day_retention: true,
+            ..Default::default()
+        };
+        policy.intersect(selected);
+        policy.intersect(CacheProjection::default());
+        assert!(policy.omit_day_retention);
+        assert!(!policy.retention);
+        let mut reverse = selected;
+        reverse.intersect(CacheProjection::all());
+        assert_eq!(policy, reverse);
+        // A failed projection does not erase a control before rejecting another one.
+        let mut context = morphiecore::semantic::context::ExecutionHints::default();
+        context.cache.prompt_cache_retention = Presence::Value(CacheRetention::Day);
+        context.cache.prompt_cache_options =
+            Presence::Value(morphiecore::semantic::context::CacheOptions {
+                mode: Presence::Value(morphiecore::semantic::context::CacheMode::Explicit),
+                ..Default::default()
+            });
+        let before = context.clone();
+        assert!(selected.project(&mut context).is_err());
+        assert_eq!(context, before);
+    }
     fn client(p: Profile) -> Adapter {
         Adapter::new(p, Dialect::MorphieCore, None)
     }

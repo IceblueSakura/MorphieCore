@@ -126,7 +126,16 @@ pub fn encode_generation_request(
     if transferred {
         rules.insert(RequestRule::TransferVisibleHistory);
     }
-    let value = request::project(&request, &fidelity, target, &mut rules)?;
+    let phase = crate::protocol::phase::omit_request(&request)?;
+    if phase.is_some() {
+        rules.insert(RequestRule::OmitMessagePhase);
+    }
+    let value = request::project(
+        phase.as_ref().unwrap_or(&request),
+        &fidelity,
+        target,
+        &mut rules,
+    )?;
     json_size(&value, crate::semantic::task::generation::MAX_TOTAL_BYTES)
         .map_err(|_| CodecError::Limit)?;
     Ok((value, rules.into_iter().collect()))
@@ -251,6 +260,10 @@ impl TargetCaps {
         for rule in &rules {
             use crate::semantic::task::generation::{InstructionAuthority, ReasoningDisplay};
             match rule {
+                RequestRule::Hint(hint) => controls.extend(hint.evidence().map(Loss::Projection)),
+                RequestRule::OmitMessagePhase => controls.push(Loss::Projection(
+                    crate::protocol::phase::omission(rule.name()),
+                )),
                 RequestRule::OmitVerbosity => controls.push(Loss::Verbosity {
                     rule: rule.name(),
                     input: request.task.semantic.text_options().verbosity.clone(),

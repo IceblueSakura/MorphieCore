@@ -35,11 +35,23 @@ pub fn lower_request<'a>(
     }
     let mut semantic = std::borrow::Cow::Borrowed(r);
     let mut projection = Vec::new();
+    if profile == Profile::Chat
+        && let Some(projected) = crate::protocol::phase::omit_request(r)?
+    {
+        semantic = std::borrow::Cow::Owned(projected);
+        let mut stage = projection::ProjectionStage::response(
+            profile,
+            c.adaptation.profile_id,
+            Some(projection::LossRule::OmitChatMessagePhase),
+        );
+        stage.direction = projection::ProjectionDirection::Request;
+        projection.push(stage);
+    }
     if let Some((groups, loss)) =
-        message_groups::project(r.items(), r.message_envelopes(), profile)?
+        message_groups::project(semantic.items(), semantic.message_envelopes(), profile)?
     {
         // Replay dependencies must be checked against the final target value below.
-        semantic = std::borrow::Cow::Owned(r.clone().with_message_envelopes(groups)?);
+        semantic = std::borrow::Cow::Owned(semantic.into_owned().with_message_envelopes(groups)?);
         let mut stage =
             projection::ProjectionStage::response(profile, c.adaptation.profile_id, Some(loss));
         stage.direction = projection::ProjectionDirection::Request;

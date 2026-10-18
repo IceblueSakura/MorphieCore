@@ -43,6 +43,54 @@ impl ClientAdapter {
             Self::Messages => Err(CodecError::ProfileMismatch),
         }
     }
+    pub(crate) fn needs_attachment(
+        &self,
+        response: &crate::semantic::task::generation::GenerationResponse,
+    ) -> bool {
+        response
+            .items()
+            .iter()
+            .any(|(_, item)| item.has_replay_attachment())
+            || self.protocol() != ClientProtocol::Responses
+                && crate::protocol::phase::has_phase(response.items())
+    }
+    fn phase_carrier(&self) -> bool {
+        match self {
+            Self::Messages => true,
+            Self::OpenAi { adapter, contract } => {
+                adapter.protocol == Profile::Chat
+                    && adapter
+                        .contract(contract)
+                        .adaptation
+                        .rules
+                        .structured_chat_reasoning
+            }
+        }
+    }
+    pub(crate) fn check_phase_carrier(&self) -> Result<(), CodecError> {
+        if self.protocol() != ClientProtocol::Responses && !self.phase_carrier() {
+            return Err(CodecError::Unsupported(
+                "message phase return carrier".into(),
+            ));
+        }
+        Ok(())
+    }
+    /// Speculative streaming grouping must not admit an unphased source that the
+    /// original Chat representation rejects. No wire body or second stream is built.
+    pub(crate) fn check_chat_source(
+        &self,
+        decoded: &DecodedResponse,
+    ) -> Result<(), super::AdapterError> {
+        let (adapter, contract) = self.as_openai()?;
+        crate::protocol::openai::lowering::lower_response(
+            &decoded.semantic,
+            &decoded.fidelity,
+            &decoded.metadata,
+            Profile::Chat,
+            adapter.contract(contract),
+        )?;
+        Ok(())
+    }
     pub(crate) fn bind_replay_origin(&mut self, origin: &ReplayOrigin) {
         if let Self::OpenAi { adapter, contract } = self {
             adapter.adaptation.scope = Some(origin.clone());
@@ -87,9 +135,11 @@ impl ClientAdapter {
         ),
         super::AdapterError,
     > {
-        let Some(packet) = crate::protocol::attachments::Packet::from_response(&decoded)? else {
+        if !self.needs_attachment(&decoded.semantic) {
             return self.encode_snapshot(decoded, None);
-        };
+        }
+        let packet = crate::protocol::attachments::Packet::from_response(&decoded)?
+            .ok_or(CodecError::Invalid("missing attachment manifest"))?;
         if let Self::OpenAi { adapter, contract } = self {
             crate::protocol::attachments::check_chat_support(
                 adapter.protocol,
@@ -100,9 +150,14 @@ impl ClientAdapter {
                     .structured_chat_reasoning,
             )?;
         }
-        let mut wire = crate::protocol::attachments::strip(&decoded)?;
+        let phase = self.protocol() != ClientProtocol::Responses
+            && crate::protocol::phase::has_phase(decoded.semantic.items());
+        let mut wire = crate::protocol::attachments::strip(&decoded, phase)?;
         let mut losses = self.project_native(&mut wire)?;
         let (projected, value, extra) = self.encode_snapshot(wire, Some(packet.encode()?))?;
+        if phase {
+            losses.push(crate::protocol::phase::carried("response.encode"));
+        }
         losses.extend(extra);
         // Stored history keeps the real owners and original groups that the returned
         // carrier restores, although the visible copy still records its grouping loss.
@@ -276,6 +331,7 @@ impl ClientAdapter {
             encoder,
             native_projection: None,
             losses: vec![],
+            phase_carrier: self.phase_carrier(),
         })
     }
     /// Whether an error frame closes this protocol's stream is a carrier property.
@@ -356,10 +412,36 @@ enum Encoder {
 }
 pub(crate) struct ClientEncoder {
     losses: Vec<crate::lowering::generation::LossEvidence>,
+    phase_carrier: bool,
     encoder: Encoder,
     native_projection: Option<crate::protocol::openai::lowering::native_messages::EventProjection>,
 }
 impl ClientEncoder {
+    /// Track Chat grouping from the first item, including an unlabelled prefix.
+    /// Absence of phase is decided at EOF, before a successful terminal.
+    pub(crate) fn project_phase(
+        &mut self,
+        events: &[StreamEvent],
+    ) -> Result<Option<Vec<StreamEvent>>, super::AdapterError> {
+        if !self.phase_carrier || !matches!(self.encoder, Encoder::Chat(_)) {
+            return Ok(None);
+        }
+        let projection = self.native_projection.get_or_insert_with(
+            crate::protocol::openai::lowering::native_messages::EventProjection::for_phase,
+        );
+        let projected = projection.project(events)?;
+        for loss in projection.losses() {
+            if !self.losses.contains(loss) {
+                self.losses.push(loss.clone());
+            }
+        }
+        Ok(Some(projected))
+    }
+    pub(crate) fn needs_phase_source_check(&self) -> bool {
+        self.native_projection
+            .as_ref()
+            .is_some_and(|p| p.needs_source_check())
+    }
     pub(crate) fn set_attachment(
         &mut self,
         value: crate::protocol::attachments::Carrier,
@@ -428,6 +510,28 @@ impl ClientEncoder {
         event: &StreamEvent,
         fidelity: &FidelityRecords,
     ) -> Result<Vec<Bytes>, SseError> {
+        if let StreamEvent::ItemStarted {
+            item,
+            kind: crate::semantic::task::generation::ItemKind::Message { phase: Some(_) },
+            replay,
+        } = event
+            && !matches!(self.encoder, Encoder::Responses(_))
+        {
+            if !self.phase_carrier {
+                return Err(CodecError::Unsupported("message phase return carrier".into()).into());
+            }
+            let wire = StreamEvent::ItemStarted {
+                item: *item,
+                kind: crate::semantic::task::generation::ItemKind::Message { phase: None },
+                replay: replay.clone(),
+            };
+            let frames = self.encode(&wire, fidelity)?;
+            let loss = crate::protocol::phase::carried("event.encode");
+            if !self.losses.contains(&loss) {
+                self.losses.push(loss);
+            }
+            return Ok(frames);
+        }
         if let StreamEvent::SafetyReport(report) = event
             && report.is_assessment_only()
         {

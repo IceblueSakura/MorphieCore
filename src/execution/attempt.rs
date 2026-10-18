@@ -210,6 +210,11 @@ impl Attempt {
     pub(crate) fn is_native(&self) -> bool {
         self.adapter.is_native()
     }
+    pub(crate) fn is_responses(&self) -> bool {
+        self.adapter
+            .openai()
+            .is_ok_and(|adapter| adapter.protocol == crate::protocol::openai::Profile::Responses)
+    }
     pub fn new(adapter: impl Into<UpstreamAdapter>, body_limit: usize, limits: SseLimits) -> Self {
         Self {
             identity: std::sync::Arc::new(()),

@@ -1,4 +1,4 @@
-//! Gateway-only transport of actual part/call ownership through opaque client carriers.
+//! Gateway-only transport of part/call ownership and message phases through client carriers.
 //! The manifest stores boundaries and dependencies, never replacement business content.
 use crate::{
     protocol::{CodecError, DecodedResponse, fidelity::FidelityRecords, replay_envelope},
@@ -194,6 +194,7 @@ impl Packet {
             .items()
             .iter()
             .any(|(_, i)| i.has_replay_attachment())
+            && !crate::protocol::phase::has_phase(response.semantic.items())
         {
             return Ok(None);
         }
@@ -327,6 +328,7 @@ impl Packet {
             };
             match item {
                 Entry::Message { phase, parts, .. } => {
+                    attached |= phase.is_some();
                     if phase
                         .as_deref()
                         .is_some_and(|p| !matches!(p, "commentary" | "final_answer"))
@@ -987,12 +989,18 @@ pub(crate) fn restore(
     Ok(())
 }
 
-pub(crate) fn strip(response: &DecodedResponse) -> Result<DecodedResponse, CodecError> {
+pub(crate) fn strip(
+    response: &DecodedResponse,
+    strip_phase: bool,
+) -> Result<DecodedResponse, CodecError> {
     let mut copy = response.clone();
     let mut items = copy.semantic.items().to_vec();
     for (id, item) in &mut items {
         match item {
             Item::Message(m) => {
+                if strip_phase {
+                    m.phase = None;
+                }
                 for p in &mut m.parts {
                     p.replay = None;
                     copy.fidelity.remove_part_replay(*id, p.id);
@@ -1006,7 +1014,14 @@ pub(crate) fn strip(response: &DecodedResponse) -> Result<DecodedResponse, Codec
             _ => {}
         }
     }
-    copy.semantic = copy.semantic.with_items(items)?;
+    let source = &response.semantic;
+    copy.semantic =
+        GenerationResponse::from_resources(items, source.outcome(), source.resources().clone())?
+            .with_message_envelopes(source.message_envelopes().to_vec())?
+            .with_progress(source.progress())?
+            .with_details(source.details().clone())?
+            .with_safety_reports(source.safety_reports().to_vec())?
+            .with_usage_reports(source.usage_reports().clone())?;
     Ok(copy)
 }
 /// Only the wire view drops attachments. The validated source owns them until EOF,

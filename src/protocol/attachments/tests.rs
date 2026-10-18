@@ -13,6 +13,9 @@ use crate::{
     },
 };
 
+#[path = "phase_tests.rs"]
+mod phase_tests;
+
 fn target() -> ReplayTarget {
     ReplayTarget::new("fixture-google", "fixture-model").unwrap()
 }
@@ -588,6 +591,42 @@ fn pinned_pi_owned_replay() {
                 .push(json!({"api":api,"wire":String::from_utf8(bytes).unwrap(),"empty":empty}));
         }
     }
+    for protocol in protocols {
+        let mut attempt = Attempt::new(
+            Adapter::new(Profile::Responses, Dialect::Standard, None),
+            2 << 20,
+            SseLimits::default(),
+        );
+        attempt.begin(200, "text/event-stream").unwrap();
+        let mut delivery = ResponseDelivery::new(
+            client(protocol),
+            "public",
+            SseLimits::default(),
+            crate::semantic::context::StreamOptions {
+                include_obfuscation: crate::semantic::value::Presence::Value(false),
+                ..Default::default()
+            },
+            Obfuscation::Disabled,
+        );
+        let mut bytes = vec![];
+        for (sequence, mut frame) in phase_tests::frames().into_iter().enumerate() {
+            frame["sequence_number"] = json!(sequence);
+            let wire = format!(
+                "event: {}\ndata: {frame}\n\n",
+                frame["type"].as_str().unwrap()
+            );
+            let (_, events) = attempt.push(wire.as_bytes()).unwrap();
+            bytes.extend(delivery.encode_events(&attempt, &events).unwrap().concat());
+        }
+        attempt.finish().unwrap();
+        bytes.extend(delivery.finish_stream(&attempt).unwrap().concat());
+        let api = match protocol {
+            ClientProtocol::Chat => "openai-completions",
+            ClientProtocol::Responses => "openai-responses",
+            ClientProtocol::Messages => "anthropic-messages",
+        };
+        fixtures.push(json!({"api":api,"wire":String::from_utf8(bytes).unwrap(),"phase":true}));
+    }
     let home = tempfile::tempdir().unwrap();
     let mut child = Command::new("node")
         .env_clear()
@@ -621,9 +660,35 @@ fn pinned_pi_owned_replay() {
         String::from_utf8_lossy(&output.stderr)
     );
     let returned: Vec<Value> = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(returned.len(), 9);
+    assert_eq!(returned.len(), 12);
     for (n, body) in returned.iter().enumerate() {
         let protocol = protocols[n % 3];
+        if n >= 9 {
+            let request = client(protocol)
+                .decode_client_request(body.to_string().as_bytes())
+                .unwrap();
+            let phases: Vec<_> = request
+                .task
+                .semantic
+                .items()
+                .iter()
+                .filter_map(|(_, item)| match item {
+                    Item::Message(m) if m.role == MessageRole::Assistant => Some(m.phase),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(
+                phases,
+                [
+                    None,
+                    None,
+                    Some(Phase::Commentary),
+                    Some(Phase::FinalAnswer)
+                ],
+                "{protocol:?}"
+            );
+            continue;
+        }
         let rounded = (3..6).contains(&n);
         let decoded = if rounded {
             // pi rounds the large integer; the changed call drops the whole carrier.

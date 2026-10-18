@@ -1,7 +1,7 @@
 //! Explicit upstream cache carriers. No cache storage, session state or routing decisions.
 use super::openai::CodecError;
 use crate::semantic::{
-    context::{ConversationContext, ExecutionHints},
+    context::{CacheRetention, ConversationContext, ExecutionHints},
     value::{Presence, Text},
 };
 use sha2::{Digest, Sha256};
@@ -36,6 +36,9 @@ impl std::fmt::Debug for InferredAffinity {
 pub struct CacheProjection {
     pub key: bool,
     pub retention: bool,
+    /// Trusted opt-in after reviewing this target's default storage policy.
+    /// Only the extended-cache preference may be omitted; this is not a carrier.
+    pub omit_day_retention: bool,
     pub options: bool,
     pub session_id: bool,
 }
@@ -46,6 +49,7 @@ pub enum HintRule {
     OmitKey,
     OmitInactiveOptions,
     OmitIdentityHints,
+    OmitDayRetention,
 }
 impl HintRule {
     pub const fn name(self) -> &'static str {
@@ -53,7 +57,16 @@ impl HintRule {
             Self::OmitKey => "cache.omit-key.v1",
             Self::OmitInactiveOptions => "cache.omit-inactive-options.v1",
             Self::OmitIdentityHints => "generation.omit-identity-hints.v1",
+            Self::OmitDayRetention => "cache.omit-day-retention.v1",
         }
+    }
+    pub(crate) fn evidence(self) -> Option<crate::lowering::generation::LossEvidence> {
+        (self == Self::OmitDayRetention).then_some(crate::lowering::generation::LossEvidence {
+            rule: self.name(),
+            field: "cache.prompt_cache_retention",
+            direction: "request.encode",
+            action: "omit",
+        })
     }
 }
 /// Identity hints only attribute abuse upstream. A target without their carrier omits
@@ -65,6 +78,10 @@ impl CacheProjection {
     /// Call only after successful projection; active options still reject.
     pub fn losses(self, context: &ExecutionHints) -> Vec<HintRule> {
         [
+            (
+                self.omits_day_retention(context),
+                HintRule::OmitDayRetention,
+            ),
             (
                 !self.key && !context.cache.prompt_cache_key.is_absent(),
                 HintRule::OmitKey,
@@ -82,6 +99,7 @@ impl CacheProjection {
         Self {
             key: true,
             retention: true,
+            omit_day_retention: false,
             options: true,
             session_id: true,
         }
@@ -89,19 +107,35 @@ impl CacheProjection {
     pub fn intersect(&mut self, other: Self) {
         self.key &= other.key;
         self.retention &= other.retention;
+        // Either trusted declaration may select the loss. False is absence of
+        // approval, not a veto; repeated carrier intersections are idempotent.
+        self.omit_day_retention |= other.omit_day_retention;
         self.options &= other.options;
         self.session_id &= other.session_id;
     }
     pub fn project(self, context: &mut ExecutionHints) -> Result<(), CodecError> {
+        let mut projected = context.clone();
+        self.project_inner(&mut projected)?;
+        *context = projected;
+        Ok(())
+    }
+    pub(crate) fn omits_day_retention(self, context: &ExecutionHints) -> bool {
+        !self.retention
+            && self.omit_day_retention
+            && context.cache.prompt_cache_retention == Presence::Value(CacheRetention::Day)
+    }
+    fn project_inner(self, context: &mut ExecutionHints) -> Result<(), CodecError> {
         context.cache.validate()?;
         // Shared hints also hold nullable reports; target projection admits requests only.
         if context.cache.prompt_cache_options == Presence::Null {
             return Err(CodecError::Invalid("cache options"));
         }
-        // Retention constrains storage; automatic caching proves no equivalent policy.
-        // https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/chat/completion_create_params.py
+        // Never erase in_memory or infer a default storage policy from automatic caching.
         if !self.retention && !context.cache.prompt_cache_retention.is_absent() {
-            return Err(CodecError::Unsupported("cache retention".into()));
+            if !self.omits_day_retention(context) {
+                return Err(CodecError::Unsupported("cache retention".into()));
+            }
+            context.cache.prompt_cache_retention = Presence::Absent;
         }
         // The grouping key alone is advisory.
         if !self.key {

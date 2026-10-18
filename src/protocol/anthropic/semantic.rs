@@ -246,8 +246,12 @@ impl Profile {
         if transferred {
             rules.insert(RequestRule::TransferVisibleHistory);
         }
+        let phase = crate::protocol::phase::omit_request(&request)?;
+        if phase.is_some() {
+            rules.insert(RequestRule::OmitMessagePhase);
+        }
         let mut wire = project(
-            &request,
+            phase.as_ref().unwrap_or(&request),
             &fidelity,
             target,
             &mut normalized,
@@ -261,7 +265,15 @@ impl Profile {
             normalized_arguments: normalized,
             omitted_execution: omitted,
             rules: rules.into_iter().collect(),
-            control_losses: vec![],
+            control_losses: phase
+                .is_some()
+                .then(|| {
+                    crate::lowering::generation::RequestControlLoss::Projection(
+                        crate::protocol::phase::omission(RequestRule::OmitMessagePhase.name()),
+                    )
+                })
+                .into_iter()
+                .collect(),
         })
     }
     pub fn encode_generation_response(

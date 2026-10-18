@@ -72,6 +72,19 @@ Ordinary tool-only responses and nonempty answers do not lose their carrier. The
 
 ## Protected semantics without complete owners
 
+### Compatibility policy review, 2026-10-18
+
+Primary pages rechecked on 2026-10-18:
+
+- [OpenAI reasoning](https://developers.openai.com/api/docs/guides/reasoning#phase-parameter) requires preserving reported assistant phase during manual replay: dropping it can make a preamble look like a final answer. [Agents SDK](https://openai.github.io/openai-agents-js/guides/models/) retains it in Responses history but warns/drops it for Chat unless strict feature validation is enabled. The selected gateway policy permits target-local request omission, not permanent default loss during client delivery.
+- pi [`4954d76`](https://github.com/earendil-works/pi/tree/4954d760504c11df9b2cbdc040346107b6a8153d) stores phase in `packages/ai/src/api/openai-responses-shared.ts` text signatures; its `transform-messages.ts` creates stripped target copies for different models. OpenCode [`e5a557e`](https://github.com/anomalyco/opencode/tree/e5a557efeee02c94486d391afc48f24a49ebc9a5) retains phase in `packages/ai/src/protocols/open-responses.ts` provider metadata and projects it through `packages/core/src/session/runner/to-llm-message.ts`. This source inspection is not a full-client acceptance run.
+- [Google CitationSource](https://ai.google.dev/api/generate-content#CitationSource) uses byte offsets and says licence information is required for code citations. [Gemini API terms](https://ai.google.dev/gemini-api/terms) explain that applicable law may require providing returned attribution to users. These are content-evidence obligations, not merely incidental settings. Nonempty sources remain rejected; a synthetic late-citation stream is not evidence of real arrival timing or frequency.
+- [OpenAI prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching) distinguishes `in_memory` from maximum extended retention and model/organization-dependent defaults. [Data controls](https://platform.openai.com/docs/guides/your-data) classify cached KV tensors in GPU-local storage as application state. Dropping `in_memory` can select a longer default; `store: false` does not replace this control. `"24h"` is not a guaranteed 24-hour cache hit, and newer minimum-TTL options are not equivalent maximum-retention carriers.
+
+The selected implementation keeps retention support separate from the default-off `omit_day_retention` target permission. No registered binding opts in. Phase-only manifests retain source labels and boundaries for Chat/Messages, but cannot make a client UI phase-aware or recover a wholly discarded carrier. Native Responses remains exact. Unsupported completion, citation, structured-output and replay contracts are not relaxed by either policy.
+
+The extended pinned pi probe (`8efd314`, Node 24.21.0) passed 24 serial synthetic fetches, adding phase-only Responses output with two unlabelled prefixes to the earlier nine cases. Chat/Messages returned the manifest and restored the original four messages; Responses returned native labels without a phase-only manifest. These fixtures use the already-representable output-token-limit terminal, not an invented cross-protocol natural completion. This is client-codec evidence only; no OpenCode or real Provider loop was run.
+
 ### Messages execution and replay policy
 
 - [Data residency](https://platform.claude.com/docs/en/manage-claude/data-residency): `inference_geo: "us"` constrains inference geography; omission uses workspace policy. The stable field exists at the earlier project pin. It cannot be dropped as an unknown preference.

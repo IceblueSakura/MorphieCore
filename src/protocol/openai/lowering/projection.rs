@@ -18,6 +18,7 @@ pub enum LossRule {
     OmitResponsesAcceptedPredictionTokens,
     OmitResponsesRejectedPredictionTokens,
     OmitResponsesMessageEnvelopes,
+    OmitChatMessagePhase,
     RegroupChatMessageItems,
     CoarsenChatCompletionCause,
     OmitResponsesCompletionCause,
@@ -46,6 +47,7 @@ impl LossRule {
                 "responses.omit-rejected-prediction-tokens.v1"
             }
             Self::OmitResponsesMessageEnvelopes => "responses.omit-message-envelopes.v1",
+            Self::OmitChatMessagePhase => "chat.omit-message-phase.v1",
             Self::RegroupChatMessageItems => "chat.regroup-message-items.v1",
             Self::CoarsenChatCompletionCause => "chat.coarsen-completion-cause.v1",
             Self::OmitResponsesCompletionCause => "responses.omit-completion-cause.v1",
@@ -74,6 +76,7 @@ impl LossRule {
             Self::OmitResponsesMessageEnvelopes | Self::RegroupChatMessageItems => {
                 "generation.message_envelopes"
             }
+            Self::OmitChatMessagePhase => "generation.message.phase",
             Self::CoarsenChatCompletionCause | Self::OmitResponsesCompletionCause => {
                 "response.terminal.completion"
             }

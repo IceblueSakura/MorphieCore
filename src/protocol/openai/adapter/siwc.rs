@@ -5,7 +5,10 @@ use crate::{
     semantic::task::generation::{InstructionAuthority, Item, ToolDefinition},
 };
 
-pub(super) fn check(request: &Request) -> Result<(), CodecError> {
+pub(super) fn check(
+    request: &Request,
+    cache: crate::protocol::cache::CacheProjection,
+) -> Result<(), CodecError> {
     let context = &request.context;
     let controls = request.task.semantic.controls();
     if controls.max_output_tokens.is_some()
@@ -22,7 +25,8 @@ pub(super) fn check(request: &Request) -> Result<(), CodecError> {
         || !context.prompt.is_absent()
         || !context.moderation.is_absent()
         || !context.context_management.is_absent()
-        || !context.cache.prompt_cache_retention.is_absent()
+        || (!context.cache.prompt_cache_retention.is_absent()
+            && !cache.omits_day_retention(context))
         || !context.cache.prompt_cache_options.is_absent()
     {
         return Err(CodecError::Unsupported("SIWC request controls".into()));

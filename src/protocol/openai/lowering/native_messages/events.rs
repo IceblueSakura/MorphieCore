@@ -11,12 +11,17 @@ fn order() -> CodecError {
 pub(crate) struct EventProjection {
     losses: Vec<crate::lowering::generation::LossEvidence>,
     profile: Profile,
+    phase_only: bool,
+    phase_seen: bool,
     message: Option<ItemId>,
     reasoning: Vec<ItemId>,
     text_owners: BTreeMap<ItemId, ItemId>,
     text_part: Option<(PartId, PartKind)>,
     text_parts: usize,
     text_metadata: bool,
+    /// One final metadata snapshot for a non-coalescible text part, emitted only
+    /// after its held ValueFinished. Plain absent metadata needs no separate event.
+    text_metadata_end: Option<StreamEvent>,
     text_closed: bool,
     pending: Vec<ItemId>,
     /// Chat calls, grouped under the carrier message at the terminal.
@@ -28,12 +33,15 @@ impl EventProjection {
         Self {
             losses: vec![],
             profile,
+            phase_only: false,
+            phase_seen: false,
             message: None,
             reasoning: vec![],
             text_owners: BTreeMap::new(),
             text_part: None,
             text_parts: 0,
             text_metadata: false,
+            text_metadata_end: None,
             text_closed: false,
             pending: vec![],
             calls: vec![],
@@ -42,6 +50,15 @@ impl EventProjection {
     }
     pub(crate) fn losses(&self) -> &[crate::lowering::generation::LossEvidence] {
         &self.losses
+    }
+    pub(crate) fn for_phase() -> Self {
+        Self {
+            phase_only: true,
+            ..Self::new(Profile::Chat)
+        }
+    }
+    pub(crate) fn needs_source_check(&self) -> bool {
+        self.phase_only && !self.phase_seen
     }
     fn record(&mut self, loss: crate::lowering::generation::LossEvidence) {
         if !self.losses.contains(&loss) {
@@ -111,7 +128,15 @@ impl EventProjection {
                                 }
                                 self.reasoning.push(*item);
                             }
-                            ItemKind::Message { .. } if self.profile == Profile::Chat => {
+                            ItemKind::Message { phase } if self.profile == Profile::Chat => {
+                                if self.phase_only {
+                                    self.phase_seen |= phase.is_some();
+                                    if phase.take().is_some() {
+                                        self.record(crate::protocol::phase::carried(
+                                            "event.encode",
+                                        ));
+                                    }
+                                }
                                 if !self.calls.is_empty() {
                                     return Err(CodecError::Unsupported(
                                         "native block order on Chat".into(),
@@ -165,6 +190,22 @@ impl EventProjection {
                     {
                         continue;
                     }
+                    StreamEvent::TextMetadata {
+                        item,
+                        part,
+                        annotations,
+                        logprobs,
+                    } if self.text_owners.contains_key(item) => {
+                        if !annotations.is_empty() || !logprobs.is_absent() {
+                            *part = self
+                                .text_part
+                                .ok_or(CodecError::Invalid("native text owner"))?
+                                .0;
+                            *item = self.text_owners[item];
+                            self.text_metadata_end = Some(event);
+                        }
+                        continue;
+                    }
                     StreamEvent::Delta { item, part, .. }
                     | StreamEvent::LogprobsSnapshot { item, part, .. }
                     | StreamEvent::AnnotationAdded { item, part, .. }
@@ -184,7 +225,7 @@ impl EventProjection {
                             continue;
                         }
                     }
-                    StreamEvent::Usage(usage) => {
+                    StreamEvent::Usage(usage) if !self.phase_only => {
                         let projected = super::client_usage(*usage)?;
                         if let Some(loss) =
                             super::usage_loss(Some(*usage), projected, "event.encode")
@@ -196,7 +237,7 @@ impl EventProjection {
                         };
                         *usage = projected;
                     }
-                    StreamEvent::UsageReport(report) => {
+                    StreamEvent::UsageReport(report) if !self.phase_only => {
                         report.validate()?;
                         if report.scope != UsageScope::Operation
                             || report.stage != UsageStage::Final
@@ -235,7 +276,7 @@ impl EventProjection {
                         }
                         continue;
                     }
-                    StreamEvent::Progress(_) => continue,
+                    StreamEvent::Progress(_) if !self.phase_only => continue,
                     StreamEvent::Terminal { terminal, .. } if self.profile == Profile::Chat => {
                         let owner = self.owner(&mut out);
                         self.close_text(&mut out);
@@ -277,6 +318,7 @@ impl EventProjection {
         {
             let item = self.message.expect("text message");
             out.push(StreamEvent::ValueFinished { item, part });
+            out.extend(self.text_metadata_end.take());
             out.push(StreamEvent::PartFinished { item, part });
             self.text_closed = true;
         }

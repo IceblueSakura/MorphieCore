@@ -351,11 +351,12 @@ impl Adapter {
         }
         let request = errors.as_ref().unwrap_or(request);
         request.check_context(contract.standard_context)?;
+        let contract = self.contract(contract);
         if self.adaptation.rules.responses_siwc {
             if self.protocol != Profile::Responses {
                 return Err(CodecError::ProfileMismatch.into());
             }
-            super::siwc::check(request)?;
+            super::siwc::check(request, contract.cache)?;
         }
         if request.delivery.streaming()
             && request
@@ -368,7 +369,6 @@ impl Adapter {
         {
             return Err(CodecError::Unsupported("streaming audio requires pcm16".into()).into());
         }
-        let contract = self.contract(contract);
         let custom_output = match request.task.semantic.tool_choice() {
             Some(ToolChoice::None | ToolChoice::Specific(_)) => false,
             Some(ToolChoice::Allowed { tools, .. }) => {
@@ -401,6 +401,14 @@ impl Adapter {
                 .losses(&request.context)
                 .into_iter()
                 .map(|r| r.name()),
+        );
+        controls.extend(
+            contract
+                .cache
+                .losses(&request.context)
+                .into_iter()
+                .filter_map(|r| r.evidence())
+                .map(crate::lowering::generation::RequestControlLoss::Projection),
         );
         // SIWC has no identity carrier whatever the configured contract says.
         if (!contract.identity_hints || self.adaptation.rules.responses_siwc)
@@ -622,6 +630,36 @@ mod tests {
         assert!(
             target
                 .encode_request(&flat, "selected-slug", &contract)
+                .is_err()
+        );
+        let mut approved = contract.clone();
+        approved.cache.omit_day_retention = true;
+        let mut extended = request.clone();
+        extended.context.cache.prompt_cache_retention =
+            Presence::Value(crate::semantic::context::CacheRetention::Day);
+        let before = extended.clone();
+        let projected = target
+            .encode_request_with_evidence(&extended, "selected-slug", &approved)
+            .unwrap();
+        assert!(projected.value.get("prompt_cache_retention").is_none());
+        assert!(projected.controls.iter().any(|loss| matches!(loss,
+            crate::lowering::generation::RequestControlLoss::Projection(e)
+                if e.rule == "cache.omit-day-retention.v1" && e.field == "cache.prompt_cache_retention"
+        )));
+        assert_eq!(extended, before);
+        // The exception does not move SIWC validation after the generic empty-options loss.
+        extended.context.cache.prompt_cache_options = Presence::Value(Default::default());
+        assert!(
+            target
+                .encode_request(&extended, "selected-slug", &approved)
+                .is_err()
+        );
+        extended.context.cache.prompt_cache_options = Presence::Absent;
+        extended.context.cache.prompt_cache_retention =
+            Presence::Value(crate::semantic::context::CacheRetention::InMemory);
+        assert!(
+            target
+                .encode_request(&extended, "selected-slug", &approved)
                 .is_err()
         );
     }

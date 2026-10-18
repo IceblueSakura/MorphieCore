@@ -20,6 +20,7 @@ pub mod native;
 pub mod openai;
 pub mod openrouter_images;
 pub mod openrouter_speech;
+pub(crate) mod phase;
 pub mod reasoning;
 pub mod replay_envelope;
 pub(crate) mod usage;
