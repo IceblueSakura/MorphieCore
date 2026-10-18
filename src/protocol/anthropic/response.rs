@@ -195,7 +195,11 @@ impl Block {
                 content,
                 is_error,
             } => {
-                let mut v = json!({"type":"tool_result","tool_use_id":tool_use_id,"content":content.wire()});
+                let mut v = json!({
+                    "type": "tool_result",
+                    "tool_use_id": tool_use_id,
+                    "content": content.wire(),
+                });
                 put(
                     v.as_object_mut().expect("object"),
                     "is_error",

@@ -890,16 +890,20 @@ fn message_parts(
         .collect()
 }
 fn part_exists(items: &[(ItemId, Item)], owner: PartId) -> bool {
+    let listed = |ids: &mut dyn Iterator<Item = PartId>| ids.take(MAX_ITEMS).any(|id| id == owner);
     items.iter().take(MAX_ITEMS).any(|(_, item)| {
         let output = match item {
-            Item::Instruction(value) => return value.parts.iter().take(MAX_ITEMS).any(|p| p.id == owner),
-            Item::Message(value) => return value.parts.iter().take(MAX_ITEMS).any(|part| part.id == owner),
-            Item::Reasoning(value) => return value.parts.iter().take(MAX_ITEMS).any(|(id, _)| *id == owner),
+            Item::Instruction(value) => return listed(&mut value.parts.iter().map(|p| p.id)),
+            Item::Message(value) => return listed(&mut value.parts.iter().map(|p| p.id)),
+            Item::Reasoning(value) => return listed(&mut value.parts.iter().map(|(id, _)| *id)),
             Item::ToolResult(value) | Item::CustomResult(value) => Some(&value.output),
             Item::ProviderTool(value) => value.output.as_ref(),
             _ => None,
         };
-        matches!(output, Some(ToolOutput::Parts(parts)) if parts.iter().take(MAX_ITEMS).any(|p| p.id == owner))
+        match output {
+            Some(ToolOutput::Parts(parts)) => listed(&mut parts.iter().map(|p| p.id)),
+            _ => false,
+        }
     })
 }
 // This in-process fingerprint is not persisted or exposed as a wire identity.

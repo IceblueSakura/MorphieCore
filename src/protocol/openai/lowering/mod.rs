@@ -213,12 +213,6 @@ pub fn lower_request<'a>(
             }
         }
     }
-    if profile == Profile::Chat
-        && (matches!(r.tool_choice(), Some(ToolChoice::Qualified(_)))
-            || matches!(r.tool_choice(), Some(ToolChoice::Allowed { tools, .. }) if tools.iter().any(|r| r.namespace.is_some())))
-    {
-        return Err(RepresentationError::Tools);
-    }
     for (_, item) in r.items() {
         if item.has_cache_breakpoints() {
             return Err(RepresentationError::Controls);
@@ -235,7 +229,15 @@ pub fn lower_request<'a>(
         if profile == Profile::Chat && parts.iter().any(|id| fidelity.cache_breakpoint(*id)) {
             return Err(RepresentationError::Controls);
         }
-        if let Item::Message(m)=item && m.parts.iter().any(|p|matches!(&p.content,ContentPart::Text(t) if !t.is_plain() && (m.role==MessageRole::User || fidelity.cache_breakpoint(p.id)))){return Err(RepresentationError::TextMetadata);}
+        if let Item::Message(m) = item
+            && m.parts.iter().any(|p| {
+                matches!(&p.content, ContentPart::Text(t)
+                    if !t.is_plain()
+                        && (m.role == MessageRole::User || fidelity.cache_breakpoint(p.id)))
+            })
+        {
+            return Err(RepresentationError::TextMetadata);
+        }
     }
     validate_wire_ids(r.items(), fidelity, false)?;
     Ok(RequestRepresentation {
@@ -621,14 +623,15 @@ fn represent_reasoning(
                 return Err(RepresentationError::ReplayPhase);
             }
         }
-        if matches!(item, Item::Reasoning(r) if r.replay.as_ref().is_some_and(|value| value.format() != ReplayFormat::ResponsesEncrypted))
+        if let Item::Reasoning(r) = item
+            && let Some(value) = &r.replay
         {
-            return Err(RepresentationError::ReplayFormat);
-        }
-        if (profile == Profile::Chat || request)
-            && matches!(item, Item::Reasoning(r) if r.replay.is_some() && r.status != ItemLifecycle::Completed)
-        {
-            return Err(RepresentationError::Terminal);
+            if value.format() != ReplayFormat::ResponsesEncrypted {
+                return Err(RepresentationError::ReplayFormat);
+            }
+            if (profile == Profile::Chat || request) && r.status != ItemLifecycle::Completed {
+                return Err(RepresentationError::Terminal);
+            }
         }
         if let Item::Reasoning(reasoning) = item
             && let Some(replay) = &reasoning.replay
@@ -658,18 +661,7 @@ fn represent_reasoning(
         && profile != Profile::Responses
         && !(profile == Profile::Chat
             && (chat_reasoning_shape(items)
-            // Structured details carry several items and parts ahead of one carrier.
-            || structured_chat && items.iter().enumerate().all(|(n,(_,item))| match item {
-                Item::Reasoning(r) => !r.parts.iter().any(|(_,p)|matches!(p,ReasoningContent::Text(t) if t.as_str().is_empty()))
-                    && (!r.parts.is_empty() || r.replay.is_some())
-                    && match items.get(n+1) {
-                        Some((_,Item::Reasoning(_))) => true,
-                        Some((_,Item::Message(m))) => m.role==MessageRole::Assistant,
-                        Some((_,Item::ToolCall(_) | Item::CustomCall(_))) => true,
-                        _ => false,
-                    },
-                _ => true,
-            })))
+                || structured_chat && structured_chat_reasoning_shape(items)))
     {
         return Err(RepresentationError::Reasoning);
     }
@@ -704,10 +696,15 @@ fn text_items(
         }
         // Public carriers have no source/reference-domain field. A domain
         // declaration is not permission to erase it or invent a private carrier.
-        if matches!(i, Item::ToolCall(call) if call.context.alias_domain.is_some())
-            || matches!(i, Item::CustomCall(call) if call.context.alias_domain.is_some())
-            || matches!(i, Item::ToolResult(result) | Item::CustomResult(result) if result.context.alias_domain.is_some())
-        {
+        let alias_domain = match i {
+            Item::ToolCall(call) => call.context.alias_domain.is_some(),
+            Item::CustomCall(call) => call.context.alias_domain.is_some(),
+            Item::ToolResult(result) | Item::CustomResult(result) => {
+                result.context.alias_domain.is_some()
+            }
+            _ => false,
+        };
+        if alias_domain {
             return Err(RepresentationError::UnmigratedSemantic);
         }
         // These profiles have neither structured argument nor execution-report carriers.
@@ -715,12 +712,8 @@ fn text_items(
             return Err(RepresentationError::Tools);
         }
         // Responses admits image and file result parts in history and output.
-        if matches!(i, Item::ToolResult(result) | Item::CustomResult(result)
-            if result.execution.is_some() || result.is_error.is_some() || matches!(result.output, ToolOutput::Structured(_))
-                || profile == Profile::Chat && !result.output.is_text_only()
-                || matches!(&result.output, ToolOutput::Parts(parts) if parts.iter().any(|part|
-                    matches!(&part.content, InputPart::Resource(r) if r.media(resources).is_ok_and(|r|
-                        matches!(r.kind(), ResourceKind::Audio | ResourceKind::Video))))))
+        if let Item::ToolResult(result) | Item::CustomResult(result) = i
+            && !result_representable(result, profile, resources)
         {
             return Err(RepresentationError::Tools);
         }
@@ -794,7 +787,14 @@ fn text_items(
                         .map_err(|_| RepresentationError::TextMetadata)?;
                 }
             }
-            if profile==Profile::Responses && m.parts.iter().any(|p|matches!(&p.content,ContentPart::Text(t) if t.logprobs().value().is_some_and(|v|v.iter().any(|p|p.bytes.is_none() || p.top_logprobs.as_ref().is_none_or(|v|v.iter().any(|p|p.token.is_none()||p.logprob.is_none()||p.bytes.is_none())))))){return Err(RepresentationError::TextMetadata);}
+            if profile == Profile::Responses
+                && m.parts.iter().any(|p| {
+                    matches!(&p.content, ContentPart::Text(t)
+                        if t.logprobs().value().is_some_and(|v| !v.iter().all(complete_logprob)))
+                })
+            {
+                return Err(RepresentationError::TextMetadata);
+            }
             if m.parts.iter().any(|p| match &p.content {
                 ContentPart::Text(_) | ContentPart::Refusal(_) => false,
                 ContentPart::Audio(_) => profile != Profile::Chat,
@@ -981,10 +981,56 @@ fn check_strict_schemas(settings: &GenerationSettings) -> Result<(), Representat
 fn check_tool_selection(choice: Option<&ToolChoice>) -> Result<(), RepresentationError> {
     // The pinned standard named-tool types have no qualified-reference carrier.
     // https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/responses/tool_choice_function_param.py
-    if matches!(choice, Some(ToolChoice::Qualified(_)))
-        || matches!(choice, Some(ToolChoice::Allowed { tools, .. }) if tools.iter().any(|r| r.namespace.is_some()))
-    {
+    let qualified = match choice {
+        Some(ToolChoice::Qualified(_)) => true,
+        Some(ToolChoice::Allowed { tools, .. }) => tools.iter().any(|r| r.namespace.is_some()),
+        _ => false,
+    };
+    if qualified {
         return Err(RepresentationError::Tools);
     }
     Ok(())
+}
+/// Responses logprobs require bytes and complete alternatives.
+fn complete_logprob(p: &Logprob) -> bool {
+    p.bytes.is_some()
+        && p.top_logprobs.as_ref().is_some_and(|alternatives| {
+            alternatives
+                .iter()
+                .all(|a| a.token.is_some() && a.logprob.is_some() && a.bytes.is_some())
+        })
+}
+/// Structured details carry several items and parts ahead of one carrier.
+fn structured_chat_reasoning_shape(items: &[(ItemId, Item)]) -> bool {
+    items.iter().enumerate().all(|(n, (_, item))| {
+        let Item::Reasoning(r) = item else {
+            return true;
+        };
+        let empty_text = r
+            .parts
+            .iter()
+            .any(|(_, p)| matches!(p, ReasoningContent::Text(t) if t.as_str().is_empty()));
+        let followed = match items.get(n + 1) {
+            Some((_, Item::Reasoning(_) | Item::ToolCall(_) | Item::CustomCall(_))) => true,
+            Some((_, Item::Message(m))) => m.role == MessageRole::Assistant,
+            _ => false,
+        };
+        !empty_text && (!r.parts.is_empty() || r.replay.is_some()) && followed
+    })
+}
+fn result_representable(result: &ToolResult, profile: Profile, resources: &ResourceTable) -> bool {
+    let audio_or_video = match &result.output {
+        ToolOutput::Parts(parts) => parts.iter().any(|part| {
+            matches!(&part.content, InputPart::Resource(r)
+            if r.media(resources).is_ok_and(|r| {
+                matches!(r.kind(), ResourceKind::Audio | ResourceKind::Video)
+            }))
+        }),
+        _ => false,
+    };
+    result.execution.is_none()
+        && result.is_error.is_none()
+        && !matches!(result.output, ToolOutput::Structured(_))
+        && (profile != Profile::Chat || result.output.is_text_only())
+        && !audio_or_video
 }

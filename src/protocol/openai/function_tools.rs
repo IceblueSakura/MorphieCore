@@ -444,7 +444,14 @@ pub(super) fn write_tool(t: &ToolDefinition, profile: Profile) -> Result<Value, 
                 v["format"] = match format {
                     CustomFormat::Text => json!({"type":"text"}),
                     CustomFormat::Grammar { syntax, definition } => {
-                        let grammar = json!({"syntax":match syntax{GrammarSyntax::Lark=>"lark",GrammarSyntax::Regex=>"regex"},"definition":definition.as_str()});
+                        let syntax = match syntax {
+                            GrammarSyntax::Lark => "lark",
+                            GrammarSyntax::Regex => "regex",
+                        };
+                        let grammar = json!({
+                            "syntax": syntax,
+                            "definition": definition.as_str(),
+                        });
                         if profile == Profile::Chat {
                             json!({"type":"grammar","grammar":grammar})
                         } else {
@@ -513,5 +520,9 @@ pub(super) fn write_choice(c: &ToolChoice, profile: Profile) -> Result<Value, Co
     })
 }
 fn write_reference(r: &ToolReference) -> Value {
-    json!({"type":match r.kind{ToolKind::Function=>"function",ToolKind::Custom=>"custom"},"name":r.name.as_str()})
+    let kind = match r.kind {
+        ToolKind::Function => "function",
+        ToolKind::Custom => "custom",
+    };
+    json!({ "type": kind, "name": r.name.as_str() })
 }

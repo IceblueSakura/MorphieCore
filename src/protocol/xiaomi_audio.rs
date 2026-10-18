@@ -60,9 +60,12 @@ pub fn encode_speech(
         messages.push(json!({"role":"user","content":instructions}));
     }
     messages.push(json!({"role":"assistant","content":task.input()}));
-    Ok(
-        json!({"model":model,"messages":messages,"audio":{"format":format,"voice":task.voice()},"stream":false}),
-    )
+    Ok(json!({
+        "model": model,
+        "messages": messages,
+        "audio": {"format": format, "voice": task.voice()},
+        "stream": false,
+    }))
 }
 
 pub fn encode_transcription(

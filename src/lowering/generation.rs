@@ -149,8 +149,6 @@ pub enum ReportedFactPolicy {
 }
 #[derive(Clone, Debug, Eq, thiserror::Error, PartialEq)]
 pub enum RepresentationError {
-    #[error("unknown projection rule")]
-    UnknownProjectionRule,
     #[error("projection stage budget exceeded")]
     ProjectionLimit,
     #[error(transparent)]

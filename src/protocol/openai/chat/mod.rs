@@ -654,7 +654,18 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     target
         .fidelity
         .check_wire_item_ids(target.semantic.items(), false)?;
-    if target.semantic.items().iter().any(|(_, item)| matches!(item, Item::ToolResult(result) | Item::CustomResult(result) if result.execution.is_some() || result.is_error.is_some() || !result.output.is_text_only())) {
+    let unrepresentable_result = |item: &Item| match item {
+        Item::ToolResult(result) | Item::CustomResult(result) => {
+            result.execution.is_some() || result.is_error.is_some() || !result.output.is_text_only()
+        }
+        _ => false,
+    };
+    if target
+        .semantic
+        .items()
+        .iter()
+        .any(|(_, item)| unrepresentable_result(item))
+    {
         return Err(CodecError::Unsupported("tool result semantics".into()));
     }
     let mut messages = encode_items_with(
@@ -747,10 +758,19 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     Ok(v)
 }
 pub(super) fn call_wire(c: &ToolCall) -> Value {
-    json!({"id":c.call_id.as_str(),"type":"function","function":{"name":c.name.as_str(),"arguments":c.arguments.as_raw().expect("checked raw arguments")}})
+    let arguments = c.arguments.as_raw().expect("checked raw arguments");
+    json!({
+        "id": c.call_id.as_str(),
+        "type": "function",
+        "function": {"name": c.name.as_str(), "arguments": arguments},
+    })
 }
 fn custom_call_wire(c: &CustomCall) -> Value {
-    json!({"id":c.call_id.as_str(),"type":"custom","custom":{"name":c.name.as_str(),"input":c.input}})
+    json!({
+        "id": c.call_id.as_str(),
+        "type": "custom",
+        "custom": {"name": c.name.as_str(), "input": c.input},
+    })
 }
 pub(super) fn encode_items_with(
     items: &[(ItemId, Item)],
@@ -781,12 +801,20 @@ pub(super) fn encode_items_with(
                             .collect::<Vec<_>>()
                     )
                 };
-                messages.push(json!({"role":match i.authority { InstructionAuthority::System => "system", InstructionAuthority::Developer => "developer" },"content":content}));
+                let role = match i.authority {
+                    InstructionAuthority::System => "system",
+                    InstructionAuthority::Developer => "developer",
+                };
+                messages.push(json!({ "role": role, "content": content }));
             }
             Item::Message(m) => {
                 standalone_calls = false;
-                let mut message =
-                    json!({"role":if m.role == MessageRole::User { "user" } else { "assistant" }});
+                let role = if m.role == MessageRole::User {
+                    "user"
+                } else {
+                    "assistant"
+                };
+                let mut message = json!({ "role": role });
                 crate::protocol::openai::chat::reasoning::write_carrier(
                     &mut message,
                     &std::mem::take(&mut reasoning),
@@ -899,13 +927,26 @@ pub(super) fn encode_items_with(
             }
             Item::ToolResult(r) | Item::CustomResult(r) => {
                 standalone_calls = false;
-                messages.push(
-                    json!({"role":"tool","tool_call_id":r.required_call_id().expect("validated request history"),"content":match &r.output {
-                        ToolOutput::Text(s)=>json!(s),
-                        ToolOutput::Parts(parts)=>json!(parts.iter().map(|p|json!({"type":"text","text":p.content.as_text().expect("lowering admits text-only tool parts")})).collect::<Vec<_>>()),
-                        ToolOutput::Structured(_) => unreachable!("lowering rejects tool result semantics without a carrier"),
-                    }}),
-                );
+                let content = match &r.output {
+                    ToolOutput::Text(s) => json!(s),
+                    ToolOutput::Parts(parts) => json!(
+                        parts
+                            .iter()
+                            .map(|p| {
+                                let text = p
+                                    .content
+                                    .as_text()
+                                    .expect("lowering admits text-only tool parts");
+                                json!({"type": "text", "text": text})
+                            })
+                            .collect::<Vec<_>>()
+                    ),
+                    ToolOutput::Structured(_) => {
+                        unreachable!("lowering rejects tool result semantics without a carrier")
+                    }
+                };
+                let call_id = r.required_call_id().expect("validated request history");
+                messages.push(json!({"role": "tool", "tool_call_id": call_id, "content": content}));
             }
         }
     }

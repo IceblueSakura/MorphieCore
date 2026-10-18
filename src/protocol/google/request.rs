@@ -187,7 +187,8 @@ pub(super) fn project(
                 .iter()
                 .all(|tool| tool.kind == ToolKind::Function && tool.namespace.is_none()) =>
             {
-                json!({"mode":"ANY","allowedFunctionNames":tools.iter().map(|tool| tool.name.as_str()).collect::<Vec<_>>()})
+                let names: Vec<_> = tools.iter().map(|tool| tool.name.as_str()).collect();
+                json!({"mode": "ANY", "allowedFunctionNames": names})
             }
             _ => return Err(unsupported()),
         };

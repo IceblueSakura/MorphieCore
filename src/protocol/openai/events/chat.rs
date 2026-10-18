@@ -690,7 +690,14 @@ impl EventEncoder {
             .created
             .as_ref()
             .expect("validated Chat timestamp");
-        let mut value = json!({"id":self.metadata.id,"object":"chat.completion.chunk","created":created,"model":self.metadata.model,"choices":[{"index":0,"delta":delta,"finish_reason":finish}],"usage":null});
+        let mut value = json!({
+            "id": self.metadata.id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": self.metadata.model,
+            "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
+            "usage": null,
+        });
         put_presence(
             value.as_object_mut().expect("object"),
             "system_fingerprint",
@@ -776,6 +783,97 @@ impl EventEncoder {
         }
         Err(CodecError::Invalid("item identity"))
     }
+    /// Readable deltas carry both the view and the detail, as the static message does.
+    fn chat_delta(
+        &mut self,
+        item: ItemId,
+        part: PartId,
+        fragment: &str,
+        structured: bool,
+    ) -> Result<Value, CodecError> {
+        Ok(match self.state()?.part(item, part)?.kind {
+            PartKind::Text => json!({ "content": fragment }),
+            PartKind::Refusal => json!({ "refusal": fragment }),
+            PartKind::Arguments => {
+                let call = json!({
+                    "index": self.call_index(item)?,
+                    "function": {"arguments": fragment},
+                });
+                json!({ "tool_calls": [call] })
+            }
+            PartKind::ReasoningText if !structured => json!({ "reasoning_content": fragment }),
+            PartKind::ReasoningText => {
+                let detail = json!({
+                    "type": "reasoning.text",
+                    "text": fragment,
+                    "format": "openai-responses-v1",
+                    "index": self.detail_index(item, Some(part))?,
+                });
+                json!({ "reasoning_content": fragment, "reasoning_details": [detail] })
+            }
+            PartKind::Summary if structured => {
+                let detail = json!({
+                    "type": "reasoning.summary",
+                    "summary": fragment,
+                    "format": "openai-responses-v1",
+                    "index": self.detail_index(item, Some(part))?,
+                });
+                json!({ "reasoning_content": fragment, "reasoning_details": [detail] })
+            }
+            _ => return Err(CodecError::Unsupported("Chat reasoning".into())),
+        })
+    }
+    fn chat_terminal(&mut self) -> Result<Vec<Value>, CodecError> {
+        let response = materialize(self.state()?)?;
+        let target = crate::protocol::openai::lowering::lower_response(
+            &response,
+            &self.fidelity,
+            &self.metadata,
+            Profile::Chat,
+            self.contract.clone(),
+        )
+        .map_err(|_| CodecError::Unsupported("Chat terminal".into()))?;
+        let finish = crate::protocol::openai::terminal::chat_finish(&response)?;
+        let mut chunks = vec![];
+        // The owned replay manifest precedes the finishing chunk of its message.
+        if let Some(carrier) = self.attachment.take() {
+            let detail = crate::protocol::attachments::chat_detail(carrier.as_str());
+            chunks.push(self.chunk(json!({ "reasoning_details": [detail] }), Value::Null));
+        }
+        chunks.push(self.chunk(json!({}), json!(finish)));
+        if let Some(usage) = target.semantic().usage() {
+            let mut v = if self.contract.adaptation.rules.repeated_finish_usage {
+                self.chunk(json!({}), json!(finish))
+            } else {
+                let mut v = self.chunk(json!({}), Value::Null);
+                v["choices"] = json!([]);
+                v
+            };
+            v["usage"] = crate::protocol::openai::static_response::encode_usage(
+                usage,
+                Profile::Chat,
+                &self.contract.adaptation.rules,
+            );
+            chunks.push(v);
+        }
+        let last = chunks.last_mut().expect("terminal chunk");
+        crate::protocol::openai::responses::envelope::write_response_extras(
+            &self.fidelity,
+            Profile::Chat,
+            &self.contract.adaptation,
+            target.semantic(),
+            self.metadata.required_id()?,
+            last.as_object_mut().expect("object"),
+        );
+        for mut stage in target.projection().iter().cloned() {
+            stage.direction =
+                crate::protocol::openai::lowering::projection::ProjectionDirection::Event;
+            if !self.projection.contains(&stage) {
+                self.projection.push(stage);
+            }
+        }
+        Ok(chunks)
+    }
     pub(super) fn chat(
         &mut self,
         event: &StreamEvent,
@@ -783,52 +881,68 @@ impl EventEncoder {
     ) -> Result<Vec<Value>, CodecError> {
         let structured = self.contract.adaptation.rules.structured_chat_reasoning;
         let mut chunks = match event {
-            StreamEvent::Started=>vec![self.chunk(json!({"role":"assistant"}),Value::Null)],
-            StreamEvent::AudioDelta{update,..}=>crate::protocol::openai::chat::audio::write_update(update,&mut self.chat_audio_pending).into_iter().map(|v|self.chunk(json!({"audio":v}),Value::Null)).collect(),
-            StreamEvent::ItemStarted{item,kind:ItemKind::ToolCall{call_id,name,..},..}=>vec![self.chunk(json!({"tool_calls":[{"index":self.call_index(*item)?,"id":call_id.as_str(),"type":"function","function":{"name":name.as_str(),"arguments":""}}]}),Value::Null)],
-            StreamEvent::PartStarted{kind:PartKind::Text,..}=>vec![self.chunk(json!({"content":""}),Value::Null)],
-            StreamEvent::PartStarted{kind:PartKind::Refusal,..}=>vec![self.chunk(json!({"refusal":""}),Value::Null)],
+            StreamEvent::Started => vec![self.chunk(json!({"role": "assistant"}), Value::Null)],
+            StreamEvent::AudioDelta { update, .. } => {
+                crate::protocol::openai::chat::audio::write_update(
+                    update,
+                    &mut self.chat_audio_pending,
+                )
+                .into_iter()
+                .map(|v| self.chunk(json!({ "audio": v }), Value::Null))
+                .collect()
+            }
+            StreamEvent::ItemStarted {
+                item,
+                kind: ItemKind::ToolCall { call_id, name, .. },
+                ..
+            } => {
+                let call = json!({
+                    "index": self.call_index(*item)?,
+                    "id": call_id.as_str(),
+                    "type": "function",
+                    "function": {"name": name.as_str(), "arguments": ""},
+                });
+                vec![self.chunk(json!({ "tool_calls": [call] }), Value::Null)]
+            }
+            StreamEvent::PartStarted {
+                kind: PartKind::Text,
+                ..
+            } => vec![self.chunk(json!({"content": ""}), Value::Null)],
+            StreamEvent::PartStarted {
+                kind: PartKind::Refusal,
+                ..
+            } => vec![self.chunk(json!({"refusal": ""}), Value::Null)],
             // Some consumers open a reasoning block per delta, so no empty opener.
-            StreamEvent::ItemFinished{item,replay:Some(replay),..} if structured => {
-                let id=self.fidelity.response_item_id(*item).map(str::to_owned).unwrap_or_else(||crate::protocol::fidelity::generated_item_id(*item));
-                vec![self.chunk(json!({"reasoning_details":[{"type":"reasoning.encrypted","data":replay.value.as_str(),"format":"openai-responses-v1","index":self.detail_index(*item,None)?,"id":id}]}),Value::Null)]
+            StreamEvent::ItemFinished {
+                item,
+                replay: Some(replay),
+                ..
+            } if structured => {
+                let id = self
+                    .fidelity
+                    .response_item_id(*item)
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| crate::protocol::fidelity::generated_item_id(*item));
+                let detail = json!({
+                    "type": "reasoning.encrypted",
+                    "data": replay.value.as_str(),
+                    "format": "openai-responses-v1",
+                    "index": self.detail_index(*item, None)?,
+                    "id": id,
+                });
+                vec![self.chunk(json!({ "reasoning_details": [detail] }), Value::Null)]
             }
-            StreamEvent::Delta{item,part,fragment,..}=>{
-                // Readable deltas carry both the view and the detail, as the static message does.
-                let delta=match self.state()?.part(*item,*part)?.kind{PartKind::Text=>json!({"content":fragment}),PartKind::Refusal=>json!({"refusal":fragment}),PartKind::Arguments=>json!({"tool_calls":[{"index":self.call_index(*item)?,"function":{"arguments":fragment}}]}),
-                    PartKind::ReasoningText if !structured=>json!({"reasoning_content":fragment}),
-                    PartKind::ReasoningText=>json!({"reasoning_content":fragment,"reasoning_details":[{"type":"reasoning.text","text":fragment,"format":"openai-responses-v1","index":self.detail_index(*item,Some(*part))?}]}),
-                    PartKind::Summary if structured => json!({"reasoning_content":fragment,"reasoning_details":[{"type":"reasoning.summary","summary":fragment,"format":"openai-responses-v1","index":self.detail_index(*item,Some(*part))?}]}),_=>return Err(CodecError::Unsupported("Chat reasoning".into()))};vec![self.chunk(delta,Value::Null)]
+            StreamEvent::Delta {
+                item,
+                part,
+                fragment,
+                ..
+            } => {
+                let delta = self.chat_delta(*item, *part, fragment, structured)?;
+                vec![self.chunk(delta, Value::Null)]
             }
-            StreamEvent::Terminal{..}=>{
-                let response=materialize(self.state()?)?;
-                let target=crate::protocol::openai::lowering::lower_response(&response,&self.fidelity,&self.metadata,Profile::Chat,self.contract.clone()).map_err(|_|CodecError::Unsupported("Chat terminal".into()))?;
-                let finish=crate::protocol::openai::terminal::chat_finish(&response)?;
-                let mut chunks=vec![];
-                // The owned replay manifest precedes the finishing chunk of its message.
-                if let Some(carrier)=self.attachment.take(){
-                    chunks.push(self.chunk(json!({"reasoning_details":[crate::protocol::attachments::chat_detail(carrier.as_str())]}),Value::Null));
-                }
-                chunks.push(self.chunk(json!({}),json!(finish)));
-                if let Some(usage)=target.semantic().usage(){
-                    let mut v=if self.contract.adaptation.rules.repeated_finish_usage {
-                        self.chunk(json!({}),json!(finish))
-                    } else {
-                        let mut v=self.chunk(json!({}),Value::Null);v["choices"]=json!([]);v
-                    };
-                    v["usage"]=crate::protocol::openai::static_response::encode_usage(usage,Profile::Chat,&self.contract.adaptation.rules);chunks.push(v);
-                }
-                crate::protocol::openai::responses::envelope::write_response_extras(&self.fidelity,Profile::Chat,&self.contract.adaptation,target.semantic(),self.metadata.required_id()?,chunks.last_mut().expect("terminal chunk").as_object_mut().expect("object"));
-                let mut stages=target.projection().to_vec();
-                for stage in &mut stages {
-                    stage.direction=crate::protocol::openai::lowering::projection::ProjectionDirection::Event;
-                }
-                for stage in stages {
-                    if !self.projection.contains(&stage) { self.projection.push(stage); }
-                }
-                chunks
-            }
-            _=>vec![],
+            StreamEvent::Terminal { .. } => self.chat_terminal()?,
+            _ => vec![],
         };
         if let Some(probabilities) = probabilities {
             if chunks.is_empty() {

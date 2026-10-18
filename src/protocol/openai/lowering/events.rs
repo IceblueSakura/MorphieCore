@@ -19,14 +19,29 @@ pub fn check_event(
         crate::protocol::openai::terminal::terminal_losses(details, profile)
             .map_err(|_| RepresentationError::Terminal)?;
     }
-    if matches!(event, StreamEvent::ItemStarted { replay: Some(replay), .. } | StreamEvent::ItemFinished { replay: Some(replay), .. }
-        if !matches!(replay.value.format(), ReplayFormat::ResponsesEncrypted | ReplayFormat::ResponsesCompaction))
-    {
-        return Err(RepresentationError::ReplayFormat);
+    if let StreamEvent::ItemStarted {
+        replay: Some(replay),
+        ..
     }
-    if matches!(event, StreamEvent::ItemStarted { replay: Some(replay), .. } if replay.value.format()==ReplayFormat::ResponsesEncrypted && replay.value.replay_token().is_some())
+    | StreamEvent::ItemFinished {
+        replay: Some(replay),
+        ..
+    } = event
     {
-        return Err(RepresentationError::ReplayPhase);
+        let format = replay.value.format();
+        if !matches!(
+            format,
+            ReplayFormat::ResponsesEncrypted | ReplayFormat::ResponsesCompaction
+        ) {
+            return Err(RepresentationError::ReplayFormat);
+        }
+        // A started item cannot already carry its final encrypted value.
+        if matches!(event, StreamEvent::ItemStarted { .. })
+            && format == ReplayFormat::ResponsesEncrypted
+            && replay.value.replay_token().is_some()
+        {
+            return Err(RepresentationError::ReplayPhase);
+        }
     }
     match event {
         StreamEvent::AnnotationAdded { annotation, .. } => {

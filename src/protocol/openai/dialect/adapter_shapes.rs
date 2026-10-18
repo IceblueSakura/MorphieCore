@@ -222,7 +222,12 @@ fn merge_usage_detail(
 }
 /// Rebuild the native billing view from current typed counters, never source JSON.
 pub(crate) fn encode_billing_usage(value: &mut Value) {
-    let mut row = serde_json::json!({"x_billing_type":"response_api", "input_tokens":value["input_tokens"],"output_tokens":value["output_tokens"],"total_tokens":value["total_tokens"]});
+    let mut row = serde_json::json!({
+        "x_billing_type": "response_api",
+        "input_tokens": value["input_tokens"],
+        "output_tokens": value["output_tokens"],
+        "total_tokens": value["total_tokens"],
+    });
     for (detail, fields) in [
         ("input_tokens_details", &["image_tokens", "text_tokens"][..]),
         ("output_tokens_details", &["text_tokens"][..]),

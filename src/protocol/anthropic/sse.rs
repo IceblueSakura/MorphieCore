@@ -151,7 +151,8 @@ impl MessageSseDecoder {
                 if message.content.len() >= MAX_ITEMS {
                     return Err(SseError::Limit);
                 }
-                if matches!(&block,Block::ToolUse {input,..} if !input.value().as_object().is_some_and(|o|o.is_empty()))
+                if let Block::ToolUse { input, .. } = &block
+                    && !input.value().as_object().is_some_and(|o| o.is_empty())
                 {
                     return Err(CodecError::Invalid("Anthropic opening tool input").into());
                 }

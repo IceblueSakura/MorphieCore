@@ -1,5 +1,6 @@
 //! Event rendering uses only validated semantic state and owner-bound wire identities.
 use crate::protocol::openai::events::*;
+use crate::protocol::openai::lowering::projection;
 use serde_json::json;
 
 pub struct EventEncoder {
@@ -13,7 +14,7 @@ pub struct EventEncoder {
     sequence: u64,
     pub(super) attachment: Option<crate::protocol::attachments::Carrier>,
     pub(super) chat_audio_pending: Vec<u8>,
-    pub(super) projection: Vec<crate::protocol::openai::lowering::projection::ProjectionStage>,
+    pub(super) projection: Vec<projection::ProjectionStage>,
 }
 impl EventEncoder {
     pub fn new(profile: Profile, metadata: ResponseMetadata) -> Result<Self, CodecError> {
@@ -113,12 +114,12 @@ impl EventEncoder {
                 {
                     return Err(CodecError::Unsupported("required reported settings".into()));
                 }
-                let mut stage = crate::protocol::openai::lowering::projection::ProjectionStage::response(
-                    self.profile, self.contract.adaptation.profile_id,
-                    Some(crate::protocol::openai::lowering::projection::LossRule::OmitChatReportedSettings),
+                let mut stage = projection::ProjectionStage::response(
+                    self.profile,
+                    self.contract.adaptation.profile_id,
+                    Some(projection::LossRule::OmitChatReportedSettings),
                 );
-                stage.direction =
-                    crate::protocol::openai::lowering::projection::ProjectionDirection::Event;
+                stage.direction = projection::ProjectionDirection::Event;
                 if !self.projection.contains(&stage) {
                     self.projection.push(stage);
                 }
@@ -202,7 +203,7 @@ impl EventEncoder {
                 && !values.is_empty()
                 && !self.metadata.context.system_fingerprint.is_absent()
             {
-                self.record_loss(crate::protocol::openai::lowering::projection::LossRule::OmitResponsesSystemFingerprint);
+                self.record_loss(projection::LossRule::OmitResponsesSystemFingerprint);
             }
             Ok(values)
         })();
@@ -220,11 +221,11 @@ impl EventEncoder {
         Ok(())
     }
     /// Successful prefixes remain evidence even when a later event is rejected.
-    pub fn projection(&self) -> &[crate::protocol::openai::lowering::projection::ProjectionStage] {
+    pub fn projection(&self) -> &[projection::ProjectionStage] {
         &self.projection
     }
-    fn record_loss(&mut self, loss: crate::protocol::openai::lowering::projection::LossRule) {
-        use crate::protocol::openai::lowering::projection::{ProjectionDirection, ProjectionStage};
+    fn record_loss(&mut self, loss: projection::LossRule) {
+        use projection::{ProjectionDirection, ProjectionStage};
         let mut stage = ProjectionStage::response(
             self.profile,
             self.contract.adaptation.profile_id,
@@ -257,7 +258,11 @@ impl EventEncoder {
     }
     fn coordinates(&self, item: ItemId, part: PartId) -> Result<Value, CodecError> {
         let kind = self.state()?.part(item, part)?.kind;
-        let mut v = json!({"output_index":self.index(item)?,"item_id":self.fidelity.response_item_id(item).ok_or(CodecError::Invalid("wire identity"))?});
+        let id = self
+            .fidelity
+            .response_item_id(item)
+            .ok_or(CodecError::Invalid("wire identity"))?;
+        let mut v = json!({"output_index": self.index(item)?, "item_id": id});
         if !matches!(
             kind,
             PartKind::Arguments | PartKind::StructuredArguments | PartKind::CustomInput
@@ -280,13 +285,17 @@ impl EventEncoder {
             .created
             .as_ref()
             .ok_or(CodecError::Invalid("created time"))?;
-        let mut v = json!({"id":self.metadata.id,"object":"response","created_at":created,"model":self.metadata.model,"status":status,"output":output});
+        let mut v = json!({
+            "id": self.metadata.id,
+            "object": "response",
+            "created_at": created,
+            "model": self.metadata.model,
+            "status": status,
+            "output": output,
+        });
         let mut delivered = self.metadata.clone();
-        let loss = crate::protocol::openai::lowering::projection::reported_settings(
-            &mut delivered,
-            self.profile,
-        )
-        .map_err(|_| CodecError::Unsupported("reported settings".into()))?;
+        let loss = projection::reported_settings(&mut delivered, self.profile)
+            .map_err(|_| CodecError::Unsupported("reported settings".into()))?;
         if loss.is_some()
             && self.contract.reported_facts
                 == crate::lowering::generation::ReportedFactPolicy::StrictComplete
@@ -295,7 +304,7 @@ impl EventEncoder {
         }
         let fingerprint = if !delivered.context.system_fingerprint.is_absent() {
             delivered.context.system_fingerprint = crate::semantic::value::Presence::Absent;
-            Some(crate::protocol::openai::lowering::projection::LossRule::OmitResponsesSystemFingerprint)
+            Some(projection::LossRule::OmitResponsesSystemFingerprint)
         } else {
             None
         };
@@ -318,8 +327,14 @@ impl EventEncoder {
                 vec![json!({"type":"response.queued","response":self.envelope("queued",vec![])?})]
             }
             StreamEvent::Started => vec![
-                json!({"type":"response.created","response":self.envelope("in_progress",vec![])?}),
-                json!({"type":"response.in_progress","response":self.envelope("in_progress",vec![])?}),
+                json!({
+                    "type": "response.created",
+                    "response": self.envelope("in_progress", vec![])?,
+                }),
+                json!({
+                    "type": "response.in_progress",
+                    "response": self.envelope("in_progress", vec![])?,
+                }),
             ],
             StreamEvent::ItemStarted { item, kind, replay } => {
                 let id = self
@@ -328,7 +343,13 @@ impl EventEncoder {
                     .ok_or(CodecError::Invalid("wire identity"))?;
                 let mut v = match kind {
                     ItemKind::Message { phase } => {
-                        let mut v = json!({"id":id,"type":"message","role":"assistant","content":[],"status":"in_progress"});
+                        let mut v = json!({
+                            "id": id,
+                            "type": "message",
+                            "role": "assistant",
+                            "content": [],
+                            "status": "in_progress",
+                        });
                         if let Some(p) = phase {
                             v["phase"] = json!(p.label());
                         }
@@ -339,7 +360,13 @@ impl EventEncoder {
                         name,
                         context,
                     } => {
-                        let mut v = json!({"id":id,"type":"custom_tool_call","call_id":call_id.as_str(),"name":name.as_str(),"input":""});
+                        let mut v = json!({
+                            "id": id,
+                            "type": "custom_tool_call",
+                            "call_id": call_id.as_str(),
+                            "name": name.as_str(),
+                            "input": "",
+                        });
                         crate::protocol::openai::responses::write_call_context(
                             context,
                             v.as_object_mut().expect("object"),
@@ -366,10 +393,21 @@ impl EventEncoder {
                         code,
                         fingerprint,
                     } => {
-                        json!({"id":id,"type":"program","call_id":call_id.as_str(),"code":code,"fingerprint":fingerprint})
+                        json!({
+                            "id": id,
+                            "type": "program",
+                            "call_id": call_id.as_str(),
+                            "code": code,
+                            "fingerprint": fingerprint,
+                        })
                     }
                     ItemKind::ProgramOutput { call_id, result } => {
-                        json!({"id":id,"type":"program_output","call_id":call_id.as_str(),"result":result})
+                        json!({
+                            "id": id,
+                            "type": "program_output",
+                            "call_id": call_id.as_str(),
+                            "result": result,
+                        })
                     }
                     ItemKind::ToolResult(_) | ItemKind::CustomResult(_) => {
                         item_wire(self.state()?, *item, &self.fidelity)?
@@ -385,7 +423,14 @@ impl EventEncoder {
                         context,
                         ..
                     } => {
-                        let mut v = json!({"id":id,"type":"function_call","call_id":call_id.as_str(),"name":name.as_str(),"arguments":"","status":"in_progress"});
+                        let mut v = json!({
+                            "id": id,
+                            "type": "function_call",
+                            "call_id": call_id.as_str(),
+                            "name": name.as_str(),
+                            "arguments": "",
+                            "status": "in_progress",
+                        });
                         crate::protocol::openai::responses::write_call_context(
                             context,
                             v.as_object_mut().expect("object"),
@@ -401,9 +446,11 @@ impl EventEncoder {
                 {
                     v["encrypted_content"] = json!(r.value.as_str());
                 }
-                vec![
-                    json!({"type":"response.output_item.added","output_index":self.index(*item)?,"item":v}),
-                ]
+                vec![json!({
+                    "type": "response.output_item.added",
+                    "output_index": self.index(*item)?,
+                    "item": v,
+                })]
             }
             StreamEvent::PartStarted { item, part, kind } => {
                 if matches!(
@@ -498,9 +545,11 @@ impl EventEncoder {
                     vec![v]
                 }
             }
-            StreamEvent::ItemFinished { item, .. } => vec![
-                json!({"type":"response.output_item.done","output_index":self.index(*item)?,"item":item_wire(self.state()?,*item,&self.fidelity)?}),
-            ],
+            StreamEvent::ItemFinished { item, .. } => vec![json!({
+                "type": "response.output_item.done",
+                "output_index": self.index(*item)?,
+                "item": item_wire(self.state()?,*item,&self.fidelity)?,
+            })],
             StreamEvent::AnnotationAdded {
                 item,
                 part,
@@ -571,8 +620,7 @@ impl EventEncoder {
                 };
                 let mut stages = target.projection().to_vec();
                 for stage in &mut stages {
-                    stage.direction =
-                        crate::protocol::openai::lowering::projection::ProjectionDirection::Event;
+                    stage.direction = projection::ProjectionDirection::Event;
                 }
                 for stage in stages {
                     if !self.projection.contains(&stage) {
@@ -593,8 +641,16 @@ impl EventEncoder {
                         .as_object_mut()
                         .expect("item")
                         .remove("encrypted_content");
-                    out.push(json!({"type":"response.output_item.added","output_index":index,"item":opening}));
-                    out.push(json!({"type":"response.output_item.done","output_index":index,"item":item}));
+                    out.push(json!({
+                        "type": "response.output_item.added",
+                        "output_index": index,
+                        "item": opening,
+                    }));
+                    out.push(json!({
+                        "type": "response.output_item.done",
+                        "output_index": index,
+                        "item": item,
+                    }));
                 }
                 out.push(json!({"type":kind,"response":v}));
                 out

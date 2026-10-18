@@ -1045,25 +1045,13 @@ mod projection {
     }
 
     #[test]
-    fn unknown_rules_and_stage_overflow_are_rejected() {
+    fn projection_stage_overflow_is_rejected() {
         use morphiecore::{
             lowering::generation::RepresentationError,
             protocol::openai::{
-                ResponseRepresentation,
-                lowering::projection::{LossRule, MAX_PROJECTION_STAGES},
+                ResponseRepresentation, lowering::projection::MAX_PROJECTION_STAGES,
             },
         };
-        assert_eq!(
-            "responses.omit-input-image-tokens.v1"
-                .parse::<LossRule>()
-                .unwrap()
-                .owner(),
-            "generation.usage.input_image_tokens"
-        );
-        assert_eq!(
-            "chat.merge-messages.v1".parse::<LossRule>(),
-            Err(RepresentationError::UnknownProjectionRule)
-        );
         fn descend(value: &ResponseRepresentation<'_>, remaining: usize) {
             if remaining == 0 {
                 assert!(matches!(

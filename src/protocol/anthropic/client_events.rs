@@ -293,9 +293,12 @@ impl ClientEventEncoder {
                         self.calls = true;
                         (
                             Kind::ToolUse,
-                            Some(
-                                json!({"type":"tool_use","id":call_id.as_str(),"name":name.as_str(),"input":{}}),
-                            ),
+                            Some(json!({
+                                "type": "tool_use",
+                                "id": call_id.as_str(),
+                                "name": name.as_str(),
+                                "input": {},
+                            })),
                         )
                     }
                     _ => return Err(CodecError::Unsupported("Messages stream item".into())),
@@ -462,7 +465,11 @@ impl ClientEventEncoder {
                         return Err(CodecError::Limit);
                     }
                     let index = open_block(&mut self.next, &mut out, thinking_block());
-                    out.push(frame(&json!({"type":"content_block_delta","index":index,"delta":{"type":"signature_delta","signature":token.as_str()}})));
+                    out.push(frame(&json!({
+                        "type": "content_block_delta",
+                        "index": index,
+                        "delta": {"type": "signature_delta", "signature": token.as_str()},
+                    })));
                     out.push(frame(&json!({"type":"content_block_stop","index":index})));
                 }
                 let mut usage = super::accounting::wire(

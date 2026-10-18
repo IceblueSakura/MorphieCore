@@ -109,7 +109,10 @@ pub(in crate::protocol::openai) fn write(resource: ResourceView<'_>) -> Value {
             media_type,
             data_base64,
         } => {
-            json!({"type":"input_file","file_data":format!("data:{};base64,{}",media_type.as_str(),data_base64.as_str())})
+            json!({
+                "type": "input_file",
+                "file_data": format!("data:{};base64,{}", media_type.as_str(), data_base64.as_str()),
+            })
         }
         ResourceLocation::OpaqueReference(_) | ResourceLocation::NamespacedReference { .. } => {
             unreachable!("file lowering rejects IDs")

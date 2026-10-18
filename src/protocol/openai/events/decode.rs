@@ -1099,7 +1099,9 @@ impl EventDecoder {
         )?;
         let (item, part, kind) = self.value_identity(o, true, out)?;
         if let Some(name) = o.get("name")
-            && !matches!(&self.state()?.item(item)?.kind, ItemKind::ToolCall{name:expected,..} if matches!(kind,PartKind::Arguments|PartKind::StructuredArguments) && name.as_str()==Some(expected.as_str()))
+            && !matches!(&self.state()?.item(item)?.kind, ItemKind::ToolCall { name: expected, .. }
+                if matches!(kind, PartKind::Arguments | PartKind::StructuredArguments)
+                    && name.as_str() == Some(expected.as_str()))
         {
             return Err(CodecError::Invalid("function name echo"));
         }
@@ -1348,7 +1350,14 @@ impl EventDecoder {
             out,
         )?;
         let expected = item_wire(self.state()?, item, &self.fidelity)?;
-        let wrapper = json!({"id":"snapshot","object":"response","created_at":0,"model":"snapshot","status":"incomplete","output":[v]});
+        let wrapper = json!({
+            "id": "snapshot",
+            "object": "response",
+            "created_at": 0,
+            "model": "snapshot",
+            "status": "incomplete",
+            "output": [v],
+        });
         let decoded = crate::protocol::openai::static_response::decode_responses_with(
             &wrapper,
             &self.adaptation,
@@ -1574,12 +1583,18 @@ mod snapshot_tests {
     #[test]
     fn replay_difference_reports_direction_without_values() {
         let absent = vec![json!({"type":"reasoning","id":"synthetic-private-id","summary":[]})];
-        let first = vec![
-            json!({"type":"reasoning","id":"synthetic-private-id","summary":[],"encrypted_content":"synthetic-private-first"}),
-        ];
-        let second = vec![
-            json!({"type":"reasoning","id":"synthetic-private-id","summary":[],"encrypted_content":"synthetic-private-second"}),
-        ];
+        let first = vec![json!({
+            "type": "reasoning",
+            "id": "synthetic-private-id",
+            "summary": [],
+            "encrypted_content": "synthetic-private-first",
+        })];
+        let second = vec![json!({
+            "type": "reasoning",
+            "id": "synthetic-private-id",
+            "summary": [],
+            "encrypted_content": "synthetic-private-second",
+        })];
         for (actual, expected, label) in [
             (&first, &absent, "terminal snapshot replay added"),
             (&absent, &first, "terminal snapshot replay removed"),

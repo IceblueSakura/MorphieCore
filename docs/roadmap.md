@@ -32,11 +32,9 @@ Exit condition for each slice: the selected invariant has a meaningful assertion
 
 Replay return restores original segmentation only from unchanged visible content plus a bounded opaque manifest; an unmatched manifest is dropped with a receipt. This does not claim immutable edit identity, opencode carrier support or full-route acceptance.
 
-Next slice:
+No hardening slice is queued. The next implementation work follows the user's selections from the [client-compatibility rejection candidates](#client-compatibility-rejection-candidates).
 
-1. **Readability pass.** Split the rustfmt-skipped single-line codec blocks into statements, and condense repeated roadmap disclaimers without changing decisions. Exit: no behavior change; anchors still resolve.
-
-Phase completeness covers the selected non-tool support scope, not all official Generation semantics. [Cache prewarming](#deferred-cache-prewarming) and [tool discovery and native `web_search`](#deferred-tool-discovery-and-web-search) are deferred, with priority and scheduling undecided. None blocks phase completion, coverage improvement or the P7 boundary review. Unsupported semantics remain explicit gaps, not silent losses or support claims.
+Phase completeness covers the selected non-tool support scope, not all official Generation semantics. [Cache prewarming](#deferred-cache-prewarming) and [tool discovery and native `web_search`](#deferred-tool-discovery-and-web-search) are deferred, with priority and scheduling undecided; neither blocks phase completion, coverage improvement or the P7 boundary review.
 
 Track semantic expression, codec representation and enabled bindings separately. Preserve accurate IR, prefer exact carriers, and allow explicitly selected advisory losses or behavioral approximations on target-private copies. Reject loss of protected task, execution or security semantics. Client compatibility does not define the semantic vocabulary. Protocol sources are pinned in [References](references.md).
 
@@ -44,11 +42,9 @@ Chat Completions, Responses and Messages are equally important downstream contra
 
 Follow the [IR and codec contract](#ir-and-codec-migration) and preserve its [integration boundary](#integration-handoff). The selected [support queue](#support-queue-after-projection-repair) has no remaining feature slices. The [architecture contract](architecture.md#accurate-ir-and-declared-loss) and [public capability/notice contract](architecture.md#public-capability-and-adaptation-notice) are selected; remaining reconnection choices stay in [Pending decisions](#pending-decisions).
 
-Expand independent wire expectations and focused safety coverage to support human review. Do not equate test counts, compilation or round trips with semantic completeness, and do not infer integration authorization from the coverage exception.
-
 Defer successful integration scenarios whose completion conversion or binding-admission contract is not selected. Remove those scenarios rather than invent a conversion or replace success with an expected gateway error. Keep identity, replay isolation, strict parsing, cancellation, transport bounds and honest-terminal assertions. Orthogonal fixtures should use exact supported carriers. Rebuild the selected integration coverage after IR/codec contracts stabilize, during the coverage stage.
 
-Keep the contract map, remaining ownership gaps and [integration handoff](#integration-handoff) available for later human design review. Foundation hardening does not require solving deferred features or certify their completeness. Keep default admission, HTTP schemas and routing unchanged; neither an agent audit nor a passing coverage run substitutes for design approval.
+Keep the contract map, remaining ownership gaps and [integration handoff](#integration-handoff) available for human design review. Test counts, round trips, agent audits and passing coverage runs establish neither semantic completeness, design approval nor integration. Default admission, HTTP schemas and routing stay unchanged.
 
 ### Generation design review gate
 
@@ -63,7 +59,7 @@ Keep the contract map, remaining ownership gaps and [integration handoff](#integ
 | History and replay | [Replay](architecture.md#reasoning-replay), [context transforms](../src/semantic/task/generation/request/context_transform.rs), [Responses storage](architecture.md#stateful-history) | Are content ownership, deployment isolation and required replay preserved separately from TTL history and affinity? |
 | Public and integration boundary | [Integration handoff](#integration-handoff), [capability contract](architecture.md#public-capability-and-adaptation-notice), [topology compilation](../src/topology/compile.rs) | Is codec representation distinguished from default admission, model evidence and accepted client loops? |
 
-Review readiness is not approval. The existing audit-coverage authorization and current foundation-hardening direction permit stronger tests without closing the design gate. Consequential unresolved semantic choices still need review before implementation. Existing regression, safety and publication gates remain in force throughout.
+Review readiness is not approval. Consequential unresolved semantic choices still need review before implementation; existing regression, safety and publication gates stay in force.
 
 ### Temporary routing freeze
 
@@ -226,8 +222,6 @@ Proposed structure for 1C-a, documents only:
 Later and separate (1C-b): `search_result` blocks as a new input part with `CitationSource::SearchResult(ordinal)`, and `content` documents made of text and image blocks. Neither has a carrier outside Messages. `web_search_result_location` belongs to Provider web search, not 1C.
 
 The alternative is to keep 1C rejected until Claude Code acceptance: pi never sends citations, and opencode sends them only from part metadata.
-
-Audit coverage is authorized before final design approval. Existing contract checks, safety invariants and the offline baseline remain required for every implementation slice; unresolved designs must not be hidden by expected-success fixtures.
 
 IR completeness does not mean every upstream can carry every modality. Protocol-specific carrier limits and the [pending decisions](#pending-decisions) remain explicit. This phase does not open file services, generated-image delivery or new Provider bindings.
 

@@ -716,7 +716,9 @@ pub fn encode_responses(target: &ResponseRepresentation<'_>) -> Result<Value, Co
     if target.profile != Profile::Responses {
         return Err(CodecError::ProfileMismatch);
     }
-    if target.semantic.items().iter().any(|(_, item)| matches!(item, Item::ToolResult(r) | Item::CustomResult(r) if r.status.is_none())) {
+    if target.semantic.items().iter().any(|(_, item)| {
+        matches!(item, Item::ToolResult(r) | Item::CustomResult(r) if r.status.is_none())
+    }) {
         return Err(CodecError::Unsupported("result output lifecycle".into()));
     }
     if !target.metadata.context.system_fingerprint.is_absent() {
@@ -761,8 +763,19 @@ pub fn encode_responses(target: &ResponseRepresentation<'_>) -> Result<Value, Co
         .created
         .as_ref()
         .ok_or(CodecError::Invalid("created time"))?;
-    let mut value = json!({"id":m.id,"object":"response","created_at":created,"model":m.model,"status":status,
-        "output":output,"usage":target.semantic.usage().map(|usage| encode_usage(usage, Profile::Responses, &target.adaptation.rules))});
+    let usage = target
+        .semantic
+        .usage()
+        .map(|usage| encode_usage(usage, Profile::Responses, &target.adaptation.rules));
+    let mut value = json!({
+        "id": m.id,
+        "object": "response",
+        "created_at": created,
+        "model": m.model,
+        "status": status,
+        "output": output,
+        "usage": usage,
+    });
     crate::protocol::openai::responses::envelope::write_metadata(
         m,
         value.as_object_mut().expect("object"),

@@ -828,7 +828,11 @@ impl Request {
         Ok(())
     }
     pub(super) fn wire(&self) -> Value {
-        let mut v = json!({"model":self.model,"max_tokens":self.max_tokens,"messages":self.messages.iter().map(InputMessage::wire).collect::<Vec<_>>()});
+        let mut v = json!({
+            "model": self.model,
+            "max_tokens": self.max_tokens,
+            "messages": self.messages.iter().map(InputMessage::wire).collect::<Vec<_>>(),
+        });
         let o = v.as_object_mut().expect("object");
         if !self.stop_sequences.is_empty() {
             o.insert("stop_sequences".into(), json!(self.stop_sequences));

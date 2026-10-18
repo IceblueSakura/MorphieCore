@@ -1029,14 +1029,28 @@ pub(crate) fn wire_event(event: &StreamEvent, source: &FidelityRecords) -> Optio
     }
     Some(event)
 }
+fn carrier_id(token: &str) -> String {
+    format!("rs_mca_{}", &digest(&[token])[..32])
+}
 pub(crate) fn response_item(token: &str) -> Value {
-    json!({"type":"reasoning","id":format!("rs_mca_{}",&digest(&[token])[..32]),"status":"completed","summary":[],"encrypted_content":token})
+    json!({
+        "type": "reasoning",
+        "id": carrier_id(token),
+        "status": "completed",
+        "summary": [],
+        "encrypted_content": token,
+    })
 }
 pub(crate) fn chat_detail(token: &str) -> Value {
-    json!({"type":"reasoning.encrypted","id":format!("rs_mca_{}",&digest(&[token])[..32]),"format":"openai-responses-v1","data":token})
+    json!({
+        "type": "reasoning.encrypted",
+        "id": carrier_id(token),
+        "format": "openai-responses-v1",
+        "data": token,
+    })
 }
 pub(crate) fn messages_block(token: &str) -> Value {
-    json!({"type":"thinking","thinking":"","signature":token})
+    json!({"type": "thinking", "thinking": "", "signature": token})
 }
 
 #[cfg(test)]

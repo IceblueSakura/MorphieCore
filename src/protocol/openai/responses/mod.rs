@@ -679,7 +679,13 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     target
         .fidelity
         .check_wire_item_ids(target.semantic.items(), false)?;
-    let mut v = json!({"input":encode_items(target.semantic.items(), target.fidelity, false, target.semantic.resources())?});
+    let input = encode_items(
+        target.semantic.items(),
+        target.fidelity,
+        false,
+        target.semantic.resources(),
+    )?;
+    let mut v = json!({ "input": input });
     settings::write(
         target.semantic.settings(),
         v.as_object_mut().expect("object"),
@@ -756,7 +762,11 @@ pub(super) fn encode_items(
                             .collect::<Vec<_>>()
                     )
                 };
-                let mut v = json!({"role":match i.authority{InstructionAuthority::System=>"system",InstructionAuthority::Developer=>"developer"},"content":content});
+                let role = match i.authority {
+                    InstructionAuthority::System => "system",
+                    InstructionAuthority::Developer => "developer",
+                };
+                let mut v = json!({ "role": role, "content": content });
                 if let Some(status) = i.status {
                     v["type"] = json!("message");
                     v["status"] = json!(status_label(status));
@@ -766,24 +776,68 @@ pub(super) fn encode_items(
             // Empty owners still carry identity, phase and lifecycle. Omitting
             // one here would also contradict its already emitted SSE item.
             Item::Message(m) => {
-                let mut v = json!({"type":"message","role":if m.role==MessageRole::User{"user"}else{"assistant"},"content":m.parts.iter().map(|p|match &p.content{ContentPart::Text(t)=>if !response && (m.role==MessageRole::User || fidelity.input_text_form(p.id) && t.is_plain()){input_part(p.id,t.as_str(),fidelity)}else{crate::protocol::openai::content::text::write(t,"output_text",resources)},ContentPart::Refusal(t)=>json!({"type":"refusal","refusal":t.as_str()}),ContentPart::Resource(value)=>media_part(p.id,value,fidelity,resources),ContentPart::Audio(_)|ContentPart::AudioReference(_)=>unreachable!("lowering rejects audio without a Responses carrier")}).collect::<Vec<_>>()});
+                let user = m.role == MessageRole::User;
+                let content = m
+                    .parts
+                    .iter()
+                    .map(|p| match &p.content {
+                        ContentPart::Text(t)
+                            if !response
+                                && (user || fidelity.input_text_form(p.id) && t.is_plain()) =>
+                        {
+                            input_part(p.id, t.as_str(), fidelity)
+                        }
+                        ContentPart::Text(t) => crate::protocol::openai::content::text::write(
+                            t,
+                            "output_text",
+                            resources,
+                        ),
+                        ContentPart::Refusal(t) => {
+                            json!({"type": "refusal", "refusal": t.as_str()})
+                        }
+                        ContentPart::Resource(value) => {
+                            media_part(p.id, value, fidelity, resources)
+                        }
+                        ContentPart::Audio(_) | ContentPart::AudioReference(_) => {
+                            unreachable!("lowering rejects audio without a Responses carrier")
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                let role = if user { "user" } else { "assistant" };
+                let mut v = json!({"type": "message", "role": role, "content": content});
                 if let Some(p) = m.phase {
                     v["phase"] = json!(p.label());
                 }
                 v
             }
             Item::ToolCall(c) => {
-                let mut v = json!({"type":"function_call","call_id":c.call_id.as_str(),"name":c.name.as_str(),"arguments":c.arguments.as_raw().expect("checked raw arguments")});
+                let mut v = json!({
+                    "type": "function_call",
+                    "call_id": c.call_id.as_str(),
+                    "name": c.name.as_str(),
+                    "arguments": c.arguments.as_raw().expect("checked raw arguments"),
+                });
                 write_call_context(&c.context, v.as_object_mut().expect("object"));
                 v
             }
             Item::CustomCall(c) => {
-                let mut v = json!({"type":"custom_tool_call","call_id":c.call_id.as_str(),"name":c.name.as_str(),"input":c.input});
+                let mut v = json!({
+                    "type": "custom_tool_call",
+                    "call_id": c.call_id.as_str(),
+                    "name": c.name.as_str(),
+                    "input": c.input,
+                });
                 write_call_context(&c.context, v.as_object_mut().expect("object"));
                 v
             }
             Item::ToolResult(r) | Item::CustomResult(r) => {
-                let mut v = json!({"type":if matches!(item,Item::CustomResult(_)){"custom_tool_call_output"}else{"function_call_output"},"output":output_wire(&r.output, fidelity, resources)});
+                let kind = if matches!(item, Item::CustomResult(_)) {
+                    "custom_tool_call_output"
+                } else {
+                    "function_call_output"
+                };
+                let output = output_wire(&r.output, fidelity, resources);
+                let mut v = json!({ "type": kind, "output": output });
                 if let Some(call_id) = &r.call_id {
                     v["call_id"] = json!(call_id.as_str());
                 }
@@ -804,10 +858,20 @@ pub(super) fn encode_items(
                 v
             }
             Item::Program(p) => {
-                json!({"type":"program","call_id":p.call_id.as_str(),"code":p.code,"fingerprint":p.fingerprint})
+                json!({
+                    "type": "program",
+                    "call_id": p.call_id.as_str(),
+                    "code": p.code,
+                    "fingerprint": p.fingerprint,
+                })
             }
             Item::ProgramOutput(o) => {
-                json!({"type":"program_output","call_id":o.call_id.as_str(),"result":o.result,"status":status_label(o.status)})
+                json!({
+                    "type": "program_output",
+                    "call_id": o.call_id.as_str(),
+                    "result": o.result,
+                    "status": status_label(o.status),
+                })
             }
             Item::Reasoning(r) => crate::protocol::openai::reasoning::encode_item(r, response),
             Item::Compaction(value) => {

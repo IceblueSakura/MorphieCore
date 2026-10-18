@@ -183,5 +183,10 @@ pub(in crate::protocol::openai) fn write_update(
     values
 }
 pub(in crate::protocol::openai) fn write(audio: &GeneratedAudio) -> Value {
-    json!({"id":audio.reference().id(),"data":audio.data_base64(),"transcript":audio.transcript(),"expires_at":audio.reference().expires_at()})
+    json!({
+        "id": audio.reference().id(),
+        "data": audio.data_base64(),
+        "transcript": audio.transcript(),
+        "expires_at": audio.reference().expires_at(),
+    })
 }

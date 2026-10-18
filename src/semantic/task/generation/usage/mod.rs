@@ -65,7 +65,7 @@ impl Usage {
         }
     }
     pub fn validate(self) -> Result<(), GenerationError> {
-        let subset = |detail: Option<u64>, total: Option<u64>| !matches!((detail,total),(Some(a),Some(b)) if a>b);
+        let subset = |detail: Option<u64>, total: Option<u64>| !matches!((detail, total), (Some(a), Some(b)) if a > b);
         if self.counters().iter().all(Option::is_none)
             || self.output_relation == OutputTokenRelation::IncludesReasoning
                 && !subset(self.reasoning_tokens, self.output_tokens)

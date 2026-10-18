@@ -140,6 +140,122 @@ fn contains_part(items: &[(ItemId, Item)], part: PartId) -> bool {
     })
 }
 
+fn apply(
+    request: &mut GenerationRequest,
+    source: &GenerationRequest,
+    edit: ContextEdit,
+) -> Result<ContextChange, GenerationError> {
+    Ok(match edit {
+        ContextEdit::Insert { at, item } => {
+            if at > request.items.len() || request.items.len() == MAX_ITEMS {
+                return Err(GenerationError::Limit);
+            }
+            if request
+                .items
+                .iter()
+                .chain(source.items())
+                .any(|(id, _)| *id == item.0)
+            {
+                return Err(GenerationError::DuplicateItemId);
+            }
+            let owner = item.0;
+            request.items.insert(at, item);
+            ContextChange::Inserted(owner)
+        }
+        ContextEdit::Delete(owners) => {
+            let _ = selected(&request.items, &owners)?;
+            request.items.retain(|(id, _)| !owners.contains(id));
+            ContextChange::Deleted(owners)
+        }
+        ContextEdit::Replace { owner, item } => {
+            let position = index(&request.items, owner)?;
+            request.items[position].1 = item;
+            ContextChange::Replaced(owner)
+        }
+        ContextEdit::Reorder(order) => {
+            if order.len() != request.items.len() {
+                return Err(GenerationError::InvalidDependency);
+            }
+            let _ = selected(&request.items, &order)?;
+            request
+                .items
+                .sort_by_key(|(id, _)| order.iter().position(|next| next == id));
+            ContextChange::Reordered(order)
+        }
+        ContextEdit::Summary {
+            sources,
+            owner,
+            part,
+            text,
+        } => summarize(request, source, sources, owner, part, text)?,
+        ContextEdit::MessageEnvelopes(groups) => {
+            request.envelopes =
+                crate::semantic::task::generation::history::envelope::MessageEnvelopes::new(
+                    &request.items,
+                    groups,
+                )?;
+            ContextChange::MessageEnvelopes
+        }
+    })
+}
+
+/// Replaces a contiguous run of plain completed messages with one user summary.
+fn summarize(
+    request: &mut GenerationRequest,
+    source: &GenerationRequest,
+    sources: Vec<ItemId>,
+    owner: ItemId,
+    part: PartId,
+    text: Text,
+) -> Result<ContextChange, GenerationError> {
+    if sources.is_empty() || text.as_str().len() > MAX_TEXT_BYTES {
+        return Err(GenerationError::Limit);
+    }
+    let values: Vec<_> = selected(&request.items, &sources)?.collect();
+    let plain_message = |item: &Item| {
+        matches!(item, Item::Message(m)
+            if m.phase.is_none()
+                && m.status == ItemLifecycle::Completed
+                && m.parts
+                    .iter()
+                    .all(|p| matches!(&p.content, ContentPart::Text(t) if t.is_plain())))
+    };
+    if source.items.iter().any(|(id, _)| *id == owner)
+        || request.items.iter().any(|(id, _)| *id == owner)
+        || contains_part(source.items(), part)
+        || contains_part(request.items(), part)
+        || !values.iter().all(|(_, item)| plain_message(item))
+    {
+        return Err(GenerationError::InvalidContextTransform);
+    }
+    let in_sources = |(id, _): &(ItemId, Item)| sources.contains(id);
+    let position = request
+        .items
+        .iter()
+        .position(in_sources)
+        .ok_or(GenerationError::InvalidDependency)?;
+    let last = request
+        .items
+        .iter()
+        .rposition(in_sources)
+        .ok_or(GenerationError::InvalidDependency)?;
+    if last - position + 1 != sources.len() {
+        return Err(GenerationError::InvalidContextTransform);
+    }
+    let sources: Vec<_> = values.iter().map(|(id, _)| *id).collect();
+    request.items.retain(|(id, _)| !sources.contains(id));
+    let summary = Message {
+        role: MessageRole::User,
+        parts: vec![Part::new(part, ContentPart::Text(text.into()))],
+        status: ItemLifecycle::Completed,
+        phase: None,
+    };
+    request
+        .items
+        .insert(position, (owner, Item::Message(summary)));
+    Ok(ContextChange::Summarized { sources, owner })
+}
+
 impl GenerationRequest {
     pub fn transform(self, edits: Vec<ContextEdit>) -> Result<ContextBuild, ContextError> {
         let fail = |stage, index, error| ContextError::at(stage, index, error);
@@ -151,66 +267,8 @@ impl GenerationRequest {
         let mut changes = Vec::new();
         let mut weight = 0usize;
         for (at, edit) in edits.into_iter().enumerate() {
-            let changed = (|| -> Result<ContextChange, GenerationError> {
-                Ok(match edit {
-                    ContextEdit::Insert { at, item } => {
-                        if at > request.items.len() || request.items.len() == MAX_ITEMS {
-                            return Err(GenerationError::Limit);
-                        }
-                        if request.items.iter().chain(source.items()).any(|(id,_)| *id == item.0) {
-                            return Err(GenerationError::DuplicateItemId);
-                        }
-                        let owner = item.0;
-                        request.items.insert(at,item);
-                        ContextChange::Inserted(owner)
-                    }
-                    ContextEdit::Delete(owners) => {
-                        let _ = selected(&request.items, &owners)?;
-                        request.items.retain(|(id,_)| !owners.contains(id));
-                        ContextChange::Deleted(owners)
-                    }
-                    ContextEdit::Replace { owner, item } => {
-                        let position = index(&request.items, owner)?;
-                        request.items[position].1 = item;
-                        ContextChange::Replaced(owner)
-                    }
-                    ContextEdit::Reorder(order) => {
-                        if order.len() != request.items.len() { return Err(GenerationError::InvalidDependency); }
-                        let _ = selected(&request.items, &order)?;
-                        request.items.sort_by_key(|(id,_)| order.iter().position(|next| next == id));
-                        ContextChange::Reordered(order)
-                    }
-                    ContextEdit::Summary { sources, owner, part, text } => {
-                        if sources.is_empty() || text.as_str().len() > MAX_TEXT_BYTES {
-                            return Err(GenerationError::Limit);
-                        }
-                        let values: Vec<_> = selected(&request.items, &sources)?.collect();
-                        if source.items.iter().any(|(id,_)| *id == owner)
-                            || request.items.iter().any(|(id,_)| *id == owner)
-                            || contains_part(source.items(),part) || contains_part(request.items(),part)
-                            || values.iter().any(|(_,item)| !matches!(item,
-                                Item::Message(m) if m.phase.is_none() && m.status == ItemLifecycle::Completed
-                                    && m.parts.iter().all(|p| matches!(&p.content,ContentPart::Text(t) if t.is_plain()))))
-                        { return Err(GenerationError::InvalidContextTransform); }
-                        let position = request.items.iter().position(|(id,_)| sources.contains(id)).ok_or(GenerationError::InvalidDependency)?;
-                        let last = request.items.iter().rposition(|(id,_)| sources.contains(id)).ok_or(GenerationError::InvalidDependency)?;
-                        if last - position + 1 != sources.len() {
-                            return Err(GenerationError::InvalidContextTransform);
-                        }
-                        let sources: Vec<_> = values.iter().map(|(id,_)| *id).collect();
-                        request.items.retain(|(id,_)| !sources.contains(id));
-                        request.items.insert(position, (owner, Item::Message(Message {
-                            role: MessageRole::User, parts: vec![Part::new(part, ContentPart::Text(text.into()))],
-                            status: ItemLifecycle::Completed, phase: None,
-                        })));
-                        ContextChange::Summarized { sources, owner }
-                    }
-                    ContextEdit::MessageEnvelopes(groups) => {
-                        request.envelopes = crate::semantic::task::generation::history::envelope::MessageEnvelopes::new(&request.items, groups)?;
-                        ContextChange::MessageEnvelopes
-                    }
-                })
-            })().map_err(|error| fail(ContextStage::Edit, Some(at), error))?;
+            let changed = apply(&mut request, &source, edit)
+                .map_err(|error| fail(ContextStage::Edit, Some(at), error))?;
             weight = weight.saturating_add(changed.weight());
             if weight > MAX_ITEMS {
                 return Err(fail(ContextStage::Edit, Some(at), GenerationError::Limit));

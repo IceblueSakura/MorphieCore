@@ -1,7 +1,9 @@
 use crate::semantic::task::generation::{
-    ContentPart, GenerationRequest, GenerationResponse, Item, OutputConstraint, ResourceKind,
-    ResourceLocation, ResourceUse,
+    ContentPart, EffortScope, FunctionStrictness, GenerationRequest, GenerationResponse, Item,
+    OutputConstraint, ReasoningPresence, ResourceKind, ResourceLocation, ResourceUse,
+    StrictDefault, ToolDefinition,
 };
+use crate::semantic::value::Presence;
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct GenerationRequirements {
     pub instruction_count: usize,
@@ -76,6 +78,14 @@ impl GenerationRequirements {
         }
     }
     pub fn derive(r: &GenerationRequest) -> Self {
+        let leaves = || r.tools().iter().flat_map(ToolDefinition::leaves);
+        let functions = || {
+            leaves().filter_map(|t| match t {
+                ToolDefinition::Function(t) => Some(t),
+                _ => None,
+            })
+        };
+        let effort_scope = r.settings().effort.value().map(|e| e.scope);
         let mut x = Self {
             cached_context: r.cached_context().is_some(),
             safety_settings: !r.settings().safety.is_empty(),
@@ -89,22 +99,25 @@ impl GenerationRequirements {
             tool_choice: r.tool_choice().cloned(),
             parallel_tool_calls: r.parallel_tool_calls(),
             instruction_count: usize::from(r.instructions().value().is_some()),
-            custom_tools: r.tools().iter().flat_map(crate::semantic::task::generation::ToolDefinition::leaves).any(|t|matches!(t,crate::semantic::task::generation::ToolDefinition::Custom(_))),
+            custom_tools: leaves().any(|t| matches!(t, ToolDefinition::Custom(_))),
             top_p: r.controls().top_p().is_some(),
             verbosity: !r.text_options().verbosity.is_absent(),
-            logprobs: r.controls().logprobs == crate::semantic::value::Presence::Value(true) || r.controls().top_logprobs.is_some(),
+            logprobs: r.controls().logprobs == Presence::Value(true)
+                || r.controls().top_logprobs.is_some(),
             truncation: r.controls().truncation.is_some(),
-            strict_function_tools: r.tools().iter().flat_map(crate::semantic::task::generation::ToolDefinition::leaves).any(|t| matches!(t,crate::semantic::task::generation::ToolDefinition::Function(t) if matches!(t.strict,crate::semantic::task::generation::FunctionStrictness::Explicit(true)))),
-            normalization_default_tools: r.tools().iter().flat_map(crate::semantic::task::generation::ToolDefinition::leaves).any(|t| matches!(t,crate::semantic::task::generation::ToolDefinition::Function(t) if t.strict == crate::semantic::task::generation::FunctionStrictness::Omitted(crate::semantic::task::generation::StrictDefault::NormalizeSchema))),
-            explicit_cache: r.tools().iter().flat_map(crate::semantic::task::generation::ToolDefinition::leaves).any(|t| matches!(t,crate::semantic::task::generation::ToolDefinition::Function(t) if t.cache.is_some())),
+            strict_function_tools: functions()
+                .any(|t| matches!(t.strict, FunctionStrictness::Explicit(true))),
+            normalization_default_tools: functions()
+                .any(|t| t.strict == FunctionStrictness::Omitted(StrictDefault::NormalizeSchema)),
+            explicit_cache: functions().any(|t| t.cache.is_some()),
             max_output_tokens: r.controls().max_output_tokens,
             temperature: r.controls().temperature().is_some(),
             tool_count: r.tools().iter().map(|t| t.leaves().len()).sum(),
             structured_output: !matches!(r.output(), OutputConstraint::Text),
-            reasoning: r.reasoning().presence() == crate::semantic::task::generation::ReasoningPresence::Present
+            reasoning: r.reasoning().presence() == ReasoningPresence::Present
                 || r.reasoning().encrypted_output()
-                || r.settings().effort.value().is_some_and(|e| e.scope == crate::semantic::task::generation::EffortScope::Reasoning),
-            response_effort: r.settings().effort.value().is_some_and(|e| e.scope == crate::semantic::task::generation::EffortScope::Response),
+                || effort_scope == Some(EffortScope::Reasoning),
+            response_effort: effort_scope == Some(EffortScope::Response),
             ..Self::default()
         };
         let mut conversation = false;

@@ -319,7 +319,10 @@ pub(crate) fn image_data(value: &Value, total: &mut usize) -> Result<ImageData, 
     Ok(data)
 }
 fn breakdown_value(v: &ImageTokenBreakdown) -> Value {
-    json!({"text_tokens":v.text.value().expect("validated text count"),"image_tokens":v.image.value().expect("validated image count")})
+    json!({
+        "text_tokens": v.text.value().expect("validated text count"),
+        "image_tokens": v.image.value().expect("validated image count"),
+    })
 }
 fn usage_value(v: &ImageUsage) -> Value {
     let mut map = Map::new();

@@ -338,6 +338,16 @@ fn wire(id: ItemId, item: &ReasoningItem, fidelity: &FidelityRecords, details: &
         details.push(value);
     }
     if let Some(token) = item.replay.as_ref().and_then(ReplayValue::replay_token) {
-        details.push(json!({"format":"openai-responses-v1","index":details.len(),"type":"reasoning.encrypted","data":token,"id":fidelity.response_item_id(id).map(str::to_owned).unwrap_or_else(||crate::protocol::fidelity::generated_item_id(id))}));
+        let wire_id = fidelity
+            .response_item_id(id)
+            .map(str::to_owned)
+            .unwrap_or_else(|| crate::protocol::fidelity::generated_item_id(id));
+        details.push(json!({
+            "format": "openai-responses-v1",
+            "index": details.len(),
+            "type": "reasoning.encrypted",
+            "data": token,
+            "id": wire_id,
+        }));
     }
 }

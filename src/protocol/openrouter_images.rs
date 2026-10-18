@@ -30,8 +30,13 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
     super::openai::images::validate_request(request)?;
     // Upstream n is an upper bound; exact local satisfaction is checked after EOF.
     // OpenAI null defaults do not authorize nullable upstream controls.
-    let mut value = json!({"model":model,"prompt":request.task.prompt(),"n":request.task.requested_count(),"stream":false,
-        "provider":{"only":["openai"],"allow_fallbacks":false}});
+    let mut value = json!({
+        "model": model,
+        "prompt": request.task.prompt(),
+        "n": request.task.requested_count(),
+        "stream": false,
+        "provider": {"only": ["openai"], "allow_fallbacks": false},
+    });
     if let Some(quality) = request.task.quality.value() {
         value["quality"] = json!(quality.label());
     }

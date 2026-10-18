@@ -118,11 +118,19 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                     alias: Some(alias), ..
                 } = &observed.operation
                     && state.items.iter().any(|old| match &old.kind {
-                        ItemKind::ProviderTool(value) | ItemKind::ProviderResult { observation: value,.. } => value.source==observed.source && matches!(&value.operation,ProviderOperation::Reported { alias: Some(value),.. } if value==alias),
-                        _ => old.kind.alias_domain()==Some(&observed.source) && old.kind.call_id()==Some(alias),
+                        ItemKind::ProviderTool(value)
+                        | ItemKind::ProviderResult {
+                            observation: value, ..
+                        } => {
+                            value.source == observed.source && reported_alias(value) == Some(alias)
+                        }
+                        _ => {
+                            old.kind.alias_domain() == Some(&observed.source)
+                                && old.kind.call_id() == Some(alias)
+                        }
                     })
                 {
-                        return Err(EventError::Identity);
+                    return Err(EventError::Identity);
                 }
             }
             if let Some(call_id) = kind.call_id() {
@@ -130,10 +138,20 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                     return Err(EventError::Limit);
                 }
                 if state.items.iter().any(|i| {
-                    matches!(&i.kind, ItemKind::ProviderTool(observed) | ItemKind::ProviderResult { observation: observed,.. } if Some(&observed.source)==kind.alias_domain()
-                        && matches!(&observed.operation,ProviderOperation::Reported { alias: Some(alias),.. } if alias==call_id))
-                    || i.kind.alias_domain() == kind.alias_domain()
-                        && i.kind.call_id().is_some_and(|id| id == call_id)
+                    let aliased = match &i.kind {
+                        ItemKind::ProviderTool(observed)
+                        | ItemKind::ProviderResult {
+                            observation: observed,
+                            ..
+                        } => {
+                            Some(&observed.source) == kind.alias_domain()
+                                && reported_alias(observed) == Some(call_id)
+                        }
+                        _ => false,
+                    };
+                    aliased
+                        || i.kind.alias_domain() == kind.alias_domain()
+                            && i.kind.call_id().is_some_and(|id| id == call_id)
                 }) {
                     return Err(EventError::Identity);
                 }
@@ -728,4 +746,10 @@ fn metadata_cost(
         return Err(EventError::Limit);
     }
     Ok(total)
+}
+fn reported_alias(observation: &ProviderToolObservation) -> Option<&Text> {
+    match &observation.operation {
+        ProviderOperation::Reported { alias, .. } => alias.as_ref(),
+        _ => None,
+    }
 }

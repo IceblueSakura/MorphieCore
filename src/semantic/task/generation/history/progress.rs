@@ -18,14 +18,23 @@ impl InteractionProgress {
     ) -> Result<(), GenerationError> {
         let pending =
             crate::semantic::task::generation::history::continuation::pending_results(items);
-        match self {
-            Self::TurnFinished if !matches!(pending, Continuation::Unreported) => Err(GenerationError::InvalidResponse),
-            Self::AwaitingToolResults if outcome != Outcome::Completed
-                || !matches!(pending, Continuation::ToolResults(_))
-                || items.iter().any(|(_, item)| matches!(item, Item::ToolCall(call) if call.status != ItemLifecycle::Completed)) =>
-                Err(GenerationError::InvalidResponse),
-            Self::NeedsContinuation if matches!(outcome, Outcome::Failed | Outcome::Cancelled) => Err(GenerationError::InvalidResponse),
-            _ => Ok(()),
+        let open_call = items.iter().any(|(_, item)| {
+            matches!(item, Item::ToolCall(call) if call.status != ItemLifecycle::Completed)
+        });
+        let valid = match self {
+            Self::TurnFinished => matches!(pending, Continuation::Unreported),
+            Self::AwaitingToolResults => {
+                outcome == Outcome::Completed
+                    && matches!(pending, Continuation::ToolResults(_))
+                    && !open_call
+            }
+            Self::NeedsContinuation => !matches!(outcome, Outcome::Failed | Outcome::Cancelled),
+            Self::Unreported => true,
+        };
+        if valid {
+            Ok(())
+        } else {
+            Err(GenerationError::InvalidResponse)
         }
     }
 }

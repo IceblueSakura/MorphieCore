@@ -423,7 +423,14 @@ pub(super) fn check_item_carriers(items: &[(ItemId, Item)]) -> Result<(), CodecE
     }) {
         return Err(CodecError::Unsupported("native reference domain".into()));
     }
-    if items.iter().any(|(_, item)| matches!(item, Item::Reasoning(r) if r.replay.as_ref().is_some_and(|value| value.format() != ReplayFormat::ResponsesEncrypted))) {
+    let foreign_replay = |item: &Item| match item {
+        Item::Reasoning(r) => r
+            .replay
+            .as_ref()
+            .is_some_and(|value| value.format() != ReplayFormat::ResponsesEncrypted),
+        _ => false,
+    };
+    if items.iter().any(|(_, item)| foreign_replay(item)) {
         return Err(CodecError::Unsupported("replay format".into()));
     }
     if items
@@ -432,14 +439,27 @@ pub(super) fn check_item_carriers(items: &[(ItemId, Item)]) -> Result<(), CodecE
     {
         return Err(CodecError::Unsupported("partial compaction carrier".into()));
     }
-    if items.iter().any(|(_, item)| matches!(item, Item::ToolCall(call) if !matches!(call.arguments, ToolArguments::Raw(_)))) {
+    if items.iter().any(|(_, item)| {
+        matches!(item, Item::ToolCall(call) if !matches!(call.arguments, ToolArguments::Raw(_)))
+    }) {
         return Err(CodecError::Unsupported("structured arguments".into()));
     }
-    if items.iter().any(|(_, item)| {
-        matches!(item, Item::ToolResult(r) | Item::CustomResult(r)
-            if r.execution.is_some() || r.is_error.is_some() || matches!(r.output, ToolOutput::Structured(_)))
-            || matches!(item, Item::CustomResult(r) if r.call_id.is_none() || r.name.is_some())
-    }) {
+    let unrepresentable_result = |item: &Item| match item {
+        Item::ToolResult(r) => {
+            r.execution.is_some()
+                || r.is_error.is_some()
+                || matches!(r.output, ToolOutput::Structured(_))
+        }
+        Item::CustomResult(r) => {
+            r.execution.is_some()
+                || r.is_error.is_some()
+                || matches!(r.output, ToolOutput::Structured(_))
+                || r.call_id.is_none()
+                || r.name.is_some()
+        }
+        _ => false,
+    };
+    if items.iter().any(|(_, item)| unrepresentable_result(item)) {
         return Err(CodecError::Unsupported("tool result semantics".into()));
     }
     Ok(())

@@ -33,8 +33,8 @@ pub(in crate::protocol::openai) fn read(
 
 pub(crate) fn representable(resource: ResourceView<'_>) -> bool {
     resource.kind() == ResourceKind::Audio
-        && matches!(resource.location,
-        ResourceLocation::Inline{media_type,..} if matches!(media_type.as_str(),"audio/wav"|"audio/mpeg"))
+        && matches!(resource.location, ResourceLocation::Inline { media_type, .. }
+            if matches!(media_type.as_str(), "audio/wav" | "audio/mpeg"))
 }
 
 pub(in crate::protocol::openai) fn write(resource: ResourceView<'_>) -> Value {
