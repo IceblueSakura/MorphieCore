@@ -907,6 +907,7 @@ mod citation_bindings {
                 status: ItemLifecycle::Completed,
                 phase: None,
                 parts: vec![Part {
+                    replay: None,
                     id: PartId::new(id),
                     cache: None,
                     content: ContentPart::Text(
@@ -1180,6 +1181,7 @@ mod files {
             .iter()
             .enumerate()
             .map(|(i, value)| Part {
+                replay: None,
                 id: PartId::new(i as u64 + 1),
                 cache: None,
                 content: ContentPart::Resource(ResourceUse {
@@ -1681,6 +1683,7 @@ mod client_carrier {
             .unwrap();
         let call = |arguments| {
             Item::ToolCall(ToolCall {
+                replay: None,
                 call_id: event::text("c"),
                 cache: None,
                 name: event::text("lookup"),

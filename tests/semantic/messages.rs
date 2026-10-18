@@ -81,6 +81,7 @@ mod message_envelopes {
                 Item::Message(Message {
                     role: MessageRole::Assistant,
                     parts: vec![Part {
+                        replay: None,
                         id: part,
                         cache: None,
                         content: ContentPart::Text(
@@ -282,6 +283,7 @@ mod message_ownership_owner {
             (
                 ItemId::new(3),
                 Item::ToolCall(ToolCall {
+                    replay: None,
                     call_id: text("C"),
                     cache: None,
                     name: text("lookup"),
@@ -434,6 +436,7 @@ mod scoped_identity {
         (
             ItemId::scoped(LocalScope::new(scope), 1),
             Item::ToolCall(ToolCall {
+                replay: None,
                 call_id: text("same"),
                 cache: None,
                 name: text("lookup"),

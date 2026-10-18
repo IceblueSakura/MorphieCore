@@ -654,8 +654,23 @@ pub fn encode_chat(target: &ResponseRepresentation<'_>) -> Result<Value, CodecEr
         }
     }
     let message = messages
-        .first()
+        .first_mut()
         .ok_or(CodecError::Invalid("empty Chat candidate"))?;
+    if let Some(carrier) = &target.attachment {
+        crate::protocol::attachments::check_chat_support(
+            Profile::Chat,
+            target.adaptation.rules.structured_chat_reasoning,
+        )?;
+        let details = message
+            .as_object_mut()
+            .ok_or(CodecError::Invalid("Chat message"))?
+            .entry("reasoning_details")
+            .or_insert_with(|| json!([]));
+        details
+            .as_array_mut()
+            .ok_or(CodecError::Invalid("Chat reasoning details"))?
+            .push(crate::protocol::attachments::chat_detail(carrier.as_str()));
+    }
     let m = &target.metadata;
     let created = m
         .created
@@ -728,12 +743,19 @@ pub fn encode_responses(target: &ResponseRepresentation<'_>) -> Result<Value, Co
         target.semantic.message_envelopes(),
         Profile::Responses,
     )?;
-    let output = responses::encode_items(
+    let mut output = responses::encode_items(
         target.semantic.items(),
         target.fidelity,
         true,
         target.semantic.resources(),
     )?;
+    if let Some(carrier) = &target.attachment {
+        let item = crate::protocol::attachments::response_item(carrier.as_str());
+        if output.iter().any(|old| old.get("id") == item.get("id")) {
+            return Err(CodecError::Invalid("attachment identity"));
+        }
+        output.push(item);
+    }
     let m = &target.metadata;
     let created = m
         .created

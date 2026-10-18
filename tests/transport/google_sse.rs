@@ -96,7 +96,7 @@ fn signed_text_and_partial_outputs_keep_replay_and_terminal_contracts() {
         Some(morphiecore::execution::replay::CLIENT_ORIGIN.clone()),
     );
     let mut returned = client
-        .decode_request(
+        .decode_client_request(
             json!({"model":"m","input":response["output"]})
                 .to_string()
                 .as_bytes(),

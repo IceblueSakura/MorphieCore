@@ -176,7 +176,7 @@ fn compaction_stream_requires_a_matching_closed_snapshot() {
         .flat_map(|event| {
             client
                 .encode(
-                    &seal_event(event, &CLIENT_ORIGIN).unwrap(),
+                    &seal_event(event, &CLIENT_ORIGIN, &result.fidelity).unwrap(),
                     &result.fidelity,
                 )
                 .unwrap()

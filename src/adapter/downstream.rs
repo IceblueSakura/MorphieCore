@@ -66,7 +66,8 @@ impl ClientAdapter {
         }
         Ok(vec![])
     }
-    /// Return exactly the representation encoded, so stored history agrees with delivery.
+    /// Return the encoded body and the history it represents, so stored history agrees
+    /// with delivery. With a replay carrier, that history is what the carrier restores.
     pub fn snapshot(
         &self,
         decoded: DecodedResponse,
@@ -77,6 +78,50 @@ impl ClientAdapter {
     pub(crate) fn snapshot_with_evidence(
         &self,
         mut decoded: DecodedResponse,
+    ) -> Result<
+        (
+            DecodedResponse,
+            Value,
+            Vec<crate::lowering::generation::LossEvidence>,
+        ),
+        super::AdapterError,
+    > {
+        let Some(packet) = crate::protocol::attachments::Packet::from_response(&decoded)? else {
+            return self.encode_snapshot(decoded, None);
+        };
+        if let Self::OpenAi { adapter, contract } = self {
+            crate::protocol::attachments::check_chat_support(
+                adapter.protocol,
+                adapter
+                    .contract(contract)
+                    .adaptation
+                    .rules
+                    .structured_chat_reasoning,
+            )?;
+        }
+        let mut wire = crate::protocol::attachments::strip(&decoded)?;
+        let mut losses = self.project_native(&mut wire)?;
+        let (projected, value, extra) = self.encode_snapshot(wire, Some(packet.encode()?))?;
+        losses.extend(extra);
+        // Stored history keeps the real owners and original groups that the returned
+        // carrier restores, although the visible copy still records its grouping loss.
+        // Item content is unchanged by these client projections, so only reports,
+        // terminal details and metadata come from the encoded copy.
+        decoded.semantic = decoded
+            .semantic
+            .with_usage_reports(projected.semantic.usage_reports().clone())
+            .map_err(CodecError::from)?
+            .with_details(projected.semantic.details().clone())
+            .map_err(CodecError::from)?
+            .with_progress(projected.semantic.progress())
+            .map_err(CodecError::from)?;
+        decoded.metadata = projected.metadata;
+        Ok((decoded, value, losses))
+    }
+    fn encode_snapshot(
+        &self,
+        mut decoded: DecodedResponse,
+        attachment: Option<crate::protocol::attachments::Carrier>,
     ) -> Result<
         (
             DecodedResponse,
@@ -99,19 +144,21 @@ impl ClientAdapter {
                 if usage != decoded.semantic.usage() {
                     losses.push(crate::protocol::anthropic::client::usage_loss());
                 }
-                crate::protocol::anthropic::client::encode_client_response(
+                crate::protocol::anthropic::client::encode_client_response_with(
                     &decoded,
                     &decoded.metadata.model,
+                    attachment.as_ref(),
                 )?
             }
             Self::OpenAi { adapter, contract } => {
-                let target = crate::protocol::openai::lowering::lower_response(
+                let mut target = crate::protocol::openai::lowering::lower_response(
                     &decoded.semantic,
                     &decoded.fidelity,
                     &decoded.metadata,
                     adapter.protocol,
                     adapter.contract(contract),
                 )?;
+                target.attachment = attachment;
                 let value = match adapter.protocol {
                     Profile::Chat => {
                         crate::protocol::openai::chat::envelope::encode_response(&target)?
@@ -184,7 +231,8 @@ impl ClientAdapter {
                     crate::protocol::anthropic::client_events::ClientEventEncoder::new(
                         metadata.required_id()?,
                         &metadata.model,
-                    );
+                    )
+                    .with_limits(limits)?;
                 encoder.update_service_class(metadata.context.service_class)?;
                 Encoder::Messages(encoder)
             }
@@ -280,6 +328,16 @@ pub(crate) struct ClientEncoder {
     native_projection: Option<crate::protocol::openai::lowering::native_messages::EventProjection>,
 }
 impl ClientEncoder {
+    pub(crate) fn set_attachment(
+        &mut self,
+        value: crate::protocol::attachments::Carrier,
+    ) -> Result<(), SseError> {
+        match &mut self.encoder {
+            Encoder::Chat(encoder) => encoder.set_attachment(value),
+            Encoder::Responses(encoder) => encoder.set_attachment(value),
+            Encoder::Messages(encoder) => Ok(encoder.set_attachment(value)?),
+        }
+    }
     pub(crate) fn project_native(
         &mut self,
         events: &[StreamEvent],

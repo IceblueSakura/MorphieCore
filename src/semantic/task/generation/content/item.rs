@@ -65,6 +65,8 @@ pub struct Part<T = ContentPart> {
     pub id: PartId,
     pub content: T,
     pub cache: Option<PrefixCacheTtl>,
+    /// Opaque continuation attached to this generated value, never to adjacent text.
+    pub replay: Option<ReplayValue>,
 }
 impl<T> Part<T> {
     pub fn new(id: PartId, content: T) -> Self {
@@ -72,6 +74,7 @@ impl<T> Part<T> {
             id,
             content,
             cache: None,
+            replay: None,
         }
     }
 }
@@ -117,6 +120,13 @@ impl ConfigurationUpdate {
     }
 }
 impl Item {
+    pub fn has_replay_attachment(&self) -> bool {
+        match self {
+            Self::Message(message) => message.parts.iter().any(|part| part.replay.is_some()),
+            Self::ToolCall(call) => call.replay.is_some(),
+            _ => false,
+        }
+    }
     pub fn lifecycle(&self) -> Option<ItemLifecycle> {
         match self {
             Self::Message(m) => Some(m.status),

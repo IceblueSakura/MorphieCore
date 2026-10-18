@@ -250,6 +250,7 @@ mod tools {
     fn semantic_construction_cannot_bypass_identifier_or_control_validation() {
         let empty = Text::allowing_empty("", "fixture", 1).unwrap();
         let call = Item::ToolCall(ToolCall {
+            replay: None,
             call_id: empty.clone(),
             cache: None,
             name: text("f"),
@@ -602,6 +603,7 @@ mod tool_results {
         (
             ItemId::new(1),
             Item::ToolCall(ToolCall {
+                replay: None,
                 call_id: text("c"),
                 cache: None,
                 name: text("lookup"),
@@ -831,6 +833,7 @@ mod tool_result_errors {
                 (
                     ItemId::new(1),
                     Item::ToolCall(ToolCall {
+                        replay: None,
                         call_id: text("c"),
                         cache: None,
                         name: text("lookup"),
@@ -1334,6 +1337,7 @@ mod turn_continuation {
         (
             ItemId::new(id),
             Item::ToolCall(ToolCall {
+                replay: None,
                 call_id: text(name),
                 cache: None,
                 name: text("lookup"),
@@ -1558,6 +1562,7 @@ mod reported_tool_results {
             (
                 ItemId::new(3),
                 Item::ToolCall(ToolCall {
+                    replay: None,
                     call_id: text("c"),
                     cache: None,
                     name: text("lookup"),

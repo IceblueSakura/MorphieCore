@@ -63,22 +63,6 @@ fn client_usage(usage: Usage) -> Result<Option<Usage>, CodecError> {
     )
 }
 
-/// A signature-only Gemini item names the part it belongs to, so Chat may carry it
-/// ahead of the message whatever its observed position. Readable reasoning keeps its order.
-pub(super) fn anchored(item: &ReasoningItem) -> bool {
-    item.parts.is_empty()
-        && item.replay.as_ref().is_some_and(|value| {
-            let attached = |format, payload: &str| {
-                format == ReplayFormat::GoogleGenerateContentPart
-                    && crate::protocol::google::attached_signature(payload)
-            };
-            match crate::protocol::replay_envelope::open(value.as_str()) {
-                Some((_, format, payload)) => attached(format, payload.as_str()),
-                None => attached(value.format(), value.as_str()),
-            }
-        })
-}
-
 /// The caller supplies a private delivery copy; the native observation stays intact.
 /// Container boundaries are omitted, object arguments are serialized exactly, and
 /// stop progress is represented by OpenAI outcome plus the preserved tool calls.
@@ -87,6 +71,10 @@ pub(crate) fn project(
     profile: Profile,
 ) -> Result<Vec<LossEvidence>, CodecError> {
     let source = &decoded.semantic;
+    let attached = source
+        .items()
+        .iter()
+        .any(|(_, item)| item.has_replay_attachment());
     match source.progress() {
         InteractionProgress::Unreported | InteractionProgress::TurnFinished => {}
         InteractionProgress::AwaitingToolResults
@@ -99,13 +87,18 @@ pub(crate) fn project(
     let mut items = source.items().to_vec();
     for (_, item) in &mut items {
         if let Item::ToolCall(call) = item {
-            let ToolArguments::Structured(value) = &call.arguments else {
-                return Err(CodecError::Invalid("native tool arguments"));
-            };
-            call.arguments = ToolArguments::Raw(
-                serde_json::to_string(value.value())
-                    .map_err(|_| CodecError::Invalid("native tool arguments"))?,
-            );
+            match &call.arguments {
+                ToolArguments::Structured(value) => {
+                    call.arguments = ToolArguments::Raw(
+                        serde_json::to_string(value.value())
+                            .map_err(|_| CodecError::Invalid("native tool arguments"))?,
+                    );
+                }
+                ToolArguments::Raw(raw)
+                    if StructuredValue::from_bytes(raw.as_bytes())
+                        .is_ok_and(|value| value.value().is_object()) => {}
+                _ => return Err(CodecError::Invalid("native tool arguments")),
+            }
         }
     }
     // Build a target representation rather than editing an observed call under
@@ -116,7 +109,10 @@ pub(crate) fn project(
             .with_safety_reports(source.safety_reports().to_vec())?
             // Derivation requires all disjoint input categories. Missing is not zero.
             .with_usage(source.usage().map(client_usage).transpose()?.flatten())?;
-    if profile == Profile::Chat {
+    if attached {
+        projected = projected.with_message_envelopes(source.message_envelopes().to_vec())?;
+    }
+    if profile == Profile::Chat && !attached {
         let status = if source.outcome() == Outcome::Incomplete {
             ItemLifecycle::Incomplete
         } else {
@@ -128,7 +124,6 @@ pub(crate) fn project(
         let mut owner = None;
         for (id, item) in projected.items() {
             match item {
-                Item::Reasoning(r) if anchored(r) => reasoning.push((*id, item.clone())),
                 // Consecutive blocks such as thinking then redacted thinking keep their order.
                 Item::Reasoning(_) if parts.is_empty() && calls.is_empty() => {
                     reasoning.push((*id, item.clone()))
@@ -164,6 +159,30 @@ pub(crate) fn project(
                     .ok_or(CodecError::Limit)?,
             ),
         };
+        // Chat has one output text value. Coalesce only unannotated text; attachment
+        // delivery retains the original layout separately before reaching this view.
+        if parts.len() > 1 {
+            let mut text = String::new();
+            for part in &parts {
+                let ContentPart::Text(value) = &part.content else {
+                    return Err(CodecError::Unsupported(
+                        "native Chat text coalescing".into(),
+                    ));
+                };
+                if !value.is_plain() || part.cache.is_some() || part.replay.is_some() {
+                    return Err(CodecError::Unsupported(
+                        "native Chat text coalescing".into(),
+                    ));
+                }
+                text.push_str(value.as_str());
+            }
+            parts[0].content = ContentPart::Text(
+                crate::semantic::value::Text::allowing_empty(text, "Chat text", MAX_TEXT_BYTES)
+                    .map_err(|_| CodecError::Limit)?
+                    .into(),
+            );
+            parts.truncate(1);
+        }
         let message = Item::Message(Message {
             role: MessageRole::Assistant,
             parts,
@@ -192,7 +211,18 @@ pub(crate) fn project(
     if source.usage_reports().has_details() {
         losses.push(crate::protocol::usage::report_loss("response.encode"));
     }
-    if source.message_envelopes() != projected.message_envelopes() {
+    let coalesced = profile == Profile::Chat
+        && !attached
+        && source
+            .items()
+            .iter()
+            .filter_map(|(_, item)| match item {
+                Item::Message(message) => Some(message.parts.len()),
+                _ => None,
+            })
+            .sum::<usize>()
+            > 1;
+    if coalesced || source.message_envelopes() != projected.message_envelopes() {
         losses.push(envelope_loss(profile, "response.encode"));
     }
     losses.extend(usage_loss(
@@ -210,37 +240,6 @@ mod tests {
     use super::*;
     use crate::protocol::{anthropic, replay_envelope};
     const BODY: &[u8] = br#"{"id":"native","type":"message","role":"assistant","model":"model","content":[{"type":"thinking","thinking":"plan","signature":"synthetic-signature"},{"type":"tool_use","id":"c","name":"lookup","input":{"n":9007199254740993.125}}],"stop_reason":"tool_use","usage":{"input_tokens":11,"cache_read_input_tokens":3,"cache_creation_input_tokens":2,"output_tokens":7}}"#;
-
-    #[test]
-    fn only_external_attachments_are_movable_reasoning_carriers() {
-        for (format, payload, expected) in [
-            (
-                ReplayFormat::GoogleGenerateContentPart,
-                r#"{"anchor":"call","call":"c","signature":"sig"}"#,
-                true,
-            ),
-            (
-                ReplayFormat::GoogleGenerateContentPart,
-                r#"{"anchor":"thought","signature":"sig"}"#,
-                false,
-            ),
-            (
-                ReplayFormat::GoogleInteractionsV1Thought,
-                r#"{"anchor":"thought","signature":"sig"}"#,
-                false,
-            ),
-        ] {
-            let item = ReasoningItem {
-                parts: vec![],
-                status: ItemLifecycle::Completed,
-                replay: Some(ReplayValue::final_value(
-                    format,
-                    crate::semantic::value::Text::new(payload, "synthetic", 1024).unwrap(),
-                )),
-            };
-            assert_eq!(anchored(&item), expected);
-        }
-    }
 
     fn fixture() -> DecodedResponse {
         let profile = anthropic::Profile::AdaptiveTextTools;
@@ -304,20 +303,6 @@ mod tests {
     fn projection_keeps_native_observation_and_derives_only_the_client_view() {
         let source = fixture();
         let before = source.clone();
-        let safety_settings = GenerationSettings {
-            safety: vec![SafetySetting {
-                category: SafetyCategory::Harassment,
-                threshold: SafetyThreshold::MediumAndAbove,
-            }],
-            ..Default::default()
-        };
-        let terminal = StreamEvent::Terminal {
-            terminal: StreamTerminal::Incomplete,
-            details: TerminalDetails {
-                incomplete: Some(IncompleteReason::MaxOutputTokens),
-                ..Default::default()
-            },
-        };
         for profile in [Profile::Responses, Profile::Chat] {
             let mut client = source.clone();
             crate::execution::replay::seal_for_client(
@@ -337,6 +322,57 @@ mod tests {
                 ..crate::protocol::openai::TargetCaps::full()
             };
             let wire = adapter.encode_response(&client, &contract).unwrap();
+            let args = if profile == Profile::Responses {
+                &wire["output"][1]["arguments"]
+            } else {
+                &wire["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
+            };
+            assert_eq!(args, "{\"n\":9007199254740993.125}");
+            assert_eq!(wire["usage"]["total_tokens"], 23);
+            assert_eq!(client.semantic.progress(), InteractionProgress::Unreported);
+            assert_eq!(source, before);
+            assert_eq!(source.metadata.created, None);
+            assert_eq!(source.semantic.usage().unwrap().total_tokens, None);
+            let Item::Reasoning(r) = &client.semantic.items()[0].1 else {
+                panic!()
+            };
+            assert_eq!(
+                replay_envelope::open(r.replay.as_ref().unwrap().as_str())
+                    .unwrap()
+                    .2
+                    .as_str(),
+                "synthetic-signature"
+            );
+        }
+    }
+
+    #[test]
+    fn native_stream_preparation_records_losses_and_rejects_unrepresentable_metadata() {
+        let source = fixture();
+        let safety_settings = GenerationSettings {
+            safety: vec![SafetySetting {
+                category: SafetyCategory::Harassment,
+                threshold: SafetyThreshold::MediumAndAbove,
+            }],
+            ..Default::default()
+        };
+        let terminal = StreamEvent::Terminal {
+            terminal: StreamTerminal::Incomplete,
+            details: TerminalDetails {
+                incomplete: Some(IncompleteReason::MaxOutputTokens),
+                ..Default::default()
+            },
+        };
+        for profile in [Profile::Responses, Profile::Chat] {
+            let adapter = crate::protocol::openai::Adapter::new(
+                profile,
+                crate::protocol::openai::Dialect::MorphieCore,
+                None,
+            );
+            let contract = crate::protocol::openai::TargetCaps {
+                replay_origin: Some(crate::execution::replay::CLIENT_ORIGIN.clone()),
+                ..crate::protocol::openai::TargetCaps::full()
+            };
             let client_adapter =
                 crate::adapter::ClientAdapter::openai(adapter.clone(), contract.clone());
             let mut attempt = crate::execution::Attempt::new(
@@ -522,28 +558,26 @@ mod tests {
                 );
                 assert_eq!(failed.losses(), before);
             }
-            let args = if profile == Profile::Responses {
-                &wire["output"][1]["arguments"]
-            } else {
-                &wire["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
-            };
-            assert_eq!(args, "{\"n\":9007199254740993.125}");
-            assert_eq!(wire["usage"]["total_tokens"], 23);
-            assert_eq!(client.semantic.progress(), InteractionProgress::Unreported);
-            assert_eq!(source, before);
-            assert_eq!(source.metadata.created, None);
-            assert_eq!(source.semantic.usage().unwrap().total_tokens, None);
-            let Item::Reasoning(r) = &client.semantic.items()[0].1 else {
-                panic!()
-            };
-            assert_eq!(
-                replay_envelope::open(r.replay.as_ref().unwrap().as_str())
-                    .unwrap()
-                    .2
-                    .as_str(),
-                "synthetic-signature"
-            );
         }
+    }
+
+    #[test]
+    fn messages_stream_records_adaptations_and_stays_rejected_after_metadata_error() {
+        let source = fixture();
+        let safety_settings = GenerationSettings {
+            safety: vec![SafetySetting {
+                category: SafetyCategory::Harassment,
+                threshold: SafetyThreshold::MediumAndAbove,
+            }],
+            ..Default::default()
+        };
+        let terminal = StreamEvent::Terminal {
+            terminal: StreamTerminal::Incomplete,
+            details: TerminalDetails {
+                incomplete: Some(IncompleteReason::MaxOutputTokens),
+                ..Default::default()
+            },
+        };
         let mut metadata = source.metadata.clone();
         let mut messages = crate::adapter::ClientAdapter::Messages
             .stream_encoder(
@@ -598,307 +632,5 @@ mod tests {
         assert!(messages.update_metadata(metadata).is_err());
         assert!(messages.encode(&terminal, &source.fidelity).is_err());
         assert!(messages.finish().is_err());
-        // A later report must not become visible in an earlier pending batch.
-        let adapter = crate::protocol::openai::Adapter::new(
-            Profile::Chat,
-            crate::protocol::openai::Dialect::Standard,
-            None,
-        );
-        let mut attempt = crate::execution::Attempt::new(adapter.clone(), 4096, Default::default());
-        attempt.begin(200, "text/event-stream").unwrap();
-        let mut delivery = crate::execution::ResponseDelivery::new(
-            crate::adapter::ClientAdapter::openai(
-                adapter,
-                crate::protocol::openai::TargetCaps::full(),
-            ),
-            "public",
-            Default::default(),
-            crate::semantic::context::StreamOptions {
-                include_obfuscation: crate::semantic::value::Presence::Value(false),
-                ..Default::default()
-            },
-            crate::protocol::openai::stream::Obfuscation::Disabled,
-        );
-        let mut batches = vec![];
-        for (fragment, fingerprint) in [("first", None), ("second", Some("later"))] {
-            let mut chunk = serde_json::json!({
-                "id":"reported", "object":"chat.completion.chunk", "created":1, "model":"model",
-                "choices":[{"index":0,"delta":{"content":fragment},"finish_reason":null}]
-            });
-            if let Some(fingerprint) = fingerprint {
-                chunk["system_fingerprint"] = fingerprint.into();
-            }
-            let (_, events) = attempt
-                .push(format!("data: {chunk}\n\n").as_bytes())
-                .unwrap();
-            batches.push(delivery.prepare_events(&attempt, &events).unwrap().unwrap());
-        }
-        for (index, batch) in batches.into_iter().enumerate() {
-            let frames = delivery.encode_prepared(batch).unwrap();
-            let wire = String::from_utf8(frames.into_iter().flatten().collect()).unwrap();
-            let values: Vec<serde_json::Value> = wire
-                .lines()
-                .filter_map(|line| line.strip_prefix("data: "))
-                .map(|line| serde_json::from_str(line).unwrap())
-                .collect();
-            assert!(!values.is_empty());
-            if index == 0 {
-                assert!(values.iter().all(|v| v.get("system_fingerprint").is_none()));
-                assert!(
-                    values
-                        .iter()
-                        .any(|v| v["choices"][0]["delta"]["content"] == "first")
-                );
-            } else {
-                assert!(values.iter().all(|v| v["system_fingerprint"] == "later"));
-                assert!(
-                    values
-                        .iter()
-                        .any(|v| v["choices"][0]["delta"]["content"] == "second")
-                );
-            }
-        }
-        delivery.cancel();
-        let policy = crate::execution::delivery::DeltaCoalescing {
-            max_delay_ms: 10,
-            max_pending_bytes: 16384,
-        };
-        for protocol in [
-            crate::adapter::ClientProtocol::Chat,
-            crate::adapter::ClientProtocol::Responses,
-            crate::adapter::ClientProtocol::Messages,
-        ] {
-            let source = crate::protocol::openai::Adapter::new(
-                Profile::Chat,
-                crate::protocol::openai::Dialect::Standard,
-                None,
-            );
-            let client = match protocol {
-                crate::adapter::ClientProtocol::Messages => crate::adapter::ClientAdapter::Messages,
-                _ => crate::adapter::ClientAdapter::openai(
-                    crate::protocol::openai::Adapter::new(
-                        if protocol == crate::adapter::ClientProtocol::Chat {
-                            Profile::Chat
-                        } else {
-                            Profile::Responses
-                        },
-                        crate::protocol::openai::Dialect::Standard,
-                        None,
-                    ),
-                    crate::protocol::openai::TargetCaps::full(),
-                ),
-            };
-            let mut attempt = crate::execution::Attempt::new(source, 65536, Default::default());
-            attempt.begin(200, "text/event-stream").unwrap();
-            let mut delivery = crate::execution::ResponseDelivery::new(
-                client,
-                "public",
-                Default::default(),
-                crate::semantic::context::StreamOptions {
-                    include_obfuscation: crate::semantic::value::Presence::Value(false),
-                    ..Default::default()
-                },
-                crate::protocol::openai::stream::Obfuscation::Disabled,
-            )
-            .with_coalescing(Some(policy));
-            let now = std::time::Instant::now();
-            let mut output = vec![];
-            for (index, text) in ["first", "\"", "\\", "\n雪"].into_iter().enumerate() {
-                let chunk = serde_json::json!({
-                    "id":"reported","object":"chat.completion.chunk","created":1,"model":"model",
-                    "choices":[{"index":0,"delta":{"content":text},"finish_reason":null}]
-                });
-                let (_, events) = attempt
-                    .push(format!("data: {chunk}\n\n").as_bytes())
-                    .unwrap();
-                let frames = delivery
-                    .coalesce_events(
-                        &attempt,
-                        &events,
-                        now + std::time::Duration::from_millis(index as u64),
-                    )
-                    .unwrap();
-                if index == 0 {
-                    assert!(!frames.is_empty(), "first content is never held");
-                } else {
-                    assert!(frames.is_empty());
-                    assert_eq!(
-                        delivery.flush_deadline(),
-                        Some(now + std::time::Duration::from_millis(11))
-                    );
-                }
-                output.extend(frames);
-            }
-            assert!(delivery.coalescing_peak_bytes() <= policy.max_pending_bytes);
-            output.extend(delivery.flush_pending().unwrap());
-            assert!(delivery.flush_deadline().is_none());
-            let wire = String::from_utf8(output.into_iter().flatten().collect()).unwrap();
-            let fragments: Vec<String> = wire
-                .lines()
-                .filter_map(|line| line.strip_prefix("data: "))
-                .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-                .filter_map(|value| {
-                    value
-                        .pointer("/choices/0/delta/content")
-                        .or_else(|| {
-                            (value["type"] == "response.output_text.delta").then(|| &value["delta"])
-                        })
-                        .or_else(|| {
-                            (value["delta"]["type"] == "text_delta")
-                                .then(|| &value["delta"]["text"])
-                        })
-                        .and_then(|value| value.as_str())
-                        .map(str::to_owned)
-                })
-                .filter(|text| !text.is_empty())
-                .collect();
-            assert_eq!(fragments, ["first", "\"\\\n雪"]);
-            let now = now + std::time::Duration::from_millis(20);
-            let mut last_events = vec![];
-            for (text, fingerprint) in [
-                ("pending", None),
-                ("", None),
-                ("before", None),
-                ("after", Some("later")),
-            ] {
-                let mut chunk = serde_json::json!({
-                    "id":"reported","object":"chat.completion.chunk","created":1,"model":"model",
-                    "choices":[{"index":0,"delta":{"content":text},"finish_reason":null}]
-                });
-                if let Some(fingerprint) = fingerprint {
-                    chunk["system_fingerprint"] = fingerprint.into();
-                }
-                let (_, mut events) = attempt
-                    .push(format!("data: {chunk}\n\n").as_bytes())
-                    .unwrap();
-                if text.is_empty() {
-                    // Empty semantic deltas are barriers even when a source codec
-                    // normally normalizes away an empty native content field.
-                    let StreamEvent::Delta { item, part, .. } = &last_events[0] else {
-                        panic!()
-                    };
-                    events = vec![StreamEvent::Delta {
-                        item: *item,
-                        part: *part,
-                        fragment: String::new(),
-                        logprobs: vec![],
-                    }];
-                } else {
-                    last_events = events.clone();
-                }
-                let frames = delivery.coalesce_events(&attempt, &events, now).unwrap();
-                if text.is_empty() || fingerprint.is_some() {
-                    assert!(!frames.is_empty(), "barriers drain the preceding run");
-                    if protocol == crate::adapter::ClientProtocol::Chat && fingerprint.is_some() {
-                        assert!(
-                            !String::from_utf8(frames.into_iter().flatten().collect())
-                                .unwrap()
-                                .contains("later")
-                        );
-                    }
-                } else {
-                    assert!(frames.is_empty());
-                }
-            }
-            assert!(
-                delivery.flush_deadline().is_some(),
-                "new context starts a distinct run"
-            );
-            if protocol == crate::adapter::ClientProtocol::Responses {
-                let mut other = crate::execution::Attempt::new(
-                    crate::protocol::openai::Adapter::new(
-                        Profile::Chat,
-                        crate::protocol::openai::Dialect::Standard,
-                        None,
-                    ),
-                    4096,
-                    Default::default(),
-                );
-                other.begin(200, "text/event-stream").unwrap();
-                let (_, events) = other.push(
-                    br#"data: {"id":"reported","object":"chat.completion.chunk","created":1,"model":"model","choices":[{"index":0,"delta":{"content":"other"},"finish_reason":null}]}
-
-"#,
-                ).unwrap();
-                assert!(delivery.coalesce_events(&other, &events, now).is_err());
-                assert!(delivery.flush_pending().is_err());
-            }
-            delivery.cancel();
-            assert!(delivery.flush_pending().is_err());
-        }
-        // Escape expansion, maximum envelope labels and padding must not turn
-        // independently valid chunks into a newly oversized merged frame.
-        for max_pending_bytes in [16384, 1024] {
-            let policy = crate::execution::delivery::DeltaCoalescing {
-                max_pending_bytes,
-                ..policy
-            };
-            let mut attempt = crate::execution::Attempt::new(
-                crate::protocol::openai::Adapter::new(
-                    Profile::Chat,
-                    crate::protocol::openai::Dialect::Standard,
-                    None,
-                ),
-                65536,
-                Default::default(),
-            );
-            attempt.begin(200, "text/event-stream").unwrap();
-            let mut delivery = crate::execution::ResponseDelivery::new(
-                crate::adapter::ClientAdapter::openai(
-                    crate::protocol::openai::Adapter::new(
-                        Profile::Chat,
-                        crate::protocol::openai::Dialect::Standard,
-                        None,
-                    ),
-                    crate::protocol::openai::TargetCaps::full(),
-                ),
-                &"\\".repeat(256),
-                crate::protocol::stream::SseLimits {
-                    max_event_bytes: 8192,
-                    ..Default::default()
-                },
-                Default::default(),
-                crate::protocol::openai::stream::Obfuscation::Seeded([7; 32]),
-            )
-            .with_coalescing(Some(policy));
-            let mut output = vec![];
-            let now = std::time::Instant::now();
-            for fragment in
-                std::iter::once("first".to_owned()).chain(std::iter::repeat_n("\"".repeat(400), 10))
-            {
-                let chunk = serde_json::json!({
-                    "id":"r".repeat(256),"object":"chat.completion.chunk","created":1,"model":"model",
-                    "system_fingerprint":"\"".repeat(256),
-                    "choices":[{"index":0,"delta":{"content":fragment},"finish_reason":null}]
-                });
-                let (_, events) = attempt
-                    .push(format!("data: {chunk}\n\n").as_bytes())
-                    .unwrap();
-                output.extend(delivery.coalesce_events(&attempt, &events, now).unwrap());
-            }
-            output.extend(delivery.flush_pending().unwrap());
-            assert!(output.iter().all(|frame| frame.len() <= 8192));
-            assert!(delivery.coalescing_peak_bytes() <= policy.max_pending_bytes);
-            if max_pending_bytes == 1024 {
-                assert_eq!(
-                    delivery.coalescing_peak_bytes(),
-                    0,
-                    "oversized contexts bypass buffering"
-                );
-            }
-            let text: String = output
-                .iter()
-                .flat_map(|frame| std::str::from_utf8(frame).unwrap().lines())
-                .filter_map(|line| line.strip_prefix("data: "))
-                .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
-                .filter_map(|v| {
-                    v["choices"][0]["delta"]["content"]
-                        .as_str()
-                        .map(str::to_owned)
-                })
-                .collect();
-            assert_eq!(text, format!("first{}", "\"".repeat(4000)));
-            delivery.cancel();
-        }
     }
 }

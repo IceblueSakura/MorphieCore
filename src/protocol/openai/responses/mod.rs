@@ -43,11 +43,19 @@ pub(crate) fn decode_generation_in(
         None if o.get("instructions").is_some_and(Value::is_string) => {}
         _ => return Err(CodecError::Invalid("input")),
     }
+    let mut groups = vec![];
+    crate::protocol::attachments::restore(
+        &mut b.items,
+        &mut groups,
+        &mut b.fidelity,
+        std::mem::take(&mut b.attachments),
+    )?;
     let semantic = GenerationRequest::from_resources(
         b.items,
         settings::read(o, false, direction)?,
         b.resources,
-    )?;
+    )?
+    .with_message_envelopes(groups)?;
     validate_program_history(&semantic)?;
     Ok(DecodedRequest {
         semantic,
@@ -332,6 +340,18 @@ pub(super) fn decode_items(
     let direction = b.direction;
     for value in input {
         let o = object(value)?;
+        if !response
+            && matches!(direction, DecodeDirection::Client(_))
+            && let Some(token) = crate::protocol::attachments::responses_marker(o)?
+        {
+            b.attachments
+                .push(crate::protocol::attachments::Marker::prefix(
+                    token,
+                    &b.items,
+                    b.attachments.last(),
+                )?);
+            continue;
+        }
         let id = b.id()?;
         let typ = o
             .get("type")
@@ -586,6 +606,7 @@ pub(super) fn decode_items(
                             _ => {}
                         }
                         parts.push(Part {
+                            replay: None,
                             cache: None,
                             id: part_id,
                             content,

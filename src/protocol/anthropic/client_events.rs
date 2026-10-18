@@ -38,6 +38,10 @@ pub struct ClientEventEncoder {
     usage: Option<UsageReport>,
     /// Already published optional observations cannot be erased by absent delta fields.
     opening_usage: Option<super::Usage>,
+    attachment: Option<crate::protocol::attachments::Carrier>,
+    limits: crate::protocol::stream::SseLimits,
+    wire_bytes: usize,
+    events: usize,
 }
 fn thinking_block() -> Value {
     json!({"type":"thinking","thinking":"","signature":""})
@@ -113,7 +117,29 @@ impl ClientEventEncoder {
             progress: InteractionProgress::Unreported,
             usage: None,
             opening_usage: None,
+            attachment: None,
+            limits: Default::default(),
+            wire_bytes: 0,
+            events: 0,
         }
+    }
+    pub(crate) fn with_limits(
+        mut self,
+        limits: crate::protocol::stream::SseLimits,
+    ) -> Result<Self, crate::protocol::stream::SseError> {
+        limits.validate()?;
+        self.limits = limits;
+        Ok(self)
+    }
+    pub(crate) fn set_attachment(
+        &mut self,
+        value: crate::protocol::attachments::Carrier,
+    ) -> Result<(), CodecError> {
+        if self.rejected || self.finished || self.attachment.is_some() {
+            return Err(CodecError::Invalid("attachment carrier"));
+        }
+        self.attachment = Some(value);
+        Ok(())
     }
     pub(crate) fn reject(&mut self) {
         self.rejected = true;
@@ -232,7 +258,22 @@ impl ClientEventEncoder {
         if self.finished || self.rejected {
             return Err(CodecError::Invalid("Messages stream closed"));
         }
-        let result = self.encode_open(event);
+        let result = self.encode_open(event).and_then(|frames| {
+            for frame in &frames {
+                self.events = self.events.checked_add(1).ok_or(CodecError::Limit)?;
+                self.wire_bytes = self
+                    .wire_bytes
+                    .checked_add(frame.len())
+                    .ok_or(CodecError::Limit)?;
+                if frame.len() > self.limits.max_event_bytes
+                    || self.events > self.limits.max_events
+                    || self.wire_bytes > self.limits.max_wire_bytes
+                {
+                    return Err(CodecError::Limit);
+                }
+            }
+            Ok(frames)
+        });
         if result.is_err() {
             self.reject();
         }
@@ -392,6 +433,9 @@ impl ClientEventEncoder {
                 self.reject();
                 return Err(CodecError::Unsupported("Messages safety report".into()));
             }
+            StreamEvent::PartReplay { .. } => {
+                return Err(CodecError::Unsupported("Messages replay attachment".into()));
+            }
             StreamEvent::Usage(usage) => {
                 self.report(&UsageReport::operation(*usage), &mut out)?;
             }
@@ -420,6 +464,14 @@ impl ClientEventEncoder {
                 );
                 started.sort_unstable();
                 for index in started {
+                    out.push(frame(&json!({"type":"content_block_stop","index":index})));
+                }
+                if let Some(token) = self.attachment.take() {
+                    if self.next >= crate::semantic::task::generation::MAX_ITEMS {
+                        return Err(CodecError::Limit);
+                    }
+                    let index = open_block(&mut self.next, &mut out, thinking_block());
+                    out.push(frame(&json!({"type":"content_block_delta","index":index,"delta":{"type":"signature_delta","signature":token.as_str()}})));
                     out.push(frame(&json!({"type":"content_block_stop","index":index})));
                 }
                 let mut usage = super::accounting::wire(

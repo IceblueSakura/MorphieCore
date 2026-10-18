@@ -436,6 +436,7 @@ mod usage_relations {
             Item::Message(Message {
                 role: MessageRole::Assistant,
                 parts: vec![Part {
+                    replay: None,
                     id: PartId::new(2),
                     content: ContentPart::Text(text("a").into()),
                     cache: None,
@@ -906,6 +907,7 @@ mod projection {
                 Item::Message(Message {
                     role: MessageRole::Assistant,
                     parts: vec![Part {
+                        replay: None,
                         id: PartId::new(2),
                         content: ContentPart::Text(text("answer").into()),
                         cache: None,
@@ -1136,6 +1138,7 @@ mod projection {
             unreachable!()
         };
         message.parts.push(Part {
+            replay: None,
             id: PartId::new(3),
             content: ContentPart::Text(text("second").into()),
             cache: None,

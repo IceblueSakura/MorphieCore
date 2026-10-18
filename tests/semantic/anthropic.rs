@@ -780,6 +780,7 @@ mod anthropic_semantics {
                         status: None,
                         parts: vec![
                             Part {
+                                replay: None,
                                 id: PartId::new(1),
                                 content: text("stable"),
                                 cache: Some(PrefixCacheTtl::OneHour),
@@ -795,6 +796,7 @@ mod anthropic_semantics {
                         status: ItemLifecycle::Completed,
                         phase: None,
                         parts: vec![Part {
+                            replay: None,
                             id: PartId::new(3),
                             content: ContentPart::Text(text("go").into()),
                             cache: Some(PrefixCacheTtl::FiveMinutes),
@@ -956,6 +958,7 @@ mod anthropic_semantics {
             panic!("message owner")
         };
         message.parts.push(Part {
+            replay: None,
             id: PartId::new(4),
             content: ContentPart::Text(Text::allowing_empty("", "fixture", 64).unwrap().into()),
             cache: Some(PrefixCacheTtl::FiveMinutes),
@@ -1730,7 +1733,7 @@ mod anthropic_output {
 mod client_fidelity {
     use morphiecore::{
         protocol::{
-            DecodedResponse,
+            CodecError, DecodedResponse,
             anthropic::{
                 client::{decode_client_request, encode_client_response},
                 client_events::ClientEventEncoder,
@@ -1974,7 +1977,7 @@ mod client_fidelity {
         assert!(encode_client_response(&response, "m").is_err());
     }
     #[test]
-    fn messages_preserves_parts_and_rejects_unrepresentable_output() {
+    fn messages_rejects_audio_in_static_output_and_each_event_shape() {
         let mut response = response();
         let mut usage = Usage::operation(0, 3, 3);
         usage.input_relation = InputTokenRelation::ExcludesCacheReadAndWrite;
@@ -1995,36 +1998,49 @@ mod client_fidelity {
         );
         audio.semantic = audio.semantic.with_items(items).unwrap();
         assert!(encode_client_response(&audio, "m").is_err());
-        let mut audio_stream = ClientEventEncoder::new("r", "m");
-        audio_stream.encode(&StreamEvent::Started).unwrap();
-        audio_stream
-            .encode(&StreamEvent::ItemStarted {
+        for event in [
+            StreamEvent::PartStarted {
                 item: ItemId::new(1),
-                kind: ItemKind::Message { phase: None },
-                replay: None,
-            })
-            .unwrap();
-        assert!(
-            audio_stream
-                .encode(&StreamEvent::PartStarted {
-                    item: ItemId::new(1),
-                    part: PartId::new(1),
-                    kind: PartKind::Audio,
-                })
-                .is_err()
-        );
-        assert!(
-            audio_stream
-                .encode(&StreamEvent::AudioDelta {
-                    item: ItemId::new(1),
-                    part: PartId::new(1),
-                    update: AudioUpdate {
-                        data: Some(vec![1, 2, 3]),
-                        ..Default::default()
-                    },
-                })
-                .is_err()
-        );
+                part: PartId::new(1),
+                kind: PartKind::Audio,
+            },
+            StreamEvent::AudioDelta {
+                item: ItemId::new(1),
+                part: PartId::new(1),
+                update: AudioUpdate {
+                    data: Some(vec![1, 2, 3]),
+                    ..Default::default()
+                },
+            },
+        ] {
+            let mut stream = ClientEventEncoder::new("r", "m");
+            stream.encode(&StreamEvent::Started).unwrap();
+            stream
+                .encode(&crate::events_support::start(
+                    1,
+                    ItemKind::Message { phase: None },
+                ))
+                .unwrap();
+            assert_eq!(
+                stream.encode(&event).unwrap_err(),
+                CodecError::Unsupported("Messages audio output".into()),
+                "{event:?}"
+            );
+            assert_eq!(
+                stream.encode(&StreamEvent::Started).unwrap_err(),
+                CodecError::Invalid("Messages stream closed")
+            );
+            assert!(stream.finish().is_err());
+        }
+    }
+
+    #[test]
+    fn messages_preserves_parts_and_rejects_unrepresentable_calls() {
+        let mut response = response();
+        let mut usage = Usage::operation(0, 3, 3);
+        usage.input_relation = InputTokenRelation::ExcludesCacheReadAndWrite;
+        response.semantic = response.semantic.with_usage(Some(usage)).unwrap();
+        let text = |s: &str| morphiecore::semantic::value::Text::new(s, "synthetic", 128).unwrap();
         assert_eq!(
             encode_client_response(&response, "m").unwrap()["content"],
             json!([{"type":"text","text":"answer"}])
@@ -2069,6 +2085,7 @@ mod client_fidelity {
         };
         for (id, value) in [(2, ""), (3, "tail")] {
             message.parts.push(Part {
+                replay: None,
                 id: PartId::new(id),
                 cache: None,
                 content: ContentPart::Text(
@@ -2130,6 +2147,7 @@ mod client_fidelity {
             ]
         );
         let mut call = ToolCall {
+            replay: None,
             call_id: text("c"),
             cache: None,
             name: text("lookup"),
@@ -2216,6 +2234,14 @@ mod client_fidelity {
         assert!(encode_client_response(&tool_response(call.clone()), "m").is_err());
         call.arguments = ToolArguments::Raw("1".into());
         assert!(encode_client_response(&tool_response(call), "m").is_err());
+    }
+
+    #[test]
+    fn messages_rejects_citations_in_static_output_and_each_event_shape() {
+        let mut response = response();
+        let mut usage = Usage::operation(0, 3, 3);
+        usage.input_relation = InputTokenRelation::ExcludesCacheReadAndWrite;
+        response.semantic = response.semantic.with_usage(Some(usage)).unwrap();
         let resource = ResourceId::scoped(LocalScope::ROOT, 1);
         let resources = ResourceTable::default()
             .insert(
@@ -2264,26 +2290,40 @@ mod client_fidelity {
             .with_items(items)
             .unwrap();
         assert!(encode_client_response(&response, "m").is_err());
-        let mut stream = ClientEventEncoder::new("r", "m");
-        assert!(
+        for event in [
+            StreamEvent::AnnotationAdded {
+                item: ItemId::new(1),
+                part: PartId::new(1),
+                annotation: annotation.clone(),
+            },
+            StreamEvent::TextMetadata {
+                item: ItemId::new(1),
+                part: PartId::new(1),
+                annotations: vec![annotation],
+                logprobs: Presence::Absent,
+            },
+        ] {
+            let mut stream = ClientEventEncoder::new("r", "m");
+            stream.encode(&StreamEvent::Started).unwrap();
             stream
-                .encode(&StreamEvent::AnnotationAdded {
+                .encode(&crate::events_support::start(
+                    1,
+                    ItemKind::Message { phase: None },
+                ))
+                .unwrap();
+            stream
+                .encode(&StreamEvent::PartStarted {
                     item: ItemId::new(1),
                     part: PartId::new(1),
-                    annotation: annotation.clone(),
+                    kind: PartKind::Text,
                 })
-                .is_err()
-        );
-        assert!(
-            stream
-                .encode(&StreamEvent::TextMetadata {
-                    item: ItemId::new(1),
-                    part: PartId::new(1),
-                    annotations: vec![annotation],
-                    logprobs: Presence::Absent,
-                })
-                .is_err()
-        );
+                .unwrap();
+            assert_eq!(
+                stream.encode(&event).unwrap_err(),
+                CodecError::Unsupported("Messages citations".into()),
+                "{event:?}"
+            );
+        }
     }
     #[test]
     fn client_intake_carries_caps_and_rejects_active_fields_it_cannot_carry() {

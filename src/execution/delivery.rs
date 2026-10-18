@@ -148,19 +148,6 @@ impl ResponseDelivery {
                     || attempt.fidelity() != Some(source.fidelity.as_ref())
             }))
     }
-    #[cfg(test)]
-    pub(crate) fn coalesce_events(
-        &mut self,
-        attempt: &Attempt,
-        events: &[StreamEvent],
-        now: std::time::Instant,
-    ) -> Result<Vec<Bytes>, AttemptError> {
-        let mut frames = vec![];
-        for batch in self.queue_events(attempt, events, now)? {
-            frames.extend(self.encode_prepared(batch)?);
-        }
-        Ok(frames)
-    }
     pub(crate) fn queue_events(
         &mut self,
         attempt: &Attempt,
@@ -260,16 +247,33 @@ impl ResponseDelivery {
         &mut self,
         attempt: &Attempt,
     ) -> Result<crate::protocol::DecodedResponse, AttemptError> {
+        let (decoded, losses) = self.client_view(attempt)?;
+        for loss in losses {
+            if !self.losses.contains(&loss) {
+                self.losses.push(loss);
+            }
+        }
+        Ok(decoded)
+    }
+    /// The client-facing response and the losses of producing it, without recording them.
+    fn client_view(
+        &self,
+        attempt: &Attempt,
+    ) -> Result<
+        (
+            crate::protocol::DecodedResponse,
+            Vec<crate::lowering::generation::LossEvidence>,
+        ),
+        AttemptError,
+    > {
         let mut decoded = attempt.response()?.clone();
         decoded.metadata = self.metadata(attempt)?;
         super::replay::seal_for_client(&mut decoded, &super::replay::CLIENT_ORIGIN)?;
-        if attempt.is_native() {
-            for loss in self.client.project_native(&mut decoded)? {
-                if !self.losses.contains(&loss) {
-                    self.losses.push(loss);
-                }
-            }
-        }
+        let losses = if attempt.is_native() {
+            self.client.project_native(&mut decoded)?
+        } else {
+            vec![]
+        };
         if self.client.protocol() == ClientProtocol::Responses || attempt.is_native() {
             for (owner, _) in decoded.semantic.items() {
                 if decoded.fidelity.response_item_id(*owner).is_none() {
@@ -284,7 +288,7 @@ impl ResponseDelivery {
                 }
             }
         }
-        Ok(decoded)
+        Ok((decoded, losses))
     }
     /// Bounded cache-only projection of exactly the delivered values; not stored history.
     pub(crate) fn cache_successor(
@@ -394,6 +398,23 @@ impl ResponseDelivery {
                 crate::protocol::anthropic::client::validate_tool_calls(attempt.response()?)?;
             }
             let mut frames = self.flush_pending()?;
+            // Only owned replay needs the materialized client view at the terminal.
+            if attempt
+                .response()?
+                .semantic
+                .items()
+                .iter()
+                .any(|(_, item)| item.has_replay_attachment())
+                // The streamed events already recorded their own projection losses.
+                && let Some(packet) = crate::protocol::attachments::Packet::from_response(
+                    &self.client_view(attempt)?.0,
+                )?
+            {
+                self.encoder
+                    .as_mut()
+                    .ok_or(AttemptError::Delivery("missing stream encoder"))?
+                    .set_attachment(packet.encode()?)?;
+            }
             frames.extend(self.encode(attempt, std::slice::from_ref(terminal))?);
             self.encoder
                 .as_ref()
@@ -471,12 +492,16 @@ impl ResponseDelivery {
             )?);
         }
         let encoder = self.encoder.as_mut().expect("encoder initialized");
+        let wire_events: Vec<_> = events
+            .iter()
+            .filter_map(|event| crate::protocol::attachments::wire_event(event, &context.fidelity))
+            .collect();
         let projected = if attempt.is_native() {
-            encoder.project_native(events)?
+            encoder.project_native(&wire_events)?
         } else {
             None
         };
-        let events = projected.as_deref().unwrap_or(events);
+        let events = projected.as_deref().unwrap_or(&wire_events);
         if self.client.protocol() != ClientProtocol::Messages
             && (self.client.protocol() == ClientProtocol::Responses || attempt.is_native())
         {
@@ -502,7 +527,9 @@ impl ResponseDelivery {
         let events = events
             .iter()
             .cloned()
-            .map(|event| super::replay::seal_event(event, &super::replay::CLIENT_ORIGIN))
+            .map(|event| {
+                super::replay::seal_event(event, &super::replay::CLIENT_ORIGIN, &context.fidelity)
+            })
             .collect::<Result<_, _>>()?;
         Ok(PreparedEvents {
             events,
@@ -612,3 +639,6 @@ impl ResponseDelivery {
         let _ = self.lifecycle.terminal();
     }
 }
+
+#[cfg(test)]
+mod tests;

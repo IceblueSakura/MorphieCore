@@ -12,7 +12,7 @@ Audit the selected Generation IR/codec design with comprehensive coverage, expli
 
 Use the sourced [contract inventory](refs/2026-10-17-generation-contracts.md) for the remaining semantic decisions. Coverage now includes independent counterexamples for protected fields, nullable usage, signed-part ownership, nested extensions and exact non-strict default conversion. Resolve the ownership gaps below before claiming all official Generation semantics are represented; explicit rejection is safer than silent loss but is not semantic completeness.
 
-The selected [visible-history transfer](architecture.md#reasoning-replay) and [scoped accounting](architecture.md#scoped-accounting) contracts are now the local baseline. Remaining work is actual signed-part/call ownership, attribution and execution/report contracts, not another review of whether foreign thinking should become assistant speech. Routing and binding admission remain unchanged.
+The selected [visible-history transfer](architecture.md#reasoning-replay) and [scoped accounting](architecture.md#scoped-accounting) contracts are the local baseline. Actual part/call replay and client manifests are implemented locally. Pinned pi Chat drops opaque-only turns; that loss is an [accepted client limitation](architecture.md#settled-decisions). Attribution and execution/report contracts follow; foreign thinking does not become assistant speech. Routing and binding admission remain unchanged.
 
 The current priority is stability and meaningful coverage of implemented foundations. Citation/source-use/point owners, additional execution controls/reports, Interactions snapshots and Messages target-policy changes are deferred until the user resumes that feature work. This changes implementation order, not the known semantic gaps or the pending design review.
 
@@ -28,7 +28,7 @@ Use measured coverage to locate unexercised branches, then prioritize concrete f
 
 Extend responsible-layer tests and use bounded property tests where they explore real state/fragmentation boundaries. Fix demonstrated defects without adding new semantic vocabulary, widening binding admission or reopening routing. Preserve credential/auth, origin, cancellation, replay isolation and terminal-honesty coverage.
 
-Exit condition for each slice: the selected invariant has a meaningful assertion, affected uncovered paths are reviewed, and focused plus full offline checks pass. Report measured coverage changes separately from SDK/client and Provider evidence. The replay migration still requires validated client carriers; foundation coverage does not authorize changing pi, inventing filler, weakening failed assertions or publishing blocked replay work.
+Exit condition for each slice: the selected invariant has a meaningful assertion, affected uncovered paths are reviewed, and focused plus full offline checks pass. Report measured coverage changes separately from SDK/client and Provider evidence. Client-compatibility losses follow the [compatibility-before-rejection decision](architecture.md#settled-decisions); they never invent filler or replace hidden state.
 
 Replay return restores original segmentation only from unchanged visible content plus a bounded opaque manifest. This does not claim immutable edit identity, opencode carrier support or full-route acceptance.
 
@@ -133,7 +133,7 @@ Content and tool cache owners remain local codec contracts. Public binding accep
 
 Terminal completion causes are independent of turn progress and tool continuation. Messages can report natural completion or a matched stop sequence; Chat and generateContent `STOP` do not distinguish those causes. Chat and Responses delivery use the [selected terminal approximations](architecture.md#selected-request-approximations); Messages rejects ambiguous stops, unknown completed terminals without pending calls and explicit continuation. Completed pending calls can carry Messages `tool_use` without synthesizing a source disposition. Google `STOP` remains a reported fact even when function calls also require continuation, and Chat delivers it as `stop` beside the calls.
 
-Cross-protocol final-answer delivery to OpenAI clients now has selected local codec contracts; Messages ambiguous-stop and recitation delivery remain [rejections](../src/protocol/anthropic/client.rs). Gateway and SDK smokes still retain exact tool-response carriers, not completed Chat-to-Responses or Messages-to-OpenAI answer loops. Google signed tool-call delivery to OpenAI clients also remains uncovered. Rebuilding those success scenarios belongs to the coverage and reconnection stages.
+Cross-protocol final-answer delivery to OpenAI clients now has selected local codec contracts; Messages ambiguous-stop and recitation delivery remain [rejections](../src/protocol/anthropic/client.rs). Gateway and SDK smokes still retain exact tool-response carriers, not completed Chat-to-Responses or Messages-to-OpenAI answer loops. Signed Google text/call history has isolated delivery and pinned pi codec coverage; this does not resolve ordinary full-request strictness/admission gates. Rebuilding connected success scenarios belongs to the reconnection stage.
 
 Messages [mid-conversation system messages](architecture.md#native-messages-projection) have client and upstream codec carriers. The Messages default `semantic_contract()` keeps `ordered_instructions` closed; only `representation_contract()` declares it. Activating it on the OpenCode Go binding needs model-level and proxy evidence.
 
@@ -337,7 +337,6 @@ Minimal counterexamples and pinned sources are in [Generation contract boundarie
 
 | Question | Recommendation and exit condition |
 |---|---|
-| Actual replay ownership and client carriers | The visible-history transfer policy is selected. Move generateContent signatures onto actual part/call owners together with their client return carrier; cover multiple signed text parts, same-content distinct owners and edited histories. Do not replace the current surrogate with a restoration-only sidecar or lose client replay through an IR-only rewrite |
 | Complete citations and source identity | Select licence/quote/request-source owners and output point anchors, including the changed OpenAI file-citation index contract. Then independently cover request, output, streaming and returned history; retain rejection until represented |
 | Execution controls and reports | Select bounded owners for geography, access programs, replay enforcement, safety/review details and Interactions reported service/continuation. Keep protected unsupported carriers rejected; do not add routing or continuation execution implicitly |
 | Interactions lifecycle snapshots | Compare supplied steps against streamed owners, including content/signatures/errors, or select snapshot-only materialization. Current rejection prevents contradiction loss but is not complete SSE support |

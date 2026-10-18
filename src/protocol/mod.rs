@@ -2,6 +2,7 @@
 pub mod aliyun_asr;
 pub mod aliyun_speech;
 pub mod anthropic;
+pub(crate) mod attachments;
 pub mod cache;
 pub(crate) mod cache_affinity;
 mod decoded;

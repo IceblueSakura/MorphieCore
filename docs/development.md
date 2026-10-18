@@ -96,6 +96,22 @@ uv run --project tests/sdk --locked --offline python -m unittest discover -s tes
 
 All listeners and credentials are synthetic and test-owned. The gate uses no real Providers or environment proxies.
 
+### Pinned pi history-carrier probe
+
+The optional ignored test uses the source revision in [protocol notes](refs/2026-10-17-generation-contracts.md#sources), Node 24.21.0 and the dependency lock in `tests/sdk/pi/`. Keep the pi checkout outside this repository; set `MORPHIECORE_PI_SOURCE` to it. Install the public test dependencies without private npm configuration or lifecycle scripts:
+
+```sh
+tmp=$(mktemp -d)
+touch "$tmp/global.ini"
+env -i PATH="$PATH" HOME="$tmp" npm --userconfig=/dev/null \
+  --globalconfig="$tmp/global.ini" --prefix tests/sdk/pi ci \
+  --ignore-scripts --no-audit --no-fund
+MORPHIECORE_PI_SOURCE=/path/to/pinned/pi \
+  cargo test --locked --offline --lib pinned_pi_owned_replay -- --ignored --nocapture
+```
+
+The test clears the child environment, uses a temporary HOME, and replaces fetch with fixed synthetic SSE. It performs 18 serial fetches, two per case, with no retries, a 32-token cap and a five-second deadline per stream. Cases cover three protocols, equal-text owners, empty signed text and exact-number mutation rejection. The pinned Chat builder drops the opaque-only empty turn; that case asserts the [accepted limitation](refs/2026-10-17-generation-contracts.md#signed-google-parts) instead of restoration. Returned history is checked separately from request-control/tool admission. This is not a live-client, opencode, Provider or routed full-chain acceptance gate.
+
 For OpenAPI-only changes, run the affected schema checks:
 
 ```sh

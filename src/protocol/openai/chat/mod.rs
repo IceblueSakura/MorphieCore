@@ -90,12 +90,28 @@ pub(crate) fn decode_generation_with(
         b.fidelity.record_prediction_omission();
     }
     for message in messages {
+        let start = b.items.len();
+        let mut value = message.clone();
+        let marker = if matches!(direction, DecodeDirection::Client(_)) {
+            crate::protocol::attachments::take_chat(&mut value)?
+        } else {
+            None
+        };
         let message = crate::protocol::openai::chat::reasoning::decode_static(
             &mut b,
-            object(message)?,
+            object(&value)?,
             adaptation,
         )?;
         decode_message(&mut b, &message, true)?;
+        if let Some(marker) = marker {
+            b.attachments
+                .push(crate::protocol::attachments::Marker::bounded(
+                    &marker,
+                    start,
+                    b.items.len(),
+                    None,
+                )?);
+        }
     }
     let mut controls = controls(o, "max_completion_tokens")?;
     controls.stop_sequences = crate::protocol::generation_controls::stops(o.get("stop"), true, 4)?;
@@ -154,7 +170,13 @@ pub(crate) fn decode_generation_with(
     };
     crate::protocol::openai::reasoning::chat_request(o, &mut settings)?;
     crate::protocol::openai::chat::audio::settings(o, &mut settings, direction)?;
-    let groups = owners::envelopes(&b.message_owners)?;
+    let mut groups = owners::envelopes(&b.message_owners)?;
+    crate::protocol::attachments::restore(
+        &mut b.items,
+        &mut groups,
+        &mut b.fidelity,
+        std::mem::take(&mut b.attachments),
+    )?;
     let r = GenerationRequest::from_resources(b.items, settings, b.resources)?
         .with_message_envelopes(groups)?;
     Ok(DecodedRequest {
@@ -455,6 +477,7 @@ pub(super) fn decode_message(
                                 parts.push(b.part(string(part, "text")?)?);
                             }
                             "image_url" => parts.push(Part {
+                                replay: None,
                                 cache: None,
                                 id: b.part_id()?,
                                 content: ContentPart::Resource(b.resource(
@@ -466,6 +489,7 @@ pub(super) fn decode_message(
                                 )?),
                             }),
                             "video_url" => parts.push(Part {
+                                replay: None,
                                 cache: None,
                                 id: b.part_id()?,
                                 content: ContentPart::Resource(b.resource(
@@ -473,6 +497,7 @@ pub(super) fn decode_message(
                                 )?),
                             }),
                             "file" => parts.push(Part {
+                                replay: None,
                                 cache: None,
                                 id: b.part_id()?,
                                 content: ContentPart::Resource(b.resource(
@@ -482,6 +507,7 @@ pub(super) fn decode_message(
                                 )?),
                             }),
                             "input_audio" => parts.push(Part {
+                                replay: None,
                                 cache: None,
                                 id: b.part_id()?,
                                 content: ContentPart::Resource(b.resource(
@@ -547,6 +573,7 @@ pub(super) fn decode_message(
                     return Err(CodecError::Invalid("audio with refusal"));
                 }
                 parts.push(Part {
+                    replay: None,
                     id: b.part_id()?,
                     content: crate::protocol::openai::chat::audio::read(audio, replay, direction)?,
                     cache: None,

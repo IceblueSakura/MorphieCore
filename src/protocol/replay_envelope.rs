@@ -39,6 +39,7 @@ fn fingerprint(parts: &[&str]) -> ReplayOrigin {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Envelope<'a> {
     o: Cow<'a, str>,
     f: Cow<'a, str>,
@@ -52,8 +53,8 @@ fn format_tag(format: ReplayFormat) -> &'static str {
         ReplayFormat::AnthropicMessagesThinking => "anthropic-thinking",
         ReplayFormat::AnthropicMessagesRedactedThinking => "anthropic-redacted-thinking",
         ReplayFormat::GoogleGenerateContentPart => "gemini-part",
+        ReplayFormat::GoogleGenerateContentSignature => "gemini-signature",
         ReplayFormat::GoogleInteractionsV1Thought => "interactions-thought",
-        ReplayFormat::GoogleInteractionsV1Step => "interactions-step",
     }
 }
 fn parse_format(tag: &str) -> Option<ReplayFormat> {
@@ -63,8 +64,8 @@ fn parse_format(tag: &str) -> Option<ReplayFormat> {
         "anthropic-thinking" => ReplayFormat::AnthropicMessagesThinking,
         "anthropic-redacted-thinking" => ReplayFormat::AnthropicMessagesRedactedThinking,
         "gemini-part" => ReplayFormat::GoogleGenerateContentPart,
+        "gemini-signature" => ReplayFormat::GoogleGenerateContentSignature,
         "interactions-thought" => ReplayFormat::GoogleInteractionsV1Thought,
-        "interactions-step" => ReplayFormat::GoogleInteractionsV1Step,
         _ => return None,
     })
 }
@@ -95,7 +96,10 @@ pub fn open(value: &str) -> Option<(ReplayOrigin, ReplayFormat, Text)> {
     }
     let encoded = value.strip_prefix(PREFIX)?;
     let json = URL_SAFE_NO_PAD.decode(encoded).ok()?;
-    let envelope: Envelope<'_> = serde_json::from_slice(&json).ok()?;
+    let value =
+        crate::semantic::value::parse_json(&json, crate::semantic::value::JsonLimits::ENVELOPE)
+            .ok()?;
+    let envelope: Envelope<'_> = serde_json::from_value(value).ok()?;
     Some((
         ReplayOrigin::new(&envelope.o).ok()?,
         parse_format(&envelope.f)?,

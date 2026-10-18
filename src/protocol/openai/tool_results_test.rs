@@ -8,6 +8,7 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
         vec![(
             ItemId::new(1),
             Item::ToolCall(ToolCall {
+                replay: None,
                 call_id: text("c"),
                 cache: None,
                 name: text("lookup"),
@@ -117,6 +118,7 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
                 metadata: std::borrow::Cow::Borrowed(&metadata),
                 profile,
                 adaptation: Default::default(),
+                attachment: None,
             };
             let result = match profile {
                 Profile::Chat => static_response::encode_chat(&forged),
@@ -165,6 +167,7 @@ fn request_codecs_enforce_result_carriers_before_rendering() {
                 (
                     ItemId::new(1),
                     Item::ToolCall(ToolCall {
+                        replay: None,
                         call_id: text("c"),
                         cache: None,
                         name: text("lookup"),

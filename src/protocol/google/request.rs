@@ -1,6 +1,6 @@
 //! Candidate-local generateContent request projection.
 //! Source: <https://ai.google.dev/api/generate-content>.
-use super::signature::{Anchor, Signed, text_hash};
+use super::signature::Signed;
 use crate::{
     protocol::{CodecError, fidelity::FidelityRecords, native::ReplayTarget},
     semantic::{task::generation::*, value::Presence},
@@ -363,7 +363,6 @@ fn contents(
             _ => return Err(unsupported()),
         };
         let mut parts = vec![];
-        let mut signed = vec![];
         for owner in group.members() {
             if !included.insert(*owner) {
                 return Err(unsupported());
@@ -374,19 +373,7 @@ fn contents(
                 .find(|(id, _)| id == owner)
                 .ok_or_else(unsupported)?
                 .1;
-            item_parts(
-                *owner,
-                item,
-                request,
-                fidelity,
-                target,
-                rules,
-                &mut parts,
-                &mut signed,
-            )?;
-        }
-        for value in signed {
-            attach(&mut parts, value)?;
+            item_parts(*owner, item, request, fidelity, target, rules, &mut parts)?;
         }
         if parts.is_empty() {
             return Err(unsupported());
@@ -417,7 +404,6 @@ fn contents(
     Ok(Value::Array(contents))
 }
 
-#[allow(clippy::too_many_arguments)]
 fn item_parts(
     id: ItemId,
     item: &Item,
@@ -426,7 +412,6 @@ fn item_parts(
     target: &ReplayTarget,
     rules: &mut BTreeSet<RequestRule>,
     parts: &mut Vec<Value>,
-    signed: &mut Vec<Signed>,
 ) -> Result<(), CodecError> {
     match item {
         Item::Message(m) => {
@@ -434,13 +419,17 @@ fn item_parts(
                 return Err(unsupported());
             }
             for p in &m.parts {
-                match &p.content {
-                    ContentPart::Text(t) if t.is_plain() => parts.push(json!({"text": t.as_str()})),
+                let mut part = match &p.content {
+                    ContentPart::Text(t) if t.is_plain() => json!({"text": t.as_str()}),
                     ContentPart::Resource(r) if m.role == MessageRole::User => {
-                        parts.push(media(r.media(request.resources())?, false, rules)?)
+                        media(r.media(request.resources())?, false, rules)?
                     }
                     _ => return Err(unsupported()),
+                };
+                if let Some(value) = &p.replay {
+                    part["thoughtSignature"] = value.replay_token().ok_or_else(unsupported)?.into();
                 }
+                parts.push(part);
             }
         }
         Item::Reasoning(r) => {
@@ -476,20 +465,13 @@ fn item_parts(
                 return Err(CodecError::Invalid("Gemini replay dependency"));
             }
             let value = Signed::decode(value.replay_token().ok_or_else(unsupported)?)?;
-            if value.anchor == Anchor::Thought {
-                let mut part = Map::new();
-                part.insert("thought".into(), true.into());
-                part.insert("text".into(), readable().into());
-                if let Some(signature) = &value.signature {
-                    part.insert("thoughtSignature".into(), signature.as_str().into());
-                }
-                parts.push(Value::Object(part));
-            } else {
-                if !r.parts.is_empty() {
-                    return Err(CodecError::Invalid("Gemini signature owner"));
-                }
-                signed.push(value);
+            let mut part = Map::new();
+            part.insert("thought".into(), true.into());
+            part.insert("text".into(), readable().into());
+            if let Some(signature) = &value.signature {
+                part.insert("thoughtSignature".into(), signature.as_str().into());
             }
+            parts.push(Value::Object(part));
         }
         Item::ToolCall(c) => {
             if c.status != ItemLifecycle::Completed
@@ -510,8 +492,12 @@ fn item_parts(
             if !args.is_object() {
                 return Err(unsupported());
             }
-            parts.push(json!({"functionCall": {
-                "id": c.call_id.as_str(), "name": c.name.as_str(), "args": args}}));
+            let mut part = json!({"functionCall": {
+                "id": c.call_id.as_str(), "name": c.name.as_str(), "args": args}});
+            if let Some(value) = &c.replay {
+                part["thoughtSignature"] = value.replay_token().ok_or_else(unsupported)?.into();
+            }
+            parts.push(part);
         }
         Item::ToolResult(r) => {
             if !r.context.is_direct() || r.context.alias_domain.is_some() || r.status.is_some() {
@@ -628,36 +614,4 @@ fn media(
         }
         _ => Err(unsupported()),
     }
-}
-
-/// Restores a signature onto the part it was issued with, independent of item order.
-fn attach(parts: &mut [Value], value: Signed) -> Result<(), CodecError> {
-    let signature = value.signature.ok_or_else(unsupported)?;
-    let slot = match &value.anchor {
-        Anchor::Call(id) => parts
-            .iter_mut()
-            .find(|p| p["functionCall"]["id"].as_str() == Some(id.as_str()))
-            .ok_or(CodecError::Invalid("Gemini signature without its call"))?,
-        Anchor::Tail {
-            text_hash: expected,
-        } => {
-            let last = parts
-                .last_mut()
-                .filter(|part| part.get("thought").is_none())
-                .ok_or(CodecError::Invalid("Gemini text signature owner"))?;
-            let text = last["text"]
-                .as_str()
-                .ok_or(CodecError::Invalid("Gemini text signature owner"))?;
-            if text_hash(text) != *expected {
-                return Err(CodecError::Invalid("Gemini text signature dependency"));
-            }
-            last
-        }
-        Anchor::Thought => return Err(unsupported()),
-    };
-    if slot.get("thoughtSignature").is_some() {
-        return Err(CodecError::Invalid("duplicate Gemini signature"));
-    }
-    slot["thoughtSignature"] = signature.into();
-    Ok(())
 }

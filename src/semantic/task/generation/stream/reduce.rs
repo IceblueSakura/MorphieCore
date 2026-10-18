@@ -264,6 +264,7 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             owner.parts.push(StreamPart {
                 id: part,
                 kind,
+                replay: None,
                 data: if kind == PartKind::Audio {
                     StreamPartValue::AudioFragments(AudioBuffer::default())
                 } else if matches!(kind, PartKind::StructuredArguments | PartKind::ResultJson) {
@@ -494,6 +495,28 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             }
             p.finished = true;
         }
+        StreamEvent::PartReplay { item, part, replay } => {
+            replay.value.validate_attachment()?;
+            if !matches!(state.item(item)?.kind, ItemKind::Message { .. }) {
+                return Err(EventError::Lifecycle);
+            }
+            let p = state.open_part(item, part)?;
+            if !p.value_finished || p.kind != PartKind::Text {
+                return Err(EventError::Lifecycle);
+            }
+            if let Some(old) = &p.replay {
+                if old.value.replay_token().is_some() {
+                    return Err(EventError::Lifecycle);
+                }
+                if old.origin != replay.origin || old.value.format() != replay.value.format() {
+                    return Err(EventError::Identity);
+                }
+            }
+            let old = p.replay.as_ref().map_or(0, |r| r.value.as_str().len());
+            state.bytes -= old;
+            state.charge(replay.value.as_str().len())?;
+            state.open_part(item, part)?.replay = Some(replay);
+        }
         StreamEvent::ItemFinished {
             item,
             status,
@@ -503,12 +526,27 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 return Err(EventError::Lifecycle);
             }
             let owner = state.open_item(item)?;
+            if replay.is_none()
+                && owner.replay.as_ref().is_some_and(|old| {
+                    matches!(owner.kind, ItemKind::ToolCall { .. })
+                        || old.value.replay_token().is_some()
+                })
+            {
+                return Err(EventError::Lifecycle);
+            }
             if matches!(owner.kind, ItemKind::ProviderResult { .. })
                 && (owner.parts.len() != 1 || owner.parts.iter().any(|part| !part.finished))
             {
                 return Err(EventError::Lifecycle);
             }
-            if status == ItemLifecycle::Completed && owner.parts.iter().any(|p| !p.finished) {
+            if status == ItemLifecycle::Completed
+                && owner.parts.iter().any(|p| {
+                    !p.finished
+                        || p.replay
+                            .as_ref()
+                            .is_some_and(|r| r.value.replay_token().is_none())
+                })
+            {
                 return Err(EventError::Lifecycle);
             }
             if owner.kind.call().is_some() && owner.parts.len() != 1 {
@@ -521,11 +559,20 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             }
             if let Some(r) = &replay {
                 r.validate(&owner.kind)?;
-                if r.value.replay_token().is_none() {
+                if r.value.replay_token().is_none()
+                    && (status == ItemLifecycle::Completed
+                        || !matches!(owner.kind, ItemKind::ToolCall { .. })
+                        || owner
+                            .replay
+                            .as_ref()
+                            .is_some_and(|old| old.value.replay_token().is_some()))
+                {
                     return Err(EventError::Lifecycle);
                 }
                 if owner.replay.as_ref().is_some_and(|old| {
-                    old.origin != r.origin || old.value.format() != r.value.format()
+                    old.origin != r.origin
+                        || old.value.format() != r.value.format()
+                        || old.value.replay_token().is_some() && old.value != r.value
                 }) {
                     return Err(EventError::Identity);
                 }

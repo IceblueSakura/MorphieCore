@@ -62,6 +62,7 @@ impl Intake {
             .enumerate()
             .map(|(i, part)| {
                 Ok(Part {
+                    replay: None,
                     id: PartId::scoped(self.scope, base + i as u64),
                     content: text(&part.content)?,
                     cache: part.cache,
@@ -95,6 +96,7 @@ impl Intake {
                     MessageRole::Assistant
                 },
                 parts: vec![Part {
+                    replay: None,
                     id: part,
                     content: ContentPart::Text(text(s)?.into()),
                     cache: None,
@@ -105,6 +107,7 @@ impl Intake {
             Block::Media(media) => Item::Message(Message {
                 role: MessageRole::User,
                 parts: vec![Part {
+                    replay: None,
                     id: part,
                     content: ContentPart::Resource(self.resource(part, media)?),
                     cache: None,
@@ -141,6 +144,7 @@ impl Intake {
                 input,
                 ..
             } => Item::ToolCall(ToolCall {
+                replay: None,
                 call_id: text(call)?,
                 cache: None,
                 name: text(name)?,
@@ -168,6 +172,7 @@ impl Intake {
                                 .map(|(i, block)| {
                                     let part = PartId::scoped(self.scope, base + i as u64);
                                     Ok(Part {
+                                        replay: None,
                                         id: part,
                                         cache: block.cache,
                                         content: match &block.content {

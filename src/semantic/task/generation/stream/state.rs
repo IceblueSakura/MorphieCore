@@ -5,6 +5,7 @@ use std::collections::BTreeSet;
 pub struct StreamPart {
     pub id: PartId,
     pub kind: PartKind,
+    pub replay: Option<ItemReplay>,
     pub(super) data: StreamPartValue,
     pub value_finished: bool,
     pub finished: bool,

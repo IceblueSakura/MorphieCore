@@ -9,16 +9,6 @@ mod stream;
 pub use request::RequestRule;
 pub use stream::GenerationSseDecoder;
 
-/// Only external attachments may use a movable downstream opaque carrier.
-pub(crate) fn attached_signature(payload: &str) -> bool {
-    signature::Signed::decode(payload).is_ok_and(|signed| {
-        matches!(
-            signed.anchor,
-            signature::Anchor::Call(_) | signature::Anchor::Tail { .. }
-        )
-    })
-}
-
 use crate::{
     adapter::{AdapterError, Request},
     protocol::{
@@ -122,7 +112,10 @@ pub fn encode_generation_request(
         request,
         fidelity,
         target,
-        &[crate::semantic::task::generation::ReplayFormat::GoogleGenerateContentPart],
+        &[
+            crate::semantic::task::generation::ReplayFormat::GoogleGenerateContentPart,
+            crate::semantic::task::generation::ReplayFormat::GoogleGenerateContentSignature,
+        ],
     )?;
     let request = group_client_history(&request)?;
     request.validate()?;

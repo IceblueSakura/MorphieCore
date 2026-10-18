@@ -399,7 +399,7 @@ Semantic support, wire representation, execution properties and client promises 
 
 For a fixed target, earlier history projects byte-identically as later turns are added; cache markers may move. Rules must not reinterpret earlier content based on the current turn or request position. This protects cache prefixes and preserved-thinking replay.
 
-Native container boundaries may be omitted by a named client projection. Ordered items, exact arguments and call/result identity remain intact; a later Chat projection does not recover the original container ownership.
+Native container boundaries may be omitted by a named client projection. Chat coalesces unannotated text into its scalar wire value without changing bytes; metadata-bearing merges reject. Ordered content, exact arguments and call/result identity remain intact. Required replay attachments use the manifest below to retain their original owner layout rather than treating this wire view as native ownership.
 
 ## Reasoning replay
 
@@ -410,6 +410,8 @@ mc1. + base64url JSON: {o: issuer fingerprint, f: native format, d: payload}
 ```
 
 Runtime fingerprints bind Provider, upstream model and the normalized trusted deployment origin/path. They do not include public aliases, credentials or ingress keys, and reveal no URL or credential locator. Changing a deployment does not authorize replay of another deployment's opaque values. Clients must treat the whole value as opaque.
+
+Once an item's replay value is final, item closure may repeat it unchanged but cannot remove, downgrade or rewrite it. Final replay does not imply a completed artifact. Partial-to-final replacement preserves format and intake origin.
 
 1. Restore the native payload only for the matching deployment/model and carrier.
 2. Transfer visible history to an incompatible target by omitting complete foreign reasoning, including its readable thinking and opaque value. Do not present another model's thinking as an assistant answer.
@@ -431,18 +433,24 @@ Carriers include Responses `encrypted_content`, Chat encrypted reasoning details
 
 Redacted thinking is an opaque-only reasoning item with its own replay format, so the native block type survives the envelope. Messages clients receive it as `redacted_thinking` whose `data` is the envelope; a streamed reasoning block opens on its first delta or at its end, once a redacted value can be recognized.
 
-Google signatures travel as reasoning items. The IR has no part- or call-level replay slots; Provider-tool replay stays separate.
+generateContent signatures on ordinary text and function calls belong to `Part.replay` and `ToolCall.replay`, with a distinct `GoogleGenerateContentSignature` format. Thought state remains on its reasoning owner; Provider-tool replay stays separate. Fidelity binds part identity, ordinal, text, lifecycle and value, or the call's identity, name, exact arguments, context, lifecycle and value. Sealing checks recorded obligations even when an owner or token was removed.
 
-The transfer policy is selected. Actual part/call replay ownership still needs an end-to-end carrier migration; the current surrogate representation is not a claim of complete replay ownership. See [protocol notes](refs/2026-10-17-generation-contracts.md#selected-visible-history-transfer).
+The bounded `mca1.` attachment manifest contains original item/part boundaries, content dependencies, lifecycle and individual `mc1.` values, not replacement text or arguments. It travels through a trailing Responses encrypted reasoning item, a trailing structured Chat encrypted detail, or a trailing empty Messages thinking-signature block. Each client encoder emits that carrier from typed input before its own validation and bounds. These are transport records, not semantic reasoning items. Client intake consumes them before ordinary reasoning decoding.
 
-- A generateContent value names its anchor: call ID, thought or tail. A tail anchor binds the final text part by digest; changed or missing text rejects instead of receiving the signature. No empty carrier is invented.
+Restoration requires unchanged text bytes and exact parsed call arguments, preserved non-text order and positions, and a matching manifest. Text coalescing can therefore recover two distinct signed `"OK"` parts without guessing which one owns a signature. Changed/deleted visible content, conflicting partial status, malformed carriers and ambiguous scopes reject. Metadata/cache boundaries that cannot survive a split also reject. Responses scopes end at their carrier and start after a preceding carrier or non-assistant separator; unrelated unsigned assistant prefixes can make that scope ambiguous.
+
+This is original-segmentation recovery, not authenticated edit identity: identical-content edits and complete removal of the manifest cannot be detected statelessly. Neither the manifest nor its dependency hashes authenticate the client. A stream builds the manifest from its existing EOF-validated materialization and publishes it with the withheld terminal; it does not add a second stream buffer. Static, SSE and retained history share the same owner contract. Standard Chat without structured reasoning support rejects this carrier in both delivery modes.
+
+- An attachment is never a tail-anchored or call-ID-anchored surrogate reasoning item. Moving or dropping its visible owner cannot silently move or erase required state.
 - An explicitly observed empty signed text part keeps its text owner. A signature on an empty streaming fragment may also close accumulated text. Both differ from a missing carrier.
 - Distinct parts within one generateContent frame retain their boundaries; unsigned preceding text never becomes part of a later signed owner.
 - A signed thought closes its owner. Later thought text starts another item, so adjacent signed parts never overwrite one another.
 - The selected Interactions carrier is a thought signature. Standard function calls have no official signature field; such fields and call-signature payloads reject. Built-in tool signatures remain a separate deferred carrier.
-- Signature-only items trail the response, so a message stays contiguous with its calls. Chat carries them ahead of the message.
-- Preserve every compatible native signature, even when an upstream sample accepts an omitted one. Only genuine part/call attachments can move as opaque downstream carriers; an empty thought remains ordered reasoning.
-- generateContent and Interactions are separate formats. A value of the other format is dropped as foreign, not translated, so failover between the two bindings loses reasoning instead of failing.
+- Preserve every compatible native signature, even when an upstream sample accepts an omitted one. An empty thought remains ordered reasoning, not a movable attachment.
+- Foreign part/call replay is removed only from completed owners with final values; visible text and real calls/results remain. Affected call wire aliases are cleared without changing semantic call identity.
+- generateContent and Interactions are separate formats. Foreign state is omitted under the selected transfer policy, not translated.
+
+Pinned pi parser/request-builder checks preserve equal-text owners and signed calls on Chat, Responses and Messages, and reject JavaScript-rounded arguments. Empty signed text returns through Responses and Messages. Pinned pi Chat drops an assistant turn containing only opaque details, so that turn's signature is lost. This is an accepted client limitation: generateContent does not strictly validate non-function-call signatures, and turns with calls keep their carrier. No placeholder text or hidden-state reconstruction replaces the turn. This is client-codec evidence, not opencode compatibility, binding admission or Provider acceptance; see the [protocol notes](refs/2026-10-17-generation-contracts.md#signed-google-parts).
 
 ## Compacted history
 
@@ -682,6 +690,7 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Two codec responsibilities | Normalize Provider dialects into an official API baseline plus declared extensions before semantic decoding; encode in reverse before serialization. Semantic extensions enter IR; eligible non-semantic fidelity stays scoped outside it |
 | Independent activation and scoped effort | Activation belongs to reasoning; a single scoped effort control belongs to generation settings. Response-wide effort is not reasoning-only effort, and off is not a positive level |
 | Accurate IR with declared lossy projection | Prefer exact carriers, permit approved advisory omissions and behavioral approximations, and reject loss of protected meaning. Preserve the source and record target-local changes; implementation follows the roadmap |
+| Compatibility before rejection | Keep every representable fact, because retained state makes conversion more stable and extensible. When a supported client cannot carry or return some state, prefer a documented loss over rejecting its requests. Do not invent content, filler or validator-bypass values. Each existing rejection changes only through a selected rule |
 | Explicit same-model level calibration | P1 permits declared directional scope approximation on target copies; level mappings stay model-local. No inferred nearest level, inverse or off-to-on conversion |
 | Disabled activation priority | P2 preserves a supported off carrier and names omission of independent unrepresentable response effort; a target without off support still rejects |
 | Preset-based thinking allocation | P3 uses six distinct shared budgets from 1024 to 24576; target-specific tables may contain duplicates. Numeric conversion minimizes absolute token distance and chooses the highest level on every tie. Preserve original intent and hard caps; this is explicit lossy quantization, not an inferred qualitative inverse |
@@ -733,9 +742,9 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Append-only history projection | Earlier content does not change when a later turn is added |
 | Reported tool results | Responses carries function/custom results in static output and item snapshots. Missing call references stay unreported; request history still requires matching preceding calls. Chat and Messages reject ordinary tool results as assistant output, not their supported history forms |
 | Scoped opaque replay and visible-history transfer | Preserve compatible replay. Omit complete incompatible reasoning on a target-private copy with a named transfer receipt; preserve visible content and actual call/results, reject partial or damaged compatible state, and never discard required compacted/cached context |
-| Selected attachment return contract | Restore original owner segmentation only when the visible projection and bounded opaque attachment manifest agree. This authorizes a future direct-owner carrier migration, not immutable edit identity for indistinguishable content or an opencode compatibility claim |
+| Selected attachment return contract | Actual part/call replay stays in the IR. Each client encoder emits the bounded opaque manifest in its own carrier before validation. Restore original owner segmentation only when the visible projection and manifest agree. A client that discards a whole opaque-only turn loses that turn's replay; the gateway accepts the resulting history. No immutable edit identity or unverified client compatibility claim |
 | Scoped source accounting | Retain raw buckets and latest operation/step snapshots independently; derive delivery views without summing snapshots or inferring unknown inclusion relations. Source-default zeros and optional counts remain distinguishable |
-| Replay dependencies | Validate the original reasoning dependency before client sealing. generateContent tail signatures also bind the actual text carrier by digest, outside semantic IR |
+| Replay dependencies | Validate recorded reasoning, part and call obligations before sealing. Bind owner lifecycle as well as content; missing owners/values reject. Partial replay cannot become final through omission or defaulting |
 | Prefix-cache ownership | Typed breakpoints and TTL belong to their content or tool-definition owner, including separate inner and outer tool-result boundaries. Automatic caching is a separate setting; absence preserves target policy. Unsupported targets reject rather than substitute cache keys or retention |
 | Compacted context is required history | A distinct ordered compaction item preserves opaque content and identity. Incompatible targets reject it rather than apply the foreign-reasoning strip rule |
 | Failover, not balancing | Legal candidates, bounded advancement and exact-credential affinity |

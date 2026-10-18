@@ -1,0 +1,986 @@
+use super::*;
+use crate::{
+    adapter::{ClientAdapter, ClientProtocol},
+    execution::{
+        Attempt, AttemptError, ResponseDelivery,
+        replay::{CLIENT_ORIGIN, open_from_client, seal_for_client},
+    },
+    protocol::{
+        google::{GenerationSseDecoder, encode_generation_request},
+        native::ReplayTarget,
+        openai::{Adapter, Dialect, Profile, TargetCaps, stream::Obfuscation},
+        stream::SseLimits,
+    },
+};
+
+fn target() -> ReplayTarget {
+    ReplayTarget::new("fixture-google", "fixture-model").unwrap()
+}
+fn source() -> (DecodedResponse, Vec<StreamEvent>) {
+    source_number(9007199254740993)
+}
+fn source_wire(number: u64) -> String {
+    source_wire_case(number, false)
+}
+fn source_wire_case(number: u64, empty: bool) -> String {
+    let mut body = json!({"responseId":"reply","modelVersion":"fixture-model","candidates":[{
+        "content":{"role":"model","parts":[
+            {"thought":true,"text":"plan","thoughtSignature":"UjE="},
+            {"text":"OK","thoughtSignature":"UzE="},
+            {"text":"OK","thoughtSignature":"UzI="},
+            {"functionCall":{"id":"c","name":"lookup","args":{"n":number}},"thoughtSignature":"UzM="}
+        ]},"finishReason":"MAX_TOKENS"}],"usageMetadata":{"promptTokenCount":10,"cachedContentTokenCount":0,
+            "candidatesTokenCount":5,"thoughtsTokenCount":1,"totalTokenCount":16}});
+    if empty {
+        body["candidates"][0]["content"]["parts"] = json!([{"text":"","thoughtSignature":"UzE="}]);
+    }
+    format!("data: {body}\n\n")
+}
+fn source_number(number: u64) -> (DecodedResponse, Vec<StreamEvent>) {
+    let wire = source_wire(number);
+    decode_source_wire(&wire)
+}
+fn decode_source_wire(wire: &str) -> (DecodedResponse, Vec<StreamEvent>) {
+    let mut decoder = GenerationSseDecoder::new(
+        200,
+        "text/event-stream",
+        SseLimits::default(),
+        LocalScope::new(2),
+        target(),
+    )
+    .unwrap();
+    let (n, events) = decoder.consume(wire.as_bytes()).unwrap();
+    assert_eq!(n, wire.len());
+    let mut source = decoder.finish().unwrap();
+    source.metadata.created = Some(1.into());
+    source.metadata.model = "public".into();
+    (source, events)
+}
+fn client(protocol: ClientProtocol) -> ClientAdapter {
+    let mut client = match protocol {
+        ClientProtocol::Chat | ClientProtocol::Responses => ClientAdapter::openai(
+            Adapter::new(
+                if protocol == ClientProtocol::Chat {
+                    Profile::Chat
+                } else {
+                    Profile::Responses
+                },
+                Dialect::MorphieCore,
+                None,
+            ),
+            TargetCaps::full(),
+        ),
+        ClientProtocol::Messages => ClientAdapter::Messages,
+    };
+    client.bind_replay_origin(&CLIENT_ORIGIN);
+    client
+}
+fn delivered(client: &ClientAdapter, source: &DecodedResponse) -> (DecodedResponse, Value) {
+    let mut sealed = source.clone();
+    seal_for_client(&mut sealed, &CLIENT_ORIGIN).unwrap();
+    client.project_native(&mut sealed).unwrap();
+    client.snapshot(sealed).unwrap()
+}
+/// Emulate the observed text coalescing, but retain each actual tool result explicitly.
+fn returned(protocol: ClientProtocol, body: &Value) -> Value {
+    match protocol {
+        ClientProtocol::Chat => json!({"model":"public","messages":[{"role":"user","content":"go"},
+            body["choices"][0]["message"],{"role":"tool","tool_call_id":"c","content":"ok"}]}),
+        ClientProtocol::Responses => {
+            let mut input = vec![json!({"role":"user","content":"go"})];
+            let mut text: Option<usize> = None;
+            for item in body["output"].as_array().unwrap() {
+                if item["type"] == "message" {
+                    if let Some(index) = text {
+                        let old = input[index]["content"][0]["text"].as_str().unwrap();
+                        input[index]["content"][0]["text"] = json!(format!(
+                            "{old}{}",
+                            item["content"][0]["text"].as_str().unwrap()
+                        ));
+                    } else {
+                        text = Some(input.len());
+                        input.push(item.clone());
+                    }
+                } else {
+                    input.push(item.clone());
+                }
+            }
+            input.push(json!({"type":"function_call_output","call_id":"c","output":"ok"}));
+            json!({"model":"public","input":input})
+        }
+        ClientProtocol::Messages => {
+            let mut content: Vec<Value> = vec![];
+            let mut text: Option<usize> = None;
+            for block in body["content"].as_array().unwrap() {
+                if block["type"] == "text" {
+                    if let Some(index) = text {
+                        let old = content[index]["text"].as_str().unwrap();
+                        content[index]["text"] =
+                            json!(format!("{old}{}", block["text"].as_str().unwrap()));
+                    } else {
+                        text = Some(content.len());
+                        content.push(block.clone());
+                    }
+                } else {
+                    content.push(block.clone());
+                }
+            }
+            json!({"model":"public","max_tokens":64,"messages":[{"role":"user","content":"go"},
+                {"role":"assistant","content":content},
+                {"role":"user","content":[{"type":"tool_result","tool_use_id":"c","content":"ok"}]}]})
+        }
+    }
+}
+fn expected_parts() -> Value {
+    json!([
+        {"thought":true,"text":"plan","thoughtSignature":"UjE="},
+        {"text":"OK","thoughtSignature":"UzE="},
+        {"text":"OK","thoughtSignature":"UzI="},
+        {"functionCall":{"id":"c","name":"lookup","args":{"n":9007199254740993u64}},"thoughtSignature":"UzM="}
+    ])
+}
+fn marker(body: &Value, protocol: ClientProtocol) -> &str {
+    match protocol {
+        ClientProtocol::Chat => body["choices"][0]["message"]["reasoning_details"]
+            .as_array()
+            .unwrap()
+            .last()
+            .unwrap()["data"]
+            .as_str()
+            .unwrap(),
+        ClientProtocol::Responses => {
+            body["output"].as_array().unwrap().last().unwrap()["encrypted_content"]
+                .as_str()
+                .unwrap()
+        }
+        ClientProtocol::Messages => {
+            body["content"].as_array().unwrap().last().unwrap()["signature"]
+                .as_str()
+                .unwrap()
+        }
+    }
+}
+fn stream_delivery(protocol: ClientProtocol) -> (Attempt, ResponseDelivery) {
+    let mut attempt = Attempt::new(
+        crate::adapter::UpstreamAdapter::GoogleGenerateContent { target: target() },
+        2 << 20,
+        SseLimits::default(),
+    );
+    attempt.begin(200, "text/event-stream").unwrap();
+    let delivery = ResponseDelivery::new(
+        client(protocol),
+        "public",
+        SseLimits::default(),
+        crate::semantic::context::StreamOptions {
+            include_obfuscation: crate::semantic::value::Presence::Value(false),
+            ..Default::default()
+        },
+        Obfuscation::Disabled,
+    );
+    (attempt, delivery)
+}
+#[test]
+fn client_carriers_restore_distinct_equal_text_owners_and_calls() {
+    let (source, _) = source();
+    assert_eq!(source.semantic.items().len(), 4);
+    for protocol in [
+        ClientProtocol::Chat,
+        ClientProtocol::Responses,
+        ClientProtocol::Messages,
+    ] {
+        let client = client(protocol);
+        let (retained, body) = delivered(&client, &source);
+        assert_eq!(retained.semantic.items().len(), 4);
+        assert!(marker(&body, protocol).starts_with(PREFIX));
+        let request = returned(protocol, &body);
+        let mut decoded = client
+            .decode_client_request(request.to_string().as_bytes())
+            .unwrap();
+        open_from_client(&mut decoded).unwrap();
+        let (wire, _) = encode_generation_request(
+            &decoded.task.semantic,
+            &decoded.task.fidelity,
+            &target(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            wire["contents"][1]["parts"],
+            expected_parts(),
+            "{protocol:?}"
+        );
+        assert_eq!(
+            wire["contents"][2]["parts"],
+            json!([{"functionResponse":{"id":"c","name":"lookup","response":{"output":"ok"}}}])
+        );
+    }
+}
+#[test]
+fn carrier_rejects_changed_visible_text_call_arguments_and_partial_claims() {
+    let (source, _) = source();
+    for protocol in [
+        ClientProtocol::Chat,
+        ClientProtocol::Responses,
+        ClientProtocol::Messages,
+    ] {
+        let client = client(protocol);
+        let (_, body) = delivered(&client, &source);
+        let request = returned(protocol, &body);
+        let mut changed = request.clone();
+        match protocol {
+            ClientProtocol::Chat => changed["messages"][1]["content"] = json!("OKchanged"),
+            ClientProtocol::Responses => {
+                changed["input"][2]["content"][0]["text"] = json!("OKchanged")
+            }
+            ClientProtocol::Messages => {
+                changed["messages"][1]["content"][1]["text"] = json!("OKchanged")
+            }
+        }
+        assert!(
+            matches!(
+                client.decode_client_request(changed.to_string().as_bytes()),
+                Err(CodecError::Invalid("replay attachment manifest"))
+            ),
+            "{protocol:?}"
+        );
+        let mut changed = request.clone();
+        match protocol {
+            ClientProtocol::Chat => {
+                changed["messages"][1]["tool_calls"][0]["function"]["arguments"] =
+                    json!("{\"n\":9007199254740992}")
+            }
+            ClientProtocol::Responses => {
+                changed["input"][3]["arguments"] = json!("{\"n\":9007199254740992}")
+            }
+            ClientProtocol::Messages => {
+                changed["messages"][1]["content"][2]["input"]["n"] = json!(9007199254740992u64)
+            }
+        }
+        assert!(
+            matches!(
+                client.decode_client_request(changed.to_string().as_bytes()),
+                Err(CodecError::Invalid("replay attachment manifest"))
+            ),
+            "{protocol:?}"
+        );
+        if protocol == ClientProtocol::Responses {
+            let mut changed = request.clone();
+            changed["input"].as_array_mut().unwrap().swap(2, 3);
+            assert!(matches!(
+                client.decode_client_request(changed.to_string().as_bytes()),
+                Err(CodecError::Invalid("replay attachment manifest"))
+            ));
+            let mut changed = request.clone();
+            changed["input"][2]["status"] = json!("incomplete");
+            assert!(matches!(
+                client.decode_client_request(changed.to_string().as_bytes()),
+                Err(CodecError::Invalid("replay attachment manifest"))
+            ));
+            let mut deleted = request;
+            deleted["input"].as_array_mut().unwrap().remove(2);
+            assert!(matches!(
+                client.decode_client_request(deleted.to_string().as_bytes()),
+                Err(CodecError::Invalid("replay attachment manifest"))
+            ));
+        }
+    }
+}
+#[test]
+fn stream_carrier_is_published_only_with_the_eof_gated_terminal() {
+    let (source, _) = source();
+    for protocol in [
+        ClientProtocol::Chat,
+        ClientProtocol::Responses,
+        ClientProtocol::Messages,
+    ] {
+        let client = client(protocol);
+        let (_, body) = delivered(&client, &source);
+        let (mut attempt, mut delivery) = stream_delivery(protocol);
+        let wire = source_wire(9007199254740993);
+        let (n, events) = attempt.push(wire.as_bytes()).unwrap();
+        assert_eq!(n, wire.len());
+        assert!(
+            events
+                .iter()
+                .all(|event| !matches!(event, StreamEvent::Terminal { .. }))
+        );
+        let mut bytes = delivery.encode_events(&attempt, &events).unwrap().concat();
+        assert!(!String::from_utf8_lossy(&bytes).contains(PREFIX));
+        assert!(matches!(
+            attempt.terminal_event(),
+            Err(AttemptError::Protocol("attempt not finished"))
+        ));
+        delivery.commit().unwrap();
+        attempt.finish().unwrap();
+        bytes.extend(delivery.finish_stream(&attempt).unwrap().concat());
+        // The carrier restores grouping on return; the visible copy still records its loss
+        // identically in JSON and SSE.
+        let (mut json_attempt, mut json_delivery) = stream_delivery(protocol);
+        json_attempt.push(wire.as_bytes()).unwrap();
+        json_attempt.finish().unwrap();
+        json_delivery.encode_json(&json_attempt).unwrap();
+        let grouping = |losses: &[crate::lowering::generation::LossEvidence]| {
+            losses
+                .iter()
+                .filter(|loss| loss.field == "generation.message_envelopes")
+                .map(|loss| loss.rule)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            grouping(json_delivery.losses()),
+            grouping(delivery.losses()),
+            "{protocol:?}"
+        );
+        let text = String::from_utf8(bytes).unwrap();
+        let count = text.matches(marker(&body, protocol)).count();
+        assert_eq!(
+            count,
+            if protocol == ClientProtocol::Responses {
+                2
+            } else {
+                1
+            },
+            "{protocol:?}"
+        );
+        if protocol == ClientProtocol::Responses {
+            let end = text
+                .lines()
+                .filter_map(|l| l.strip_prefix("data: "))
+                .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+                .next_back()
+                .unwrap();
+            assert_eq!(end["type"], "response.incomplete");
+            assert_eq!(
+                end["response"]["output"]
+                    .as_array()
+                    .unwrap()
+                    .last()
+                    .unwrap(),
+                &json!({
+                    "type":"reasoning",
+                    "id":body["output"].as_array().unwrap().last().unwrap()["id"],
+                    "status":"completed",
+                    "summary":[],
+                    "encrypted_content":marker(&body, protocol)
+                })
+            );
+        }
+    }
+}
+#[test]
+fn premature_or_truncated_eof_never_publishes_the_carrier() {
+    for protocol in [
+        ClientProtocol::Chat,
+        ClientProtocol::Responses,
+        ClientProtocol::Messages,
+    ] {
+        for truncated in [false, true] {
+            let (mut attempt, mut delivery) = stream_delivery(protocol);
+            let wire = source_wire(9007199254740993);
+            let (n, events) = attempt.push(wire.as_bytes()).unwrap();
+            assert_eq!(n, wire.len());
+            let bytes = delivery.encode_events(&attempt, &events).unwrap().concat();
+            assert!(!String::from_utf8_lossy(&bytes).contains(PREFIX));
+            delivery.commit().unwrap();
+            if truncated {
+                let suffix = b"data: {";
+                let (n, events) = attempt.push(suffix).unwrap();
+                assert_eq!(n, suffix.len());
+                assert!(events.is_empty());
+                assert!(matches!(
+                    attempt.finish(),
+                    Err(AttemptError::Sse(
+                        crate::protocol::stream::SseError::Framing(
+                            crate::transport::sse::SseDecodeError::UnexpectedEof
+                        )
+                    ))
+                ));
+                assert!(matches!(
+                    delivery.finish_stream(&attempt),
+                    Err(AttemptError::Protocol("rejected attempt"))
+                ));
+            } else {
+                assert!(matches!(
+                    delivery.finish_stream(&attempt),
+                    Err(AttemptError::Protocol("attempt not finished"))
+                ));
+            }
+            assert!(!delivery.lifecycle().may_retry_or_fallback());
+            assert!(matches!(
+                delivery.finish_stream(&attempt),
+                Err(AttemptError::Protocol("delivery closed"))
+            ));
+        }
+    }
+}
+#[test]
+fn client_carriers_have_independent_wire_shapes() {
+    assert_eq!(
+        response_item("mca1.synthetic"),
+        json!({
+            "type":"reasoning",
+            "id":"rs_mca_5caf1c16dabeb0a8c98b1a50a7e431dd",
+            "status":"completed",
+            "summary":[],
+            "encrypted_content":"mca1.synthetic"
+        })
+    );
+    assert_eq!(
+        chat_detail("mca1.synthetic"),
+        json!({
+            "type":"reasoning.encrypted",
+            "id":"rs_mca_5caf1c16dabeb0a8c98b1a50a7e431dd",
+            "format":"openai-responses-v1",
+            "data":"mca1.synthetic"
+        })
+    );
+    assert_eq!(
+        messages_block("mca1.synthetic"),
+        json!({"type":"thinking","thinking":"","signature":"mca1.synthetic"})
+    );
+    // Without readable reasoning, Chat delivery still owns the details carrier.
+    let (source, _) = decode_source_wire(&source_wire_case(7, true));
+    let (_, body) = delivered(&client(ClientProtocol::Chat), &source);
+    let token = marker(&body, ClientProtocol::Chat);
+    assert_eq!(
+        body["choices"][0]["message"]["reasoning_details"],
+        json!([chat_detail(token)])
+    );
+}
+#[test]
+fn attachment_dependencies_detect_removed_values_owners_and_lifecycle_edits() {
+    let (source, _) = source();
+    for index in [1, 3] {
+        let mut changed = source.clone();
+        let mut items = changed.semantic.items().to_vec();
+        match &mut items[index].1 {
+            Item::Message(m) => m.parts[0].replay = None,
+            Item::ToolCall(c) => c.replay = None,
+            _ => panic!(),
+        }
+        changed.semantic = changed.semantic.with_items(items).unwrap();
+        assert!(seal_for_client(&mut changed, &CLIENT_ORIGIN).is_err());
+        let mut changed = source.clone();
+        let mut items = changed.semantic.items().to_vec();
+        items.remove(index);
+        changed.semantic = changed
+            .semantic
+            .with_progress(InteractionProgress::Unreported)
+            .unwrap()
+            .with_items(items)
+            .unwrap();
+        assert!(seal_for_client(&mut changed, &CLIENT_ORIGIN).is_err());
+    }
+    let mut changed = source.clone();
+    let mut items = changed.semantic.items().to_vec();
+    let (owner, Item::Message(message)) = &mut items[1] else {
+        panic!()
+    };
+    message.status = ItemLifecycle::Incomplete;
+    changed
+        .fidelity
+        .record_part_replay(
+            *owner,
+            message.status,
+            0,
+            &message.parts[0],
+            Some(target().origin()),
+        )
+        .unwrap();
+    message.status = ItemLifecycle::Completed;
+    changed.semantic = changed.semantic.with_items(items).unwrap();
+    assert!(matches!(
+        seal_for_client(&mut changed, &CLIENT_ORIGIN),
+        Err(CodecError::Invalid("part replay dependency"))
+    ));
+}
+
+/// Separate real-client codec probe, not binding admission or Provider acceptance.
+#[test]
+#[ignore = "requires the pinned public pi checkout and isolated SDK dependencies"]
+fn pinned_pi_owned_replay() {
+    use std::{
+        io::Write,
+        process::{Command, Stdio},
+    };
+    let pi_source = std::path::PathBuf::from(
+        std::env::var("MORPHIECORE_PI_SOURCE").expect("set MORPHIECORE_PI_SOURCE"),
+    );
+    let protocols = [
+        ClientProtocol::Chat,
+        ClientProtocol::Responses,
+        ClientProtocol::Messages,
+    ];
+    let mut fixtures = vec![];
+    for (number, empty) in [(7, false), (9007199254740993, false), (7, true)] {
+        for protocol in protocols {
+            let mut attempt = crate::execution::Attempt::new(
+                crate::adapter::UpstreamAdapter::GoogleGenerateContent { target: target() },
+                2 << 20,
+                SseLimits::default(),
+            );
+            let mut delivery = crate::execution::ResponseDelivery::new(
+                client(protocol),
+                "public",
+                SseLimits::default(),
+                crate::semantic::context::StreamOptions {
+                    include_obfuscation: crate::semantic::value::Presence::Value(false),
+                    ..Default::default()
+                },
+                Obfuscation::Disabled,
+            );
+            attempt.begin(200, "text/event-stream").unwrap();
+            let wire = source_wire_case(number, empty);
+            let (n, events) = attempt.push(wire.as_bytes()).unwrap();
+            assert_eq!(n, wire.len());
+            let mut bytes = delivery.encode_events(&attempt, &events).unwrap().concat();
+            assert!(!String::from_utf8_lossy(&bytes).contains(PREFIX));
+            if !bytes.is_empty() {
+                delivery.commit().unwrap();
+            }
+            attempt.finish().unwrap();
+            bytes.extend(delivery.finish_stream(&attempt).unwrap().concat());
+            let api = match protocol {
+                ClientProtocol::Chat => "openai-completions",
+                ClientProtocol::Responses => "openai-responses",
+                ClientProtocol::Messages => "anthropic-messages",
+            };
+            fixtures
+                .push(json!({"api":api,"wire":String::from_utf8(bytes).unwrap(),"empty":empty}));
+        }
+    }
+    let home = tempfile::tempdir().unwrap();
+    let mut child = Command::new("node")
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap())
+        .env("HOME", home.path())
+        .arg("--import")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/sdk/pi/register.mjs"
+        ))
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/sdk/pi_owned_replay.mjs"
+        ))
+        .arg(pi_source)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(&serde_json::to_vec(&fixtures).unwrap())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let returned: Vec<Value> = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(returned.len(), 9);
+    for (n, body) in returned.iter().enumerate() {
+        let protocol = protocols[n % 3];
+        let decoded = client(protocol).decode_client_request(body.to_string().as_bytes());
+        if (3..6).contains(&n) {
+            assert!(
+                matches!(
+                    decoded,
+                    Err(CodecError::Invalid("replay attachment manifest"))
+                ),
+                "{protocol:?}"
+            );
+            continue;
+        }
+        let mut decoded = decoded.unwrap();
+        open_from_client(&mut decoded).unwrap();
+        // Request controls/tools have separate frozen admission contracts; this probe
+        // re-encodes the returned history, including the actual synthetic tool result.
+        let history = GenerationRequest::from_resources(
+            decoded.task.semantic.items().to_vec(),
+            GenerationSettings::default(),
+            decoded.task.semantic.resources().clone(),
+        )
+        .unwrap()
+        .with_message_envelopes(decoded.task.semantic.message_envelopes().to_vec())
+        .unwrap();
+        let (wire, _) =
+            encode_generation_request(&history, &decoded.task.fidelity, &target(), None).unwrap();
+        if n == 6 {
+            // Accepted client limitation: pinned pi Chat drops an assistant turn with
+            // neither text nor calls, so its signature is lost but the request proceeds.
+            assert!(!body.to_string().contains(PREFIX));
+            let contents = wire["contents"].as_array().unwrap();
+            assert!(contents.iter().all(|content| content["role"] == "user"));
+            continue;
+        }
+        let mut expected = if n >= 6 {
+            json!([{"text":"","thoughtSignature":"UzE="}])
+        } else {
+            expected_parts()
+        };
+        if n < 3 {
+            expected[3]["functionCall"]["args"]["n"] = json!(7);
+        }
+        assert_eq!(wire["contents"][1]["parts"], expected, "{protocol:?}");
+        if n < 3 {
+            assert_eq!(
+                wire["contents"][2]["parts"][0]["functionResponse"]["id"],
+                "c"
+            );
+        }
+    }
+}
+#[test]
+fn partial_attachment_events_need_finalization_and_keep_owner_kind() {
+    let (source, events) = source();
+    let index = events
+        .iter()
+        .position(|event| matches!(event, StreamEvent::PartReplay { .. }))
+        .unwrap();
+    let mut state = StreamState::new();
+    for event in &events[..index] {
+        state = reduce(state, event.clone()).unwrap();
+    }
+    let mut partial = events[index].clone();
+    let StreamEvent::PartReplay { replay, .. } = &mut partial else {
+        unreachable!()
+    };
+    replay.value = ReplayValue::partial(
+        replay.value.format(),
+        Text::new(replay.value.as_str(), "fixture", 1024).unwrap(),
+    );
+    let state = reduce(state, partial).unwrap();
+    let mut unfinished = state.clone();
+    unfinished = reduce(unfinished, events[index + 1].clone()).unwrap();
+    assert!(matches!(
+        reduce(unfinished, events[index + 2].clone()),
+        Err(EventError::Lifecycle)
+    ));
+    let complete = reduce(state.clone(), events[index].clone()).unwrap();
+    assert!(matches!(
+        reduce(complete, events[index].clone()),
+        Err(EventError::Lifecycle)
+    ));
+    let mut rebound = events[index].clone();
+    let StreamEvent::PartReplay { replay, .. } = &mut rebound else {
+        unreachable!()
+    };
+    replay.origin = Some(ReplayTarget::new("other", "other").unwrap().origin());
+    assert!(matches!(reduce(state, rebound), Err(EventError::Identity)));
+    let mut items = source.semantic.items().to_vec();
+    let Item::Message(message) = &mut items[1].1 else {
+        panic!()
+    };
+    message.parts[0].replay = Some(ReplayValue::final_value(
+        ReplayFormat::GoogleGenerateContentPart,
+        Text::new(
+            r#"{"anchor":"thought","signature":"UzE="}"#,
+            "fixture",
+            1024,
+        )
+        .unwrap(),
+    ));
+    assert!(matches!(
+        source.semantic.with_items(items),
+        Err(GenerationError::InvalidReplay)
+    ));
+}
+
+#[test]
+fn foreign_signed_text_drops_only_replay_and_affected_call_aliases() {
+    let (mut source, _) = source();
+    let mut items = source.semantic.items().to_vec();
+    items.retain(|(_, item)| !matches!(item, Item::Reasoning(_)));
+    let (call_id, Item::ToolCall(call)) = items.last_mut().unwrap() else {
+        panic!()
+    };
+    let call_id = *call_id;
+    call.replay = None;
+    source.fidelity.remove_replay(call_id);
+    source.fidelity.retain_owners(&items);
+    source
+        .fidelity
+        .record_response_item_id(call_id, "fc_fixture")
+        .unwrap();
+    let request = crate::adapter::Request::from_generation(
+        crate::protocol::DecodedRequest {
+            semantic: GenerationRequest::new(items, GenerationControls::default()).unwrap(),
+            fidelity: source.fidelity,
+        },
+        "public",
+    )
+    .unwrap();
+    let copied = request
+        .without_foreign_reasoning(Some(&ReplayTarget::new("other", "other").unwrap().origin()))
+        .unwrap()
+        .unwrap();
+    assert_eq!(copied.task.semantic.items().len(), 3);
+    assert!(
+        copied
+            .task
+            .semantic
+            .items()
+            .iter()
+            .all(|(_, item)| !item.has_replay_attachment())
+    );
+    assert_eq!(copied.task.fidelity.response_item_id(call_id), None);
+    assert_eq!(
+        request.task.fidelity.response_item_id(call_id),
+        Some("fc_fixture")
+    );
+    assert!(
+        request
+            .task
+            .semantic
+            .items()
+            .iter()
+            .any(|(_, item)| item.has_replay_attachment())
+    );
+}
+
+#[test]
+fn manifests_reject_duplicate_keys_and_oversized_parts() {
+    let baseline = r#"{"items":[{"type":"message","status":"completed","phase":null,"parts":[{"bytes":2,"hash":"fixture-hash","replay":"fixture-replay"}]}],"groups":[]}"#;
+    let encoded = |raw: &[u8]| format!("{PREFIX}{}", URL_SAFE_NO_PAD.encode(raw));
+    assert!(Packet::decode(&encoded(baseline.as_bytes())).is_ok());
+    let mut value: Value = serde_json::from_str(baseline).unwrap();
+    value["items"][0]["parts"][0]["bytes"] = json!(MAX_TEXT_BYTES + 1);
+    let oversized = encoded(&serde_json::to_vec(&value).unwrap());
+    assert!(matches!(Packet::decode(&oversized), Err(CodecError::Limit)));
+    let duplicate = baseline.replace(r#""groups":[]"#, r#""groups":[],"groups":[]"#);
+    assert!(matches!(
+        Packet::decode(&encoded(duplicate.as_bytes())),
+        Err(CodecError::Invalid("replay attachment manifest"))
+    ));
+}
+#[test]
+fn ordinary_reasoning_cannot_hide_an_unrestored_carrier() {
+    let (source, _) = source();
+    let client = client(ClientProtocol::Responses);
+    let (_, body) = delivered(&client, &source);
+    let raw = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    let mut request = raw
+        .decode_request(
+            json!({"model":"public","input":body["output"]})
+                .to_string()
+                .as_bytes(),
+        )
+        .unwrap();
+    assert!(matches!(
+        open_from_client(&mut request),
+        Err(CodecError::Invalid("unrestored attachment carrier"))
+    ));
+}
+#[test]
+fn unsupported_chat_carrier_is_rejected_by_static_and_stream_delivery() {
+    let (source, _) = decode_source_wire(&source_wire_case(7, true));
+    let mut sealed = source.clone();
+    seal_for_client(&mut sealed, &CLIENT_ORIGIN).unwrap();
+    let mut client = ClientAdapter::openai(
+        Adapter::new(Profile::Chat, Dialect::Standard, None),
+        TargetCaps::full(),
+    );
+    client.bind_replay_origin(&CLIENT_ORIGIN);
+    let token = Packet::from_response(&sealed)
+        .unwrap()
+        .unwrap()
+        .encode()
+        .unwrap();
+    assert!(
+        matches!(client.snapshot(sealed),Err(crate::adapter::AdapterError::Codec(CodecError::Unsupported(reason))) if reason=="Chat attachment carrier")
+    );
+    let mut encoder = client
+        .stream_encoder(
+            source.metadata,
+            SseLimits::default(),
+            crate::semantic::context::StreamOptions {
+                include_obfuscation: crate::semantic::value::Presence::Value(false),
+                ..Default::default()
+            },
+            Obfuscation::Disabled,
+        )
+        .unwrap();
+    assert!(
+        matches!(encoder.set_attachment(token),Err(crate::protocol::stream::SseError::Codec(CodecError::Unsupported(reason))) if reason=="Chat attachment carrier")
+    );
+}
+
+#[test]
+fn independent_empty_carriers_rebuild_once_and_share_aggregate_budgets() {
+    let (source, _) = decode_source_wire(&source_wire_case(7, true));
+    let (_, body) = delivered(&client(ClientProtocol::Responses), &source);
+    let token = marker(&body, ClientProtocol::Responses);
+    let mut items = vec![];
+    let mut markers = vec![];
+    for n in 1..=4096 {
+        items.push((
+            ItemId::new(n),
+            Item::Message(Message {
+                role: MessageRole::Assistant,
+                status: ItemLifecycle::Completed,
+                phase: None,
+                parts: vec![Part::new(
+                    PartId::new(n),
+                    ContentPart::Text(Text::allowing_empty("", "fixture", 64).unwrap().into()),
+                )],
+            }),
+        ));
+        let marker = Marker::prefix(token, &items, markers.last()).unwrap();
+        assert_eq!((marker.start, marker.end), (n as usize - 1, n as usize));
+        markers.push(marker);
+    }
+    let mut groups = vec![];
+    let mut fidelity = FidelityRecords::default();
+    restore(&mut items, &mut groups, &mut fidelity, markers).unwrap();
+    assert_eq!(items.len(), 4096);
+    assert_eq!(groups.len(), 4096);
+    assert!(items.iter().all(|(_, item)| item.has_replay_attachment()));
+    let mut packet = Packet::decode(token).unwrap();
+    packet.items.extend((1..MAX_ITEMS).map(|_| Entry::Message {
+        status: Status::Completed,
+        phase: None,
+        parts: vec![],
+    }));
+    packet.validate().unwrap();
+    let mut items = vec![(
+        ItemId::new(1),
+        Item::Message(Message {
+            role: MessageRole::User,
+            status: ItemLifecycle::Completed,
+            phase: None,
+            parts: vec![Part::new(
+                PartId::new(1),
+                ContentPart::Text(Text::new("go", "fixture", 64).unwrap().into()),
+            )],
+        }),
+    )];
+    assert!(matches!(
+        restore(
+            &mut items,
+            &mut vec![],
+            &mut FidelityRecords::default(),
+            vec![Marker {
+                start: 1,
+                end: 1,
+                group: None,
+                packet
+            }]
+        ),
+        Err(CodecError::Limit)
+    ));
+}
+#[test]
+fn restore_keeps_described_phase_and_rejects_unsplittable_boundaries() {
+    let token = replay_envelope::seal(
+        &CLIENT_ORIGIN,
+        ReplayFormat::GoogleGenerateContentSignature,
+        "UzE=",
+    )
+    .unwrap();
+    let segment = |text: &str| Segment {
+        bytes: text.len(),
+        hash: digest(&[text]),
+        replay: Some(token.as_str().to_owned()),
+    };
+    let marker = |phase: Option<&str>, parts| Marker {
+        start: 0,
+        end: 1,
+        group: None,
+        packet: Packet {
+            items: vec![Entry::Message {
+                status: Status::Completed,
+                phase: phase.map(str::to_owned),
+                parts,
+            }],
+            groups: vec![],
+        },
+    };
+    let history = |phase, parts: Vec<Part>| {
+        vec![(
+            ItemId::new(1),
+            Item::Message(Message {
+                role: MessageRole::Assistant,
+                status: ItemLifecycle::Completed,
+                phase,
+                parts,
+            }),
+        )]
+    };
+    let text = |id, value: &str| {
+        Part::new(
+            PartId::new(id),
+            ContentPart::Text(Text::new(value, "fixture", 64).unwrap().into()),
+        )
+    };
+    let run = |mut items: Vec<(ItemId, Item)>, marker| {
+        restore(
+            &mut items,
+            &mut vec![],
+            &mut FidelityRecords::default(),
+            vec![marker],
+        )
+        .map(|()| items)
+    };
+
+    // Responses-style returned history has no phase; the manifest supplies it.
+    let restored = run(
+        history(None, vec![text(1, "OKOK")]),
+        marker(Some("commentary"), vec![segment("OK"), segment("OK")]),
+    )
+    .unwrap();
+    let Item::Message(message) = &restored[0].1 else {
+        panic!("restored message")
+    };
+    assert_eq!(message.phase, Some(Phase::Commentary));
+    assert_eq!(
+        message
+            .parts
+            .iter()
+            .map(|part| match &part.content {
+                ContentPart::Text(text) => (text.as_str(), part.replay.is_some()),
+                _ => panic!("restored text"),
+            })
+            .collect::<Vec<_>>(),
+        [("OK", true), ("OK", true)]
+    );
+    assert!(matches!(
+        run(
+            history(Some(Phase::FinalAnswer), vec![text(1, "OKOK")]),
+            marker(Some("commentary"), vec![segment("OK"), segment("OK")]),
+        ),
+        Err(CodecError::Invalid("replay attachment manifest"))
+    ));
+
+    // A cache marker ending inside a restored part has no faithful owner.
+    let mut cached = text(1, "O");
+    cached.cache = Some(PrefixCacheTtl::FiveMinutes);
+    assert!(matches!(
+        run(
+            history(None, vec![cached, text(2, "K")]),
+            marker(None, vec![segment("OK")]),
+        ),
+        Err(CodecError::Unsupported(reason)) if reason == "attachment cache boundary"
+    ));
+    // Splitting probabilities or citations would reassign them to guessed boundaries.
+    let mut annotated = text(1, "OKOK");
+    annotated.content = ContentPart::Text(
+        TextContent::new(
+            Text::new("OKOK", "fixture", 64).unwrap(),
+            vec![],
+            crate::semantic::value::Presence::Value(vec![]),
+        )
+        .unwrap(),
+    );
+    assert!(matches!(
+        run(
+            history(None, vec![annotated]),
+            marker(None, vec![segment("OK"), segment("OK")]),
+        ),
+        Err(CodecError::Unsupported(reason)) if reason == "attachment metadata split"
+    ));
+}

@@ -27,6 +27,12 @@ pub fn lower_request<'a>(
     c: TargetCaps,
 ) -> Result<RequestRepresentation<'a>, RepresentationError> {
     r.validate()?;
+    if r.items()
+        .iter()
+        .any(|(_, item)| item.has_replay_attachment())
+    {
+        return Err(RepresentationError::ReplayFormat);
+    }
     let mut semantic = std::borrow::Cow::Borrowed(r);
     let mut projection = Vec::new();
     if let Some((groups, loss)) =
@@ -313,6 +319,12 @@ pub fn lower_response<'a>(
     profile: Profile,
     c: TargetCaps,
 ) -> Result<ResponseRepresentation<'a>, RepresentationError> {
+    if r.items()
+        .iter()
+        .any(|(_, item)| item.has_replay_attachment())
+    {
+        return Err(RepresentationError::ReplayFormat);
+    }
     if !r.safety_reports().is_empty() {
         return Err(RepresentationError::Safety);
     }
@@ -396,6 +408,7 @@ pub fn lower_response<'a>(
         profile,
         adaptation: c.adaptation,
         projection,
+        attachment: None,
     })
 }
 
@@ -647,8 +660,6 @@ fn represent_reasoning(
             && (chat_reasoning_shape(items)
             // Structured details carry several items and parts ahead of one carrier.
             || structured_chat && items.iter().enumerate().all(|(n,(_,item))| match item {
-                // A signature-only Gemini item binds by anchor and may trail the calls.
-                Item::Reasoning(r) if native_messages::anchored(r) => true,
                 Item::Reasoning(r) => !r.parts.iter().any(|(_,p)|matches!(p,ReasoningContent::Text(t) if t.as_str().is_empty()))
                     && (!r.parts.is_empty() || r.replay.is_some())
                     && match items.get(n+1) {

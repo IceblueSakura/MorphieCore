@@ -1,7 +1,9 @@
 //! Client-executed tools. Payloads and grammar are data; this module never executes them.
 pub(in crate::semantic::task::generation) mod provider;
 pub(in crate::semantic::task::generation) mod result;
-use crate::semantic::task::generation::{GenerationError, MAX_TEXT_BYTES, StructuredValue};
+use crate::semantic::task::generation::{
+    GenerationError, MAX_TEXT_BYTES, ReplayValue, StructuredValue,
+};
 use crate::semantic::value::Text;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StrictDefault {
@@ -250,6 +252,7 @@ pub struct ToolCall {
     pub status: ItemLifecycle,
     pub context: CallContext,
     pub cache: Option<PrefixCacheTtl>,
+    pub replay: Option<ReplayValue>,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CustomCall {

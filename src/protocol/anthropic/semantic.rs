@@ -85,6 +85,7 @@ impl Profile {
                             .enumerate()
                             .map(|(i, s)| {
                                 Ok(Part {
+                                    replay: None,
                                     id: PartId::scoped(scope, i as u64 + 1),
                                     content: text(&s.content)?,
                                     cache: s.cache,
@@ -294,7 +295,7 @@ impl Profile {
             .build()?;
         response
             .fidelity
-            .require_reasoning_replay(&joined, &target.origin())?;
+            .require_native_replay(&joined, &target.origin())?;
         let actual = response.semantic.message_envelopes();
         if actual.len() != 1
             || actual[0].role() != MessageEnvelopeRole::Assistant

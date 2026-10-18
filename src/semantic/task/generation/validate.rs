@@ -117,6 +117,9 @@ pub fn items(
                     return Err(GenerationError::InvalidResponse);
                 }
                 for part in &i.parts {
+                    if part.replay.is_some() {
+                        return Err(GenerationError::InvalidReplay);
+                    }
                     part_id(&mut parts, part.id)?;
                     charge(&mut bytes, usize::from(part.cache.is_some()) * 32)?;
                     add(&mut bytes, part.content.as_str())?;
@@ -137,6 +140,18 @@ pub fn items(
                 }
                 for p in &m.parts {
                     part_id(&mut parts, p.id)?;
+                    if let Some(value) = &p.replay {
+                        if m.role != MessageRole::Assistant
+                            || !matches!(p.content, ContentPart::Text(_))
+                        {
+                            return Err(GenerationError::InvalidReplay);
+                        }
+                        value.validate_attachment()?;
+                        if m.status == ItemLifecycle::Completed && value.replay_token().is_none() {
+                            return Err(GenerationError::InvalidReplay);
+                        }
+                        add(&mut bytes, value.as_str())?;
+                    }
                     charge(&mut bytes, usize::from(p.cache.is_some()) * 32)?;
                     match &p.content {
                         ContentPart::Text(t) => {
@@ -191,6 +206,13 @@ pub fn items(
                 }
             }
             Item::ToolCall(c) => {
+                if let Some(value) = &c.replay {
+                    value.validate_attachment()?;
+                    if c.status == ItemLifecycle::Completed && value.replay_token().is_none() {
+                        return Err(GenerationError::InvalidReplay);
+                    }
+                    add(&mut bytes, value.as_str())?;
+                }
                 call_context(&c.context, &mut bytes)?;
                 if !response {
                     caller_reference(&c.context, &calls)?;
@@ -379,6 +401,9 @@ pub(super) fn tool_result(
         ToolOutput::Text(t) => add(bytes, t)?,
         ToolOutput::Parts(p) => {
             for part in p {
+                if part.replay.is_some() {
+                    return Err(GenerationError::InvalidReplay);
+                }
                 part_id(parts, part.id)?;
                 charge(bytes, usize::from(part.cache.is_some()) * 32)?;
                 input_part(&part.content, resources, bytes, file_decoded_bytes)?;
@@ -529,6 +554,9 @@ fn provider_observation_value(
                     return Err(GenerationError::InvalidProviderObservation);
                 }
                 part_id(parts, part.id)?;
+                if part.replay.is_some() {
+                    return Err(GenerationError::InvalidReplay);
+                }
                 match &part.content {
                     InputPart::Text(value) => add(bytes, value.as_str())?,
                     InputPart::Resource(resource) => {

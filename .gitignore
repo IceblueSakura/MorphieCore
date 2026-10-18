@@ -23,6 +23,7 @@ config/chatgpt/*
 /tools/corpus/.venv/
 /tools/corpus/.pytest_cache/
 /tests/sdk/.venv/
+/tests/sdk/pi/node_modules/
 **/__pycache__/
 
 # JetBrains IDE: share only the project dictionary.

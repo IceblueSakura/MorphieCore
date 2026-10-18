@@ -804,7 +804,12 @@ impl EventEncoder {
                 let response=materialize(self.state()?)?;
                 let target=crate::protocol::openai::lowering::lower_response(&response,&self.fidelity,&self.metadata,Profile::Chat,self.contract.clone()).map_err(|_|CodecError::Unsupported("Chat terminal".into()))?;
                 let finish=crate::protocol::openai::terminal::chat_finish(&response)?;
-                let mut chunks=vec![self.chunk(json!({}),json!(finish))];
+                let mut chunks=vec![];
+                // The owned replay manifest precedes the finishing chunk of its message.
+                if let Some(carrier)=self.attachment.take(){
+                    chunks.push(self.chunk(json!({"reasoning_details":[crate::protocol::attachments::chat_detail(carrier.as_str())]}),Value::Null));
+                }
+                chunks.push(self.chunk(json!({}),json!(finish)));
                 if let Some(usage)=target.semantic().usage(){
                     let mut v=if self.contract.adaptation.rules.repeated_finish_usage {
                         self.chunk(json!({}),json!(finish))

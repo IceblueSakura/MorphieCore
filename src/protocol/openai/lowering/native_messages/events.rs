@@ -13,9 +13,11 @@ pub(crate) struct EventProjection {
     profile: Profile,
     message: Option<ItemId>,
     reasoning: Vec<ItemId>,
-    /// A reasoning item opened after content, held until it proves to be anchored.
-    late: Option<StreamEvent>,
     text_owners: BTreeMap<ItemId, ItemId>,
+    text_part: Option<(PartId, PartKind)>,
+    text_parts: usize,
+    text_metadata: bool,
+    text_closed: bool,
     pending: Vec<ItemId>,
     /// Chat calls, grouped under the carrier message at the terminal.
     calls: Vec<ItemId>,
@@ -28,8 +30,11 @@ impl EventProjection {
             profile,
             message: None,
             reasoning: vec![],
-            late: None,
             text_owners: BTreeMap::new(),
+            text_part: None,
+            text_parts: 0,
+            text_metadata: false,
+            text_closed: false,
             pending: vec![],
             calls: vec![],
             scope: LocalScope::new(2),
@@ -64,12 +69,6 @@ impl EventProjection {
         self.close_later(owner);
         owner
     }
-    fn late_item(&self) -> Option<ItemId> {
-        match &self.late {
-            Some(StreamEvent::ItemStarted { item, .. }) => Some(*item),
-            _ => None,
-        }
-    }
     pub(crate) fn project(
         &mut self,
         events: &[StreamEvent],
@@ -79,17 +78,36 @@ impl EventProjection {
             let mut out = vec![];
             for event in events {
                 let mut event = event.clone();
+                let metadata = match &event {
+                    StreamEvent::Delta { item, logprobs, .. } => {
+                        Some((*item, !logprobs.is_empty()))
+                    }
+                    StreamEvent::LogprobsSnapshot { item, .. }
+                    | StreamEvent::AnnotationAdded { item, .. } => Some((*item, true)),
+                    StreamEvent::TextMetadata {
+                        item,
+                        annotations,
+                        logprobs,
+                        ..
+                    } => Some((*item, !annotations.is_empty() || !logprobs.is_absent())),
+                    _ => None,
+                };
+                if metadata.is_some_and(|(id, active)| active && self.text_owners.contains_key(&id))
+                {
+                    self.text_metadata = true;
+                    if self.text_parts > 1 {
+                        return Err(CodecError::Unsupported(
+                            "native Chat text coalescing".into(),
+                        ));
+                    }
+                }
                 match &mut event {
                     StreamEvent::ItemStarted { item, kind, .. } => {
                         self.scope = item.scope();
                         match kind {
                             ItemKind::Reasoning if self.profile == Profile::Chat => {
                                 if self.message.is_some() || !self.calls.is_empty() {
-                                    if self.late.is_some() {
-                                        return Err(order());
-                                    }
-                                    self.late = Some(event.clone());
-                                    continue;
+                                    return Err(order());
                                 }
                                 self.reasoning.push(*item);
                             }
@@ -111,6 +129,7 @@ impl EventProjection {
                                 *format = ArgumentFormat::Raw;
                                 if self.profile == Profile::Chat {
                                     self.owner(&mut out);
+                                    self.close_text(&mut out);
                                     self.close_later(*item);
                                     self.calls.push(*item);
                                 }
@@ -118,42 +137,49 @@ impl EventProjection {
                             _ => {}
                         }
                     }
-                    StreamEvent::PartStarted { item, .. } | StreamEvent::Delta { item, .. }
-                        if self.late_item() == Some(*item) =>
-                    {
-                        return Err(order());
-                    }
-                    StreamEvent::ItemFinished {
-                        item,
-                        replay: Some(replay),
-                        ..
-                    } if self.late_item() == Some(*item) => {
-                        let anchored = super::anchored(&ReasoningItem {
-                            parts: vec![],
-                            status: ItemLifecycle::Completed,
-                            replay: Some(replay.value.clone()),
-                        });
-                        if !anchored {
-                            return Err(order());
-                        }
-                        out.extend(self.late.take());
-                        self.reasoning.push(*item);
-                    }
-                    StreamEvent::PartStarted { item, kind, .. } => {
+                    StreamEvent::PartStarted { item, part, kind } => {
                         if *kind == PartKind::StructuredArguments {
                             *kind = PartKind::Arguments;
                         }
+                        if self.text_owners.contains_key(item) {
+                            self.text_parts += 1;
+                            if let Some((_, old_kind)) = self.text_part {
+                                if self.text_metadata
+                                    || *kind != PartKind::Text
+                                    || old_kind != PartKind::Text
+                                {
+                                    return Err(CodecError::Unsupported(
+                                        "native Chat text coalescing".into(),
+                                    ));
+                                }
+                                self.record(super::envelope_loss(self.profile, "event.encode"));
+                                continue;
+                            }
+                            self.text_part = Some((*part, *kind));
+                        }
                         *item = self.text_owners.get(item).copied().unwrap_or(*item);
                     }
-                    StreamEvent::Delta { item, .. }
-                    | StreamEvent::ValueFinished { item, .. }
-                    | StreamEvent::PartFinished { item, .. } => {
+                    StreamEvent::ValueFinished { item, .. }
+                    | StreamEvent::PartFinished { item, .. }
+                        if self.text_owners.contains_key(item) =>
+                    {
+                        continue;
+                    }
+                    StreamEvent::Delta { item, part, .. }
+                    | StreamEvent::LogprobsSnapshot { item, part, .. }
+                    | StreamEvent::AnnotationAdded { item, part, .. }
+                    | StreamEvent::TextMetadata { item, part, .. }
+                    | StreamEvent::ValueFinished { item, part }
+                    | StreamEvent::PartFinished { item, part } => {
+                        if self.text_owners.contains_key(item) {
+                            *part = self
+                                .text_part
+                                .ok_or(CodecError::Invalid("native text owner"))?
+                                .0;
+                        }
                         *item = self.text_owners.get(item).copied().unwrap_or(*item);
                     }
                     StreamEvent::ItemFinished { item, .. } if self.profile == Profile::Chat => {
-                        if self.late_item() == Some(*item) {
-                            return Err(order());
-                        }
                         if !self.reasoning.contains(item) {
                             continue;
                         }
@@ -212,6 +238,7 @@ impl EventProjection {
                     StreamEvent::Progress(_) => continue,
                     StreamEvent::Terminal { terminal, .. } if self.profile == Profile::Chat => {
                         let owner = self.owner(&mut out);
+                        self.close_text(&mut out);
                         for item in self.pending.drain(..) {
                             out.push(StreamEvent::ItemFinished {
                                 item,
@@ -243,5 +270,15 @@ impl EventProjection {
             self.losses.truncate(checked);
         }
         result
+    }
+    fn close_text(&mut self, out: &mut Vec<StreamEvent>) {
+        if !self.text_closed
+            && let Some((part, _)) = self.text_part
+        {
+            let item = self.message.expect("text message");
+            out.push(StreamEvent::ValueFinished { item, part });
+            out.push(StreamEvent::PartFinished { item, part });
+            self.text_closed = true;
+        }
     }
 }

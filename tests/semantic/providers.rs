@@ -1772,6 +1772,7 @@ mod chat_wire {
         let mut items = request.task.semantic.items().to_vec();
         if let Item::Message(m) = &mut items[1].1 {
             m.parts.push(Part {
+                replay: None,
                 id: PartId::new(99),
                 cache: None,
                 content: ContentPart::Text(Text::new("inserted", "fixture", 128).unwrap().into()),

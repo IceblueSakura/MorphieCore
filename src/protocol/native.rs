@@ -61,7 +61,7 @@ pub(crate) fn native_reasoning_history(
     CodecError,
 > {
     request.validate()?;
-    fidelity.require_reasoning_replay(request, &target.origin())?;
+    fidelity.require_native_replay(request, &target.origin())?;
     let mut omitted = Vec::new();
     for (id, item) in request.items() {
         if let Item::Reasoning(reasoning) = item
@@ -78,8 +78,47 @@ pub(crate) fn native_reasoning_history(
         .clone()
         .retain_items(|id, _| !omitted.contains(&id))?;
     let mut fidelity = fidelity.clone();
+    let mut transferred = !omitted.is_empty();
+    let mut items = request.items().to_vec();
+    for (owner, item) in &mut items {
+        match item {
+            Item::Message(message) => {
+                for part in &mut message.parts {
+                    if let Some(value) = &part.replay
+                        && !formats.contains(&value.format())
+                    {
+                        if message.status != ItemLifecycle::Completed
+                            || value.replay_token().is_none()
+                        {
+                            return Err(CodecError::Unsupported(
+                                "partial foreign attachment".into(),
+                            ));
+                        }
+                        part.replay = None;
+                        fidelity.remove_part_replay(*owner, part.id);
+                        transferred = true;
+                    }
+                }
+            }
+            Item::ToolCall(call) => {
+                if let Some(value) = &call.replay
+                    && !formats.contains(&value.format())
+                {
+                    if call.status != ItemLifecycle::Completed || value.replay_token().is_none() {
+                        return Err(CodecError::Unsupported("partial foreign attachment".into()));
+                    }
+                    call.replay = None;
+                    fidelity.remove_replay(*owner);
+                    fidelity.remove_response_item_id(*owner);
+                    transferred = true;
+                }
+            }
+            _ => {}
+        }
+    }
+    let request = request.with_items(items)?;
     fidelity.retain_owners(request.items());
-    Ok((request, fidelity, !omitted.is_empty()))
+    Ok((request, fidelity, transferred))
 }
 
 /// Explicit stateless defaults do not ask the upstream for storage or context.

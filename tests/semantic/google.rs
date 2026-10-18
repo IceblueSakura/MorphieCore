@@ -259,7 +259,7 @@ fn cross_format_reasoning_is_removed_before_grouping_but_partial_values_reject()
 }
 
 #[test]
-fn stream_maps_thoughts_text_calls_and_anchored_signatures() {
+fn stream_maps_thoughts_text_calls_and_owned_signatures() {
     let empty = decode(&wire(&[json!({
         "responseId":"empty","modelVersion":"gemini-synthetic",
         "candidates":[{"content":{"role":"model","parts":[
@@ -282,9 +282,12 @@ fn stream_maps_thoughts_text_calls_and_anchored_signatures() {
         body["contents"][0]["parts"],
         json!([{"text":"","thoughtSignature":"U0lH"}])
     );
-    let missing = history
-        .retain_items(|_, item| !matches!(item, Item::Message(_)))
-        .unwrap();
+    let missing = client(
+        Profile::Chat,
+        json!({"model":"public","messages":[{"role":"user","content":"continue"}]}),
+    )
+    .task
+    .semantic;
     assert!(encode_generation_request(&missing, &empty.fidelity, &target(), None).is_err());
 
     let partial = decode(&wire(&[json!({
@@ -335,19 +338,16 @@ fn stream_maps_thoughts_text_calls_and_anchored_signatures() {
     );
     assert_eq!(observed.metadata.created, None);
     let items = observed.semantic.items();
-    assert_eq!(items.len(), 5);
+    assert_eq!(items.len(), 4);
     assert!(matches!(&items[0].1, Item::Reasoning(r)
         if matches!(r.parts.as_slice(), [(_, ReasoningContent::Summary(t))] if t.as_str() == "Plan more")));
     assert_eq!(signature(&items[0].1), json!({"anchor":"thought"}));
     assert!(matches!(&items[1].1, Item::Message(m)
         if m.role == MessageRole::Assistant
             && matches!(&m.parts[0].content, ContentPart::Text(t) if t.as_str() == "Reading.")));
-    // Signature-only items trail the calls; their anchor, not position, binds them.
-    assert!(matches!(&items[4].1, Item::Reasoning(r) if r.parts.is_empty()));
-    assert_eq!(
-        signature(&items[4].1),
-        json!({"anchor":"call","call":"c1","signature":"U0lH"})
-    );
+    assert!(matches!(&items[2].1, Item::ToolCall(call)
+        if call.replay.as_ref().is_some_and(|r|r.format()==ReplayFormat::GoogleGenerateContentSignature&&r.replay_token()==Some("U0lH"))));
+    assert!(matches!(&items[3].1, Item::ToolCall(call) if call.replay.is_none()));
     for (index, (id, path)) in [(2, ("c1", "a.txt")), (3, ("c2", "b.txt"))] {
         assert!(matches!(&items[index].1, Item::ToolCall(c)
             if c.call_id.as_str() == id && c.name.as_str() == "read"
@@ -548,6 +548,7 @@ fn stream_maps_thoughts_text_calls_and_anchored_signatures() {
                         .into_iter()
                         .enumerate()
                         .map(|(index, bytes)| Part {
+                            replay: None,
                             id: PartId::new(index as u64 + 1),
                             cache: None,
                             content: ContentPart::Text(
@@ -847,19 +848,6 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
         Err(morphiecore::protocol::CodecError::Unsupported(reason))
             if reason == "Gemini semantic carrier"
     ));
-    // Chat delivers reasoning ahead of the message; the anchor, not the position, binds it.
-    let mut items = request.items().to_vec();
-    let signed = items.remove(5);
-    items.insert(1, signed);
-    let hoisted = request
-        .clone()
-        .with_message_envelopes(vec![])
-        .unwrap()
-        .with_items(items)
-        .unwrap();
-    let (body, _) =
-        encode_generation_request(&hoisted, &observed.fidelity, &target(), None).unwrap();
-    assert_eq!(body, expected);
     let other = ReplayTarget::new("synthetic-google", "gemini-other").unwrap();
     assert!(encode_generation_request(&request, &observed.fidelity, &other, None).is_err());
     let mut settings = request.settings().clone();
@@ -1422,5 +1410,67 @@ fn image_sizes_remain_strict() {
             None,
         );
         assert_eq!(result.is_ok(), ok);
+    }
+}
+
+#[test]
+fn request_maps_tool_choice_effort_and_leading_instructions() {
+    let encode = |extra: Value| {
+        let mut body = json!({"model":"gemini","messages":[
+            {"role":"developer","content":"Be brief."},
+            {"role":"user","content":"go"}],
+            "tools":[{"type":"function","function":{"name":"read","parameters":{"type":"object"}}}]});
+        body.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        let request = client(Profile::Chat, body);
+        let (wire, rules) = encode_generation_request(
+            &request.task.semantic,
+            &request.task.fidelity,
+            &target(),
+            None,
+        )
+        .unwrap();
+        (wire, rules.iter().map(|r| r.name()).collect::<Vec<_>>())
+    };
+    let (wire, rules) = encode(json!({}));
+    assert_eq!(
+        wire["systemInstruction"],
+        json!({"parts":[{"text":"Be brief."}]})
+    );
+    assert_eq!(
+        wire["contents"],
+        json!([{"role":"user","parts":[{"text":"go"}]}])
+    );
+    assert_eq!(rules, ["gemini.developer-as-system.v1"]);
+    assert!(wire.get("toolConfig").is_none());
+    for (choice, config) in [
+        (json!("auto"), json!({"mode":"AUTO"})),
+        (json!("none"), json!({"mode":"NONE"})),
+        (json!("required"), json!({"mode":"ANY"})),
+        (
+            json!({"type":"function","function":{"name":"read"}}),
+            json!({"mode":"ANY","allowedFunctionNames":["read"]}),
+        ),
+    ] {
+        let (wire, _) = encode(json!({"tool_choice": choice}));
+        assert_eq!(
+            wire["toolConfig"],
+            json!({"functionCallingConfig": config}),
+            "{choice}"
+        );
+    }
+    for (effort, level) in [
+        ("minimal", "MINIMAL"),
+        ("low", "LOW"),
+        ("medium", "MEDIUM"),
+        ("high", "HIGH"),
+    ] {
+        let (wire, _) = encode(json!({"reasoning_effort": effort}));
+        assert_eq!(
+            wire["generationConfig"],
+            json!({"thinkingConfig":{"thinkingLevel":level}}),
+            "{effort}"
+        );
     }
 }

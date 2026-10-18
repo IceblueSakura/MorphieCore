@@ -128,7 +128,50 @@ impl Request {
             })
             .map(|(id, _)| *id)
             .collect();
-        if foreign.is_empty() {
+        let mut foreign_parts = Vec::new();
+        let mut foreign_calls = Vec::new();
+        for (id, item) in self.task.semantic.items() {
+            match item {
+                Item::Message(message) => {
+                    for part in &message.parts {
+                        if let Some(value) = &part.replay {
+                            let origin = fidelity
+                                .part_replay_origin(*id, part.id)
+                                .ok_or(CodecError::Invalid("unbound part replay"))?;
+                            if Some(origin) != target {
+                                if message.status != ItemLifecycle::Completed
+                                    || value.replay_token().is_none()
+                                {
+                                    return Err(CodecError::Unsupported(
+                                        "partial foreign attachment".into(),
+                                    ));
+                                }
+                                foreign_parts.push((*id, part.id));
+                            }
+                        }
+                    }
+                }
+                Item::ToolCall(call) => {
+                    if let Some(value) = &call.replay {
+                        let origin = fidelity
+                            .replay_origin(*id)
+                            .ok_or(CodecError::Invalid("unbound call replay"))?;
+                        if Some(origin) != target {
+                            if call.status != ItemLifecycle::Completed
+                                || value.replay_token().is_none()
+                            {
+                                return Err(CodecError::Unsupported(
+                                    "partial foreign attachment".into(),
+                                ));
+                            }
+                            foreign_calls.push(*id);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        if foreign.is_empty() && foreign_parts.is_empty() && foreign_calls.is_empty() {
             return Ok(None);
         }
         if self.task.semantic.items().iter().any(|(id, item)| {
@@ -141,7 +184,7 @@ impl Request {
         let mut copy = self.clone();
         // Responses item IDs can be paired with discarded reasoning. Forget only
         // call wire aliases in affected assistant runs; semantic call IDs and links
-        // stay unchanged. This also covers trailing Google signature carriers.
+        // stay unchanged. Part/call replay is removed without deleting its visible owner.
         let assistant = |item: &Item| match item {
             Item::Reasoning(_) | Item::ToolCall(_) | Item::CustomCall(_) => true,
             Item::Message(message) => message.role == MessageRole::Assistant,
@@ -153,7 +196,11 @@ impl Request {
             .items()
             .chunk_by(|a, b| assistant(&a.1) && assistant(&b.1))
         {
-            if run.iter().any(|(id, _)| foreign.contains(id)) {
+            if run.iter().any(|(id, _)| {
+                foreign.contains(id)
+                    || foreign_calls.contains(id)
+                    || foreign_parts.iter().any(|(owner, _)| owner == id)
+            }) {
                 if run.iter().any(|(id, item)| {
                     !foreign.contains(id)
                         && matches!(item, Item::Reasoning(reasoning) if reasoning.replay.is_some())
@@ -177,6 +224,25 @@ impl Request {
             .semantic
             .clone()
             .retain_items(|id, _| !foreign.contains(&id))?;
+        let mut items = semantic.items().to_vec();
+        for (id, item) in &mut items {
+            match item {
+                Item::Message(message) => {
+                    for part in &mut message.parts {
+                        if foreign_parts.contains(&(*id, part.id)) {
+                            part.replay = None;
+                            copy.task.fidelity.remove_part_replay(*id, part.id);
+                        }
+                    }
+                }
+                Item::ToolCall(call) if foreign_calls.contains(id) => {
+                    call.replay = None;
+                    copy.task.fidelity.remove_replay(*id);
+                }
+                _ => {}
+            }
+        }
+        let semantic = semantic.with_items(items)?;
         copy.task.fidelity.retain_owners(semantic.items());
         copy.task.semantic = semantic;
         Ok(Some(copy))

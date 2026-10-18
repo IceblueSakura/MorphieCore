@@ -142,6 +142,12 @@ pub enum StreamEvent {
         item: ItemId,
         part: PartId,
     },
+    /// Bind a closed readable value before closing its part.
+    PartReplay {
+        item: ItemId,
+        part: PartId,
+        replay: ItemReplay,
+    },
     PartFinished {
         item: ItemId,
         part: PartId,

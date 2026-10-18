@@ -46,7 +46,29 @@ Natural completion requires evidence: a completed response and finished turn alo
 
 The [function-calling guide](https://ai.google.dev/gemini-api/docs/generate-content/function-calling#managing-conversation-history-manually) forbids merging signed and unsigned parts. In a single frame, `[{text:"A"},{text:"B",thoughtSignature:"…"}]` must not become signed `"AB"`. Explicit within-frame boundaries are preserved; the first part of a later frame may continue a previous fragment, including an empty signature-bearing closing fragment. The independent replay expectation lives in [google.rs](../../tests/semantic/google.rs).
 
-The current tail-digest representation is still narrower than arbitrary part-owned replay. Multiple signed ordinary-text parts, or a signed text part followed by another part, need a more general owner rather than positional attachment to the last text.
+`Part.replay` and `ToolCall.replay` now own those signatures directly. The old tail/call surrogate is removed. A separate signature format prevents rebinding thought payloads as ordinary attachments; fidelity includes the owner's lifecycle and catches deleted obligations.
+
+The [attachment codec](../../src/protocol/attachments.rs) transports a bounded layout/dependency manifest through existing client opaque fields, consuming it before semantic request construction. It restores original text boundaries only when returned bytes, exact arguments and non-text ordering agree. It never restores business content from a hidden copy or upgrades an observed partial owner. Unknown/ambiguous scopes reject, including a flat Responses assistant prefix that cannot be associated safely.
+
+The [pi probe](../../tests/sdk/pi_owned_replay.mjs) uses this repository's actual SSE delivery, then pinned pi response parsers and request builders, then MorphieCore intake and native history encoding. On Node 24.21.0, 18 serial synthetic fetches exercised three protocols: equal signed text owners plus a signed call; a large-number mutation rejection; and an empty signed text owner. Source messages stayed unchanged. The first two cases passed on all three protocols; the empty case restored on Responses and Messages.
+
+Pinned pi's [`openai-completions.ts`](https://github.com/earendil-works/pi/blob/8efd314fa3d3232ce197d8d7a6a5660530b9d83e/packages/ai/src/api/openai-completions.ts#L1395-L1406) skips assistant messages without content or tool calls, even after assigning `reasoning_details`. An opaque-only turn therefore disappears before the gateway sees its next request; the local pi checkout from 2026-10-15 behaves the same. A stateless gateway cannot infer a wholly absent carrier, and adding visible filler would violate the selected contract.
+
+On 2026-10-18 the user accepted this as a client limitation rather than a reason to reject requests. The [signature guide](https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures) strictly validates function calls in the current turn; omitting other signatures does not block the request, though it may degrade quality. A dropped turn has no calls by construction. The probe now asserts this limitation for the Chat empty case: no manifest returns, the next request is accepted and its history has no model turn.
+
+pi normalizes `9007199254740993` to `9007199254740992`; all three returns reject that changed call rather than replay a mismatched signature. This cannot undo a tool invocation already performed by the client with rounded arguments; the probe executes no tools. Exact numeric spellings and object order remain conservative dependencies, so other client normalizations may also reject.
+
+This validates the history carrier, not full request admission: tools/controls retain their separate frozen contracts. No Provider calls or opencode probe were run. Identical-content edits and wholesale loss of the opaque manifest remain outside the selected stateless detection contract.
+
+### Opaque-only turns: native API versus client extension
+
+The [OpenAI Chat reference](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create) and pinned `chat_completion_assistant_message_param.py` specify nullable assistant `content`, required unless `tool_calls` or legacy `function_call` is supplied. Required presence does not mean nonempty text. Audio and refusal also have separate typed fields. Neither the pinned assistant input nor output schema defines `reasoning_details` or `encrypted_content`; the former is an [OpenRouter-compatible extension](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens), not OpenAI's native Chat reasoning carrier. The pi behavior therefore does not, by itself, establish an OpenAI protocol violation.
+
+In Responses, a reasoning item is distinct from a message and may have `summary: []` with opaque `encrypted_content`. The [reasoning guide](https://developers.openai.com/api/docs/guides/reasoning) makes summaries opt-in and explicitly describes `max_output_tokens` or context exhaustion before any visible output. Stateless history preserves returned reasoning items. This does not guarantee that every such incomplete response contains a usable token: follow the [completed-item replay rule](https://developers.openai.com/api/reference/resources/responses/subresources/input_items), not the possibly partial value in `response.output_item.added`.
+
+The [Google signature guide](https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures) documents an empty signature-bearing text **part** during non-function-call streaming. That does not establish an entirely empty assistant **turn**. A trailing empty fragment after visible text closes the accumulated text owner in this codec and does not trigger pi's whole-message filter. The probe deliberately constructs the stronger case: no visible text or calls in the entire response, plus a signature and `MAX_TOKENS`. It is a synthetic boundary case, not an observed Provider exchange or evidence of its frequency.
+
+Ordinary tool-only responses and nonempty answers do not lose their carrier. The loss requires an entire turn without text/calls, meaningful state projected into the gateway's Chat extension, and a client that discards that extension-only message. The accepted limitation does not change a generic Chat empty-message policy.
 
 ## Protected semantics without complete owners
 
@@ -110,7 +132,7 @@ MorphieCore follows that transfer direction, not pi's synthetic orphan results, 
 
 [Responses item-ID handling](https://github.com/earendil-works/pi/blob/8efd314fa3d3232ce197d8d7a6a5660530b9d83e/packages/ai/src/api/openai-responses-shared.ts#L313-L322) also matters: wire call-item IDs may be paired with removed reasoning. The target copy forgets those aliases in affected assistant runs without changing semantic call IDs or actual results. Damaged or missing compatible replay cannot be hidden by another owner's foreign omission.
 
-This policy supersedes the earlier recommendation to reject all active-tool-turn transfer by default. Native API replay requirements do not themselves forbid a different model receiving a visible transcript; transfer is an explicit loss of internal state, not equivalent continuation. Actual generateContent part/call replay slots still need a coordinated client-carrier migration.
+This policy supersedes the earlier recommendation to reject all active-tool-turn transfer by default. Native API replay requirements do not themselves forbid a different model receiving a visible transcript; transfer is an explicit loss of internal state, not equivalent continuation. Foreign part/call values are cleared without deleting their visible owners.
 
 ## Loss-policy decisions still needed
 
@@ -128,7 +150,7 @@ Keep the inspected protections for normalization-default tools, no automatic thi
 |---|---|---|
 | Ordered history, roles, call/result links | `Item`, message envelopes, `ClientManaged`; history/tool tests | Tool discovery, turn-scoped configuration and participant names remain rejected/deferred |
 | Tools and output constraints | Typed definitions, exact JSON, strictness defaults; schema/tool tests | Hosted tools and native schema subsets are not universal support |
-| Reasoning controls | Separate activation, scope, effort, budget and display; reasoning tests | Opaque replay purpose/part ownership and target-policy placement need selection |
+| Reasoning controls and replay | Separate controls, real part/call replay slots and bounded client manifests; native and pi carrier checks | Target-policy placement and unverified client transformations remain separate boundaries |
 | Input media | Resource tables and per-use description; media tests | File services, Messages document context and unselected detail conversions remain gaps |
 | Generated media | Existing Chat audio owner and lifecycle tests | General generated image/audio/video needs a selected contract |
 | Content evidence | Text-owned probabilities/citations; static and SSE tests | Citation licence, request-source associations and newer point anchors remain gaps |

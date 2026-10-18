@@ -2,7 +2,7 @@
 //! fragment. Known fields are strict and unknown ones ignored; the aggregate is the reduced
 //! event state, released only at strict EOF.
 //! Source: <https://ai.google.dev/api/generate-content>.
-use super::signature::{Anchor, Signed, text_hash};
+use super::signature::Signed;
 use crate::{
     protocol::{
         CodecError, DecodedResponse, ResponseMetadata,
@@ -20,7 +20,7 @@ use serde_json::{Map, Value};
 
 enum OpenKind {
     Thought { signature: Option<String> },
-    Text,
+    Text { signature: Option<String> },
 }
 struct Open {
     item: ItemId,
@@ -42,9 +42,6 @@ pub struct GenerationSseDecoder {
     members: Vec<ItemId>,
     calls: Vec<String>,
     usage: Option<UsageReport>,
-    /// Call and tail signatures, emitted last: they bind by anchor, and trailing them
-    /// keeps a message contiguous with its calls for every downstream carrier.
-    signatures: Vec<Signed>,
     finished: bool,
     closed: bool,
     rejected: bool,
@@ -166,7 +163,6 @@ impl GenerationSseDecoder {
             members: vec![],
             calls: vec![],
             usage: None,
-            signatures: vec![],
             finished: false,
             closed: false,
             rejected: false,
@@ -455,7 +451,7 @@ impl GenerationSseDecoder {
                     if !matches!(
                         self.open,
                         Some(Open {
-                            kind: OpenKind::Text,
+                            kind: OpenKind::Text { .. },
                             ..
                         })
                     ) {
@@ -472,7 +468,7 @@ impl GenerationSseDecoder {
                         self.open = Some(Open {
                             item,
                             part,
-                            kind: OpenKind::Text,
+                            kind: OpenKind::Text { signature: None },
                             part_started: false,
                         });
                     }
@@ -492,18 +488,9 @@ impl GenerationSseDecoder {
                             out,
                         )?;
                     }
-                    let text = self
-                        .state
-                        .part(item, part)
-                        .map_err(CodecError::from)?
-                        .text()
-                        .ok_or_else(|| invalid("Gemini text signature owner"))?;
-                    self.signatures.push(Signed {
-                        anchor: Anchor::Tail {
-                            text_hash: text_hash(text),
-                        },
+                    self.open.as_mut().expect("text opened").kind = OpenKind::Text {
                         signature: Some(signature),
-                    });
+                    };
                     self.close(out)?;
                 }
                 Ok(())
@@ -527,12 +514,18 @@ impl GenerationSseDecoder {
                     return Err(invalid("duplicate Gemini call"));
                 }
                 self.calls.push(id.into());
-                if let Some(signature) = signature {
-                    self.signatures.push(Signed {
-                        anchor: Anchor::Call(id.into()),
-                        signature: Some(signature),
-                    });
-                }
+                let replay = if let Some(signature) = signature {
+                    Some(ItemReplay {
+                        value: ReplayValue::final_value(
+                            ReplayFormat::GoogleGenerateContentSignature,
+                            text(&signature)?,
+                        ),
+                        origin: Some(self.target.origin()),
+                    })
+                } else {
+                    None
+                };
+                let signed = replay.is_some();
                 let (item, part) = self.next_ids()?;
                 self.emit(
                     StreamEvent::ItemStarted {
@@ -566,10 +559,22 @@ impl GenerationSseDecoder {
                     StreamEvent::ItemFinished {
                         item,
                         status: ItemLifecycle::Completed,
-                        replay: None,
+                        replay,
                     },
                 ] {
                     self.emit(event, out)?;
+                }
+                if signed {
+                    let Item::ToolCall(call) = self
+                        .state
+                        .item(item)
+                        .and_then(|i| i.snapshot())
+                        .map_err(CodecError::from)?
+                    else {
+                        return Err(invalid("Gemini call replay owner"));
+                    };
+                    self.fidelity
+                        .record_call_replay(item, &call, Some(self.target.origin()))?;
                 }
                 Ok(())
             }
@@ -602,19 +607,6 @@ impl GenerationSseDecoder {
             },
             out,
         )
-    }
-    /// A signature-only reasoning item, anchored to the part that carried it.
-    fn signature(&mut self, value: Signed, out: &mut Vec<StreamEvent>) -> Result<(), SseError> {
-        let (item, _) = self.next_ids()?;
-        self.emit(
-            StreamEvent::ItemStarted {
-                item,
-                kind: ItemKind::Reasoning,
-                replay: None,
-            },
-            out,
-        )?;
-        self.finish_reasoning(item, value, out)
     }
     fn finish_reasoning(
         &mut self,
@@ -662,6 +654,25 @@ impl GenerationSseDecoder {
                 },
                 out,
             )?;
+            if let OpenKind::Text {
+                signature: Some(signature),
+            } = &open.kind
+            {
+                self.emit(
+                    StreamEvent::PartReplay {
+                        item: open.item,
+                        part: open.part,
+                        replay: ItemReplay {
+                            value: ReplayValue::final_value(
+                                ReplayFormat::GoogleGenerateContentSignature,
+                                text(signature)?,
+                            ),
+                            origin: Some(self.target.origin()),
+                        },
+                    },
+                    out,
+                )?;
+            }
             self.emit(
                 StreamEvent::PartFinished {
                     item: open.item,
@@ -670,16 +681,12 @@ impl GenerationSseDecoder {
                 out,
             )?;
         }
+        let signed_text = matches!(open.kind, OpenKind::Text { signature: Some(_) });
         match open.kind {
-            OpenKind::Thought { signature } => self.finish_reasoning(
-                open.item,
-                Signed {
-                    anchor: Anchor::Thought,
-                    signature,
-                },
-                out,
-            ),
-            OpenKind::Text => self.emit(
+            OpenKind::Thought { signature } => {
+                self.finish_reasoning(open.item, Signed { signature }, out)
+            }
+            OpenKind::Text { .. } => self.emit(
                 StreamEvent::ItemFinished {
                     item: open.item,
                     status: ItemLifecycle::Completed,
@@ -687,7 +694,25 @@ impl GenerationSseDecoder {
                 },
                 out,
             ),
+        }?;
+        if signed_text {
+            let Item::Message(message) = self
+                .state
+                .item(open.item)
+                .and_then(|i| i.snapshot())
+                .map_err(CodecError::from)?
+            else {
+                return Err(invalid("Gemini text replay owner"));
+            };
+            self.fidelity.record_part_replay(
+                open.item,
+                message.status,
+                0,
+                &message.parts[0],
+                Some(self.target.origin()),
+            )?;
         }
+        Ok(())
     }
     fn terminal(
         &mut self,
@@ -695,9 +720,6 @@ impl GenerationSseDecoder {
         out: &mut Vec<StreamEvent>,
     ) -> Result<(), SseError> {
         self.close(out)?;
-        for value in std::mem::take(&mut self.signatures) {
-            self.signature(value, out)?;
-        }
         self.finished = true;
         let group = GroupId::new(self.scope, 1);
         let envelope = if self.members.is_empty() {

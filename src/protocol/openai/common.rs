@@ -181,6 +181,7 @@ pub(super) struct Items<'a> {
     pub resources: ResourceTable,
     pub message_owners: Vec<(ItemId, ItemId)>,
     pub fidelity: FidelityRecords,
+    pub attachments: Vec<crate::protocol::attachments::Marker>,
     next_item: u64,
     next_part: u64,
     next_resource: u64,
@@ -236,6 +237,7 @@ impl<'a> Items<'a> {
             return Err(CodecError::Limit);
         }
         Ok(Part {
+            replay: None,
             id: PartId::new(self.next_part),
             content: ContentPart::Refusal(text.into()),
             cache: None,
@@ -247,6 +249,7 @@ impl<'a> Items<'a> {
             return Err(CodecError::Limit);
         }
         Ok(Part {
+            replay: None,
             id: PartId::new(self.next_part),
             cache: None,
             content: ContentPart::Text(
@@ -371,6 +374,7 @@ pub(super) fn tool_call(
         crate::protocol::openai::responses::status(o, ItemLifecycle::Completed)?
     };
     Ok(ToolCall {
+        replay: None,
         call_id: text(id, "call_id", 256)?,
         cache: None,
         name: text(string(f, "name")?, "function name", 128)?,

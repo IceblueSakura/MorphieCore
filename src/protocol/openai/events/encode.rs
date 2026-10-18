@@ -11,6 +11,7 @@ pub struct EventEncoder {
     poisoned: bool,
     target_locked: bool,
     sequence: u64,
+    pub(super) attachment: Option<crate::protocol::attachments::Carrier>,
     pub(super) chat_audio_pending: Vec<u8>,
     pub(super) projection: Vec<crate::protocol::openai::lowering::projection::ProjectionStage>,
 }
@@ -27,9 +28,24 @@ impl EventEncoder {
             poisoned: false,
             target_locked: false,
             sequence: 0,
+            attachment: None,
             chat_audio_pending: Vec::new(),
             projection: Vec::new(),
         })
+    }
+    pub(crate) fn set_attachment(
+        &mut self,
+        value: crate::protocol::attachments::Carrier,
+    ) -> Result<(), CodecError> {
+        crate::protocol::attachments::check_chat_support(
+            self.profile,
+            self.contract.adaptation.rules.structured_chat_reasoning,
+        )?;
+        if self.poisoned || self.state()?.terminal().is_some() || self.attachment.is_some() {
+            return Err(CodecError::Invalid("attachment carrier"));
+        }
+        self.attachment = Some(value);
+        Ok(())
     }
     /// Refresh reported settings/completion metadata without changing response identity.
     pub fn update_metadata(&mut self, metadata: ResponseMetadata) -> Result<(), CodecError> {
@@ -512,6 +528,9 @@ impl EventEncoder {
             StreamEvent::UsageReport(_) => {
                 return Err(CodecError::Unsupported("scoped usage projection".into()));
             }
+            StreamEvent::PartReplay { .. } => {
+                return Err(CodecError::Unsupported("owned replay attachment".into()));
+            }
             StreamEvent::SafetyReport(_) => {
                 return Err(CodecError::Unsupported("safety report".into()));
             }
@@ -531,7 +550,7 @@ impl EventEncoder {
             }
             StreamEvent::Terminal { terminal, .. } => {
                 let response = materialize(self.state()?)?;
-                let target = crate::protocol::openai::lowering::lower_response(
+                let mut target = crate::protocol::openai::lowering::lower_response(
                     &response,
                     &self.fidelity,
                     &self.metadata,
@@ -539,6 +558,7 @@ impl EventEncoder {
                     self.contract.clone(),
                 )
                 .map_err(|_| CodecError::Unsupported("terminal representation".into()))?;
+                target.attachment = self.attachment.take();
                 let v = crate::protocol::openai::responses::encode_response(&target)?;
                 let kind = match terminal {
                     StreamTerminal::Completed => "response.completed",
@@ -559,7 +579,25 @@ impl EventEncoder {
                         self.projection.push(stage);
                     }
                 }
-                vec![json!({"type":kind,"response":v})]
+                let mut out = vec![];
+                if let Some(carrier) = &target.attachment {
+                    // The carrier is the last snapshot item; announce it like any other item.
+                    let item = crate::protocol::attachments::response_item(carrier.as_str());
+                    let index = v["output"]
+                        .as_array()
+                        .and_then(|output| output.len().checked_sub(1))
+                        .ok_or(CodecError::Invalid("attachment output"))?;
+                    let mut opening = item.clone();
+                    opening["status"] = json!("in_progress");
+                    opening
+                        .as_object_mut()
+                        .expect("item")
+                        .remove("encrypted_content");
+                    out.push(json!({"type":"response.output_item.added","output_index":index,"item":opening}));
+                    out.push(json!({"type":"response.output_item.done","output_index":index,"item":item}));
+                }
+                out.push(json!({"type":kind,"response":v}));
+                out
             }
         };
         Ok(result)

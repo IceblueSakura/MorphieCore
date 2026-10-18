@@ -190,6 +190,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                         .enumerate()
                         .map(|(i, s)| {
                             Ok(Part {
+                                replay: None,
                                 id: PartId::scoped(scope, i as u64 + 1),
                                 content: text(&s.content)?,
                                 cache: s.cache,
@@ -326,6 +327,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         .as_array()
         .ok_or(CodecError::Invalid("messages"))?;
     let mut roles = Vec::with_capacity(messages.len());
+    let mut attachments = vec![];
     for message in messages {
         let mut message = message.clone();
         // Turn-scoped clearing and per-message output settings change the model contract.
@@ -367,13 +369,36 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                 .map(|v| super::CacheMarked::read(v, Block::read))
                 .collect::<Result<_, _>>()?
         };
-        intake.request_message(role, &parsed)?;
+        let start = intake.items.len();
+        let mut marker = None;
+        let mut content = Vec::new();
+        for block in parsed {
+            if let Some(token) = crate::protocol::attachments::messages_marker(&block.content)? {
+                if role != Role::Assistant || marker.is_some() || block.cache.is_some() {
+                    return Err(CodecError::Invalid("attachment carrier"));
+                }
+                marker = Some(token.to_owned());
+            } else {
+                content.push(block);
+            }
+        }
+        if marker.is_none() || !content.is_empty() {
+            intake.request_message(role, &content)?;
+        }
+        if let Some(marker) = marker {
+            attachments.push(crate::protocol::attachments::Marker::bounded(
+                &marker,
+                start,
+                intake.items.len(),
+                None,
+            )?);
+        }
     }
     super::request::validate_system_placement(&roles)?;
     // Messages turns are not kept as envelopes: each target regroups items its own
     // way (native by role, Chat by assistant text and calls).
     // Calls carry their input as raw JSON text, as every client protocol's calls do.
-    let items = intake
+    let mut items = intake
         .items
         .into_iter()
         .map(|(id, mut item)| {
@@ -391,9 +416,12 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
             (id, item)
         })
         .collect();
-    let semantic = GenerationRequest::from_resources(items, settings, intake.resources)?;
-    super::semantic_intake::validate_cache(&semantic)?;
     let mut fidelity = FidelityRecords::default();
+    let mut groups = vec![];
+    crate::protocol::attachments::restore(&mut items, &mut groups, &mut fidelity, attachments)?;
+    let semantic = GenerationRequest::from_resources(items, settings, intake.resources)?
+        .with_message_envelopes(groups)?;
+    super::semantic_intake::validate_cache(&semantic)?;
     fidelity.bind_replay_origin(&crate::execution::replay::CLIENT_ORIGIN)?;
     for part in intake.strict_images {
         fidelity.record_strict_image_size(part)?;
@@ -570,6 +598,14 @@ pub fn encode_client_response(
     response: &DecodedResponse,
     model: &str,
 ) -> Result<Value, CodecError> {
+    encode_client_response_with(response, model, None)
+}
+/// The owned replay manifest trails the content it describes as an empty signed thinking block.
+pub(crate) fn encode_client_response_with(
+    response: &DecodedResponse,
+    model: &str,
+    attachment: Option<&crate::protocol::attachments::Carrier>,
+) -> Result<Value, CodecError> {
     let semantic = &response.semantic;
     if !semantic.safety_reports().is_empty()
         || response
@@ -644,6 +680,11 @@ pub fn encode_client_response(
         calls,
         semantic.details(),
     )?;
+    if let Some(carrier) = attachment {
+        content.push(crate::protocol::attachments::messages_block(
+            carrier.as_str(),
+        ));
+    }
     let mut v = Map::new();
     v.insert("id".into(), json!(response.metadata.required_id()?));
     v.insert("type".into(), json!("message"));
@@ -659,7 +700,12 @@ pub fn encode_client_response(
         &response.metadata.context.service_class,
     )?;
     v.insert("usage".into(), usage);
-    Ok(Value::Object(v))
+    let v = Value::Object(v);
+    if attachment.is_some() {
+        crate::semantic::value::json_size(&v, crate::semantic::task::generation::MAX_TOTAL_BYTES)
+            .map_err(|_| CodecError::Limit)?;
+    }
+    Ok(v)
 }
 pub(super) fn terminal(
     outcome: Outcome,

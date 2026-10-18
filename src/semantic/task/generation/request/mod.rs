@@ -211,6 +211,7 @@ impl GenerationRequest {
                 .filter_map(|(part, content)| {
                     let (ReasoningContent::Summary(text) | ReasoningContent::Text(text)) = content;
                     (!text.as_str().trim().is_empty()).then(|| Part {
+                        replay: None,
                         id: *part,
                         cache: None,
                         content: ContentPart::Text(text.clone().into()),
