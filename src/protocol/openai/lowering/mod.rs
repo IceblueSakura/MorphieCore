@@ -520,24 +520,11 @@ fn validate_response(
     }
     if profile == Profile::Chat
         && (matches!(r.outcome(), Outcome::Failed | Outcome::Cancelled)
-            || r.outcome() == Outcome::Incomplete
-                && !matches!(
-                    r.details().incomplete,
-                    Some(
-                        IncompleteReason::MaxOutputTokens
-                            | IncompleteReason::ContentFilter
-                            | IncompleteReason::Recitation
-                    )
-                )
             || r.details().error.is_some()
-            || r.details().incomplete.as_ref().is_some_and(|reason| {
-                !matches!(
-                    reason,
-                    IncompleteReason::MaxOutputTokens
-                        | IncompleteReason::ContentFilter
-                        | IncompleteReason::Recitation
-                )
-            }))
+            || !crate::protocol::openai::terminal::chat_incomplete(
+                r.outcome() == Outcome::Incomplete,
+                r.details(),
+            ))
     {
         return Err(RepresentationError::Terminal);
     }

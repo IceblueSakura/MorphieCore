@@ -39,31 +39,39 @@ pub struct CacheProjection {
     pub options: bool,
     pub session_id: bool,
 }
-/// Fixed field labels only; cache values and caller identifiers stay private.
+/// Omitted advisory execution hints. Fixed field labels only; cache values and
+/// caller identifiers stay private.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub enum CacheRule {
+pub enum HintRule {
     OmitKey,
     OmitInactiveOptions,
+    OmitIdentityHints,
 }
-impl CacheRule {
+impl HintRule {
     pub const fn name(self) -> &'static str {
         match self {
             Self::OmitKey => "cache.omit-key.v1",
             Self::OmitInactiveOptions => "cache.omit-inactive-options.v1",
+            Self::OmitIdentityHints => "generation.omit-identity-hints.v1",
         }
     }
 }
+/// Identity hints only attribute abuse upstream. A target without their carrier omits
+/// them; the loss is the Provider's attribution, not task meaning.
+pub(crate) fn identity_loss(context: &ExecutionHints) -> Option<HintRule> {
+    (context.identity != Default::default()).then_some(HintRule::OmitIdentityHints)
+}
 impl CacheProjection {
     /// Call only after successful projection; active options still reject.
-    pub fn losses(self, context: &ExecutionHints) -> Vec<CacheRule> {
+    pub fn losses(self, context: &ExecutionHints) -> Vec<HintRule> {
         [
             (
                 !self.key && !context.cache.prompt_cache_key.is_absent(),
-                CacheRule::OmitKey,
+                HintRule::OmitKey,
             ),
             (
                 !self.options && !context.cache.prompt_cache_options.is_absent(),
-                CacheRule::OmitInactiveOptions,
+                HintRule::OmitInactiveOptions,
             ),
         ]
         .into_iter()

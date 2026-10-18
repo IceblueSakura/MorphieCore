@@ -95,6 +95,16 @@ impl SafetyReport {
         }
         Ok(std::mem::size_of::<Self>() + std::mem::size_of_val(self.ratings.as_slice()) + message)
     }
+    /// No block reason or message, and every rating explicitly reports no block.
+    /// An unreported block flag is not evidence of an unblocked rating.
+    pub fn is_assessment_only(&self) -> bool {
+        self.reason.is_none()
+            && self.message.is_none()
+            && self
+                .ratings
+                .iter()
+                .all(|rating| rating.blocked == Some(false))
+    }
 }
 pub(super) fn settings_bytes(settings: &[SafetySetting]) -> Result<usize, GenerationError> {
     if settings.len() > MAX_ITEMS {

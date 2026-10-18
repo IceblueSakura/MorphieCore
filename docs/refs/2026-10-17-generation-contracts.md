@@ -76,7 +76,7 @@ Ordinary tool-only responses and nonempty answers do not lose their carrier. The
 
 - [Data residency](https://platform.claude.com/docs/en/manage-claude/data-residency): `inference_geo: "us"` constrains inference geography; omission uses workspace policy. The stable field exists at the earlier project pin. It cannot be dropped as an unknown preference.
 - `speed` affects execution/pricing; beta `fallbacks` and `fallback_credit_token` affect fallback/billing behavior. Current client intake rejects active values. This does not implement refusal retries or billing-token forwarding.
-- [Preserved thinking](https://platform.claude.com/docs/en/build-with-claude/preserved-thinking): beta `thinking.block_binding.prefix_mismatch_behavior` selects rejection or dropping invalid thinking blocks. Explicit `"error"` can opt older accounts into enforcement; it is not universally equivalent to omission. Current intake rejects this control. Returned `input_transformations` are a separate unmodeled report.
+- [Preserved thinking](https://platform.claude.com/docs/en/build-with-claude/preserved-thinking): beta `thinking.block_binding.prefix_mismatch_behavior` selects rejection or dropping invalid thinking blocks. Explicit `"error"` can opt older accounts into enforcement; it is not universally equivalent to omission. Since 2026-10-18 Messages intake admits only `drop_block`, omitted with a receipt; default and `"error"` enforcement still reject. Returned `input_transformations` are a separate unmodeled report.
 
 ### Attribution
 
@@ -154,7 +154,7 @@ Keep the inspected protections for normalization-default tools, no automatic thi
 | Input media | Resource tables and per-use description; media tests | File services, Messages document context and unselected detail conversions remain gaps |
 | Generated media | Existing Chat audio owner and lifecycle tests | General generated image/audio/video needs a selected contract |
 | Content evidence | Text-owned probabilities/citations; static and SSE tests | Citation licence, request-source associations and newer point anchors remain gaps |
-| Safety and completion | Ordered safety reports; separate outcome/progress/cause; terminal tests | Current downstream safety-report rejection still blocks ordinary full-loop delivery |
+| Safety and completion | Ordered safety reports; separate outcome/progress/cause; terminal tests | Assessment-only reports are omitted with a receipt since 2026-10-18; blocking-report rejection still blocks those full loops |
 | Usage | Typed source-scoped reports, Google/Interactions modality/step intake, Messages TTL/tool/thinking reports and exact native carriers | Interactions mode-specific total relationships remain unestablished; downstream carriers do not express all source scope/detail |
 | Execution policy | Separate service intent/report and cache ownership | Geography, access programs, replay enforcement and several returned execution reports lack complete owners |
 

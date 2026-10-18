@@ -313,3 +313,99 @@ fn coalescing_respects_escaped_frame_and_pending_memory_limits() {
         delivery.cancel();
     }
 }
+
+#[test]
+fn assessment_only_safety_reports_are_omitted_and_blocking_reports_reject() {
+    use crate::adapter::{ClientProtocol, UpstreamAdapter};
+    use crate::protocol::native::ReplayTarget;
+    let wire = |blocked: bool| {
+        let body = json!({"responseId":"r","modelVersion":"fixture-model","candidates":[{
+            "content":{"role":"model","parts":[{"text":"OK"}]},"finishReason":"MAX_TOKENS",
+            "safetyRatings":[{"category":"HARM_CATEGORY_HARASSMENT","probability":"NEGLIGIBLE",
+                "blocked":blocked}]}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":1,
+            "totalTokenCount":4}});
+        format!("data: {body}\n\n")
+    };
+    let run = |protocol: ClientProtocol, blocked: bool, stream: bool| {
+        let mut attempt = Attempt::new(
+            UpstreamAdapter::GoogleGenerateContent {
+                target: ReplayTarget::new("fixture-google", "fixture-model").unwrap(),
+            },
+            1 << 20,
+            Default::default(),
+        );
+        attempt.begin(200, "text/event-stream").unwrap();
+        let client = match protocol {
+            ClientProtocol::Messages => ClientAdapter::Messages,
+            _ => ClientAdapter::openai(
+                Adapter::new(
+                    if protocol == ClientProtocol::Chat {
+                        Profile::Chat
+                    } else {
+                        Profile::Responses
+                    },
+                    Dialect::Standard,
+                    None,
+                ),
+                TargetCaps::full(),
+            ),
+        };
+        let mut delivery = ResponseDelivery::new(
+            client,
+            "public",
+            Default::default(),
+            StreamOptions {
+                include_obfuscation: Presence::Value(false),
+                ..Default::default()
+            },
+            Obfuscation::Disabled,
+        );
+        let (_, events) = attempt.push(wire(blocked).as_bytes()).unwrap();
+        let body = if stream {
+            delivery
+                .encode_events(&attempt, &events)
+                .and_then(|frames| {
+                    delivery.commit()?;
+                    attempt.finish()?;
+                    Ok(frames
+                        .into_iter()
+                        .chain(delivery.finish_stream(&attempt)?)
+                        .collect::<Vec<_>>()
+                        .concat())
+                })
+        } else {
+            attempt.finish().unwrap();
+            delivery.encode_json(&attempt)
+        };
+        (body, delivery.losses().to_vec())
+    };
+    for protocol in [
+        ClientProtocol::Chat,
+        ClientProtocol::Responses,
+        ClientProtocol::Messages,
+    ] {
+        for stream in [false, true] {
+            let (body, losses) = run(protocol, false, stream);
+            let body = String::from_utf8(body.unwrap()).unwrap();
+            assert!(
+                body.contains("OK") && !body.contains("HARASSMENT"),
+                "{protocol:?}"
+            );
+            assert!(
+                losses
+                    .iter()
+                    .any(|loss| loss.rule == "generation.omit-safety-assessment.v1"
+                        && loss.field == "response.safety_reports"),
+                "{protocol:?} {stream}"
+            );
+            // Only the block flag differs from the delivered case above.
+            let error = format!("{:?}", run(protocol, true, stream).0.unwrap_err());
+            assert!(
+                error.contains("Safety")
+                    || error.contains("safety report")
+                    || error.contains("event target representation"),
+                "{protocol:?} {stream}: {error}"
+            );
+        }
+    }
+}

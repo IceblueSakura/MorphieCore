@@ -912,7 +912,7 @@ pub(crate) fn restore(
         let ((restored, packet_groups), trial) = match restored {
             Some(Ok(value)) => value,
             Some(Err(CodecError::Invalid(_) | CodecError::Unsupported(_))) | None => {
-                fidelity.record_replay_manifest_omission();
+                fidelity.record_omission(crate::protocol::fidelity::REPLAY_MANIFEST_OMISSION);
                 continue;
             }
             Some(Err(error)) => return Err(error),

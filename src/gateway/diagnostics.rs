@@ -515,10 +515,7 @@ impl Trace {
         for normalization in fidelity.normalizations() {
             use crate::protocol::fidelity::Normalization;
             let (rule, field) = match normalization {
-                Normalization::PredictionOmitted { rule } => (*rule, "generation.prediction"),
-                Normalization::ReplayManifestOmitted { rule } => {
-                    (*rule, "generation.replay.attachments")
-                }
+                Normalization::Omitted { rule, field } => (*rule, *field),
                 _ => continue,
             };
             let loss = LossObservation {

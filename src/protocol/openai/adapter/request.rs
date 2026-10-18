@@ -402,11 +402,12 @@ impl Adapter {
                 .into_iter()
                 .map(|r| r.name()),
         );
-        if !contract.identity_hints
-            && (!context.identity.user.is_absent()
-                || !context.identity.safety_identifier.is_absent())
+        // SIWC has no identity carrier whatever the configured contract says.
+        if (!contract.identity_hints || self.adaptation.rules.responses_siwc)
+            && let Some(rule) = crate::protocol::cache::identity_loss(&context)
         {
-            return Err(CodecError::Unsupported("identity hints".into()).into());
+            rules.push(rule.name());
+            context.identity = Default::default();
         }
         if request.cache_session.is_some() && !contract.cache.session_id {
             return Err(CodecError::Unsupported("session_id".into()).into());
@@ -577,8 +578,6 @@ mod tests {
             ("previous_response_id", Value::Null),
             ("prompt", Value::Null),
             ("moderation", Value::Null),
-            ("safety_identifier", serde_json::json!("identity")),
-            ("user", Value::Null),
             ("prompt_cache_retention", serde_json::json!("24h")),
         ] {
             let mut edited = body.clone();
@@ -592,6 +591,21 @@ mod tests {
                     .is_err(),
                 "{field}"
             );
+        }
+        // Identity hints are omitted, not sent and not rejected.
+        for (field, value) in [
+            ("safety_identifier", serde_json::json!("identity")),
+            ("user", Value::Null),
+        ] {
+            let mut edited = body.clone();
+            edited[field] = value;
+            let request = client
+                .decode_request(edited.to_string().as_bytes())
+                .unwrap();
+            let wire = target
+                .encode_request(&request, "selected-slug", &contract)
+                .unwrap();
+            assert!(wire.get(field).is_none(), "{field}");
         }
         let mut edited = request.clone();
         let mut settings = edited.task.semantic.settings().clone();

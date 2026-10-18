@@ -1,6 +1,7 @@
 //! Client codec dispatch. Publication, attempt identity and entropy belong to execution.
 use super::{ClientProtocol, Request};
 use crate::{
+    lowering::generation::LossEvidence,
     protocol::{
         CodecError, DecodedResponse, ResponseMetadata,
         fidelity::FidelityRecords,
@@ -131,6 +132,25 @@ impl ClientAdapter {
         super::AdapterError,
     > {
         let mut losses = vec![];
+        if decoded
+            .semantic
+            .safety_reports()
+            .iter()
+            .any(|report| report.is_assessment_only())
+        {
+            let blocking = decoded
+                .semantic
+                .safety_reports()
+                .iter()
+                .filter(|report| !report.is_assessment_only())
+                .cloned()
+                .collect();
+            decoded.semantic = decoded
+                .semantic
+                .with_safety_reports(blocking)
+                .map_err(CodecError::from)?;
+            losses.push(safety_assessment_loss("response.encode"));
+        }
         let value = match self {
             Self::Messages => {
                 losses.extend(crate::protocol::anthropic::client::metadata_losses(
@@ -317,6 +337,18 @@ impl ClientAdapter {
     }
 }
 
+/// Client carriers have no safety assessment slot. Assessment-only reports are
+/// omitted under a named rule; blocking reports remain protected and reject.
+pub(crate) const SAFETY_ASSESSMENT_RULE: &str = "generation.omit-safety-assessment.v1";
+fn safety_assessment_loss(direction: &'static str) -> LossEvidence {
+    LossEvidence {
+        rule: SAFETY_ASSESSMENT_RULE,
+        field: "response.safety_reports",
+        direction,
+        action: "omit",
+    }
+}
+
 enum Encoder {
     Responses(ResponsesSseEncoder),
     Chat(ChatSseEncoder),
@@ -396,6 +428,15 @@ impl ClientEncoder {
         event: &StreamEvent,
         fidelity: &FidelityRecords,
     ) -> Result<Vec<Bytes>, SseError> {
+        if let StreamEvent::SafetyReport(report) = event
+            && report.is_assessment_only()
+        {
+            let loss = safety_assessment_loss("event.encode");
+            if !self.losses.contains(&loss) {
+                self.losses.push(loss);
+            }
+            return Ok(vec![]);
+        }
         match &mut self.encoder {
             Encoder::Chat(e) => e.encode(event, fidelity),
             Encoder::Responses(e) => e.encode(event, fidelity),

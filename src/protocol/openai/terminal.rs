@@ -78,12 +78,30 @@ pub(super) fn chat_finish(response: &GenerationResponse) -> Result<&'static str,
             Continuation::Unreported => "stop",
             Continuation::ToolResults(_) => "tool_calls",
         }),
-        (Outcome::Incomplete, Some(IncompleteReason::MaxOutputTokens)) => Ok("length"),
+        // A context-window stop is also a length limit; the cause is recorded as a loss.
+        (
+            Outcome::Incomplete,
+            Some(IncompleteReason::MaxOutputTokens | IncompleteReason::ContextWindowExceeded),
+        ) => Ok("length"),
         (
             Outcome::Incomplete,
             Some(IncompleteReason::ContentFilter | IncompleteReason::Recitation),
         ) => Ok("content_filter"),
         _ => Err(CodecError::Unsupported("Chat terminal".into())),
+    }
+}
+/// Whether Chat has a finish reason for this incomplete state, exactly or under a
+/// named rule. An incomplete outcome needs a reason; a successful one admits none.
+pub(super) fn chat_incomplete(incomplete: bool, details: &TerminalDetails) -> bool {
+    match &details.incomplete {
+        None => !incomplete,
+        Some(reason) => matches!(
+            reason,
+            IncompleteReason::MaxOutputTokens
+                | IncompleteReason::ContentFilter
+                | IncompleteReason::Recitation
+                | IncompleteReason::ContextWindowExceeded
+        ),
     }
 }
 /// Selected terminal approximations for a profile; an empty list means exact.
@@ -101,11 +119,14 @@ pub(super) fn terminal_losses(
         (Some(_), Profile::Chat) => losses.push(LossRule::CoarsenChatCompletionCause),
         (Some(_), Profile::Responses) => losses.push(LossRule::OmitResponsesCompletionCause),
     }
-    match details.incomplete {
-        Some(IncompleteReason::ContextWindowExceeded) => {
-            return Err(CodecError::Unsupported("context-window terminal".into()));
+    match (&details.incomplete, profile) {
+        (Some(IncompleteReason::ContextWindowExceeded), Profile::Chat) => {
+            losses.push(LossRule::ContextWindowAsLength)
         }
-        Some(IncompleteReason::Recitation) => losses.push(LossRule::RecitationAsContentFilter),
+        (Some(IncompleteReason::ContextWindowExceeded), Profile::Responses) => {
+            losses.push(LossRule::OmitResponsesContextWindowReason)
+        }
+        (Some(IncompleteReason::Recitation), _) => losses.push(LossRule::RecitationAsContentFilter),
         _ => {}
     }
     Ok(losses)
@@ -127,12 +148,10 @@ pub(super) fn encode_incomplete(reason: Option<&IncompleteReason>) -> Result<Val
         return Ok(Value::Null);
     };
     let reason = match reason {
-        IncompleteReason::Unspecified => Value::Null,
+        // Responses has no context-window reason; the stop stays incomplete.
+        IncompleteReason::Unspecified | IncompleteReason::ContextWindowExceeded => Value::Null,
         IncompleteReason::MaxOutputTokens => json!("max_output_tokens"),
         IncompleteReason::ContentFilter | IncompleteReason::Recitation => json!("content_filter"),
-        IncompleteReason::ContextWindowExceeded => {
-            return Err(CodecError::Unsupported("context-window terminal".into()));
-        }
         IncompleteReason::Other(t) => json!(t.as_str()),
     };
     Ok(json!({ "reason": reason }))

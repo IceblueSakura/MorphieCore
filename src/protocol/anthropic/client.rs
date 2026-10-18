@@ -269,11 +269,27 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         });
         settings.parallel_tool_calls = choice.disable_parallel_tool_use.value().map(|b| !b);
     }
+    let mut block_binding = false;
     if let Some(thinking) = o.get("thinking").filter(|v| !v.is_null()) {
-        if thinking.get("block_binding").is_some_and(|v| !v.is_null()) {
-            return Err(CodecError::Unsupported("thinking.block_binding".into()));
-        }
         let mut thinking = thinking.clone();
+        if let Some(binding) = thinking
+            .as_object_mut()
+            .and_then(|t| t.remove("block_binding"))
+            .filter(|v| !v.is_null())
+        {
+            let binding = binding
+                .as_object()
+                .ok_or(CodecError::Invalid("thinking.block_binding"))?;
+            // Default or explicit "error" enforcement has no carrier and stays rejected.
+            if binding
+                .get("prefix_mismatch_behavior")
+                .and_then(Value::as_str)
+                != Some("drop_block")
+            {
+                return Err(CodecError::Unsupported("thinking.block_binding".into()));
+            }
+            block_binding = true;
+        }
         keep(
             &mut thinking,
             &["type", "budget_tokens", "display"],
@@ -421,6 +437,9 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         })
         .collect();
     let mut fidelity = FidelityRecords::default();
+    if block_binding {
+        fidelity.record_omission(crate::protocol::fidelity::BLOCK_BINDING_OMISSION);
+    }
     let mut groups = vec![];
     crate::protocol::attachments::restore(&mut items, &mut groups, &mut fidelity, attachments)?;
     let semantic = GenerationRequest::from_resources(items, settings, intake.resources)?

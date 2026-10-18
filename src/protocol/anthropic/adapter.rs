@@ -54,6 +54,8 @@ impl TargetCaps {
         let mut context = request.context.clone();
         self.cache.project(&mut context)?;
         normalize_stateless_defaults(&mut context);
+        // Recorded as `HintRule::OmitIdentityHints`; no native identity carrier is used.
+        context.identity = Default::default();
         let go = self.dialect == Dialect::OpenCodeGo;
         if go {
             self.cache.opencode_session(
@@ -149,7 +151,8 @@ impl TargetCaps {
             self.cache
                 .losses(&request.context)
                 .into_iter()
-                .map(RequestRule::Cache),
+                .chain(crate::protocol::cache::identity_loss(&request.context))
+                .map(RequestRule::Hint),
         );
         projection.rules.sort();
         projection.control_losses.extend(controls);

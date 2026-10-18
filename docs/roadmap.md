@@ -118,7 +118,7 @@ Owner-local Messages cache markers and separate automatic TTL controls have code
 
 Existing [cached-context references](architecture.md#cached-context-references) have a generateContent request carrier with exact identity/expiry association and explicit clock checks. Other carriers reject; default binding admission remains closed. There is no new HTTP request field, resource authorization service or cache lifecycle operation. This is separate from cache-only prewarming.
 
-[Safety policies and reports](architecture.md#safety-policy-and-reports) have a classic generateContent probability-policy and streamed-assessment contract. Current downstream carriers reject nonempty reports and safety-bearing settings echoes rather than dropping security facts. Requests without an explicit policy may still receive such reports upstream; those exchanges are not an established full client loop. Default admission, HTTP schemas and routing remain unchanged. Vertex severity/method carriers are not part of this contract.
+[Safety policies and reports](architecture.md#safety-policy-and-reports) have a classic generateContent probability-policy and streamed-assessment contract. Downstream carriers omit assessment-only reports under a named rule and reject blocking reports and safety-bearing settings echoes rather than dropping security facts. Requests without an explicit policy may still receive such reports upstream; those exchanges are not an established full client loop. Default admission, HTTP schemas and routing remain unchanged. Vertex severity/method carriers are not part of this contract.
 
 Service-policy codecs follow the [closed policy/report contract](architecture.md#service-policies-and-reports); default binding admission remains unchanged. The native generation-only decode helper rejects an execution policy rather than dropping it; full request envelopes retain it. Messages service reports require full-message or opening usage. Cross-contract classes and late reports without a target carrier reject instead of being reclassified or omitted.
 
@@ -342,17 +342,13 @@ Minimal counterexamples and pinned sources are in [Generation contract boundarie
 
 ### Client-compatibility rejection candidates
 
-The rejection audit found these rejections reachable by supported clients or ordinary failover. Each needs a [compatibility-before-rejection](architecture.md#settled-decisions) selection; behavior is unchanged until then. Malformed or unknown wire shapes, request safety policies, tool dispatch/namespace and call context, partial tool input, continuation-bearing terminals, candidate multiplicity, credential-owned file IDs, execution controls and managed-state queries stay protected rejections. Client sources: pi [`4954d76`](https://github.com/earendil-works/pi/tree/4954d760504c11df9b2cbdc040346107b6a8153d), OpenCode `e5a557e`.
+The rejection audit found these rejections reachable by supported clients or ordinary failover. The [selected losses](architecture.md#settled-decisions) are implemented; the rows below remain pending, with behavior unchanged until selected. Malformed or unknown wire shapes, request safety policies, tool dispatch/namespace and call context, partial tool input, continuation-bearing terminals, candidate multiplicity, credential-owned file IDs, execution controls and managed-state queries stay protected rejections. Client sources: pi [`4954d76`](https://github.com/earendil-works/pi/tree/4954d760504c11df9b2cbdc040346107b6a8153d), OpenCode `e5a557e`.
 
 | Rejection | Counterexample | Recommendation |
 |---|---|---|
 | Message `phase` outside Responses | pi Responses returns a gpt-5.x `phase` in history (`openai-responses-shared.ts`). Failover to a Chat, Messages, Gemini or Interactions target rejects the next turn; a Chat or Messages client rejects a phase-bearing response | Omit the label with a per-target named rule in both directions. Exact phase return to the client stays a later manifest option |
-| Messages `thinking.block_binding` | OpenCode adds `{"prefix_mismatch_behavior":"drop_block"}` for Claude 5.1+ and Opus 5+; pi adds it for mid-conversation effort models. Every such request rejects | Admit `drop_block` and record its omission; keep rejecting explicit `"error"` enforcement |
 | Gemini `citationMetadata` sources | A candidate that recites code carries source URIs and licences, so the attempt can fail after earlier content streamed | Omit the sources with a named rule until the citation owner is selected; keep `groundingMetadata` rejected because no grounding tool is sent |
-| Context-window terminal on OpenAI clients | An Anthropic `model_context_window_exceeded` stream ends in an error on Chat and Responses | Chat `length` under `chat.coarsen-completion-cause.v1`; Responses `incomplete` with a null reason under `responses.omit-completion-cause.v1` |
-| Non-blocking safety reports | Gemini assessments with no blocked rating and no block reason reject on every non-Google client | Omit assessment-only reports with a named rule; keep blocking reports protected |
 | Prompt cache retention | pi Chat and Responses send `prompt_cache_retention: "24h"` when long retention is configured; targets without a retention carrier reject | Omit retention with a named rule; shorter retention changes cost, not task meaning |
-| Identity hints | OpenCode sends a configured `safety_identifier`; targets without the carrier reject | Omit with a named rule; low priority |
 
 | Question | Unresolved choice and recommendation | Blocks |
 |---|---|---|

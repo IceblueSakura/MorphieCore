@@ -226,11 +226,11 @@ fn assert_dropped(
         .decode_client_request(request.to_string().as_bytes())
         .unwrap_or_else(|error| panic!("{context}: {error:?}"));
     assert!(
-        decoded.task.fidelity.normalizations().contains(
-            &crate::protocol::fidelity::Normalization::ReplayManifestOmitted {
-                rule: "generation.omit-unmatched-replay-manifest.v1"
-            }
-        ),
+        decoded
+            .task
+            .fidelity
+            .normalizations()
+            .contains(&crate::protocol::fidelity::REPLAY_MANIFEST_OMISSION),
         "{context}"
     );
     assert!(
@@ -990,11 +990,11 @@ fn restore_keeps_described_phase_and_drops_unsplittable_carriers() {
         );
         let (restored, fidelity) = run(items.clone(), marker);
         assert_eq!(restored, items);
-        assert!(fidelity.normalizations().contains(
-            &crate::protocol::fidelity::Normalization::ReplayManifestOmitted {
-                rule: "generation.omit-unmatched-replay-manifest.v1"
-            }
-        ));
+        assert!(
+            fidelity
+                .normalizations()
+                .contains(&crate::protocol::fidelity::REPLAY_MANIFEST_OMISSION)
+        );
     };
 
     // Responses-style returned history has no phase; the manifest supplies it.

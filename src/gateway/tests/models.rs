@@ -53,8 +53,12 @@ async fn models_list_and_retrieve_use_the_same_standard_public_object() {
         "treatment":"approved_adaptation",
         "rules":["chat.omit-incidental-settings.v1"]
     });
+    let assessments = json!({
+        "feature":"generation.safety","domain":"assessment_only_reports",
+        "treatment":"approved_adaptation","rules":["generation.omit-safety-assessment.v1"]
+    });
     let safety = json!({
-        "feature":"generation.safety","domain":"nonempty_reports_or_settings_echoes",
+        "feature":"generation.safety","domain":"blocking_reports_or_settings_echoes",
         "treatment":"rejected"
     });
     let natural = json!({
@@ -75,7 +79,7 @@ async fn models_list_and_retrieve_use_the_same_standard_public_object() {
             "data":[
                 {"model":"fixture-model","protocol":"chat_completions",
                     "delivery_modes":["json","sse"],"request":[],
-                    "delivery":[settings,safety.clone(),natural,ambiguous],"history":[]},
+                    "delivery":[settings,assessments.clone(),safety.clone(),natural,ambiguous],"history":[]},
                 {"model":"fixture-model","protocol":"messages",
                     "delivery_modes":["json","sse"],"request":[],
                     "delivery":[
@@ -83,6 +87,7 @@ async fn models_list_and_retrieve_use_the_same_standard_public_object() {
                             "domain":"incidental_settings_without_safety",
                             "treatment":"approved_adaptation",
                             "rules":["messages.omit-incidental-settings.v1"]},
+                        assessments,
                         safety,
                         {"feature":"generation.completion_cause",
                             "domain":"natural_or_matched_stop_without_tool_continuation",

@@ -22,8 +22,6 @@ pub(super) fn check(request: &Request) -> Result<(), CodecError> {
         || !context.prompt.is_absent()
         || !context.moderation.is_absent()
         || !context.context_management.is_absent()
-        || !context.identity.user.is_absent()
-        || !context.identity.safety_identifier.is_absent()
         || !context.cache.prompt_cache_retention.is_absent()
         || !context.cache.prompt_cache_options.is_absent()
     {

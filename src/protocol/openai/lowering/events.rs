@@ -297,27 +297,13 @@ pub fn check_event(
         }
         StreamEvent::Terminal { terminal, details }
             if profile == Profile::Chat
-                && (*terminal == StreamTerminal::Incomplete
-                    && !matches!(
-                        details.incomplete,
-                        Some(
-                            IncompleteReason::MaxOutputTokens
-                                | IncompleteReason::ContentFilter
-                                | IncompleteReason::Recitation
-                        )
-                    )
-                    || matches!(
-                        terminal,
-                        StreamTerminal::Failed | StreamTerminal::Cancelled | StreamTerminal::Error
-                    )
-                    || details.incomplete.as_ref().is_some_and(|r| {
-                        !matches!(
-                            r,
-                            IncompleteReason::MaxOutputTokens
-                                | IncompleteReason::ContentFilter
-                                | IncompleteReason::Recitation
-                        )
-                    })) =>
+                && (matches!(
+                    terminal,
+                    StreamTerminal::Failed | StreamTerminal::Cancelled | StreamTerminal::Error
+                ) || !crate::protocol::openai::terminal::chat_incomplete(
+                    *terminal == StreamTerminal::Incomplete,
+                    details,
+                )) =>
         {
             return Err(RepresentationError::Terminal);
         }

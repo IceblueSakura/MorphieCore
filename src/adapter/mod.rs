@@ -8,7 +8,7 @@ pub mod speech;
 pub mod transcription;
 mod upstream;
 pub use downstream::ClientAdapter;
-pub(crate) use downstream::ClientEncoder;
+pub(crate) use downstream::{ClientEncoder, SAFETY_ASSESSMENT_RULE};
 pub use request::Request;
 pub(crate) use upstream::GenerationDecoder;
 pub use upstream::UpstreamAdapter;

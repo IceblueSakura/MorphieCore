@@ -152,10 +152,24 @@ mod anthropic_profile {
                 Err(CodecError::Unsupported(field)) if field == key));
         }
         let mut body = base;
-        body["thinking"] =
-            json!({"type":"adaptive","block_binding":{"prefix_mismatch_behavior":"error"}});
-        assert!(matches!(decode_client_request(body.to_string().as_bytes()),
-            Err(CodecError::Unsupported(field)) if field == "thinking.block_binding"));
+        body["thinking"] = json!({"type":"adaptive"});
+        let plain = decode_client_request(body.to_string().as_bytes()).unwrap();
+        // Tolerant dropping is omitted with a receipt; enforcement has no carrier.
+        body["thinking"]["block_binding"] = json!({"prefix_mismatch_behavior":"drop_block"});
+        let dropped = decode_client_request(body.to_string().as_bytes()).unwrap();
+        assert_eq!(dropped.task.semantic, plain.task.semantic);
+        assert!(dropped.task.fidelity.normalizations().contains(
+            &morphiecore::protocol::fidelity::Normalization::Omitted {
+                rule: "messages.omit-block-binding.v1",
+                field: "generation.reasoning.block_binding",
+            }
+        ));
+        assert!(plain.task.fidelity.normalizations().is_empty());
+        for binding in [json!({"prefix_mismatch_behavior":"error"}), json!({})] {
+            body["thinking"]["block_binding"] = binding;
+            assert!(matches!(decode_client_request(body.to_string().as_bytes()),
+                Err(CodecError::Unsupported(field)) if field == "thinking.block_binding"));
+        }
     }
     fn message() -> Value {
         json!({"id":"msg_synthetic","type":"message","role":"assistant","model":"synthetic-model",
@@ -679,15 +693,77 @@ mod anthropic_semantics {
         let window_wire =
             morphiecore::protocol::anthropic::client::encode_client_response(&window, "m").unwrap();
         assert_eq!(window_wire["stop_reason"], "model_context_window_exceeded");
-        assert!(
-            morphiecore::protocol::openai::Adapter::new(
-                morphiecore::protocol::openai::Profile::Chat,
-                morphiecore::protocol::openai::Dialect::Standard,
-                None
+        // OpenAI has no context-window reason: Chat reports `length` and Responses an
+        // unspecified incomplete reason, each under a named rule; neither becomes success.
+        use morphiecore::protocol::openai::Profile as OpenAi;
+        // As after the native client projection: no native usage, items follow the outcome.
+        let mut items = window.semantic.items().to_vec();
+        let Item::Message(message) = &mut items[0].1 else {
+            unreachable!()
+        };
+        message.status = ItemLifecycle::Incomplete;
+        let stopped = GenerationResponse::new(items, window.semantic.outcome())
+            .unwrap()
+            .with_details(window.semantic.details().clone())
+            .unwrap();
+        for (profile, rule) in [
+            (OpenAi::Chat, "chat.context-window-as-length.v1"),
+            (OpenAi::Responses, "responses.omit-context-window-reason.v1"),
+        ] {
+            let projected = morphiecore::protocol::openai::lowering::lower_response(
+                &stopped,
+                &fidelity,
+                &metadata,
+                profile,
+                morphiecore::protocol::openai::TargetCaps::full(),
             )
-            .encode_response(&window, &morphiecore::protocol::openai::TargetCaps::full())
-            .is_err()
-        );
+            .unwrap();
+            let named = |stages: &[morphiecore::protocol::openai::lowering::projection::ProjectionStage]| {
+                stages
+                    .iter()
+                    .any(|stage| stage.loss.is_some_and(|loss| loss.name() == rule))
+            };
+            assert!(named(projected.projection()), "{rule}");
+            let events = [
+                vec![
+                    StreamEvent::Started,
+                    crate::events_support::start(1, ItemKind::Message { phase: None }),
+                ],
+                crate::events_support::part(1, 1, PartKind::Text, "partial"),
+                vec![
+                    crate::events_support::close(1, ItemLifecycle::Incomplete),
+                    StreamEvent::Terminal {
+                        terminal: StreamTerminal::Incomplete,
+                        details: stopped.details().clone(),
+                    },
+                ],
+            ]
+            .concat();
+            let mut encoder =
+                morphiecore::protocol::openai::events::EventEncoder::new(profile, metadata.clone())
+                    .unwrap();
+            let frames: Vec<_> = events
+                .iter()
+                .flat_map(|event| encoder.encode(event, &fidelity).unwrap())
+                .collect();
+            encoder.finish().unwrap();
+            assert!(named(encoder.projection()), "{rule}");
+            let last = frames.last().unwrap();
+            if profile == OpenAi::Chat {
+                let json =
+                    morphiecore::protocol::openai::chat::encode_response(&projected).unwrap();
+                assert_eq!(json["choices"][0]["finish_reason"], "length");
+                assert_eq!(last["choices"][0]["finish_reason"], "length");
+            } else {
+                let json =
+                    morphiecore::protocol::openai::responses::encode_response(&projected).unwrap();
+                for response in [&json, &last["response"]] {
+                    assert_eq!(response["status"], "incomplete");
+                    assert_eq!(response["incomplete_details"], json!({"reason": null}));
+                }
+                assert_eq!(last["type"], "response.incomplete");
+            }
+        }
         let frames = vec![
             json!({"type":"message_start","message":{"id":"msg_synthetic","type":"message","role":"assistant","model":"synthetic-model","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":0}}}),
             json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":"partial"}}),
@@ -2598,8 +2674,8 @@ mod client_fidelity {
                 .iter()
                 .any(|normalization| matches!(
                     normalization,
-                    morphiecore::protocol::fidelity::Normalization::PredictionOmitted { rule }
-                        if *rule == "chat.omit-prediction.v1"
+                    morphiecore::protocol::fidelity::Normalization::Omitted { rule, field }
+                        if *rule == "chat.omit-prediction.v1" && *field == "generation.prediction"
                 ))
         );
         assert!(!format!("{:?}", decoded.task.fidelity).contains("synthetic predicted output"));

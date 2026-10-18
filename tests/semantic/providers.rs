@@ -1669,6 +1669,47 @@ mod cache_projection {
         assert_eq!(wire["prompt_cache_retention"], "in_memory");
         assert!(rules.is_empty());
         assert_eq!(advisory, saved);
+        // Identity hints only attribute abuse upstream: a target without their carrier
+        // omits them under a named rule, and a target with it keeps them.
+        let mut identified = decoded.clone();
+        identified.context.identity.safety_identifier =
+            morphiecore::semantic::value::Presence::Value("synthetic-user".into());
+        let mut without = Contract::full();
+        without.identity_hints = false;
+        let (wire, rules) = Adapter::new(Profile::Chat, Dialect::Standard, None)
+            .encode_request_with_rules(&identified, "upstream", &without)
+            .unwrap();
+        assert!(wire.get("safety_identifier").is_none());
+        assert!(rules.contains(&"generation.omit-identity-hints.v1"));
+        let (wire, rules) = Adapter::new(Profile::Chat, Dialect::Standard, None)
+            .encode_request_with_rules(&identified, "upstream", &Contract::full())
+            .unwrap();
+        assert_eq!(wire["safety_identifier"], "synthetic-user");
+        assert!(!rules.contains(&"generation.omit-identity-hints.v1"));
+        use morphiecore::protocol::anthropic::{
+            Dialect as MessagesDialect, Profile as MessagesProfile, RequestRule, TargetCaps,
+        };
+        let text_only = client(Profile::Chat)
+            .decode_request(
+                json!({"model":"public","messages":[{"role":"user","content":"hello"}],
+                    "safety_identifier":"synthetic-user"})
+                .to_string()
+                .as_bytes(),
+            )
+            .unwrap();
+        let native = TargetCaps::new(
+            MessagesProfile::AdaptiveTextTools,
+            MessagesDialect::Standard,
+        )
+        .encode_request(
+            &text_only,
+            &morphiecore::protocol::native::ReplayTarget::new("synthetic", "model").unwrap(),
+        )
+        .unwrap();
+        assert!(native.value.get("metadata").is_none());
+        assert!(native.rules.contains(&RequestRule::Hint(
+            morphiecore::protocol::cache::HintRule::OmitIdentityHints
+        )));
         empty["prompt_cache_options"] = json!({"mode":"explicit"});
         let active = client(Profile::Chat)
             .decode_request(empty.to_string().as_bytes())

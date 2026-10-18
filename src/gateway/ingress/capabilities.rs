@@ -106,11 +106,20 @@ impl<'a> Entry<'a> {
         if settings_admitted {
             settings.rules.push(settings_rule);
         }
+        let mut assessments = Case::new(
+            "generation.safety",
+            "assessment_only_reports",
+            Treatment::ApprovedAdaptation,
+        );
+        assessments
+            .rules
+            .push(crate::adapter::SAFETY_ASSESSMENT_RULE);
         let mut delivery = vec![
             settings,
+            assessments,
             Case::new(
                 "generation.safety",
-                "nonempty_reports_or_settings_echoes",
+                "blocking_reports_or_settings_echoes",
                 Treatment::Rejected,
             ),
         ];

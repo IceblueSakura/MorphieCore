@@ -87,7 +87,8 @@ pub(crate) fn decode_generation_with(
             }
             _ => return Err(CodecError::Invalid("prediction content")),
         }
-        b.fidelity.record_prediction_omission();
+        b.fidelity
+            .record_omission(crate::protocol::fidelity::PREDICTION_OMISSION);
     }
     for message in messages {
         let start = b.items.len();

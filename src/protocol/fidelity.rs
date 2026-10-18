@@ -41,14 +41,26 @@ pub enum Normalization {
         input: &'static str,
         output: &'static str,
     },
-    PredictionOmitted {
+    /// A selected rule dropped a client control or carrier at intake.
+    Omitted {
         rule: &'static str,
-    },
-    /// A returned replay manifest no longer matched its visible history.
-    ReplayManifestOmitted {
-        rule: &'static str,
+        field: &'static str,
     },
 }
+pub(crate) const PREDICTION_OMISSION: Normalization = Normalization::Omitted {
+    rule: "chat.omit-prediction.v1",
+    field: "generation.prediction",
+};
+/// A returned replay manifest no longer matched its visible history.
+pub(crate) const REPLAY_MANIFEST_OMISSION: Normalization = Normalization::Omitted {
+    rule: "generation.omit-unmatched-replay-manifest.v1",
+    field: "generation.replay.attachments",
+};
+/// Only the tolerant `drop_block` behavior is admitted; no target receives it.
+pub(crate) const BLOCK_BINDING_OMISSION: Normalization = Normalization::Omitted {
+    rule: "messages.omit-block-binding.v1",
+    field: "generation.reasoning.block_binding",
+};
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ResponseExtras {
     protocol: Profile,
@@ -795,17 +807,8 @@ impl FidelityRecords {
                 output,
             });
     }
-    pub(crate) fn record_prediction_omission(&mut self) {
-        self.normalizations
-            .insert(Normalization::PredictionOmitted {
-                rule: "chat.omit-prediction.v1",
-            });
-    }
-    pub(crate) fn record_replay_manifest_omission(&mut self) {
-        self.normalizations
-            .insert(Normalization::ReplayManifestOmitted {
-                rule: "generation.omit-unmatched-replay-manifest.v1",
-            });
+    pub(crate) fn record_omission(&mut self, omission: Normalization) {
+        self.normalizations.insert(omission);
     }
     pub(crate) fn copy_response_records(&mut self, source: &Self) {
         self.response_extras = source.response_extras.clone();

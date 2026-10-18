@@ -19,7 +19,7 @@ pub(super) fn unsupported() -> CodecError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum RequestRule {
     ReasoningPolicy(&'static str),
-    Cache(crate::protocol::cache::CacheRule),
+    Hint(crate::protocol::cache::HintRule),
     OmitVerbosity,
     /// Messages has one summarized display, without concise or detailed variants.
     SummarizeReasoning,
@@ -41,7 +41,7 @@ impl RequestRule {
     pub const fn name(self) -> &'static str {
         match self {
             Self::ReasoningPolicy(rule) => rule,
-            Self::Cache(rule) => rule.name(),
+            Self::Hint(rule) => rule.name(),
             Self::OmitVerbosity => "messages.omit-verbosity.v1",
             Self::SummarizeReasoning => "messages.summarize-reasoning.v1",
             Self::OmitSampling => "messages.omit-sampling.v1",

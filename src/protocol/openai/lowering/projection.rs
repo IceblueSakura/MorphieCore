@@ -22,6 +22,8 @@ pub enum LossRule {
     CoarsenChatCompletionCause,
     OmitResponsesCompletionCause,
     RecitationAsContentFilter,
+    ContextWindowAsLength,
+    OmitResponsesContextWindowReason,
 }
 impl LossRule {
     pub const fn name(self) -> &'static str {
@@ -48,6 +50,8 @@ impl LossRule {
             Self::CoarsenChatCompletionCause => "chat.coarsen-completion-cause.v1",
             Self::OmitResponsesCompletionCause => "responses.omit-completion-cause.v1",
             Self::RecitationAsContentFilter => "openai.recitation-as-content-filter.v1",
+            Self::ContextWindowAsLength => "chat.context-window-as-length.v1",
+            Self::OmitResponsesContextWindowReason => "responses.omit-context-window-reason.v1",
         }
     }
     pub const fn owner(self) -> &'static str {
@@ -73,7 +77,9 @@ impl LossRule {
             Self::CoarsenChatCompletionCause | Self::OmitResponsesCompletionCause => {
                 "response.terminal.completion"
             }
-            Self::RecitationAsContentFilter => "response.terminal.incomplete",
+            Self::RecitationAsContentFilter
+            | Self::ContextWindowAsLength
+            | Self::OmitResponsesContextWindowReason => "response.terminal.incomplete",
         }
     }
 }
