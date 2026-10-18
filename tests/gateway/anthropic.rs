@@ -1,4 +1,5 @@
 //! Independent HTTP oracle for standard clients over a native Messages endpoint.
+use super::Guard;
 use axum::response::{IntoResponse, Response};
 use axum::{Json, Router, extract::State, http::HeaderMap, routing::post};
 use morphiecore::{
@@ -14,13 +15,6 @@ use std::{
     time::Duration,
 };
 use tokio::net::TcpListener;
-
-struct Guard(tokio::task::JoinHandle<()>);
-impl Drop for Guard {
-    fn drop(&mut self) {
-        self.0.abort();
-    }
-}
 
 fn native_stream_body(value: &Value) -> String {
     let mut initial = value.clone();

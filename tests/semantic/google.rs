@@ -1406,19 +1406,7 @@ fn tool_media_ride_inline_in_the_function_response() {
 }
 
 #[test]
-fn instruction_media_rejects_before_target_and_image_sizes_remain_strict() {
-    assert_eq!(
-        Adapter::new(Profile::Responses, Dialect::Standard, None)
-            .decode_request(
-                json!({"model":"gemini","input":[
-            {"role":"developer","content":[{"type":"input_image","image_url":"data:image/png;base64,AQID"}]},
-            {"role":"user","content":"Describe."}]})
-                    .to_string()
-                    .as_bytes()
-            )
-            .unwrap_err(),
-        morphiecore::protocol::CodecError::Unsupported("instruction content".into())
-    );
+fn image_sizes_remain_strict() {
     let messages = |oversized: &str| {
         let raw = json!({"model":"gemini","max_tokens":8,"messages":[{"role":"user","content":[
             {"type":"image","source":{"type":"base64","media_type":"image/png","data":"AQID"},

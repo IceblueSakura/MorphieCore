@@ -1,4 +1,5 @@
 //! Independent stateless tool replay through the Router and an Interactions upstream.
+use super::Guard;
 use axum::{
     Json, Router,
     extract::State,
@@ -19,13 +20,6 @@ use std::{
     time::Duration,
 };
 use tokio::net::TcpListener;
-
-struct Guard(tokio::task::JoinHandle<()>);
-impl Drop for Guard {
-    fn drop(&mut self) {
-        self.0.abort();
-    }
-}
 fn wire(events: Vec<Value>, done: bool) -> String {
     let mut wire = events
         .iter()

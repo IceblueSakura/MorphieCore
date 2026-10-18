@@ -1339,6 +1339,18 @@ mod files {
     }
     #[test]
     fn responses_instructions_reject_media_and_preserve_text() {
+        assert_eq!(
+            adapter()
+                .decode_request(
+                    json!({"model":"gemini","input":[
+                        {"role":"developer","content":[{"type":"input_image","image_url":"data:image/png;base64,AQID"}]},
+                        {"role":"user","content":"Describe."}]})
+                        .to_string()
+                        .as_bytes()
+                )
+                .unwrap_err(),
+            morphiecore::protocol::CodecError::Unsupported("instruction content".into())
+        );
         let mut input = json!([
             {"role":"developer","content":[
                 {"type":"input_text","text":"Follow the attached guide."},
@@ -1542,38 +1554,21 @@ mod images {
     fn adapter(profile: Profile) -> Adapter {
         Adapter::new(profile, Dialect::Standard, None)
     }
-    fn wire(profile: Profile, parts: Value) -> Value {
-        match profile {
-            Profile::Chat => {
-                json!({"model":"synthetic","messages":[{"role":"user","content":parts}]})
-            }
-            Profile::Responses => {
-                json!({"model":"synthetic","input":[{"role":"user","content":parts}]})
-            }
-        }
-    }
-    fn parts(profile: Profile) -> Value {
-        match profile {
-            Profile::Chat => json!([
-                {"type":"text","text":"before"},
-                {"type":"image_url","image_url":{"url":"https://example.test/a.png","detail":"low"}},
-                {"type":"text","text":"between"},
-                {"type":"image_url","image_url":{"url":"data:image/png;base64,AQID"}}
-            ]),
-            Profile::Responses => json!([
-                {"type":"input_text","text":"before"},
-                {"type":"input_image","image_url":"https://example.test/a.png","detail":"low"},
-                {"type":"input_text","text":"between"},
-                {"type":"input_image","image_url":"data:image/png;base64,AQID"}
-            ]),
-        }
+    fn wire(parts: Value) -> Value {
+        json!({"model":"synthetic","input":[{"role":"user","content":parts}]})
     }
 
     #[test]
     fn lowering_rejects_disabled_images_and_undeclared_detail_without_mutating_ir() {
         let request = adapter(Profile::Responses)
             .decode_request(
-                &serde_json::to_vec(&wire(Profile::Responses, parts(Profile::Responses))).unwrap(),
+                &serde_json::to_vec(&wire(json!([
+                    {"type":"input_text","text":"before"},
+                    {"type":"input_image","image_url":"https://example.test/a.png","detail":"low"},
+                    {"type":"input_text","text":"between"},
+                    {"type":"input_image","image_url":"data:image/png;base64,AQID"}
+                ])))
+                .unwrap(),
             )
             .unwrap();
         let before = request.clone();
@@ -1610,7 +1605,6 @@ mod images {
                 .is_err()
         );
         let original = wire(
-            Profile::Responses,
             json!([{"type":"input_image","image_url":"https://example.test/x","detail":"original"}]),
         );
         let request = adapter(Profile::Responses)
@@ -1626,10 +1620,7 @@ mod images {
                 .encode_request(&request, "synthetic", &TargetCaps::full())
                 .is_ok()
         );
-        let bmp = wire(
-            Profile::Responses,
-            json!([{"type":"input_image","image_url":"data:image/bmp;base64,AQID"}]),
-        );
+        let bmp = wire(json!([{"type":"input_image","image_url":"data:image/bmp;base64,AQID"}]));
         let request = Adapter::new(Profile::Responses, Dialect::MorphieCore, None)
             .decode_request(&serde_json::to_vec(&bmp).unwrap())
             .unwrap();

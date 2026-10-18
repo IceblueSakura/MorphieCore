@@ -19,7 +19,6 @@ use morphiecore::{
 };
 use serde_json::{Value, json};
 use std::{
-    process::Stdio,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -63,28 +62,17 @@ async fn handle(State(context): State<Context>, headers: HeaderMap, body: Bytes)
         }
         let audio = request.task.semantic.settings().audio.value().is_some();
         let stream = request.delivery.streaming();
-        if follow || !audio {
-            let message = if follow {
-                json!({"role":"assistant","content":"continued"})
-            } else {
-                json!({"role":"assistant","content":"hello","annotations":[{"type":"url_citation","url_citation":{"start_index":0,"end_index":5,"title":"Example","url":"https://example.invalid/"}}]})
+        if follow || !audio || !stream {
+            let message = match (follow, audio) {
+                (true, _) => json!({"role":"assistant","content":"continued"}),
+                (false, false) => {
+                    json!({"role":"assistant","content":"hello","annotations":[{"type":"url_citation","url_citation":{"start_index":0,"end_index":5,"title":"Example","url":"https://example.invalid/"}}]})
+                }
+                (false, true) => {
+                    json!({"role":"assistant","content":null,"audio":{"id":"synthetic-audio","data":"AQIDBA==","transcript":"hello","expires_at":2000}})
+                }
             };
             let wire = json!({"id":"synthetic-media","object":"chat.completion","created":1,"model":"fixture-model","choices":[{"index":0,"message":message,"finish_reason":"stop"}]});
-            let decoded = adapter()
-                .decode_response(&serde_json::to_vec(&wire).map_err(|_| ())?)
-                .map_err(|_| ())?;
-            return Ok((
-                false,
-                serde_json::to_vec(
-                    &adapter()
-                        .encode_response(&decoded, &contract())
-                        .map_err(|_| ())?,
-                )
-                .map_err(|_| ())?,
-            ));
-        }
-        let wire = json!({"id":"synthetic-media","object":"chat.completion","created":1,"model":"fixture-model","choices":[{"index":0,"message":{"role":"assistant","content":null,"audio":{"id":"synthetic-audio","data":"AQIDBA==","transcript":"hello","expires_at":2000}},"finish_reason":"stop"}]});
-        if !stream {
             let decoded = adapter()
                 .decode_response(&serde_json::to_vec(&wire).map_err(|_| ())?)
                 .map_err(|_| ())?;
@@ -204,10 +192,7 @@ async fn sdk_chat_media_values_streams_and_history() {
             "tests/sdk/chat_media_loop.py",
             &format!("http://{address}/v1"),
         ])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .current_dir(env!("CARGO_MANIFEST_DIR"));
     for name in [
         "OPENAI_API_KEY",
         "OPENAI_BASE_URL",

@@ -12,7 +12,6 @@ use morphiecore::gateway::Limits;
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
-    process::Stdio,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -449,10 +448,7 @@ async fn sdk_uses_gateway_for_both_protocols_and_deliveries() {
     );
     command
         .args(["tests/sdk/gateway_text_loop.py", &base])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .current_dir(env!("CARGO_MANIFEST_DIR"));
     for (name, _) in std::env::vars_os() {
         let text = name.to_string_lossy();
         if text.starts_with("OPENAI_") || text.starts_with("MORPHIECORE_") {

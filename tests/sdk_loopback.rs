@@ -14,7 +14,6 @@ mod process_tests;
 mod wire;
 
 use std::{
-    process::Stdio,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -397,10 +396,7 @@ async fn sdk_case(sse: bool, profile: Profile, without_opaque: bool) {
             &format!("http://{address}/v1"),
             if sse { "sse" } else { "json" },
         ])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .current_dir(env!("CARGO_MANIFEST_DIR"));
     if profile == Profile::Responses {
         command.arg(if without_opaque { "readable" } else { "opaque" });
     }

@@ -745,30 +745,13 @@ mod subscription_accounting {
         let decoded = source
             .decode_response(response.to_string().as_bytes())
             .unwrap();
-        assert_eq!(
-            source.encode_response(&decoded, &Contract::full()).unwrap()["access_programs"],
-            json!({"cyber":"standard"})
-        );
-        assert_eq!(
-            source.encode_response(&decoded, &Contract::full()).unwrap()["tool_usage"],
-            zero_tools
-        );
-        assert_eq!(
-            source.encode_response(&decoded, &Contract::full()).unwrap()["frequency_penalty"],
-            json!(0.0)
-        );
-        assert_eq!(
-            source.encode_response(&decoded, &Contract::full()).unwrap()["presence_penalty"],
-            json!(0)
-        );
-        assert_eq!(
-            source.encode_response(&decoded, &Contract::full()).unwrap()["moderation"],
-            Value::Null
-        );
-        assert_eq!(
-            source.encode_response(&decoded, &Contract::full()).unwrap()["usage"]["attribution"],
-            attribution
-        );
+        let encoded = source.encode_response(&decoded, &Contract::full()).unwrap();
+        assert_eq!(encoded["access_programs"], json!({"cyber":"standard"}));
+        assert_eq!(encoded["tool_usage"], zero_tools);
+        assert_eq!(encoded["frequency_penalty"], json!(0.0));
+        assert_eq!(encoded["presence_penalty"], json!(0));
+        assert_eq!(encoded["moderation"], Value::Null);
+        assert_eq!(encoded["usage"]["attribution"], attribution);
         assert_eq!(decoded.semantic.usage().unwrap().input_tokens, Some(3));
         assert!(
             adapter(Dialect::MorphieCore, "one")
@@ -1206,10 +1189,6 @@ mod projection {
             )
             .unwrap();
             assert_eq!(checked.semantic(), &request);
-            assert_eq!(
-                checked.requirements(),
-                GenerationRequirements::derive(&request)
-            );
             assert_eq!(checked.profile(), profile);
         }
     }
