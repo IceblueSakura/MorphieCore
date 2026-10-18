@@ -319,3 +319,81 @@ pub(crate) fn responses_usage(
     usage.validate()?;
     Ok((usage, losses))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::semantic::{task::generation::*, value::Presence};
+
+    fn metadata(settings: GenerationSettings) -> crate::protocol::ResponseMetadata {
+        crate::protocol::ResponseMetadata {
+            storage: None,
+            id: Some("resp".into()),
+            model: "m".into(),
+            created: None,
+            context: crate::semantic::context::ResponseContext {
+                settings: Some(settings),
+                ..Default::default()
+            },
+            instruction_fidelity: Default::default(),
+        }
+    }
+
+    /// Settings echoes lose only controls without a target carrier; protected reports reject.
+    #[test]
+    fn reported_settings_omit_only_incidental_echoes() {
+        let mut settings = GenerationSettings {
+            reasoning: ReasoningRequest::present(Some(ReasoningSummary::Detailed)),
+            effort: Presence::Value(EffortControl {
+                scope: EffortScope::Response,
+                level: EffortLevel::High,
+            }),
+            ..Default::default()
+        };
+        settings.reasoning.mode = Presence::Value(ReasoningMode::Budgeted);
+        settings.reasoning.budget_tokens = Some(2048);
+        let mut chat = metadata(settings.clone());
+        assert_eq!(
+            reported_settings(&mut chat, Profile::Chat),
+            Ok(Some(LossRule::OmitChatReportedSettings))
+        );
+        assert!(chat.context.settings.is_none());
+
+        let mut responses = metadata(settings.clone());
+        assert_eq!(
+            reported_settings(&mut responses, Profile::Responses),
+            Ok(Some(LossRule::OmitReportedReasoningControls))
+        );
+        let kept = responses.context.settings.unwrap();
+        assert_eq!(kept.reasoning.budget_tokens, None);
+        assert_eq!(kept.reasoning.mode, Presence::Absent);
+        assert_eq!(kept.effort, Presence::Absent);
+        assert_eq!(
+            kept.reasoning.summary(),
+            Some(ReasoningSummary::Detailed),
+            "a representable summary echo is not incidental"
+        );
+
+        // A representable reasoning-scoped effort is delivered unchanged.
+        let mut exact = metadata(GenerationSettings {
+            effort: Presence::Value(EffortControl {
+                scope: EffortScope::Reasoning,
+                level: EffortLevel::Low,
+            }),
+            ..Default::default()
+        });
+        assert_eq!(reported_settings(&mut exact, Profile::Responses), Ok(None));
+
+        let mut safety = settings;
+        safety.safety = vec![SafetySetting {
+            category: SafetyCategory::Harassment,
+            threshold: SafetyThreshold::BlockNone,
+        }];
+        for profile in [Profile::Chat, Profile::Responses] {
+            assert_eq!(
+                reported_settings(&mut metadata(safety.clone()), profile),
+                Err(RepresentationError::Safety)
+            );
+        }
+    }
+}

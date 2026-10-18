@@ -679,3 +679,189 @@ fn media_become_v1_content_and_video_has_no_carrier() {
         );
     }
 }
+
+#[test]
+fn projects_instructions_tool_choice_effort_summaries_and_result_errors() {
+    let target = ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap();
+    let encode = |profile, body: serde_json::Value| {
+        let request = Adapter::new(profile, Dialect::Standard, None)
+            .decode_request(body.to_string().as_bytes())
+            .unwrap();
+        let (wire, rules) =
+            encode_generation_request(&request.task.semantic, &request.task.fidelity, &target)
+                .unwrap();
+        (wire, rules.iter().map(|r| r.name()).collect::<Vec<_>>())
+    };
+    let chat = |extra: serde_json::Value| {
+        let mut body = json!({"model":"public","messages":[
+            {"role":"developer","content":"Be brief."},
+            {"role":"user","content":"go"},
+            {"role":"assistant","content":"Reading."}],
+            "tools":[{"type":"function","function":{"name":"read","parameters":{"type":"object"}}}]});
+        body.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        encode(Profile::Chat, body)
+    };
+    let (wire, rules) = chat(json!({}));
+    assert_eq!(wire["system_instruction"], "Be brief.");
+    assert_eq!(
+        wire["input"],
+        json!([
+            {"type":"user_input","content":[{"type":"text","text":"go"}]},
+            {"type":"model_output","content":[{"type":"text","text":"Reading."}]}
+        ])
+    );
+    assert_eq!(rules, ["interactions.developer-as-system.v1"]);
+    for (choice, wire_choice) in [
+        (json!("auto"), json!("auto")),
+        (json!("none"), json!("none")),
+        (json!("required"), json!("any")),
+        (
+            json!({"type":"function","function":{"name":"read"}}),
+            json!({"allowed_tools":{"mode":"any","tools":["read"]}}),
+        ),
+    ] {
+        let (wire, _) = chat(json!({"tool_choice": choice}));
+        assert_eq!(
+            wire["generation_config"],
+            json!({"tool_choice": wire_choice}),
+            "{choice}"
+        );
+    }
+    for effort in ["minimal", "low", "medium", "high"] {
+        let (wire, _) = chat(json!({"reasoning_effort": effort}));
+        assert_eq!(
+            wire["generation_config"],
+            json!({"thinking_level": effort}),
+            "{effort}"
+        );
+    }
+    // One summary mode: requested concision is approximated, not dropped.
+    let (wire, rules) = encode(
+        Profile::Responses,
+        json!({"model":"public","input":"go","reasoning":{"summary":"concise"}}),
+    );
+    assert_eq!(
+        wire["generation_config"],
+        json!({"thinking_summaries":"auto"})
+    );
+    assert_eq!(rules, ["interactions.summarize-reasoning.v1"]);
+
+    // Messages tool errors keep their flag on the result step.
+    let request = morphiecore::protocol::anthropic::client::decode_client_request(
+        json!({"model":"public","max_tokens":64,"messages":[
+            {"role":"user","content":"go"},
+            {"role":"assistant","content":[{"type":"tool_use","id":"c1","name":"read","input":{}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"c1","content":"missing","is_error":true}]}]})
+        .to_string()
+        .as_bytes(),
+    )
+    .unwrap();
+    let (wire, _) =
+        encode_generation_request(&request.task.semantic, &request.task.fidelity, &target).unwrap();
+    assert_eq!(
+        wire["input"][2],
+        json!({"type":"function_result","call_id":"c1","name":"read","result":"missing","is_error":true})
+    );
+}
+
+/// Both Google request encoders accept only execution reports their result flag can carry.
+#[test]
+fn tool_result_execution_reports_match_their_error_flag() {
+    let text = |value: &str| Text::new(value, "fixture", 64).unwrap();
+    let request = |execution, is_error| {
+        GenerationRequest::new(
+            vec![
+                (
+                    ItemId::new(1),
+                    Item::Message(Message {
+                        role: MessageRole::User,
+                        status: ItemLifecycle::Completed,
+                        phase: None,
+                        parts: vec![Part::new(
+                            PartId::new(1),
+                            ContentPart::Text(text("go").into()),
+                        )],
+                    }),
+                ),
+                (
+                    ItemId::new(2),
+                    Item::ToolCall(ToolCall {
+                        replay: None,
+                        call_id: text("c1"),
+                        cache: None,
+                        name: text("read"),
+                        arguments: "{}".into(),
+                        status: ItemLifecycle::Completed,
+                        context: CallContext::default(),
+                    }),
+                ),
+                (
+                    ItemId::new(3),
+                    Item::ToolResult(ToolResult {
+                        is_error,
+                        cache: None,
+                        call_id: Some(text("c1")),
+                        name: None,
+                        output: "out".into(),
+                        execution: Some(execution),
+                        status: None,
+                        context: CallContext::default(),
+                    }),
+                ),
+            ],
+            GenerationControls::default(),
+        )
+        .unwrap()
+    };
+    let target = ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap();
+    let fidelity = FidelityRecords::default();
+    let encode = |request: &GenerationRequest| {
+        let interactions = encode_generation_request(request, &fidelity, &target)
+            .map(|(wire, _)| wire["input"][2].clone());
+        let generate = morphiecore::protocol::google::encode_generation_request(
+            request, &fidelity, &target, None,
+        )
+        .map(|(wire, _)| wire["contents"][2]["parts"][0]["functionResponse"]["response"].clone());
+        (interactions, generate)
+    };
+    for (execution, is_error, key) in [
+        (ToolExecution::Succeeded, None, "output"),
+        (ToolExecution::Succeeded, Some(false), "output"),
+        (ToolExecution::NotExecuted, Some(true), "error"),
+        (ToolExecution::Failed { code: None }, Some(true), "error"),
+    ] {
+        let (interactions, generate) = encode(&request(execution.clone(), is_error));
+        assert_eq!(generate.unwrap(), json!({key: "out"}), "{execution:?}");
+        let interactions = interactions.unwrap();
+        assert_eq!(interactions["result"], "out", "{execution:?}");
+        assert_eq!(
+            interactions.get("is_error"),
+            is_error.map(|e| json!(e)).as_ref()
+        );
+    }
+    // IR validation already rejects success reported as an error.
+    for (execution, is_error) in [
+        (ToolExecution::NotExecuted, None),
+        (ToolExecution::NotExecuted, Some(false)),
+        (
+            ToolExecution::Failed {
+                code: Some(text("E1")),
+            },
+            Some(true),
+        ),
+        (ToolExecution::Cancelled, Some(true)),
+        (ToolExecution::Unknown, None),
+    ] {
+        let (interactions, generate) = encode(&request(execution.clone(), is_error));
+        assert!(
+            matches!(&generate, Err(morphiecore::protocol::CodecError::Unsupported(r)) if r == "Gemini semantic carrier"),
+            "{execution:?}"
+        );
+        assert!(
+            matches!(&interactions, Err(morphiecore::protocol::CodecError::Unsupported(r)) if r == "Interactions semantic carrier"),
+            "{execution:?}"
+        );
+    }
+}

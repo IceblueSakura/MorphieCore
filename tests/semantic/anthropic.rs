@@ -11,6 +11,93 @@ mod anthropic_profile {
             "required":["key"],"additionalProperties":false},"strict":false}],
         "tool_choice":{"type":"auto"},"messages":[{"role":"user","content":"Look up A."}]})
     }
+    /// Strict tools follow the native structured-output subset and request-wide grammar
+    /// budget; nothing is simplified to fit.
+    #[test]
+    fn strict_tool_schemas_admit_only_the_native_subset_and_budget() {
+        let p = Profile::AdaptiveTextTools;
+        let encode = |tools: Vec<Value>, output: Option<Value>| {
+            let mut body = request();
+            body["tools"] = json!(tools);
+            if let Some(schema) = output {
+                body["output_config"] = json!({"format":{"type":"json_schema","schema":schema}});
+            }
+            let decoded = p.decode_request(body.to_string().as_bytes()).unwrap();
+            p.encode_request(&decoded)
+        };
+        let tool = |schema: Value| json!({"name":"lookup","input_schema":schema,"strict":true});
+        let object = |properties: Value, required: Vec<String>| json!({"type":"object","properties":properties,"required":required,"additionalProperties":false});
+        let admitted = |result: Result<Value, CodecError>| result.is_ok();
+        let rejected = |result: Result<Value, CodecError>| matches!(result, Err(CodecError::Unsupported(r)) if r == "Anthropic strict tool schema");
+        let rich = object(
+            json!({
+                "email":{"type":["string","null"],"format":"email"},
+                "count":{"anyOf":[{"type":"integer"},{"type":"null"}]},
+                "tags":{"type":"array","items":{"type":"number"},"minItems":1}
+            }),
+            vec!["email".into(), "count".into(), "tags".into()],
+        );
+        assert!(admitted(encode(vec![tool(rich.clone())], None)));
+        for (path, value) in [
+            ("/properties/email/format", json!("binary")),
+            ("/properties/email/type", json!([])),
+            ("/properties/email/pattern", json!("^a")),
+            ("/properties/email/enum", json!(["a"])),
+            ("/properties/count/anyOf", json!([])),
+            ("/properties/tags/minItems", json!(2)),
+            ("/properties/tags/items", json!({"$ref":"#/$defs/n"})),
+            ("/additionalProperties", json!(true)),
+        ] {
+            let mut schema = rich.clone();
+            let (parent, key) = path.rsplit_once('/').unwrap();
+            let target = if parent.is_empty() {
+                &mut schema
+            } else {
+                schema.pointer_mut(parent).unwrap()
+            };
+            target[key] = value;
+            assert!(rejected(encode(vec![tool(schema)], None)), "{path}");
+        }
+
+        let optional = |n: usize| {
+            object(
+                (0..n)
+                    .map(|i| (format!("p{i}"), json!({"type":"string"})))
+                    .collect::<serde_json::Map<_, _>>()
+                    .into(),
+                vec![],
+            )
+        };
+        assert!(admitted(encode(vec![tool(optional(24))], None)));
+        assert!(rejected(encode(vec![tool(optional(25))], None)));
+        // The budget is request-wide: output schemas count beside strict tools.
+        assert!(rejected(encode(
+            vec![tool(optional(20))],
+            Some(optional(5))
+        )));
+        let unions = |n: usize| {
+            let names: Vec<String> = (0..n).map(|i| format!("u{i}")).collect();
+            object(
+                names
+                    .iter()
+                    .map(|name| (name.clone(), json!({"type":["string","null"]})))
+                    .collect::<serde_json::Map<_, _>>()
+                    .into(),
+                names,
+            )
+        };
+        assert!(admitted(encode(vec![tool(unions(16))], None)));
+        assert!(rejected(encode(vec![tool(unions(17))], None)));
+        let many = |n: usize| {
+            (0..n)
+                .map(|i| {
+                    json!({"name":format!("t{i}"),"input_schema":object(json!({}), vec![]),"strict":true})
+                })
+                .collect::<Vec<_>>()
+        };
+        assert!(admitted(encode(many(20), None)));
+        assert!(rejected(encode(many(21), None)));
+    }
     #[test]
     fn audit_consecutive_messages_share_tool_turn_validation_without_reordering() {
         let p = Profile::AdaptiveTextTools;

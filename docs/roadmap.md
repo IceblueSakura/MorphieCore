@@ -34,9 +34,8 @@ Replay return restores original segmentation only from unchanged visible content
 
 Next slices, in order:
 
-1. **Codec coverage gaps.** Add hand-written directional expectations and failure-reaching negatives for generateContent tool-result execution status, Interactions request encoding, Messages strict schema and the OpenAI projection loss rules. Exit: each listed branch has an assertion; no coverage target.
-2. **Rejection audit.** Classify current client-visible rejections as protected meaning or client-compatibility loss. Present candidates for named degradation for selection; change none implicitly.
-3. **Readability pass.** Split the rustfmt-skipped single-line codec blocks into statements, and condense repeated roadmap disclaimers without changing decisions. Exit: no behavior change; anchors still resolve.
+1. **Rejection audit.** Classify current client-visible rejections as protected meaning or client-compatibility loss. Present candidates for named degradation for selection; change none implicitly.
+2. **Readability pass.** Split the rustfmt-skipped single-line codec blocks into statements, and condense repeated roadmap disclaimers without changing decisions. Exit: no behavior change; anchors still resolve.
 
 Phase completeness covers the selected non-tool support scope, not all official Generation semantics. [Cache prewarming](#deferred-cache-prewarming) and [tool discovery and native `web_search`](#deferred-tool-discovery-and-web-search) are deferred, with priority and scheduling undecided. None blocks phase completion, coverage improvement or the P7 boundary review. Unsupported semantics remain explicit gaps, not silent losses or support claims.
 
