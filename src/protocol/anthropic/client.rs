@@ -534,6 +534,31 @@ pub(crate) fn content_losses(
     losses.extend(refusal.then(|| refusal_loss("response.encode")));
     losses
 }
+/// Shared by JSON and SSE delivery. Lost report detail/scope and a changed scalar usage
+/// view are independent receipts; a report without a selected view records only the former.
+pub(crate) fn report_losses(
+    source: &UsageReport,
+    selected: Option<&UsageReport>,
+    direction: &'static str,
+) -> Vec<crate::lowering::generation::LossEvidence> {
+    if selected == Some(source) {
+        return vec![];
+    }
+    let detailed = source.details != Default::default()
+        || source.scope != UsageScope::Operation
+        || source.accounting != crate::semantic::task::generation::UsageAccounting::Direct;
+    let mut losses = Vec::new();
+    if detailed {
+        losses.push(crate::protocol::usage::report_loss(direction));
+    }
+    if !detailed || selected.is_some_and(|s| s.scalar_summary() != source.scalar_summary()) {
+        losses.push(crate::lowering::generation::LossEvidence {
+            direction,
+            ..usage_loss()
+        });
+    }
+    losses
+}
 pub(crate) fn usage_loss() -> crate::lowering::generation::LossEvidence {
     crate::lowering::generation::LossEvidence {
         rule: "messages.usage-view.v1",

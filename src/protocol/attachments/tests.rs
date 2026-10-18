@@ -347,22 +347,27 @@ fn stream_carrier_is_published_only_with_the_eof_gated_terminal() {
         delivery.commit().unwrap();
         attempt.finish().unwrap();
         bytes.extend(delivery.finish_stream(&attempt).unwrap().concat());
-        // The carrier restores grouping on return; the visible copy still records its loss
-        // identically in JSON and SSE.
+        // JSON and SSE record the same applied losses, including grouping that the
+        // carrier restores only on return.
         let (mut json_attempt, mut json_delivery) = stream_delivery(protocol);
         json_attempt.push(wire.as_bytes()).unwrap();
         json_attempt.finish().unwrap();
         json_delivery.encode_json(&json_attempt).unwrap();
-        let grouping = |losses: &[crate::lowering::generation::LossEvidence]| {
+        let receipts = |losses: &[crate::lowering::generation::LossEvidence]| {
             losses
                 .iter()
-                .filter(|loss| loss.field == "generation.message_envelopes")
-                .map(|loss| loss.rule)
-                .collect::<Vec<_>>()
+                .map(|loss| (loss.rule, loss.field))
+                .collect::<std::collections::BTreeSet<_>>()
         };
         assert_eq!(
-            grouping(json_delivery.losses()),
-            grouping(delivery.losses()),
+            receipts(json_delivery.losses()),
+            receipts(delivery.losses()),
+            "{protocol:?}"
+        );
+        assert!(
+            receipts(delivery.losses())
+                .iter()
+                .any(|(_, field)| *field == "generation.usage.reports"),
             "{protocol:?}"
         );
         let text = String::from_utf8(bytes).unwrap();

@@ -202,16 +202,7 @@ impl ClientEventEncoder {
             Err(_) if source.stage == UsageStage::Checkpoint => None,
             Err(error) => return Err(error),
         };
-        if selected.as_ref() != Some(source) {
-            let mut loss = if source.details != Default::default()
-                || source.scope != UsageScope::Operation
-                || source.accounting != crate::semantic::task::generation::UsageAccounting::Direct
-            {
-                crate::protocol::usage::report_loss("event.encode")
-            } else {
-                super::client::usage_loss()
-            };
-            loss.direction = "event.encode";
+        for loss in super::client::report_losses(source, selected.as_ref(), "event.encode") {
             if !self.losses.contains(&loss) {
                 self.losses.push(loss);
             }
