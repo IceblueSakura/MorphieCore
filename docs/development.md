@@ -149,6 +149,7 @@ Use pi's real binary against the CLI gateway, not a wrapper that sources private
    - `anthropic-messages`: bare gateway origin.
    - `openai-completions` and `openai-responses`: origin with `/v1`.
    - Use `apiKey: "$NAME"` and `reasoning: true` on the selected model entry.
+   - For the R2 Messages profile, declare the model with `api: "anthropic-messages"`, `reasoning: true` and the built-in Haiku 5.5 compat (`supportsMidConvoEffort`, `supportsMidConvoSystemMessages`, `supportsMidConvoToolChanges`, `forceAdaptiveThinking`, `supportsStrictTools`, `supportsTemperature: false`), as the pi extension does. Overriding only the built-in `anthropic` provider's `baseUrl` sends the same shape.
    - For session-affinity checks on Chat/Messages, set `compat.sendSessionAffinityHeaders: true` and keep caching enabled (`cacheRetention` other than `none`). Verify the same neutral conversation across the tool round; Responses normally uses `session_id`, Messages uses `x-session-affinity`. Transport-header checks alone are not full-client acceptance.
 4. Set `retry.enabled: false` and `cacheWarming: "off"` in scratch `settings.json`.
 5. Ask pi to read a synthetic file, then answer. Use these flags:
