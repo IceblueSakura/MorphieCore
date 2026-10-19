@@ -9,10 +9,10 @@ This page owns direction and current scope. Code and tests define behavior; [Arc
 | Routing | Functional phase complete under the [stable routing baseline](architecture.md#failover); feature development closed | [Routing acceptance](#routing-acceptance--pending) after the [P7 boundary review](#p7-boundary-review) |
 | Generation IR/codec | Selected design implemented locally, including [visible-history transfer](architecture.md#reasoning-replay), part/call replay with client manifests and [scoped accounting](architecture.md#scoped-accounting). Audit coverage authorized on 2026-10-17 | [Human design review](#generation-design-review-gate) |
 | Client compatibility | Rejection audit and policy selection complete: [phase transfer/return](architecture.md#message-phase-transfer), guarded extended-retention omission and retained citation rejection | Client-carrier acceptance and target storage evidence during reconnection |
-| Integration | Disconnected where codec contracts outgrew frozen admission; the [P7 candidate review](#proposed-first-reconnection-slices) identifies bounded starting paths and blockers | Select the reconnection scope; no implicit admission or binding activation |
+| Integration | P7 selects [R1a/R1b](#first-reconnection-slices); paths beyond frozen admission remain disconnected | Execute the selected loop gates; no implicit admission or binding activation |
 | Real acceptance | Current codec work has offline and synthetic evidence only; client and Provider loops are not re-accepted | Routing acceptance, then [deferred acceptance](#deferred-acceptance) |
 
-No reconnection implementation slice is authorized yet. The P7 boundary review has a proposed sequence below; scope/admission selection and the overall design review remain open. Provider-specific reset dialects, persistence and cooldown tuning need separate evidence and approval; no background probes, balancing or multi-round retries are scheduled.
+R1a/R1b are the selected next reconnection slices, without new binding or admission activation. The overall Generation design review and each slice's acceptance gates remain open. Messages cache admission and Google value-guard work are not part of this first stage. Provider-specific reset dialects, persistence and cooldown tuning need separate evidence and approval; no background probes, balancing or multi-round retries are scheduled.
 
 The current priority is stability and meaningful coverage of implemented foundations. Citation/source-use/point owners, additional execution controls/reports, Interactions snapshots and Messages target-policy changes wait until the user resumes that feature work. This changes implementation order, not the known semantic gaps.
 
@@ -137,6 +137,8 @@ The P7 boundary review becomes eligible after first-stage local completion, with
 
 ### P7 boundary review
 
+**Status: the initial boundary and sequence were selected on 2026-10-18 for R1a/R1b only.** This closes the first-stage scope choice, not the overall Generation design review, full-loop acceptance or later admission decisions.
+
 Entry condition: the first-stage IR/codec scope passes its local gates, and incompatible carriers and frozen admission boundaries are explicit. A connected end-to-end gateway is not a prerequisite.
 
 The review must:
@@ -148,7 +150,7 @@ The review must:
 
 Exit condition: a selected boundary design and an explicit implementation and reconnection schedule. The review changes no routes and promises no conversion.
 
-#### Proposed first reconnection slices
+#### First reconnection slices
 
 The 2026-10-18 review checked actual catalog targets, pinned client builders, official protocol/model sources and focused offline request probes. Preflight and preparation share encoding; selected first requests agreeing at those boundaries do not establish response delivery or a client loop. The [evidence and counterexamples](refs/2026-10-17-generation-contracts.md#p7-binding-evidence-2026-10-18) remain distinct from live acceptance.
 
@@ -159,9 +161,9 @@ The 2026-10-18 review checked actual catalog targets, pinned client builders, of
 | R2 | Messages client → `claude-haiku-5-5` / `opencode-go-haiku-messages`; native non-strict tools, caller-supplied cap, supported thinking controls | Select owner-local cache admission for normal pi/OpenCode requests, then establish the Go deployment version and account-compatible signed-thinking replay. Disabling client caching only proves a narrower control case |
 | Later | `gemini-3.8-flash` generateContent → Chat/Responses; explicit non-strict tools and supported controls | Select model-effective value guards and finish the selected safety/terminal loop evidence. Interactions lifecycle snapshots and Google → Messages final-answer conversion remain blocked, not assumed equivalent |
 
-First-stage recommendation: R1a/R1b before R2, not a Provider/model matrix. Use one selected binding at a time without changing catalog ordering or activating alternatives implicitly. Do not use DeepSeek Responses as the initial faithful baseline: its documented role, reasoning and parallel-tool behavior needs separate directional policies. Coding Plan's output-cap semantics also need their own evidence; the DashScope fix is not a universal dialect change.
+Selected first stage: R1a/R1b before R2, not a Provider/model matrix. Use one selected binding at a time without changing catalog ordering or activating alternatives implicitly. Do not use DeepSeek Responses as the initial faithful baseline: its documented role, reasoning and parallel-tool behavior needs separate directional policies. Coding Plan's output-cap semantics also need their own evidence; the DashScope fix is not a universal dialect change.
 
-Two decisions remain explicit:
+Deferred decisions do not block the selected R1 scope:
 
 - **Messages cache admission:** permit the existing owner-local markers on the selected native binding only after model/proxy evidence, or keep R2 disconnected. Recommendation: an independent R2 slice, preserving marker ownership and TTL; do not drop markers or open strict tools, cached-context references or ordered instructions with it. Request-wide cache policy and sampling/default-cap placement remain separate.
 - **Model-effective value guards:** select a bounded trusted binding policy for allowed effort values and the maximum output ceiling, checked by the shared target encoder after projection. Recommendation: reject unsupported values rather than clamp or approximate; retain protocol-wide carriers and keep this outside semantic IR and route selection. Gemini `minimal` and cap `65537` currently encode despite the model's documented restrictions, so they cannot establish effective support.
