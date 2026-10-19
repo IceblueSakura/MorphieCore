@@ -60,6 +60,8 @@ Shared builders live in `tests/support/`. Test selection follows the lean policy
 
 Protocol mappings need independently hand-written wire→IR and IR→wire expectations. Do not generate an oracle with the encoder under test. Round trips are supplementary.
 
+Follow the [Generation priority order](roadmap.md#planned-order). For same-protocol lossless checks, declare the protocol revision and feature domain, then check request and response directions independently, including applicable JSON/SSE and returned history. Separate equivalent normalization from lost meaning and model/product policy. A recorded adaptation or successful tool loop does not establish codec losslessness; deferred unsupported fields remain explicit gaps.
+
 The [Generation design review gate](roadmap.md#generation-design-review-gate) records explicit authorization on 2026-10-17 to expand audit coverage before design approval. Use independent expectations and counterexamples to support human review; an agent audit or passing baseline is not design approval. Keep unresolved semantic choices explicit rather than encoding current defects as successful expectations. Integration, SDK and real acceptance remain separate gates.
 
 ## Coverage and pruning

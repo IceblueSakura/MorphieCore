@@ -7,16 +7,16 @@ This page owns direction and current scope. Code and tests define behavior; [Arc
 | Area | State | Next step |
 |---|---|---|
 | Routing | Functional phase complete under the [stable routing baseline](architecture.md#failover); feature development closed | [Routing acceptance](#routing-acceptance--pending) after the [P7 boundary review](#p7-boundary-review) |
-| Generation IR/codec | Selected design implemented locally, including [visible-history transfer](architecture.md#reasoning-replay), part/call replay with client manifests and [scoped accounting](architecture.md#scoped-accounting). Audit coverage authorized on 2026-10-17 | [Human design review](#generation-design-review-gate) |
+| Generation IR/codec | Selected design implemented locally, including [visible-history transfer](architecture.md#reasoning-replay), part/call replay with client manifests and [scoped accounting](architecture.md#scoped-accounting). Audit coverage authorized on 2026-10-17 | Same-protocol lossless codec review under the [priority order](#planned-order); [human design review](#generation-design-review-gate) remains open |
 | Client compatibility | Rejection audit and policy selection complete: [phase transfer/return](architecture.md#message-phase-transfer), guarded extended-retention omission and retained citation rejection | Client-carrier acceptance and target storage evidence during reconnection |
-| Integration | P7 selects [R1a/R1b](#first-reconnection-slices); paths beyond frozen admission remain disconnected | Execute the selected loop gates; no implicit admission or binding activation |
+| Integration | P7 selects [R1a/R1b](#first-reconnection-slices); paths beyond frozen admission remain disconnected | Basic agent tool loops after their same-protocol codec gates; no implicit admission or binding activation |
 | Real acceptance | Current codec work has offline and synthetic evidence only; client and Provider loops are not re-accepted | Routing acceptance, then [deferred acceptance](#deferred-acceptance) |
 
 R1a/R1b remain the selected first full-loop acceptance slices. The user separately resumed Messages owner-local cache admission on 2026-10-19; its [all-native configured contract](architecture.md#owner-local-cache-admission) is implemented without activating bindings or changing routes. The overall Generation design review and real acceptance gates remain open. Google value-guard work is separate. Provider-specific reset dialects, persistence and cooldown tuning need separate evidence and approval; no background probes, balancing or multi-round retries are scheduled.
 
-The current priority is stability and meaningful coverage of implemented foundations. Citation/source-use/point owners, additional execution controls/reports, Interactions snapshots and further Messages target-policy changes wait until the user resumes that feature work. This changes implementation order, not the known semantic gaps.
+The selected priority is **same-protocol lossless IR codecs first, basic agent tool interactions second, and citations, cross-protocol conversion stability, tool discovery and hosted tools last**. The [planned order](#planned-order) defines the goals and evidence. Same-protocol omissions, default-policy leakage and missing report carriers take precedence over expanding cross-protocol compatibility. Unresolved owners still need a selected design; this priority change does not approve new endpoints, bindings or feature implementations.
 
-Phase completeness covers the selected non-tool scope, not all official Generation semantics; explicit rejection is safer than silent loss but is not completeness. Chat Completions, Responses and Messages are equally important downstream contracts for static delivery, streaming and history replay. Google generateContent and Interactions supply upstream request encoding and SSE intake only.
+Phase completeness covers the declared feature scope, not all official Generation semantics; explicit rejection is safer than silent loss but is not completeness. Chat Completions, Responses and Messages are equally important for same-protocol request, response, static delivery, streaming and history replay. Google generateContent and Interactions supply upstream request encoding and SSE intake only; record missing directions rather than implying a complete same-protocol pair.
 
 ## Phase rules
 
@@ -88,7 +88,7 @@ Minimal counterexamples and pinned sources are in [Generation contract boundarie
 |---|---|---|
 | Binding activation and reconnection (P7 follow-up) | The public capability/notice contract is selected. Complete model-level evidence and preflight/preparation checks, then specify bindings and client loops under the [reconnection sequence](#public-capability-and-reconnection-sequence). Do not reinterpret unsupported completion/safety carriers or reopen P8 policies | Binding activation and full-chain acceptance, not codec-only coverage |
 | [Native cache-only prewarming](#deferred-cache-prewarming) | Priority and scheduling undecided; select the operation and result contract when reopened | That slice only |
-| [Tool discovery and native `web_search`](#deferred-tool-discovery-and-web-search) | Priority, scheduling and designs undecided; select the IR and execution/replay contracts when reopened | Those slices only |
+| [Tool discovery and native `web_search`](#deferred-tool-discovery-and-web-search) | Lower priority after same-protocol codecs and basic agent tools; scheduling and designs remain undecided | Those slices only |
 | [API expansion](api-expansion-design.md) | Scope confirmed, design proposed, nothing scheduled. Record decisions in Architecture and schedule explicit slices here before implementation | Its own slices; not a Generation exit condition |
 | File API | Inline data or public URLs only, within the IR budgets (12 MiB decoded per item, 32 MiB per request). Client Provider file IDs and credential-owned URIs reject. Options: a gateway store resolved inline before lowering; upload pinned to one credential; or per-executor upstream upload. The first and last share one IR slot | File services |
 | Realtime | No approach or schedule selected. Choose a client scenario and official contract before deciding session ownership, transport, interruption and recovery | Realtime |
@@ -128,10 +128,17 @@ When scheduled, add an independent alias-carrier oracle and an incompatible-poli
 
 ## Planned order
 
-1. **Generation design closure and human review.** Resolve confirmed defects, select the pending decisions and reconcile the contract map.
-2. **Coverage improvement**, authorized alongside review, without a per-model or per-Provider matrix.
-3. **Integration acceptance.** Reconnect selected exact carriers, then approved adaptations, and perform the routing acceptance.
-4. **Other agent acceptance.** Codex, Claude Code and other agents; priority undecided, lowest for now.
+| Priority | Goal | Exit evidence for a selected slice |
+|---|---|---|
+| **1 — Same-protocol lossless IR codecs** | Preserve the declared protocol semantics through client request → IR → same-protocol upstream request, and upstream response/events → IR → same-protocol client delivery/history. Prioritize known fields, presence/default meaning, ordered owners, reasoning/replay, usage and terminal facts over cross-protocol convenience | Independent wire→IR and IR→wire expectations in each applicable direction, JSON/SSE agreement and returned-history preservation. Report unsupported fields/directions and actual losses explicitly; round trips, HTTP success and named loss receipts are not lossless evidence |
+| **2 — Basic agent tool interactions** | Ordinary function-tool declarations and schema intent, call IDs/arguments, results/errors, streaming, final answers and next-turn history for pi/OpenCode. The client executes its tools; no gateway tool executor is implied | Selected same-protocol tool-call → result → final-answer → replay loops, preserving source data and required reasoning/cache owners. Keep offline, SDK and bounded real-client/Provider evidence separate |
+| **3 — Extended compatibility and tools** | Citations/source attribution, cross-protocol conversion stability, `tool_search`/ordered discovery and hosted tools such as native `web_search` | Separately selected owners, mappings and lifecycle contracts; these are not prerequisites for the higher-priority core slices |
+
+“Lossless” means semantic fidelity within an explicit protocol revision and feature domain, not byte-identical JSON or retention of unknown fields. Equivalent wire normalization is allowed. Preserve protocol records in their existing bounded owners; do not introduce raw passthrough or an IR extension bag. A same-named API at a different Provider is not proof of equivalent semantics.
+
+Audit existing same-protocol loss paths and distinguish codec loss from model/product policy. Basic tool-field fidelity belongs to priority 1; priority 2 adds the agent interaction loop. Previously approved adaptations remain active until deliberately changed, but their occurrence cannot pass a lossless check. Deferred citations or other unsupported semantics remain explicit coverage gaps and reject where required; postponing them never permits silent loss or a claim of complete protocol coverage.
+
+Design review and focused coverage proceed within each priority, not as a requirement to finish every lower-priority design first. Keep the existing human approval, publication and integration gates. Preserve security, bounds, cancellation, replay isolation, honest terminals and existing cross-protocol regression assertions at every priority; lower priority defers expansion, not necessary maintenance. Other-agent acceptance keeps its [separate scheduling](#deferred-acceptance).
 
 The P7 boundary review becomes eligible after first-stage local completion, without waiting for deferred cache and tool slices, and is required before route-facing acceptance. Its analysis may proceed alongside design closure.
 
@@ -161,7 +168,7 @@ The 2026-10-18 review checked actual catalog targets, pinned client builders, of
 | R2 | Messages client → `claude-haiku-5-5` / `opencode-go-haiku-messages`; native non-strict tools, caller-supplied cap, supported thinking controls and owner-local cache markers on an all-native configured route | Establish the deployed Go bridge/destination behavior, effective TTL/usage and account-compatible signed-thinking replay with real clients. Source evidence and the synthetic cache-bearing tool loop do not certify those contracts |
 | Later | `gemini-3.8-flash` generateContent → Chat/Responses; explicit non-strict tools and supported controls | Select model-effective value guards and finish the selected safety/terminal loop evidence. Interactions lifecycle snapshots and Google → Messages final-answer conversion remain blocked, not assumed equivalent |
 
-Selected first stage: R1a/R1b before R2, not a Provider/model matrix. Use one selected binding at a time without changing catalog ordering or activating alternatives implicitly. Do not use DeepSeek Responses as the initial faithful baseline: its documented role, reasoning and parallel-tool behavior needs separate directional policies. Coding Plan's output-cap semantics also need their own evidence; the DashScope fix is not a universal dialect change.
+Selected loop order: R1a/R1b before R2, within priority 2 after the relevant priority-1 codec checks, not ahead of same-protocol fidelity work or as a Provider/model matrix. Google → Chat/Responses conversion belongs to priority 3. Use one selected binding at a time without changing catalog ordering or activating alternatives implicitly. Do not use DeepSeek Responses as the initial faithful baseline: its documented role, reasoning and parallel-tool behavior needs separate directional policies. Coding Plan's output-cap semantics also need their own evidence; the DashScope fix is not a universal dialect change.
 
 Deferred decisions do not block the selected R1 scope:
 
@@ -217,7 +224,7 @@ When reopened, select the cache-only operation and result contract from pi's str
 
 ### Deferred tool discovery and web search
 
-Select IR ownership and execution/replay contracts before implementation and show the minimal counterexample when either slice reopens. Neither blocks first-stage completion, coverage or P7.
+These are priority 3, after same-protocol fidelity and basic agent tools. Select IR ownership and execution/replay contracts before implementation and show the minimal counterexample when either slice reopens. Neither blocks first-stage completion, coverage or P7; scheduling and designs remain open.
 
 - **Tool discovery and ordered availability updates.** Complete `tool_search`, its call/output items and `additional_tools`, building on deferred-loading and namespace types. Later tools must not be retroactively added to earlier history through top-level settings. Exit condition: discovery results and availability changes keep order, definitions and references through decode, encode and replay. No gateway tool registry or search executor.
 - **Native OpenAI `web_search`.** Complete the selected built-in path: declaration and controls, Provider-executed observations, reported sources and URL citations, streamed lifecycle and history, reusing observation and citation foundations. Exit condition: the Responses path preserves operations, results, citation associations and honest terminals in JSON and SSE; targets without a carrier reject. The gateway never fetches URLs or searches itself.
@@ -225,6 +232,8 @@ Select IR ownership and execution/replay contracts before implementation and sho
 Unsupported discovery and search semantics stay rejected, not converted to text or ordinary function calls. These slices do not reopen generated media, file services, new bindings, Realtime or Embeddings.
 
 ### 1C design: Messages citations
+
+This is a lower-priority proposal, not a prerequisite for the declared non-citation codec and basic-tool slices. Citation-bearing requests/responses retain their existing rejection until the design is selected and implemented.
 
 Counterexample: a request holds two PDF documents with `citations: {"enabled": true}`. The response cites `{"type":"page_location","document_index":1,"document_title":"B","cited_text":"…","start_page_number":2,"end_page_number":3}`, and the client returns that text block with its citation. The IR has page coordinates but cannot hold the per-document flag, the cited text or a reference to the second request document: `Citation.source` resolves only in its owner's resource table.
 
