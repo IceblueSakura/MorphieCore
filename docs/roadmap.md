@@ -88,9 +88,6 @@ Minimal counterexamples and pinned sources are in [Generation contract boundarie
 
 | Question | Current behavior and recommendation | Blocks |
 |---|---|---|
-| Stage-1 baseline revisions | [References](references.md#pinned-sources) pins OpenAI Python `be9d666` and Anthropic Python `b4b7916` (1.13.0); the [contract inventory](refs/2026-10-17-generation-contracts.md#sources) already enforces fields from the newer `bfada50` and `bcd55fe` (1.15.0). Recommendation: adopt the newer pins as the lossless baseline in S1-0 and update References; recheck newer releases only when a slice needs them | Every stage-1 lossless claim |
-| Stage-1 dialect scope | Many Chat dialects are registered. Recommendation: claim same-protocol fidelity first for DashScope Chat, OpenRouter Responses and OpenCode Go Messages, the R1a/R1b/R2 dialects; other dialects stay maintenance-only until selected | Stage-1 exit; not codec maintenance |
-| [R2 pi client profile](#stage-1-to-stage-2-handoff) | Pinned pi's built-in Haiku 5.5 profile sends per-message effort, inline tool changes and `drop_block`; a scratch custom model sends budgeted thinking unless `forceAdaptiveThinking` is set. Recommendation: accept R2 first with a custom adaptive profile and keep the built-in-only features as S1-3 design candidates | R2 and its S1-3 scope |
 | Binding activation and reconnection (P7 follow-up) | The public capability/notice contract is selected. Complete model-level evidence and preflight/preparation checks, then specify bindings and client loops under the [reconnection sequence](#public-capability-and-reconnection-sequence). Do not reinterpret unsupported completion/safety carriers or reopen P8 policies | Binding activation and full-chain acceptance, not codec-only coverage |
 | [Native cache-only prewarming](#deferred-cache-prewarming) | Priority and scheduling undecided; select the operation and result contract when reopened | That slice only |
 | [Tool discovery and native `web_search`](#deferred-tool-discovery-and-web-search) | Stage-5 backlog, unscheduled; designs remain undecided | Those slices only |
@@ -154,7 +151,7 @@ The P7 boundary review becomes eligible after first-stage local completion, with
 
 ### Stage 1 work plan
 
-**Status: proposed on 2026-10-19; the slice order and the [scheduling choices](#scheduling-and-product-decisions) above await selection.** Same-protocol pairs are Chat → Chat, Responses → Responses and Messages → Messages, each across request encoding, static response, SSE and returned history. Google generateContent and Interactions have no client endpoint and therefore no pair: stage 1 maintains their existing carriers, while value guards, lifecycle snapshots and Google conversions belong to stage 3. Each lossless claim names one baseline revision and one upstream dialect.
+**Status: scope selected on 2026-10-19.** The [baseline, dialects and R2 client profile](architecture.md#settled-decisions) are settled: latest SDK and pi releases; DashScope Chat, OpenRouter Responses and OpenCode Go Messages; pi's built-in `anthropic` Haiku 5.5 profile. Same-protocol pairs are Chat → Chat, Responses → Responses and Messages → Messages, each across request encoding, static response, SSE and returned history. Google generateContent and Interactions have no client endpoint and therefore no pair: stage 1 maintains their existing carriers, while value guards, lifecycle snapshots and Google conversions belong to stage 3. Each lossless claim names one baseline revision and one upstream dialect.
 
 | Slice | Work | Exit condition |
 |---|---|---|
@@ -163,20 +160,25 @@ The P7 boundary review becomes eligible after first-stage local completion, with
 | S1-2 Responses | R1b domain on OpenRouter: reasoning summary and encrypted items, phase, function-call items, usage details, `include`, `truncation`, `max_tool_calls`, metadata, and stateless plus gateway-stored history | As S1-1, and stored and stateless continuation project the same history |
 | S1-3 Messages | Give the native codec official carriers for the Messages gaps below and move Claude 5.x restrictions to trusted binding policy, resolving [Messages model/product defaults](#ownership-and-projection-decisions) | Independent native oracles for each new carrier; the Go/Haiku binding omits or rejects only through named target policy, not missing codec carriers |
 
-Recommended order: S1-0, then S1-1 and S1-2 to match the selected R1a/R1b loops, then S1-3. S1-3 is independent and may run earlier. No slice widens binding admission.
+Order: S1-3 first for the selected R2 profile, which needs new carriers, then S1-0, S1-1 and S1-2. No slice widens admission beyond its selected binding.
 
-Known same-protocol gaps from code inspection on 2026-10-19, to be confirmed by S1-0:
+S1-3 design for the pi built-in Haiku 5.5 profile at pi v1.3.0. Native carriers follow the Anthropic 1.15.0 types and Messages documentation; bounded real checks select which carriers the Go binding enables:
+
+| Request feature | Current treatment | S1-3 design and fallback |
+|---|---|---|
+| Strict tools (`strict: true` from pi's preferred constraints) | Codec carrier; admission closed | Admit on the Go/Haiku binding with the existing strict-schema checks |
+| Tool `eager_input_streaming` | Ignored by name | Typed tool owner and exact native carrier; other targets omit it under `generation.omit-eager-tool-input.v1`. Unparseable input at `content_block_stop` still fails the stream; partial-input delivery is a follow-up |
+| Deferred placeholder tool (`defer_loading: true`) | Rejected | Existing `ToolDispatch.defer_loading` owner with an exact native carrier |
+| Adaptive `thinking.block_binding` | `drop_block` omitted for every target | Typed reasoning owner, exact on Messages targets with the carrier; elsewhere `drop_block` keeps its omission and `"error"` rejects. Returned `input_transformations` are validated, then omitted under `messages.omit-input-transformations.v1` because their paths index the upstream request |
+| Effort-only and content system messages with `output_config.effort` | Rejected | Ordered `ConfigurationUpdate` items, the owner Responses `configuration_update` already uses. Without the carrier, `messages.flatten-message-effort.v1` sets top-level effort to the level the next reply runs at under the documented placement rules and drops historical markers |
+| Mid-conversation system text | Codec carrier; admission closed | Admit ordered instructions on the Go/Haiku binding |
+| `tool_addition` and `tool_removal` blocks | Rejected | Ordered tool-change items. Without the carrier, `messages.collapse-tool-changes.v1` declares the final available tool set at top level, losing the availability timeline and prefix stability across a change |
+| `anthropic-beta` features | Client header not forwarded | The native encoder derives beta values from the final wire; client headers never select them |
+
+Other Messages gaps are not sent by that profile: `temperature`, `top_p` and `top_k` stay omitted or rejected by the native profile until binding policy owns them; budgeted thinking has no native carrier; `metadata.user_id` is ignored by name. They remain S1-3 follow-ups.
 
 | Pair | Field or carrier | Current treatment | Recommendation |
 |---|---|---|---|
-| Messages | `temperature`, `top_p` | No native carrier; always omitted under `messages.omit-sampling.v1` | Codec carriers; fixed Claude 5.x sampling becomes binding policy |
-| Messages | `top_k` | Decoded, then rejected by the native profile | Codec carrier; binding policy rejects or omits on evidence |
-| Messages | `thinking.type: "enabled"` with `budget_tokens` | No native carrier; rejected unless a configured budget-to-effort approximation applies | Codec carrier; model policy decides whether a target accepts budgets |
-| Messages | `thinking.block_binding` `drop_block` | Omitted for every target under `messages.omit-block-binding.v1` | Exact carrier on Messages targets, omission elsewhere. It bears on R2 account-bound thinking replay |
-| Messages | Tool `eager_input_streaming`, which pinned pi sends as `true` by default | Ignored by name | Exact carrier or a named advisory omission; it changes stream granularity, not content |
-| Messages | `metadata.user_id` | Ignored by name | Carry it through the identity-hint owner; targets without a carrier use `generation.omit-identity-hints.v1` |
-| Messages | Per-message `output_config` on system messages and `tool_addition`/`tool_removal`, from pinned pi's built-in Haiku 5.5 profile | Rejected; no IR owner | Owner design only if the [R2 profile](#scheduling-and-product-decisions) selects them |
-| Messages | Request-wide automatic `cache_control`, strict tools and mid-conversation system messages | Codec carriers exist; admission closed | Admission belongs to the R2 handoff, not codec work |
 | Chat | `prediction` | Omitted at intake for every target under D3 | Keep D3 unless a selected Chat binding supports it; then move the omission to target projection |
 | Chat | Participant `name`, `n` other than 1, `store: true`, `logit_bias`, `moderation`, custom-tool SSE | Rejected | Keep as recorded stage-1 gaps |
 | All | Hosted and server tools, citations, Messages document `context`, `clear_at`, `input_examples`, geography, speed and fallbacks; Responses `prompt`, `conversation`, `context_management`, access programs and misalignment details | Rejected | Stage 5 or a later owner selection; not stage-1 blockers |
@@ -185,7 +187,7 @@ Stage-1 exit for a pair means every in-domain official field is exact, or is an 
 
 #### Stage-1 to stage-2 handoff
 
-A stage-2 loop needs only its own protocol slice, scoped to that loop's carriers, not the whole of stage 1: R1a follows S1-1 and R1b follows S1-2. R2 follows S1-3 and the R2 pi profile choice. A scratch custom pi model without `forceAdaptiveThinking` sends budgeted thinking, which the native Haiku target rejects unless a configured conversion applies; the built-in Haiku profile adds per-message effort, inline tool changes and `drop_block`.
+A stage-2 loop needs only its own protocol slice, scoped to that loop's carriers, not the whole of stage 1: R1a follows S1-1 and R1b follows S1-2. R2 follows S1-3 and uses pi's built-in `anthropic` Haiku 5.5 entry with only its base URL and key pointed at the gateway. A scratch custom model is not the R2 profile: without `forceAdaptiveThinking` it sends budgeted thinking, which the native target rejects.
 
 Every selected loop must leave no unclassified ignored request fields: `ignored_request_field_count` stays zero, or each ignored name is classified in the inventory. Client-specific dialect fields such as pi's `enable_thinking` or `chat_template_kwargs` are outside the official Chat baseline. The selected pi and OpenCode profiles must emit only registered carriers.
 
@@ -236,7 +238,7 @@ The 2026-10-18 review checked actual catalog targets, pinned client builders, of
 |---|---|---|
 | R1a | Chat client → `qwen3.8-flash` / `dashscope-flash-chat`; text, ordinary non-strict functions, `low` effort, explicit total output cap, complete readable reasoning history | Verify the tool-call/result/final-answer/history loop in JSON and SSE, followed by bounded pi/OpenCode and Provider acceptance. The cap carrier is corrected; other effort aliases and model-effective controls are not newly certified |
 | R1b | Responses client → `gpt-6-luna` / `openrouter-responses`; explicit `strict:false`, `low`, no forbidden sampling/parallel controls, full stateless history | Confirm actual summary/opaque reasoning, phase, usage and tool-call history carriers. OpenRouter's model listing and API name do not prove every Responses semantic. Keep retained-history and replay isolation gates |
-| R2 | Messages client → `claude-haiku-5-5` / `opencode-go-haiku-messages`; native non-strict tools, caller-supplied cap, supported thinking controls and owner-local cache markers on an all-native configured route | Establish the deployed Go bridge/destination behavior, effective TTL/usage and account-compatible signed-thinking replay with real clients. Source evidence and the synthetic cache-bearing tool loop do not certify those contracts |
+| R2 | Messages client → `claude-haiku-5-5` / `opencode-go-haiku-messages`; pi's built-in Haiku 5.5 profile: strict and deferred tools with eager input, adaptive thinking with `drop_block`, per-message effort, mid-conversation system messages and tool changes, caller-supplied cap and owner-local cache markers on an all-native configured route | Establish the deployed Go bridge/destination behavior, effective TTL/usage and account-compatible signed-thinking replay with real clients. Source evidence and the synthetic cache-bearing tool loop do not certify those contracts |
 | Later | `gemini-3.8-flash` generateContent → Chat/Responses; explicit non-strict tools and supported controls | Select model-effective value guards and finish the selected safety/terminal loop evidence. Interactions lifecycle snapshots and Google → Messages final-answer conversion remain blocked, not assumed equivalent |
 
 Selected loop order: R1a/R1b before R2, within stage 2 after the [stage-1 handoff](#stage-1-to-stage-2-handoff) for their protocol, not ahead of same-protocol fidelity work or as a Provider/model matrix. Google → Chat/Responses conversion belongs to stage 3. Use one selected binding at a time without changing catalog ordering or activating alternatives implicitly. Do not use DeepSeek Responses as the initial faithful baseline: its documented role, reasoning and parallel-tool behavior needs separate directional policies. Coding Plan's output-cap semantics also need their own evidence; the DashScope fix is not a universal dialect change.

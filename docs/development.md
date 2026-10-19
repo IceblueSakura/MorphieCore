@@ -99,7 +99,7 @@ All listeners and credentials are synthetic and test-owned. The gate uses no rea
 
 ### Pinned pi history-carrier probe
 
-The optional ignored test uses the source revision in [protocol notes](refs/2026-10-17-generation-contracts.md#sources), Node 24.21.0 and the dependency lock in `tests/sdk/pi/`. Keep the pi checkout outside this repository; set `MORPHIECORE_PI_SOURCE` to it. Install the public test dependencies without private npm configuration or lifecycle scripts:
+The optional ignored test uses the [pi client baseline](references.md#pinned-sources), Node 24.21.0 and the dependency lock in `tests/sdk/pi/`. Keep the pi checkout outside this repository; set `MORPHIECORE_PI_SOURCE` to it. Install the public test dependencies without private npm configuration or lifecycle scripts:
 
 ```sh
 tmp=$(mktemp -d)

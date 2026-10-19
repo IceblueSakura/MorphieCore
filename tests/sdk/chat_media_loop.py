@@ -1,4 +1,4 @@
-"""Synthetic SDK Chat citations/audio; raw chunk consumption, not a guessed typed delta."""
+"""Synthetic SDK Chat citations/audio; consumes only the fields present in each chunk."""
 import base64
 import sys
 from sdk_support import check, client_for
@@ -24,7 +24,7 @@ def run(base_url):
                 with result:
                     for chunk in result:
                         for choice in chunk.choices:
-                            update = choice.delta.model_dump().get("audio")
+                            update = choice.delta.model_dump(exclude_unset=True).get("audio")
                             if update:
                                 for key in ("id", "expires_at"):
                                     if key in update:
