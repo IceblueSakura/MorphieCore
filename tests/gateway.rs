@@ -13,6 +13,8 @@ mod native_audio;
 #[path = "support/responses_profile.rs"]
 mod responses_wire;
 use responses_wire as r1_response_wire;
+#[path = "support/messages_wire.rs"]
+mod messages_wire;
 #[path = "support/gateway.rs"]
 mod support;
 
@@ -22,6 +24,8 @@ mod anthropic;
 mod interactions;
 #[path = "gateway/r1.rs"]
 mod r1;
+#[path = "gateway/r2.rs"]
+mod r2;
 use axum::{
     Router,
     body::Body,

@@ -1,5 +1,6 @@
 //! Independent HTTP oracle for standard clients over a native Messages endpoint.
 use super::Guard;
+use crate::messages_wire::{native_response, native_stream_body};
 use axum::response::{IntoResponse, Response};
 use axum::{Json, Router, extract::State, http::HeaderMap, routing::post};
 use morphiecore::{
@@ -16,60 +17,6 @@ use std::{
 };
 use tokio::net::TcpListener;
 
-fn native_stream_body(value: &Value) -> String {
-    let mut initial = value.clone();
-    initial["content"] = json!([]);
-    initial["stop_reason"] = Value::Null;
-    initial["usage"]["output_tokens"] = json!(0);
-    let mut events = vec![json!({"type":"message_start","message":initial})];
-    for (index, block) in value["content"].as_array().unwrap().iter().enumerate() {
-        match block["type"].as_str().unwrap() {
-            "text" => {
-                events.push(json!({"type":"content_block_start","index":index,"content_block":{"type":"text","text":""}}));
-                events.push(json!({"type":"content_block_delta","index":index,"delta":{"type":"text_delta","text":block["text"]}}));
-            }
-            "thinking" => {
-                events.push(json!({"type":"content_block_start","index":index,"content_block":{"type":"thinking","thinking":"","signature":""}}));
-                events.push(json!({"type":"content_block_delta","index":index,"delta":{"type":"thinking_delta","thinking":block["thinking"]}}));
-                events.push(json!({"type":"content_block_delta","index":index,"delta":{"type":"signature_delta","signature":block["signature"]}}));
-            }
-            // Redacted thinking arrives whole; it has no delta type.
-            "redacted_thinking" => {
-                events.push(
-                    json!({"type":"content_block_start","index":index,"content_block":block}),
-                );
-            }
-            "tool_use" => {
-                events.push(json!({"type":"content_block_start","index":index,"content_block":{"type":"tool_use","id":block["id"],"name":block["name"],"input":{}}}));
-                events.push(json!({"type":"content_block_delta","index":index,"delta":{"type":"input_json_delta","partial_json":block["input"].to_string()}}));
-            }
-            _ => panic!("fixture block"),
-        }
-        events.push(json!({"type":"content_block_stop","index":index}));
-    }
-    events.push(json!({"type":"message_delta","delta":{"stop_reason":value["stop_reason"]},"usage":{"output_tokens":value["usage"]["output_tokens"]}}));
-    events.push(json!({"type":"message_stop"}));
-    events
-        .iter()
-        .map(|event| {
-            format!(
-                "event: {}\ndata: {event}\n\n",
-                event["type"].as_str().unwrap()
-            )
-        })
-        .collect()
-}
-fn native_response(value: Value, stream: bool) -> Response {
-    if !stream {
-        return Json(value).into_response();
-    }
-    (
-        [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
-        native_stream_body(&value),
-    )
-        .into_response()
-}
-
 async fn client_body(response: reqwest::Response, profile: Profile, stream: bool) -> Value {
     if !stream || response.status() != 200 {
         return response.json().await.unwrap();
@@ -78,7 +25,7 @@ async fn client_body(response: reqwest::Response, profile: Profile, stream: bool
     stream_body(&wire, profile)
 }
 /// Independent fold of Anthropic SSE into the message it streams.
-fn messages_stream_body(wire: &str) -> Value {
+pub(super) fn messages_stream_body(wire: &str) -> Value {
     let mut message = Value::Null;
     let mut partial = std::collections::BTreeMap::<u64, String>::new();
     for data in wire.lines().filter_map(|line| line.strip_prefix("data: ")) {
@@ -126,7 +73,11 @@ fn messages_stream_body(wire: &str) -> Value {
             }
             "message_delta" => {
                 message["stop_reason"] = event["delta"]["stop_reason"].clone();
-                message["usage"] = event["usage"].clone();
+                for (key, value) in event["usage"].as_object().unwrap() {
+                    if !value.is_null() {
+                        message["usage"][key] = value.clone();
+                    }
+                }
             }
             "message_stop" => return message,
             other => panic!("event {other}"),
@@ -184,7 +135,7 @@ fn controlled_response(mode: &str, control: Arc<Control>) -> Response {
         bytes
     } else {
         bytes
-            .split_once("event: content_block_stop")
+            .rsplit_once("event: content_block_stop")
             .unwrap()
             .0
             .to_owned()
@@ -764,9 +715,11 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
         }
     }
     assert_eq!(seen.lock().unwrap().len(), 26);
-    for profile in [Profile::Responses, Profile::Chat] {
-        let responses = profile == Profile::Responses;
-        let path = if responses {
+    for profile in [Some(Profile::Responses), Some(Profile::Chat), None] {
+        let responses = profile == Some(Profile::Responses);
+        let path = if profile.is_none() {
+            "/v1/messages"
+        } else if responses {
             "/v1/responses"
         } else {
             "/v1/chat/completions"
@@ -776,7 +729,12 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             tokio::time::advance(Duration::from_secs(60)).await;
             tokio::time::resume();
             let function = json!({"name":"lookup","parameters":{"type":"object","properties":{"key":{"type":"string"}}},"strict":false});
-            let input = if responses {
+            let input = if profile.is_none() {
+                json!({"model":binding.model,"max_tokens":64,"stream":true,
+                    "tools":[{"name":"lookup","strict":false,
+                        "input_schema":{"type":"object","properties":{"key":{"type":"string"}}}}],
+                    "messages":[{"role":"user","content":mode}]})
+            } else if responses {
                 let mut tool = function.clone();
                 tool["type"] = json!("function");
                 json!({"model":binding.model,"max_output_tokens":64,"input":mode,"store":false,"stream":true,"tools":[tool]})
@@ -800,13 +758,15 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             assert_eq!(response.status(), 200);
             let mut output = vec![];
             tokio::time::timeout(Duration::from_secs(1), async {
-                while !String::from_utf8_lossy(&output).contains("early") {
+                while !String::from_utf8_lossy(&output).contains("early")
+                    || !String::from_utf8_lossy(&output).contains("lookup")
+                {
                     output
                         .extend_from_slice(&response.chunk().await.unwrap().expect("live prefix"));
                 }
             })
             .await
-            .expect("text before release");
+            .expect("text and tool publication before release");
             if mode == "cancel" {
                 drop(response);
             } else {
@@ -818,6 +778,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 }
                 assert!(!String::from_utf8_lossy(&output).contains("response.completed"));
                 assert!(!String::from_utf8_lossy(&output).contains("[DONE]"));
+                assert!(!String::from_utf8_lossy(&output).contains("message_stop"));
                 if mode == "hold" {
                     tokio::time::sleep(Duration::from_millis(1100)).await;
                 }
@@ -836,17 +797,24 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 assert_eq!(failed, mode == "cut");
                 let output = String::from_utf8(output).unwrap();
                 if mode == "hold" {
-                    let value = stream_body(&output, profile);
-                    assert_eq!(
-                        value[if responses { "status" } else { "object" }],
-                        if responses {
-                            "completed"
-                        } else {
-                            "chat.completion"
-                        }
-                    );
+                    if let Some(profile) = profile {
+                        let value = stream_body(&output, profile);
+                        assert_eq!(
+                            value[if responses { "status" } else { "object" }],
+                            if responses {
+                                "completed"
+                            } else {
+                                "chat.completion"
+                            }
+                        );
+                    } else {
+                        let value = messages_stream_body(&output);
+                        assert_eq!(value["stop_reason"], "tool_use");
+                        assert_eq!(value["content"][1]["id"], "held-call");
+                    }
                 } else {
                     assert!(!output.contains("response.completed") && !output.contains("[DONE]"));
+                    assert!(!output.contains("message_stop"));
                 }
             }
             tokio::time::timeout(Duration::from_secs(2), control.dropped.notified())
@@ -859,7 +827,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             );
         }
     }
-    assert_eq!(seen.lock().unwrap().len(), 32);
+    assert_eq!(seen.lock().unwrap().len(), 35);
     // Error classes: Codex reads overflow only from a streamed `response.failed`;
     // a failure after headers ends the stream with its class instead of a cut.
     for profile in [Profile::Responses, Profile::Chat] {
@@ -943,7 +911,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             }
         }
     }
-    assert_eq!(seen.lock().unwrap().len(), 50);
+    assert_eq!(seen.lock().unwrap().len(), 53);
     diagnostic_owner.flush_diagnostics().await;
     let records = std::fs::read_to_string(&diagnostics).unwrap();
     assert!(

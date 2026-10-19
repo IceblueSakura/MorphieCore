@@ -969,6 +969,64 @@ async fn configured_messages_cache_admission_requires_all_native_candidates() {
             assert_eq!(wire["max_tokens"], 64);
             assert_eq!(request, original);
         }
+        // The same configured admission must accept pi's complete native profile,
+        // not only a plain tool plus cache markers.
+        let mut rich = input.clone();
+        rich["tools"][0]["strict"] = json!(true);
+        rich["tools"][0]["eager_input_streaming"] = json!(true);
+        rich["tools"][0]["input_schema"]["additionalProperties"] = json!(false);
+        rich["tools"].as_array_mut().unwrap().push(json!({
+            "name":"__pi_deferred_placeholder__","input_schema":{"type":"object"},
+            "defer_loading":true
+        }));
+        rich["thinking"] = json!({"type":"adaptive","display":"summarized",
+            "block_binding":{"prefix_mismatch_behavior":"drop_block"}});
+        rich["output_config"] = json!({"effort":"high"});
+        rich["messages"].as_array_mut().unwrap().extend([
+            json!({"role":"assistant","content":"done"}),
+            json!({"role":"user","content":"inspect next"}),
+            json!({"role":"system","content":[
+                {"type":"text","text":"Inspect mode."},
+                {"type":"tool_removal","tool":{"type":"tool_reference","name":"lookup"}},
+                {"type":"tool_addition","tool":{"type":"tool_definition","definition":{
+                    "name":"inspect","input_schema":{"type":"object"},
+                    "eager_input_streaming":true}}}
+            ],"output_config":{"effort":"low"}}),
+        ]);
+        let (_, mut request) = crate::gateway::ingress::admission::prepare_messages(
+            state,
+            &serde_json::to_vec(&rich).unwrap(),
+        )
+        .unwrap();
+        request.conversation =
+            Some(crate::semantic::context::ConversationContext::conversation("synthetic").unwrap());
+        let candidate = &entry.candidates[0];
+        representable(&candidate.endpoint, &request).unwrap();
+        let prepared = prepare(
+            &candidate.endpoint,
+            &candidate.provider,
+            &candidate.secret.resolve().unwrap().0,
+            &request,
+        )
+        .unwrap();
+        let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
+        assert_eq!(wire["thinking"], rich["thinking"]);
+        assert_eq!(wire["output_config"], rich["output_config"]);
+        assert_eq!(wire["tools"], rich["tools"]);
+        assert_eq!(
+            wire["messages"].as_array().unwrap().last(),
+            rich["messages"].as_array().unwrap().last()
+        );
+        assert!(wire.get("cache_control").is_none());
+        let beta = prepared
+            .safe_headers
+            .iter()
+            .find(|(name, _)| name == "anthropic-beta")
+            .unwrap();
+        assert_eq!(
+            beta.1,
+            "mid-conversation-output-config-2026-07-01,thinking-binding-controls-2026-08-01,inline-tools-2026-09-15"
+        );
         // Reach admission, not an earlier invalid marker combination.
         {
             let feature = GenerationFeature::AutomaticPrefixCache;

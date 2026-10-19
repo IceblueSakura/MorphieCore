@@ -10,10 +10,14 @@ mod child_process;
 mod gateway_sdk;
 #[path = "sdk/messages.rs"]
 mod messages_sdk;
+#[path = "support/messages_wire.rs"]
+mod messages_wire;
 #[path = "sdk/process.rs"]
 mod process_tests;
 #[path = "sdk/r1.rs"]
 mod r1;
+#[path = "sdk/r2.rs"]
+mod r2;
 #[path = "support/responses_profile.rs"]
 mod wire;
 use wire as r1_response_wire;
