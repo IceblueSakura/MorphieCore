@@ -39,6 +39,17 @@ The pinned [Go handler](https://github.com/anomalyco/opencode/blob/e5a557efeee02
 
 This evidence supports exact request forwarding on the selected binding, not live cache effectiveness. The [admission contract](../architecture.md#owner-local-cache-admission) opens only all-native configured candidates and suppresses unrequested automatic caching beside explicit markers. Mixed routes and caller-selected automatic policy remain closed. Actual writes/reads, billed TTL, proxy version and account-compatible signed-thinking replay remain separate acceptance gates; cache admission does not imply storage retention or ZDR.
 
+### pi Messages request profile, 2026-10-19
+
+At pi `8efd314`, `packages/ai/src/api/anthropic-messages.ts` builds these Messages fields:
+
+- Tool definitions add `eager_input_streaming: true` unless `compat.supportsEagerToolInputStreaming` is false; the default is true.
+- Reasoning models with `compat.forceAdaptiveThinking` send `thinking: {type: "adaptive", display}`. Other reasoning models send `{type: "enabled", budget_tokens, display}` when thinking is on.
+- With `compat.supportsMidConvoEffort`, thinking is adaptive with `block_binding: {prefix_mismatch_behavior: "drop_block"}`, and requests append `{role: "system", content: [], output_config: {effort}}` messages. With mid-conversation system messages and tool changes enabled, later tools arrive in `tool_addition` blocks. `scripts/generate-models.ts` enables these for the built-in `anthropic` Haiku 5.5 entry; a custom model entry carries only its configured compat.
+- `metadata.user_id` is sent only when the caller supplies it.
+
+On the same date, MorphieCore's Messages intake ignores `metadata` and tool `eager_input_streaming` by name, omits `drop_block` for every target, and rejects message `output_config` and tool-change blocks. The native target has no sampling or budgeted-thinking carrier. This is source inspection only; no client or Provider run was made. The [stage-1 work plan](../roadmap.md#stage-1-work-plan) owns the resulting scope.
+
 ### Function strictness defaults
 
 The [OpenAI function-calling guide](https://developers.openai.com/api/docs/guides/function-calling) distinguishes Chat's non-strict default from Responses schema normalization. A source `Omitted(NonStrict)` tool has an exact Responses carrier: emit `strict: false` without changing its schema or source IR. This is default materialization, not a loss rule. The inverse conversion is not symmetric: `Omitted(NormalizeSchema)` still requires normalization semantics and must not become a plain tool.
