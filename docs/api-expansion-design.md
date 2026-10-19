@@ -4,7 +4,7 @@
 
 This is a standalone pre-implementation reference requested for the API expansion. The requested scope is confirmed; the architecture recommendations below are proposals unless already established in [Architecture](architecture.md). No new interface, binding, resource service or execution policy is activated by this document.
 
-[Roadmap](roadmap.md#planned-order) owns the five-stage sequence and the current routing freeze. Embedding and other-modality API/implementation adaptation, including audio/image/video, are selected for stage 4, after cross-protocol stability and before stage-5 citations/discovery/hosted tools. This is not an additional exit condition for stages 1–3. Detailed operation designs and within-stage ordering remain proposals; record selected decisions and explicit slices before implementing new contracts or activating bindings. Counting, compaction, general Files/Uploads and Batch retain separate scheduling except for selected dependencies.
+[Roadmap](roadmap.md#planned-order) owns the five-stage sequence and the current routing freeze. `count_tokens` belongs to stage 3 alongside cross-protocol conversion; Embedding/audio/image/video adaptation and Files/multipart Uploads belong to stage 4. Server-side compaction, Batch and Realtime join citations/discovery/hosted tools in stage 5. **All stage-5 tasks are currently unscheduled:** scope placement is not a start or delivery commitment. Detailed operation designs and within-stage ordering remain proposals; record selected decisions and explicit slices before implementing new contracts or activating bindings. Stage-4/5 work is not an exit condition for earlier stages.
 
 Code and tests remain the behavior specification. This document records ownership, constraints and proposed work, not a model catalog, compatibility certification or implementation progress log. Provider and binding availability belongs to [the catalog](../src/topology/catalog.rs) and [startup](../src/gateway/startup/bootstrap.rs).
 
@@ -27,16 +27,17 @@ The user selected OpenAI-first downstream contracts, broad coverage of current a
 
 | Requested surface | Expansion goal |
 |---|---|
-| `POST /v1/messages/count_tokens` | Count a structured model input without generating a message |
-| `POST /v1/responses/compact` | Execute native context compaction and return reusable context |
+| `POST /v1/messages/count_tokens` | Stage 3: count a structured model input under the selected target/projection contract, without generation |
+| `POST /v1/responses/compact` | Stage 5, unscheduled: execute native context compaction and return reusable context |
 | `POST /v1/embeddings` | Complete the existing independent embedding contract |
 | `POST /v1/audio/speech` | Complete standalone speech synthesis, including supported streaming |
 | `POST /v1/audio/transcriptions` | Complete file-based transcription and its reported evidence |
 | `POST /v1/audio/translations` | Add the current native audio-translation contract |
 | `POST /v1/images/edits` | Add editing and complete the shared modern image-production contract |
 | Video APIs, concrete operations/endpoints pending | Adapt selected video input/output or generation operations, including their execution lifecycle and artifact delivery |
-| Batch APIs | Submit and manage asynchronous batches of supported typed tasks |
-| File APIs | Manage reusable files and multipart upload resources |
+| Batch APIs | Stage 5, unscheduled: submit and manage asynchronous batches of supported typed tasks |
+| Files/multipart Uploads | Stage 4: manage reusable files and bounded multipart upload resources |
+| Realtime APIs, concrete contracts pending | Stage 5, unscheduled: select client/session, transport, interruption and recovery contracts |
 
 Two companion surfaces are recommended, not silently added to the confirmed list: `POST /v1/responses/input_tokens` for the OpenAI-first counting path, and completion of the existing `POST /v1/images/generations` alongside edits.
 
@@ -46,7 +47,7 @@ Completeness means covering the selected current operation contracts, not only t
 
 Do not add Legacy Completions, old DALL-E-only behavior or image variations for historical parity. Existing current Chat Completions and Messages contracts are not deprecated merely by this expansion. A still-current endpoint's documented older-model restriction is not permission to invent a newer equivalent.
 
-The earlier exclusion of video is superseded by the stage-4 modality scope; it does not select a particular video-generation or editing contract yet. Google-native downstream endpoints, Realtime/Live, Vector Stores, Assistants, fine-tuning and general hosted-tool execution remain outside this expansion. Hosted tools have their own stage-5 work. Custom voice creation and consent management remain an [open scope decision](#open-decisions). Standalone image support does not automatically implement the Responses image-generation tool.
+The earlier exclusion of video is superseded by the stage-4 modality scope; it does not select a particular video-generation or editing contract yet. Realtime/Live is an unscheduled stage-5 topic, not part of stage-4 media delivery. Google-native downstream endpoints, Vector Stores, Assistants and fine-tuning remain outside this expansion. Hosted tools have their own unscheduled stage-5 work. Custom voice creation and consent management remain an [open scope decision](#open-decisions). Standalone image support does not automatically implement the Responses image-generation tool.
 
 The initial vendor comparison is a checklist, not a protocol oracle. Endpoint names do not determine task ownership: Gemini can synthesize speech through a generation endpoint, Responses can be stateless, and Anthropic permits consecutive same-role turns. Use the [official references](#protocol-references), not the comparison's historical restrictions.
 
@@ -149,6 +150,8 @@ Upstream response parsing must remain strict on known fields and ignore unknown 
 
 ### Token counting
 
+Selected for stage 3 with cross-protocol conversion. The Messages `count_tokens` surface is confirmed; the Responses counting companion still requires selection.
+
 Model a count request from count-relevant conversation content: instructions, ordered history, tools, media and applicable settings. It is not generation with a zero output cap. A count result is not inference usage and must not contain fabricated generated output.
 
 OpenAI documents `POST /v1/responses/input_tokens`; Anthropic documents `POST /v1/messages/count_tokens`. Reuse one task boundary while preserving distinct source semantics and result envelopes. Resolve any admitted gateway-owned history reference before target preparation; never forward a gateway ID as a Provider-owned reference.
@@ -160,6 +163,8 @@ One candidate's count is not an exact count for every failover candidate or a re
 Exit evidence: independent request/result oracles, count-relevant controls and media preserved, unsupported counting rejected, no generation side effects, and explicit scope for the returned count.
 
 ### Context compaction
+
+Stage-5 future work, currently unscheduled. Existing Generation compaction-item intake/replay is not deferred with this operation.
 
 Use a distinct request and result. The result contains returned ordered context, resources, reported accounting and operation metadata. It is not a normal assistant response.
 
@@ -231,7 +236,7 @@ Exit evidence: independently specified request/result and applicable event/job c
 
 ### Files and uploads
 
-Files/Uploads need typed resource operations, not an inference request or a larger Generation resource table.
+Files/multipart Uploads are selected for stage 4. They need typed resource operations, not an inference request or a larger Generation resource table.
 
 | Method and path | Proposed operation |
 |---|---|
@@ -247,7 +252,7 @@ Files/Uploads need typed resource operations, not an inference request or a larg
 
 The resource service owns public identities, access checks, metadata, purpose, retention, upload state and private upstream mappings. The conversation resource table remains request-local content ownership.
 
-Choose authoritative storage before implementation. The first-stage recommendation is upstream-native content storage with gateway-owned public IDs and durable private mappings. The alternative is gateway-owned content with per-target upstream replicas. Neither is selected yet.
+Choose authoritative storage before implementation. The initial Files-slice recommendation is upstream-native content storage with gateway-owned public IDs and durable private mappings. The alternative is gateway-owned content with per-target upstream replicas. Neither is selected yet.
 
 Define finite storage/upload bounds, part order and byte-total validation, incomplete-upload cleanup and supported purposes. Do not adopt deprecated File status fields as a new processing state machine. Accepting a file purpose does not implement its associated fine-tuning or agent service.
 
@@ -256,6 +261,8 @@ Resolve resource authorization outside pure codecs. Task content may carry typed
 Exit evidence: create/read/list/delete and upload lifecycle contracts, restart-consistent mappings, access isolation, expiry, deletion with active references, and bounded streaming rather than whole-file memory retention.
 
 ### Native batch jobs
+
+Stage-5 future work, currently unscheduled. Stage-4 native media jobs retain their own lifecycle requirements without implying this general Batch API.
 
 | Method and path | Proposed operation |
 |---|---|
@@ -277,6 +284,10 @@ Select the durable acceptance point and crash-recovery contract. A submission ti
 After acceptance, a disconnected client does not cancel the job. Explicit cancellation distinguishes requested, confirmed and already-completed work. A cancelled or expired job may still have valid completed records; job failure must not fabricate record outcomes.
 
 Exit evidence: accepted-job recovery, lost submission acknowledgement, partial results, identity mapping, explicit cancellation, output/error file access and no accidental resubmission.
+
+### Realtime
+
+Stage-5 future work, currently unscheduled. No concrete session API, transport or event contract is selected. Choose the client scenario, media directions, interruption/cancellation, reconnection, session/resource ownership and bounded delivery before implementation. Ordinary streamed Generation and stage-4 audio/video operations do not establish Realtime support.
 
 ## Optional Chat-carried audio
 
@@ -329,19 +340,21 @@ Keep diagnostics body-free. Apply the existing private-capture policy deliberate
 
 ## Implementation sequence
 
-The roadmap's stage-4 placement is selected; the task-local sequence below is a proposal, not another numbering of the five roadmap stages. Embedding and audio/image/video work need not wait for unrelated counting, compaction or Batch work. Definition work does not reopen the [routing freeze](roadmap.md#temporary-routing-freeze) or activate bindings. Schedule each implementation slice after its boundary decisions.
+The stage assignments below follow the roadmap; task-local details and ordering remain proposals. Counting is stage 3; Embedding/media and Files/multipart Uploads are stage 4. Compaction, Batch and Realtime are stage-5 backlog items, not scheduled implementation slices. Definition work does not reopen the [routing freeze](roadmap.md#temporary-routing-freeze) or activate bindings. Select each implementation slice after its boundary decisions.
 
 | Slice | Work | Exit condition |
 |---|---|---|
 | Per-operation contract selection | Pin official API/SDK sources; select task and required resource/job ownership; extract only necessary shared values | Each operation has request/result/event/lifecycle boundaries and explicit exclusions; decisions are recorded |
+| Stage 3: Token counting | Complete `count_tokens` with model/tokenizer and effective-input projection scope; include the Responses companion only if selected | Counts preserve the native meaning, unsupported projections reject, and no inference side effects or silent estimates occur |
 | Stage 4: Embeddings | Extend the existing task and codecs | Input/result correspondence, dimensions, encoding, tokenizer scope and embedding-space admission hold |
 | Stage 4: Audio | Complete speech delivery, then transcription, then translation; add native OpenAI preparation/intake | Supported static/streamed results preserve required evidence and reject unsupported combinations |
 | Stage 4: Optional audio dialect | Migrate Chat-carried static audio; add native streaming/reporting separately | Standard downstream audio works without Generation execution; optional work does not block the main audio slice |
 | Stage 4: Images | Complete selected Generate/Edit contracts, initially with direct inputs | Source/mask identity, output controls, static results and preview/final streams are correct |
 | Stage 4: Video | Select concrete video operations, then implement task/content codecs and native execution/delivery | Required controls, artifacts and synchronous/asynchronous completion have independent evidence |
-| Separately scheduled context operations | Implement counting and compaction as separate slices; include the recommended Responses counting surface if selected | No generation masquerading as counting; returned compacted context replays correctly without weakening Generation validation |
-| Selected dependency or separate Files/Uploads slice | Add the selected resource service and connect admitted file references | Lifecycle, authorization, durable mappings and active-reference policies hold across restart |
-| Separately scheduled Native Batch | Add job coordination over completed task contracts and file resources; open endpoint support incrementally | Submission uncertainty, recovery, cancellation and per-record results are handled without implicit retries |
+| Stage 4: Files/multipart Uploads | Add the selected resource service and connect admitted file references | Lifecycle, authorization, bounded multipart uploads, durable mappings and active-reference policies hold across restart |
+| Stage 5, unscheduled: Server-side compaction | Select the explicit native compaction operation separately from automatic triggers | Returned compacted context replays correctly without weakening Generation validation; no implicit background scheduling |
+| Stage 5, unscheduled: Native Batch | Select job coordination over completed task contracts and file resources | Submission uncertainty, recovery, cancellation and per-record results have explicit contracts before implementation |
+| Stage 5, unscheduled: Realtime | Select client/session, transport and event/media contracts | Ownership, interruption, recovery, cancellation and resource bounds are defined before implementation |
 | Per-slice integrated acceptance | Verify selected public bindings, OpenAPI summary, pinned SDKs and bounded real calls | IR, codec, admission, SDK and actual Provider claims have separate evidence |
 
 Files must be designed early but need not block direct audio or image work:
@@ -371,7 +384,8 @@ These recommendations have not been adopted merely by requesting this document.
 | Batch composition | Select compatible model/deployment restrictions and supported endpoint set; recommend explicit rejection over implicit cross-target splitting | Batch admission |
 | Custom voices | Recommend authorized voice references first; voice creation/consent management as a separate resource slice. Broader audio resource coverage may be selected explicitly | Voice-resource endpoints, not ordinary speech |
 | Video contracts | Select current operations/endpoints, task versus content ownership, artifact access and any required job lifecycle before implementation | Video implementation, not stages 1–3 |
-| Within-stage scheduling | Stage 4 is selected for Embedding/audio/image/video; choose bounded implementation slices and necessary dependencies. Other expansion surfaces retain separate scheduling | Per-slice activation and full-chain acceptance |
+| Realtime design | Client scenario, session/transport and interruption/recovery contracts are unselected; keep stage 5 unscheduled | Realtime implementation |
+| Within-stage scheduling | Stage 3 includes counting; stage 4 includes Embedding/audio/image/video and Files/multipart Uploads. All stage-5 tasks remain unscheduled; placing them in the plan does not queue implementation | Per-slice activation and full-chain acceptance |
 
 ## Verification
 

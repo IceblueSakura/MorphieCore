@@ -10,12 +10,13 @@ This page owns direction and current scope. Code and tests define behavior; [Arc
 | Generation IR/codec | Selected design implemented locally, including [visible-history transfer](architecture.md#reasoning-replay), part/call replay with client manifests and [scoped accounting](architecture.md#scoped-accounting). Audit coverage authorized on 2026-10-17 | Same-protocol lossless codec review under the [priority order](#planned-order); [human design review](#generation-design-review-gate) remains open |
 | Client compatibility | Rejection audit and policy selection complete: [phase transfer/return](architecture.md#message-phase-transfer), guarded extended-retention omission and retained citation rejection | Client-carrier acceptance and target storage evidence during reconnection |
 | Integration | P7 selects [R1a/R1b](#first-reconnection-slices); paths beyond frozen admission remain disconnected | Basic agent tool loops after their same-protocol codec gates; no implicit admission or binding activation |
-| Embedding and other modalities | API and implementation adaptation selected for stage 4, including audio/image/video | Select per-operation contracts and slices; existing standalone paths remain maintenance-only until that stage |
+| Embedding, other modalities and file resources | Stage 4 includes audio/image/video API adaptation and Files/multipart Uploads | Select per-operation and resource contracts; existing paths remain maintenance-only until their slices |
+| Stage-5 follow-ups | Citations, tool discovery, hosted tools, server-side compaction, Batch and Realtime are recorded but **unscheduled** | No implementation queue or delivery commitment; select each slice before starting it |
 | Real acceptance | Current codec work has offline and synthetic evidence only; client and Provider loops are not re-accepted | Routing acceptance, then [deferred acceptance](#deferred-acceptance) |
 
 R1a/R1b remain the selected first full-loop acceptance slices. The user separately resumed Messages owner-local cache admission on 2026-10-19; its [all-native configured contract](architecture.md#owner-local-cache-admission) is implemented without activating bindings or changing routes. The overall Generation design review and real acceptance gates remain open. Google value-guard work is separate. Provider-specific reset dialects, persistence and cooldown tuning need separate evidence and approval; no background probes, balancing or multi-round retries are scheduled.
 
-The selected order is **1. same-protocol lossless IR codecs; 2. basic agent tool interactions; 3. cross-protocol conversion stability; 4. Embedding and other-modality API/implementation adaptation, including audio/image/video; 5. citations, tool discovery and hosted tools**. The [planned order](#planned-order) defines the goals and evidence. Same-protocol omissions, default-policy leakage and missing report carriers take precedence over expanding cross-protocol compatibility. Stage 4 selects the modality scope, including video, but exact new operations, owners and bindings still need their own design before implementation.
+The selected order is **1. same-protocol lossless IR codecs; 2. basic agent tool interactions; 3. cross-protocol conversion stability and `count_tokens`; 4. Embedding/audio/image/video API adaptation and Files/multipart Uploads; 5. unscheduled follow-ups: citations, tool discovery, hosted tools, server-side compaction, Batch and Realtime**. The [planned order](#planned-order) defines the goals and evidence. Stage 5 records future scope only, not an automatic next implementation phase or delivery commitment. Exact new operations, owners and bindings still need their own design before implementation.
 
 Phase completeness covers the declared feature scope, not all official Generation semantics; explicit rejection is safer than silent loss but is not completeness. Chat Completions, Responses and Messages are equally important for same-protocol request, response, static delivery, streaming and history replay. Google generateContent and Interactions supply upstream request encoding and SSE intake only; record missing directions rather than implying a complete same-protocol pair.
 
@@ -89,10 +90,13 @@ Minimal counterexamples and pinned sources are in [Generation contract boundarie
 |---|---|---|
 | Binding activation and reconnection (P7 follow-up) | The public capability/notice contract is selected. Complete model-level evidence and preflight/preparation checks, then specify bindings and client loops under the [reconnection sequence](#public-capability-and-reconnection-sequence). Do not reinterpret unsupported completion/safety carriers or reopen P8 policies | Binding activation and full-chain acceptance, not codec-only coverage |
 | [Native cache-only prewarming](#deferred-cache-prewarming) | Priority and scheduling undecided; select the operation and result contract when reopened | That slice only |
-| [Tool discovery and native `web_search`](#deferred-tool-discovery-and-web-search) | Stage 5, after the first four stages; per-slice scheduling and designs remain undecided | Those slices only |
-| [API expansion](api-expansion-design.md) | Embedding and audio/image/video adaptation belong to stage 4; detailed operation designs and within-stage order remain to be selected. Counting, compaction, general Files/Batch work retain separate scheduling except for selected dependencies | Its own slices; not an exit condition for stages 1–3 |
-| File API | Inline data or public URLs only, within the IR budgets (12 MiB decoded per item, 32 MiB per request). Client Provider file IDs and credential-owned URIs reject. Options: a gateway store resolved inline before lowering; upload pinned to one credential; or per-executor upstream upload. The first and last share one IR slot | File services |
-| Realtime | No approach or schedule selected. Choose a client scenario and official contract before deciding session ownership, transport, interruption and recovery | Realtime |
+| [Tool discovery and native `web_search`](#deferred-tool-discovery-and-web-search) | Stage-5 backlog, unscheduled; designs remain undecided | Those slices only |
+| [Token counting](api-expansion-design.md#token-counting) | Complete `count_tokens` in stage 3 with a target/projection-aware counting contract. Responses `input_tokens` remains a proposed companion surface | Counting and its cross-protocol promises, not stages 1–2 |
+| [API expansion](api-expansion-design.md) | Stage 3: counting. Stage 4: Embedding, audio/image/video and Files/multipart Uploads. Stage 5: server-side compaction, Batch and Realtime, all unscheduled | Each operation's own contract and activation |
+| Files/multipart Uploads | Selected for stage 4. Choose storage authority, authorized public IDs, upload lifecycle, retention/deletion and private upstream mappings. Current inline/URL input and rejection of credential-owned references remain until implemented | File resources and their dependent operations |
+| Server-side compaction | Stage-5 backlog, unscheduled. Keep the explicit `/responses/compact` operation separate from automatic triggers and existing compaction-item replay | Compaction execution, not existing replay or stages 1–4 |
+| Batch | Stage-5 backlog, unscheduled. Select native job execution, durable acceptance/reconciliation and supported task/resource dependencies | Batch API and execution |
+| Realtime | Stage-5 backlog, unscheduled. Choose a client scenario and official contract before deciding session ownership, transport, interruption and recovery | Realtime |
 
 ## Integration handoff
 
@@ -133,9 +137,9 @@ When scheduled, add an independent alias-carrier oracle and an incompatible-poli
 |---|---|---|
 | **1 — Same-protocol lossless IR codecs** | Preserve the declared protocol semantics through client request → IR → same-protocol upstream request, and upstream response/events → IR → same-protocol client delivery/history. Prioritize known fields, presence/default meaning, ordered owners, reasoning/replay, usage and terminal facts over cross-protocol convenience | Independent wire→IR and IR→wire expectations in each applicable direction, JSON/SSE agreement and returned-history preservation. Report unsupported fields/directions and actual losses explicitly; round trips, HTTP success and named loss receipts are not lossless evidence |
 | **2 — Basic agent tool interactions** | Ordinary function-tool declarations and schema intent, call IDs/arguments, results/errors, streaming, final answers and next-turn history for pi/OpenCode. The client executes its tools; no gateway tool executor is implied | Selected same-protocol tool-call → result → final-answer → replay loops, preserving source data and required reasoning/cache owners. Keep offline, SDK and bounded real-client/Provider evidence separate |
-| **3 — Cross-protocol conversion stability** | Stabilize selected conversions between different protocols using exact carriers or approved named adaptations, including request controls, tools, reasoning, JSON/SSE, terminals and returned history | Independent directional expectations and selected client loops; consistent admission/preparation and explicit rejection of protected unrepresentable semantics. Do not label approved loss as exact support |
-| **4 — Embedding and other-modality APIs and implementations** | Adapt Embedding and audio/image/video APIs through task IR, upstream/downstream codecs, execution and delivery. Complete existing standalone paths and select missing operation contracts | Each selected operation works through API → typed task → trusted target → result/events; validate format/dimensions or media controls, bounds, lifecycle, cancellation, accounting and applicable SDK/real acceptance |
-| **5 — Deferred evidence and advanced tools** | Citations/source attribution, `tool_search`/ordered discovery and hosted tools such as native `web_search` | Separately selected owners, mappings and lifecycle contracts; these are not prerequisites for stages 1–4 |
+| **3 — Cross-protocol stability and token counting** | Stabilize selected request, response/event and history conversions through exact carriers or approved named adaptations; implement `count_tokens` with explicit model/tokenizer and effective-input projection scope | Independent directional expectations and selected loops; admission/preparation agreement and rejection of protected unrepresentable semantics. Counting has no inference side effects or silent estimation, and does not claim one target's count is exact for every fallback candidate |
+| **4 — Embedding, modalities and file resources** | Adapt Embedding and audio/image/video APIs through task IR, codecs, execution and delivery; implement Files and multipart Uploads as resource services | Verify formats/dimensions, controls, results/events, bounds, cancellation, accounting and applicable SDK/real gates. File resources require authorization, bounded upload/part handling, identity, retention/deletion and restart-consistent mappings |
+| **5 — Unscheduled follow-ups** | Citations/source attribution, `tool_search`, hosted tools, server-side compaction, Batch and Realtime | **Unscheduled:** select each scope/design and explicitly schedule its slice before implementation. No start/delivery commitment or prerequisite for stages 1–4 |
 
 “Lossless” means semantic fidelity within an explicit protocol revision and feature domain, not byte-identical JSON or retention of unknown fields. Equivalent wire normalization is allowed. Preserve protocol records in their existing bounded owners; do not introduce raw passthrough or an IR extension bag. A same-named API at a different Provider is not proof of equivalent semantics.
 
@@ -145,15 +149,29 @@ Design review and focused coverage proceed within each stage, not as a requireme
 
 The P7 boundary review becomes eligible after first-stage local completion, without waiting for deferred cache and tool slices, and is required before route-facing acceptance. Its analysis may proceed alongside design closure.
 
+### Stage 3 counting scope
+
+Complete `POST /v1/messages/count_tokens` during cross-protocol work, as an independent counting operation over the selected model's effective input projection. Preserve count-relevant instructions, tools, media and settings; identify the native model/tokenizer scope and preserve the source's counting meaning. A count does not reserve the next Generation route or promise billing equality. Unsupported counting rejects rather than silently estimating or invoking inference. The [proposed Responses counting companion](api-expansion-design.md#token-counting) remains a surface-selection decision.
+
 ### Stage 4 scope
 
 - **Embedding:** extend the [independent path](#independent-embedding-path), preserving input/result association, dimensions, output encoding, usage and embedding-space compatibility.
 - **Audio:** adapt speech synthesis, transcription/recognition and translation APIs, with selected static/streamed delivery, formats, voices and reported timing/accounting.
 - **Image:** complete generation/editing APIs and implementation, including source/mask ownership, output artifacts and selected preview/final delivery.
 - **Video:** include video API and implementation adaptation rather than retaining the earlier exclusion. Select the concrete input/output or generation operations, typed owners, artifact access and synchronous/asynchronous lifecycle from current protocol evidence before implementing endpoints.
-- **Other modalities and dependencies:** select bounded slices as needed. Keep conversational media in Generation where appropriate and independent operations in their own task contracts; an upstream `/chat/completions` or generation URL does not make every operation a Generation task. File/job services are included only where a selected operation requires them, not as implicit authorization for every resource or Batch API. Realtime/Live remains separately scoped.
+- **Files/multipart Uploads:** implement the selected file and upload APIs, including create/read/list/delete, content access and bounded multipart upload/complete/cancel lifecycles. Select storage authority, authorization, private target mappings, retention/deletion and restart behavior before implementation.
+- **Other modalities and dependencies:** select bounded slices as needed. Keep conversational media in Generation where appropriate and independent operations in their own task contracts. Direct-input media need not wait for the complete file service; file-reference paths do. Native media job lifecycle requirements stay with their stage-4 operation and do not imply the general Batch API. Batch and Realtime belong to the unscheduled stage-5 backlog.
 
-The [API expansion design](api-expansion-design.md) supplies operation proposals, not an already implemented endpoint list. The order within stage 4 remains a per-slice decision; it does not block completion of stages 1–3.
+The [API expansion design](api-expansion-design.md) supplies operation proposals, not an already implemented endpoint list. The order within stage 4 remains a per-slice decision; stage-4 work does not block completion of stages 1–3.
+
+### Stage 5 backlog
+
+**Status: unscheduled.** This is a future-work bucket, not a promised implementation queue after stage 4. Each task needs a selected design and explicit scheduling before work begins.
+
+- Citations/source attribution, `tool_search`/ordered discovery and hosted tools retain their separate proposals below.
+- **Server-side compaction:** include the explicit Provider-executed `/responses/compact` operation. Receiving/replaying compaction items remains existing Generation scope. Automatic compaction triggers, mutation of stored conversations and background execution are not implied by the explicit operation.
+- **Batch:** select supported typed tasks, file dependencies, submission reconciliation, durable job identity, cancellation and per-record outcomes.
+- **Realtime:** select client scenarios, session/transport ownership, event/media contracts, interruption, recovery and resource bounds. Stage-4 audio/video adaptation does not implement Realtime.
 
 ### P7 boundary review
 
@@ -237,7 +255,7 @@ When reopened, select the cache-only operation and result contract from pi's str
 
 ### Deferred tool discovery and web search
 
-These belong to stage 5, after same-protocol fidelity, basic agent tools, cross-protocol stability and Embedding/modality adaptation. Select IR ownership and execution/replay contracts before implementation and show the minimal counterexample when either slice reopens. Neither blocks stages 1–4, coverage or P7; per-slice scheduling and designs remain open.
+These belong to the unscheduled stage-5 backlog. Select IR ownership and execution/replay contracts and explicitly schedule a slice before implementation. Neither blocks stages 1–4, coverage or P7; stage placement is not a delivery commitment.
 
 - **Tool discovery and ordered availability updates.** Complete `tool_search`, its call/output items and `additional_tools`, building on deferred-loading and namespace types. Later tools must not be retroactively added to earlier history through top-level settings. Exit condition: discovery results and availability changes keep order, definitions and references through decode, encode and replay. No gateway tool registry or search executor.
 - **Native OpenAI `web_search`.** Complete the selected built-in path: declaration and controls, Provider-executed observations, reported sources and URL citations, streamed lifecycle and history, reusing observation and citation foundations. Exit condition: the Responses path preserves operations, results, citation associations and honest terminals in JSON and SSE; targets without a carrier reject. The gateway never fetches URLs or searches itself.
@@ -246,7 +264,7 @@ Unsupported discovery and search semantics stay rejected, not converted to text 
 
 ### 1C design: Messages citations
 
-This is a stage-5 proposal, not a prerequisite for stages 1–4. Citation-bearing requests/responses retain their existing rejection until the design is selected and implemented.
+This is an unscheduled stage-5 proposal, not a prerequisite for stages 1–4. Citation-bearing requests/responses retain their existing rejection until the design is selected, scheduled and implemented.
 
 Counterexample: a request holds two PDF documents with `citations: {"enabled": true}`. The response cites `{"type":"page_location","document_index":1,"document_title":"B","cited_text":"…","start_page_number":2,"end_page_number":3}`, and the client returns that text block with its citation. The IR has page coordinates but cannot hold the per-document flag, the cited text or a reference to the second request document: `Citation.source` resolves only in its owner's resource table.
 
@@ -300,8 +318,8 @@ Maintenance only, when a refactor requires it:
 - Standalone Images, Speech, Transcription and Embeddings until their selected stage-4 implementation slices; the stage scope is selected, but per-operation designs and activation remain separate.
 - New Providers and model bindings unless an approved slice reopens them. Alternative bindings for an existing public model belong to failover work; activating a registered binding is not adding one.
 - New subscription credential features.
-- File services.
-- Realtime.
+- Files/multipart Uploads until their selected stage-4 implementation slices.
+- Server-side compaction execution, Batch and Realtime while stage 5 remains unscheduled.
 
 ### Not planned
 
@@ -322,9 +340,9 @@ Observed vendor stream shapes become named dialect rules only when a bound upstr
 
 ## Future work
 
-- **Server-side compaction** (priority undecided). Provider-executed compaction beyond receiving and replaying compaction items. Select the trigger policy, bindings and client-visible behavior first; preserve opaque history and reject incompatible replay targets. This does not imply Provider-held state.
-- Stage-4 Embedding and audio/image/video API/implementation adaptation, including generated-media owners where selected; general file services retain separate scheduling.
-- Remaining [API expansion](api-expansion-design.md) surfaces, such as counting, compaction and Batch, once separately scheduled.
+- [Stage-3 token counting](#stage-3-counting-scope), consistent with selected cross-protocol input projection.
+- Stage-4 Embedding, audio/image/video and Files/multipart Uploads, with per-operation designs and acceptance.
+- The [unscheduled stage-5 backlog](#stage-5-backlog), including server-side compaction, Batch and Realtime; no automatic compaction policy or Provider-held state is selected.
 
 ### Independent Embedding path
 
