@@ -3,7 +3,7 @@
 ## Project and sources of truth
 
 - MorphieCore hides Provider differences behind one typed IR. pi and opencode are the primary clients. Routing is cache-affine failover, not load balancing.
-- [Architecture](docs/architecture.md) owns principles and decisions; [Roadmap](docs/roadmap.md) owns scope and priorities; [Usage](docs/usage.md) and [Development](docs/development.md) own procedures. Code and tests define behavior; read catalogs and startup code for current Providers, models and bindings.
+- [README](README.md#documentation-map) is the document entry point. [Architecture](docs/architecture.md) owns accepted principles and decisions; [Roadmap](docs/roadmap.md) owns scope, execution dependencies and gates; [API expansion design](docs/api-expansion-design.md) owns unselected proposals; [Usage](docs/usage.md) and [Development](docs/development.md) own procedures. Code and tests define behavior; read catalogs and startup code for current Providers, models and bindings.
 
 ## Working approach
 
@@ -46,3 +46,5 @@
 ## Documentation
 
 Keep the existing document set: `README.md`, `AGENTS.md`, `docs/{architecture,roadmap,usage,development,references}.md`, the [API expansion design](docs/api-expansion-design.md), `docs/openapi.json`, and sourced, dated protocol notes in `docs/refs/`. Do not add run reports or history pages. Remove finished roadmap slices and record meaningful decisions in the architecture decision table.
+
+Organize each document by domain with shared rules above specialized branches. Keep one authoritative home per topic and link to it instead of maintaining duplicate plans or specifications. Separate proposed design, accepted decisions, implementation status and acceptance evidence; a structural edit grants no approval. Preserve source dates in research notes and use [References](docs/references.md#research-notes) as their index.

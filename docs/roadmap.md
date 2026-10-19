@@ -1,6 +1,39 @@
 # Roadmap
 
-This page owns direction and current scope. Code and tests define behavior; [Architecture](architecture.md) records design decisions. Remove completed slices here; Git keeps history.
+This page owns current scope, priorities, dependencies and exit gates. Start with the next work package; it is not an approval record or implementation specification. [Architecture](architecture.md) owns accepted design, [API expansion design](api-expansion-design.md) owns unselected proposals, and [Development](development.md) owns verification procedures. Code and tests define behavior. Remove completed slices; Git keeps history.
+
+## Contents
+
+- [Current status](#current-status)
+- [Planned order](#planned-order)
+  - [Execution sequence and work-package rules](#execution-sequence-and-work-package-rules)
+  - [Stage 1 work plan](#stage-1-work-plan)
+  - [Stage 2 work plan](#stage-2-work-plan)
+  - [Stage 3 work plan](#stage-3-work-plan)
+  - [Stage 4 scope](#stage-4-scope)
+  - [Stage 5 backlog](#stage-5-backlog)
+- [Phase rules](#phase-rules)
+  - [Generation design review gate](#generation-design-review-gate)
+  - [Temporary routing freeze](#temporary-routing-freeze)
+  - [IR and codec migration](#ir-and-codec-migration)
+  - [Verification and integration boundary](#verification-and-integration-boundary)
+- [Integration handoff](#integration-handoff)
+  - [P7 boundary review](#p7-boundary-review)
+  - [Routing acceptance — pending](#routing-acceptance--pending)
+- [Pending decisions](#pending-decisions)
+  - [Ownership and projection decisions](#ownership-and-projection-decisions)
+  - [Scheduling and product decisions](#scheduling-and-product-decisions)
+- [Deferred work](#deferred-work)
+  - [Deferred Generation semantics](#deferred-generation-semantics)
+  - [Deferred cache prewarming](#deferred-cache-prewarming)
+  - [Deferred tool discovery and web search](#deferred-tool-discovery-and-web-search)
+  - [Messages citations](#messages-citations)
+- [Deferred acceptance](#deferred-acceptance)
+  - [Target clients](#target-clients)
+  - [Only if needed](#only-if-needed)
+- [Frozen scope](#frozen-scope)
+  - [Not planned](#not-planned)
+  - [Maintenance rules](#maintenance-rules)
 
 ## Current status
 
@@ -9,16 +42,154 @@ This page owns direction and current scope. Code and tests define behavior; [Arc
 | Routing | Functional phase complete under the [stable routing baseline](architecture.md#failover); feature development closed | [Routing acceptance](#routing-acceptance--pending) after the selected stage-2 loops |
 | Generation IR/codec | Selected design implemented locally, including [visible-history transfer](architecture.md#reasoning-replay), part/call replay with client manifests and [scoped accounting](architecture.md#scoped-accounting). Audit coverage authorized on 2026-10-17 | [Stage-1 work plan](#stage-1-work-plan): S1-0 inventory, then the Chat and Responses slices; [human design review](#generation-design-review-gate) remains open |
 | Client compatibility | Rejection audit and policy selection complete: [phase transfer/return](architecture.md#message-phase-transfer), guarded extended-retention omission and retained citation rejection | Client-carrier acceptance and target storage evidence during reconnection |
-| Integration | P7 selects [R1a/R1b](#first-reconnection-slices); paths beyond frozen admission remain disconnected | Each loop starts after its protocol's [stage-1 handoff](#stage-1-to-stage-2-handoff); no implicit admission or binding activation |
-| Embedding, other modalities and file resources | Stage 4 includes audio/image/video API adaptation and Files/multipart Uploads | Select per-operation and resource contracts; existing paths remain maintenance-only until their slices |
+| Integration | P7 selects [R1a/R1b](#first-reconnection-slices); paths beyond frozen admission remain disconnected | Follow the [stage-2 work plan](#stage-2-work-plan) after each protocol's handoff; no implicit admission or binding activation |
+| Cross-protocol conversion and counting | Target-value limits, missing-cap policy and attribution rules are selected; implementation and Interactions snapshot design remain pending | [Stage-3 work plan](#stage-3-work-plan), with counting dependent on its own input projection rather than every conversion |
+| Embedding, other modalities and file resources | Stage 4 includes audio/image/video API adaptation and Files/multipart Uploads | Follow the [operation work packages](#stage-4-scope); existing paths remain maintenance-only until their slices |
 | Stage-5 follow-ups | Citations, tool discovery, hosted tools, server-side compaction, Batch and Realtime are recorded but **unscheduled** | No implementation queue or delivery commitment; select each slice before starting it |
 | Real acceptance | Bounded request-profile checks for R2 passed on 2026-10-19; other codec work has offline and synthetic evidence only, and no client loop is re-accepted | Stage-2 loops, routing acceptance, then [deferred acceptance](#deferred-acceptance) |
 
 R1a/R1b remain the selected first full-loop acceptance slices. The user separately resumed Messages owner-local cache admission on 2026-10-19; its [all-native configured contract](architecture.md#owner-local-cache-admission) is implemented without activating bindings or changing routes. The overall Generation design review and real acceptance gates remain open. Google value guards and Interactions snapshots belong to stage 3: no Google client endpoint forms a same-protocol pair. Provider-specific reset dialects, persistence and cooldown tuning need separate evidence and approval; no background probes, balancing or multi-round retries are scheduled.
 
-The selected order is **1. same-protocol lossless IR codecs; 2. basic agent tool interactions; 3. cross-protocol conversion stability and `count_tokens`; 4. Embedding/audio/image/video API adaptation and Files/multipart Uploads; 5. unscheduled follow-ups: citations, tool discovery, hosted tools, server-side compaction, Batch and Realtime**. The [planned order](#planned-order) defines the goals and evidence. Stage 5 records future scope only, not an automatic next implementation phase or delivery commitment. Exact new operations, owners and bindings still need their own design before implementation.
-
 Phase completeness covers the declared feature scope, not all official Generation semantics; explicit rejection is safer than silent loss but is not completeness. Chat Completions, Responses and Messages are equally important for same-protocol request, response, static delivery, streaming and history replay. Google generateContent and Interactions supply upstream request encoding and SSE intake only; record missing directions rather than implying a complete same-protocol pair.
+
+## Planned order
+
+| Stage | Goal | Exit evidence for a selected slice |
+|---|---|---|
+| **1 — Same-protocol lossless IR codecs** | Preserve the declared protocol semantics through client request → IR → same-protocol upstream request, and upstream response/events → IR → same-protocol client delivery/history. Prioritize known fields, presence/default meaning, ordered owners, reasoning/replay, usage and terminal facts over cross-protocol convenience | Independent wire→IR and IR→wire expectations in each applicable direction, JSON/SSE agreement and returned-history preservation. Report unsupported fields/directions and actual losses explicitly; round trips, HTTP success and named loss receipts are not lossless evidence |
+| **2 — Basic agent tool interactions** | Ordinary function-tool declarations and schema intent, call IDs/arguments, results/errors, streaming, final answers and next-turn history for pi/OpenCode. The client executes its tools; no gateway tool executor is implied | Selected same-protocol tool-call → result → final-answer → replay loops, preserving source data and required reasoning/cache owners. Keep offline, SDK and bounded real-client/Provider evidence separate |
+| **3 — Cross-protocol stability and token counting** | Stabilize selected request, response/event and history conversions through exact carriers or approved named adaptations; implement `count_tokens` with explicit model/tokenizer and effective-input projection scope | Independent directional expectations and selected loops; admission/preparation agreement and rejection of protected unrepresentable semantics. Counting has no inference side effects or silent estimation, and does not claim one target's count is exact for every fallback candidate |
+| **4 — Embedding, modalities and file resources** | Adapt Embedding and audio/image/video APIs through task IR, codecs, execution and delivery; implement Files and multipart Uploads as resource services | Verify formats/dimensions, controls, results/events, bounds, cancellation, accounting and applicable SDK/real gates. File resources require authorization, bounded upload/part handling, identity, retention/deletion and restart-consistent mappings |
+| **5 — Unscheduled follow-ups** | Citations/source attribution, `tool_search`, hosted tools, server-side compaction, Batch and Realtime | **Unscheduled:** select each scope/design and explicitly schedule its slice before implementation. No start/delivery commitment or prerequisite for stages 1–4 |
+
+“Lossless” means semantic fidelity within an explicit protocol revision and feature domain, not byte-identical JSON or retention of unknown fields. Equivalent wire normalization is allowed. Preserve protocol records in their existing bounded owners; do not introduce raw passthrough or an IR extension bag. A same-named API at a different Provider is not proof of equivalent semantics.
+
+Audit existing same-protocol loss paths and distinguish codec loss from model/product policy. Basic tool-field fidelity belongs to stage 1; stage 2 adds the agent interaction loop. Previously approved adaptations remain active until deliberately changed, but their occurrence cannot pass a lossless check. Deferred citations or other unsupported semantics remain explicit coverage gaps and reject where required; postponing them never permits silent loss or a claim of complete protocol coverage.
+
+Design review and focused coverage proceed within each stage, not as a requirement to finish every later-stage design first. Keep the existing human approval, publication and integration gates. Preserve security, bounds, cancellation, replay isolation, honest terminals and existing regression assertions at every stage; later scheduling defers expansion, not necessary maintenance. Existing media carriers remain covered during stages 1–3; new modality APIs and execution paths belong to stage 4. Other-agent acceptance keeps its [separate scheduling](#deferred-acceptance).
+
+The P7 boundary review becomes eligible after first-stage local completion, without waiting for deferred cache and tool slices, and is required before route-facing acceptance. Its analysis may proceed alongside design closure.
+
+### Execution sequence and work-package rules
+
+The packages below refine the selected scope, not design approval or binding activation. IDs name coherent deliverables, not a required commit count. Stage-4 ordering is recommended; exact operation contracts still need selection. Stage 5 has no execution queue.
+
+1. Start with **S1-0**, then prioritize **S1-1 → S1-2 → the remaining S1-3 work**.
+2. Hand off **S1-1 → R1a** and **S1-2 → R1b** independently. A loop waits for its own carriers and review/admission gates, not every stage-1 package. Run R1a/R1b before R2.
+3. R2 uses the implemented pi Haiku profile; it does not wait for unrelated S1-3 manual-budget, sampling or identity work. An observed defect in a carrier actually used by R2 must still be fixed before accepting it.
+4. Complete selected stage-2 loops before routing acceptance and stage-3 conversion work. Keep separately scheduled real failover distinct from controlled synthetic recovery checks.
+5. In stage 3, implement shared target checks before the paths that need them. Interactions snapshots and counting are separate branches; counting waits only for its selected effective-input projection. S3-3 attribution depends on S1-3c native identity preservation.
+6. In stage 4, select the next operation's contract just in time. Design file authority early, but let direct-input Embedding/audio/image slices proceed without the complete file service. File-reference integration waits for authorized resource resolution.
+
+Every implementation package follows the same bounded workflow:
+
+- **Entry:** name the pinned source revision, dialect, feature domain, relevant binding/client profile, existing owners and unresolved decisions. Extend sourced `docs/refs/` notes for protocol findings; do not create run-report documents.
+- **Delivery:** implement one coherent request/result/event/history or resource-lifecycle slice. Present a minimal counterexample and options before introducing an unselected semantic structure; a decision blocks only dependent work.
+- **Evidence:** write independent directional expectations and focused failure checks at the responsible layer. Separate equivalent normalization, exact carriage, approved loss, rejection and unassessed cases. Prepare the [human review](#generation-design-review-gate) evidence incrementally; no passing test or agent review closes that gate.
+- **Exit:** apply the [publication and integration gates](#verification-and-integration-boundary). Report codec, admission, SDK and real-client/Provider status separately, including blocked checks. Commit/push only after the applicable checks; remove completed packages from this page and keep accepted decisions in Architecture.
+
+### Stage 1 work plan
+
+**Status: scope selected on 2026-10-19.** The [baseline, dialects and R2 client profile](architecture.md#settled-decisions) are settled: SDK and pi releases pinned on that date; DashScope Chat, OpenRouter Responses and OpenCode Go Messages; pi's `anthropic-messages` profile with the built-in Haiku 5.5 compat flags. Same-protocol pairs are Chat → Chat, Responses → Responses and Messages → Messages, each across request encoding, static response, SSE and returned history. Google generateContent and Interactions have no client endpoint and therefore no pair: stage 1 maintains their existing carriers, while value guards, lifecycle snapshots and Google conversions belong to stage 3. Each lossless claim names one baseline revision and one upstream dialect.
+
+| Slice | Work | Exit condition |
+|---|---|---|
+| S1-0 Inventory | Use the selected revisions in [References](references.md#pinned-sources), not a moving latest-version target. For each pair and direction, classify every official request field, response field, event and history carrier as exact, named loss, rejection or ignored by name, with its code and test owner. Separate official fields, registered dialect extensions and target/model policy. Record sourced findings in a dated `docs/refs/` note, then assign each in-scope gap to S1-1/2/3 | No official field is ignored without classification; every named rule that can fire on a same-protocol path is listed with its owner; the gaps below are confirmed or corrected. Missing Google client/static directions are explicit, not invented pairs |
+| S1-1 Chat | R1a domain on the DashScope dialect: text, function tools, readable and replay reasoning extensions, usage details, finish reasons, `stream_options` and Chat-originated history | Stage-1 exit evidence, with no same-protocol loss receipt in that domain |
+| S1-2 Responses | R1b domain on OpenRouter: reasoning summary and encrypted items, phase, function-call items, usage details, `include`, `truncation`, `max_tool_calls`, metadata, and stateless plus gateway-stored history | As S1-1, and stored and stateless continuation project the same history |
+| S1-3 Messages | The pi Haiku carriers are done: see [request rules](architecture.md#request-rules). Complete the four remaining packages below under the [source boundaries and selected scope](refs/2026-10-17-generation-contracts.md#messages-budget-and-identity-boundaries-2026-10-19) | Native request, JSON/SSE and returned-history evidence for each selected carrier; separate protocol fidelity from the narrower Go/Haiku model policy |
+
+Order: S1-0, S1-1 and S1-2, then the remaining S1-3 items. No slice widens admission beyond its selected binding.
+
+For S1-1 and S1-2, work through request/history preservation, static response delivery, then event intake/delivery and next-request replay. Extend the existing semantic/transport checks rather than creating a second harness. Resolve inventory gaps within the declared domain before handing off; record out-of-domain gaps instead of expanding into a Provider/model matrix.
+
+| Messages package | Work | Exit condition |
+|---|---|---|
+| S1-3a Sampling policy | Move fixed/ignored Claude 5.x sampling behavior from the generic codec profile to explicit trusted binding policy, including the selected `top_k` restriction | A supported native control has an exact carrier; only an evidenced target policy omits or rejects it. Source validation remains strict, and the configured Haiku behavior does not widen |
+| S1-3b Ordinary manual budgets | Add exact numeric-budget encoding for supporting native targets; validate the Messages source and final target relations separately | Independent native oracles enforce budget ≥ 1024 and budget < output ceiling, including equality/overflow boundaries. No clipping, cap increase, manual-interleaved exception or manual-thinking admission on adaptive-only bindings |
+| S1-3c Native user identity | Preserve `metadata.user_id`, including meaningful absent/null/empty states; give the shared typed owner sufficient bounds and enforce source/target limits | Independent intake/encoding/history expectations preserve native identity and keep separately supplied user, safety and cache fields intact. No cross-protocol attribution or identity-derived cache key is introduced here |
+| S1-3d Eager partial tool input | Pin the native partial-input cases that currently fail at `content_block_stop`; select the incomplete-argument representation/delivery contract before changing validation, then implement it | Native event/delivery/history expectations cover valid complete input and selected partial/error cases. Preserve exact supplied fragments and call identity; do not repair arguments or fabricate a completed call. Keep ordinary strict-JSON and terminal checks |
+
+| Pair | Field or carrier | Current treatment | Recommendation |
+|---|---|---|---|
+| Chat | `prediction` | Omitted at intake for every target under D3 | Keep D3 unless a selected Chat binding supports it; then move the omission to target projection |
+| Chat | Participant `name`, `n` other than 1, `store: true`, `logit_bias`, `moderation`, custom-tool SSE | Rejected | Keep as recorded stage-1 gaps |
+| All | Hosted and server tools, citations, Messages document `context`, `clear_at`, `input_examples`, geography, speed and fallbacks; Responses `prompt`, `conversation`, `context_management`, access programs and misalignment details | Rejected | Stage 5 or a later owner selection; not stage-1 blockers |
+
+Stage-1 exit for a pair means every in-domain official field is exact, or is an explicitly listed rejection or target-policy loss. Approved losses that still fire on same-protocol paths remain listed as non-lossless.
+
+#### Stage-1 to stage-2 handoff
+
+A stage-2 loop needs only its own protocol slice, scoped to that loop's carriers, not the whole of stage 1: R1a follows S1-1 and R1b follows S1-2. R2 is pi's `anthropic-messages` API with the built-in Haiku 5.5 compat flags, which the user's separate pi extension declares for the gateway. The flags are listed in the [pi profile note](refs/2026-10-17-generation-contracts.md#pi-messages-request-profile-2026-10-19). Its carriers are implemented and passed a bounded check, so R2 needs no further S1-3 work. Acceptance runs declare the same model in scratch `models.json`; a declaration without `forceAdaptiveThinking` sends budgeted thinking, which the native target rejects, and is not R2.
+
+Every selected loop must leave no unclassified ignored request fields: `ignored_request_field_count` stays zero, or each ignored name is classified in the inventory. Client-specific dialect fields such as pi's `enable_thinking` or `chat_template_kwargs` are outside the official Chat baseline. The selected pi and OpenCode profiles must emit only registered carriers.
+
+### Stage 2 work plan
+
+These packages implement the [selected reconnection contracts](#first-reconnection-slices), not a new admission policy. Protocol-local handoff does not bypass the pending human design review, P7 boundary review or binding evidence. R1a and R1b are separate acceptance slices; neither needs R2 or stage-3 conversions to succeed.
+
+| Package | Dependency and work | Exit condition |
+|---|---|---|
+| S2-0 Per-loop readiness | Repeat for the next selected loop after its [stage-1 handoff](#stage-1-to-stage-2-handoff). Confirm exact client request shape, model-effective carrier evidence, public admission and shared preflight/preparation behavior; classify every ignored field | The loop has an explicit carrier/profile contract and no unclassified ignored fields. Capability declarations distinguish exact support, adaptation and rejection. Any unsupported boundary is recorded without activating another binding |
+| S2-1 R1a | After S1-1 and S2-0, connect the selected DashScope Chat loop. Cover a static and a streamed function turn, result, final answer and next-request readable/replay reasoning history | Offline and connected SDK gates pass; bounded pi/OpenCode and Provider checks separately establish the selected loop. Other effort aliases and dialects remain unverified |
+| S2-2 R1b | After S1-2 and S2-0, connect the selected OpenRouter Responses loop with explicit non-strict tools. Check summary/opaque reasoning, phase, usage and complete call/result history | Static/SSE and stateless/gateway-stored history retain their own evidence. Verify phase-only manifest return where used, replay isolation and pinned-client behavior; then run the separate bounded real gates |
+| S2-3 R2 | After R1a/R1b and its own S2-0, accept the existing pi Haiku profile on the all-native configured route. Include a real session that changes tools, owner-local cache usage/TTL evidence and account-compatible signed-thinking replay | A tool/result/final-answer/history loop is accepted, not merely a request-profile probe. Missing cache reports remain unknown; accepted effort fields do not prove effective effort levels. Automatic-cache admission stays separate |
+| S2-4 Routing acceptance | After the selected loops, exercise the unchanged routing contract through controlled synthetic failures; see [routing acceptance](#routing-acceptance--pending) | Conversation identity, exact-credential affinity, migration, all-cooling/`Retry-After`, cancellation and post-publication failure are checked. Client retries and gateway attempts are counted separately; real failover remains a separately scheduled run |
+
+For each loop, establish independent static and SSE expectations before real acceptance, including tool errors, strict EOF, cancellation and no replay after publication. Use the [existing SDK and client procedures](development.md), not a new acceptance framework. Before every real run fix the target, request count, output cap and timeout; run serially through the project loader with no hidden retries and body-free reporting.
+
+Extended-retention omission is not a prerequisite for these exact-carrier loops. If a later slice selects it, first verify that target's storage policy; cache usage is not retention evidence.
+
+### Stage 3 work plan
+
+The stage covers request projection, selected cross-protocol loops, Interactions intake and counting. Target-value rejection, trusted missing-cap defaults and attribution priority are already selected policies, not new alternatives to debate. Configuration details, model evidence, snapshot strategy and the concrete counting profile still need work.
+
+| Package | Dependency and work | Exit condition |
+|---|---|---|
+| S3-1 Model-effective value guards | Implement bounded allowed-effort and maximum-output declarations in trusted binding policy. Apply them through the shared encoder after projection, including ordered updates and inserted defaults | Preflight/preparation agree; documented invalid Gemini effort/output examples reject at the intended target check. Keep protocol-wide carriers, source IR, existing approved mappings and route selection unchanged; no new clamping |
+| S3-2 Messages missing-cap default | Select the bounded configuration shape and per-binding values; replace fixed `32000` insertion with the trusted default only when the source has no ceiling. Integrate with S3-1 final checks | Explicit caps survive; the default is distinct from the model maximum; incompatible ordinary budget/default combinations reject without adjustment. Named insertion evidence appears once on the candidate copy |
+| S3-3 Cross-protocol attribution | After S1-3c and the relevant native-field inventory, implement the selected [end-user attribution](architecture.md#end-user-attribution) rules, including generateContent safety labels | Independent directional checks cover safety-ID priority, null/empty/absent, same-priority conflicts and target bounds. Source fields remain unchanged; identity loss and legacy cache-bucketing loss are separate. No inferred Interactions carrier |
+| S3-4 Google → Chat/Responses loops | After S3-1 and the carriers required by each selected profile, verify generateContent → Chat, then Responses, one direction/binding at a time. Check request projection, tool results, final answers, usage and signed-history return | JSON/SSE loops pass applicable offline, SDK and separately bounded real gates. Preserve safety/terminal rejection and late-report honesty. Google client/static intake and Google → Messages final-answer conversion are not opened implicitly |
+| S3-5 Interactions snapshots | Present the minimal streamed-owner/snapshot counterexample and select owner-by-owner reconciliation or snapshot-only materialization, then implement that design | Supplied content, signatures, errors and lifecycle facts cannot contradict earlier owners silently. Independent positive/negative event cases establish the selected mode; current rejection alone is not complete SSE support |
+| S3-6 Token counting | Select one model/target counting profile and its public scope, then implement the independent Messages operation below using that profile's effective-input projection | Independent request/result oracles, no inference side effects, no silent estimates, and explicit model/tokenizer meaning. Update implemented OpenAPI and run applicable SDK/real gates; Responses counting is added only if separately selected |
+
+S3-2 uses S3-1's final validation; S3-4 needs S3-3 only if its chosen profile exercises attribution. S3-5 is not a prerequisite for generateContent or counting. S3-6 may proceed once its own projection is stable rather than waiting for every cross-protocol pair. Unsupported protected semantics continue to reject; completing these packages does not imply full official-protocol coverage.
+
+#### Stage 3 counting scope
+
+Complete `POST /v1/messages/count_tokens` during cross-protocol work, as an independent counting operation over the selected model's effective input projection. Preserve count-relevant instructions, tools, media and settings; identify the native model/tokenizer scope and preserve the source's counting meaning. A count does not reserve the next Generation route or promise billing equality. Unsupported counting rejects rather than silently estimating or invoking inference. The [proposed Responses counting companion](api-expansion-design.md#token-counting) remains a surface-selection decision.
+
+### Stage 4 scope
+
+The [API expansion design](api-expansion-design.md) supplies operation proposals, not implemented endpoints or approved type layouts. Keep conversational media in Generation where appropriate and independent operations in their own task contracts. The order below is recommended, with per-operation selection before implementation; stage-4 work does not block stages 1–3.
+
+| Package | Dependency and work | Exit condition |
+|---|---|---|
+| S4-0 Next-operation design | Pin current official request/result/event contracts, choose one target and task/resource owners, and state exclusions. Select file authority early; select later operations just in time rather than requiring a complete redesign upfront | New semantic structures and execution-policy choices have explicit decisions. Existing owners/shared values are reused where appropriate; no universal task bag, repository-wide rewrite or implicit new binding |
+| S4-1 Embedding | Extend the [independent path](architecture.md#independent-embedding-path) after its S4-0. Preserve text/token-ID alternatives, input/result association, dimensions, encoding and usage | One selected official contract works end to end; tokenizer scope, bounds and cancellation hold. Equal dimensions do not authorize cross-model failover |
+| S4-2a Speech | Complete the selected static binary contract, then independently deliver progressive binary/SSE where supported. Preserve text, instructions, voice, speed, format and reported accounting | Static and streamed evidence remain separate; bounded buffering, cancellation and honest completion hold. No fabricated transcript/usage or implicit voice-resource creation |
+| S4-2b Transcription | Complete file-based recognition with native multipart upstream preparation, static decoding and selected stream intake | Real reported text/timing/speaker/probability/usage facts survive; unsupported output formats reject instead of inventing timestamps. Large input and cancellation stay bounded; a reusable File object is not required |
+| S4-2c Translation | Reuse the necessary audio-input infrastructure from S4-2b, but select and implement native translation as a distinct operation | Current model/language restrictions are rechecked; translation intent and results are preserved. No implicit ASR-plus-Generation substitute |
+| S4-3 Images | Deliver Generate completion, direct-input Edit, then selected preview/final streaming as coherent sub-slices. Keep source order, mask association, controls and artifact identity | Independent generate/edit oracles and task-specific lifecycle checks pass. Previews do not satisfy final-image counts; direct inputs need not wait for Files, while file-reference forms wait for S4-4c |
+| S4-4a Files | After selecting storage authority, public-ID authorization, private mappings and retention/reference policy, implement create/read/list/delete and content access | Access isolation, bounded streaming/spooling, deletion/expiry with active references and restart-consistent mappings are verified. No credential-owned upstream ID is accepted as public authority |
+| S4-4b Multipart Uploads | Build on the selected file identity/lifecycle contract: create upload, add bounded parts, complete ordered parts, cancel and clean up incomplete uploads | Part identity/order, total bytes, expiry/cancel cleanup and uncertain remote completion are handled without blind replay or whole-file memory retention |
+| S4-4c File-reference integration | Connect authorized resource resolution to each selected task outside pure codecs; retain the task's existing direct-input path | Resource scope can restrict trusted targets but cannot supply origins/credentials. Selected file-backed operations work across restart and reject stale, unauthorized or incompatible references |
+| S4-5 Video | Select concrete current input/output or production operations before choosing task/content and optional native-job owners. Implement their codecs, execution and artifact access | Independent request/result and applicable event/job evidence covers bounds, cancellation, artifact identity and honest completion. Async APIs explicitly handle submission uncertainty/status/cancellation; only file-reference paths depend on S4-4c |
+
+Files design can proceed alongside the first operation slices; implementation need not delay direct-input media. Speech, image and file implementations may advance independently once their own contracts are selected, but shared-owner changes must stay coordinated. Native video/media job lifecycle belongs to that operation, not the general Batch API.
+
+Optional Chat-carried audio is a separate slice after its task contract stabilizes: preserve the existing static path, then verify genuine upstream streaming if selected. It neither blocks the main audio path nor establishes Realtime. For every operation, update the OpenAPI/usage surface only when implemented, keep admission and actual Provider evidence separate, and use the [stage-specific verification](api-expansion-design.md#verification).
+
+### Stage 5 backlog
+
+**Status: unscheduled.** This is a future-work bucket, not a promised implementation queue after stage 4. Each task needs a selected design and explicit scheduling before work begins.
+
+Reopening a task requires its client scenario, minimum semantic/resource dependencies, design choice and bounded acceptance contract. Do not prebuild these systems as stage-3/4 infrastructure. Native cache-only prewarming and other separately deferred features retain their own scheduling decisions; they are not silently added to this queue.
+
+- Citations/source attribution, `tool_search`/ordered discovery and hosted tools retain their separate [design proposals](api-expansion-design.md#unscheduled-designs).
+- **Server-side compaction:** include the explicit Provider-executed `/responses/compact` operation. Receiving/replaying compaction items remains existing Generation scope. Automatic compaction triggers, mutation of stored conversations and background execution are not implied by the explicit operation.
+- **Batch:** select supported typed tasks, file dependencies, submission reconciliation, durable job identity, cancellation and per-record outcomes.
+- **Realtime:** select client scenarios, session/transport ownership, event/media contracts, interruption, recovery and resource bounds. Stage-4 audio/video adaptation does not implement Realtime.
 
 ## Phase rules
 
@@ -69,35 +240,6 @@ For every implementation slice:
 | Commit and push | Full offline baseline passes, or an explicit user exception | A local completion claim does not grant publication |
 | Accept integration | Boundary review, admitted route contracts, full offline baseline and connected SDK gate pass | Only then claim a selected full client loop works; real Provider acceptance stays separate |
 
-## Pending decisions
-
-The [settled decisions](architecture.md#settled-decisions) remain the baseline; the audit permits evidence-backed reconsideration of lossy mappings. New semantic or execution-policy structures need a selected design. Continue independent work while a choice blocks only its own contracts.
-
-### Ownership and projection decisions
-
-Minimal counterexamples and pinned sources are in [Generation contract boundaries](refs/2026-10-17-generation-contracts.md).
-
-| Question | Recommendation and exit condition |
-|---|---|
-| Complete citations and source identity | **Stage 5.** Select licence/quote/request-source owners and output point anchors, including the changed OpenAI file-citation index contract. Then independently cover request, output, streaming and returned history; retain rejection until represented. Messages citations have a separate [1C design](#1c-design-messages-citations) |
-| Execution controls and reports | **Unscheduled; not a stage-1 blocker.** Select bounded owners for geography, access programs, safety/review details and Interactions reported service/continuation only when a scheduled client sends them. Messages block binding already has typed ownership and selected carrier/fallback rules; input transformations use validated named omission, not exact report carriage. Keep other protected unsupported carriers rejected; do not add routing or continuation execution implicitly |
-| Interactions lifecycle snapshots | **Stage 3.** Compare supplied steps against streamed owners, including content/signatures/errors, or select snapshot-only materialization. Current rejection prevents contradiction loss but is not complete SSE support |
-| Messages sampling policy | **Stage 1 (S1-3).** Move sampling omission to explicit trusted target policy. Missing output ceilings have a selected [trusted target-default policy](architecture.md#settled-decisions), with implementation in stage 3 rather than a remaining default-versus-rejection choice |
-
-### Scheduling and product decisions
-
-| Question | Current behavior and recommendation | Blocks |
-|---|---|---|
-| Binding activation and reconnection (P7 follow-up) | The public capability/notice contract is selected. Complete model-level evidence and preflight/preparation checks, then specify bindings and client loops under the [reconnection sequence](#public-capability-and-reconnection-sequence). Do not reinterpret unsupported completion/safety carriers or reopen P8 policies | Binding activation and full-chain acceptance, not codec-only coverage |
-| [Native cache-only prewarming](#deferred-cache-prewarming) | Priority and scheduling undecided; select the operation and result contract when reopened | That slice only |
-| [Tool discovery and native `web_search`](#deferred-tool-discovery-and-web-search) | Stage-5 backlog, unscheduled; designs remain undecided | Those slices only |
-| [Token counting](api-expansion-design.md#token-counting) | Complete `count_tokens` in stage 3 with a target/projection-aware counting contract. Responses `input_tokens` remains a proposed companion surface | Counting and its cross-protocol promises, not stages 1–2 |
-| [API expansion](api-expansion-design.md) | Stage 3: counting. Stage 4: Embedding, audio/image/video and Files/multipart Uploads. Stage 5: server-side compaction, Batch and Realtime, all unscheduled | Each operation's own contract and activation |
-| Files/multipart Uploads | Selected for stage 4. Choose storage authority, authorized public IDs, upload lifecycle, retention/deletion and private upstream mappings. Current inline/URL input and rejection of credential-owned references remain until implemented | File resources and their dependent operations |
-| Server-side compaction | Stage-5 backlog, unscheduled. Keep the explicit `/responses/compact` operation separate from automatic triggers and existing compaction-item replay | Compaction execution, not existing replay or stages 1–4 |
-| Batch | Stage-5 backlog, unscheduled. Select native job execution, durable acceptance/reconciliation and supported task/resource dependencies | Batch API and execution |
-| Realtime | Stage-5 backlog, unscheduled. Choose a client scenario and official contract before deciding session ownership, transport, interruption and recovery | Realtime |
-
 ## Integration handoff
 
 Native `representation_contract()` carrier availability is separate from default `semantic_contract()` binding admission. Completing a codec activates nothing: [topology compilation](../src/topology/compile.rs) still checks the selected admission contracts, and widening a synthetic endpoint for a test does not establish a public route. The [all-native Go/Haiku contract](architecture.md#owner-local-cache-admission) is an explicitly selected configured exception; generic defaults and unrelated frozen features remain unchanged.
@@ -124,85 +266,6 @@ P8 policy selection is complete. Responses normalization-default strictness neve
 Terminal completion causes are independent of turn progress and tool continuation. Chat and Responses use the [selected terminal approximations](architecture.md#selected-request-approximations); Messages rejects ambiguous stops, recitation, unknown completed terminals without pending calls and explicit continuation. Google `STOP` stays a reported fact beside function calls, and Chat delivers it as `stop`. Gateway and SDK smokes retain exact tool-response carriers, not completed cross-protocol answer loops; signed Google history has pinned pi codec coverage, not full-request admission. The [Messages gateway smoke](../tests/gateway/anthropic.rs) checks owner-local markers and signed tool-result/final-answer history with a synthetic native upstream in JSON/SSE, not real client or Provider acceptance.
 
 Exchange capture covers authenticated client boundaries and Generation upstream I/O, not frozen standalone tasks. Unsafe units are explicitly incomplete or omitted, never raw fallbacks; capture counters do not establish semantic completion or durable retention.
-
-### Model-name service-policy carriers
-
-Service-policy carriers may be upstream model names rather than a dedicated field. A trusted, evidence-backed binding declaration must associate an alias with the complete policy it represents; never infer a tier from a suffix or accept a client-supplied upstream selector. A different model version, quantization or context contract is not automatically a tier of the same model. The current [endpoint contract](../src/topology/endpoint.rs) fixes the upstream model at binding time; choosing predeclared variants during preparation is an integration design question, not a codec-only string rewrite.
-
-When scheduled, add an independent alias-carrier oracle and an incompatible-policy rejection. Preparation must agree with preflight on the effective deployment, and cache/replay identity must follow the selected wire model. A selected alias proves request projection, not delivered service; record a reported tier only from an authoritative report.
-
-## Planned order
-
-| Stage | Goal | Exit evidence for a selected slice |
-|---|---|---|
-| **1 — Same-protocol lossless IR codecs** | Preserve the declared protocol semantics through client request → IR → same-protocol upstream request, and upstream response/events → IR → same-protocol client delivery/history. Prioritize known fields, presence/default meaning, ordered owners, reasoning/replay, usage and terminal facts over cross-protocol convenience | Independent wire→IR and IR→wire expectations in each applicable direction, JSON/SSE agreement and returned-history preservation. Report unsupported fields/directions and actual losses explicitly; round trips, HTTP success and named loss receipts are not lossless evidence |
-| **2 — Basic agent tool interactions** | Ordinary function-tool declarations and schema intent, call IDs/arguments, results/errors, streaming, final answers and next-turn history for pi/OpenCode. The client executes its tools; no gateway tool executor is implied | Selected same-protocol tool-call → result → final-answer → replay loops, preserving source data and required reasoning/cache owners. Keep offline, SDK and bounded real-client/Provider evidence separate |
-| **3 — Cross-protocol stability and token counting** | Stabilize selected request, response/event and history conversions through exact carriers or approved named adaptations; implement `count_tokens` with explicit model/tokenizer and effective-input projection scope | Independent directional expectations and selected loops; admission/preparation agreement and rejection of protected unrepresentable semantics. Counting has no inference side effects or silent estimation, and does not claim one target's count is exact for every fallback candidate |
-| **4 — Embedding, modalities and file resources** | Adapt Embedding and audio/image/video APIs through task IR, codecs, execution and delivery; implement Files and multipart Uploads as resource services | Verify formats/dimensions, controls, results/events, bounds, cancellation, accounting and applicable SDK/real gates. File resources require authorization, bounded upload/part handling, identity, retention/deletion and restart-consistent mappings |
-| **5 — Unscheduled follow-ups** | Citations/source attribution, `tool_search`, hosted tools, server-side compaction, Batch and Realtime | **Unscheduled:** select each scope/design and explicitly schedule its slice before implementation. No start/delivery commitment or prerequisite for stages 1–4 |
-
-“Lossless” means semantic fidelity within an explicit protocol revision and feature domain, not byte-identical JSON or retention of unknown fields. Equivalent wire normalization is allowed. Preserve protocol records in their existing bounded owners; do not introduce raw passthrough or an IR extension bag. A same-named API at a different Provider is not proof of equivalent semantics.
-
-Audit existing same-protocol loss paths and distinguish codec loss from model/product policy. Basic tool-field fidelity belongs to stage 1; stage 2 adds the agent interaction loop. Previously approved adaptations remain active until deliberately changed, but their occurrence cannot pass a lossless check. Deferred citations or other unsupported semantics remain explicit coverage gaps and reject where required; postponing them never permits silent loss or a claim of complete protocol coverage.
-
-Design review and focused coverage proceed within each stage, not as a requirement to finish every later-stage design first. Keep the existing human approval, publication and integration gates. Preserve security, bounds, cancellation, replay isolation, honest terminals and existing regression assertions at every stage; later scheduling defers expansion, not necessary maintenance. Existing media carriers remain covered during stages 1–3; new modality APIs and execution paths belong to stage 4. Other-agent acceptance keeps its [separate scheduling](#deferred-acceptance).
-
-The P7 boundary review becomes eligible after first-stage local completion, without waiting for deferred cache and tool slices, and is required before route-facing acceptance. Its analysis may proceed alongside design closure.
-
-### Stage 1 work plan
-
-**Status: scope selected on 2026-10-19.** The [baseline, dialects and R2 client profile](architecture.md#settled-decisions) are settled: latest SDK and pi releases; DashScope Chat, OpenRouter Responses and OpenCode Go Messages; pi's `anthropic-messages` profile with the built-in Haiku 5.5 compat flags. Same-protocol pairs are Chat → Chat, Responses → Responses and Messages → Messages, each across request encoding, static response, SSE and returned history. Google generateContent and Interactions have no client endpoint and therefore no pair: stage 1 maintains their existing carriers, while value guards, lifecycle snapshots and Google conversions belong to stage 3. Each lossless claim names one baseline revision and one upstream dialect.
-
-| Slice | Work | Exit condition |
-|---|---|---|
-| S1-0 Inventory | For each pair and direction, classify every official request field, response field, event and history carrier of the selected revision as exact, named loss, rejection or ignored by name, with its code and test owner. Separate codec loss from target or model policy. Record sourced findings in a dated `docs/refs/` note | No official field is ignored without classification; every named rule that can fire on a same-protocol path is listed with its owner; the gaps below are confirmed or corrected |
-| S1-1 Chat | R1a domain on the DashScope dialect: text, function tools, readable and replay reasoning extensions, usage details, finish reasons, `stream_options` and Chat-originated history | Stage-1 exit evidence, with no same-protocol loss receipt in that domain |
-| S1-2 Responses | R1b domain on OpenRouter: reasoning summary and encrypted items, phase, function-call items, usage details, `include`, `truncation`, `max_tool_calls`, metadata, and stateless plus gateway-stored history | As S1-1, and stored and stateless continuation project the same history |
-| S1-3 Messages | The pi Haiku carriers are done: see [request rules](architecture.md#request-rules). Remaining: move Claude 5.x sampling restrictions to trusted binding policy, resolving [Messages sampling policy](#ownership-and-projection-decisions); implement the selected ordinary manual-budget carrier and native `metadata.user_id` preservation under the [source boundaries and selected scope](refs/2026-10-17-generation-contracts.md#messages-budget-and-identity-boundaries-2026-10-19); deliver partial eager tool input, which now fails the stream at `content_block_stop` when unparseable | Independent native oracles and strict ordinary budget/output checks; preserve user IDs and meaningful presence with sufficient shared bounds and source/target-local validation. Keep independent identity/cache fields intact for the selected stage-3 attribution projection. The manual-interleaved budget exception stays deferred and adaptive-only bindings stay unchanged |
-
-Order: S1-0, S1-1 and S1-2, then the remaining S1-3 items. No slice widens admission beyond its selected binding.
-
-| Pair | Field or carrier | Current treatment | Recommendation |
-|---|---|---|---|
-| Chat | `prediction` | Omitted at intake for every target under D3 | Keep D3 unless a selected Chat binding supports it; then move the omission to target projection |
-| Chat | Participant `name`, `n` other than 1, `store: true`, `logit_bias`, `moderation`, custom-tool SSE | Rejected | Keep as recorded stage-1 gaps |
-| All | Hosted and server tools, citations, Messages document `context`, `clear_at`, `input_examples`, geography, speed and fallbacks; Responses `prompt`, `conversation`, `context_management`, access programs and misalignment details | Rejected | Stage 5 or a later owner selection; not stage-1 blockers |
-
-Stage-1 exit for a pair means every in-domain official field is exact, or is an explicitly listed rejection or target-policy loss. Approved losses that still fire on same-protocol paths remain listed as non-lossless.
-
-#### Stage-1 to stage-2 handoff
-
-A stage-2 loop needs only its own protocol slice, scoped to that loop's carriers, not the whole of stage 1: R1a follows S1-1 and R1b follows S1-2. R2 is pi's `anthropic-messages` API with the built-in Haiku 5.5 compat flags, which the user's separate pi extension declares for the gateway. The flags are listed in the [pi profile note](refs/2026-10-17-generation-contracts.md#pi-messages-request-profile-2026-10-19). Its carriers are implemented and passed a bounded check, so R2 needs no further S1-3 work. Acceptance runs declare the same model in scratch `models.json`; a declaration without `forceAdaptiveThinking` sends budgeted thinking, which the native target rejects, and is not R2.
-
-Every selected loop must leave no unclassified ignored request fields: `ignored_request_field_count` stays zero, or each ignored name is classified in the inventory. Client-specific dialect fields such as pi's `enable_thinking` or `chat_template_kwargs` are outside the official Chat baseline. The selected pi and OpenCode profiles must emit only registered carriers.
-
-### Stage 3 counting scope
-
-Complete `POST /v1/messages/count_tokens` during cross-protocol work, as an independent counting operation over the selected model's effective input projection. Preserve count-relevant instructions, tools, media and settings; identify the native model/tokenizer scope and preserve the source's counting meaning. A count does not reserve the next Generation route or promise billing equality. Unsupported counting rejects rather than silently estimating or invoking inference. The [proposed Responses counting companion](api-expansion-design.md#token-counting) remains a surface-selection decision.
-
-Stage-3 request projection also implements the selected Messages missing-cap policy: replace the fixed `32000` insertion with a trusted target-configured default only when the source lacks a ceiling. Resolve it before final target checks, preserve explicit caps and validate the selected value against target limits and applicable thinking-budget relations. Preflight and preparation must agree and retain the named insertion evidence. Configuration shape and per-binding values remain implementation work; no model-maximum fallback or automatic budget adjustment is selected.
-
-Stage 3 also implements [cross-protocol end-user attribution](architecture.md#end-user-attribution), including the generateContent safety-label carrier. Verify explicit safety-ID priority, null/empty/absent distinctions, same-priority conflicts, target bounds, source immutability and separate identity/cache losses with independent directional expectations. Same-protocol native fields remain exact; never silently replace an invalid selected ID, manufacture a cache key or infer an Interactions carrier. Codec completion does not widen binding admission.
-
-### Stage 4 scope
-
-- **Embedding:** extend the [independent path](#independent-embedding-path), preserving input/result association, dimensions, output encoding, usage and embedding-space compatibility.
-- **Audio:** adapt speech synthesis, transcription/recognition and translation APIs, with selected static/streamed delivery, formats, voices and reported timing/accounting.
-- **Image:** complete generation/editing APIs and implementation, including source/mask ownership, output artifacts and selected preview/final delivery.
-- **Video:** include video API and implementation adaptation rather than retaining the earlier exclusion. Select the concrete input/output or generation operations, typed owners, artifact access and synchronous/asynchronous lifecycle from current protocol evidence before implementing endpoints.
-- **Files/multipart Uploads:** implement the selected file and upload APIs, including create/read/list/delete, content access and bounded multipart upload/complete/cancel lifecycles. Select storage authority, authorization, private target mappings, retention/deletion and restart behavior before implementation.
-- **Other modalities and dependencies:** select bounded slices as needed. Keep conversational media in Generation where appropriate and independent operations in their own task contracts. Direct-input media need not wait for the complete file service; file-reference paths do. Native media job lifecycle requirements stay with their stage-4 operation and do not imply the general Batch API. Batch and Realtime belong to the unscheduled stage-5 backlog.
-
-The [API expansion design](api-expansion-design.md) supplies operation proposals, not an already implemented endpoint list. The order within stage 4 remains a per-slice decision; stage-4 work does not block completion of stages 1–3.
-
-### Stage 5 backlog
-
-**Status: unscheduled.** This is a future-work bucket, not a promised implementation queue after stage 4. Each task needs a selected design and explicit scheduling before work begins.
-
-- Citations/source attribution, `tool_search`/ordered discovery and hosted tools retain their separate proposals below.
-- **Server-side compaction:** include the explicit Provider-executed `/responses/compact` operation. Receiving/replaying compaction items remains existing Generation scope. Automatic compaction triggers, mutation of stored conversations and background execution are not implied by the explicit operation.
-- **Batch:** select supported typed tasks, file dependencies, submission reconciliation, durable job identity, cancellation and per-record outcomes.
-- **Realtime:** select client scenarios, session/transport ownership, event/media contracts, interruption, recovery and resource bounds. Stage-4 audio/video adaptation does not implement Realtime.
 
 ### P7 boundary review
 
@@ -259,6 +322,35 @@ Select a small set of admitted bindings and exact client carriers first. Do not 
 
 Exit condition: selected client loops and recovery scenarios have explicit results, offline and connected SDK gates stay green, and unverified bindings remain identified. Follow the [real-client and Provider procedures](development.md); this stage authorizes no deployment or routing features.
 
+## Pending decisions
+
+The [settled decisions](architecture.md#settled-decisions) remain the baseline; the audit permits evidence-backed reconsideration of lossy mappings. New semantic or execution-policy structures need a selected design. Continue independent work while a choice blocks only its own contracts.
+
+### Ownership and projection decisions
+
+Minimal counterexamples and pinned sources are in [Generation contract boundaries](refs/2026-10-17-generation-contracts.md).
+
+| Question | Recommendation and exit condition |
+|---|---|
+| Complete citations and source identity | **Stage 5.** Select licence/quote/request-source owners and output point anchors, including the changed OpenAI file-citation index contract. Then independently cover request, output, streaming and returned history; retain rejection until represented. Messages citations have a separate [1C design](api-expansion-design.md#1c-design-messages-citations) |
+| Execution controls and reports | **Unscheduled; not a stage-1 blocker.** Select bounded owners for geography, access programs, safety/review details and Interactions reported service/continuation only when a scheduled client sends them. Messages block binding already has typed ownership and selected carrier/fallback rules; input transformations use validated named omission, not exact report carriage. Keep other protected unsupported carriers rejected; do not add routing or continuation execution implicitly |
+| Interactions lifecycle snapshots | **Stage 3.** Compare supplied steps against streamed owners, including content/signatures/errors, or select snapshot-only materialization. Current rejection prevents contradiction loss but is not complete SSE support |
+| Messages sampling policy | **Stage 1 (S1-3).** Move sampling omission to explicit trusted target policy. Missing output ceilings have a selected [trusted target-default policy](architecture.md#settled-decisions), with implementation in stage 3 rather than a remaining default-versus-rejection choice |
+
+### Scheduling and product decisions
+
+| Question | Current behavior and recommendation | Blocks |
+|---|---|---|
+| Binding activation and reconnection (P7 follow-up) | The public capability/notice contract is selected. Complete model-level evidence and preflight/preparation checks, then specify bindings and client loops under the [reconnection sequence](#public-capability-and-reconnection-sequence). Do not reinterpret unsupported completion/safety carriers or reopen P8 policies | Binding activation and full-chain acceptance, not codec-only coverage |
+| [Native cache-only prewarming](#deferred-cache-prewarming) | Priority and scheduling undecided; select the operation and result contract when reopened | That slice only |
+| [Tool discovery and native `web_search`](#deferred-tool-discovery-and-web-search) | Stage-5 backlog, unscheduled; designs remain undecided | Those slices only |
+| [Token counting](api-expansion-design.md#token-counting) | Complete `count_tokens` in stage 3 with a target/projection-aware counting contract. Responses `input_tokens` remains a proposed companion surface | Counting and its cross-protocol promises, not stages 1–2 |
+| [API expansion](api-expansion-design.md) | Stage 3: counting. Stage 4: Embedding, audio/image/video and Files/multipart Uploads. Stage 5: server-side compaction, Batch and Realtime, all unscheduled | Each operation's own contract and activation |
+| Files/multipart Uploads | Selected for stage 4. Choose storage authority, authorized public IDs, upload lifecycle, retention/deletion and private upstream mappings. Current inline/URL input and rejection of credential-owned references remain until implemented | File resources and their dependent operations |
+| Server-side compaction | Stage-5 backlog, unscheduled. Keep the explicit `/responses/compact` operation separate from automatic triggers and existing compaction-item replay | Compaction execution, not existing replay or stages 1–4 |
+| Batch | Stage-5 backlog, unscheduled. Select native job execution, durable acceptance/reconciliation and supported task/resource dependencies | Batch API and execution |
+| Realtime | Stage-5 backlog, unscheduled. Choose a client scenario and official contract before deciding session ownership, transport, interruption and recovery | Realtime |
+
 ## Deferred work
 
 ### Deferred Generation semantics
@@ -266,7 +358,7 @@ Exit condition: selected client loops and recovery scenarios have explicit resul
 These are explicit gaps, not claims of complete official API coverage:
 
 - [Native cache-only prewarming](#deferred-cache-prewarming) and [tool discovery and native `web_search`](#deferred-tool-discovery-and-web-search).
-- Messages citations ([1C](#1c-design-messages-citations)) are deferred to Claude Code acceptance; carrying requests and responses reject.
+- Messages citations ([1C](api-expansion-design.md#1c-design-messages-citations)) remain unscheduled stage-5 work; carrying requests and responses reject. Separately scheduled Claude Code sampling may motivate that slice.
 - Messages document `context` rejects until its model-visible semantics have an IR owner.
 - Messages turn-scoped system messages (`clear_at`) have no IR owner and reject.
 - Generated media beyond Chat audio need a selected output, stream and replay design. Other hosted tools remain deferred; observation types do not imply an end-to-end contract.
@@ -275,55 +367,19 @@ These are explicit gaps, not claims of complete official API coverage:
 - The wider budget-scope exception for manual interleaved thinking remains deferred. S1-3 supports only ordinary manual-budget relations; this does not disable adaptive thinking or existing tool loops.
 - Gemini finish reasons without content semantics (`MALFORMED_FUNCTION_CALL`, `UNEXPECTED_TOOL_CALL`, `TOO_MANY_TOOL_CALLS`, `LANGUAGE`, `OTHER`) stay attempt failures under the routing freeze.
 - Tool-result video has no carrier on any bound target.
-- Multi-candidate execution and file services.
+- Multi-candidate execution remains deferred; file services wait for their selected stage-4 packages.
 
 ### Deferred cache prewarming
 
-Native cache-only prewarming is not a prerequisite for first-stage completion, coverage or P7. Existing cached-context references keep their separate contract.
-
-The [pinned pi cache warmer](https://github.com/earendil-works/pi/blob/4270522473e677ddba7b093caa0064a3df51d459/packages/coding-agent/src/core/cache-warmer.ts) replays a real request with a one-token cap and keeps refresh usage outside history. That is ordinary generation owned by the client strategy, not native cache-only support; no gateway-owned warmer is selected.
-
-When reopened, select the cache-only operation and result contract from pi's strategy and official native carriers. Exit condition: exact codecs preserve the operation, usage and reported cache facts, distinguish prewarming completion from output and reject targets without carriers. `max_tokens: 0` is not a zero-length answer; never replace explicit no-output prewarming with one-token generation.
+Native cache-only prewarming is unscheduled and is not a prerequisite for stages 1–4 or P7. Existing cached-context references retain their own contract. The [operation proposal](api-expansion-design.md#deferred-cache-prewarming) distinguishes native no-output prewarming from client-owned one-token generation; select its priority, operation/result owners and acceptance scope before reopening.
 
 ### Deferred tool discovery and web search
 
-These belong to the unscheduled stage-5 backlog. Select IR ownership and execution/replay contracts and explicitly schedule a slice before implementation. Neither blocks stages 1–4, coverage or P7; stage placement is not a delivery commitment.
+These are unscheduled stage-5 tasks. Select ordered discovery/availability and native Provider-search contracts separately; the [design proposals](api-expansion-design.md#deferred-tool-discovery-and-web-search) retain the required ordering, citations and replay boundaries. Neither authorizes a gateway tool registry, search executor or silent text/function-call substitution.
 
-- **Tool discovery and ordered availability updates.** Complete `tool_search`, its call/output items and `additional_tools`, building on deferred-loading and namespace types. Later tools must not be retroactively added to earlier history through top-level settings. Exit condition: discovery results and availability changes keep order, definitions and references through decode, encode and replay. No gateway tool registry or search executor.
-- **Native OpenAI `web_search`.** Complete the selected built-in path: declaration and controls, Provider-executed observations, reported sources and URL citations, streamed lifecycle and history, reusing observation and citation foundations. Exit condition: the Responses path preserves operations, results, citation associations and honest terminals in JSON and SSE; targets without a carrier reject. The gateway never fetches URLs or searches itself.
+### Messages citations
 
-Unsupported discovery and search semantics stay rejected, not converted to text or ordinary function calls. These slices do not reopen generated media, file services, new bindings, Realtime or Embeddings.
-
-### 1C design: Messages citations
-
-This is an unscheduled stage-5 proposal, not a prerequisite for stages 1–4. Citation-bearing requests/responses retain their existing rejection until the design is selected, scheduled and implemented.
-
-Counterexample: a request holds two PDF documents with `citations: {"enabled": true}`. The response cites `{"type":"page_location","document_index":1,"document_title":"B","cited_text":"…","start_page_number":2,"end_page_number":3}`, and the client returns that text block with its citation. The IR has page coordinates but cannot hold the per-document flag, the cited text or a reference to the second request document: `Citation.source` resolves only in its owner's resource table.
-
-Protocol facts (pinned SDK; [Citations](https://platform.claude.com/docs/en/build-with-claude/citations) and [Search results](https://platform.claude.com/docs/en/build-with-claude/search-results), read 2026-10-13):
-
-- `document_index` is 0-based over all document blocks in the request, across messages. `search_result_index` is 0-based over all `search_result` blocks, across messages and tool results.
-- Character and block ranges are 0-based; pages are 1-based. All ends are exclusive.
-- Citations are enabled on all or none of the documents, and likewise for search results. They are incompatible with structured output.
-- Messages cites whole text blocks, splitting text at citation boundaries. `cited_text` is not billed.
-
-Proposed 1C-a, documents only:
-
-| Concept | IR change |
-|---|---|
-| Enable flag | `FileDescription.citations: bool` per use. Messages carries it; other targets reject `true` because it changes the output contract |
-| Cited source | `Citation.source` becomes `CitationSource::Resource(ResourceId)` or `CitationSource::RequestDocument(ordinal)`, counting the request's file uses in order |
-| Cited text | `Citation.quote: Option<Text>`, kept exactly |
-| Location | Existing `SourceCoordinates` text, page and block ranges; the claim is `Whole` |
-| Other targets | OpenAI has no request-document citation. Reject an incompatible target rather than drop required evidence |
-
-Exit condition: one hand-written Messages oracle each way for a cited PDF, one streamed `citations_delta`, and an OpenAI target rejecting the flag. A bounded real call must confirm whether documents inside `tool_result` count toward `document_index`.
-
-Later 1C-b: `search_result` input parts and `content` documents of text and image blocks; neither has a carrier outside Messages. `web_search_result_location` belongs to Provider web search. The alternative is to keep 1C rejected: pi never sends citations, and opencode sends them only from part metadata.
-
-## Target clients
-
-pi and opencode are the primary clients and real-client gates. Pinned client behavior is an acceptance oracle alongside the protocol schema: parsing, stream merging, returned history and error classification. See [References](references.md), [pi acceptance](development.md#pi-acceptance) and [opencode acceptance](development.md#opencode-acceptance).
+The [1C proposal](api-expansion-design.md#1c-design-messages-citations) remains unselected and unscheduled. Citation-bearing requests/responses keep their rejection until source identity, quotes, request flags and output anchors are represented. Claude Code acceptance may motivate this slice, but is itself separately scheduled.
 
 ## Deferred acceptance
 
@@ -333,9 +389,13 @@ pi and opencode are the primary clients and real-client gates. Pinned client beh
 | Pinned-client image replay | Conditional | If the installed binary differs from the pinned source, run the bounded image tool round trip with a binary built from that revision |
 | Real failover | Separately scheduled routing acceptance after selected client loops; not implied by stage 3 | One bounded run for a model with two credentials or Providers and a reproducible advanceable failure, such as an exhausted key in a scratch store |
 | Codex and other agents | Separately scheduled; on hold | Define the client's acceptance contract first; no runs or request sampling before scheduling |
-| Claude Code | Separately scheduled; on hold, with citation work in stage 5 | Sample real request shapes, then verify beta headers/query, token counting and user metadata; implement [1C](#1c-design-messages-citations) if samples use citations. pi Messages acceptance does not prove Claude Code |
+| Claude Code | Separately scheduled; on hold, with citation work in stage 5 | Sample real request shapes, then verify beta headers/query, token counting and user metadata; implement [1C](api-expansion-design.md#1c-design-messages-citations) if samples use citations. pi Messages acceptance does not prove Claude Code |
 
 The coverage pass covers text, tools, tool errors, reasoning replay, usage, truncation, error classes and media carriers, plus client-facing fragment shapes and absent/null/empty distinctions. It does not authorize a variant matrix.
+
+### Target clients
+
+pi and opencode are the primary clients and real-client gates. Pinned client behavior is an acceptance oracle alongside the protocol schema: parsing, stream merging, returned history and error classification. See [References](references.md), [pi acceptance](development.md#pi-acceptance) and [opencode acceptance](development.md#opencode-acceptance).
 
 ### Only if needed
 
@@ -366,26 +426,6 @@ Maintenance only, when a refactor requires it:
 
 These boundaries follow [Failover](architecture.md#failover) and [Settled decisions](architecture.md#settled-decisions).
 
-## Maintenance rules
+### Maintenance rules
 
 Observed vendor stream shapes become named dialect rules only when a bound upstream emits them, such as empty continuation tool names or call IDs, empty finish reasons and tool-call openers. Treat a bound upstream's in-stream error as a classified failure, not normal output. Do not expand standalone media implementations incidentally during stages 1–3; use the selected stage-4 slices.
-
-## Future work
-
-- [Stage-3 token counting](#stage-3-counting-scope), consistent with selected cross-protocol input projection.
-- Stage-4 Embedding, audio/image/video and Files/multipart Uploads, with per-operation designs and acceptance.
-- The [unscheduled stage-5 backlog](#stage-5-backlog), including server-side compaction, Batch and Realtime; no automatic compaction policy or Provider-held state is selected.
-
-### Independent Embedding path
-
-Selected for stage 4. Extend the existing Embedding path independently of Generation, with per-slice contracts and acceptance selected before implementation. It is not a prerequisite for stages 1–3.
-
-```text
-client request → Embedding codec → Embedding IR
-  → task admission and trusted route → target codec → HTTP execution
-  → Embedding IR response → client codec
-```
-
-The [task contract](../src/semantic/task/embedding.rs) owns bounded inputs, requested dimensions, vectors, input/result association and usage. The [adapter](../src/adapter/embeddings.rs), [execution path](../src/execution/embeddings.rs) and [topology](../src/topology/embeddings.rs) keep bindings, encoding choices and runtime state outside it. Do not represent embeddings as Generation messages, tool results or stream events.
-
-Routes must preserve embedding-space compatibility; equal dimensions do not prove compatible vectors, so Generation's cross-model failover does not apply without an explicit contract. Chunking, vector indexes and retrieval remain caller responsibilities. Exit condition: one selected official Embedding contract works end to end, with input/result correspondence, dimensions, bounds and cancellation verified, under lean smoke tests.

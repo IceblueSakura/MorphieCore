@@ -2,6 +2,8 @@
 
 Checked on 2026-10-16 against the [pinned OpenAI Python SDK](https://github.com/openai/openai-python/tree/be9d66628ad7377bd36fe5a76ae6d735843f0e76) and the live [Chat create reference](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create). These are protocol facts, not model-binding or live acceptance claims.
 
+See [References](../references.md#research-notes) for related evidence, [Architecture](../architecture.md#settled-decisions) for selected contracts and [Roadmap](../roadmap.md#integration-handoff) for current admission/acceptance boundaries.
+
 | Carrier | Contract and source |
 |---|---|
 | Definition | `{"type":"custom","custom":{"name":"sql","format":{"type":"grammar","grammar":{"syntax":"regex","definition":"SELECT [0-9]+"}}}}`; [parameter type](https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/chat/chat_completion_custom_tool_param.py) |

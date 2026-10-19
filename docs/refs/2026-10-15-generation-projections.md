@@ -2,6 +2,17 @@
 
 Researched on 2026-10-15. These notes establish official wire contracts and mapping constraints, not implemented support or live Provider acceptance. Code and tests define behavior. Integration limits and deferred product choices belong in [Roadmap](../roadmap.md#integration-handoff).
 
+Current decisions belong to [Architecture](../architecture.md); the [research index](../references.md#research-notes) relates this dated evidence to other notes. Historical recommendations below do not override later selected contracts.
+
+## Contents
+
+- [Sources and version boundaries](#sources-and-version-boundaries)
+- [Protocol baselines and explicit extensions](#protocol-baselines-and-explicit-extensions)
+- [OpenAI parameter and content boundaries](#openai-parameter-and-content-boundaries)
+- [Thinking activation, effort, budgets and display](#thinking-activation-effort-budgets-and-display)
+- [Sampling, schemas and service policy](#sampling-schemas-and-service-policy)
+- [Later support boundaries](#later-support-boundaries)
+
 ## Sources and version boundaries
 
 | Source | Revision | Contract |

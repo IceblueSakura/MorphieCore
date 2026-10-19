@@ -1,25 +1,41 @@
-# API expansion design and implementation plan
+# API expansion design
+
+## Contents
+
+- [Status and authority](#status-and-authority)
+- [Requested scope](#requested-scope)
+- [Shared design boundaries](#shared-design-boundaries)
+  - [Proposed ownership](#proposed-ownership)
+  - [Generation boundary review](#generation-boundary-review)
+  - [Resource and execution safety](#resource-and-execution-safety)
+- [Operation contracts](#operation-contracts)
+  - [Token counting](#token-counting)
+  - [Embeddings](#embeddings)
+  - [Audio](#audio)
+  - [Image production and editing](#image-production-and-editing)
+  - [Video API and implementation](#video-api-and-implementation)
+- [Resource services](#resource-services)
+  - [Files and uploads](#files-and-uploads)
+- [Unscheduled designs](#unscheduled-designs)
+  - [1C design: Messages citations](#1c-design-messages-citations)
+  - [Deferred tool discovery and web search](#deferred-tool-discovery-and-web-search)
+  - [Context compaction](#context-compaction)
+  - [Native batch jobs](#native-batch-jobs)
+  - [Realtime](#realtime)
+  - [Deferred cache prewarming](#deferred-cache-prewarming)
+  - [Model-name service-policy carriers](#model-name-service-policy-carriers)
+- [Open decisions](#open-decisions)
+- [Execution handoff](#execution-handoff)
+- [Verification](#verification)
+- [Protocol references](#protocol-references)
 
 ## Status and authority
 
-This is a standalone pre-implementation reference requested for the API expansion. The requested scope is confirmed; the architecture recommendations below are proposals unless already established in [Architecture](architecture.md). No new interface, binding, resource service or execution policy is activated by this document.
+This page owns proposed operation, resource and advanced-Generation designs. The requested scope is confirmed; structural recommendations remain proposals unless already established in [Architecture](architecture.md). No new interface, binding, resource service or execution policy is activated by this document.
 
 [Roadmap](roadmap.md#planned-order) owns the five-stage sequence and the current routing freeze. `count_tokens` belongs to stage 3 alongside cross-protocol conversion; Embedding/audio/image/video adaptation and Files/multipart Uploads belong to stage 4. Server-side compaction, Batch and Realtime join citations/discovery/hosted tools in stage 5. **All stage-5 tasks are currently unscheduled:** scope placement is not a start or delivery commitment. Detailed operation designs and within-stage ordering remain proposals; record selected decisions and explicit slices before implementing new contracts or activating bindings. Stage-4/5 work is not an exit condition for earlier stages.
 
 Code and tests remain the behavior specification. This document records ownership, constraints and proposed work, not a model catalog, compatibility certification or implementation progress log. Provider and binding availability belongs to [the catalog](../src/topology/catalog.rs) and [startup](../src/gateway/startup/bootstrap.rs).
-
-## Contents
-
-- [Requested scope](#requested-scope)
-- [Proposed ownership](#proposed-ownership)
-- [Generation boundary review](#generation-boundary-review)
-- [Operation contracts](#operation-contracts)
-- [Optional Chat-carried audio](#optional-chat-carried-audio)
-- [Resource and execution safety](#resource-and-execution-safety)
-- [Implementation sequence](#implementation-sequence)
-- [Open decisions](#open-decisions)
-- [Verification](#verification)
-- [Protocol references](#protocol-references)
 
 ## Requested scope
 
@@ -33,13 +49,14 @@ The user selected OpenAI-first downstream contracts, broad coverage of current a
 | `POST /v1/audio/speech` | Complete standalone speech synthesis, including supported streaming |
 | `POST /v1/audio/transcriptions` | Complete file-based transcription and its reported evidence |
 | `POST /v1/audio/translations` | Add the current native audio-translation contract |
+| `POST /v1/images/generations` | Complete the existing image-generation contract within the selected stage-4 image scope |
 | `POST /v1/images/edits` | Add editing and complete the shared modern image-production contract |
 | Video APIs, concrete operations/endpoints pending | Adapt selected video input/output or generation operations, including their execution lifecycle and artifact delivery |
 | Batch APIs | Stage 5, unscheduled: submit and manage asynchronous batches of supported typed tasks |
 | Files/multipart Uploads | Stage 4: manage reusable files and bounded multipart upload resources |
 | Realtime APIs, concrete contracts pending | Stage 5, unscheduled: select client/session, transport, interruption and recovery contracts |
 
-Two companion surfaces are recommended, not silently added to the confirmed list: `POST /v1/responses/input_tokens` for the OpenAI-first counting path, and completion of the existing `POST /v1/images/generations` alongside edits.
+The companion surface `POST /v1/responses/input_tokens` is recommended for the OpenAI-first counting path, but remains unselected. Image generations and edits are both included by the [stage-4 scope](roadmap.md#stage-4-scope); their concrete contracts and implementation slices still need selection.
 
 Optional scope: map task-specific upstream Chat Completions media payloads, such as MiMo TTS/ASR, to standard `/audio/*` endpoints. This must not block the OpenAI main path.
 
@@ -51,7 +68,9 @@ The earlier exclusion of video is superseded by the stage-4 modality scope; it d
 
 The initial vendor comparison is a checklist, not a protocol oracle. Endpoint names do not determine task ownership: Gemini can synthesize speech through a generation endpoint, Responses can be stateless, and Anthropic permits consecutive same-role turns. Use the [official references](#protocol-references), not the comparison's historical restrictions.
 
-## Proposed ownership
+## Shared design boundaries
+
+### Proposed ownership
 
 One typed semantic core does not require one universal `GenerationRequest`. Standalone operations must not be forced through ordinary Generation execution. Conversational media remains Generation content; select video operation ownership before adding a new task or lifecycle.
 
@@ -92,9 +111,9 @@ Share authentication, trusted transport, bounded I/O, cancellation primitives an
 
 Extract a shared conversation-input aggregate only where counting and compaction need it. Reusing ordered content must not force those operations to inherit sampling, audio-output settings or ordinary assistant-response validation.
 
-## Generation boundary review
+### Generation boundary review
 
-### Retain legitimate conversation semantics
+#### Retain legitimate conversation semantics
 
 The existing [Generation request](../src/semantic/task/generation/request/mod.rs) owns conversation content and settings. Independent [Embedding](../src/semantic/task/embedding.rs), [SpeechSynthesis](../src/semantic/task/speech_synthesis.rs), [SpeechRecognition](../src/semantic/task/speech_recognition.rs) and [ImageGeneration](../src/semantic/task/image_generation.rs) contracts already exist. They are not standalone operations incorrectly hidden inside Generation.
 
@@ -121,7 +140,7 @@ Minimal counterexamples distinguish content from operations:
 
 A future Responses hosted image-tool observation may contain image artifacts without making standalone image execution a Generation operation. Similarly, reported tool progress is not the gateway's Batch scheduler state.
 
-### Review concrete ownership coupling
+#### Review concrete ownership coupling
 
 | Evidence entry point | Existing coupling | Proposed treatment |
 |---|---|---|
@@ -138,13 +157,32 @@ The conversation [GeneratedAudio](../src/semantic/task/generation/content/audio.
 
 Existing cache options do not establish a complete cache-only operation. Preserve current handling and the separate [deferred prewarming decision](roadmap.md#deferred-cache-prewarming); counting and compaction must not reopen it implicitly.
 
-### Integration constraints to revisit
+#### Integration constraints to revisit
 
 The [transcription adapter](../src/adapter/transcription.rs) and [preparation](../src/execution/transcription.rs) show that a standard downstream transcription endpoint does not establish an OpenAI multipart upstream implementation. Include native upstream preparation, response decoding and stream intake in the audio plan.
 
 Standalone topology has narrow operation and execution restrictions; see [image routes](../src/topology/images.rs). Review model identity across operations, task-specific streaming admission and operation bindings during scheduled integration. Do not fabricate separate model identities to bypass a one-operation restriction.
 
 Upstream response parsing must remain strict on known fields and ignore unknown fields. Review the shared closed-object helper in [OpenAI image/embedding codecs](../src/protocol/openai/images.rs) when reopening those contracts; current rejection of unknown response fields is not the intended forward-compatibility policy.
+
+### Resource and execution safety
+
+Keep runtime targets, credentials, retries and publication state outside task IR. Resource services and job coordination may need private persistent metadata, but never persist access tokens in semantic requests or expose credential locators.
+
+| Failure scenario | Required boundary |
+|---|---|
+| File ID names a different account/project | Intersect authorized task targets with resource scope; reject incompatible use |
+| Connection drops after remote upload completion or batch creation | Reconcile remote outcome before repeating a state-changing request |
+| Gateway restarts after acknowledging a batch | Recover the accepted job, not merely its conversation history |
+| Caller disconnects during synchronous speech/recognition | Cancel and release the upstream according to the task lifecycle |
+| Caller disconnects after asynchronous job acceptance | Keep the job; cancellation requires an explicit operation |
+| Stream ends before its required completion evidence | Fail or abort; do not fabricate success |
+| Deletion/expiry races an active job or retained history | Apply a selected reference-retention policy rather than accidental dangling access |
+| A large upload or JSONL input exceeds memory capacity | Use bounded streaming/spooling and finite retention, not Generation's whole-request buffer |
+
+Existing conversation affinity does not replace resource ownership or durable job affinity. Long-lived jobs need a policy for unavailable credentials without adding implicit credential refresh, login or reassignment.
+
+Keep diagnostics body-free. Apply the existing private-capture policy deliberately when new paths are instrumented; binary, multipart and fragmented content must not become unredacted fallback logging.
 
 ## Operation contracts
 
@@ -162,20 +200,6 @@ One candidate's count is not an exact count for every failover candidate or a re
 
 Exit evidence: independent request/result oracles, count-relevant controls and media preserved, unsupported counting rejected, no generation side effects, and explicit scope for the returned count.
 
-### Context compaction
-
-Stage-5 future work, currently unscheduled. Existing Generation compaction-item intake/replay is not deferred with this operation.
-
-Use a distinct request and result. The result contains returned ordered context, resources, reported accounting and operation metadata. It is not a normal assistant response.
-
-The official compact response can retain user messages followed by a compaction item. [Generation response validation](../src/semantic/task/generation/validate.rs) excludes user/instruction messages from ordinary output. Do not weaken that validation to reuse `GenerationResponse`.
-
-Reuse typed conversation content and [compacted-history replay](architecture.md#compacted-history). Preserve the opaque result's compatible deployment/model scope; incompatible replay rejects rather than strips required history.
-
-Keep three operations separate: caller-supplied plaintext context editing, Provider-executed compaction, and automatic compaction scheduling. Adding `/responses/compact` does not select automatic triggers, mutate stored conversations, enable Provider-held continuation or introduce background Generation.
-
-Exit evidence: independently specified compacted context in both directions, faithful subsequent input replay, incompatible-target rejection and honest failure handling.
-
 ### Embeddings
 
 Extend the existing independent task rather than representing vectors as messages or tool output.
@@ -190,7 +214,9 @@ Extend the existing independent task rather than representing vectors as message
 
 Retrieval task intent or multimodal embeddings may enter the task only when selected official requirements justify them. Do not silently detokenize token IDs or apply Generation's cross-model failover without an explicit embedding-space contract. Chunking, vector indexes and retrieval remain caller responsibilities.
 
-### Speech synthesis
+### Audio
+
+#### Speech synthesis
 
 Preserve supplied text, synthesis instructions, voice selection, speed and encoding intent. Distinguish a built-in voice from an authorized custom voice reference instead of relying on an unconstrained string.
 
@@ -200,7 +226,7 @@ Use reported token, character or duration accounting only where the source provi
 
 Exit evidence: correct binary/SSE delivery, supported controls preserved, unsupported voice/format/control combinations rejected, bounded buffering and cancellation, and no success after truncated input.
 
-### Audio to text
+#### Audio to text
 
 Propose separate `Transcribe` and `Translate` request variants within one audio-to-text domain. The same recording may require an original-language transcript or an English translation; that difference is protected task intent, not a response encoding.
 
@@ -213,6 +239,36 @@ An uploaded audio file with streamed transcription results is not a live microph
 The currently documented OpenAI translation endpoint is English-targeted and Whisper-only. Recheck this restriction when pinning the implementation source; do not invent an arbitrary target-language parameter or replace it with an implicit transcription-plus-Generation chain.
 
 Exit evidence: native multipart preparation, complete static and supported streamed results, faithful timing/speaker/usage reports, operation-specific restrictions, bounds and cancellation.
+
+#### Optional Chat-carried audio
+
+Separate downstream API, task meaning and upstream carrier:
+
+```text
+/audio/speech
+  -> SpeechSynthesis
+  -> task-specific MiMo Chat codec
+  -> /chat/completions
+  -> SpeechResult
+  -> standard audio delivery
+
+/audio/transcriptions
+  -> AudioToText.Transcribe
+  -> task-specific MiMo Chat codec
+  -> /chat/completions
+  -> TranscriptionResult
+  -> standard transcription delivery
+```
+
+Neither path needs `GenerationRequest`, `GenerationResponse` or the Generation reducer. A documented TTS carrier placing supplied text in an `assistant` field is wire encoding, not a fabricated conversation turn in IR.
+
+The existing [MiMo audio codec](../src/protocol/xiaomi_audio.rs), [speech adapter](../src/adapter/speech.rs) and [transcription adapter](../src/adapter/transcription.rs) already demonstrate this separation. Preserve and evolve that path; catalog registration does not establish activation or live acceptance.
+
+Retain exact task intent and explicit target capabilities. Map supported media/control carriers, reject unsupported voice, speed, format, timing or speaker requirements, and preserve available accounting under the selected reporting policy. Do not reinterpret ASR as translation or substitute a nearby voice silently.
+
+Current static adaptation is not proof of native streaming support. When scheduled, implement a task-specific mapping from upstream audio/text deltas to the selected downstream event contract, including cancellation and honest terminals. Do not present post-buffer chunking as verified progressive upstream delivery.
+
+Treat this as a separate optional audio slice: migrate existing static mappings after the task contracts stabilize, then add native streaming and richer reports where justified. It must not narrow the OpenAI contract or block its completion.
 
 ### Image production and editing
 
@@ -233,6 +289,8 @@ Video is selected as a stage-4 modality, not an already chosen endpoint family. 
 For each selected operation, specify supported input references, required media controls, output artifacts and reported accounting. If the native API is asynchronous, select submission identity, status, cancellation, artifact access and uncertain-submission handling explicitly. Do not reuse a completed text response as evidence of video completion or turn a returned artifact URL into unrestricted server-side fetching.
 
 Exit evidence: independently specified request/result and applicable event/job contracts, bounded media I/O, correct artifact identity, cancellation and honest completion. Specific APIs, new task types, storage and job persistence remain design decisions, not permissions implied by this scope entry.
+
+## Resource services
 
 ### Files and uploads
 
@@ -259,6 +317,60 @@ Define finite storage/upload bounds, part order and byte-total validation, incom
 Resolve resource authorization outside pure codecs. Task content may carry typed resource identity, but credentials, storage handles and trusted target mappings stay outside IR. Resource scope can restrict already authorized targets; it cannot authorize an arbitrary origin or credential.
 
 Exit evidence: create/read/list/delete and upload lifecycle contracts, restart-consistent mappings, access isolation, expiry, deletion with active references, and bounded streaming rather than whole-file memory retention.
+
+## Unscheduled designs
+
+The [stage-5 backlog](roadmap.md#stage-5-backlog) has no implementation queue or delivery commitment. Native cache-only prewarming and model-name service-policy selection also retain separate scheduling decisions. These branches share no automatic approval or activation.
+
+### 1C design: Messages citations
+
+This is an unscheduled stage-5 proposal, not a prerequisite for stages 1–4. Citation-bearing requests/responses retain their existing rejection until the design is selected, scheduled and implemented.
+
+Counterexample: a request holds two PDF documents with `citations: {"enabled": true}`. The response cites `{"type":"page_location","document_index":1,"document_title":"B","cited_text":"…","start_page_number":2,"end_page_number":3}`, and the client returns that text block with its citation. The IR has page coordinates but cannot hold the per-document flag, the cited text or a reference to the second request document: `Citation.source` resolves only in its owner's resource table.
+
+Protocol facts (pinned SDK; [Citations](https://platform.claude.com/docs/en/build-with-claude/citations) and [Search results](https://platform.claude.com/docs/en/build-with-claude/search-results), read 2026-10-13):
+
+- `document_index` is 0-based over all document blocks in the request, across messages. `search_result_index` is 0-based over all `search_result` blocks, across messages and tool results.
+- Character and block ranges are 0-based; pages are 1-based. All ends are exclusive.
+- Citations are enabled on all or none of the documents, and likewise for search results. They are incompatible with structured output.
+- Messages cites whole text blocks, splitting text at citation boundaries. `cited_text` is not billed.
+
+Proposed 1C-a, documents only:
+
+| Concept | IR change |
+|---|---|
+| Enable flag | `FileDescription.citations: bool` per use. Messages carries it; other targets reject `true` because it changes the output contract |
+| Cited source | `Citation.source` becomes `CitationSource::Resource(ResourceId)` or `CitationSource::RequestDocument(ordinal)`, counting the request's file uses in order |
+| Cited text | `Citation.quote: Option<Text>`, kept exactly |
+| Location | Existing `SourceCoordinates` text, page and block ranges; the claim is `Whole` |
+| Other targets | OpenAI has no request-document citation. Reject an incompatible target rather than drop required evidence |
+
+Exit condition: one hand-written Messages oracle each way for a cited PDF, one streamed `citations_delta`, and an OpenAI target rejecting the flag. A bounded real call must confirm whether documents inside `tool_result` count toward `document_index`.
+
+Later 1C-b: `search_result` input parts and `content` documents of text and image blocks; neither has a carrier outside Messages. `web_search_result_location` belongs to Provider web search. The alternative is to keep 1C rejected: pi never sends citations, and opencode sends them only from part metadata.
+
+### Deferred tool discovery and web search
+
+These belong to the unscheduled stage-5 backlog. Select IR ownership and execution/replay contracts and explicitly schedule a slice before implementation. Neither blocks stages 1–4, coverage or P7; stage placement is not a delivery commitment.
+
+- **Tool discovery and ordered availability updates.** Complete `tool_search`, its call/output items and `additional_tools`, building on deferred-loading and namespace types. Later tools must not be retroactively added to earlier history through top-level settings. Exit condition: discovery results and availability changes keep order, definitions and references through decode, encode and replay. No gateway tool registry or search executor.
+- **Native OpenAI `web_search`.** Complete the selected built-in path: declaration and controls, Provider-executed observations, reported sources and URL citations, streamed lifecycle and history, reusing observation and citation foundations. Exit condition: the Responses path preserves operations, results, citation associations and honest terminals in JSON and SSE; targets without a carrier reject. The gateway never fetches URLs or searches itself.
+
+Unsupported discovery and search semantics stay rejected, not converted to text or ordinary function calls. These slices do not reopen generated media, file services, new bindings, Realtime or Embeddings.
+
+### Context compaction
+
+Stage-5 future work, currently unscheduled. Existing Generation compaction-item intake/replay is not deferred with this operation.
+
+Use a distinct request and result. The result contains returned ordered context, resources, reported accounting and operation metadata. It is not a normal assistant response.
+
+The official compact response can retain user messages followed by a compaction item. [Generation response validation](../src/semantic/task/generation/validate.rs) excludes user/instruction messages from ordinary output. Do not weaken that validation to reuse `GenerationResponse`.
+
+Reuse typed conversation content and [compacted-history replay](architecture.md#compacted-history). Preserve the opaque result's compatible deployment/model scope; incompatible replay rejects rather than strips required history.
+
+Keep three operations separate: caller-supplied plaintext context editing, Provider-executed compaction, and automatic compaction scheduling. Adding `/responses/compact` does not select automatic triggers, mutate stored conversations, enable Provider-held continuation or introduce background Generation.
+
+Exit evidence: independently specified compacted context in both directions, faithful subsequent input replay, incompatible-target rejection and honest failure handling.
 
 ### Native batch jobs
 
@@ -289,85 +401,19 @@ Exit evidence: accepted-job recovery, lost submission acknowledgement, partial r
 
 Stage-5 future work, currently unscheduled. No concrete session API, transport or event contract is selected. Choose the client scenario, media directions, interruption/cancellation, reconnection, session/resource ownership and bounded delivery before implementation. Ordinary streamed Generation and stage-4 audio/video operations do not establish Realtime support.
 
-## Optional Chat-carried audio
+### Deferred cache prewarming
 
-Separate downstream API, task meaning and upstream carrier:
+Native cache-only prewarming is not a prerequisite for first-stage completion, coverage or P7. Existing cached-context references keep their separate contract.
 
-```text
-/audio/speech
-  -> SpeechSynthesis
-  -> task-specific MiMo Chat codec
-  -> /chat/completions
-  -> SpeechResult
-  -> standard audio delivery
+The [pinned pi cache warmer](https://github.com/earendil-works/pi/blob/4270522473e677ddba7b093caa0064a3df51d459/packages/coding-agent/src/core/cache-warmer.ts) replays a real request with a one-token cap and keeps refresh usage outside history. That is ordinary generation owned by the client strategy, not native cache-only support; no gateway-owned warmer is selected.
 
-/audio/transcriptions
-  -> AudioToText.Transcribe
-  -> task-specific MiMo Chat codec
-  -> /chat/completions
-  -> TranscriptionResult
-  -> standard transcription delivery
-```
+When reopened, select the cache-only operation and result contract from pi's strategy and official native carriers. Exit condition: exact codecs preserve the operation, usage and reported cache facts, distinguish prewarming completion from output and reject targets without carriers. `max_tokens: 0` is not a zero-length answer; never replace explicit no-output prewarming with one-token generation.
 
-Neither path needs `GenerationRequest`, `GenerationResponse` or the Generation reducer. A documented TTS carrier placing supplied text in an `assistant` field is wire encoding, not a fabricated conversation turn in IR.
+### Model-name service-policy carriers
 
-The existing [MiMo audio codec](../src/protocol/xiaomi_audio.rs), [speech adapter](../src/adapter/speech.rs) and [transcription adapter](../src/adapter/transcription.rs) already demonstrate this separation. Preserve and evolve that path; catalog registration does not establish activation or live acceptance.
+Service-policy carriers may be upstream model names rather than a dedicated field. A trusted, evidence-backed binding declaration must associate an alias with the complete policy it represents; never infer a tier from a suffix or accept a client-supplied upstream selector. A different model version, quantization or context contract is not automatically a tier of the same model. The current [endpoint contract](../src/topology/endpoint.rs) fixes the upstream model at binding time; choosing predeclared variants during preparation is an integration design question, not a codec-only string rewrite.
 
-Retain exact task intent and explicit target capabilities. Map supported media/control carriers, reject unsupported voice, speed, format, timing or speaker requirements, and preserve available accounting under the selected reporting policy. Do not reinterpret ASR as translation or substitute a nearby voice silently.
-
-Current static adaptation is not proof of native streaming support. When scheduled, implement a task-specific mapping from upstream audio/text deltas to the selected downstream event contract, including cancellation and honest terminals. Do not present post-buffer chunking as verified progressive upstream delivery.
-
-Treat this as a separate optional audio slice: migrate existing static mappings after the task contracts stabilize, then add native streaming and richer reports where justified. It must not narrow the OpenAI contract or block its completion.
-
-## Resource and execution safety
-
-Keep runtime targets, credentials, retries and publication state outside task IR. Resource services and job coordination may need private persistent metadata, but never persist access tokens in semantic requests or expose credential locators.
-
-| Failure scenario | Required boundary |
-|---|---|
-| File ID names a different account/project | Intersect authorized task targets with resource scope; reject incompatible use |
-| Connection drops after remote upload completion or batch creation | Reconcile remote outcome before repeating a state-changing request |
-| Gateway restarts after acknowledging a batch | Recover the accepted job, not merely its conversation history |
-| Caller disconnects during synchronous speech/recognition | Cancel and release the upstream according to the task lifecycle |
-| Caller disconnects after asynchronous job acceptance | Keep the job; cancellation requires an explicit operation |
-| Stream ends before its required completion evidence | Fail or abort; do not fabricate success |
-| Deletion/expiry races an active job or retained history | Apply a selected reference-retention policy rather than accidental dangling access |
-| A large upload or JSONL input exceeds memory capacity | Use bounded streaming/spooling and finite retention, not Generation's whole-request buffer |
-
-Existing conversation affinity does not replace resource ownership or durable job affinity. Long-lived jobs need a policy for unavailable credentials without adding implicit credential refresh, login or reassignment.
-
-Keep diagnostics body-free. Apply the existing private-capture policy deliberately when new paths are instrumented; binary, multipart and fragmented content must not become unredacted fallback logging.
-
-## Implementation sequence
-
-The stage assignments below follow the roadmap; task-local details and ordering remain proposals. Counting is stage 3; Embedding/media and Files/multipart Uploads are stage 4. Compaction, Batch and Realtime are stage-5 backlog items, not scheduled implementation slices. Definition work does not reopen the [routing freeze](roadmap.md#temporary-routing-freeze) or activate bindings. Select each implementation slice after its boundary decisions.
-
-| Slice | Work | Exit condition |
-|---|---|---|
-| Per-operation contract selection | Pin official API/SDK sources; select task and required resource/job ownership; extract only necessary shared values | Each operation has request/result/event/lifecycle boundaries and explicit exclusions; decisions are recorded |
-| Stage 3: Token counting | Complete `count_tokens` with model/tokenizer and effective-input projection scope; include the Responses companion only if selected | Counts preserve the native meaning, unsupported projections reject, and no inference side effects or silent estimates occur |
-| Stage 4: Embeddings | Extend the existing task and codecs | Input/result correspondence, dimensions, encoding, tokenizer scope and embedding-space admission hold |
-| Stage 4: Audio | Complete speech delivery, then transcription, then translation; add native OpenAI preparation/intake | Supported static/streamed results preserve required evidence and reject unsupported combinations |
-| Stage 4: Optional audio dialect | Migrate Chat-carried static audio; add native streaming/reporting separately | Standard downstream audio works without Generation execution; optional work does not block the main audio slice |
-| Stage 4: Images | Complete selected Generate/Edit contracts, initially with direct inputs | Source/mask identity, output controls, static results and preview/final streams are correct |
-| Stage 4: Video | Select concrete video operations, then implement task/content codecs and native execution/delivery | Required controls, artifacts and synchronous/asynchronous completion have independent evidence |
-| Stage 4: Files/multipart Uploads | Add the selected resource service and connect admitted file references | Lifecycle, authorization, bounded multipart uploads, durable mappings and active-reference policies hold across restart |
-| Stage 5, unscheduled: Server-side compaction | Select the explicit native compaction operation separately from automatic triggers | Returned compacted context replays correctly without weakening Generation validation; no implicit background scheduling |
-| Stage 5, unscheduled: Native Batch | Select job coordination over completed task contracts and file resources | Submission uncertainty, recovery, cancellation and per-record results have explicit contracts before implementation |
-| Stage 5, unscheduled: Realtime | Select client/session, transport and event/media contracts | Ownership, interruption, recovery, cancellation and resource bounds are defined before implementation |
-| Per-slice integrated acceptance | Verify selected public bindings, OpenAPI summary, pinned SDKs and bounded real calls | IR, codec, admission, SDK and actual Provider claims have separate evidence |
-
-Files must be designed early but need not block direct audio or image work:
-
-```text
-shared values -> counting / compaction / embeddings / audio
-              -> direct-input images
-              -> files/uploads -> image file references
-                               -> batch resource lifecycle
-completed task contracts ------> batch record execution
-```
-
-Before each implementation slice, state the goal and exit condition in the roadmap and present any new IR counterexample/options. Do not perform a repository-wide ownership rewrite as a prerequisite for the first working operation.
+When scheduled, add an independent alias-carrier oracle and an incompatible-policy rejection. Preparation must agree with preflight on the effective deployment, and cache/replay identity must follow the selected wire model. A selected alias proves request projection, not delivered service; record a reported tier only from an authoritative report.
 
 ## Open decisions
 
@@ -376,8 +422,8 @@ These recommendations have not been adopted merely by requesting this document.
 | Decision | Options and recommendation | Blocks |
 |---|---|---|
 | Task grouping and shared content | Recommend independent TokenCount/Compaction, AudioToText variants, and Image Generate/Edit variants; share content without inheriting Generation execution | New task type and public Rust contract changes |
-| Companion surfaces | Recommend Responses input-token counting and completing image generations alongside edits | Declaring those additional surfaces part of the delivery scope |
-| Counting meaning across protocols | Recommend an explicit public-model/target counting profile consistent with generation projection; reject unsupported counting rather than silently estimate. A separately exposed estimate would need its own policy | Cross-protocol counting admission and client promises |
+| Counting companion surface | Recommend Responses input-token counting; image generations/edits already belong to stage 4 | Adding the Responses counting surface to delivery scope |
+| Counting profile and public scope | Select the concrete public-model/target profile, native capability evidence and client-visible count scope. Consistency with effective generation projection, no silent estimation and no inference side effects are [already selected](architecture.md#settled-decisions), not open alternatives | Cross-protocol counting admission and client promises |
 | File authority | Recommend upstream-native content plus gateway public IDs/durable mappings first. Gateway-owned content with target replicas improves portability but adds storage and replication ownership | Files/Uploads and resource-based failover |
 | Retention and deletion | Select expiry, deletion with active jobs/history, cascade behavior and restart guarantees. Durable jobs and resource mappings cannot inherit process-local Responses TTL accidentally | Resource/job lifecycle implementation |
 | Batch execution | Recommend native Provider batches. A gateway scheduler is a separate product with different billing, timing and cancellation semantics | Batch implementation |
@@ -386,6 +432,12 @@ These recommendations have not been adopted merely by requesting this document.
 | Video contracts | Select current operations/endpoints, task versus content ownership, artifact access and any required job lifecycle before implementation | Video implementation, not stages 1–3 |
 | Realtime design | Client scenario, session/transport and interruption/recovery contracts are unselected; keep stage 5 unscheduled | Realtime implementation |
 | Within-stage scheduling | Stage 3 includes counting; stage 4 includes Embedding/audio/image/video and Files/multipart Uploads. All stage-5 tasks remain unscheduled; placing them in the plan does not queue implementation | Per-slice activation and full-chain acceptance |
+
+## Execution handoff
+
+The [roadmap work packages](roadmap.md#execution-sequence-and-work-package-rules) own sequence, dependencies and acceptance gates. This page does not maintain a second implementation queue. Before starting a package, select its request/result/event and lifecycle boundaries, record accepted choices in Architecture, and retain only unresolved alternatives here.
+
+Extract shared values only when the selected operation needs them. Direct-input media do not depend on the complete file service; authorized file-reference paths do. Stage-4 native media jobs keep their own lifecycle without implying the general Batch API. Do not perform a repository-wide ownership rewrite or prebuild stage-5 infrastructure as a prerequisite for the first operation.
 
 ## Verification
 

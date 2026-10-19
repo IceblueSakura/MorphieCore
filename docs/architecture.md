@@ -2,26 +2,48 @@
 
 MorphieCore translates client and Provider protocols through one typed semantic IR. It is a gateway, not an agent loop: planning, agent memory and tool execution belong to the caller.
 
-This page records design principles and settled decisions. Code and tests define behavior; [Roadmap](roadmap.md) sets scope and direction.
+This page owns accepted principles, domain contracts and decision records. [Roadmap](roadmap.md) owns scope, priority and acceptance status; [API expansion design](api-expansion-design.md) owns unselected alternatives. Code and tests define behavior. Configuration and commands belong to [Usage](usage.md) and [Development](development.md).
 
 ## Contents
 
-- [Protocols](#protocols)
-- [Layers and data flow](#layers-and-data-flow)
-- [Semantic IR](#semantic-ir)
+- [System boundaries](#system-boundaries)
+  - [Protocols](#protocols)
+  - [Layers and data flow](#layers-and-data-flow)
+- [Semantic contracts](#semantic-contracts)
+  - [Semantic IR](#semantic-ir)
+  - [Independent task boundaries](#independent-task-boundaries)
 - [Adaptation](#adaptation)
-- [Reasoning replay](#reasoning-replay)
-- [Compacted history](#compacted-history)
-- [Chat reasoning extensions](#chat-reasoning-extensions)
-- [Failover](#failover)
-- [Streaming and delivery](#streaming-and-delivery)
+  - [Source and target boundaries](#source-and-target-boundaries)
+  - [Request and reported meaning](#request-and-reported-meaning)
+  - [Reasoning controls](#reasoning-controls)
+  - [Media](#media)
+  - [Adaptation evidence](#adaptation-evidence)
+- [History and replay](#history-and-replay)
+  - [Reasoning replay](#reasoning-replay)
+  - [Chat reasoning extensions](#chat-reasoning-extensions)
+  - [Compacted history](#compacted-history)
+  - [Stateful history](#stateful-history)
 - [Native Messages projection](#native-messages-projection)
-- [Conversation and cache affinity](#conversation-and-cache-affinity)
-- [Stateful history](#stateful-history)
-- [Credentials and security](#credentials-and-security)
+  - [Request rules](#request-rules)
+  - [Owner-local cache admission](#owner-local-cache-admission)
+  - [Response rules](#response-rules)
+- [Runtime and trust](#runtime-and-trust)
+  - [Failover](#failover)
+  - [Conversation and cache affinity](#conversation-and-cache-affinity)
+  - [Streaming and delivery](#streaming-and-delivery)
+  - [Credentials and security](#credentials-and-security)
+  - [Configurable exchange capture](#configurable-exchange-capture)
 - [Settled decisions](#settled-decisions)
+  - [Scope and activation decisions](#scope-and-activation-decisions)
+  - [Semantic ownership decisions](#semantic-ownership-decisions)
+  - [Projection and reasoning decisions](#projection-and-reasoning-decisions)
+  - [History and cache decisions](#history-and-cache-decisions)
+  - [Routing and security decisions](#routing-and-security-decisions)
+  - [Delivery and evidence decisions](#delivery-and-evidence-decisions)
 
-## Protocols
+## System boundaries
+
+### Protocols
 
 | Direction | Protocols |
 |---|---|
@@ -34,7 +56,7 @@ All three Generation client protocols use the public model's configured ordered 
 
 Provider definitions, public models and bindings are maintained in [provider/catalog.rs](../src/provider/catalog.rs), [topology/catalog.rs](../src/topology/catalog.rs) and [gateway bootstrap](../src/gateway/startup/bootstrap.rs). Registration does not prove activation or live account access.
 
-## Layers and data flow
+### Layers and data flow
 
 ```text
 downstream HTTP: authenticate and collect within bounds
@@ -68,7 +90,9 @@ Protocol differences stay in protocol modules. Native Anthropic, Google and Inte
 
 Execution is typed dataflow coordinated by scoped state machines. Semantic reduction, protocol representation, attempt intake and acknowledged delivery each own their state. A stage may transform its output but cannot rewrite another stage's authority or expand the trusted candidate set. Optional delivery stages do not require a generic pipeline registry or detached workers.
 
-## Semantic IR
+## Semantic contracts
+
+### Semantic IR
 
 The IR is neither a protocol DTO nor a union of vendor fields.
 
@@ -91,7 +115,7 @@ Clients may resend full history or use [gateway-managed Responses history](#stat
 
 When a concept cannot be expressed, show a minimal counterexample and structural options before changing the IR. Do not hide it in private adapter fields.
 
-### Scoped accounting
+#### Scoped accounting
 
 `UsageReports` is the sole stored accounting source. It retains the latest bounded snapshot per operation or response-local execution step; steps never synthesize an operation total. Checkpoints replace their scope without summation. A final observation seals that scope but does not certify exhaustive billing. Content edits retain the reports.
 
@@ -111,7 +135,7 @@ Native Messages JSON stores a final operation report; SSE emits opening/delta ch
 
 An absent delta field cannot erase an optional observation already published in opening usage; such delivery transitions reject. A final report with no usable scalar view cannot resurrect an older checkpoint. Static client projection records checkpoint-to-final observation sealing on its private copy, matching its JSON carrier; exact native static encoding requires a final report. Accounting checkpoints remain lifecycle-only for the existing bounded pre-content hold, not a reason to publish and disable failover.
 
-### Cached context references
+#### Cached context references
 
 `GenerationRequest` may name one existing cached input base, separately from settings and ordered items. The reference carries bounded opaque identity and an optional reported expiry with subsecond precision. It is required task context, not an advisory optimization. Item edits preserve it; history composition may share an identical base but rejects incompatible bases or retroactive introduction after selected input.
 
@@ -119,7 +143,7 @@ Boundary fidelity records associate the complete reference with a logical issuer
 
 The generateContent carrier encodes the bound reference without expanding its content. Cached instructions/tools cannot be overlaid implicitly. Other carriers reject without support; default binding admission and public HTTP schemas remain unchanged. Cache creation, fetching, renewal, resource authorization and cache-only prewarming are separate work. See [Google's resource contract](https://ai.google.dev/api/caching).
 
-### Safety policy and reports
+#### Safety policy and reports
 
 `GenerationSettings` holds requested per-category probability filtering. Target default, disabled filtering and no category blocking are distinct choices. A caller identity hint is not a safety policy. Threshold names do not establish equivalent calibration or enforcement across targets or models.
 
@@ -131,9 +155,74 @@ The classic generateContent codec encodes probability policies and reads prompt 
 
 Other request carriers reject these policies. Downstream carriers have no assessment slot. An assessment-only report, with no block reason or message and every rating explicitly unblocked, is omitted under `generation.omit-safety-assessment.v1` in JSON and SSE. Blocking reports and safety-bearing settings echoes still reject rather than being treated as incidental settings; rejection prevents a later successful terminal. Default admission and public HTTP schemas stay unchanged; model-effective enforcement and blocking-report delivery remain integration work.
 
+### Independent task boundaries
+
+Standalone task types retain their own request, result and lifecycle contracts. [Operation proposals](api-expansion-design.md#proposed-ownership) describe pending expansion; they do not extend Generation execution.
+
+#### Independent Embedding path
+
+Embedding has an independent task and execution path. Its [stage-4 expansion](roadmap.md#stage-4-scope) needs per-operation design and acceptance; this boundary does not activate new support.
+
+```text
+client request → Embedding codec → Embedding IR
+  → task admission and trusted route → target codec → HTTP execution
+  → Embedding IR response → client codec
+```
+
+The [task contract](../src/semantic/task/embedding.rs) owns bounded inputs, requested dimensions, vectors, input/result association and usage. The [adapter](../src/adapter/embeddings.rs), [execution path](../src/execution/embeddings.rs) and [topology](../src/topology/embeddings.rs) keep bindings, encoding choices and runtime state outside it. Do not represent embeddings as Generation messages, tool results or stream events.
+
+Routes must preserve embedding-space compatibility; equal dimensions do not prove compatible vectors, so Generation's cross-model failover does not apply without an explicit contract. Chunking, vector indexes and retrieval remain caller responsibilities. The roadmap owns implementation and acceptance gates.
+
 ## Adaptation
 
-### Accurate IR and declared loss
+### Source and target boundaries
+
+#### Protocol baselines and Provider dialects
+
+Use two codec responsibilities in each direction:
+
+```text
+decode: wire → dialect normalization → protocol baseline + declared extensions → IR + fidelity
+encode: IR + eligible fidelity → target baseline + declared extensions → dialect representation → wire
+```
+
+This is the selected boundary, not a claim that all existing codecs implement it. The baseline is one official API and its selected source revision, not another cross-protocol IR. Keep Chat Completions, Responses, Messages, generateContent and Interactions distinct. Model restrictions and Provider aliases do not redefine the baseline.
+
+A dialect may normalize an equivalent alias, with conflict checks against the canonical field. A declared semantic extension enters typed IR through an explicit decoder; it cannot hide required content in a restoration-only sidecar. Non-semantic reports and representation records stay bounded, source- and owner-bound outside the semantic task. Unknown fields never become restorable extensions.
+
+Trusted adapters select dialects. Apply the same extension admission to requests, static reports, streamed events and returned history, while retaining their direction-specific unknown-field policies. Registered MorphieCore downstream extensions remain explicit extensions, not additions to an official schema.
+
+Encode from the current typed meaning. A source extension cannot override canonical output, restore a deleted owner or cross an incompatible target. Dialect representation precedes final serialization; there are no post-encoding JSON patches. Projection need not be invertible: named approximations remain losses, not equivalent mappings.
+
+Introduce this seam incrementally around concrete mappings. Do not add a universal protocol DTO, arbitrary extension bag, plugin registry, second stream reducer or whole-stream buffering. Existing framing limits, conflict validation, EOF-gated terminals and replay authority remain unchanged.
+
+#### Field handling
+
+| Class | Handling |
+|---|---|
+| Must preserve | Preserve instructions, order, tools, arguments, call/result links, required continuations, stop reasons and core usage; reject an unrepresentable target |
+| Degradable | Apply an approved advisory omission or behavioral approximation to a target-private copy and record it; never silently patch the source |
+| Unknown | Ignore unregistered protocol fields; keep known fields strict and never forward unknown input |
+
+Upstream responses are strict on known types, values and relations. Unknown fields are ignored. Unknown Responses event types are skipped and counted; registered content and terminal events remain strict.
+
+Downstream generation requests ignore unregistered fields; diagnostics record their count, not untrusted names or values. Unknown content or role discriminators are rejected because ignoring them would lose content. Protected known semantics that a target cannot express return an error. Trusted configuration and frozen-task requests stay closed.
+
+Parsing direction is explicit: client input, upstream reports and encoder checks have different policies. Nested parsing inherits that direction; no ambient or thread-local policy is used.
+
+#### Candidate-local projection
+
+Each candidate starts from the unchanged source IR. Static and streaming paths use the same named rules.
+
+Semantic support, wire representation, execution properties and client promises are separate capability layers. Public capability is not the union of all candidates.
+
+For a fixed target, earlier history projects byte-identically as later turns are added; cache markers may move. Rules must not reinterpret earlier content based on the current turn or request position. This protects cache prefixes and preserved-thinking replay.
+
+Native container boundaries may be omitted by a named client projection. Chat coalesces unannotated text into its scalar wire value without changing bytes; metadata-bearing merges reject. Ordered content, exact arguments and call/result identity remain intact. Required replay attachments use the manifest below to retain their original owner layout rather than treating this wire view as native ownership.
+
+### Request and reported meaning
+
+#### Accurate IR and declared loss
 
 The selected policy favors useful conversion over exact wire correspondence. Preserve source intent and observed facts in the IR; prefer an exact target carrier, then an explicitly approved omission or approximation on a target-private copy. Missing fidelity alone need not reject a request. This is the migration contract, not a claim that current codecs implement every rule; see the [implementation plan](roadmap.md#ir-and-codec-migration).
 
@@ -156,7 +245,7 @@ Keep source validation, acceptance with approved adaptation, and faithful target
 
 Request controls, upstream-reported settings and downstream delivery have different authority. Sent controls do not prove effective settings. A response-only echo can be omitted under a selected delivery rule without discarding generated content; validate source facts and repeated snapshots before that omission. JSON, SSE and retained delivered history must agree on the applied loss.
 
-### Message phase transfer
+#### Message phase transfer
 
 Responses preserves assistant `commentary` and `final_answer` exactly, independently of lifecycle and terminal meaning. Missing/null labels stay unlabelled. These labels affect history interpretation, not merely display; never infer them from text, tool calls or completion.
 
@@ -166,7 +255,7 @@ Chat/Messages delivery does not permanently discard phase by default. `generatio
 
 Returned edited or missing manifests follow the existing attachment contract: keep visible history, do not guess labels, and record a recognized mismatching carrier's omission. See the [source evidence](refs/2026-10-17-generation-contracts.md#compatibility-policy-review-2026-10-18).
 
-### Service policies and reports
+#### Service policies and reports
 
 Service selection uses closed request-policy variants, separate from the reported service class. They belong to request execution intent and response metadata, not generation settings or token accounting. Keep native spellings in codecs; do not infer a report from the requested policy, configured target or model alias.
 
@@ -176,7 +265,7 @@ Messages carries a service report in full-message usage, including stream openin
 
 Model names may encode a service policy only through an evidence-backed trusted binding declaration. Keep canonical model identity, semantic policy and wire spelling distinct. Effective deployment identity must agree across preparation, cache and replay. Request-dependent alias selection remains deferred with routing integration.
 
-### End-user attribution
+#### End-user attribution
 
 The selected design permits a shared opaque end-user attribution value to use OpenAI Chat/Responses `safety_identifier`, Messages `metadata.user_id` and generateContent `labels.safety_identifier` on admitted targets. These carriers overlap in abuse attribution; they are not authentication, credential, workspace, billing-project or conversation selectors. The [source comparison](refs/2026-10-17-generation-contracts.md#cross-provider-user-attribution-2026-10-19) records their distinct bounds and purposes. Google Interactions has no selected equivalent carrier.
 
@@ -194,7 +283,7 @@ For example, source `user: "legacy_a"`, `safety_identifier: "usr_b"` and `prompt
 
 These are selected contracts, not implemented support. Messages/Google carriers, shared identity bounds and field-selective projection remain work in the [roadmap](roadmap.md#stage-1-work-plan). Cross-protocol mapping is stage 3; no binding activation, new Google client endpoint, generic label forwarding or source-protocol disclosure framework is implied.
 
-### Selected request approximations
+#### Selected request approximations
 
 D3 selects named omission of Chat `prediction` until a faithful carrier is implemented. Validate its known source shape before omitting the optimization, and record the omission rather than treating it as an unknown field. Predicted content is not a constraint on generated text. Neither output text nor reported accepted/rejected prediction counts may be synthesized from it; loss receipts do not contain the predicted body.
 
@@ -235,62 +324,9 @@ Messages has no refusal block, and `stop_reason: "refusal"` reports classifier i
 
 These are selected policies, not claims that all bindings support every conversion. Concrete mappings and default-equivalence checks use trusted target policy with source evidence, not client-selected fallback logic or upstream-error discovery. Native targets reject uncalibrated detail/context controls and filenames without carriers; a named rule alone does not establish approval.
 
-### Adaptation evidence
+### Reasoning controls
 
-Every selected loss produces bounded typed evidence with a stable rule, direction, semantic field category and action. Safe control summaries show enum values and presence; numeric request summaries allow only thinking budgets, representative preset tokens and output-token ceilings. Keep request intent, sent controls, upstream reports and delivered facts distinguishable. Evidence cannot restore omitted values, change semantic meaning or select an upstream.
-
-Reuse the existing diagnostics and protocol projection records rather than add a logging platform or a generic rule engine. Record losses independently once per affected control or aggregate repeated event occurrences within existing budgets. A prior refusal receipt cannot suppress a later usage-view receipt. These summary records do not contain bodies, prompts, schemas, arguments or opaque values; full business content belongs only to the separately controlled capture below. Arbitrary input strings and unknown field names are not automatically safe summary labels.
-
-Evidence belongs to a successfully checked projection boundary. A rejected batch adds no new receipts; earlier successful prefixes retain theirs when later intake or encoding fails. Late-reported facts follow the same rule. Native grouping and accounting transformations record evidence before their source ownership is removed. Encoding evidence alone proves neither network transmission nor effective Provider behavior.
-
-Required output evidence is established by explicit request controls, the source contract or continuation requirements. Preserve it or reject an incompatible target. Selected incidental settings echoes and auxiliary reports may be omitted after source validation, with evidence. Absence of a request flag alone does not prove that citations or other content are incidental; deferred citation support remains deferred.
-
-Chat omits incidental settings echoes because its response has no settings carrier. Responses omits unsupported independent reasoning-control echoes while retaining representable settings. Strict-complete delivery rejects either loss. These rules never drop generated reasoning, probabilities, citations or continuation values. Messages rejects unsupported probabilities and citations; its retained usage uses the same explicit cache/total view as delivery.
-
-#### Public capability and adaptation notice
-
-P7 selects an authenticated read-only capability snapshot and a conservative HTTP response-header notice of possible adaptation. The [initial partial surface](usage.md#capability-discovery-and-adaptation-notice) publishes gateway-boundary contracts for activated Generation clients, not model-effective support or full-loop availability. Unlisted cases are unassessed. Actual per-exchange loss receipts remain in internal diagnostics; no public receipt store, custom SSE events or response-body extensions are selected.
-
-Publish by public model and distinguish request acceptance, downstream delivery and history replay, including JSON/SSE limits. Describe faithful support, approved adaptation with stable rule IDs, and rejection. Reuse typed contracts and policies; do not serialize admission booleans or union candidate capabilities. Reveal no credentials, deployment origins or internal candidate identities. Keep `/v1/models` as model discovery rather than overloading its standard fields.
-
-The notice means possible adaptation, not applied loss or proof of Provider-effective settings. Its absence does not certify an exact full loop, and clients may not display it. Late stream reports make response headers unsuitable as complete actual-loss receipts. Do not buffer a complete stream to collect receipts, rely on trailers, add per-request loss-policy overrides or change routing. Neither a notice nor a receipt authorizes dropping completion causes, safety reports or other protected facts; only a selected named rule does.
-
-The [P7 boundary review](roadmap.md#p7-boundary-review) owns further capability expansion and reconnection sequencing. Model-level binding evidence and selected client loops must be specified before activating additional support; publishing a gateway rejection or delivery policy does not activate it.
-
-### Configurable exchange capture
-
-P6 selects configurable full business-message capture for this internal gateway, not just field summaries. Keep independent header/body controls for four boundaries: inbound client request, outbound upstream request, inbound upstream response and outbound client response. Body capture includes JSON, streamed application content, tool arguments/results and non-authentication opaque payloads when enabled. Capture is not a source of replay or semantic restoration.
-
-Capture is opt-in and off by default. Use private local storage, restrictive file permissions and finite queue, per-exchange and aggregate retention limits. Record redaction, truncation, dropped records and incomplete streams explicitly; do not label a partial record as complete. Keep the current best-effort availability contract: capture failure does not change the business response. Enabling content capture does not authorize remote export or printing captured business content into tool output.
-
-Credentials are excluded even in full mode. Redact Authorization/Proxy-Authorization, authentication cookies, API keys, token-bearing query values, known authentication body fields and credential material before enqueueing or writing. Configuration cannot disable this step. If a capture unit cannot be sanitized safely, omit it and record the reason. Complete business capture is not byte-for-byte credential-bearing wire capture.
-
-Capture belongs at gateway/transport I/O boundaries; codecs remain pure and only return bounded typed adaptation evidence. Stream incrementally within existing lifecycle bounds, sanitize at safe parsing boundaries and do not buffer the whole response or wait for storage before publication. Associate capture with an exchange-local identity and existing attempt ordinal without changing routing, retry or cancellation.
-
-The startup-owned [capture configuration](usage.md#private-exchange-capture) selects four independent header/body boundaries. Authenticated client traffic and Generation upstream I/O use a private exclusive-create writer. Static upstream JSON borrows the existing intake buffer; SSE uses bounded event framing. Unsafe serialized-argument fragments and URI headers are omitted explicitly, not logged as raw strings. Frozen standalone-task upstream capture remains outside these hooks.
-
-Capture is normalized application evidence, not a wire archive. Source EOF is distinct from semantic completion, body handoff and retained completeness. Queue, exchange and aggregate limits are finite; observed drops and writer failures remain queryable even when storage cannot retain a status record. No capture failure changes request acceptance or permits replay.
-
-### Protocol baselines and Provider dialects
-
-Use two codec responsibilities in each direction:
-
-```text
-decode: wire → dialect normalization → protocol baseline + declared extensions → IR + fidelity
-encode: IR + eligible fidelity → target baseline + declared extensions → dialect representation → wire
-```
-
-This is the selected boundary, not a claim that all existing codecs implement it. The baseline is one official API and its selected source revision, not another cross-protocol IR. Keep Chat Completions, Responses, Messages, generateContent and Interactions distinct. Model restrictions and Provider aliases do not redefine the baseline.
-
-A dialect may normalize an equivalent alias, with conflict checks against the canonical field. A declared semantic extension enters typed IR through an explicit decoder; it cannot hide required content in a restoration-only sidecar. Non-semantic reports and representation records stay bounded, source- and owner-bound outside the semantic task. Unknown fields never become restorable extensions.
-
-Trusted adapters select dialects. Apply the same extension admission to requests, static reports, streamed events and returned history, while retaining their direction-specific unknown-field policies. Registered MorphieCore downstream extensions remain explicit extensions, not additions to an official schema.
-
-Encode from the current typed meaning. A source extension cannot override canonical output, restore a deleted owner or cross an incompatible target. Dialect representation precedes final serialization; there are no post-encoding JSON patches. Projection need not be invertible: named approximations remain losses, not equivalent mappings.
-
-Introduce this seam incrementally around concrete mappings. Do not add a universal protocol DTO, arbitrary extension bag, plugin registry, second stream reducer or whole-stream buffering. Existing framing limits, conflict validation, EOF-gated terminals and replay authority remain unchanged.
-
-### Reasoning activation and effort scope
+#### Reasoning activation and effort scope
 
 The IR separates activation from a scope-qualified effort control. [Reasoning types](../src/semantic/task/generation/content/reasoning.rs), [settings](../src/semantic/task/generation/request/settings.rs) and their codecs own the contract; target-specific integration limits are in [Roadmap](roadmap.md#integration-handoff).
 
@@ -306,7 +342,7 @@ P2 gives explicit disabled activation priority when the target can represent off
 
 Requirements and target contracts must distinguish response-wide effort from reasoning support. Reported settings use the same scoped types without acquiring request intent that was not reported. No Provider identifiers or mapping tables enter semantic types, and no compatibility-only effort field survives the migration.
 
-### Reasoning level calibration
+#### Reasoning level calibration
 
 The existing level interface performs explicit, hand-authored calibration for the same model under trusted binding/dialect selection. It is not a universal adapter for all reasoning controls. P1/P2 select scope approximation and disabled-priority handling; P3 selects preset-based numeric-budget conversion inspired by [pi's pinned implementation](refs/2026-10-15-generation-projections.md#pi-thinking-budget-presets). Request-policy machinery exists for OpenAI and native projections, and OpenAI intake has directional reported-level calibration. Those interfaces do not establish model-effective support or activate a binding.
 
@@ -316,7 +352,7 @@ P4 preserves supported sampling controls. A named target policy may omit control
 
 Encode and decode mappings are directional. A many-to-one encode mapping has no automatic inverse; normalization of an upstream report needs its own explicit rule. Preserve request intent and reported effective settings separately, never synthesizing a reported setting from the request. Apply each mapping once at its boundary, record its named provenance, and validate the result against the target contract.
 
-#### Thinking-budget quantization
+##### Thinking-budget quantization
 
 The selected shared preset uses six distinct budgets across the positive OpenAI/IR level vocabulary. It follows pi's preset-based approach but deliberately differs from [pi's default values](refs/2026-10-15-generation-projections.md#pi-thinking-budget-presets). These are MorphieCore approximation settings, not official OpenAI token equivalents or universal target limits:
 
@@ -346,7 +382,7 @@ Passing this comparison is necessary, not sufficient. Equality is accepted only 
 
 Rules cannot expand accepted content types, bypass model restrictions, select a route or modify the source IR. No public request override is selected. Qualitative level calibration remains hand-authored Rust policy. Trusted startup configuration may supply a public model's six numeric thinking budgets; each candidate explicitly selects budget-to-effort or effort-to-budget conversion. Omission selects no conversion. The existing algorithms, target restrictions and output-ceiling checks remain authoritative; there is no generic rule engine. P6's diagnostic switches configure capture, not semantic mapping.
 
-#### Initial mapping plan
+##### Initial mapping plan
 
 Select a policy for one canonical model and trusted endpoint/protocol binding, not for every model of a Provider. It declares a stable rule identity, effort scope, accepted native levels and independent encode/decode tables. Use finite typed pairs or match arms; off, absence, null, budgets, display and execution mode are not table entries.
 
@@ -372,7 +408,7 @@ Validate duplicate keys, output levels, effort scope and binding identity at the
 
 Validate native types, alias conflicts and source-snapshot consistency before a many-to-one normalization can hide a disagreement. Responses intake compares repeated reported settings before effort calibration, separately from item-snapshot validation. Normalize only fields actually reported. Static and streamed metadata use the same rule, and downstream delivery does not reapply the source Provider's encode map.
 
-#### Implementation owners
+##### Implementation owners
 
 | Owner | Responsibility |
 |---|---|
@@ -386,20 +422,6 @@ Validate native types, alias conflicts and source-snapshot consistency before a 
 Native `Endpoint::adapter()` currently carries profile/replay labels rather than all representation caps. Native request conversions do not supply an implicit inverse for reported settings. If a concrete native binding needs reported-level calibration, select an independent decode policy and propagate it explicitly into intake before claiming support; request projection alone does not establish it. The ordinary downstream client decoder uses its declared client contract, not a guessed Provider policy chosen from business JSON.
 
 Keep [candidate preflight](../src/execution/plan.rs) and transport free of mapping tables. Preflight already invokes endpoint encoding, so preparation must reuse that same codec path rather than add a second execution-layer mapper.
-
-### Field handling
-
-| Class | Handling |
-|---|---|
-| Must preserve | Preserve instructions, order, tools, arguments, call/result links, required continuations, stop reasons and core usage; reject an unrepresentable target |
-| Degradable | Apply an approved advisory omission or behavioral approximation to a target-private copy and record it; never silently patch the source |
-| Unknown | Ignore unregistered protocol fields; keep known fields strict and never forward unknown input |
-
-Upstream responses are strict on known types, values and relations. Unknown fields are ignored. Unknown Responses event types are skipped and counted; registered content and terminal events remain strict.
-
-Downstream generation requests ignore unregistered fields; diagnostics record their count, not untrusted names or values. Unknown content or role discriminators are rejected because ignoring them would lose content. Protected known semantics that a target cannot express return an error. Trusted configuration and frozen-task requests stay closed.
-
-Parsing direction is explicit: client input, upstream reports and encoder checks have different policies. Nested parsing inherits that direction; no ambient or thread-local policy is used.
 
 ### Media
 
@@ -419,17 +441,31 @@ Image, audio, video and file resources are inert: inline data or a URL, never fe
 
 Carrier tables and sources: [Multimodal carriers](refs/multimodal.md).
 
-### Candidate-local projection
+### Adaptation evidence
 
-Each candidate starts from the unchanged source IR. Static and streaming paths use the same named rules.
+Every selected loss produces bounded typed evidence with a stable rule, direction, semantic field category and action. Safe control summaries show enum values and presence; numeric request summaries allow only thinking budgets, representative preset tokens and output-token ceilings. Keep request intent, sent controls, upstream reports and delivered facts distinguishable. Evidence cannot restore omitted values, change semantic meaning or select an upstream.
 
-Semantic support, wire representation, execution properties and client promises are separate capability layers. Public capability is not the union of all candidates.
+Reuse the existing diagnostics and protocol projection records rather than add a logging platform or a generic rule engine. Record losses independently once per affected control or aggregate repeated event occurrences within existing budgets. A prior refusal receipt cannot suppress a later usage-view receipt. These summary records do not contain bodies, prompts, schemas, arguments or opaque values; full business content belongs only to the separately controlled capture below. Arbitrary input strings and unknown field names are not automatically safe summary labels.
 
-For a fixed target, earlier history projects byte-identically as later turns are added; cache markers may move. Rules must not reinterpret earlier content based on the current turn or request position. This protects cache prefixes and preserved-thinking replay.
+Evidence belongs to a successfully checked projection boundary. A rejected batch adds no new receipts; earlier successful prefixes retain theirs when later intake or encoding fails. Late-reported facts follow the same rule. Native grouping and accounting transformations record evidence before their source ownership is removed. Encoding evidence alone proves neither network transmission nor effective Provider behavior.
 
-Native container boundaries may be omitted by a named client projection. Chat coalesces unannotated text into its scalar wire value without changing bytes; metadata-bearing merges reject. Ordered content, exact arguments and call/result identity remain intact. Required replay attachments use the manifest below to retain their original owner layout rather than treating this wire view as native ownership.
+Required output evidence is established by explicit request controls, the source contract or continuation requirements. Preserve it or reject an incompatible target. Selected incidental settings echoes and auxiliary reports may be omitted after source validation, with evidence. Absence of a request flag alone does not prove that citations or other content are incidental; deferred citation support remains deferred.
 
-## Reasoning replay
+Chat omits incidental settings echoes because its response has no settings carrier. Responses omits unsupported independent reasoning-control echoes while retaining representable settings. Strict-complete delivery rejects either loss. These rules never drop generated reasoning, probabilities, citations or continuation values. Messages rejects unsupported probabilities and citations; its retained usage uses the same explicit cache/total view as delivery.
+
+#### Public capability and adaptation notice
+
+P7 selects an authenticated read-only capability snapshot and a conservative HTTP response-header notice of possible adaptation. The [initial partial surface](usage.md#capability-discovery-and-adaptation-notice) publishes gateway-boundary contracts for activated Generation clients, not model-effective support or full-loop availability. Unlisted cases are unassessed. Actual per-exchange loss receipts remain in internal diagnostics; no public receipt store, custom SSE events or response-body extensions are selected.
+
+Publish by public model and distinguish request acceptance, downstream delivery and history replay, including JSON/SSE limits. Describe faithful support, approved adaptation with stable rule IDs, and rejection. Reuse typed contracts and policies; do not serialize admission booleans or union candidate capabilities. Reveal no credentials, deployment origins or internal candidate identities. Keep `/v1/models` as model discovery rather than overloading its standard fields.
+
+The notice means possible adaptation, not applied loss or proof of Provider-effective settings. Its absence does not certify an exact full loop, and clients may not display it. Late stream reports make response headers unsuitable as complete actual-loss receipts. Do not buffer a complete stream to collect receipts, rely on trailers, add per-request loss-policy overrides or change routing. Neither a notice nor a receipt authorizes dropping completion causes, safety reports or other protected facts; only a selected named rule does.
+
+The [P7 boundary review](roadmap.md#p7-boundary-review) owns further capability expansion and reconnection sequencing. Model-level binding evidence and selected client loops must be specified before activating additional support; publishing a gateway rejection or delivery policy does not activate it.
+
+## History and replay
+
+### Reasoning replay
 
 Opaque upstream values reach clients in a tagged envelope:
 
@@ -480,15 +516,7 @@ This is original-segmentation recovery, not authenticated edit identity: identic
 
 Pinned pi parser/request-builder checks preserve equal-text owners and signed calls on Chat, Responses and Messages; JavaScript-rounded arguments drop that turn's carrier. Empty signed text returns through Responses and Messages. Pinned pi Chat drops an assistant turn containing only opaque details, so that turn's signature is lost. This is an accepted client limitation: generateContent does not strictly validate non-function-call signatures, and turns with calls keep their carrier. No placeholder text or hidden-state reconstruction replaces the turn. This is client-codec evidence, not opencode compatibility, binding admission or Provider acceptance; see the [protocol notes](refs/2026-10-17-generation-contracts.md#signed-google-parts).
 
-## Compacted history
-
-A compaction item owns opaque context at one position in the ordered history. It is not a readable summary, reasoning or a message with an invented role. Responses preserves its identity and `encrypted_content` in input, static output and streamed item snapshots. Only a completed opaque value can enter replay history; an unfinished stream cannot become a static compaction item.
-
-Compaction uses the [replay envelope](#reasoning-replay) with a distinct format tag. The gateway restores the native payload only for the matching deployment/model and Responses carrier. Bare, malformed, foreign or unbound values are rejected, never stripped: unlike optional reasoning, removing compacted context would lose history. Chat Completions, Messages and Google targets reject it in the absence of a carrier.
-
-Compaction admission is separate from reasoning support. Codec support does not activate existing model bindings. This contract receives and replays compacted history; it does not schedule compaction, expose `/responses/compact` or store conversations. The [official guide](https://developers.openai.com/api/docs/guides/compaction) and [pinned SDK](references.md#pinned-sources) define the selected wire contract.
-
-## Chat reasoning extensions
+### Chat reasoning extensions
 
 Chat uses OpenRouter shapes for semantics its standard fields cannot carry:
 
@@ -510,128 +538,29 @@ For registered plaintext views, absence, null and an empty string make no text a
 
 Register new extension shapes here one at a time. The old `_openbridge` attachment is rejected and never emitted.
 
-## Failover
+### Compacted history
 
-### Legal candidates
+A compaction item owns opaque context at one position in the ordered history. It is not a readable summary, reasoning or a message with an invented role. Responses preserves its identity and `encrypted_content` in input, static output and streamed item snapshots. Only a completed opaque value can enter replay history; an unfinished stream cannot become a static compaction item.
 
-Startup compiles a public model to a route with legal endpoints and all authorized credential-pool members, at most 64 expanded candidates per entry. Business input cannot create candidates or name an executor. Request representability is checked before selection; it does not widen public admission.
+Compaction uses the [replay envelope](#reasoning-replay) with a distinct format tag. The gateway restores the native payload only for the matching deployment/model and Responses carrier. Bare, malformed, foreign or unbound values are rejected, never stripped: unlike optional reasoning, removing compacted context would lose history. Chat Completions, Messages and Google targets reject it in the absence of a carrier.
 
-Compiled order is stable. Runtime policy promotes an available conversation preference and defers unavailable targets, then rechecks health atomically before dispatch. Cooling is a dispatch gate, not a last resort. This is failover, not load balancing.
+Compaction admission is separate from reasoning support. Codec support does not activate existing model bindings. This contract receives and replays compacted history; it does not schedule compaction, expose `/responses/compact` or store conversations. The [official guide](https://developers.openai.com/api/docs/guides/compaction) and [pinned SDK](references.md#pinned-sources) define the selected wire contract.
 
-The exact executor/cache identity includes ingress principal, credential provenance, public model, Provider, deployment origin/path and upstream model. API-key rotation changes it; OAuth token refresh preserves the verified principal. A different credential is a different cache domain. Health uses separate private digests so public aliases do not isolate a shared failure.
+### Stateful history
 
-### Advancement
+Downstream Responses offers stateless full-history requests and gateway-managed `previous_response_id` continuation. The gateway retains canonical request input and the delivered response projection, with replay envelopes intact. The Responses codec materializes their ordered items with new input before ordinary IR validation and candidate preparation. Storage facts stay in protocol metadata, outside Generation IR and upstream execution hints.
 
-Advancement requires enabled policy, an unpublished body, a legal remaining candidate and remaining attempt/time budget. Scan the stable suffix under every earlier failure restriction; an ineligible adjacent key cannot block a later Provider, and another Provider's failure cannot erase an earlier exclusion.
+Storage defaults to true, matching OpenAI's Responses default. Omitted or null `store` retains the new response; explicit `store: false` opts out. A request may read a stored predecessor without storing its successor. Top-level instructions and other settings come from the new request, not its predecessor; instruction items in history remain history.
 
-The pool's runtime ceiling applies per endpoint: `max_attempts` with credential fallback enabled, otherwise one. The route ceiling spans all endpoints. Beginning credential resolution consumes an attempt; representability, health and policy skips do not. Neither budget resets or multiplies, and no candidate is revisited. Transport has no hidden retry or redirect. A retained tail member can be the first attempt even when the pool or route ceiling is one.
+The synchronous API includes response retrieval and deletion and cursor-paginated input items. Only fully delivered terminal responses become visible. Unknown, deleted and expired references have the same not-found result. Stored branches own complete snapshots: deleting or expiring an ancestor does not invalidate an already stored descendant. Retrieval is JSON only; there is no event log or stream resumption.
 
-| Failure | Advancement |
-|---|---|
-| Transport/connect failure, upstream timeout, server failure | Next key or endpoint where its credential/route policy permits |
-| Locally unavailable credential | Next credential of that endpoint where enabled; no new cross-Provider permission |
-| Exhausted quota | Next key or another Provider, where enabled |
-| Rate limit | Another Provider; do not rotate keys for unknown quota scope |
-| Authentication/permission failure, context overflow, request projection failure | Do not advance |
-| Safety refusal | Deliver it; never retry on another model |
+History lives in bounded process memory with a TTL. Expiration or restart invalidates stored references; there is no disk durability or restart recovery. Other storage backends require a later decision, not a prebuilt backend framework.
 
-A non-API 2xx reply, such as HTML or an empty body, is not success. Invalid or truncated upstream intake can advance while unpublished. Downstream projection failures do not acquire retry permission.
+Capacity accounts for typed payloads, retrieval bytes and owner records. A final snapshot reserves capacity before its terminal frame is queued. The body publishes it synchronously at the final acknowledged handoff, so an immediately following request can resolve it. Dropped or failed delivery releases the reservation. TTL starts at publication, reads do not extend it, and expired entries are reclaimed on store access. Unexpired entries are not evicted.
 
-Authentication/permission HTTP statuses remain authoritative: error wording cannot reinterpret them as quota, and reading an optional error body cannot turn them into a timeout. For other failed heads, a body-read timeout retains the known status classification.
+Upstream calls remain stateless, using full history and `store: false` where supported. Neither Provider-only nor hybrid Provider-held continuation is planned. Downstream storage intent never enables upstream storage. Cache affinity remains separate from history ownership.
 
-### Health and recovery
-
-| Failure | Health domain |
-|---|---|
-| Authentication, locally unavailable credential | Credential provenance + Provider + trusted origin |
-| Permission, quota, upstream server/transport/intake failure | Exact credential + Provider + deployment origin/path + upstream model |
-| Unknown-scope rate limit | Configured pool membership + Provider + deployment origin/path + upstream model |
-
-Pool identity is a digest of its ordered-independent member provenance set, not its display name. An unknown rate limit gates that deployment's pool across requests, without inventing a global Provider/account quota scope. Health keys come only from bound candidates; they and the bounded conversation table remain in process memory.
-
-Before `not_before`, no dispatch occurs. At expiry, one foreground request atomically acquires recovery ownership across all affected scopes. The lease lasts through EOF and final handoff; cancellation releases it. No background probes, waiting queues or repeated candidate cycles run. If every otherwise-legal remaining target is cooling or probing, return sanitized HTTP 503 `upstream_unavailable` with the earliest candidate's remaining delay (one second when only a probe is pending). Policy/budget exhaustion instead preserves the last attempted failure.
-
-Standard `Retry-After` accepts seconds or an HTTP date within one day. A valid delay, including zero, is used without a one-hour truncation. Without it, consecutive transient upstream failures back off from one second to one minute; credential, quota and rate failures from one minute to thirty minutes. Failures during an active cooldown do not multiply the backoff; thirty minutes after the previous cooldown resets the sequence. Active deadlines never shorten. No Provider-specific reset dialect is guessed.
-
-Each attempt captures health generations. Successful cleanup and affinity publication require all captured generations still to match; a late success cannot erase a newer failure. Already observed upstream failures survive interrupted error-frame delivery. Slow downstreams, cancellation alone, local projection failures and semantic refusals do not create upstream health failures.
-
-Diagnostics record bounded skip/stop reasons, scope classes, probe ownership and delay sources, never health keys, credential fingerprints, conversation IDs or business content.
-
-### Routing unit
-
-The declared conversation is the routing unit. Turns, messages, branches and inferred subtasks are not routing keys.
-
-After honest completion, later requests for the same public model and conversation prefer that executor. Successful failover updates affinity without automatically returning to the old target when it recovers. The table holds at most 4,096 pairs for one hour after completion; reads do not extend it. There are no weights, rotations, concurrency lanes or load-spreading rules.
-
-## Streaming and delivery
-
-When another candidate could answer, lifecycle-only frames are held before publication. Content, a 64 KiB bound or a real 20-second timer releases held frames, including during upstream silence. Empty buffers produce no invented keepalive or terminal. This lets a pre-publication failure advance without exposing the attempt.
-
-Publishing any body frame freezes advancement. Body handoff acknowledges commit. Completion requires validated upstream EOF and the final handoff.
-
-After publication:
-
-- Never splice another candidate into the body.
-- A classified upstream failure may produce a protocol failure frame.
-- Other failures abort delivery.
-- Never invent a successful terminal or replay the request.
-
-A Responses stream with context overflow or exhausted quota can return HTTP 200 with `response.failed` even before normal output, because Codex reads those classes from stream events.
-
-Upstream streaming and client delivery are independent. JSON clients receive a bounded aggregate; SSE clients receive incremental output. A native stop event is not transport EOF.
-
-Bodies, frames, event counts and deadlines are bounded. Client disconnect, timeout or shutdown cancels upstream work. Held-stream keep-alives remain [deferred](roadmap.md#only-if-needed).
-
-### Optional delta coalescing
-
-Delta coalescing is implemented and disabled by default. Prepared batches retain shared immutable metadata and fidelity, with projection and replay sealing performed once. The disabled path encodes each batch immediately.
-
-The goal is fewer downstream events, repeated envelopes and body handoffs without changing semantic content. It does not reduce upstream traffic or token usage, and fewer handoffs do not imply proportionally fewer network packets.
-
-```text
-upstream decoding and original-event validation/reduction
-  → attempt-local intake with terminal withheld until validated EOF
-    → streaming: client projection and prepared event context
-      → optional bounded delta coalescer → client encoder → body delivery
-    → final-only: existing materialized response → client projection → JSON delivery
-```
-
-Final-only delivery already supports a declared forced-stream upstream. It uses the existing authoritative reduction and final response, not an infinite coalescing window, an event log or a second full-response accumulator. Unexpected upstream SSE remains subject to the endpoint's declared delivery contract.
-
-#### Ownership and equivalence
-
-| Owner | Responsibility |
-|---|---|
-| Upstream decoder and semantic reducer | Validate every original event and retain existing byte, event and semantic limits |
-| Client projection | Prepare each event once, in order, with stable identity, metadata, fidelity and replay context |
-| Delivery-local coalescer | Keep one bounded adjacent run for one attempt; no network, clock source, credential or complete response state |
-| Gateway intake | Drive reads, monotonic-time flushes and body handoff in the existing task; retain deadlines, backpressure and cancellation |
-| Client encoder and body | Generate downstream sequence numbers, validate target state and preserve publication/acknowledgement gates |
-
-Successful streams must be equivalent after normalizing delta segmentation: ordered content, identities, probabilities, annotations, replay, usage and terminal outcome remain unchanged. Event count, sequence numbers, padding and timing need not match byte-for-byte. Failure paths preserve published prefixes and honest failure; cancellation is not a promise to deliver buffered data.
-
-Preparation and encoding need a separate seam. Do not buffer raw events and later call the existing combined operation against newer attempt metadata or fidelity. Retain the context needed by the pending run, or flush it under its original context before an update. Budget retained context as well as text; avoid copying a full sidecar per delta. Never rerun stateful native projection during flush. Existing target-encoder validation remains in place.
-
-#### Initial merge contract
-
-The first implementation merges only adjacent, nonempty `Delta` fragments of `PartKind::Text`, with the same projected item/part identity, unchanged encoding context and empty logprobs. Concatenate exact strings; never sample or keep only the latest fragment. Other deltas, including reasoning, tool arguments, audio and opaque signatures, pass through unchanged.
-
-Every noneligible event is a flush barrier. This includes resources, annotations, probability snapshots, final text metadata, usage, progress, part/item closure and terminal events. Empty deltas also remain barriers until their observable equivalence is established. Keep only one pending run, not independently buffered queues per part.
-
-The coalescer has empty, pending and closed states. An eligible event starts or extends a pending run; a barrier or size/time threshold emits that run before subsequent events. Cancellation or abandonment discards its state. No state crosses attempts, clients or requests.
-
-#### Scheduling and failure boundaries
-
-1. Preserve the first content-bearing batch's existing publication path without intentional coalescing delay. Do not release held lifecycle frames while hiding that batch in a new buffer. Existing pre-content fallback holding remains a separate policy.
-2. Start a fixed flush deadline when a run becomes pending; later fragments do not reset it. An actual timer must flush during upstream silence, and processing multiple events from one network chunk must not starve it. Existing elapsed-time checks on event arrivals are not such a timer.
-3. Flush before exceeding the pending-byte limit. Account conservatively for JSON escaping and envelope overhead so merging cannot make individually valid events exceed target frame limits. Original upstream limits are unchanged.
-4. Await the existing bounded body handoff. Do not read ahead in a detached task to bypass a slow client. The flush deadline bounds intentional buffering, not downstream/network blocking.
-5. Publication forbids advancement; acknowledgement advances the delivery lifecycle. Do not flush merely to manufacture commitment or create a new fallback permission. A failed unpublished attempt loses its buffer before legal advancement; cancellation discards it. On a published classified failure, handle already validated pending content in order before the failure frame when delivery remains possible; malformed intake still cannot create a success terminal.
-6. Normal completion drains pending content before terminal encoding, but the terminal itself remains gated by validated upstream EOF. Final-only delivery, stored response snapshots and replay retain their existing authority.
-
-The policy belongs to trusted startup configuration and defaults to disabled. Both finite time and accounted-byte bounds are required; invalid bounds fail startup. Retained context counts against the pending budget, and oversized contexts/fragments pass through rather than being truncated. Reported instruction-message trees bypass buffering. Conservative escaped-text and envelope allowances keep merged frames within the target event ceiling; the encoder still enforces aggregate output budgets.
-
-Configuration is documented in [Usage](usage.md#delta-coalescing). It is not an IR field or a downstream request extension. The [offline baseline](development.md#offline-baseline), [SDK loopback gate](development.md#sdk-loopback-gate) and separately scoped real acceptance remain distinct; synthetic overhead reductions do not establish universal latency or packet-count improvements.
+The scope is conversation history management, not execution persistence. No `background: true`, detached generation jobs, scheduler or agent loop is planned. JSON and SSE requests keep the existing cancellation and honest-delivery rules.
 
 ## Native Messages projection
 
@@ -681,7 +610,62 @@ Messages delivery rejects citations until that carrier is implemented. Static an
 
 Messages final usage requires reported input/output counts and a known accounting relation. `output_tokens_details.thinking_tokens` maps to the reported reasoning subset in both directions and is never derived. Cache-exclusive input is preserved. Inclusive input needs a reported cache-read count. An unreported cache-write category stays absent rather than zero, and the remaining input keeps any such writes. With both counts reported, at least one must be zero: the IR does not promise that nonzero cache-read and cache-write subsets are disjoint. Missing or ambiguous counts fail projection instead of becoming zero. SSE opening counters are provisional; they never replace the required final report.
 
-## Conversation and cache affinity
+## Runtime and trust
+
+### Failover
+
+#### Legal candidates
+
+Startup compiles a public model to a route with legal endpoints and all authorized credential-pool members, at most 64 expanded candidates per entry. Business input cannot create candidates or name an executor. Request representability is checked before selection; it does not widen public admission.
+
+Compiled order is stable. Runtime policy promotes an available conversation preference and defers unavailable targets, then rechecks health atomically before dispatch. Cooling is a dispatch gate, not a last resort. This is failover, not load balancing.
+
+The exact executor/cache identity includes ingress principal, credential provenance, public model, Provider, deployment origin/path and upstream model. API-key rotation changes it; OAuth token refresh preserves the verified principal. A different credential is a different cache domain. Health uses separate private digests so public aliases do not isolate a shared failure.
+
+#### Advancement
+
+Advancement requires enabled policy, an unpublished body, a legal remaining candidate and remaining attempt/time budget. Scan the stable suffix under every earlier failure restriction; an ineligible adjacent key cannot block a later Provider, and another Provider's failure cannot erase an earlier exclusion.
+
+The pool's runtime ceiling applies per endpoint: `max_attempts` with credential fallback enabled, otherwise one. The route ceiling spans all endpoints. Beginning credential resolution consumes an attempt; representability, health and policy skips do not. Neither budget resets or multiplies, and no candidate is revisited. Transport has no hidden retry or redirect. A retained tail member can be the first attempt even when the pool or route ceiling is one.
+
+| Failure | Advancement |
+|---|---|
+| Transport/connect failure, upstream timeout, server failure | Next key or endpoint where its credential/route policy permits |
+| Locally unavailable credential | Next credential of that endpoint where enabled; no new cross-Provider permission |
+| Exhausted quota | Next key or another Provider, where enabled |
+| Rate limit | Another Provider; do not rotate keys for unknown quota scope |
+| Authentication/permission failure, context overflow, request projection failure | Do not advance |
+| Safety refusal | Deliver it; never retry on another model |
+
+A non-API 2xx reply, such as HTML or an empty body, is not success. Invalid or truncated upstream intake can advance while unpublished. Downstream projection failures do not acquire retry permission.
+
+Authentication/permission HTTP statuses remain authoritative: error wording cannot reinterpret them as quota, and reading an optional error body cannot turn them into a timeout. For other failed heads, a body-read timeout retains the known status classification.
+
+#### Health and recovery
+
+| Failure | Health domain |
+|---|---|
+| Authentication, locally unavailable credential | Credential provenance + Provider + trusted origin |
+| Permission, quota, upstream server/transport/intake failure | Exact credential + Provider + deployment origin/path + upstream model |
+| Unknown-scope rate limit | Configured pool membership + Provider + deployment origin/path + upstream model |
+
+Pool identity is a digest of its ordered-independent member provenance set, not its display name. An unknown rate limit gates that deployment's pool across requests, without inventing a global Provider/account quota scope. Health keys come only from bound candidates; they and the bounded conversation table remain in process memory.
+
+Before `not_before`, no dispatch occurs. At expiry, one foreground request atomically acquires recovery ownership across all affected scopes. The lease lasts through EOF and final handoff; cancellation releases it. No background probes, waiting queues or repeated candidate cycles run. If every otherwise-legal remaining target is cooling or probing, return sanitized HTTP 503 `upstream_unavailable` with the earliest candidate's remaining delay (one second when only a probe is pending). Policy/budget exhaustion instead preserves the last attempted failure.
+
+Standard `Retry-After` accepts seconds or an HTTP date within one day. A valid delay, including zero, is used without a one-hour truncation. Without it, consecutive transient upstream failures back off from one second to one minute; credential, quota and rate failures from one minute to thirty minutes. Failures during an active cooldown do not multiply the backoff; thirty minutes after the previous cooldown resets the sequence. Active deadlines never shorten. No Provider-specific reset dialect is guessed.
+
+Each attempt captures health generations. Successful cleanup and affinity publication require all captured generations still to match; a late success cannot erase a newer failure. Already observed upstream failures survive interrupted error-frame delivery. Slow downstreams, cancellation alone, local projection failures and semantic refusals do not create upstream health failures.
+
+Diagnostics record bounded skip/stop reasons, scope classes, probe ownership and delay sources, never health keys, credential fingerprints, conversation IDs or business content.
+
+#### Routing unit
+
+The declared conversation is the routing unit. Turns, messages, branches and inferred subtasks are not routing keys.
+
+After honest completion, later requests for the same public model and conversation prefer that executor. Successful failover updates affinity without automatically returning to the old target when it recovers. The table holds at most 4,096 pairs for one hour after completion; reads do not extend it. There are no weights, rotations, concurrency lanes or load-spreading rules.
+
+### Conversation and cache affinity
 
 The explicit `X-MorphieCore-Conversation-Id` header takes precedence over agent session headers. See [Usage](usage.md#conversation-and-cache-affinity) for accepted headers and constraints.
 
@@ -691,23 +675,77 @@ Without a declared conversation, a short-lived prefix-digest index offers best-e
 
 Implicit cache scope is isolated by ingress key, credential source and public model. It is independent of the replay fingerprint. Losing the index loses cache hits, not correctness.
 
-## Stateful history
+### Streaming and delivery
 
-Downstream Responses offers stateless full-history requests and gateway-managed `previous_response_id` continuation. The gateway retains canonical request input and the delivered response projection, with replay envelopes intact. The Responses codec materializes their ordered items with new input before ordinary IR validation and candidate preparation. Storage facts stay in protocol metadata, outside Generation IR and upstream execution hints.
+When another candidate could answer, lifecycle-only frames are held before publication. Content, a 64 KiB bound or a real 20-second timer releases held frames, including during upstream silence. Empty buffers produce no invented keepalive or terminal. This lets a pre-publication failure advance without exposing the attempt.
 
-Storage defaults to true, matching OpenAI's Responses default. Omitted or null `store` retains the new response; explicit `store: false` opts out. A request may read a stored predecessor without storing its successor. Top-level instructions and other settings come from the new request, not its predecessor; instruction items in history remain history.
+Publishing any body frame freezes advancement. Body handoff acknowledges commit. Completion requires validated upstream EOF and the final handoff.
 
-The synchronous API includes response retrieval and deletion and cursor-paginated input items. Only fully delivered terminal responses become visible. Unknown, deleted and expired references have the same not-found result. Stored branches own complete snapshots: deleting or expiring an ancestor does not invalidate an already stored descendant. Retrieval is JSON only; there is no event log or stream resumption.
+After publication:
 
-History lives in bounded process memory with a TTL. Expiration or restart invalidates stored references; there is no disk durability or restart recovery. Other storage backends require a later decision, not a prebuilt backend framework.
+- Never splice another candidate into the body.
+- A classified upstream failure may produce a protocol failure frame.
+- Other failures abort delivery.
+- Never invent a successful terminal or replay the request.
 
-Capacity accounts for typed payloads, retrieval bytes and owner records. A final snapshot reserves capacity before its terminal frame is queued. The body publishes it synchronously at the final acknowledged handoff, so an immediately following request can resolve it. Dropped or failed delivery releases the reservation. TTL starts at publication, reads do not extend it, and expired entries are reclaimed on store access. Unexpired entries are not evicted.
+A Responses stream with context overflow or exhausted quota can return HTTP 200 with `response.failed` even before normal output, because Codex reads those classes from stream events.
 
-Upstream calls remain stateless, using full history and `store: false` where supported. Neither Provider-only nor hybrid Provider-held continuation is planned. Downstream storage intent never enables upstream storage. Cache affinity remains separate from history ownership.
+Upstream streaming and client delivery are independent. JSON clients receive a bounded aggregate; SSE clients receive incremental output. A native stop event is not transport EOF.
 
-The scope is conversation history management, not execution persistence. No `background: true`, detached generation jobs, scheduler or agent loop is planned. JSON and SSE requests keep the existing cancellation and honest-delivery rules.
+Bodies, frames, event counts and deadlines are bounded. Client disconnect, timeout or shutdown cancels upstream work. Held-stream keep-alives remain [deferred](roadmap.md#only-if-needed).
 
-## Credentials and security
+#### Optional delta coalescing
+
+Delta coalescing is implemented and disabled by default. Prepared batches retain shared immutable metadata and fidelity, with projection and replay sealing performed once. The disabled path encodes each batch immediately.
+
+The goal is fewer downstream events, repeated envelopes and body handoffs without changing semantic content. It does not reduce upstream traffic or token usage, and fewer handoffs do not imply proportionally fewer network packets.
+
+```text
+upstream decoding and original-event validation/reduction
+  → attempt-local intake with terminal withheld until validated EOF
+    → streaming: client projection and prepared event context
+      → optional bounded delta coalescer → client encoder → body delivery
+    → final-only: existing materialized response → client projection → JSON delivery
+```
+
+Final-only delivery already supports a declared forced-stream upstream. It uses the existing authoritative reduction and final response, not an infinite coalescing window, an event log or a second full-response accumulator. Unexpected upstream SSE remains subject to the endpoint's declared delivery contract.
+
+##### Ownership and equivalence
+
+| Owner | Responsibility |
+|---|---|
+| Upstream decoder and semantic reducer | Validate every original event and retain existing byte, event and semantic limits |
+| Client projection | Prepare each event once, in order, with stable identity, metadata, fidelity and replay context |
+| Delivery-local coalescer | Keep one bounded adjacent run for one attempt; no network, clock source, credential or complete response state |
+| Gateway intake | Drive reads, monotonic-time flushes and body handoff in the existing task; retain deadlines, backpressure and cancellation |
+| Client encoder and body | Generate downstream sequence numbers, validate target state and preserve publication/acknowledgement gates |
+
+Successful streams must be equivalent after normalizing delta segmentation: ordered content, identities, probabilities, annotations, replay, usage and terminal outcome remain unchanged. Event count, sequence numbers, padding and timing need not match byte-for-byte. Failure paths preserve published prefixes and honest failure; cancellation is not a promise to deliver buffered data.
+
+Preparation and encoding need a separate seam. Do not buffer raw events and later call the existing combined operation against newer attempt metadata or fidelity. Retain the context needed by the pending run, or flush it under its original context before an update. Budget retained context as well as text; avoid copying a full sidecar per delta. Never rerun stateful native projection during flush. Existing target-encoder validation remains in place.
+
+##### Initial merge contract
+
+The first implementation merges only adjacent, nonempty `Delta` fragments of `PartKind::Text`, with the same projected item/part identity, unchanged encoding context and empty logprobs. Concatenate exact strings; never sample or keep only the latest fragment. Other deltas, including reasoning, tool arguments, audio and opaque signatures, pass through unchanged.
+
+Every noneligible event is a flush barrier. This includes resources, annotations, probability snapshots, final text metadata, usage, progress, part/item closure and terminal events. Empty deltas also remain barriers until their observable equivalence is established. Keep only one pending run, not independently buffered queues per part.
+
+The coalescer has empty, pending and closed states. An eligible event starts or extends a pending run; a barrier or size/time threshold emits that run before subsequent events. Cancellation or abandonment discards its state. No state crosses attempts, clients or requests.
+
+##### Scheduling and failure boundaries
+
+1. Preserve the first content-bearing batch's existing publication path without intentional coalescing delay. Do not release held lifecycle frames while hiding that batch in a new buffer. Existing pre-content fallback holding remains a separate policy.
+2. Start a fixed flush deadline when a run becomes pending; later fragments do not reset it. An actual timer must flush during upstream silence, and processing multiple events from one network chunk must not starve it. Existing elapsed-time checks on event arrivals are not such a timer.
+3. Flush before exceeding the pending-byte limit. Account conservatively for JSON escaping and envelope overhead so merging cannot make individually valid events exceed target frame limits. Original upstream limits are unchanged.
+4. Await the existing bounded body handoff. Do not read ahead in a detached task to bypass a slow client. The flush deadline bounds intentional buffering, not downstream/network blocking.
+5. Publication forbids advancement; acknowledgement advances the delivery lifecycle. Do not flush merely to manufacture commitment or create a new fallback permission. A failed unpublished attempt loses its buffer before legal advancement; cancellation discards it. On a published classified failure, handle already validated pending content in order before the failure frame when delivery remains possible; malformed intake still cannot create a success terminal.
+6. Normal completion drains pending content before terminal encoding, but the terminal itself remains gated by validated upstream EOF. Final-only delivery, stored response snapshots and replay retain their existing authority.
+
+The policy belongs to trusted startup configuration and defaults to disabled. Both finite time and accounted-byte bounds are required; invalid bounds fail startup. Retained context counts against the pending budget, and oversized contexts/fragments pass through rather than being truncated. Reported instruction-message trees bypass buffering. Conservative escaped-text and envelope allowances keep merged frames within the target event ceiling; the encoder still enforces aggregate output budgets.
+
+Configuration is documented in [Usage](usage.md#delta-coalescing). It is not an IR field or a downstream request extension. The [offline baseline](development.md#offline-baseline), [SDK loopback gate](development.md#sdk-loopback-gate) and separately scoped real acceptance remain distinct; synthetic overhead reductions do not establish universal latency or packet-count improvements.
+
+### Credentials and security
 
 Credentials come only from the application's private store. A manager owns API keys, OAuth identities and ordered pools. Inference borrows access for a fixed identity; it never logs in or refreshes.
 
@@ -715,23 +753,76 @@ Ingress accepts one configured token via Bearer or `x-api-key` and authenticates
 
 Transport uses trusted prepared requests, no redirects and no implicit HTTP retries. Environment proxies require explicit startup opt-in. Credentials, locators, private config and upstream bodies never reach clients.
 
+### Configurable exchange capture
+
+P6 selects configurable full business-message capture for this internal gateway, not just field summaries. Keep independent header/body controls for four boundaries: inbound client request, outbound upstream request, inbound upstream response and outbound client response. Body capture includes JSON, streamed application content, tool arguments/results and non-authentication opaque payloads when enabled. Capture is not a source of replay or semantic restoration.
+
+Capture is opt-in and off by default. Use private local storage, restrictive file permissions and finite queue, per-exchange and aggregate retention limits. Record redaction, truncation, dropped records and incomplete streams explicitly; do not label a partial record as complete. Keep the current best-effort availability contract: capture failure does not change the business response. Enabling content capture does not authorize remote export or printing captured business content into tool output.
+
+Credentials are excluded even in full mode. Redact Authorization/Proxy-Authorization, authentication cookies, API keys, token-bearing query values, known authentication body fields and credential material before enqueueing or writing. Configuration cannot disable this step. If a capture unit cannot be sanitized safely, omit it and record the reason. Complete business capture is not byte-for-byte credential-bearing wire capture.
+
+Capture belongs at gateway/transport I/O boundaries; codecs remain pure and only return bounded typed adaptation evidence. Stream incrementally within existing lifecycle bounds, sanitize at safe parsing boundaries and do not buffer the whole response or wait for storage before publication. Associate capture with an exchange-local identity and existing attempt ordinal without changing routing, retry or cancellation.
+
+The startup-owned [capture configuration](usage.md#private-exchange-capture) selects four independent header/body boundaries. Authenticated client traffic and Generation upstream I/O use a private exclusive-create writer. Static upstream JSON borrows the existing intake buffer; SSE uses bounded event framing. Unsafe serialized-argument fragments and URI headers are omitted explicitly, not logged as raw strings. Frozen standalone-task upstream capture remains outside these hooks.
+
+Capture is normalized application evidence, not a wire archive. Source EOF is distinct from semantic completion, body handoff and retained completeness. Queue, exchange and aggregate limits are finite; observed drops and writer failures remain queryable even when storage cannot retain a status record. No capture failure changes request acceptance or permits replay.
+
 ## Settled decisions
+
+These records preserve accepted choices and their consequences, grouped by domain. Detailed contracts above remain authoritative; implementation status, remaining work and acceptance belong to the [roadmap](roadmap.md#current-status). A selected decision is not evidence of a working client loop.
+
+### Scope and activation decisions
 
 | Decision | Consequence |
 |---|---|
-| One semantic core | Gateway and future agent library share the IR; callers own agent behavior. Beyond context edits and response continuation, agent-only machinery joins the IR when the library needs it |
 | Five-stage development order | 1. Same-protocol lossless upstream/downstream IR codecs; 2. Basic agent tool interactions; 3. Cross-protocol stability and `count_tokens`; 4. Embedding/audio/image/video APIs and Files/multipart Uploads; 5. Unscheduled citations, tool discovery, hosted tools, server-side compaction, Batch and Realtime. Lossless claims are semantic and scoped; approved loss is not losslessness. Scope and exit conditions live in the [roadmap](roadmap.md#planned-order) |
 | Stage-1 baseline and scope (2026-10-19) | Lossless claims and tests use the latest releases checked that day: OpenAI Python 3.35.1, Anthropic Python 1.15.0 and pi 1.3.0, the installed client. The SDK loopback gate locks the same OpenAI release. Stage-1 dialects are DashScope Chat, OpenRouter Responses and OpenCode Go Messages; other registered dialects stay maintenance-only |
 | pi Haiku request profile (2026-10-19) | R2 is pi's `anthropic-messages` API with the built-in Haiku 5.5 compat flags. The user's separate pi extension declares that model for the gateway; MorphieCore adds no client-specific code, and OpenCode Go is only the current upstream. Its strict, deferred and eager-input tools, block binding, per-message effort, mid-conversation system messages and tool changes get typed owners and exact native carriers. Missing carriers use the selected named projections in the [request rules](#request-rules); protected controls without an approved fallback, including explicit block-binding `"error"`, still reject. Trusted binding policy enables carriers, and the encoder derives beta headers from the final wire. On 2026-10-19 bounded Go checks accepted all three beta carriers, so the Go/Haiku binding enables them. Strict tools, ordered instructions and tool changes are published under the all-native rule for owner-local cache admission |
 | Stage-3 counting | Complete `count_tokens` with cross-protocol adaptation, using explicit model/tokenizer and effective-input projection scope. Counting is not inference usage, silent estimation or a reservation of the next Generation route. Responses input-token counting remains a proposed companion surface |
 | Stage-4 operation scope | Extend independent Embedding/media paths and implement Files/multipart Uploads with selected storage, authorization and lifecycle contracts. Video is in scope, but exact operations and owners remain to be designed. Do not force standalone operations into Generation or imply Batch, Realtime or new binding activation |
 | Stage-5 scheduling | All stage-5 tasks are unscheduled future work, not a delivery commitment after stage 4. Explicit compaction is separate from automatic triggers; Batch and Realtime require their own task/session/job designs. Existing compaction-item replay and stage-4 media job requirements do not wait for those future APIs |
-| Official Generation vocabulary | OpenAI, Anthropic and Google define semantic concepts; dialect carriers and approximation policies stay in protocol modules. Semantic expression, codec support and activated bindings are separate claims |
 | Tool discovery and native web search (deferred) | Unscheduled stage-5 backlog; implementation designs and per-slice scheduling remain unresolved. Do not block stages 1–4, coverage improvement or the P7 boundary review on them. Preserve existing foundations and reject unsupported semantics; deferral does not claim complete official API coverage. Goals and reopening boundaries stay in the [roadmap](roadmap.md#deferred-tool-discovery-and-web-search) |
 | Cache prewarming (deferred) | Client replay warming already has an owner in pi; no gateway-owned background warmer is selected. Defer native cache-only support with priority and scheduling undecided, without blocking first-stage completion, coverage improvement or the P7 boundary review. Native cache resource references remain in scope. Ordinary one-token generation is not native no-output prewarming; preserve existing cache handling without claiming that contract. See the [roadmap](roadmap.md#deferred-cache-prewarming) |
+| P7 first reconnection scope (2026-10-19) | Select Qwen3.8 Flash through DashScope Chat and GPT-6 Luna through OpenRouter Responses, one existing binding at a time under the roadmap's bounded contracts and gates. Messages full-loop acceptance and Google model-value guards remain separate. No new binding, route policy or protected-semantic loss is selected |
+| Messages owner-local cache admission (2026-10-19) | The user separately resumed this slice. Enable the existing Go/Haiku binding's owner-local markers and publish admission only for all-native, opted-in configured candidates. Do not inject automatic caching beside explicit markers; preserve the marker-free default. Automatic-policy admission and unrelated frozen features remain closed; strict tools follow the pi Haiku profile row |
+| Routing phase boundary | Generation routing functional development is phase-complete and closed pending the [separate acceptance gate](roadmap.md#routing-acceptance--pending). Necessary maintenance and evidence-backed acceptance fixes preserve the selected contract; public semantic admission, bindings, credentials, standalone execution and unresolved client reconnection remain unchanged |
+| Native carrier availability is not activation | Native `representation_contract()` describes codec carriers; default `semantic_contract()` keeps generic binding admission unchanged. The selected [all-native Go/Haiku contract](#owner-local-cache-admission) is a narrow configured exception, not activation of other carriers. Public/topology checks remain narrower elsewhere until the scheduled integration review |
+| Transitional test scope | While IR/codec contracts are incomplete, defer success scenarios that assume unselected completion conversions or binding admission. Keep established local contracts and safety assertions, measure pruning coverage, and rebuild selected integration coverage after the contracts stabilize. A green reduced suite does not establish the deferred client loops |
+
+### Semantic ownership decisions
+
+| Decision | Consequence |
+|---|---|
+| One semantic core | Gateway and future agent library share the IR; callers own agent behavior. Beyond context edits and response continuation, agent-only machinery joins the IR when the library needs it |
+| Official Generation vocabulary | OpenAI, Anthropic and Google define semantic concepts; dialect carriers and approximation policies stay in protocol modules. Semantic expression, codec support and activated bindings are separate claims |
 | Two codec responsibilities | Normalize Provider dialects into an official API baseline plus declared extensions before semantic decoding; encode in reverse before serialization. Semantic extensions enter IR; eligible non-semantic fidelity stays scoped outside it |
-| Independent activation and scoped effort | Activation belongs to reasoning; a single scoped effort control belongs to generation settings. Response-wide effort is not reasoning-only effort, and off is not a positive level |
 | Accurate IR with declared lossy projection | Prefer exact carriers, permit approved advisory omissions and behavioral approximations, and reject loss of protected meaning. Preserve the source and record target-local changes; implementation follows the roadmap |
+| Equal downstream contracts | Chat Completions, Responses and Messages receive equal consideration for static delivery, streaming and history replay; a missing carrier needs an approved projection or explicit rejection |
+| Text-only instruction scope | Request-wide and ordered system/developer instructions admit only plain text. Instruction parts are `Part<Text>`, not resource-capable input parts. Reject media in requests and reported echoes at source decoding; no role movement, silent loss or instruction resource table is selected. Every official instruction carrier, including Messages mid-conversation system messages, is text-only; a shared SDK content union is not evidence of role-specific semantics |
+| Ordered instructions | An instruction after conversation content is a separate `ordered_instructions` feature. Chat and Responses carry it natively; Messages represents it as a mid-conversation system message; Google targets reject it. Codec representation does not widen default Messages admission; the reviewed Go/Haiku binding opens it |
+| Role-scoped content | IR validation rejects input media in assistant messages and citations or probabilities on user text. Generated assistant media wait for a selected output owner |
+| Unowned message fields | Chat participant `name` and non-null Messages `clear_at` are known official fields without IR owners and reject instead of being ignored. Non-null per-message `output_config.effort` on a system message becomes an ordered `ConfigurationUpdate` and rejects on other roles. Chat `store: true` rejects because the gateway provides no completion storage |
+| Protected controls and reports without owners | Messages geography/speed/fallback, Responses access programs and misalignment details, Google attribution and unsupported Interactions lifecycle/step-error carriers reject explicitly. Messages block-binding controls now have typed owners and selected carriers/fallbacks; input transformations use validated named omission under the [request rules](#request-rules). Rejection of the remaining gaps is a temporary representation boundary, not complete IR support; see [contract gaps](refs/2026-10-17-generation-contracts.md#protected-semantics-without-complete-owners) |
+| Exact non-strict default materialization | Chat/Messages non-strict defaults can become Responses `strict: false` without schema rewriting. Responses normalization defaults cannot become plain tools |
+| Program caller dependencies | Request calls name preceding program calls and linked results preserve caller identity. Self-describing response snapshots do not relax complete request-history associations |
+| Gemini non-content stops | `MALFORMED_FUNCTION_CALL`, `UNEXPECTED_TOOL_CALL`, `TOO_MANY_TOOL_CALLS`, `LANGUAGE`, `OTHER` and unknown finish reasons remain attempt failures. They never become success; pre-publication failover stays available and the frozen routing classification is unchanged. Recitation has its own incomplete reason |
+| Chat custom-tool identity | Use the official nested JSON carriers and preserve raw input/grammar. Resolve a result's function/custom kind only from its preceding call ID. The pinned Chat SSE schema has no custom delta carrier: reject rather than invent one or cast custom calls to functions; see [protocol sources](refs/2026-10-16-chat-custom-tools.md) |
+| Separate task contracts | Generation, Embeddings, Images, Speech and Transcription are not one universal message type |
+| Pure protocol boundaries | Encode from final typed input; no network in codecs or post-encoding JSON patches |
+| Functional ownership | Keep root layers; organize internals by domain, without compatibility aliases or plugin frameworks |
+| Explicit downstream identity | A closed client protocol and its adapter own decoding and delivery carriers. All Generation clients share the configured candidate route; Messages needs no dummy OpenAI adapter |
+| Official intake fields | Decode registered source semantics accurately. Unsupported preferences need selected omission rules; critical content and execution intent cannot masquerade as unknown fields. Optionality alone does not authorize dropping billing, storage or quality controls |
+| Reported tool results | Responses carries function/custom results in static output and item snapshots. Missing call references stay unreported; request history still requires matching preceding calls. Chat and Messages reject ordinary tool results as assistant output, not their supported history forms |
+| Envelopes as grouping | Ordered message envelopes are the only IR grouping. Chat's call ownership is a view derived in the OpenAI codec, which also enforces Chat-only rules such as no calls on a refusal |
+| Schemas as data | The IR keeps any bounded JSON-object schema an official API accepts. Each target checks its selected subset without rewriting constraints. generateContent function parameters require an explicit object root when a schema is present; omitted schemas stay omitted. Google protocols keep distinct structured-output shells; native strict-tool checks do not restrict client parsing. An unnamed output schema gets the fixed name `response` only on OpenAI targets, which require one |
+| Strict tool constraints stay protected | Messages strict tools reject unsupported constraints and documented case-sensitive string enum/const fidelity gaps. Native request-wide schema complexity includes output-only schemas and combined strict-tool/output schemas. No SDK constraint-removal helper or implicit default-strict conversion is used |
+| Client-owned output caps | Preserve explicit client ceilings. A protocol requiring an otherwise absent ceiling uses the selected named default policy; [Messages request rules](#request-rules) distinguish the current fixed insertion from the accepted target-configured replacement. No model-maximum fallback or automatic budget adjustment is selected |
+
+### Projection and reasoning decisions
+
+| Decision | Consequence |
+|---|---|
+| Independent activation and scoped effort | Activation belongs to reasoning; a single scoped effort control belongs to generation settings. Response-wide effort is not reasoning-only effort, and off is not a positive level |
 | Compatibility before rejection | Keep every representable fact, because retained state makes conversion more stable and extensible. When a supported client cannot carry or return some state, prefer a documented loss over rejecting its requests. Do not invent content, filler or validator-bypass values. Each existing rejection changes only through a selected rule |
 | Selected compatibility losses (2026-10-18) | Superseded for block binding on 2026-10-19 by the typed owner in the pi Haiku profile row. Targets without an identity carrier omit `user` and `safety_identifier` under `generation.omit-identity-hints.v1`. Assessment-only safety reports and OpenAI context-window stops follow the named rules above |
 | Unified user attribution (2026-10-19, revised) | Permit projection to OpenAI `safety_identifier`, Messages `metadata.user_id` and generateContent `labels.safety_identifier` under [the attribution contract](#end-user-attribution). Explicit safety identity takes precedence during cross-protocol projection; independently supplied source fields remain distinct and same-priority conflicts reject. Preserve same-protocol native fields and keep cache grouping separate. This supersedes the earlier prohibition on user-to-safety projection, not the trust boundary or binding gates; implementation remains pending |
@@ -746,11 +837,6 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Model-effective value limits (2026-10-19) | Keep model-specific effort levels and output maxima in trusted binding policy, outside protocol-neutral IR and routing policy. Check final projected controls, ordered updates and inserted defaults through the shared preflight/preparation encoder; existing explicitly selected mappings remain separate. Reject values outside the target contract for now. Do not implement speculative clamping; reconsider a specific field's clamp only when an actual compatibility problem supplies evidence and a separate policy decision. This placement decision does not activate bindings or certify model effectiveness |
 | DashScope Qwen3.8 output ceiling | The registered DashScope Qwen3.8 Flash/Max Chat bindings encode the total ceiling as `max_completion_tokens`; their `max_tokens` excludes thinking. Do not infer this policy for Coding Plan or other models sharing the dialect. Wire preservation is not a claim of exact upstream token enforcement |
 | Target-effective sampling | P4 preserves supported controls and permits named omission only for declared fixed/ignored behavior; unknown effectiveness is not permission to discard a control |
-| Required and incidental output evidence | P5 preserves required output facts and allows selected incidental-report loss after validation; request intent never fabricates upstream reports |
-| Configurable internal exchange capture | P6 permits opt-in business headers/bodies at all four I/O boundaries with separate controls, finite retention and best-effort writes. Credentials are always redacted; no switch permits credential-bearing logs |
-| Public capability and adaptation notice | P7 selects an authenticated capability snapshot distinguishing faithful support, approved adaptation and rejection, plus a conservative possible-adaptation HTTP notice. Actual receipts remain internal; standard response bodies and SSE stay unchanged. Implementation and reconnection remain separately scheduled |
-| P7 first reconnection scope (2026-10-19) | Select Qwen3.8 Flash through DashScope Chat and GPT-6 Luna through OpenRouter Responses, one existing binding at a time under the roadmap's bounded contracts and gates. Messages full-loop acceptance and Google model-value guards remain separate. No new binding, route policy or protected-semantic loss is selected |
-| Messages owner-local cache admission (2026-10-19) | The user separately resumed this slice. Enable the existing Go/Haiku binding's owner-local markers and publish admission only for all-native, opted-in configured candidates. Do not inject automatic caching beside explicit markers; preserve the marker-free default. Automatic-policy admission and unrelated frozen features remain closed; strict tools follow the pi Haiku profile row |
 | Summary granularity and visibility | P8 permits approximate summary granularity while preserving show/hide intent. Do not enable reasoning, fabricate summaries or expose hidden content |
 | Role and instruction approximation | P8 permits named developer/system/user mappings on target copies. A trusted Chat instruction-role selector uses developer for supported targets or system for compatibility fallback, before encoding and without error-triggered retry; existing ordered history stays ordered |
 | Target-local media detail | P8 prefers exact image/file detail carriers. Omission needs proven target-default equivalence; other approximations need evidence-backed named directional rules. No blanket media-option omission or inferred auto/absence equivalence |
@@ -759,69 +845,64 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | No default-strict-to-plain conversion | P8 rejects `DefaultStrictAsPlain`. Omitted Responses normalization defaults are not non-strict tools; preserve their source semantics or reject, without removing explicit constraints |
 | Predicted-output optimization | D3 selects named omission of Chat prediction after source validation until supported. Record the loss without changing generated text or fabricating usage |
 | Registered reasoning-view presence | Absent/null/empty plaintext views make no assertion; nonempty duplicates must agree. Explicit structured parts and replay ownership remain intact |
-| Equal downstream contracts | Chat Completions, Responses and Messages receive equal consideration for static delivery, streaming and history replay; a missing carrier needs an approved projection or explicit rejection |
-| Text-only instruction scope | Request-wide and ordered system/developer instructions admit only plain text. Instruction parts are `Part<Text>`, not resource-capable input parts. Reject media in requests and reported echoes at source decoding; no role movement, silent loss or instruction resource table is selected. Every official instruction carrier, including Messages mid-conversation system messages, is text-only; a shared SDK content union is not evidence of role-specific semantics |
-| Ordered instructions | An instruction after conversation content is a separate `ordered_instructions` feature. Chat and Responses carry it natively; Messages represents it as a mid-conversation system message; Google targets reject it. Codec representation does not widen default Messages admission; the reviewed Go/Haiku binding opens it |
-| Role-scoped content | IR validation rejects input media in assistant messages and citations or probabilities on user text. Generated assistant media wait for a selected output owner |
-| Unowned message fields | Chat participant `name` and non-null Messages `clear_at` are known official fields without IR owners and reject instead of being ignored. Non-null per-message `output_config.effort` on a system message becomes an ordered `ConfigurationUpdate` and rejects on other roles. Chat `store: true` rejects because the gateway provides no completion storage |
 | Unsupported known request semantics | Chat `moderation` and Messages tool `input_examples` reject before unknown-field filtering. Neither security policy nor model-visible tool examples may be silently discarded |
-| Protected controls and reports without owners | Messages geography/speed/fallback, Responses access programs and misalignment details, Google attribution and unsupported Interactions lifecycle/step-error carriers reject explicitly. Messages block-binding controls now have typed owners and selected carriers/fallbacks; input transformations use validated named omission under the [request rules](#request-rules). Rejection of the remaining gaps is a temporary representation boundary, not complete IR support; see [contract gaps](refs/2026-10-17-generation-contracts.md#protected-semantics-without-complete-owners) |
-| Exact non-strict default materialization | Chat/Messages non-strict defaults can become Responses `strict: false` without schema rewriting. Responses normalization defaults cannot become plain tools |
-| Program caller dependencies | Request calls name preceding program calls and linked results preserve caller identity. Self-describing response snapshots do not relax complete request-history associations |
-| Gemini non-content stops | `MALFORMED_FUNCTION_CALL`, `UNEXPECTED_TOOL_CALL`, `TOO_MANY_TOOL_CALLS`, `LANGUAGE`, `OTHER` and unknown finish reasons remain attempt failures. They never become success; pre-publication failover stays available and the frozen routing classification is unchanged. Recitation has its own incomplete reason |
-| Chat custom-tool identity | Use the official nested JSON carriers and preserve raw input/grammar. Resolve a result's function/custom kind only from its preceding call ID. The pinned Chat SSE schema has no custom delta carrier: reject rather than invent one or cast custom calls to functions; see [protocol sources](refs/2026-10-16-chat-custom-tools.md) |
-| Separate task contracts | Generation, Embeddings, Images, Speech and Transcription are not one universal message type |
-| Pure protocol boundaries | Encode from final typed input; no network in codecs or post-encoding JSON patches |
-| Functional ownership | Keep root layers; organize internals by domain, without compatibility aliases or plugin frameworks |
 | Layered capabilities | Source validity, acceptance through approved adaptation and faithful target support are distinct. Do not advertise lossy acceptance as native support or infer public promises from a union of candidates |
+| Declared adaptation | Named candidate-local losses; known fields strict, unknown protocol fields ignored |
+| Candidate-local tool errors | Messages admission preserves tool-result error flags regardless of the route. Native targets retain them; OpenAI targets apply a named loss on their private copy |
+| Configurable reasoning parameters | Numeric thinking tables belong to public models; candidate-local conversion direction is explicit. Reasoning-as-text defaults to false and requires opt-in. Configuration cannot alter dialect implementations, infer qualitative mappings or widen semantic admission |
+| Target carriers and protected content | Prefer official carriers or declared extensions. Selected role approximations change only the target representation; they do not invent content, assistant/tool speakers or call/result links. Do not drop task content or media merely to make a target accept the request |
+| Target-local image restrictions | Formats, encoded sizes, counts and unavailable per-use options are checked or projected at the protocol boundary, not encoded as Provider-specific IR fields |
+| Generation controls | Positive top-k, ordered exact stop sequences, independent presence/frequency coefficients and best-effort seeds have separate carriers. Absent, permitted null and empty stop lists mean no control; target limits remain codec-local. Messages clients may send top-k; the selected Messages profile rejects it at projection. Unbound tokenizer-specific logit bias remains rejected |
+| Service-policy intent and reports | [Closed policies and separate reported classes](#service-policies-and-reports), not speculative field combinations. Native names and model aliases never establish cross-service equivalence or effective reports; dynamic alias selection remains deferred with routing integration |
+
+### History and cache decisions
+
+| Decision | Consequence |
+|---|---|
+| Cache storage intent is protected | Prefer exact retention. Only `"24h"` may be omitted under an explicit, default-off trusted target policy after reviewing its default storage; `in_memory` stays protected. No registered target opts in. Do not infer equivalent TTLs or repair malformed/active request cache options |
+| Append-only history projection | Earlier content does not change when a later turn is added |
+| Scoped opaque replay and visible-history transfer | Preserve compatible replay. Omit complete incompatible reasoning on a target-private copy with a named transfer receipt; preserve visible content and actual call/results, reject partial or damaged compatible state, and never discard required compacted/cached context |
+| Selected attachment return contract | Actual part/call replay stays in the IR. Each client encoder emits the bounded opaque manifest in its own carrier before validation. Restore original owner segmentation only when the visible projection and manifest agree; otherwise drop that carrier's part/call replay with a receipt and keep the visible history. A client that discards a whole opaque-only turn loses that turn's replay; the gateway accepts the resulting history. No immutable edit identity or unverified client compatibility claim |
+| Replay dependencies | Validate recorded reasoning, part and call obligations before sealing. Bind owner lifecycle as well as content; missing owners/values reject. Partial replay cannot become final through omission or defaulting |
+| Prefix-cache ownership | Typed breakpoints and TTL belong to their content or tool-definition owner, including separate inner and outer tool-result boundaries. Automatic caching is a separate setting; absence preserves target policy. Unsupported targets reject rather than substitute cache keys or retention |
+| Compacted context is required history | A distinct ordered compaction item preserves opaque content and identity. Incompatible targets reject it rather than apply the foreign-reasoning strip rule |
+| Gateway-only history | [In-memory TTL history](#stateful-history) defaults to enabled for OpenAI Responses compatibility; `store: false` opts out. Continuation, retrieval and deletion remain synchronous, without Provider-held state or background execution |
+| Stateless Google Interactions | `store: false` and full history; no `previous_interaction_id` or revision header. Signatures keep their native formats |
+| Existing cached context | A typed optional reference belongs to `GenerationRequest` as its input base, not settings, an ordered item or advisory cache hints. Preserve resource identity and reported expiry; unreported expiry is not unlimited retention. Boundary records hold provenance and an explicit target clock checks known expiry. Never fetch, expand, renew or silently omit the reference. Default binding admission and public request schemas stay unchanged |
+
+### Routing and security decisions
+
+| Decision | Consequence |
+|---|---|
 | Stable entry paths | Provider entry paths are concrete unescaped ASCII. Reject encoded dot segments, separators, whitespace/control bytes and URL-escaped syntax before topology compilation; request-path normalization must not change the path used for cache/replay identity |
-| Routing phase boundary | Generation routing functional development is phase-complete and closed pending the [separate acceptance gate](roadmap.md#routing-acceptance--pending). Necessary maintenance and evidence-backed acceptance fixes preserve the selected contract; public semantic admission, bindings, credentials, standalone execution and unresolved client reconnection remain unchanged |
 | Stable routing revision | Bind complete bounded pools; scan legal successors under accumulated restrictions; gate dispatch on generation-fenced cooling with exclusive foreground recovery. Preserve stable order, exact-credential affinity, one exchange budget and no replay after publication |
 | Shared model identities across protocols | Compatible API-key, OAuth and native Messages bindings share one public model and ordered route. Endpoint protocols and credential domains stay distinct; narrower candidates reject requests they cannot represent |
 | SIWC cross-Provider fallback | A mixed route may contain one SIWC endpoint and advance to another Provider before publication within the route budget. SIWC pools remain single-account with no credential fallback; standalone SIWC routes remain single-attempt with fallback disabled |
 | Case-sensitive model labels | Public IDs may preserve upstream ASCII capitalization, but resolve only registered routes. Provider prefixes remain rejected; Provider, endpoint and route IDs keep their lowercase grammar |
-| Declared adaptation | Named candidate-local losses; known fields strict, unknown protocol fields ignored |
-| Cache storage intent is protected | Prefer exact retention. Only `"24h"` may be omitted under an explicit, default-off trusted target policy after reviewing its default storage; `in_memory` stays protected. No registered target opts in. Do not infer equivalent TTLs or repair malformed/active request cache options |
-| Native carrier availability is not activation | Native `representation_contract()` describes codec carriers; default `semantic_contract()` keeps generic binding admission unchanged. The selected [all-native Go/Haiku contract](#owner-local-cache-admission) is a narrow configured exception, not activation of other carriers. Public/topology checks remain narrower elsewhere until the scheduled integration review |
-| Candidate-local tool errors | Messages admission preserves tool-result error flags regardless of the route. Native targets retain them; OpenAI targets apply a named loss on their private copy |
-| Explicit downstream identity | A closed client protocol and its adapter own decoding and delivery carriers. All Generation clients share the configured candidate route; Messages needs no dummy OpenAI adapter |
 | Codec dispatch and execution | Adapters own upstream decoder and downstream encoder dispatch. Execution owns attempt identity, budgets, EOF validation and publication; candidate-transition rules are pure and independent of I/O |
 | Dataflow and scoped state | Typed stages have separate semantic, protocol, attempt and delivery authorities; optional stages do not introduce a generic pipeline framework |
-| Bounded text-delta coalescing | Startup-only, disabled-by-default optimization after client projection and before encoding. One pending run retains its prepared context and fixed deadline; invalid bounds fail startup. Final-only clients retain existing materialization; original intake validation and publication safety remain authoritative |
 | Typed startup activation | One `TaskEntries` input selects Generation and each standalone task explicitly. Empty lists activate nothing; embedding does not discover catalogs, credentials or environment proxies |
 | Two-file startup configuration | `gateway.json` owns service settings; `models.json` explicitly selects catalog models and ordered candidates. Candidate-local trusted deployment declarations may override URLs, wire model names and credential pools without changing Provider identity or dialects. All Generation client protocols use the configured route; frozen tasks keep their single catalog binding |
-| Configurable reasoning parameters | Numeric thinking tables belong to public models; candidate-local conversion direction is explicit. Reasoning-as-text defaults to false and requires opt-in. Configuration cannot alter dialect implementations, infer qualitative mappings or widen semantic admission |
-| Official intake fields | Decode registered source semantics accurately. Unsupported preferences need selected omission rules; critical content and execution intent cannot masquerade as unknown fields. Optionality alone does not authorize dropping billing, storage or quality controls |
-| Append-only history projection | Earlier content does not change when a later turn is added |
-| Reported tool results | Responses carries function/custom results in static output and item snapshots. Missing call references stay unreported; request history still requires matching preceding calls. Chat and Messages reject ordinary tool results as assistant output, not their supported history forms |
-| Scoped opaque replay and visible-history transfer | Preserve compatible replay. Omit complete incompatible reasoning on a target-private copy with a named transfer receipt; preserve visible content and actual call/results, reject partial or damaged compatible state, and never discard required compacted/cached context |
-| Selected attachment return contract | Actual part/call replay stays in the IR. Each client encoder emits the bounded opaque manifest in its own carrier before validation. Restore original owner segmentation only when the visible projection and manifest agree; otherwise drop that carrier's part/call replay with a receipt and keep the visible history. A client that discards a whole opaque-only turn loses that turn's replay; the gateway accepts the resulting history. No immutable edit identity or unverified client compatibility claim |
-| Scoped source accounting | Retain raw buckets and latest operation/step snapshots independently; derive delivery views without summing snapshots or inferring unknown inclusion relations. Source-default zeros and optional counts remain distinguishable |
-| Replay dependencies | Validate recorded reasoning, part and call obligations before sealing. Bind owner lifecycle as well as content; missing owners/values reject. Partial replay cannot become final through omission or defaulting |
-| Prefix-cache ownership | Typed breakpoints and TTL belong to their content or tool-definition owner, including separate inner and outer tool-result boundaries. Automatic caching is a separate setting; absence preserves target policy. Unsupported targets reject rather than substitute cache keys or retention |
-| Compacted context is required history | A distinct ordered compaction item preserves opaque content and identity. Incompatible targets reject it rather than apply the foreign-reasoning strip rule |
 | Failover, not balancing | Legal candidates, bounded advancement and exact-credential affinity |
 | Conversation routing | No inferred turn, branch or message routing |
-| Gateway-only history | [In-memory TTL history](#stateful-history) defaults to enabled for OpenAI Responses compatibility; `store: false` opts out. Continuation, retrieval and deletion remain synchronous, without Provider-held state or background execution |
-| Honest delivery | Publication forbids advancement; success requires validated EOF and handoff |
-| Agent-shaped failures | Sanitized error classes match pinned client behavior; refusals are not retries |
-| Delivery-local identity | Generated client IDs/timestamps are not upstream facts. Responses allocates a gateway-owned ID; only a stored, fully delivered snapshot makes it a history key |
-| Stateless Google Interactions | `store: false` and full history; no `previous_interaction_id` or revision header. Signatures keep their native formats |
 | Separate credential lifecycle | Private file store and ordered pools; no inference-triggered login or refresh |
 | Independent CLI paths | Default configuration lives in the home-relative application directory, with credentials in its `credentials` child. CLI credential/proxy overrides beat file settings; omitted credential paths retain their independent home-relative default. File-relative paths resolve beside the declaring file; no legacy discovery or automatic migration |
 | Agent-sized bounds | Bodies, IR budgets and deadlines fit whole-history agent sessions and long turns: tens of MiB and one hour per exchange. Upstreams enforce their own maxima |
 | Inert, credential-free media | Inline data or URLs only; no gateway fetch or file service, and no client-supplied Provider file references |
-| Target carriers and protected content | Prefer official carriers or declared extensions. Selected role approximations change only the target representation; they do not invent content, assistant/tool speakers or call/result links. Do not drop task content or media merely to make a target accept the request |
-| Target-local image restrictions | Formats, encoded sizes, counts and unavailable per-use options are checked or projected at the protocol boundary, not encoded as Provider-specific IR fields |
-| Envelopes as grouping | Ordered message envelopes are the only IR grouping. Chat's call ownership is a view derived in the OpenAI codec, which also enforces Chat-only rules such as no calls on a refusal |
-| Schemas as data | The IR keeps any bounded JSON-object schema an official API accepts. Each target checks its selected subset without rewriting constraints. generateContent function parameters require an explicit object root when a schema is present; omitted schemas stay omitted. Google protocols keep distinct structured-output shells; native strict-tool checks do not restrict client parsing. An unnamed output schema gets the fixed name `response` only on OpenAI targets, which require one |
-| Strict tool constraints stay protected | Messages strict tools reject unsupported constraints and documented case-sensitive string enum/const fidelity gaps. Native request-wide schema complexity includes output-only schemas and combined strict-tool/output schemas. No SDK constraint-removal helper or implicit default-strict conversion is used |
-| Generation controls | Positive top-k, ordered exact stop sequences, independent presence/frequency coefficients and best-effort seeds have separate carriers. Absent, permitted null and empty stop lists mean no control; target limits remain codec-local. Messages clients may send top-k; the selected Messages profile rejects it at projection. Unbound tokenizer-specific logit bias remains rejected |
-| Service-policy intent and reports | [Closed policies and separate reported classes](#service-policies-and-reports), not speculative field combinations. Native names and model aliases never establish cross-service equivalence or effective reports; dynamic alias selection remains deferred with routing integration |
+
+### Delivery and evidence decisions
+
+| Decision | Consequence |
+|---|---|
+| Required and incidental output evidence | P5 preserves required output facts and allows selected incidental-report loss after validation; request intent never fabricates upstream reports |
+| Configurable internal exchange capture | P6 permits opt-in business headers/bodies at all four I/O boundaries with separate controls, finite retention and best-effort writes. Credentials are always redacted; no switch permits credential-bearing logs |
+| Public capability and adaptation notice | P7 selects an authenticated capability snapshot distinguishing faithful support, approved adaptation and rejection, plus a conservative possible-adaptation HTTP notice. Actual receipts remain internal; standard response bodies and SSE stay unchanged. Implementation and reconnection remain separately scheduled |
+| Bounded text-delta coalescing | Startup-only, disabled-by-default optimization after client projection and before encoding. One pending run retains its prepared context and fixed deadline; invalid bounds fail startup. Final-only clients retain existing materialization; original intake validation and publication safety remain authoritative |
+| Scoped source accounting | Retain raw buckets and latest operation/step snapshots independently; derive delivery views without summing snapshots or inferring unknown inclusion relations. Source-default zeros and optional counts remain distinguishable |
+| Honest delivery | Publication forbids advancement; success requires validated EOF and handoff |
+| Agent-shaped failures | Sanitized error classes match pinned client behavior; refusals are not retries |
+| Delivery-local identity | Generated client IDs/timestamps are not upstream facts. Responses allocates a gateway-owned ID; only a stored, fully delivered snapshot makes it a history key |
 | Terminal stop evidence | Completion cause is separate from outcome and turn progress, including when Google reports STOP alongside function calls. Preserve natural, sequence-matched and ambiguous stop reports without deriving them from sent controls or output text. Chat coarsens and Responses omits causes under the [selected terminal approximations](#selected-request-approximations); Messages requires the stated cause/progress or pending-call evidence, without inventing source reports. Context-window and recitation reasons stay distinct in the IR; OpenAI clients receive them under named rules. Other targets without a carrier reject |
-| Existing cached context | A typed optional reference belongs to `GenerationRequest` as its input base, not settings, an ordered item or advisory cache hints. Preserve resource identity and reported expiry; unreported expiry is not unlimited retention. Boundary records hold provenance and an explicit target clock checks known expiry. Never fetch, expand, renew or silently omit the reference. Default binding admission and public request schemas stay unchanged |
 | Safety policy and reported assessment | Request probability-threshold settings belong to `GenerationSettings`; actual input/output assessments belong independently to `GenerationResponse` and report events. Preserve report order and source facts without deriving them from controls, confusing probability with severity or inferring an outcome. Default, disabled filtering and no category blocking remain distinct. Assessment-only reports are omitted under a named rule; blocking reports and unsupported policy carriers reject |
-| Transitional test scope | While IR/codec contracts are incomplete, defer success scenarios that assume unselected completion conversions or binding admission. Keep established local contracts and safety assertions, measure pruning coverage, and rebuild selected integration coverage after the contracts stabilize. A green reduced suite does not establish the deferred client loops |
-| Client-owned output caps | The gateway neither caps nor invents `max_tokens`; the upstream enforces its model limit. Only a protocol that requires the field fills a fixed default, under a named rule |
 
 Pinned clients and protocol sources are in [References](references.md). Observed client behavior is an oracle, not permission to weaken security or fabricate semantics.

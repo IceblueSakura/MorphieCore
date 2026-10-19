@@ -2,6 +2,24 @@
 
 Sources checked on 2026-10-17. These are protocol findings and design inputs, not Provider acceptance results. Current codec directions are OpenAI Chat/Responses and Messages in both directions, plus generateContent/Interactions upstream request encoding and SSE intake. Google client endpoints and static intake remain separate work.
 
+Later observations retain their own dates and evidence scope below. [Architecture](../architecture.md) owns current decisions; [Roadmap](../roadmap.md) owns remaining work and acceptance. Use the [research index](../references.md#research-notes) for related sources rather than treating this note as an implementation checklist.
+
+## Contents
+
+- [Sources](#sources)
+- [Exact carriers and source validation](#exact-carriers-and-source-validation)
+  - [P7 binding evidence, 2026-10-18](#p7-binding-evidence-2026-10-18)
+  - [Messages owner-local cache admission, 2026-10-19](#messages-owner-local-cache-admission-2026-10-19)
+  - [pi Messages request profile, 2026-10-19](#pi-messages-request-profile-2026-10-19)
+  - [Signed Google parts](#signed-google-parts)
+- [Protected semantics without complete owners](#protected-semantics-without-complete-owners)
+- [Scoped accounting contract](#scoped-accounting-contract)
+- [Selected visible-history transfer](#selected-visible-history-transfer)
+- [Messages budget and identity boundaries, 2026-10-19](#messages-budget-and-identity-boundaries-2026-10-19)
+- [Cross-provider user attribution, 2026-10-19](#cross-provider-user-attribution-2026-10-19)
+- [Loss-policy decisions still needed](#loss-policy-decisions-still-needed)
+- [Contract and evidence map](#contract-and-evidence-map)
+
 ## Sources
 
 | Source | Revision | License | Evidence |
@@ -140,7 +158,7 @@ Google [`CitationMetadata`](https://ai.google.dev/api/generate-content#CitationM
 
 Interactions `TextContent.annotations` appears in initial model-output content, initial thought summaries and thought-summary deltas. All reject nonempty annotations consistently. Merely rejecting the separate annotation delta is insufficient.
 
-Messages document/search citations remain the separate [1C proposal](../roadmap.md#1c-design-messages-citations): request-document ordinals, cited text and enable flags need explicit owners.
+Messages document/search citations remain the separate [1C proposal](../api-expansion-design.md#1c-design-messages-citations): request-document ordinals, cited text and enable flags need explicit owners.
 
 The newer OpenAI SDK describes `file_citation.index` as an insertion position in output text, whereas the earlier pin described a file-list index. Existing `reported_ordinal` is explicitly not a text offset. Do not relabel this silently: select the updated baseline, offset units and point-anchor semantics, with a distinct `file_path.index` contract.
 

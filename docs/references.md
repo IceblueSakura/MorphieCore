@@ -1,6 +1,19 @@
 # References
 
-Primary sources used in design, with pinned revisions and licenses. Web pages are unversioned; recheck them when implementing the protocol. A pinned revision does not mean it is installed or verified locally.
+This page indexes primary sources, licenses and dated research notes. It does not select design or certify implementation: [Architecture](architecture.md) owns accepted contracts and [Roadmap](roadmap.md) owns current scope and acceptance. Web pages are unversioned; recheck them when implementing the protocol. A pinned revision does not mean it is installed or verified locally.
+
+## Contents
+
+- [Pinned sources](#pinned-sources)
+- [Research notes](#research-notes)
+- [Protocol docs](#protocol-docs)
+  - [OpenAI](#openai)
+  - [Anthropic](#anthropic)
+  - [Google Gemini](#google-gemini)
+  - [OpenRouter](#openrouter)
+  - [OpenCode Go](#opencode-go)
+  - [JSON Schema](#json-schema)
+- [OAuth / OIDC](#oauth--oidc)
 
 ## Pinned sources
 
@@ -21,9 +34,18 @@ Primary sources used in design, with pinned revisions and licenses. Web pages ar
 
 The SDK loopback gate uses the versions locked in `tests/sdk/uv.lock`, independent of the research revisions above.
 
-## Protocol docs
+## Research notes
 
-Protocol research notes with dated findings live in `refs/`: [Multimodal carriers](refs/multimodal.md), [Generation projection contracts](refs/2026-10-15-generation-projections.md), [Chat custom tools](refs/2026-10-16-chat-custom-tools.md) and [Generation contract boundaries](refs/2026-10-17-generation-contracts.md). The latter pins supplemental SDK/reference-test sources and distinguishes newly observed semantics from the earlier baseline.
+| Domain | Note | Evidence boundary |
+|---|---|---|
+| Media and resource carriers | [Multimodal carriers](refs/multimodal.md) | Input/tool-result media, Provider-owned file references and generated-media sources; collected 2026-10-12 with dated updates |
+| Generation controls and projection | [Generation projection contracts](refs/2026-10-15-generation-projections.md) | Protocol/dialect distinctions, reasoning, budgets, sampling and service controls; researched 2026-10-15 |
+| Chat custom tools | [Custom-tool carriers](refs/2026-10-16-chat-custom-tools.md) | Native definition, call/result and missing SSE carriers; checked 2026-10-16 |
+| Generation contracts and client behavior | [Contract boundaries](refs/2026-10-17-generation-contracts.md) | Supplemental SDK findings, minimal counterexamples and dated client/binding checks from 2026-10-17 onward |
+
+Notes preserve the source revision and observation date, including superseded recommendations and narrower historical checks. Their conclusions are design inputs, not a second work queue or a replacement for current decisions. Recheck mutable sources before making a new protocol claim; distinguish SDK shape, client behavior, synthetic evidence and live Provider evidence.
+
+## Protocol docs
 
 ### OpenAI
 

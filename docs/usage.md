@@ -1,16 +1,31 @@
 # Usage
 
-This guide covers local setup and client requests. For the build environment, see [Development](development.md#environment).
+This guide owns local setup, configuration and client-facing procedures for implemented interfaces. [Architecture](architecture.md) explains the contracts; [Roadmap](roadmap.md) separates selected scope from acceptance. For tooling and verification, see [Development](development.md). Planned endpoints in the [API design](api-expansion-design.md) are not instructions for currently available APIs.
 
 ## Contents
 
 - [Prepare credentials](#prepare-credentials)
+  - [Add an API key](#add-an-api-key)
+  - [Create a pool](#create-a-pool)
+  - [OAuth](#oauth)
 - [Configure the gateway](#configure-the-gateway)
+  - [Model configuration](#model-configuration)
+  - [Delta coalescing](#delta-coalescing)
+  - [Private exchange capture](#private-exchange-capture)
 - [Start the gateway](#start-the-gateway)
 - [Send a request](#send-a-request)
+  - [Responses](#responses)
+  - [Chat Completions](#chat-completions)
+  - [Messages](#messages)
+  - [Shared request rules](#shared-request-rules)
+  - [Messages profile and cache markers](#messages-profile-and-cache-markers)
+  - [Chat custom tools](#chat-custom-tools)
+  - [Unsupported controls and delivery](#unsupported-controls-and-delivery)
+  - [Image input](#image-input)
 - [Stored Responses](#stored-responses)
-- [HTTP API](#http-api)
 - [Conversation and cache affinity](#conversation-and-cache-affinity)
+- [HTTP API](#http-api)
+  - [Capability discovery and adaptation notice](#capability-discovery-and-adaptation-notice)
 - [Errors and limits](#errors-and-limits)
 
 ## Prepare credentials
@@ -131,27 +146,6 @@ Create private `gateway.json` and `models.json` files in `$HOME/.local/share/mor
 
 Paths in the service file resolve relative to that file, not the process working directory. CLI paths remain explicit process-relative or absolute paths.
 
-### Delta coalescing
-
-To opt in, add this field to `gateway.json`:
-
-```json
-{
-  "delta_coalescing": {
-    "max_delay_ms": 10,
-    "max_pending_bytes": 16384
-  }
-}
-```
-
-Both fields are required. `max_delay_ms` must be 1–100 milliseconds; `max_pending_bytes` must be 1024–1048576 bytes. Invalid bounds or unknown fields fail startup. Omission preserves immediate delivery. Rust embedding uses the same optional `Limits::delta_coalescing` policy.
-
-Only adjacent nonempty text deltas with the same projected owner, part and encoding context, and no probabilities, are merged. The first content batch is not intentionally delayed. Other events and context changes flush pending text in order. A fixed deadline flushes during upstream silence; later fragments do not extend it. The delay bounds intentional buffering, not client backpressure or end-to-end latency.
-
-The byte bound includes conservatively accounted retained metadata, fidelity and text storage/escaping, not process RSS. Contexts or fragments that cannot fit pass through; reported instruction-message trees also bypass buffering. Upstream intake limits remain unchanged. Cancellation drops pending state; successful terminals still require validated upstream EOF. `stream:false`, including a declared forced-SSE upstream, uses existing final-response materialization without a coalescing buffer.
-
-This service policy adds no HTTP request fields, changes no routing rules and reduces neither upstream traffic nor token usage. Optional diagnostics report the peak accounted pending bytes observed when an attempt returns, without content. Synthetic measurements demonstrate overhead reduction only for their fixture; SDK, real-client and Provider acceptance remain separate gates.
-
 ### Model configuration
 
 `models.json` owns explicit public-model selection and ordered upstream candidates:
@@ -229,6 +223,27 @@ Place this object on the public model, alongside `candidates`. At least one cand
 Only listed models are activated. Frozen Images, Speech, Transcription and Embeddings entries use an empty object (`"configured-frozen-model": {}`); they retain their existing single catalog target and pool constraints, without Generation overrides.
 
 The file supports at most 64 models and 64 candidates per model; expanded credential candidates retain the existing runtime bound. Unknown bindings, mismatched model identities, duplicate deployments, missing pools and invalid bounds fail startup. See [service loading](../src/gateway/startup/bootstrap.rs) and [model assembly](../src/gateway/startup/models.rs).
+
+### Delta coalescing
+
+To opt in, add this field to `gateway.json`:
+
+```json
+{
+  "delta_coalescing": {
+    "max_delay_ms": 10,
+    "max_pending_bytes": 16384
+  }
+}
+```
+
+Both fields are required. `max_delay_ms` must be 1–100 milliseconds; `max_pending_bytes` must be 1024–1048576 bytes. Invalid bounds or unknown fields fail startup. Omission preserves immediate delivery. Rust embedding uses the same optional `Limits::delta_coalescing` policy.
+
+Only adjacent nonempty text deltas with the same projected owner, part and encoding context, and no probabilities, are merged. The first content batch is not intentionally delayed. Other events and context changes flush pending text in order. A fixed deadline flushes during upstream silence; later fragments do not extend it. The delay bounds intentional buffering, not client backpressure or end-to-end latency.
+
+The byte bound includes conservatively accounted retained metadata, fidelity and text storage/escaping, not process RSS. Contexts or fragments that cannot fit pass through; reported instruction-message trees also bypass buffering. Upstream intake limits remain unchanged. Cancellation drops pending state; successful terminals still require validated upstream EOF. `stream:false`, including a declared forced-SSE upstream, uses existing final-response materialization without a coalescing buffer.
+
+This service policy adds no HTTP request fields, changes no routing rules and reduces neither upstream traffic nor token usage. Optional diagnostics report the peak accounted pending bytes observed when an attempt returns, without content. Synthetic measurements demonstrate overhead reduction only for their fixture; SDK, real-client and Provider acceptance remain separate gates.
 
 ### Private exchange capture
 
@@ -313,21 +328,33 @@ Both forms work at ingress. Repeated headers or both forms together are rejected
 {"model":"configured-public-model","messages":[{"role":"user","content":"Reply with exactly pong."}],"max_tokens":64}
 ```
 
-Use `"stream": true` for SSE. Send the full history each turn, or use [stored Responses](#stored-responses). Chat Completions and Messages remain full-history APIs.
+### Shared request rules
 
-On an admitted native Messages configuration, tool definitions, system blocks and supported conversation blocks retain their own cache markers, including a `tool_result` wrapper. `{"type":"ephemeral"}` and explicit `ttl:"5m"` mean five minutes; `ttl:"1h"` means one hour. At most four explicit breakpoints are allowed, ordered with longer TTLs before shorter ones. The gateway does not move or drop markers, shorten TTLs or add a request-wide policy alongside them. Marker-free requests retain the existing automatic five-minute default. Caller-supplied top-level `cache_control` remains rejected on this binding, independently of owner-local markers. Cache hits and deployed proxy TTL behavior are not certified by admission.
+Use `"stream": true` for SSE. Send the full history each turn, or use [stored Responses](#stored-responses). Chat Completions and Messages remain full-history APIs.
 
 Instruction content is plain text only: request-wide instructions, Messages `system`, instruction text in mid-conversation Messages system messages, and Chat/Responses system or developer messages cannot contain images, audio, video or files. Messages system messages may additionally carry the supported tool-change blocks and per-message effort described below. Media-bearing instructions reject at decoding rather than being dropped or moved to a user message. The same restriction applies to reported instruction echoes from an upstream.
 
-Later system or developer instructions keep their position. Chat and Responses targets carry them natively; Messages uses mid-conversation system messages subject to native placement rules; Google targets reject them. The generic Messages profile keeps ordered-instruction and tool-change admission closed, while the [all-native configured Go/Haiku route](#model-configuration) enables the reviewed profile. Messages system messages can contain text and `tool_addition`/`tool_removal` blocks and carry per-message `output_config.effort`; a non-null effort on another role rejects. An effort-only system message may have empty content. Adaptive thinking can carry `thinking.block_binding`. Missing target carriers use the selected [named projections](architecture.md#request-rules); explicit block-binding `"error"` has no fallback. Non-null Messages `clear_at`, Chat message `name` and Chat `store: true` remain rejected.
+Later system or developer instructions keep their position. Chat and Responses targets carry them natively; Messages uses mid-conversation system messages subject to native placement rules; Google targets reject them.
 
 Return reasoning carriers unchanged in later history. Chat clients must preserve `reasoning_details`, not just readable text. See [Reasoning replay](architecture.md#reasoning-replay).
+
+Chat accepts the deprecated `max_tokens` as the output cap, but not together with `max_completion_tokens`. An absent or null cap remains unspecified at Chat intake; CLI bootstrap supplies no default or token ceiling. A target requiring a cap uses its named default, currently `messages.default-max-tokens.v1` with `32000` for native Messages. Chat and Responses codecs carry `verbosity`; native Messages and Google projections use selected, recorded omission rules. A codec carrier does not establish model-effective support or binding admission. Chat `stop` and Messages `stop_sequences` decode into ordered stop controls, but unchanged default binding admission does not enable them merely because the codecs have carriers.
+
+### Messages profile and cache markers
+
+On an admitted native Messages configuration, tool definitions, system blocks and supported conversation blocks retain their own cache markers, including a `tool_result` wrapper. `{"type":"ephemeral"}` and explicit `ttl:"5m"` mean five minutes; `ttl:"1h"` means one hour. At most four explicit breakpoints are allowed, ordered with longer TTLs before shorter ones. The gateway does not move or drop markers, shorten TTLs or add a request-wide policy alongside them. Marker-free requests retain the existing automatic five-minute default. Caller-supplied top-level `cache_control` remains rejected on this binding, independently of owner-local markers. Cache hits and deployed proxy TTL behavior are not certified by admission.
+
+The generic Messages profile keeps ordered-instruction and tool-change admission closed, while the [all-native configured Go/Haiku route](#model-configuration) enables the reviewed profile. Messages system messages can contain text and `tool_addition`/`tool_removal` blocks and carry per-message `output_config.effort`; a non-null effort on another role rejects. An effort-only system message may have empty content. Adaptive thinking can carry `thinking.block_binding`. Missing target carriers use the selected [named projections](architecture.md#request-rules); explicit block-binding `"error"` has no fallback.
+
+### Chat custom tools
 
 For custom-capable targets, Chat JSON uses `{"type":"custom","custom":{"name":"sql","format":{"type":"text"}}}` definitions and `{"type":"custom","custom":{"name":"sql"}}` choices. Calls retain raw `custom.input`; return their ID through an ordinary `role:"tool"` message. Preserve the preceding typed call in history so the result cannot be mistaken for a function result. Grammar definitions use the nested carrier described in [protocol sources](refs/2026-10-16-chat-custom-tools.md).
 
 The pinned Chat SSE contract has no custom-call delta carrier. Chat upstream streaming that enables custom selection and downstream custom-call deltas reject explicitly; use an admitted Responses streaming path instead. Custom history and declarations remain usable for a later stream when tool choice excludes custom output. Codec support does not activate models or execute tools.
 
-Chat accepts the deprecated `max_tokens` as the output cap, but not together with `max_completion_tokens`. An absent or null cap remains unspecified at Chat intake; CLI bootstrap supplies no default or token ceiling. A target requiring a cap uses its named default, currently `messages.default-max-tokens.v1` with `32000` for native Messages. Chat and Responses codecs carry `verbosity`; native Messages and Google projections use selected, recorded omission rules. A codec carrier does not establish model-effective support or binding admission. Chat `stop` and Messages `stop_sequences` decode into ordered stop controls, but unchanged default binding admission does not enable them merely because the codecs have carriers.
+### Unsupported controls and delivery
+
+Non-null Messages `clear_at`, Chat message `name` and Chat `store: true` remain rejected.
 
 Active Chat `functions`, `function_call` and `web_search_options`, and Messages `container`, `mcp_servers`, `context_management` and `compaction` remain unsupported and rejected. Other unrecognized fields are ignored by name. Messages `thinking.display` is preserved; Messages `top_k` decodes, but the native Messages target rejects it. Messages responses with citations or missing/ambiguous final usage fail projection rather than dropping annotations or inventing zero counts; a failure after streaming starts aborts delivery without a success terminal.
 
@@ -399,6 +426,21 @@ Snapshots use a fixed TTL from final delivery, not a sliding TTL. Defaults are 3
 
 History is process-local and is lost at shutdown or restart. A declared conversation header still controls routing/cache affinity independently; response IDs do not select credentials. There is no disk persistence, Conversations API, background generation or event log. Retrieval is JSON only: `stream=true` and `starting_after` are rejected. Retrieval and input listing accept only `include[]=reasoning.encrypted_content` as an optional include; other query fields are rejected.
 
+## Conversation and cache affinity
+
+Use `X-MorphieCore-Conversation-Id` for one logical conversation. Keep it stable across turns and model changes. Use a new ID for a new conversation.
+
+The ID must be 1–256 visible ASCII characters, without commas, in one header. If it is absent, ingress checks these agent headers in order:
+
+1. opencode: `X-Session-Id`
+2. pi: `session_id`
+3. Codex: `session-id`
+4. pi Chat/Messages: `x-session-affinity`
+
+For pi's ordinary API-key Chat and Messages integrations, enable `compat.sendSessionAffinityHeaders: true`; automatic session headers also require `cacheRetention` other than `none`. Responses normally sends `session_id` without that compatibility flag. Installed pi 1.3.0 transport carrier checks corroborate the pinned-source behavior; they do not establish full-client or Provider acceptance. Existing header precedence is unchanged; an invalid selected header rejects rather than falling through. `x-client-request-id` is not a conversation source.
+
+This ID groups routing and cache affinity; it does not store history. Body `session_id` is rejected. Standard `prompt_cache_key` is a separate cache-grouping intent. Without a declared conversation, the optional prefix index offers best-effort cache reuse, not executor affinity or replay permission.
+
 ## HTTP API
 
 | Method and path | Purpose |
@@ -438,21 +480,6 @@ Phase cases describe exact metadata carriers: native Responses assistant labels,
 Messages request cases distinguish `generation.cache` domain `valid_owner_local_breakpoints_5m_or_1h` from `request_wide_automatic_policy`. The former is faithful only under the selected all-native admission contract; mixed configurations publish rejection. These declarations do not promise cache creation/hits, billed TTLs, storage retention or signed-thinking replay.
 
 Generation JSON/SSE responses carry `X-MorphieCore-Adaptation: possible` and `Link: </v1/morphiecore/capabilities>; rel="describedby"`. This is deliberately conservative, including when no adaptation occurs and when Responses returns a pre-frame failure stream. It is not an actual-loss receipt, a success assertion or proof of Provider-effective behavior. Clients may not display it. Pre-response auth/admission errors, discovery, history operations and standalone tasks do not receive the notice; missing headers do not prove exactness. The notice adds no response-body fields or SSE events; the existing replay/phase carriers have their own [contract](architecture.md#reasoning-replay). Actual receipts remain internal diagnostics.
-
-## Conversation and cache affinity
-
-Use `X-MorphieCore-Conversation-Id` for one logical conversation. Keep it stable across turns and model changes. Use a new ID for a new conversation.
-
-The ID must be 1–256 visible ASCII characters, without commas, in one header. If it is absent, ingress checks these agent headers in order:
-
-1. opencode: `X-Session-Id`
-2. pi: `session_id`
-3. Codex: `session-id`
-4. pi Chat/Messages: `x-session-affinity`
-
-For pi's ordinary API-key Chat and Messages integrations, enable `compat.sendSessionAffinityHeaders: true`; automatic session headers also require `cacheRetention` other than `none`. Responses normally sends `session_id` without that compatibility flag. Installed pi 1.3.0 transport carrier checks corroborate the pinned-source behavior; they do not establish full-client or Provider acceptance. Existing header precedence is unchanged; an invalid selected header rejects rather than falling through. `x-client-request-id` is not a conversation source.
-
-This ID groups routing and cache affinity; it does not store history. Body `session_id` is rejected. Standard `prompt_cache_key` is a separate cache-grouping intent. Without a declared conversation, the optional prefix index offers best-effort cache reuse, not executor affinity or replay permission.
 
 ## Errors and limits
 
