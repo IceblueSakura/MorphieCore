@@ -137,7 +137,7 @@ The P7 boundary review becomes eligible after first-stage local completion, with
 
 ### P7 boundary review
 
-**Status: the initial boundary and sequence were selected on 2026-10-18 for R1a/R1b only.** This closes the first-stage scope choice, not the overall Generation design review, full-loop acceptance or later admission decisions.
+**Status: the initial boundary and sequence were selected on 2026-10-19 for R1a/R1b only.** This closes the first-stage scope choice, not the overall Generation design review, full-loop acceptance or later admission decisions.
 
 Entry condition: the first-stage IR/codec scope passes its local gates, and incompatible carriers and frozen admission boundaries are explicit. A connected end-to-end gateway is not a prerequisite.
 
