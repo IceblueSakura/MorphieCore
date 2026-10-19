@@ -412,17 +412,19 @@ fn intake_errors_are_classified_bounded_and_irrecoverable() {
 }
 #[test]
 fn cancellation_closes_intake_and_delivery_without_success() {
-    let mut intake = Attempt::new(standard(Profile::Chat), 4096, SseLimits::default());
-    let mut output = delivery(standard(Profile::Chat), Contract::full());
-    intake.begin(200, "text/event-stream").unwrap();
-    let (_, events) = intake.push(&bytes(Profile::Chat)).unwrap();
-    output.encode_events(&intake, &events).unwrap();
-    output.commit().unwrap();
-    intake.cancel();
-    output.cancel();
-    assert!(intake.finish().is_err());
-    assert!(output.finish_stream(&intake).is_err());
-    assert!(!output.lifecycle().may_retry_or_fallback());
+    for profile in [Profile::Chat, Profile::Responses] {
+        let mut intake = Attempt::new(standard(profile), 4096, SseLimits::default());
+        let mut output = delivery(standard(profile), Contract::full());
+        intake.begin(200, "text/event-stream").unwrap();
+        let (_, events) = intake.push(&bytes(profile)).unwrap();
+        output.encode_events(&intake, &events).unwrap();
+        output.commit().unwrap();
+        intake.cancel();
+        output.cancel();
+        assert!(intake.finish().is_err());
+        assert!(output.finish_stream(&intake).is_err());
+        assert!(!output.lifecycle().may_retry_or_fallback());
+    }
 }
 #[test]
 fn unified_request_projection_keeps_targets_trusted_and_debug_redacted() {

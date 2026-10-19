@@ -12,8 +12,11 @@ mod gateway_sdk;
 mod messages_sdk;
 #[path = "sdk/process.rs"]
 mod process_tests;
+#[path = "sdk/r1.rs"]
+mod r1;
 #[path = "support/responses_profile.rs"]
 mod wire;
+use wire as r1_response_wire;
 
 use std::{
     sync::{Arc, Mutex},
