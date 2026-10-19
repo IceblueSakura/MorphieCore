@@ -150,7 +150,7 @@ A future proposal would need independently owned answer/thought/total limits, pr
 
 **Analysis only, requested on 2026-10-19. No semantic change is approved.** R1b exposed a difference between opening/progress and terminal Responses reports; the [dated evidence](refs/2026-10-17-generation-contracts.md#responses-lifecycle-reports-2026-10-19) separates observations from interpretation. Current source-conflict rejection remains authoritative.
 
-The current [observer](../src/protocol/openai/events/decode.rs) compares complete native `GenerationSettings` values, then separately checks service-class agreement. Both checks precede target projection. Fixing only settings would expose the service conflict next; the [encoder](../src/protocol/openai/events/encode.rs) also forbids changing an already reported service class. This is not just a decoder flag.
+The current [observer](../src/protocol/openai/events/decode/mod.rs) compares complete native `GenerationSettings` values, then separately checks service-class agreement. Both checks precede target projection. Fixing only settings would expose the service conflict next; the [encoder](../src/protocol/openai/events/encode/mod.rs) also forbids changing an already reported service class. This is not just a decoder flag.
 
 Minimal independent examples use one identity, increasing sequence numbers and valid empty output snapshots, first `in_progress`, then `completed`:
 

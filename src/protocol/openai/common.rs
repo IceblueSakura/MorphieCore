@@ -384,7 +384,7 @@ pub(super) fn tool_call(
     let status = if profile == Profile::Chat || o.get("status").is_some_and(Value::is_null) {
         ItemLifecycle::Completed
     } else {
-        crate::protocol::openai::responses::status(o, ItemLifecycle::Completed)?
+        crate::protocol::openai::responses::items::status(o, ItemLifecycle::Completed)?
     };
     Ok(ToolCall {
         replay: None,
@@ -394,7 +394,7 @@ pub(super) fn tool_call(
         arguments: raw_string(f, "arguments")?.into(),
         status,
         context: if profile == Profile::Responses {
-            crate::protocol::openai::responses::call_context(o, direction)?
+            crate::protocol::openai::responses::items::call_context(o, direction)?
         } else {
             CallContext::default()
         },

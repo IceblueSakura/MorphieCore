@@ -420,7 +420,7 @@ pub(crate) fn decode_chat_with(
         DecodeDirection::Upstream,
     )?;
     let o = object(&v)?;
-    chat::reject_moderation(o)?;
+    chat::items::reject_moderation(o)?;
     DecodeDirection::Upstream.fields(
         o,
         &[
@@ -459,7 +459,7 @@ pub(crate) fn decode_chat_with(
     let mut b = Items::new(DecodeDirection::Upstream);
     let message =
         crate::protocol::openai::chat::reasoning::decode_static(&mut b, message, adaptation)?;
-    chat::decode_message(&mut b, &message, false)?;
+    chat::items::decode_message(&mut b, &message, false)?;
     crate::protocol::openai::chat::logprobs::attach(&mut b.items, c.get("logprobs"))?;
     if matches!(outcome, Outcome::Incomplete) {
         for (_, item) in &mut b.items {
@@ -555,7 +555,7 @@ pub(crate) fn decode_responses_with(
     } else {
         "incomplete"
     };
-    responses::decode_items(&mut b, output, true, item_status)?;
+    responses::items::decode_items(&mut b, output, true, item_status)?;
     for (_, item) in &mut b.items {
         if let Item::ConfigurationUpdate(update) = item {
             let native = update.effort;
@@ -641,7 +641,7 @@ pub fn encode_chat(target: &ResponseRepresentation<'_>) -> Result<Value, CodecEr
         target.semantic.message_envelopes(),
         Profile::Chat,
     )?;
-    let mut messages = chat::encode_items_with(
+    let mut messages = chat::items::encode_items_with(
         target.semantic.items(),
         &chat::owners::owners(target.semantic.items(), target.semantic.message_envelopes()),
         target.fidelity,
@@ -746,7 +746,7 @@ pub fn encode_responses(target: &ResponseRepresentation<'_>) -> Result<Value, Co
         target.semantic.message_envelopes(),
         Profile::Responses,
     )?;
-    let mut output = responses::encode_items(
+    let mut output = responses::items::encode_items(
         target.semantic.items(),
         target.fidelity,
         true,

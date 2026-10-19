@@ -216,7 +216,7 @@ pub(crate) fn decode_request_in(
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     Ok(DecodedResponsesRequest {
-        task: crate::protocol::openai::responses::decode_generation_in(
+        task: crate::protocol::openai::responses::request::decode_generation_in(
             &Value::Object(task),
             direction,
         )?,
@@ -294,7 +294,7 @@ impl ResponseContext {
         let instruction_messages = if let Some(Value::Array(values)) = o.get("instructions") {
             controls.remove("instructions");
             let mut items = Items::new(direction);
-            crate::protocol::openai::responses::decode_items(
+            crate::protocol::openai::responses::items::decode_items(
                 &mut items,
                 values,
                 false,
@@ -342,7 +342,7 @@ impl ResponseContext {
         if let Some(messages) = &self.instruction_messages {
             o.insert(
                 "instructions".into(),
-                json!(crate::protocol::openai::responses::encode_items(
+                json!(crate::protocol::openai::responses::items::encode_items(
                     messages,
                     fidelity,
                     false,
@@ -492,7 +492,7 @@ pub(in crate::protocol::openai) fn validate_item_snapshot(v: &Value) -> Result<(
         if string(o, "role")? != "assistant" || !o.contains_key("status") {
             return Err(CodecError::Invalid("output message headers"));
         }
-        crate::protocol::openai::responses::status(o, ItemLifecycle::Completed)?;
+        crate::protocol::openai::responses::items::status(o, ItemLifecycle::Completed)?;
         let parts = o
             .get("content")
             .and_then(Value::as_array)

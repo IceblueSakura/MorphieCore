@@ -6,8 +6,8 @@ use crate::semantic::{context::ServiceClass, value::Presence};
 use crate::{
     protocol::CodecError,
     semantic::task::generation::{
-        InputTokenRelation, InteractionProgress, ItemId, ItemKind, Outcome, OutputTokenRelation,
-        PartId, PartKind, StreamEvent, StreamTerminal, Usage, UsageReport, UsageScope, UsageStage,
+        InteractionProgress, ItemId, ItemKind, Outcome, PartId, PartKind, StreamEvent,
+        StreamTerminal, UsageReport, UsageScope, UsageStage,
     },
 };
 use bytes::Bytes;
@@ -58,47 +58,6 @@ fn open_block(next: &mut usize, out: &mut Vec<Bytes>, block: Value) -> usize {
 fn frame(v: &Value) -> Bytes {
     let kind = v["type"].as_str().unwrap_or("error");
     Bytes::from(format!("event: {kind}\ndata: {v}\n\n"))
-}
-/// Messages usage: input excludes cache reads and reported cache writes.
-/// An unreported write category stays absent; the remaining input keeps any such writes.
-pub(super) fn usage_json(u: Option<&Usage>) -> Result<Value, CodecError> {
-    let unsupported = || CodecError::Unsupported("Messages usage".into());
-    let u = u.ok_or_else(unsupported)?;
-    u.validate()?;
-    let input = u.input_tokens.ok_or_else(unsupported)?;
-    let input = match u.input_relation {
-        InputTokenRelation::ExcludesCacheReadAndWrite => input,
-        InputTokenRelation::IncludesCache => {
-            let read = u.cached_input_tokens.ok_or_else(unsupported)?;
-            let excluded = match u.input_cache_write_tokens {
-                None => read,
-                // IncludesCache does not promise disjoint cache-read and cache-write subsets.
-                Some(write) if read != 0 && write != 0 => return Err(unsupported()),
-                Some(write) => read.max(write),
-            };
-            input.checked_sub(excluded).ok_or_else(unsupported)?
-        }
-        InputTokenRelation::Unreported => return Err(unsupported()),
-    };
-    let output = u.output_tokens.ok_or_else(unsupported)?;
-    let output = match u.output_relation {
-        OutputTokenRelation::IncludesReasoning => output,
-        OutputTokenRelation::ExcludesReasoning => output
-            .checked_add(u.reasoning_tokens.ok_or_else(unsupported)?)
-            .ok_or_else(unsupported)?,
-        OutputTokenRelation::Unreported => return Err(unsupported()),
-    };
-    let mut v = json!({"input_tokens":input,"output_tokens":output});
-    if let Some(read) = u.cached_input_tokens {
-        v["cache_read_input_tokens"] = json!(read);
-    }
-    if let Some(write) = u.input_cache_write_tokens {
-        v["cache_creation_input_tokens"] = json!(write);
-    }
-    if let Some(thinking) = u.reasoning_tokens {
-        v["output_tokens_details"] = json!({ "thinking_tokens": thinking });
-    }
-    Ok(v)
 }
 impl ClientEventEncoder {
     pub fn new(id: &str, model: &str) -> Self {
@@ -471,7 +430,7 @@ impl ClientEventEncoder {
                     StreamTerminal::Cancelled => Outcome::Cancelled,
                 };
                 let (stop, sequence) =
-                    super::client::terminal(outcome, self.progress, self.calls, details)?;
+                    super::terminal::encode(outcome, self.progress, self.calls, details)?;
                 // Close every started block by its wire index. Text items own no block;
                 // a thinking item without content has not opened one yet.
                 let mut started: Vec<usize> =

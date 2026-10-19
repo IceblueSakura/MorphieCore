@@ -1,30 +1,40 @@
 //! Wire protocol boundary for the shared semantic model.
-pub mod aliyun_asr;
-pub mod aliyun_speech;
+//! Protocols own wire grammar and selected projections; shared records preserve
+//! owner-local fidelity. No module here selects routes or performs network I/O.
+
+// Generation wire boundaries.
 pub mod anthropic;
+pub mod google;
+pub mod interactions;
+pub mod openai;
+
+// Shared decoded values, fidelity and projection policies.
 pub(crate) mod attachments;
 pub mod cache;
-pub(crate) mod cache_affinity;
 mod decoded;
-pub(crate) mod json;
-pub mod stream;
-pub use decoded::{CodecError, DecodedRequest, DecodedResponse, ResponseMetadata, ResponseStorage};
 pub mod extensions;
 pub mod fidelity;
-pub mod file_constraints;
 mod generation_controls;
-pub mod google;
-pub mod image_constraints;
-pub mod interactions;
 pub mod native;
-pub mod openai;
-pub mod openrouter_images;
-pub mod openrouter_speech;
 pub(crate) mod phase;
 pub mod reasoning;
 pub mod replay_envelope;
 pub(crate) mod usage;
+
+// Shared wire validation and framing.
+pub mod file_constraints;
+pub mod image_constraints;
+pub(crate) mod json;
+pub mod stream;
+
+// Standalone operation dialects; registration does not activate a binding.
+pub mod aliyun_asr;
+pub mod aliyun_speech;
+pub mod openrouter_images;
+pub mod openrouter_speech;
 pub mod xiaomi_audio;
+
+pub use decoded::{CodecError, DecodedRequest, DecodedResponse, ResponseMetadata, ResponseStorage};
 
 /// One pure upstream encoding and its body-free adaptation receipts.
 pub(crate) struct RequestProjection {

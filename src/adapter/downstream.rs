@@ -263,7 +263,7 @@ impl ClientAdapter {
         request: &Request,
         decoded: &DecodedResponse,
     ) -> Option<Request> {
-        use crate::protocol::cache_affinity::{MAX_PROMPT_BYTES, prefixes};
+        use crate::protocol::openai::cache_affinity::{MAX_PROMPT_BYTES, prefixes};
         let (adapter, contract) = self.as_openai().ok()?;
         let mut input = adapter
             .encode_request(request, &decoded.metadata.model, contract)

@@ -4,6 +4,7 @@ use crate::{
     protocol::CodecError,
     semantic::{context::ServiceClass, task::generation::*, value::Presence},
 };
+use serde_json::{Value, json};
 
 pub(super) fn counts(wire: &super::Usage) -> Usage {
     let mut counts = Usage::operation(0, wire.output_tokens, 0);
@@ -76,6 +77,77 @@ fn tools(report: &UsageReport) -> Option<ServerToolUsage> {
     })
 }
 
+/// Messages usage: input excludes cache reads and reported cache writes.
+/// An unreported write category stays absent; the remaining input keeps any such writes.
+fn scalar_json(u: Option<&Usage>) -> Result<Value, CodecError> {
+    let unsupported = || CodecError::Unsupported("Messages usage".into());
+    let u = u.ok_or_else(unsupported)?;
+    u.validate()?;
+    let input = u.input_tokens.ok_or_else(unsupported)?;
+    let input = match u.input_relation {
+        InputTokenRelation::ExcludesCacheReadAndWrite => input,
+        InputTokenRelation::IncludesCache => {
+            let read = u.cached_input_tokens.ok_or_else(unsupported)?;
+            let excluded = match u.input_cache_write_tokens {
+                None => read,
+                // IncludesCache does not promise disjoint cache-read and cache-write subsets.
+                Some(write) if read != 0 && write != 0 => return Err(unsupported()),
+                Some(write) => read.max(write),
+            };
+            input.checked_sub(excluded).ok_or_else(unsupported)?
+        }
+        InputTokenRelation::Unreported => return Err(unsupported()),
+    };
+    let output = u.output_tokens.ok_or_else(unsupported)?;
+    let output = match u.output_relation {
+        OutputTokenRelation::IncludesReasoning => output,
+        OutputTokenRelation::ExcludesReasoning => output
+            .checked_add(u.reasoning_tokens.ok_or_else(unsupported)?)
+            .ok_or_else(unsupported)?,
+        OutputTokenRelation::Unreported => return Err(unsupported()),
+    };
+    let mut v = json!({"input_tokens":input,"output_tokens":output});
+    if let Some(read) = u.cached_input_tokens {
+        v["cache_read_input_tokens"] = json!(read);
+    }
+    if let Some(write) = u.input_cache_write_tokens {
+        v["cache_creation_input_tokens"] = json!(write);
+    }
+    if let Some(thinking) = u.reasoning_tokens {
+        v["output_tokens_details"] = json!({ "thinking_tokens": thinking });
+    }
+    Ok(v)
+}
+fn project_usage(source: Usage) -> Result<Usage, CodecError> {
+    let wire = scalar_json(Some(&source))?;
+    let count = |key: &str| -> Result<u64, CodecError> {
+        wire[key]
+            .as_u64()
+            .ok_or(CodecError::Invalid("Messages projected usage"))
+    };
+    let selected = counts(&super::Usage {
+        service_class: Presence::Absent,
+        cache_creation: Presence::Absent,
+        server_tool_use: Presence::Absent,
+        input_tokens: Presence::Value(count("input_tokens")?),
+        output_tokens: count("output_tokens")?,
+        cache_read_input_tokens: wire
+            .get("cache_read_input_tokens")
+            .map(|_| count("cache_read_input_tokens"))
+            .transpose()?
+            .map_or(Presence::Absent, Presence::Value),
+        cache_creation_input_tokens: wire
+            .get("cache_creation_input_tokens")
+            .map(|_| count("cache_creation_input_tokens"))
+            .transpose()?
+            .map_or(Presence::Absent, Presence::Value),
+        thinking_tokens: source
+            .reasoning_tokens
+            .map_or(Presence::Absent, Presence::Value),
+    });
+    Ok(selected)
+}
+
 /// Named delivery projection; never fills a missing native child with zero.
 pub(super) fn project(report: &UsageReport) -> Result<Option<UsageReport>, CodecError> {
     report.validate()?;
@@ -86,7 +158,7 @@ pub(super) fn project(report: &UsageReport) -> Result<Option<UsageReport>, Codec
         return Ok(None);
     };
     let mut selected = report.clone();
-    selected.counts = super::client::project_usage(summary)?;
+    selected.counts = project_usage(summary)?;
     selected.accounting = UsageAccounting::Direct;
     selected.details.modalities.clear();
     selected.details.defaulted.clear();

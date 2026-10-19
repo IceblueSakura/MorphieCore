@@ -48,7 +48,7 @@ impl Index {
         for prefix in prefixes
             .iter()
             .rev()
-            .take(crate::protocol::cache_affinity::MAX_CHECKPOINTS)
+            .take(crate::protocol::openai::cache_affinity::MAX_CHECKPOINTS)
         {
             if let Some(record) = records
                 .iter()
@@ -114,7 +114,7 @@ fn target_prefixes(
 ) -> Option<Vec<Digest>> {
     let profile = candidate.endpoint.adapter().ok()?.openai().ok()?.protocol;
     let wire = candidate.endpoint.encode_request(request).ok()?;
-    crate::protocol::cache_affinity::prefixes(&wire, profile)
+    crate::protocol::openai::cache_affinity::prefixes(&wire, profile)
 }
 pub(in crate::gateway) fn choose(
     index: &Index,

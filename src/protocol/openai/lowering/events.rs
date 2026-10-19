@@ -124,7 +124,7 @@ pub fn check_event(
             } else {
                 super::projection::responses_usage(*usage, &contract.adaptation.rules)?.0
             };
-            super::check_usage(projected, profile, &contract.adaptation.rules)?;
+            super::checks::check_usage(projected, profile, &contract.adaptation.rules)?;
         }
         StreamEvent::ItemStarted { kind, replay, .. } => {
             match kind {
@@ -332,7 +332,7 @@ fn check_result(
         Item::ToolResult(result.clone())
     };
     let items = vec![(ItemId::new(1), item)];
-    super::text_items(&items, profile, false, state.resources())?;
+    super::checks::text_items(&items, profile, false, state.resources())?;
     let response =
         GenerationResponse::from_resources(items, Outcome::Incomplete, state.resources().clone())
             .map_err(|_| RepresentationError::Tools)?;

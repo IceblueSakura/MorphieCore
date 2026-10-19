@@ -1,5 +1,5 @@
 //! Bounded digests of final target prompts, never history or replay proofs.
-use super::openai::Profile;
+use super::Profile;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 

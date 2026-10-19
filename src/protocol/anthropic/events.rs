@@ -251,7 +251,7 @@ impl GenerationSseDecoder {
                     &message.usage,
                     UsageStage::Final,
                 )));
-                let (outcome, progress, details) = super::semantic::outcome(message)?;
+                let (outcome, progress, details) = super::terminal::decode(message)?;
                 if progress != InteractionProgress::Unreported {
                     out.push(StreamEvent::Progress(progress));
                 }

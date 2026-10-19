@@ -1,4 +1,7 @@
 //! Selected native wire types, not a second semantic model or an execution API.
+//! Wire DTOs (`request`/`response`) are distinct from native IR mapping (`semantic`)
+//! and client admission/delivery (`client`). Accounting and terminal mappings are
+//! shared by those directions, not owned by a delivery front end.
 mod accounting;
 mod adapter;
 mod carriers;
@@ -15,6 +18,7 @@ mod service;
 mod shape;
 mod sse;
 mod strict_schema;
+mod terminal;
 pub use sse::MessageSseDecoder;
 mod events;
 mod media;

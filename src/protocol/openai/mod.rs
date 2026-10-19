@@ -1,7 +1,11 @@
 //! Pure codecs for explicitly admitted OpenAI operations.
+//! `chat`/`responses` expose envelopes, task requests and shared item codecs.
+//! `events` owns payload state/grammar; SSE framing stays with each protocol.
+//! `lowering` checks representability before wire encoding.
 pub mod adapter;
 pub use adapter::{Adapter, Dialect};
 pub(crate) mod bailian;
+pub(crate) mod cache_affinity;
 pub mod chat;
 pub(crate) mod content;
 pub mod dialect;

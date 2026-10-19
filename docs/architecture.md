@@ -84,6 +84,21 @@ downstream HTTP: authenticate and collect within bounds
 
 Directories follow the Rust module tree. Keep architectural root boundaries; group internals by domain and expose deliberate entry points. Do not add compatibility-only aliases or a generic plugin framework.
 
+Protocol implementation is organized by the wire responsibility being reviewed:
+
+| Review boundary | Owner |
+|---|---|
+| OpenAI complete task requests, settings and history validation | `openai/{chat,responses}/request.rs`; the protocol `mod.rs` files expose the public task entry points |
+| OpenAI message/item mapping reused by input, static output and events | `openai/{chat,responses}/items.rs`; these are not whole-request codecs |
+| OpenAI event state, poisoning, reduction and profile dispatch | `openai/events/{decode,encode}/mod.rs`; private Chat and Responses grammar/rendering modules operate on that same state, without a second reducer |
+| OpenAI representability and candidate-local projection | `openai/lowering/{request,response}.rs`, with shared constraints in `checks.rs` and incremental checks in `events.rs` |
+| Native Messages wire DTOs versus semantic mappings | `anthropic/{request,response}.rs` versus `semantic{,_intake,_request}.rs`; native target binding is not client admission |
+| Messages client admission versus delivery | `anthropic/client/{request,response}.rs`; `client/mod.rs` exposes the deliberate client API and `client_events.rs` owns outgoing stream state |
+| Messages shared accounting and terminal meaning | `anthropic/{accounting,terminal}.rs`; native mappings and client JSON/SSE use these owners, not helpers belonging to another front end |
+| OpenAI wire prefix fingerprints | `openai/cache_affinity.rs`; the disposable routing index and affinity decisions remain in `gateway` |
+
+Paths in this table are relative to `src/protocol/`. Public codec entry points remain at their protocol façades; private item and grammar modules are not additional APIs. Fidelity aggregates and attachment reconstruction retain their existing shared ownership rather than being split merely by file size.
+
 Request transforms stay with their request owner. Stream grammar, state, reduction and materialization share a stream boundary. Chat and Responses own their envelopes and SSE codecs; only genuinely shared content and state logic is shared.
 
 Protocol differences stay in protocol modules. Native Anthropic, Google and Interactions adapters do not borrow OpenAI switches.
@@ -442,7 +457,7 @@ Validate native types, alias conflicts and source-snapshot consistency before a 
 | [Protocol reasoning helper](../src/protocol/reasoning.rs) | Explicit qualitative mapping pairs plus separate P3 preset lookup and nearest-budget quantization with highest-level ties; no inferred qualitative inverse |
 | [Catalog binding declarations](../src/topology/catalog/bindings.rs), [catalog construction](../src/topology/catalog.rs), native catalog constructors and [endpoint compilation](../src/topology/endpoint.rs) | Select policy by canonical model and binding, validate it and pass it through representation caps to the adapter; do not reuse a Provider-wide switch for model-specific levels |
 | [OpenAI adaptation](../src/protocol/openai/dialect/adaptation.rs), [request projection](../src/protocol/openai/adapter/request.rs), [Messages projection](../src/protocol/anthropic/semantic_request.rs), [generateContent projection](../src/protocol/google/request.rs) and [Interactions projection](../src/protocol/interactions/request.rs) | Preserve scope and apply a selected level policy once to candidate-private typed representation before final validation and serialization; no Provider-wide level calibration switch |
-| [Upstream adapter](../src/adapter/upstream.rs), [static response intake](../src/protocol/openai/static_response.rs), [event intake](../src/protocol/openai/events/decode.rs) and native decoders | OpenAI carries its selected decode mapping into actual reported-setting parsing, including SSE. Any future native report calibration needs independent policy propagation; do not put it in `ReplayTarget` or discover it from a response model string |
+| [Upstream adapter](../src/adapter/upstream.rs), [static response intake](../src/protocol/openai/static_response.rs), [event intake](../src/protocol/openai/events/decode/mod.rs) and native decoders | OpenAI carries its selected decode mapping into actual reported-setting parsing, including SSE. Any future native report calibration needs independent policy propagation; do not put it in `ReplayTarget` or discover it from a response model string |
 | [Fidelity](../src/protocol/fidelity.rs) and existing named request rules | Record bounded normalization provenance and actual encode adaptation, without restoring unsupported controls or synthesizing effective settings |
 
 Native `Endpoint::adapter()` currently carries profile/replay labels rather than all representation caps. Native request conversions do not supply an implicit inverse for reported settings. If a concrete native binding needs reported-level calibration, select an independent decode policy and propagate it explicitly into intake before claiming support; request projection alone does not establish it. The ordinary downstream client decoder uses its declared client contract, not a guessed Provider policy chosen from business JSON.

@@ -129,7 +129,7 @@ pub(crate) fn decode_request_with(
     if o.contains_key("moderation") {
         return Err(CodecError::Unsupported("Chat moderation".into()));
     }
-    let allowed: Vec<_> = chat::FIELDS
+    let allowed: Vec<_> = chat::request::FIELDS
         .iter()
         .copied()
         .chain(
@@ -164,11 +164,11 @@ pub(crate) fn decode_request_with(
     context.validate()?;
     let task: Map<_, _> = o
         .iter()
-        .filter(|(k, _)| chat::FIELDS.contains(&k.as_str()))
+        .filter(|(k, _)| chat::request::FIELDS.contains(&k.as_str()))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     Ok(DecodedChatRequest {
-        task: chat::decode_generation_with(&Value::Object(task), adaptation, direction)?,
+        task: chat::request::decode_generation_with(&Value::Object(task), adaptation, direction)?,
         context,
     })
 }

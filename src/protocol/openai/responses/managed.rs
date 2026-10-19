@@ -75,13 +75,13 @@ pub fn decode(
         ) {
             return Err(CodecError::Invalid("non-replayable response"));
         }
-        let mut items = super::encode_items(
+        let mut items = super::items::encode_items(
             input.semantic.items(),
             &input.fidelity,
             false,
             input.semantic.resources(),
         )?;
-        items.extend(super::encode_items(
+        items.extend(super::items::encode_items(
             output.semantic.items(),
             &output.fidelity,
             false,
@@ -113,7 +113,7 @@ pub(crate) fn retained_size(
     output: &DecodedResponse,
     body_bytes: usize,
 ) -> Result<usize, CodecError> {
-    let mut value = json!({"input":super::encode_items(
+    let mut value = json!({"input":super::items::encode_items(
         input.semantic.items(), &input.fidelity, false, input.semantic.resources(),
     )?});
     crate::protocol::openai::settings::write(
@@ -190,7 +190,7 @@ pub fn input_items(
             _ => return Err(CodecError::Unsupported("input items query".into())),
         }
     }
-    let mut items = super::encode_items(
+    let mut items = super::items::encode_items(
         request.semantic.items(),
         &request.fidelity,
         false,
@@ -204,7 +204,7 @@ pub fn input_items(
             value["type"] = json!("message");
         }
         if let Some(status) = item.lifecycle() {
-            value["status"] = json!(super::status_label(status));
+            value["status"] = json!(super::items::status_label(status));
         }
     }
     if !ascending {

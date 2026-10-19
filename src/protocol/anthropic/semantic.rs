@@ -199,7 +199,7 @@ impl Profile {
         }
         let mut intake = Intake::new(scope);
         intake.message(Role::Assistant, &wire.content)?;
-        let (outcome, progress, details) = outcome(&wire)?;
+        let (outcome, progress, details) = super::terminal::decode(&wire)?;
         let mut reports = UsageReports::default();
         reports.replace(super::accounting::report(&wire.usage, UsageStage::Final))?;
         let semantic = GenerationResponse::new(intake.items, outcome)?
@@ -343,7 +343,7 @@ impl Profile {
             .into_iter()
             .flatten()
             .collect();
-        let (stop_reason, stop_sequence) = super::client::terminal(
+        let (stop_reason, stop_sequence) = super::terminal::encode(
             response.semantic.outcome(),
             response.semantic.progress(),
             response
@@ -401,62 +401,4 @@ pub(super) fn effort_level(effort: super::Effort) -> EffortLevel {
         super::Effort::XHigh => EffortLevel::XHigh,
         super::Effort::Max => EffortLevel::Max,
     }
-}
-pub(super) fn outcome(
-    message: &super::Message,
-) -> Result<(Outcome, InteractionProgress, TerminalDetails), CodecError> {
-    let stop = *message
-        .stop_reason
-        .value()
-        .ok_or(CodecError::Invalid("native stop"))?;
-    let (outcome, progress, mut details) = match stop {
-        super::StopReason::EndTurn | super::StopReason::StopSequence => (
-            Outcome::Completed,
-            InteractionProgress::TurnFinished,
-            TerminalDetails::default(),
-        ),
-        super::StopReason::ToolUse => (
-            Outcome::Completed,
-            InteractionProgress::AwaitingToolResults,
-            TerminalDetails::default(),
-        ),
-        super::StopReason::MaxTokens => (
-            Outcome::Incomplete,
-            InteractionProgress::Unreported,
-            TerminalDetails {
-                incomplete: Some(IncompleteReason::MaxOutputTokens),
-                error: None,
-                completion: None,
-            },
-        ),
-        super::StopReason::ModelContextWindowExceeded => (
-            Outcome::Incomplete,
-            InteractionProgress::Unreported,
-            TerminalDetails {
-                incomplete: Some(IncompleteReason::ContextWindowExceeded),
-                error: None,
-                completion: None,
-            },
-        ),
-        super::StopReason::Refusal => (
-            Outcome::Incomplete,
-            InteractionProgress::Unreported,
-            TerminalDetails {
-                incomplete: Some(IncompleteReason::ContentFilter),
-                error: None,
-                completion: None,
-            },
-        ),
-    };
-    details.completion = match stop {
-        super::StopReason::EndTurn => Some(CompletionCause::Natural),
-        super::StopReason::StopSequence => Some(CompletionCause::StopSequence(text(
-            message
-                .stop_sequence
-                .value()
-                .ok_or(CodecError::Invalid("native stop sequence"))?,
-        )?)),
-        _ => None,
-    };
-    Ok((outcome, progress, details))
 }
