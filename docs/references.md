@@ -42,6 +42,7 @@ The SDK loopback gate uses the versions locked in `tests/sdk/uv.lock`, independe
 | Generation controls and projection | [Generation projection contracts](refs/2026-10-15-generation-projections.md) | Protocol/dialect distinctions, reasoning, budgets, sampling and service controls; researched 2026-10-15 |
 | Chat custom tools | [Custom-tool carriers](refs/2026-10-16-chat-custom-tools.md) | Native definition, call/result and missing SSE carriers; checked 2026-10-16 |
 | Generation contracts and client behavior | [Contract boundaries](refs/2026-10-17-generation-contracts.md) | Supplemental SDK findings, minimal counterexamples and dated client/binding checks from 2026-10-17 onward |
+| Same-protocol field and event inventory | [Same-protocol Generation inventory](refs/2026-10-19-same-protocol-inventory.md) | Pinned Chat/Responses/Messages fields, event families, history, named losses, ignored fields and directional evidence gaps; checked 2026-10-19 |
 
 Notes preserve the source revision and observation date, including superseded recommendations and narrower historical checks. Their conclusions are design inputs, not a second work queue or a replacement for current decisions. Recheck mutable sources before making a new protocol claim; distinguish SDK shape, client behavior, synthetic evidence and live Provider evidence.
 

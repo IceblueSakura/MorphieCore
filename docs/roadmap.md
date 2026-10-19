@@ -40,7 +40,7 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
 | Area | State | Next step |
 |---|---|---|
 | Routing | Functional phase complete under the [stable routing baseline](architecture.md#failover); feature development closed | [Routing acceptance](#routing-acceptance--pending) after the selected stage-2 loops |
-| Generation IR/codec | Selected design implemented locally, including [visible-history transfer](architecture.md#reasoning-replay), part/call replay with client manifests and [scoped accounting](architecture.md#scoped-accounting). Audit coverage authorized on 2026-10-17 | [Stage-1 work plan](#stage-1-work-plan): S1-0 inventory, then the Chat and Responses slices; [human design review](#generation-design-review-gate) remains open |
+| Generation IR/codec | Selected design implemented locally; [S1-0 inventory](refs/2026-10-19-same-protocol-inventory.md) classifies native carriers, named losses and ignored official fields. Chat cache-boundary and moderation loss now reject | Continue [S1-1 Chat, then S1-2 Responses](#stage-1-work-plan); [human design review](#generation-design-review-gate) remains open |
 | Client compatibility | Rejection audit and policy selection complete: [phase transfer/return](architecture.md#message-phase-transfer), guarded extended-retention omission and retained citation rejection | Client-carrier acceptance and target storage evidence during reconnection |
 | Integration | P7 selects [R1a/R1b](#first-reconnection-slices); paths beyond frozen admission remain disconnected | Follow the [stage-2 work plan](#stage-2-work-plan) after each protocol's handoff; no implicit admission or binding activation |
 | Cross-protocol conversion and counting | Target-value limits, missing-cap policy and attribution rules are selected; implementation and Interactions snapshot design remain pending | [Stage-3 work plan](#stage-3-work-plan), with counting dependent on its own input projection rather than every conversion |
@@ -74,7 +74,7 @@ The P7 boundary review becomes eligible after first-stage local completion, with
 
 The packages below refine the selected scope, not design approval or binding activation. IDs name coherent deliverables, not a required commit count. Stage-4 ordering is recommended; exact operation contracts still need selection. Stage 5 has no execution queue.
 
-1. Start with **S1-0**, then prioritize **S1-1 → S1-2 → the remaining S1-3 work**.
+1. Use the completed [S1-0 inventory](refs/2026-10-19-same-protocol-inventory.md), then prioritize **S1-1 → S1-2 → the remaining S1-3 work**.
 2. Hand off **S1-1 → R1a** and **S1-2 → R1b** independently. A loop waits for its own carriers and review/admission gates, not every stage-1 package. Run R1a/R1b before R2.
 3. R2 uses the implemented pi Haiku profile; it does not wait for unrelated S1-3 manual-budget, sampling or identity work. An observed defect in a carrier actually used by R2 must still be fixed before accepting it.
 4. Complete selected stage-2 loops before routing acceptance and stage-3 conversion work. Keep separately scheduled real failover distinct from controlled synthetic recovery checks.
@@ -94,12 +94,13 @@ Every implementation package follows the same bounded workflow:
 
 | Slice | Work | Exit condition |
 |---|---|---|
-| S1-0 Inventory | Use the selected revisions in [References](references.md#pinned-sources), not a moving latest-version target. For each pair and direction, classify every official request field, response field, event and history carrier as exact, named loss, rejection or ignored by name, with its code and test owner. Separate official fields, registered dialect extensions and target/model policy. Record sourced findings in a dated `docs/refs/` note, then assign each in-scope gap to S1-1/2/3 | No official field is ignored without classification; every named rule that can fire on a same-protocol path is listed with its owner; the gaps below are confirmed or corrected. Missing Google client/static directions are explicit, not invented pairs |
 | S1-1 Chat | R1a domain on the DashScope dialect: text, function tools, readable and replay reasoning extensions, usage details, finish reasons, `stream_options` and Chat-originated history | Stage-1 exit evidence, with no same-protocol loss receipt in that domain |
 | S1-2 Responses | R1b domain on OpenRouter: reasoning summary and encrypted items, phase, function-call items, usage details, `include`, `truncation`, `max_tool_calls`, metadata, and stateless plus gateway-stored history | As S1-1, and stored and stateless continuation project the same history |
 | S1-3 Messages | The pi Haiku carriers are done: see [request rules](architecture.md#request-rules). Complete the four remaining packages below under the [source boundaries and selected scope](refs/2026-10-17-generation-contracts.md#messages-budget-and-identity-boundaries-2026-10-19) | Native request, JSON/SSE and returned-history evidence for each selected carrier; separate protocol fidelity from the narrower Go/Haiku model policy |
 
-Order: S1-0, S1-1 and S1-2, then the remaining S1-3 items. No slice widens admission beyond its selected binding.
+The [S1-0 inventory](refs/2026-10-19-same-protocol-inventory.md) records pinned request/result fields, event families, returned history, rule reachability and code/test owners. It distinguishes inspected carriers from independent directional evidence and explicitly classifies ignored official fields. Order: S1-1 and S1-2, then the remaining S1-3 items. No slice widens admission beyond its selected binding.
+
+S1-1 must establish the actual DashScope replay contract: Bailian registers readable `reasoning_content`, not OpenRouter-shaped structured replay details. Do not enable that alias merely because the IR has a carrier. S1-2 must resolve summary-part interruption status, output `created_by`, error `type` and compaction-progress treatment, and independently establish stored/stateless continuation parity. Missing typed owners require a counterexample and selected design; the inventory does not approve new structures.
 
 For S1-1 and S1-2, work through request/history preservation, static response delivery, then event intake/delivery and next-request replay. Extend the existing semantic/transport checks rather than creating a second harness. Resolve inventory gaps within the declared domain before handing off; record out-of-domain gaps instead of expanding into a Provider/model matrix.
 
@@ -113,8 +114,9 @@ For S1-1 and S1-2, work through request/history preservation, static response de
 | Pair | Field or carrier | Current treatment | Recommendation |
 |---|---|---|---|
 | Chat | `prediction` | Omitted at intake for every target under D3 | Keep D3 unless a selected Chat binding supports it; then move the omission to target projection |
-| Chat | Participant `name`, `n` other than 1, `store: true`, `logit_bias`, `moderation`, custom-tool SSE | Rejected | Keep as recorded stage-1 gaps |
-| All | Hosted and server tools, citations, Messages document `context`, `clear_at`, `input_examples`, geography, speed and fallbacks; Responses `prompt`, `conversation`, `context_management`, access programs and misalignment details | Rejected | Stage 5 or a later owner selection; not stage-1 blockers |
+| Chat | Participant `name`, `n` other than 1, `store: true`, `logit_bias`, request `moderation`, content `prompt_cache_breakpoint`, non-null moderation reports, custom-tool SSE | Rejected | Keep as recorded stage-1 gaps; rejecting cache boundaries/reports prevents silent loss but is not exact support |
+| All | Unsupported hosted/server item and block variants; Messages citations, document `context`, `clear_at`, `input_examples`, active geography/speed/fallback requests; Responses active `prompt`, `conversation`, `context_management`, access programs and misalignment details | Rejected within the inventory's stated subsets | Stage 5 or a later owner selection; not stage-1 blockers |
+| Messages / Responses | Messages `diagnostics`, beta `output_config.task_budget`, tool `toolset_name` and unowned execution/refusal reports; deferred Responses hosted event families | Ignored, explicitly classified in the inventory | No lossless claim for these fields/events; later scheduling does not make ignored protected meaning exact |
 
 Stage-1 exit for a pair means every in-domain official field is exact, or is an explicitly listed rejection or target-policy loss. Approved losses that still fire on same-protocol paths remain listed as non-lossless.
 

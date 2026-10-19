@@ -420,6 +420,7 @@ pub(crate) fn decode_chat_with(
         DecodeDirection::Upstream,
     )?;
     let o = object(&v)?;
+    chat::reject_moderation(o)?;
     DecodeDirection::Upstream.fields(
         o,
         &[

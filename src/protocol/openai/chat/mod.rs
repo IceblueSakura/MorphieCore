@@ -44,6 +44,13 @@ pub(super) const FIELDS: &[&str] = &[
 /// Official fields whose active value changes tools or output; ignoring them would be
 /// silent loss. Other unregistered client fields are ignored by name.
 const UNSUPPORTED: &[&str] = &["functions", "function_call", "web_search_options"];
+pub(super) fn reject_moderation(o: &Map<String, Value>) -> Result<(), CodecError> {
+    // A known safety report cannot follow the unknown-extension ignore policy.
+    if o.get("moderation").is_some_and(|v| !v.is_null()) {
+        return Err(CodecError::Unsupported("active moderation report".into()));
+    }
+    Ok(())
+}
 pub fn decode_generation(v: &Value) -> Result<DecodedRequest, CodecError> {
     decode_generation_with(v, &Default::default(), DecodeDirection::Request)
 }
@@ -263,6 +270,22 @@ pub(super) fn decode_message(
     let direction = b.direction;
     let role = string(m, "role")?;
     reject_chat_orchestration(m)?;
+    // Chat lowering has no explicit-prefix carrier. Reject before permissive
+    // client field filtering can discard the requested cache boundary.
+    if replay
+        && m.get("content")
+            .and_then(Value::as_array)
+            .is_some_and(|parts| {
+                parts.iter().any(|part| {
+                    part.as_object()
+                        .is_some_and(|part| part.contains_key("prompt_cache_breakpoint"))
+                })
+            })
+    {
+        return Err(CodecError::Unsupported(
+            "Chat prompt_cache_breakpoint".into(),
+        ));
+    }
     if m.get("function_call").is_some_and(|v| !v.is_null()) {
         return Err(CodecError::Unsupported("legacy function_call".into()));
     }

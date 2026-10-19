@@ -49,6 +49,152 @@ fn options(usage: bool) -> StreamOptions {
 }
 
 #[test]
+fn chat_rejects_uncarried_cache_boundaries_before_client_field_filtering() {
+    use morphiecore::protocol::{
+        CodecError,
+        openai::{Adapter, Dialect},
+    };
+    // All text-array owners and standard media use the same cache-boundary guard.
+    for dialect in [Dialect::Standard, Dialect::Bailian] {
+        let adapter = Adapter::new(Profile::Chat, dialect, None);
+        for (role, part) in [
+            ("system", json!({"type":"text","text":"instruction"})),
+            ("developer", json!({"type":"text","text":"instruction"})),
+            ("assistant", json!({"type":"text","text":"answer"})),
+            ("tool", json!({"type":"text","text":"result"})),
+            ("user", json!({"type":"text","text":"input"})),
+            (
+                "user",
+                json!({"type":"image_url","image_url":{"url":"https://example.test/a.png"}}),
+            ),
+            (
+                "user",
+                json!({"type":"input_audio","input_audio":{"data":"AQID","format":"wav"}}),
+            ),
+            (
+                "user",
+                json!({"type":"file","file":{"file_data":"data:application/pdf;base64,AQID","filename":"a.pdf"}}),
+            ),
+        ] {
+            let mut message = json!({"role":role,"content":[part]});
+            let mut messages = vec![];
+            if role == "tool" {
+                messages.push(json!({"role":"assistant","tool_calls":[
+                    {"id":"c","type":"function","function":{"name":"read","arguments":"{}"}}
+                ]}));
+                message["tool_call_id"] = json!("c");
+            }
+            messages.push(message);
+            let mut source = json!({"model":"synthetic","messages":messages});
+            adapter
+                .decode_client_request(source.to_string().as_bytes())
+                .unwrap();
+            let last = source["messages"].as_array().unwrap().len() - 1;
+            for marker in [json!({"mode":"explicit"}), Value::Null] {
+                source["messages"][last]["content"][0]["prompt_cache_breakpoint"] = marker;
+                for result in [
+                    adapter.decode_client_request(source.to_string().as_bytes()),
+                    adapter.decode_request(source.to_string().as_bytes()),
+                ] {
+                    assert!(
+                        matches!(
+                            result,
+                            Err(CodecError::Unsupported(field))
+                                if field == "Chat prompt_cache_breakpoint"
+                        ),
+                        "{dialect:?} {role}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn chat_static_and_streamed_moderation_reports_cannot_disappear() {
+    use morphiecore::protocol::{
+        CodecError,
+        openai::{Adapter, Dialect},
+        stream::SseError,
+    };
+    let report =
+        json!({"input":{"type":"error","code":"moderation_unavailable","message":"synthetic"}});
+    for dialect in [Dialect::Standard, Dialect::Bailian] {
+        let adapter = Adapter::new(Profile::Chat, dialect, None);
+        let mut source = wire::response(2);
+        source["unknown_extension"] = json!({"ignored":true});
+        source["moderation"] = Value::Null;
+        adapter
+            .decode_response(source.to_string().as_bytes())
+            .unwrap();
+        source["moderation"] = report.clone();
+        assert!(matches!(
+            adapter.decode_response(source.to_string().as_bytes()),
+            Err(CodecError::Unsupported(field)) if field == "active moderation report"
+        ));
+
+        let opening = json!({"id":"synthetic-response","object":"chat.completion.chunk","created":1,
+            "model":"synthetic-model","choices":[{"index":0,"delta":{"role":"assistant","content":"answer"},
+            "finish_reason":null}],"unknown_extension":true,"moderation":null});
+        let finish = json!({"id":"synthetic-response","object":"chat.completion.chunk","created":1,
+            "model":"synthetic-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]});
+        let mut tail = opening.clone();
+        tail["choices"] = json!([]);
+        tail["usage"] = json!({"prompt_tokens":1,"completion_tokens":1,"total_tokens":2});
+        let new_decoder = || {
+            ChatSseDecoder::with_decoder(
+                200,
+                "text/event-stream",
+                SseLimits::default(),
+                adapter.event_decoder(),
+            )
+            .unwrap()
+        };
+        let mut control = new_decoder();
+        for chunk in [&opening, &finish, &tail] {
+            assert!(
+                consume(&mut control, &frame(chunk), 1)
+                    .iter()
+                    .all(|event| !matches!(event, StreamEvent::Terminal { .. }))
+            );
+        }
+        consume(&mut control, b"data: [DONE]\n\n", 1);
+        control.finish().unwrap();
+        assert_eq!(
+            control.materialize().unwrap().semantic.outcome(),
+            Outcome::Completed
+        );
+        // Exercise both the first chunk and a usage tail after the finish.
+        for late in [false, true] {
+            let mut d = new_decoder();
+            let mut moderated = opening.clone();
+            if late {
+                for chunk in [&opening, &finish] {
+                    assert!(
+                        consume(&mut d, &frame(chunk), 1)
+                            .iter()
+                            .all(|event| !matches!(event, StreamEvent::Terminal { .. }))
+                    );
+                }
+                moderated = tail.clone();
+            }
+            moderated["moderation"] = report.clone();
+            assert!(matches!(
+                d.consume(&frame(&moderated)),
+                Err(SseError::Codec(CodecError::Unsupported(field)))
+                    if field == "active moderation report"
+            ));
+            assert!(matches!(
+                d.consume(b"data: [DONE]\n\n"),
+                Err(SseError::Closed)
+            ));
+            assert!(matches!(d.finish(), Err(SseError::Closed)));
+            assert!(matches!(d.materialize(), Err(SseError::Closed)));
+        }
+    }
+}
+
+#[test]
 fn complete_chat_envelope_separates_delivery_and_rejects_unsupported_admission() {
     let source = json!({"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"top_p":0.8,"n":1,"stream":true,"stream_options":{"include_usage":true,"include_obfuscation":false}});
     let d = envelope::decode_request_bytes(&serde_json::to_vec(&source).unwrap()).unwrap();

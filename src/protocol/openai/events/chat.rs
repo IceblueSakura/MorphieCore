@@ -3,6 +3,7 @@ use crate::protocol::openai::events::*;
 use serde_json::json;
 impl EventDecoder {
     pub(super) fn chat(&mut self, o: &Map<String, Value>) -> Result<Vec<StreamEvent>, CodecError> {
+        crate::protocol::openai::chat::reject_moderation(o)?;
         DecodeDirection::Upstream.fields(
             o,
             &[
