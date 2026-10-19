@@ -4,7 +4,7 @@
 
 This is a standalone pre-implementation reference requested for the API expansion. The requested scope is confirmed; the architecture recommendations below are proposals unless already established in [Architecture](architecture.md). No new interface, binding, resource service or execution policy is activated by this document.
 
-[Roadmap](roadmap.md) still owns scheduling and the current routing freeze. This expansion is not an additional exit condition for the Generation migration. Before implementation, record selected decisions in the architecture decision table and schedule explicit slices in the roadmap, including any necessary reopening of frozen standalone tasks and resource services.
+[Roadmap](roadmap.md#planned-order) owns the five-stage sequence and the current routing freeze. Embedding and other-modality API/implementation adaptation, including audio/image/video, are selected for stage 4, after cross-protocol stability and before stage-5 citations/discovery/hosted tools. This is not an additional exit condition for stages 1–3. Detailed operation designs and within-stage ordering remain proposals; record selected decisions and explicit slices before implementing new contracts or activating bindings. Counting, compaction, general Files/Uploads and Batch retain separate scheduling except for selected dependencies.
 
 Code and tests remain the behavior specification. This document records ownership, constraints and proposed work, not a model catalog, compatibility certification or implementation progress log. Provider and binding availability belongs to [the catalog](../src/topology/catalog.rs) and [startup](../src/gateway/startup/bootstrap.rs).
 
@@ -23,7 +23,7 @@ Code and tests remain the behavior specification. This document records ownershi
 
 ## Requested scope
 
-The user selected OpenAI-first downstream contracts, broad coverage of current audio and image APIs, and no compatibility work for historical protocols. OpenAI-first does not mean OpenAI-only upstream execution.
+The user selected OpenAI-first downstream contracts, broad coverage of current audio and image APIs, and no compatibility work for historical protocols. The subsequent five-stage plan explicitly adds video API/implementation adaptation to stage 4. OpenAI-first does not mean OpenAI-only upstream execution; video operations and concrete endpoints remain to be selected from current protocol evidence.
 
 | Requested surface | Expansion goal |
 |---|---|
@@ -34,6 +34,7 @@ The user selected OpenAI-first downstream contracts, broad coverage of current a
 | `POST /v1/audio/transcriptions` | Complete file-based transcription and its reported evidence |
 | `POST /v1/audio/translations` | Add the current native audio-translation contract |
 | `POST /v1/images/edits` | Add editing and complete the shared modern image-production contract |
+| Video APIs, concrete operations/endpoints pending | Adapt selected video input/output or generation operations, including their execution lifecycle and artifact delivery |
 | Batch APIs | Submit and manage asynchronous batches of supported typed tasks |
 | File APIs | Manage reusable files and multipart upload resources |
 
@@ -45,13 +46,13 @@ Completeness means covering the selected current operation contracts, not only t
 
 Do not add Legacy Completions, old DALL-E-only behavior or image variations for historical parity. Existing current Chat Completions and Messages contracts are not deprecated merely by this expansion. A still-current endpoint's documented older-model restriction is not permission to invent a newer equivalent.
 
-Google-native downstream endpoints, Realtime/Live, video generation, Vector Stores, Assistants, fine-tuning and general hosted-tool execution are not selected here. Custom voice creation and consent management remain an [open scope decision](#open-decisions). Standalone image support does not automatically implement the Responses image-generation tool.
+The earlier exclusion of video is superseded by the stage-4 modality scope; it does not select a particular video-generation or editing contract yet. Google-native downstream endpoints, Realtime/Live, Vector Stores, Assistants, fine-tuning and general hosted-tool execution remain outside this expansion. Hosted tools have their own stage-5 work. Custom voice creation and consent management remain an [open scope decision](#open-decisions). Standalone image support does not automatically implement the Responses image-generation tool.
 
 The initial vendor comparison is a checklist, not a protocol oracle. Endpoint names do not determine task ownership: Gemini can synthesize speech through a generation endpoint, Responses can be stateless, and Anthropic permits consecutive same-role turns. Use the [official references](#protocol-references), not the comparison's historical restrictions.
 
 ## Proposed ownership
 
-One typed semantic core does not require one universal `GenerationRequest`. None of the nine requested surfaces should execute as an ordinary Generation request.
+One typed semantic core does not require one universal `GenerationRequest`. Standalone operations must not be forced through ordinary Generation execution. Conversational media remains Generation content; select video operation ownership before adding a new task or lifecycle.
 
 | Surface | Semantic or service owner | Execution owner | Reuse from Generation |
 |---|---|---|---|
@@ -61,6 +62,7 @@ One typed semantic core does not require one universal `GenerationRequest`. None
 | Speech | Existing SpeechSynthesis task | Independent synthesis and delivery | Shared audio values, not a conversation response |
 | Transcriptions/translations | Proposed AudioToText family with `Transcribe` and `Translate` variants | Shared audio-input infrastructure, distinct operation admission | Shared media values, not Generation events |
 | Image generations/edits | Proposed Image family with `Generate` and `Edit` variants | Shared image execution infrastructure, distinct operation admission | Shared media values and artifacts |
+| Video operations | Task/content and optional job owners to be selected per operation | Native synchronous/asynchronous lifecycle, as required by the selected API | Shared media, timing and artifact values without borrowing Generation completion |
 | Files/Uploads | Resource-operation contracts | Resource service | Inert content references, not the conversation resource table |
 | Batches | Job contract containing allowlisted typed task requests | Durable job coordination | Generation as one supported record type |
 
@@ -219,6 +221,14 @@ Static and streamed delivery share final-artifact semantics. Partial images are 
 
 Exit evidence: source/mask ownership, independent generate/edit wire oracles, correct artifact/usage projection, partial-versus-final streams and rejection of incompatible options. Direct-input support can precede File API integration.
 
+### Video API and implementation
+
+Video is selected as a stage-4 modality, not an already chosen endpoint family. Pin current official contracts before selecting concrete input/output, generation or editing operations. Separate conversational video content from standalone production operations; the wire endpoint name does not determine the task owner.
+
+For each selected operation, specify supported input references, required media controls, output artifacts and reported accounting. If the native API is asynchronous, select submission identity, status, cancellation, artifact access and uncertain-submission handling explicitly. Do not reuse a completed text response as evidence of video completion or turn a returned artifact URL into unrestricted server-side fetching.
+
+Exit evidence: independently specified request/result and applicable event/job contracts, bounded media I/O, correct artifact identity, cancellation and honest completion. Specific APIs, new task types, storage and job persistence remain design decisions, not permissions implied by this scope entry.
+
 ### Files and uploads
 
 Files/Uploads need typed resource operations, not an inference request or a larger Generation resource table.
@@ -319,19 +329,20 @@ Keep diagnostics body-free. Apply the existing private-capture policy deliberate
 
 ## Implementation sequence
 
-The sequence is proposed. Definition work does not reopen the [routing freeze](roadmap.md#temporary-routing-freeze), activate bindings or replace the current roadmap. Schedule integration explicitly after the relevant boundary decisions.
+The roadmap's stage-4 placement is selected; the task-local sequence below is a proposal, not another numbering of the five roadmap stages. Embedding and audio/image/video work need not wait for unrelated counting, compaction or Batch work. Definition work does not reopen the [routing freeze](roadmap.md#temporary-routing-freeze) or activate bindings. Schedule each implementation slice after its boundary decisions.
 
-| Stage | Work | Exit condition |
+| Slice | Work | Exit condition |
 |---|---|---|
-| 0. Contract and ownership selection | Pin official API/SDK sources; select task grouping, counting scope, file/job ownership and voice scope; extract only necessary shared values | Each operation has request/result/event/lifecycle boundaries and explicit exclusions; decisions are recorded |
-| 1. Context operations | Implement counting and compaction as separate slices; include the recommended Responses counting surface if selected | No generation masquerading as counting; returned compacted context replays correctly without weakening Generation validation |
-| 2. Embeddings | Extend the existing task and codecs | Input/result correspondence, dimensions, encoding, tokenizer scope and embedding-space admission hold |
-| 3. Audio | Complete speech delivery, then transcription, then translation; add native OpenAI preparation/intake | Supported static/streamed results preserve required evidence and reject unsupported combinations |
-| 3a. Optional audio dialect | Migrate Chat-carried static audio; add native streaming/reporting separately | Standard downstream audio works without Generation execution; optional work does not block stage 3 |
-| 4. Images | Complete Generate/Edit together, initially with direct inputs | Source/mask identity, output controls, static results and preview/final streams are correct |
-| 5. Files/Uploads | Add the selected resource service and connect admitted file references | Lifecycle, authorization, durable mappings and active-reference policies hold across restart |
-| 6. Native Batch | Add job coordination over completed task contracts and file resources; open endpoint support incrementally | Submission uncertainty, recovery, cancellation and per-record results are handled without implicit retries |
-| 7. Integrated acceptance | Verify selected public bindings, OpenAPI summary, pinned SDKs and bounded real calls | IR, codec, admission, SDK and actual Provider claims have separate evidence |
+| Per-operation contract selection | Pin official API/SDK sources; select task and required resource/job ownership; extract only necessary shared values | Each operation has request/result/event/lifecycle boundaries and explicit exclusions; decisions are recorded |
+| Stage 4: Embeddings | Extend the existing task and codecs | Input/result correspondence, dimensions, encoding, tokenizer scope and embedding-space admission hold |
+| Stage 4: Audio | Complete speech delivery, then transcription, then translation; add native OpenAI preparation/intake | Supported static/streamed results preserve required evidence and reject unsupported combinations |
+| Stage 4: Optional audio dialect | Migrate Chat-carried static audio; add native streaming/reporting separately | Standard downstream audio works without Generation execution; optional work does not block the main audio slice |
+| Stage 4: Images | Complete selected Generate/Edit contracts, initially with direct inputs | Source/mask identity, output controls, static results and preview/final streams are correct |
+| Stage 4: Video | Select concrete video operations, then implement task/content codecs and native execution/delivery | Required controls, artifacts and synchronous/asynchronous completion have independent evidence |
+| Separately scheduled context operations | Implement counting and compaction as separate slices; include the recommended Responses counting surface if selected | No generation masquerading as counting; returned compacted context replays correctly without weakening Generation validation |
+| Selected dependency or separate Files/Uploads slice | Add the selected resource service and connect admitted file references | Lifecycle, authorization, durable mappings and active-reference policies hold across restart |
+| Separately scheduled Native Batch | Add job coordination over completed task contracts and file resources; open endpoint support incrementally | Submission uncertainty, recovery, cancellation and per-record results are handled without implicit retries |
+| Per-slice integrated acceptance | Verify selected public bindings, OpenAPI summary, pinned SDKs and bounded real calls | IR, codec, admission, SDK and actual Provider claims have separate evidence |
 
 Files must be designed early but need not block direct audio or image work:
 
@@ -359,12 +370,13 @@ These recommendations have not been adopted merely by requesting this document.
 | Batch execution | Recommend native Provider batches. A gateway scheduler is a separate product with different billing, timing and cancellation semantics | Batch implementation |
 | Batch composition | Select compatible model/deployment restrictions and supported endpoint set; recommend explicit rejection over implicit cross-target splitting | Batch admission |
 | Custom voices | Recommend authorized voice references first; voice creation/consent management as a separate resource slice. Broader audio resource coverage may be selected explicitly | Voice-resource endpoints, not ordinary speech |
-| Scheduling | Recommend a new expansion phase rather than adding requirements to current Generation completion. Route reconnection and frozen-scope changes need explicit scheduling | Binding activation and full-chain acceptance |
+| Video contracts | Select current operations/endpoints, task versus content ownership, artifact access and any required job lifecycle before implementation | Video implementation, not stages 1–3 |
+| Within-stage scheduling | Stage 4 is selected for Embedding/audio/image/video; choose bounded implementation slices and necessary dependencies. Other expansion surfaces retain separate scheduling | Per-slice activation and full-chain acceptance |
 
 ## Verification
 
 1. Pin and inspect current official schemas and streaming grammars before each codec implementation. Separate documented fields from model-effective support; do not maintain model lists here.
-2. Use independent hand-written wire-to-IR and IR-to-wire expectations. Extend existing same-layer tests; preserve the lean suite and safety assertions. Follow the current migration's no-new-test restrictions until its scope is explicitly reopened.
+2. Use independent hand-written wire-to-IR and IR-to-wire expectations. Extend existing same-layer tests; preserve the lean suite and safety assertions. Follow the roadmap's phase-specific scope and coverage authorization.
 3. Keep one positive and one negative case per contract at the lowest owner. Do not build per-model/Provider variant matrices. Resource/job safety assertions should address concrete authorization, recovery, cancellation and uncertain-submission scenarios.
 4. Run affected checks, then the [full offline baseline](development.md#offline-baseline). Do not weaken checks or repair unrelated frozen routing to make a new slice appear integrated.
 5. When connected, run the [SDK loopback gate](development.md#sdk-loopback-gate) and compare the [OpenAPI summary](openapi.json) with implemented ingress and codecs. Do not publish planned endpoints as implemented API paths.
