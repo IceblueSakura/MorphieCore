@@ -63,20 +63,17 @@ impl ApiKeyBinding {
         };
         let scope = crate::protocol::replay_envelope::issuer(provider.id.as_str(), self.upstream);
         let mut adapter = Adapter::new(family, self.dialect, Some(scope.clone()));
-        // Qwen3.8 max_tokens excludes thinking; preserve the total output ceiling.
-        // https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions
-        // Both billing plans share this Qwen wire contract, not every model.
-        if protocol == ProtocolProfile::OpenAiChat
-            && self.dialect == crate::protocol::openai::Dialect::Bailian
-            && matches!(self.canonical_model, "qwen3.8-flash" | "qwen3.8-max")
-        {
-            adapter.adaptation.rules.legacy_max_tokens = false;
-        }
         let mut mappings = self
             .effort_mappings
             .iter()
             .filter(|(member, _)| *member == protocol);
         adapter.adaptation.effort_mapping = mappings.next().map(|(_, mapping)| *mapping);
+        if adapter.adaptation.effort_mapping.is_none()
+            && self.dialect == crate::protocol::openai::Dialect::Bailian
+        {
+            adapter.adaptation.effort_mapping =
+                crate::protocol::openai::bailian::effort_mapping(self.canonical_model, family);
+        }
         if mappings.next().is_some() {
             return Err(TopologyError::InvalidModelBinding);
         }

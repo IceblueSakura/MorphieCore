@@ -708,6 +708,9 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     {
         return Err(CodecError::Unsupported("tool result semantics".into()));
     }
+    if target.adaptation.rules.bailian_requests {
+        crate::protocol::openai::bailian::check_semantic(&target.semantic, Profile::Chat, "")?;
+    }
     let mut messages = encode_items_with(
         target.semantic.items(),
         &owners::owners(target.semantic.items(), target.semantic.message_envelopes()),
@@ -737,6 +740,12 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     );
     if let Some(p) = target.semantic.controls().top_p() {
         o.insert("top_p".into(), json!(p));
+    }
+    if let Some(k) = target.semantic.controls().top_k {
+        if !target.adaptation.rules.thinking_controls {
+            return Err(CodecError::Unsupported("top_k".into()));
+        }
+        o.insert("top_k".into(), json!(k));
     }
     let controls = target.semantic.controls();
     if !controls.stop_sequences.is_empty() {
@@ -788,7 +797,15 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         }
     }
     crate::protocol::openai::chat::audio::write_settings(target.semantic.settings(), o);
-    function_tools::encode(&target.semantic, Profile::Chat, o)?;
+    if target.adaptation.rules.bailian_requests {
+        crate::protocol::openai::bailian::write_tools(
+            target.semantic.settings(),
+            o,
+            Profile::Chat,
+        )?;
+    } else {
+        function_tools::encode(&target.semantic, Profile::Chat, o)?;
+    }
     let mut settings = target.semantic.settings().clone();
     if !settings.reasoning.read_history.is_absent() {
         if !target.adaptation.rules.chat_preserve_thinking {
@@ -802,7 +819,11 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         );
         settings.reasoning.read_history = Presence::Absent;
     }
-    crate::protocol::openai::reasoning::write_request(&settings, o, Profile::Chat)?;
+    if target.adaptation.rules.thinking_controls {
+        crate::protocol::openai::bailian::write_reasoning(&settings, o, Profile::Chat)?;
+    } else {
+        crate::protocol::openai::reasoning::write_request(&settings, o, Profile::Chat)?;
+    }
     bounded(&v)?;
     Ok(v)
 }

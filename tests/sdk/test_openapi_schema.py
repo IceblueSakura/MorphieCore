@@ -18,6 +18,21 @@ def validator(name):
 
 
 class OpenApiSchemaTests(unittest.TestCase):
+    def test_native_thinking_carriers_are_typed_without_an_extension_bag(self):
+        chat = {"model": "synthetic", "messages": []}
+        response = {"model": "synthetic", "input": "go"}
+        for name, body in (("ChatRequest", chat), ("ResponsesRequest", response)):
+            for value in (False, True):
+                validator(name).validate({**body, "enable_thinking": value})
+            for value in (None, 1, "true"):
+                self.assertFalse(validator(name).is_valid({**body, "enable_thinking": value}))
+            self.assertFalse(validator(name).is_valid({**body, "extra_body": {}}))
+            self.assertFalse(validator(name).is_valid({**body, "parameters": {"max_tokens": 64}}))
+        validator("ChatRequest").validate({**chat, "thinking_budget": 32, "top_k": 40})
+        for patch in ({"thinking_budget": 0}, {"thinking_budget": None},
+                      {"top_k": 0}, {"top_k": 101}, {"top_k": 1.5}):
+            self.assertFalse(validator("ChatRequest").is_valid({**chat, **patch}))
+
     def test_native_identity_and_history_reading_use_distinct_bounded_carriers(self):
         messages = {"model": "synthetic", "max_tokens": 64,
                     "messages": [{"role": "user", "content": "go"}]}

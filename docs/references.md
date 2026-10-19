@@ -43,6 +43,7 @@ The SDK loopback gate uses the versions locked in `tests/sdk/uv.lock`, independe
 | Chat custom tools | [Custom-tool carriers](refs/2026-10-16-chat-custom-tools.md) | Native definition, call/result and missing SSE carriers; checked 2026-10-16 |
 | Generation contracts and client behavior | [Contract boundaries](refs/2026-10-17-generation-contracts.md) | Supplemental SDK findings, minimal counterexamples and dated client/binding checks from 2026-10-17 onward |
 | Same-protocol field and event inventory | [Same-protocol Generation inventory](refs/2026-10-19-same-protocol-inventory.md) | Pinned Chat/Responses/Messages fields, shared Aliyun billing dialect, Grok/public SIWC directions, scoped-report exclusions and history; checked 2026-10-19 |
+| Bailian compatible requests | [Bailian request subset](refs/2026-10-19-bailian-compatible-requests.md) | Official Chat/Responses parameter definitions, model-specific effort/caps, ignored-field refusals and existing-IR boundary; checked 2026-10-19. Native RPC is reference only |
 
 Notes preserve the source revision and observation date, including superseded recommendations and narrower historical checks. Their conclusions are design inputs, not a second work queue or a replacement for current decisions. Recheck mutable sources before making a new protocol claim; distinguish SDK shape, client behavior, synthetic evidence and live Provider evidence.
 

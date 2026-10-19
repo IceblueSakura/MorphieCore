@@ -922,6 +922,11 @@
           "max_tokens": {"type": ["integer", "null"], "minimum": 1, "deprecated": true, "description": "Deprecated spelling of the same output cap; cannot be combined with max_completion_tokens."},
           "verbosity": {"type": ["string", "null"], "enum": ["low", "medium", "high", null], "description": "Output verbosity has Chat/Responses codec carriers; native Messages/Google projections use selected recorded omission rules. Model-effective support and binding admission remain separate."},
           "preserve_thinking": {"type": "boolean", "description": "Registered historical reasoning-reading intent, independently preserving omission, true and false. DashScope carries it natively; targets without a selected carrier reject. Does not select a Provider, infer a model default or enable thinking."},
+          "enable_thinking": {"type": "boolean", "description": "Explicit current-turn activation in the existing reasoning IR. No effort or token default is inferred. Bailian has a native carrier; other targets need their own exact representation."},
+          "thinking_budget": {"type": "integer", "minimum": 1, "description": "Existing reasoning allocation, not an independent answer ceiling. Cannot be combined with qualitative effort, disabled activation or a smaller total output cap. Bailian carrier support is model-specific; no token/effort conversion."},
+          "top_k": {"type": "integer", "minimum": 1, "maximum": 100, "description": "Registered positive sampler carrier. Does not widen default model/binding admission."},
+          "extra_body": false,
+          "parameters": false,
           "metadata": {"type": ["object", "null"], "maxProperties": 16, "propertyNames": {"maxLength": 64}, "additionalProperties": {"type": "string", "maxLength": 512}, "description": "Typed request hint, never copied into reported response metadata."},
           "service_tier": {"type": ["string", "null"], "enum": ["auto", "default", "flex", "scale", "priority", "fast", null], "description": "Request hint; the reported effective tier may differ. Endpoint context admission remains independent."},
           "logprobs": {"type": ["boolean", "null"], "description": "Return token probabilities when true; null/false are inactive controls."},
@@ -932,7 +937,7 @@
           {"not": {"required": ["max_tokens", "max_completion_tokens"]}}
         ],
         "additionalProperties": true,
-        "description": "Envelope subset, not an arbitrary upstream parameter bag. Known fields follow the codec; stop has a codec carrier but unchanged default binding admission remains narrower. Active functions, function_call, web_search_options and store:true are rejected; other unknown fields are ignored by name. Return reasoning_details unchanged for opaque replay. Named projection may omit container boundaries, not call/result identity."
+        "description": "Envelope subset, not an arbitrary upstream parameter bag. Known fields follow the codec; stop and top_k have codec carriers but unchanged default binding admission remains narrower. SDK extra_body is flattened before HTTP transmission, not accepted as a wire bag. Known unowned hosted-search, execution and native RPC controls reject; other unknown fields are ignored by name. Active functions, function_call, web_search_options and store:true reject. Return reasoning_details unchanged for opaque replay. Named projection may omit container boundaries, not call/result identity."
       },
       "ChatTool": {
         "oneOf": [
@@ -1005,6 +1010,11 @@
             "description": "Other reasoning controls and conflicting aliases are checked by the owning codec and selected target."
           },
           "stream": {"type": ["boolean", "null"], "default": false},
+          "enable_thinking": {"type": "boolean", "description": "Explicit current-turn activation; target capability and exact carrier are checked independently. Does not invent qualitative effort or a token budget."},
+          "thinking_budget": false,
+          "top_k": false,
+          "extra_body": false,
+          "parameters": false,
           "max_output_tokens": {"type": ["integer", "null"], "minimum": 1, "description": "Client-owned output cap. Selected targets may reject explicit caps; local limits alone do not bound upstream charges."}
         },
         "additionalProperties": true,

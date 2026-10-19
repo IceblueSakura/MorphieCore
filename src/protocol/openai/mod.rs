@@ -1,6 +1,7 @@
 //! Pure codecs for explicitly admitted OpenAI operations.
 pub mod adapter;
 pub use adapter::{Adapter, Dialect};
+pub(crate) mod bailian;
 pub mod chat;
 pub(crate) mod content;
 pub mod dialect;

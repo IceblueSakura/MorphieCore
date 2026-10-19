@@ -75,6 +75,7 @@ impl Dialect {
                     chat_video_url: true,
                     readable_reasoning: true,
                     chat_preserve_thinking: true,
+                    thinking_controls: true,
                     structured_chat_reasoning: true,
                     accept_reasoning_alias: true,
                     responses_image_usage: true,
@@ -169,7 +170,8 @@ impl Dialect {
                     responses_reported_schema_alias: true,
                     readable_reasoning: true,
                     chat_preserve_thinking: true,
-                    legacy_max_tokens: true,
+                    thinking_controls: true,
+                    bailian_requests: true,
                     response_extras: true,
                     responses_billing_view: true,
                     responses_text_usage: true,
@@ -211,7 +213,7 @@ impl Dialect {
             }
             _ => crate::protocol::image_constraints::ImageConstraints::common(),
         };
-        if self == Self::Xiaomi {
+        if matches!(self, Self::Xiaomi | Self::Bailian) {
             images.details.clear();
         }
         let cache = match self {

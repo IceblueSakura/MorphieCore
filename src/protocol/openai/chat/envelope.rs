@@ -189,17 +189,46 @@ pub fn encode_request(
             "streaming audio requires pcm16".into(),
         ));
     }
+    if target.adaptation.rules.bailian_requests {
+        crate::protocol::openai::bailian::check_semantic(
+            target.semantic(),
+            super::super::Profile::Chat,
+            &context.model,
+        )?;
+        crate::protocol::openai::bailian::check_native_effort(
+            target.semantic().settings(),
+            &context.model,
+            super::super::Profile::Chat,
+        )?;
+        if !context.metadata.is_absent() || !context.service_policy.is_absent() {
+            return Err(CodecError::Unsupported(
+                "Bailian Chat execution controls".into(),
+            ));
+        }
+    }
     let mut v = chat::encode_generation(target)?;
     let o = v.as_object_mut().expect("object");
     o.insert("model".into(), json!(context.model));
     put_presence(o, "n", &context.n, |v| json!(v));
     put_presence(o, "stream", &context.stream, |v| json!(v));
-    put_presence(
-        o,
-        "stream_options",
-        &context.stream_options,
-        StreamOptions::write,
-    );
+    if target.adaptation.rules.bailian_requests {
+        if let Some(options) = context.stream_options.value()
+            && !options.include_usage.is_absent()
+        {
+            let mut native = Map::new();
+            put_presence(&mut native, "include_usage", &options.include_usage, |v| {
+                json!(v)
+            });
+            o.insert("stream_options".into(), Value::Object(native));
+        }
+    } else {
+        put_presence(
+            o,
+            "stream_options",
+            &context.stream_options,
+            StreamOptions::write,
+        );
+    }
     context.cache.write(o)?;
     let Value::Object(identity) = serde_json::to_value(&context.identity)
         .map_err(|_| CodecError::Invalid("identity hints"))?

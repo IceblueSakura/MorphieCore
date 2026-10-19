@@ -674,6 +674,9 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         Profile::Responses,
     )?;
     target.semantic.validate()?;
+    if target.adaptation.rules.bailian_requests {
+        crate::protocol::openai::bailian::check_semantic(&target.semantic, Profile::Responses, "")?;
+    }
     check_item_carriers(target.semantic.items())?;
     crate::protocol::openai::content::citations::check_items(
         target.semantic.items(),
@@ -690,10 +693,35 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         target.semantic.resources(),
     )?;
     let mut v = json!({ "input": input });
-    settings::write(
-        target.semantic.settings(),
-        v.as_object_mut().expect("object"),
-    )?;
+    if target.adaptation.rules.bailian_requests || target.adaptation.rules.thinking_controls {
+        let mut standard = target.semantic.settings().clone();
+        standard.reasoning = ReasoningRequest::absent();
+        standard.effort = crate::semantic::value::Presence::Absent;
+        if target.adaptation.rules.bailian_requests {
+            standard.tools = None;
+            standard.tool_choice = None;
+            standard.parallel_tool_calls = None;
+        }
+        let o = v.as_object_mut().expect("object");
+        settings::write(&standard, o)?;
+        crate::protocol::openai::bailian::write_reasoning(
+            target.semantic.settings(),
+            o,
+            Profile::Responses,
+        )?;
+        if target.adaptation.rules.bailian_requests {
+            crate::protocol::openai::bailian::write_tools(
+                target.semantic.settings(),
+                o,
+                Profile::Responses,
+            )?;
+        }
+    } else {
+        settings::write(
+            target.semantic.settings(),
+            v.as_object_mut().expect("object"),
+        )?;
+    }
     bounded(&v)?;
     Ok(v)
 }

@@ -200,13 +200,12 @@ mod candidates {
             );
             assert_eq!(request, before);
         }
-        // GLM-5.3's documented legacy cap already includes thinking; do not change
-        // every target sharing the dialect or infer policy from an endpoint suffix.
+        // All selected first-party Bailian models support the unambiguous total cap.
         let glm = topology
             .endpoint(&EndpointId::new("dashscope-glm-chat").unwrap())
             .unwrap();
         assert!(
-            glm.representation
+            !glm.representation
                 .openai()
                 .unwrap()
                 .adaptation
@@ -247,7 +246,7 @@ mod candidates {
             Adapter::new(Profile::Responses, Dialect::Standard, None)
                 .decode_client_request(
                     &serde_json::to_vec(&json!({"model":model,
-                        "tools":[{"type":"function","name":"read","parameters":{"type":"object"}}],
+                        "tools":[{"type":"function","name":"read","description":"Read media","strict":false,"parameters":{"type":"object"}}],
                         "input":[
                             {"type":"function_call","call_id":"c","name":"read","arguments":"{}"},
                             {"type":"function_call_output","call_id":"c","output":[
@@ -269,8 +268,10 @@ mod candidates {
         };
         assert_eq!(
             representable(ProtocolProfile::OpenAiResponses),
-            [true, true]
+            [false, false]
         );
+        // Model image support does not create a Bailian function-output media carrier.
+        // Its documented output is a string; the standard codec's broader array is not enough.
         // Standard Chat has no tool-result media carrier, so Chat targets reject it.
         assert_eq!(representable(ProtocolProfile::OpenAiChat), [false, false]);
         let text_only = topology.model("qwen3.8-flash").unwrap();

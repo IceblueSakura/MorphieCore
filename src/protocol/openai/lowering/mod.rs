@@ -60,6 +60,7 @@ pub fn lower_request<'a>(
     let r = semantic.as_ref();
     let q = check(r, c.clone())?;
     if r.controls().top_k.is_some()
+        && !(profile == Profile::Chat && c.adaptation.rules.thinking_controls)
         || profile == Profile::Responses && r.controls().has_extended_controls()
         || profile == Profile::Chat
             && (r.controls().stop_sequences.len() > 4
@@ -603,7 +604,11 @@ fn represent_reasoning(
     {
         return Err(RepresentationError::Reasoning);
     }
-    if super::reasoning::requires_extended_controls(settings) {
+    if super::bailian::extended(
+        settings,
+        profile,
+        request && adaptation.rules.thinking_controls,
+    ) {
         return Err(RepresentationError::Reasoning);
     }
     if profile == Profile::Responses && controls.summary() == Some(ReasoningSummary::Disabled) {
@@ -659,13 +664,20 @@ fn represent_reasoning(
     let has_reasoning_items = items
         .iter()
         .any(|(_, item)| matches!(item, Item::Reasoning(_)));
-    if profile == Profile::Chat && (!controls.context.is_absent() || !controls.mode.is_absent()) {
+    let native_budget = request
+        && adaptation.rules.thinking_controls
+        && controls.budget_tokens.is_some()
+        && controls.mode == crate::semantic::value::Presence::Value(ReasoningMode::Budgeted);
+    if profile == Profile::Chat
+        && (!controls.context.is_absent() || !controls.mode.is_absent() && !native_budget)
+    {
         return Err(RepresentationError::Reasoning);
     }
     let chat_control = controls.presence() == ReasoningPresence::Present
         && (settings.effort.is_absent()
             && controls.activation.is_absent()
             && controls.read_history.is_absent()
+            && !native_budget
             || !controls.summary.is_absent());
     if has_reasoning_items
         && profile != Profile::Responses

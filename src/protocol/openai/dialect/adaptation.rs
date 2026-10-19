@@ -48,6 +48,10 @@ pub struct WireRules {
     pub readable_reasoning: bool,
     /// DashScope's explicit historical reasoning consumption switch.
     pub chat_preserve_thinking: bool,
+    /// Exact enable_thinking, Chat thinking_budget and positive top_k carriers.
+    pub thinking_controls: bool,
+    /// The documented Bailian request subset, separate from upstream report shapes.
+    pub bailian_requests: bool,
     /// Preserve reasoning items while rejecting unverified active request controls.
     /// A readable history carrier does not establish reasoning-effort admission.
     pub reject_reasoning_controls: bool,

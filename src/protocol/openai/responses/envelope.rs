@@ -232,6 +232,23 @@ pub fn encode_request(
     if target.profile != Profile::Responses {
         return Err(CodecError::ProfileMismatch);
     }
+    if target.adaptation.rules.bailian_requests {
+        crate::protocol::openai::bailian::check_semantic(
+            target.semantic(),
+            Profile::Responses,
+            &context.model,
+        )?;
+        crate::protocol::openai::bailian::check_native_effort(
+            target.semantic().settings(),
+            &context.model,
+            Profile::Responses,
+        )?;
+        crate::protocol::openai::bailian::check_context(
+            &context.execution,
+            &context.service_policy,
+            Profile::Responses,
+        )?;
+    }
     let mut v = crate::protocol::openai::responses::encode_generation(target)?;
     let o = v.as_object_mut().expect("object");
     context.execution.write(o)?;
@@ -239,7 +256,11 @@ pub fn encode_request(
     o.insert("store".into(), json!(false));
     o.insert("model".into(), json!(context.model));
     put_presence(o, "stream", &context.delivery.stream, |s| json!(s));
-    put_presence(o, "stream_options", &context.delivery.options, |s| json!(s));
+    // Client delivery preferences are implemented by ResponseDelivery.
+    // Bailian does not advertise a matching upstream option.
+    if !target.adaptation.rules.bailian_requests {
+        put_presence(o, "stream_options", &context.delivery.options, |s| json!(s));
+    }
     bounded(&v)?;
     Ok(v)
 }

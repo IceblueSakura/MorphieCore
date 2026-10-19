@@ -140,6 +140,12 @@ Minimal counterexamples distinguish content from operations:
 
 A future Responses hosted image-tool observation may contain image artifacts without making standalone image execution a Generation operation. Similarly, reported tool progress is not the gateway's Batch scheduler state.
 
+#### Independent output ceilings (unselected)
+
+The 2026-10-19 Bailian review selected [existing-IR-only adaptation](architecture.md#shared-aliyun-billing-dialect), not a budget-scope extension. Qwen Chat's reply-only `max_tokens:128` plus `thinking_budget:64` is a minimal counterexample: replacing them with total `192` permits an oversized reply when fewer thoughts are used; total `128` can truncate an otherwise valid 128-reply/64-thought result. Neither summation nor clipping is an exact mapping.
+
+A future proposal would need independently owned answer/thought/total limits, precedence and contradiction rules, native source/target mappings and cross-protocol refusal behavior. No representation is selected here. Current codecs reject the unrepresentable combination and numeric allocations outside the existing IR relation; they do not widen IR or reinterpret effort as tokens.
+
 #### Review concrete ownership coupling
 
 | Evidence entry point | Existing coupling | Proposed treatment |

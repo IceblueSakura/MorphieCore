@@ -17,9 +17,11 @@ use serde_json::Value;
 fn with_effort_mapping(
     request: &Request,
     mapping: &crate::protocol::reasoning::ReasoningEffortMapping,
+    profile: Profile,
+    native_thinking: bool,
 ) -> Result<Option<Request>, CodecError> {
     mapping.validate()?;
-    if openai::reasoning::requires_extended_controls(request.task.semantic.settings()) {
+    if openai::bailian::extended(request.task.semantic.settings(), profile, native_thinking) {
         return Err(CodecError::Unsupported("reasoning controls".into()));
     }
     let mut items = request.task.semantic.items().to_vec();
@@ -90,6 +92,21 @@ impl Adapter {
         direction: DecodeDirection<'_>,
     ) -> Result<Request, CodecError> {
         let mut value = crate::protocol::json::decode(bytes)?;
+        let mut native_controls = serde_json::Map::new();
+        if self.adaptation.rules.thinking_controls {
+            openai::bailian::source(
+                &value,
+                self.protocol,
+                self.adaptation.rules.bailian_requests,
+            )?;
+            if let Some(o) = value.as_object_mut() {
+                for name in openai::bailian::CONTROL_FIELDS {
+                    if let Some(value) = o.shift_remove(*name) {
+                        native_controls.insert((*name).into(), value);
+                    }
+                }
+            }
+        }
         let cache_session = if let Some(session) = value
             .as_object_mut()
             .and_then(|o| o.shift_remove("session_id"))
@@ -157,6 +174,48 @@ impl Adapter {
                 }
             }
         };
+        if !native_controls.is_empty() || self.adaptation.rules.bailian_requests {
+            let mut settings = request.task.semantic.settings().clone();
+            openai::bailian::read_controls(&native_controls, &mut settings, self.protocol)?;
+            if self.adaptation.rules.bailian_requests
+                && let Some(mapping) =
+                    openai::bailian::effort_mapping(&request.model, self.protocol)
+                && let Some(control) = settings.effort.value().copied()
+            {
+                let level = mapping.encode(control.level)?;
+                if level != control.level {
+                    settings.effort =
+                        Presence::Value(crate::semantic::task::generation::EffortControl {
+                            scope: control.scope,
+                            level,
+                        });
+                    request.task.fidelity.record_effort_mapping(
+                        mapping.rule,
+                        control.level.into(),
+                        level.into(),
+                    );
+                }
+            }
+            if self.adaptation.rules.bailian_requests && self.protocol == Profile::Responses {
+                for tool in settings.tools.iter_mut().flatten() {
+                    if let crate::semantic::task::generation::ToolDefinition::Function(tool) = tool
+                        && tool.strict
+                            == crate::semantic::task::generation::FunctionStrictness::Omitted(
+                                crate::semantic::task::generation::StrictDefault::NormalizeSchema,
+                            )
+                    {
+                        tool.strict =
+                            crate::semantic::task::generation::FunctionStrictness::Omitted(
+                                crate::semantic::task::generation::StrictDefault::NonStrict,
+                            );
+                    }
+                }
+            }
+            request.task.semantic = request.task.semantic.with_settings(settings)?;
+        }
+        if self.adaptation.rules.bailian_requests {
+            openai::bailian::check(&request, self.protocol, &request.model)?;
+        }
         request.delivery.validate()?;
         if let Some(scope) = &self.adaptation.scope {
             request.task.fidelity.bind_replay_origin(scope)?;
@@ -230,6 +289,14 @@ impl Adapter {
         contract: &TargetCaps,
     ) -> Result<crate::protocol::RequestProjection, AdapterError> {
         use crate::lowering::generation::RequestControlLoss;
+        if self.adaptation.rules.bailian_requests
+            && self.adaptation.effort_mapping.is_none()
+            && let Some(mapping) = openai::bailian::effort_mapping(model, self.protocol)
+        {
+            let mut bound = self.clone();
+            bound.adaptation.effort_mapping = Some(mapping);
+            return bound.encode_request_with_evidence(request, model, contract);
+        }
         // Compatibility and carrier support are separate: a same-issuer value
         // without a target carrier must fail lowering, not disappear silently.
         let issuer = contract
@@ -281,13 +348,27 @@ impl Adapter {
         {
             return Err(CodecError::Unsupported("reasoning activation".into()).into());
         }
-        if openai::reasoning::requires_extended_controls(request.task.semantic.settings()) {
+        if self.adaptation.rules.bailian_requests {
+            openai::bailian::check(request, self.protocol, model)?;
+        }
+        if openai::bailian::extended(
+            request.task.semantic.settings(),
+            self.protocol,
+            self.adaptation.rules.thinking_controls,
+        ) {
             return Err(CodecError::Unsupported("reasoning controls".into()).into());
         }
         let mapped = self
             .adaptation
             .effort_mapping
-            .map(|mapping| with_effort_mapping(request, mapping))
+            .map(|mapping| {
+                with_effort_mapping(
+                    request,
+                    mapping,
+                    self.protocol,
+                    self.adaptation.rules.thinking_controls,
+                )
+            })
             .transpose()?
             .flatten();
         if let Some(mapped_request) = &mapped {

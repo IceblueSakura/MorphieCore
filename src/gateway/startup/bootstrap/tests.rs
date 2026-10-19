@@ -162,7 +162,8 @@ fn shared_provider_credentials_keep_model_and_protocol_targets_distinct() {
     assert_eq!(prepared.path, "/compatible-mode/v1/chat/completions");
     let wire: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
     assert_eq!(wire["model"], "glm-5.3-prime");
-    assert_eq!(wire["max_tokens"], 64);
+    assert_eq!(wire["max_completion_tokens"], 64);
+    assert!(wire.get("max_tokens").is_none());
     assert!(boot.gateway.state.entries.contains_key(&(
         crate::gateway::family(Profile::Responses),
         "glm-5.3-prime".into(),
