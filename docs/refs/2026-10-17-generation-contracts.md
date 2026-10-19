@@ -190,13 +190,25 @@ MorphieCore follows that transfer direction, not pi's synthetic orphan results, 
 
 This policy supersedes the earlier recommendation to reject all active-tool-turn transfer by default. Native API replay requirements do not themselves forbid a different model receiving a visible transcript; transfer is an explicit loss of internal state, not equivalent continuation. Foreign part/call values are cleared without deleting their visible owners.
 
+## Messages budget and identity boundaries, 2026-10-19
+
+The [extended-thinking guide](https://platform.claude.com/docs/en/build-with-claude/extended-thinking), [Messages reference](https://platform.claude.com/docs/en/api/messages) and [Haiku 5.5 reference](https://platform.claude.com/docs/en/models/haiku-5-5/overview) were rechecked on 2026-10-19. These are source and code findings, not new policy selections or Provider acceptance.
+
+- **Numeric thinking:** manual `thinking: {type: "enabled", budget_tokens: N}` is distinct from adaptive thinking plus effort. Ordinary manual budgets are at least 1024 and less than `max_tokens`; the guide separately permits larger budgets for supported manual interleaved thinking because their scope spans thinking blocks in the assistant turn. Haiku 5.5 documents adaptive thinking, not a manual-budget carrier.
+- **Current gap:** Messages client intake retains a numeric budget, but the native profile encodes only disabled/adaptive thinking. Trusted `budget_to_effort` is an explicit lossy alternative, not exact carriage. The current IR globally rejects budget greater than output ceiling and allows equality; it cannot represent the documented interleaved exception or independently enforce the ordinary Messages strict inequality. Selecting a budget scope and source/target relation is required before claiming complete manual-mode support. Existing P3b rejection and no-clipping rules remain unchanged pending that decision.
+- **User attribution:** `metadata.user_id` is an optional nullable opaque end-user identifier for abuse attribution, not an authentication or conversation identifier. The current reference permits up to 512 characters and forbids personal identifying information. The [pinned SDK type](https://github.com/anthropics/anthropic-sdk-python/blob/bcd55fe1d3f0f1240765f8cef04295b67337f55a/src/anthropic/types/metadata_param.py) confirms its optional/null shape and purpose.
+- **Current gap:** client intake ignores the whole `metadata` container; native Messages has no metadata carrier. `ExecutionHints.identity.user` is a possible shared owner, but currently bounds values to 256 characters. Exact carriage needs source validation, sufficient bounded storage and target-local limits. Cross-protocol disclosure/mapping remains a selection, not permission to copy a user ID into `safety_identifier`, routing, credentials or session identity. Preserve absence/null and never truncate, hash or synthesize identifiers implicitly.
+
+Model-effective validation is separate from protocol grammar. The [Gemini 3.8 Flash page](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash), rechecked on the same date, lists low/medium/high thinking, rejects minimal and limits output to 65,536 tokens. The generic encoder still carries minimal and 65,537, as the earlier P7 probes showed. The recommendation remains a small trusted binding policy checked after projection by the shared preflight/preparation encoder, including ordered effort updates and inserted defaults; do not clamp values or remove protocol-wide carriers.
+
 ## Loss-policy decisions still needed
 
 | Current rule | Counterexample | Recommendation |
 |---|---|---|
 | Messages profile always omits sampling | A sampling-capable model uses the same protocol profile | Keep official sampling carriers in codecs; select fixed/ignored sampling only through evidenced target policy. Current registered binding does not prove the protocol-wide assumption |
-| Absent output ceiling becomes `32000` | Target supports a larger cap, but a different client's product default limits the request | Make the mandatory inserted cap an explicit trusted target/product default, or require caller input. Do not automatically raise it to the model maximum |
 | File citation index retains older ordinal meaning | Updated official reference calls it an output insertion position | Select the protocol revision and a point anchor; do not reuse a list ordinal |
+
+The missing-output-ceiling choice was settled on 2026-10-19: use a trusted target-configured default when converting to Messages, preserving explicit client ceilings. The current fixed `32000` remains an implementation gap, not a reason to choose the model maximum automatically. See [the selected decision](../architecture.md#settled-decisions) and [stage-3 work](../roadmap.md#stage-3-counting-scope).
 
 Keep the inspected protections for normalization-default tools, no automatic thinking-budget clipping, explicit role approximations, and incomplete terminals. Source-level numeric labels do not establish cross-model equivalence. An official API feature may justify IR vocabulary even when another target must reject it.
 
