@@ -461,12 +461,13 @@ pub(super) fn project(
         tool_choice,
         thinking,
         output_config,
-        // Always requested, like OpenAI's implicit caching; below the model's minimum
-        // prompt length nothing is cached or charged.
-        cache_control: Presence::Value(super::CacheControl::from_ttl(
-            s.automatic_prefix_cache
-                .unwrap_or(PrefixCacheTtl::FiveMinutes),
-        )),
+        // Explicit owners must not acquire a fifth breakpoint or a conflicting
+        // automatic TTL. Keep the legacy default only for marker-free requests.
+        cache_control: match s.automatic_prefix_cache {
+            Some(ttl) => Presence::Value(super::CacheControl::from_ttl(ttl)),
+            None if GenerationRequirements::derive(request).explicit_cache => Presence::Absent,
+            None => Presence::Value(super::CacheControl::Ephemeral),
+        },
         messages,
         stream: Presence::Absent,
     })

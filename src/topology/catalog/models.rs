@@ -210,7 +210,9 @@ pub const MODELS: &[ModelDefinition] = &[
 ];
 pub fn contract(id: &str) -> GenerationSemanticContract {
     if let Some(binding) = super::MESSAGES_BINDINGS.iter().find(|b| b.model == id) {
-        return binding.canonical_model().contract;
+        // Shared public admission is narrower than the model's native capabilities.
+        // Do not copy Messages-only cache support into OpenAI-compatible bindings.
+        return binding.public_model().contract;
     }
     let definition = MODELS
         .iter()

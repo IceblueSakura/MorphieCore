@@ -187,6 +187,7 @@ impl Models {
             table.validate().map_err(|_| invalid())?;
             let single = config.candidates.len() == 1;
             let mut deployments = BTreeSet::new();
+            let mut native_owner_cache = true;
             for (candidate_index, candidate) in config.candidates.into_iter().enumerate() {
                 let binding = EndpointId::new(&candidate.binding).map_err(|_| invalid())?;
                 if !template_route.endpoints.contains(&binding) {
@@ -261,6 +262,8 @@ impl Models {
                     candidate.thinking_conversion,
                     &table,
                 )?;
+                native_owner_cache &= endpoint.protocol == ProtocolProfile::AnthropicMessages
+                    && endpoint.representation.semantics().explicit_cache;
                 route.endpoints.push(endpoint.id.clone());
                 // All public Generation client protocols use the same explicit route.
                 entries
@@ -273,7 +276,11 @@ impl Models {
                 endpoints.push((endpoint, provider));
             }
             routes.push(route);
-            public_models.push(public.clone());
+            let mut public = public.clone();
+            // Publish only the selected all-native contract, never a union that
+            // admits cache-bearing requests by skipping incompatible candidates.
+            public.contract.explicit_cache |= native_owner_cache;
+            public_models.push(public);
         }
         let topology = catalog
             .with_generation(endpoints, routes, public_models)

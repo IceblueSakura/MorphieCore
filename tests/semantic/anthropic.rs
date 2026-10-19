@@ -1011,6 +1011,23 @@ mod anthropic_semantics {
             p.decode_request(full.to_string().as_bytes()).err(),
             Some(morphiecore::protocol::CodecError::Limit)
         );
+        // A single 1h tail must not conflict with an unrequested 5m policy.
+        let long = p.decode_generation_request(
+            br#"{"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":[{"type":"text","text":"go","cache_control":{"type":"ephemeral","ttl":"1h"}}]}]}"#,
+            LocalScope::new(1), &target(),
+        ).unwrap();
+        let Item::Message(message) = &long.semantic.items()[0].1 else {
+            panic!("message")
+        };
+        assert_eq!(message.parts[0].cache, Some(PrefixCacheTtl::OneHour));
+        assert_eq!(
+            p.encode_generation_request(&long.semantic, &long.fidelity, &target())
+                .unwrap()
+                .value,
+            json!({"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":[
+                {"type":"text","text":"go","cache_control":{"type":"ephemeral","ttl":"1h"}}
+            ]}]})
+        );
         let mut items = content.semantic.items().to_vec();
         let Item::Instruction(instruction) = &mut items[0].1 else {
             unreachable!()
@@ -1262,10 +1279,14 @@ mod anthropic_semantics {
                 &target(),
             )
             .unwrap();
-        assert!(
-            p.encode_generation_request(&four.semantic, &four.fidelity, &target())
-                .is_err()
-        );
+        assert_eq!(four.semantic.settings().automatic_prefix_cache, None);
+        let requirements = GenerationRequirements::derive(&four.semantic);
+        assert!(requirements.explicit_cache && !requirements.automatic_prefix_cache);
+        let encoded = p
+            .encode_generation_request(&four.semantic, &four.fidelity, &target())
+            .unwrap();
+        assert!(encoded.value.get("cache_control").is_none());
+        assert_eq!(encoded.value["tools"].as_array().unwrap().len(), 4);
         bounded["tools"].as_array_mut().unwrap().push(json!({
             "name":"extra","input_schema":{"type":"object"},
             "cache_control":{"type":"ephemeral"}

@@ -313,7 +313,11 @@ fn compile_deployments(
             }
             let native = match endpoint.protocol {
                 super::ProtocolProfile::AnthropicMessages => {
-                    Some(crate::protocol::anthropic::Profile::AdaptiveTextTools.semantic_contract())
+                    let mut ceiling =
+                        crate::protocol::anthropic::Profile::AdaptiveTextTools.semantic_contract();
+                    // Reviewed binding opt-in only; other codec-only features stay closed.
+                    ceiling.explicit_cache = true;
+                    Some(ceiling)
                 }
                 super::ProtocolProfile::GoogleGenerateContent => {
                     Some(crate::protocol::google::semantic_contract())

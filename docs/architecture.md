@@ -632,13 +632,19 @@ These describe current native behavior, not completion of the [loss-policy migra
 - A leading developer instruction maps to the system prompt by name.
 - A later instruction item becomes a [mid-conversation system message](https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages) at its envelope boundary, also under the developer rule. Placement follows the native rules: after a user turn, before an assistant turn or at the end. An instruction inside a merged turn rejects. Turn-scoped `clear_at`, tool additions/removals and per-message `output_config` have no IR owner and reject. Default binding admission keeps `ordered_instructions` closed until model-level evidence activates it.
 - Call IDs outside the native grammar map to stable digests; collisions fail rather than merge calls.
-- Each native request uses top-level ephemeral cache control. Cache hits still depend on upstream thresholds.
+- Owner-local cache markers preserve their placement and 5m/1h TTLs. Do not add automatic caching to a request with explicit markers: four explicit markers plus automatic caching, or an automatic TTL differing from the tail marker, would conflict. Marker-free requests retain the existing top-level ephemeral default. Caller-selected automatic caching remains a separate, default-closed admission feature. Cache hits still depend on upstream thresholds.
 - A JSON-schema output format maps to `output_config.format`, which always constrains decoding. Its name is dropped by a named rule; a JSON-object mode or a schema description has no carrier and is rejected.
 - A source without an output cap gets `max_tokens: 32000`, the default of opencode's Messages client, because Messages requires the field. The rule `messages.default-max-tokens.v1` records it.
 - Client `top_k` decodes into the IR control; this profile rejects it at projection.
 - OpenAI stateless controls are not forwarded as native fields. Requesting an encrypted reasoning carrier selects delivery, not native thinking.
 
 Exact rules live in [semantic_request.rs](../src/protocol/anthropic/semantic_request.rs).
+
+### Owner-local cache admission
+
+The selected `opencode-go-haiku-messages` binding admits existing owner-local cache markers; the generic profile constructor remains closed. The canonical model ceiling includes that capability, but the shared catalog public contract and OpenRouter Chat binding do not inherit it. At configured startup, publish explicit-cache admission only when every selected candidate is an opted-in native Messages target. Mixed routes remain cache-closed instead of admitting requests by skipping an incompatible candidate; membership, order, fallback, affinity and replay identity do not change.
+
+The Messages capability view distinguishes valid owner-local 5m/1h breakpoints from caller-selected request-wide automatic policy. Four-marker bounds, TTL ordering and owner validity still apply; no marker is relocated, dropped or downgraded. The [model and forwarding evidence](refs/2026-10-17-generation-contracts.md#messages-owner-local-cache-admission-2026-10-19) is not proof of a deployed proxy's effective caching, retention or account-compatible signed replay.
 
 ### Response rules
 
@@ -713,7 +719,8 @@ Transport uses trusted prepared requests, no redirects and no implicit HTTP retr
 | Required and incidental output evidence | P5 preserves required output facts and allows selected incidental-report loss after validation; request intent never fabricates upstream reports |
 | Configurable internal exchange capture | P6 permits opt-in business headers/bodies at all four I/O boundaries with separate controls, finite retention and best-effort writes. Credentials are always redacted; no switch permits credential-bearing logs |
 | Public capability and adaptation notice | P7 selects an authenticated capability snapshot distinguishing faithful support, approved adaptation and rejection, plus a conservative possible-adaptation HTTP notice. Actual receipts remain internal; standard response bodies and SSE stay unchanged. Implementation and reconnection remain separately scheduled |
-| P7 first reconnection scope (2026-10-19) | Select Qwen3.8 Flash through DashScope Chat and GPT-6 Luna through OpenRouter Responses, one existing binding at a time under the roadmap's bounded contracts and gates. Messages cache admission is a later slice; Google model-value guards remain separate. No new binding, route policy or protected-semantic loss is selected |
+| P7 first reconnection scope (2026-10-19) | Select Qwen3.8 Flash through DashScope Chat and GPT-6 Luna through OpenRouter Responses, one existing binding at a time under the roadmap's bounded contracts and gates. Messages full-loop acceptance and Google model-value guards remain separate. No new binding, route policy or protected-semantic loss is selected |
+| Messages owner-local cache admission (2026-10-19) | The user separately resumed this slice. Enable the existing Go/Haiku binding's owner-local markers and publish admission only for all-native, opted-in configured candidates. Do not inject automatic caching beside explicit markers; preserve the marker-free default. Strict tools, automatic-policy admission and unrelated frozen features remain closed |
 | Summary granularity and visibility | P8 permits approximate summary granularity while preserving show/hide intent. Do not enable reasoning, fabricate summaries or expose hidden content |
 | Role and instruction approximation | P8 permits named developer/system/user mappings on target copies. A trusted Chat instruction-role selector uses developer for supported targets or system for compatibility fallback, before encoding and without error-triggered retry; existing ordered history stays ordered |
 | Target-local media detail | P8 prefers exact image/file detail carriers. Omission needs proven target-default equivalence; other approximations need evidence-backed named directional rules. No blanket media-option omission or inferred auto/absence equivalence |

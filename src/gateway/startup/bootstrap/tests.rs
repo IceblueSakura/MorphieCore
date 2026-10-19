@@ -760,6 +760,233 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
     assert!(format!("{error:?}").contains("duplicate call"), "{error:?}");
 }
 
+#[tokio::test]
+async fn configured_messages_cache_admission_requires_all_native_candidates() {
+    use crate::{
+        adapter::{AdapterError, ClientAdapter},
+        execution::{AttemptError, admit, plan::representable, prepare},
+        lowering::generation::RepresentationError,
+        semantic::task::generation::{GenerationFeature, Item, PrefixCacheTtl},
+    };
+    use serde_json::{Value, json};
+    use tower::ServiceExt;
+
+    let input = json!({
+        "model":"claude-haiku-5-5","max_tokens":64,
+        "tools":[{"name":"lookup","strict":false,"input_schema":{"type":"object"},
+            "cache_control":{"type":"ephemeral","ttl":"1h"}}],
+        "system":[
+            {"type":"text","text":"stable","cache_control":{"type":"ephemeral","ttl":"1h"}},
+            {"type":"text","text":"changing","cache_control":{"type":"ephemeral","ttl":"5m"}}
+        ],
+        "messages":[
+            {"role":"user","content":"lookup"},
+            {"role":"assistant","content":[{"type":"tool_use","id":"call","name":"lookup","input":{}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"call","content":"found",
+                "cache_control":{"type":"ephemeral"}}]}
+        ]
+    });
+    for (providers, admitted) in [
+        (&["opencode-go"][..], true),
+        (&["openrouter"][..], false),
+        (&["openrouter", "opencode-go"][..], false),
+    ] {
+        let models = selected_models(&["claude-haiku-5-5"], providers);
+        let boot = Fixture::from_lookup(|name| {
+            Ok(match name {
+                "client_key" => Some("synthetic-gateway-client-token-0001".into()),
+                "opencode-go-api-key" | "openrouter-api-key" => Some("synthetic-upstream".into()),
+                "model_config" => Some(models.to_string()),
+                _ => None,
+            })
+        })
+        .unwrap();
+        let state = &boot.gateway.state;
+        let entry = &state.entries[&(crate::gateway::MESSAGES_FAMILY, "claude-haiku-5-5".into())];
+        assert_eq!(
+            entry
+                .candidates
+                .iter()
+                .map(|c| c.provider.id.as_str())
+                .collect::<Vec<_>>(),
+            providers
+        );
+        assert!(
+            state
+                .entries
+                .values()
+                .all(|entry| entry.public.contract.explicit_cache == admitted)
+        );
+        assert!(!entry.public.contract.automatic_prefix_cache);
+        assert!(!entry.public.contract.strict_tools);
+        assert!(!entry.public.contract.ordered_instructions);
+        assert!(!entry.public.contract.cached_context);
+
+        let response = boot
+            .gateway
+            .router()
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/v1/morphiecore/capabilities")
+                    .header(
+                        "authorization",
+                        "Bearer synthetic-gateway-client-token-0001",
+                    )
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        let bytes = axum::body::to_bytes(response.into_body(), 32 << 10)
+            .await
+            .unwrap();
+        let capabilities: Value = serde_json::from_slice(&bytes).unwrap();
+        let messages = capabilities["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["protocol"] == "messages")
+            .unwrap();
+        let cache: Vec<_> = messages["request"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|case| case["feature"] == "generation.cache")
+            .cloned()
+            .collect();
+        assert_eq!(
+            cache,
+            vec![
+                json!({"feature":"generation.cache","domain":"valid_owner_local_breakpoints_5m_or_1h",
+                "treatment":if admitted {"faithful"} else {"rejected"}}),
+                json!({"feature":"generation.cache","domain":"request_wide_automatic_policy","treatment":"rejected"}),
+            ]
+        );
+        assert_eq!(capabilities["provider_effectiveness"], "not_asserted");
+        assert_eq!(capabilities["full_loop"], "not_asserted");
+        assert!(!capabilities.to_string().contains("opencode-go"));
+
+        let request = ClientAdapter::Messages
+            .decode_client_request(&serde_json::to_vec(&input).unwrap())
+            .unwrap();
+        if !admitted {
+            assert!(matches!(
+                admit(&entry.public, &request),
+                Err(AttemptError::Adapter(AdapterError::Representation(
+                    RepresentationError::Admission(GenerationFeature::ExplicitCache)
+                )))
+            ));
+            assert!(
+                crate::gateway::ingress::admission::prepare_messages(
+                    state,
+                    &serde_json::to_vec(&input).unwrap()
+                )
+                .is_err()
+            );
+            continue;
+        }
+        for stream in [false, true] {
+            let mut body = input.clone();
+            body["stream"] = json!(stream);
+            let (_, mut request) = crate::gateway::ingress::admission::prepare_messages(
+                state,
+                &serde_json::to_vec(&body).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                request.task.semantic.settings().automatic_prefix_cache,
+                None
+            );
+            let Item::Instruction(system) = &request.task.semantic.items()[0].1 else {
+                panic!("system")
+            };
+            assert_eq!(
+                system.parts.iter().map(|p| p.cache).collect::<Vec<_>>(),
+                [
+                    Some(PrefixCacheTtl::OneHour),
+                    Some(PrefixCacheTtl::FiveMinutes)
+                ]
+            );
+            let Item::ToolResult(result) = &request.task.semantic.items().last().unwrap().1 else {
+                panic!("result")
+            };
+            assert_eq!(result.cache, Some(PrefixCacheTtl::FiveMinutes));
+            request.conversation = Some(
+                crate::semantic::context::ConversationContext::conversation("synthetic").unwrap(),
+            );
+            let original = request.clone();
+            let candidate = &entry.candidates[0];
+            representable(&candidate.endpoint, &request).unwrap();
+            let prepared = prepare(
+                &candidate.endpoint,
+                &candidate.provider,
+                &candidate.secret.resolve().unwrap().0,
+                &request,
+            )
+            .unwrap();
+            let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
+            assert!(wire.get("cache_control").is_none());
+            assert_eq!(
+                wire["tools"],
+                json!([{"name":"lookup","strict":false,
+                "input_schema":{"type":"object"},"cache_control":{"type":"ephemeral","ttl":"1h"}}])
+            );
+            assert_eq!(
+                wire["system"],
+                json!([
+                    {"type":"text","text":"stable","cache_control":{"type":"ephemeral","ttl":"1h"}},
+                    {"type":"text","text":"changing","cache_control":{"type":"ephemeral"}}
+                ])
+            );
+            assert_eq!(
+                wire["messages"],
+                json!([
+                    {"role":"user","content":[{"type":"text","text":"lookup"}]},
+                    {"role":"assistant","content":[{"type":"tool_use","id":"call","name":"lookup","input":{}}]},
+                    {"role":"user","content":[{"type":"tool_result","tool_use_id":"call","content":"found",
+                        "cache_control":{"type":"ephemeral"}}]}
+                ])
+            );
+            assert_eq!(wire["stream"], stream);
+            assert_eq!(wire["max_tokens"], 64);
+            assert_eq!(request, original);
+        }
+        // Reach admission for each feature, not an earlier invalid marker combination.
+        for feature in [
+            GenerationFeature::StrictTools,
+            GenerationFeature::AutomaticPrefixCache,
+        ] {
+            let mut body = input.clone();
+            body["system"].as_array_mut().unwrap().pop();
+            match feature {
+                GenerationFeature::StrictTools => body["tools"][0]["strict"] = json!(true),
+                _ => body["cache_control"] = json!({"type":"ephemeral"}),
+            }
+            let mut request = ClientAdapter::Messages
+                .decode_client_request(&serde_json::to_vec(&body).unwrap())
+                .unwrap();
+            assert!(matches!(admit(&entry.public, &request),
+                Err(AttemptError::Adapter(AdapterError::Representation(
+                    RepresentationError::Admission(found)))) if found == feature));
+            request.conversation = Some(
+                crate::semantic::context::ConversationContext::conversation("synthetic").unwrap(),
+            );
+            let candidate = &entry.candidates[0];
+            assert!(representable(&candidate.endpoint, &request).is_err());
+            assert!(
+                prepare(
+                    &candidate.endpoint,
+                    &candidate.provider,
+                    &candidate.secret.resolve().unwrap().0,
+                    &request
+                )
+                .is_err()
+            );
+        }
+    }
+}
+
 #[test]
 fn configured_failover_orders_and_limits_a_models_providers() {
     let directory = crate::credential::tests::support::private_directory();

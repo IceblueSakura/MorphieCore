@@ -30,7 +30,10 @@ impl MessagesBinding {
     }
     pub fn endpoint(&self) -> Endpoint {
         let provider = self.provider();
-        let representation = TargetCaps::new(Profile::AdaptiveTextTools, Dialect::OpenCodeGo);
+        let mut representation = TargetCaps::new(Profile::AdaptiveTextTools, Dialect::OpenCodeGo);
+        // Haiku supports owner-local 5m/1h markers; the pinned Go bridge preserves them.
+        // This does not admit request-wide automatic caching or certify live cache use.
+        representation.semantics.explicit_cache = true;
         Endpoint {
             id: EndpointId::new("opencode-go-haiku-messages").expect("static id"),
             provider: provider.id,
@@ -78,10 +81,12 @@ impl MessagesBinding {
         public
     }
     pub fn canonical_model(&self) -> CanonicalModel {
+        let mut contract = Profile::AdaptiveTextTools.semantic_contract();
+        contract.explicit_cache = true;
         CanonicalModel {
             id: ModelId::new(self.model).expect("static model"),
             task: TaskKind::Generation,
-            contract: Profile::AdaptiveTextTools.semantic_contract(),
+            contract,
         }
     }
 }

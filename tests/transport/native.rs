@@ -462,16 +462,10 @@ mod native_catalog {
                 RepresentationError::Admission(GenerationFeature::ExplicitCache)
             )))
         ));
-        assert!(representable(&binding.endpoint(), &request).is_err());
-        let mut synthetic = binding.endpoint();
-        synthetic
-            .representation
-            .messages_mut()
-            .unwrap()
-            .semantics
-            .explicit_cache = true;
+        // The native endpoint is opted in, but the mixed catalog public route is not.
+        representable(&binding.endpoint(), &request).unwrap();
         let prepared = prepare(
-            &synthetic,
+            &binding.endpoint(),
             &binding.provider(),
             &SecretMaterial::new("synthetic-key").unwrap(),
             &request,
@@ -482,6 +476,7 @@ mod native_catalog {
             wire["tools"][0]["cache_control"],
             serde_json::json!({"type":"ephemeral","ttl":"1h"})
         );
+        assert!(wire.get("cache_control").is_none());
     }
     #[test]
     fn declared_native_binding_prepares_the_messages_wire() {

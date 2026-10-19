@@ -4,7 +4,7 @@ use axum::response::{IntoResponse, Response};
 use axum::{Json, Router, extract::State, http::HeaderMap, routing::post};
 use morphiecore::{
     gateway::{Entry, Gateway, Limits},
-    protocol::{anthropic, openai::Profile, replay_envelope},
+    protocol::{openai::Profile, replay_envelope},
     provider::{CredentialBindingId, SecretMaterial, TrustedOrigin},
     topology::{self, ModelMetadata, catalog::MESSAGES_BINDINGS},
 };
@@ -239,8 +239,27 @@ async fn answer(
         json!({"type":"object","properties":{"key":{"type":"string"}}})
     );
     assert_eq!(body["tools"][0]["strict"], false);
-    // Messages has no cache key or retention; the gateway always requests caching.
-    assert_eq!(body["cache_control"], json!({"type":"ephemeral"}));
+    let explicit_cache = body["tools"][0].get("cache_control").is_some();
+    if explicit_cache {
+        assert!(body.get("cache_control").is_none());
+        assert_eq!(
+            body["tools"][0]["cache_control"],
+            json!({"type":"ephemeral","ttl":"1h"})
+        );
+        assert_eq!(
+            body["system"],
+            json!([
+                {"type":"text","text":"Be brief.","cache_control":{"type":"ephemeral","ttl":"1h"}},
+                {"type":"text","text":"Use lookup.","cache_control":{"type":"ephemeral"}}
+            ])
+        );
+        assert_eq!(
+            body["messages"].as_array().unwrap().last().unwrap()["content"][0]["cache_control"],
+            json!({"type":"ephemeral"})
+        );
+    } else {
+        assert_eq!(body["cache_control"], json!({"type":"ephemeral"}));
+    }
     assert!(body.get("prompt_cache_key").is_none() && body.get("prompt_cache_retention").is_none());
     seen.lock().unwrap().push(body.clone());
     let prompt = body["messages"][0]["content"][0]["text"].as_str().unwrap();
@@ -320,18 +339,19 @@ async fn answer(
     );
     let turn = body["messages"].as_array().unwrap().len() > 1;
     if turn {
-        assert_eq!(
-            body["messages"],
-            json!([
-                {"role":"user","content":[{"type":"text","text":"lookup"}]},
-                {"role":"assistant","content":[
-                    {"type":"thinking","thinking":"plan","signature":"synthetic-native-signature"},
-                    {"type":"redacted_thinking","data":"synthetic-redacted"},
-                    {"type":"tool_use","id":"call-local","name":"lookup","input":{"key":"A"}}
-                ]},
-                {"role":"user","content":[{"type":"tool_result","tool_use_id":"call-local","content":"found"}]}
-            ])
-        );
+        let mut expected = json!([
+            {"role":"user","content":[{"type":"text","text":"lookup"}]},
+            {"role":"assistant","content":[
+                {"type":"thinking","thinking":"plan","signature":"synthetic-native-signature"},
+                {"type":"redacted_thinking","data":"synthetic-redacted"},
+                {"type":"tool_use","id":"call-local","name":"lookup","input":{"key":"A"}}
+            ]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"call-local","content":"found"}]}
+        ]);
+        if explicit_cache {
+            expected[2]["content"][0]["cache_control"] = json!({"type":"ephemeral"});
+        }
+        assert_eq!(body["messages"], expected);
     }
     native_response(
         json!({"id":"msg-local","type":"message","role":"assistant","model":"claude-haiku-5-5",
@@ -383,7 +403,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             ..Default::default()
         },
     };
-    let contract = anthropic::Profile::AdaptiveTextTools.semantic_contract();
+    let contract = binding.canonical_model().contract;
     let mut public = topology::PublicModel::new(
         model.clone(),
         model.clone(),
@@ -612,16 +632,20 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
         }
     }
     assert_eq!(seen.lock().unwrap().len(), 20);
-    // A Messages client (Claude Code) runs the same tool loop with thinking replay.
+    // A Messages client keeps four explicit owners across a tool round with thinking replay.
     for stream in [false, true] {
         let mut input = json!({"model":binding.model,"max_tokens":64,"stream":stream,
         "thinking":{"type":"adaptive"},
         "metadata":{"user_id":"synthetic-user"},
-        "system":"Be brief.",
-        "tools":[{"name":"lookup","strict":false,
+        "system":[
+            {"type":"text","text":"Be brief.","cache_control":{"type":"ephemeral","ttl":"1h"}},
+            {"type":"text","text":"Use lookup.","cache_control":{"type":"ephemeral"}}
+        ],
+        "tools":[{"name":"lookup","strict":false,"cache_control":{"type":"ephemeral","ttl":"1h"},
             "input_schema":{"type":"object","properties":{"key":{"type":"string"}}}}],
         "tool_choice":{"type":"auto","disable_parallel_tool_use":true},
-        "messages":[{"role":"user","content":"lookup"}]});
+        "messages":[{"role":"user","content":[{"type":"text","text":"lookup",
+            "cache_control":{"type":"ephemeral"}}]}]});
         for turn in 0..2 {
             let result = client
                 .post(format!("{base}/v1/messages"))
@@ -678,9 +702,14 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 json!({"type":"tool_use","id":"call-local","name":"lookup","input":{"key":"A"}})
             );
             let history = input["messages"].as_array_mut().unwrap();
+            history[0]["content"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove("cache_control");
             history.push(json!({"role":"assistant","content":body["content"]}));
             history.push(json!({"role":"user","content":[
-            {"type":"tool_result","tool_use_id":"call-local","content":"found"}]}));
+            {"type":"tool_result","tool_use_id":"call-local","content":"found",
+                "cache_control":{"type":"ephemeral"}}]}));
         }
     }
     assert_eq!(seen.lock().unwrap().len(), 24);

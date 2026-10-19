@@ -344,6 +344,21 @@ pub fn topology(
 #[test]
 fn declared_topology_compiles() {
     let topology = default_topology().unwrap();
+    let haiku = topology.model("claude-haiku-5-5").unwrap();
+    assert!(!haiku.contract.explicit_cache);
+    assert!(
+        topology
+            .canonical_model(&haiku.canonical_model)
+            .unwrap()
+            .contract
+            .explicit_cache
+    );
+    for endpoint in topology.route_endpoints(&haiku.route) {
+        assert_eq!(
+            endpoint.representation.semantics().explicit_cache,
+            endpoint.id.as_str() == "opencode-go-haiku-messages"
+        );
+    }
     for (model, providers) in [
         ("claude-haiku-5-5", &["openrouter", "opencode-go"][..]),
         ("mimo-v2.6-pro", &["xiaomi", "opencode-go"][..]),
@@ -368,6 +383,34 @@ fn declared_topology_compiles() {
         "kimi-k3",
     ] {
         assert!(topology.model(model).is_some(), "{model}");
+    }
+    let binding = &MESSAGES_BINDINGS[0];
+    assert!(
+        !crate::protocol::anthropic::TargetCaps::new(
+            crate::protocol::anthropic::Profile::AdaptiveTextTools,
+            crate::protocol::anthropic::Dialect::OpenCodeGo
+        )
+        .semantics
+        .explicit_cache
+    );
+    for feature in 0..3 {
+        let mut endpoint = binding.endpoint();
+        let semantics = &mut endpoint.representation.messages_mut().unwrap().semantics;
+        match feature {
+            0 => semantics.strict_tools = true,
+            1 => semantics.automatic_prefix_cache = true,
+            _ => semantics.ordered_instructions = true,
+        }
+        assert_eq!(
+            compile(
+                vec![binding.provider()],
+                vec![endpoint],
+                vec![binding.route()],
+                vec![binding.public_model()],
+                vec![binding.canonical_model()]
+            ),
+            Err(TopologyError::ContractUnsatisfiable)
+        );
     }
     let muse = topology.model("muse-spark-1.3-contributor").unwrap();
     let muse_endpoints = topology.route_endpoints(&muse.route);

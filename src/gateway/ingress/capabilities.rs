@@ -73,6 +73,33 @@ impl<'a> Entry<'a> {
                 request.push(Case::new(feature, domain, Treatment::Rejected));
             }
         }
+        if protocol == ClientProtocol::Messages {
+            let admitted = entry.public.contract.explicit_cache;
+            if !admitted
+                || entry.candidates.iter().all(|candidate| {
+                    candidate.endpoint.protocol
+                        == crate::topology::ProtocolProfile::AnthropicMessages
+                        && candidate.endpoint.representation.semantics().explicit_cache
+                })
+            {
+                request.push(Case::new(
+                    "generation.cache",
+                    "valid_owner_local_breakpoints_5m_or_1h",
+                    if admitted {
+                        Treatment::Faithful
+                    } else {
+                        Treatment::Rejected
+                    },
+                ));
+            }
+            if !entry.public.contract.automatic_prefix_cache {
+                request.push(Case::new(
+                    "generation.cache",
+                    "request_wide_automatic_policy",
+                    Treatment::Rejected,
+                ));
+            }
+        }
         let (settings_domain, settings_rule, settings_admitted) = match &entry.client {
             ClientAdapter::Messages => (
                 "incidental_settings_without_safety",
