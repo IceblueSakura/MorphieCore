@@ -65,9 +65,9 @@ impl ApiKeyBinding {
         let mut adapter = Adapter::new(family, self.dialect, Some(scope.clone()));
         // Qwen3.8 max_tokens excludes thinking; preserve the total output ceiling.
         // https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions
-        // This evidence covers the DashScope bindings, not every Bailian-compatible target.
+        // Both billing plans share this Qwen wire contract, not every model.
         if protocol == ProtocolProfile::OpenAiChat
-            && provider.id.as_str() == "aliyun-dashscope-cn"
+            && self.dialect == crate::protocol::openai::Dialect::Bailian
             && matches!(self.canonical_model, "qwen3.8-flash" | "qwen3.8-max")
         {
             adapter.adaptation.rules.legacy_max_tokens = false;

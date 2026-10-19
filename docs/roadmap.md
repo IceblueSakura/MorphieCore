@@ -90,13 +90,15 @@ Every implementation package follows the same bounded workflow:
 
 ### Stage 1 work plan
 
-**Status: selected implementation complete on 2026-10-19; overall human review remains pending.** Chat/DashScope, Responses/OpenRouter and Messages/Go have independent request/result/event/history expectations within the [pinned inventory's](refs/2026-10-19-same-protocol-inventory.md) declared domains. Google generateContent and Interactions still have no client/static pair; their guards, snapshots and conversions remain stage 3.
+**Status: selected implementation complete on 2026-10-19; overall human review remains pending.** Chat/DashScope–TokenPlan, Responses/OpenRouter, Grok and public OpenAI SIWC, and Messages/Go have independent request/result/event/history expectations within the [pinned inventory's](refs/2026-10-19-same-protocol-inventory.md) declared domains. Both Aliyun billing plans use the same dialect and shared-model controls without merging their authority. Google generateContent and Interactions still have no client/static pair; their guards, snapshots and conversions remain stage 3.
 
 Accepted contracts live in Architecture: [Chat readable replay/history reading](architecture.md#chat-reasoning-extensions), [Responses item/event observations](architecture.md#responses-item-and-event-observations), [stored history](architecture.md#stateful-history), and [native Messages controls and partial-input boundaries](architecture.md#native-messages-projection). Completed work packages are removed here, not retained as another implementation specification.
 
 No new binding is activated. JSON/SSE equivalence applies only where each native schema has a carrier: event-only summary interruption/compaction progress are not a static event log; unfinished Messages arguments are native-SSE-only under the selected `max_tokens` contract and still reject as JSON/history. Manual-interleaved budget scope remains deferred, and adaptive-only Haiku still rejects manual thinking. Target-policy losses/default insertions remain named and are not exactness evidence.
 
 Remaining work is review and integration acceptance, not more stage-1 carrier implementation: obtain the [overall human review](#generation-design-review-gate), complete P7 and per-loop readiness, then the selected stage-2 loops. Synthetic SDK/client-carrier and private visible-history probes do not accept real Provider behavior or signed account-compatible replay.
+
+Grok/SIWC verification covers their existing Responses bindings, restricted request preparation, native static/event directions, JSON/SSE delivery and stateless/stored history parity. SIWC's upstream is always streamed; static upstream JSON fixtures test representation, not HTTP support. Provider-only scoped reports remain an [explicit client-delivery loss](architecture.md#subscription-responses). This extension does not add Grok Chat, widen SIWC controls or replace the R1a/R1b-first acceptance order.
 
 | Pair | Field or carrier | Current treatment | Recommendation |
 |---|---|---|---|

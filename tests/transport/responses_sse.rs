@@ -382,11 +382,21 @@ fn empty_terminal_summary_requires_real_closed_items_and_exact_nonempty_snapshot
     let events = crate::wire::events(2);
     for (dialect, finished, output, accepted) in [
         (Dialect::Codex, true, json!([]), true),
+        (Dialect::Siwc, true, json!([]), true),
         (Dialect::Standard, true, json!([]), false),
+        (Dialect::Grok, true, json!([]), false),
         (Dialect::Codex, false, json!([]), false),
+        (Dialect::Siwc, false, json!([]), false),
         (Dialect::Codex, true, Value::Null, false),
+        (Dialect::Siwc, true, Value::Null, false),
         (
             Dialect::Codex,
+            true,
+            json!([{"type":"message","id":"other","role":"assistant","status":"completed","content":[]}]),
+            false,
+        ),
+        (
+            Dialect::Siwc,
             true,
             json!([{"type":"message","id":"other","role":"assistant","status":"completed","content":[]}]),
             false,
@@ -412,5 +422,91 @@ fn empty_terminal_summary_requires_real_closed_items_and_exact_nonempty_snapshot
         }
         valid = valid && attempt.finish().is_ok();
         assert_eq!(valid, accepted, "{dialect:?} finished={finished}");
+        if accepted {
+            let response = attempt.response().unwrap();
+            assert!(matches!(&response.semantic.items()[0].1,
+                morphiecore::semantic::task::generation::Item::Message(message)
+                if matches!(&message.parts[0].content,
+                    morphiecore::semantic::task::generation::ContentPart::Text(text)
+                        if text.as_str()=="{\"ok\":false}")));
+        }
+    }
+}
+#[test]
+fn subscription_dialects_keep_raw_call_fragments_final_replay_and_strict_eof() {
+    use morphiecore::{
+        protocol::openai::{Adapter, Dialect},
+        semantic::task::generation::*,
+    };
+    for (dialect, grouped) in [(Dialect::Grok, false), (Dialect::Siwc, true)] {
+        let adapter = Adapter::new(Profile::Responses, dialect, Some(origin()));
+        let events = wire::response_events(wire::subscription_response(grouped));
+        for failure in ["none", "cipher", "item_done", "terminal", "done_trailer"] {
+            let mut values = events.clone();
+            match failure {
+                "cipher" => {
+                    values.last_mut().unwrap()["response"]["output"][0]["encrypted_content"] =
+                        json!("changed")
+                }
+                "item_done" => values.retain(|v| {
+                    !(v["type"] == "response.output_item.done" && v["item"]["type"] == "reasoning")
+                }),
+                "terminal" => {
+                    values.pop();
+                }
+                _ => {}
+            }
+            let mut bytes = values
+                .iter()
+                .enumerate()
+                .flat_map(|(i, v)| {
+                    let mut v = v.clone();
+                    v["sequence_number"] = json!(i);
+                    encode_frame(&v, SseLimits::default().max_event_bytes).unwrap()
+                })
+                .collect::<Vec<_>>();
+            if failure == "done_trailer" {
+                bytes.extend_from_slice(b"data: [DONE]\n\n");
+            }
+            let mut d = ResponsesSseDecoder::with_decoder(
+                200,
+                "text/event-stream",
+                SseLimits::default(),
+                adapter.event_decoder(),
+            )
+            .unwrap();
+            let mut valid = true;
+            'chunks: for chunk in bytes.chunks(if failure == "none" { 1 } else { 17 }) {
+                let mut rest = chunk;
+                while !rest.is_empty() {
+                    match d.consume(rest) {
+                        Ok((used, _)) => {
+                            assert!(used > 0);
+                            rest = &rest[used..];
+                        }
+                        Err(_) => {
+                            valid = false;
+                            break 'chunks;
+                        }
+                    }
+                }
+            }
+            assert!(d.materialize().is_err());
+            valid = valid && d.finish().is_ok();
+            assert_eq!(valid, failure == "none", "{dialect:?} {failure}");
+            if valid {
+                let response = d.materialize().unwrap();
+                assert_eq!(response.semantic.outcome(), Outcome::Completed);
+                assert!(matches!(&response.semantic.items()[0].1,Item::Reasoning(r)
+                    if r.replay.as_ref().is_some_and(|v|v.replay_token()==Some("synthetic-final-token"))));
+                assert!(matches!(&response.semantic.items()[1].1,Item::ToolCall(c)
+                    if c.arguments.as_raw()==Some("{ \"n\":9007199254740993 }")));
+                assert!(matches!(&response.semantic.items()[2].1,Item::Message(m)
+                    if m.phase==Some(Phase::Commentary)&&matches!(&m.parts[0].content,
+                        ContentPart::Text(text) if text.as_str()=="checking")));
+            } else {
+                assert!(d.materialize().is_err());
+            }
+        }
     }
 }

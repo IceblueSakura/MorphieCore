@@ -1,9 +1,7 @@
 //! Closed, source-bound accounting views, not substitutes for Generation usage.
 //! Product response metadata is not authority to invoke programs or hosted tools.
 use crate::protocol::openai::{
-    CodecError,
-    common::{DecodeDirection, object},
-    dialect::adapter_shapes::Extras,
+    CodecError, common::DecodeDirection, dialect::adapter_shapes::Extras,
 };
 use serde_json::{Map, Value, json};
 fn take(o: &mut Map<String, Value>, key: &str, path: &str, extras: &mut Extras) {
@@ -16,9 +14,12 @@ pub(in crate::protocol::openai) fn programs(
     extras: &mut Extras,
     direction: DecodeDirection,
 ) -> Result<(), CodecError> {
-    if let Some(value) = o.get("access_programs") {
-        let programs = object(value)?;
+    if let Some(value) = o.get_mut("access_programs") {
+        let programs = value
+            .as_object_mut()
+            .ok_or(CodecError::Invalid("access program report"))?;
         direction.fields(programs, &["cyber"])?;
+        programs.retain(|name, _| name == "cyber");
         if programs.get("cyber").is_some_and(|v| {
             !v.as_str().is_some_and(|s| {
                 !s.is_empty()
@@ -72,7 +73,7 @@ pub(in crate::protocol::openai) fn usage_attribution(
     direction: DecodeDirection,
 ) -> Result<(), CodecError> {
     if let Some(usage) = o.get_mut("usage").and_then(Value::as_object_mut)
-        && let Some(value) = usage.get("attribution")
+        && let Some(value) = usage.get_mut("attribution")
     {
         attribution(value, direction)?;
         take(usage, "attribution", "/usage/attribution", extras);
@@ -96,19 +97,23 @@ pub(in crate::protocol::openai) fn zero_tools(
 // Attribution uses upstream input/output coordinates, not local ItemId. Keep
 // the entire closed view source-bound; never attach it to a new semantic owner
 // or sum it into billed totals (context and billing can account differently).
-fn attribution(value: &Value, direction: DecodeDirection) -> Result<(), CodecError> {
-    let attribution = object(value)?;
+fn attribution(value: &mut Value, direction: DecodeDirection) -> Result<(), CodecError> {
+    let attribution = value
+        .as_object_mut()
+        .ok_or(CodecError::Invalid("usage attribution"))?;
     direction.fields(attribution, &["items", "request_fields"])?;
-    let items = object(
-        attribution
-            .get("items")
-            .ok_or(CodecError::Invalid("usage attribution"))?,
-    )?;
+    attribution.retain(|name, _| matches!(name.as_str(), "items" | "request_fields"));
+    let items = attribution
+        .get_mut("items")
+        .and_then(Value::as_object_mut)
+        .ok_or(CodecError::Invalid("usage attribution"))?;
     if items.len() > 64 {
         return Err(CodecError::Limit);
     }
-    let counts = |value: &Value, item: bool| -> Result<(), CodecError> {
-        let value = object(value)?;
+    let counts = |value: &mut Value, item: bool| -> Result<(), CodecError> {
+        let value = value
+            .as_object_mut()
+            .ok_or(CodecError::Invalid("attribution counter"))?;
         let keys = [
             "input_tokens",
             "output_tokens",
@@ -120,6 +125,7 @@ fn attribution(value: &Value, direction: DecodeDirection) -> Result<(), CodecErr
             allowed.push("content");
         }
         direction.fields(value, &allowed)?;
+        value.retain(|name, _| allowed.contains(&name.as_str()));
         if keys
             .iter()
             .any(|key| value.get(*key).and_then(Value::as_u64).is_none())
@@ -133,11 +139,11 @@ fn attribution(value: &Value, direction: DecodeDirection) -> Result<(), CodecErr
             return Err(CodecError::Invalid("attribution coordinate"));
         }
         counts(item, true)?;
-        let Some(content) = item.get("content") else {
+        let Some(content) = item.get_mut("content") else {
             continue;
         };
         let content = content
-            .as_array()
+            .as_array_mut()
             .ok_or(CodecError::Invalid("attribution content"))?;
         if content.len() > 64 {
             return Err(CodecError::Limit);
@@ -146,10 +152,13 @@ fn attribution(value: &Value, direction: DecodeDirection) -> Result<(), CodecErr
             counts(part, false)?;
         }
     }
-    if let Some(request_fields) = attribution.get("request_fields") {
-        let request_fields = object(request_fields)?;
+    if let Some(request_fields) = attribution.get_mut("request_fields") {
+        let request_fields = request_fields
+            .as_object_mut()
+            .ok_or(CodecError::Invalid("attribution request fields"))?;
         direction.fields(request_fields, &["tools"])?;
-        for value in request_fields.values() {
+        request_fields.retain(|name, _| name == "tools");
+        for value in request_fields.values_mut() {
             counts(value, false)?;
         }
     }
@@ -163,6 +172,13 @@ pub(in crate::protocol::openai) fn context(
     extras: &mut Extras,
     direction: DecodeDirection,
 ) -> Result<(), CodecError> {
+    for name in ["frequency_penalty", "presence_penalty"] {
+        if o.get(name)
+            .is_some_and(|v| !v.as_f64().is_some_and(f64::is_finite))
+        {
+            return Err(CodecError::Invalid("reported penalty"));
+        }
+    }
     let Some(usage) = o.get_mut("usage").and_then(Value::as_object_mut) else {
         return Ok(());
     };
@@ -185,9 +201,12 @@ pub(in crate::protocol::openai) fn context(
             extras,
         );
     }
-    if let Some(value) = usage.get("context_details") {
-        let details = object(value)?;
+    if let Some(value) = usage.get_mut("context_details") {
+        let details = value
+            .as_object_mut()
+            .ok_or(CodecError::Invalid("context accounting"))?;
         direction.fields(details, &["input_tokens", "output_tokens"])?;
+        details.retain(|name, _| matches!(name.as_str(), "input_tokens" | "output_tokens"));
         if details.values().any(|v| v.as_u64().is_none()) {
             return Err(CodecError::Invalid("context accounting"));
         }

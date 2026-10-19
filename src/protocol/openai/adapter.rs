@@ -30,7 +30,6 @@ pub enum Dialect {
     ModelBest,
     Nvidia,
     Bailian,
-    BailianTokenPlan,
     Zhipu,
 }
 impl Dialect {
@@ -160,20 +159,16 @@ impl Dialect {
                     ..Default::default()
                 },
             ),
-            Self::Bailian | Self::BailianTokenPlan => (
-                if self == Self::BailianTokenPlan {
-                    "bailian-tokenplan-v1"
-                } else {
-                    "bailian-v1"
-                },
+            Self::Bailian => (
+                "bailian-v1",
                 WireRules {
                     chat_video_url: true,
-                    // Scope timestamp normalization to the plan's Chat carrier.
-                    chunk_created_drift: self == Self::BailianTokenPlan,
-                    empty_continuation_call_id: self == Self::BailianTokenPlan,
-                    responses_reported_schema_alias: self == Self::BailianTokenPlan,
+                    // Both billing plans use the same upstream wire dialect.
+                    chunk_created_drift: true,
+                    empty_continuation_call_id: true,
+                    responses_reported_schema_alias: true,
                     readable_reasoning: true,
-                    chat_preserve_thinking: self == Self::Bailian,
+                    chat_preserve_thinking: true,
                     legacy_max_tokens: true,
                     response_extras: true,
                     responses_billing_view: true,
@@ -281,7 +276,7 @@ impl Adapter {
         if dialect == Dialect::Grok && protocol != Profile::Responses {
             adaptation.cache.key = false;
         }
-        if dialect == Dialect::BailianTokenPlan && protocol != Profile::Chat {
+        if dialect == Dialect::Bailian && protocol != Profile::Chat {
             adaptation.rules.chunk_created_drift = false;
             adaptation.rules.empty_continuation_call_id = false;
         }

@@ -753,6 +753,37 @@ mod subscription_accounting {
         assert_eq!(encoded["presence_penalty"], json!(0));
         assert_eq!(encoded["moderation"], Value::Null);
         assert_eq!(encoded["usage"]["attribution"], attribution);
+        let mut extended = response.clone();
+        extended["access_programs"]["future"] = json!({"ignored":true});
+        extended["usage"]["attribution"]["future"] = json!("ignored");
+        extended["usage"]["attribution"]["request_fields"]["future"] = json!("ignored");
+        extended["usage"]["attribution"]["request_fields"]["tools"]["future"] = json!("ignored");
+        extended["usage"]["attribution"]["items"]["input.0"]["future"] = json!("ignored");
+        let mut expected_attribution = attribution.clone();
+        expected_attribution["items"]["input.0"]["content"] = json!([{
+            "input_tokens":1,"output_tokens":0,"cached_tokens":0,"cache_write_tokens":0}]);
+        extended["usage"]["attribution"]["items"]["input.0"]["content"] = json!([{
+            "input_tokens":1,"output_tokens":0,"cached_tokens":0,"cache_write_tokens":0,"future":"ignored"}]);
+        let filtered = source
+            .decode_response(extended.to_string().as_bytes())
+            .unwrap();
+        let projected = source
+            .encode_response(&filtered, &Contract::full())
+            .unwrap();
+        assert_eq!(projected["access_programs"], json!({"cyber":"standard"}));
+        assert_eq!(projected["usage"]["attribution"], expected_attribution);
+        let mut decoder = source.event_decoder();
+        for mut event in crate::wire::events(2) {
+            if event["type"] == "response.completed" {
+                event["response"] = extended.clone();
+            }
+            decoder.push(&event).unwrap();
+        }
+        decoder.finish().unwrap();
+        let projected = source
+            .encode_response(&decoder.materialize().unwrap(), &Contract::full())
+            .unwrap();
+        assert_eq!(projected["usage"]["attribution"], expected_attribution);
         assert_eq!(decoded.semantic.usage().unwrap().input_tokens, Some(3));
         assert!(
             adapter(Dialect::MorphieCore, "one")
@@ -857,6 +888,55 @@ mod subscription_accounting {
             json!({"input_tokens":71,"output_tokens":83})
         );
         assert_eq!(wire["usage"]["cost_in_usd_ticks"], 9007199254740993u64);
+        assert_eq!(decoded.semantic.usage().unwrap().input_tokens, Some(3));
+        for future in [json!("ignored"), json!(1), json!({"nested":"ignored"})] {
+            let mut extended = response.clone();
+            extended["usage"]["context_details"]["future"] = future;
+            let clean = source
+                .decode_response(extended.to_string().as_bytes())
+                .unwrap();
+            let projected = source.encode_response(&clean, &Contract::full()).unwrap();
+            assert_eq!(
+                projected["usage"]["context_details"],
+                json!({"input_tokens":71,"output_tokens":83})
+            );
+            let mut decoder = source.event_decoder();
+            for mut event in crate::wire::events(2) {
+                if event["type"] == "response.completed" {
+                    event["response"] = extended.clone();
+                }
+                decoder.push(&event).unwrap();
+            }
+            decoder.finish().unwrap();
+            assert_eq!(
+                source
+                    .encode_response(&decoder.materialize().unwrap(), &Contract::full())
+                    .unwrap()["usage"]["context_details"],
+                json!({"input_tokens":71,"output_tokens":83})
+            );
+        }
+        for field in ["frequency_penalty", "presence_penalty"] {
+            for value in [Value::Null, json!({}), json!("0"), json!(true)] {
+                let mut invalid = response.clone();
+                invalid[field] = value;
+                assert!(matches!(
+                    source.decode_response(invalid.to_string().as_bytes()),
+                    Err(morphiecore::protocol::CodecError::Invalid(
+                        "reported penalty"
+                    ))
+                ));
+                let mut decoder = source.event_decoder();
+                for mut event in crate::wire::events(2) {
+                    if event["type"] == "response.completed" {
+                        event["response"] = invalid.clone();
+                        assert!(decoder.push(&event).is_err());
+                    } else {
+                        decoder.push(&event).unwrap();
+                    }
+                }
+                assert!(decoder.finish().is_err());
+            }
+        }
         for other in [
             adapter(Dialect::MorphieCore, "one"),
             adapter(Dialect::Grok, "two"),
@@ -875,6 +955,7 @@ mod subscription_accounting {
         );
         for (path, value) in [
             ("/usage/num_sources_used", json!(1)),
+            ("/usage/num_server_side_tools_used", json!(1)),
             ("/usage/cost_in_usd_ticks", json!(-1)),
             ("/usage/context_details", json!({"input_tokens":"71"})),
         ] {

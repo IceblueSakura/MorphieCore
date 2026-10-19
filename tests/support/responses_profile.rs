@@ -43,12 +43,37 @@ pub fn response(turn: u8) -> Value {
 }
 /// Wire ordering and completion snapshots are from the fixed schema, not from either Rust encoder.
 pub fn events(turn: u8) -> Vec<Value> {
-    let final_response = response(turn);
+    response_events(response(turn))
+}
+/// Stateless text/tool domain shared by the subscription dialect checks.
+#[allow(dead_code)] // Shared fixture modules are included by independent harnesses.
+pub fn subscription_response(namespaced: bool) -> Value {
+    let mut call = json!({"id":"call-item","type":"function_call","call_id":"c",
+        "name":"lookup","arguments":"{ \"n\":9007199254740993 }","status":"completed"});
+    if namespaced {
+        call["namespace"] = json!("ops");
+    }
+    json!({"id":"subscription","object":"response","created_at":1,"model":"fixture-model",
+        "status":"completed","output":[
+            {"id":"reason","type":"reasoning","status":"completed",
+                "summary":[{"type":"summary_text","text":"Plan 🧪"}],
+                "content":[{"type":"reasoning_text","text":"Check"}],
+                "encrypted_content":"synthetic-final-token"},
+            call,
+            {"id":"comment","type":"message","role":"assistant","phase":"commentary","status":"completed",
+                "content":[{"type":"output_text","text":"checking","annotations":[],"logprobs":[]}]}
+        ],"usage":{"input_tokens":3,"output_tokens":5,"total_tokens":8,
+            "input_tokens_details":{"cached_tokens":1,"cache_write_tokens":0},
+            "output_tokens_details":{"reasoning_tokens":2}}})
+}
+pub fn response_events(final_response: Value) -> Vec<Value> {
     let mut initial = final_response.clone();
     initial["status"] = json!("in_progress");
     initial["output"] = json!([]);
     initial["usage"] = Value::Null;
-    initial["completed_at"] = Value::Null;
+    if initial.get("completed_at").is_some() {
+        initial["completed_at"] = Value::Null;
+    }
     let mut events = vec![json!({"type":"response.created","response":initial})];
     for (index, item) in final_response["output"]
         .as_array()
@@ -110,7 +135,11 @@ pub fn events(turn: u8) -> Vec<Value> {
                 }
                 events.push(json!({"type":"response.content_part.added","output_index":index,"item_id":id,"content_index":0,"part":{"type":"output_text","text":"","annotations":[]}}));
                 events.push(json!({"type":"response.output_text.delta","output_index":index,"item_id":id,"content_index":0,"delta":part["text"],"logprobs":probabilities,"obfuscation":"synthetic-padding"}));
-                events.push(json!({"type":"response.output_text.annotation.added","output_index":index,"item_id":id,"content_index":0,"annotation_index":0,"annotation":part["annotations"][0]}));
+                for (annotation_index, annotation) in
+                    part["annotations"].as_array().unwrap().iter().enumerate()
+                {
+                    events.push(json!({"type":"response.output_text.annotation.added","output_index":index,"item_id":id,"content_index":0,"annotation_index":annotation_index,"annotation":annotation}));
+                }
                 events.push(json!({"type":"response.output_text.done","output_index":index,"item_id":id,"content_index":0,"text":part["text"],"logprobs":probabilities}));
                 events.push(json!({"type":"response.content_part.done","output_index":index,"item_id":id,"content_index":0,"part":part}));
             }

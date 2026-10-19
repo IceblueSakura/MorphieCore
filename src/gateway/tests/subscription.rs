@@ -157,6 +157,76 @@ async fn missing_media_does_not_relax_sse_terminal_or_eof_validation() {
 }
 
 #[tokio::test]
+async fn subscription_sse_materializes_json_or_sse_without_losing_calls_or_faking_success() {
+    use crate::protocol::openai::Dialect;
+    for dialect in [Dialect::Grok, Dialect::Siwc] {
+        for stream in [false, true] {
+            for outcome in ["completed", "incomplete", "failed"] {
+                let mut response = wire::subscription_response(dialect == Dialect::Siwc);
+                let mut events = wire::response_events(response.clone());
+                response["status"] = json!(outcome);
+                if outcome == "failed" {
+                    response["error"] =
+                        json!({"code":"subscription_limit","message":"synthetic limit"});
+                }
+                if outcome == "incomplete" {
+                    response["incomplete_details"] = json!({"reason":"max_output_tokens"});
+                }
+                let last = events.last_mut().unwrap();
+                last["type"] = json!(format!("response.{outcome}"));
+                last["response"] = response.clone();
+                let upstream_sse = stream || dialect == Dialect::Siwc;
+                let bytes = if upstream_sse {
+                    events
+                        .iter()
+                        .map(|e| format!("event: {}\ndata: {e}\n\n", e["type"].as_str().unwrap()))
+                        .collect::<String>()
+                        .into_bytes()
+                } else {
+                    serde_json::to_vec(&response).unwrap()
+                };
+                let media: &[u8] = if upstream_sse {
+                    b"text/event-stream"
+                } else {
+                    b"application/json"
+                };
+                let delivered = consume(dialect, &[media], bytes.clone(), stream)
+                    .await
+                    .unwrap_or_else(|| panic!("{dialect:?} stream={stream} outcome={outcome}"));
+                let terminal = if stream {
+                    let frames = String::from_utf8(delivered).unwrap();
+                    let values = frames
+                        .lines()
+                        .filter_map(|l| l.strip_prefix("data: "))
+                        .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
+                        .collect::<Vec<_>>();
+                    assert_eq!(
+                        values.last().unwrap()["type"],
+                        format!("response.{outcome}")
+                    );
+                    if outcome != "completed" {
+                        assert!(!values.iter().any(|e| e["type"] == "response.completed"));
+                    }
+                    values.last().unwrap()["response"].clone()
+                } else {
+                    serde_json::from_slice(&delivered).unwrap()
+                };
+                assert_eq!(terminal["status"], outcome);
+                assert_eq!(terminal["output"][1]["call_id"], "c");
+                assert_eq!(
+                    terminal["output"][1]["arguments"],
+                    "{ \"n\":9007199254740993 }"
+                );
+                assert_eq!(terminal["output"][2]["phase"], "commentary");
+                if dialect == Dialect::Siwc {
+                    assert!(consume(dialect, &[], bytes, stream).await.is_some());
+                }
+            }
+        }
+    }
+}
+
+#[tokio::test]
 async fn missing_media_is_not_enabled_for_standard_or_other_responses_profiles() {
     for dialect in [
         crate::protocol::openai::Dialect::Standard,

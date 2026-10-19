@@ -245,7 +245,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
     },
     ApiKeyBinding {
         provider: catalog::aliyun_tokenplan_cn,
-        dialect: Dialect::BailianTokenPlan,
+        dialect: Dialect::Bailian,
         endpoint_prefix: "tokenplan-max",
         effort_mappings: &[],
         model: "qwen3.8-max",
@@ -260,7 +260,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
     },
     ApiKeyBinding {
         provider: catalog::aliyun_tokenplan_cn,
-        dialect: Dialect::BailianTokenPlan,
+        dialect: Dialect::Bailian,
         endpoint_prefix: "tokenplan-glm",
         effort_mappings: &[],
         model: "glm-5.3",
@@ -386,7 +386,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
     },
     ApiKeyBinding {
         provider: catalog::aliyun_tokenplan_cn,
-        dialect: Dialect::BailianTokenPlan,
+        dialect: Dialect::Bailian,
         endpoint_prefix: "aliyun-tokenplan-cn",
         effort_mappings: &[],
         model: "qwen3.8-flash",

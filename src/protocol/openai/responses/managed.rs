@@ -306,20 +306,19 @@ mod tests {
 
     #[test]
     fn reasoning_phase_and_tool_history_match_an_independent_stateless_oracle() {
-        let origin = crate::semantic::value::ReplayOrigin::new("synthetic-history").unwrap();
-        let adapter = Adapter::new(
-            Profile::Responses,
-            Dialect::OpenRouter,
-            Some(origin.clone()),
-        );
-        let mut contract = TargetCaps::full();
-        contract.replay_origin = Some(origin);
-        let old = adapter
-            .decode_client_request(
-                br#"{"model":"m","instructions":"old","metadata":{"old":"value"},"input":"first"}"#,
-            )
-            .unwrap();
-        let output=adapter.decode_response(json!({"id":"r1","object":"response","created_at":1,"model":"m",
+        for dialect in [Dialect::OpenRouter, Dialect::Grok, Dialect::Siwc] {
+            let origin = crate::semantic::value::ReplayOrigin::new("synthetic-history").unwrap();
+            let adapter = Adapter::new(Profile::Responses, dialect, Some(origin.clone()));
+            let mut contract = TargetCaps::full();
+            contract.replay_origin = Some(origin);
+            let mut old_wire = json!({"model":"m","instructions":"old","input":"first"});
+            if dialect == Dialect::OpenRouter {
+                old_wire["metadata"] = json!({"old":"value"});
+            }
+            let old = adapter
+                .decode_client_request(old_wire.to_string().as_bytes())
+                .unwrap();
+            let mut output_wire = json!({"id":"r1","object":"response","created_at":1,"model":"m",
             "status":"completed","output":[
                 {"id":"reason1","type":"reasoning","summary":[{"type":"summary_text","text":"summary"}],
                     "content":[{"type":"reasoning_text","text":"readable"}],"encrypted_content":"opaque-final","status":"completed"},
@@ -328,65 +327,96 @@ mod tests {
                 {"id":"call-item","type":"function_call","call_id":"c","name":"lookup",
                     "arguments":"{\"n\":9007199254740993}","status":"completed"}],
             "usage":{"input_tokens":3,"output_tokens":2,"total_tokens":5,
-                "input_tokens_details":{"cached_tokens":1},"output_tokens_details":{"reasoning_tokens":1}}})
-            .to_string().as_bytes()).unwrap();
-        let expected_input = json!([
-            {"type":"message","role":"user","content":[{"type":"input_text","text":"first"}]},
-            {"id":"reason1","type":"reasoning","summary":[{"type":"summary_text","text":"summary"}],
-                "content":[{"type":"reasoning_text","text":"readable"}],"encrypted_content":"opaque-final"},
-            {"id":"comment","type":"message","role":"assistant","phase":"commentary",
-                "content":[{"type":"output_text","text":"checking","annotations":[]}]},
-            {"id":"call-item","type":"function_call","call_id":"c","name":"lookup","arguments":"{\"n\":9007199254740993}"},
-            {"type":"function_call_output","call_id":"c","output":"done"}
-        ]);
-        let current = json!({"model":"m","previous_response_id":"public-r1","instructions":"new",
+                "input_tokens_details":{"cached_tokens":1},"output_tokens_details":{"reasoning_tokens":1}}});
+            if dialect == Dialect::Siwc {
+                output_wire["output"][2]["namespace"] = json!("ops");
+            }
+            let output = adapter
+                .decode_response(output_wire.to_string().as_bytes())
+                .unwrap();
+            let mut expected_input = json!([
+                {"type":"message","role":"user","content":[{"type":"input_text","text":"first"}]},
+                {"id":"reason1","type":"reasoning","summary":[{"type":"summary_text","text":"summary"}],
+                    "content":[{"type":"reasoning_text","text":"readable"}],"encrypted_content":"opaque-final"},
+                {"id":"comment","type":"message","role":"assistant","phase":"commentary",
+                    "content":[{"type":"output_text","text":"checking","annotations":[]}]},
+                {"id":"call-item","type":"function_call","call_id":"c","name":"lookup","arguments":"{\"n\":9007199254740993}"},
+                {"type":"function_call_output","call_id":"c","output":"done"}
+            ]);
+            if dialect == Dialect::Siwc {
+                expected_input[3]["namespace"] = json!("ops");
+            }
+            let mut current = json!({"model":"m","previous_response_id":"public-r1","instructions":"new",
             "input":[{"type":"function_call_output","call_id":"c","output":"done"}],
             "include":["reasoning.encrypted_content"],"truncation":"disabled","max_tool_calls":3,
             "metadata":{"new":"value"},"max_output_tokens":1024});
-        let (stored, _) = decode(
-            &adapter,
-            current.to_string().as_bytes(),
-            Some((&old.task, &output)),
-        )
-        .unwrap();
-        let mut explicit = current.clone();
-        explicit
-            .as_object_mut()
-            .unwrap()
-            .remove("previous_response_id");
-        explicit["input"] = expected_input.clone();
-        let (stateless, _) = decode(&adapter, explicit.to_string().as_bytes(), None).unwrap();
-        let mut expected = explicit;
-        expected["store"] = json!(false);
-        expected["provider"] = json!({"require_parameters":true});
-        for request in [&stored, &stateless] {
-            assert_eq!(
-                adapter.encode_request(request, "m", &contract).unwrap(),
-                expected
-            );
-        }
-        let final_output=adapter.decode_response(json!({"id":"r2","object":"response","created_at":2,"model":"m",
+            if dialect != Dialect::OpenRouter {
+                for key in ["metadata", "max_tool_calls"] {
+                    current.as_object_mut().unwrap().remove(key);
+                }
+            }
+            if dialect == Dialect::Siwc {
+                for key in ["truncation", "max_output_tokens"] {
+                    current.as_object_mut().unwrap().remove(key);
+                }
+            }
+            let (stored, _) = decode(
+                &adapter,
+                current.to_string().as_bytes(),
+                Some((&old.task, &output)),
+            )
+            .unwrap();
+            let mut explicit = current.clone();
+            explicit
+                .as_object_mut()
+                .unwrap()
+                .remove("previous_response_id");
+            explicit["input"] = expected_input.clone();
+            let (stateless, _) = decode(&adapter, explicit.to_string().as_bytes(), None).unwrap();
+            let mut expected = explicit;
+            expected["store"] = json!(false);
+            if dialect == Dialect::OpenRouter {
+                expected["provider"] = json!({"require_parameters":true});
+            }
+            if dialect == Dialect::Siwc {
+                expected["stream"] = json!(true);
+            }
+            for request in [&stored, &stateless] {
+                assert_eq!(
+                    adapter.encode_request(request, "m", &contract).unwrap(),
+                    expected
+                );
+            }
+            let final_output=adapter.decode_response(json!({"id":"r2","object":"response","created_at":2,"model":"m",
             "status":"completed","output":[{"id":"final","type":"message","role":"assistant","phase":"final_answer",
                 "status":"completed","content":[{"type":"output_text","text":"answer","annotations":[]}]}]})
             .to_string().as_bytes()).unwrap();
-        let mut twice = expected_input.as_array().unwrap().clone();
-        twice.extend([
+            let mut twice = expected_input.as_array().unwrap().clone();
+            twice.extend([
             json!({"id":"final","type":"message","role":"assistant","phase":"final_answer",
                 "content":[{"type":"output_text","text":"answer","annotations":[]}]}),
             json!({"type":"message","role":"user","content":[{"type":"input_text","text":"again"}]})
         ]);
-        let (next, _) = decode(
-            &adapter,
-            br#"{"model":"m","previous_response_id":"public-r2","input":"again"}"#,
-            Some((&stored.task, &final_output)),
-        )
-        .unwrap();
-        assert_eq!(
-            adapter.encode_request(&next, "m", &contract).unwrap(),
-            json!({"model":"m","store":false,"input":twice,"provider":{"require_parameters":true}})
-        );
-        let listing = input_items(&next.task, "public-r3", Some("limit=2&order=asc")).unwrap();
-        assert_eq!(listing["data"].as_array().unwrap().len(), 2);
-        assert_eq!(listing["has_more"], true);
+            let (next, _) = decode(
+                &adapter,
+                br#"{"model":"m","previous_response_id":"public-r2","input":"again"}"#,
+                Some((&stored.task, &final_output)),
+            )
+            .unwrap();
+            let mut expected_next = json!({"model":"m","store":false,"input":twice});
+            if dialect == Dialect::OpenRouter {
+                expected_next["provider"] = json!({"require_parameters":true});
+            }
+            if dialect == Dialect::Siwc {
+                expected_next["stream"] = json!(true);
+            }
+            assert_eq!(
+                adapter.encode_request(&next, "m", &contract).unwrap(),
+                expected_next
+            );
+            let listing = input_items(&next.task, "public-r3", Some("limit=2&order=asc")).unwrap();
+            assert_eq!(listing["data"].as_array().unwrap().len(), 2);
+            assert_eq!(listing["has_more"], true);
+        }
     }
 }

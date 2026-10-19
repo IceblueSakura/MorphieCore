@@ -2,7 +2,7 @@
 
 Observed on 2026-10-19 against the [selected baselines](../references.md#pinned-sources): OpenAI Python **3.35.1**, [`547ecb1e4fc233f19030736c29fee4374dfbaca1`](https://github.com/openai/openai-python/tree/547ecb1e4fc233f19030736c29fee4374dfbaca1/src/openai/types), and Anthropic Python **1.15.0**, [`bcd55fe1d3f0f1240765f8cef04295b67337f55a`](https://github.com/anthropics/anthropic-sdk-python/tree/bcd55fe1d3f0f1240765f8cef04295b67337f55a/src/anthropic/types). Both public source checkouts matched these revisions and had clean working trees. The client baseline is pi **1.3.0**, `71023ae`; its selected beta profile is documented in the [Messages profile note](2026-10-17-generation-contracts.md#pi-messages-request-profile-2026-10-19).
 
-This is a source/codec inventory, not design approval, activation, exhaustive test evidence or live Provider acceptance. [Architecture](../architecture.md) owns decisions and [Roadmap](../roadmap.md#stage-1-work-plan) owns remaining work. The three same-protocol pairs are Chat/DashScope, Responses/OpenRouter and Messages/OpenCode Go. Google generateContent and Interactions have upstream request encoders and SSE intake, **not client endpoints or static intake**, so there is no Google same-protocol pair.
+This is a source/codec inventory, not design approval, activation, exhaustive test evidence or live Provider acceptance. [Architecture](../architecture.md) owns decisions and [Roadmap](../roadmap.md#stage-1-work-plan) owns remaining work. The protocol pairs are Chat/DashScope–TokenPlan, Responses/OpenRouter plus Grok/public OpenAI SIWC, and Messages/OpenCode Go. Google generateContent and Interactions have upstream request encoders and SSE intake, **not client endpoints or static intake**, so there is no Google same-protocol pair.
 
 ## Reading the inventory
 
@@ -16,9 +16,15 @@ Request rows describe client wire → IR → native upstream wire. Result rows d
 
 Code paths below are relative to `src/protocol/`; test paths are relative to `tests/`. Test owners identify where existing assertions live, **not proof of exhaustive field coverage**. Each table groups related fields by name; a rejected whole variant includes its children rather than implying partial support.
 
+## Shared Aliyun dialect
+
+The user selected identical DashScope/TokenPlan dialect behavior on 2026-10-19. Their official [TokenPlan quickstart](https://help.aliyun.com/zh/model-studio/token-plan-team-quickstart) and [tool configuration](https://help.aliyun.com/zh/model-studio/more-tools), rechecked that day, distinguish compatible protocols from billing credentials: TokenPlan, Coding Plan and pay-as-you-go keys/base URLs are not interchangeable. TokenPlan's native Responses entry is independently documented by the existing Codex/base-URL sources in `provider/catalog.rs`; it is not inferred from Chat or the older Coding Plan's limitations.
+
+One `Bailian` profile now owns readable reasoning/history reading, Chat created-time/empty-ID normalization, response-only `schema_` aliases and existing accounting mappings. Qwen3.8 Flash/Max total-cap encoding is shared by model on both plans. Native decoder conflict/identity checks remain strict. Binding-level expectations check shared wire rules and control bodies while separately asserting origin, credential and replay-issuer isolation. Shared syntax does not establish a live service's effective parameter support or identical model availability.
+
 ## Chat and the DashScope dialect
 
-Sources: SDK `chat/completion_create_params.py`, `chat/chat_completion.py`, `chat/chat_completion_chunk.py`, `chat/chat_completion_message.py`, all `chat/chat_completion_*_param.py` content/tool types, and `completion_usage.py`. DashScope selects `Dialect::Bailian`, not `BailianTokenPlan`; binding-local total-cap overrides are separate from generic dialect defaults.
+Sources: SDK `chat/completion_create_params.py`, `chat/chat_completion.py`, `chat/chat_completion_chunk.py`, `chat/chat_completion_message.py`, all `chat/chat_completion_*_param.py` content/tool types, and `completion_usage.py`. DashScope and TokenPlan select one `Dialect::Bailian`; total-cap overrides are model-specific, not billing-plan-specific.
 
 ### Request fields
 
@@ -161,6 +167,23 @@ Brace notation enumerates exact event names with the displayed prefix. Supported
 Dispatch and delivery owners: `openai/events/{decode,encode}.rs`, `openai/responses/sse.rs`. Sequence numbers are validated then regenerated; obfuscation is bounded nonsemantic padding. Unknown events increment a count, not a name inventory. Skipping a deferred event does not establish its support or permit fabricated successful hosted execution; supported item/terminal consistency still applies. OpenRouter accepts its selected post-terminal DONE convention.
 
 Existing test owners: `semantic/{text,messages,reasoning_replay,tool_calls,compaction,providers}.rs`, `transport/responses_sse.rs`, and managed-history unit tests. Stage-1 additions use independent event/report oracles and a handwritten stored/stateless native-input oracle covering reasoning, final encrypted values, phase, exact arguments, results, current settings and a second continuation. There is no separate `tests/semantic/responses.rs` suite. This is codec evidence, not storage-service or client acceptance.
+
+## Grok and public SIWC Responses
+
+Checked on 2026-10-19 against the pinned OpenAI schema plus the public [SIWC inference contract](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference), [preview limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations.md) and [xAI Responses reference](https://docs.x.ai/developers/rest-api-reference/inference/responses). These web sources are unversioned. The configured bindings select `grok-4.7` and the three existing SIWC GPT bindings; this is not another Provider/model matrix.
+
+| Direction/domain | Treatment and evidence |
+|---|---|
+| Native request | E within text, request-wide/ordered developer instructions, explicit non-strict function tools, raw call/result association, encrypted-output include and body cache key. Independent authored IR and wire expectations use actual subscription endpoints. SIWC groups definitions/calls in namespaces and forces upstream SSE; Grok preserves selected stream intent. Both force `store:false`; no product session headers |
+| Unsupported controls | SIWC R output caps, sampling, native HTTP continuation, standard metadata and the other final-check controls; flat tools/system history R. Grok does not inherit those SIWC restrictions, but its existing binding still closes standard context/strict tools/files. No model-effective parameter claim follows from codec support |
+| Native static/result | E selected reasoning summary/readable parts/final encrypted value, phase, exact raw arguments, namespace and standard cached/reasoning usage. Wire→IR and separately authored IR→wire expectations are independent. SIWC static fixtures validate representation, not nonstreaming upstream HTTP |
+| SSE and client delivery | E selected native event values and JSON/SSE materialization; byte fragmentation, changed final ciphertext, missing item-done/terminal and `[DONE]` reject. SIWC alone permits the existing missing-media/event-owned-empty-output compatibility; Grok remains strict. Completed/incomplete/failed terminals stay distinct |
+| Returned history | E selected native encrypted reasoning/phase/call/result history and a second continuation through both gateway-stored and stateless paths. Current controls replace old ones; SIWC namespaces persist and native `previous_response_id` is not forwarded |
+| Identity/cache policy | L `generation.omit-identity-hints.v1`, independently checked with source immutability; extended retention R by default. A separately opted-in omission remains L, not a successful exactness case |
+| Source-only reports | E only for same-dialect/issuer/response-dependency return: xAI cost ticks/context counters/zero hosted counts; SIWC access programs, attribution, inactive penalties and exact zero-tool reports. Unknown nested program/attribution/context fields are filtered; malformed known counters/penalties R. Billed usage does not inherit context counters |
+| Client report exclusion | **I / non-lossless** when projecting those scoped reports to the MorphieCore client dialect, including Responses→Responses. No client carrier or new report owner is selected here. Foreign scope and edited semantic dependencies cannot restore them |
+
+Test owners: `semantic/providers.rs::subscription_stage1`, `semantic/usage.rs::subscription_accounting`, `transport/responses_sse.rs`, gateway subscription tests and managed-history unit tests. Existing unsupported hosted/citation/tool-discovery domains remain excluded. Synthetic gates do not accept live OAuth plans, final-cipher replay against an account, cached-token hits or every real-client loop.
 
 ## Messages and the Go/Haiku profile
 

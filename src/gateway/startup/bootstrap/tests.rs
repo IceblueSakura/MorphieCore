@@ -243,12 +243,8 @@ fn subscription_and_metered_entries_never_exchange_credentials_or_origins() {
                         wire[if candidate.endpoint.protocol
                             == crate::topology::ProtocolProfile::OpenAiChat
                         {
-                            if candidate.provider.id.as_str() == "aliyun-dashscope-cn" {
-                                assert!(wire.get("max_tokens").is_none());
-                                "max_completion_tokens"
-                            } else {
-                                "max_tokens"
-                            }
+                            assert!(wire.get("max_tokens").is_none());
+                            "max_completion_tokens"
                         } else {
                             "max_output_tokens"
                         }],
