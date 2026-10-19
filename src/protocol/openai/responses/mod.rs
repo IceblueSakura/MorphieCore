@@ -636,6 +636,10 @@ pub(super) fn decode_items(
         {
             b.record_id(id, o)?;
         }
+        if response {
+            b.fidelity
+                .observe_created_by(id, &item, &b.resources, o.get("created_by"))?;
+        }
         b.items.push((id, item));
     }
     Ok(())
@@ -881,6 +885,9 @@ pub(super) fn encode_items(
             Item::ToolChange(_) => unreachable!("lowering rejects tool changes"),
         };
         if response {
+            if let Some(actor) = fidelity.created_by(*id, item, resources) {
+                v["created_by"] = json!(actor);
+            }
             v["id"] = json!(
                 fidelity
                     .response_item_id(*id)

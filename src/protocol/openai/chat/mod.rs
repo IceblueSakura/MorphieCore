@@ -25,6 +25,7 @@ pub(super) const FIELDS: &[&str] = &[
     "tool_choice",
     "parallel_tool_calls",
     "reasoning_effort",
+    "preserve_thinking",
     "response_format",
     "logprobs",
     "top_logprobs",
@@ -176,6 +177,21 @@ pub(crate) fn decode_generation_with(
         ..Default::default()
     };
     crate::protocol::openai::reasoning::chat_request(o, &mut settings)?;
+    if let Some(value) = o.get("preserve_thinking") {
+        if adaptation.rules.chat_preserve_thinking {
+            settings.reasoning.presence = ReasoningPresence::Present;
+            settings.reasoning.read_history = Presence::Value(
+                value
+                    .as_bool()
+                    .ok_or(CodecError::Invalid("preserve_thinking"))?,
+            );
+        } else {
+            direction.fields(
+                &Map::from_iter([("preserve_thinking".into(), value.clone())]),
+                &[],
+            )?;
+        }
+    }
     crate::protocol::openai::chat::audio::settings(o, &mut settings, direction)?;
     let mut groups = owners::envelopes(&b.message_owners)?;
     crate::protocol::attachments::restore(
@@ -773,11 +789,20 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     }
     crate::protocol::openai::chat::audio::write_settings(target.semantic.settings(), o);
     function_tools::encode(&target.semantic, Profile::Chat, o)?;
-    crate::protocol::openai::reasoning::write_request(
-        target.semantic.settings(),
-        o,
-        Profile::Chat,
-    )?;
+    let mut settings = target.semantic.settings().clone();
+    if !settings.reasoning.read_history.is_absent() {
+        if !target.adaptation.rules.chat_preserve_thinking {
+            return Err(CodecError::Unsupported("reasoning history reading".into()));
+        }
+        put_presence(
+            o,
+            "preserve_thinking",
+            &settings.reasoning.read_history,
+            |v| json!(v),
+        );
+        settings.reasoning.read_history = Presence::Absent;
+    }
+    crate::protocol::openai::reasoning::write_request(&settings, o, Profile::Chat)?;
     bounded(&v)?;
     Ok(v)
 }

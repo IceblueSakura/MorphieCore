@@ -542,6 +542,10 @@ impl EventDecoder {
                 self.part_done(o, &mut out)?
             }
             "response.output_item.done" => self.item_done(o, &mut out)?,
+            "response.compaction.compacting" => {
+                let item = self.owner(o)?;
+                self.emit(StreamEvent::CompactionProgress { item }, &mut out)?;
+            }
             "response.completed" | "response.incomplete" | "response.failed" => {
                 self.terminal(o, &mut out)?
             }
@@ -724,6 +728,18 @@ impl EventDecoder {
             },
             out,
         )?;
+        if matches!(
+            kind,
+            ItemKind::ToolResult(_) | ItemKind::CustomResult(_) | ItemKind::Compaction
+        ) {
+            let snapshot = self.state()?.item(item)?.snapshot()?;
+            self.fidelity.observe_created_by(
+                item,
+                &snapshot,
+                self.state.as_ref().expect("state").resources(),
+                v.get("created_by"),
+            )?;
+        }
         if kind.call().is_some() {
             let part_kind = if matches!(kind, ItemKind::CustomCall { .. }) {
                 PartKind::CustomInput
@@ -1266,7 +1282,23 @@ impl EventDecoder {
                 out,
             )?;
         }
-        self.emit(StreamEvent::PartFinished { item, part }, out)
+        let interrupted = if summary {
+            match o.get("status") {
+                None | Some(Value::Null) => false,
+                Some(value) if value == "incomplete" => true,
+                Some(_) => return Err(CodecError::Invalid("summary completion status")),
+            }
+        } else {
+            false
+        };
+        self.emit(
+            if interrupted {
+                StreamEvent::PartInterrupted { item, part }
+            } else {
+                StreamEvent::PartFinished { item, part }
+            },
+            out,
+        )
     }
     fn item_done(
         &mut self,
@@ -1349,6 +1381,13 @@ impl EventDecoder {
             },
             out,
         )?;
+        let snapshot = self.state()?.item(item)?.snapshot()?;
+        self.fidelity.observe_created_by(
+            item,
+            &snapshot,
+            self.state.as_ref().expect("state").resources(),
+            p.get("created_by"),
+        )?;
         let expected = item_wire(self.state()?, item, &self.fidelity)?;
         let wrapper = json!({
             "id": "snapshot",
@@ -1362,12 +1401,17 @@ impl EventDecoder {
             &wrapper,
             &self.adaptation,
         )?;
-        let normalized = crate::protocol::openai::responses::encode_items(
+        let mut normalized = crate::protocol::openai::responses::encode_items(
             decoded.semantic.items(),
             &decoded.fidelity,
             true,
             decoded.semantic.resources(),
         )?;
+        if v.get("created_by").is_none_or(Value::is_null)
+            && let Some(actor) = expected.get("created_by")
+        {
+            normalized[0]["created_by"] = actor.clone();
+        }
         if normalized.first() != Some(&expected) {
             return Err(CodecError::Invalid("item snapshot"));
         }
@@ -1543,18 +1587,37 @@ impl EventDecoder {
             &mut self.fidelity,
             None,
         )?;
+        let snapshots = snapshot_items(self.state()?)?;
+        for (index, (owner, item)) in snapshots.iter().enumerate() {
+            self.fidelity.observe_created_by(
+                *owner,
+                item,
+                self.state.as_ref().expect("state").resources(),
+                p.get("output")
+                    .and_then(Value::as_array)
+                    .and_then(|items| items.get(index))
+                    .and_then(|item| item.get("created_by")),
+            )?;
+        }
         let expected = crate::protocol::openai::responses::encode_items(
             &snapshot_items(self.state()?)?,
             &self.fidelity,
             true,
             self.state()?.resources(),
         )?;
-        let actual = crate::protocol::openai::responses::encode_items(
+        let mut actual = crate::protocol::openai::responses::encode_items(
             decoded.semantic.items(),
             &decoded.fidelity,
             true,
             decoded.semantic.resources(),
         )?;
+        for (value, expected) in actual.iter_mut().zip(&expected) {
+            if value.get("created_by").is_none()
+                && let Some(actor) = expected.get("created_by")
+            {
+                value["created_by"] = actor.clone();
+            }
+        }
         if actual != expected {
             return Err(CodecError::Invalid(terminal_snapshot_difference(
                 &actual, &expected,

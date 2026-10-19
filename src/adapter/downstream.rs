@@ -370,6 +370,7 @@ impl ClientAdapter {
                     code: field("code"),
                     message: field("message").ok_or(CodecError::Invalid("failure message"))?,
                     param: None,
+                    original_type: field("type"),
                 }),
                 incomplete: None,
                 completion: None,

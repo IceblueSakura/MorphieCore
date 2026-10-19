@@ -494,8 +494,17 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             p.data = value;
             p.value_finished = true;
         }
-        StreamEvent::PartFinished { item, part } => {
+        StreamEvent::CompactionProgress { item } => {
+            if !matches!(state.open_item(item)?.kind, ItemKind::Compaction) {
+                return Err(EventError::Lifecycle);
+            }
+        }
+        StreamEvent::PartFinished { item, part } | StreamEvent::PartInterrupted { item, part } => {
+            let interrupted = matches!(event, StreamEvent::PartInterrupted { .. });
             let p = state.open_part(item, part)?;
+            if interrupted && p.kind != PartKind::Summary {
+                return Err(EventError::Lifecycle);
+            }
             if !p.value_finished {
                 return Err(EventError::Lifecycle);
             }

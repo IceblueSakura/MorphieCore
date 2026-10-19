@@ -22,6 +22,11 @@ pub struct GenerationControls {
     pub truncation: Option<Truncation>,
 }
 impl GenerationControls {
+    pub fn without_sampling(mut self) -> Self {
+        self.temperature_bits = None;
+        self.top_p_bits = None;
+        self
+    }
     pub fn with_temperature(mut self, v: f64) -> Result<Self, GenerationError> {
         if !v.is_finite() {
             return Err(GenerationError::NonFiniteTemperature);

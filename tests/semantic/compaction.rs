@@ -347,3 +347,111 @@ fn compaction_replay_rejects_incompatible_or_unbound_context_without_stripping()
         .is_err()
     );
 }
+#[test]
+fn compaction_progress_and_output_creator_are_not_execution_or_request_authority() {
+    let opener =
+        json!({"type":"compaction","id":"cmp_1","encrypted_content":"","created_by":"actor"});
+    let done = json!({"type":"compaction","id":"cmp_1","encrypted_content":"synthetic-context","created_by":"actor"});
+    let mut decoder = EventDecoder::new(Profile::Responses).with_replay_origin(origin());
+    decoder.push(&created()).unwrap();
+    let opened = decoder
+        .push(&json!({"type":"response.output_item.added","output_index":0,"item":opener}))
+        .unwrap();
+    let id = match opened[0] {
+        StreamEvent::ItemStarted { item, .. } => item,
+        _ => panic!("compaction owner"),
+    };
+    for _ in 0..2 {
+        assert_eq!(decoder.push(&json!({"type":"response.compaction.compacting","output_index":0,"item_id":"cmp_1"})).unwrap(),
+            vec![StreamEvent::CompactionProgress{item:id}]);
+    }
+    decoder
+        .push(&json!({"type":"response.output_item.done","output_index":0,"item":done}))
+        .unwrap();
+    decoder
+        .push(&json!({"type":"response.completed","response":envelope("completed",json!([done]))}))
+        .unwrap();
+    decoder.finish().unwrap();
+    let response = decoder.materialize().unwrap();
+    assert_eq!(response.semantic.items()[0].1, Item::Compaction(content()));
+    let (owner, item) = &response.semantic.items()[0];
+    assert_eq!(
+        response
+            .fidelity
+            .created_by(*owner, item, response.semantic.resources()),
+        Some("actor")
+    );
+    // Independent typed event -> wire expectation. Progress remains repeatable,
+    // content-free and ordered; no output snapshot is invented from it.
+    let mut encoder = EventEncoder::new(Profile::Responses, metadata())
+        .unwrap()
+        .with_contract(contract());
+    encoder
+        .encode(&StreamEvent::Started, &FidelityRecords::default())
+        .unwrap();
+    let start = StreamEvent::ItemStarted {
+        item: ItemId::new(9),
+        kind: ItemKind::Compaction,
+        replay: Some(ItemReplay {
+            origin: Some(origin()),
+            value: ReplayValue::partial(
+                ReplayFormat::ResponsesCompaction,
+                morphiecore::semantic::value::Text::allowing_empty("", "test", 8).unwrap(),
+            ),
+        }),
+    };
+    let mut records = FidelityRecords::default();
+    records
+        .record_response_item_id(ItemId::new(9), "cmp_1")
+        .unwrap();
+    encoder.encode(&start, &records).unwrap();
+    for sequence in [3, 4] {
+        let event = encoder
+            .encode(
+                &StreamEvent::CompactionProgress {
+                    item: ItemId::new(9),
+                },
+                &records,
+            )
+            .unwrap();
+        assert_eq!(
+            event,
+            json!([{"type":"response.compaction.compacting","output_index":0,
+            "item_id":"cmp_1","sequence_number":sequence}])
+            .as_array()
+            .unwrap()
+            .clone()
+        );
+    }
+    assert!(
+        encoder
+            .encode(
+                &StreamEvent::CompactionProgress {
+                    item: ItemId::new(99)
+                },
+                &records
+            )
+            .is_err()
+    );
+    // Output reports do not become official request-history fields.
+    let request = GenerationRequest::from_settings(
+        response.semantic.items().to_vec(),
+        GenerationSettings::default(),
+    )
+    .unwrap();
+    let wire = responses::encode_generation(
+        &lower_request(&request, &response.fidelity, Profile::Responses, contract()).unwrap(),
+    )
+    .unwrap();
+    assert!(wire["input"][0].get("created_by").is_none());
+    let changed = Item::Compaction(ReplayValue::final_value(
+        ReplayFormat::ResponsesCompaction,
+        text("edited"),
+    ));
+    assert_eq!(
+        response
+            .fidelity
+            .created_by(*owner, &changed, response.semantic.resources()),
+        None
+    );
+}

@@ -77,7 +77,7 @@ These checks use synthetic data only. Do not use real Providers or private confi
 
 ### SDK loopback gate
 
-Python and dependencies are pinned by `tests/sdk/.python-version` and `tests/sdk/uv.lock`. uv owns the ignored `tests/sdk/.venv/`; do not edit it by hand.
+Python and dependencies are pinned by `tests/sdk/.python-version` and `tests/sdk/uv.lock`, including the selected OpenAI and Anthropic releases. uv owns the ignored `tests/sdk/.venv/`; do not edit it by hand.
 
 ```sh
 uv sync --project tests/sdk --locked
@@ -86,6 +86,9 @@ uv run --project tests/sdk --locked --offline python -m unittest discover -s tes
 ```
 
 All listeners and credentials are synthetic and test-owned. The gate uses no real Providers or environment proxies.
+
+The Messages gate extends the same loopback suite: native manual-budget/identity request controls, JSON tool input, SDK-returned call/result history, ordinary SSE and raw unfinished argument deltas at `max_tokens`. It uses an empty child environment and scratch HOME. Raw-event acceptance is not a claim that an SDK's accumulated-message helper or tool runner can replay unfinished parameters; native JSON/history rejection remains required.
+This fixture covers codec/Attempt/delivery, not full gateway Router acceptance. Its buffered HTTP response does not measure incremental network publication; the transport suite independently checks incremental delivery and EOF withholding.
 
 #### Pinned pi history-carrier probe
 

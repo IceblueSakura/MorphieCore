@@ -662,11 +662,11 @@ impl EventDecoder {
         Ok(out)
     }
     fn reasoning_owner(&mut self, out: &mut Vec<StreamEvent>) -> Result<ItemId, CodecError> {
-        if let Some(item) = self.chat_reasoning {
-            return Ok(item);
-        }
         if self.chat_owner.is_some() {
             return Err(CodecError::Unsupported("late Chat reasoning owner".into()));
+        }
+        if let Some(item) = self.chat_reasoning {
+            return Ok(item);
         }
         let item = self.allocate_item()?;
         self.emit(

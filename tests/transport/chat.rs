@@ -555,3 +555,44 @@ fn probability_bytes_and_empty_reports_survive_fragmentation_without_a_fake_done
         assert!(bad.materialize().is_err());
     }
 }
+#[test]
+fn dashscope_reasoning_cannot_resume_after_text_or_call_publication() {
+    use morphiecore::protocol::{
+        CodecError,
+        openai::{Adapter, Dialect},
+        stream::SseError,
+    };
+    let adapter = Adapter::new(Profile::Chat, Dialect::Bailian, None);
+    let chunk = |delta: Value| {
+        json!({"id":"r","object":"chat.completion.chunk","created":1,"model":"m",
+        "choices":[{"index":0,"delta":delta,"finish_reason":null}]})
+    };
+    for visible in [
+        json!({"content":"answer"}),
+        json!({"tool_calls":[
+        {"index":0,"id":"c","type":"function","function":{"name":"lookup","arguments":""}}]}),
+    ] {
+        let mut d = ChatSseDecoder::with_decoder(
+            200,
+            "text/event-stream",
+            SseLimits::default(),
+            adapter.event_decoder(),
+        )
+        .unwrap();
+        consume(
+            &mut d,
+            &frame(&chunk(json!({"reasoning_content":"before"}))),
+            1,
+        );
+        consume(&mut d, &frame(&chunk(visible)), 1);
+        assert!(
+            matches!(d.consume(&frame(&chunk(json!({"reasoning_content":"late"})))),
+            Err(SseError::Codec(CodecError::Unsupported(field))) if field=="late Chat reasoning owner")
+        );
+        assert!(matches!(
+            d.consume(b"data: [DONE]\n\n"),
+            Err(SseError::Closed)
+        ));
+        assert!(d.finish().is_err());
+    }
+}

@@ -231,7 +231,7 @@ fn thinking(
     {
         return Err(unsupported());
     }
-    if !r.context.is_absent() {
+    if !r.context.is_absent() || !r.read_history.is_absent() {
         return Err(unsupported());
     }
     let summary = match (&r.display, &r.summary) {

@@ -40,6 +40,10 @@ impl MessagesBinding {
     pub fn endpoint(&self) -> Endpoint {
         let provider = self.provider();
         let mut representation = TargetCaps::new(Profile::AdaptiveTextTools, Dialect::OpenCodeGo);
+        representation.sampling = crate::protocol::anthropic::SamplingPolicy::Fixed;
+        representation.manual_thinking = false;
+        representation.automatic_cache_default =
+            Some(crate::semantic::task::generation::PrefixCacheTtl::FiveMinutes);
         // Haiku supports owner-local 5m/1h markers; the pinned Go bridge preserves them.
         // This does not admit request-wide automatic caching or certify live cache use.
         representation.semantics.explicit_cache = true;

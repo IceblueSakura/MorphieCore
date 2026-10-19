@@ -34,6 +34,7 @@ pub struct ClientEventEncoder {
     text_parts: BTreeMap<(ItemId, PartId), usize>,
     next: usize,
     calls: bool,
+    incomplete_calls: bool,
     progress: InteractionProgress,
     usage: Option<UsageReport>,
     /// Already published optional observations cannot be erased by absent delta fields.
@@ -114,6 +115,7 @@ impl ClientEventEncoder {
             text_parts: BTreeMap::new(),
             next: 0,
             calls: false,
+            incomplete_calls: false,
             progress: InteractionProgress::Unreported,
             usage: None,
             opening_usage: None,
@@ -245,6 +247,9 @@ impl ClientEventEncoder {
         }
         Ok(())
     }
+    /// Render already reduced events. Raw argument strings are not JSON authority:
+    /// callers must validate the EOF materialization before submitting its terminal,
+    /// as ResponseDelivery does. This renderer is not source admission or a parser.
     pub fn encode(&mut self, event: &StreamEvent) -> Result<Vec<Bytes>, CodecError> {
         if self.finished || self.rejected {
             return Err(CodecError::Invalid("Messages stream closed"));
@@ -271,6 +276,12 @@ impl ClientEventEncoder {
         result
     }
     fn encode_open(&mut self, event: &StreamEvent) -> Result<Vec<Bytes>, CodecError> {
+        if matches!(
+            event,
+            StreamEvent::PartInterrupted { .. } | StreamEvent::CompactionProgress { .. }
+        ) {
+            return Err(CodecError::Unsupported("Messages event carrier".into()));
+        }
         let mut out = vec![];
         match event {
             // Wait for opening accounting or the first content owner, without buffering content.
@@ -375,11 +386,20 @@ impl ClientEventEncoder {
                     &json!({"type":"content_block_delta","index":index,"delta":delta}),
                 ));
             }
-            StreamEvent::ItemFinished { item, replay, .. } => {
+            StreamEvent::ItemFinished {
+                item,
+                replay,
+                status,
+            } => {
                 let (index, kind, signature) = self
                     .open
                     .remove(item)
                     .ok_or(CodecError::Invalid("Messages block"))?;
+                if kind == Kind::ToolUse
+                    && *status == crate::semantic::task::generation::ItemLifecycle::Incomplete
+                {
+                    self.incomplete_calls = true;
+                }
                 if kind == Kind::Text {
                     if self.text_parts.keys().any(|(owner, _)| owner == item) {
                         return Err(CodecError::Invalid("Messages open text part"));
@@ -438,6 +458,11 @@ impl ClientEventEncoder {
                 self.report(report, &mut out)?;
             }
             StreamEvent::Terminal { terminal, details } => {
+                if self.incomplete_calls && (*terminal != StreamTerminal::Incomplete
+                    || details.incomplete != Some(crate::semantic::task::generation::IncompleteReason::MaxOutputTokens))
+                {
+                    return Err(CodecError::Unsupported("Messages partial tool terminal".into()));
+                }
                 self.start(&mut out);
                 let outcome = match terminal {
                     StreamTerminal::Completed => Outcome::Completed,

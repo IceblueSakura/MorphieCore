@@ -44,6 +44,13 @@ pub enum Dialect {
     Standard,
     OpenCodeGo,
 }
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum SamplingPolicy {
+    #[default]
+    Native,
+    /// Evidenced Claude 5.x policy, selected by a trusted binding.
+    Fixed,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TargetCaps {
@@ -54,6 +61,9 @@ pub struct TargetCaps {
     pub reasoning_policy: Option<crate::protocol::reasoning::ReasoningRequestPolicy>,
     pub reasoning_as_text: bool,
     pub carriers: super::Carriers,
+    pub sampling: SamplingPolicy,
+    pub manual_thinking: bool,
+    pub automatic_cache_default: Option<crate::semantic::task::generation::PrefixCacheTtl>,
 }
 impl TargetCaps {
     pub fn new(profile: Profile, dialect: Dialect) -> Self {
@@ -64,6 +74,9 @@ impl TargetCaps {
             reasoning_policy: None,
             reasoning_as_text: false,
             carriers: Default::default(),
+            sampling: SamplingPolicy::Native,
+            manual_thinking: true,
+            automatic_cache_default: None,
             cache: CacheProjection {
                 session_id: dialect == Dialect::OpenCodeGo,
                 ..Default::default()
@@ -83,7 +96,7 @@ impl TargetCaps {
         let mut context = request.context.clone();
         self.cache.project(&mut context)?;
         normalize_stateless_defaults(&mut context);
-        // Recorded as `HintRule::OmitIdentityHints`; no native identity carrier is used.
+        // Native attribution is encoded separately; other hints retain named loss.
         context.identity = Default::default();
         let go = self.dialect == Dialect::OpenCodeGo;
         if go {
@@ -112,8 +125,33 @@ impl TargetCaps {
         let mut projected = std::borrow::Cow::Borrowed(request);
         let mut reasoning_rule = None;
         let mut controls = vec![];
+        let sampling_loss = if self.sampling == SamplingPolicy::Fixed {
+            let settings = request.task.semantic.settings();
+            if settings.controls.top_k.is_some() {
+                return Err(CodecError::Unsupported("target top_k".into()).into());
+            }
+            let values = (
+                settings.controls.temperature().is_some(),
+                settings.controls.top_p().is_some(),
+            );
+            if values.0 || values.1 {
+                let mut settings = settings.clone();
+                settings.controls = settings.controls.without_sampling();
+                projected.to_mut().task.semantic = request
+                    .task
+                    .semantic
+                    .clone()
+                    .with_settings(settings)
+                    .map_err(CodecError::from)?;
+                Some(values)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         if let Some(policy) = &self.reasoning_policy
-            && let Some(semantic) = policy.project_request(&request.task.semantic)?
+            && let Some(semantic) = policy.project_request(&projected.task.semantic)?
         {
             controls.push(policy.receipt(&request.task.semantic, &semantic)?);
             projected.to_mut().task.semantic = semantic;
@@ -143,6 +181,11 @@ impl TargetCaps {
             )
         };
         let request = projected.as_ref();
+        if !self.manual_thinking && request.task.semantic.reasoning().budget_tokens.is_some() {
+            return Err(
+                CodecError::Unsupported("manual thinking unsupported by target".into()).into(),
+            );
+        }
         let stripped = request.without_foreign_reasoning(Some(&target.origin()))?;
         let foreign = stripped.is_some();
         let request = stripped.as_ref().unwrap_or(request);
@@ -160,6 +203,13 @@ impl TargetCaps {
         request.check_semantic(&self.profile.representation_contract())?;
         let mut semantic = group_client_history(&request.task.semantic, true)?;
         let mut settings = semantic.settings().clone();
+        let default_cache = settings.automatic_prefix_cache.is_none()
+            && !crate::semantic::task::generation::GenerationRequirements::derive(&semantic)
+                .explicit_cache
+            && self.automatic_cache_default.is_some();
+        if default_cache {
+            settings.automatic_prefix_cache = self.automatic_cache_default;
+        }
         // Include selects the downstream opaque carrier, not a native control.
         settings.reasoning = settings.reasoning.with_encrypted_output(false);
         semantic = semantic.with_settings(settings).map_err(CodecError::from)?;
@@ -169,6 +219,26 @@ impl TargetCaps {
             target,
             &request.service_policy,
         )?;
+        if default_cache {
+            projection.rules.push(RequestRule::DefaultAutomaticCache);
+        }
+        if matches!(
+            request.source,
+            None | Some(crate::adapter::ClientProtocol::Messages)
+        ) {
+            let identity = &request.context.identity.user;
+            super::request::validate_user_id(identity)?;
+            if !identity.is_absent() {
+                let mut metadata = serde_json::Map::new();
+                super::shape::put(&mut metadata, "user_id", identity, |value| {
+                    serde_json::json!(value)
+                });
+                projection.value["metadata"] = metadata.into();
+            }
+        }
+        if sampling_loss.is_some() {
+            projection.rules.push(RequestRule::OmitSampling);
+        }
         if !self.reasoning_as_text && projection.rules.contains(&RequestRule::ReasoningAsText) {
             return Err(CodecError::Unsupported("reasoning as text disabled".into()).into());
         }
@@ -190,7 +260,16 @@ impl TargetCaps {
             self.cache
                 .losses(&request.context)
                 .into_iter()
-                .chain(crate::protocol::cache::identity_loss(&request.context))
+                .chain({
+                    let mut context = request.context.clone();
+                    if matches!(
+                        request.source,
+                        None | Some(crate::adapter::ClientProtocol::Messages)
+                    ) {
+                        context.identity.user = Presence::Absent;
+                    }
+                    crate::protocol::cache::identity_loss(&context)
+                })
                 .map(RequestRule::Hint),
         );
         projection.rules.sort();
@@ -217,12 +296,13 @@ impl TargetCaps {
                 }),
                 RequestRule::OmitSampling => projection.control_losses.push(Loss::Sampling {
                     rule: rule.name(),
-                    temperature: settings.controls.temperature().is_some(),
-                    top_p: settings.controls.top_p().is_some(),
+                    temperature: sampling_loss.is_some_and(|v| v.0),
+                    top_p: sampling_loss.is_some_and(|v| v.1),
                 }),
                 _ => {}
             }
         }
+        super::shape::bounded(&projection.value)?;
         Ok(projection)
     }
     /// Fixed headers plus the betas the encoded body actually uses.

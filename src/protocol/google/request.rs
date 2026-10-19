@@ -295,7 +295,7 @@ fn thinking(
     {
         return Err(unsupported());
     }
-    if !reasoning.context.is_absent() {
+    if !reasoning.context.is_absent() || !reasoning.read_history.is_absent() {
         return Err(unsupported());
     }
     let include = match (&reasoning.display, &reasoning.summary) {

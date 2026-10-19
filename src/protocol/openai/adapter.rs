@@ -75,6 +75,7 @@ impl Dialect {
                 WireRules {
                     chat_video_url: true,
                     readable_reasoning: true,
+                    chat_preserve_thinking: true,
                     structured_chat_reasoning: true,
                     accept_reasoning_alias: true,
                     responses_image_usage: true,
@@ -172,6 +173,7 @@ impl Dialect {
                     empty_continuation_call_id: self == Self::BailianTokenPlan,
                     responses_reported_schema_alias: self == Self::BailianTokenPlan,
                     readable_reasoning: true,
+                    chat_preserve_thinking: self == Self::Bailian,
                     legacy_max_tokens: true,
                     response_extras: true,
                     responses_billing_view: true,

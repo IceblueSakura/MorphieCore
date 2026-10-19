@@ -37,6 +37,8 @@ pub enum RequestRule {
     OmitSchemaName,
     /// Messages requires `max_tokens`; a source without a ceiling gets the fixed default.
     DefaultMaxTokens,
+    /// A trusted target explicitly selects automatic caching for marker-free input.
+    DefaultAutomaticCache,
     /// Tolerant `drop_block` replay handling without a target carrier.
     OmitBlockBinding,
     /// Per-message effort becomes the level in effect for the requested reply.
@@ -59,6 +61,7 @@ impl RequestRule {
             Self::DeveloperAsSystem => "messages.developer-as-system.v1",
             Self::OmitSchemaName => "messages.omit-schema-name.v1",
             Self::DefaultMaxTokens => "messages.default-max-tokens.v1",
+            Self::DefaultAutomaticCache => "messages.default-automatic-cache.v1",
             Self::OmitBlockBinding => "messages.omit-block-binding.v1",
             Self::FlattenMessageEffort => "messages.flatten-message-effort.v1",
             Self::CollapseToolChanges => "messages.collapse-tool-changes.v1",
@@ -192,15 +195,11 @@ pub(super) fn project(
     if request.cached_context().is_some() || !s.safety.is_empty() {
         return Err(unsupported());
     }
-    if s.controls.top_k.is_some()
-        || s.controls.presence_penalty().is_some()
+    if s.controls.presence_penalty().is_some()
         || s.controls.frequency_penalty().is_some()
         || s.controls.seed.is_some()
     {
         return Err(unsupported());
-    }
-    if s.controls.temperature().is_some() || s.controls.top_p().is_some() {
-        rules.insert(RequestRule::OmitSampling);
     }
     if s.controls.top_logprobs.is_some()
         || !s.controls.logprobs.is_absent()
@@ -280,7 +279,7 @@ pub(super) fn project(
     {
         return Err(unsupported());
     }
-    if !reasoning.context.is_absent() {
+    if !reasoning.context.is_absent() || !reasoning.read_history.is_absent() {
         return Err(unsupported());
     }
     // An OpenAI summary request selects the display; without one the field stays absent,
@@ -301,33 +300,45 @@ pub(super) fn project(
         (Presence::Null, _) => Presence::Null,
         (Presence::Absent, Presence::Absent) => Presence::Absent,
     };
-    if reasoning.budget_tokens.is_some() {
-        return Err(unsupported());
-    }
-    let thinking = match (&reasoning.activation, &reasoning.mode) {
-        (Presence::Value(ReasoningActivation::Disabled), Presence::Absent)
-            if matches!(
-                display,
-                Presence::Absent | Presence::Value(super::Display::Omitted)
-            ) =>
+    let thinking = if let Some(budget_tokens) = reasoning.budget_tokens {
+        if reasoning.activation == Presence::Value(ReasoningActivation::Disabled)
+            || !matches!(
+                reasoning.mode,
+                Presence::Absent | Presence::Value(ReasoningMode::Budgeted)
+            )
         {
-            Presence::Value(super::Thinking::Disabled)
+            return Err(unsupported());
         }
-        (
-            Presence::Absent | Presence::Value(ReasoningActivation::Enabled),
-            Presence::Value(ReasoningMode::Adaptive),
-        )
-        | (Presence::Value(ReasoningActivation::Enabled), Presence::Absent) => {
-            Presence::Value(super::Thinking::Adaptive {
-                display,
-                block_binding: reasoning.replay_mismatch.map(|m| match m {
-                    ReplayMismatch::Reject => super::PrefixMismatch::Error,
-                    ReplayMismatch::Drop => super::PrefixMismatch::DropBlock,
-                }),
-            })
+        Presence::Value(super::Thinking::Enabled {
+            budget_tokens,
+            display,
+        })
+    } else {
+        match (&reasoning.activation, &reasoning.mode) {
+            (Presence::Value(ReasoningActivation::Disabled), Presence::Absent)
+                if matches!(
+                    display,
+                    Presence::Absent | Presence::Value(super::Display::Omitted)
+                ) =>
+            {
+                Presence::Value(super::Thinking::Disabled)
+            }
+            (
+                Presence::Absent | Presence::Value(ReasoningActivation::Enabled),
+                Presence::Value(ReasoningMode::Adaptive),
+            )
+            | (Presence::Value(ReasoningActivation::Enabled), Presence::Absent) => {
+                Presence::Value(super::Thinking::Adaptive {
+                    display,
+                    block_binding: reasoning.replay_mismatch.map(|m| match m {
+                        ReplayMismatch::Reject => super::PrefixMismatch::Error,
+                        ReplayMismatch::Drop => super::PrefixMismatch::DropBlock,
+                    }),
+                })
+            }
+            (Presence::Absent, Presence::Absent) if display.is_absent() => Presence::Absent,
+            _ => return Err(unsupported()),
         }
-        (Presence::Absent, Presence::Absent) if display.is_absent() => Presence::Absent,
-        _ => return Err(unsupported()),
     };
     // The binding check exists only for adaptive thinking.
     if reasoning.replay_mismatch.is_some()
@@ -518,6 +529,10 @@ pub(super) fn project(
     }
     Ok(super::Request {
         model: target.model().into(),
+        temperature: s.controls.temperature(),
+        top_p: s.controls.top_p(),
+        top_k: s.controls.top_k,
+        user_id: Presence::Absent,
         service_policy: Presence::Absent,
         // Messages requires max_tokens; other sources may leave the cap to the model.
         max_tokens: match s.controls.max_output_tokens {
@@ -538,12 +553,10 @@ pub(super) fn project(
         tool_choice,
         thinking,
         output_config,
-        // Explicit owners must not acquire a fifth breakpoint or a conflicting
-        // automatic TTL. Keep the legacy default only for marker-free requests.
+        // Absence is preserved by the codec; defaults belong to trusted targets.
         cache_control: match s.automatic_prefix_cache {
             Some(ttl) => Presence::Value(super::CacheControl::from_ttl(ttl)),
-            None if GenerationRequirements::derive(request).explicit_cache => Presence::Absent,
-            None => Presence::Value(super::CacheControl::Ephemeral),
+            None => Presence::Absent,
         },
         messages,
         stream: Presence::Absent,

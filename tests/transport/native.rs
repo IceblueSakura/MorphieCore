@@ -118,7 +118,7 @@ mod native_bindings {
             .map(|(_, value)| value.as_str())
     }
     fn hello_wire() -> Value {
-        json!({"model":"synthetic-model","max_tokens":32,"cache_control":{"type":"ephemeral"},
+        json!({"model":"synthetic-model","max_tokens":32,
             "messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]})
     }
 
@@ -263,7 +263,6 @@ mod native_bindings {
             .unwrap();
         let expected = json!({
             "model":"synthetic-model", "max_tokens":32,
-            "cache_control":{"type":"ephemeral"},
             "messages":[{"role":"user","content":[{"type":"text","text":text}]}]
         });
         let mut bounded = native.clone();
@@ -444,7 +443,8 @@ mod native_catalog {
             rules,
             [
                 "messages.omit-sampling.v1",
-                "messages.developer-as-system.v1"
+                "messages.developer-as-system.v1",
+                "messages.default-automatic-cache.v1"
             ]
         );
         assert_eq!(request, original);

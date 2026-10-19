@@ -410,6 +410,13 @@ impl Adapter {
                 .filter_map(|r| r.evidence())
                 .map(crate::lowering::generation::RequestControlLoss::Projection),
         );
+        // Foreign attribution is not OpenAI legacy user/cache bucketing.
+        if request.source == Some(crate::adapter::ClientProtocol::Messages)
+            && !context.identity.user.is_absent()
+        {
+            rules.push("generation.omit-identity-hints.v1");
+            context.identity.user = Presence::Absent;
+        }
         // SIWC has no identity carrier whatever the configured contract says.
         if (!contract.identity_hints || self.adaptation.rules.responses_siwc)
             && let Some(rule) = crate::protocol::cache::identity_loss(&context)

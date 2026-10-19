@@ -98,10 +98,16 @@ struct CachedContextBinding {
     reference: CachedContextReference,
     origin: ReplayOrigin,
 }
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CreatorBinding {
+    actor: Text,
+    dependency: [u8; 32],
+}
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct FidelityRecords {
     response_item_ids: BTreeMap<ItemId, Text>,
+    reported_creators: BTreeMap<ItemId, CreatorBinding>,
     cache_breakpoints: std::collections::BTreeSet<PartId>,
     /// Messages images that must fail rather than be downsized when oversized.
     strict_image_sizes: std::collections::BTreeSet<PartId>,
@@ -115,9 +121,103 @@ pub struct FidelityRecords {
     normalizations: std::collections::BTreeSet<Normalization>,
 }
 impl FidelityRecords {
+    /// Output-only report, never caller authority or a request-history control.
+    pub fn observe_created_by(
+        &mut self,
+        owner: ItemId,
+        item: &Item,
+        resources: &ResourceTable,
+        value: Option<&Value>,
+    ) -> Result<(), CodecError> {
+        if !matches!(
+            item,
+            Item::ToolResult(_) | Item::CustomResult(_) | Item::Compaction(_)
+        ) {
+            if value.is_some_and(|v| !v.is_null()) {
+                return Err(CodecError::Unsupported("created_by owner".into()));
+            }
+            return Ok(());
+        }
+        let actor = value
+            .filter(|v| !v.is_null())
+            .map(|v| {
+                Text::allowing_empty(
+                    v.as_str().ok_or(CodecError::Invalid("created_by"))?,
+                    "created_by",
+                    256,
+                )
+                .map_err(|_| CodecError::Limit)
+            })
+            .transpose()?;
+        let previous = self.reported_creators.get(&owner);
+        if actor
+            .as_ref()
+            .zip(previous)
+            .is_some_and(|(actor, old)| actor != &old.actor)
+        {
+            return Err(CodecError::Invalid("created_by changed"));
+        }
+        let actor = actor.or_else(|| previous.map(|old| old.actor.clone()));
+        if let Some(actor) = actor {
+            if !self.reported_creators.contains_key(&owner)
+                && self.reported_creators.len() >= MAX_ITEMS
+            {
+                return Err(CodecError::Limit);
+            }
+            self.reported_creators.insert(
+                owner,
+                CreatorBinding {
+                    actor,
+                    dependency: creator_dependency(item, resources),
+                },
+            );
+        }
+        Ok(())
+    }
+    pub fn created_by(
+        &self,
+        owner: ItemId,
+        item: &Item,
+        resources: &ResourceTable,
+    ) -> Option<&str> {
+        self.reported_creators
+            .get(&owner)
+            .filter(|report| report.dependency == creator_dependency(item, resources))
+            .map(|report| report.actor.as_str())
+    }
+    pub(crate) fn merge_item_reports(
+        &mut self,
+        source: &Self,
+        state: &StreamState,
+    ) -> Result<(), CodecError> {
+        for owner in source.reported_creators.keys() {
+            if let Ok(item) = state.item(*owner) {
+                let snapshot = item.snapshot()?;
+                if let Some(actor) = source.created_by(*owner, &snapshot, state.resources()) {
+                    self.observe_created_by(
+                        *owner,
+                        &snapshot,
+                        state.resources(),
+                        Some(&Value::String(actor.into())),
+                    )?;
+                }
+            }
+        }
+        let owners = self.reported_creators.keys().copied().collect::<Vec<_>>();
+        for owner in owners {
+            let snapshot = state.item(owner)?.snapshot()?;
+            self.observe_created_by(owner, &snapshot, state.resources(), None)?;
+        }
+        Ok(())
+    }
     /// Conservative retained-context accounting for the optional delivery buffer.
     pub(crate) fn retained_bytes(&self) -> usize {
         std::mem::size_of::<Self>()
+            + self
+                .reported_creators
+                .values()
+                .map(|report| 512 + report.actor.as_str().len())
+                .sum::<usize>()
             + self
                 .response_item_ids
                 .values()
@@ -823,6 +923,23 @@ impl FidelityRecords {
         semantic: &GenerationResponse,
     ) {
         self.copy_response_records(source);
+        for (owner, item) in semantic.items() {
+            let wire = self.response_item_id(*owner);
+            let source_owner = source
+                .response_item_ids
+                .iter()
+                .find(|(_, id)| Some(id.as_str()) == wire)
+                .map(|(id, _)| *id);
+            if let Some(report) = source_owner.and_then(|id| source.reported_creators.get(&id)) {
+                self.reported_creators.insert(
+                    *owner,
+                    CreatorBinding {
+                        actor: report.actor.clone(),
+                        dependency: creator_dependency(item, semantic.resources()),
+                    },
+                );
+            }
+        }
         let dependency = response_dependency(semantic);
         for record in [&mut self.response_extras, &mut self.routing_extras]
             .into_iter()
@@ -864,6 +981,8 @@ impl FidelityRecords {
         self.audio.retain(|owner, _| parts.contains(owner));
         self.response_item_ids
             .retain(|id, _| owners.contains_key(id));
+        self.reported_creators
+            .retain(|id, _| owners.contains_key(id));
         self.item_replay.retain(|id, _| {
             matches!(
                 owners.get(id),
@@ -873,6 +992,36 @@ impl FidelityRecords {
         self.part_replay
             .retain(|key, _| message_parts.contains_key(key));
     }
+}
+fn creator_dependency(item: &Item, resources: &ResourceTable) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    let mut hash = Sha256::new();
+    hash.update(format!("{item:?}").as_bytes());
+    if let Item::Compaction(value) = item {
+        hash.update(value.fingerprint());
+    }
+    if let Item::ToolResult(result) | Item::CustomResult(result) = item
+        && let ToolOutput::Parts(parts) = &result.output
+    {
+        for part in parts {
+            if let InputPart::Resource(resource) = &part.content {
+                if let Some(location) = resources.get(resource.id) {
+                    hash.update(location.fingerprint());
+                }
+                if let ResourceDescription::File(file) = &resource.description {
+                    match &file.filename {
+                        None => hash.update([0]),
+                        Some(name) => {
+                            hash.update([1]);
+                            hash.update((name.as_str().len() as u64).to_le_bytes());
+                            hash.update(name.as_str().as_bytes());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    hash.finalize().into()
 }
 fn message_parts(
     items: &[(ItemId, Item)],

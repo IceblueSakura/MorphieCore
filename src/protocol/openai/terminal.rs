@@ -13,8 +13,21 @@ pub(super) fn decode_details(o: &Map<String, Value>) -> Result<TerminalDetails, 
                     "Responses misalignment details".into(),
                 ));
             }
-            DecodeDirection::Upstream.fields(e, &["code", "message", "param"])?;
+            DecodeDirection::Upstream.fields(e, &["code", "message", "param", "type"])?;
             Ok::<_, CodecError>(ResponseError {
+                original_type: e
+                    .get("type")
+                    .filter(|v| !v.is_null())
+                    .map(|v| {
+                        crate::semantic::value::Text::allowing_empty(
+                            v.as_str()
+                                .ok_or(CodecError::Invalid("original error type"))?,
+                            "original error type",
+                            256,
+                        )
+                        .map_err(|_| CodecError::Limit)
+                    })
+                    .transpose()?,
                 code: e
                     .get("code")
                     .filter(|v| !v.is_null())
@@ -138,6 +151,9 @@ pub(super) fn encode_error(error: Option<&ResponseError>) -> Value {
                 json!({"code":e.code.as_ref().map(|c|c.as_str()),"message":e.message.as_str()});
             if let Some(p) = &e.param {
                 v["param"] = json!(p.as_str());
+            }
+            if let Some(value) = &e.original_type {
+                v["type"] = json!(value.as_str());
             }
             v
         })

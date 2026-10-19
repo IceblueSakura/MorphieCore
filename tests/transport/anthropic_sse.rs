@@ -752,3 +752,192 @@ fn input_transformations_are_validated_then_omitted_with_a_receipt() {
         assert!(decode(&message).is_err());
     }
 }
+#[test]
+fn eager_partial_arguments_keep_exact_bytes_only_on_incomplete_native_sse() {
+    use morphiecore::{
+        adapter::ClientAdapter,
+        execution::ResponseDelivery,
+        protocol::{anthropic::client::encode_client_response, openai::stream::Obfuscation},
+        semantic::{context::StreamOptions, task::generation::*},
+    };
+    for signed in [false, true] {
+        let mut input = frames();
+        input[11]["delta"]["partial_json"] = json!("{\"key\":\"");
+        input[12]["delta"]["partial_json"] = json!("unfinis");
+        input[15]["delta"]["stop_reason"] = json!("max_tokens");
+        if !signed {
+            // A complete text+partial-call response without an opaque carrier.
+            input.drain(2..7);
+            for event in input.iter_mut() {
+                if let Some(index) = event.get("index").and_then(Value::as_u64) {
+                    event["index"] = json!(index - 1);
+                }
+            }
+        }
+        let mut attempt =
+            native_attempt(ReplayTarget::new("synthetic-provider", "synthetic-model").unwrap());
+        attempt.begin(200, "text/event-stream").unwrap();
+        let mut delivery = ResponseDelivery::new(
+            ClientAdapter::Messages,
+            "public",
+            SseLimits::default(),
+            StreamOptions::default(),
+            Obfuscation::Disabled,
+        );
+        let mut output = vec![];
+        for frame in &input {
+            let bytes = wire(std::slice::from_ref(frame));
+            let mut rest = bytes.as_slice();
+            while !rest.is_empty() {
+                let (used, events) = attempt.push(rest).unwrap();
+                rest = &rest[used..];
+                assert!(
+                    !events
+                        .iter()
+                        .any(|e| matches!(e, StreamEvent::Terminal { .. }))
+                );
+                let produced = delivery.encode_events(&attempt, &events).unwrap();
+                if !produced.is_empty() && delivery.lifecycle().may_retry_or_fallback() {
+                    delivery.commit().unwrap();
+                }
+                output.extend(produced.into_iter().flatten());
+            }
+        }
+        assert!(!String::from_utf8_lossy(&output).contains("\"type\":\"message_stop\""));
+        let response = attempt.finish().unwrap().clone();
+        let call = response
+            .semantic
+            .items()
+            .iter()
+            .find_map(|(_, item)| match item {
+                Item::ToolCall(c) => Some(c),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(call.call_id.as_str(), "toolu_one");
+        assert_eq!(call.status, ItemLifecycle::Incomplete);
+        assert_eq!(
+            call.arguments,
+            ToolArguments::StructuredPartial("{\"key\":\"unfinis".into())
+        );
+        assert_eq!(response.semantic.outcome(), Outcome::Incomplete);
+        assert!(encode_client_response(&response, "public").is_err());
+        output.extend(
+            delivery
+                .finish_stream(&attempt)
+                .unwrap()
+                .into_iter()
+                .flatten(),
+        );
+        delivery.complete(&attempt).unwrap();
+        let text = String::from_utf8(output).unwrap();
+        let emitted: Vec<Value> = text
+            .lines()
+            .filter_map(|line| line.strip_prefix("data: "))
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        let fragments: String = emitted
+            .iter()
+            .filter_map(|v| v.pointer("/delta/partial_json").and_then(Value::as_str))
+            .collect();
+        assert_eq!(fragments, "{\"key\":\"unfinis");
+        assert!(
+            emitted
+                .iter()
+                .any(|v| v.pointer("/delta/stop_reason") == Some(&json!("max_tokens")))
+        );
+        assert_eq!(emitted.last().unwrap()["type"], "message_stop");
+        let history = json!({"model":"m","max_tokens":4096,"messages":[
+            {"role":"user","content":"go"},
+            {"role":"assistant","content":[{"type":"tool_use","id":"c","name":"lookup","input":"{\"key\":\"unfinis"}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"c","content":"error"}]}]});
+        assert!(
+            morphiecore::protocol::anthropic::client::decode_client_request(
+                history.to_string().as_bytes()
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn eager_partial_input_cannot_relax_duplicates_limits_or_honest_eof() {
+    let run = |fragments: &str, stop: &str, close: bool| {
+        let mut values = frames();
+        values[11]["delta"]["partial_json"] = json!(fragments);
+        values.remove(12);
+        values[14]["delta"]["stop_reason"] = json!(stop);
+        if !close {
+            values.pop();
+        }
+        let mut d = MessageSseDecoder::new(200, "text/event-stream", SseLimits::default()).unwrap();
+        feed(&mut d, &wire(&values)).and_then(|_| d.finish().map(|_| ()))
+    };
+    assert!(run("{\"x\":", "max_tokens", true).is_ok());
+    assert!(run(r#"{"x":"\u0"#, "max_tokens", true).is_ok());
+    for prefix in [r#"{"x":"\uG"#, r#"{"x":"\u0G"#, r#"{"x":"\u00G"#] {
+        assert!(run(prefix, "max_tokens", true).is_err());
+    }
+    assert!(run("{\"x\":", "tool_use", true).is_err());
+    assert!(run("{\"x\":1,\"x\":2}", "max_tokens", true).is_err());
+    assert!(run("{\"x\":1,\"x\":2", "max_tokens", true).is_err());
+    assert!(
+        run(
+            &format!("{{\"x\":[{}", "0,".repeat(8192)),
+            "max_tokens",
+            true
+        )
+        .is_err()
+    );
+    assert!(run("[1,2]", "max_tokens", true).is_err());
+    assert!(run("[1,2", "max_tokens", true).is_err());
+    assert!(run("{\"x\":", "max_tokens", false).is_err());
+    assert!(run(&format!("{{\"x\":{}", "[".repeat(200)), "max_tokens", true).is_err());
+}
+#[test]
+fn typed_native_partial_values_reject_every_json_or_opening_carrier_without_panicking() {
+    use morphiecore::protocol::anthropic::{
+        Block, CacheMarked, Event, InputMessage, MessageContent, Role,
+    };
+    use morphiecore::semantic::value::Presence;
+    let profile = Profile::AdaptiveTextTools;
+    let partial = Block::PartialToolUse {
+        id: "c".into(),
+        name: "lookup".into(),
+        input: "{\"n\":".into(),
+        caller: Presence::Absent,
+    };
+    assert!(
+        profile
+            .encode_event(&Event::BlockStart {
+                index: 0,
+                block: partial.clone()
+            })
+            .is_err()
+    );
+    let mut message = profile
+        .decode_response(expected().to_string().as_bytes())
+        .unwrap();
+    message.content = vec![partial.clone()];
+    message.stop_reason = Presence::Value(morphiecore::protocol::anthropic::StopReason::MaxTokens);
+    assert!(profile.encode_response(&message).is_err());
+    assert!(profile.encode_event(&Event::MessageStart(message)).is_err());
+    let mut request=profile.decode_request(br#"{"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":"go"}]}"#).unwrap();
+    request.messages.insert(
+        1,
+        InputMessage {
+            role: Role::Assistant,
+            content: MessageContent::Blocks(vec![CacheMarked {
+                content: partial,
+                cache: None,
+            }]),
+            effort: None,
+        },
+    );
+    request.messages.push(InputMessage {
+        role: Role::User,
+        content: MessageContent::Text("again".into()),
+        effort: None,
+    });
+    assert!(profile.encode_request(&request).is_err());
+}

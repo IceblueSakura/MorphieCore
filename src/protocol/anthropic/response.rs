@@ -25,6 +25,13 @@ pub enum Block {
         input: StructuredValue,
         caller: Presence<Caller>,
     },
+    /// Native SSE aggregation only. JSON and request history have no carrier.
+    PartialToolUse {
+        id: String,
+        name: String,
+        input: String,
+        caller: Presence<Caller>,
+    },
     ToolResult {
         tool_use_id: String,
         content: super::ResultContent,
@@ -124,6 +131,16 @@ impl Block {
     pub(super) fn bytes(&self, opening: bool) -> Result<usize, CodecError> {
         let mut bytes = 0;
         match self {
+            Self::PartialToolUse {
+                id,
+                name: tool,
+                input,
+                ..
+            } => {
+                name(id, 64)?;
+                name(tool, 128)?;
+                charge(&mut bytes, id.len() + tool.len() + text(input)?)?;
+            }
             Self::Text(s) => charge(&mut bytes, text(s)?)?,
             Self::Thinking {
                 thinking,
@@ -195,6 +212,7 @@ impl Block {
     pub(super) fn wire(&self) -> Value {
         match self {
             Self::Text(s) => json!({"type":"text","text":s}),
+            Self::PartialToolUse { .. } => unreachable!("partial tool input has no JSON carrier"),
             Self::Thinking {
                 thinking,
                 signature,
@@ -468,12 +486,16 @@ impl Message {
         let mut nodes = 64;
         let mut calls = std::collections::BTreeSet::new();
         for block in &self.content {
-            if !block.permits(Role::Assistant) {
+            let partial = matches!(block, Block::PartialToolUse { .. });
+            if partial && self.stop_reason != Presence::Value(StopReason::MaxTokens) {
+                return Err(CodecError::Invalid("Anthropic partial tool terminal"));
+            }
+            if !block.permits(Role::Assistant) && !partial {
                 return Err(CodecError::Invalid("Anthropic output block"));
             }
             charge(&mut bytes, block.bytes(false)?)?;
             node_charge(&mut nodes, block.nodes()?)?;
-            if let Block::ToolUse { id, .. } = block
+            if let Block::ToolUse { id, .. } | Block::PartialToolUse { id, .. } = block
                 && !calls.insert(id)
             {
                 return Err(CodecError::Invalid("Anthropic duplicate call"));

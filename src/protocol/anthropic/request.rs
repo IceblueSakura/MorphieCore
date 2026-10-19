@@ -430,6 +430,10 @@ impl Display {
 #[derive(Clone, Eq, PartialEq)]
 pub enum Thinking {
     Disabled,
+    Enabled {
+        budget_tokens: u64,
+        display: Presence<Display>,
+    },
     Adaptive {
         display: Presence<Display>,
         block_binding: Option<PrefixMismatch>,
@@ -480,10 +484,38 @@ impl Thinking {
                     block_binding: PrefixMismatch::read(o.get("block_binding"))?,
                 })
             }
+            Some("enabled") => {
+                let o = closed(v, &["type", "budget_tokens", "display"])?;
+                let display = presence(o, "display", Display::read)?;
+                nonnull(&display)?;
+                Ok(Self::Enabled {
+                    budget_tokens: uint(required(o, "budget_tokens")?)?,
+                    display,
+                })
+            }
             _ => Err(CodecError::Unsupported("Anthropic thinking mode".into())),
         }
     }
     fn wire(&self) -> Value {
+        if let Self::Enabled {
+            budget_tokens,
+            display,
+        } = self
+        {
+            let mut value = json!({"type":"enabled","budget_tokens":budget_tokens});
+            put(
+                value.as_object_mut().expect("object"),
+                "display",
+                display,
+                |d| {
+                    json!(match d {
+                        Display::Summarized => "summarized",
+                        Display::Omitted => "omitted",
+                    })
+                },
+            );
+            return value;
+        }
         let Self::Adaptive {
             display,
             block_binding,
@@ -671,9 +703,13 @@ pub(super) fn validate_automatic_cache(
     }
     validate_cache_breakpoints(breakpoints.iter().copied())
 }
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Request {
     pub model: String,
+    pub temperature: Option<f64>,
+    pub top_p: Option<f64>,
+    pub top_k: Option<u32>,
+    pub user_id: Presence<String>,
     pub service_policy: Presence<crate::semantic::context::ServicePolicy>,
     pub max_tokens: u64,
     pub stop_sequences: Vec<String>,
@@ -697,6 +733,10 @@ impl Request {
             v,
             &[
                 "model",
+                "temperature",
+                "top_p",
+                "top_k",
+                "metadata",
                 "service_tier",
                 "max_tokens",
                 "stop_sequences",
@@ -712,6 +752,13 @@ impl Request {
         )?;
         let r = Self {
             model: string(required(o, "model")?)?,
+            temperature: sampling(o, "temperature", 1.0)?,
+            top_p: sampling(o, "top_p", 1.0)?,
+            top_k: match o.get("top_k").filter(|v| !v.is_null()) {
+                Some(v) => Some(u32::try_from(uint(v)?).map_err(|_| CodecError::Invalid("top_k"))?),
+                None => None,
+            },
+            user_id: read_user_id(o)?,
             service_policy: super::service::read_policy(o)?,
             max_tokens: uint(required(o, "max_tokens")?)?,
             stop_sequences: crate::protocol::generation_controls::stops(
@@ -747,6 +794,25 @@ impl Request {
         }
         if self.max_tokens == 0 {
             return Err(CodecError::Invalid("Anthropic max_tokens"));
+        }
+        for value in [self.temperature, self.top_p].into_iter().flatten() {
+            if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+                return Err(CodecError::Invalid("Anthropic sampling"));
+            }
+        }
+        if self.top_k == Some(0) {
+            return Err(CodecError::Invalid("Anthropic top_k"));
+        }
+        validate_user_id(&self.user_id)?;
+        if let Presence::Value(Thinking::Enabled {
+            budget_tokens,
+            display,
+        }) = &self.thinking
+        {
+            nonnull(display)?;
+            if *budget_tokens < 1024 || *budget_tokens >= self.max_tokens {
+                return Err(CodecError::Invalid("thinking budget"));
+            }
         }
         count(self.messages.len())?;
         let roles: Vec<_> = self
@@ -855,6 +921,7 @@ impl Request {
             self.cache_control.value().map(|c| c.ttl()),
         )?;
         let mut bytes = self.model.len();
+        charge(&mut bytes, self.user_id.value().map_or(0, String::len))?;
         count(self.stop_sequences.len())?;
         for stop in &self.stop_sequences {
             if stop.is_empty() {
@@ -991,6 +1058,21 @@ impl Request {
             "messages": self.messages.iter().map(InputMessage::wire).collect::<Vec<_>>(),
         });
         let o = v.as_object_mut().expect("object");
+        for (key, value) in [("temperature", self.temperature), ("top_p", self.top_p)] {
+            if let Some(value) = value {
+                o.insert(key.into(), json!(value));
+            }
+        }
+        if let Some(value) = self.top_k {
+            o.insert("top_k".into(), json!(value));
+        }
+        if !self.user_id.is_absent() {
+            let mut metadata = Map::new();
+            put(&mut metadata, "user_id", &self.user_id, |value| {
+                json!(value)
+            });
+            o.insert("metadata".into(), metadata.into());
+        }
         if !self.stop_sequences.is_empty() {
             o.insert("stop_sequences".into(), json!(self.stop_sequences));
         }
@@ -1008,4 +1090,35 @@ impl Request {
         put(o, "stream", &self.stream, |b| json!(b));
         v
     }
+}
+pub(super) fn sampling(
+    o: &Map<String, Value>,
+    key: &'static str,
+    max: f64,
+) -> Result<Option<f64>, CodecError> {
+    o.get(key)
+        .filter(|v| !v.is_null())
+        .map(|v| {
+            v.as_f64()
+                .filter(|v| v.is_finite() && (0.0..=max).contains(v))
+                .ok_or(CodecError::Invalid("Anthropic sampling"))
+        })
+        .transpose()
+}
+pub(super) fn validate_user_id(value: &Presence<String>) -> Result<(), CodecError> {
+    if value
+        .value()
+        .is_some_and(|s| s.chars().count() > 512 || s.len() > 2048)
+    {
+        return Err(CodecError::Limit);
+    }
+    Ok(())
+}
+pub(super) fn read_user_id(o: &Map<String, Value>) -> Result<Presence<String>, CodecError> {
+    let Some(metadata) = o.get("metadata") else {
+        return Ok(Presence::Absent);
+    };
+    let value = presence(closed(metadata, &["user_id"])?, "user_id", string)?;
+    validate_user_id(&value)?;
+    Ok(value)
 }

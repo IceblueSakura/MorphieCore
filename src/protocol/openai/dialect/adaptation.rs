@@ -46,6 +46,8 @@ pub struct WireRules {
     pub responses_unreported_text_logprobs: bool,
     /// Assistant reasoning text has its own typed owner before its Chat carrier.
     pub readable_reasoning: bool,
+    /// DashScope's explicit historical reasoning consumption switch.
+    pub chat_preserve_thinking: bool,
     /// Preserve reasoning items while rejecting unverified active request controls.
     /// A readable history carrier does not establish reasoning-effort admission.
     pub reject_reasoning_controls: bool,

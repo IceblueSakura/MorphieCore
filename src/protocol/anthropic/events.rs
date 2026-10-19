@@ -174,6 +174,7 @@ impl GenerationSseDecoder {
                     .message()
                     .ok_or(CodecError::Invalid("native stream"))?
                     .content[index as usize];
+                let partial = matches!(block, Block::PartialToolUse { .. });
                 if matches!(block, Block::ToolUse { .. }) && !self.json_delta {
                     out.push(StreamEvent::Delta {
                         item,
@@ -182,7 +183,7 @@ impl GenerationSseDecoder {
                         logprobs: vec![],
                     });
                 }
-                if self.part_started {
+                if self.part_started && !partial {
                     out.push(StreamEvent::ValueFinished { item, part });
                     out.push(StreamEvent::PartFinished { item, part });
                 }
@@ -222,7 +223,11 @@ impl GenerationSseDecoder {
                 };
                 out.push(StreamEvent::ItemFinished {
                     item,
-                    status: ItemLifecycle::Completed,
+                    status: if partial {
+                        ItemLifecycle::Incomplete
+                    } else {
+                        ItemLifecycle::Completed
+                    },
                     replay,
                 });
             }

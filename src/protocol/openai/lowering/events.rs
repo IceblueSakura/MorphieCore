@@ -61,6 +61,11 @@ pub fn check_event(
         _ => {}
     }
     match event {
+        StreamEvent::PartInterrupted { .. } | StreamEvent::CompactionProgress { .. }
+            if profile != Profile::Responses =>
+        {
+            return Err(RepresentationError::UnmigratedSemantic);
+        }
         StreamEvent::ResourceDeclared { resource, .. } => {
             if profile != Profile::Responses
                 && !crate::protocol::openai::content::citations::context(resource)

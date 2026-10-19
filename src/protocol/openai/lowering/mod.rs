@@ -598,6 +598,11 @@ fn represent_reasoning(
     let structured_chat = adaptation.rules.structured_chat_reasoning;
     let controls = &settings.reasoning;
     let request = history.is_some();
+    if !controls.read_history.is_absent()
+        && (profile != Profile::Chat || !adaptation.rules.chat_preserve_thinking)
+    {
+        return Err(RepresentationError::Reasoning);
+    }
     if super::reasoning::requires_extended_controls(settings) {
         return Err(RepresentationError::Reasoning);
     }
@@ -658,7 +663,9 @@ fn represent_reasoning(
         return Err(RepresentationError::Reasoning);
     }
     let chat_control = controls.presence() == ReasoningPresence::Present
-        && (settings.effort.is_absent() && controls.activation.is_absent()
+        && (settings.effort.is_absent()
+            && controls.activation.is_absent()
+            && controls.read_history.is_absent()
             || !controls.summary.is_absent());
     if has_reasoning_items
         && profile != Profile::Responses

@@ -18,6 +18,20 @@ def validator(name):
 
 
 class OpenApiSchemaTests(unittest.TestCase):
+    def test_native_identity_and_history_reading_use_distinct_bounded_carriers(self):
+        messages = {"model": "synthetic", "max_tokens": 64,
+                    "messages": [{"role": "user", "content": "go"}]}
+        for value in (None, "", "用" * 512):
+            validator("MessagesRequest").validate({**messages, "metadata": {"user_id": value}})
+        for value in ({"metadata": None}, {"metadata": {"user_id": 1}},
+                      {"metadata": {"user_id": "x" * 513}}):
+            self.assertFalse(validator("MessagesRequest").is_valid({**messages, **value}))
+        chat = {"model": "synthetic", "messages": []}
+        for value in (False, True):
+            validator("ChatRequest").validate({**chat, "preserve_thinking": value})
+        for value in (None, "true", 1):
+            self.assertFalse(validator("ChatRequest").is_valid({**chat, "preserve_thinking": value}))
+
     def test_generation_has_one_neutral_conversation_header_and_no_provider_session_body(self):
         parameter = DOCUMENT["components"]["parameters"]["ConversationId"]
         self.assertEqual(parameter["in"], "header")

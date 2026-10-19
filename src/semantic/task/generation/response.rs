@@ -28,6 +28,8 @@ pub struct ResponseError {
     pub code: Option<Text>,
     pub message: Text,
     pub param: Option<Text>,
+    /// Original upstream error classification, not an event discriminator.
+    pub original_type: Option<Text>,
 }
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TerminalDetails {
@@ -48,6 +50,7 @@ impl TerminalDetails {
             e.code.as_ref().map_or(0, |c| c.as_str().len())
                 + e.message.as_str().len()
                 + e.param.as_ref().map_or(0, |p| p.as_str().len())
+                + e.original_type.as_ref().map_or(0, |p| p.as_str().len())
         });
         error
             + match &self.completion {
@@ -79,7 +82,10 @@ impl TerminalDetails {
                 .as_ref()
                 .is_some_and(|c| c.as_str().is_empty() || c.as_str().len() > 128)
                 || e.message.as_str().len() > MAX_TEXT_BYTES
-                || e.param.as_ref().is_some_and(|p| p.as_str().len() > 256))
+                || e.param.as_ref().is_some_and(|p| p.as_str().len() > 256)
+                || e.original_type
+                    .as_ref()
+                    .is_some_and(|p| p.as_str().len() > 256))
         {
             return Err(GenerationError::Limit);
         }

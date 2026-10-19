@@ -8,6 +8,8 @@ mod chat_sdk;
 mod child_process;
 #[path = "sdk/gateway.rs"]
 mod gateway_sdk;
+#[path = "sdk/messages.rs"]
+mod messages_sdk;
 #[path = "sdk/process.rs"]
 mod process_tests;
 #[path = "support/responses_profile.rs"]

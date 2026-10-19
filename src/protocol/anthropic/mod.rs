@@ -4,7 +4,7 @@ mod adapter;
 mod carriers;
 pub mod client;
 pub mod client_events;
-pub use adapter::{Dialect, TargetCaps};
+pub use adapter::{Dialect, SamplingPolicy, TargetCaps};
 pub use carriers::Carriers;
 mod request;
 mod response;
@@ -42,7 +42,7 @@ impl Profile {
             instructions: true,
             // Mid-conversation system messages need model-level binding evidence.
             ordered_instructions: false,
-            // Accepted, then dropped by `RequestRule::OmitSampling`.
+            // Native carrier; an evidenced fixed-sampling binding may omit it.
             temperature: true,
             max_output_tokens: true,
             tools: true,
@@ -93,6 +93,7 @@ impl Profile {
         contract.ordered_instructions = true;
         // Without the binding's carrier, changes collapse under a named rule.
         contract.tool_changes = true;
+        contract.top_k = true;
         contract
     }
     pub fn decode_request(self, bytes: &[u8]) -> Result<Request, CodecError> {
@@ -114,6 +115,15 @@ impl Profile {
     }
     pub fn encode_response(self, message: &Message) -> Result<Value, CodecError> {
         message.validate(false)?;
+        if message
+            .content
+            .iter()
+            .any(|b| matches!(b, Block::PartialToolUse { .. }))
+        {
+            return Err(CodecError::Unsupported(
+                "partial tool input has no JSON carrier".into(),
+            ));
+        }
         let wire = message.wire();
         shape::bounded(&wire)?;
         Ok(wire)

@@ -110,6 +110,7 @@ impl ExecutionHints {
         let hints: Self = serde_json::from_value(Value::Object(fields))
             .map_err(|_| CodecError::Invalid("execution hints"))?;
         hints.validate()?;
+        validate_identity(&hints.identity)?;
         Ok(hints)
     }
     pub(in crate::protocol::openai) fn write(
@@ -117,6 +118,7 @@ impl ExecutionHints {
         o: &mut Map<String, Value>,
     ) -> Result<(), CodecError> {
         self.validate()?;
+        validate_identity(&self.identity)?;
         let Value::Object(v) =
             serde_json::to_value(self).map_err(|_| CodecError::Invalid("execution hints"))?
         else {

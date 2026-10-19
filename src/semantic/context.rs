@@ -129,7 +129,7 @@ pub struct ClientIdentityHints {
 }
 impl ClientIdentityHints {
     pub fn validate(&self) -> Result<(), ContextError> {
-        for (value, max) in [(&self.safety_identifier, 64), (&self.user, 256)] {
+        for (value, max) in [(&self.safety_identifier, 64), (&self.user, 512)] {
             if value
                 .value()
                 .is_some_and(|s| s.chars().count() > max || s.len() > max * 4)

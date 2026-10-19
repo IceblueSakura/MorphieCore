@@ -168,6 +168,8 @@ impl EventEncoder {
                 self.state.take().ok_or(CodecError::Invalid("state"))?,
                 event.clone(),
             )?);
+            self.fidelity
+                .merge_item_reports(source, self.state.as_ref().expect("state"))?;
             // Replay is event authority, never restored from the source sidecar.
             match event {
                 StreamEvent::ItemStarted { item, .. } | StreamEvent::ItemFinished { item, .. } => {
@@ -446,6 +448,18 @@ impl EventEncoder {
                 {
                     v["encrypted_content"] = json!(r.value.as_str());
                 }
+                if matches!(
+                    kind,
+                    ItemKind::ToolResult(_) | ItemKind::CustomResult(_) | ItemKind::Compaction
+                ) {
+                    let snapshot = self.state()?.item(*item)?.snapshot()?;
+                    if let Some(actor) =
+                        self.fidelity
+                            .created_by(*item, &snapshot, self.state()?.resources())
+                    {
+                        v["created_by"] = json!(actor);
+                    }
+                }
                 vec![json!({
                     "type": "response.output_item.added",
                     "output_index": self.index(*item)?,
@@ -505,7 +519,8 @@ impl EventEncoder {
                 }
                 vec![v]
             }
-            StreamEvent::PartFinished { item, part } => {
+            StreamEvent::PartFinished { item, part }
+            | StreamEvent::PartInterrupted { item, part } => {
                 let p = self.state()?.part(*item, *part)?;
                 if matches!(
                     p.kind,
@@ -542,9 +557,17 @@ impl EventEncoder {
                                 .ok_or(CodecError::Unsupported("structured arguments".into()))?,
                         )
                     };
+                    if matches!(event, StreamEvent::PartInterrupted { .. }) {
+                        v["status"] = json!("incomplete");
+                    }
                     vec![v]
                 }
             }
+            StreamEvent::CompactionProgress { item } => vec![json!({
+                "type":"response.compaction.compacting",
+                "output_index":self.index(*item)?,
+                "item_id":self.fidelity.response_item_id(*item).ok_or(CodecError::Invalid("compaction identity"))?,
+            })],
             StreamEvent::ItemFinished { item, .. } => vec![json!({
                 "type": "response.output_item.done",
                 "output_index": self.index(*item)?,
@@ -591,6 +614,15 @@ impl EventEncoder {
                 details,
             } => {
                 let mut v = crate::protocol::openai::terminal::encode_error(details.error.as_ref());
+                if details
+                    .error
+                    .as_ref()
+                    .is_some_and(|e| e.original_type.is_some())
+                {
+                    return Err(CodecError::Unsupported(
+                        "original error type on standalone error event".into(),
+                    ));
+                }
                 if !v.is_object() {
                     return Err(CodecError::Invalid("error details"));
                 }

@@ -140,7 +140,10 @@ impl Intake {
         Ok(())
     }
     fn block(&mut self, block: &Block, role: Role) -> Result<ItemId, CodecError> {
-        if role == Role::System || !block.permits(role) {
+        if role == Role::System
+            || !block.permits(role)
+                && !(role == Role::Assistant && matches!(block, Block::PartialToolUse { .. }))
+        {
             return Err(CodecError::Invalid("Anthropic block role"));
         }
         if self.items.len() >= MAX_ITEMS {
@@ -210,6 +213,20 @@ impl Intake {
                 name: text(name)?,
                 arguments: ToolArguments::Structured(input.clone()),
                 status: ItemLifecycle::Completed,
+                context: Default::default(),
+            }),
+            Block::PartialToolUse {
+                id: call,
+                name,
+                input,
+                ..
+            } => Item::ToolCall(ToolCall {
+                replay: None,
+                call_id: text(call)?,
+                cache: None,
+                name: text(name)?,
+                arguments: ToolArguments::StructuredPartial(input.clone()),
+                status: ItemLifecycle::Incomplete,
                 context: Default::default(),
             }),
             Block::ToolAddition(_) | Block::ToolRemoval(_) => {

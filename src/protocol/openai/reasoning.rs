@@ -159,7 +159,7 @@ pub(super) fn write_request(
 ) -> Result<(), CodecError> {
     settings.validate()?;
     let value = &settings.reasoning;
-    if requires_extended_controls(settings) {
+    if requires_extended_controls(settings) || !value.read_history.is_absent() {
         return Err(CodecError::Unsupported("reasoning controls".into()));
     }
     if profile == Profile::Responses && value.summary() == Some(ReasoningSummary::Disabled) {

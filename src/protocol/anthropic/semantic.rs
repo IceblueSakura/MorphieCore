@@ -47,7 +47,7 @@ impl Profile {
         target: &ReplayTarget,
     ) -> Result<DecodedRequest, CodecError> {
         let wire = self.decode_request(bytes)?;
-        if !wire.service_policy.is_absent() {
+        if !wire.service_policy.is_absent() || !wire.user_id.is_absent() {
             return Err(CodecError::Unsupported(
                 "execution policy requires request envelope".into(),
             ));
@@ -64,6 +64,13 @@ impl Profile {
             ..Default::default()
         };
         settings.controls.max_output_tokens = Some(wire.max_tokens);
+        if let Some(value) = wire.temperature {
+            settings.controls = settings.controls.with_temperature(value)?;
+        }
+        if let Some(value) = wire.top_p {
+            settings.controls = settings.controls.with_top_p(value)?;
+        }
+        settings.controls.top_k = wire.top_k;
         settings.controls.stop_sequences = wire
             .stop_sequences
             .iter()
@@ -119,6 +126,15 @@ impl Profile {
             match thinking {
                 super::Thinking::Disabled => {
                     settings.reasoning.activation = Presence::Value(ReasoningActivation::Disabled);
+                }
+                super::Thinking::Enabled {
+                    budget_tokens,
+                    display: view,
+                } => {
+                    settings.reasoning.activation = Presence::Value(ReasoningActivation::Enabled);
+                    settings.reasoning.mode = Presence::Value(ReasoningMode::Budgeted);
+                    settings.reasoning.budget_tokens = Some(*budget_tokens);
+                    settings.reasoning.display = display(view);
                 }
                 super::Thinking::Adaptive {
                     display: view,

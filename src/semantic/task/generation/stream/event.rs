@@ -152,6 +152,16 @@ pub enum StreamEvent {
         item: ItemId,
         part: PartId,
     },
+    /// A closed summary whose generation was interrupted, not an item or
+    /// response termination and not opaque replay finality.
+    PartInterrupted {
+        item: ItemId,
+        part: PartId,
+    },
+    /// Repeatable sampling progress, not content or completion evidence.
+    CompactionProgress {
+        item: ItemId,
+    },
     ItemFinished {
         item: ItemId,
         status: ItemLifecycle,

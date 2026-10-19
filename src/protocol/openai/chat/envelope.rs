@@ -73,6 +73,7 @@ impl RequestContext {
 /// Chat has no carrier for Responses-only cache operations.
 pub(crate) fn validate_context(context: &ExecutionHints) -> Result<(), CodecError> {
     context.validate()?;
+    validate_identity(&context.identity)?;
     if context
         .cache
         .prompt_cache_options

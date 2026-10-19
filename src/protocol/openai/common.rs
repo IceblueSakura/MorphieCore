@@ -45,6 +45,19 @@ pub(super) fn put_presence<T>(
 pub(super) fn object(v: &Value) -> Result<&Map<String, Value>, CodecError> {
     v.as_object().ok_or(CodecError::Invalid("object"))
 }
+pub(super) fn validate_identity(
+    identity: &crate::semantic::context::ClientIdentityHints,
+) -> Result<(), CodecError> {
+    identity.validate()?;
+    if identity
+        .user
+        .value()
+        .is_some_and(|value| value.chars().count() > 256 || value.len() > 1024)
+    {
+        return Err(CodecError::Limit);
+    }
+    Ok(())
+}
 /// Operation-local parsing policy. Payload contents never select this direction.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) enum DecodeDirection<'a> {

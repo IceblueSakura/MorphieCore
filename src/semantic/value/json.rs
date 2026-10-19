@@ -43,6 +43,123 @@ pub enum JsonError {
 pub fn parse_json(input: &[u8], limits: JsonLimits) -> Result<Value, JsonError> {
     parse(input, limits, true)
 }
+/// Validate unfinished JSON without completing or materializing it. Known
+/// duplicate keys and budgets remain errors before the outer value closes.
+pub(crate) fn validate_json_prefix(input: &[u8], limits: JsonLimits) -> Result<(), JsonError> {
+    let limits = JsonLimits {
+        bytes: limits.bytes.min(JsonLimits::ENVELOPE.bytes),
+        depth: limits.depth.min(JsonLimits::ENVELOPE.depth),
+        nodes: limits.nodes.min(JsonLimits::ENVELOPE.nodes),
+    };
+    if input.len() > limits.bytes {
+        return Err(JsonError::Limit);
+    }
+    depth_preflight(input, limits.depth)?;
+    // Count wire tokens, not serde's arbitrary-precision Number pseudo-map.
+    let (mut nodes, mut string, mut escaped, mut scalar) = (0usize, false, false, false);
+    let mut unicode_remaining = 0u8;
+    for byte in input {
+        if string {
+            if unicode_remaining > 0 {
+                if !byte.is_ascii_hexdigit() {
+                    return Err(JsonError::Invalid);
+                }
+                unicode_remaining -= 1;
+            } else if escaped {
+                // serde may report EOF before checking the already supplied
+                // digits of a short Unicode escape; EOF alone is not prefix validity.
+                match *byte {
+                    b'u' => unicode_remaining = 4,
+                    b'"' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't' => {}
+                    _ => return Err(JsonError::Invalid),
+                }
+                escaped = false;
+            } else if *byte == b'\\' {
+                escaped = true;
+            } else if *byte == b'"' {
+                string = false;
+            } else if *byte < 0x20 {
+                return Err(JsonError::Invalid);
+            }
+            continue;
+        }
+        let starts = match *byte {
+            b'"' => {
+                string = true;
+                scalar = false;
+                true
+            }
+            b'{' | b'[' => {
+                scalar = false;
+                true
+            }
+            b'}' | b']' | b':' | b',' | b' ' | b'\n' | b'\r' | b'\t' => {
+                scalar = false;
+                false
+            }
+            _ => {
+                let starts = !scalar;
+                scalar = true;
+                starts
+            }
+        };
+        nodes += usize::from(starts);
+        if nodes > limits.nodes {
+            return Err(JsonError::Limit);
+        }
+    }
+    let mut parser = serde_json::Deserializer::from_slice(input);
+    match Prefix.deserialize(&mut parser).and_then(|()| parser.end()) {
+        Ok(()) => Ok(()),
+        Err(error) if error.is_eof() => Ok(()),
+        Err(_) => Err(JsonError::Invalid),
+    }
+}
+struct Prefix;
+impl<'de> DeserializeSeed<'de> for Prefix {
+    type Value = ();
+    fn deserialize<D: de::Deserializer<'de>>(self, parser: D) -> Result<(), D::Error> {
+        parser.deserialize_any(self)
+    }
+}
+impl<'de> Visitor<'de> for Prefix {
+    type Value = ();
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("JSON prefix")
+    }
+    fn visit_unit<E: de::Error>(self) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_bool<E: de::Error>(self, _: bool) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_i64<E: de::Error>(self, _: i64) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_u64<E: de::Error>(self, _: u64) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_f64<E: de::Error>(self, _: f64) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_str<E: de::Error>(self, _: &str) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<(), A::Error> {
+        while seq.next_element_seed(Prefix)?.is_some() {}
+        Ok(())
+    }
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
+        let mut keys = std::collections::BTreeSet::new();
+        while let Some(key) = map.next_key::<String>()? {
+            if !keys.insert(key) {
+                return Err(de::Error::custom("duplicate JSON key"));
+            }
+            map.next_value_seed(Prefix)?;
+        }
+        Ok(())
+    }
+}
 /// Derived views use last-key-wins without changing raw or structured authority.
 pub(crate) fn parse_json_view(input: &[u8]) -> Result<Value, JsonError> {
     parse(input, JsonLimits::ENVELOPE, false)

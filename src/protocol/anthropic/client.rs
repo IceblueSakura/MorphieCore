@@ -31,6 +31,7 @@ const TOP: &[&str] = &[
     "cache_control",
     "stop_sequences",
     "stream",
+    "metadata",
 ];
 /// Official fields (including beta) whose active value changes model input, tools or
 /// output; ignoring them would be silent loss. Other unregistered fields are ignored by name.
@@ -170,6 +171,9 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     if let Some(cache) = v.get_mut("cache_control") {
         keep(cache, &["type", "ttl"], &mut ignored);
     }
+    if let Some(metadata) = v.get_mut("metadata") {
+        keep(metadata, &["user_id"], &mut ignored);
+    }
     let o = object(&v)?.clone();
     let model = string(required(&o, "model")?)?;
     label(&model)?;
@@ -192,8 +196,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         ),
         ("top_p", GenerationControls::with_top_p),
     ] {
-        if let Some(value) = o.get(key).filter(|v| !v.is_null()) {
-            let value = value.as_f64().ok_or(CodecError::Invalid("sampling"))?;
+        if let Some(value) = super::request::sampling(&o, key, 1.0)? {
             settings.controls = apply(settings.controls, value)?;
         }
     }
@@ -287,6 +290,13 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                 settings.reasoning.activation = Presence::Value(ReasoningActivation::Enabled);
                 settings.reasoning.mode = Presence::Value(ReasoningMode::Budgeted);
                 settings.reasoning.budget_tokens = Some(budget);
+                if settings
+                    .controls
+                    .max_output_tokens
+                    .is_some_and(|cap| budget >= cap)
+                {
+                    return Err(CodecError::Invalid("thinking budget"));
+                }
             }
             Some("adaptive") => {
                 if t.contains_key("budget_tokens") {
@@ -454,6 +464,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         fidelity.record_strict_image_size(part)?;
     }
     let mut request = Request::from_generation(DecodedRequest { semantic, fidelity }, &model)?;
+    request.context.identity.user = super::request::read_user_id(&o)?;
     request.service_policy = super::service::read_policy(&o)?;
     request.source = Some(crate::adapter::ClientProtocol::Messages);
     if let Some(stream) = o.get("stream").filter(|v| !v.is_null()) {
@@ -640,6 +651,15 @@ fn tool_input(call: &ToolCall) -> Result<Value, CodecError> {
 pub(crate) fn validate_tool_calls(response: &DecodedResponse) -> Result<(), CodecError> {
     for (_, item) in response.semantic.items() {
         if let Item::ToolCall(call) = item {
+            if matches!(call.arguments, ToolArguments::StructuredPartial(_))
+                && call.status == ItemLifecycle::Incomplete
+                && response.semantic.outcome() == Outcome::Incomplete
+                && response.semantic.details().incomplete == Some(IncompleteReason::MaxOutputTokens)
+                && call.context.is_direct()
+                && call.context.alias_domain.is_none()
+            {
+                continue;
+            }
             tool_input(call)?;
         }
     }

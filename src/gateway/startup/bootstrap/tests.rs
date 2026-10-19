@@ -684,7 +684,11 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
     );
     assert_eq!(
         rules,
-        ["messages.omit-sampling.v1", "messages.project-call-ids.v1",]
+        [
+            "messages.omit-sampling.v1",
+            "messages.project-call-ids.v1",
+            "messages.default-automatic-cache.v1"
+        ]
     );
     // Reasoning-only effort cannot become response-wide effort, and display
     // alone cannot enable adaptive thinking.
@@ -751,6 +755,7 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
             "messages.omit-sampling.v1",
             "messages.transfer-visible-history.v1",
             "messages.reasoning-as-text.v1",
+            "messages.default-automatic-cache.v1",
         ]
     );
     // A client ID equal to a projected digest fails instead of merging two calls.

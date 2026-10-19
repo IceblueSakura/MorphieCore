@@ -947,7 +947,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
     diagnostic_owner.flush_diagnostics().await;
     let records = std::fs::read_to_string(&diagnostics).unwrap();
     assert!(
-        records.contains(r#""request_rules":["cache.omit-key.v1","messages.omit-sampling.v1"]"#)
+        records.contains(r#""request_rules":["cache.omit-key.v1","messages.omit-sampling.v1","messages.default-automatic-cache.v1"]"#)
     );
     assert!(records.contains(r#""ignored_request_field_count":1"#));
     assert!(!records.contains("client_metadata"));

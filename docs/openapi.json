@@ -876,6 +876,7 @@
         "properties": {
           "model": {"$ref": "#/components/schemas/PublicModelLabel"},
           "max_tokens": {"type": "integer", "minimum": 1},
+          "metadata": {"type": "object", "properties": {"user_id": {"type": ["string", "null"], "maxLength": 512}}, "additionalProperties": true, "description": "Native opaque end-user attribution, not credentials, routing or a cache key. Absent/null/empty user_id retain their meaning; unknown metadata names are ignored by name. No cross-protocol identity mapping is implied."},
           "messages": {
             "type": "array",
             "items": {
@@ -920,6 +921,7 @@
           "max_completion_tokens": {"type": ["integer", "null"], "minimum": 1, "description": "Client-owned output cap; omission or null supplies no cap at Chat intake. CLI bootstrap imposes no default or token ceiling. Target admission remains separate. Native Messages fills an absent cap with 32000 under messages.default-max-tokens.v1 because its protocol requires the field. Local resource limits alone do not bound upstream charges."},
           "max_tokens": {"type": ["integer", "null"], "minimum": 1, "deprecated": true, "description": "Deprecated spelling of the same output cap; cannot be combined with max_completion_tokens."},
           "verbosity": {"type": ["string", "null"], "enum": ["low", "medium", "high", null], "description": "Output verbosity has Chat/Responses codec carriers; native Messages/Google projections use selected recorded omission rules. Model-effective support and binding admission remain separate."},
+          "preserve_thinking": {"type": "boolean", "description": "Registered historical reasoning-reading intent, independently preserving omission, true and false. DashScope carries it natively; targets without a selected carrier reject. Does not select a Provider, infer a model default or enable thinking."},
           "metadata": {"type": ["object", "null"], "maxProperties": 16, "propertyNames": {"maxLength": 64}, "additionalProperties": {"type": "string", "maxLength": 512}, "description": "Typed request hint, never copied into reported response metadata."},
           "service_tier": {"type": ["string", "null"], "enum": ["auto", "default", "flex", "scale", "priority", "fast", null], "description": "Request hint; the reported effective tier may differ. Endpoint context admission remains independent."},
           "logprobs": {"type": ["boolean", "null"], "description": "Return token probabilities when true; null/false are inactive controls."},

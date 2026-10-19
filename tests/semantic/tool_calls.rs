@@ -1711,3 +1711,258 @@ mod reported_tool_results {
         assert!(reduce(closed, start(3, ItemKind::ToolResult(initial))).is_err());
     }
 }
+mod stage1_result_creator {
+    use crate::events_support::*;
+    use morphiecore::{
+        protocol::{
+            fidelity::FidelityRecords,
+            openai::{Profile, events::EventDecoder, lowering::lower_response, responses},
+        },
+        semantic::task::generation::*,
+    };
+    use serde_json::json;
+    #[test]
+    fn creator_reports_are_item_owned_bounded_and_output_only() {
+        let wire = json!({"id":"result","type":"function_call_output","call_id":"c","output":"value",
+            "status":"completed","created_by":"actor"});
+        let parsed = responses::decode_response(&envelope("completed", json!([wire]))).unwrap();
+        let (id, item) = &parsed.semantic.items()[0];
+        assert_eq!(
+            parsed
+                .fidelity
+                .created_by(*id, item, parsed.semantic.resources()),
+            Some("actor")
+        );
+        let owner = ItemId::new(9);
+        let item = Item::ToolResult(ToolResult {
+            call_id: Some(text("c")),
+            name: None,
+            output: "value".into(),
+            status: Some(ItemLifecycle::Completed),
+            is_error: None,
+            execution: None,
+            context: Default::default(),
+            cache: None,
+        });
+        let semantic =
+            GenerationResponse::new(vec![(owner, item.clone())], Outcome::Completed).unwrap();
+        let mut fidelity = FidelityRecords::default();
+        fidelity.record_response_item_id(owner, "result").unwrap();
+        fidelity
+            .observe_created_by(owner, &item, semantic.resources(), Some(&json!("actor")))
+            .unwrap();
+        let reported = metadata();
+        let target = lower_response(
+            &semantic,
+            &fidelity,
+            &reported,
+            Profile::Responses,
+            contract(),
+        )
+        .unwrap();
+        assert_eq!(
+            responses::encode_response(&target).unwrap()["output"],
+            json!([wire])
+        );
+        assert!(
+            fidelity
+                .observe_created_by(owner, &item, semantic.resources(), Some(&json!("other")))
+                .is_err()
+        );
+        assert!(
+            fidelity
+                .observe_created_by(
+                    ItemId::new(10),
+                    &item,
+                    semantic.resources(),
+                    Some(&json!("x".repeat(257)))
+                )
+                .is_err()
+        );
+        let mut edited = item.clone();
+        let Item::ToolResult(result) = &mut edited else {
+            unreachable!()
+        };
+        result.output = "edited".into();
+        assert_eq!(
+            fidelity.created_by(owner, &edited, semantic.resources()),
+            None
+        );
+        fidelity.retain_owners(&[]);
+        assert_eq!(
+            fidelity.created_by(owner, &item, semantic.resources()),
+            None
+        );
+    }
+    #[test]
+    fn result_creator_snapshot_drift_cannot_be_hidden_at_done_or_terminal() {
+        for terminal_drift in [false, true] {
+            let mut decoder = EventDecoder::new(Profile::Responses);
+            decoder.push(&created()).unwrap();
+            let initial = json!({"id":"result","type":"function_call_output","call_id":"c","output":"",
+                "status":"in_progress","created_by":"actor"});
+            decoder
+                .push(&json!({"type":"response.output_item.added","output_index":0,"item":initial}))
+                .unwrap();
+            let mut done = json!({"id":"result","type":"function_call_output","call_id":"c","output":"value",
+                "status":"completed","created_by":"actor"});
+            if !terminal_drift {
+                done["created_by"] = json!("other");
+                assert!(decoder.push(&json!({"type":"response.output_item.done","output_index":0,"item":done})).is_err());
+            } else {
+                decoder
+                    .push(&json!({"type":"response.output_item.done","output_index":0,"item":done}))
+                    .unwrap();
+                done["created_by"] = json!("other");
+                assert!(decoder.push(&json!({"type":"response.completed","response":envelope("completed",json!([done]))})).is_err());
+            }
+            assert!(decoder.finish().is_err());
+        }
+    }
+}
+mod stage1_creator_dependencies {
+    use crate::events_support::*;
+    use morphiecore::{
+        protocol::{
+            fidelity::FidelityRecords,
+            openai::{Profile, events::EventEncoder, responses},
+        },
+        semantic::task::generation::*,
+    };
+    use serde_json::json;
+    #[test]
+    fn unrelated_resources_preserve_creators_but_owned_filename_and_location_edits_do_not() {
+        let wire = envelope(
+            "completed",
+            json!([
+                {"id":"r1","type":"function_call_output","call_id":"c1","status":"completed","output":"one","created_by":"actor1"},
+                {"id":"r2","type":"function_call_output","call_id":"c2","status":"completed",
+                    "output":[{"type":"input_file","file_url":"https://example.test/file.pdf","filename":"before.pdf"}],"created_by":"actor2"}
+            ]),
+        );
+        let parsed = responses::decode_response(&wire).unwrap();
+        let (one, first) = &parsed.semantic.items()[0];
+        let (two, second) = &parsed.semantic.items()[1];
+        assert_eq!(
+            parsed
+                .fidelity
+                .created_by(*one, first, parsed.semantic.resources()),
+            Some("actor1")
+        );
+        assert_eq!(
+            parsed
+                .fidelity
+                .created_by(*two, second, parsed.semantic.resources()),
+            Some("actor2")
+        );
+        let mut edited = second.clone();
+        let Item::ToolResult(result) = &mut edited else {
+            unreachable!()
+        };
+        let ToolOutput::Parts(parts) = &mut result.output else {
+            unreachable!()
+        };
+        let InputPart::Resource(resource) = &mut parts[0].content else {
+            unreachable!()
+        };
+        let resource_id = resource.id;
+        let ResourceDescription::File(file) = &mut resource.description else {
+            unreachable!()
+        };
+        file.filename = Some(text("after.pdf"));
+        assert_eq!(
+            parsed
+                .fidelity
+                .created_by(*two, &edited, parsed.semantic.resources()),
+            None
+        );
+        let changed = ResourceTable::default()
+            .insert(
+                resource_id,
+                ResourceLocation::Url(text("https://example.test/changed.pdf")),
+            )
+            .unwrap();
+        assert_eq!(parsed.fidelity.created_by(*two, second, &changed), None);
+        assert_eq!(
+            parsed.fidelity.created_by(*one, first, &changed),
+            Some("actor1")
+        );
+    }
+    fn result(status: ItemLifecycle) -> ToolResult {
+        ToolResult {
+            call_id: Some(text("c")),
+            name: None,
+            output: "".into(),
+            status: Some(status),
+            is_error: None,
+            execution: None,
+            context: Default::default(),
+            cache: None,
+        }
+    }
+    #[test]
+    fn typed_event_encoding_cannot_change_or_erase_an_already_published_creator() {
+        for conflict in [false, true] {
+            let id = ItemId::new(1);
+            let resources = ResourceTable::default();
+            let mut initial = FidelityRecords::default();
+            initial.record_response_item_id(id, "result").unwrap();
+            initial
+                .observe_created_by(
+                    id,
+                    &Item::ToolResult(result(ItemLifecycle::InProgress)),
+                    &resources,
+                    Some(&json!("A")),
+                )
+                .unwrap();
+            let mut encoder = EventEncoder::new(Profile::Responses, metadata())
+                .unwrap()
+                .with_contract(contract());
+            encoder.encode(&StreamEvent::Started, &initial).unwrap();
+            let opened = encoder
+                .encode(
+                    &StreamEvent::ItemStarted {
+                        item: id,
+                        kind: ItemKind::ToolResult(result(ItemLifecycle::InProgress)),
+                        replay: None,
+                    },
+                    &initial,
+                )
+                .unwrap();
+            assert_eq!(opened[0]["item"]["created_by"], "A");
+            let mut next = FidelityRecords::default();
+            next.record_response_item_id(id, "result").unwrap();
+            if conflict {
+                next.observe_created_by(
+                    id,
+                    &Item::ToolResult(result(ItemLifecycle::Completed)),
+                    &resources,
+                    Some(&json!("B")),
+                )
+                .unwrap();
+            }
+            let closed = encoder.encode(
+                &StreamEvent::ItemFinished {
+                    item: id,
+                    status: ItemLifecycle::Completed,
+                    replay: None,
+                },
+                &next,
+            );
+            if conflict {
+                assert!(closed.is_err());
+                assert!(
+                    encoder
+                        .encode(&terminal(StreamTerminal::Completed), &next)
+                        .is_err()
+                );
+            } else {
+                assert_eq!(closed.unwrap()[0]["item"]["created_by"], "A");
+                let end = encoder
+                    .encode(&terminal(StreamTerminal::Completed), &next)
+                    .unwrap();
+                assert_eq!(end[0]["response"]["output"][0]["created_by"], "A");
+            }
+        }
+    }
+}

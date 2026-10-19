@@ -205,12 +205,48 @@ impl MessageSseDecoder {
                 if let Block::ToolUse { input, .. } = &mut open.block
                     && let Some(json) = open.json
                 {
-                    let value = parse_json(json.as_bytes(), JsonLimits::STRUCTURED)
-                        .map_err(|_| CodecError::Invalid("Anthropic final tool JSON"))?;
-                    if !value.is_object() {
-                        return Err(CodecError::Invalid("Anthropic final tool object").into());
+                    match parse_json(json.as_bytes(), JsonLimits::STRUCTURED) {
+                        Ok(value) => {
+                            if !value.is_object() {
+                                return Err(
+                                    CodecError::Invalid("Anthropic final tool object").into()
+                                );
+                            }
+                            *input = StructuredValue::new(value).map_err(CodecError::from)?;
+                        }
+                        Err(crate::semantic::value::JsonError::Limit) => {
+                            return Err(SseError::Limit);
+                        }
+                        Err(crate::semantic::value::JsonError::Invalid) => {
+                            if json.trim_start().chars().next().is_some_and(|c| c != '{') {
+                                return Err(
+                                    CodecError::Invalid("Anthropic final tool object").into()
+                                );
+                            }
+                            crate::semantic::value::validate_json_prefix(
+                                json.as_bytes(),
+                                JsonLimits::STRUCTURED,
+                            )
+                            .map_err(|error| match error {
+                                crate::semantic::value::JsonError::Limit => SseError::Limit,
+                                crate::semantic::value::JsonError::Invalid => {
+                                    CodecError::Invalid("Anthropic final tool JSON").into()
+                                }
+                            })?;
+                            let Block::ToolUse {
+                                id, name, caller, ..
+                            } = open.block
+                            else {
+                                unreachable!("tool input owner")
+                            };
+                            open.block = Block::PartialToolUse {
+                                id,
+                                name,
+                                caller,
+                                input: json,
+                            };
+                        }
                     }
-                    *input = StructuredValue::new(value).map_err(CodecError::from)?;
                 }
                 open.block.bytes(false)?;
                 message.content.push(open.block);
