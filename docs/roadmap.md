@@ -80,7 +80,7 @@ Minimal counterexamples and pinned sources are in [Generation contract boundarie
 | Question | Recommendation and exit condition |
 |---|---|
 | Complete citations and source identity | **Stage 5.** Select licence/quote/request-source owners and output point anchors, including the changed OpenAI file-citation index contract. Then independently cover request, output, streaming and returned history; retain rejection until represented. Messages citations have a separate [1C design](#1c-design-messages-citations) |
-| Execution controls and reports | **Unscheduled; not a stage-1 blocker.** Select bounded owners for geography, access programs, replay enforcement, safety/review details and Interactions reported service/continuation only when a scheduled client sends them. Keep protected unsupported carriers rejected; do not add routing or continuation execution implicitly |
+| Execution controls and reports | **Unscheduled; not a stage-1 blocker.** Select bounded owners for geography, access programs, safety/review details and Interactions reported service/continuation only when a scheduled client sends them. Messages block binding already has typed ownership and selected carrier/fallback rules; input transformations use validated named omission, not exact report carriage. Keep other protected unsupported carriers rejected; do not add routing or continuation execution implicitly |
 | Interactions lifecycle snapshots | **Stage 3.** Compare supplied steps against streamed owners, including content/signatures/errors, or select snapshot-only materialization. Current rejection prevents contradiction loss but is not complete SSE support |
 | Messages model/product defaults | **Stage 1 (S1-3).** Move sampling omission to explicit trusted target policy. Required output-cap insertion affects only sources without a ceiling, because Messages clients must send `max_tokens`; settle it in stage 3. Select a bounded default or require caller input; do not raise the cap automatically to a model maximum |
 
@@ -100,7 +100,7 @@ Minimal counterexamples and pinned sources are in [Generation contract boundarie
 
 ## Integration handoff
 
-Native `representation_contract()` carrier availability is separate from default `semantic_contract()` binding admission. Completing a codec activates nothing: [topology compilation](../src/topology/compile.rs) still checks the narrower default contracts, and widening a synthetic endpoint for a test does not establish a public route.
+Native `representation_contract()` carrier availability is separate from default `semantic_contract()` binding admission. Completing a codec activates nothing: [topology compilation](../src/topology/compile.rs) still checks the selected admission contracts, and widening a synthetic endpoint for a test does not establish a public route. The [all-native Go/Haiku contract](architecture.md#owner-local-cache-admission) is an explicitly selected configured exception; generic defaults and unrelated frozen features remain unchanged.
 
 | Boundary | Current treatment | Exit condition when reopened |
 |---|---|---|
@@ -111,7 +111,7 @@ Native `representation_contract()` carrier availability is separate from default
 
 Codec carriers whose binding admission stays closed:
 
-- Google structured output and logprobs, and Messages request-wide automatic TTL controls. Messages owner-local markers, strict tools, mid-conversation system messages, per-message effort, block binding and tool changes have the narrow [all-native configured admission](architecture.md#owner-local-cache-admission) on the Go/Haiku binding; mixed routes and the generic profile remain closed.
+- Google structured output and logprobs, and Messages request-wide automatic TTL controls. Messages owner-local markers, strict tools, ordered instructions and tool changes have the narrow [all-native configured admission](architecture.md#owner-local-cache-admission) on the Go/Haiku binding; mixed routes and the generic profile remain closed for those features. Exact beta carriers for per-message effort, block binding and tool changes are separately enabled by trusted binding policy. Missing carriers use the selected named projections where applicable; explicit block-binding `"error"` still rejects without a carrier.
 - generateContent [cached-context references](architecture.md#cached-context-references) with exact identity/expiry and explicit clock checks. Other carriers reject; there is no HTTP field, authorization service or cache lifecycle operation.
 - [Safety policies and reports](architecture.md#safety-policy-and-reports) on generateContent. Downstream delivery omits assessment-only reports under a named rule and rejects blocking reports and safety-bearing settings echoes. Requests without a policy may still receive reports; those exchanges are not an established full loop. Vertex severity/method carriers are out of scope.
 - [Service policies](architecture.md#service-policies-and-reports). The native generation-only decode helper rejects an execution policy rather than dropping it. Messages service reports need full-message or opening usage; cross-contract classes and late reports without a carrier reject. Absent reports are never supplied from request controls.

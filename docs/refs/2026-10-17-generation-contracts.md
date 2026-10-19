@@ -29,6 +29,8 @@ These findings concern registered bindings, not inspected private deployments. N
 
 Focused synthetic request probes confirmed that the proposed Qwen Chat and Luna Responses shapes pass public admission and agree between preflight/preparation. A native Haiku request without owner cache markers passes those boundaries, while adding a marker reaches `ExplicitCache`; Gemini omitted-strict tools reach `ToolSchemaNormalization`. The unsupported Gemini numeric/level counterexamples also currently pass encoding. These probes exercised no upstream response, SDK or client loop and are not retained as success tests for unresolved contracts.
 
+The `ExplicitCache` rejection above records the 2026-10-18 boundary. It is superseded only for the selected all-native configured route by the following 2026-10-19 admission slice; generic and mixed-route admission remain closed.
+
 ### Messages owner-local cache admission, 2026-10-19
 
 The user resumed this bounded admission slice after the initial P7 scope choice. The [Claude caching guide](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) and [Haiku 5.5 model reference](https://platform.claude.com/docs/en/models/haiku-5-5/overview) establish owner-local 5m/default and 1h cache carriers. Explicit breakpoints are limited to four in tools → system → messages prefix order, with longer TTLs before shorter ones. Four explicit markers plus automatic caching, or an automatic TTL conflicting with the tail marker, return an error. Empty text and direct thinking markers are not valid cache owners.
@@ -130,7 +132,7 @@ The extended pinned pi probe (`8efd314`, Node 24.21.0) passed 24 serial syntheti
 
 - [Data residency](https://platform.claude.com/docs/en/manage-claude/data-residency): `inference_geo: "us"` constrains inference geography; omission uses workspace policy. The stable field exists at the earlier project pin. It cannot be dropped as an unknown preference.
 - `speed` affects execution/pricing; beta `fallbacks` and `fallback_credit_token` affect fallback/billing behavior. Current client intake rejects active values. This does not implement refusal retries or billing-token forwarding.
-- [Preserved thinking](https://platform.claude.com/docs/en/build-with-claude/preserved-thinking): beta `thinking.block_binding.prefix_mismatch_behavior` selects rejection or dropping invalid thinking blocks. Explicit `"error"` can opt older accounts into enforcement; it is not universally equivalent to omission. Since 2026-10-18 Messages intake admits only `drop_block`, omitted with a receipt; default and `"error"` enforcement still reject. Returned `input_transformations` are a separate unmodeled report.
+- [Preserved thinking](https://platform.claude.com/docs/en/build-with-claude/preserved-thinking): beta `thinking.block_binding.prefix_mismatch_behavior` selects rejection or dropping invalid thinking blocks. Explicit `"error"` can opt older accounts into enforcement; it is not universally equivalent to omission. The 2026-10-18 drop-only intake policy is superseded by the [2026-10-19 typed request profile](#pi-messages-request-profile-2026-10-19). Adaptive thinking preserves both explicit values when the trusted target enables the carrier. Without it, `drop_block` is omitted under a named rule and explicit `"error"` rejects; absent/null/empty controls retain the default. Returned `input_transformations` are validated and omitted under `messages.omit-input-transformations.v1`, because their paths index the upstream request. This is selected report loss, not exact report carriage.
 
 ### Attribution
 
@@ -176,7 +178,7 @@ Anthropic's [cache documentation](https://platform.claude.com/docs/en/build-with
 
 The pinned `MessageDeltaUsage` has server-tool/thinking reports but no `cache_creation` TTL object. Full TTL and server-tool objects require both children. Optional null means no observation; non-null nested objects replace rather than field-merge or sum. Messages JSON and opening SSE preserve native TTL detail; late new/changed TTL detail rejects, while supported tool/thinking reports use delta fields. Missing generic children are not filled with zero. Exact details stay in the Messages delivery copy; OpenAI keeps its derivable scalar/reasoning view and records omitted breakdowns.
 
-The pinned SDK fixture `tests/lib/streaming/fixtures/message_delta_fields_response.txt` changes the cache-write parent from 10 to 12 without another TTL report, while its reducer retains 10+0. That demonstrates SDK replacement behavior, not a valid exception to the documented arithmetic. The codec rejects the contradictory accumulated report instead of changing a source fact or weakening the global relationship. Input-transformation reports remain separate execution work.
+The pinned SDK fixture `tests/lib/streaming/fixtures/message_delta_fields_response.txt` changes the cache-write parent from 10 to 12 without another TTL report, while its reducer retains 10+0. That demonstrates SDK replacement behavior, not a valid exception to the documented arithmetic. The codec rejects the contradictory accumulated report instead of changing a source fact or weakening the global relationship. Input-transformation reports use the separate validated omission described above, not token accounting.
 
 ## Selected visible-history transfer
 
@@ -210,6 +212,6 @@ Keep the inspected protections for normalization-default tools, no automatic thi
 | Content evidence | Text-owned probabilities/citations; static and SSE tests | Citation licence, request-source associations and newer point anchors remain gaps |
 | Safety and completion | Ordered safety reports; separate outcome/progress/cause; terminal tests | Assessment-only reports are omitted with a receipt since 2026-10-18; blocking-report rejection still blocks those full loops |
 | Usage | Typed source-scoped reports, Google/Interactions modality/step intake, Messages TTL/tool/thinking reports and exact native carriers | Interactions mode-specific total relationships remain unestablished; downstream carriers do not express all source scope/detail |
-| Execution policy | Separate service intent/report and cache ownership | Geography, access programs, replay enforcement and several returned execution reports lack complete owners |
+| Execution policy | Separate service intent/report, cache ownership and typed replay-mismatch policy; validated input-transformation omission | Geography, access programs and other unsupported execution reports still need owners; exact input-transformation report carriage is not selected |
 
 This map does not claim all official semantics are represented or all protocol pairs are usable. Offline codec checks, synthetic SDK loops, live Provider behavior and public binding admission remain separate evidence.
