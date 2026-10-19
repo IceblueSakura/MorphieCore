@@ -1711,7 +1711,7 @@ mod reported_tool_results {
         assert!(reduce(closed, start(3, ItemKind::ToolResult(initial))).is_err());
     }
 }
-mod stage1_result_creator {
+mod tool_result_creator {
     use crate::events_support::*;
     use morphiecore::{
         protocol::{
@@ -1820,7 +1820,7 @@ mod stage1_result_creator {
         }
     }
 }
-mod stage1_creator_dependencies {
+mod creator_dependencies {
     use crate::events_support::*;
     use morphiecore::{
         protocol::{

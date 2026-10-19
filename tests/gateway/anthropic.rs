@@ -1,5 +1,6 @@
 //! Independent HTTP oracle for standard clients over a native Messages endpoint.
 use super::Guard;
+use crate::messages_stream::messages_stream_body;
 use crate::messages_wire::{native_response, native_stream_body};
 use axum::response::{IntoResponse, Response};
 use axum::{Json, Router, extract::State, http::HeaderMap, routing::post};
@@ -23,67 +24,6 @@ async fn client_body(response: reqwest::Response, profile: Profile, stream: bool
     }
     let wire = response.text().await.unwrap();
     stream_body(&wire, profile)
-}
-/// Independent fold of Anthropic SSE into the message it streams.
-pub(super) fn messages_stream_body(wire: &str) -> Value {
-    let mut message = Value::Null;
-    let mut partial = std::collections::BTreeMap::<u64, String>::new();
-    for data in wire.lines().filter_map(|line| line.strip_prefix("data: ")) {
-        let event: Value = serde_json::from_str(data).unwrap();
-        let index = event["index"].as_u64().unwrap_or(0);
-        match event["type"].as_str().unwrap() {
-            "message_start" => message = event["message"].clone(),
-            "content_block_start" => {
-                message["content"]
-                    .as_array_mut()
-                    .unwrap()
-                    .push(event["content_block"].clone());
-            }
-            "content_block_delta" => {
-                let block = &mut message["content"][index as usize];
-                let delta = &event["delta"];
-                match delta["type"].as_str().unwrap() {
-                    "text_delta" => {
-                        block["text"] = json!(format!(
-                            "{}{}",
-                            block["text"].as_str().unwrap(),
-                            delta["text"].as_str().unwrap()
-                        ))
-                    }
-                    "thinking_delta" => {
-                        block["thinking"] = json!(format!(
-                            "{}{}",
-                            block["thinking"].as_str().unwrap(),
-                            delta["thinking"].as_str().unwrap()
-                        ))
-                    }
-                    "signature_delta" => block["signature"] = delta["signature"].clone(),
-                    "input_json_delta" => partial
-                        .entry(index)
-                        .or_default()
-                        .push_str(delta["partial_json"].as_str().unwrap()),
-                    other => panic!("delta {other}"),
-                }
-            }
-            "content_block_stop" => {
-                if let Some(json) = partial.remove(&index) {
-                    message["content"][index as usize]["input"] =
-                        serde_json::from_str(&json).unwrap();
-                }
-            }
-            "message_delta" => {
-                message["stop_reason"] = event["delta"]["stop_reason"].clone();
-                for (key, value) in event["usage"].as_object().unwrap() {
-                    if !value.is_null() {
-                        message["usage"][key] = value.clone();
-                    }
-                }
-            }
-            "message_stop" => return message,
-            other => panic!("event {other}"),
-        }
-    }
-    panic!("no message_stop")
 }
 fn stream_body(wire: &str, profile: Profile) -> Value {
     assert!(!wire.contains("synthetic-native-signature") && !wire.contains("synthetic-redacted"));
@@ -319,8 +259,20 @@ async fn answer(
     )
 }
 
-#[tokio::test]
-async fn json_and_stream_clients_replay_native_thinking_and_tools() {
+struct NativeFixture {
+    base: String,
+    seen: Arc<Mutex<Vec<Value>>>,
+    control: Arc<Control>,
+    replay_origin: morphiecore::semantic::value::ReplayOrigin,
+    gateway: Gateway,
+    diagnostics: std::path::PathBuf,
+    client: reqwest::Client,
+    _gateway_task: Guard,
+    _upstream: Guard,
+    _directory: tempfile::TempDir,
+}
+
+async fn native_fixture() -> NativeFixture {
     let seen = Arc::new(Mutex::new(vec![]));
     let control = Arc::new(Control::default());
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -328,7 +280,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
     let app = Router::new()
         .route("/zen/go/v1/messages", post(answer))
         .with_state((seen.clone(), control.clone()));
-    let _upstream = Guard(tokio::spawn(async move {
+    let upstream = Guard(tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap()
     }));
     let binding = &MESSAGES_BINDINGS[0];
@@ -415,7 +367,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
     let diagnostic_owner = gate.clone();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
-    let _gateway = Guard(tokio::spawn(async move {
+    let gateway_task = Guard(tokio::spawn(async move {
         gate.serve(listener, std::future::pending()).await.unwrap()
     }));
     let client = reqwest::Client::builder()
@@ -423,6 +375,31 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
         .timeout(Duration::from_secs(3))
         .build()
         .unwrap();
+
+    NativeFixture {
+        base,
+        seen,
+        control,
+        replay_origin,
+        gateway: diagnostic_owner,
+        diagnostics,
+        client,
+        _gateway_task: gateway_task,
+        _upstream: upstream,
+        _directory: directory,
+    }
+}
+
+#[tokio::test]
+async fn json_and_stream_clients_replay_native_thinking_and_tools() {
+    let fixture = native_fixture().await;
+    let base = &fixture.base;
+    let seen = &fixture.seen;
+    let replay_origin = fixture.replay_origin.clone();
+    let diagnostic_owner = &fixture.gateway;
+    let diagnostics = &fixture.diagnostics;
+    let client = &fixture.client;
+    let binding = &MESSAGES_BINDINGS[0];
     for profile in [Profile::Responses, Profile::Chat] {
         for stream in [false, true] {
             let responses = profile == Profile::Responses;
@@ -485,7 +462,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 diagnostic_owner.flush_diagnostics().await;
                 panic!(
                     "{profile:?}: {body}; {}",
-                    std::fs::read_to_string(&diagnostics).unwrap()
+                    std::fs::read_to_string(diagnostics).unwrap()
                 );
             }
             assert_eq!(body["model"], binding.model);
@@ -715,119 +692,6 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
         }
     }
     assert_eq!(seen.lock().unwrap().len(), 26);
-    for profile in [Some(Profile::Responses), Some(Profile::Chat), None] {
-        let responses = profile == Some(Profile::Responses);
-        let path = if profile.is_none() {
-            "/v1/messages"
-        } else if responses {
-            "/v1/responses"
-        } else {
-            "/v1/chat/completions"
-        };
-        for mode in ["hold", "cut", "cancel"] {
-            tokio::time::pause();
-            tokio::time::advance(Duration::from_secs(60)).await;
-            tokio::time::resume();
-            let function = json!({"name":"lookup","parameters":{"type":"object","properties":{"key":{"type":"string"}}},"strict":false});
-            let input = if profile.is_none() {
-                json!({"model":binding.model,"max_tokens":64,"stream":true,
-                    "tools":[{"name":"lookup","strict":false,
-                        "input_schema":{"type":"object","properties":{"key":{"type":"string"}}}}],
-                    "messages":[{"role":"user","content":mode}]})
-            } else if responses {
-                let mut tool = function.clone();
-                tool["type"] = json!("function");
-                json!({"model":binding.model,"max_output_tokens":64,"input":mode,"store":false,"stream":true,"tools":[tool]})
-            } else {
-                json!({"model":binding.model,"max_completion_tokens":64,"messages":[{"role":"user","content":mode}],
-                    "tools":[{"type":"function","function":function}],"stream":true,
-                    "stream_options":{"include_usage":true,"include_obfuscation":false}})
-            };
-            let count = seen.lock().unwrap().len();
-            let mut response = tokio::time::timeout(
-                Duration::from_secs(1),
-                client
-                    .post(format!("{base}{path}"))
-                    .bearer_auth("synthetic-client-identity-00000001")
-                    .json(&input)
-                    .send(),
-            )
-            .await
-            .expect("headers before release")
-            .unwrap();
-            assert_eq!(response.status(), 200);
-            let mut output = vec![];
-            tokio::time::timeout(Duration::from_secs(1), async {
-                while !String::from_utf8_lossy(&output).contains("early")
-                    || !String::from_utf8_lossy(&output).contains("lookup")
-                {
-                    output
-                        .extend_from_slice(&response.chunk().await.unwrap().expect("live prefix"));
-                }
-            })
-            .await
-            .expect("text and tool publication before release");
-            if mode == "cancel" {
-                drop(response);
-            } else {
-                // Drain ready frames, then prove a native message_stop is not transport EOF.
-                while let Ok(next) =
-                    tokio::time::timeout(Duration::from_millis(100), response.chunk()).await
-                {
-                    output.extend_from_slice(&next.unwrap().expect("upstream held open"));
-                }
-                assert!(!String::from_utf8_lossy(&output).contains("response.completed"));
-                assert!(!String::from_utf8_lossy(&output).contains("[DONE]"));
-                assert!(!String::from_utf8_lossy(&output).contains("message_stop"));
-                if mode == "hold" {
-                    tokio::time::sleep(Duration::from_millis(1100)).await;
-                }
-                control.release.notify_one();
-                let mut failed = false;
-                loop {
-                    match response.chunk().await {
-                        Ok(Some(bytes)) => output.extend_from_slice(&bytes),
-                        Ok(None) => break,
-                        Err(_) => {
-                            failed = true;
-                            break;
-                        }
-                    }
-                }
-                assert_eq!(failed, mode == "cut");
-                let output = String::from_utf8(output).unwrap();
-                if mode == "hold" {
-                    if let Some(profile) = profile {
-                        let value = stream_body(&output, profile);
-                        assert_eq!(
-                            value[if responses { "status" } else { "object" }],
-                            if responses {
-                                "completed"
-                            } else {
-                                "chat.completion"
-                            }
-                        );
-                    } else {
-                        let value = messages_stream_body(&output);
-                        assert_eq!(value["stop_reason"], "tool_use");
-                        assert_eq!(value["content"][1]["id"], "held-call");
-                    }
-                } else {
-                    assert!(!output.contains("response.completed") && !output.contains("[DONE]"));
-                    assert!(!output.contains("message_stop"));
-                }
-            }
-            tokio::time::timeout(Duration::from_secs(2), control.dropped.notified())
-                .await
-                .expect("upstream body released");
-            assert_eq!(
-                seen.lock().unwrap().len(),
-                count + 1,
-                "no replay after commitment"
-            );
-        }
-    }
-    assert_eq!(seen.lock().unwrap().len(), 35);
     // Error classes: Codex reads overflow only from a streamed `response.failed`;
     // a failure after headers ends the stream with its class instead of a cut.
     for profile in [Profile::Responses, Profile::Chat] {
@@ -911,9 +775,9 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             }
         }
     }
-    assert_eq!(seen.lock().unwrap().len(), 53);
+    assert_eq!(seen.lock().unwrap().len(), 44);
     diagnostic_owner.flush_diagnostics().await;
-    let records = std::fs::read_to_string(&diagnostics).unwrap();
+    let records = std::fs::read_to_string(diagnostics).unwrap();
     assert!(
         records.contains(r#""request_rules":["cache.omit-key.v1","messages.omit-sampling.v1","messages.default-automatic-cache.v1"]"#)
     );
@@ -922,4 +786,138 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
     // Native adaptive intent stays adaptive, without a numeric-budget approximation.
     assert!(!records.contains("messages.budget-as-effort.v1"));
     assert!(!records.contains("0.375"));
+}
+
+#[tokio::test]
+async fn native_tool_publication_waits_for_eof_and_releases_upstream_without_replay() {
+    let fixture = native_fixture().await;
+    let base = &fixture.base;
+    let seen = &fixture.seen;
+    let control = &fixture.control;
+    let client = &fixture.client;
+    let binding = &MESSAGES_BINDINGS[0];
+    for profile in [Some(Profile::Responses), Some(Profile::Chat), None] {
+        let responses = profile == Some(Profile::Responses);
+        let path = if profile.is_none() {
+            "/v1/messages"
+        } else if responses {
+            "/v1/responses"
+        } else {
+            "/v1/chat/completions"
+        };
+        for mode in ["hold", "cut", "cancel"] {
+            tokio::time::pause();
+            tokio::time::advance(Duration::from_secs(60)).await;
+            tokio::time::resume();
+            let function = json!({"name":"lookup","parameters":{"type":"object","properties":{"key":{"type":"string"}}},"strict":false});
+            let input = if profile.is_none() {
+                json!({"model":binding.model,"max_tokens":64,"stream":true,
+                    "tools":[{"name":"lookup","strict":false,
+                        "input_schema":{"type":"object","properties":{"key":{"type":"string"}}}}],
+                    "messages":[{"role":"user","content":mode}]})
+            } else if responses {
+                let mut tool = function.clone();
+                tool["type"] = json!("function");
+                json!({"model":binding.model,"max_output_tokens":64,"input":mode,"store":false,"stream":true,"tools":[tool]})
+            } else {
+                json!({"model":binding.model,"max_completion_tokens":64,"messages":[{"role":"user","content":mode}],
+                    "tools":[{"type":"function","function":function}],"stream":true,
+                    "stream_options":{"include_usage":true,"include_obfuscation":false}})
+            };
+            let count = seen.lock().unwrap().len();
+            let mut response = tokio::time::timeout(
+                Duration::from_secs(1),
+                client
+                    .post(format!("{base}{path}"))
+                    .bearer_auth("synthetic-client-identity-00000001")
+                    .json(&input)
+                    .send(),
+            )
+            .await
+            .expect("headers before release")
+            .unwrap();
+            assert_eq!(response.status(), 200);
+            let mut output = vec![];
+            tokio::time::timeout(Duration::from_secs(1), async {
+                while !String::from_utf8_lossy(&output).contains("early")
+                    || !String::from_utf8_lossy(&output).contains("lookup")
+                {
+                    output
+                        .extend_from_slice(&response.chunk().await.unwrap().expect("live prefix"));
+                }
+            })
+            .await
+            .expect("text and tool publication before release");
+            if mode == "cancel" {
+                drop(response);
+            } else {
+                // Drain ready frames, then prove a native message_stop is not transport EOF.
+                while let Ok(next) =
+                    tokio::time::timeout(Duration::from_millis(100), response.chunk()).await
+                {
+                    output.extend_from_slice(&next.unwrap().expect("upstream held open"));
+                }
+                assert!(!String::from_utf8_lossy(&output).contains("response.completed"));
+                assert!(!String::from_utf8_lossy(&output).contains("[DONE]"));
+                assert!(!String::from_utf8_lossy(&output).contains("message_stop"));
+                for data in String::from_utf8_lossy(&output)
+                    .lines()
+                    .filter_map(|line| line.strip_prefix("data: "))
+                {
+                    if let Ok(event) = serde_json::from_str::<Value>(data) {
+                        assert!(event["delta"]["stop_reason"].is_null());
+                        if let Some(choices) = event["choices"].as_array() {
+                            assert!(choices.iter().all(|c| c["finish_reason"].is_null()));
+                        }
+                    }
+                }
+                if mode == "hold" {
+                    tokio::time::sleep(Duration::from_millis(1100)).await;
+                }
+                control.release.notify_one();
+                let mut failed = false;
+                loop {
+                    match response.chunk().await {
+                        Ok(Some(bytes)) => output.extend_from_slice(&bytes),
+                        Ok(None) => break,
+                        Err(_) => {
+                            failed = true;
+                            break;
+                        }
+                    }
+                }
+                assert_eq!(failed, mode == "cut");
+                let output = String::from_utf8(output).unwrap();
+                if mode == "hold" {
+                    if let Some(profile) = profile {
+                        let value = stream_body(&output, profile);
+                        assert_eq!(
+                            value[if responses { "status" } else { "object" }],
+                            if responses {
+                                "completed"
+                            } else {
+                                "chat.completion"
+                            }
+                        );
+                    } else {
+                        let value = messages_stream_body(&output);
+                        assert_eq!(value["stop_reason"], "tool_use");
+                        assert_eq!(value["content"][1]["id"], "held-call");
+                    }
+                } else {
+                    assert!(!output.contains("response.completed") && !output.contains("[DONE]"));
+                    assert!(!output.contains("message_stop"));
+                }
+            }
+            tokio::time::timeout(Duration::from_secs(2), control.dropped.notified())
+                .await
+                .expect("upstream body released");
+            assert_eq!(
+                seen.lock().unwrap().len(),
+                count + 1,
+                "no replay after commitment"
+            );
+        }
+    }
+    assert_eq!(seen.lock().unwrap().len(), 9);
 }

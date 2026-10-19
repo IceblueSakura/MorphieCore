@@ -4,6 +4,10 @@ mod managed_key_tests;
 #[cfg(test)]
 mod media_tests;
 #[cfg(test)]
+mod messages_tests;
+#[cfg(test)]
+mod test_support;
+#[cfg(test)]
 mod tests;
 use crate::{
     credential::{CredentialManager, Secret},

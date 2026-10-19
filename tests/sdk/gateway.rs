@@ -4,7 +4,7 @@
 mod native_audio;
 #[path = "../support/gateway.rs"]
 mod support;
-use super::{ServerGuard, chat_sdk::wire as chat_wire, wire};
+use super::{ServerGuard, chat_sdk::wire as chat_wire, responses_wire as wire};
 use axum::{
     Router, body::Body, extract::State, http::HeaderMap, response::Response, routing::post,
 };

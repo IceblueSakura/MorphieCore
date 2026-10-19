@@ -1,4 +1,4 @@
-//! Selected native R2 route, with independent five-turn upstream wire expectations.
+//! Selected native Messages route, with independent five-turn upstream wire expectations.
 use crate::messages_wire::native_response;
 use axum::{Json, Router, extract::State, http::HeaderMap, response::Response, routing::post};
 use morphiecore::{
@@ -14,7 +14,7 @@ use std::{
 };
 use tokio::net::TcpListener;
 
-pub const KEY: &str = "synthetic-r2-client-token-00000001";
+pub const KEY: &str = "synthetic-messages-client-token-00000001";
 pub const BETA: &str = "mid-conversation-output-config-2026-07-01,thinking-binding-controls-2026-08-01,inline-tools-2026-09-15";
 pub struct Fixture {
     pub base: String,
@@ -33,7 +33,7 @@ pub fn input(stream: bool) -> Value {
     json!({"model":"claude-haiku-5-5","max_tokens":2048,"stream":stream,
         "thinking":{"type":"adaptive","display":"summarized","block_binding":{"prefix_mismatch_behavior":"drop_block"}},
         "output_config":{"effort":"high"},
-        "system":[{"type":"text","text":"Synthetic R2.","cache_control":{"type":"ephemeral","ttl":"1h"}}],
+        "system":[{"type":"text","text":"Synthetic Messages tool loop.","cache_control":{"type":"ephemeral","ttl":"1h"}}],
         "tools":[
             {"name":"lookup","strict":true,"eager_input_streaming":true,
              "input_schema":{"type":"object","properties":{"key":{"type":"string"}},"required":["key"],"additionalProperties":false},
@@ -42,44 +42,6 @@ pub fn input(stream: bool) -> Value {
         ],
         "messages":[{"role":"user","content":[{"type":"text","text":"lookup","cache_control":{"type":"ephemeral","ttl":"1h"}}]},
             {"role":"system","content":[],"output_config":{"effort":"high"}}]})
-}
-
-/// Client history is built only from delivered blocks, never restored native signatures.
-#[allow(dead_code)] // The SDK builds its own continuation instead of using this wire client.
-pub fn advance(body: &mut Value, content: Value, turn: usize) {
-    let messages = body["messages"].as_array_mut().unwrap();
-    for message in messages.iter_mut() {
-        if let Some(blocks) = message["content"].as_array_mut() {
-            for block in blocks {
-                block.as_object_mut().unwrap().remove("cache_control");
-            }
-        }
-    }
-    messages.push(json!({"role":"assistant","content":content}));
-    let next = match turn {
-        1 => {
-            json!({"role":"user","content":[{"type":"tool_result","tool_use_id":"call-lookup","content":"A","is_error":false}]})
-        }
-        2 => json!({"role":"user","content":[{"type":"text","text":"inspect"}]}),
-        3 => {
-            json!({"role":"user","content":[{"type":"tool_result","tool_use_id":"call-inspect","content":"B","is_error":true}]})
-        }
-        4 => json!({"role":"user","content":[{"type":"text","text":"repeat"}]}),
-        _ => panic!("client continuation"),
-    };
-    let mut next = next;
-    next["content"][0]["cache_control"] = json!({"type":"ephemeral","ttl":"1h"});
-    messages.push(next);
-    if turn == 2 {
-        messages.push(json!({"role":"system","content":[
-            {"type":"text","text":"Inspect mode."},
-            {"type":"tool_removal","tool":{"type":"tool_reference","name":"lookup"}},
-            {"type":"tool_addition","tool":{"type":"tool_definition","definition":{
-                "name":"inspect","input_schema":{"type":"object"},"eager_input_streaming":true}}}
-        ],"output_config":{"effort":"low"}}));
-    } else {
-        messages.push(json!({"role":"system","content":[],"output_config":{"effort":if turn < 2 {"high"}else{"low"}}}));
-    }
 }
 
 pub fn snapshot(turn: usize) -> Value {
@@ -98,7 +60,7 @@ pub fn snapshot(turn: usize) -> Value {
         }
         _ => panic!("upstream turn"),
     };
-    json!({"id":format!("msg-r2-{turn}"),"type":"message","role":"assistant","model":"claude-haiku-5-5",
+    json!({"id":format!("msg-tools-{turn}"),"type":"message","role":"assistant","model":"claude-haiku-5-5",
         "content":content,"stop_reason":if turn==1 || turn==3 {"tool_use"}else{"end_turn"},"stop_sequence":null,
         "usage":{"input_tokens":11,"cache_read_input_tokens":13,"cache_creation_input_tokens":17,
             "cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":17},"output_tokens":7}})
@@ -110,7 +72,7 @@ async fn answer(
     Json(body): Json<Value>,
 ) -> Response {
     assert_eq!(headers["anthropic-version"], "2023-06-01");
-    assert_eq!(headers["x-api-key"], "synthetic-r2-upstream");
+    assert_eq!(headers["x-api-key"], "synthetic-messages-upstream");
     assert!(headers.contains_key("x-opencode-session") && !headers.contains_key("authorization"));
     let turn = seen.lock().unwrap().len() % 5 + 1;
     let mut expected = json!([
@@ -163,8 +125,23 @@ async fn answer(
         .rev()
         .find(|m| m["role"] == "user")
         .unwrap()["content"][0]["cache_control"] = json!({"type":"ephemeral","ttl":"1h"});
-    assert_eq!(body["messages"], expected, "native R2 history turn {turn}");
-    let initial = input(body["stream"] == true);
+    assert_eq!(
+        body["messages"], expected,
+        "native Messages history turn {turn}"
+    );
+    // Independent of the client fixture: a changed stimulus must not redefine the oracle.
+    let initial = json!({"model":"claude-haiku-5-5","max_tokens":2048,
+        "thinking":{"type":"adaptive","display":"summarized",
+            "block_binding":{"prefix_mismatch_behavior":"drop_block"}},
+        "output_config":{"effort":"high"},
+        "system":[{"type":"text","text":"Synthetic Messages tool loop.",
+            "cache_control":{"type":"ephemeral","ttl":"1h"}}],
+        "tools":[{"name":"lookup","strict":true,"eager_input_streaming":true,
+            "input_schema":{"type":"object","properties":{"key":{"type":"string"}},
+                "required":["key"],"additionalProperties":false},
+            "cache_control":{"type":"ephemeral","ttl":"1h"}},
+            {"name":"__pi_deferred_placeholder__","input_schema":{"type":"object"},"defer_loading":true}]
+    });
     for key in [
         "model",
         "max_tokens",
@@ -173,7 +150,7 @@ async fn answer(
         "tools",
         "system",
     ] {
-        assert_eq!(body[key], initial[key], "native R2 {key}");
+        assert_eq!(body[key], initial[key], "native Messages {key}");
     }
     assert!(body.get("cache_control").is_none() && body.get("temperature").is_none());
     let expected_beta = if turn < 3 {
@@ -224,7 +201,7 @@ pub async fn start() -> Fixture {
         },
         BTreeMap::from([(
             CredentialBindingId::new(binding.credential).unwrap(),
-            Arc::new(SecretMaterial::new("synthetic-r2-upstream").unwrap()),
+            Arc::new(SecretMaterial::new("synthetic-messages-upstream").unwrap()),
         )]),
         SecretMaterial::new(KEY).unwrap(),
         Limits::default(),

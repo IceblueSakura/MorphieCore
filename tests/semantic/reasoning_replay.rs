@@ -1621,7 +1621,7 @@ mod replay_finality {
         );
     }
 }
-mod stage1_summary_completion {
+mod summary_completion {
     use crate::events_support::*;
     use morphiecore::{
         protocol::{

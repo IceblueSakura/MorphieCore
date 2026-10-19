@@ -29,6 +29,7 @@
 - `src/semantic` stays independent of protocols, Providers and execution. Keep runtime targets, credentials and retry state outside the IR; codecs and lowering are pure. Protocol-specific fields and raw wire handling belong in codecs, not IR request bags.
 - Keep known upstream fields strict and ignore unknown ones. Reject unrepresentable critical semantics; use named, recorded rules for approved degradations. Follow [Adaptation](docs/architecture.md#adaptation).
 - Prefer existing solutions and direct code over speculative abstractions. Add checks for concrete failures and remove obsolete code. Update `Cargo.lock` for dependency changes and verify with `--locked`.
+- Name code, fixtures and tests by protocol or behavior, not roadmap phases or package IDs. Keep scheduling identifiers in planning and acceptance documentation.
 - Use concise English for documentation, comments and commits. Do not inspect/edit build caches by hand or commit `testdata/{generated,reports,dist,runtime}/`.
 
 ## Tests

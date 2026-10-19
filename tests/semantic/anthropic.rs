@@ -3015,7 +3015,7 @@ mod client_fidelity {
         );
     }
 }
-mod stage1_native_controls {
+mod native_controls {
     use morphiecore::{
         adapter::Request,
         protocol::{

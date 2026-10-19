@@ -10,17 +10,20 @@ mod child_process;
 mod gateway_sdk;
 #[path = "sdk/messages.rs"]
 mod messages_sdk;
+#[path = "support/messages_tool_loop.rs"]
+mod messages_tool_fixture;
+#[path = "sdk/messages_tool_loop.rs"]
+mod messages_tool_loop;
 #[path = "support/messages_wire.rs"]
 mod messages_wire;
+#[path = "sdk/openai_tool_history.rs"]
+mod openai_tool_history;
+#[path = "support/openai_tool_loop.rs"]
+mod openai_tool_loop;
 #[path = "sdk/process.rs"]
 mod process_tests;
-#[path = "sdk/r1.rs"]
-mod r1;
-#[path = "sdk/r2.rs"]
-mod r2;
 #[path = "support/responses_profile.rs"]
-mod wire;
-use wire as r1_response_wire;
+mod responses_wire;
 
 use std::{
     sync::{Arc, Mutex},
@@ -92,7 +95,7 @@ fn remove_opaque(item: &mut Value) {
 }
 
 fn response_fixture(turn: u8, without_opaque: bool) -> Value {
-    let mut response = wire::response(turn);
+    let mut response = responses_wire::response(turn);
     // SDK v3's strict response model requires integer timestamps.
     response["created_at"] = 1.into();
     response["completed_at"] = 2.into();
@@ -278,7 +281,7 @@ async fn handle(State(state): State<Suite>, headers: HeaderMap, body: Bytes) -> 
     )
     .unwrap();
     let mut events = Vec::new();
-    for mut payload in wire::events(turn as u8) {
+    for mut payload in responses_wire::events(turn as u8) {
         if state.1 {
             if let Some(item) = payload.get_mut("item") {
                 remove_opaque(item);

@@ -1,0 +1,279 @@
+//! Catalog-backed Chat/Responses Router fixture; protocol wire oracles stay separate.
+#[path = "openai_tool_loop/chat.rs"]
+mod chat;
+#[path = "openai_tool_loop/responses.rs"]
+mod responses;
+use axum::{
+    Json, Router, body::Body, extract::State, http::HeaderMap, response::Response, routing::post,
+};
+use morphiecore::{
+    gateway::{Entry, Gateway, Limits, TaskEntries},
+    protocol::openai::Profile,
+    provider::{SecretMaterial, TrustedOrigin},
+    topology::{self, catalog},
+};
+use serde_json::Value;
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+};
+use tokio::net::TcpListener;
+
+pub const CLIENT_KEY: &str = "synthetic-tool-history-client-0001";
+pub const RESULT: &str = "{\"error\":\"synthetic lookup unavailable\",\"label\":\"cedar-71\"}";
+pub struct Fixture {
+    pub base: String,
+    pub seen: Arc<Mutex<Vec<Value>>>,
+    pub gateway: Gateway,
+    #[allow(dead_code)] // The gateway target owns lifecycle-control assertions.
+    pub control: Arc<Control>,
+    tasks: Vec<tokio::task::JoinHandle<()>>,
+}
+#[derive(Default)]
+pub struct Control {
+    pub release: tokio::sync::Notify,
+    pub dropped: tokio::sync::Notify,
+}
+struct DropSignal(Arc<Control>);
+impl Drop for DropSignal {
+    fn drop(&mut self) {
+        self.0.dropped.notify_one();
+    }
+}
+#[derive(Clone)]
+struct StateData {
+    profile: Profile,
+    seen: Arc<Mutex<Vec<Value>>>,
+    control: Arc<Control>,
+}
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        for task in &self.tasks {
+            task.abort();
+        }
+    }
+}
+fn snapshot(profile: Profile, turn: usize) -> Value {
+    match profile {
+        Profile::Chat => chat::snapshot(turn),
+        Profile::Responses => responses::snapshot(turn),
+    }
+}
+fn events(profile: Profile, turn: usize) -> Vec<Value> {
+    match profile {
+        Profile::Chat => chat::events(turn),
+        Profile::Responses => responses::events(turn),
+    }
+}
+async fn answer(
+    State(StateData {
+        profile,
+        seen,
+        control,
+    }): State<StateData>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> Response {
+    assert!(matches!(
+        headers["authorization"].to_str().unwrap(),
+        "Bearer synthetic-tool-history-upstream" | "Bearer synthetic-tool-history-secondary"
+    ));
+    for field in [
+        "temperature",
+        "top_p",
+        "parallel_tool_calls",
+        "top_logprobs",
+    ] {
+        assert!(body.get(field).is_none(), "unexpected {field}");
+    }
+    let turn = match profile {
+        Profile::Chat => chat::assert_request(&body),
+        Profile::Responses => responses::assert_request(&body),
+    };
+    let chat = profile == Profile::Chat;
+    let history = body[if chat { "messages" } else { "input" }]
+        .as_array()
+        .unwrap();
+    seen.lock().unwrap().push(body.clone());
+    let stream = body["stream"] == true;
+    let bytes = if stream {
+        let mut bytes = Vec::new();
+        for event in events(profile, turn) {
+            let mode = history[0]["content"]
+                .as_str()
+                .or_else(|| history[0]["content"][0]["text"].as_str())
+                .unwrap();
+            if matches!(mode, "cut" | "cancel")
+                && (event["type"] == "response.completed"
+                    || event["choices"][0]["finish_reason"].is_string())
+            {
+                break;
+            }
+            bytes.extend_from_slice(format!("data: {event}\n\n").as_bytes());
+        }
+        if chat && !matches!(history[0]["content"].as_str(), Some("cut" | "cancel")) {
+            bytes.extend_from_slice(b"data: [DONE]\n\n");
+        }
+        bytes
+    } else {
+        serde_json::to_vec(&snapshot(profile, turn)).unwrap()
+    };
+    let mode = history[0]["content"]
+        .as_str()
+        .or_else(|| history[0]["content"][0]["text"].as_str())
+        .unwrap();
+    if matches!(mode, "hold" | "cut" | "cancel") {
+        let cut = mode == "cut";
+        let stream = futures_util::stream::unfold(
+            (0, DropSignal(control), bytes, cut),
+            |(phase, guard, bytes, cut)| async move {
+                match phase {
+                    0 => Some((
+                        Ok::<_, std::io::Error>(bytes::Bytes::copy_from_slice(&bytes)),
+                        (1, guard, bytes, cut),
+                    )),
+                    1 => {
+                        guard.0.release.notified().await;
+                        if cut {
+                            Some((
+                                Err(std::io::Error::other("synthetic disconnect")),
+                                (2, guard, bytes, cut),
+                            ))
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                }
+            },
+        );
+        return Response::builder()
+            .header("content-type", "text/event-stream")
+            .body(Body::from_stream(stream))
+            .unwrap();
+    }
+    Response::builder()
+        .header(
+            "content-type",
+            if stream {
+                "text/event-stream"
+            } else {
+                "application/json"
+            },
+        )
+        .body(Body::from_stream(futures_util::stream::iter(
+            bytes
+                .chunks(13)
+                .map(|b| Ok::<_, std::io::Error>(bytes::Bytes::copy_from_slice(b)))
+                .collect::<Vec<_>>(),
+        )))
+        .unwrap()
+}
+pub async fn start(profile: Profile, fallback: bool) -> Fixture {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let control = Arc::new(Control::default());
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin =
+        TrustedOrigin::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
+    let app = Router::new()
+        .route("/compatible-mode/v1/chat/completions", post(answer))
+        .route("/api/v1/responses", post(answer))
+        .with_state(StateData {
+            profile,
+            seen: seen.clone(),
+            control: control.clone(),
+        });
+    let upstream = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let catalog = catalog::default_topology().unwrap();
+    let mut endpoints = Vec::new();
+    let mut entries = Vec::new();
+    let mut credentials = BTreeMap::new();
+    let (label, id) = match profile {
+        Profile::Chat => ("qwen3.8-flash", "dashscope-flash-chat"),
+        Profile::Responses => ("gpt-6-luna", "openrouter-responses"),
+    };
+    let mut endpoint = catalog
+        .endpoint(&topology::EndpointId::new(id).unwrap())
+        .unwrap()
+        .clone();
+    let mut provider = catalog.endpoint_provider(&endpoint).unwrap().clone();
+    provider.origin = origin.clone();
+    endpoint.target.origin = origin.clone();
+    let public = catalog.model(label).unwrap().clone();
+    let mut route = catalog.route(&public.route).unwrap().clone();
+    route.endpoints = vec![endpoint.id.clone()];
+    route.policy.max_attempts = 1;
+    if fallback {
+        let mut secondary = endpoint.clone();
+        secondary.id = topology::EndpointId::new(&format!("{id}-secondary")).unwrap();
+        secondary.credential =
+            morphiecore::provider::CredentialBindingId::new(&format!("{id}-secondary-key"))
+                .unwrap();
+        route.endpoints.push(secondary.id.clone());
+        route.policy.max_attempts = 2;
+        route.policy.fallback = topology::FallbackPolicy::BeforeCommit;
+        entries.push(Entry {
+            model: label.into(),
+            protocol: profile,
+            endpoint: secondary.id.clone(),
+        });
+        credentials.insert(
+            secondary.credential.clone(),
+            Arc::new(SecretMaterial::new("synthetic-tool-history-secondary").unwrap()),
+        );
+        endpoints.push(secondary);
+    }
+    let canonical = topology::CanonicalModel {
+        id: public.canonical_model.clone(),
+        task: public.task,
+        contract: public.contract.clone(),
+    };
+    entries.push(Entry {
+        model: label.into(),
+        protocol: profile,
+        endpoint: endpoint.id.clone(),
+    });
+    credentials.insert(
+        endpoint.credential.clone(),
+        Arc::new(SecretMaterial::new("synthetic-tool-history-upstream").unwrap()),
+    );
+    endpoints.push(endpoint);
+    let metadata = [(
+        public.id.clone(),
+        topology::ModelMetadata::new(1, "Synthetic tool history").unwrap(),
+    )];
+    let topology = topology::compile(
+        vec![provider],
+        endpoints,
+        vec![route],
+        vec![public],
+        vec![canonical],
+    )
+    .unwrap()
+    .with_model_metadata(metadata)
+    .unwrap();
+    let gateway = Gateway::new(
+        topology,
+        TaskEntries {
+            generation: entries,
+            ..Default::default()
+        },
+        credentials,
+        SecretMaterial::new(CLIENT_KEY).unwrap(),
+        Limits::default(),
+        None,
+    )
+    .unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/v1", listener.local_addr().unwrap());
+    let owner = gateway.clone();
+    let server =
+        tokio::spawn(async move { owner.serve(listener, std::future::pending()).await.unwrap() });
+    Fixture {
+        base,
+        seen,
+        gateway,
+        control,
+        tasks: vec![server, upstream],
+    }
+}

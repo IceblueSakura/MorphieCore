@@ -1,14 +1,13 @@
-//! Pinned SDK traverses the production native Router with the selected R2 profile.
-#[path = "../support/r2.rs"]
-mod fixture;
+//! Pinned SDK traverses the production native Router with the selected native Messages profile.
 use super::child_process;
+use crate::messages_tool_fixture as fixture;
 use serde_json::Value;
 use std::time::Duration;
 use tokio::process::Command;
 
 #[tokio::test]
-#[ignore = "requires locked Anthropic SDK; synthetic native R2 JSON/SSE five-turn loops"]
-async fn selected_r2_sdk_keeps_changed_tools_effort_and_replay() {
+#[ignore = "requires locked Anthropic SDK; synthetic native Messages JSON/SSE five-turn loops"]
+async fn native_messages_sdk_keeps_changed_tools_effort_and_replay() {
     let fixture = fixture::start().await;
     let home = tempfile::tempdir().unwrap();
     let mut command = Command::new(
@@ -18,7 +17,11 @@ async fn selected_r2_sdk_keeps_changed_tools_effort_and_replay() {
         .env_clear()
         .env("HOME", home.path())
         .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-        .args(["tests/sdk/r2_loop.py", &fixture.base, fixture::KEY])
+        .args([
+            "tests/sdk/messages_tool_loop.py",
+            &fixture.base,
+            fixture::KEY,
+        ])
         .current_dir(env!("CARGO_MANIFEST_DIR"));
     let input = serde_json::to_vec(&fixture::input(false)).unwrap();
     let output = child_process::run(&mut command, &input, Duration::from_secs(30), 16 << 10)
@@ -26,7 +29,7 @@ async fn selected_r2_sdk_keeps_changed_tools_effort_and_replay() {
         .unwrap();
     assert!(
         output.status.success(),
-        "synthetic R2 SDK failure: {}",
+        "synthetic Messages SDK failure: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();

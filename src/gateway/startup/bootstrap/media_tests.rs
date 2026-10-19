@@ -1,5 +1,5 @@
 //! Frozen media activation needs explicit selection and a single non-fallback source.
-use super::tests::{selected_models, write_configuration};
+use super::test_support::{selected_models, write_configuration};
 use super::*;
 use crate::credential::{CredentialPool, CredentialRef};
 use serde_json::json;

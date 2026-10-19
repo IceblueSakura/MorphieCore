@@ -1,5 +1,5 @@
 //! File activation and replay epoch rebinding, without inference traffic.
-use super::tests::{selected_models, write_configuration};
+use super::test_support::{selected_models, write_configuration};
 use super::*;
 use crate::credential::{CredentialPool, CredentialRef};
 fn setup() -> (tempfile::TempDir, CredentialManager) {

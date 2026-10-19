@@ -2119,7 +2119,7 @@ mod chat_wire {
         assert_eq!(output["choices"][0]["finish_reason"], "length");
     }
 }
-mod stage1_dashscope {
+mod dashscope_controls {
     use crate::events_support::{metadata, text};
     use morphiecore::{
         adapter::Request,

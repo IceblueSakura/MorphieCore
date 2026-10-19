@@ -20,7 +20,7 @@ with httpx.Client(trust_env=False, timeout=10) as http:
             body["stream"] = streamed
             for turn in range(1, 6):
                 requests += 1
-                headers = {"x-session-affinity": "synthetic-r2-session"}
+                headers = {"x-session-affinity": "synthetic-messages-session"}
                 if streamed:
                     with client.beta.messages.stream(**{k: v for k, v in body.items() if k != "stream"}, extra_headers=headers) as stream:
                         message = stream.get_final_message()

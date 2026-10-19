@@ -7,25 +7,34 @@ mod chat_wire;
 mod child_line;
 #[path = "support/child_process.rs"]
 mod child_process;
+#[path = "support/messages_stream.rs"]
+mod messages_stream;
+#[path = "support/messages_tool_loop.rs"]
+mod messages_tool_fixture;
+#[path = "support/messages_wire.rs"]
+mod messages_wire;
 #[path = "support/tokenplan_audio.rs"]
 mod native_audio;
+#[path = "support/openai_tool_loop.rs"]
+mod openai_tool_loop;
 #[allow(dead_code)]
 #[path = "support/responses_profile.rs"]
 mod responses_wire;
-use responses_wire as r1_response_wire;
-#[path = "support/messages_wire.rs"]
-mod messages_wire;
 #[path = "support/gateway.rs"]
 mod support;
 
 #[path = "gateway/anthropic.rs"]
 mod anthropic;
+#[path = "gateway/chat_tool_history.rs"]
+mod chat_tool_history;
 #[path = "gateway/interactions.rs"]
 mod interactions;
-#[path = "gateway/r1.rs"]
-mod r1;
-#[path = "gateway/r2.rs"]
-mod r2;
+#[path = "gateway/messages_tool_loop.rs"]
+mod messages_tool_loop;
+#[path = "gateway/responses_history.rs"]
+mod responses_history;
+#[path = "gateway/tool_publication.rs"]
+mod tool_publication;
 use axum::{
     Router,
     body::Body,
