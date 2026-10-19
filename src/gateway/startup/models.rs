@@ -188,6 +188,7 @@ impl Models {
             let single = config.candidates.len() == 1;
             let mut deployments = BTreeSet::new();
             let mut native_owner_cache = true;
+            let mut native_agent_profile = true;
             for (candidate_index, candidate) in config.candidates.into_iter().enumerate() {
                 let binding = EndpointId::new(&candidate.binding).map_err(|_| invalid())?;
                 if !template_route.endpoints.contains(&binding) {
@@ -262,8 +263,13 @@ impl Models {
                     candidate.thinking_conversion,
                     &table,
                 )?;
-                native_owner_cache &= endpoint.protocol == ProtocolProfile::AnthropicMessages
-                    && endpoint.representation.semantics().explicit_cache;
+                let native = endpoint.protocol == ProtocolProfile::AnthropicMessages;
+                let semantics = endpoint.representation.semantics();
+                native_owner_cache &= native && semantics.explicit_cache;
+                native_agent_profile &= native
+                    && semantics.strict_tools
+                    && semantics.ordered_instructions
+                    && semantics.tool_changes;
                 route.endpoints.push(endpoint.id.clone());
                 // All public Generation client protocols use the same explicit route.
                 entries
@@ -280,6 +286,13 @@ impl Models {
             // Publish only the selected all-native contract, never a union that
             // admits cache-bearing requests by skipping incompatible candidates.
             public.contract.explicit_cache |= native_owner_cache;
+            // pi's built-in Messages profile: strict tools, mid-conversation system
+            // messages and tool changes, under the same all-native rule.
+            if native_agent_profile {
+                public.contract.strict_tools = true;
+                public.contract.ordered_instructions = true;
+                public.contract.tool_changes = true;
+            }
             public_models.push(public);
         }
         let topology = catalog

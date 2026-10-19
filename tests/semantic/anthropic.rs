@@ -154,22 +154,38 @@ mod anthropic_profile {
         let mut body = base;
         body["thinking"] = json!({"type":"adaptive"});
         let plain = decode_client_request(body.to_string().as_bytes()).unwrap();
-        // Tolerant dropping is omitted with a receipt; enforcement has no carrier.
-        body["thinking"]["block_binding"] = json!({"prefix_mismatch_behavior":"drop_block"});
-        let dropped = decode_client_request(body.to_string().as_bytes()).unwrap();
-        assert_eq!(dropped.task.semantic, plain.task.semantic);
-        assert!(dropped.task.fidelity.normalizations().contains(
-            &morphiecore::protocol::fidelity::Normalization::Omitted {
-                rule: "messages.omit-block-binding.v1",
-                field: "generation.reasoning.block_binding",
-            }
-        ));
-        assert!(plain.task.fidelity.normalizations().is_empty());
-        for binding in [json!({"prefix_mismatch_behavior":"error"}), json!({})] {
+        // Block binding has a typed owner; `{}` and a null behavior keep the default.
+        use morphiecore::semantic::task::generation::ReplayMismatch;
+        for (binding, expected) in [
+            (
+                json!({"prefix_mismatch_behavior":"drop_block"}),
+                Some(ReplayMismatch::Drop),
+            ),
+            (
+                json!({"prefix_mismatch_behavior":"error"}),
+                Some(ReplayMismatch::Reject),
+            ),
+            (json!({}), None),
+            (json!({"prefix_mismatch_behavior":null}), None),
+        ] {
             body["thinking"]["block_binding"] = binding;
-            assert!(matches!(decode_client_request(body.to_string().as_bytes()),
-                Err(CodecError::Unsupported(field)) if field == "thinking.block_binding"));
+            let decoded = decode_client_request(body.to_string().as_bytes()).unwrap();
+            assert_eq!(decoded.task.semantic.reasoning().replay_mismatch, expected);
+            assert!(decoded.task.fidelity.normalizations().is_empty());
         }
+        assert_eq!(plain.task.semantic.reasoning().replay_mismatch, None);
+        body["thinking"]["block_binding"] = json!({"prefix_mismatch_behavior":"ignore"});
+        assert!(matches!(
+            decode_client_request(body.to_string().as_bytes()),
+            Err(CodecError::Invalid("thinking.block_binding"))
+        ));
+        // The check exists only for adaptive thinking.
+        body["thinking"] = json!({"type":"enabled","budget_tokens":1024,
+            "block_binding":{"prefix_mismatch_behavior":"drop_block"}});
+        assert!(matches!(
+            decode_client_request(body.to_string().as_bytes()),
+            Err(CodecError::Invalid("thinking.block_binding"))
+        ));
     }
     fn message() -> Value {
         json!({"id":"msg_synthetic","type":"message","role":"assistant","model":"synthetic-model",
@@ -1662,8 +1678,8 @@ mod anthropic_media {
         // The Chat source has no cap; Messages requires one and records the default.
         assert_eq!(wire["max_tokens"], 32_000);
         assert_eq!(rules, ["messages.default-max-tokens.v1"]);
-        // A later developer message becomes a mid-conversation system message once the
-        // binding's representation declares it; default admission stays closed.
+        // A later developer message becomes a mid-conversation system message on the
+        // reviewed Haiku binding; the profile default keeps admission closed.
         let ordered = |messages: Value| {
             let mut request = chat
                 .decode_client_request(
@@ -1678,14 +1694,14 @@ mod anthropic_media {
         };
         let later = ordered(json!([{"role":"user","content":"go"},
             {"role":"developer","content":"Be brief."}]));
-        assert!(endpoint.encode_request_with_rules(&later).is_err());
-        let mut widened = endpoint.clone();
-        let mut caps = morphiecore::protocol::anthropic::TargetCaps::new(
+        let mut closed = endpoint.clone();
+        closed.representation = morphiecore::protocol::anthropic::TargetCaps::new(
             Profile::AdaptiveTextTools,
             morphiecore::protocol::anthropic::Dialect::OpenCodeGo,
-        );
-        caps.semantics = Profile::AdaptiveTextTools.representation_contract();
-        widened.representation = caps.into();
+        )
+        .into();
+        assert!(closed.encode_request_with_rules(&later).is_err());
+        let widened = endpoint.clone();
         let (wire, rules) = widened.encode_request_with_rules(&later).unwrap();
         assert_eq!(
             wire["messages"],
@@ -2509,6 +2525,172 @@ mod client_fidelity {
             );
         }
     }
+    /// pi 1.3.0's built-in Haiku request shape: per-message effort, block binding and
+    /// ordered tool changes keep exact carriers or their named rules.
+    #[test]
+    fn pi_haiku_profile_keeps_carriers_or_records_rules() {
+        use morphiecore::protocol::{anthropic, native::ReplayTarget};
+        let strict = json!({"type":"object","properties":{"path":{"type":"string"}},
+            "required":["path"],"additionalProperties":false});
+        let body = json!({"model":"m","max_tokens":64,
+            "system":[{"type":"text","text":"You are pi."}],
+            "thinking":{"type":"adaptive","display":"summarized",
+                "block_binding":{"prefix_mismatch_behavior":"drop_block"}},
+            "output_config":{"effort":"high"},
+            "tools":[
+                {"name":"read","input_schema":strict,"strict":true,"eager_input_streaming":true},
+                {"name":"__pi_deferred_placeholder__","input_schema":{"type":"object"},
+                    "defer_loading":true}],
+            "messages":[
+                {"role":"user","content":"read a"},
+                {"role":"system","content":[],"output_config":{"effort":"low"}},
+                {"role":"assistant","content":[
+                    {"type":"tool_use","id":"t1","name":"read","input":{"path":"a"}}]},
+                {"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"A"}]},
+                {"role":"assistant","content":"done"},
+                {"role":"user","content":"now write"},
+                {"role":"system","content":[{"type":"text","text":"Write mode."},
+                    {"type":"tool_removal","tool":{"type":"tool_reference","name":"read"}},
+                    {"type":"tool_addition","tool":{"type":"tool_definition","definition":
+                        {"name":"write","input_schema":strict,"strict":true}}}]},
+                {"role":"system","content":[],"output_config":{"effort":"medium"}}]});
+        let decoded = decode_client_request(body.to_string().as_bytes()).unwrap();
+        let semantic = &decoded.task.semantic;
+        assert_eq!(
+            semantic.reasoning().replay_mismatch,
+            Some(ReplayMismatch::Drop)
+        );
+        let effort = |level| {
+            Item::ConfigurationUpdate(ConfigurationUpdate {
+                activation: None,
+                effort: Some(EffortControl {
+                    scope: EffortScope::Response,
+                    level,
+                }),
+            })
+        };
+        let items: Vec<_> = semantic.items().iter().map(|(_, item)| item).collect();
+        assert_eq!(items.len(), 11);
+        assert_eq!(items[2], &effort(EffortLevel::Low));
+        assert!(matches!(items[7], Item::Instruction(i)
+            if i.texts().map(|(_, t)| t).collect::<Vec<_>>() == ["Write mode."]));
+        assert!(matches!(items[8], Item::ToolChange(ToolChange {
+            action: ToolChangeAction::Remove(name), cache: None }) if name.as_str() == "read"));
+        assert!(matches!(items[9], Item::ToolChange(ToolChange {
+            action: ToolChangeAction::AddDefinition(tool), cache: None })
+            if tool.name.as_str() == "write"
+                && tool.strict == FunctionStrictness::Explicit(true)));
+        assert_eq!(items[10], &effort(EffortLevel::Medium));
+
+        let target = ReplayTarget::new("synthetic", "synthetic").unwrap();
+        let mut caps = anthropic::TargetCaps::new(
+            anthropic::Profile::AdaptiveTextTools,
+            anthropic::Dialect::Standard,
+        );
+        caps.semantics = anthropic::Profile::AdaptiveTextTools.representation_contract();
+        caps.carriers = anthropic::Carriers::all();
+        let exact = caps.encode_request(&decoded, &target).unwrap();
+        assert!(exact.rules.is_empty(), "{:?}", exact.rules);
+        let wire = &exact.value;
+        assert_eq!(wire["thinking"], body["thinking"]);
+        assert_eq!(wire["tools"], body["tools"]);
+        assert_eq!(wire["output_config"], json!({"effort":"high"}));
+        // One system section shares a message; its effort rides on that message.
+        let messages = wire["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 7);
+        assert_eq!(
+            messages[1],
+            json!({"role":"system","content":[],"output_config":{"effort":"low"}})
+        );
+        assert_eq!(
+            messages[6],
+            json!({"role":"system","content":[{"type":"text","text":"Write mode."},
+                body["messages"][6]["content"][1], body["messages"][6]["content"][2]],
+                "output_config":{"effort":"medium"}})
+        );
+
+        // Without carriers: tolerant binding is omitted, the reply's effort is the level in
+        // effect for it, and the tool set is the final available one.
+        caps.carriers = Default::default();
+        let flat = caps.encode_request(&decoded, &target).unwrap();
+        let rules: Vec<_> = flat.rules.iter().map(|r| r.name()).collect();
+        assert_eq!(
+            rules,
+            [
+                "messages.omit-block-binding.v1",
+                "messages.flatten-message-effort.v1",
+                "messages.collapse-tool-changes.v1"
+            ]
+        );
+        let wire = &flat.value;
+        assert_eq!(
+            wire["thinking"],
+            json!({"type":"adaptive","display":"summarized"})
+        );
+        assert_eq!(wire["output_config"], json!({"effort":"medium"}));
+        assert_eq!(
+            wire["tools"],
+            json!([{"name":"write","input_schema":strict,"strict":true}])
+        );
+        let messages = wire["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 6);
+        assert_eq!(
+            messages[5],
+            json!({"role":"system","content":[{"type":"text","text":"Write mode."}]})
+        );
+        // A change after a tool-result-only turn waits for new input.
+        let mut pending = body.clone();
+        pending["messages"] = json!([
+            {"role":"user","content":"read a"},
+            {"role":"assistant","content":[
+                {"type":"tool_use","id":"t1","name":"read","input":{"path":"a"}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"A"}]},
+            {"role":"system","content":[],"output_config":{"effort":"low"}}]);
+        let decoded = decode_client_request(pending.to_string().as_bytes()).unwrap();
+        let flat = caps.encode_request(&decoded, &target).unwrap();
+        assert_eq!(flat.value["output_config"], json!({"effort":"high"}));
+        // Explicit enforcement has no carrier to degrade to.
+        let mut enforced = pending;
+        enforced["thinking"]["block_binding"]["prefix_mismatch_behavior"] = json!("error");
+        let decoded = decode_client_request(enforced.to_string().as_bytes()).unwrap();
+        assert!(caps.encode_request(&decoded, &target).is_err());
+        caps.carriers.block_binding = true;
+        assert_eq!(
+            caps.encode_request(&decoded, &target).unwrap().value["thinking"]["block_binding"],
+            json!({"prefix_mismatch_behavior":"error"})
+        );
+        // Tool-change blocks are system content only, and removal names a reference.
+        for (index, role, block, error) in [
+            (
+                5,
+                "user",
+                json!({"type":"tool_removal","tool":{"type":"tool_reference","name":"read"}}),
+                "Anthropic block role",
+            ),
+            (
+                6,
+                "system",
+                json!({"type":"tool_removal","tool":{"type":"tool_definition",
+                    "definition":{"name":"read","input_schema":{"type":"object"}}}}),
+                "Anthropic tool removal",
+            ),
+        ] {
+            let mut misplaced = body.clone();
+            misplaced["messages"][index] =
+                json!({"role":role,"content":[{"type":"text","text":"x"},block]});
+            assert_eq!(
+                decode_client_request(misplaced.to_string().as_bytes()).unwrap_err(),
+                CodecError::Invalid(error)
+            );
+        }
+        // Per-message effort belongs to system messages.
+        let mut misplaced = body;
+        misplaced["messages"][0]["output_config"] = json!({"effort":"low"});
+        assert!(matches!(
+            decode_client_request(misplaced.to_string().as_bytes()),
+            Err(CodecError::Invalid("Anthropic message output_config"))
+        ));
+    }
     #[test]
     fn client_intake_carries_caps_and_rejects_active_fields_it_cannot_carry() {
         let body = json!({"model":"m","max_tokens":8,"stop_sequences":[],
@@ -2571,8 +2753,30 @@ mod client_fidelity {
             ])
         );
         assert!(projected.rules.is_empty());
+        // pi's tool flags keep typed owners and reach the native wire unchanged.
+        let mut flagged = strict.clone();
+        flagged["tools"][0]["eager_input_streaming"] = json!(true);
+        flagged["tools"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"name":"later","input_schema":{"type":"object"},"defer_loading":true}));
+        let decoded = decode_client_request(flagged.to_string().as_bytes()).unwrap();
+        let tools: Vec<_> = decoded
+            .task
+            .semantic
+            .tools()
+            .iter()
+            .map(|tool| match tool {
+                ToolDefinition::Function(t) => (t.eager_input, t.dispatch.defer_loading),
+                _ => panic!("function"),
+            })
+            .collect();
+        assert_eq!(tools, [(Some(true), false), (None, true)]);
+        let projected = caps.encode_request(&decoded, &target).unwrap();
+        assert_eq!(projected.value["tools"], flagged["tools"]);
+        flagged["tools"][1]["cache_control"] = json!({"type":"ephemeral"});
+        assert!(decode_client_request(flagged.to_string().as_bytes()).is_err());
         for (key, value) in [
-            ("defer_loading", json!(true)),
             ("allowed_callers", json!(["code_execution_20250825"])),
             ("input_examples", json!([{}])),
         ] {

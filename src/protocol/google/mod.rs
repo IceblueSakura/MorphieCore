@@ -78,6 +78,7 @@ pub fn semantic_contract() -> GenerationSemanticContract {
         file_input: true,
         parallel_tool_calls: true,
         strict_tools: false,
+        tool_changes: false,
         normalization_default_tools: false,
         explicit_cache: false,
         cached_context: false,
@@ -117,7 +118,7 @@ pub fn encode_generation_request(
             crate::semantic::task::generation::ReplayFormat::GoogleGenerateContentSignature,
         ],
     )?;
-    let request = group_client_history(&request)?;
+    let request = group_client_history(&request, false)?;
     request.validate()?;
     if let Some(reference) = request.cached_context() {
         fidelity.check_cached_context(reference, &target.origin(), resource_time)?;

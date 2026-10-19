@@ -257,6 +257,23 @@ pub fn items(
                 )?;
             }
             Item::ConfigurationUpdate(update) => update.validate()?,
+            Item::ToolChange(change) => {
+                if response {
+                    return Err(GenerationError::InvalidResponse);
+                }
+                match &change.action {
+                    ToolChangeAction::AddDefinition(tool) => charge(
+                        &mut bytes,
+                        tools(&[ToolDefinition::Function((**tool).clone())], None)?,
+                    )?,
+                    ToolChangeAction::AddReference(name) | ToolChangeAction::Remove(name) => {
+                        if name.as_str().is_empty() || name.as_str().len() > 128 {
+                            return Err(GenerationError::InvalidToolDefinition);
+                        }
+                        add(&mut bytes, name.as_str())?;
+                    }
+                }
+            }
             Item::Compaction(value) => {
                 value.validate_compaction()?;
                 if !response && value.replay_token().is_none() {

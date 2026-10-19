@@ -264,6 +264,10 @@ impl GenerationSseDecoder {
                     .wire
                     .message()
                     .ok_or(CodecError::Invalid("native stream"))?;
+                if message.input_transformations {
+                    self.fidelity
+                        .record_omission(crate::protocol::fidelity::INPUT_TRANSFORMATIONS_OMISSION);
+                }
                 out.push(StreamEvent::UsageReport(super::accounting::report(
                     &message.usage,
                     UsageStage::Checkpoint,

@@ -38,6 +38,35 @@ mod provider_profiles {
             assert_eq!(rules.contains(&"zhipu.glm-5.3.effort.v1"), effort != "high");
         }
     }
+    /// Messages-only tool and replay controls on a Chat target: eager input is omitted
+    /// under a named rule; explicit block-binding enforcement rejects.
+    #[test]
+    fn messages_only_controls_leave_chat_targets_by_named_rules() {
+        use morphiecore::protocol::{CodecError, anthropic::client::decode_client_request};
+        use morphiecore::topology::{ProtocolProfile, catalog::API_KEY_BINDINGS};
+        let endpoint = API_KEY_BINDINGS
+            .iter()
+            .find(|binding| binding.endpoint_prefix == "dashscope-flash")
+            .unwrap()
+            .endpoint(ProtocolProfile::OpenAiChat)
+            .unwrap();
+        let mut body = json!({"model":"m","max_tokens":64,
+            "tools":[{"name":"read","input_schema":{"type":"object"},"eager_input_streaming":true}],
+            "messages":[{"role":"user","content":"q"}]});
+        let request = decode_client_request(body.to_string().as_bytes()).unwrap();
+        let (wire, rules) = endpoint.encode_request_with_rules(&request).unwrap();
+        assert_eq!(rules, ["generation.omit-eager-tool-input.v1"]);
+        assert_eq!(wire["tools"][0]["function"]["name"], "read");
+        assert!(!wire.to_string().contains("eager"));
+        // Adaptive Messages thinking has no OpenAI carrier yet, so only enforcement is
+        // observable: it rejects before reasoning projection.
+        body["thinking"] = json!({"type":"adaptive",
+            "block_binding":{"prefix_mismatch_behavior":"error"}});
+        let request = decode_client_request(body.to_string().as_bytes()).unwrap();
+        assert!(matches!(endpoint.encode_request_with_rules(&request),
+            Err(morphiecore::adapter::AdapterError::Codec(CodecError::Unsupported(field)))
+                if field == "thinking.block_binding"));
+    }
     #[test]
     fn unversioned_readable_views_are_closed_and_never_restore_deleted_reasoning() {
         use morphiecore::semantic::task::generation::{Item, ReasoningContent};

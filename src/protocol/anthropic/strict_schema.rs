@@ -4,11 +4,20 @@ use serde_json::Value;
 
 pub(super) fn admits_request(request: &super::Request) -> bool {
     use crate::semantic::value::Presence;
+    // Definitions added mid-conversation share the request-wide grammar limits.
+    let added = request.messages.iter().flat_map(|m| match &m.content {
+        super::MessageContent::Blocks(blocks) => blocks.as_slice(),
+        super::MessageContent::Text(_) => &[],
+    });
     let tools: Vec<_> = request
         .tools
         .value()
         .into_iter()
         .flatten()
+        .chain(added.filter_map(|block| match &block.content {
+            super::Block::ToolAddition(super::ToolTarget::Definition(tool)) => Some(tool),
+            _ => None,
+        }))
         .filter(|tool| tool.strict == Presence::Value(true))
         .collect();
     // These native grammar limits are request-wide, including JSON output.

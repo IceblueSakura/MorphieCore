@@ -1,7 +1,8 @@
 //! Native Messages bindings. Directory bootstrap activates one only when `models` lists it.
 use crate::{
-    protocol::anthropic::{Dialect, Profile, TargetCaps},
+    protocol::anthropic::{Carriers, Dialect, Profile, TargetCaps},
     provider::{CredentialBindingId, CredentialKind, ProviderDefinition, catalog},
+    semantic::task::generation::GenerationSemanticContract,
     topology::*,
 };
 pub struct MessagesBinding {
@@ -21,6 +22,14 @@ pub const MESSAGES_BINDINGS: &[MessagesBinding] = &[MessagesBinding {
     released_at: 1_791_331_200,
     developer: "Anthropic",
 }];
+/// pi's built-in Haiku profile: strict tools, mid-conversation system messages and
+/// ordered tool changes.
+fn haiku_contract(mut contract: GenerationSemanticContract) -> GenerationSemanticContract {
+    contract.strict_tools = true;
+    contract.ordered_instructions = true;
+    contract.tool_changes = true;
+    contract
+}
 impl MessagesBinding {
     pub fn provider(&self) -> ProviderDefinition {
         catalog::opencode_go()
@@ -34,6 +43,8 @@ impl MessagesBinding {
         // Haiku supports owner-local 5m/1h markers; the pinned Go bridge preserves them.
         // This does not admit request-wide automatic caching or certify live cache use.
         representation.semantics.explicit_cache = true;
+        representation.semantics = haiku_contract(representation.semantics);
+        representation.carriers = Carriers::all();
         Endpoint {
             id: EndpointId::new("opencode-go-haiku-messages").expect("static id"),
             provider: provider.id,
@@ -81,7 +92,7 @@ impl MessagesBinding {
         public
     }
     pub fn canonical_model(&self) -> CanonicalModel {
-        let mut contract = Profile::AdaptiveTextTools.semantic_contract();
+        let mut contract = haiku_contract(Profile::AdaptiveTextTools.semantic_contract());
         contract.explicit_cache = true;
         CanonicalModel {
             id: ModelId::new(self.model).expect("static model"),

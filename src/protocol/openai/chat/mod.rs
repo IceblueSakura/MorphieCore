@@ -921,6 +921,7 @@ pub(super) fn encode_items_with(
             }
             Item::ProviderTool(_)
             | Item::ConfigurationUpdate(_)
+            | Item::ToolChange(_)
             | Item::Compaction(_)
             | Item::Program(_)
             | Item::ProgramOutput(_) => {

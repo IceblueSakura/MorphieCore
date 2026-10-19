@@ -24,12 +24,12 @@ pub use content::citation::{
 };
 pub use content::item::{
     ConfigurationUpdate, ContentPart, InputPart, Instruction, InstructionAuthority, Item, Message,
-    MessageRole, Part, Phase,
+    MessageRole, Part, Phase, ToolChange, ToolChangeAction,
 };
 pub use content::reasoning::{
     EffortControl, EffortLevel, EffortScope, ReasoningActivation, ReasoningContent,
     ReasoningContext, ReasoningDisplay, ReasoningItem, ReasoningMode, ReasoningPresence,
-    ReasoningRequest, ReasoningSummary,
+    ReasoningRequest, ReasoningSummary, ReplayMismatch,
 };
 pub use content::structured::StructuredValue;
 pub use content::text::{

@@ -315,8 +315,11 @@ fn compile_deployments(
                 super::ProtocolProfile::AnthropicMessages => {
                     let mut ceiling =
                         crate::protocol::anthropic::Profile::AdaptiveTextTools.semantic_contract();
-                    // Reviewed binding opt-in only; other codec-only features stay closed.
+                    // Reviewed binding opt-ins only; other codec-only features stay closed.
                     ceiling.explicit_cache = true;
+                    ceiling.strict_tools = true;
+                    ceiling.ordered_instructions = true;
+                    ceiling.tool_changes = true;
                     Some(ceiling)
                 }
                 super::ProtocolProfile::GoogleGenerateContent => {

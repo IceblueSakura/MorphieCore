@@ -336,6 +336,7 @@ mod client_managed_composition {
                     output_schema: None,
                     dispatch: Default::default(),
                     cache: None,
+                    eager_input: None,
                 })]),
                 reasoning,
                 ..Default::default()

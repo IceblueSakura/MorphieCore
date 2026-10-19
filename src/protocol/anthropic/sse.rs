@@ -219,12 +219,14 @@ impl MessageSseDecoder {
                 stop_reason,
                 stop_sequence,
                 usage,
+                input_transformations,
             } => {
                 if self.open.is_some() {
                     return Err(invalid());
                 }
                 let message = self.message.as_mut().ok_or_else(invalid)?;
                 self.ending = true;
+                message.input_transformations |= input_transformations;
                 if !stop_reason.is_absent() {
                     if message.stop_reason.value().is_some() && message.stop_reason != stop_reason {
                         return Err(invalid());

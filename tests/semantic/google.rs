@@ -829,6 +829,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
         output_schema: None,
         dispatch: Default::default(),
         cache: None,
+        eager_input: None,
     })]);
     let bare = request.clone().with_settings(bare).unwrap();
     let (body, _) = encode_generation_request(&bare, &observed.fidelity, &target(), None).unwrap();

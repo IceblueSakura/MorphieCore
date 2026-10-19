@@ -144,13 +144,21 @@ pub(crate) fn normalize_stateless_defaults(context: &mut ExecutionHints) {
 /// Assemble target messages from ordered items, without claiming source ownership:
 /// consecutive assistant output (messages, reasoning, calls) forms one assistant turn,
 /// user messages and tool results one user turn.
+/// Group client history by role. Instructions, and with `ordered_system` the tool
+/// changes and configuration updates a Messages system message carries, stay outside.
 pub(crate) fn group_client_history(
     request: &GenerationRequest,
+    ordered_system: bool,
 ) -> Result<GenerationRequest, CodecError> {
+    let outside_envelopes = |item: &Item| match item {
+        Item::Instruction(_) => true,
+        Item::ToolChange(_) | Item::ConfigurationUpdate(_) => ordered_system,
+        _ => false,
+    };
     let expected: Vec<_> = request
         .items()
         .iter()
-        .filter(|(_, item)| !matches!(item, Item::Instruction(_)))
+        .filter(|(_, item)| !outside_envelopes(item))
         .map(|(id, _)| *id)
         .collect();
     let actual: Vec<_> = request
@@ -164,7 +172,7 @@ pub(crate) fn group_client_history(
     let mut groups: Vec<(MessageEnvelopeRole, Vec<ItemId>)> = vec![];
     for (id, item) in request.items() {
         let role = match item {
-            Item::Instruction(_) => continue,
+            item if outside_envelopes(item) => continue,
             Item::Message(message) => match message.role {
                 MessageRole::User => MessageEnvelopeRole::User,
                 MessageRole::Assistant => MessageEnvelopeRole::Assistant,

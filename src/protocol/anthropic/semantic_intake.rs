@@ -79,6 +79,66 @@ impl Intake {
         ));
         Ok(())
     }
+    fn push(&mut self, item: Item) -> Result<(), CodecError> {
+        if self.items.len() >= MAX_ITEMS {
+            return Err(CodecError::Limit);
+        }
+        let id = ItemId::scoped(self.scope, self.items.len() as u64 + 1);
+        self.items.push((id, item));
+        Ok(())
+    }
+    /// One mid-conversation system message, in block order: text runs become
+    /// instructions, tool-change blocks ordered changes, and a per-message effort an
+    /// ordered configuration update after them.
+    pub(super) fn system_message(
+        &mut self,
+        blocks: &[super::CacheMarked<Block>],
+        effort: Option<super::Effort>,
+    ) -> Result<(), CodecError> {
+        if blocks.is_empty() && effort.is_none() {
+            return Err(CodecError::Invalid("Anthropic empty system message"));
+        }
+        let mut text_run = vec![];
+        for block in blocks {
+            let action = match &block.content {
+                Block::Text(s) => {
+                    text_run.push(super::CacheMarked {
+                        content: s.clone(),
+                        cache: block.cache,
+                    });
+                    continue;
+                }
+                Block::ToolAddition(super::ToolTarget::Reference(name)) => {
+                    ToolChangeAction::AddReference(text(name)?)
+                }
+                Block::ToolAddition(super::ToolTarget::Definition(tool)) => {
+                    ToolChangeAction::AddDefinition(Box::new(function_tool(tool)?))
+                }
+                Block::ToolRemoval(name) => ToolChangeAction::Remove(text(name)?),
+                _ => return Err(CodecError::Invalid("Anthropic block role")),
+            };
+            if !text_run.is_empty() {
+                self.instruction(&std::mem::take(&mut text_run))?;
+            }
+            self.push(Item::ToolChange(ToolChange {
+                action,
+                cache: block.cache,
+            }))?;
+        }
+        if !text_run.is_empty() {
+            self.instruction(&text_run)?;
+        }
+        if let Some(effort) = effort {
+            self.push(Item::ConfigurationUpdate(ConfigurationUpdate {
+                activation: None,
+                effort: Some(EffortControl {
+                    scope: EffortScope::Response,
+                    level: super::semantic::effort_level(effort),
+                }),
+            }))?;
+        }
+        Ok(())
+    }
     fn block(&mut self, block: &Block, role: Role) -> Result<ItemId, CodecError> {
         if role == Role::System || !block.permits(role) {
             return Err(CodecError::Invalid("Anthropic block role"));
@@ -152,6 +212,9 @@ impl Intake {
                 status: ItemLifecycle::Completed,
                 context: Default::default(),
             }),
+            Block::ToolAddition(_) | Block::ToolRemoval(_) => {
+                return Err(CodecError::Invalid("Anthropic block role"));
+            }
             Block::ToolResult {
                 tool_use_id,
                 content,
@@ -240,6 +303,27 @@ impl Intake {
         Ok(())
     }
 }
+/// One native tool definition; deferred loading and eager input keep their owners.
+pub(super) fn function_tool(tool: &super::Tool) -> Result<FunctionTool, CodecError> {
+    Ok(FunctionTool {
+        name: text(&tool.name)?,
+        description: tool.description.value().cloned(),
+        parameters: Some(tool.input_schema.clone()),
+        strict: tool
+            .strict
+            .value()
+            .map_or(FunctionStrictness::Omitted(StrictDefault::NonStrict), |b| {
+                FunctionStrictness::Explicit(*b)
+            }),
+        output_schema: None,
+        dispatch: ToolDispatch {
+            defer_loading: tool.defer_loading,
+            ..Default::default()
+        },
+        cache: tool.cache_control.value().copied(),
+        eager_input: tool.eager_input_streaming.value().copied(),
+    })
+}
 pub(super) fn validate_cache(request: &GenerationRequest) -> Result<(), CodecError> {
     let mut markers = request
         .tools()
@@ -298,6 +382,19 @@ pub(super) fn validate_cache(request: &GenerationRequest) -> Result<(), CodecErr
                 }
                 markers.extend(r.cache);
                 last = r.cache;
+            }
+            // The marker sits on the block or inside the definition, never both.
+            Item::ToolChange(change) => {
+                let definition = match &change.action {
+                    ToolChangeAction::AddDefinition(tool) => tool.cache,
+                    _ => None,
+                };
+                if change.cache.is_some() && definition.is_some() {
+                    return Err(CodecError::Invalid("Anthropic tool change cache"));
+                }
+                let cache = change.cache.or(definition);
+                markers.extend(cache);
+                last = cache;
             }
             _ => {}
         }

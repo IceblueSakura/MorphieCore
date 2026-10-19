@@ -97,6 +97,8 @@ pub enum Item {
     /// Opaque compacted context at this exact position, never readable reasoning.
     Compaction(ReplayValue),
     ConfigurationUpdate(ConfigurationUpdate),
+    /// Ordered tool availability change; request tools stay the initial declaration.
+    ToolChange(ToolChange),
     Program(Program),
     ProgramOutput(ProgramOutput),
     ProviderTool(ProviderToolObservation),
@@ -117,6 +119,28 @@ impl ConfigurationUpdate {
             return Err(GenerationError::InvalidControl);
         }
         Ok(())
+    }
+}
+/// Offers or withdraws a tool from this position onward.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ToolChange {
+    pub action: ToolChangeAction,
+    pub cache: Option<PrefixCacheTtl>,
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ToolChangeAction {
+    /// A tool declared in the request or defined by an earlier change.
+    AddReference(Text),
+    /// A definition by value, replacing an earlier one with the same name.
+    AddDefinition(Box<FunctionTool>),
+    Remove(Text),
+}
+impl ToolChange {
+    pub fn name(&self) -> &Text {
+        match &self.action {
+            ToolChangeAction::AddReference(name) | ToolChangeAction::Remove(name) => name,
+            ToolChangeAction::AddDefinition(tool) => &tool.name,
+        }
     }
 }
 impl Item {
@@ -166,6 +190,10 @@ impl Item {
             Self::Instruction(i) => i.parts.iter().any(|p| p.cache.is_some()),
             Self::Message(m) => m.parts.iter().any(|p| p.cache.is_some()),
             Self::ToolCall(c) => c.cache.is_some(),
+            Self::ToolChange(c) => {
+                c.cache.is_some()
+                    || matches!(&c.action, ToolChangeAction::AddDefinition(t) if t.cache.is_some())
+            }
             Self::ToolResult(r) | Self::CustomResult(r) => {
                 r.cache.is_some()
                     || matches!(&r.output, ToolOutput::Parts(parts) if parts.iter().any(|p| p.cache.is_some()))

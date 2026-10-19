@@ -605,6 +605,10 @@ fn represent_reasoning(
         return Err(RepresentationError::Reasoning);
     }
     for (id, item) in items {
+        // No OpenAI carrier orders tool availability; collapsing it is a separate policy.
+        if matches!(item, Item::ToolChange(_)) {
+            return Err(RepresentationError::Tools);
+        }
         if let Item::ConfigurationUpdate(update) = item
             && (profile != Profile::Responses || super::reasoning::effort_label(update).is_err())
         {

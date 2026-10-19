@@ -56,10 +56,10 @@ pub(crate) const REPLAY_MANIFEST_OMISSION: Normalization = Normalization::Omitte
     rule: "generation.omit-unmatched-replay-manifest.v1",
     field: "generation.replay.attachments",
 };
-/// Only the tolerant `drop_block` behavior is admitted; no target receives it.
-pub(crate) const BLOCK_BINDING_OMISSION: Normalization = Normalization::Omitted {
-    rule: "messages.omit-block-binding.v1",
-    field: "generation.reasoning.block_binding",
+/// Messages reports of upstream input changes; their paths index the upstream request.
+pub(crate) const INPUT_TRANSFORMATIONS_OMISSION: Normalization = Normalization::Omitted {
+    rule: "messages.omit-input-transformations.v1",
+    field: "response.input_transformations",
 };
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ResponseExtras {

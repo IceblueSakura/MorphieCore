@@ -37,6 +37,12 @@ pub enum RequestRule {
     OmitSchemaName,
     /// Messages requires `max_tokens`; a source without a ceiling gets the fixed default.
     DefaultMaxTokens,
+    /// Tolerant `drop_block` replay handling without a target carrier.
+    OmitBlockBinding,
+    /// Per-message effort becomes the level in effect for the requested reply.
+    FlattenMessageEffort,
+    /// Ordered tool changes become the final available tool set.
+    CollapseToolChanges,
 }
 impl RequestRule {
     pub const fn name(self) -> &'static str {
@@ -53,6 +59,9 @@ impl RequestRule {
             Self::DeveloperAsSystem => "messages.developer-as-system.v1",
             Self::OmitSchemaName => "messages.omit-schema-name.v1",
             Self::DefaultMaxTokens => "messages.default-max-tokens.v1",
+            Self::OmitBlockBinding => "messages.omit-block-binding.v1",
+            Self::FlattenMessageEffort => "messages.flatten-message-effort.v1",
+            Self::CollapseToolChanges => "messages.collapse-tool-changes.v1",
         }
     }
 }
@@ -67,6 +76,109 @@ fn call_id(id: &str, rules: &mut BTreeSet<RequestRule>) -> String {
     let digest = Sha256::digest(id.as_bytes());
     let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
     format!("mc_{}", &hex[..40])
+}
+fn native_tool(t: &FunctionTool) -> Result<super::Tool, CodecError> {
+    let ToolDispatch {
+        async_call: false,
+        defer_loading,
+        allowed_callers: None,
+    } = t.dispatch
+    else {
+        return Err(unsupported());
+    };
+    if t.output_schema.is_some() {
+        return Err(unsupported());
+    }
+    Ok(super::Tool {
+        name: t.name.as_str().into(),
+        description: t
+            .description
+            .clone()
+            .map_or(Presence::Absent, Presence::Value),
+        input_schema: t.parameters.clone().ok_or_else(unsupported)?,
+        strict: match t.strict {
+            FunctionStrictness::Omitted(StrictDefault::NonStrict) => Presence::Absent,
+            FunctionStrictness::Explicit(false) => Presence::Value(false),
+            FunctionStrictness::Explicit(true) => Presence::Value(true),
+            FunctionStrictness::Omitted(StrictDefault::NormalizeSchema) => {
+                return Err(unsupported());
+            }
+        },
+        cache_control: t.cache.map_or(Presence::Absent, Presence::Value),
+        defer_loading,
+        eager_input_streaming: t.eager_input.map_or(Presence::Absent, Presence::Value),
+    })
+}
+fn native_effort(level: EffortLevel) -> Result<super::Effort, CodecError> {
+    Ok(match level {
+        EffortLevel::Low => super::Effort::Low,
+        EffortLevel::Medium => super::Effort::Medium,
+        EffortLevel::High => super::Effort::High,
+        EffortLevel::XHigh => super::Effort::XHigh,
+        EffortLevel::Max => super::Effort::Max,
+        EffortLevel::Minimal => return Err(unsupported()),
+    })
+}
+/// Items that render as mid-conversation system content, outside message envelopes.
+fn system_side(item: &Item) -> bool {
+    matches!(
+        item,
+        Item::Instruction(_) | Item::ToolChange(_) | Item::ConfigurationUpdate(_)
+    )
+}
+/// One run of system-side items. Consecutive system messages form one section, so the
+/// run shares a message; an effort closes it, keeping each message to one level.
+fn system_messages(
+    run: &[&Item],
+    rules: &mut BTreeSet<RequestRule>,
+) -> Result<Vec<InputMessage>, CodecError> {
+    let mut messages = vec![];
+    let mut blocks = vec![];
+    for item in run {
+        match item {
+            Item::Instruction(i) => {
+                if i.status.is_some() {
+                    return Err(unsupported());
+                }
+                if i.authority == InstructionAuthority::Developer {
+                    rules.insert(RequestRule::DeveloperAsSystem);
+                }
+                blocks.extend(i.parts.iter().map(|p| super::CacheMarked {
+                    content: Block::Text(p.content.as_str().into()),
+                    cache: p.cache,
+                }));
+            }
+            Item::ToolChange(change) => blocks.push(super::CacheMarked {
+                content: match &change.action {
+                    ToolChangeAction::AddReference(name) => {
+                        Block::ToolAddition(super::ToolTarget::Reference(name.as_str().into()))
+                    }
+                    ToolChangeAction::AddDefinition(tool) => {
+                        Block::ToolAddition(super::ToolTarget::Definition(native_tool(tool)?))
+                    }
+                    ToolChangeAction::Remove(name) => Block::ToolRemoval(name.as_str().into()),
+                },
+                cache: change.cache,
+            }),
+            Item::ConfigurationUpdate(ConfigurationUpdate {
+                activation: None,
+                effort: Some(effort),
+            }) if effort.scope == EffortScope::Response => messages.push(InputMessage {
+                role: Role::System,
+                content: MessageContent::Blocks(std::mem::take(&mut blocks)),
+                effort: Some(native_effort(effort.level)?),
+            }),
+            _ => return Err(unsupported()),
+        }
+    }
+    if !blocks.is_empty() {
+        messages.push(InputMessage {
+            role: Role::System,
+            content: MessageContent::Blocks(blocks),
+            effort: None,
+        });
+    }
+    Ok(messages)
 }
 pub(super) fn project(
     request: &GenerationRequest,
@@ -129,32 +241,9 @@ pub(super) fn project(
             request
                 .tools()
                 .iter()
-                .map(|tool| {
-                    let ToolDefinition::Function(t) = tool else {
-                        return Err(unsupported());
-                    };
-                    if !t.dispatch.is_inactive() || t.output_schema.is_some() {
-                        return Err(unsupported());
-                    }
-                    Ok(super::Tool {
-                        name: t.name.as_str().into(),
-                        description: t
-                            .description
-                            .clone()
-                            .map_or(Presence::Absent, Presence::Value),
-                        input_schema: t.parameters.clone().ok_or_else(unsupported)?,
-                        strict: match t.strict {
-                            FunctionStrictness::Omitted(StrictDefault::NonStrict) => {
-                                Presence::Absent
-                            }
-                            FunctionStrictness::Explicit(false) => Presence::Value(false),
-                            FunctionStrictness::Explicit(true) => Presence::Value(true),
-                            FunctionStrictness::Omitted(StrictDefault::NormalizeSchema) => {
-                                return Err(unsupported());
-                            }
-                        },
-                        cache_control: t.cache.map_or(Presence::Absent, Presence::Value),
-                    })
+                .map(|tool| match tool {
+                    ToolDefinition::Function(t) => native_tool(t),
+                    _ => Err(unsupported()),
                 })
                 .collect::<Result<_, _>>()?,
         )
@@ -229,22 +318,27 @@ pub(super) fn project(
             Presence::Value(ReasoningMode::Adaptive),
         )
         | (Presence::Value(ReasoningActivation::Enabled), Presence::Absent) => {
-            Presence::Value(super::Thinking::Adaptive { display })
+            Presence::Value(super::Thinking::Adaptive {
+                display,
+                block_binding: reasoning.replay_mismatch.map(|m| match m {
+                    ReplayMismatch::Reject => super::PrefixMismatch::Error,
+                    ReplayMismatch::Drop => super::PrefixMismatch::DropBlock,
+                }),
+            })
         }
         (Presence::Absent, Presence::Absent) if display.is_absent() => Presence::Absent,
         _ => return Err(unsupported()),
     };
+    // The binding check exists only for adaptive thinking.
+    if reasoning.replay_mismatch.is_some()
+        && !matches!(thinking, Presence::Value(super::Thinking::Adaptive { .. }))
+    {
+        return Err(unsupported());
+    }
     let effort = match &s.effort {
         Presence::Absent => Presence::Absent,
         Presence::Value(control) if control.scope == EffortScope::Response => {
-            Presence::Value(match control.level {
-                EffortLevel::Low => super::Effort::Low,
-                EffortLevel::Medium => super::Effort::Medium,
-                EffortLevel::High => super::Effort::High,
-                EffortLevel::XHigh => super::Effort::XHigh,
-                EffortLevel::Max => super::Effort::Max,
-                EffortLevel::Minimal => return Err(unsupported()),
-            })
+            Presence::Value(native_effort(control.level)?)
         }
         Presence::Value(_) => return Err(unsupported()),
         Presence::Null => return Err(unsupported()),
@@ -280,10 +374,10 @@ pub(super) fn project(
     };
     let mut included = BTreeSet::new();
     let mut messages = vec![];
-    // Later instruction items become mid-conversation system messages at their
+    // Later system-side items become mid-conversation system messages at their
     // envelope boundary; placement is validated with the complete wire request.
     let position = |owner: &ItemId| request.items().iter().position(|(id, _)| id == owner);
-    let mut instructions = request
+    let mut system_items = request
         .items()
         .iter()
         .enumerate()
@@ -291,31 +385,9 @@ pub(super) fn project(
             request.items().first(),
             Some((_, Item::Instruction(_)))
         )))
-        .filter_map(|(index, (_, item))| match item {
-            Item::Instruction(i) => Some((index, i)),
-            _ => None,
-        })
+        .filter(|(_, (_, item))| system_side(item))
+        .map(|(index, (_, item))| (index, item))
         .peekable();
-    let system_message = |i: &Instruction, rules: &mut BTreeSet<RequestRule>| {
-        if i.status.is_some() {
-            return Err(unsupported());
-        }
-        if i.authority == InstructionAuthority::Developer {
-            rules.insert(RequestRule::DeveloperAsSystem);
-        }
-        Ok(InputMessage {
-            role: Role::System,
-            content: MessageContent::Blocks(
-                i.parts
-                    .iter()
-                    .map(|p| super::CacheMarked {
-                        content: Block::Text(p.content.as_str().into()),
-                        cache: p.cache,
-                    })
-                    .collect(),
-            ),
-        })
-    };
     let mut previous_end = None;
     for group in request.message_envelopes() {
         if group.members().is_empty() {
@@ -331,13 +403,15 @@ pub(super) fn project(
             .last()
             .and_then(position)
             .ok_or_else(unsupported)?;
-        while let Some((index, i)) = instructions.next_if(|(index, _)| *index < first) {
-            // An instruction inside another envelope would split a native message.
+        let mut run = vec![];
+        while let Some((index, item)) = system_items.next_if(|(index, _)| *index < first) {
+            // A system item inside another envelope would split a native message.
             if previous_end.is_some_and(|end| index < end) {
                 return Err(unsupported());
             }
-            messages.push(system_message(i, rules)?);
+            run.push(item);
         }
+        messages.extend(system_messages(&run, rules)?);
         previous_end = Some(last);
         let role = match group.role() {
             MessageEnvelopeRole::User => Role::User,
@@ -416,18 +490,21 @@ pub(super) fn project(
         messages.push(InputMessage {
             role,
             content: MessageContent::Blocks(blocks),
+            effort: None,
         });
     }
-    for (index, i) in instructions {
+    let mut run = vec![];
+    for (index, item) in system_items {
         if previous_end.is_some_and(|end| index < end) {
             return Err(unsupported());
         }
-        messages.push(system_message(i, rules)?);
+        run.push(item);
     }
+    messages.extend(system_messages(&run, rules)?);
     let expected = request
         .items()
         .iter()
-        .filter(|(_, item)| !matches!(item, Item::Instruction(_)))
+        .filter(|(_, item)| !system_side(item))
         .map(|(id, _)| *id)
         .collect::<Vec<_>>();
     let actual = request

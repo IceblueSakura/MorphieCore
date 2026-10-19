@@ -12,6 +12,33 @@ use crate::{
     },
 };
 
+/// Beta names for the carriers present in an encoded request.
+fn betas(body: &serde_json::Value) -> Vec<&'static str> {
+    let messages = body["messages"].as_array().map_or(&[][..], Vec::as_slice);
+    let blocks = || {
+        messages
+            .iter()
+            .filter_map(|m| m["content"].as_array())
+            .flatten()
+    };
+    [
+        (
+            messages.iter().any(|m| m.get("output_config").is_some()),
+            "mid-conversation-output-config-2026-07-01",
+        ),
+        (
+            body["thinking"].get("block_binding").is_some(),
+            "thinking-binding-controls-2026-08-01",
+        ),
+        (
+            blocks().any(|b| matches!(b["type"].as_str(), Some("tool_addition" | "tool_removal"))),
+            "inline-tools-2026-09-15",
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(used, name)| used.then_some(name))
+    .collect()
+}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Dialect {
     Standard,
@@ -26,6 +53,7 @@ pub struct TargetCaps {
     pub cache: CacheProjection,
     pub reasoning_policy: Option<crate::protocol::reasoning::ReasoningRequestPolicy>,
     pub reasoning_as_text: bool,
+    pub carriers: super::Carriers,
 }
 impl TargetCaps {
     pub fn new(profile: Profile, dialect: Dialect) -> Self {
@@ -35,6 +63,7 @@ impl TargetCaps {
             semantics: profile.semantic_contract(),
             reasoning_policy: None,
             reasoning_as_text: false,
+            carriers: Default::default(),
             cache: CacheProjection {
                 session_id: dialect == Dialect::OpenCodeGo,
                 ..Default::default()
@@ -119,8 +148,17 @@ impl TargetCaps {
         let request = stripped.as_ref().unwrap_or(request);
         self.check_context(request)?;
         request.check_semantic(&self.semantics)?;
+        let mut carrier_rules = std::collections::BTreeSet::new();
+        let carried =
+            super::carriers::project(&request.task.semantic, self.carriers, &mut carrier_rules)?
+                .map(|semantic| {
+                    let mut copy = request.clone();
+                    copy.task.semantic = semantic;
+                    copy
+                });
+        let request = carried.as_ref().unwrap_or(request);
         request.check_semantic(&self.profile.representation_contract())?;
-        let mut semantic = group_client_history(&request.task.semantic)?;
+        let mut semantic = group_client_history(&request.task.semantic, true)?;
         let mut settings = semantic.settings().clone();
         // Include selects the downstream opaque carrier, not a native control.
         settings.reasoning = settings.reasoning.with_encrypted_output(false);
@@ -147,6 +185,7 @@ impl TargetCaps {
         if foreign {
             projection.rules.push(RequestRule::TransferVisibleHistory);
         }
+        projection.rules.extend(carrier_rules);
         projection.rules.extend(
             self.cache
                 .losses(&request.context)
@@ -186,9 +225,11 @@ impl TargetCaps {
         }
         Ok(projection)
     }
+    /// Fixed headers plus the betas the encoded body actually uses.
     pub(crate) fn request_headers(
         &self,
         request: &Request,
+        body: &serde_json::Value,
     ) -> Result<Vec<(String, String)>, CodecError> {
         let mut headers = vec![
             ("anthropic-version".into(), "2023-06-01".into()),
@@ -197,6 +238,10 @@ impl TargetCaps {
                 concat!("MorphieCore/", env!("CARGO_PKG_VERSION")).into(),
             ),
         ];
+        let betas = betas(body);
+        if !betas.is_empty() {
+            headers.push(("anthropic-beta".into(), betas.join(",")));
+        }
         if self.dialect == Dialect::OpenCodeGo {
             let session = self.cache.opencode_session(
                 request.conversation.as_ref(),
@@ -206,5 +251,27 @@ impl TargetCaps {
             headers.push(("x-opencode-session".into(), session));
         }
         Ok(headers)
+    }
+}
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+    #[test]
+    fn betas_follow_the_encoded_carriers() {
+        assert!(super::betas(&json!({"messages":[{"role":"user","content":"go"}]})).is_empty());
+        let body = json!({"thinking":{"type":"adaptive",
+                "block_binding":{"prefix_mismatch_behavior":"drop_block"}},
+            "messages":[{"role":"user","content":"go"},
+                {"role":"system","content":[{"type":"tool_removal",
+                    "tool":{"type":"tool_reference","name":"read"}}],
+                    "output_config":{"effort":"low"}}]});
+        assert_eq!(
+            super::betas(&body),
+            [
+                "mid-conversation-output-config-2026-07-01",
+                "thinking-binding-controls-2026-08-01",
+                "inline-tools-2026-09-15"
+            ]
+        );
     }
 }

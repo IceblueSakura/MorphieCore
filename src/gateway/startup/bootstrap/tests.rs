@@ -818,8 +818,9 @@ async fn configured_messages_cache_admission_requires_all_native_candidates() {
                 .all(|entry| entry.public.contract.explicit_cache == admitted)
         );
         assert!(!entry.public.contract.automatic_prefix_cache);
-        assert!(!entry.public.contract.strict_tools);
-        assert!(!entry.public.contract.ordered_instructions);
+        assert_eq!(entry.public.contract.strict_tools, admitted);
+        assert_eq!(entry.public.contract.ordered_instructions, admitted);
+        assert_eq!(entry.public.contract.tool_changes, admitted);
         assert!(!entry.public.contract.cached_context);
 
         let response = boot
@@ -875,6 +876,20 @@ async fn configured_messages_cache_admission_requires_all_native_candidates() {
                 admit(&entry.public, &request),
                 Err(AttemptError::Adapter(AdapterError::Representation(
                     RepresentationError::Admission(GenerationFeature::ExplicitCache)
+                )))
+            ));
+            // pi's agent profile follows the same all-native rule.
+            let strict = json!({"model":"claude-haiku-5-5","max_tokens":64,
+                "tools":[{"name":"lookup","strict":true,
+                    "input_schema":{"type":"object","additionalProperties":false}}],
+                "messages":[{"role":"user","content":"lookup"}]});
+            let strict = ClientAdapter::Messages
+                .decode_client_request(&serde_json::to_vec(&strict).unwrap())
+                .unwrap();
+            assert!(matches!(
+                admit(&entry.public, &strict),
+                Err(AttemptError::Adapter(AdapterError::Representation(
+                    RepresentationError::Admission(GenerationFeature::StrictTools)
                 )))
             ));
             assert!(
@@ -952,17 +967,12 @@ async fn configured_messages_cache_admission_requires_all_native_candidates() {
             assert_eq!(wire["max_tokens"], 64);
             assert_eq!(request, original);
         }
-        // Reach admission for each feature, not an earlier invalid marker combination.
-        for feature in [
-            GenerationFeature::StrictTools,
-            GenerationFeature::AutomaticPrefixCache,
-        ] {
+        // Reach admission, not an earlier invalid marker combination.
+        {
+            let feature = GenerationFeature::AutomaticPrefixCache;
             let mut body = input.clone();
             body["system"].as_array_mut().unwrap().pop();
-            match feature {
-                GenerationFeature::StrictTools => body["tools"][0]["strict"] = json!(true),
-                _ => body["cache_control"] = json!({"type":"ephemeral"}),
-            }
+            body["cache_control"] = json!({"type":"ephemeral"});
             let mut request = ClientAdapter::Messages
                 .decode_client_request(&serde_json::to_vec(&body).unwrap())
                 .unwrap();

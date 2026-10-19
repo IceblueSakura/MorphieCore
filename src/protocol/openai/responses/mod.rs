@@ -878,6 +878,7 @@ pub(super) fn encode_items(
                 json!({"type":"compaction","encrypted_content":value.as_str()})
             }
             Item::ProviderTool(_) => unreachable!("checked Provider carrier"),
+            Item::ToolChange(_) => unreachable!("lowering rejects tool changes"),
         };
         if response {
             v["id"] = json!(

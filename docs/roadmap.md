@@ -7,7 +7,7 @@ This page owns direction and current scope. Code and tests define behavior; [Arc
 | Area | State | Next step |
 |---|---|---|
 | Routing | Functional phase complete under the [stable routing baseline](architecture.md#failover); feature development closed | [Routing acceptance](#routing-acceptance--pending) after the selected stage-2 loops |
-| Generation IR/codec | Selected design implemented locally, including [visible-history transfer](architecture.md#reasoning-replay), part/call replay with client manifests and [scoped accounting](architecture.md#scoped-accounting). Audit coverage authorized on 2026-10-17 | [Stage-1 work plan](#stage-1-work-plan): S1-0 inventory, then per-protocol slices; [human design review](#generation-design-review-gate) remains open |
+| Generation IR/codec | Selected design implemented locally, including [visible-history transfer](architecture.md#reasoning-replay), part/call replay with client manifests and [scoped accounting](architecture.md#scoped-accounting). Audit coverage authorized on 2026-10-17 | [Stage-1 work plan](#stage-1-work-plan): S1-0 inventory, then the Chat and Responses slices; [human design review](#generation-design-review-gate) remains open |
 | Client compatibility | Rejection audit and policy selection complete: [phase transfer/return](architecture.md#message-phase-transfer), guarded extended-retention omission and retained citation rejection | Client-carrier acceptance and target storage evidence during reconnection |
 | Integration | P7 selects [R1a/R1b](#first-reconnection-slices); paths beyond frozen admission remain disconnected | Each loop starts after its protocol's [stage-1 handoff](#stage-1-to-stage-2-handoff); no implicit admission or binding activation |
 | Embedding, other modalities and file resources | Stage 4 includes audio/image/video API adaptation and Files/multipart Uploads | Select per-operation and resource contracts; existing paths remain maintenance-only until their slices |
@@ -82,7 +82,7 @@ Minimal counterexamples and pinned sources are in [Generation contract boundarie
 | Complete citations and source identity | **Stage 5.** Select licence/quote/request-source owners and output point anchors, including the changed OpenAI file-citation index contract. Then independently cover request, output, streaming and returned history; retain rejection until represented. Messages citations have a separate [1C design](#1c-design-messages-citations) |
 | Execution controls and reports | **Unscheduled; not a stage-1 blocker.** Select bounded owners for geography, access programs, replay enforcement, safety/review details and Interactions reported service/continuation only when a scheduled client sends them. Keep protected unsupported carriers rejected; do not add routing or continuation execution implicitly |
 | Interactions lifecycle snapshots | **Stage 3.** Compare supplied steps against streamed owners, including content/signatures/errors, or select snapshot-only materialization. Current rejection prevents contradiction loss but is not complete SSE support |
-| Messages model/product defaults | **Stage 1 (S1-3).** Move sampling omission to explicit trusted target policy and give the native codec its official carriers. Required output-cap insertion affects only sources without a ceiling, because Messages clients must send `max_tokens`; settle it in stage 3. Select a bounded default or require caller input; do not raise the cap automatically to a model maximum |
+| Messages model/product defaults | **Stage 1 (S1-3).** Move sampling omission to explicit trusted target policy. Required output-cap insertion affects only sources without a ceiling, because Messages clients must send `max_tokens`; settle it in stage 3. Select a bounded default or require caller input; do not raise the cap automatically to a model maximum |
 
 ### Scheduling and product decisions
 
@@ -158,24 +158,9 @@ The P7 boundary review becomes eligible after first-stage local completion, with
 | S1-0 Inventory | For each pair and direction, classify every official request field, response field, event and history carrier of the selected revision as exact, named loss, rejection or ignored by name, with its code and test owner. Separate codec loss from target or model policy. Record sourced findings in a dated `docs/refs/` note | No official field is ignored without classification; every named rule that can fire on a same-protocol path is listed with its owner; the gaps below are confirmed or corrected |
 | S1-1 Chat | R1a domain on the DashScope dialect: text, function tools, readable and replay reasoning extensions, usage details, finish reasons, `stream_options` and Chat-originated history | Stage-1 exit evidence, with no same-protocol loss receipt in that domain |
 | S1-2 Responses | R1b domain on OpenRouter: reasoning summary and encrypted items, phase, function-call items, usage details, `include`, `truncation`, `max_tool_calls`, metadata, and stateless plus gateway-stored history | As S1-1, and stored and stateless continuation project the same history |
-| S1-3 Messages | Give the native codec official carriers for the Messages gaps below and move Claude 5.x restrictions to trusted binding policy, resolving [Messages model/product defaults](#ownership-and-projection-decisions) | Independent native oracles for each new carrier; the Go/Haiku binding omits or rejects only through named target policy, not missing codec carriers |
+| S1-3 Messages | The pi Haiku carriers are done: see [request rules](architecture.md#request-rules). Remaining: move Claude 5.x sampling restrictions to trusted binding policy, resolving [Messages model/product defaults](#ownership-and-projection-decisions); decide the budgeted-thinking carrier and `metadata.user_id`; deliver partial eager tool input, which now fails the stream at `content_block_stop` when unparseable | Independent native oracles for each new carrier; the Go/Haiku binding omits or rejects only through named target policy, not missing codec carriers |
 
-Order: S1-3 first for the selected R2 profile, which needs new carriers, then S1-0, S1-1 and S1-2. No slice widens admission beyond its selected binding.
-
-S1-3 design for the pi built-in Haiku 5.5 profile at pi v1.3.0. Native carriers follow the Anthropic 1.15.0 types and Messages documentation; bounded real checks select which carriers the Go binding enables:
-
-| Request feature | Current treatment | S1-3 design and fallback |
-|---|---|---|
-| Strict tools (`strict: true` from pi's preferred constraints) | Codec carrier; admission closed | Admit on the Go/Haiku binding with the existing strict-schema checks |
-| Tool `eager_input_streaming` | Ignored by name | Typed tool owner and exact native carrier; other targets omit it under `generation.omit-eager-tool-input.v1`. Unparseable input at `content_block_stop` still fails the stream; partial-input delivery is a follow-up |
-| Deferred placeholder tool (`defer_loading: true`) | Rejected | Existing `ToolDispatch.defer_loading` owner with an exact native carrier |
-| Adaptive `thinking.block_binding` | `drop_block` omitted for every target | Typed reasoning owner, exact on Messages targets with the carrier; elsewhere `drop_block` keeps its omission and `"error"` rejects. Returned `input_transformations` are validated, then omitted under `messages.omit-input-transformations.v1` because their paths index the upstream request |
-| Effort-only and content system messages with `output_config.effort` | Rejected | Ordered `ConfigurationUpdate` items, the owner Responses `configuration_update` already uses. Without the carrier, `messages.flatten-message-effort.v1` sets top-level effort to the level the next reply runs at under the documented placement rules and drops historical markers |
-| Mid-conversation system text | Codec carrier; admission closed | Admit ordered instructions on the Go/Haiku binding |
-| `tool_addition` and `tool_removal` blocks | Rejected | Ordered tool-change items. Without the carrier, `messages.collapse-tool-changes.v1` declares the final available tool set at top level, losing the availability timeline and prefix stability across a change |
-| `anthropic-beta` features | Client header not forwarded | The native encoder derives beta values from the final wire; client headers never select them |
-
-Other Messages gaps are not sent by that profile: `temperature`, `top_p` and `top_k` stay omitted or rejected by the native profile until binding policy owns them; budgeted thinking has no native carrier; `metadata.user_id` is ignored by name. They remain S1-3 follow-ups.
+Order: S1-0, S1-1 and S1-2, then the remaining S1-3 items. No slice widens admission beyond its selected binding.
 
 | Pair | Field or carrier | Current treatment | Recommendation |
 |---|---|---|---|
@@ -187,7 +172,7 @@ Stage-1 exit for a pair means every in-domain official field is exact, or is an 
 
 #### Stage-1 to stage-2 handoff
 
-A stage-2 loop needs only its own protocol slice, scoped to that loop's carriers, not the whole of stage 1: R1a follows S1-1 and R1b follows S1-2. R2 follows S1-3 and uses pi's built-in `anthropic` Haiku 5.5 entry with only its base URL and key pointed at the gateway. A scratch custom model is not the R2 profile: without `forceAdaptiveThinking` it sends budgeted thinking, which the native target rejects.
+A stage-2 loop needs only its own protocol slice, scoped to that loop's carriers, not the whole of stage 1: R1a follows S1-1 and R1b follows S1-2. R2 uses pi's built-in `anthropic` Haiku 5.5 entry with only its base URL and key pointed at the gateway; its carriers are implemented, and a [bounded check](refs/2026-10-17-generation-contracts.md#pi-messages-request-profile-2026-10-19) passed. A scratch custom model is not the R2 profile: without `forceAdaptiveThinking` it sends budgeted thinking, which the native target rejects.
 
 Every selected loop must leave no unclassified ignored request fields: `ignored_request_field_count` stays zero, or each ignored name is classified in the inventory. Client-specific dialect fields such as pi's `enable_thinking` or `chat_template_kwargs` are outside the official Chat baseline. The selected pi and OpenCode profiles must emit only registered carriers.
 

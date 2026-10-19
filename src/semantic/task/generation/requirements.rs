@@ -34,6 +34,7 @@ pub struct GenerationRequirements {
     pub tool_choice: Option<crate::semantic::task::generation::ToolChoice>,
     pub parallel_tool_calls: Option<bool>,
     pub strict_function_tools: bool,
+    pub tool_changes: bool,
     pub normalization_default_tools: bool,
     pub explicit_cache: bool,
     pub cached_context: bool,
@@ -207,6 +208,17 @@ impl GenerationRequirements {
                 }
                 Item::Compaction(_) => x.compaction = true,
                 Item::ProviderTool(_) => x.provider_observations = true,
+                Item::ToolChange(change) => {
+                    x.tool_changes = true;
+                    if let crate::semantic::task::generation::ToolChangeAction::AddDefinition(t) =
+                        &change.action
+                    {
+                        x.strict_function_tools |=
+                            matches!(t.strict, FunctionStrictness::Explicit(true));
+                        x.normalization_default_tools |=
+                            t.strict == FunctionStrictness::Omitted(StrictDefault::NormalizeSchema);
+                    }
+                }
             }
         }
         x
@@ -243,6 +255,7 @@ impl GenerationResponseRequirements {
             match item {
                 Item::Instruction(_) => q.instructions = true,
                 Item::ProviderTool(_) => q.provider_observations = true,
+                Item::ToolChange(_) => q.tools = true,
                 Item::ToolCall(call) => {
                     q.tools = true;
                     q.structured_arguments |= !matches!(

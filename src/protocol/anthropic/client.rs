@@ -73,6 +73,7 @@ fn block_fields(kind: Option<&str>) -> &'static [&'static str] {
             "cache_control",
         ],
         Some("image") => &["type", "source", "transformations", "cache_control"],
+        Some("tool_addition" | "tool_removal") => &["type", "tool", "cache_control"],
         // `context` and `citations` are kept so `Media::read` rejects them; they
         // change model-visible content.
         Some("document") => &[
@@ -101,7 +102,15 @@ fn blocks(v: &mut Value, ignored: &mut BTreeSet<String>) -> Result<(), CodecErro
             if block.get("cache_control").is_some()
                 && !matches!(
                     block.get("type").and_then(Value::as_str),
-                    Some("text" | "image" | "document" | "tool_use" | "tool_result")
+                    Some(
+                        "text"
+                            | "image"
+                            | "document"
+                            | "tool_use"
+                            | "tool_result"
+                            | "tool_addition"
+                            | "tool_removal"
+                    )
                 )
             {
                 return Err(CodecError::Unsupported(
@@ -118,7 +127,30 @@ fn blocks(v: &mut Value, ignored: &mut BTreeSet<String>) -> Result<(), CodecErro
             {
                 blocks(content, ignored)?;
             }
+            if let Some(tool) = block.get_mut("tool") {
+                keep(tool, &["type", "name", "definition"], ignored);
+                if let Some(definition) = tool.get_mut("definition") {
+                    tool_fields(definition, ignored)?;
+                }
+            }
         }
+    }
+    Ok(())
+}
+/// Close a tool definition to its known fields; dispatch and example fields that
+/// change model input or callers reject.
+fn tool_fields(t: &mut Value, ignored: &mut BTreeSet<String>) -> Result<(), CodecError> {
+    if t.get("input_examples").is_some() {
+        return Err(CodecError::Unsupported(
+            "Anthropic tool input examples".into(),
+        ));
+    }
+    if t.get("allowed_callers").is_some() {
+        return Err(CodecError::Unsupported("Anthropic tool dispatch".into()));
+    }
+    keep(t, super::request::TOOL_FIELDS, ignored);
+    if let Some(cache) = t.get_mut("cache_control") {
+        keep(cache, &["type", "ttl"], ignored);
     }
     Ok(())
 }
@@ -204,54 +236,18 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     }
     if let Some(tools) = o.get("tools").filter(|v| !v.is_null()) {
         let tools = tools.as_array().ok_or(CodecError::Invalid("tools"))?;
-        settings.tools =
-            Some(
-                tools
-                    .iter()
-                    .map(|t| {
-                        if t.get("input_examples").is_some() {
-                            return Err(CodecError::Unsupported(
-                                "Anthropic tool input examples".into(),
-                            ));
-                        }
-                        if ["defer_loading", "allowed_callers"]
-                            .iter()
-                            .any(|key| t.get(key).is_some())
-                        {
-                            return Err(CodecError::Unsupported("Anthropic tool dispatch".into()));
-                        }
-                        let mut t = t.clone();
-                        keep(
-                            &mut t,
-                            &[
-                                "name",
-                                "description",
-                                "input_schema",
-                                "strict",
-                                "cache_control",
-                            ],
-                            &mut ignored,
-                        );
-                        if let Some(cache) = t.get_mut("cache_control") {
-                            keep(cache, &["type", "ttl"], &mut ignored);
-                        }
-                        let tool = Tool::read(&t)?;
-                        tool.bytes()?;
-                        Ok(ToolDefinition::Function(FunctionTool {
-                            name: text(&tool.name)?,
-                            description: tool.description.value().cloned(),
-                            parameters: Some(tool.input_schema),
-                            strict: tool.strict.value().map_or(
-                                FunctionStrictness::Omitted(StrictDefault::NonStrict),
-                                |b| FunctionStrictness::Explicit(*b),
-                            ),
-                            output_schema: None,
-                            dispatch: Default::default(),
-                            cache: tool.cache_control.value().copied(),
-                        }))
-                    })
-                    .collect::<Result<_, CodecError>>()?,
-            );
+        settings.tools = Some(
+            tools
+                .iter()
+                .map(|t| {
+                    let mut t = t.clone();
+                    tool_fields(&mut t, &mut ignored)?;
+                    let tool = Tool::read(&t)?;
+                    tool.bytes()?;
+                    super::semantic_intake::function_tool(&tool).map(ToolDefinition::Function)
+                })
+                .collect::<Result<_, CodecError>>()?,
+        );
         super::request::validate_cache_breakpoints(settings.tools.iter().flatten().filter_map(
             |tool| match tool {
                 ToolDefinition::Function(tool) => tool.cache,
@@ -269,32 +265,16 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         });
         settings.parallel_tool_calls = choice.disable_parallel_tool_use.value().map(|b| !b);
     }
-    let mut block_binding = false;
     if let Some(thinking) = o.get("thinking").filter(|v| !v.is_null()) {
         let mut thinking = thinking.clone();
-        if let Some(binding) = thinking
-            .as_object_mut()
-            .and_then(|t| t.remove("block_binding"))
-            .filter(|v| !v.is_null())
-        {
-            let binding = binding
-                .as_object()
-                .ok_or(CodecError::Invalid("thinking.block_binding"))?;
-            // Default or explicit "error" enforcement has no carrier and stays rejected.
-            if binding
-                .get("prefix_mismatch_behavior")
-                .and_then(Value::as_str)
-                != Some("drop_block")
-            {
-                return Err(CodecError::Unsupported("thinking.block_binding".into()));
-            }
-            block_binding = true;
-        }
         keep(
             &mut thinking,
-            &["type", "budget_tokens", "display"],
+            &["type", "budget_tokens", "display", "block_binding"],
             &mut ignored,
         );
+        if let Some(binding) = thinking.get_mut("block_binding") {
+            keep(binding, &["prefix_mismatch_behavior"], &mut ignored);
+        }
         let t = object(&thinking)?;
         match t.get("type").and_then(Value::as_str) {
             Some("enabled") => {
@@ -330,6 +310,12 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         if settings.reasoning.display == Presence::Null {
             return Err(CodecError::Invalid("thinking display"));
         }
+        let binding = super::PrefixMismatch::read(t.get("block_binding"))?;
+        if binding.is_some() && settings.reasoning.mode != Presence::Value(ReasoningMode::Adaptive)
+        {
+            return Err(CodecError::Invalid("thinking.block_binding"));
+        }
+        settings.reasoning.replay_mismatch = binding.map(super::semantic::replay_mismatch);
     }
     if let Some(config) = o.get("output_config").filter(|v| !v.is_null()) {
         let mut config = config.clone();
@@ -346,30 +332,51 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     let mut attachments = vec![];
     for message in messages {
         let mut message = message.clone();
-        // Turn-scoped clearing and per-message output settings change the model contract.
-        if let Some(key) = ["clear_at", "output_config"]
-            .into_iter()
-            .find(|key| message.get(*key).is_some_and(|v| !v.is_null()))
-        {
-            return Err(CodecError::Unsupported(format!("message {key}")));
+        // Turn-scoped clearing changes the model contract.
+        if message.get("clear_at").is_some_and(|v| !v.is_null()) {
+            return Err(CodecError::Unsupported("message clear_at".into()));
         }
-        keep(&mut message, &["role", "content"], &mut ignored);
+        keep(
+            &mut message,
+            &["role", "content", "output_config"],
+            &mut ignored,
+        );
+        if let Some(config) = message.get_mut("output_config") {
+            keep(config, &["effort"], &mut ignored);
+        }
         let m = object(&message)?;
         let role = Role::read(required(m, "role")?)?;
-        roles.push(role);
         let content = required(m, "content")?;
+        let effort = super::request::read_message_effort(m)?;
         if role == Role::System {
-            let mut content = content.clone();
-            blocks(&mut content, &mut ignored)?;
-            match WireText::read(&content)? {
-                WireText::Text(s) => intake.instruction(&[super::CacheMarked {
-                    content: s,
-                    cache: None,
-                }])?,
-                WireText::Blocks(parts) => intake.instruction(&parts)?,
-            }
+            // An empty string renders nothing, as an empty block list does.
+            let parsed: Vec<_> = if content.is_string() {
+                let s = string(content)?;
+                (!s.is_empty())
+                    .then(|| super::CacheMarked {
+                        content: Block::Text(s),
+                        cache: None,
+                    })
+                    .into_iter()
+                    .collect()
+            } else {
+                let mut content = content.clone();
+                blocks(&mut content, &mut ignored)?;
+                content
+                    .as_array()
+                    .ok_or(CodecError::Invalid("content"))?
+                    .iter()
+                    .map(|v| super::CacheMarked::read(v, Block::read))
+                    .collect::<Result<_, _>>()?
+            };
+            roles.push((role, !parsed.is_empty()));
+            intake.system_message(&parsed, effort)?;
             continue;
         }
+        if effort.is_some() {
+            return Err(CodecError::Invalid("Anthropic message output_config"));
+        }
+        roles.push((role, true));
         let parsed = if content.is_string() {
             vec![super::CacheMarked {
                 content: Block::Text(string(content)?),
@@ -437,9 +444,6 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         })
         .collect();
     let mut fidelity = FidelityRecords::default();
-    if block_binding {
-        fidelity.record_omission(crate::protocol::fidelity::BLOCK_BINDING_OMISSION);
-    }
     let mut groups = vec![];
     crate::protocol::attachments::restore(&mut items, &mut groups, &mut fidelity, attachments)?;
     let semantic = GenerationRequest::from_resources(items, settings, intake.resources)?

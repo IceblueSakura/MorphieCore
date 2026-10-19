@@ -546,13 +546,13 @@ impl Trace {
         }
         if let Some(fidelity) = fidelity {
             for normalization in fidelity.normalizations() {
-                if let crate::protocol::fidelity::Normalization::ReasoningEffortMapping {
-                    rule,
-                    input,
-                    output,
-                } = normalization
-                {
-                    self.loss(
+                use crate::protocol::fidelity::Normalization;
+                match normalization {
+                    Normalization::ReasoningEffortMapping {
+                        rule,
+                        input,
+                        output,
+                    } => self.loss(
                         crate::lowering::generation::LossEvidence {
                             rule,
                             field: "response.reported.effort",
@@ -561,7 +561,18 @@ impl Trace {
                         },
                         Some(serde_json::json!(input)),
                         Some(serde_json::json!(output)),
-                    );
+                    ),
+                    Normalization::Omitted { rule, field } => self.loss(
+                        crate::lowering::generation::LossEvidence {
+                            rule,
+                            field,
+                            direction: "response.decode",
+                            action: "omit",
+                        },
+                        None,
+                        None,
+                    ),
+                    _ => {}
                 }
             }
         }

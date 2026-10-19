@@ -35,7 +35,7 @@ pub fn encode_generation_request(
         target,
         &[crate::semantic::task::generation::ReplayFormat::GoogleInteractionsV1Thought],
     )?;
-    let request = group_client_history(&request)?;
+    let request = group_client_history(&request, false)?;
     request.validate()?;
     if request.cached_context().is_some() {
         return Err(CodecError::Unsupported(
@@ -98,6 +98,7 @@ pub fn semantic_contract() -> GenerationSemanticContract {
         file_input: true,
         parallel_tool_calls: true,
         strict_tools: false,
+        tool_changes: false,
         normalization_default_tools: false,
         explicit_cache: false,
         cached_context: false,

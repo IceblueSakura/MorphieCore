@@ -271,6 +271,7 @@ mod tools {
             strict: FunctionStrictness::Explicit(false),
             dispatch: ToolDispatch::default(),
             cache: None,
+            eager_input: None,
         });
         assert!(
             d.semantic

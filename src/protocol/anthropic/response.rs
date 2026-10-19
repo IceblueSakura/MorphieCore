@@ -31,6 +31,10 @@ pub enum Block {
         is_error: Presence<bool>,
     },
     Media(super::Media),
+    /// Request-only system blocks that change tool availability from this position.
+    /// https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages
+    ToolAddition(super::ToolTarget),
+    ToolRemoval(String),
 }
 impl std::fmt::Debug for Block {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -89,6 +93,19 @@ impl Block {
                 }
             }
             "image" | "document" => Self::Media(super::Media::read(kind, v)?),
+            "tool_addition" => Self::ToolAddition(super::ToolTarget::read(required(
+                closed(v, &["type", "tool", "cache_control"])?,
+                "tool",
+            )?)?),
+            "tool_removal" => {
+                let tool = required(closed(v, &["type", "tool", "cache_control"])?, "tool")?;
+                match super::ToolTarget::read(tool)? {
+                    super::ToolTarget::Reference(name) => Self::ToolRemoval(name),
+                    super::ToolTarget::Definition(_) => {
+                        return Err(CodecError::Invalid("Anthropic tool removal"));
+                    }
+                }
+            }
             _ => return Err(CodecError::Unsupported("Anthropic block type".into())),
         })
     }
@@ -97,6 +114,7 @@ impl Block {
             (self, role),
             (Self::Text(_), _)
                 | (Self::ToolResult { .. } | Self::Media(_), Role::User)
+                | (Self::ToolAddition(_) | Self::ToolRemoval(_), Role::System)
                 | (
                     Self::Thinking { .. } | Self::RedactedThinking(_) | Self::ToolUse { .. },
                     Role::Assistant
@@ -155,6 +173,11 @@ impl Block {
                 charge(&mut bytes, content.bytes()?)?;
             }
             Self::Media(media) => charge(&mut bytes, media.bytes()?)?,
+            Self::ToolAddition(target) => charge(&mut bytes, target.bytes()?)?,
+            Self::ToolRemoval(tool) => {
+                name(tool, 128)?;
+                charge(&mut bytes, tool.len())?;
+            }
         }
         Ok(bytes)
     }
@@ -163,6 +186,9 @@ impl Block {
             + match self {
                 Self::ToolUse { input, .. } => value_nodes(input.value())?,
                 Self::ToolResult { content, .. } => content.nodes(),
+                Self::ToolAddition(super::ToolTarget::Definition(tool)) => {
+                    24 + value_nodes(tool.input_schema.root())?
+                }
                 _ => 0,
             })
     }
@@ -190,6 +216,10 @@ impl Block {
                 v
             }
             Self::Media(media) => media.wire(),
+            Self::ToolAddition(target) => json!({"type":"tool_addition","tool":target.wire()}),
+            Self::ToolRemoval(name) => {
+                json!({"type":"tool_removal","tool":{"type":"tool_reference","name":name}})
+            }
             Self::ToolResult {
                 tool_use_id,
                 content,
@@ -355,6 +385,32 @@ pub struct Message {
     pub stop_reason: Presence<StopReason>,
     pub stop_sequence: Presence<String>,
     pub usage: Usage,
+    /// The upstream reported changes to its request input. Entries index the upstream
+    /// request, so they are never forwarded.
+    pub input_transformations: bool,
+}
+/// Validates `input_transformations` entries; unknown entry types are ignored, as the
+/// API documents. True when any entry is reported.
+/// https://github.com/anthropics/anthropic-sdk-python/blob/bcd55fe1d3f0f1240765f8cef04295b67337f55a/src/anthropic/types/beta/beta_message.py
+fn input_transformations(o: &serde_json::Map<String, Value>) -> Result<bool, CodecError> {
+    let Some(list) = o.get("input_transformations").filter(|v| !v.is_null()) else {
+        return Ok(false);
+    };
+    let list = list
+        .as_array()
+        .ok_or(CodecError::Invalid("Anthropic input_transformations"))?;
+    count(list.len())?;
+    for entry in list {
+        let entry = object(entry)?;
+        let kind = string(required(entry, "type")?)?;
+        if matches!(
+            kind.as_str(),
+            "thinking_dropped" | "thinking_mismatch_allowed"
+        ) {
+            string(required(entry, "path")?)?;
+        }
+    }
+    Ok(!list.is_empty())
 }
 impl std::fmt::Debug for Message {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -379,6 +435,7 @@ impl Message {
             stop_reason: presence(o, "stop_reason", StopReason::read)?,
             stop_sequence: presence(o, "stop_sequence", string)?,
             usage: Usage::read(required(o, "usage")?)?,
+            input_transformations: input_transformations(o)?,
         };
         m.validate(opening)?;
         Ok(m)
@@ -520,6 +577,7 @@ pub enum Event {
         stop_reason: Presence<StopReason>,
         stop_sequence: Presence<String>,
         usage: Usage,
+        input_transformations: bool,
     },
     MessageStop,
     Ping,
@@ -574,6 +632,7 @@ impl Event {
                     stop_reason: presence(d, "stop_reason", StopReason::read)?,
                     stop_sequence: presence(d, "stop_sequence", string)?,
                     usage: Usage::read(required(o, "usage")?)?,
+                    input_transformations: input_transformations(o)?,
                 }
             }
             "message_stop" => Self::MessageStop,
@@ -609,6 +668,7 @@ impl Event {
                 stop_reason,
                 stop_sequence,
                 usage,
+                ..
             } => {
                 usage.validate()?;
                 if !usage.cache_creation.is_absent() {
@@ -660,6 +720,7 @@ impl Event {
                 stop_reason,
                 stop_sequence,
                 usage,
+                ..
             } => {
                 let mut delta = json!({});
                 let o = delta.as_object_mut().expect("object");

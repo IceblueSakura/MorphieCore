@@ -9,6 +9,48 @@ use crate::{
     topology::{EndpointId, ProtocolProfile, TaskKind},
 };
 
+/// Messages tool and replay controls on another protocol's target. Eager argument
+/// streaming only changes delivery granularity; tolerant `drop_block` only relaxes a
+/// check other targets do not make. Explicit enforcement has no carrier and rejects.
+fn omit_messages_controls(
+    request: &crate::adapter::Request,
+) -> Result<
+    (
+        std::borrow::Cow<'_, crate::adapter::Request>,
+        Vec<&'static str>,
+    ),
+    crate::protocol::CodecError,
+> {
+    use crate::semantic::task::generation::{ReplayMismatch, ToolDefinition};
+    let semantic = &request.task.semantic;
+    let mut settings = semantic.settings().clone();
+    let mut rules = vec![];
+    match settings.reasoning.replay_mismatch.take() {
+        Some(ReplayMismatch::Drop) => rules.push("messages.omit-block-binding.v1"),
+        Some(ReplayMismatch::Reject) => {
+            return Err(crate::protocol::CodecError::Unsupported(
+                "thinking.block_binding".into(),
+            ));
+        }
+        None => {}
+    }
+    let mut eager = false;
+    for tool in settings.tools.iter_mut().flatten() {
+        if let ToolDefinition::Function(tool) = tool {
+            eager |= tool.eager_input.take().is_some();
+        }
+    }
+    if eager {
+        rules.push("generation.omit-eager-tool-input.v1");
+    }
+    if rules.is_empty() {
+        return Ok((std::borrow::Cow::Borrowed(request), rules));
+    }
+    let mut copy = request.clone();
+    copy.task.semantic = semantic.clone().with_settings(settings)?;
+    Ok((std::borrow::Cow::Owned(copy), rules))
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EndpointTarget {
     pub origin: TrustedOrigin,
@@ -152,7 +194,12 @@ impl Endpoint {
         request: &crate::adapter::Request,
     ) -> Result<crate::protocol::RequestProjection, crate::adapter::AdapterError> {
         use crate::adapter::UpstreamAdapter;
-        match (self.adapter()?, &self.representation) {
+        let (request, omitted) = match &self.representation {
+            TargetCaps::AnthropicMessages(_) => (std::borrow::Cow::Borrowed(request), vec![]),
+            _ => omit_messages_controls(request)?,
+        };
+        let request = request.as_ref();
+        let mut projection = match (self.adapter()?, &self.representation) {
             (UpstreamAdapter::OpenAi(adapter), TargetCaps::OpenAi(caps)) => {
                 let mut contract = caps.as_ref().clone();
                 contract.replay_origin = contract.replay_origin.map(|_| self.replay_origin());
@@ -177,19 +224,22 @@ impl Endpoint {
                 TargetCaps::GoogleInteractions(caps),
             ) => caps.encode_request(request, &target),
             _ => Err(crate::protocol::CodecError::ProfileMismatch.into()),
-        }
+        }?;
+        projection.rules.extend(omitted);
+        Ok(projection)
     }
     /// Closed Provider header projection; no inbound header map or runtime target selection.
     pub(crate) fn request_headers(
         &self,
         request: &crate::adapter::Request,
+        body: &serde_json::Value,
     ) -> Result<Vec<(String, String)>, crate::protocol::CodecError> {
         match &self.representation {
             TargetCaps::OpenAi(caps) => self
                 .adapter()?
                 .openai()?
                 .request_headers(request, caps.cache),
-            TargetCaps::AnthropicMessages(caps) => caps.request_headers(request),
+            TargetCaps::AnthropicMessages(caps) => caps.request_headers(request, body),
             TargetCaps::GoogleGenerateContent(caps) => Ok(caps.request_headers()),
             TargetCaps::GoogleInteractions(caps) => Ok(caps.request_headers()),
         }

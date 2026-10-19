@@ -1,9 +1,11 @@
 //! Selected native wire types, not a second semantic model or an execution API.
 mod accounting;
 mod adapter;
+mod carriers;
 pub mod client;
 pub mod client_events;
 pub use adapter::{Dialect, TargetCaps};
+pub use carriers::Carriers;
 mod request;
 mod response;
 mod semantic;
@@ -71,6 +73,7 @@ impl Profile {
             file_input: true,
             parallel_tool_calls: true,
             strict_tools: false,
+            tool_changes: false,
             normalization_default_tools: false,
             explicit_cache: false,
             cached_context: false,
@@ -88,6 +91,8 @@ impl Profile {
         contract.automatic_prefix_cache = true;
         contract.stop_sequences = true;
         contract.ordered_instructions = true;
+        // Without the binding's carrier, changes collapse under a named rule.
+        contract.tool_changes = true;
         contract
     }
     pub fn decode_request(self, bytes: &[u8]) -> Result<Request, CodecError> {

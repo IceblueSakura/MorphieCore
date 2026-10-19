@@ -128,16 +128,20 @@ impl Role {
         }
     }
 }
-/// A run of system messages follows a user turn and precedes an assistant turn or
-/// ends the list; it is never first and never separates a call from its results.
-pub(super) fn validate_system_placement(roles: &[Role]) -> Result<(), CodecError> {
-    for (index, role) in roles.iter().enumerate() {
-        if *role != Role::System {
+/// A run of system messages is judged together. A run carrying content follows a user
+/// turn and precedes an assistant turn or ends the list; an effort-only run may appear
+/// anywhere. `(role, content)` marks whether each message carries blocks.
+pub(super) fn validate_system_placement(messages: &[(Role, bool)]) -> Result<(), CodecError> {
+    let mut end = 0;
+    for run in messages.chunk_by(|a, b| a.0 == b.0) {
+        let start = end;
+        end += run.len();
+        if run[0].0 != Role::System || !run.iter().any(|(_, content)| *content) {
             continue;
         }
-        let before = roles[..index].iter().rev().find(|r| **r != Role::System);
-        let after = roles[index + 1..].iter().find(|r| **r != Role::System);
-        if before != Some(&Role::User) || after.is_some_and(|r| *r != Role::Assistant) {
+        let before = start.checked_sub(1).map(|i| messages[i].0);
+        let after = messages.get(end).map(|m| m.0);
+        if before != Some(Role::User) || after.is_some_and(|r| r != Role::Assistant) {
             return Err(CodecError::Invalid("Anthropic system message placement"));
         }
     }
@@ -152,12 +156,22 @@ pub enum MessageContent {
 pub struct InputMessage {
     pub role: Role,
     pub content: MessageContent,
+    /// Per-message effort on a system message, in effect from its documented turn.
+    /// https://platform.claude.com/docs/en/build-with-claude/effort#change-effort-mid-conversation-beta
+    pub effort: Option<Effort>,
 }
 impl InputMessage {
+    pub(super) fn carries_content(&self) -> bool {
+        match &self.content {
+            MessageContent::Text(s) => !s.is_empty(),
+            MessageContent::Blocks(blocks) => !blocks.is_empty(),
+        }
+    }
     fn read(v: &Value) -> Result<Self, CodecError> {
-        let o = closed(v, &["role", "content"])?;
+        let o = closed(v, &["role", "content", "output_config"])?;
         let content = required(o, "content")?;
         Ok(Self {
+            effort: read_message_effort(o)?,
             role: Role::read(required(o, "role")?)?,
             content: if content.is_string() {
                 MessageContent::Text(string(content)?)
@@ -201,7 +215,10 @@ impl InputMessage {
                 bytes
             }
         };
-        if !has_content {
+        if self.effort.is_some() && self.role != Role::System {
+            return Err(CodecError::Invalid("Anthropic message output_config"));
+        }
+        if !has_content && self.effort.is_none() {
             return Err(CodecError::Invalid("Anthropic empty message"));
         }
         Ok(bytes)
@@ -213,7 +230,60 @@ impl InputMessage {
                 json!(a.iter().map(|b| b.wire(Block::wire)).collect::<Vec<_>>())
             }
         };
-        json!({"role":self.role.wire(),"content":content})
+        let mut v = json!({"role":self.role.wire(),"content":content});
+        if let Some(effort) = self.effort {
+            v["output_config"] = json!({"effort": effort.wire()});
+        }
+        v
+    }
+}
+/// Absent, null, `{}` and a null effort all mean no per-message change.
+pub(super) fn read_message_effort(o: &Map<String, Value>) -> Result<Option<Effort>, CodecError> {
+    match o.get("output_config") {
+        None | Some(Value::Null) => Ok(None),
+        Some(config) => match closed(config, &["effort"])?.get("effort") {
+            None | Some(Value::Null) => Ok(None),
+            Some(effort) => Effort::read(effort).map(Some),
+        },
+    }
+}
+/// A tool-change target: a name declared earlier, or a definition by value.
+#[derive(Clone, Eq, PartialEq)]
+pub enum ToolTarget {
+    Reference(String),
+    Definition(Tool),
+}
+impl ToolTarget {
+    pub(super) fn read(v: &Value) -> Result<Self, CodecError> {
+        let o = object(v)?;
+        match required(o, "type")?.as_str() {
+            Some("tool_reference") => Ok(Self::Reference(string(required(
+                closed(v, &["type", "name"])?,
+                "name",
+            )?)?)),
+            Some("tool_definition") => Ok(Self::Definition(Tool::read(required(
+                closed(v, &["type", "definition"])?,
+                "definition",
+            )?)?)),
+            _ => Err(CodecError::Unsupported(
+                "Anthropic tool change target".into(),
+            )),
+        }
+    }
+    pub(super) fn bytes(&self) -> Result<usize, CodecError> {
+        match self {
+            Self::Reference(tool) => {
+                name(tool, 128)?;
+                Ok(tool.len())
+            }
+            Self::Definition(tool) => tool.bytes(),
+        }
+    }
+    pub(super) fn wire(&self) -> Value {
+        match self {
+            Self::Reference(name) => json!({"type":"tool_reference","name":name}),
+            Self::Definition(tool) => json!({"type":"tool_definition","definition":tool.wire()}),
+        }
     }
 }
 #[derive(Clone, Eq, PartialEq)]
@@ -223,25 +293,32 @@ pub struct Tool {
     pub input_schema: SchemaDocument,
     pub strict: Presence<bool>,
     pub cache_control: Presence<PrefixCacheTtl>,
+    /// Withheld until a later tool addition surfaces it.
+    pub defer_loading: bool,
+    pub eager_input_streaming: Presence<bool>,
 }
+pub(super) const TOOL_FIELDS: &[&str] = &[
+    "name",
+    "description",
+    "input_schema",
+    "strict",
+    "cache_control",
+    "defer_loading",
+    "eager_input_streaming",
+];
 impl Tool {
     pub(super) fn read(v: &Value) -> Result<Self, CodecError> {
-        let o = closed(
-            v,
-            &[
-                "name",
-                "description",
-                "input_schema",
-                "strict",
-                "cache_control",
-            ],
-        )?;
+        let o = closed(v, TOOL_FIELDS)?;
+        let defer = presence(o, "defer_loading", boolean)?;
+        nonnull(&defer)?;
         Ok(Self {
             name: string(required(o, "name")?)?,
             description: presence(o, "description", string)?,
             input_schema: required(o, "input_schema")?.clone().into(),
             strict: presence(o, "strict", boolean)?,
             cache_control: presence(o, "cache_control", CacheControl::read_breakpoint)?,
+            defer_loading: defer.value() == Some(&true),
+            eager_input_streaming: presence(o, "eager_input_streaming", boolean)?,
         })
     }
     pub(super) fn bytes(&self) -> Result<usize, CodecError> {
@@ -249,6 +326,11 @@ impl Tool {
         nonnull(&self.description)?;
         nonnull(&self.strict)?;
         nonnull(&self.cache_control)?;
+        nonnull(&self.eager_input_streaming)?;
+        // A deferred definition cannot carry a breakpoint.
+        if self.defer_loading && self.cache_control.value().is_some() {
+            return Err(CodecError::Invalid("Anthropic deferred tool cache"));
+        }
         if self.input_schema.root().get("type").and_then(Value::as_str) != Some("object") {
             return Err(CodecError::Unsupported("Anthropic object schema".into()));
         }
@@ -272,6 +354,15 @@ impl Tool {
             "cache_control",
             &self.cache_control,
             CacheControl::breakpoint_wire,
+        );
+        if self.defer_loading {
+            o.insert("defer_loading".into(), json!(true));
+        }
+        put(
+            o,
+            "eager_input_streaming",
+            &self.eager_input_streaming,
+            |b| json!(b),
         );
         v
     }
@@ -339,7 +430,38 @@ impl Display {
 #[derive(Clone, Eq, PartialEq)]
 pub enum Thinking {
     Disabled,
-    Adaptive { display: Presence<Display> },
+    Adaptive {
+        display: Presence<Display>,
+        block_binding: Option<PrefixMismatch>,
+    },
+}
+/// `thinking.block_binding.prefix_mismatch_behavior`; absent, null and `{}` are defaults.
+/// https://platform.claude.com/docs/en/build-with-claude/preserved-thinking
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PrefixMismatch {
+    Error,
+    DropBlock,
+}
+impl PrefixMismatch {
+    pub(super) fn read(v: Option<&Value>) -> Result<Option<Self>, CodecError> {
+        let Some(v) = v.filter(|v| !v.is_null()) else {
+            return Ok(None);
+        };
+        match closed(v, &["prefix_mismatch_behavior"])?.get("prefix_mismatch_behavior") {
+            None | Some(Value::Null) => Ok(None),
+            Some(v) => match v.as_str() {
+                Some("error") => Ok(Some(Self::Error)),
+                Some("drop_block") => Ok(Some(Self::DropBlock)),
+                _ => Err(CodecError::Invalid("thinking.block_binding")),
+            },
+        }
+    }
+    fn wire(self) -> Value {
+        json!({"prefix_mismatch_behavior": match self {
+            Self::Error => "error",
+            Self::DropBlock => "drop_block",
+        }})
+    }
 }
 impl Thinking {
     fn read(v: &Value) -> Result<Self, CodecError> {
@@ -350,30 +472,36 @@ impl Thinking {
                 Ok(Self::Disabled)
             }
             Some("adaptive") => {
-                let o = closed(v, &["type", "display"])?;
+                let o = closed(v, &["type", "display", "block_binding"])?;
                 let display = presence(o, "display", Display::read)?;
                 nonnull(&display)?;
-                Ok(Self::Adaptive { display })
+                Ok(Self::Adaptive {
+                    display,
+                    block_binding: PrefixMismatch::read(o.get("block_binding"))?,
+                })
             }
             _ => Err(CodecError::Unsupported("Anthropic thinking mode".into())),
         }
     }
     fn wire(&self) -> Value {
-        let Self::Adaptive { display } = self else {
+        let Self::Adaptive {
+            display,
+            block_binding,
+        } = self
+        else {
             return json!({"type":"disabled"});
         };
         let mut v = json!({"type":"adaptive"});
-        put(
-            v.as_object_mut().expect("object"),
-            "display",
-            display,
-            |d| {
-                json!(match d {
-                    Display::Summarized => "summarized",
-                    Display::Omitted => "omitted",
-                })
-            },
-        );
+        let o = v.as_object_mut().expect("object");
+        put(o, "display", display, |d| {
+            json!(match d {
+                Display::Summarized => "summarized",
+                Display::Omitted => "omitted",
+            })
+        });
+        if let Some(binding) = block_binding {
+            o.insert("block_binding".into(), binding.wire());
+        }
         v
     }
 }
@@ -621,9 +749,23 @@ impl Request {
             return Err(CodecError::Invalid("Anthropic max_tokens"));
         }
         count(self.messages.len())?;
-        let roles: Vec<_> = self.messages.iter().map(|m| m.role).collect();
-        if roles.first() != Some(&Role::User)
-            || roles.iter().rev().find(|r| **r != Role::System) != Some(&Role::User)
+        let roles: Vec<_> = self
+            .messages
+            .iter()
+            .map(|m| (m.role, m.carries_content()))
+            .collect();
+        // Only an effort-only system message may precede the first user turn.
+        if roles
+            .iter()
+            .find(|(r, c)| *r != Role::System || *c)
+            .map(|m| m.0)
+            != Some(Role::User)
+            || roles
+                .iter()
+                .rev()
+                .find(|m| m.0 != Role::System)
+                .map(|m| m.0)
+                != Some(Role::User)
         {
             return Err(CodecError::Invalid("Anthropic user boundary"));
         }
@@ -632,7 +774,7 @@ impl Request {
         nonnull(&self.tools)?;
         nonnull(&self.tool_choice)?;
         nonnull(&self.thinking)?;
-        if let Presence::Value(Thinking::Adaptive { display }) = &self.thinking {
+        if let Presence::Value(Thinking::Adaptive { display, .. }) = &self.thinking {
             nonnull(display)?;
         }
         nonnull(&self.output_config)?;
@@ -682,6 +824,17 @@ impl Request {
                                 }
                                 breakpoints.extend(part.cache);
                             }
+                        }
+                        // The marker goes on the block or in the definition, not both.
+                        if let Block::ToolAddition(ToolTarget::Definition(tool)) = &block.content
+                            && let Some(ttl) = tool.cache_control.value()
+                        {
+                            if block.cache.is_some() {
+                                return Err(CodecError::Invalid("Anthropic tool change cache"));
+                            }
+                            breakpoints.push(*ttl);
+                            last_cache = Some(*ttl);
+                            continue;
                         }
                         let eligible = match &block.content {
                             Block::Text(s) => text_cache_eligible(s, block.cache)?,
@@ -761,7 +914,11 @@ impl Request {
         // The API combines consecutive same-role messages into one logical turn.
         // Validate adjacency and result prefixes across the run, without rewriting it.
         for turn in self.messages.chunk_by(|a, b| a.role == b.role) {
-            if !pending.is_empty() && turn[0].role != Role::User {
+            // Effort-only system messages render nothing at their position.
+            if !pending.is_empty()
+                && turn[0].role != Role::User
+                && (turn[0].role != Role::System || turn.iter().any(|m| m.carries_content()))
+            {
                 return Err(CodecError::Invalid("Anthropic pending results"));
             }
             let mut results = BTreeSet::new();

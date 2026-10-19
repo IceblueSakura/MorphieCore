@@ -78,7 +78,15 @@ pub struct ReasoningRequest {
     /// target or a cap is the target's rule; Messages documents a target.
     pub budget_tokens: Option<u64>,
     pub display: crate::semantic::value::Presence<ReasoningDisplay>,
+    /// Handling of returned reasoning that fails the target's conversation check.
+    pub replay_mismatch: Option<ReplayMismatch>,
     encrypted_output: bool,
+}
+/// Explicit policy for replayed reasoning that no longer matches its conversation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReplayMismatch {
+    Reject,
+    Drop,
 }
 impl ReasoningRequest {
     pub fn absent() -> Self {

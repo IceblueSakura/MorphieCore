@@ -75,6 +75,8 @@ pub struct FunctionTool {
     pub dispatch: ToolDispatch,
     /// An explicit prefix boundary ending at this tool definition, not cache affinity.
     pub cache: Option<PrefixCacheTtl>,
+    /// Unbuffered, unvalidated argument streaming; absent keeps the target default.
+    pub eager_input: Option<bool>,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CustomFormat {

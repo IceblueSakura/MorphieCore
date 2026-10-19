@@ -681,3 +681,74 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
         )
     );
 }
+
+#[test]
+fn input_transformations_are_validated_then_omitted_with_a_receipt() {
+    use morphiecore::protocol::{anthropic::GenerationSseDecoder, fidelity::Normalization};
+    let target = ReplayTarget::new("synthetic-provider", "synthetic-model").unwrap();
+    let omitted = Normalization::Omitted {
+        rule: "messages.omit-input-transformations.v1",
+        field: "response.input_transformations",
+    };
+    let entries = json!([{"type":"thinking_dropped","path":"messages.1.content.0"}]);
+    let stream = |frames: &[Value]| {
+        let mut decoder = GenerationSseDecoder::new(
+            200,
+            "text/event-stream",
+            SseLimits::default(),
+            LocalScope::new(2),
+            target.clone(),
+        )
+        .unwrap();
+        let bytes = wire(frames);
+        let mut rest = &bytes[..];
+        while !rest.is_empty() {
+            let (used, _) = decoder.consume(rest).unwrap();
+            rest = &rest[used..];
+        }
+        decoder.finish().unwrap();
+        decoder.fidelity().normalizations().contains(&omitted)
+    };
+    assert!(!stream(&frames()));
+    let mut native = frames();
+    native[15]["input_transformations"] = entries.clone();
+    assert!(stream(&native));
+    let decode = |message: &Value| {
+        Profile::AdaptiveTextTools.decode_generation_response(
+            message.to_string().as_bytes(),
+            LocalScope::new(2),
+            &target,
+        )
+    };
+    assert!(
+        !decode(&expected())
+            .unwrap()
+            .fidelity
+            .normalizations()
+            .contains(&omitted)
+    );
+    // Unknown entry types are ignored, as documented; known ones stay strict.
+    for (list, receipt) in [
+        (entries, true),
+        (json!([{"type":"future_report"}]), true),
+        (json!([]), false),
+        (Value::Null, false),
+    ] {
+        let mut message = expected();
+        message["input_transformations"] = list;
+        let decoded = decode(&message).unwrap();
+        assert_eq!(
+            decoded.fidelity.normalizations().contains(&omitted),
+            receipt
+        );
+    }
+    for list in [
+        json!([{"type":"thinking_dropped"}]),
+        json!([{"path":"messages.1"}]),
+        json!({"type":"thinking_dropped"}),
+    ] {
+        let mut message = expected();
+        message["input_transformations"] = list;
+        assert!(decode(&message).is_err());
+    }
+}

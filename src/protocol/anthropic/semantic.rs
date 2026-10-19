@@ -101,20 +101,7 @@ impl Profile {
             settings.tools = Some(
                 tools
                     .iter()
-                    .map(|t| {
-                        Ok(ToolDefinition::Function(FunctionTool {
-                            name: text(&t.name)?,
-                            description: t.description.value().cloned(),
-                            parameters: Some(t.input_schema.clone()),
-                            strict: t.strict.value().map_or(
-                                FunctionStrictness::Omitted(StrictDefault::NonStrict),
-                                |b| FunctionStrictness::Explicit(*b),
-                            ),
-                            output_schema: None,
-                            dispatch: Default::default(),
-                            cache: t.cache_control.value().copied(),
-                        }))
-                    })
+                    .map(|t| super::semantic_intake::function_tool(t).map(ToolDefinition::Function))
                     .collect::<Result<_, CodecError>>()?,
             );
         }
@@ -133,10 +120,14 @@ impl Profile {
                 super::Thinking::Disabled => {
                     settings.reasoning.activation = Presence::Value(ReasoningActivation::Disabled);
                 }
-                super::Thinking::Adaptive { display: view } => {
+                super::Thinking::Adaptive {
+                    display: view,
+                    block_binding,
+                } => {
                     settings.reasoning.activation = Presence::Value(ReasoningActivation::Enabled);
                     settings.reasoning.mode = Presence::Value(ReasoningMode::Adaptive);
                     settings.reasoning.display = display(view);
+                    settings.reasoning.replay_mismatch = block_binding.map(replay_mismatch);
                 }
             }
         }
@@ -145,24 +136,16 @@ impl Profile {
         }
         for message in &wire.messages {
             match (&message.content, message.role) {
-                (MessageContent::Text(s), super::Role::System) => {
-                    intake.instruction(&[super::CacheMarked {
-                        content: s.clone(),
+                (MessageContent::Text(s), super::Role::System) => intake.system_message(
+                    &[super::CacheMarked {
+                        content: Block::Text(s.clone()),
                         cache: None,
-                    }])?
-                }
-                (MessageContent::Blocks(blocks), super::Role::System) => intake.instruction(
-                    &blocks
-                        .iter()
-                        .map(|block| match &block.content {
-                            Block::Text(s) => Ok(super::CacheMarked {
-                                content: s.clone(),
-                                cache: block.cache,
-                            }),
-                            _ => Err(CodecError::Invalid("Anthropic block role")),
-                        })
-                        .collect::<Result<Vec<_>, _>>()?,
+                    }],
+                    message.effort,
                 )?,
+                (MessageContent::Blocks(blocks), super::Role::System) => {
+                    intake.system_message(blocks, message.effort)?
+                }
                 (MessageContent::Text(s), role) => {
                     intake.message(role, &[Block::Text(s.clone())])?
                 }
@@ -210,6 +193,9 @@ impl Profile {
             .with_usage_reports(reports)?;
         let mut fidelity = FidelityRecords::default();
         bind(&mut fidelity, semantic.items(), target)?;
+        if wire.input_transformations {
+            fidelity.record_omission(crate::protocol::fidelity::INPUT_TRANSFORMATIONS_OMISSION);
+        }
         Ok(DecodedResponse {
             semantic,
             fidelity,
@@ -362,6 +348,7 @@ impl Profile {
             stop_reason: Presence::Value(stop_reason),
             stop_sequence,
             usage: super::accounting::wire(report, service_class)?,
+            input_transformations: false,
         })
     }
 }
@@ -370,13 +357,7 @@ pub(super) fn output_settings(config: &super::OutputConfig, settings: &mut Gener
     if let Presence::Value(effort) = config.effort {
         settings.effort = Presence::Value(EffortControl {
             scope: EffortScope::Response,
-            level: match effort {
-                super::Effort::Low => EffortLevel::Low,
-                super::Effort::Medium => EffortLevel::Medium,
-                super::Effort::High => EffortLevel::High,
-                super::Effort::XHigh => EffortLevel::XHigh,
-                super::Effort::Max => EffortLevel::Max,
-            },
+            level: effort_level(effort),
         });
     }
     if let Presence::Value(schema) = &config.format {
@@ -388,6 +369,21 @@ pub(super) fn output_settings(config: &super::OutputConfig, settings: &mut Gener
             schema: schema.clone(),
             strict: Some(true),
         });
+    }
+}
+pub(super) fn replay_mismatch(behavior: super::PrefixMismatch) -> ReplayMismatch {
+    match behavior {
+        super::PrefixMismatch::Error => ReplayMismatch::Reject,
+        super::PrefixMismatch::DropBlock => ReplayMismatch::Drop,
+    }
+}
+pub(super) fn effort_level(effort: super::Effort) -> EffortLevel {
+    match effort {
+        super::Effort::Low => EffortLevel::Low,
+        super::Effort::Medium => EffortLevel::Medium,
+        super::Effort::High => EffortLevel::High,
+        super::Effort::XHigh => EffortLevel::XHigh,
+        super::Effort::Max => EffortLevel::Max,
     }
 }
 pub(super) fn outcome(

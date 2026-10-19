@@ -160,7 +160,7 @@ pub(crate) fn prepare_with_evidence(
             .into(),
         ),
     ];
-    safe_headers.extend(endpoint.request_headers(request)?);
+    safe_headers.extend(endpoint.request_headers(request, &value)?);
     Ok((
         UpstreamRequest {
             origin: endpoint.target.origin.as_str().into(),
