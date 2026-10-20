@@ -156,6 +156,78 @@ fn lifecycle_requires_identity_and_distinguishes_invalid_from_unsupported_status
 }
 
 #[test]
+fn status_observations_neither_finish_nor_override_the_final_envelope() {
+    use morphiecore::protocol::{google::interactions::GenerationSseDecoder, stream::SseLimits};
+    for status in [
+        "in_progress",
+        "requires_action",
+        "completed",
+        "failed",
+        "cancelled",
+        "incomplete",
+    ] {
+        let mut frames = interaction_frames();
+        frames[1]["status"] = json!(status);
+        frames[1]["usage"] = json!({"total_tokens":7});
+        let mut decoder = GenerationSseDecoder::new(
+            200,
+            "text/event-stream",
+            SseLimits::default(),
+            LocalScope::new(2),
+            ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap(),
+        )
+        .unwrap();
+        decoder
+            .consume(format!("data: {}\n\n", frames[0]).as_bytes())
+            .unwrap();
+        let (_, observed) = decoder
+            .consume(format!("data: {}\n\n", frames[1]).as_bytes())
+            .unwrap();
+        assert!(
+            matches!(observed.as_slice(), [StreamEvent::UsageReport(report)]
+            if report.stage == UsageStage::Checkpoint && report.counts.total_tokens == Some(7))
+        );
+        assert!(
+            decoder.finish().is_err(),
+            "{status} is not a final envelope"
+        );
+        let decoded = decode_interaction(&frames, true).unwrap();
+        assert_eq!(decoded.semantic.outcome(), Outcome::Completed);
+        assert_eq!(
+            decoded.semantic.progress(),
+            InteractionProgress::AwaitingToolResults
+        );
+        // A checkpoint cannot make a final envelope with pending calls valid.
+        frames.last_mut().unwrap()["interaction"]["status"] = json!("completed");
+        assert!(
+            decode_interaction(&frames, true)
+                .unwrap_err()
+                .contains("Interactions terminal status")
+        );
+    }
+    // Source types do not establish an irreversible status-transition graph.
+    let mut frames = interaction_frames();
+    frames[1]["status"] = json!("requires_action");
+    let resumed = json!({"event_type":"interaction.status_update",
+        "interaction_id":"i","status":"in_progress"});
+    frames.insert(2, resumed.clone());
+    // Remove call steps, leaving the completed thought and no pending tools.
+    frames.drain(7..11);
+    frames.last_mut().unwrap()["interaction"]["status"] = json!("completed");
+    let decoded = decode_interaction(&frames, true).unwrap();
+    assert_eq!(
+        decoded.semantic.progress(),
+        InteractionProgress::TurnFinished
+    );
+    frames.push(resumed);
+    assert!(
+        decode_interaction(&frames, true)
+            .unwrap_err()
+            .contains("event after completion")
+    );
+}
+
+#[test]
 fn continuation_is_rejected_at_each_native_owner_and_poisoning_is_absorbing() {
     use morphiecore::protocol::{
         google::interactions::GenerationSseDecoder,

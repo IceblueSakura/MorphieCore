@@ -298,11 +298,10 @@ impl GenerationSseDecoder {
             "interaction.status_update" => {
                 self.check_identity(o, "interaction_id")?;
                 check_continuation(o)?;
-                if status(o)? != "in_progress" {
-                    return Err(
-                        CodecError::Unsupported("Interactions status observation".into()).into(),
-                    );
-                }
+                // Updates are observations, not completion or tool authorization.
+                // The final envelope alone supplies outcome/progress; no transition
+                // graph or equality with an earlier checkpoint is inferred.
+                status(o)?;
                 if let Some(value) = o.get("usage").filter(|v| !v.is_null()) {
                     self.emit(
                         StreamEvent::UsageReport(usage(
