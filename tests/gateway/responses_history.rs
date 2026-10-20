@@ -116,10 +116,22 @@ async fn stored_and_stateless_tool_history_agree_in_json_and_sse() {
                     body["previous_response_id"] = output_id.clone();
                     body["input"] = json!([next]);
                 } else {
-                    body["input"]
-                        .as_array_mut()
-                        .unwrap()
-                        .extend(output.iter().cloned());
+                    let mut returned = output.clone();
+                    if stream {
+                        // OpenCode's input shorthand omits empty annotations.
+                        // Never erase a supplied citation in this client oracle.
+                        for item in &mut returned {
+                            if item["type"] == "message" {
+                                for part in item["content"].as_array_mut().unwrap() {
+                                    if part["type"] == "output_text" {
+                                        assert_eq!(part["annotations"], json!([]));
+                                        part.as_object_mut().unwrap().remove("annotations");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    body["input"].as_array_mut().unwrap().extend(returned);
                     body["input"].as_array_mut().unwrap().push(next);
                 }
             }

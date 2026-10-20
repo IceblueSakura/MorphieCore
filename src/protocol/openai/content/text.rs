@@ -33,7 +33,12 @@ pub(in crate::protocol::openai) fn read_existing(
     }
     let annotations = match o.get("annotations") {
         Some(v) if !v.is_null() => read_annotations(v, items, existing)?,
-        // Both the output model and the request param require this array.
+        None if replay && items.direction.client() => {
+            // Selected client-input shorthand only. Closed request decoding and
+            // every upstream snapshot still require the official array.
+            items.fidelity.record_history_annotations_default();
+            vec![]
+        }
         _ => return Err(CodecError::Invalid("annotations")),
     };
     let logprobs = read_presence(o, "logprobs", read_logprobs)?;

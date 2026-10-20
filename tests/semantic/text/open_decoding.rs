@@ -140,6 +140,87 @@ fn known_upstream_fields_stay_strict() {
 }
 
 #[test]
+fn client_text_history_shorthand_does_not_relax_annotations() {
+    use morphiecore::{
+        protocol::{
+            CodecError,
+            fidelity::{FidelityRecords, Normalization},
+            openai::{TargetCaps, lowering::lower_request},
+        },
+        semantic::{task::generation::*, value::Text},
+    };
+    let a = adapter(Profile::Responses);
+    let mut history = json!({"model":"m","input":[{"role":"assistant","content":[{"type":"output_text","text":"hello"}]}]});
+    let decoded = a
+        .decode_client_request(history.to_string().as_bytes())
+        .unwrap();
+    let expected = GenerationRequest::new(
+        vec![(
+            ItemId::new(1),
+            Item::Message(Message {
+                role: MessageRole::Assistant,
+                phase: None,
+                status: ItemLifecycle::Completed,
+                parts: vec![Part::new(
+                    PartId::new(1),
+                    ContentPart::Text(Text::new("hello", "test", 32).unwrap().into()),
+                )],
+            }),
+        )],
+        GenerationControls::default(),
+    )
+    .unwrap();
+    assert_eq!(decoded.task.semantic, expected);
+    assert_eq!(
+        decoded.task.fidelity.normalizations(),
+        &std::collections::BTreeSet::from([Normalization::HistoryAnnotationsDefault])
+    );
+    // Independently constructed IR emits the official array, not the shorthand.
+    let fidelity = FidelityRecords::default();
+    let target =
+        lower_request(&expected, &fidelity, Profile::Responses, TargetCaps::full()).unwrap();
+    let encoded = morphiecore::protocol::openai::responses::encode_generation(&target).unwrap();
+    assert_eq!(
+        encoded["input"][0]["content"][0],
+        json!({"type":"output_text","text":"hello","annotations":[]})
+    );
+    assert!(matches!(
+        a.decode_request(history.to_string().as_bytes()),
+        Err(CodecError::Invalid("annotations"))
+    ));
+    for invalid in [
+        Value::Null,
+        json!({}),
+        json!([{"type":"unregistered_annotation"}]),
+    ] {
+        history["input"][0]["content"][0]["annotations"] = invalid;
+        assert!(
+            a.decode_client_request(history.to_string().as_bytes())
+                .is_err()
+        );
+    }
+    history["input"][0]["content"][0]["annotations"] = json!([{
+        "type":"url_citation","start_index":0,"end_index":5,"url":"https://example.test/","title":"Example"}]);
+    let cited = a
+        .decode_client_request(history.to_string().as_bytes())
+        .unwrap();
+    assert!(cited.task.fidelity.normalizations().is_empty());
+    assert_eq!(
+        a.encode_request(&cited, "m", &TargetCaps::full()).unwrap()["input"][0]["content"][0]["annotations"],
+        history["input"][0]["content"][0]["annotations"]
+    );
+    let mut upstream = wire::response(1);
+    upstream["output"][3]["content"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("annotations");
+    assert!(matches!(
+        a.decode_response(upstream.to_string().as_bytes()),
+        Err(CodecError::Invalid("annotations"))
+    ));
+}
+
+#[test]
 fn downstream_requests_still_reject_unmodeled_fields() {
     let mut body = wire::request(false);
     body["future_control"] = json!(true);

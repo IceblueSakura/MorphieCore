@@ -514,8 +514,13 @@ impl Trace {
         }
         for normalization in fidelity.normalizations() {
             use crate::protocol::fidelity::Normalization;
-            let (rule, field) = match normalization {
-                Normalization::Omitted { rule, field } => (*rule, *field),
+            let (rule, field, action) = match normalization {
+                Normalization::HistoryAnnotationsDefault => (
+                    "responses.default-history-annotations.v1",
+                    "generation.content.annotations",
+                    "insert",
+                ),
+                Normalization::Omitted { rule, field } => (*rule, *field, "omit"),
                 _ => continue,
             };
             let loss = LossObservation {
@@ -523,7 +528,7 @@ impl Trace {
                     rule,
                     field,
                     direction: "request.decode",
-                    action: "omit",
+                    action,
                 },
                 input: None,
                 output: None,
@@ -807,6 +812,18 @@ mod tests {
         let (tx, _rx) = mpsc::sync_channel(1);
         let sink = Sink(tx);
         let mut trace = Trace::new(Some(&sink));
+        let mut fidelity = crate::protocol::fidelity::FidelityRecords::default();
+        fidelity.record_history_annotations_default();
+        trace.request_intake(&fidelity);
+        trace.request_intake(&fidelity);
+        assert_eq!(
+            serde_json::to_value(&trace.record.input_losses).unwrap(),
+            serde_json::json!([{
+                "rule":"responses.default-history-annotations.v1",
+                "field":"generation.content.annotations",
+                "direction":"request.decode","action":"insert"
+            }])
+        );
         trace.executor_order("affinity");
         trace.begin_candidate(1);
         trace.probe(true);

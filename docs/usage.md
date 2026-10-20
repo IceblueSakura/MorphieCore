@@ -338,6 +338,8 @@ Later system or developer instructions keep their position. Chat and Responses t
 
 Return reasoning carriers unchanged in later history. Chat clients must preserve `reasoning_details`, not just readable text. See [Reasoning replay](architecture.md#reasoning-replay).
 
+Responses assistant-history `output_text` may omit `annotations` under the [selected input shorthand](architecture.md#client-responses-history-shorthand). The gateway inserts an empty list with a named diagnostic receipt; explicit null or malformed annotations still reject, and supplied citations must be preserved. This does not relax upstream response validation or restore citations discarded by a client.
+
 Chat accepts the deprecated `max_tokens` as the output cap, but not together with `max_completion_tokens`. An absent or null cap remains unspecified at Chat intake; CLI bootstrap supplies no default or token ceiling. A target requiring a cap uses its named default, currently `messages.default-max-tokens.v1` with `32000` for native Messages. Chat and Responses codecs carry `verbosity`; native Messages and Google projections use selected, recorded omission rules. A codec carrier does not establish model-effective support or binding admission. Chat `stop` and Messages `stop_sequences` decode into ordered stop controls, but unchanged default binding admission does not enable them merely because the codecs have carriers.
 
 ### Messages profile and cache markers

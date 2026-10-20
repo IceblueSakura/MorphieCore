@@ -147,14 +147,6 @@ The 2026-10-19 Bailian review selected [existing-IR-only adaptation](architectur
 A future proposal would need independently owned answer/thought/total limits, precedence and contradiction rules, native source/target mappings and cross-protocol refusal behavior. No representation is selected here. Current codecs reject the unrepresentable combination and numeric allocations outside the existing IR relation; they do not widen IR or reinterpret effort as tokens.
 
 
-#### Assistant history annotations (unselected)
-
-The resumed Responses acceptance exposed a separate client-input boundary: installed OpenCode completes a tool round, then its next-turn assistant text rejects with `Invalid("annotations")`. The [dated source comparison](refs/2026-10-17-generation-contracts.md#responses-lifecycle-reports-2026-10-19) distinguishes the client's omitted field from the pinned OpenAI required parameter.
-
-Minimal input: `{"role":"assistant","content":[{"type":"output_text","text":"hello"}]}` rejects, while the same part with `annotations: []` or the existing string shorthand `content: "hello"` is admitted.
-
-**Recommendation, not authorization:** accept only omitted `annotations` in client Responses assistant text history as an input shorthand, materializing an empty array with a named normalization receipt. Explicit null, malformed arrays and supplied citation semantics stay strict; upstream/static/SSE output snapshots still require the array. Do not reconstruct citations that the client discarded, rewrite client payloads in acceptance tooling or claim that such client loss is preserved. Keeping strict input rejection leaves the OpenCode next-turn gate blocked. Select this boundary before implementation.
-
 #### Review concrete ownership coupling
 
 | Evidence entry point | Existing coupling | Proposed treatment |

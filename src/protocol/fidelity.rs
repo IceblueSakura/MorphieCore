@@ -35,6 +35,8 @@ pub(crate) fn declared_response_extras(
 /// Intake audit facts only; never used to restore or change semantic values.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Normalization {
+    /// Client assistant-history shorthand, never an upstream annotation report.
+    HistoryAnnotationsDefault,
     CacheWriteDefault {
         profile: &'static str,
     },
@@ -330,6 +332,10 @@ impl FidelityRecords {
     }
     pub fn normalizations(&self) -> &std::collections::BTreeSet<Normalization> {
         &self.normalizations
+    }
+    pub(crate) fn record_history_annotations_default(&mut self) {
+        self.normalizations
+            .insert(Normalization::HistoryAnnotationsDefault);
     }
     pub(crate) fn record_cache_write_default(&mut self, profile: &'static str) {
         self.normalizations
