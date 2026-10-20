@@ -41,7 +41,12 @@ pub(crate) fn decode_with(
     } else {
         "incomplete"
     };
-    responses::items::decode_items(&mut b, output, true, item_status)?;
+    responses::items::decode_items(
+        &mut b,
+        output,
+        responses::items::ItemSide::Output,
+        item_status,
+    )?;
     for (_, item) in &mut b.items {
         if let Item::ConfigurationUpdate(update) = item {
             let native = update.effort;

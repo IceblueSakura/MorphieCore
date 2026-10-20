@@ -1,5 +1,5 @@
 //! Complete Responses task requests: settings and validated full-history input.
-use super::items::{decode_items, encode_items};
+use super::items::{ItemSide, decode_items, encode_items};
 use crate::protocol::openai::{
     CodecError, DecodedRequest, Profile, RequestRepresentation, common::*, settings,
 };
@@ -31,7 +31,7 @@ pub(crate) fn decode_generation_in(
                 }),
             ));
         }
-        Some(Value::Array(a)) => decode_items(&mut b, a, false, "completed")?,
+        Some(Value::Array(a)) => decode_items(&mut b, a, ItemSide::History, "completed")?,
         None if o.get("instructions").is_some_and(Value::is_string) => {}
         _ => return Err(CodecError::Invalid("input")),
     }

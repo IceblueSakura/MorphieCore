@@ -181,7 +181,7 @@ impl ResponseContext {
             crate::protocol::openai::responses::items::decode_items(
                 &mut items,
                 values,
-                false,
+                crate::protocol::openai::responses::items::ItemSide::History,
                 "completed",
             )?;
             fidelity = items.fidelity;

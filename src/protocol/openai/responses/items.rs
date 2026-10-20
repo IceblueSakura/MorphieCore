@@ -257,12 +257,27 @@ pub(in crate::protocol::openai) fn tool_result(
     })
 }
 
+/// Which Responses surface supplies the array. `Output` carries the response's own
+/// item lifecycle; `History` is an input echo with no per-item status field.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::protocol::openai) enum ItemSide {
+    History,
+    Output,
+}
+
+impl ItemSide {
+    fn response(self) -> bool {
+        self == Self::Output
+    }
+}
+
 pub(in crate::protocol::openai) fn decode_items(
     b: &mut Items,
     input: &[Value],
-    response: bool,
+    side: ItemSide,
     item_status: &str,
 ) -> Result<(), CodecError> {
+    let response = side.response();
     let direction = b.direction;
     for value in input {
         let o = object(value)?;

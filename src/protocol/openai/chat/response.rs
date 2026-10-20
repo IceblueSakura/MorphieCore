@@ -57,9 +57,12 @@ pub(crate) fn decode_with(
     };
     let message = object(c.get("message").ok_or(CodecError::Invalid("message"))?)?;
     let mut b = Items::new(DecodeDirection::Upstream);
-    let message =
-        crate::protocol::openai::chat::reasoning::decode_static(&mut b, message, adaptation)?;
-    chat::items::decode_message(&mut b, &message, false)?;
+    chat::items::decode_whole(
+        &mut b,
+        message,
+        adaptation,
+        chat::items::MessageSide::Output,
+    )?;
     crate::protocol::openai::chat::logprobs::attach(&mut b.items, c.get("logprobs"))?;
     if matches!(outcome, Outcome::Incomplete) {
         for (_, item) in &mut b.items {

@@ -1,6 +1,6 @@
 //! Complete Chat task requests: settings, tools and ordered message history.
 use super::{
-    items::{decode_message, encode_items_with, request_text_parts},
+    items::{MessageSide, decode_whole, encode_items_with, request_text_parts},
     owners,
 };
 use crate::protocol::openai::{
@@ -92,12 +92,7 @@ pub(crate) fn decode_generation_with(
         } else {
             None
         };
-        let message = crate::protocol::openai::chat::reasoning::decode_static(
-            &mut b,
-            object(&value)?,
-            adaptation,
-        )?;
-        decode_message(&mut b, &message, true)?;
+        decode_whole(&mut b, object(&value)?, adaptation, MessageSide::History)?;
         if let Some(marker) = marker {
             b.attachments
                 .push(crate::protocol::attachments::Marker::bounded(

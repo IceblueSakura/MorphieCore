@@ -33,11 +33,32 @@ pub(super) fn request_text_parts<'a>(
         _ => Err(CodecError::Invalid("content")),
     }
 }
-pub(in crate::protocol::openai) fn decode_message(
+/// Which Chat surface a message comes from. `Output` is the response's own message;
+/// `History` is a caller-supplied echo, so caller-only fields are validated too.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::protocol::openai) enum MessageSide {
+    History,
+    Output,
+}
+
+/// One whole Chat message. The reasoning carrier is read first, so a rejected field
+/// can never leave a half-built item behind; callers never sequence the two steps.
+pub(in crate::protocol::openai) fn decode_whole(
     b: &mut Items,
     m: &Map<String, Value>,
-    replay: bool,
+    adaptation: &crate::protocol::openai::dialect::adaptation::Adaptation,
+    side: MessageSide,
 ) -> Result<(), CodecError> {
+    let message = crate::protocol::openai::chat::reasoning::decode_static(b, m, adaptation)?;
+    decode_message(b, &message, side)
+}
+
+fn decode_message(
+    b: &mut Items,
+    m: &Map<String, Value>,
+    side: MessageSide,
+) -> Result<(), CodecError> {
+    let replay = side == MessageSide::History;
     let direction = b.direction;
     let role = string(m, "role")?;
     reject_chat_orchestration(m)?;
