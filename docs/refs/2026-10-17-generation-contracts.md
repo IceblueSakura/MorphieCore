@@ -20,6 +20,7 @@ Later observations retain their own dates and evidence scope below. [Architectur
 - [Selected visible-history transfer](#selected-visible-history-transfer)
 - [Messages budget and identity boundaries, 2026-10-19](#messages-budget-and-identity-boundaries-2026-10-19)
 - [Model-effective limits, 2026-10-20](#model-effective-limits-2026-10-20)
+- [Messages missing-ceiling evidence, 2026-10-20](#messages-missing-ceiling-evidence-2026-10-20)
 - [Cross-provider user attribution, 2026-10-19](#cross-provider-user-attribution-2026-10-19)
 - [Loss-policy decisions still needed](#loss-policy-decisions-still-needed)
 - [Contract and evidence map](#contract-and-evidence-map)
@@ -273,6 +274,16 @@ The [Gemini 3.8 Flash model page](https://ai.google.dev/gemini-api/docs/models/g
 
 The existing generateContent and Interactions catalog bindings now declare those limits through [trusted target caps](../architecture.md#model-effective-values). Synthetic directional and preflight/preparation checks cover minimal, 65,537 and a budget conversion producing minimal; no live Provider enforcement was tested. The 2026-10-18/19 gaps above describe the earlier state, not the current binding guard. Other models require their own evidence; changing a deployment or wire alias does not establish another model's limits.
 
+## Messages missing-ceiling evidence, 2026-10-20
+
+Primary sources and current implementation were inspected for the [missing-ceiling proposal](../api-expansion-design.md#missing-messages-output-ceilings-proposal); no Provider calls or private configuration were used.
+
+- The [pinned Anthropic SDK request type](https://github.com/anthropics/anthropic-sdk-python/blob/bcd55fe1d3f0f1240765f8cef04295b67337f55a/src/anthropic/types/message_create_params.py) requires `max_tokens` and describes an output ceiling, not a suggested amount to generate. It includes thinking tokens. Its cache-prewarming zero form remains outside the selected Generation scope.
+- The [pinned OpenCode Messages adapter](https://github.com/anomalyco/opencode/blob/e5a557efeee02c94486d391afc48f24a49ebc9a5/packages/ai/src/protocols/anthropic-messages.ts) declares `DEFAULT_MAX_TOKENS = 32_000` and uses `generation?.maxTokens ?? DEFAULT_MAX_TOKENS`. This establishes that client's fallback and MorphieCore's current numeric provenance, not an upstream default or mandatory model budget. Its `fitThinkingBudget` behavior is not selected for MorphieCore; no automatic budget adjustment follows from this reference.
+- The [Haiku 5.5 reference](https://platform.claude.com/docs/en/models/haiku-5-5/overview), rechecked on 2026-10-20, lists adaptive thinking and 128K ordinary maximum output; the separate 300K Batch beta does not apply to this Generation binding. The [Go documentation](https://opencode.ai/docs/go/) lists Haiku and pricing but supplies no missing-cap default or effective per-request output-limit guarantee for the pinned bridge. Neither source selects a gateway fallback or certifies Go enforcement.
+- The [Messages reference](https://platform.claude.com/docs/en/api/messages) and [extended-thinking guide](https://platform.claude.com/docs/en/build-with-claude/extended-thinking), rechecked on 2026-10-20, require ordinary manual budgets of at least 1024 and strictly less than `max_tokens`. The documented interleaved exception remains outside the selected scope; Haiku's adaptive-only binding is not a manual-budget test target.
+- Current [native projection](../../src/protocol/anthropic/semantic_request.rs) inserts `32000` below trusted `TargetCaps`; direct `Profile::encode_generation_request` therefore also gets that fallback. [Target adaptation](../../src/protocol/anthropic/adapter.rs) already runs selected reasoning conversion before native projection, and [final native checks](../../src/protocol/anthropic/semantic.rs) validate the projected cap against S3-1 limits. Budget-to-effort removes the numeric allocation; effort-to-budget creates one. This ordering is the basis for the proposal, not new implementation or an experiment result.
+
 ## Cross-provider user attribution, 2026-10-19
 
 Official sources rechecked on 2026-10-19:
@@ -296,7 +307,7 @@ Current code is narrower: `ClientIdentityHints` limits safety IDs to 64 characte
 | Messages profile always omits sampling | A sampling-capable model uses the same protocol profile | Keep official sampling carriers in codecs; select fixed/ignored sampling only through evidenced target policy. Current registered binding does not prove the protocol-wide assumption |
 | File citation index retains older ordinal meaning | Updated official reference calls it an output insertion position | Select the protocol revision and a point anchor; do not reuse a list ordinal |
 
-The missing-output-ceiling choice was settled on 2026-10-19: use a trusted target-configured default when converting to Messages, preserving explicit client ceilings. The current fixed `32000` remains an implementation gap, not a reason to choose the model maximum automatically. See [the selected decision](../architecture.md#settled-decisions) and [stage-3 work](../roadmap.md#stage-3-counting-scope).
+The missing-output-ceiling choice was settled on 2026-10-19: use a trusted target-configured default when converting to Messages, preserving explicit client ceilings. The current fixed `32000` remains an implementation gap, not a reason to choose the model maximum automatically. See [the selected decision](../architecture.md#settled-decisions), the [unselected configuration proposal](../api-expansion-design.md#missing-messages-output-ceilings-proposal) and [stage-3 work](../roadmap.md#stage-3-work-plan).
 
 Keep the inspected protections for normalization-default tools, no automatic thinking-budget clipping, explicit role approximations, and incomplete terminals. Source-level numeric labels do not establish cross-model equivalence. An official API feature may justify IR vocabulary even when another target must reject it.
 

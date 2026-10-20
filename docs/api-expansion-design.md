@@ -7,6 +7,7 @@
 - [Shared design boundaries](#shared-design-boundaries)
   - [Proposed ownership](#proposed-ownership)
   - [Generation boundary review](#generation-boundary-review)
+    - [Missing Messages output ceilings (proposal)](#missing-messages-output-ceilings-proposal)
   - [Resource and execution safety](#resource-and-execution-safety)
 - [Operation contracts](#operation-contracts)
   - [Token counting](#token-counting)
@@ -146,6 +147,62 @@ The 2026-10-19 Bailian review selected [existing-IR-only adaptation](architectur
 
 A future proposal would need independently owned answer/thought/total limits, precedence and contradiction rules, native source/target mappings and cross-protocol refusal behavior. No representation is selected here. Current codecs reject the unrepresentable combination and numeric allocations outside the existing IR relation; they do not widen IR or reinterpret effort as tokens.
 
+
+#### Missing Messages output ceilings (proposal)
+
+The [accepted missing-ceiling policy](architecture.md#native-messages-projection) requires a trusted candidate default, preservation of explicit caps and rejection without adjustment. The following configuration, constructor behavior and catalog value are **recommendations awaiting selection**, not implemented settings. [Roadmap](roadmap.md#stage-3-work-plan) owns implementation and acceptance; [dated source findings](refs/2026-10-17-generation-contracts.md#messages-missing-ceiling-evidence-2026-10-20) distinguish client defaults from model limits.
+
+**Configuration and ownership.** Recommend one trusted candidate field, `default_output_tokens`, applicable only to Messages targets. Resolve it into an optional positive `u64` on Messages `TargetCaps`, separate from `ModelLimits.maximum_output_tokens`. Keep it outside client input, protocol-neutral IR schemas, public model capabilities and routing policy. Reuse the existing presence type at startup; do not introduce a general defaults framework.
+
+| Candidate configuration | Proposed meaning |
+|---|---|
+| Field omitted | Inherit the binding's default, including inherited absence |
+| Integer in `1..=u64::MAX` | Replace the binding default; it may be higher or lower, subject to the effective model maximum |
+| Explicit `null` | Clear the inherited default; only explicitly capped requests can use this target |
+| Zero, negative, fraction, wrong type or overflow | Reject configuration; never interpret as absence |
+| Field present on a non-Messages candidate, including `null` | Reject configuration instead of ignoring a misplaced policy |
+
+These presence rules apply only to the proposed field; do not change existing `allowed_effort` or `maximum_output_tokens` parsing. Resolve model-limit inheritance/narrowing first. A resolved default above the effective declared maximum is a configuration error, even if a particular request supplies a valid explicit cap. An absent default is valid; an absent model maximum supplies neither a default nor evidence of an unlimited upstream. Do not constrain a default to be lower than its catalog predecessor: unlike a maximum, it is an insertion policy, not a restriction on explicit client intent.
+
+For example, narrowing a candidate maximum to `8192` while inheriting `32000` must fail startup. Set `default_output_tokens: 4096` or clear it with `null`; do not silently reduce it to `8192`. This intentionally detects a contradictory target declaration earlier than S3-1's request-time check of the fixed default. Share validation between startup/compiled endpoints and the target encoder so programmatically built caps cannot bypass positivity or the default/maximum relation.
+
+**Recommended initial declarations.** For the sole current `opencode-go-haiku-messages` binding, declare `32000` explicitly in the catalog to preserve existing missing-cap behavior. This is a gateway policy retained from the pinned client's fallback, not a model maximum, upstream default, measured optimum or live Go guarantee. Generic Messages `TargetCaps::new` and direct `Profile` encoding receive no implicit fallback; future Messages bindings must select their own declaration. Other protocol bindings, including Chat for the same canonical Haiku model, receive no such policy. Do not add Haiku maximum-output declarations or change existing manual-thinking admission as a side effect of this slice.
+
+| Alternative | Trade-off and recommendation |
+|---|---|
+| Use the model maximum, or `min(default, maximum)` | Conflates two policies or conceals contradictory configuration; reject |
+| Choose a new smaller default such as `8192` | May reduce latency/cost exposure, but changes existing uncapped turns and can truncate thinking/tool arguments; needs separate workload evidence |
+| Remove all catalog defaults | Explicit-cap-only operation is useful via `null`, but is not the recommended migration for the existing binding |
+| Put a fallback parameter/constant inside every codec call | Leaves policy ownership ambiguous and risks bypass by direct callers; resolve the cap once in trusted target projection instead |
+
+**Projection sequence.**
+
+1. Validate original source semantics before target changes. Missing/null Chat caps remain unspecified under current intake rules; native Messages missing/null/zero `max_tokens` still rejects at intake. A target default cannot repair invalid source input.
+2. On the candidate copy, apply existing selected reasoning conversions and carrier projections. Then, if the effective semantic output cap is absent, insert the resolved trusted default. If none exists, reject locally with a missing-target-default error; do not use the maximum, a thinking preset or an upstream probe. Retain every explicit positive cap unchanged, even when larger than the default.
+3. Validate the effective settings, then project the typed native request. Pure `Profile`/IR-to-wire encoding requires a supplied cap and rejects absence; remove its fixed `DEFAULT_MAX_TOKENS` fallback, without a compatibility shim or JSON repair. A raw native DTO already requires `max_tokens`.
+4. Keep the final S3-1 model-value check on the projected native request and native grammar validation. For a retained ordinary manual budget `B` and resulting cap `C`, require `1024 <= B < C`. A shared candidate-settings check may reject `B > C` earlier in this target projection; equality must reach the native strict relation. Do not clip budgets, raise caps or infer numeric budgets from qualitative effort.
+5. On successful insertion, emit `messages.default-max-tokens.v1` once in the projection. Explicit caps emit no insertion rule. Preflight and preparation run the same deterministic encoder against the same source and caps; each invocation reports its own insertion, not a second cumulative default. Source IR, stored client history and successor candidates retain their original settings; transport does not resolve or reinterpret defaults.
+
+Ordering is observable: budget-to-effort conversion can remove a numeric allocation that would conflict with a prematurely inserted ceiling. Effort-to-budget conversion can create one that must be checked against the default. Preserve existing source-invalid explicit-cap rejection before either mapping; this proposal authorizes no new conversion table or manual-thinking target.
+
+**Discriminating examples.** Here `C` is a source cap, `D` the resolved default, `M` a declared maximum and `B` a retained ordinary manual budget. Values below are synthetic, not model presets.
+
+| Input and target | Required result |
+|---|---|
+| `C=6000, D=4096, M=8192` | Encode `6000`, without an insertion rule |
+| Missing `C`, `D=4096, M=8192` | Encode `4096`; exactly one insertion rule |
+| Missing `C` and `D`, even with `M=8192` | Reject missing default; with explicit `C=4096`, encode normally |
+| `D=4096, M=2048` | Invalid configuration, including for explicitly capped requests |
+| `D=M=4096`, no conflicting budget | Valid declarations; equality of default and maximum is allowed |
+| `B=1024`, missing `C`, `D=1024` versus `D=1025` | Reject native budget equality versus preserve `B` and encode `1025` |
+| Selected conversion produces `B=4096`, missing `C`, `D=4096` | Reject native equality without adjustment |
+| Selected budget-to-effort conversion removes `B>D` before insertion | Do not invent a numeric-budget conflict; check final effort and remaining target rules |
+| Source has `B>C`, or explicit `C>M`, with otherwise valid `D` | Preserve source/target rejection; the default cannot overwrite explicit intent |
+| Candidate A uses `D=1024`, candidate B uses `D=4096`, source has `B=2048` and no cap | A rejects, B may encode `4096`; neither mutates the source or the other's copy |
+
+**Implementation handoff, not acceptance evidence.** Extend existing native-control, startup and transport tests rather than creating a default-policy matrix. Cover omitted inheritance, null clearing, malformed/wrong-protocol configuration, compiled and direct caps validation, pure Profile missing-cap rejection, explicit precedence, unchanged native intake and independent expected `max_tokens`/rule values. Use a supporting synthetic Messages target for ordinary budgets: Go/Haiku must continue rejecting manual thinking before those cases. Check preflight/prepared-body agreement and candidate isolation, retaining S3-1 final-value assertions.
+
+Implementation needs the full offline baseline and pinned synthetic SDK gate; mark any changed constructor fixtures explicitly instead of preserving a hidden `32000` convenience fallback. It does not reopen Google loops, installed-client acceptance or real model-limit certification. Keep Usage/OpenAPI descriptions aligned only when code lands. Counting does not inherit Generation's required output cap: share only count-relevant effective-input rules in its separately selected projection, without invoking full generation preparation.
 
 #### Review concrete ownership coupling
 
@@ -428,6 +485,7 @@ These recommendations have not been adopted merely by requesting this document.
 
 | Decision | Options and recommendation | Blocks |
 |---|---|---|
+| Messages missing-cap details | Recommend the [candidate-local proposal](#missing-messages-output-ceilings-proposal): omission inherits, `null` clears, positive overrides, no generic fallback, existing Go/Haiku catalog default `32000`. Trusted-default ownership and no adjustment are already accepted | Selecting these details and implementation; not reopening S3-1 guards |
 | Task grouping and shared content | Recommend independent TokenCount/Compaction, AudioToText variants, and Image Generate/Edit variants; share content without inheriting Generation execution | New task type and public Rust contract changes |
 | Counting companion surface | Recommend Responses input-token counting; image generations/edits already belong to stage 4 | Adding the Responses counting surface to delivery scope |
 | Counting profile and public scope | Select the public-model/target profile, upstream reliability criteria, coarse estimation rule/input coverage and client-visible scope/provenance. [Upstream preference, explicit estimates for inaccurate reports, no gateway tokenizer counting and no inference side effects](architecture.md#token-counting-policy) are selected, not open alternatives | Cross-protocol counting admission and client promises |
