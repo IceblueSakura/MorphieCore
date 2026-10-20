@@ -1,7 +1,7 @@
 //! Selected native Messages types, not a second semantic model or an execution API.
-//! `wire` holds the DTOs, `semantic*` maps them to and from the IR, and `client`
-//! admits and delivers downstream values. Accounting and terminal mappings are
-//! shared by those directions, not owned by a delivery front end.
+//! `wire` holds the DTOs; `request`, `response`, `items` and `settings` map them to
+//! and from the IR; `client` admits and delivers downstream values. Accounting and
+//! terminal mappings are shared by those directions, not owned by a delivery front end.
 mod accounting;
 mod carriers;
 pub mod client;
@@ -11,19 +11,19 @@ pub use sse::{GenerationSseDecoder, MessageSseDecoder};
 mod target;
 pub use carriers::Carriers;
 pub use target::{Dialect, SamplingPolicy, TargetCaps};
+mod items;
 mod media;
-mod semantic;
-mod semantic_intake;
-mod semantic_request;
+mod request;
+mod response;
 mod service;
+mod settings;
 mod shape;
 mod strict_schema;
 mod terminal;
 pub mod wire;
 use crate::protocol::CodecError;
 pub use media::{Media, ResultBlock, ResultContent, Source};
-pub use semantic::NativeProjection;
-pub use semantic_request::RequestRule;
+pub use request::{NativeProjection, RequestRule};
 use serde_json::Value;
 pub use wire::*;
 

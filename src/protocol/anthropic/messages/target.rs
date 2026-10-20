@@ -257,7 +257,7 @@ impl TargetCaps {
             crate::protocol::attribution::Carrier::Messages,
         )?;
         let identity = &attribution.identity.user;
-        super::request::validate_user_id(identity)?;
+        crate::protocol::anthropic::messages::wire::request::validate_user_id(identity)?;
         if !identity.is_absent() {
             let mut metadata = serde_json::Map::new();
             super::shape::put(&mut metadata, "user_id", identity, |value| {

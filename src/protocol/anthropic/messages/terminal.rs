@@ -1,5 +1,5 @@
 //! Messages stop reasons and semantic outcome/progress mappings in both directions.
-use super::semantic_intake::text;
+use crate::protocol::anthropic::messages::items::text;
 use crate::{protocol::CodecError, semantic::task::generation::*};
 
 pub(super) fn decode(

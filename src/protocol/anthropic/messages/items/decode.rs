@@ -7,19 +7,19 @@ use crate::{
     protocol::{CodecError, fidelity::FidelityRecords},
     semantic::{task::generation::*, value::Text},
 };
-pub(super) fn text(s: &str) -> Result<Text, CodecError> {
+pub(in crate::protocol::anthropic::messages) fn text(s: &str) -> Result<Text, CodecError> {
     Text::allowing_empty(s, "native text", MAX_TEXT_BYTES).map_err(|_| CodecError::Limit)
 }
-pub(super) struct Intake {
+pub(in crate::protocol::anthropic::messages) struct Intake {
     scope: LocalScope,
-    pub(super) items: Vec<(ItemId, Item)>,
-    pub(super) groups: Vec<MessageEnvelope>,
-    pub(super) resources: ResourceTable,
+    pub(in crate::protocol::anthropic::messages) items: Vec<(ItemId, Item)>,
+    pub(in crate::protocol::anthropic::messages) groups: Vec<MessageEnvelope>,
+    pub(in crate::protocol::anthropic::messages) resources: ResourceTable,
     /// Parts whose image rejects downsizing; the caller records them as fidelity.
-    pub(super) strict_images: Vec<PartId>,
+    pub(in crate::protocol::anthropic::messages) strict_images: Vec<PartId>,
 }
 impl Intake {
-    pub(super) fn new(scope: LocalScope) -> Self {
+    pub(in crate::protocol::anthropic::messages) fn new(scope: LocalScope) -> Self {
         Self {
             scope,
             items: vec![],
@@ -28,7 +28,11 @@ impl Intake {
             strict_images: vec![],
         }
     }
-    fn resource(&mut self, part: PartId, media: &Media) -> Result<ResourceUse, CodecError> {
+    pub(in crate::protocol::anthropic::messages) fn resource(
+        &mut self,
+        part: PartId,
+        media: &Media,
+    ) -> Result<ResourceUse, CodecError> {
         if matches!(
             media,
             Media::Image {
@@ -47,9 +51,9 @@ impl Intake {
         })
     }
     /// A mid-conversation system message becomes one ordered, text-only instruction.
-    pub(super) fn instruction(
+    pub(in crate::protocol::anthropic::messages) fn instruction(
         &mut self,
-        parts: &[super::CacheMarked<String>],
+        parts: &[crate::protocol::anthropic::messages::CacheMarked<String>],
     ) -> Result<(), CodecError> {
         if parts.is_empty() {
             return Err(CodecError::Invalid("Anthropic empty system message"));
@@ -81,7 +85,10 @@ impl Intake {
         ));
         Ok(())
     }
-    fn push(&mut self, item: Item) -> Result<(), CodecError> {
+    pub(in crate::protocol::anthropic::messages) fn push(
+        &mut self,
+        item: Item,
+    ) -> Result<(), CodecError> {
         if self.items.len() >= MAX_ITEMS {
             return Err(CodecError::Limit);
         }
@@ -92,10 +99,10 @@ impl Intake {
     /// One mid-conversation system message, in block order: text runs become
     /// instructions, tool-change blocks ordered changes, and a per-message effort an
     /// ordered configuration update after them.
-    pub(super) fn system_message(
+    pub(in crate::protocol::anthropic::messages) fn system_message(
         &mut self,
-        blocks: &[super::CacheMarked<Block>],
-        effort: Option<super::Effort>,
+        blocks: &[crate::protocol::anthropic::messages::CacheMarked<Block>],
+        effort: Option<crate::protocol::anthropic::messages::Effort>,
     ) -> Result<(), CodecError> {
         if blocks.is_empty() && effort.is_none() {
             return Err(CodecError::Invalid("Anthropic empty system message"));
@@ -104,18 +111,18 @@ impl Intake {
         for block in blocks {
             let action = match &block.content {
                 Block::Text(s) => {
-                    text_run.push(super::CacheMarked {
+                    text_run.push(crate::protocol::anthropic::messages::CacheMarked {
                         content: s.clone(),
                         cache: block.cache,
                     });
                     continue;
                 }
-                Block::ToolAddition(super::ToolTarget::Reference(name)) => {
-                    ToolChangeAction::AddReference(text(name)?)
-                }
-                Block::ToolAddition(super::ToolTarget::Definition(tool)) => {
-                    ToolChangeAction::AddDefinition(Box::new(function_tool(tool)?))
-                }
+                Block::ToolAddition(
+                    crate::protocol::anthropic::messages::ToolTarget::Reference(name),
+                ) => ToolChangeAction::AddReference(text(name)?),
+                Block::ToolAddition(
+                    crate::protocol::anthropic::messages::ToolTarget::Definition(tool),
+                ) => ToolChangeAction::AddDefinition(Box::new(function_tool(tool)?)),
                 Block::ToolRemoval(name) => ToolChangeAction::Remove(text(name)?),
                 _ => return Err(CodecError::Invalid("Anthropic block role")),
             };
@@ -135,13 +142,17 @@ impl Intake {
                 activation: None,
                 effort: Some(EffortControl {
                     scope: EffortScope::Response,
-                    level: super::semantic::effort_level(effort),
+                    level: crate::protocol::anthropic::messages::settings::effort_level(effort),
                 }),
             }))?;
         }
         Ok(())
     }
-    fn block(&mut self, block: &Block, role: Role) -> Result<ItemId, CodecError> {
+    pub(in crate::protocol::anthropic::messages) fn block(
+        &mut self,
+        block: &Block,
+        role: Role,
+    ) -> Result<ItemId, CodecError> {
         if role == Role::System
             || !block.permits(role)
                 && !(role == Role::Assistant && matches!(block, Block::PartialToolUse { .. }))
@@ -278,17 +289,21 @@ impl Intake {
         self.items.push((id, item));
         Ok(id)
     }
-    pub(super) fn message(&mut self, role: Role, blocks: &[Block]) -> Result<(), CodecError> {
+    pub(in crate::protocol::anthropic::messages) fn message(
+        &mut self,
+        role: Role,
+        blocks: &[Block],
+    ) -> Result<(), CodecError> {
         let members = blocks
             .iter()
             .map(|b| self.block(b, role))
             .collect::<Result<Vec<_>, _>>()?;
         self.envelope(role, members)
     }
-    pub(super) fn request_message(
+    pub(in crate::protocol::anthropic::messages) fn request_message(
         &mut self,
         role: Role,
-        blocks: &[super::CacheMarked<Block>],
+        blocks: &[crate::protocol::anthropic::messages::CacheMarked<Block>],
     ) -> Result<(), CodecError> {
         let mut members = Vec::new();
         for block in blocks {
@@ -307,7 +322,11 @@ impl Intake {
         }
         self.envelope(role, members)
     }
-    fn envelope(&mut self, role: Role, members: Vec<ItemId>) -> Result<(), CodecError> {
+    pub(in crate::protocol::anthropic::messages) fn envelope(
+        &mut self,
+        role: Role,
+        members: Vec<ItemId>,
+    ) -> Result<(), CodecError> {
         let id = GroupId::new(self.scope, self.groups.len() as u64 + 1);
         let role = if role == Role::User {
             MessageEnvelopeRole::User
@@ -323,7 +342,9 @@ impl Intake {
     }
 }
 /// One native tool definition; deferred loading and eager input keep their owners.
-pub(super) fn function_tool(tool: &super::Tool) -> Result<FunctionTool, CodecError> {
+pub(in crate::protocol::anthropic::messages) fn function_tool(
+    tool: &crate::protocol::anthropic::messages::Tool,
+) -> Result<FunctionTool, CodecError> {
     Ok(FunctionTool {
         name: text(&tool.name)?,
         description: tool.description.value().cloned(),
@@ -343,7 +364,9 @@ pub(super) fn function_tool(tool: &super::Tool) -> Result<FunctionTool, CodecErr
         eager_input: tool.eager_input_streaming.value().copied(),
     })
 }
-pub(super) fn validate_cache(request: &GenerationRequest) -> Result<(), CodecError> {
+pub(in crate::protocol::anthropic::messages) fn validate_cache(
+    request: &GenerationRequest,
+) -> Result<(), CodecError> {
     let mut markers = request
         .tools()
         .iter()
@@ -418,13 +441,13 @@ pub(super) fn validate_cache(request: &GenerationRequest) -> Result<(), CodecErr
             _ => {}
         }
     }
-    super::request::validate_automatic_cache(
+    crate::protocol::anthropic::messages::wire::request::validate_automatic_cache(
         &mut markers,
         last,
         request.settings().automatic_prefix_cache,
     )
 }
-pub(super) fn bind(
+pub(in crate::protocol::anthropic::messages) fn bind(
     fidelity: &mut FidelityRecords,
     owners: &[(ItemId, Item)],
     target: &ReplayTarget,

@@ -1,17 +1,181 @@
-//! Candidate-local native request/history projection.
+//! Native Messages request mapping: wire → IR intake and IR → wire projection.
 use super::{
-    Block, InputMessage, Media, MessageContent, ResultBlock, ResultContent, Role, Selection,
-    TextContent as WireText,
+    Block, InputMessage, MessageContent, Profile, Role, Selection, TextContent as WireText,
+    items::{Intake, bind, item_blocks, text},
+    settings::{display, output_settings, replay_mismatch},
 };
 use crate::{
-    protocol::{CodecError, fidelity::FidelityRecords, native::ReplayTarget},
+    protocol::{CodecError, DecodedRequest, fidelity::FidelityRecords, native::ReplayTarget},
     semantic::{task::generation::*, value::Presence},
 };
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
-pub(super) fn unsupported() -> CodecError {
-    CodecError::Unsupported("native semantic carrier".into())
+
+/// Body-free receipts identify actual selected normalization/loss, not permission.
+pub struct NativeProjection {
+    pub value: Value,
+    pub normalized_arguments: Vec<ItemId>,
+    pub omitted_execution: Vec<ItemId>,
+    pub rules: Vec<RequestRule>,
+    pub control_losses: Vec<crate::lowering::generation::RequestControlLoss>,
 }
+impl std::fmt::Debug for NativeProjection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NativeProjection")
+            .field("body", &"[redacted]")
+            .field("normalized_arguments", &self.normalized_arguments)
+            .field("omitted_execution", &self.omitted_execution)
+            .field("rules", &self.rules)
+            .field("control_losses", &self.control_losses)
+            .finish()
+    }
+}
+
+impl Profile {
+    pub fn decode_generation_request(
+        self,
+        bytes: &[u8],
+        scope: LocalScope,
+        target: &ReplayTarget,
+    ) -> Result<DecodedRequest, CodecError> {
+        let wire = self.decode_request(bytes)?;
+        if !wire.service_policy.is_absent() || !wire.user_id.is_absent() {
+            return Err(CodecError::Unsupported(
+                "execution policy requires request envelope".into(),
+            ));
+        }
+        if wire.model != target.model() {
+            return Err(CodecError::Invalid("native model binding"));
+        }
+        if wire.stream == Presence::Value(true) {
+            return Err(CodecError::Unsupported("native streaming mapping".into()));
+        }
+        let mut intake = Intake::new(scope);
+        let mut settings = GenerationSettings {
+            automatic_prefix_cache: wire.cache_control.value().map(|c| c.ttl()),
+            ..Default::default()
+        };
+        settings.controls.max_output_tokens = Some(wire.max_tokens);
+        if let Some(value) = wire.temperature {
+            settings.controls = settings.controls.with_temperature(value)?;
+        }
+        if let Some(value) = wire.top_p {
+            settings.controls = settings.controls.with_top_p(value)?;
+        }
+        settings.controls.top_k = wire.top_k;
+        settings.controls.stop_sequences = wire
+            .stop_sequences
+            .iter()
+            .map(|s| text(s))
+            .collect::<Result<_, _>>()?;
+        match &wire.system {
+            Presence::Value(WireText::Text(s)) => settings.instructions = Presence::Value(text(s)?),
+            Presence::Value(WireText::Blocks(parts)) => {
+                if parts.is_empty() {
+                    return Err(CodecError::Unsupported("empty system block carrier".into()));
+                }
+                intake.items.push((
+                    ItemId::scoped(scope, 1),
+                    Item::Instruction(Instruction {
+                        authority: InstructionAuthority::System,
+                        status: None,
+                        parts: parts
+                            .iter()
+                            .enumerate()
+                            .map(|(i, s)| {
+                                Ok(Part {
+                                    replay: None,
+                                    id: PartId::scoped(scope, i as u64 + 1),
+                                    content: text(&s.content)?,
+                                    cache: s.cache,
+                                })
+                            })
+                            .collect::<Result<_, CodecError>>()?,
+                    }),
+                ));
+            }
+            _ => {}
+        }
+        if let Presence::Value(tools) = &wire.tools {
+            settings.tools = Some(
+                tools
+                    .iter()
+                    .map(|t| {
+                        crate::protocol::anthropic::messages::items::function_tool(t)
+                            .map(ToolDefinition::Function)
+                    })
+                    .collect::<Result<_, CodecError>>()?,
+            );
+        }
+        if let Presence::Value(choice) = &wire.tool_choice {
+            settings.tool_choice = Some(match &choice.selection {
+                Selection::Auto => ToolChoice::Auto,
+                Selection::None => ToolChoice::None,
+                Selection::Any => ToolChoice::Required,
+                Selection::Tool(s) => ToolChoice::Specific(text(s)?),
+            });
+            settings.parallel_tool_calls = choice.disable_parallel_tool_use.value().map(|b| !b);
+        }
+        if let Presence::Value(thinking) = &wire.thinking {
+            settings.reasoning = ReasoningRequest::present(None);
+            match thinking {
+                super::Thinking::Disabled => {
+                    settings.reasoning.activation = Presence::Value(ReasoningActivation::Disabled);
+                }
+                super::Thinking::Enabled {
+                    budget_tokens,
+                    display: view,
+                } => {
+                    settings.reasoning.activation = Presence::Value(ReasoningActivation::Enabled);
+                    settings.reasoning.mode = Presence::Value(ReasoningMode::Budgeted);
+                    settings.reasoning.budget_tokens = Some(*budget_tokens);
+                    settings.reasoning.display = display(view);
+                }
+                super::Thinking::Adaptive {
+                    display: view,
+                    block_binding,
+                } => {
+                    settings.reasoning.activation = Presence::Value(ReasoningActivation::Enabled);
+                    settings.reasoning.mode = Presence::Value(ReasoningMode::Adaptive);
+                    settings.reasoning.display = display(view);
+                    settings.reasoning.replay_mismatch = block_binding.map(replay_mismatch);
+                }
+            }
+        }
+        if let Presence::Value(config) = &wire.output_config {
+            output_settings(config, &mut settings);
+        }
+        for message in &wire.messages {
+            match (&message.content, message.role) {
+                (MessageContent::Text(s), super::Role::System) => intake.system_message(
+                    &[super::CacheMarked {
+                        content: Block::Text(s.clone()),
+                        cache: None,
+                    }],
+                    message.effort,
+                )?,
+                (MessageContent::Blocks(blocks), super::Role::System) => {
+                    intake.system_message(blocks, message.effort)?
+                }
+                (MessageContent::Text(s), role) => {
+                    intake.message(role, &[Block::Text(s.clone())])?
+                }
+                (MessageContent::Blocks(blocks), role) => intake.request_message(role, blocks)?,
+            }
+        }
+        let semantic = GenerationRequest::from_resources(intake.items, settings, intake.resources)?
+            .with_message_envelopes(intake.groups)?;
+        let mut fidelity = FidelityRecords::default();
+        bind(&mut fidelity, semantic.items(), target)?;
+        for part in intake.strict_images {
+            fidelity.record_strict_image_size(part)?;
+        }
+        Ok(DecodedRequest { semantic, fidelity })
+    }
+}
+
+use super::items::unsupported;
 /// Named degradable rules applied to one candidate's request copy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum RequestRule {
@@ -180,7 +344,7 @@ fn system_messages(
     }
     Ok(messages)
 }
-pub(super) fn project(
+pub(in crate::protocol::anthropic::messages) fn project(
     request: &GenerationRequest,
     fidelity: &FidelityRecords,
     target: &ReplayTarget,
@@ -553,138 +717,5 @@ pub(super) fn project(
         },
         messages,
         stream: Presence::Absent,
-    })
-}
-#[allow(clippy::too_many_arguments)]
-pub(super) fn item_blocks(
-    id: ItemId,
-    item: &Item,
-    request: &GenerationRequest,
-    fidelity: &FidelityRecords,
-    target: &ReplayTarget,
-    normalized: &mut Vec<ItemId>,
-    omitted: &mut Vec<ItemId>,
-    _rules: &mut BTreeSet<RequestRule>,
-) -> Result<Vec<Block>, CodecError> {
-    let media = |part: PartId, resource: &ResourceUse| {
-        Media::from_resource(
-            resource.media(request.resources())?,
-            fidelity.strict_image_size(part),
-        )
-    };
-    Ok(match item {
-        Item::Message(m) => {
-            if m.status != ItemLifecycle::Completed || m.phase.is_some() {
-                return Err(unsupported());
-            }
-            m.parts
-                .iter()
-                .map(|p| match &p.content {
-                    ContentPart::Text(t) if t.is_plain() => Ok(Block::Text(t.as_str().into())),
-                    ContentPart::Resource(r) if m.role == MessageRole::User => {
-                        Ok(Block::Media(media(p.id, r)?))
-                    }
-                    _ => Err(unsupported()),
-                })
-                .collect::<Result<_, _>>()?
-        }
-        Item::Reasoning(r) => {
-            if r.status != ItemLifecycle::Completed
-                || r.parts.len() > 1
-                || !fidelity.replay_matches_request(id, r, Some(&target.origin()), request)
-            {
-                return Err(CodecError::Invalid("native replay dependency"));
-            }
-            let replay = r.replay.as_ref().ok_or_else(unsupported)?;
-            let value = replay.replay_token().ok_or_else(unsupported)?.into();
-            match (replay.format(), r.parts.first()) {
-                (ReplayFormat::AnthropicMessagesRedactedThinking, None) => {
-                    vec![Block::RedactedThinking(value)]
-                }
-                (ReplayFormat::AnthropicMessagesThinking, part) => vec![Block::Thinking {
-                    thinking: match part {
-                        None => String::new(),
-                        Some((_, ReasoningContent::Summary(t))) => t.as_str().into(),
-                        _ => return Err(unsupported()),
-                    },
-                    signature: value,
-                }],
-                _ => return Err(unsupported()),
-            }
-        }
-        Item::ToolCall(c) => {
-            if c.status != ItemLifecycle::Completed
-                || !c.context.is_direct()
-                || c.context.alias_domain.is_some()
-            {
-                return Err(unsupported());
-            }
-            let input = match &c.arguments {
-                ToolArguments::Structured(v) => v.clone(),
-                ToolArguments::Raw(s) => {
-                    let value = crate::semantic::value::parse_json(
-                        s.as_bytes(),
-                        crate::semantic::value::JsonLimits::STRUCTURED,
-                    )
-                    .map_err(|_| CodecError::Invalid("native object arguments"))?;
-                    normalized.push(id);
-                    StructuredValue::new(value)?
-                }
-                ToolArguments::StructuredPartial(_) => return Err(unsupported()),
-            };
-            if !input.value().is_object() {
-                return Err(unsupported());
-            }
-            vec![Block::ToolUse {
-                id: c.call_id.as_str().into(),
-                name: c.name.as_str().into(),
-                input,
-                caller: Presence::Absent,
-            }]
-        }
-        Item::ToolResult(r) => {
-            if !r.context.is_direct() || r.context.alias_domain.is_some() || r.status.is_some() {
-                return Err(unsupported());
-            }
-            if let Some(execution) = &r.execution {
-                let allowed = match execution {
-                    ToolExecution::Succeeded => r.is_error != Some(true),
-                    ToolExecution::NotExecuted | ToolExecution::Failed { code: None } => {
-                        r.is_error == Some(true)
-                    }
-                    _ => false,
-                };
-                if !allowed {
-                    return Err(unsupported());
-                }
-                omitted.push(id);
-            }
-            let content = match &r.output {
-                ToolOutput::Text(s) => ResultContent::Text(s.clone()),
-                ToolOutput::Parts(parts) => ResultContent::Blocks(
-                    parts
-                        .iter()
-                        .map(|part| {
-                            Ok(super::CacheMarked {
-                                cache: part.cache,
-                                content: match &part.content {
-                                    InputPart::Text(t) => ResultBlock::Text(t.as_str().into()),
-                                    InputPart::Resource(r) => {
-                                        ResultBlock::Media(media(part.id, r)?)
-                                    }
-                                },
-                            })
-                        })
-                        .collect::<Result<_, CodecError>>()?,
-                ),
-                _ => return Err(unsupported()),
-            };
-            vec![Block::ToolResult {
-                tool_use_id: r.required_call_id()?.into(),
-                content,
-                is_error: r.is_error.map_or(Presence::Absent, Presence::Value),
-            }]
-        }
-        _ => return Err(unsupported()),
     })
 }

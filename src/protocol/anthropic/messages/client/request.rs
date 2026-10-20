@@ -1,9 +1,10 @@
 //! Untrusted client Messages: registered fields, protected controls and IR admission.
 use crate::protocol::anthropic::messages::{
-    self as wire, Block, OutputConfig, Role, Selection, TextContent as WireText, Tool,
-    ToolChoice as WireChoice,
-    semantic_intake::{Intake, text},
-    shape::{label, object, parse, required, string},
+    Block, OutputConfig, Role, Selection, TextContent as WireText, Tool, ToolChoice as WireChoice,
+    items::{Intake, text},
+    service, settings,
+    shape::{self, label, object, parse, required, string},
+    wire,
 };
 use crate::{
     adapter::Request,
@@ -179,7 +180,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     settings.controls.stop_sequences =
         crate::protocol::generation_controls::stops(o.get("stop_sequences"), false, MAX_ITEMS)?;
     if let Some(cache) = o.get("cache_control") {
-        settings.automatic_prefix_cache = Some(wire::CacheControl::read(cache)?.ttl());
+        settings.automatic_prefix_cache = Some(wire::request::CacheControl::read(cache)?.ttl());
     }
     settings.controls.max_output_tokens = Some(
         required(&o, "max_tokens")?
@@ -245,7 +246,8 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                     tool_fields(&mut t, &mut ignored)?;
                     let tool = Tool::read(&t)?;
                     tool.bytes()?;
-                    wire::semantic_intake::function_tool(&tool).map(ToolDefinition::Function)
+                    crate::protocol::anthropic::messages::items::function_tool(&tool)
+                        .map(ToolDefinition::Function)
                 })
                 .collect::<Result<_, CodecError>>()?,
         );
@@ -313,17 +315,21 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
             }
             _ => return Err(CodecError::Unsupported("Anthropic thinking mode".into())),
         }
-        settings.reasoning.display =
-            wire::semantic::display(&wire::shape::presence(t, "display", wire::Display::read)?);
+        settings.reasoning.display = settings::display(&shape::presence(
+            t,
+            "display",
+            wire::request::Display::read,
+        )?);
         if settings.reasoning.display == Presence::Null {
             return Err(CodecError::Invalid("thinking display"));
         }
-        let binding = wire::PrefixMismatch::read(t.get("block_binding"))?;
+        let binding = wire::request::PrefixMismatch::read(t.get("block_binding"))?;
         if binding.is_some() && settings.reasoning.mode != Presence::Value(ReasoningMode::Adaptive)
         {
             return Err(CodecError::Invalid("thinking.block_binding"));
         }
-        settings.reasoning.replay_mismatch = binding.map(wire::semantic::replay_mismatch);
+        settings.reasoning.replay_mismatch =
+            binding.map(crate::protocol::anthropic::messages::settings::replay_mismatch);
     }
     if let Some(config) = o.get("output_config").filter(|v| !v.is_null()) {
         let mut config = config.clone();
@@ -331,7 +337,10 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         if let Some(format) = config.get_mut("format") {
             keep(format, &["type", "schema"], &mut ignored);
         }
-        wire::semantic::output_settings(&OutputConfig::read(&config)?, &mut settings);
+        crate::protocol::anthropic::messages::settings::output_settings(
+            &OutputConfig::read(&config)?,
+            &mut settings,
+        );
     }
     let messages = required(&o, "messages")?
         .as_array()
@@ -361,7 +370,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
             let parsed: Vec<_> = if content.is_string() {
                 let s = string(content)?;
                 (!s.is_empty())
-                    .then(|| wire::CacheMarked {
+                    .then(|| wire::request::CacheMarked {
                         content: Block::Text(s),
                         cache: None,
                     })
@@ -374,7 +383,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                     .as_array()
                     .ok_or(CodecError::Invalid("content"))?
                     .iter()
-                    .map(|v| wire::CacheMarked::read(v, Block::read))
+                    .map(|v| wire::request::CacheMarked::read(v, Block::read))
                     .collect::<Result<_, _>>()?
             };
             roles.push((role, !parsed.is_empty()));
@@ -386,7 +395,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         }
         roles.push((role, true));
         let parsed = if content.is_string() {
-            vec![wire::CacheMarked {
+            vec![wire::request::CacheMarked {
                 content: Block::Text(string(content)?),
                 cache: None,
             }]
@@ -397,7 +406,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                 .as_array()
                 .ok_or(CodecError::Invalid("content"))?
                 .iter()
-                .map(|v| wire::CacheMarked::read(v, Block::read))
+                .map(|v| wire::request::CacheMarked::read(v, Block::read))
                 .collect::<Result<_, _>>()?
         };
         let start = intake.items.len();
@@ -456,14 +465,14 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     crate::protocol::attachments::restore(&mut items, &mut groups, &mut fidelity, attachments)?;
     let semantic = GenerationRequest::from_resources(items, settings, intake.resources)?
         .with_message_envelopes(groups)?;
-    wire::semantic_intake::validate_cache(&semantic)?;
+    crate::protocol::anthropic::messages::items::validate_cache(&semantic)?;
     fidelity.bind_replay_origin(&crate::execution::replay::CLIENT_ORIGIN)?;
     for part in intake.strict_images {
         fidelity.record_strict_image_size(part)?;
     }
     let mut request = Request::from_generation(DecodedRequest { semantic, fidelity }, &model)?;
     request.context.identity.user = wire::request::read_user_id(&o)?;
-    request.service_policy = wire::service::read_policy(&o)?;
+    request.service_policy = service::read_policy(&o)?;
     request.source = Some(crate::adapter::ClientProtocol::Messages);
     if let Some(stream) = o.get("stream").filter(|v| !v.is_null()) {
         request.delivery.stream =
