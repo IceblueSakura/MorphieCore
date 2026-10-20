@@ -55,7 +55,8 @@ def responses_completion(client, params, stream):
     return result
 
 
-def run(base, profile):
+def run(base, profile, api):
+    check(api in ("generate_content", "interactions"))
     function = {"name": "read", "strict": False, "parameters": {
         "type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}
     transmissions = []
@@ -78,10 +79,14 @@ def run(base, profile):
                 requests += 1
                 result = (chat_completion if profile == "chat" else responses_completion)(
                     client, params, stream)
-                check(result["usage"]["total_tokens"] == 15)
+                if api == "generate_content":
+                    check(result["usage"]["total_tokens"] == 15)
+                else:
+                    check(result.get("usage") is None)
                 if profile == "chat":
                     choice = result["choices"][0]
-                    check(choice["finish_reason"] == "stop")
+                    expected_reason = "tool_calls" if api == "interactions" and turn <= 2 else "stop"
+                    check(choice["finish_reason"] == expected_reason)
                     message = choice["message"]
                     params["messages"].append(message)
                     if turn <= 2:
@@ -108,9 +113,9 @@ def run(base, profile):
                                   ("cedar-71" if turn == 3 else "continued") for item in output))
                         params["input"].append({"role": "user", "content": "Continue."})
     check(requests == 8 and len(transmissions) == requests)
-    print(json.dumps({"requests": requests, "http_requests": len(transmissions),
+    print(json.dumps({"upstream": api, "requests": requests, "http_requests": len(transmissions),
                       "deliveries": 2, "tool_correction_and_final_history": True}))
 
 
 if __name__ == "__main__":
-    run(sys.argv[1], sys.argv[2])
+    run(sys.argv[1], sys.argv[2], sys.argv[3])

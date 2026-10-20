@@ -66,6 +66,7 @@ async fn answer(
     state.seen.lock().unwrap().push(body.clone());
     let mut events = vec![
         json!({"event_type":"interaction.created","interaction":{"object":"interaction","model":"gemini-3.8-flash"}}),
+        json!({"event_type":"interaction.status_update","status":"in_progress"}),
     ];
     if hold || replay || plain {
         if replay {
@@ -111,11 +112,14 @@ async fn answer(
             json!({"event_type":"step.stop","index":1}),
         ]);
     }
-    events.push(json!({"event_type":"interaction.completed","interaction":{
-        "id":"i",
+    let mut final_resource = json!({
         "status":if replay || plain{"completed"}else{"requires_action"},
         "usage":{"total_input_tokens":10,"total_output_tokens":5,"total_thought_tokens":0,"total_cached_tokens":0,"total_tokens":15}
-    }}));
+    });
+    if plain {
+        final_resource["id"] = json!("i");
+    }
+    events.push(json!({"event_type":"interaction.completed","interaction":final_resource}));
     ([("content-type", "text/event-stream")], wire(events, true)).into_response()
 }
 #[tokio::test]

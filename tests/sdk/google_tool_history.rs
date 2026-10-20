@@ -3,17 +3,20 @@ use crate::google_tool_fixture as fixture;
 use morphiecore::protocol::openai::Profile;
 use std::time::Duration;
 
-#[tokio::test]
-#[ignore = "requires pinned OpenAI SDK; synthetic generateContent JSON/SSE tool correction"]
-async fn google_tool_correction_and_signed_final_history() {
+async fn exercise(api: fixture::Api, api_name: &str) {
     for (profile, name) in [(Profile::Chat, "chat"), (Profile::Responses, "responses")] {
-        let fixture = fixture::start(profile).await;
+        let fixture = fixture::start(profile, api).await;
         let home = tempfile::tempdir().unwrap();
         let mut command = tokio::process::Command::new(
             std::env::var_os("MORPHIECORE_SDK_PYTHON").unwrap_or_else(|| "python3".into()),
         );
         command
-            .args(["tests/sdk/google_tool_history.py", &fixture.base, name])
+            .args([
+                "tests/sdk/google_tool_history.py",
+                &fixture.base,
+                name,
+                api_name,
+            ])
             .current_dir(env!("CARGO_MANIFEST_DIR"))
             .env_clear()
             .env("HOME", home.path())
@@ -33,7 +36,20 @@ async fn google_tool_correction_and_signed_final_history() {
         assert_eq!(report["http_requests"], 8);
         assert_eq!(report["deliveries"], 2);
         assert_eq!(report["tool_correction_and_final_history"], true);
+        assert_eq!(report["upstream"], api_name);
         assert_eq!(fixture.seen.lock().unwrap().len(), 8);
         fixture.gateway.flush_diagnostics().await;
     }
+}
+
+#[tokio::test]
+#[ignore = "requires pinned OpenAI SDK; synthetic generateContent JSON/SSE tool correction"]
+async fn google_tool_correction_and_signed_final_history() {
+    exercise(fixture::Api::GenerateContent, "generate_content").await;
+}
+
+#[tokio::test]
+#[ignore = "requires pinned OpenAI SDK; synthetic Interactions JSON/SSE tool correction"]
+async fn interactions_tool_correction_and_signed_final_history() {
+    exercise(fixture::Api::Interactions, "interactions").await;
 }

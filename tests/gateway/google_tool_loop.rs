@@ -27,6 +27,7 @@ async fn complete(client: &reqwest::Client, base: &str, profile: Profile, body: 
     let mut done = 0;
     let mut message = json!({"role":"assistant","content":null});
     let mut calls = BTreeMap::<u64, Value>::new();
+    let mut reasoning = BTreeMap::<u64, Value>::new();
     for line in wire.lines().filter_map(|line| line.strip_prefix("data: ")) {
         if line == "[DONE]" {
             done += 1;
@@ -48,15 +49,34 @@ async fn complete(client: &reqwest::Client, base: &str, profile: Profile, body: 
         }
         for choice in event["choices"].as_array().unwrap() {
             let delta = &choice["delta"];
-            if let Some(text) = delta["content"].as_str() {
-                message["content"] = json!(format!(
-                    "{}{text}",
-                    message["content"].as_str().unwrap_or_default()
-                ));
+            for key in ["content", "reasoning_content"] {
+                if let Some(text) = delta[key].as_str() {
+                    message[key] = json!(format!(
+                        "{}{text}",
+                        message[key].as_str().unwrap_or_default()
+                    ));
+                }
             }
-            if let Some(details) = delta.get("reasoning_details") {
-                assert!(message.get("reasoning_details").is_none());
-                message["reasoning_details"] = details.clone();
+            if let Some(details) = delta["reasoning_details"].as_array() {
+                for detail in details {
+                    let index = detail["index"].as_u64().unwrap_or_else(|| {
+                        reasoning.last_key_value().map_or(0, |(index, _)| index + 1)
+                    });
+                    let entry = reasoning.entry(index).or_insert_with(|| json!({}));
+                    for (key, value) in detail.as_object().unwrap() {
+                        if matches!(key.as_str(), "text" | "summary" | "data") {
+                            entry[key] = json!(format!(
+                                "{}{}",
+                                entry[key].as_str().unwrap_or_default(),
+                                value.as_str().unwrap()
+                            ));
+                        } else if let Some(previous) = entry.get(key) {
+                            assert_eq!(previous, value);
+                        } else {
+                            entry[key] = value.clone();
+                        }
+                    }
+                }
             }
             if let Some(parts) = delta["tool_calls"].as_array() {
                 for part in parts {
@@ -83,14 +103,16 @@ async fn complete(client: &reqwest::Client, base: &str, profile: Profile, body: 
         return terminal.unwrap();
     }
     assert_eq!(done, 1);
+    if !reasoning.is_empty() {
+        message["reasoning_details"] = json!(reasoning.into_values().collect::<Vec<_>>());
+    }
     if !calls.is_empty() {
         message["tool_calls"] = json!(calls.into_values().collect::<Vec<_>>());
     }
     json!({"choices":[{"message":message,"finish_reason":terminal.unwrap()}],"usage":usage})
 }
 
-#[tokio::test]
-async fn ordinary_stop_tool_error_correction_and_final_history() {
+async fn exercise(api: fixture::Api) {
     let client = reqwest::Client::builder()
         .no_proxy()
         .timeout(std::time::Duration::from_secs(5))
@@ -98,7 +120,7 @@ async fn ordinary_stop_tool_error_correction_and_final_history() {
         .unwrap();
     for profile in [Profile::Chat, Profile::Responses] {
         for stream in [false, true] {
-            let fixture = fixture::start(profile).await;
+            let fixture = fixture::start(profile, api).await;
             let function = json!({"name":"read","strict":false,"parameters":{
                 "type":"object","properties":{"path":{"type":"string"}},"required":["path"]}});
             let mut body = if profile == Profile::Chat {
@@ -117,10 +139,20 @@ async fn ordinary_stop_tool_error_correction_and_final_history() {
             }
             for turn in 1..=4 {
                 let response = complete(&client, &fixture.base, profile, &body).await;
-                assert_eq!(response["usage"]["total_tokens"], 15);
+                if api == fixture::Api::GenerateContent {
+                    assert_eq!(response["usage"]["total_tokens"], 15);
+                } else {
+                    // Inclusion premises stay unknown; no OpenAI token total is fabricated.
+                    assert!(response["usage"].is_null());
+                }
                 if profile == Profile::Chat {
-                    // Google STOP does not become a fabricated native tool_calls cause.
-                    assert_eq!(response["choices"][0]["finish_reason"], "stop");
+                    // STOP stays stop; Interactions explicitly requires tool results.
+                    let reason = if api == fixture::Api::Interactions && turn <= 2 {
+                        "tool_calls"
+                    } else {
+                        "stop"
+                    };
+                    assert_eq!(response["choices"][0]["finish_reason"], reason);
                     let message = response["choices"][0]["message"].clone();
                     if turn <= 2 {
                         let call = &message["tool_calls"][0];
@@ -192,4 +224,14 @@ async fn ordinary_stop_tool_error_correction_and_final_history() {
             fixture.gateway.flush_diagnostics().await;
         }
     }
+}
+
+#[tokio::test]
+async fn ordinary_stop_tool_error_correction_and_final_history() {
+    exercise(fixture::Api::GenerateContent).await;
+}
+
+#[tokio::test]
+async fn interactions_tool_correction_and_signed_final_history() {
+    exercise(fixture::Api::Interactions).await;
 }

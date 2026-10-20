@@ -65,13 +65,59 @@ fn decode_interaction(
 }
 
 #[test]
-fn lifecycle_distinguishes_optional_opening_from_invalid_or_unsupported_fields() {
+fn empty_chat_carrier_is_not_an_empty_text_part() {
+    let adapter = Adapter::new(Profile::Chat, Dialect::Standard, None);
+    let target = ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap();
+    for (content, count, projected) in [
+        (json!(null), 0, json!([])),
+        (json!(""), 1, json!([{"type":"text","text":""}])),
+    ] {
+        let request = json!({"model":"m","messages":[
+            {"role":"user","content":"Read."},
+            {"role":"assistant","content":content,"tool_calls":[
+                {"id":"c","type":"function","function":{"name":"read","arguments":"{}"}}]},
+            {"role":"tool","tool_call_id":"c","content":"ok"}]});
+        let decoded = adapter
+            .decode_request(request.to_string().as_bytes())
+            .unwrap()
+            .task;
+        let message = decoded
+            .semantic
+            .items()
+            .iter()
+            .find_map(|(_, item)| match item {
+                Item::Message(message) if message.role == MessageRole::Assistant => Some(message),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(message.parts.len(), count);
+        if count == 1 {
+            assert!(
+                matches!(&message.parts[0].content, ContentPart::Text(text) if text.as_str().is_empty())
+            );
+        }
+        let (wire, _) =
+            encode_generation_request(&decoded.semantic, &decoded.fidelity, &target).unwrap();
+        assert_eq!(
+            wire["input"],
+            json!([
+                {"type":"user_input","content":[{"type":"text","text":"Read."}]},
+                {"type":"model_output","content":projected},
+                {"type":"function_call","id":"c","name":"read","arguments":{}},
+                {"type":"function_result","call_id":"c","name":"read","result":"ok"},
+            ])
+        );
+    }
+}
+
+#[test]
+fn lifecycle_distinguishes_optional_fields_from_invalid_or_unsupported_values() {
     let frames = interaction_frames();
     assert!(decode_interaction(&frames, true).is_ok());
     for index in [0, 1, frames.len() - 1] {
         let key = if index == 1 { "interaction_id" } else { "id" };
         for value in [None, Some(json!(null)), Some(json!(17)), Some(json!(""))] {
-            let opening_omission = index == 0 && value.is_none();
+            let identity_omission = value.is_none();
             let mut changed = frames.clone();
             let owner = if index == 1 {
                 changed[index].as_object_mut().unwrap()
@@ -86,7 +132,7 @@ fn lifecycle_distinguishes_optional_opening_from_invalid_or_unsupported_fields()
                     owner.remove(key);
                 }
             }
-            if opening_omission {
+            if identity_omission {
                 assert!(decode_interaction(&changed, true).is_ok());
                 continue;
             }
@@ -166,7 +212,7 @@ fn lifecycle_distinguishes_optional_opening_from_invalid_or_unsupported_fields()
 }
 
 #[test]
-fn partial_opening_binds_the_first_reported_identity_without_inventing_status() {
+fn lifecycle_identity_binds_first_observation_without_inventing_status() {
     use morphiecore::protocol::{google::interactions::GenerationSseDecoder, stream::SseLimits};
     let original = interaction_frames();
     let expected = decode_interaction(&original, true).unwrap();
@@ -207,6 +253,28 @@ fn partial_opening_binds_the_first_reported_identity_without_inventing_status() 
         decode_interaction(&first_at_terminal, true).unwrap(),
         expected
     );
+    let mut absent = frames.clone();
+    absent[1].as_object_mut().unwrap().remove("interaction_id");
+    let last = absent.len() - 1;
+    absent[last]["interaction"]
+        .as_object_mut()
+        .unwrap()
+        .remove("id");
+    let unreported = decode_interaction(&absent, true).unwrap();
+    assert_eq!(unreported.metadata.id, None);
+    assert_eq!(unreported.semantic, expected.semantic);
+    assert_eq!(unreported.fidelity, expected.fidelity);
+    let mut intermittent = frames.clone();
+    intermittent.insert(
+        2,
+        json!({"event_type":"interaction.status_update","status":"in_progress"}),
+    );
+    let last = intermittent.len() - 1;
+    intermittent[last]["interaction"]
+        .as_object_mut()
+        .unwrap()
+        .remove("id");
+    assert_eq!(decode_interaction(&intermittent, true).unwrap(), expected);
     let mut contradictory = frames.clone();
     contradictory[1]["interaction_id"] = json!("first");
     assert!(

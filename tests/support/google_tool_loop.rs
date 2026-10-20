@@ -1,4 +1,6 @@
-//! One generateContent candidate; independent native tool/error/final-history oracles.
+//! One selected Google candidate; independent native tool/error/final-history oracles.
+#[path = "google_tool_loop/interactions.rs"]
+mod interactions;
 use axum::{
     Json, Router,
     extract::State,
@@ -22,6 +24,11 @@ use tokio::net::TcpListener;
 pub const KEY: &str = "synthetic-google-loop-client-000001";
 pub const ERROR: &str = "missing file";
 pub const RESULT: &str = "cedar-71";
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Api {
+    GenerateContent,
+    Interactions,
+}
 pub struct Fixture {
     pub base: String,
     pub seen: Arc<Mutex<Vec<Value>>>,
@@ -127,26 +134,33 @@ async fn answer(
         )))
         .unwrap()
 }
-pub async fn start(profile: Profile) -> Fixture {
+pub async fn start(profile: Profile, api: Api) -> Fixture {
     let binding = &GOOGLE_BINDINGS[0];
     let seen = Arc::new(Mutex::new(Vec::new()));
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let origin =
         TrustedOrigin::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
-    let mut endpoint = binding.endpoint();
+    let mut endpoint = match api {
+        Api::GenerateContent => binding.endpoint(),
+        Api::Interactions => binding.interactions_endpoint(),
+    };
     endpoint.target.origin = origin.clone();
     let mut provider = binding.provider();
     provider.origin = origin;
     let mut route = binding.route();
-    // Interactions is deliberately absent: it cannot mask a failed conversion.
+    // The other Google protocol cannot mask a failed conversion.
     route.endpoints = vec![endpoint.id.clone()];
     route.policy.max_attempts = 1;
-    let app = Router::new()
-        .route(endpoint.target.path.as_str(), post(answer))
-        .with_state(Upstream {
-            profile,
-            seen: seen.clone(),
-        });
+    let app = match api {
+        Api::GenerateContent => Router::new().route(endpoint.target.path.as_str(), post(answer)),
+        Api::Interactions => {
+            Router::new().route(endpoint.target.path.as_str(), post(interactions::answer))
+        }
+    }
+    .with_state(Upstream {
+        profile,
+        seen: seen.clone(),
+    });
     let upstream = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     let topology = topology::compile(
         vec![provider],

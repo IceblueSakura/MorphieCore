@@ -228,8 +228,10 @@ impl GenerationSseDecoder {
         o: &Map<String, Value>,
         key: &'static str,
     ) -> Result<(), SseError> {
-        let id = required(o, key)?;
-        if id.len() > 256 {
+        let Some(id) = string(o, key)? else {
+            return Ok(());
+        };
+        if id.is_empty() || id.len() > 256 {
             return Err(invalid(key));
         }
         let metadata = self
