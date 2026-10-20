@@ -12,7 +12,7 @@ mod client_fidelity;
 #[path = "anthropic/native_controls.rs"]
 mod native_controls;
 #[test]
-fn native_identity_never_silently_becomes_openai_legacy_user() {
+fn native_identity_projects_to_openai_safety_not_legacy_cache_bucketing() {
     use morphiecore::protocol::{
         anthropic::client::decode_client_request,
         openai::{Adapter, Dialect, Profile, TargetCaps},
@@ -21,8 +21,8 @@ fn native_identity_never_silently_becomes_openai_legacy_user() {
     for value in [
         Value::Null,
         json!(""),
-        json!("x".repeat(256)),
-        json!("x".repeat(257)),
+        json!("x".repeat(128)),
+        json!("x".repeat(129)),
         json!("x".repeat(512)),
     ] {
         let source = decode_client_request(
@@ -35,18 +35,20 @@ fn native_identity_never_silently_becomes_openai_legacy_user() {
         let before = source.clone();
         for profile in [Profile::Chat, Profile::Responses] {
             let adapter = Adapter::new(profile, Dialect::Standard, None);
-            let (wire, rules) = adapter
-                .encode_request_with_rules(&source, "m", &TargetCaps::full())
-                .unwrap();
+            let encoded = adapter.encode_request_with_rules(&source, "m", &TargetCaps::full());
+            if value
+                .as_str()
+                .is_some_and(|value| value.chars().count() > 128)
+            {
+                assert!(encoded.is_err());
+                continue;
+            }
+            let (wire, rules) = encoded.unwrap();
             assert!(wire.get("user").is_none());
-            assert!(wire.get("safety_identifier").is_none());
-            assert_eq!(
-                rules
-                    .iter()
-                    .filter(|r| **r == "generation.omit-identity-hints.v1")
-                    .count(),
-                1
-            );
+            assert_eq!(wire["safety_identifier"], value);
+            assert!(wire.get("prompt_cache_key").is_none());
+            assert!(!rules.contains(&"generation.omit-identity-hints.v1"));
+            assert!(!rules.contains(&"cache.omit-legacy-user-bucketing.v1"));
         }
         assert_eq!(source, before);
     }

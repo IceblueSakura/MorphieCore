@@ -50,6 +50,7 @@ pub enum HintRule {
     OmitInactiveOptions,
     OmitIdentityHints,
     OmitDayRetention,
+    OmitLegacyUserBucketing,
 }
 impl HintRule {
     pub const fn name(self) -> &'static str {
@@ -58,21 +59,23 @@ impl HintRule {
             Self::OmitInactiveOptions => "cache.omit-inactive-options.v1",
             Self::OmitIdentityHints => "generation.omit-identity-hints.v1",
             Self::OmitDayRetention => "cache.omit-day-retention.v1",
+            Self::OmitLegacyUserBucketing => "cache.omit-legacy-user-bucketing.v1",
         }
     }
     pub(crate) fn evidence(self) -> Option<crate::lowering::generation::LossEvidence> {
-        (self == Self::OmitDayRetention).then_some(crate::lowering::generation::LossEvidence {
+        let field = match self {
+            Self::OmitDayRetention => "cache.prompt_cache_retention",
+            Self::OmitIdentityHints => "identity",
+            Self::OmitLegacyUserBucketing => "cache.legacy_user_bucketing",
+            _ => return None,
+        };
+        Some(crate::lowering::generation::LossEvidence {
             rule: self.name(),
-            field: "cache.prompt_cache_retention",
+            field,
             direction: "request.encode",
             action: "omit",
         })
     }
-}
-/// Identity hints only attribute abuse upstream. A target without their carrier omits
-/// them; the loss is the Provider's attribution, not task meaning.
-pub(crate) fn identity_loss(context: &ExecutionHints) -> Option<HintRule> {
-    (context.identity != Default::default()).then_some(HintRule::OmitIdentityHints)
 }
 impl CacheProjection {
     /// Call only after successful projection; active options still reject.

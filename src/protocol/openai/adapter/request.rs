@@ -54,7 +54,7 @@ fn with_effort_mapping(
 }
 
 /// OpenAI requires a schema name; Messages and Gemini formats have none. The fixed
-/// name is a wire label, like the fixed `max_tokens` default on Messages targets.
+/// name is a wire label, not a new semantic output constraint.
 fn with_schema_name(request: &Request) -> Result<Option<Request>, CodecError> {
     use crate::semantic::{
         task::generation::OutputConstraint,
@@ -491,19 +491,20 @@ impl Adapter {
                 .filter_map(|r| r.evidence())
                 .map(crate::lowering::generation::RequestControlLoss::Projection),
         );
-        // Foreign attribution is not OpenAI legacy user/cache bucketing.
-        if request.source == Some(crate::adapter::ClientProtocol::Messages)
-            && !context.identity.user.is_absent()
-        {
-            rules.push("generation.omit-identity-hints.v1");
-            context.identity.user = Presence::Absent;
-        }
+        use crate::protocol::attribution::{self, Carrier};
         // SIWC has no identity carrier whatever the configured contract says.
-        if (!contract.identity_hints || self.adaptation.rules.responses_siwc)
-            && let Some(rule) = crate::protocol::cache::identity_loss(&context)
-        {
+        let identity = attribution::project(
+            request,
+            if contract.identity_hints && !self.adaptation.rules.responses_siwc {
+                Carrier::OpenAi
+            } else {
+                Carrier::None
+            },
+        )?;
+        context.identity = identity.identity;
+        for rule in identity.losses {
             rules.push(rule.name());
-            context.identity = Default::default();
+            controls.extend(rule.evidence().map(RequestControlLoss::Projection));
         }
         if request.cache_session.is_some() && !contract.cache.session_id {
             return Err(CodecError::Unsupported("session_id".into()).into());

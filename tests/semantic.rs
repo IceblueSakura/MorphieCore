@@ -14,6 +14,8 @@ mod wire;
 
 #[path = "semantic/anthropic.rs"]
 mod anthropic;
+#[path = "semantic/attribution.rs"]
+mod attribution;
 #[path = "semantic/chat.rs"]
 mod chat;
 #[path = "semantic/compaction.rs"]

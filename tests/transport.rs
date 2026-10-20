@@ -6,6 +6,8 @@ mod wire;
 
 #[path = "transport/anthropic_sse.rs"]
 mod anthropic_sse;
+#[path = "transport/attribution.rs"]
+mod attribution;
 #[path = "transport/body_lifecycle.rs"]
 mod body_lifecycle;
 #[path = "transport/chain.rs"]

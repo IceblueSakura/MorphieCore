@@ -17,6 +17,7 @@ pub use target::TargetCaps;
 mod common;
 pub(crate) use common::DecodeDirection;
 pub use common::IgnoredFields;
+pub(crate) use common::validate_identity;
 pub mod embeddings;
 mod function_tools;
 pub mod images;

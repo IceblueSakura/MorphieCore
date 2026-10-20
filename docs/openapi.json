@@ -876,7 +876,7 @@
         "properties": {
           "model": {"$ref": "#/components/schemas/PublicModelLabel"},
           "max_tokens": {"type": "integer", "minimum": 1},
-          "metadata": {"type": "object", "properties": {"user_id": {"type": ["string", "null"], "maxLength": 512}}, "additionalProperties": true, "description": "Native opaque end-user attribution, not credentials, routing or a cache key. Absent/null/empty user_id retain their meaning; unknown metadata names are ignored by name. No cross-protocol identity mapping is implied."},
+          "metadata": {"type": "object", "properties": {"user_id": {"type": ["string", "null"], "maxLength": 512}}, "additionalProperties": true, "description": "Opaque end-user attribution, not credentials, routing or a cache key. Absent/null/empty user_id retain their meaning; unknown metadata names are ignored by name. Selected cross-protocol projection uses OpenAI safety_identifier or generateContent's fixed safety label, subject to stricter target bounds, without legacy user/cache substitution."},
           "messages": {
             "type": "array",
             "items": {
@@ -911,6 +911,8 @@
         "not": {"required": ["session_id"]},
         "properties": {
           "model": {"$ref": "#/components/schemas/PublicModelLabel"},
+          "safety_identifier": {"type": ["string", "null"], "maxLength": 128, "description": "Independent opaque safety attribution. On single-carrier cross-protocol targets it takes priority over user; explicit null blocks fallback. Target bounds still apply; no normalization or credential/conversation-derived value."},
+          "user": {"type": ["string", "null"], "maxLength": 256, "deprecated": true, "description": "Legacy attribution and cache-bucketing field, independent of safety_identifier and prompt_cache_key. Native OpenAI paths preserve it. Cross-protocol attribution fallback does not preserve legacy cache bucketing; its loss is recorded separately."},
           "prompt_cache_key": {"type": ["string", "null"], "maxLength": 256, "description": "Cache-grouping intent, separate from conversation identity. Null is not filled from conversation context; no value guarantees a cache hit."},
           "messages": {"type": "array", "items": {"type": "object", "not": {"required": ["_openbridge"]}}, "description": "Ordered history. System/developer instructions are text-only and keep their position; media-bearing instructions and participant names reject at decoding. Assistant history may mix text and refusal parts. Text and selected user image/audio inputs require codec and target admission. Tool results retain call links. Unbound audio IDs and unsupported media are rejected."},
           "tools": {"type": "array", "maxItems": 128, "items": {"$ref": "#/components/schemas/ChatTool"}, "description": "Function and custom definitions use their official nested shells. Custom inputs stay raw strings; grammar is not evaluated by the gateway. Binding and streaming admission remain separate."},
@@ -988,6 +990,8 @@
         "not": {"required": ["session_id"]},
         "properties": {
           "model": {"$ref": "#/components/schemas/PublicModelLabel"},
+          "safety_identifier": {"type": ["string", "null"], "maxLength": 128, "description": "Independent opaque safety attribution. On single-carrier cross-protocol targets it takes priority over user; explicit null blocks fallback. Target bounds still apply; no normalization or credential/conversation-derived value."},
+          "user": {"type": ["string", "null"], "maxLength": 256, "deprecated": true, "description": "Legacy attribution and cache-bucketing field, independent of safety_identifier and prompt_cache_key. Native OpenAI paths preserve it. Cross-protocol attribution fallback does not preserve legacy cache bucketing; its loss is recorded separately."},
           "store": {"type": ["boolean", "null"], "default": true, "description": "Omitted, null or true retains this response in gateway TTL memory. Explicit false opts out. Upstream storage stays disabled."},
           "previous_response_id": {"type": ["string", "null"], "minLength": 1, "maxLength": 256, "pattern": "^[\\u0021-\\u007e]+$", "description": "Gateway-owned predecessor. Only history is inherited; current instructions, tools and controls replace top-level settings."},
           "background": {"enum": [false, null], "description": "Background execution is not supported."},

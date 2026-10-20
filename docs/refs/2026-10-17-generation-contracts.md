@@ -22,6 +22,7 @@ Later observations retain their own dates and evidence scope below. [Architectur
 - [Model-effective limits, 2026-10-20](#model-effective-limits-2026-10-20)
 - [Messages missing-ceiling evidence, 2026-10-20](#messages-missing-ceiling-evidence-2026-10-20)
 - [Cross-provider user attribution, 2026-10-19](#cross-provider-user-attribution-2026-10-19)
+  - [Attribution carrier recheck, 2026-10-20](#attribution-carrier-recheck-2026-10-20)
 - [Loss-policy decisions still needed](#loss-policy-decisions-still-needed)
 - [Contract and evidence map](#contract-and-evidence-map)
 
@@ -298,7 +299,15 @@ The Google Discovery URL is mutable, and reference-page renderings may omit fiel
 
 The user selected shared attribution projection to these three carriers, superseding the earlier user-to-safety prohibition. [Architecture](../architecture.md#end-user-attribution) owns the rules: exact native source fields first on same-protocol paths; explicit safety identity before general/legacy user attribution on cross-protocol paths; no fallback through explicit null; equal-priority semantic aliases must agree. Different legacy `user` and safety values remain independent facts. Keep cache controls separate and record unrepresented identity/cache facts without their values.
 
-Current code is narrower: `ClientIdentityHints` limits safety IDs to 64 characters and user IDs to 256, Messages client intake ignores `metadata`, and native Messages/Google paths omit identity hints. Shared bounded storage, strict source/target checks, named cache-loss evidence for legacy `user` transfer and field-selective carrier projection are pending implementation, not facts proved by this source review. Invalid target values must not be truncated, lowercased, hashed or replaced with another ID.
+At the 2026-10-19 inspection, code was narrower: `ClientIdentityHints` limited safety IDs to 64 characters and user IDs to 256, Messages client intake ignored `metadata`, and native Messages/Google paths omitted identity hints. Those implementation gaps are superseded by native preservation and the target-local attribution implementation below; the dated source review itself was not implementation evidence. Invalid target values must not be truncated, lowercased, hashed or replaced with another ID.
+
+### Attribution carrier recheck, 2026-10-20
+
+The [Responses reference](https://developers.openai.com/api/reference/resources/responses/methods/create) was rechecked: safety identity is an optional nullable string of at most 128 characters. The Google [Discovery schema](https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta) still explicitly names aggregator `labels.safety_identifier` and limits label values to 63 Unicode codepoints of lowercase letters, numeric characters, underscores and dashes, allowing international characters.
+
+The schema refers to unified Cloud labels. Google's [general labeling guide](https://docs.cloud.google.com/compute/docs/labeling-resources) permits empty values; its [Bigtable API reference](https://docs.cloud.google.com/bigtable/docs/reference/admin/rest/v2/projects.instances) spells the character classes as `[\p{Ll}\p{Lo}\p{N}_-]{0,63}`. The implementation uses those classes, not a lowercase transformation or ASCII-only substitute. Bigtable's additional resource-specific byte bound is not inferred for generateContent; its schema supplies the selected codepoint bound. This is source-backed grammar interpretation, not a live Google enforcement result.
+
+Current shared storage bounds are 512 general-user and 128 safety characters, with independent native OpenAI 256/128 checks. [Target projection](../../src/protocol/attribution.rs) implements the selected field priority and value-free identity/legacy-cache loss evidence; Google emits only the fixed safety label and Interactions emits no inferred carrier. Current source schemas expose one spelling per identity slot. Arbitrary metadata names are not aliases; duplicate raw keys reject, and a future simultaneous alias contract must enforce the selected conflict rule. No Provider calls or private configuration were used for this review.
 
 ## Loss-policy decisions still needed
 

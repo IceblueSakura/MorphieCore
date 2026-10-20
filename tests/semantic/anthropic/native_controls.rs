@@ -298,7 +298,7 @@ fn sampling_is_native_unless_the_trusted_target_selects_fixed_policy() {
     assert!(endpoint.encode_request_with_rules(&decoded).is_err());
 }
 #[test]
-fn native_identity_keeps_null_empty_unicode_and_target_bounds_without_cross_projection() {
+fn native_identity_keeps_presence_and_bounds_with_selected_cross_projection() {
     for value in [Value::Null, json!(""), json!("用".repeat(512))] {
         let wire = json!({"model":"m","max_tokens":4096,"metadata":{"user_id":value},
                 "messages":[{"role":"user","content":"go"}]});
@@ -345,11 +345,17 @@ fn native_identity_keeps_null_empty_unicode_and_target_bounds_without_cross_proj
         )
         .unwrap();
     let encoded = caps().encode_request(&foreign, &target()).unwrap();
-    assert!(encoded.value.get("metadata").is_none());
+    assert_eq!(encoded.value["metadata"]["user_id"], "legacy");
+    assert!(
+        !encoded
+            .rules
+            .iter()
+            .any(|r| r.name() == "generation.omit-identity-hints.v1")
+    );
     assert!(
         encoded
             .rules
             .iter()
-            .any(|r| r.name() == "generation.omit-identity-hints.v1")
+            .any(|r| r.name() == "cache.omit-legacy-user-bucketing.v1")
     );
 }

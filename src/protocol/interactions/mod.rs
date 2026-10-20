@@ -200,6 +200,10 @@ impl TargetCaps {
             .with_settings(settings)
             .map_err(CodecError::from)?;
         self.model_limits.check_request(&semantic)?;
+        let attribution = crate::protocol::attribution::project(
+            request,
+            crate::protocol::attribution::Carrier::None,
+        )?;
         let (wire, mut rules) =
             encode_generation_request(&semantic, &request.task.fidelity, target)?;
         if !self.reasoning_as_text && rules.contains(&RequestRule::ReasoningAsText) {
@@ -215,7 +219,7 @@ impl TargetCaps {
             self.cache
                 .losses(&request.context)
                 .into_iter()
-                .chain(crate::protocol::cache::identity_loss(&request.context))
+                .chain(attribution.losses)
                 .map(RequestRule::Hint),
         );
         rules.sort();

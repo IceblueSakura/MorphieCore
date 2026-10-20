@@ -109,6 +109,21 @@ pub fn encode_generation_request(
     target: &ReplayTarget,
     resource_time: Option<std::time::SystemTime>,
 ) -> Result<(Value, Vec<RequestRule>), CodecError> {
+    encode_with_identity(
+        request,
+        fidelity,
+        target,
+        resource_time,
+        &Default::default(),
+    )
+}
+fn encode_with_identity(
+    request: &GenerationRequest,
+    fidelity: &FidelityRecords,
+    target: &ReplayTarget,
+    resource_time: Option<std::time::SystemTime>,
+    identity: &crate::semantic::context::ClientIdentityHints,
+) -> Result<(Value, Vec<RequestRule>), CodecError> {
     let (request, fidelity, transferred) = crate::protocol::native::native_reasoning_history(
         request,
         fidelity,
@@ -136,6 +151,7 @@ pub fn encode_generation_request(
         &fidelity,
         target,
         &mut rules,
+        identity,
     )?;
     json_size(&value, crate::semantic::task::generation::MAX_TOTAL_BYTES)
         .map_err(|_| CodecError::Limit)?;
@@ -172,7 +188,7 @@ impl TargetCaps {
         let mut context = request.context.clone();
         self.cache.project(&mut context)?;
         normalize_stateless_defaults(&mut context);
-        // Recorded as `HintRule::OmitIdentityHints`; no native identity carrier is used.
+        // Attribution is projected independently of execution context.
         context.identity = Default::default();
         if context != ExecutionHints::default()
             || !request.service_policy.is_absent()
@@ -237,11 +253,16 @@ impl TargetCaps {
             .with_settings(settings)
             .map_err(CodecError::from)?;
         self.model_limits.check_request(&semantic)?;
-        let (wire, mut rules) = encode_generation_request(
+        let attribution = crate::protocol::attribution::project(
+            request,
+            crate::protocol::attribution::Carrier::GoogleLabels,
+        )?;
+        let (wire, mut rules) = encode_with_identity(
             &semantic,
             &request.task.fidelity,
             target,
             self.resource_time,
+            &attribution.identity,
         )?;
         if !self.reasoning_as_text && rules.contains(&RequestRule::ReasoningAsText) {
             return Err(CodecError::Unsupported("reasoning as text disabled".into()).into());
@@ -256,7 +277,7 @@ impl TargetCaps {
             self.cache
                 .losses(&request.context)
                 .into_iter()
-                .chain(crate::protocol::cache::identity_loss(&request.context))
+                .chain(attribution.losses)
                 .map(RequestRule::Hint),
         );
         rules.sort();

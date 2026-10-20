@@ -56,6 +56,7 @@ pub(super) fn project(
     fidelity: &FidelityRecords,
     target: &ReplayTarget,
     rules: &mut BTreeSet<RequestRule>,
+    identity: &crate::semantic::context::ClientIdentityHints,
 ) -> Result<Value, CodecError> {
     let s = request.settings();
     if s.automatic_prefix_cache.is_some()
@@ -83,6 +84,9 @@ pub(super) fn project(
             "safetySettings".into(),
             super::safety::settings(&s.safety).into(),
         );
+    }
+    if let Some(value) = identity.safety_identifier.value() {
+        body.insert("labels".into(), json!({"safety_identifier":value}));
     }
     if let Some(reference) = request.cached_context() {
         // Cached resources may fix these controls. Do not invent an overlay.

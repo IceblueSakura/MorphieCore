@@ -183,8 +183,8 @@ fn scoped_session_and_standard_cache_key_remain_independent_on_both_wires() {
         &morphiecore::protocol::native::ReplayTarget::new("synthetic", "model").unwrap(),
     )
     .unwrap();
-    assert!(native.value.get("metadata").is_none());
-    assert!(native.rules.contains(&RequestRule::Hint(
+    assert_eq!(native.value["metadata"]["user_id"], "synthetic-user");
+    assert!(!native.rules.contains(&RequestRule::Hint(
         morphiecore::protocol::cache::HintRule::OmitIdentityHints
     )));
     empty["prompt_cache_options"] = json!({"mode":"explicit"});

@@ -45,16 +45,17 @@ pub(super) fn put_presence<T>(
 pub(super) fn object(v: &Value) -> Result<&Map<String, Value>, CodecError> {
     v.as_object().ok_or(CodecError::Invalid("object"))
 }
-pub(super) fn validate_identity(
+pub(crate) fn validate_identity(
     identity: &crate::semantic::context::ClientIdentityHints,
 ) -> Result<(), CodecError> {
     identity.validate()?;
-    if identity
-        .user
-        .value()
-        .is_some_and(|value| value.chars().count() > 256 || value.len() > 1024)
-    {
-        return Err(CodecError::Limit);
+    for (value, maximum) in [(&identity.user, 256), (&identity.safety_identifier, 128)] {
+        if value
+            .value()
+            .is_some_and(|value| value.chars().count() > maximum || value.len() > maximum * 4)
+        {
+            return Err(CodecError::Limit);
+        }
     }
     Ok(())
 }

@@ -349,6 +349,16 @@ Responses assistant-history `output_text` may omit `annotations` under the [sele
 
 Chat accepts the deprecated `max_tokens` as the output cap, but not together with `max_completion_tokens`. An absent or null cap remains unspecified at Chat intake; bootstrap imposes no global default or token ceiling. Messages targets fill absence only from their configured `default_output_tokens`, under `messages.default-max-tokens.v1`; without one they reject. Native Messages intake still requires a positive `max_tokens`. Chat and Responses codecs carry `verbosity`; native Messages and Google projections use selected, recorded omission rules. A codec carrier does not establish model-effective support or binding admission. Chat `stop` and Messages `stop_sequences` decode into ordered stop controls, but unchanged default binding admission does not enable them merely because the codecs have carriers.
 
+### End-user attribution
+
+OpenAI Chat/Responses accept independent `safety_identifier` (up to 128 characters) and deprecated `user` (up to 256); native Messages accepts `metadata.user_id` (up to 512). Native OpenAI paths, including Chat↔Responses, retain both fields independently. They never automatically modernize `user` into safety/cache fields.
+
+Cross-protocol targets with one attribution carrier prefer an explicit safety identifier, otherwise general user attribution. Messages uses `metadata.user_id`; OpenAI uses `safety_identifier`, not legacy `user`; generateContent uses only `labels.safety_identifier`. Google values allow at most 63 Unicode codepoints of lowercase/uncased letters, numeric characters, underscores and dashes. No generic label/metadata map or Interactions carrier is selected.
+
+Explicit null blocks fallback, and a permitted empty string remains explicit. Google omits unrepresentable null with a named receipt rather than filling another ID. Invalid target values reject without truncation, lowercasing, hashing or substitution; for example, a 129-character native Messages ID cannot project to OpenAI's 128-character safety carrier.
+
+`prompt_cache_key` remains independent. A projection can lose identity under `generation.omit-identity-hints.v1` and separately lose OpenAI legacy `user` cache bucketing under `cache.omit-legacy-user-bucketing.v1`; neither receipt includes identifier values. No identity is derived from credentials, prompts or conversation IDs. See the [attribution contract](architecture.md#end-user-attribution).
+
 ### Messages profile and cache markers
 
 On an admitted native Messages configuration, tool definitions, system blocks and supported conversation blocks retain their own cache markers, including a `tool_result` wrapper. `{"type":"ephemeral"}` and explicit `ttl:"5m"` mean five minutes; `ttl:"1h"` means one hour. At most four explicit breakpoints are allowed, ordered with longer TTLs before shorter ones. The gateway does not move or drop markers, shorten TTLs or add a request-wide policy alongside them. Marker-free requests retain the existing automatic five-minute default. Caller-supplied top-level `cache_control` remains rejected on this binding, independently of owner-local markers. Cache hits and deployed proxy TTL behavior are not certified by admission.

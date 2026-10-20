@@ -252,19 +252,18 @@ impl TargetCaps {
         if default_cache {
             projection.rules.push(RequestRule::DefaultAutomaticCache);
         }
-        if matches!(
-            request.source,
-            None | Some(crate::adapter::ClientProtocol::Messages)
-        ) {
-            let identity = &request.context.identity.user;
-            super::request::validate_user_id(identity)?;
-            if !identity.is_absent() {
-                let mut metadata = serde_json::Map::new();
-                super::shape::put(&mut metadata, "user_id", identity, |value| {
-                    serde_json::json!(value)
-                });
-                projection.value["metadata"] = metadata.into();
-            }
+        let attribution = crate::protocol::attribution::project(
+            request,
+            crate::protocol::attribution::Carrier::Messages,
+        )?;
+        let identity = &attribution.identity.user;
+        super::request::validate_user_id(identity)?;
+        if !identity.is_absent() {
+            let mut metadata = serde_json::Map::new();
+            super::shape::put(&mut metadata, "user_id", identity, |value| {
+                serde_json::json!(value)
+            });
+            projection.value["metadata"] = metadata.into();
         }
         if sampling_loss.is_some() {
             projection.rules.push(RequestRule::OmitSampling);
@@ -290,16 +289,7 @@ impl TargetCaps {
             self.cache
                 .losses(&request.context)
                 .into_iter()
-                .chain({
-                    let mut context = request.context.clone();
-                    if matches!(
-                        request.source,
-                        None | Some(crate::adapter::ClientProtocol::Messages)
-                    ) {
-                        context.identity.user = Presence::Absent;
-                    }
-                    crate::protocol::cache::identity_loss(&context)
-                })
+                .chain(attribution.losses)
                 .map(RequestRule::Hint),
         );
         projection.rules.sort();

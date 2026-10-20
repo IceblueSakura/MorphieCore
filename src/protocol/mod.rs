@@ -10,6 +10,7 @@ pub mod openai;
 
 // Shared decoded values, fidelity and projection policies.
 pub(crate) mod attachments;
+pub(crate) mod attribution;
 pub mod cache;
 mod decoded;
 pub mod extensions;
