@@ -14,6 +14,7 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
   - [Stage 5 backlog](#stage-5-backlog)
 - [Phase rules](#phase-rules)
   - [Generation design review gate](#generation-design-review-gate)
+  - [Observability follow-up](#observability-follow-up)
   - [Temporary routing freeze](#temporary-routing-freeze)
   - [IR and codec migration](#ir-and-codec-migration)
   - [Verification and integration boundary](#verification-and-integration-boundary)
@@ -208,6 +209,12 @@ The earlier instruction to defer R1b and complete R2 authorized only R2's existi
 | Public and integration boundary | [Integration handoff](#integration-handoff), [capability contract](architecture.md#public-capability-and-adaptation-notice), [topology compilation](../src/topology/compile.rs) | Is codec representation distinguished from default admission, model evidence and accepted client loops? |
 
 The sourced [contract inventory](refs/2026-10-17-generation-contracts.md) holds the remaining semantic counterexamples. Test counts, round trips, agent audits and passing coverage runs establish neither semantic completeness, design approval nor integration.
+
+### Observability follow-up
+
+**Direction selected on 2026-10-20; implementation deferred.** Follow [Observability](architecture.md#observability). After the relevant stage's functional acceptance, use concrete investigation gaps to select the smallest useful log/span/metric additions and any migration of existing diagnostics. Do not turn the audit checklist into a full instrumentation programme or a new acceptance gate.
+
+Until then, keep observability changes to necessary maintenance for existing acceptance. Protocol, security and lifecycle defects remain subject to their own gates; deferring telemetry does not waive those contracts. This selection does not close the overall Generation review or approve other unresolved audit proposals. No new dependencies, backend deployment or content export is selected by this documentation decision.
 
 ### Temporary routing freeze
 

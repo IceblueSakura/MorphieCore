@@ -32,6 +32,7 @@ This page owns accepted principles, domain contracts and decision records. [Road
   - [Conversation and cache affinity](#conversation-and-cache-affinity)
   - [Streaming and delivery](#streaming-and-delivery)
   - [Credentials and security](#credentials-and-security)
+  - [Observability](#observability)
   - [Configurable exchange capture](#configurable-exchange-capture)
 - [Settled decisions](#settled-decisions)
   - [Scope and activation decisions](#scope-and-activation-decisions)
@@ -510,7 +511,7 @@ Carrier tables and sources: [Multimodal carriers](refs/multimodal.md).
 
 Every selected loss produces bounded typed evidence with a stable rule, direction, semantic field category and action. Safe control summaries show enum values and presence; numeric request summaries allow only thinking budgets, representative preset tokens and output-token ceilings. Keep request intent, sent controls, upstream reports and delivered facts distinguishable. Evidence cannot restore omitted values, change semantic meaning or select an upstream.
 
-Reuse the existing diagnostics and protocol projection records rather than add a logging platform or a generic rule engine. Record losses independently once per affected control or aggregate repeated event occurrences within existing budgets. A prior refusal receipt cannot suppress a later usage-view receipt. These summary records do not contain bodies, prompts, schemas, arguments or opaque values; full business content belongs only to the separately controlled capture below. Arbitrary input strings and unknown field names are not automatically safe summary labels.
+Keep the bounded typed projection evidence needed for adaptation correctness; operational reporting follows [Observability](#observability), not a parallel diagnostic model or generic rule engine. Record losses independently once per affected control or aggregate repeated event occurrences within existing budgets. A prior refusal receipt cannot suppress a later usage-view receipt. These summary records do not contain bodies, prompts, schemas, arguments or opaque values; full business content belongs only to the separately controlled capture below. Arbitrary input strings and unknown field names are not automatically safe summary labels.
 
 Evidence belongs to a successfully checked projection boundary. A rejected batch adds no new receipts; earlier successful prefixes retain theirs when later intake or encoding fails. Late-reported facts follow the same rule. Native grouping and accounting transformations record evidence before their source ownership is removed. Encoding evidence alone proves neither network transmission nor effective Provider behavior.
 
@@ -821,6 +822,18 @@ Ingress accepts one configured token via Bearer or `x-api-key` and authenticates
 
 Transport uses trusted prepared requests, no redirects and no implicit HTTP retries. Environment proxies require explicit startup opt-in. Credentials, locators, private config and upstream bodies never reach clients.
 
+### Observability
+
+Prefer `tracing` spans/events and established OpenTelemetry log, trace and metrics integrations where needed. Reuse ecosystem SDKs, subscribers and exporters with minimal application wiring; do not build a home-grown diagnostics library, event bus or parallel record framework.
+
+Organize observations around real request, client-turn and session boundaries. A client turn may span several tool-loop requests; upstream attempts belong to one request. Correlate turns/sessions only from established caller context, not prompts, timing or response ancestry. A conversation/cache key alone does not prove either boundary. Unknown associations stay unknown; correlation needs neither long-lived session spans nor a new agent/session store. Request instrumentation follows body completion, failure or cancellation, not merely the handler's return.
+
+Attach logs and adaptation summaries to the relevant request/attempt context instead of maintaining disconnected record trees. Use privacy-safe correlation fields, not high-cardinality metric labels. Semantic reports and projection evidence remain authoritative; do not duplicate their owners or add IR fields solely for telemetry.
+
+Keep operational telemetry body-free and preserve business behavior when export fails. [Private exchange capture](#configurable-exchange-capture) remains a separate disclosure contract; adopting OpenTelemetry does not authorize business-content export.
+
+The current bespoke JSONL diagnostics are an interim implementation, not a framework to expand. Instrumentation and migration follow the [acceptance-driven follow-up](roadmap.md#observability-follow-up): add only signals that answer demonstrated investigation needs, not an exhaustive field/event catalogue.
+
 ### Configurable exchange capture
 
 P6 selects configurable full business-message capture for this internal gateway, not just field summaries. Keep independent header/body controls for four boundaries: inbound client request, outbound upstream request, inbound upstream response and outbound client response. Body capture includes JSON, streamed application content, tool arguments/results and non-authentication opaque payloads when enabled. Capture is not a source of replay or semantic restoration.
@@ -972,6 +985,7 @@ These records preserve accepted choices and their consequences, grouped by domai
 
 | Decision | Consequence |
 |---|---|
+| Ecosystem-first observability (2026-10-20) | Prefer `tracing` and OpenTelemetry with minimal custom glue, correlated to real request/turn/session boundaries without inferred agent state. Signal selection and migration follow stage acceptance, not an exhaustive audit checklist; [Observability](#observability) owns the design |
 | Required and incidental output evidence | P5 preserves required output facts and allows selected incidental-report loss after validation; request intent never fabricates upstream reports |
 | Configurable internal exchange capture | P6 permits opt-in business headers/bodies at all four I/O boundaries with separate controls, finite retention and best-effort writes. Credentials are always redacted; no switch permits credential-bearing logs |
 | Public capability and adaptation notice | P7 selects an authenticated capability snapshot distinguishing faithful support, approved adaptation and rejection, plus a conservative possible-adaptation HTTP notice. Actual receipts remain internal; standard response bodies and SSE stay unchanged. Implementation and reconnection remain separately scheduled |
