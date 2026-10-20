@@ -5,6 +5,7 @@ mod items;
 mod replay;
 mod request;
 mod schema;
+mod snapshots;
 mod sse;
 mod target;
 

@@ -40,7 +40,8 @@ pub struct GenerationSseDecoder {
     state: StreamState,
     fidelity: FidelityRecords,
     open: Option<Open>,
-    steps: u64,
+    // Source ordinals include empty output steps, unlike semantic members.
+    steps: Vec<Option<ItemId>>,
     members: Vec<ItemId>,
     calls: Vec<String>,
     completed: bool,
@@ -57,14 +58,20 @@ pub(super) fn object<'a>(
 ) -> Result<&'a Map<String, Value>, SseError> {
     v.as_object().ok_or_else(|| invalid(what))
 }
-fn string<'a>(o: &'a Map<String, Value>, key: &'static str) -> Result<Option<&'a str>, SseError> {
+pub(super) fn string<'a>(
+    o: &'a Map<String, Value>,
+    key: &'static str,
+) -> Result<Option<&'a str>, SseError> {
     match o.get(key) {
         None => Ok(None),
         Some(Value::String(s)) => Ok(Some(s)),
         _ => Err(invalid(key)),
     }
 }
-fn required<'a>(o: &'a Map<String, Value>, key: &'static str) -> Result<&'a str, SseError> {
+pub(super) fn required<'a>(
+    o: &'a Map<String, Value>,
+    key: &'static str,
+) -> Result<&'a str, SseError> {
     string(o, key)?
         .filter(|s| !s.is_empty())
         .ok_or_else(|| invalid(key))
@@ -76,12 +83,10 @@ pub(super) fn field<'a>(
     o.get(key).ok_or_else(|| invalid(key))
 }
 fn check_lifecycle(i: &Map<String, Value>) -> Result<(), SseError> {
-    // Full snapshots and provider-held continuation need explicit owners/checks.
+    // Service reports still need a selected source baseline and mapping.
     check_continuation(i)?;
-    for key in ["steps", "service_tier"] {
-        if i.get(key).is_some_and(|v| !v.is_null()) {
-            return Err(CodecError::Unsupported(format!("Interactions {key}")).into());
-        }
+    if i.get("service_tier").is_some_and(|v| !v.is_null()) {
+        return Err(CodecError::Unsupported("Interactions service_tier".into()).into());
     }
     Ok(())
 }
@@ -105,7 +110,7 @@ fn status(o: &Map<String, Value>) -> Result<&str, SseError> {
         _ => Err(invalid("Interactions status")),
     }
 }
-fn check_annotations(p: &Map<String, Value>) -> Result<(), SseError> {
+pub(super) fn check_annotations(p: &Map<String, Value>) -> Result<(), SseError> {
     if p.get("annotations")
         .is_some_and(|v| !v.is_null() && v.as_array().is_none_or(|a| !a.is_empty()))
     {
@@ -134,7 +139,7 @@ impl GenerationSseDecoder {
             state: StreamState::new(),
             fidelity: Default::default(),
             open: None,
-            steps: 0,
+            steps: vec![],
             members: vec![],
             calls: vec![],
             completed: false,
@@ -260,6 +265,7 @@ impl GenerationSseDecoder {
             }
             let i = object(field(o, "interaction")?, "interaction")?;
             check_lifecycle(i)?;
+            super::snapshots::reconcile(i.get("steps"), &self.steps, &self.state)?;
             // Fresh foreground streams start actively. Other schema-valid opening
             // states require a separately selected admission/observation contract.
             if status(i)? != "in_progress" {
@@ -351,10 +357,12 @@ impl GenerationSseDecoder {
         let index = field(o, "index")?
             .as_u64()
             .ok_or_else(|| invalid("step index"))?;
-        if self.open.is_some() || index != self.steps {
+        if self.open.is_some() || index != self.steps.len() as u64 {
             return Err(invalid("Interactions step order"));
         }
-        self.steps += 1;
+        if self.steps.len() >= MAX_ITEMS {
+            return Err(SseError::Limit);
+        }
         let s = object(field(o, "step")?, "step")?;
         if s.get("error").is_some_and(|v| !v.is_null()) {
             return Err(CodecError::Unsupported("Interactions model_output error".into()).into());
@@ -437,7 +445,14 @@ impl GenerationSseDecoder {
                 if !valid {
                     return Err(invalid("Interactions step content"));
                 }
-                for part in v.as_array().ok_or_else(|| invalid("step content"))? {
+                let parts = v.as_array().ok_or_else(|| invalid("step content"))?;
+                if parts.len() > 1 {
+                    return Err(CodecError::Unsupported(
+                        "Interactions multipart step content".into(),
+                    )
+                    .into());
+                }
+                for part in parts {
                     let p = object(part, "step content part")?;
                     check_annotations(p)?;
                     if required(p, "type")? != "text" {
@@ -582,6 +597,7 @@ impl GenerationSseDecoder {
         let open = self.open.take().ok_or_else(|| invalid("step"))?;
         if matches!(open.kind, Kind::Text) && !open.started {
             self.members.pop();
+            self.steps.push(None);
             return Ok(());
         }
         if open.started {
@@ -607,7 +623,7 @@ impl GenerationSseDecoder {
                     signature: open.signature,
                 },
                 out,
-            )
+            )?;
         } else {
             self.emit(
                 StreamEvent::ItemFinished {
@@ -616,8 +632,10 @@ impl GenerationSseDecoder {
                     replay: None,
                 },
                 out,
-            )
+            )?;
         }
+        self.steps.push(Some(open.item));
+        Ok(())
     }
     fn terminal(
         &mut self,
@@ -629,6 +647,7 @@ impl GenerationSseDecoder {
         }
         check_lifecycle(i)?;
         self.check_identity(i, "id")?;
+        super::snapshots::reconcile(i.get("steps"), &self.steps, &self.state)?;
         if let Some(model) = string(i, "model")?
             && self.metadata.as_ref().is_none_or(|m| m.model != model)
         {

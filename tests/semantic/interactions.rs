@@ -346,6 +346,207 @@ fn audit_step_errors_and_unrepresented_lifecycle_facts_cannot_complete() {
 }
 
 #[test]
+fn lifecycle_snapshots_compare_source_ordinals_without_republishing_content() {
+    use morphiecore::protocol::{google::interactions::GenerationSseDecoder, stream::SseLimits};
+    let mut frames = interaction_frames();
+    for frame in &mut frames {
+        if let Some(index) = frame.get_mut("index") {
+            *index = json!(index.as_u64().unwrap() + 1);
+        }
+    }
+    frames.splice(
+        2..2,
+        [
+            json!({"event_type":"step.start","index":0,"step":{"type":"model_output"}}),
+            json!({"event_type":"step.stop","index":0}),
+        ],
+    );
+    frames[0]["interaction"]["steps"] = json!([]);
+    let original = decode_interaction(&frames, true).unwrap();
+    let steps = json!([
+        {"type":"model_output","content":[]},
+        {"type":"thought","summary":[{"type":"text","text":"Plan"}],"signature":"synthetic-thought"},
+        {"type":"function_call","id":"c1","name":"read","arguments":{"path":"a"}}
+    ]);
+    let last = frames.len() - 1;
+    frames[last]["interaction"]["steps"] = steps.clone();
+    let matched = decode_interaction(&frames, true).unwrap();
+    assert_eq!(matched, original);
+    let mut decoder = GenerationSseDecoder::new(
+        200,
+        "text/event-stream",
+        SseLimits::default(),
+        LocalScope::new(2),
+        ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap(),
+    )
+    .unwrap();
+    let mut emitted = vec![];
+    for frame in &frames {
+        emitted.extend(
+            decoder
+                .consume(format!("data: {frame}\n\n").as_bytes())
+                .unwrap()
+                .1,
+        );
+    }
+    decoder.consume(b"event: done\ndata: [DONE]\n\n").unwrap();
+    assert_eq!(decoder.finish().unwrap(), original);
+    assert_eq!(
+        emitted
+            .iter()
+            .filter(|e| matches!(e, StreamEvent::ItemStarted { .. }))
+            .count(),
+        2
+    );
+    assert_eq!(
+        emitted
+            .iter()
+            .filter(|e| matches!(e, StreamEvent::ItemFinished { .. }))
+            .count(),
+        2
+    );
+    assert_eq!(
+        emitted
+            .iter()
+            .filter(|e| matches!(e, StreamEvent::Delta { fragment, .. } if fragment == "Plan"))
+            .count(),
+        1
+    );
+    assert_eq!(
+        emitted
+            .iter()
+            .filter(|e| matches!(e, StreamEvent::Terminal { .. }))
+            .count(),
+        1
+    );
+    for supplied in [
+        json!([{"type":"model_output"},{"type":"thought"},
+            {"type":"function_call","id":"c1","name":"read","arguments":{"path":"a"},"future":17}]),
+        json!(null),
+    ] {
+        let mut partial = frames.clone();
+        partial[last]["interaction"]["steps"] = supplied;
+        assert_eq!(decode_interaction(&partial, true).unwrap(), original);
+    }
+    let change = |index: usize, field: &str, value: serde_json::Value| {
+        let mut snapshot = steps.clone();
+        snapshot[index][field] = value;
+        snapshot
+    };
+    for (snapshot, expected) in [
+        (json!([]), "snapshot steps"),
+        (json!(17), "Interactions steps"),
+        (
+            change(0, "content", json!([{"type":"text","text":"new"}])),
+            "snapshot steps",
+        ),
+        (
+            change(1, "summary", json!([{"type":"text","text":"changed"}])),
+            "snapshot steps",
+        ),
+        (change(1, "signature", json!("changed")), "snapshot steps"),
+        (change(1, "error", json!({"code":7})), "model_output error"),
+        (
+            change(
+                1,
+                "summary",
+                json!([{"type":"text","text":"P"},{"type":"text","text":"lan"}]),
+            ),
+            "snapshot multipart",
+        ),
+        (change(2, "id", json!("foreign")), "snapshot steps"),
+        (change(2, "name", json!("other")), "snapshot steps"),
+        (
+            change(2, "arguments", json!({"path":"b"})),
+            "snapshot steps",
+        ),
+        (change(2, "signature", json!("new")), "signature owner"),
+        (change(0, "type", json!("thought")), "snapshot steps"),
+    ] {
+        let mut changed = frames.clone();
+        changed[last]["interaction"]["steps"] = snapshot;
+        let error = decode_interaction(&changed, true).unwrap_err();
+        assert!(error.contains(expected), "{expected}: {error}");
+    }
+    let mut missing = frames.clone();
+    missing[last]["interaction"]["steps"][2]
+        .as_object_mut()
+        .unwrap()
+        .remove("arguments");
+    assert!(
+        decode_interaction(&missing, true)
+            .unwrap_err()
+            .contains("arguments")
+    );
+    let mut signature_only_in_snapshot = frames.clone();
+    signature_only_in_snapshot.remove(6);
+    assert!(
+        decode_interaction(&signature_only_in_snapshot, true)
+            .unwrap_err()
+            .contains("snapshot steps")
+    );
+    let mut multipart = frames.clone();
+    multipart[4]["step"]["summary"] =
+        json!([{"type":"text","text":"A"},{"type":"text","text":"B"}]);
+    assert!(
+        decode_interaction(&multipart, true)
+            .unwrap_err()
+            .contains("multipart step content")
+    );
+    let mut introduced = frames;
+    introduced[6]["delta"]["signature"] = json!("other");
+    assert!(
+        decode_interaction(&introduced, true)
+            .unwrap_err()
+            .contains("snapshot steps")
+    );
+}
+
+#[test]
+fn empty_source_steps_are_bounded_even_without_semantic_members() {
+    use morphiecore::protocol::{
+        google::interactions::GenerationSseDecoder,
+        stream::{SseError, SseLimits},
+    };
+    let mut decoder = GenerationSseDecoder::new(
+        200,
+        "text/event-stream",
+        SseLimits::default(),
+        LocalScope::new(2),
+        ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap(),
+    )
+    .unwrap();
+    decoder
+        .consume(format!("data: {}\n\n", interaction_frames()[0]).as_bytes())
+        .unwrap();
+    for index in 0..MAX_ITEMS {
+        let start = json!({"event_type":"step.start","index":index,"step":{"type":"model_output"}});
+        assert!(
+            decoder
+                .consume(format!("data: {start}\n\n").as_bytes())
+                .unwrap()
+                .1
+                .is_empty()
+        );
+        let stop = json!({"event_type":"step.stop","index":index});
+        assert!(
+            decoder
+                .consume(format!("data: {stop}\n\n").as_bytes())
+                .unwrap()
+                .1
+                .is_empty()
+        );
+    }
+    let excess =
+        json!({"event_type":"step.start","index":MAX_ITEMS,"step":{"type":"model_output"}});
+    assert!(matches!(
+        decoder.consume(format!("data: {excess}\n\n").as_bytes()),
+        Err(SseError::Limit)
+    ));
+    assert!(decoder.finish().is_err());
+}
+
+#[test]
 fn step_stream_preserves_usage_call_arguments_and_thought_signature() {
     let decoded = decode_interaction(&interaction_frames(), true).unwrap();
     assert_eq!(decoded.metadata.id.as_deref(), Some("i"));
