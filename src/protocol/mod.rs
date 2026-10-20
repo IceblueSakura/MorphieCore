@@ -20,6 +20,7 @@ pub mod native;
 pub(crate) mod phase;
 pub mod reasoning;
 pub mod replay_envelope;
+pub(crate) mod reports;
 pub(crate) mod usage;
 
 // Shared wire validation and framing.

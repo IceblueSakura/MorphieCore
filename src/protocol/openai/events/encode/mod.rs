@@ -21,7 +21,7 @@ pub struct EventEncoder {
 impl EventEncoder {
     pub fn new(profile: Profile, metadata: ResponseMetadata) -> Result<Self, CodecError> {
         metadata.validate()?;
-        crate::protocol::openai::reports::relation(&metadata.context.reports, true)?;
+        crate::protocol::reports::relation(&metadata.context.reports, true)?;
         validate_metadata(profile, &metadata)?;
         Ok(Self {
             profile,
@@ -93,7 +93,7 @@ impl EventEncoder {
                     return Err(CodecError::Invalid("bound Chat metadata changed"));
                 }
             }
-            crate::protocol::openai::reports::update(
+            crate::protocol::reports::update(
                 &self.metadata.context.reports,
                 &metadata.context.reports,
             )?;
@@ -280,7 +280,7 @@ fn validate_metadata(profile: Profile, metadata: &ResponseMetadata) -> Result<()
         .as_ref()
         .ok_or(CodecError::Invalid("created time"))?;
     if profile == Profile::Chat {
-        crate::protocol::openai::reports::validate_single(&metadata.context.reports)?;
+        crate::protocol::reports::validate_single(&metadata.context.reports)?;
         crate::protocol::openai::chat::envelope::validate_context(&metadata.context.execution)?;
         if created.as_u64().is_none() || !metadata.context.execution.metadata.is_absent() {
             // Chat chunks have no metadata slot; never silently discard a static fact.

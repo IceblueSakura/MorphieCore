@@ -17,7 +17,7 @@ pub(crate) fn encode_client_response_with(
     attachment: Option<&crate::protocol::attachments::Carrier>,
 ) -> Result<Value, CodecError> {
     response.metadata.validate()?;
-    crate::protocol::openai::reports::validate_single(&response.metadata.context.reports)?;
+    crate::protocol::reports::validate_single(&response.metadata.context.reports)?;
     let semantic = &response.semantic;
     if !semantic.safety_reports().is_empty()
         || response

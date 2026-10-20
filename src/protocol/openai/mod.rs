@@ -3,7 +3,8 @@
 //! `context` hold what both profiles report identically. `events` owns payload
 //! state/grammar; SSE framing stays with each protocol.
 pub mod adapter;
-pub use adapter::{Adapter, Dialect};
+pub use adapter::Adapter;
+pub use dialect::Dialect;
 pub(crate) mod bailian;
 pub(crate) mod cache_affinity;
 pub mod chat;
@@ -25,7 +26,6 @@ mod function_tools;
 pub mod images;
 pub mod obfuscation;
 mod reasoning;
-pub(crate) mod reports;
 mod service;
 mod settings;
 pub mod speech;

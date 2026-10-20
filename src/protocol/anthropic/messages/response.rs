@@ -150,7 +150,7 @@ impl Profile {
             return Err(unsupported());
         }
         let mut context = response.metadata.context.clone();
-        crate::protocol::openai::reports::single_view(&mut context.reports)?;
+        crate::protocol::reports::single_view(&mut context.reports)?;
         let service_class = std::mem::take(
             &mut context
                 .reports

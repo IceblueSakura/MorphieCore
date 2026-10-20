@@ -328,7 +328,7 @@ impl EventDecoder {
                 }
                 self.native_instructions = Some(instructions);
             }
-            self.native_reports = Some(crate::protocol::openai::reports::observe(
+            self.native_reports = Some(crate::protocol::reports::observe(
                 self.native_reports.as_ref(),
                 &native.reports,
                 self.adaptation.rules.responses_lifecycle_reports,
@@ -359,7 +359,7 @@ impl EventDecoder {
                 m.created = old.created.clone();
             }
             if self.profile == Profile::Responses {
-                m.context.reports = crate::protocol::openai::reports::observe(
+                m.context.reports = crate::protocol::reports::observe(
                     Some(&old.context.reports),
                     &m.context.reports,
                     self.adaptation.rules.responses_lifecycle_reports,

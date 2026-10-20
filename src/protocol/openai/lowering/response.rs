@@ -85,10 +85,10 @@ pub fn lower_response<'a>(
             Some(loss),
         ));
     }
-    crate::protocol::openai::reports::relation(&metadata.context.reports, true)
+    crate::protocol::reports::relation(&metadata.context.reports, true)
         .map_err(|_| RepresentationError::Metadata)?;
     if profile == Profile::Responses
-        && crate::protocol::openai::reports::terminal_view(&mut metadata.to_mut().context.reports)
+        && crate::protocol::reports::terminal_view(&mut metadata.to_mut().context.reports)
             .map_err(|_| RepresentationError::Metadata)?
     {
         if c.reported_facts == ReportedFactPolicy::StrictComplete {

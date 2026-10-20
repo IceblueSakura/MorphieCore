@@ -107,7 +107,7 @@ pub(crate) fn reported_settings(
         .context
         .validate()
         .map_err(|_| RepresentationError::Metadata)?;
-    crate::protocol::openai::reports::relation(&metadata.context.reports, true)
+    crate::protocol::reports::relation(&metadata.context.reports, true)
         .map_err(|_| RepresentationError::Metadata)?;
     if metadata
         .context
@@ -124,7 +124,7 @@ pub(crate) fn reported_settings(
             .iter()
             .any(|r| r.settings.is_some())
             || metadata.context.instruction_messages.is_some();
-        crate::protocol::openai::reports::single_view(&mut metadata.context.reports)
+        crate::protocol::reports::single_view(&mut metadata.context.reports)
             .map_err(|_| RepresentationError::Metadata)?;
         for report in metadata.context.reports.iter_mut() {
             report.settings = None;

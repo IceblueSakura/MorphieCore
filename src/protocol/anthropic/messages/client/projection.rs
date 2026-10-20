@@ -24,7 +24,7 @@ pub(crate) fn project_snapshot(response: &mut DecodedResponse) -> Result<(), Cod
     {
         return Err(CodecError::Unsupported("Messages safety report".into()));
     }
-    crate::protocol::openai::reports::single_view(&mut response.metadata.context.reports)?;
+    crate::protocol::reports::single_view(&mut response.metadata.context.reports)?;
     if let Some(class) = response.metadata.context.service_class().value() {
         wire::service::class_wire(*class)?;
     }

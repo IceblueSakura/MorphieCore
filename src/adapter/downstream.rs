@@ -312,7 +312,7 @@ impl ClientAdapter {
                         &metadata.model,
                     )
                     .with_limits(limits)?;
-                crate::protocol::openai::reports::validate_single(&metadata.context.reports)?;
+                crate::protocol::reports::validate_single(&metadata.context.reports)?;
                 encoder.update_service_class(metadata.context.service_class().clone())?;
                 Encoder::Messages(encoder)
             }
@@ -488,7 +488,7 @@ impl ClientEncoder {
                     return Err(CodecError::from(error).into());
                 }
                 if let Err(error) =
-                    crate::protocol::openai::reports::validate_single(&metadata.context.reports)
+                    crate::protocol::reports::validate_single(&metadata.context.reports)
                 {
                     e.reject();
                     return Err(error.into());
