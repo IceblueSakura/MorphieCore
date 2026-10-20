@@ -24,7 +24,7 @@ pub fn semantic_contract() -> GenerationSemanticContract {
         custom_tools: false,
         structured_arguments: true,
         structured_tool_results: false,
-        tool_execution_reports: true,
+        tool_execution_reports: false,
         tool_result_errors: true,
         tool_result_media: true,
         text_metadata: false,

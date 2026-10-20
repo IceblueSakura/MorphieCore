@@ -376,8 +376,8 @@ fn stream_maps_thoughts_text_calls_and_owned_signatures() {
     );
     let mut reported = frames();
     reported[2]["candidates"][0]["logprobsResult"] = json!({
-        "chosenCandidates":[{"token":"Reading.","tokenId":42,"logProbability":-0.25}],
-        "topCandidates":[{"candidates":[{"token":"Reading.","tokenId":42,"logProbability":-0.25}]}]
+        "chosenCandidates":[{"token":"Reading.","logProbability":-0.25}],
+        "topCandidates":[{"candidates":[{"token":"Reading.","logProbability":-0.25}]}]
     });
     let reported = decode(&wire(&reported)).unwrap();
     let Item::Message(message) = &reported.semantic.items()[1].1 else {
@@ -680,6 +680,184 @@ fn stream_maps_thoughts_text_calls_and_owned_signatures() {
         ]
     );
     assert_eq!(evaluated.semantic.outcome(), Outcome::Completed);
+}
+
+#[test]
+fn unowned_candidate_reports_reject_instead_of_disappearing() {
+    let frame = json!({"responseId":"r","modelVersion":"gemini-synthetic",
+        "candidates":[{"content":{"role":"model","parts":[{"text":"A"}]},
+            "finishReason":"STOP"}]});
+    assert!(decode(&wire(std::slice::from_ref(&frame))).is_ok());
+    for (key, value, field) in [
+        (
+            "urlContextMetadata",
+            json!({"urlMetadata":[{
+                "retrievedUrl":"https://example.invalid/",
+                "urlRetrievalStatus":"URL_RETRIEVAL_STATUS_ERROR"
+            }]}),
+            "urlContextMetadata",
+        ),
+        (
+            "finishMessage",
+            json!("Generation ended normally"),
+            "finishMessage",
+        ),
+        ("finishMessage", json!(""), "finishMessage"),
+        ("avgLogprobs", json!(-0.25), "avgLogprobs"),
+        ("avgLogprobs", json!(0), "avgLogprobs"),
+        (
+            "logprobsResult",
+            json!({"logProbabilitySum":-0.25}),
+            "logProbabilitySum",
+        ),
+        (
+            "logprobsResult",
+            json!({"logProbabilitySum":0}),
+            "logProbabilitySum",
+        ),
+        (
+            "logprobsResult",
+            json!({"chosenCandidates":[
+            {"token":"A","logProbability":-0.25,"tokenId":0}]}),
+            "tokenId",
+        ),
+        (
+            "logprobsResult",
+            json!({"chosenCandidates":[
+            {"token":"A","logProbability":-0.25}],
+            "topCandidates":[{"candidates":[
+                {"token":"A","logProbability":-0.25,"tokenId":42}]}]}),
+            "tokenId",
+        ),
+    ] {
+        let mut changed = frame.clone();
+        changed["candidates"][0][key] = value;
+        let error = decode(&wire(&[changed])).unwrap_err();
+        assert!(
+            error.contains("unsupported") && error.contains(field),
+            "{error}"
+        );
+    }
+    // Empty metadata has no retrieval observations; unknown fields stay ignored.
+    for value in [
+        json!(null),
+        json!({}),
+        json!({"urlMetadata":[],"future":true}),
+    ] {
+        let mut changed = frame.clone();
+        changed["candidates"][0]["urlContextMetadata"] = value;
+        assert!(decode(&wire(&[changed])).is_ok());
+    }
+    for (key, value) in [
+        ("finishMessage", json!(17)),
+        ("avgLogprobs", json!(0.25)),
+        ("urlContextMetadata", json!([])),
+        ("urlContextMetadata", json!({"urlMetadata":17})),
+    ] {
+        let mut changed = frame.clone();
+        changed["candidates"][0][key] = value;
+        assert!(decode(&wire(&[changed])).unwrap_err().contains("invalid"));
+    }
+    // Failure of a late report poisons intake; prior text cannot become a success.
+    let mut decoder = GenerationSseDecoder::new(
+        200,
+        "text/event-stream",
+        SseLimits::default(),
+        LocalScope::new(2),
+        target(),
+    )
+    .unwrap();
+    let mut opening = frame.clone();
+    opening["candidates"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("finishReason");
+    let first = wire(&[opening]);
+    let (_, events) = decoder.consume(&first).unwrap();
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, StreamEvent::Delta { fragment, .. } if fragment == "A"))
+    );
+    let mut late = frame;
+    late["candidates"][0]["finishMessage"] = json!("explanation");
+    assert!(
+        decoder
+            .consume(&wire(&[late]))
+            .unwrap_err()
+            .to_string()
+            .contains("finishMessage")
+    );
+    assert!(decoder.finish().is_err());
+}
+
+#[test]
+fn optional_token_probability_is_not_a_reported_zero() {
+    let frame = |chosen: Value| {
+        json!({
+            "responseId":"r","modelVersion":"gemini-synthetic",
+            "candidates":[{"content":{"role":"model","parts":[{"text":"A"}]},
+                "logprobsResult":{"chosenCandidates":[chosen]},"finishReason":"STOP"}]
+        })
+    };
+    let mut sparse = frame(json!({"token":"A","logProbability":-0.25}));
+    sparse["candidates"][0]["logprobsResult"]["topCandidates"] = json!([{"candidates":[
+        {"token":"A","logProbability":-0.25}, {"token":"B"}, {"logProbability":-1.0}
+    ]}]);
+    let decoded = decode(&wire(&[sparse.clone()])).unwrap();
+    let Item::Message(message) = &decoded.semantic.items()[0].1 else {
+        panic!("message")
+    };
+    let ContentPart::Text(text) = &message.parts[0].content else {
+        panic!("text")
+    };
+    assert_eq!(
+        text.logprobs().value().unwrap()[0].top_logprobs,
+        Some(vec![
+            TopLogprob {
+                token: Some("A".into()),
+                logprob: Some(json!(-0.25).as_number().unwrap().clone()),
+                bytes: None
+            },
+            TopLogprob {
+                token: Some("B".into()),
+                logprob: None,
+                bytes: None
+            },
+            TopLogprob {
+                token: None,
+                logprob: Some(json!(-1.0).as_number().unwrap().clone()),
+                bytes: None
+            },
+        ])
+    );
+    sparse["candidates"][0]["logprobsResult"]["topCandidates"][0]["candidates"][2]["logProbability"] =
+        json!(0);
+    assert!(
+        decode(&wire(&[sparse]))
+            .unwrap_err()
+            .contains("invalid Gemini logprobs")
+    );
+    for token in [
+        json!({"token":"A"}),
+        json!({"token":"A","logProbability":null}),
+    ] {
+        assert!(
+            decode(&wire(&[frame(token)]))
+                .unwrap_err()
+                .contains("invalid Gemini logprobs")
+        );
+    }
+    let decoded = decode(&wire(&[frame(json!({"token":"A","logProbability":0}))])).unwrap();
+    let Item::Message(message) = &decoded.semantic.items()[0].1 else {
+        panic!("message")
+    };
+    let ContentPart::Text(text) = &message.parts[0].content else {
+        panic!("text")
+    };
+    let probability = &text.logprobs().value().unwrap()[0];
+    assert_eq!(probability.logprob.as_f64(), Some(0.0));
+    assert_eq!(probability.bytes, None);
 }
 
 #[test]
@@ -1327,8 +1505,9 @@ fn tool_media_ride_inline_in_the_function_response() {
     assert_eq!(
         body["contents"][1],
         json!({"role":"user","parts":[{"functionResponse":{"id":"c1","name":"shot",
-            "response":{"output":"screen"},
-            "parts":[{"inlineData":{"mimeType":"image/png","data":"AQID"}}]}}]})
+            "response":{"output":["screen",{"$ref":"morphie_tool_media_1"}]},
+            "parts":[{"inlineData":{"mimeType":"image/png","data":"AQID",
+                "displayName":"morphie_tool_media_1"}}]}}]})
     );
     assert!(rules.is_empty());
     let mut detailed = input("data:image/png;base64,AQID");
@@ -1385,13 +1564,144 @@ fn tool_media_ride_inline_in_the_function_response() {
         encode_generation_request(&pdf.task.semantic, &pdf.task.fidelity, &target(), None).unwrap();
     assert_eq!(
         body["contents"][1]["parts"][0]["functionResponse"]["parts"],
-        json!([{"inlineData":{"mimeType":"application/pdf","data":"BAUG"}}])
+        json!([{"inlineData":{"mimeType":"application/pdf","data":"BAUG",
+            "displayName":"morphie_tool_media_0"}}])
     );
     let video = part(json!({"type":"input_video","video_url":"data:video/mp4;base64,BAUG"}));
     assert!(
         encode_generation_request(&video.task.semantic, &video.task.fidelity, &target(), None)
             .is_err()
     );
+}
+
+#[test]
+fn tool_result_parts_preserve_order_boundaries_and_repeated_resources() {
+    let text = |s: &str| Text::allowing_empty(s, "fixture", 64).unwrap();
+    let request = |output, is_error| {
+        GenerationRequest::from_resources(
+            vec![
+                (
+                    ItemId::new(1),
+                    Item::ToolCall(ToolCall {
+                        call_id: text("c"),
+                        name: text("shot"),
+                        arguments: "{}".into(),
+                        replay: None,
+                        cache: None,
+                        status: ItemLifecycle::Completed,
+                        context: Default::default(),
+                    }),
+                ),
+                (
+                    ItemId::new(2),
+                    Item::ToolResult(ToolResult {
+                        call_id: Some(text("c")),
+                        name: None,
+                        output,
+                        is_error,
+                        execution: None,
+                        status: None,
+                        context: Default::default(),
+                        cache: None,
+                    }),
+                ),
+            ],
+            GenerationSettings::default(),
+            ResourceTable::new(vec![(
+                ResourceId::new(1),
+                ResourceLocation::Inline {
+                    media_type: text("image/png"),
+                    data_base64: text("AQID"),
+                },
+            )])
+            .unwrap(),
+        )
+        .unwrap()
+    };
+    let resource = || {
+        InputPart::Resource(ResourceUse {
+            id: ResourceId::new(1),
+            description: ResourceDescription::Image { detail: None },
+        })
+    };
+    let parts = vec![
+        Part::new(PartId::new(1), InputPart::Text(text("before"))),
+        Part::new(PartId::new(2), resource()),
+        Part::new(PartId::new(3), InputPart::Text(text(""))),
+        Part::new(PartId::new(4), InputPart::Text(text("after"))),
+        Part::new(PartId::new(5), resource()),
+    ];
+    for is_error in [None, Some(true)] {
+        let source = request(ToolOutput::Parts(parts.clone()), is_error);
+        let original = source.clone();
+        let encode = |source: &GenerationRequest| {
+            encode_generation_request(source, &Default::default(), &target(), None).unwrap()
+        };
+        let (body, rules) = encode(&source);
+        let response = &body["contents"][1]["parts"][0]["functionResponse"];
+        let key = if is_error == Some(true) {
+            "error"
+        } else {
+            "output"
+        };
+        assert_eq!(
+            response,
+            &json!({
+                "id":"c", "name":"shot",
+                "response":{key:["before",{"$ref":"morphie_tool_media_1"},"","after",
+                    {"$ref":"morphie_tool_media_4"}]},
+                "parts":[
+                    {"inlineData":{"mimeType":"image/png","data":"AQID",
+                        "displayName":"morphie_tool_media_1"}},
+                    {"inlineData":{"mimeType":"image/png","data":"AQID",
+                        "displayName":"morphie_tool_media_4"}}
+                ]
+            })
+        );
+        assert!(rules.is_empty());
+        let mut history = source.items().to_vec();
+        history.push((
+            ItemId::new(3),
+            Item::Message(Message {
+                role: MessageRole::User,
+                status: ItemLifecycle::Completed,
+                phase: None,
+                parts: vec![Part::new(
+                    PartId::new(6),
+                    ContentPart::Text(text("next").into()),
+                )],
+            }),
+        ));
+        let extended = source.clone().with_items(history).unwrap();
+        let later = encode(&extended).0;
+        // Later user text may share the native container, not rewrite its old parts.
+        assert_eq!(later["contents"][0], body["contents"][0]);
+        assert_eq!(
+            later["contents"][1]["parts"][0],
+            body["contents"][1]["parts"][0]
+        );
+        assert_eq!(source, original);
+    }
+    for (output, expected) in [
+        (ToolOutput::Text("plain".into()), json!("plain")),
+        (ToolOutput::Parts(vec![]), json!([])),
+        (
+            ToolOutput::Parts(vec![
+                Part::new(PartId::new(1), InputPart::Text(text("A"))),
+                Part::new(PartId::new(2), InputPart::Text(text("B"))),
+            ]),
+            json!(["A", "B"]),
+        ),
+    ] {
+        let source = request(output, None);
+        let (body, rules) =
+            encode_generation_request(&source, &Default::default(), &target(), None).unwrap();
+        assert_eq!(
+            body["contents"][1]["parts"][0]["functionResponse"]["response"],
+            json!({"output": expected})
+        );
+        assert!(rules.is_empty());
+    }
 }
 
 #[test]

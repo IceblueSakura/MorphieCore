@@ -167,38 +167,33 @@ fn item_parts(
             parts.push(part);
         }
         Item::ToolResult(r) => {
-            if !r.context.is_direct() || r.context.alias_domain.is_some() || r.status.is_some() {
+            if !r.context.is_direct()
+                || r.context.alias_domain.is_some()
+                || r.status.is_some()
+                || r.execution.is_some()
+            {
                 return Err(unsupported());
-            }
-            if let Some(execution) = &r.execution {
-                let allowed = match execution {
-                    ToolExecution::Succeeded => r.is_error != Some(true),
-                    ToolExecution::NotExecuted | ToolExecution::Failed { code: None } => {
-                        r.is_error == Some(true)
-                    }
-                    _ => false,
-                };
-                if !allowed {
-                    return Err(unsupported());
-                }
             }
             let mut media_parts = vec![];
             let output = match &r.output {
-                ToolOutput::Text(s) => s.clone(),
+                ToolOutput::Text(s) => json!(s),
                 ToolOutput::Parts(list) => {
-                    let mut text = vec![];
-                    for part in list {
-                        match &part.content {
-                            InputPart::Text(t) => text.push(t.as_str()),
+                    let mut output = Vec::with_capacity(list.len());
+                    for (index, part) in list.iter().enumerate() {
+                        output.push(match &part.content {
+                            InputPart::Text(t) => json!(t.as_str()),
                             InputPart::Resource(r) => {
-                                media_parts.push(media(r.media(request.resources())?, true, rules)?)
+                                // Reference labels belong to occurrences, not resources or
+                                // filenames. Result-local positions stay stable as history grows.
+                                let name = format!("morphie_tool_media_{index}");
+                                let mut value = media(r.media(request.resources())?, true, rules)?;
+                                value["inlineData"]["displayName"] = json!(name);
+                                media_parts.push(value);
+                                json!({"$ref": name})
                             }
-                        }
+                        });
                     }
-                    if text.len() > 1 {
-                        rules.insert(RequestRule::JoinResultParts);
-                    }
-                    text.concat()
+                    Value::Array(output)
                 }
                 ToolOutput::Structured(_) => return Err(unsupported()),
             };

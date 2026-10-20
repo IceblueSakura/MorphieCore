@@ -64,7 +64,7 @@ async fn answer(
         .any(|i| i["type"] == "function_result");
     state.seen.lock().unwrap().push(body.clone());
     let mut events = vec![
-        json!({"event_type":"interaction.created","interaction":{"object":"interaction","model":"gemini-3.8-flash"}}),
+        json!({"event_type":"interaction.created","interaction":{"id":"i","status":"in_progress","object":"interaction","model":"gemini-3.8-flash"}}),
     ];
     if hold || replay {
         if replay {
@@ -111,6 +111,7 @@ async fn answer(
         ]);
     }
     events.push(json!({"event_type":"interaction.completed","interaction":{
+        "id":"i",
         "status":if replay{"completed"}else{"requires_action"},
         "usage":{"total_input_tokens":10,"total_output_tokens":5,"total_thought_tokens":0,"total_cached_tokens":0,"total_tokens":15}
     }}));

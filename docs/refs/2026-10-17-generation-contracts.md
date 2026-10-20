@@ -8,6 +8,7 @@ Later observations retain their own dates and evidence scope below. [Architectur
 
 - [Sources](#sources)
 - [Exact carriers and source validation](#exact-carriers-and-source-validation)
+  - [Google foreground contracts, 2026-10-20](#google-foreground-contracts-2026-10-20)
   - [P7 binding evidence, 2026-10-18](#p7-binding-evidence-2026-10-18)
   - [Messages owner-local cache admission, 2026-10-19](#messages-owner-local-cache-admission-2026-10-19)
   - [pi Messages request profile, 2026-10-19](#pi-messages-request-profile-2026-10-19)
@@ -39,6 +40,18 @@ Later observations retain their own dates and evidence scope below. [Architectur
 Research checkouts live outside the repository under `/home/sakura/codespace/generation-codec-audit/`. No third-party test code or dataset is vendored. SDK shapes and official prose establish the contract; reference-library fixtures are not an oracle when they contradict required fields or arithmetic. These observations supplement, rather than silently replace, the baseline pins in [References](../references.md).
 
 ## Exact carriers and source validation
+
+### Google foreground contracts, 2026-10-20
+
+The [Interactions v1 reference](https://ai.google.dev/api/interactions-api-v1) and pinned Google SDK [`78f6d34`](https://github.com/googleapis/python-genai/tree/78f6d3412caaaed44f99ce57be2d16d0b8c407cb/google/genai/_gaos/types/interactions) distinguish nested created/completed resources from top-level status updates. The nested resource descriptions and SDK require `id`/`status`, although the rendered reference labels those fields optional; updates require `interaction_id`/`status`. Both native lifecycle resources and status updates declare decode continuation tokens in the SDK. `event_id` is a separate resumption marker, not permission to resume.
+
+The public six-status union includes `in_progress`, `requires_action`, `completed`, `failed`, `cancelled`, `incomplete`. SDK updates additionally include `queued` and `budget_exceeded`; that does not widen the selected v1 foreground profile. Neither source establishes a transition graph or final equality with an earlier terminal-like update. A schema-expressible `requires_action → in_progress → final completed` sequence is a policy counterexample, not observed Provider behavior. The [streaming guide](https://ai.google.dev/gemini-api/docs/interactions/streaming) explicitly ends a tool-call stream with `interaction.completed` carrying `requires_action`; its REST examples use v1beta, not the selected v1 path.
+
+The [generateContent function-calling guide](https://ai.google.dev/gemini-api/docs/generate-content/function-calling#multimodal-function-responses) documents singleton `{"$ref":"displayName"}` objects, unique inline-part names and at most one reference per name. An ordered `response.output`/`error` array can therefore keep text and media occurrences distinct without concatenation. The exact array is the gateway's projection convention, not an official prescribed output schema. See [multimodal source discrepancies](multimodal.md#tool-result-media); this is not Provider acceptance.
+
+The [pinned Google proto](https://github.com/googleapis/googleapis/blob/8cc2927c2ea64e6876568683050deabf2b52ce56/google/ai/generativelanguage/v1beta/generative_service.proto) declares token `log_probability` and signed-int32 `token_id` optional. Omission is not a reported zero. `finish_message` explains an existing finish reason; average/sum log probabilities are independent reported aggregates. A candidate containing text `"A"` plus `avgLogprobs:-0.25`, `logProbabilitySum:-0.25`, `finishMessage:"Generation ended normally"` or chosen `tokenId:42` loses a distinct fact if intake simply discards that field. URL retrieval errors/paywall/unsafe statuses are likewise not empty citation metadata.
+
+Existing token probabilities can retain unknown bytes and sparse alternative facts. General explanations/aggregates/token identity need the [proposed owners](../api-expansion-design.md#google-output-report-owners-unselected), not a generic extras bag or reconstruction from token values. These checks used public sources and synthetic data; no real Provider or client-loop behavior is established.
 
 ### P7 binding evidence, 2026-10-18
 

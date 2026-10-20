@@ -115,20 +115,9 @@ pub(super) fn steps(
                     if !r.context.is_direct()
                         || r.context.alias_domain.is_some()
                         || r.status.is_some()
+                        || r.execution.is_some()
                     {
                         return Err(unsupported());
-                    }
-                    if let Some(execution) = &r.execution {
-                        let allowed = match execution {
-                            ToolExecution::Succeeded => r.is_error != Some(true),
-                            ToolExecution::NotExecuted | ToolExecution::Failed { code: None } => {
-                                r.is_error == Some(true)
-                            }
-                            _ => false,
-                        };
-                        if !allowed {
-                            return Err(unsupported());
-                        }
                     }
                     let result = match &r.output {
                         ToolOutput::Text(t) => json!(t),

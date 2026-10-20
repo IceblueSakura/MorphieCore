@@ -14,8 +14,8 @@ use serde_json::json;
 
 fn interaction_frames() -> Vec<serde_json::Value> {
     vec![
-        json!({"event_type":"interaction.created","interaction":{"object":"interaction","model":"gemini-synthetic"}}),
-        json!({"event_type":"interaction.status_update","status":"in_progress"}),
+        json!({"event_type":"interaction.created","interaction":{"id":"i","status":"in_progress","object":"interaction","model":"gemini-synthetic"}}),
+        json!({"event_type":"interaction.status_update","interaction_id":"i","status":"in_progress"}),
         json!({"event_type":"step.start","index":0,"step":{"type":"thought"}}),
         json!({"event_type":"step.delta","index":0,"delta":{"type":"thought_summary","content":{"type":"text","text":"Plan"}}}),
         json!({"event_type":"step.delta","index":0,"delta":{"type":"thought_signature","signature":"synthetic-thought"}}),
@@ -24,7 +24,7 @@ fn interaction_frames() -> Vec<serde_json::Value> {
         json!({"event_type":"step.delta","index":1,"delta":{"type":"arguments_delta","arguments":"{\"path\":"}}),
         json!({"event_type":"step.delta","index":1,"delta":{"type":"arguments_delta","arguments":"\"a\"}"}}),
         json!({"event_type":"step.stop","index":1}),
-        json!({"event_type":"interaction.completed","interaction":{"status":"requires_action","usage":{
+        json!({"event_type":"interaction.completed","interaction":{"id":"i","status":"requires_action","usage":{
             "total_input_tokens":10,"total_cached_tokens":4,"total_output_tokens":5,
             "total_thought_tokens":7,"total_tool_use_tokens":0,"total_tokens":22}}}),
     ]
@@ -65,9 +65,157 @@ fn decode_interaction(
 }
 
 #[test]
+fn lifecycle_requires_identity_and_distinguishes_invalid_from_unsupported_status() {
+    let frames = interaction_frames();
+    assert!(decode_interaction(&frames, true).is_ok());
+    for index in [0, 1, frames.len() - 1] {
+        let key = if index == 1 { "interaction_id" } else { "id" };
+        for value in [None, Some(json!(null)), Some(json!(17)), Some(json!(""))] {
+            let mut changed = frames.clone();
+            let owner = if index == 1 {
+                changed[index].as_object_mut().unwrap()
+            } else {
+                changed[index]["interaction"].as_object_mut().unwrap()
+            };
+            match value {
+                Some(value) => {
+                    owner.insert(key.into(), value);
+                }
+                None => {
+                    owner.remove(key);
+                }
+            }
+            assert!(
+                decode_interaction(&changed, true)
+                    .unwrap_err()
+                    .contains(key)
+            );
+        }
+        if index != 0 {
+            let mut changed = frames.clone();
+            if index == 1 {
+                changed[index][key] = json!("foreign");
+                changed[index]["usage"] = json!({"total_tokens":999});
+            } else {
+                changed[index]["interaction"][key] = json!("foreign");
+            }
+            assert!(
+                decode_interaction(&changed, true)
+                    .unwrap_err()
+                    .contains("interaction identity changed")
+            );
+        }
+        for value in [
+            None,
+            Some(json!(null)),
+            Some(json!(17)),
+            Some(json!("invented")),
+        ] {
+            let mut changed = frames.clone();
+            let owner = if index == 1 {
+                changed[index].as_object_mut().unwrap()
+            } else {
+                changed[index]["interaction"].as_object_mut().unwrap()
+            };
+            match value {
+                Some(value) => {
+                    owner.insert("status".into(), value);
+                }
+                None => {
+                    owner.remove("status");
+                }
+            }
+            let error = decode_interaction(&changed, true).unwrap_err();
+            assert!(
+                error.contains("invalid") && error.contains("status"),
+                "{error}"
+            );
+        }
+    }
+    let mut unsupported = frames.clone();
+    unsupported[0]["interaction"]["status"] = json!("failed");
+    assert!(
+        decode_interaction(&unsupported, true)
+            .unwrap_err()
+            .contains("unsupported")
+    );
+    unsupported = frames.clone();
+    unsupported[1]["status"] = json!("queued");
+    assert!(
+        decode_interaction(&unsupported, true)
+            .unwrap_err()
+            .contains("unsupported")
+    );
+    unsupported = frames;
+    unsupported[1]["event_id"] = json!(17);
+    assert!(
+        decode_interaction(&unsupported, true)
+            .unwrap_err()
+            .contains("invalid event_id")
+    );
+}
+
+#[test]
+fn continuation_is_rejected_at_each_native_owner_and_poisoning_is_absorbing() {
+    use morphiecore::protocol::{
+        google::interactions::GenerationSseDecoder,
+        stream::{SseError, SseLimits},
+    };
+    let frames = interaction_frames();
+    for index in [0, 1, frames.len() - 1] {
+        for (value, accepted) in [
+            (json!(null), true),
+            (json!("checkpoint"), false),
+            (json!(7), false),
+        ] {
+            let mut changed = frames.clone();
+            if index == 1 {
+                changed[index]["continuation_token"] = value;
+            } else {
+                changed[index]["interaction"]["continuation_token"] = value;
+            }
+            if accepted {
+                assert!(decode_interaction(&changed, true).is_ok());
+            } else {
+                assert!(
+                    decode_interaction(&changed, true)
+                        .unwrap_err()
+                        .contains("continuation_token")
+                );
+            }
+        }
+    }
+    let mut decoder = GenerationSseDecoder::new(
+        200,
+        "text/event-stream",
+        SseLimits::default(),
+        LocalScope::new(2),
+        ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap(),
+    )
+    .unwrap();
+    let opening = format!("data: {}\n\n", frames[0]);
+    decoder.consume(opening.as_bytes()).unwrap();
+    let foreign = json!({"event_type":"interaction.status_update","interaction_id":"foreign",
+        "status":"in_progress","usage":{"total_tokens":999}});
+    let foreign = format!("data: {foreign}\n\n");
+    assert!(
+        decoder
+            .consume(foreign.as_bytes())
+            .unwrap_err()
+            .to_string()
+            .contains("interaction identity changed")
+    );
+    assert!(matches!(
+        decoder.consume(opening.as_bytes()),
+        Err(SseError::Closed)
+    ));
+    assert!(matches!(decoder.finish(), Err(SseError::Closed)));
+}
+
+#[test]
 fn audit_step_errors_and_unrepresented_lifecycle_facts_cannot_complete() {
     let base = vec![
-        json!({"event_type":"interaction.created","interaction":{"id":"i","model":"gemini-synthetic"}}),
+        json!({"event_type":"interaction.created","interaction":{"id":"i","status":"in_progress","model":"gemini-synthetic"}}),
         json!({"event_type":"step.start","index":0,"step":{"type":"model_output","content":[{"type":"text","text":"A"}]}}),
         json!({"event_type":"step.stop","index":0}),
         json!({"event_type":"interaction.completed","interaction":{"id":"i","model":"gemini-synthetic","status":"completed"}}),
@@ -128,7 +276,7 @@ fn audit_step_errors_and_unrepresented_lifecycle_facts_cannot_complete() {
 #[test]
 fn step_stream_preserves_usage_call_arguments_and_thought_signature() {
     let decoded = decode_interaction(&interaction_frames(), true).unwrap();
-    assert!(decoded.metadata.id.is_none());
+    assert_eq!(decoded.metadata.id.as_deref(), Some("i"));
     assert_eq!(
         decoded.semantic.progress(),
         InteractionProgress::AwaitingToolResults
@@ -175,13 +323,13 @@ fn scoped_usage_keeps_uncalibrated_tool_counts_and_replaces_operation_snapshots(
         "total_thought_tokens":0,"total_tool_use_tokens":0,"total_tokens":total})
     };
     let frames = vec![
-        json!({"event_type":"interaction.created","interaction":{"model":"gemini-synthetic"}}),
-        json!({"event_type":"interaction.status_update","status":"in_progress","usage":usage(50)}),
+        json!({"event_type":"interaction.created","interaction":{"id":"i","status":"in_progress","model":"gemini-synthetic"}}),
+        json!({"event_type":"interaction.status_update","interaction_id":"i","status":"in_progress","usage":usage(50)}),
         json!({"event_type":"step.start","index":0,"step":{"type":"model_output"}}),
         json!({"event_type":"step.stop","index":0,"usage":usage(100),"step_usage":usage(100)}),
         json!({"event_type":"step.start","index":1,"step":{"type":"model_output"}}),
         json!({"event_type":"step.stop","index":1,"usage":usage(220),"step_usage":usage(120)}),
-        json!({"event_type":"interaction.completed","interaction":{"status":"completed"}}),
+        json!({"event_type":"interaction.completed","interaction":{"id":"i","status":"completed"}}),
     ];
     let observed = decode_interaction(&frames, true).unwrap();
     assert_eq!(observed.semantic.usage().unwrap().total_tokens, Some(220));
@@ -243,8 +391,8 @@ fn scoped_usage_keeps_uncalibrated_tool_counts_and_replaces_operation_snapshots(
 #[test]
 fn step_stream_rejects_missing_call_identity_and_unfinished_or_late_data() {
     let opening = vec![
-        json!({"event_type":"interaction.created","interaction":{"model":"gemini-synthetic","usage":{"total_tokens":7}}}),
-        json!({"event_type":"interaction.completed","interaction":{"status":"completed"}}),
+        json!({"event_type":"interaction.created","interaction":{"id":"i","status":"in_progress","model":"gemini-synthetic","usage":{"total_tokens":7}}}),
+        json!({"event_type":"interaction.completed","interaction":{"id":"i","status":"completed"}}),
     ];
     let observed = decode_interaction(&opening, true).unwrap();
     assert_eq!(
@@ -290,10 +438,10 @@ fn step_stream_rejects_missing_call_identity_and_unfinished_or_late_data() {
         assert!(!part.defaulted);
     }
     let truncated = vec![
-        json!({"event_type":"interaction.created","interaction":{"object":"interaction","model":"gemini-synthetic"}}),
+        json!({"event_type":"interaction.created","interaction":{"id":"i","status":"in_progress","object":"interaction","model":"gemini-synthetic"}}),
         json!({"event_type":"step.start","index":0,"step":{"type":"model_output"}}),
         json!({"event_type":"step.stop","index":0}),
-        json!({"event_type":"interaction.completed","interaction":{"status":"incomplete"}}),
+        json!({"event_type":"interaction.completed","interaction":{"id":"i","status":"incomplete"}}),
     ];
     let decoded = decode_interaction(&truncated, true).unwrap();
     assert_eq!(decoded.semantic.outcome(), Outcome::Incomplete);
@@ -768,9 +916,9 @@ fn projects_instructions_tool_choice_effort_summaries_and_result_errors() {
     );
 }
 
-/// Both Google request encoders accept only execution reports their result flag can carry.
+/// A result error flag is not an execution report in either Google API.
 #[test]
-fn tool_result_execution_reports_match_their_error_flag() {
+fn tool_result_execution_reports_require_a_real_carrier() {
     let text = |value: &str| Text::new(value, "fixture", 64).unwrap();
     let request = |execution, is_error| {
         GenerationRequest::new(
@@ -807,7 +955,7 @@ fn tool_result_execution_reports_match_their_error_flag() {
                         call_id: Some(text("c1")),
                         name: None,
                         output: "out".into(),
-                        execution: Some(execution),
+                        execution,
                         status: None,
                         context: CallContext::default(),
                     }),
@@ -828,23 +976,38 @@ fn tool_result_execution_reports_match_their_error_flag() {
         .map(|(wire, _)| wire["contents"][2]["parts"][0]["functionResponse"]["response"].clone());
         (interactions, generate)
     };
-    for (execution, is_error, key) in [
-        (ToolExecution::Succeeded, None, "output"),
-        (ToolExecution::Succeeded, Some(false), "output"),
-        (ToolExecution::NotExecuted, Some(true), "error"),
-        (ToolExecution::Failed { code: None }, Some(true), "error"),
-    ] {
-        let (interactions, generate) = encode(&request(execution.clone(), is_error));
-        assert_eq!(generate.unwrap(), json!({key: "out"}), "{execution:?}");
+    for is_error in [None, Some(false), Some(true)] {
+        let source = request(None, is_error);
+        let (interactions, generate) = encode(&source);
+        let key = if is_error == Some(true) {
+            "error"
+        } else {
+            "output"
+        };
+        assert_eq!(generate.unwrap(), json!({key: "out"}));
         let interactions = interactions.unwrap();
-        assert_eq!(interactions["result"], "out", "{execution:?}");
+        assert_eq!(interactions["result"], "out");
         assert_eq!(
             interactions.get("is_error"),
             is_error.map(|e| json!(e)).as_ref()
         );
+        assert!(
+            morphiecore::protocol::google::generate_content::semantic_contract()
+                .check(&source)
+                .is_ok()
+        );
+        assert!(
+            morphiecore::protocol::google::interactions::semantic_contract()
+                .check(&source)
+                .is_ok()
+        );
     }
     // IR validation already rejects success reported as an error.
     for (execution, is_error) in [
+        (ToolExecution::Succeeded, None),
+        (ToolExecution::Succeeded, Some(false)),
+        (ToolExecution::NotExecuted, Some(true)),
+        (ToolExecution::Failed { code: None }, Some(true)),
         (ToolExecution::NotExecuted, None),
         (ToolExecution::NotExecuted, Some(false)),
         (
@@ -856,7 +1019,9 @@ fn tool_result_execution_reports_match_their_error_flag() {
         (ToolExecution::Cancelled, Some(true)),
         (ToolExecution::Unknown, None),
     ] {
-        let (interactions, generate) = encode(&request(execution.clone(), is_error));
+        let source = request(Some(execution.clone()), is_error);
+        let original = source.clone();
+        let (interactions, generate) = encode(&source);
         assert!(
             matches!(&generate, Err(morphiecore::protocol::CodecError::Unsupported(r)) if r == "Gemini semantic carrier"),
             "{execution:?}"
@@ -865,5 +1030,15 @@ fn tool_result_execution_reports_match_their_error_flag() {
             matches!(&interactions, Err(morphiecore::protocol::CodecError::Unsupported(r)) if r == "Interactions semantic carrier"),
             "{execution:?}"
         );
+        for contract in [
+            morphiecore::protocol::google::generate_content::semantic_contract(),
+            morphiecore::protocol::google::interactions::semantic_contract(),
+        ] {
+            assert_eq!(
+                contract.check(&source),
+                Err(GenerationFeature::ToolExecutionReport)
+            );
+        }
+        assert_eq!(source, original);
     }
 }

@@ -19,11 +19,10 @@ fn list(value: Option<&Value>) -> Result<&[Value], CodecError> {
         _ => Err(invalid()),
     }
 }
-fn probability(value: Option<&Value>) -> Result<Number, CodecError> {
-    // Proto3 omits zero-valued numeric fields.
+fn probability(value: &Value) -> Result<Number, CodecError> {
+    // log_probability is optional: omission is not evidence of probability one.
     let number = match value {
-        None => Number::from(0),
-        Some(Value::Number(number)) => number.clone(),
+        Value::Number(number) => number.clone(),
         _ => return Err(invalid()),
     };
     if !number.as_f64().is_some_and(|n| n.is_finite() && n <= 0.0) {
@@ -31,29 +30,28 @@ fn probability(value: Option<&Value>) -> Result<Number, CodecError> {
     }
     Ok(number)
 }
-fn token(value: &Value) -> Result<Logprob, CodecError> {
+fn token(value: &Value) -> Result<TopLogprob, CodecError> {
     let object = object(value)?;
-    if object
-        .get("tokenId")
-        .is_some_and(|id| id.as_u64().is_none_or(|id| id > i32::MAX as u64))
-    {
-        return Err(invalid());
+    if let Some(id) = object.get("tokenId") {
+        if id.as_i64().is_none_or(|id| i32::try_from(id).is_err()) {
+            return Err(invalid());
+        }
+        return Err(CodecError::Unsupported("Gemini tokenId".into()));
     }
-    Ok(Logprob {
+    Ok(TopLogprob {
         token: object
             .get("token")
-            .and_then(Value::as_str)
-            .ok_or_else(invalid)?
-            .into(),
-        logprob: probability(object.get("logProbability"))?,
+            .map(|value| value.as_str().map(str::to_owned).ok_or_else(invalid))
+            .transpose()?,
+        logprob: object.get("logProbability").map(probability).transpose()?,
         bytes: None,
-        top_logprobs: None,
     })
 }
 pub(super) fn read(value: &Value) -> Result<Vec<Logprob>, CodecError> {
     let object = object(value)?;
-    if object.contains_key("logProbabilitySum") {
-        probability(object.get("logProbabilitySum"))?;
+    if let Some(value) = object.get("logProbabilitySum") {
+        probability(value)?;
+        return Err(CodecError::Unsupported("Gemini logProbabilitySum".into()));
     }
     let chosen = list(object.get("chosenCandidates"))?;
     let top = object
@@ -67,7 +65,15 @@ pub(super) fn read(value: &Value) -> Result<Vec<Logprob>, CodecError> {
         .iter()
         .enumerate()
         .map(|(index, value)| {
-            let mut chosen = token(value)?;
+            let reported = token(value)?;
+            // Chosen tokens require an aligned string and actual probability.
+            // Alternatives can preserve either fact as unreported.
+            let mut chosen = Logprob {
+                token: reported.token.ok_or_else(invalid)?,
+                logprob: reported.logprob.ok_or_else(invalid)?,
+                bytes: None,
+                top_logprobs: None,
+            };
             if let Some(top) = top {
                 let step = top[index].as_object().ok_or_else(invalid)?;
                 let candidates = list(step.get("candidates"))?;
@@ -78,22 +84,16 @@ pub(super) fn read(value: &Value) -> Result<Vec<Logprob>, CodecError> {
                     .iter()
                     .map(token)
                     .collect::<Result<Vec<_>, _>>()?;
-                if candidates
-                    .windows(2)
-                    .any(|pair| pair[0].logprob.as_f64() < pair[1].logprob.as_f64())
-                {
-                    return Err(invalid());
+                let mut previous = None;
+                for candidate in &candidates {
+                    if let Some(number) = candidate.logprob.as_ref().and_then(Number::as_f64) {
+                        if previous.is_some_and(|previous| previous < number) {
+                            return Err(invalid());
+                        }
+                        previous = Some(number);
+                    }
                 }
-                chosen.top_logprobs = Some(
-                    candidates
-                        .into_iter()
-                        .map(|candidate| TopLogprob {
-                            token: Some(candidate.token),
-                            logprob: Some(candidate.logprob),
-                            bytes: None,
-                        })
-                        .collect(),
-                );
+                chosen.top_logprobs = Some(candidates);
             }
             Ok(chosen)
         })

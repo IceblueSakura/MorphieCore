@@ -35,8 +35,6 @@ pub enum RequestRule {
     OmitSchemaName,
     /// Gemini caches implicitly and has no cache-key carrier.
     OmitCacheKey,
-    /// `functionResponse.response` holds one string; text parts are concatenated.
-    JoinResultParts,
     /// A pre-ownership surrogate signature returned by an older gateway is dropped.
     OmitLegacySignature,
 }
@@ -52,7 +50,6 @@ impl RequestRule {
             Self::DeveloperAsSystem => "gemini.developer-as-system.v1",
             Self::OmitSchemaName => "gemini.omit-schema-name.v1",
             Self::OmitCacheKey => "gemini.omit-cache-key.v1",
-            Self::JoinResultParts => "gemini.join-result-parts.v1",
             Self::OmitLegacySignature => "gemini.omit-legacy-signature.v1",
         }
     }

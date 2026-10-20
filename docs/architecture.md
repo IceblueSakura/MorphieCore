@@ -148,6 +148,16 @@ Summary interruption and compaction sampling progress are event facts. `PartInte
 
 `ResponseError.original_type` retains a bounded original error classification on failed response snapshots. It is separate from the standalone SSE `type: "error"` discriminator; that event has no original-type carrier and rejects an independently populated classification rather than overwriting it.
 
+#### Google foreground intake
+
+Interactions lifecycle resources require `id` and `status`; status updates require their top-level `interaction_id` and `status`. Verify identity before accepting usage. The current fresh foreground profile requires an `in_progress` opening and accepts only `in_progress` updates. Other known opening/update states are unsupported, not malformed enum values. Non-null continuation tokens reject at each actual owner, including status updates. Optional event IDs do not activate resumption. Lifecycle snapshots and service reports remain rejected pending the selected stage-3 work.
+
+Status observations, generated outcome/progress and delivery publication are separate authorities. Neither a schema union nor `interaction.completed` proves successful completion, a legal transition graph or final-status equality with an earlier update. Broader observation handling remains a [pending selection](roadmap.md#ownership-and-projection-decisions); this maintenance does not add background execution, remote cancellation or retry policy.
+
+Both Google request encoders reject explicit tool execution reports: `is_error` cannot distinguish nonexecution, failure and successful execution. Ordinary results without an execution report preserve their error flag independently. Capabilities and direct encoder checks agree; no execution fact is inferred from the flag or result text.
+
+generateContent rejects supplied terminal explanations, aggregate probability reports and model-specific token IDs until their owners/carriers are selected. Nonempty URL-context observations also reject; absent/null or empty URL metadata supplies no retrieval fact. Chosen-token probabilities require an actual number, including explicit zero; missing is not defaulted to zero. Sparse alternative-token facts retain their existing optional IR fields, and unknown token bytes stay unknown. See the [source boundaries](refs/2026-10-17-generation-contracts.md#google-foreground-contracts-2026-10-20).
+
 #### Scoped accounting
 
 `UsageReports` is the sole stored accounting source. It retains the latest bounded snapshot per operation or response-local execution step; steps never synthesize an operation total. Checkpoints replace their scope without summation. A final observation seals that scope but does not certify exhaustive billing. Content edits retain the reports.
@@ -537,6 +547,7 @@ Image, audio, video and file resources are inert: inline data or a URL, never fe
 - A file name is the model-visible document name: OpenAI `filename` and Messages document `title` map to each other. A present name needs an exact carrier; do not drop it or inject it into text.
 - Instructions are text-only, including Responses system/developer messages and Messages mid-conversation system messages. Reject image, audio, video and file parts before target selection, even when a shared SDK content union admits them; user and tool-result media retain their separate contracts.
 - Tool results may carry media of any kind. Admission needs tool-result media and the kind's input modality. An inline file whose MIME type is image, audio or video also needs that modality, in addition to file input. Responses carries tool media; standard Chat does not, so Chat targets reject it.
+- generateContent preserves tool-result parts in an ordered array under `functionResponse.response.output` or `error`: text stays a string element and each media occurrence has one `$ref` to its own `parts[].inlineData.displayName`. Result-local positions determine stable labels, including repeated uses of one resource. Labels are not filenames. Scalar text remains a string; no text concatenation or media deduplication occurs. Existing inline/MIME/options/size restrictions remain authoritative.
 - Provider file IDs and file URIs are bound to the gateway credential's workspace or project. Client-supplied references are rejected.
 - User and tool-result media uses admit only inline data or URLs. Generic opaque/namespaced identities remain available for citation sources, not model-input media.
 - Google protocol boundaries reject media URLs on the Files API host, even when a client labels them as ordinary image or file URLs. Public URLs stay inert.
@@ -1005,6 +1016,7 @@ These records preserve accepted choices and their consequences, grouped by domai
 | Layered capabilities | Source validity, acceptance through approved adaptation and faithful target support are distinct. Do not advertise lossy acceptance as native support or infer public promises from a union of candidates |
 | Declared adaptation | Named candidate-local losses; known fields strict, unknown protocol fields ignored |
 | Candidate-local tool errors | Messages admission preserves tool-result error flags regardless of the route. Native targets retain them; OpenAI targets apply a named loss on their private copy |
+| Google tool-result truth and order (2026-10-20) | Reject explicit execution reports without an exact carrier; retain independent error flags. Use the native ordered `$ref`/`displayName` projection for generateContent parts, with occurrence-local labels and unchanged media restrictions. This is codec support, not real Provider or client-loop acceptance |
 | Configurable reasoning parameters | Numeric thinking tables belong to public models; candidate-local conversion direction is explicit. Reasoning-as-text defaults to false and requires opt-in. Configuration cannot alter dialect implementations, infer qualitative mappings or widen semantic admission |
 | Target carriers and protected content | Prefer official carriers or declared extensions. Selected role approximations change only the target representation; they do not invent content, assistant/tool speakers or call/result links. Do not drop task content or media merely to make a target accept the request |
 | Target-local image restrictions | Formats, encoded sizes, counts and unavailable per-use options are checked or projected at the protocol boundary, not encoded as Provider-specific IR fields |

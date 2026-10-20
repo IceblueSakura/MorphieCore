@@ -257,15 +257,32 @@ impl GenerationSseDecoder {
         {
             return Err(unsupported("groundingMetadata"));
         }
+        if let Some(metadata) = candidate.get("urlContextMetadata").filter(|v| !v.is_null()) {
+            let metadata = object(metadata, "urlContextMetadata")?;
+            if let Some(entries) = metadata.get("urlMetadata") {
+                let entries = entries.as_array().ok_or_else(|| invalid("urlMetadata"))?;
+                if !entries.is_empty() {
+                    return Err(unsupported("urlContextMetadata"));
+                }
+            }
+        }
+        if let Some(message) = string(candidate, "finishMessage")? {
+            if message.len() > MAX_TEXT_BYTES {
+                return Err(SseError::Limit);
+            }
+            // An explanation is neither generated text nor a different stop reason.
+            return Err(unsupported("finishMessage"));
+        }
         let mut probabilities = candidate
             .get("logprobsResult")
             .map(super::logprobs::read)
             .transpose()?
             .unwrap_or_default();
-        if let Some(value) = candidate.get("avgLogprobs")
-            && !value.as_f64().is_some_and(|n| n.is_finite() && n <= 0.0)
-        {
-            return Err(invalid("avgLogprobs"));
+        if let Some(value) = candidate.get("avgLogprobs") {
+            if !value.as_f64().is_some_and(|n| n.is_finite() && n <= 0.0) {
+                return Err(invalid("avgLogprobs"));
+            }
+            return Err(unsupported("avgLogprobs"));
         }
         if !probabilities.is_empty() {
             let parts = candidate

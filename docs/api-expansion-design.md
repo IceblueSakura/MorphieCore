@@ -8,6 +8,7 @@
   - [Proposed ownership](#proposed-ownership)
   - [Generation boundary review](#generation-boundary-review)
     - [Missing Messages output ceilings](#missing-messages-output-ceilings)
+    - [Google output report owners (unselected)](#google-output-report-owners-unselected)
   - [Resource and execution safety](#resource-and-execution-safety)
 - [Operation contracts](#operation-contracts)
   - [Token counting](#token-counting)
@@ -151,6 +152,18 @@ A future proposal would need independently owned answer/thought/total limits, pr
 #### Missing Messages output ceilings
 
 The user selected the candidate-local configuration, explicit-cap-only generic constructors and Go/Haiku `32000` catalog default on 2026-10-20. The accepted [missing-output-ceiling contract](architecture.md#missing-output-ceilings) now owns these rules; [Usage](usage.md#model-configuration) owns implemented configuration. No alternative default framework or independent output-limit IR extension is selected here.
+
+#### Google output report owners (unselected)
+
+The 2026-10-20 repair plan selects classification and maintenance rejection, not new report structures. The [source counterexamples](refs/2026-10-17-generation-contracts.md#google-foreground-contracts-2026-10-20) require design review before broader carriage:
+
+| Fact | Minimal proposed owner | Required decision |
+|---|---|---|
+| General `finishMessage` | Optional bounded explanation on existing `TerminalDetails` | Preserve it independently of outcome and known stop/incomplete reason; choose cross-protocol carriage or an explicit report-loss policy. Do not turn it into generated text or an error |
+| Reported average and sum log probabilities | One bounded output/candidate probability-report owner with independent optional numbers | Define chunk/checkpoint/final scope from evidence, replacement/conflict rules, edit dependencies and delivery. An aggregate may arrive without token reports; never recompute it as the reported value |
+| Internal vocabulary token ID | Typed source-bound fidelity tied to the unchanged text/probability owner and chosen/alternative position | Select retention bounds and invalidation/carriers; it is neither portable token bytes nor replay authority |
+
+Prefer those local additions over a new generic report store. Existing `TopLogprob` already preserves absent alternative token/probability values and needs no new owner. Existing Provider-tool observations are the first candidate for future URL retrieval facts, but their Google mapping and delivery are not selected. Keep nonempty URL-context reports rejected without activating hosted tools or full citation support.
 
 #### Review concrete ownership coupling
 

@@ -77,12 +77,33 @@ pub(super) fn field<'a>(
 }
 fn check_lifecycle(i: &Map<String, Value>) -> Result<(), SseError> {
     // Full snapshots and provider-held continuation need explicit owners/checks.
-    for key in ["steps", "continuation_token", "service_tier"] {
+    check_continuation(i)?;
+    for key in ["steps", "service_tier"] {
         if i.get(key).is_some_and(|v| !v.is_null()) {
             return Err(CodecError::Unsupported(format!("Interactions {key}")).into());
         }
     }
     Ok(())
+}
+fn check_continuation(o: &Map<String, Value>) -> Result<(), SseError> {
+    if let Some(value) = o.get("continuation_token").filter(|v| !v.is_null()) {
+        if !value.is_string() {
+            return Err(invalid("continuation_token"));
+        }
+        return Err(CodecError::Unsupported("Interactions continuation_token".into()).into());
+    }
+    Ok(())
+}
+fn status(o: &Map<String, Value>) -> Result<&str, SseError> {
+    match required(o, "status")? {
+        value @ ("in_progress" | "requires_action" | "completed" | "failed" | "cancelled"
+        | "incomplete") => Ok(value),
+        // SDK additions do not activate background or budget-resumption support.
+        "queued" | "budget_exceeded" => {
+            Err(CodecError::Unsupported("Interactions status".into()).into())
+        }
+        _ => Err(invalid("Interactions status")),
+    }
 }
 fn check_annotations(p: &Map<String, Value>) -> Result<(), SseError> {
     if p.get("annotations")
@@ -171,6 +192,7 @@ impl GenerationSseDecoder {
                     if frame.event().is_some_and(|e| e != kind) {
                         return Err(invalid("Interactions event identity"));
                     }
+                    string(o, "event_id")?;
                     self.event(kind, o, &mut out)?;
                 }
             }
@@ -195,6 +217,12 @@ impl GenerationSseDecoder {
         let item = ItemId::scoped(self.scope, n);
         self.members.push(item);
         Ok((item, PartId::scoped(self.scope, n * (MAX_ITEMS as u64 + 1))))
+    }
+    fn check_identity(&self, o: &Map<String, Value>, key: &'static str) -> Result<(), SseError> {
+        if self.metadata.as_ref().and_then(|m| m.id.as_deref()) != Some(required(o, key)?) {
+            return Err(invalid("interaction identity changed"));
+        }
+        Ok(())
     }
     fn event(
         &mut self,
@@ -232,12 +260,17 @@ impl GenerationSseDecoder {
             }
             let i = object(field(o, "interaction")?, "interaction")?;
             check_lifecycle(i)?;
+            // Fresh foreground streams start actively. Other schema-valid opening
+            // states require a separately selected admission/observation contract.
+            if status(i)? != "in_progress" {
+                return Err(CodecError::Unsupported("Interactions creation status".into()).into());
+            }
             if string(i, "object")?.is_some_and(|v| v != "interaction") {
                 return Err(invalid("interaction object"));
             }
             let metadata = ResponseMetadata {
                 storage: None,
-                id: string(i, "id")?.map(str::to_owned),
+                id: Some(required(i, "id")?.into()),
                 model: required(i, "model")?.into(),
                 created: None,
                 context: Default::default(),
@@ -263,10 +296,13 @@ impl GenerationSseDecoder {
         }
         match kind {
             "interaction.status_update" => {
-                if required(o, "status")? != "in_progress" {
-                    return Err(invalid("Interactions status update"));
+                self.check_identity(o, "interaction_id")?;
+                check_continuation(o)?;
+                if status(o)? != "in_progress" {
+                    return Err(
+                        CodecError::Unsupported("Interactions status observation".into()).into(),
+                    );
                 }
-                string(o, "interaction_id")?;
                 if let Some(value) = o.get("usage").filter(|v| !v.is_null()) {
                     self.emit(
                         StreamEvent::UsageReport(usage(
@@ -593,17 +629,13 @@ impl GenerationSseDecoder {
             return Err(invalid("unclosed Interactions step"));
         }
         check_lifecycle(i)?;
-        if let Some(id) = string(i, "id")?
-            && self.metadata.as_ref().and_then(|m| m.id.as_deref()) != Some(id)
-        {
-            return Err(invalid("interaction identity changed"));
-        }
+        self.check_identity(i, "id")?;
         if let Some(model) = string(i, "model")?
             && self.metadata.as_ref().is_none_or(|m| m.model != model)
         {
             return Err(invalid("interaction model changed"));
         }
-        let (terminal, progress, incomplete) = match required(i, "status")? {
+        let (terminal, progress, incomplete) = match status(i)? {
             "completed" if self.calls.is_empty() => (
                 StreamTerminal::Completed,
                 InteractionProgress::TurnFinished,
