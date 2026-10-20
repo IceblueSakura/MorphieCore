@@ -158,7 +158,11 @@ fn response_format_shells_map_to_one_owner_with_independent_shapes() {
         ),
     ] {
         let options = TextOptions {
-            presence: format.is_some(),
+            presence: if format.is_some() {
+                Presence::Value(())
+            } else {
+                Presence::Absent
+            },
             format: format.unwrap_or(Presence::Absent),
             verbosity: Presence::Absent,
         };
@@ -195,7 +199,7 @@ fn response_format_shells_map_to_one_owner_with_independent_shapes() {
     assert_eq!(
         d.semantic.text_options(),
         &TextOptions {
-            presence: true,
+            presence: Presence::Value(()),
             format: Presence::Absent,
             verbosity: Presence::Value(Verbosity::Low),
         }
@@ -467,6 +471,144 @@ fn custom_tools_and_text_array_results_are_not_function_arguments() {
     mismatch["input"][1]["type"] = json!("function_call_output");
     assert!(responses::decode_generation(&mismatch).is_err());
 }
+#[test]
+fn reported_text_container_presence_is_not_request_intent() {
+    use morphiecore::{
+        protocol::{
+            CodecError,
+            fidelity::FidelityRecords,
+            openai::{Adapter, Dialect, ResponseMetadata, events::EventEncoder},
+        },
+        semantic::context::{ResponseContext, ResponseReport, ResponseReports},
+    };
+    let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    for (wire_text, options) in [
+        (None, TextOptions::default()),
+        (
+            Some(Value::Null),
+            TextOptions {
+                presence: Presence::Null,
+                ..Default::default()
+            },
+        ),
+        (
+            Some(json!({})),
+            TextOptions {
+                presence: Presence::Value(()),
+                ..Default::default()
+            },
+        ),
+        (
+            Some(json!({"format":{"type":"text"},"verbosity":"medium"})),
+            TextOptions {
+                presence: Presence::Value(()),
+                format: Presence::Value(OutputConstraint::Text),
+                verbosity: Presence::Value(Verbosity::Medium),
+            },
+        ),
+    ] {
+        // Another reported setting prevents whole-settings absence from hiding
+        // a lost text-container observation.
+        let mut source = json!({"id":"r","object":"response","created_at":1,"model":"m",
+            "status":"completed","output":[],"temperature":0.5});
+        if let Some(value) = &wire_text {
+            source["text"] = value.clone();
+        }
+        let settings = GenerationSettings {
+            controls: GenerationControls::default().with_temperature(0.5).unwrap(),
+            text: options,
+            ..Default::default()
+        };
+        let decoded = adapter
+            .decode_response(source.to_string().as_bytes())
+            .unwrap();
+        assert_eq!(decoded.metadata.context.settings(), Some(&settings));
+
+        // Independently constructed IR supplies both JSON and SSE expectations.
+        let metadata = ResponseMetadata {
+            id: Some("r".into()),
+            model: "m".into(),
+            created: Some(1.into()),
+            context: ResponseContext {
+                reports: ResponseReports::single(ResponseReport {
+                    settings: Some(settings),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            storage: None,
+            instruction_fidelity: Default::default(),
+        };
+        let response = GenerationResponse::new(vec![], Outcome::Completed).unwrap();
+        let fidelity = FidelityRecords::default();
+        let projected = lower_response(
+            &response,
+            &fidelity,
+            &metadata,
+            Profile::Responses,
+            contract(),
+        )
+        .unwrap();
+        let output = envelope::encode_response(&projected).unwrap();
+        assert_eq!(output.get("text"), wire_text.as_ref());
+        assert!(
+            projected
+                .projection()
+                .iter()
+                .all(|stage| stage.loss.is_none())
+        );
+        let mut encoder = EventEncoder::new(Profile::Responses, metadata).unwrap();
+        for event in [
+            StreamEvent::Started,
+            StreamEvent::Terminal {
+                terminal: StreamTerminal::Completed,
+                details: Default::default(),
+            },
+        ] {
+            let frames = encoder.encode(&event, &fidelity).unwrap();
+            assert!(!frames.is_empty());
+            for frame in frames {
+                assert_eq!(frame["response"].get("text"), wire_text.as_ref());
+            }
+        }
+        encoder.finish().unwrap();
+    }
+    let request = json!({"model":"m","input":"go","text":null});
+    assert!(matches!(
+        adapter.decode_client_request(request.to_string().as_bytes()),
+        Err(CodecError::Invalid("text"))
+    ));
+    assert!(matches!(
+        responses::decode_generation(&json!({"input":"go","text":null})),
+        Err(CodecError::Invalid("text"))
+    ));
+    let request = responses::decode_generation(&json!({"input":"go"}))
+        .unwrap()
+        .semantic;
+    let mut settings = request.settings().clone();
+    settings.text.presence = Presence::Null;
+    settings.validate().unwrap();
+    assert!(matches!(
+        request.with_settings(settings),
+        Err(GenerationError::InvalidControl)
+    ));
+    for presence in [Presence::Absent, Presence::Null] {
+        let mut settings = GenerationSettings::default();
+        settings.text.presence = presence;
+        settings.text.format = Presence::Null;
+        assert!(matches!(
+            settings.validate(),
+            Err(GenerationError::InvalidControl)
+        ));
+        settings.text.format = Presence::Absent;
+        settings.text.verbosity = Presence::Value(Verbosity::Low);
+        assert!(matches!(
+            settings.validate(),
+            Err(GenerationError::InvalidControl)
+        ));
+    }
+}
+
 #[test]
 fn null_empty_false_and_default_controls_are_deliberate_not_unknown_passthrough() {
     let d=responses::decode_generation(&json!({"input":"","instructions":null,"reasoning":{"effort":null,"summary":null},"tools":[],"tool_choice":"none","parallel_tool_calls":false,"text":{"format":{"type":"text"},"verbosity":null}})).unwrap();

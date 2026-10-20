@@ -217,7 +217,7 @@ impl TargetCaps {
         let mut settings = admission.task.semantic.settings().clone();
         settings.text.verbosity = Presence::Absent;
         if settings.text.format.is_absent() {
-            settings.text.presence = false;
+            settings.text.presence = Presence::Absent;
         }
         admission.task.semantic = admission
             .task

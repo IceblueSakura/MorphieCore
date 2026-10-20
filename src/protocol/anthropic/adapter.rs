@@ -165,7 +165,7 @@ impl TargetCaps {
             let mut settings = copy.task.semantic.settings().clone();
             settings.text.verbosity = Presence::Absent;
             if settings.text.format.is_absent() {
-                settings.text.presence = false;
+                settings.text.presence = Presence::Absent;
             }
             copy.task.semantic = copy
                 .task

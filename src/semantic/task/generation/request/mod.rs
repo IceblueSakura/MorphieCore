@@ -55,6 +55,9 @@ impl GenerationRequest {
     }
     pub fn validate(&self) -> Result<(), GenerationError> {
         let settings = self.settings.validate()?;
+        if self.settings.text.presence == Presence::Null {
+            return Err(GenerationError::InvalidControl);
+        }
         let items = if self.items.is_empty() && self.settings.instructions.value().is_some() {
             0
         } else {
@@ -172,7 +175,7 @@ impl GenerationRequest {
     }
     pub fn with_output(self, output: OutputConstraint) -> Result<Self, GenerationError> {
         let mut settings = self.settings().clone();
-        settings.text.presence = true;
+        settings.text.presence = Presence::Value(());
         settings.text.format = Presence::Value(output);
         self.with_settings(settings)
     }

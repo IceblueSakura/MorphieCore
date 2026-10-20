@@ -465,7 +465,7 @@
         "if": {"properties": {"treatment": {"const": "approved_adaptation"}}},
         "then": {"required": ["rules"]},
         "else": {"not": {"required": ["rules"]}},
-        "description": "Treatment of this feature/domain only, assuming other validation succeeds. Request lists selected public-admission rejections. Delivery rules apply equally to JSON/SSE. History preserves the delivered projection, not pre-projection facts or cross-target replay."
+        "description": "Treatment of this feature/domain only, assuming other validation succeeds. Request lists selected public-admission cases. Delivery rules apply equally to JSON/SSE. History preserves the delivered projection, not pre-projection facts or cross-target replay."
       },
       "EmbeddingRequest": {
         "type": "object", "required": ["model", "input"], "additionalProperties": false,

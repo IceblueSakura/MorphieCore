@@ -299,6 +299,12 @@ Keep source validation, acceptance with approved adaptation, and faithful target
 
 Request controls, upstream-reported settings and downstream delivery have different authority. Sent controls do not prove effective settings. A response-only echo can be omitted under a selected delivery rule without discarding generated content; validate source facts and repeated snapshots before that omission. JSON, SSE and retained delivered history must agree on the applied loss.
 
+#### Reported text configuration
+
+Reported text configuration preserves absent, null and object containers through the existing `TextOptions.presence: Presence<()>`; an empty object stays distinct from absent/null. Format and verbosity children require an object container. Native Responses JSON/SSE and stored terminal snapshots retain these observations without inserting format or verbosity defaults; repeated settings comparisons include container presence before any delivery omission.
+
+Null is a reported state, not a request to disable text or an inferred default configuration. Request-side null text containers remain invalid, including direct IR construction. This is a local repair of the reported-fact contract, not a mechanical presence expansion across all settings. The [dated source evidence](refs/2026-10-17-generation-contracts.md#responses-text-container-presence-2026-10-20) distinguishes SDK-observable state from unproven Provider behavior.
+
 #### Message phase transfer
 
 Responses preserves assistant `commentary` and `final_answer` exactly, independently of lifecycle and terminal meaning. Missing/null labels stay unlabelled. These labels affect history interpretation, not merely display; never infer them from text, tool calls or completion.
@@ -885,6 +891,7 @@ These records preserve accepted choices and their consequences, grouped by domai
 | Official Generation vocabulary | OpenAI, Anthropic and Google define semantic concepts; dialect carriers and approximation policies stay in protocol modules. Semantic expression, codec support and activated bindings are separate claims |
 | Two codec responsibilities | Normalize Provider dialects into an official API baseline plus declared extensions before semantic decoding; encode in reverse before serialization. Semantic extensions enter IR; eligible non-semantic fidelity stays scoped outside it |
 | Stage-1 report/event ownership (2026-10-19) | User-selected [Responses observations](#responses-item-and-event-observations): output-only bounded actor records, event-only summary interruption/compaction progress, and original error classification. No actor authority, static progress field or event-log service |
+| Reported text-container presence (2026-10-20) | Preserve absent/null/object using the existing bounded presence type, without default insertion or a parallel report owner. Request null remains rejected; [reported text configuration](#reported-text-configuration) keeps this repair separate from broad presence redesign |
 | Eager partial-input boundary (2026-10-19) | User selected native SSE-only unfinished argument carriage under `max_tokens`, reusing partial arguments and incomplete lifecycle; strict JSON/history and successful-terminal rejection remain. Complete clients may still repair/drop raw fragments, so wire fidelity does not certify client history fidelity |
 | Accurate IR with declared lossy projection | Prefer exact carriers, permit approved advisory omissions and behavioral approximations, and reject loss of protected meaning. Preserve the source and record target-local changes; implementation follows the roadmap |
 | Equal downstream contracts | Chat Completions, Responses and Messages receive equal consideration for static delivery, streaming and history replay; a missing carrier needs an approved projection or explicit rejection |

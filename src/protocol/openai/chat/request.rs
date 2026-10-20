@@ -156,7 +156,11 @@ pub(crate) fn decode_generation_with(
     let mut settings = GenerationSettings {
         controls,
         text: TextOptions {
-            presence: !format.is_absent() || !verbosity.is_absent(),
+            presence: if format.is_absent() && verbosity.is_absent() {
+                Presence::Absent
+            } else {
+                Presence::Value(())
+            },
             format,
             verbosity,
         },

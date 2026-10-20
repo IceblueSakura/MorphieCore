@@ -131,8 +131,8 @@ impl GenerationSettings {
         {
             return Err(GenerationError::InvalidControl);
         }
-        // An absent container cannot hide explicit values or null children.
-        if !self.text.presence
+        // Absent/null containers cannot hide explicit values or null children.
+        if self.text.presence.value().is_none()
             && (!self.text.format.is_absent() || !self.text.verbosity.is_absent())
         {
             return Err(GenerationError::InvalidControl);

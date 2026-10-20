@@ -74,13 +74,13 @@ pub(super) fn read(
         // The pinned create type is non-nullable; an explicit null is not "no text".
         return Err(CodecError::Invalid("text"));
     }
-    if let Some(t) = o.get("text").filter(|v| !v.is_null()) {
+    s.text.presence = read_presence(o, "text", |t| {
         let t = object(t)?;
         direction.fields(t, &["format", "verbosity"])?;
-        s.text.presence = true;
         s.text.format = read_presence(t, "format", |v| read_format(v, direction))?;
         s.text.verbosity = read_presence(t, "verbosity", verbosity)?;
-    }
+        Ok(())
+    })?;
     function_tools::read_settings(o, Profile::Responses, &mut s, direction)?;
     s.validate()?;
     Ok(s)
@@ -203,7 +203,9 @@ pub(super) fn write(s: &GenerationSettings, o: &mut Map<String, Value>) -> Resul
             .expect("typed include")
             .push(json!("message.output_text.logprobs"));
     }
-    if s.text.presence {
+    if s.text.presence == Presence::Null {
+        o.insert("text".into(), Value::Null);
+    } else if s.text.presence.value().is_some() {
         let mut t = Map::new();
         match &s.text.format {
             Presence::Absent => {}

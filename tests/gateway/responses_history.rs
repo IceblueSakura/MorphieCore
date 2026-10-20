@@ -28,6 +28,7 @@ async fn request(client: &reqwest::Client, base: &str, body: &Value) -> Value {
                 json!({"effort":"low","summary":"auto"})
             );
             assert_eq!(event["response"]["service_tier"], "auto");
+            assert_eq!(event["response"].get("text"), Some(&Value::Null));
         }
         if event["type"] == "response.completed" {
             assert!(terminal.replace(event["response"].clone()).is_none());
@@ -66,6 +67,7 @@ async fn stored_and_stateless_tool_history_agree_in_json_and_sse() {
                     json!({"effort":"low","summary":"detailed","context":"all_turns","mode":"standard"})
                 );
                 assert_eq!(response["service_tier"], "default");
+                assert_eq!(response.get("text"), Some(&Value::Null));
                 if stored {
                     let retrieved = client
                         .get(format!(

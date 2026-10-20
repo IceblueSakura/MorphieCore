@@ -13,6 +13,7 @@ Later observations retain their own dates and evidence scope below. [Architectur
   - [pi Messages request profile, 2026-10-19](#pi-messages-request-profile-2026-10-19)
   - [R2 native client and replay evidence, 2026-10-19](#r2-native-client-and-replay-evidence-2026-10-19)
   - [Responses lifecycle reports, 2026-10-19](#responses-lifecycle-reports-2026-10-19)
+  - [Responses text-container presence, 2026-10-20](#responses-text-container-presence-2026-10-20)
   - [Signed Google parts](#signed-google-parts)
 - [Protected semantics without complete owners](#protected-semantics-without-complete-owners)
 - [Scoped accounting contract](#scoped-accounting-contract)
@@ -110,6 +111,16 @@ The [installed OpenCode source revision](https://github.com/anomalyco/opencode/b
 After that selection, the final OpenCode and pi gates each completed three serial requests with call/result identity, final-answer history and one returned phase-bearing message compared against the actual next-turn requests. OpenCode recorded one `responses.default-history-annotations.v1` insertion; pi recorded none. Both had zero unclassified ignored fields and three honest terminals. Neither final installed-client run returned opaque reasoning, so opaque replay evidence remains the separate SDK scope. Targets, 2048-token caps, 120-second deadlines and no-retry limits were unchanged. These checks do not accept other client profiles, cross-account replay, real Provider failover or the overall Generation design.
 
 Client profile evidence: installed pi 1.3.0 Chat needs `supportsDeveloperRole:false`, `supportsStrictMode:false`, OpenAI thinking format and the total-cap spelling for R1a. It replays structured `reasoning_details` instead of redundantly sending `reasoning_content` when a signature exists. Its Responses built-in `read` prefers strict sampling; the accepted R1b gate uses a test-owned non-strict tool declaration rather than gateway strictness rewriting. Installed OpenCode is `2.0.6+e5ecb57`, distinct from the source pin in [References](../references.md#pinned-sources); its explicit body cap was checked, not inferred from `limit.output`.
+
+### Responses text-container presence, 2026-10-20
+
+The pinned OpenAI Python 3.35.1 [response type](https://github.com/openai/openai-python/blob/547ecb1e4fc233f19030736c29fee4374dfbaca1/src/openai/types/responses/response.py) declares `text: Optional[ResponseTextConfig] = None`; the [create type](https://github.com/openai/openai-python/blob/547ecb1e4fc233f19030736c29fee4374dfbaca1/src/openai/types/responses/response_create_params.py) does not admit a null text container. Its [README](https://github.com/openai/openai-python/blob/547ecb1e4fc233f19030736c29fee4374dfbaca1/README.md#how-to-tell-whether-none-means-null-or-missing) explicitly distinguishes null from missing response fields using `model_fields_set`.
+
+The [text-config type](https://github.com/openai/openai-python/blob/547ecb1e4fc233f19030736c29fee4374dfbaca1/src/openai/types/responses/response_text_config.py) and [response reference](https://developers.openai.com/api/reference/resources/responses/methods/retrieve), rechecked on 2026-10-20, describe default format `text` and verbosity `medium`. They do not establish equivalence between a null whole reported container, a missing container and an empty object. An offline SDK validation/serialization probe preserved absent, null, `{}` and an explicitly configured object independently through `model_fields_set` and `model_dump(exclude_unset=True)`. This establishes an observable report distinction, not that null disables output or changes effective model behavior; no Provider call was made.
+
+The minimal codec counterexample is two same-phase snapshots with `temperature:0.5`, one also containing `text:null` and the other omitting `text`. The former boolean container marker merged these reports and lost the null on native delivery. The [local repair](../architecture.md#reported-text-configuration) reuses `Presence<()>` for this one container, prohibits children under absent/null and keeps request null invalid. No lifecycle transition or default insertion is added.
+
+Independent wire-to-IR and IR-to-JSON/SSE expectations live in [text_profile.rs](../../tests/semantic/text/text_profile.rs); [lifecycle_reports.rs](../../tests/semantic/text/lifecycle_reports.rs) rejects null/absent/object drift at the intended report check, including under the selected OpenRouter lifecycle rules. The existing [Router history oracle](../../tests/gateway/responses_history.rs) now supplies null reports and checks opening/terminal preservation, exact GET parity and non-inheritance into subsequent requests. These are synthetic checks, not a rerun or expansion of the earlier real-client/Provider acceptance.
 
 ### Function strictness defaults
 

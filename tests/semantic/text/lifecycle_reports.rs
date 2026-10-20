@@ -192,6 +192,36 @@ fn each_resolution_is_closed_phase_local_and_source_checked() {
         ));
     }
     let mut malformed = event("completed", 1, json!({"mode":7}), json!("default"));
+    // Container null is an observation, not an absent-field wildcard, even
+    // beside another setting and with the selected lifecycle rules enabled.
+    for (before, after) in [
+        (Some(Value::Null), None),
+        (None, Some(Value::Null)),
+        (Some(Value::Null), Some(json!({}))),
+        (Some(json!({})), Some(Value::Null)),
+    ] {
+        for phase in ["in_progress", "completed"] {
+            let mut first = event("created", 0, json!({}), json!("default"));
+            let mut next = event(phase, 1, json!({}), json!("default"));
+            first["response"]["temperature"] = json!(0.5);
+            next["response"]["temperature"] = json!(0.5);
+            if let Some(value) = &before {
+                first["response"]["text"] = value.clone();
+            }
+            if let Some(value) = &after {
+                next["response"]["text"] = value.clone();
+            }
+            let mut decoder = adapter().event_decoder();
+            decoder.push(&first).unwrap();
+            assert!(matches!(
+                decoder.push(&next),
+                Err(morphiecore::protocol::CodecError::Invalid(
+                    "reported settings changed"
+                ))
+            ));
+            assert!(decoder.finish().is_err());
+        }
+    }
     let mut decoder = adapter().event_decoder();
     decoder
         .push(&event("created", 0, json!({}), json!("default")))

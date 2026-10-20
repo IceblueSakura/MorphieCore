@@ -385,7 +385,7 @@ pub(super) fn output_settings(config: &super::OutputConfig, settings: &mut Gener
     }
     if let Presence::Value(schema) = &config.format {
         // Messages output always conforms to the schema, as OpenAI strict output does.
-        settings.text.presence = true;
+        settings.text.presence = Presence::Value(());
         settings.text.format = Presence::Value(OutputConstraint::JsonSchema {
             name: None,
             description: None,

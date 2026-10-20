@@ -21,7 +21,8 @@ pub enum Verbosity {
 }
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct TextOptions {
-    pub presence: bool,
+    /// Container state; null is a reported observation, not request intent.
+    pub presence: Presence<()>,
     pub format: Presence<OutputConstraint>,
     pub verbosity: Presence<Verbosity>,
 }

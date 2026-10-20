@@ -6,7 +6,7 @@ pub fn snapshot(turn: usize) -> Value {
     json!({"id":format!("response-{turn}"),"object":"response","created_at":1,
         "completed_at":2,"model":"openai/gpt-6-luna","status":"completed","error":null,
         "reasoning":{"effort":"low","summary":"detailed","context":"all_turns","mode":"standard"},
-        "service_tier":"default",
+        "service_tier":"default","text":null,
         "incomplete_details":null,"output":if turn == 1 {json!([
             {"id":"reason","type":"reasoning","status":"completed",
                 "summary":[{"type":"summary_text","text":"Plan 🧪"}],
@@ -42,6 +42,10 @@ pub fn assert_request(body: &Value) -> usize {
     assert_eq!(body["reasoning"]["effort"], "low");
     assert_eq!(body["store"], false);
     assert!(body.get("previous_response_id").is_none());
+    assert!(
+        body.get("text").is_none(),
+        "reported null is not request intent"
+    );
     assert_eq!(body["provider"], json!({"require_parameters":true}));
     let tool = &body["tools"][0];
     assert_eq!(tool["name"], "lookup");

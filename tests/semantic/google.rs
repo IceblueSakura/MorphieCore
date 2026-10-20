@@ -853,7 +853,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
     assert!(encode_generation_request(&request, &observed.fidelity, &other, None).is_err());
     let mut settings = request.settings().clone();
     settings.text = TextOptions {
-        presence: true,
+        presence: morphiecore::semantic::value::Presence::Value(()),
         format: morphiecore::semantic::value::Presence::Value(OutputConstraint::Text),
         verbosity: morphiecore::semantic::value::Presence::Value(Verbosity::Low),
     };
