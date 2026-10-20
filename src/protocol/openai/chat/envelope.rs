@@ -133,7 +133,7 @@ pub(crate) fn decode_request_with(
         .iter()
         .copied()
         .chain(
-            crate::protocol::openai::responses::envelope::CACHE_FIELDS
+            crate::protocol::openai::context::CACHE_FIELDS
                 .iter()
                 .copied(),
         )

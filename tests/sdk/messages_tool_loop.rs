@@ -7,13 +7,13 @@ use tokio::process::Command;
 
 #[tokio::test]
 #[ignore = "requires locked Anthropic SDK; synthetic native Messages JSON/SSE five-turn loops"]
-async fn native_messages_sdk_keeps_changed_tools_effort_and_replay() {
+async fn native_response_sdk_keeps_changed_tools_effort_and_replay() {
     history_case(None).await;
 }
 
 #[tokio::test]
 #[ignore = "requires locked Anthropic SDK; synthetic native credential migration JSON/SSE"]
-async fn native_messages_sdk_tool_feedback_sticks_after_primary_recovery() {
+async fn native_response_sdk_tool_feedback_sticks_after_primary_recovery() {
     for stream in [false, true] {
         history_case(Some(stream)).await;
     }

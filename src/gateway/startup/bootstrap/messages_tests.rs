@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 
 #[test]
-fn native_messages_binding_activates_only_when_listed() {
+fn native_response_binding_activates_only_when_listed() {
     // Both protocol families share the same public contract; activation remains explicit.
     let settings = |models: Option<&'static str>| {
         move |name: &str| {
@@ -452,7 +452,7 @@ async fn configured_messages_cache_admission_requires_all_native_candidates() {
 }
 
 #[test]
-fn native_messages_admit_strict_changed_tools_and_message_effort() {
+fn native_response_admit_strict_changed_tools_and_message_effort() {
     let boot = configured_messages(&["opencode-go"]);
     let state = &boot.gateway.state;
     let entry = &state.entries[&(crate::gateway::MESSAGES_FAMILY, "claude-haiku-5-5".into())];

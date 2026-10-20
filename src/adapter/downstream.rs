@@ -110,7 +110,7 @@ impl ClientAdapter {
         response: &mut DecodedResponse,
     ) -> Result<Vec<crate::lowering::generation::LossEvidence>, super::AdapterError> {
         if let Self::OpenAi { adapter, .. } = self {
-            return Ok(crate::protocol::openai::lowering::native_messages::project(
+            return Ok(crate::protocol::openai::lowering::native_response::project(
                 response,
                 adapter.protocol,
             )?);
@@ -420,7 +420,7 @@ pub(crate) struct ClientEncoder {
     losses: Vec<crate::lowering::generation::LossEvidence>,
     phase_carrier: bool,
     encoder: Encoder,
-    native_projection: Option<crate::protocol::openai::lowering::native_messages::EventProjection>,
+    native_projection: Option<crate::protocol::openai::lowering::native_response::EventProjection>,
 }
 impl ClientEncoder {
     /// Track Chat grouping from the first item, including an unlabelled prefix.
@@ -433,7 +433,7 @@ impl ClientEncoder {
             return Ok(None);
         }
         let projection = self.native_projection.get_or_insert_with(
-            crate::protocol::openai::lowering::native_messages::EventProjection::for_phase,
+            crate::protocol::openai::lowering::native_response::EventProjection::for_phase,
         );
         let projected = projection.project(events)?;
         for loss in projection.losses() {
@@ -468,7 +468,7 @@ impl ClientEncoder {
             Encoder::Messages(_) => return Ok(None),
         };
         let projection = self.native_projection.get_or_insert_with(|| {
-            crate::protocol::openai::lowering::native_messages::EventProjection::new(profile)
+            crate::protocol::openai::lowering::native_response::EventProjection::new(profile)
         });
         let result = projection.project(events);
         for loss in projection.losses() {

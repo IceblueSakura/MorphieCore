@@ -33,13 +33,13 @@ pub(crate) fn project(request: &Request, carrier: Carrier) -> Result<Projection,
         request.source,
         None | Some(ClientProtocol::Chat | ClientProtocol::Responses)
     );
-    let native_messages = matches!(request.source, None | Some(ClientProtocol::Messages));
+    let native_response = matches!(request.source, None | Some(ClientProtocol::Messages));
     match carrier {
         Carrier::OpenAi if native_openai => {
             identity = source.clone();
             remaining = Default::default();
         }
-        Carrier::Messages if native_messages => {
+        Carrier::Messages if native_response => {
             identity.user = source.user.clone();
             remaining.user = Presence::Absent;
         }

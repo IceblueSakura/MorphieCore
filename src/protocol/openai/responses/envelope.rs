@@ -1,133 +1,17 @@
 //! Complete stateless Responses envelopes. Execution hints never become task instructions.
 use crate::protocol::openai::{
-    CodecError, DecodedRequest, Profile, RequestRepresentation, ResponseMetadata, common::*,
+    CodecError, DecodedRequest, Profile, RequestRepresentation, ResponseMetadata,
+    common::*,
+    context::{CACHE_FIELDS, EXEC_FIELDS, check_access_programs},
     settings,
 };
 use crate::semantic::{
-    context::{CacheHints, ExecutionHints, ResponseContext, ServicePolicy},
+    context::{ExecutionHints, ResponseContext, ServicePolicy},
     task::generation::*,
     value::Presence,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value, json};
-pub(in crate::protocol::openai) const CACHE_FIELDS: &[&str] = &[
-    "prompt_cache_key",
-    "prompt_cache_retention",
-    "prompt_cache_options",
-    "safety_identifier",
-    "user",
-];
-impl CacheHints {
-    pub(in crate::protocol::openai) fn write(
-        &self,
-        o: &mut Map<String, Value>,
-    ) -> Result<(), CodecError> {
-        self.validate()?;
-        let Value::Object(v) =
-            serde_json::to_value(self).map_err(|_| CodecError::Invalid("cache hints"))?
-        else {
-            unreachable!()
-        };
-        o.extend(v);
-        Ok(())
-    }
-}
-pub(in crate::protocol::openai) const EXEC_FIELDS: &[&str] = &[
-    "metadata",
-    "service_tier",
-    "max_tool_calls",
-    "store",
-    "background",
-    "previous_response_id",
-    "conversation",
-    "prompt",
-    "moderation",
-    "context_management",
-];
-fn check_access_programs(o: &Map<String, Value>) -> Result<(), CodecError> {
-    if o.get("access_programs").is_some_and(|v| !v.is_null()) {
-        return Err(CodecError::Unsupported("Responses access_programs".into()));
-    }
-    Ok(())
-}
-impl ExecutionHints {
-    pub(in crate::protocol::openai) fn read(
-        o: &Map<String, Value>,
-        profile: Profile,
-        direction: DecodeDirection<'_>,
-    ) -> Result<Self, CodecError> {
-        if profile == Profile::Responses {
-            check_access_programs(o)?;
-        }
-        let mut fields: Map<_, _> = o
-            .iter()
-            .filter(|(k, _)| {
-                k.as_str() != "service_tier"
-                    && (CACHE_FIELDS.contains(&k.as_str())
-                        // Chat `store` persists completions; only false/null is admitted.
-                        || if profile == Profile::Chat {
-                            matches!(k.as_str(), "metadata" | "store")
-                        } else {
-                            EXEC_FIELDS.contains(&k.as_str())
-                        })
-            })
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        // Reports may echo null, but request cache-options containers are non-nullable.
-        if matches!(
-            direction,
-            DecodeDirection::Request | DecodeDirection::Client(_)
-        ) && fields
-            .get("prompt_cache_options")
-            .is_some_and(Value::is_null)
-        {
-            return Err(CodecError::Invalid("cache options"));
-        }
-        if let Some(options) = fields
-            .get_mut("prompt_cache_options")
-            .filter(|v| !v.is_null())
-        {
-            let options = options
-                .as_object_mut()
-                .ok_or(CodecError::Invalid("cache options"))?;
-            let allowed: &[&str] = if profile == Profile::Chat {
-                if direction.client()
-                    && ["comparison_response_id", "prewarm"]
-                        .iter()
-                        .any(|key| options.get(*key).is_some_and(|v| !v.is_null()))
-                {
-                    return Err(CodecError::Unsupported(
-                        "Responses-only cache options".into(),
-                    ));
-                }
-                &["mode", "ttl"]
-            } else {
-                &["mode", "ttl", "comparison_response_id", "prewarm"]
-            };
-            direction.fields(options, allowed)?;
-            options.retain(|key, _| allowed.contains(&key.as_str()));
-        }
-        let hints: Self = serde_json::from_value(Value::Object(fields))
-            .map_err(|_| CodecError::Invalid("execution hints"))?;
-        hints.validate()?;
-        validate_identity(&hints.identity)?;
-        Ok(hints)
-    }
-    pub(in crate::protocol::openai) fn write(
-        &self,
-        o: &mut Map<String, Value>,
-    ) -> Result<(), CodecError> {
-        self.validate()?;
-        validate_identity(&self.identity)?;
-        let Value::Object(v) =
-            serde_json::to_value(self).map_err(|_| CodecError::Invalid("execution hints"))?
-        else {
-            unreachable!()
-        };
-        o.extend(v);
-        Ok(())
-    }
-}
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StreamOptions {

@@ -2,7 +2,7 @@
 mod checks;
 pub mod events;
 mod message_groups;
-pub(crate) mod native_messages;
+pub(crate) mod native_response;
 pub mod projection;
 mod request;
 mod response;

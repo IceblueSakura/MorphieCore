@@ -3,7 +3,7 @@ use crate::messages_tool_fixture as fixture;
 use serde_json::{Value, json};
 
 #[tokio::test]
-async fn native_messages_keep_changed_tools_effort_and_final_history() {
+async fn native_response_keep_changed_tools_effort_and_final_history() {
     history_case(false).await;
 }
 
