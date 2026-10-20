@@ -75,6 +75,18 @@ cargo test --locked --offline --test semantic reasoning_replay::
 
 These checks use synthetic data only. Do not use real Providers or private configuration as offline test input.
 
+The larger `tests/semantic/*.rs` domain entries declare focused child modules in matching directories. Item history, controls, replay, accounting and concrete provider dialects keep their own helpers and assertions; protocol-independent Provider observations live in `provider_observations.rs`. The target's Rust module paths remain the filter vocabulary, not physical filenames or roadmap IDs.
+
+The gateway target retains its shared HTTP Router fixture; CLI identity and isolated binary startup checks live in `tests/gateway/bootstrap.rs`. Capture's direct credential-redaction, incomplete-source and retention checks live under `src/gateway/capture/tests.rs`, separate from body-free diagnostics checks. Keep cross-owner HTTP/cancellation assertions at their existing integration owner.
+
+For example:
+
+```sh
+cargo test --locked --offline --test semantic tool_calls::reported_tool_results::
+cargo test --locked --offline --test semantic provider_observations::
+cargo test --locked --offline --test gateway bootstrap::
+```
+
 ### SDK loopback gate
 
 Python and dependencies are pinned by `tests/sdk/.python-version` and `tests/sdk/uv.lock`, including the selected OpenAI and Anthropic releases. uv owns the ignored `tests/sdk/.venv/`; do not edit it by hand.

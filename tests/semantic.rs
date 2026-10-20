@@ -28,6 +28,8 @@ mod interactions;
 mod media;
 #[path = "semantic/messages.rs"]
 mod messages;
+#[path = "semantic/provider_observations.rs"]
+mod provider_observations;
 #[path = "semantic/providers.rs"]
 mod providers;
 #[path = "semantic/reasoning_replay.rs"]

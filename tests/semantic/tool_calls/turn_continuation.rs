@@ -1,0 +1,96 @@
+//! Explicit local relations never manufacture wire identity or execution permission.
+use crate::events_support::text;
+use morphiecore::semantic::task::generation::*;
+
+fn call(id: u64, name: &str) -> (ItemId, Item) {
+    (
+        ItemId::new(id),
+        Item::ToolCall(ToolCall {
+            replay: None,
+            call_id: text(name),
+            cache: None,
+            name: text("lookup"),
+            arguments: "{}".into(),
+            status: ItemLifecycle::Completed,
+            context: CallContext::default(),
+        }),
+    )
+}
+fn result(id: u64, call_id: &str, status: ItemLifecycle) -> (ItemId, Item) {
+    (
+        ItemId::new(id),
+        Item::ToolResult(ToolResult {
+            is_error: None,
+            execution: None,
+            call_id: Some(text(call_id)),
+            cache: None,
+            name: None,
+            output: "done".into(),
+            status: Some(status),
+            context: CallContext::default(),
+        }),
+    )
+}
+fn history(items: Vec<(ItemId, Item)>) -> GenerationRequest {
+    GenerationRequest::new(items, GenerationControls::default()).unwrap()
+}
+fn relation() -> ResponseRelation {
+    ResponseRelation::new(TurnId::new(7), ResponseId::new(10))
+}
+
+#[test]
+fn parallel_exchange_distinguishes_pending_partial_and_complete_results() {
+    let response =
+        GenerationResponse::new(vec![call(1, "a"), call(2, "b")], Outcome::Completed).unwrap();
+    let exchange = ResponseContinuation::new(relation(), &response);
+    let request = history(response.items().to_vec());
+    assert!(
+        matches!(exchange.inspect(&request).unwrap(), ResultReadiness::Awaiting { ref missing, ref in_progress } if missing.len() == 2 && in_progress.is_empty())
+    );
+    let mut items = request.items().to_vec();
+    items.push(result(3, "b", ItemLifecycle::InProgress));
+    let partial = history(items.clone());
+    assert!(matches!(
+        exchange.inspect(&partial).unwrap(),
+        ResultReadiness::Awaiting { ref missing, ref in_progress }
+            if missing[0].call_id == "a" && in_progress[0].call_id == "b"
+    ));
+    assert!(
+        exchange
+            .advance(&partial, ResponseId::new(11), &response)
+            .is_err()
+    );
+    let Item::ToolResult(r) = &mut items[2].1 else {
+        panic!("result")
+    };
+    r.status = Some(ItemLifecycle::Incomplete);
+    let request = history(items.clone());
+    assert!(
+        matches!(exchange.inspect(&request).unwrap(), ResultReadiness::Awaiting { ref missing, ref in_progress } if missing[0].call_id == "a" && in_progress.is_empty())
+    );
+    items.push(result(4, "a", ItemLifecycle::Completed));
+    let request = history(items);
+    assert_eq!(
+        exchange.inspect(&request).unwrap(),
+        ResultReadiness::ResultsComplete
+    );
+    let next_response = GenerationResponse::new(vec![call(5, "c")], Outcome::Completed).unwrap();
+    let next = exchange
+        .advance(&request, ResponseId::new(11), &next_response)
+        .unwrap();
+    assert_eq!(next.relation().turn(), TurnId::new(7));
+    assert_eq!(next.relation().previous(), Some(ResponseId::new(10)));
+    assert_eq!(response.outcome(), Outcome::Completed);
+    assert!(
+        matches!(response.continuation(), Continuation::ToolResults(ref calls) if calls.len() == 2)
+    );
+    let mut items = request.items().to_vec();
+    items.extend_from_slice(next_response.items());
+    assert!(
+        matches!(next.inspect(&history(items)).unwrap(), ResultReadiness::Awaiting { ref missing, .. } if missing[0].call_id == "c")
+    );
+    assert!(
+        next.advance(&request, ResponseId::new(10), &next_response)
+            .is_err()
+    );
+}
