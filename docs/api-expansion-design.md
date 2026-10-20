@@ -201,11 +201,11 @@ Model a count request from count-relevant conversation content: instructions, or
 
 OpenAI documents `POST /v1/responses/input_tokens`; Anthropic documents `POST /v1/messages/count_tokens`. Reuse one task boundary while preserving distinct source semantics and result envelopes. Resolve any admitted gateway-owned history reference before target preparation; never forward a gateway ID as a Provider-owned reference.
 
-Counting must identify the model/tokenizer and effective input projection. A Messages-shaped request does not automatically imply an Anthropic tokenizer if the public model denotes another target. Cross-protocol counting needs an explicitly selected, evidence-backed profile consistent with generation preparation.
+The [upstream-first counting policy](architecture.md#token-counting-policy) is selected: prefer upstream counts, allow explicit coarse estimates for inaccurate upstream reports, and do not build a tokenizer-based exact-counting path. Identify the model/target, effective input projection and count source; a Messages-shaped request does not imply an Anthropic model or counting method.
 
-One candidate's count is not an exact count for every failover candidate or a reservation of the next generation route. Upstream token counts may themselves be estimates; preserve their documented meaning rather than promise billing equality. Missing native counting support must not silently become a character-count estimate or an inference call.
+Select the concrete profile's upstream reliability criteria, coarse estimation rule and supported input coverage. A character-based rule must account for the projected instructions, history and tool definitions/results, not just the latest user text. For heuristic fallback, media require an explicit estimate policy or rejection, not a zero-cost assumption. Select client-visible source/approximation reporting compatible with the result envelope; do not invent standard API fields or promise billing equality.
 
-Exit evidence: independent request/result oracles, count-relevant controls and media preserved, unsupported counting rejected, no generation side effects, and explicit scope for the returned count.
+Exit evidence: independent request/result oracles cover upstream preference and the selected inaccurate-report fallback, count-relevant controls and media, explicit scope/provenance, no generation side effects and no tokenizer execution. Reject input outside the selected counting profile rather than silently omit it. One candidate's result still neither covers every failover candidate nor reserves the next generation route.
 
 ### Embeddings
 
@@ -430,7 +430,7 @@ These recommendations have not been adopted merely by requesting this document.
 |---|---|---|
 | Task grouping and shared content | Recommend independent TokenCount/Compaction, AudioToText variants, and Image Generate/Edit variants; share content without inheriting Generation execution | New task type and public Rust contract changes |
 | Counting companion surface | Recommend Responses input-token counting; image generations/edits already belong to stage 4 | Adding the Responses counting surface to delivery scope |
-| Counting profile and public scope | Select the concrete public-model/target profile, native capability evidence and client-visible count scope. Consistency with effective generation projection, no silent estimation and no inference side effects are [already selected](architecture.md#settled-decisions), not open alternatives | Cross-protocol counting admission and client promises |
+| Counting profile and public scope | Select the public-model/target profile, upstream reliability criteria, coarse estimation rule/input coverage and client-visible scope/provenance. [Upstream preference, explicit estimates for inaccurate reports, no gateway tokenizer counting and no inference side effects](architecture.md#token-counting-policy) are selected, not open alternatives | Cross-protocol counting admission and client promises |
 | File authority | Recommend upstream-native content plus gateway public IDs/durable mappings first. Gateway-owned content with target replicas improves portability but adds storage and replication ownership | Files/Uploads and resource-based failover |
 | Retention and deletion | Select expiry, deletion with active jobs/history, cascade behavior and restart guarantees. Durable jobs and resource mappings cannot inherit process-local Responses TTL accidentally | Resource/job lifecycle implementation |
 | Batch execution | Recommend native Provider batches. A gateway scheduler is a separate product with different billing, timing and cancellation semantics | Batch implementation |
