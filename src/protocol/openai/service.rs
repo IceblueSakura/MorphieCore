@@ -3,7 +3,7 @@
 //! https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/chat/completion_create_params.py
 use super::{
     CodecError, Profile,
-    common::{put_presence, read_presence},
+    shape::{put_presence, read_presence},
 };
 use crate::semantic::{
     context::{ServiceClass, ServicePolicy},

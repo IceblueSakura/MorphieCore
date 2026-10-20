@@ -1,6 +1,7 @@
 //! Standard Chat nests URL citations; the shared text owner uses a flat typed value.
 //! https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/chat/chat_completion_message.py
-use crate::protocol::openai::{CodecError, common::*};
+use crate::protocol::openai::content::intake::Items;
+use crate::protocol::openai::{CodecError, shape::*};
 use crate::semantic::{task::generation::*, value::Text};
 use serde_json::{Value, json};
 

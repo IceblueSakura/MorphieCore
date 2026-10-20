@@ -1,7 +1,7 @@
 //! Complete single-candidate Chat envelopes; task mapping stays in `chat`.
 use crate::protocol::openai::{
     CodecError, DecodedRequest, DecodedResponse, RequestRepresentation, ResponseRepresentation,
-    chat, common::*,
+    chat, shape::*, validate_identity,
 };
 use crate::semantic::{
     context::{CacheHints, ClientIdentityHints, ExecutionHints, ServicePolicy, StreamOptions},
@@ -190,12 +190,12 @@ pub fn encode_request(
         ));
     }
     if target.adaptation.rules.bailian_requests {
-        crate::protocol::openai::bailian::check_semantic(
+        crate::protocol::openai::dialect::bailian::check_semantic(
             target.semantic(),
             super::super::Profile::Chat,
             &context.model,
         )?;
-        crate::protocol::openai::bailian::check_native_effort(
+        crate::protocol::openai::dialect::bailian::check_native_effort(
             target.semantic().settings(),
             &context.model,
             super::super::Profile::Chat,

@@ -4,7 +4,12 @@ use super::{
     owners,
 };
 use crate::protocol::openai::{
-    CodecError, DecodedRequest, Profile, RequestRepresentation, common::*, function_tools,
+    CodecError, DecodedRequest, Profile, RequestRepresentation, function_tools, shape::*,
+};
+use crate::protocol::openai::{
+    content::intake::Items,
+    lowering::carriers::{check_item_carriers, check_message_carriers},
+    settings::{controls, write_control_values},
 };
 use crate::semantic::task::generation::*;
 use crate::semantic::value::Presence;
@@ -274,7 +279,11 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         return Err(CodecError::Unsupported("tool result semantics".into()));
     }
     if target.adaptation.rules.bailian_requests {
-        crate::protocol::openai::bailian::check_semantic(&target.semantic, Profile::Chat, "")?;
+        crate::protocol::openai::dialect::bailian::check_semantic(
+            &target.semantic,
+            Profile::Chat,
+            "",
+        )?;
     }
     let mut messages = encode_items_with(
         target.semantic.items(),
@@ -294,8 +303,8 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     }
     let mut v = json!({"messages": messages});
     let o = v.as_object_mut().expect("object literal");
-    write_controls(
-        &target.semantic,
+    write_control_values(
+        target.semantic.controls(),
         o,
         if target.adaptation.rules.legacy_max_tokens {
             "max_tokens"
@@ -363,7 +372,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     }
     crate::protocol::openai::chat::audio::write_settings(target.semantic.settings(), o);
     if target.adaptation.rules.bailian_requests {
-        crate::protocol::openai::bailian::write_tools(
+        crate::protocol::openai::dialect::bailian::write_tools(
             target.semantic.settings(),
             o,
             Profile::Chat,
@@ -385,7 +394,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         settings.reasoning.read_history = Presence::Absent;
     }
     if target.adaptation.rules.thinking_controls {
-        crate::protocol::openai::bailian::write_reasoning(&settings, o, Profile::Chat)?;
+        crate::protocol::openai::dialect::bailian::write_reasoning(&settings, o, Profile::Chat)?;
     } else {
         crate::protocol::openai::reasoning::write_request(&settings, o, Profile::Chat)?;
     }

@@ -2,7 +2,7 @@
 //! base64 data URL, never a frame list. Chat's is shared by OpenRouter, DashScope, Zhipu,
 //! vLLM and ModelBest; Responses' by Open Responses and OpenRouter. Extras such as `fps`
 //! or `processing` are dialect-specific and ignored. Source: docs/refs/multimodal.md.
-use crate::protocol::openai::{CodecError, common::*};
+use crate::protocol::openai::{CodecError, shape::*};
 use crate::semantic::task::generation::*;
 use serde_json::{Map, Value, json};
 

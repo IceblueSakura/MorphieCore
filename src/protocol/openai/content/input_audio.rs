@@ -1,6 +1,6 @@
 //! Standard user input audio: inline WAV/MP3 only, never a transcript or a URL.
 //! https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create
-use crate::protocol::openai::{CodecError, common::*};
+use crate::protocol::openai::{CodecError, shape::*};
 use crate::semantic::{task::generation::*, value::Text};
 use serde_json::{Map, Value, json};
 

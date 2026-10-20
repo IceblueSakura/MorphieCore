@@ -2,7 +2,7 @@
 //! Shared readers receive an explicit direction; modeled values remain strict.
 use crate::protocol::openai::DecodeDirection;
 use crate::protocol::openai::dialect::adaptation::Adaptation;
-use crate::protocol::openai::{CodecError, Profile, common::bounded};
+use crate::protocol::openai::{CodecError, Profile, shape::bounded};
 use serde_json::{Map, Value};
 use std::{borrow::Cow, collections::BTreeMap};
 

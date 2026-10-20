@@ -123,7 +123,10 @@ impl ApiKeyBinding {
             && self.dialect == crate::protocol::openai::Dialect::Bailian
         {
             adapter.adaptation.effort_mapping =
-                crate::protocol::openai::bailian::effort_mapping(self.canonical_model, family);
+                crate::protocol::openai::dialect::bailian::effort_mapping(
+                    self.canonical_model,
+                    family,
+                );
         }
         if mappings.next().is_some() {
             return Err(TopologyError::InvalidModelBinding);

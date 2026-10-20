@@ -3,7 +3,7 @@ use crate::{
     adapter::Request,
     protocol::{
         CodecError, DecodedRequest, DecodedResponse, ResponseStorage,
-        openai::{Adapter, Profile, common::*},
+        openai::{Adapter, Profile, shape::*},
     },
     semantic::value::Presence,
 };

@@ -1,5 +1,5 @@
 //! Typed terminal details, shared by static and event codecs.
-use crate::protocol::openai::{CodecError, common::*, lowering::projection::LossRule};
+use crate::protocol::openai::{CodecError, lowering::projection::LossRule, shape::*};
 use crate::semantic::task::generation::*;
 use serde_json::{Map, Value, json};
 pub(super) fn decode_details(o: &Map<String, Value>) -> Result<TerminalDetails, CodecError> {

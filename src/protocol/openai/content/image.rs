@@ -1,5 +1,5 @@
 //! Standard input image values. File IDs need issuer/resource ownership before admission.
-use crate::protocol::openai::{CodecError, Profile, common::*};
+use crate::protocol::openai::{CodecError, Profile, shape::*};
 use crate::semantic::{task::generation::*, value::Text};
 use serde_json::{Map, Value, json};
 

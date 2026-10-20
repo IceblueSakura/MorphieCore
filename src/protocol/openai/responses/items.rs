@@ -1,5 +1,6 @@
 //! Responses item mapping shared by input history, static output and event codecs.
-use crate::protocol::openai::{CodecError, Profile, common::*};
+use crate::protocol::openai::{CodecError, Profile, shape::*};
+use crate::protocol::openai::{content::call::tool_call, content::intake::Items};
 use crate::{
     protocol::fidelity::FidelityRecords,
     semantic::{task::generation::*, value::Text},

@@ -2,7 +2,7 @@
 use super::{
     Block, InputMessage, MessageContent, Profile, Role, Selection, TextContent as WireText,
     items::{Intake, bind, item_blocks, text},
-    settings::{display, output_settings, replay_mismatch},
+    settings::{display, effort_level, output_settings, replay_mismatch},
 };
 use crate::{
     protocol::{CodecError, DecodedRequest, fidelity::FidelityRecords, native::ReplayTarget},
@@ -33,6 +33,83 @@ impl std::fmt::Debug for NativeProjection {
 }
 
 impl Profile {
+    pub fn encode_generation_request(
+        self,
+        request: &GenerationRequest,
+        fidelity: &FidelityRecords,
+        target: &ReplayTarget,
+    ) -> Result<NativeProjection, CodecError> {
+        self.encode_request_envelope(
+            request,
+            fidelity,
+            target,
+            &Presence::Absent,
+            &Default::default(),
+        )
+    }
+    pub(super) fn encode_request_envelope(
+        self,
+        request: &GenerationRequest,
+        fidelity: &FidelityRecords,
+        target: &ReplayTarget,
+        policy: &Presence<crate::semantic::context::ServicePolicy>,
+        limits: &crate::protocol::model_limits::ModelLimits,
+    ) -> Result<NativeProjection, CodecError> {
+        let (request, fidelity, transferred) = crate::protocol::native::native_reasoning_history(
+            request,
+            fidelity,
+            target,
+            &[
+                ReplayFormat::AnthropicMessagesThinking,
+                ReplayFormat::AnthropicMessagesRedactedThinking,
+            ],
+        )?;
+        let mut normalized = vec![];
+        let mut omitted = vec![];
+        let mut rules = std::collections::BTreeSet::new();
+        if transferred {
+            rules.insert(RequestRule::TransferVisibleHistory);
+        }
+        let phase = crate::protocol::phase::omit_request(&request)?;
+        if phase.is_some() {
+            rules.insert(RequestRule::OmitMessagePhase);
+        }
+        let mut wire = project(
+            phase.as_ref().unwrap_or(&request),
+            &fidelity,
+            target,
+            &mut normalized,
+            &mut omitted,
+            &mut rules,
+        )?;
+        wire.service_policy = policy.clone();
+        limits.check_values(
+            Some(wire.max_tokens),
+            wire.output_config
+                .value()
+                .and_then(|config| config.effort.value())
+                .copied()
+                .into_iter()
+                .chain(wire.messages.iter().filter_map(|message| message.effort))
+                .map(effort_level),
+        )?;
+        let value = self.encode_request(&wire)?;
+        Ok(NativeProjection {
+            value,
+            normalized_arguments: normalized,
+            omitted_execution: omitted,
+            rules: rules.into_iter().collect(),
+            control_losses: phase
+                .is_some()
+                .then(|| {
+                    crate::lowering::generation::RequestControlLoss::Projection(
+                        crate::protocol::phase::omission(RequestRule::OmitMessagePhase.name()),
+                    )
+                })
+                .into_iter()
+                .collect(),
+        })
+    }
     pub fn decode_generation_request(
         self,
         bytes: &[u8],

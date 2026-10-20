@@ -1,5 +1,6 @@
 //! Typed text metadata; no unknown annotation/probability object is retained.
-use crate::protocol::openai::{CodecError, common::*};
+use crate::protocol::openai::content::intake::Items;
+use crate::protocol::openai::{CodecError, shape::*};
 use crate::semantic::{
     task::generation::*,
     value::{Presence, Text},

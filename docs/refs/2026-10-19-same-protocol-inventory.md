@@ -34,8 +34,8 @@ Sources: SDK `chat/completion_create_params.py`, `chat/chat_completion.py`, `cha
 |---|---|
 | `model`, `messages` | E trusted model selection and ordered history; `openai/chat/envelope.rs`, `openai/chat/mod.rs` |
 | `temperature`, `top_p`, `frequency_penalty`, `presence_penalty`, `seed`, `stop` | E admitted values; null normalizes absent and scalar stop to a list; `openai/chat/mod.rs`, `generation_controls.rs` |
-| `max_completion_tokens`, `max_tokens` | E one typed total cap; simultaneous spellings R. Current Bailian bindings emit total `max_completion_tokens`; native legacy reply-only intake R unless thinking is explicitly off, with GLM5.3's documented legacy-total exception. No independent answer/thought conversion; `openai/bailian.rs`, `openai/chat/envelope.rs`, `openai/chat/mod.rs` |
-| Bailian `enable_thinking`, Chat `thinking_budget`, `top_k` | E selected existing-IR subset with strict types and model guards, no inferred defaults. Conflicts, unsupported/ignored carriers and allocations outside the IR relation R. Positive top-k codec carriage does not expand binding admission; `openai/bailian.rs` |
+| `max_completion_tokens`, `max_tokens` | E one typed total cap; simultaneous spellings R. Current Bailian bindings emit total `max_completion_tokens`; native legacy reply-only intake R unless thinking is explicitly off, with GLM5.3's documented legacy-total exception. No independent answer/thought conversion; `openai/dialect/bailian.rs`, `openai/chat/envelope.rs`, `openai/chat/mod.rs` |
+| Bailian `enable_thinking`, Chat `thinking_budget`, `top_k` | E selected existing-IR subset with strict types and model guards, no inferred defaults. Conflicts, unsupported/ignored carriers and allocations outside the IR relation R. Positive top-k codec carriage does not expand binding admission; `openai/dialect/bailian.rs` |
 | `logprobs`, `top_logprobs` | E boolean and 0–20 count; a count requires `logprobs:true`; `openai/chat/mod.rs` |
 | `reasoning_effort`, `verbosity` | E admitted levels/presence; effective target support separate; `openai/reasoning.rs`, `openai/chat/mod.rs` |
 | `response_format` | E `text`, `json_object`, `json_schema.{name,description,schema,strict}` subset; SDK-optional missing schema R; `openai/chat/mod.rs`, `openai/settings.rs` |
@@ -59,13 +59,13 @@ Sources: SDK `chat/completion_create_params.py`, `chat/chat_completion.py`, `cha
 |---|---|
 | System/developer/user/assistant `role`, `content` | E admitted text and ordered text arrays; one-part arrays may normalize to strings; non-null participant `name` R; legacy function role R; `openai/chat/mod.rs`, `openai/chat/owners.rs` |
 | Function `name,description,parameters,strict`; custom `name,description,format.{type,grammar.{syntax,definition}}`; allowed-tools `mode,tools` | E admitted typed definitions/references; no schema repair; `openai/function_tools.rs` |
-| Calls `id,type,function.{name,arguments}`, custom `name,input`; results `tool_call_id,content` | E exact raw arguments/input, links and ordered string/text-array results, including empty result arrays. A preceding call determines function/custom result kind; `openai/chat/mod.rs`, `openai/common.rs` |
+| Calls `id,type,function.{name,arguments}`, custom `name,input`; results `tool_call_id,content` | E exact raw arguments/input, links and ordered string/text-array results, including empty result arrays. A preceding call determines function/custom result kind; `openai/chat/items.rs`, `openai/content/call.rs` |
 | User `image_url.{url,detail}`, `input_audio.{data,format}`, `file.{file_data,file_id,filename}` | E supported inline/URL subsets; credential-owned file IDs R; Bailian file admission remains narrower; `openai/content/{image,input_audio,file}.rs` |
 | Content-part `prompt_cache_breakpoint.{mode}` | **R** until a Chat target carrier is selected. Previously ignored during permissive client intake; now rejected before filtering, on text and media arrays. Responses records and Chat lowering rejection do not constitute a native Chat carrier; `openai/chat/mod.rs`, `openai/lowering/mod.rs` |
 | Assistant `refusal`, text/refusal array parts | E representable combinations; conflicting text/refusal/calls R; `openai/chat/mod.rs` |
 | Assistant `audio.{id,data,expires_at,transcript}` | E existing static/replay carrier with origin/expiry checks; request uses ID, not regenerated audio; `openai/chat/audio.rs`, `fidelity.rs` |
 | `annotations[].url_citation.{start_index,end_index,title,url}` | E typed static attribution; annotated request history R in lowering. No citation-loop completeness claim; `openai/chat/annotations.rs`, `openai/lowering/mod.rs` |
-| SDK `parsed`, `parsed_arguments` | Validate equality with authoritative raw JSON, then discard derived view; `openai/common.rs` |
+| SDK `parsed`, `parsed_arguments` | Validate equality with authoritative raw JSON, then discard derived view; `openai/shape.rs` |
 | DashScope `reasoning_content` | Registered E readable extension, not an official Chat field. Nonempty leading text retained; null/empty normalize away; late SSE reasoning R; `openai/chat/reasoning.rs`, `openai/events/chat.rs` |
 | DashScope `preserve_thinking` | E strict boolean through independent `ReasoningRequest.read_history`; absent stays absent. The public gateway source registers it explicitly; the selected native Bailian target carries it. It controls historical reasoning consumption, not current-turn context. Other upstream dialects do not inherit this carrier; `openai/chat/mod.rs`, `openai/lowering/mod.rs` |
 | `reasoning`, `reasoning_details` | **Not registered on Bailian**: client/upstream I, closed request R. OpenRouter's structured carrier is not automatically a DashScope carrier. Determine the selected model's real replay contract before widening; `openai/adapter.rs`, `openai/chat/reasoning.rs` |
@@ -133,7 +133,7 @@ Sources: SDK `responses/response_create_params.py`, `response.py`, `response_inp
 |---|---|
 | Easy/input/output `message`, `input_text`, `output_text`, `refusal` | E role/order/ID/lifecycle and applicable content; assistant `phase:commentary/final_answer` E; defaults normalize selectively; `openai/responses/mod.rs` |
 | `input_image,input_file` | E admitted URL/inline/detail/filename, including `prompt_cache_breakpoint`; non-null credential-owned `file_id` R even beside a usable URL; `openai/content/{image,file}.rs` |
-| `function_call` | E `id,call_id,name,arguments,status,namespace,async,caller`; raw arguments retained and direct context normalizes; `openai/common.rs`, `openai/responses/mod.rs` |
+| `function_call` | E `id,call_id,name,arguments,status,namespace,async,caller`; raw arguments retained and direct context normalizes; `openai/content/call.rs`, `openai/responses/items.rs` |
 | `function_call_output,custom_tool_call_output` | E association/ID/status/name/namespace/caller, string or text/image/file output and bounded output-only `created_by`. Actor records bind the owner/resources and check snapshot/publication drift; request history has no actor field. Request history requires a call ID despite optional official field; `openai/responses/mod.rs`, `fidelity.rs` |
 | `custom_tool_call` | E ID/call ID/name/raw input/context, text/lark/regex grammar; same owner and `openai/function_tools.rs` |
 | `reasoning` | E ordered `summary_text,reasoning_text`, encrypted content, ID/status and origin-bound replay; `openai/reasoning.rs`, `fidelity.rs` |
@@ -144,7 +144,7 @@ Sources: SDK `responses/response_create_params.py`, `response.py`, `response_inp
 | Input `compaction_trigger,item_reference` | R whole variant; no hidden state/resource authority |
 | Tool definition `name,description,parameters,strict,output_schema,defer_loading,allowed_callers`; custom `format`; namespace leaves | E supported typed declarations; `openai/function_tools.rs` |
 | Output annotations `url_citation,file_citation,container_file_citation,file_path`; logprob `token,bytes,logprob,top_logprobs` | E existing static subset; citation revision/point-anchor gap remains deferred and `file_path` annotation-added SSE R; `openai/content/{text,citations}.rs` |
-| SDK `parsed,parsed_arguments` | Validate then discard derived view; `openai/common.rs` |
+| SDK `parsed,parsed_arguments` | Validate then discard derived view; `openai/shape.rs` |
 
 Gateway continuation expands **old typed input + old typed output + new input**, with current instructions/settings; it does not forward native previous-response authority. Input listing may synthesize IDs/status. Basic continuation/pagination tests in `openai/responses/managed.rs` and storage lifecycle tests in `src/gateway/generation/history.rs` do not prove full stored/stateless parity for encrypted reasoning, phase and complete call/result history.
 

@@ -1,7 +1,11 @@
 //! Complete Responses task requests: settings and validated full-history input.
 use super::items::{ItemSide, decode_items, encode_items};
 use crate::protocol::openai::{
-    CodecError, DecodedRequest, Profile, RequestRepresentation, common::*, settings,
+    CodecError, DecodedRequest, Profile, RequestRepresentation, settings, shape::*,
+};
+use crate::protocol::openai::{
+    content::intake::Items,
+    lowering::carriers::{check_item_carriers, check_message_carriers},
 };
 use crate::semantic::task::generation::*;
 use serde_json::{Value, json};
@@ -87,7 +91,11 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     )?;
     target.semantic.validate()?;
     if target.adaptation.rules.bailian_requests {
-        crate::protocol::openai::bailian::check_semantic(&target.semantic, Profile::Responses, "")?;
+        crate::protocol::openai::dialect::bailian::check_semantic(
+            &target.semantic,
+            Profile::Responses,
+            "",
+        )?;
     }
     check_item_carriers(target.semantic.items())?;
     crate::protocol::openai::content::citations::check_items(
@@ -116,13 +124,13 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         }
         let o = v.as_object_mut().expect("object");
         settings::write(&standard, o)?;
-        crate::protocol::openai::bailian::write_reasoning(
+        crate::protocol::openai::dialect::bailian::write_reasoning(
             target.semantic.settings(),
             o,
             Profile::Responses,
         )?;
         if target.adaptation.rules.bailian_requests {
-            crate::protocol::openai::bailian::write_tools(
+            crate::protocol::openai::dialect::bailian::write_tools(
                 target.semantic.settings(),
                 o,
                 Profile::Responses,

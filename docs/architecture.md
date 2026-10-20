@@ -96,11 +96,13 @@ Protocol implementation is organized by the wire responsibility being reviewed:
 |---|---|
 | OpenAI complete task requests, settings and history validation | `openai/{chat,responses}/request.rs`; the protocol `mod.rs` files expose the public task entry points |
 | OpenAI message/item mapping reused by input, static output and events | `openai/{chat,responses}/items.rs`; these are not whole-request codecs |
+| OpenAI shared shape admission and content construction | `openai/shape.rs` owns readers and field policy; `content/{intake,call}.rs` owns item construction and function-call mapping |
 | OpenAI event state, poisoning, reduction and profile dispatch | `openai/events/{decode,encode}/mod.rs`; private Chat and Responses grammar/rendering modules operate on that same state, without a second reducer |
-| OpenAI representability and candidate-local projection | `openai/lowering/{request,response}.rs`, with shared constraints in `checks.rs` and incremental checks in `events.rs` |
-| Native Messages wire DTOs versus semantic mappings | `anthropic/{request,response}.rs` versus `semantic{,_intake,_request}.rs`; native target binding is not client admission |
+| OpenAI representability and candidate-local projection | `openai/lowering/{request,response}.rs`, with shared constraints in `checks.rs`, final encoding guards in `carriers.rs` and incremental checks in `events.rs` |
+| Native Messages wire DTOs versus semantic mappings | `anthropic/messages/wire/` versus `anthropic/messages/{request,response,settings}.rs` and `anthropic/messages/items/`; native target binding is not client admission |
 | Messages client admission versus delivery | `anthropic/messages/client/{request,response}.rs`; `client/mod.rs` exposes the deliberate client API, `client/projection.rs` owns delivery projection and `client/sse.rs` owns outgoing stream state |
-| Messages shared accounting and terminal meaning | `anthropic/{accounting,terminal}.rs`; native mappings and client JSON/SSE use these owners, not helpers belonging to another front end |
+| Messages shared accounting and terminal meaning | `anthropic/messages/{accounting,terminal}.rs`; native mappings and client JSON/SSE use these owners, not helpers belonging to another front end |
+| Google request settings versus history content | `google/{generate_content,interactions}/request.rs` owns whole requests; each API's `items.rs` owns its history and media projection |
 | OpenAI wire prefix fingerprints | `openai/cache_affinity.rs`; the disposable routing index and affinity decisions remain in `gateway` |
 | Shared fidelity state, bounds and owner pruning | `fidelity.rs` owns the aggregate; private `fidelity/{replay,response_records}.rs` implementations group replay binding and output-only report associations |
 | Attachment manifests, wire carriers and reconstruction | `attachments.rs` owns the manifest and output view; `attachments/carriers.rs` owns wire recognition/construction and `restore.rs` owns trial-based reconstruction and fallback |
@@ -241,6 +243,8 @@ Organize protocol code as vendor → wire API → responsibility: `openai/{chat,
 
 A shared rule belongs to the nearest common owner: one API, then one vendor, then `protocol`. Dialect code differs by API, so `openai/chat` and `openai/responses` may each name the same Provider; only a rule that must change together is shared. Model or endpoint capability, adaptation policy, Provider identity, origin and credentials stay outside the dialect.
 
+OpenAI's shared dialect selection lives in `openai/dialect/trusted.rs`; Chat/Responses Bailian request rules live in `openai/dialect/bailian.rs`, while the Responses-only SIWC check lives in `openai/responses/dialect/siwc.rs`. Adapters invoke those checks at their required validation stages; moving the implementation does not move its authority or execution order.
+
 Where a direction is missing, the tree says so instead of imitating a fuller sibling: a whole re-encode is not a static response, and a truncated dependency is not a mirror of the source that defined it. Shared records still live at protocol level; the [report views](../src/protocol/reports.rs) are one example, because a protocol that cannot express a lifecycle change must not import that rule from a sibling API.
 
 ##### Shared Aliyun billing dialect
@@ -255,7 +259,7 @@ Model catalogs, trusted origins, paths, credentials, billing and replay issuers 
 
 ##### Subscription Responses
 
-Grok and OpenAI SIWC use public Responses endpoints, not Chat or a CLI subscription proxy. Both keep upstream history stateless with `store:false` and use body `prompt_cache_key`, not product session headers. SIWC always requests upstream SSE even for a JSON client, groups function/custom definitions and call history in namespaces, and rejects its unsupported controls under the [final typed check](../src/protocol/openai/adapter/siwc.rs). It is distinct from the Codex backend dialect.
+Grok and OpenAI SIWC use public Responses endpoints, not Chat or a CLI subscription proxy. Both keep upstream history stateless with `store:false` and use body `prompt_cache_key`, not product session headers. SIWC always requests upstream SSE even for a JSON client, groups function/custom definitions and call history in namespaces, and rejects its unsupported controls under the [final typed check](../src/protocol/openai/responses/dialect/siwc.rs). It is distinct from the Codex backend dialect.
 
 Only SIWC's selected compatibility profile permits absent SSE Content-Type and an empty terminal output reconstructed from already closed event owners. Grok does not inherit those exceptions or `[DONE]` tolerance. Missing owners, conflicting terminal snapshots, incomplete framing and data after termination remain errors. These compatibility observations are not universal guarantees of the public API.
 

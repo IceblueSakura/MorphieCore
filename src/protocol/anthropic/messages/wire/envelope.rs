@@ -266,28 +266,6 @@ impl Message {
         }
         Ok(())
     }
-    /// Derived envelope facts only; no timestamp, instruction echo or replay proof is invented.
-    pub fn reported_metadata(&self) -> Result<crate::protocol::ResponseMetadata, CodecError> {
-        self.validate(false)?;
-        let metadata = crate::protocol::ResponseMetadata {
-            storage: None,
-            id: Some(self.id.clone()),
-            model: self.model.clone(),
-            created: None,
-            context: crate::semantic::context::ResponseContext {
-                reports: crate::semantic::context::ResponseReports::single(
-                    crate::semantic::context::ResponseReport {
-                        service_class: self.usage.service_class.clone(),
-                        ..Default::default()
-                    },
-                ),
-                ..Default::default()
-            },
-            instruction_fidelity: Default::default(),
-        };
-        metadata.validate()?;
-        Ok(metadata)
-    }
     pub(in crate::protocol::anthropic::messages) fn wire(&self) -> Value {
         let mut v = json!({"id":self.id,"type":"message","role":"assistant","model":self.model,
             "content":self.content.iter().map(Block::wire).collect::<Vec<_>>(),"usage":self.usage.wire()});

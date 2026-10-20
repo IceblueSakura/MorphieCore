@@ -1,5 +1,6 @@
 //! Scoped Responses-format reasoning on a Chat carrier, not opaque JSON passthrough.
-use crate::protocol::openai::{CodecError, common::*};
+use crate::protocol::openai::content::intake::Items;
+use crate::protocol::openai::{CodecError, shape::*};
 use crate::{
     protocol::{fidelity::FidelityRecords, openai::dialect::adaptation::Adaptation},
     semantic::{task::generation::*, value::Text},

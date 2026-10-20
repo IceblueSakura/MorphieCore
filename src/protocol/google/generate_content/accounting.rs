@@ -1,10 +1,16 @@
 //! `usageMetadata` → IR accounting. Zero-valued proto3 integers are absent, never invented.
-use super::sse::{invalid, object};
 use crate::{
     protocol::{CodecError, stream::SseError},
     semantic::task::generation::*,
 };
 use serde_json::{Map, Value};
+
+fn invalid(what: &'static str) -> SseError {
+    CodecError::Invalid(what).into()
+}
+fn object<'a>(value: &'a Value, what: &'static str) -> Result<&'a Map<String, Value>, SseError> {
+    value.as_object().ok_or_else(|| invalid(what))
+}
 
 pub(super) fn counter(o: &Map<String, Value>, key: &'static str) -> Result<u64, SseError> {
     match o.get(key) {

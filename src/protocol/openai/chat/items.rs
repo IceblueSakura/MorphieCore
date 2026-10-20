@@ -1,5 +1,9 @@
 //! Chat message/item mapping shared by request history, static output and event codecs.
-use crate::protocol::openai::{CodecError, Profile, common::*};
+use crate::protocol::openai::{CodecError, Profile, shape::*};
+use crate::protocol::openai::{
+    content::call::{reject_chat_orchestration, tool_call},
+    content::intake::Items,
+};
 use crate::semantic::task::generation::*;
 use serde_json::{Map, Value, json};
 pub(in crate::protocol::openai) fn reject_moderation(
@@ -245,7 +249,7 @@ fn decode_message(
                 return Err(CodecError::Invalid("message tool fields"));
             }
             if replay {
-                crate::protocol::openai::common::admit_parsed(
+                crate::protocol::openai::shape::admit_parsed(
                     "parsed",
                     m.get("parsed"),
                     match m.get("content") {

@@ -84,7 +84,7 @@ pub(super) fn represent_reasoning(
     {
         return Err(RepresentationError::Reasoning);
     }
-    if crate::protocol::openai::bailian::extended(
+    if crate::protocol::openai::dialect::bailian::extended(
         settings,
         profile,
         request && adaptation.rules.thinking_controls,

@@ -1,10 +1,11 @@
 //! Generation event codecs. Protocol indexes are mappings, never semantic identities.
 //! Payloads exclude SSE framing. Rejected streams are poisoned and cannot resume.
+use crate::protocol::openai::{content::call::reject_chat_orchestration, content::intake::Items};
 mod decode;
 mod encode;
 mod responses_wire;
 use crate::protocol::openai::TargetCaps;
-use crate::protocol::openai::{CodecError, Profile, ResponseMetadata, common::*};
+use crate::protocol::openai::{CodecError, Profile, ResponseMetadata, shape::*};
 use crate::{
     protocol::fidelity::FidelityRecords,
     semantic::{task::generation::*, value::ReplayOrigin},

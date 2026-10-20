@@ -1,7 +1,11 @@
 //! Whole Responses snapshot decode and encode, including non-success terminals.
 use crate::protocol::openai::{
-    CodecError, DecodedResponse, Profile, ResponseRepresentation, accounting, common::*, context,
-    responses, terminal::*,
+    CodecError, DecodedResponse, Profile, ResponseRepresentation, accounting, context, responses,
+    shape::*, terminal::*,
+};
+use crate::protocol::openai::{
+    content::intake::Items,
+    lowering::carriers::{check_item_carriers, check_message_carriers, check_response_carriers},
 };
 use crate::semantic::task::generation::*;
 use serde_json::{Value, json};

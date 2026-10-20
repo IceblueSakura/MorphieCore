@@ -1,4 +1,5 @@
 //! OpenAI representability: directional projection over shared immutable-IR constraints.
+pub(in crate::protocol::openai) mod carriers;
 mod checks;
 pub mod events;
 mod message_groups;

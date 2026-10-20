@@ -1,6 +1,7 @@
 //! Native annotation syntax stays outside the semantic model.
 //! https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/responses/response_output_text.py
-use crate::protocol::openai::{CodecError, Profile, common::*};
+use crate::protocol::openai::content::intake::Items;
+use crate::protocol::openai::{CodecError, Profile, shape::*};
 use crate::semantic::{task::generation::*, value::Text};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

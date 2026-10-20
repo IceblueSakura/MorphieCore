@@ -1,13 +1,14 @@
 //! Documented Bailian request carriers and fail-closed model constraints.
 //! OpenAI-compatible Chat/Responses, not the native DashScope RPC protocol.
-use super::{CodecError, Profile, common::object};
+use crate::protocol::openai::{CodecError, Profile, function_tools, reasoning, shape::object};
 use crate::{
     adapter::Request,
     semantic::{task::generation::*, value::Presence},
 };
 use serde_json::{Map, Value, json};
 
-pub(super) const CONTROL_FIELDS: &[&str] = &["enable_thinking", "thinking_budget", "top_k"];
+pub(in crate::protocol::openai) const CONTROL_FIELDS: &[&str] =
+    &["enable_thinking", "thinking_budget", "top_k"];
 const UNOWNED: &[&str] = &[
     "extra_body",
     "parameters",
@@ -25,7 +26,11 @@ const UNOWNED: &[&str] = &[
 ];
 
 /// Registered controls cannot disappear under the unknown-field policy.
-pub(super) fn source(value: &Value, profile: Profile, native: bool) -> Result<(), CodecError> {
+pub(in crate::protocol::openai) fn source(
+    value: &Value,
+    profile: Profile,
+    native: bool,
+) -> Result<(), CodecError> {
     let o = object(value)?;
     if native {
         let model = o.get("model").and_then(Value::as_str).unwrap_or("");
@@ -119,7 +124,7 @@ pub(super) fn source(value: &Value, profile: Profile, native: bool) -> Result<()
     Ok(())
 }
 
-pub(super) fn read_controls(
+pub(in crate::protocol::openai) fn read_controls(
     o: &Map<String, Value>,
     settings: &mut GenerationSettings,
     profile: Profile,
@@ -182,7 +187,7 @@ pub(super) fn read_controls(
 }
 
 /// Remove only fields with their own exact native carrier before the standard writer.
-pub(super) fn standard_reasoning(
+pub(in crate::protocol::openai) fn standard_reasoning(
     settings: &GenerationSettings,
     profile: Profile,
 ) -> GenerationSettings {
@@ -196,14 +201,18 @@ pub(super) fn standard_reasoning(
     }
     standard
 }
-pub(super) fn extended(settings: &GenerationSettings, profile: Profile, native: bool) -> bool {
+pub(in crate::protocol::openai) fn extended(
+    settings: &GenerationSettings,
+    profile: Profile,
+    native: bool,
+) -> bool {
     if native {
-        super::reasoning::requires_extended_controls(&standard_reasoning(settings, profile))
+        reasoning::requires_extended_controls(&standard_reasoning(settings, profile))
     } else {
-        super::reasoning::requires_extended_controls(settings)
+        reasoning::requires_extended_controls(settings)
     }
 }
-pub(super) fn write_reasoning(
+pub(in crate::protocol::openai) fn write_reasoning(
     settings: &GenerationSettings,
     o: &mut Map<String, Value>,
     profile: Profile,
@@ -223,7 +232,7 @@ pub(super) fn write_reasoning(
         o.insert("thinking_budget".into(), json!(budget));
     }
     let standard = standard_reasoning(settings, profile);
-    super::reasoning::write_request(&standard, o, profile)?;
+    reasoning::write_request(&standard, o, profile)?;
     if profile == Profile::Responses && o.get("reasoning") == Some(&json!({})) {
         o.shift_remove("reasoning");
     }
@@ -302,7 +311,7 @@ pub(crate) fn effort_mapping(
     }
 }
 
-pub(super) fn check_native_effort(
+pub(in crate::protocol::openai) fn check_native_effort(
     settings: &GenerationSettings,
     model: &str,
     profile: Profile,
@@ -317,11 +326,15 @@ pub(super) fn check_native_effort(
     }
     Ok(())
 }
-pub(super) fn check(request: &Request, profile: Profile, model: &str) -> Result<(), CodecError> {
+pub(in crate::protocol::openai) fn check(
+    request: &Request,
+    profile: Profile,
+    model: &str,
+) -> Result<(), CodecError> {
     check_semantic(&request.task.semantic, profile, model)?;
     check_context(&request.context, &request.service_policy, profile)
 }
-pub(super) fn check_context(
+pub(in crate::protocol::openai) fn check_context(
     ctx: &crate::semantic::context::ExecutionHints,
     service: &Presence<crate::semantic::context::ServicePolicy>,
     profile: Profile,
@@ -341,7 +354,7 @@ pub(super) fn check_context(
     }
     Ok(())
 }
-pub(super) fn check_semantic(
+pub(in crate::protocol::openai) fn check_semantic(
     semantic: &GenerationRequest,
     profile: Profile,
     model: &str,
@@ -546,7 +559,7 @@ pub(super) fn check_semantic(
 
 /// Responses has no strict-schema guarantee. Never serialize a strict request
 /// as a non-strict definition; the checker above requires explicit non-strict intent.
-pub(super) fn write_tools(
+pub(in crate::protocol::openai) fn write_tools(
     s: &GenerationSettings,
     o: &mut Map<String, Value>,
     profile: Profile,
@@ -592,7 +605,7 @@ pub(super) fn write_tools(
             ToolChoice::Specific(name) if profile == Profile::Responses => {
                 json!({"type":"allowed_tools","mode":"required","tools":[{"type":"function","name":name.as_str()}]})
             }
-            _ => super::function_tools::write_choice(choice, profile)?,
+            _ => function_tools::write_choice(choice, profile)?,
         };
         o.insert("tool_choice".into(), value);
     }

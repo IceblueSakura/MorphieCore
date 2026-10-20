@@ -1,6 +1,6 @@
 //! Chat and Responses token accounting over one typed `Usage`.
 //! The two profiles name the same counters differently; aliases are named rules.
-use crate::protocol::openai::{CodecError, Profile, common::*};
+use crate::protocol::openai::{CodecError, Profile, shape::*};
 use crate::semantic::task::generation::*;
 use serde_json::{Map, Value, json};
 

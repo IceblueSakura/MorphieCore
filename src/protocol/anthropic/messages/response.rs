@@ -1,9 +1,7 @@
 //! Native Messages response mapping: wire → IR decode and IR → wire encode.
 use super::{
-    NativeProjection, Profile, RequestRule, Role,
+    Profile, Role,
     items::{Intake, bind, item_blocks, unsupported},
-    request::project,
-    settings::effort_level,
 };
 use crate::{
     protocol::{
@@ -53,83 +51,6 @@ impl Profile {
             semantic,
             fidelity,
             metadata: wire.reported_metadata()?,
-        })
-    }
-    pub fn encode_generation_request(
-        self,
-        request: &GenerationRequest,
-        fidelity: &FidelityRecords,
-        target: &ReplayTarget,
-    ) -> Result<NativeProjection, CodecError> {
-        self.encode_request_envelope(
-            request,
-            fidelity,
-            target,
-            &Presence::Absent,
-            &Default::default(),
-        )
-    }
-    pub(super) fn encode_request_envelope(
-        self,
-        request: &GenerationRequest,
-        fidelity: &FidelityRecords,
-        target: &ReplayTarget,
-        policy: &Presence<crate::semantic::context::ServicePolicy>,
-        limits: &crate::protocol::model_limits::ModelLimits,
-    ) -> Result<NativeProjection, CodecError> {
-        let (request, fidelity, transferred) = crate::protocol::native::native_reasoning_history(
-            request,
-            fidelity,
-            target,
-            &[
-                ReplayFormat::AnthropicMessagesThinking,
-                ReplayFormat::AnthropicMessagesRedactedThinking,
-            ],
-        )?;
-        let mut normalized = vec![];
-        let mut omitted = vec![];
-        let mut rules = std::collections::BTreeSet::new();
-        if transferred {
-            rules.insert(RequestRule::TransferVisibleHistory);
-        }
-        let phase = crate::protocol::phase::omit_request(&request)?;
-        if phase.is_some() {
-            rules.insert(RequestRule::OmitMessagePhase);
-        }
-        let mut wire = project(
-            phase.as_ref().unwrap_or(&request),
-            &fidelity,
-            target,
-            &mut normalized,
-            &mut omitted,
-            &mut rules,
-        )?;
-        wire.service_policy = policy.clone();
-        limits.check_values(
-            Some(wire.max_tokens),
-            wire.output_config
-                .value()
-                .and_then(|config| config.effort.value())
-                .copied()
-                .into_iter()
-                .chain(wire.messages.iter().filter_map(|message| message.effort))
-                .map(effort_level),
-        )?;
-        let value = self.encode_request(&wire)?;
-        Ok(NativeProjection {
-            value,
-            normalized_arguments: normalized,
-            omitted_execution: omitted,
-            rules: rules.into_iter().collect(),
-            control_losses: phase
-                .is_some()
-                .then(|| {
-                    crate::lowering::generation::RequestControlLoss::Projection(
-                        crate::protocol::phase::omission(RequestRule::OmitMessagePhase.name()),
-                    )
-                })
-                .into_iter()
-                .collect(),
         })
     }
     pub fn encode_generation_response(
@@ -227,5 +148,30 @@ impl Profile {
             usage: super::accounting::wire(report, service_class)?,
             input_transformations: false,
         })
+    }
+}
+
+impl super::Message {
+    /// Derived envelope facts only; no timestamp, instruction echo or replay proof is invented.
+    pub fn reported_metadata(&self) -> Result<crate::protocol::ResponseMetadata, CodecError> {
+        self.validate(false)?;
+        let metadata = crate::protocol::ResponseMetadata {
+            storage: None,
+            id: Some(self.id.clone()),
+            model: self.model.clone(),
+            created: None,
+            context: crate::semantic::context::ResponseContext {
+                reports: crate::semantic::context::ResponseReports::single(
+                    crate::semantic::context::ResponseReport {
+                        service_class: self.usage.service_class.clone(),
+                        ..Default::default()
+                    },
+                ),
+                ..Default::default()
+            },
+            instruction_fidelity: Default::default(),
+        };
+        metadata.validate()?;
+        Ok(metadata)
     }
 }

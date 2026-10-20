@@ -1,11 +1,11 @@
 //! Reported context and the executed-context wire codec shared by both OpenAI profiles.
 //! A context hint is never a task instruction, and each profile owns its field set.
-use crate::protocol::openai::{CodecError, Profile, ResponseMetadata, common::*};
+use crate::protocol::openai::{CodecError, Profile, ResponseMetadata, shape::*};
 use crate::semantic::{
     context::{CacheHints, ExecutionHints},
     task::generation::*,
 };
-use serde_json::{Map, Value};
+use serde_json::{Map, Number, Value};
 
 pub(super) fn metadata(
     o: &Map<String, Value>,
@@ -24,7 +24,7 @@ pub(super) fn metadata(
     let model = text(string(o, "model")?, "response model", 256)?
         .as_str()
         .to_owned();
-    let created = crate::protocol::openai::responses::envelope::timestamp(
+    let created = timestamp(
         o.get(created_key)
             .ok_or(CodecError::Invalid("created time"))?,
     )?;
@@ -217,4 +217,26 @@ impl ExecutionHints {
         o.extend(v);
         Ok(())
     }
+}
+
+pub(in crate::protocol::openai) fn timestamp(v: &Value) -> Result<Number, CodecError> {
+    match v {
+        Value::Number(n) if crate::semantic::value::valid_timestamp(n) => Ok(n.clone()),
+        _ => Err(CodecError::Invalid("timestamp")),
+    }
+}
+
+pub(crate) fn validate_identity(
+    identity: &crate::semantic::context::ClientIdentityHints,
+) -> Result<(), CodecError> {
+    identity.validate()?;
+    for (value, maximum) in [(&identity.user, 256), (&identity.safety_identifier, 128)] {
+        if value
+            .value()
+            .is_some_and(|value| value.chars().count() > maximum || value.len() > maximum * 4)
+        {
+            return Err(CodecError::Limit);
+        }
+    }
+    Ok(())
 }

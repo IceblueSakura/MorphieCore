@@ -1,9 +1,10 @@
 //! Complete stateless Responses envelopes. Execution hints never become task instructions.
+use crate::protocol::openai::content::intake::Items;
 use crate::protocol::openai::{
     CodecError, DecodedRequest, Profile, RequestRepresentation, ResponseMetadata,
-    common::*,
-    context::{CACHE_FIELDS, EXEC_FIELDS, check_access_programs},
+    context::{CACHE_FIELDS, EXEC_FIELDS, check_access_programs, timestamp},
     settings,
+    shape::*,
 };
 use crate::semantic::{
     context::{ExecutionHints, ResponseContext, ServicePolicy},
@@ -11,7 +12,7 @@ use crate::semantic::{
     value::Presence,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Number, Value, json};
+use serde_json::{Map, Value, json};
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StreamOptions {
@@ -117,17 +118,17 @@ pub fn encode_request(
         return Err(CodecError::ProfileMismatch);
     }
     if target.adaptation.rules.bailian_requests {
-        crate::protocol::openai::bailian::check_semantic(
+        crate::protocol::openai::dialect::bailian::check_semantic(
             target.semantic(),
             Profile::Responses,
             &context.model,
         )?;
-        crate::protocol::openai::bailian::check_native_effort(
+        crate::protocol::openai::dialect::bailian::check_native_effort(
             target.semantic().settings(),
             &context.model,
             Profile::Responses,
         )?;
-        crate::protocol::openai::bailian::check_context(
+        crate::protocol::openai::dialect::bailian::check_context(
             &context.execution,
             &context.service_policy,
             Profile::Responses,
@@ -422,12 +423,6 @@ pub(in crate::protocol::openai) fn validate_part_snapshot(v: &Value) -> Result<(
         }
     }
     Ok(())
-}
-pub(in crate::protocol::openai) fn timestamp(v: &Value) -> Result<Number, CodecError> {
-    match v {
-        Value::Number(n) if crate::semantic::value::valid_timestamp(n) => Ok(n.clone()),
-        _ => Err(CodecError::Invalid("timestamp")),
-    }
 }
 pub(in crate::protocol::openai) fn response_fields(
     o: &Map<String, Value>,

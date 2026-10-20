@@ -1,11 +1,11 @@
 //! Final typed SIWC admission, before cache projection or wire encoding.
-use crate::protocol::openai::adapter::Request;
+use crate::adapter::Request;
 use crate::{
     protocol::CodecError,
     semantic::task::generation::{InstructionAuthority, Item, ToolDefinition},
 };
 
-pub(super) fn check(
+pub(in crate::protocol::openai) fn check(
     request: &Request,
     cache: crate::protocol::cache::CacheProjection,
 ) -> Result<(), CodecError> {

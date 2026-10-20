@@ -1,5 +1,5 @@
 //! Task settings shared by request parsing and provider-reported response echoes.
-use crate::protocol::openai::{CodecError, Profile, common::*, function_tools, reasoning};
+use crate::protocol::openai::{CodecError, Profile, function_tools, reasoning, shape::*};
 use crate::semantic::{
     task::generation::*,
     value::{Presence, Text},
@@ -234,5 +234,33 @@ pub(super) fn verbosity(v: &Value) -> Result<Verbosity, CodecError> {
         Some("medium") => Ok(Verbosity::Medium),
         Some("high") => Ok(Verbosity::High),
         _ => Err(CodecError::Invalid("verbosity")),
+    }
+}
+
+pub(super) fn controls(
+    o: &Map<String, Value>,
+    key: &'static str,
+) -> Result<GenerationControls, CodecError> {
+    let mut c = GenerationControls::default();
+    c.max_output_tokens = o
+        .get(key)
+        .filter(|v| !v.is_null())
+        .map(|v| {
+            v.as_u64()
+                .filter(|n| *n > 0)
+                .ok_or(CodecError::Invalid(key))
+        })
+        .transpose()?;
+    if let Some(t) = o.get("temperature").filter(|v| !v.is_null()) {
+        c = c.with_temperature(t.as_f64().ok_or(CodecError::Invalid("temperature"))?)?;
+    }
+    Ok(c)
+}
+pub(super) fn write_control_values(c: &GenerationControls, o: &mut Map<String, Value>, key: &str) {
+    if let Some(t) = c.temperature() {
+        o.insert("temperature".into(), Value::from(t));
+    }
+    if let Some(n) = c.max_output_tokens {
+        o.insert(key.into(), Value::from(n));
     }
 }

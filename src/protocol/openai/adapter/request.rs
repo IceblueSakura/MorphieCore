@@ -21,7 +21,11 @@ fn with_effort_mapping(
     native_thinking: bool,
 ) -> Result<Option<Request>, CodecError> {
     mapping.validate()?;
-    if openai::bailian::extended(request.task.semantic.settings(), profile, native_thinking) {
+    if openai::dialect::bailian::extended(
+        request.task.semantic.settings(),
+        profile,
+        native_thinking,
+    ) {
         return Err(CodecError::Unsupported("reasoning controls".into()));
     }
     let mut items = request.task.semantic.items().to_vec();
@@ -94,13 +98,13 @@ impl Adapter {
         let mut value = crate::protocol::json::decode(bytes)?;
         let mut native_controls = serde_json::Map::new();
         if self.adaptation.rules.thinking_controls {
-            openai::bailian::source(
+            openai::dialect::bailian::source(
                 &value,
                 self.protocol,
                 self.adaptation.rules.bailian_requests,
             )?;
             if let Some(o) = value.as_object_mut() {
-                for name in openai::bailian::CONTROL_FIELDS {
+                for name in openai::dialect::bailian::CONTROL_FIELDS {
                     if let Some(value) = o.shift_remove(*name) {
                         native_controls.insert((*name).into(), value);
                     }
@@ -176,10 +180,14 @@ impl Adapter {
         };
         if !native_controls.is_empty() || self.adaptation.rules.bailian_requests {
             let mut settings = request.task.semantic.settings().clone();
-            openai::bailian::read_controls(&native_controls, &mut settings, self.protocol)?;
+            openai::dialect::bailian::read_controls(
+                &native_controls,
+                &mut settings,
+                self.protocol,
+            )?;
             if self.adaptation.rules.bailian_requests
                 && let Some(mapping) =
-                    openai::bailian::effort_mapping(&request.model, self.protocol)
+                    openai::dialect::bailian::effort_mapping(&request.model, self.protocol)
                 && let Some(control) = settings.effort.value().copied()
             {
                 let level = mapping.encode(control.level)?;
@@ -214,7 +222,7 @@ impl Adapter {
             request.task.semantic = request.task.semantic.with_settings(settings)?;
         }
         if self.adaptation.rules.bailian_requests {
-            openai::bailian::check(&request, self.protocol, &request.model)?;
+            openai::dialect::bailian::check(&request, self.protocol, &request.model)?;
         }
         request.delivery.validate()?;
         if let Some(scope) = &self.adaptation.scope {
@@ -291,7 +299,7 @@ impl Adapter {
         use crate::lowering::generation::RequestControlLoss;
         if self.adaptation.rules.bailian_requests
             && self.adaptation.effort_mapping.is_none()
-            && let Some(mapping) = openai::bailian::effort_mapping(model, self.protocol)
+            && let Some(mapping) = openai::dialect::bailian::effort_mapping(model, self.protocol)
         {
             let mut bound = self.clone();
             bound.adaptation.effort_mapping = Some(mapping);
@@ -349,9 +357,9 @@ impl Adapter {
             return Err(CodecError::Unsupported("reasoning activation".into()).into());
         }
         if self.adaptation.rules.bailian_requests {
-            openai::bailian::check(request, self.protocol, model)?;
+            openai::dialect::bailian::check(request, self.protocol, model)?;
         }
-        if openai::bailian::extended(
+        if openai::dialect::bailian::extended(
             request.task.semantic.settings(),
             self.protocol,
             self.adaptation.rules.thinking_controls,
@@ -437,7 +445,7 @@ impl Adapter {
             if self.protocol != Profile::Responses {
                 return Err(CodecError::ProfileMismatch.into());
             }
-            super::siwc::check(request, contract.cache)?;
+            openai::responses::dialect::siwc::check(request, contract.cache)?;
         }
         if request.delivery.streaming()
             && request

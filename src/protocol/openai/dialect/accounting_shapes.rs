@@ -1,7 +1,7 @@
 //! Closed, source-bound accounting views, not substitutes for Generation usage.
 //! Product response metadata is not authority to invoke programs or hosted tools.
 use crate::protocol::openai::{
-    CodecError, common::DecodeDirection, dialect::adapter_shapes::Extras,
+    CodecError, dialect::adapter_shapes::Extras, shape::DecodeDirection,
 };
 use serde_json::{Map, Value, json};
 fn take(o: &mut Map<String, Value>, key: &str, path: &str, extras: &mut Extras) {

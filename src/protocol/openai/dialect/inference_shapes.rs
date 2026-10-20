@@ -1,7 +1,7 @@
 //! Closed inference-server placeholders and reported usage aliases; no payload fidelity.
 use crate::protocol::openai::{
     CodecError,
-    common::{DecodeDirection, object},
+    shape::{DecodeDirection, object},
 };
 use serde_json::{Map, Value};
 

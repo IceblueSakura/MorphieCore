@@ -36,7 +36,7 @@ The public gateway owns typed activation/allocation/top-k spellings, not an arbi
 
 ## Evidence boundary
 
-`src/protocol/openai/bailian.rs` owns native request checks and writers; adapter intake, candidate encoding and full native envelopes apply them. The model-bearing direct adapter path installs the same effort mapping as catalog endpoints; the envelope rejects an uncalibrated label. Generic lowering retains its other protections.
+`src/protocol/openai/dialect/bailian.rs` owns native request checks and writers; adapter intake, candidate encoding and full native envelopes apply them. The model-bearing direct adapter path installs the same effort mapping as catalog endpoints; the envelope rejects an uncalibrated label. Generic lowering retains its other protections.
 
 `tests/semantic/providers.rs::bailian_spec` independently states native wire→IR expectations and IR→native wire values, then checks actual shared-model bindings, omitted defaults, invalid types, aliases, direct-adapter/envelope bypasses, local delivery options, strict defaults and result adjacency. Existing planning assertions distinguish model image ability from the narrower native function-output carrier. These are offline checks, not evidence of effective temperature, hard token enforcement, replay validity or live plan acceptance.
 

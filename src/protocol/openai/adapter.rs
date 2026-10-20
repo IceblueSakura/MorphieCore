@@ -1,6 +1,5 @@
 //! OpenAI bidirectional adapter: one profile plus the adaptation a binding selected.
 mod request;
-mod siwc;
 pub use crate::protocol::openai::dialect::Dialect;
 use crate::{
     adapter::{AdapterError, Request},

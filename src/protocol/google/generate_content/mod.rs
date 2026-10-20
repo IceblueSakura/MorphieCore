@@ -1,6 +1,7 @@
 //! `generateContent` upstream: request projection and streamed intake over the shared
 //! IR. Upstream only; no client codec, OpenAI profile or wire switches.
 mod accounting;
+mod items;
 mod logprobs;
 mod replay;
 mod request;
