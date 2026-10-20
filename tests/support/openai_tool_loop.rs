@@ -24,10 +24,12 @@ pub const RESULT: &str = "{\"error\":\"synthetic lookup unavailable\",\"label\":
 pub struct Fixture {
     pub base: String,
     pub seen: Arc<Mutex<Vec<Value>>>,
+    pub recovery: Option<Arc<crate::credential_recovery::Recovery>>,
     pub gateway: Gateway,
     #[allow(dead_code)] // The gateway target owns lifecycle-control assertions.
     pub control: Arc<Control>,
     tasks: Vec<tokio::task::JoinHandle<()>>,
+    _store: Option<tempfile::TempDir>,
 }
 #[derive(Default)]
 pub struct Control {
@@ -45,6 +47,7 @@ struct StateData {
     profile: Profile,
     seen: Arc<Mutex<Vec<Value>>>,
     control: Arc<Control>,
+    recovery: Option<Arc<crate::credential_recovery::Recovery>>,
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
@@ -70,14 +73,22 @@ async fn answer(
         profile,
         seen,
         control,
+        recovery,
     }): State<StateData>,
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Response {
-    assert!(matches!(
-        headers["authorization"].to_str().unwrap(),
-        "Bearer synthetic-tool-history-upstream" | "Bearer synthetic-tool-history-secondary"
-    ));
+    let secret = headers["authorization"]
+        .to_str()
+        .unwrap()
+        .strip_prefix("Bearer ")
+        .unwrap();
+    if recovery.is_none() {
+        assert!(matches!(
+            secret,
+            "synthetic-tool-history-upstream" | "synthetic-tool-history-secondary"
+        ));
+    }
     for field in [
         "temperature",
         "top_p",
@@ -95,6 +106,11 @@ async fn answer(
         .as_array()
         .unwrap();
     seen.lock().unwrap().push(body.clone());
+    if let Some(recovery) = &recovery
+        && let Some(failure) = recovery.observe(turn, secret, &headers)
+    {
+        return failure;
+    }
     let stream = body["stream"] == true;
     let bytes = if stream {
         let mut bytes = Vec::new();
@@ -170,8 +186,17 @@ async fn answer(
         .unwrap()
 }
 pub async fn start(profile: Profile, fallback: bool) -> Fixture {
+    start_with_recovery(profile, fallback, false).await
+}
+
+pub async fn start_recovery() -> Fixture {
+    start_with_recovery(Profile::Chat, false, true).await
+}
+
+async fn start_with_recovery(profile: Profile, fallback: bool, recover: bool) -> Fixture {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let control = Arc::new(Control::default());
+    let recovery = recover.then(|| Arc::new(crate::credential_recovery::Recovery::default()));
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let origin =
         TrustedOrigin::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
@@ -182,6 +207,7 @@ pub async fn start(profile: Profile, fallback: bool) -> Fixture {
             profile,
             seen: seen.clone(),
             control: control.clone(),
+            recovery: recovery.clone(),
         });
     let upstream = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     let catalog = catalog::default_topology().unwrap();
@@ -202,7 +228,7 @@ pub async fn start(profile: Profile, fallback: bool) -> Fixture {
     let public = catalog.model(label).unwrap().clone();
     let mut route = catalog.route(&public.route).unwrap().clone();
     route.endpoints = vec![endpoint.id.clone()];
-    route.policy.max_attempts = 1;
+    route.policy.max_attempts = if recover { 2 } else { 1 };
     if fallback {
         let mut secondary = endpoint.clone();
         secondary.id = topology::EndpointId::new(&format!("{id}-secondary")).unwrap();
@@ -242,6 +268,15 @@ pub async fn start(profile: Profile, fallback: bool) -> Fixture {
         public.id.clone(),
         topology::ModelMetadata::new(1, "Synthetic tool history").unwrap(),
     )];
+    let (credentials, store) = if recover {
+        let (credentials, store) = crate::credential_recovery::pool(
+            provider.id.as_str(),
+            endpoints.last().unwrap().credential.clone(),
+        );
+        (credentials, Some(store))
+    } else {
+        (credentials.into(), None)
+    };
     let topology = topology::compile(
         vec![provider],
         endpoints,
@@ -272,8 +307,10 @@ pub async fn start(profile: Profile, fallback: bool) -> Fixture {
     Fixture {
         base,
         seen,
+        recovery,
         gateway,
         control,
         tasks: vec![server, upstream],
+        _store: store,
     }
 }

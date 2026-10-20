@@ -2,6 +2,7 @@
 import json
 import sys
 import openai
+import httpx2 as httpx
 
 KEY = "synthetic-tool-history-client-0001"
 RESULT = '{"error":"synthetic lookup unavailable","label":"cedar-71"}'
@@ -60,16 +61,21 @@ def chat_completion(client, params, stream):
 
 
 
-def run(base):
+def run(base, recovery_stream=None):
     function = {"name": "lookup", "description": "Synthetic lookup", "strict": False,
                 "parameters": {"type": "object", "properties": {"key": {"type": "string"}},
                                "required": ["key"]}}
     requests = 0
-    with openai.OpenAI(base_url=base, api_key=KEY, max_retries=0, timeout=5.0) as client:
-        for stream in (False, True):
+    transmissions = []
+    deliveries = (False, True) if recovery_stream is None else (recovery_stream == "sse",)
+    with httpx.Client(trust_env=False, event_hooks={"request": [transmissions.append]}) as http, \
+            openai.OpenAI(base_url=base, api_key=KEY, max_retries=0, timeout=5.0,
+                          http_client=http) as client:
+        for stream in deliveries:
             params = dict(model="qwen3.8-flash", tools=[{"type": "function", "function": function}],
                           messages=[{"role": "user", "content": "lookup"}],
-                          reasoning_effort="low", max_completion_tokens=256)
+                          reasoning_effort="low", max_completion_tokens=256,
+                          extra_headers={"x-session-affinity": "synthetic-chat-session"})
             for turn in range(1, 4):
                 requests += 1
                 result = chat_completion(client, params, stream)
@@ -88,8 +94,16 @@ def run(base):
                 else:
                     check(message["content"] == "cedar-71")
                     params["messages"].append({"role": "user", "content": "next"})
-    print(json.dumps({"requests": requests, "protocols": 1, "deliveries": 2, "three_turn_history": True}))
+                if recovery_stream is not None and turn == 2:
+                    probe = {**params, "messages": [{"role": "user", "content": "lookup"}],
+                             "extra_headers": {"x-session-affinity": "other-chat-session"}}
+                    requests += 1
+                    recovered = chat_completion(client, probe, stream)
+                    check(recovered["choices"][0]["finish_reason"] == "tool_calls")
+    check(len(transmissions) == requests)
+    print(json.dumps({"requests": requests, "http_requests": len(transmissions),
+                      "protocols": 1, "deliveries": len(deliveries), "three_turn_history": True}))
 
 
 if __name__ == "__main__":
-    run(sys.argv[1])
+    run(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)

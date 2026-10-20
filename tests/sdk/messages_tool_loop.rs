@@ -8,7 +8,23 @@ use tokio::process::Command;
 #[tokio::test]
 #[ignore = "requires locked Anthropic SDK; synthetic native Messages JSON/SSE five-turn loops"]
 async fn native_messages_sdk_keeps_changed_tools_effort_and_replay() {
-    let fixture = fixture::start().await;
+    history_case(None).await;
+}
+
+#[tokio::test]
+#[ignore = "requires locked Anthropic SDK; synthetic native credential migration JSON/SSE"]
+async fn native_messages_sdk_tool_feedback_sticks_after_primary_recovery() {
+    for stream in [false, true] {
+        history_case(Some(stream)).await;
+    }
+}
+
+async fn history_case(recovery_stream: Option<bool>) {
+    let fixture = if recovery_stream.is_some() {
+        fixture::start_recovery().await
+    } else {
+        fixture::start().await
+    };
     let home = tempfile::tempdir().unwrap();
     let mut command = Command::new(
         std::env::var_os("MORPHIECORE_SDK_PYTHON").unwrap_or_else(|| "python3".into()),
@@ -23,6 +39,9 @@ async fn native_messages_sdk_keeps_changed_tools_effort_and_replay() {
             fixture::KEY,
         ])
         .current_dir(env!("CARGO_MANIFEST_DIR"));
+    if let Some(stream) = recovery_stream {
+        command.arg(if stream { "sse" } else { "json" });
+    }
     let input = serde_json::to_vec(&fixture::input(false)).unwrap();
     let output = child_process::run(&mut command, &input, Duration::from_secs(30), 16 << 10)
         .await
@@ -33,15 +52,23 @@ async fn native_messages_sdk_keeps_changed_tools_effort_and_replay() {
         String::from_utf8_lossy(&output.stderr)
     );
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let requests = if recovery_stream.is_some() { 6 } else { 10 };
     assert_eq!(
         report,
-        serde_json::json!({"requests":10,"tool_changes":true,"ttl":"1h"})
+        serde_json::json!({"requests":requests,"http_requests":requests,"tool_changes":true,"ttl":"1h"})
     );
     let seen = fixture.seen.lock().unwrap();
-    assert_eq!(seen.len(), 10);
-    for (static_body, streamed_body) in seen[..5].iter().zip(&seen[5..]) {
-        let mut static_body = static_body.clone();
-        static_body["stream"] = serde_json::json!(true);
-        assert_eq!(&static_body, streamed_body);
+    assert_eq!(
+        seen.len(),
+        requests + usize::from(recovery_stream.is_some())
+    );
+    if let Some(recovery) = &fixture.recovery {
+        recovery.assert_complete(5, true);
+    } else {
+        for (static_body, streamed_body) in seen[..5].iter().zip(&seen[5..]) {
+            let mut static_body = static_body.clone();
+            static_body["stream"] = serde_json::json!(true);
+            assert_eq!(&static_body, streamed_body);
+        }
     }
 }

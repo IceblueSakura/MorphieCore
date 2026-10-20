@@ -6,6 +6,8 @@ mod chat_media_sdk;
 mod chat_sdk;
 #[path = "support/child_process.rs"]
 mod child_process;
+#[path = "support/credential_recovery.rs"]
+mod credential_recovery;
 #[path = "sdk/gateway.rs"]
 mod gateway_sdk;
 #[path = "sdk/messages.rs"]

@@ -3,6 +3,8 @@
 #[allow(dead_code)]
 #[path = "support/chat_profile.rs"]
 mod chat_wire;
+#[path = "support/credential_recovery.rs"]
+mod credential_recovery;
 #[path = "support/messages_stream.rs"]
 mod messages_stream;
 #[path = "support/messages_tool_loop.rs"]

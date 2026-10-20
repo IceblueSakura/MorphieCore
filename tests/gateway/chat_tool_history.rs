@@ -3,10 +3,11 @@ use crate::openai_tool_loop as fixture;
 use morphiecore::protocol::openai::Profile;
 use serde_json::{Value, json};
 
-async fn request(client: &reqwest::Client, base: &str, body: &Value) -> Value {
+async fn request(client: &reqwest::Client, base: &str, body: &Value, session: &str) -> Value {
     let response = client
         .post(format!("{base}/chat/completions"))
         .bearer_auth(fixture::CLIENT_KEY)
+        .header("x-session-affinity", session)
         .json(body)
         .send()
         .await
@@ -75,22 +76,58 @@ async fn request(client: &reqwest::Client, base: &str, body: &Value) -> Value {
 
 #[tokio::test]
 async fn tool_result_and_reasoning_history_survive_json_and_sse() {
-    let fixture = fixture::start(Profile::Chat, false).await;
+    history_case(false).await;
+}
+
+#[tokio::test]
+async fn tool_feedback_migrates_credentials_and_sticks_after_primary_recovery() {
+    history_case(true).await;
+}
+
+#[tokio::test]
+async fn cooling_chat_pool_returns_retry_after_without_dispatch() {
+    let fixture = fixture::start_recovery().await;
+    let unavailable = fixture
+        .recovery
+        .as_ref()
+        .unwrap()
+        .assert_all_cooling(
+            &format!("{}/chat/completions", fixture.base),
+            fixture::CLIENT_KEY,
+            &input(false),
+            503,
+        )
+        .await;
+    assert_eq!(unavailable["error"]["code"], "upstream_unavailable");
+}
+
+fn input(stream: bool) -> Value {
+    let mut body = json!({"model":"qwen3.8-flash","messages":[{"role":"user","content":"lookup"}],
+        "max_completion_tokens":256,"reasoning_effort":"low","tools":[{"type":"function",
+        "function":{"name":"lookup","description":"Synthetic lookup","parameters":{"type":"object",
+        "properties":{"key":{"type":"string"}},"required":["key"]},"strict":false}}],"stream":stream});
+    if stream {
+        body["stream_options"] = json!({"include_usage":true});
+    }
+    body
+}
+
+async fn history_case(recover: bool) {
     let client = reqwest::Client::builder()
         .no_proxy()
         .timeout(std::time::Duration::from_secs(5))
         .build()
         .unwrap();
     for stream in [false, true] {
-        let mut body = json!({"model":"qwen3.8-flash","messages":[{"role":"user","content":"lookup"}],
-            "max_completion_tokens":256,"reasoning_effort":"low","tools":[{"type":"function",
-            "function":{"name":"lookup","description":"Synthetic lookup","parameters":{"type":"object",
-            "properties":{"key":{"type":"string"}},"required":["key"]},"strict":false}}],"stream":stream});
-        if stream {
-            body["stream_options"] = json!({"include_usage":true});
-        }
+        let fixture = if recover {
+            fixture::start_recovery().await
+        } else {
+            fixture::start(Profile::Chat, false).await
+        };
+        let mut body = input(stream);
+        let initial = body.clone();
         for turn in 1..=3 {
-            let response = request(&client, &fixture.base, &body).await;
+            let response = request(&client, &fixture.base, &body, "synthetic-chat-session").await;
             assert_eq!(
                 response["usage"]["total_tokens"], 18,
                 "stream={stream}, turn={turn}: {response}"
@@ -117,13 +154,24 @@ async fn tool_result_and_reasoning_history_survive_json_and_sse() {
                 ]);
             } else {
                 assert_eq!(message["content"], "cedar-71");
+                if recover && turn == 2 {
+                    let recovered =
+                        request(&client, &fixture.base, &initial, "other-chat-session").await;
+                    assert_eq!(recovered["choices"][0]["finish_reason"], "tool_calls");
+                }
                 body["messages"]
                     .as_array_mut()
                     .unwrap()
                     .extend([message, json!({"role":"user","content":"next"})]);
             }
         }
+        assert_eq!(
+            fixture.seen.lock().unwrap().len(),
+            if recover { 5 } else { 3 }
+        );
+        if let Some(recovery) = &fixture.recovery {
+            recovery.assert_complete(3, false);
+        }
+        fixture.gateway.flush_diagnostics().await;
     }
-    assert_eq!(fixture.seen.lock().unwrap().len(), 6);
-    fixture.gateway.flush_diagnostics().await;
 }

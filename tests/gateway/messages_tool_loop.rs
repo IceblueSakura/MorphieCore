@@ -4,31 +4,71 @@ use serde_json::{Value, json};
 
 #[tokio::test]
 async fn native_messages_keep_changed_tools_effort_and_final_history() {
-    let fixture = fixture::start().await;
+    history_case(false).await;
+}
+
+#[tokio::test]
+async fn native_tool_feedback_migrates_credentials_and_sticks_after_primary_recovery() {
+    history_case(true).await;
+}
+
+#[tokio::test]
+async fn cooling_native_pool_returns_retry_after_without_dispatch() {
+    let fixture = fixture::start_recovery().await;
+    let unavailable = fixture
+        .recovery
+        .as_ref()
+        .unwrap()
+        .assert_all_cooling(
+            &format!("{}/v1/messages", fixture.base),
+            fixture::KEY,
+            &fixture::input(false),
+            529,
+        )
+        .await;
+    assert_eq!(
+        unavailable,
+        json!({"type":"error","error":{
+            "type":"api_error","message":"The request could not be completed (upstream_unavailable)."
+        }})
+    );
+}
+
+async fn request(client: &reqwest::Client, base: &str, input: &Value, session: &str) -> Value {
+    let response = client
+        .post(format!("{base}/v1/messages"))
+        .header("x-api-key", fixture::KEY)
+        .header("x-session-affinity", session)
+        // Ingress headers cannot select which beta carriers upstream receives.
+        .header("anthropic-beta", "synthetic-do-not-forward")
+        .json(input)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    if input["stream"] == true {
+        crate::messages_stream::messages_stream_body(&response.text().await.unwrap())
+    } else {
+        response.json().await.unwrap()
+    }
+}
+
+async fn history_case(recover: bool) {
+    let mut deliveries = Vec::new();
     let client = reqwest::Client::builder()
         .no_proxy()
         .timeout(std::time::Duration::from_secs(5))
         .build()
         .unwrap();
     for stream in [false, true] {
+        let fixture = if recover {
+            fixture::start_recovery().await
+        } else {
+            fixture::start().await
+        };
         let mut input = fixture::input(stream);
         for turn in 1..=5 {
-            let response = client
-                .post(format!("{}/v1/messages", fixture.base))
-                .header("x-api-key", fixture::KEY)
-                .header("x-session-affinity", "synthetic-messages-session")
-                // Ingress headers cannot select which beta carriers upstream receives.
-                .header("anthropic-beta", "synthetic-do-not-forward")
-                .json(&input)
-                .send()
-                .await
-                .unwrap();
-            assert_eq!(response.status(), 200);
-            let body: Value = if stream {
-                crate::messages_stream::messages_stream_body(&response.text().await.unwrap())
-            } else {
-                response.json().await.unwrap()
-            };
+            let body = request(&client, &fixture.base, &input, "synthetic-messages-session").await;
             assert_eq!(
                 body["usage"],
                 json!({"input_tokens":11,"output_tokens":7,
@@ -73,14 +113,30 @@ async fn native_messages_keep_changed_tools_effort_and_final_history() {
             } else {
                 assert_eq!(body["content"], snapshot["content"]);
             }
+            if recover && turn == 2 {
+                let recovered = request(
+                    &client,
+                    &fixture.base,
+                    &fixture::input(stream),
+                    "other-messages-session",
+                )
+                .await;
+                assert_eq!(recovered["stop_reason"], "tool_use");
+            }
             if turn < 5 {
                 advance(&mut input, body["content"].clone(), turn);
             }
         }
+        assert_eq!(
+            fixture.seen.lock().unwrap().len(),
+            if recover { 7 } else { 5 }
+        );
+        if let Some(recovery) = &fixture.recovery {
+            recovery.assert_complete(5, true);
+        }
+        deliveries.push(fixture.seen.lock().unwrap().clone());
     }
-    let seen = fixture.seen.lock().unwrap();
-    assert_eq!(seen.len(), 10);
-    for (static_body, streamed_body) in seen[..5].iter().zip(&seen[5..]) {
+    for (static_body, streamed_body) in deliveries[0].iter().zip(&deliveries[1]) {
         let mut static_body = static_body.clone();
         static_body["stream"] = json!(true);
         assert_eq!(&static_body, streamed_body);

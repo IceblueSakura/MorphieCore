@@ -19,7 +19,9 @@ pub const BETA: &str = "mid-conversation-output-config-2026-07-01,thinking-bindi
 pub struct Fixture {
     pub base: String,
     pub seen: Arc<Mutex<Vec<Value>>>,
+    pub recovery: Option<Arc<crate::credential_recovery::Recovery>>,
     jobs: Vec<tokio::task::JoinHandle<()>>,
+    _store: Option<tempfile::TempDir>,
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
@@ -66,15 +68,30 @@ pub fn snapshot(turn: usize) -> Value {
             "cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":17},"output_tokens":7}})
 }
 
+#[derive(Clone)]
+struct StateData {
+    seen: Arc<Mutex<Vec<Value>>>,
+    recovery: Option<Arc<crate::credential_recovery::Recovery>>,
+}
+
 async fn answer(
-    State(seen): State<Arc<Mutex<Vec<Value>>>>,
+    State(StateData { seen, recovery }): State<StateData>,
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Response {
     assert_eq!(headers["anthropic-version"], "2023-06-01");
-    assert_eq!(headers["x-api-key"], "synthetic-messages-upstream");
+    if recovery.is_none() {
+        assert_eq!(headers["x-api-key"], "synthetic-messages-upstream");
+    }
     assert!(headers.contains_key("x-opencode-session") && !headers.contains_key("authorization"));
-    let turn = seen.lock().unwrap().len() % 5 + 1;
+    // Dispatch failures do not advance the semantic history.
+    let turn = body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|message| message["role"] == "user")
+        .count();
+    assert!((1..=5).contains(&turn));
     let mut expected = json!([
         {"role":"user","content":[{"type":"text","text":"lookup"}]},
         {"role":"system","content":[],"output_config":{"effort":"high"}}
@@ -160,17 +177,35 @@ async fn answer(
     };
     assert_eq!(headers["anthropic-beta"], expected_beta);
     seen.lock().unwrap().push(body.clone());
+    if let Some(recovery) = &recovery
+        && let Some(failure) =
+            recovery.observe(turn, headers["x-api-key"].to_str().unwrap(), &headers)
+    {
+        return failure;
+    }
     native_response(snapshot(turn), body["stream"] == true)
 }
 
 pub async fn start() -> Fixture {
+    start_with_recovery(false).await
+}
+
+pub async fn start_recovery() -> Fixture {
+    start_with_recovery(true).await
+}
+
+async fn start_with_recovery(recover: bool) -> Fixture {
     let seen = Arc::new(Mutex::new(vec![]));
+    let recovery = recover.then(|| Arc::new(crate::credential_recovery::Recovery::default()));
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let origin =
         TrustedOrigin::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
     let app = Router::new()
         .route("/zen/go/v1/messages", post(answer))
-        .with_state(seen.clone());
+        .with_state(StateData {
+            seen: seen.clone(),
+            recovery: recovery.clone(),
+        });
     let upstream = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     let binding = &MESSAGES_BINDINGS[0];
     let mut provider = binding.provider();
@@ -179,10 +214,28 @@ pub async fn start() -> Fixture {
     endpoint.target.origin = origin;
     let mut public = binding.public_model();
     public.contract = binding.canonical_model().contract;
+    let (credentials, store) = if recover {
+        let (credentials, store) =
+            crate::credential_recovery::pool(provider.id.as_str(), endpoint.credential.clone());
+        (credentials, Some(store))
+    } else {
+        (
+            BTreeMap::from([(
+                CredentialBindingId::new(binding.credential).unwrap(),
+                Arc::new(SecretMaterial::new("synthetic-messages-upstream").unwrap()),
+            )])
+            .into(),
+            None,
+        )
+    };
+    let mut route = binding.route();
+    if recover {
+        route.policy.max_attempts = 2;
+    }
     let topology = topology::compile(
         vec![provider],
         vec![endpoint],
-        vec![binding.route()],
+        vec![route],
         vec![public],
         vec![binding.canonical_model()],
     )
@@ -199,10 +252,7 @@ pub async fn start() -> Fixture {
             }],
             ..Default::default()
         },
-        BTreeMap::from([(
-            CredentialBindingId::new(binding.credential).unwrap(),
-            Arc::new(SecretMaterial::new("synthetic-messages-upstream").unwrap()),
-        )]),
+        credentials,
         SecretMaterial::new(KEY).unwrap(),
         Limits::default(),
         None,
@@ -219,6 +269,8 @@ pub async fn start() -> Fixture {
     Fixture {
         base,
         seen,
+        recovery,
         jobs: vec![upstream, server],
+        _store: store,
     }
 }
