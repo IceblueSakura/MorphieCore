@@ -10,6 +10,10 @@ mod child_process;
 mod credential_recovery;
 #[path = "sdk/gateway.rs"]
 mod gateway_sdk;
+#[path = "support/google_tool_loop.rs"]
+mod google_tool_fixture;
+#[path = "sdk/google_tool_history.rs"]
+mod google_tool_history;
 #[path = "sdk/messages.rs"]
 mod messages_sdk;
 #[path = "support/messages_tool_loop.rs"]

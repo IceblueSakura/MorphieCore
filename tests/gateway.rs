@@ -5,6 +5,8 @@
 mod chat_wire;
 #[path = "support/credential_recovery.rs"]
 mod credential_recovery;
+#[path = "support/google_tool_loop.rs"]
+mod google_tool_fixture;
 #[path = "support/messages_stream.rs"]
 mod messages_stream;
 #[path = "support/messages_tool_loop.rs"]
@@ -27,6 +29,8 @@ mod anthropic;
 mod bootstrap;
 #[path = "gateway/chat_tool_history.rs"]
 mod chat_tool_history;
+#[path = "gateway/google_tool_loop.rs"]
+mod google_tool_loop;
 #[path = "gateway/interactions.rs"]
 mod interactions;
 #[path = "gateway/messages_tool_loop.rs"]
