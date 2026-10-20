@@ -44,6 +44,8 @@ struct Candidate {
     binding: String,
     allowed_effort: Option<Vec<String>>,
     maximum_output_tokens: Option<u64>,
+    #[serde(default)]
+    default_output_tokens: crate::semantic::value::Presence<u64>,
     base_url: Option<String>,
     upstream_model: Option<String>,
     credential: Option<String>,
@@ -285,6 +287,22 @@ impl Models {
                     .model_limits()
                     .narrowed(limits)
                     .map_err(|_| invalid())?;
+                match (
+                    &mut endpoint.representation,
+                    candidate.default_output_tokens,
+                ) {
+                    (TargetCaps::AnthropicMessages(caps), configured) => {
+                        use crate::semantic::value::Presence;
+                        match configured {
+                            Presence::Absent => {}
+                            Presence::Null => caps.default_output_tokens = None,
+                            Presence::Value(value) => caps.default_output_tokens = Some(value),
+                        }
+                        caps.validate().map_err(|_| invalid())?;
+                    }
+                    (_, crate::semantic::value::Presence::Absent) => {}
+                    _ => return Err(invalid()),
+                }
                 let native = endpoint.protocol == ProtocolProfile::AnthropicMessages;
                 let semantics = endpoint.representation.semantics();
                 native_owner_cache &= native && semantics.explicit_cache;

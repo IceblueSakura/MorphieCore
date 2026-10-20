@@ -58,16 +58,24 @@ fn typed(budget: Option<u64>) -> Request {
 #[test]
 fn model_maximum_checks_inserted_default_without_replacing_explicit_caps() {
     use morphiecore::adapter::AdapterError;
+    assert_eq!(caps().default_output_tokens, None);
     let mut request = typed(None);
     let mut settings = request.task.semantic.settings().clone();
     settings.controls.max_output_tokens = None;
     request.task.semantic = request.task.semantic.with_settings(settings).unwrap();
     let before = request.clone();
     let mut limited = caps();
-    limited.model_limits.maximum_output_tokens = Some(31_999);
     assert!(matches!(limited.encode_request(&request, &target()),
         Err(AdapterError::Codec(CodecError::Unsupported(value)))
-            if value == "target maximum output tokens"));
+            if value == "Messages missing target output default"));
+    limited.default_output_tokens = Some(32_000);
+    limited.model_limits.maximum_output_tokens = Some(31_999);
+    assert!(matches!(
+        limited.encode_request(&request, &target()),
+        Err(AdapterError::Codec(CodecError::Invalid(
+            "Messages default output tokens"
+        )))
+    ));
     limited.model_limits.maximum_output_tokens = Some(32_000);
     let projected = limited.encode_request(&request, &target()).unwrap();
     assert_eq!(projected.value["max_tokens"], 32_000);
@@ -80,16 +88,116 @@ fn model_maximum_checks_inserted_default_without_replacing_explicit_caps() {
         1
     );
     assert_eq!(request, before);
+    limited.default_output_tokens = Some(2048);
     limited.model_limits.maximum_output_tokens = Some(4096);
     let explicit = typed(None);
-    assert_eq!(
-        limited.encode_request(&explicit, &target()).unwrap().value["max_tokens"],
-        4096
+    let projected = limited.encode_request(&explicit, &target()).unwrap();
+    assert_eq!(projected.value["max_tokens"], 4096);
+    assert!(
+        !projected
+            .rules
+            .contains(&anthropic::RequestRule::DefaultMaxTokens)
     );
     limited.model_limits.maximum_output_tokens = Some(4095);
     assert!(matches!(limited.encode_request(&explicit, &target()),
         Err(AdapterError::Codec(CodecError::Unsupported(value)))
             if value == "target maximum output tokens"));
+    limited.default_output_tokens = Some(0);
+    assert!(matches!(
+        limited.encode_request(&explicit, &target()),
+        Err(AdapterError::Codec(CodecError::Invalid(
+            "Messages default output tokens"
+        )))
+    ));
+    limited.default_output_tokens = None;
+    limited.model_limits.maximum_output_tokens = Some(4096);
+    assert_eq!(
+        limited.encode_request(&explicit, &target()).unwrap().value["max_tokens"],
+        4096
+    );
+    assert!(matches!(limited.encode_request(&request, &target()),
+        Err(AdapterError::Codec(CodecError::Unsupported(value)))
+            if value == "Messages missing target output default"));
+}
+#[test]
+fn output_defaults_check_budgets_after_selected_conversions() {
+    use morphiecore::{
+        adapter::AdapterError,
+        protocol::reasoning::{ReasoningConversion, ReasoningRequestPolicy, SHARED_BUDGETS},
+    };
+    let mut request = typed(Some(2048));
+    let mut settings = request.task.semantic.settings().clone();
+    settings.controls.max_output_tokens = None;
+    request.task.semantic = request.task.semantic.with_settings(settings).unwrap();
+    let before = request.clone();
+    let mut target_caps = caps();
+    target_caps.default_output_tokens = Some(2048);
+    assert!(matches!(
+        target_caps.encode_request(&request, &target()),
+        Err(AdapterError::Codec(CodecError::Invalid("thinking budget")))
+    ));
+    target_caps.default_output_tokens = Some(2049);
+    let projected = target_caps.encode_request(&request, &target()).unwrap();
+    assert_eq!(projected.value["max_tokens"], 2049);
+    assert_eq!(projected.value["thinking"]["budget_tokens"], 2048);
+
+    // A numeric allocation removed by an approved mapping must not constrain
+    // the subsequently inserted cap; the final effort still has its own guard.
+    target_caps.default_output_tokens = Some(512);
+    target_caps.reasoning_policy = Some(ReasoningRequestPolicy {
+        canonical_model: "m".into(),
+        rule: "synthetic.budget-to-effort.v1",
+        conversion: ReasoningConversion::BudgetToEffort {
+            scope: EffortScope::Response,
+            table: SHARED_BUDGETS.clone(),
+        },
+    });
+    target_caps.model_limits.allowed_effort = Some(vec![EffortLevel::Low].into());
+    let projected = target_caps.encode_request(&request, &target()).unwrap();
+    assert_eq!(projected.value["max_tokens"], 512);
+    assert!(projected.value["thinking"].get("budget_tokens").is_none());
+    assert_eq!(projected.value["output_config"]["effort"], "low");
+    assert_eq!(
+        projected
+            .rules
+            .iter()
+            .filter(|r| **r == anthropic::RequestRule::DefaultMaxTokens)
+            .count(),
+        1
+    );
+    target_caps.model_limits.allowed_effort = Some(vec![EffortLevel::High].into());
+    assert!(matches!(target_caps.encode_request(&request, &target()),
+        Err(AdapterError::Codec(CodecError::Unsupported(value))) if value == "target effort"));
+    assert_eq!(request, before);
+
+    let mut settings = typed(None).task.semantic.settings().clone();
+    settings.controls.max_output_tokens = None;
+    settings.effort = Presence::Value(EffortControl {
+        scope: EffortScope::Response,
+        level: EffortLevel::Medium,
+    });
+    let mut qualitative = typed(None);
+    qualitative.task.semantic = qualitative.task.semantic.with_settings(settings).unwrap();
+    let original = qualitative.clone();
+    target_caps.model_limits.allowed_effort = None;
+    target_caps.reasoning_policy = Some(ReasoningRequestPolicy {
+        canonical_model: "m".into(),
+        rule: "synthetic.effort-to-budget.v1",
+        conversion: ReasoningConversion::EffortToBudget {
+            scope: EffortScope::Response,
+            table: SHARED_BUDGETS.clone(),
+        },
+    });
+    target_caps.default_output_tokens = Some(4096);
+    assert!(matches!(
+        target_caps.encode_request(&qualitative, &target()),
+        Err(AdapterError::Codec(CodecError::Invalid("thinking budget")))
+    ));
+    target_caps.default_output_tokens = Some(4097);
+    let projected = target_caps.encode_request(&qualitative, &target()).unwrap();
+    assert_eq!(projected.value["thinking"]["budget_tokens"], 4096);
+    assert_eq!(projected.value["max_tokens"], 4097);
+    assert_eq!(qualitative, original);
 }
 #[test]
 fn ordinary_budgets_preserve_numeric_intent_and_native_strict_relation() {
@@ -233,7 +341,7 @@ fn native_identity_keeps_null_empty_unicode_and_target_bounds_without_cross_proj
     );
     let foreign = openai
         .decode_client_request(
-            br#"{"model":"m","messages":[{"role":"user","content":"go"}],"user":"legacy"}"#,
+            br#"{"model":"m","max_completion_tokens":4096,"messages":[{"role":"user","content":"go"}],"user":"legacy"}"#,
         )
         .unwrap();
     let encoded = caps().encode_request(&foreign, &target()).unwrap();

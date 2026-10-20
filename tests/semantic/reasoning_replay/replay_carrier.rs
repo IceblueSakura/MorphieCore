@@ -103,7 +103,8 @@ fn same_issuer_receives_its_original_value() {
 
 #[test]
 fn another_target_gets_visible_history_without_foreign_thinking() {
-    let body = client_round_trip("openai/model-a");
+    let mut body = client_round_trip("openai/model-a");
+    body["max_output_tokens"] = json!(4096);
     let mut request = client()
         .decode_request(body.to_string().as_bytes())
         .unwrap();

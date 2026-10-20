@@ -966,14 +966,32 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
         morphiecore::protocol::anthropic::client::decode_client_request(invalid.as_bytes())
             .is_err()
     );
-    // Messages requires max_tokens; a source without a cap gets the fixed default.
+    // Pure codecs require a resolved ceiling; only trusted target caps insert defaults.
     let mut settings = decoded.semantic.settings().clone();
     settings.controls.max_output_tokens = None;
     let uncapped = decoded.semantic.clone().with_settings(settings).unwrap();
-    let encoded = p
-        .encode_generation_request(&uncapped, &decoded.fidelity, &target())
-        .unwrap();
-    assert_eq!(encoded.value["max_tokens"], 32_000);
+    assert!(
+        matches!(p.encode_generation_request(&uncapped, &decoded.fidelity, &target()),
+        Err(morphiecore::protocol::CodecError::Unsupported(value)) if value == "Messages missing output ceiling")
+    );
+    for max_tokens in [Value::Null, json!(0)] {
+        let mut invalid: Value = serde_json::from_slice(raw).unwrap();
+        invalid["max_tokens"] = max_tokens;
+        assert!(
+            morphiecore::protocol::anthropic::client::decode_client_request(
+                invalid.to_string().as_bytes()
+            )
+            .is_err()
+        );
+    }
+    let mut missing: Value = serde_json::from_slice(raw).unwrap();
+    missing.as_object_mut().unwrap().remove("max_tokens");
+    assert!(
+        morphiecore::protocol::anthropic::client::decode_client_request(
+            missing.to_string().as_bytes()
+        )
+        .is_err()
+    );
     automatic["cache_control"]["ttl"] = json!("1h");
     let long = p
         .decode_generation_request(

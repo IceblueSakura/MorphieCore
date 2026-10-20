@@ -25,6 +25,7 @@ This page owns accepted principles, domain contracts and decision records. [Road
   - [Stateful history](#stateful-history)
 - [Native Messages projection](#native-messages-projection)
   - [Request rules](#request-rules)
+  - [Missing output ceilings](#missing-output-ceilings)
   - [Owner-local cache admission](#owner-local-cache-admission)
   - [Response rules](#response-rules)
 - [Runtime and trust](#runtime-and-trust)
@@ -286,7 +287,7 @@ Native container boundaries may be omitted by a named client projection. Chat co
 
 Trusted target caps own optional allowed-effort and maximum-output declarations in [ModelLimits](../src/protocol/model_limits.rs), separate from protocol carriers and semantic feature admission. Omission adds no restriction or capability. Declaration validation rejects empty/duplicate effort sets and zero maxima; configured candidates inherit catalog declarations and may narrow, never widen them. Effort scopes and existing conversion tables remain unchanged.
 
-The shared preflight/preparation encoder checks final typed controls after selected mappings and carrier projections, including retained ordered efforts and inserted defaults. Messages checks the projected native request so its default ceiling and per-message efforts cannot bypass the guard. Reject violations without clipping, remapping to another allowed effort or changing source IR. A model maximum never supplies a missing ceiling; replacement of the existing Messages default remains [separate work](roadmap.md#stage-3-work-plan). These declarations neither rank routes nor publish broader capabilities or prove upstream enforcement.
+The shared preflight/preparation encoder checks final typed controls after selected mappings and carrier projections, including retained ordered efforts and inserted defaults. Messages checks the projected native request so its default ceiling and per-message efforts cannot bypass the guard. Reject violations without clipping, remapping to another allowed effort or changing source IR. A model maximum never supplies a missing ceiling; [Messages default insertion](#missing-output-ceilings) is a separate policy. These declarations neither rank routes nor publish broader capabilities or prove upstream enforcement.
 
 ### Request and reported meaning
 
@@ -671,11 +672,33 @@ These describe current native behavior, not completion of the [loss-policy migra
 - Call IDs outside the native grammar map to stable digests; collisions fail rather than merge calls.
 - Owner-local cache markers preserve their placement and 5m/1h TTLs. Do not add automatic caching to a request with explicit markers: four explicit markers plus automatic caching, or an automatic TTL differing from the tail marker, would conflict. Generic codecs preserve absent automatic policy. Go/Haiku explicitly selects the existing marker-free 5m default under `messages.default-automatic-cache.v1`, on a candidate copy after source admission. Caller-selected automatic caching remains a separate, default-closed admission feature. Cache hits still depend on upstream thresholds.
 - A JSON-schema output format maps to `output_config.format`, which always constrains decoding. Its name is dropped by a named rule; a JSON-object mode or a schema description has no carrier and is rejected.
-- The current implementation gives a source without an output cap `max_tokens: 32000`, the fallback of the pinned opencode Messages client, under `messages.default-max-tokens.v1`. The selected replacement is a trusted target-configured default, not a mandatory client field on other protocols; implementation remains stage-3 work. Preserve an explicit client ceiling, distinguish the default from the target maximum, and reject incompatible budget/ceiling combinations without automatic adjustment. The [detailed configuration and migration proposal](api-expansion-design.md#missing-messages-output-ceilings-proposal) is not yet a selected field or numeric default.
+- A source without an output cap uses the [trusted target default](#missing-output-ceilings), if declared, under `messages.default-max-tokens.v1`. Preserve an explicit client ceiling; pure codecs invent no fallback.
 - Client `top_k` decodes into the IR control and has a native carrier; fixed-sampling bindings reject it without changing the source.
 - OpenAI stateless controls are not forwarded as native fields. Requesting an encrypted reasoning carrier selects delivery, not native thinking.
 
 Exact rules live in [semantic_request.rs](../src/protocol/anthropic/semantic_request.rs) and [carriers.rs](../src/protocol/anthropic/carriers.rs).
+
+### Missing output ceilings
+
+The user selected these configuration and migration details on 2026-10-20. Messages `TargetCaps.default_output_tokens` owns an optional positive `u64` insertion policy, separate from `ModelLimits.maximum_output_tokens`. It is not a client field, model capability or routing policy. [Usage](usage.md#model-configuration) owns configuration syntax.
+
+Candidate omission inherits the binding default; a positive value replaces it; explicit `null` clears it. Overrides may raise or lower a default because it is not a restriction on explicit client intent. Reject malformed values and any presence of this field on a non-Messages candidate. Existing model-limit presence semantics remain unchanged.
+
+Resolve model-limit inheritance/narrowing before validating the default. Zero or a default above the effective declared maximum rejects at startup/endpoint compilation and in direct target encoding, even for a request that supplies its own valid ceiling. No default is valid configuration; an uncapped request then rejects locally. A missing maximum supplies neither a default nor evidence of unlimited upstream output. For example, narrowing a maximum to `8192` while inheriting `32000` requires overriding or clearing the default, not taking `min`.
+
+The existing Go/Haiku Messages binding explicitly declares `32000` to preserve its prior missing-cap behavior. This is gateway policy retained from the [pinned client fallback](refs/2026-10-17-generation-contracts.md#messages-missing-ceiling-evidence-2026-10-20), not an upstream default, model maximum, measured optimum or live enforcement claim. Generic `TargetCaps::new` has no default; future bindings select their own values. Other protocols, including Chat for the same model, do not inherit this Messages policy.
+
+Projection order:
+
+1. Validate original source semantics. Native Messages still requires positive `max_tokens` at intake; a target default cannot repair missing/null/zero native input or an invalid explicit source budget/cap relation.
+2. Apply existing selected reasoning conversions and carrier projections on a candidate copy. Only then fill an absent effective cap from the trusted default. Preserve every explicit cap, including one larger than the default; never use the model maximum or a thinking preset as a fallback.
+3. Validate effective settings and project the typed native request. Pure Profile/IR-to-wire encoding requires a resolved ceiling and rejects absence; it contains no fallback constant or compatibility shim.
+4. Apply final model-value and native grammar checks. Retained ordinary manual budgets require `1024 <= B < C`; the candidate-settings check may already reject `B > C`, while native validation rejects equality. Do not clip budgets, raise caps or infer tokens from effort.
+5. Successful insertion records `messages.default-max-tokens.v1` exactly once per encoder invocation. Explicit caps record no insertion. Preflight and preparation use the same deterministic encoder; source IR, stored client history and successor candidates remain unchanged. Transport does not resolve defaults.
+
+The ordering preserves budget-to-effort conversion that removes an otherwise conflicting numeric allocation, and checks budgets created by effort-to-budget conversion against the inserted cap. It selects no new mapping or manual-thinking target; Go/Haiku remains adaptive-only. A synthetic target with `B=2048` and `D=1024` rejects without changing a successor target's ability to encode `D=4096`. A retained budget equal to the inserted cap rejects; a larger cap may pass without changing the budget.
+
+Counting does not inherit Generation's required output cap. Its separately selected effective-input projection shares only count-relevant rules, not full generation preparation.
 
 ### Owner-local cache admission
 
@@ -946,7 +969,7 @@ These records preserve accepted choices and their consequences, grouped by domai
 | Preset-based thinking allocation | P3 uses six distinct shared budgets from 1024 to 24576; target-specific tables may contain duplicates. Numeric conversion minimizes absolute token distance and chooses the highest level on every tie. Preserve original intent and hard caps; this is explicit lossy quantization, not an inferred qualitative inverse |
 | Thinking budget and output ceiling | P3b rejects explicit or conversion-generated budgets above the applicable client output ceiling. Preserve both values; stricter target relations still apply, without automatic reduction or cap increases |
 | Messages manual-budget scope (2026-10-19) | Select ordinary manual budgets only for the pending carrier work: at least 1024 tokens and strictly less than the applicable output ceiling, enforced at Messages source/target boundaries. Defer the wider manual-interleaved budget-scope exception and reject requests requiring it; do not add a new budget-scope abstraction for this slice. Shared IR equality does not establish Messages validity. Preserve P3b and no-clipping rules; exact carriage needs a supporting target, and adaptive-only bindings remain unchanged |
-| Messages missing output ceiling (2026-10-19) | When converting a source without an output ceiling to Messages, use a bounded trusted target-configured default on the candidate copy and record its insertion. Preserve an explicit client ceiling; do not choose the model maximum automatically or raise the selected ceiling to fit thinking. The default and model maximum are separate policies. The current fixed `32000` remains until the stage-3 implementation; this decision selects neither a new numeric default nor a public configuration field |
+| Messages missing output ceiling (2026-10-19; details approved 2026-10-20) | Use the [candidate-local insertion policy](#missing-output-ceilings): omission inherits, positive overrides, `null` clears. Go/Haiku declares `32000`; generic targets and pure codecs have no fallback. Reject contradictory default/maximum declarations before requests and retain final budget/model checks after selected conversions. Preserve explicit caps; no clipping or cap increase |
 | Model-effective value limits (2026-10-19; configuration 2026-10-20) | Keep model-specific effort levels and output maxima in [trusted target caps](#model-effective-values), outside protocol-neutral IR and routing policy. Candidate configuration inherits catalog limits and may only narrow them. Check final controls, retained updates and inserted defaults through the shared encoder; preserve selected mappings, reject violations and add no clamping. This activates no binding and does not certify upstream enforcement |
 | Bailian output ceiling | Current Qwen3.8 Flash/Max, GLM5.3/Prime and Kimi-K3 Chat bindings use the documented total `max_completion_tokens` on both billing plans. Qwen/Kimi legacy `max_tokens` is reply-only; GLM5.3's legacy cap already includes thinking. Responses total-cap admission is scoped separately. Do not infer these contracts for Coding Plan or unbound models; wire preservation does not prove upstream enforcement |
 | Target-effective sampling | P4 preserves supported controls and permits named omission only for declared fixed/ignored behavior; unknown effectiveness is not permission to discard a control |

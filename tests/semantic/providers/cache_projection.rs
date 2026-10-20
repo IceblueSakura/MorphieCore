@@ -168,7 +168,7 @@ fn scoped_session_and_standard_cache_key_remain_independent_on_both_wires() {
     };
     let text_only = client(Profile::Chat)
         .decode_request(
-            json!({"model":"public","messages":[{"role":"user","content":"hello"}],
+            json!({"model":"public","max_completion_tokens":4096,"messages":[{"role":"user","content":"hello"}],
                     "safety_identifier":"synthetic-user"})
             .to_string()
             .as_bytes(),

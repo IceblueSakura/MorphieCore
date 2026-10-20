@@ -9,9 +9,6 @@ use crate::{
 };
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
-/// The cap opencode's Messages client sends by default (`DEFAULT_MAX_TOKENS` in
-/// https://github.com/anomalyco/opencode/blob/e5a557efeee02c94486d391afc48f24a49ebc9a5/packages/ai/src/protocols/anthropic-messages.ts).
-const DEFAULT_MAX_TOKENS: u64 = 32_000;
 pub(super) fn unsupported() -> CodecError {
     CodecError::Unsupported("native semantic carrier".into())
 }
@@ -35,7 +32,7 @@ pub enum RequestRule {
     DeveloperAsSystem,
     /// A Messages output format has no name; OpenAI requires one as a label.
     OmitSchemaName,
-    /// Messages requires `max_tokens`; a source without a ceiling gets the fixed default.
+    /// A trusted target inserts its configured ceiling on the candidate copy.
     DefaultMaxTokens,
     /// A trusted target explicitly selects automatic caching for marker-free input.
     DefaultAutomaticCache,
@@ -534,14 +531,10 @@ pub(super) fn project(
         top_k: s.controls.top_k,
         user_id: Presence::Absent,
         service_policy: Presence::Absent,
-        // Messages requires max_tokens; other sources may leave the cap to the model.
-        max_tokens: match s.controls.max_output_tokens {
-            Some(limit) => limit,
-            None => {
-                rules.insert(RequestRule::DefaultMaxTokens);
-                DEFAULT_MAX_TOKENS
-            }
-        },
+        max_tokens: s
+            .controls
+            .max_output_tokens
+            .ok_or_else(|| CodecError::Unsupported("Messages missing output ceiling".into()))?,
         stop_sequences: s
             .controls
             .stop_sequences

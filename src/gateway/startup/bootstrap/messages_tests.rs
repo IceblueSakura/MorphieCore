@@ -99,6 +99,135 @@ fn configured_messages(providers: &[&str]) -> Fixture {
     .unwrap()
 }
 
+#[test]
+fn messages_output_defaults_inherit_override_or_clear_without_widening_maxima() {
+    let load = |mut candidate: Value| {
+        if candidate.get("binding").is_none() {
+            candidate["binding"] = json!("opencode-go-haiku-messages");
+        }
+        let models = json!({"models":{"claude-haiku-5-5":{"candidates":[candidate]}}});
+        Fixture::from_lookup(|name| {
+            Ok(match name {
+                "client_key" => Some("synthetic-gateway-client-token-0001".into()),
+                "opencode-go-api-key" | "openrouter-api-key" => Some("synthetic-upstream".into()),
+                "model_config" => Some(models.to_string()),
+                _ => None,
+            })
+        })
+    };
+    for (configured, expected) in [
+        (json!({}), Some(32_000)),
+        (json!({"default_output_tokens":64_000}), Some(64_000)),
+        (json!({"default_output_tokens":null}), None),
+        (
+            json!({"maximum_output_tokens":4096,"default_output_tokens":4096}),
+            Some(4096),
+        ),
+        (
+            json!({"maximum_output_tokens":4096,"default_output_tokens":null}),
+            None,
+        ),
+    ] {
+        let boot = load(configured).unwrap();
+        let entry = &boot.gateway.state.entries[&(
+            crate::gateway::family(Profile::Responses),
+            "claude-haiku-5-5".into(),
+        )];
+        let candidate = &entry.candidates[0];
+        assert_eq!(
+            candidate
+                .endpoint
+                .representation
+                .messages()
+                .unwrap()
+                .default_output_tokens,
+            expected
+        );
+        let mut request = crate::protocol::openai::Adapter::new(
+            Profile::Responses,
+            crate::protocol::openai::Dialect::Standard,
+            None,
+        )
+        .decode_request(br#"{"model":"claude-haiku-5-5","input":"go"}"#)
+        .unwrap();
+        request.conversation = Some(
+            crate::semantic::context::ConversationContext::conversation("synthetic-defaults")
+                .unwrap(),
+        );
+        let before = request.clone();
+        let secret = candidate.secret.resolve().unwrap().0;
+        if let Some(default) = expected {
+            representable(&candidate.endpoint, &request).unwrap();
+            let (prepared, rules) = crate::execution::prepare_with_rules(
+                &candidate.endpoint,
+                &candidate.provider,
+                &secret,
+                &request,
+            )
+            .unwrap();
+            let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
+            assert_eq!(wire["max_tokens"], default);
+            assert_eq!(
+                rules
+                    .iter()
+                    .filter(|rule| **rule == "messages.default-max-tokens.v1")
+                    .count(),
+                1
+            );
+        } else {
+            assert!(representable(&candidate.endpoint, &request).is_err());
+            assert!(
+                matches!(prepare(&candidate.endpoint, &candidate.provider, &secret, &request),
+                Err(AttemptError::Adapter(AdapterError::Codec(crate::protocol::CodecError::Unsupported(value))))
+                    if value == "Messages missing target output default")
+            );
+        }
+        assert_eq!(request, before);
+        let mut capped = request.clone();
+        let mut settings = capped.task.semantic.settings().clone();
+        settings.controls.max_output_tokens = Some(128);
+        capped.task.semantic = capped.task.semantic.with_settings(settings).unwrap();
+        let (prepared, rules) = crate::execution::prepare_with_rules(
+            &candidate.endpoint,
+            &candidate.provider,
+            &secret,
+            &capped,
+        )
+        .unwrap();
+        let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
+        assert_eq!(wire["max_tokens"], 128);
+        assert!(!rules.contains(&"messages.default-max-tokens.v1"));
+    }
+    for configured in [
+        json!({"maximum_output_tokens":4096}),
+        json!({"maximum_output_tokens":4096,"default_output_tokens":4097}),
+        json!({"default_output_tokens":0}),
+        json!({"default_output_tokens":-1}),
+        json!({"default_output_tokens":1.5}),
+        json!({"default_output_tokens":1e100}),
+        json!({"default_output_tokens":"4096"}),
+        json!({"default_output_tokens":true}),
+    ] {
+        assert!(matches!(
+            load(configured),
+            Err(StartupError::Configuration("models"))
+        ));
+    }
+    let catalog = catalog::default_topology().unwrap();
+    let public = catalog.model("claude-haiku-5-5").unwrap();
+    let chat = catalog
+        .route_endpoints(&public.route)
+        .into_iter()
+        .find(|endpoint| endpoint.protocol == crate::topology::ProtocolProfile::OpenAiChat)
+        .unwrap();
+    for value in [Value::Null, json!(4096)] {
+        assert!(matches!(
+            load(json!({"binding":chat.id.as_str(),"default_output_tokens":value})),
+            Err(StartupError::Configuration("models"))
+        ));
+    }
+}
+
 fn cached_tool_result_input() -> Value {
     json!({
         "model":"claude-haiku-5-5","max_tokens":64,

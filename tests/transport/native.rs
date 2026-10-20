@@ -167,6 +167,23 @@ mod native_bindings {
         compile_with(model).unwrap();
 
         let p = provider();
+        for (default, maximum, valid) in [
+            (Some(0), None, false),
+            (Some(32_000), Some(8192), false),
+            (Some(4096), Some(4096), true),
+            (None, Some(1), true),
+        ] {
+            let mut configured = native.clone();
+            let caps = configured.representation.messages_mut().unwrap();
+            caps.default_output_tokens = default;
+            caps.model_limits.maximum_output_tokens = maximum;
+            let result = compile_endpoints(p.clone(), vec![configured]);
+            if valid {
+                result.unwrap();
+            } else {
+                assert_eq!(result.unwrap_err(), TopologyError::ContractUnsatisfiable);
+            }
+        }
         for change in 0..3 {
             let mut bad = native.clone();
             match change {
@@ -200,6 +217,69 @@ mod native_bindings {
             assert!(representable(&wrong, &request).is_err());
             assert!(prepare(&wrong, &p, &secret(), &request).is_err());
         }
+    }
+
+    #[test]
+    fn output_defaults_are_candidate_local_and_preflight_matches_preparation() {
+        use morphiecore::{
+            adapter::AdapterError,
+            execution::{AttemptError, plan::RejectionReason, prepare_with_rules},
+            protocol::CodecError,
+            semantic::task::generation::{
+                GenerationError, ReasoningActivation, ReasoningMode, ReasoningRequest,
+            },
+        };
+        let mut request = native_request();
+        let mut settings = request.task.semantic.settings().clone();
+        settings.controls.max_output_tokens = None;
+        settings.reasoning = ReasoningRequest::present(None);
+        settings.reasoning.activation = Presence::Value(ReasoningActivation::Enabled);
+        settings.reasoning.mode = Presence::Value(ReasoningMode::Budgeted);
+        settings.reasoning.budget_tokens = Some(2048);
+        request.task.semantic = request.task.semantic.with_settings(settings).unwrap();
+        let before = request.clone();
+        let mut first = standard_native();
+        let caps = first.representation.messages_mut().unwrap();
+        caps.semantics = NativeProfile::AdaptiveTextTools.representation_contract();
+        caps.default_output_tokens = Some(1024);
+        let mut second = first.clone();
+        second
+            .representation
+            .messages_mut()
+            .unwrap()
+            .default_output_tokens = Some(4096);
+        assert_eq!(
+            representable(&first, &request),
+            Err(RejectionReason::Representation)
+        );
+        assert!(matches!(
+            prepare(&first, &provider(), &secret(), &request),
+            Err(AttemptError::Adapter(AdapterError::Codec(
+                CodecError::Semantic(GenerationError::InvalidControl)
+            )))
+        ));
+        assert_eq!(request, before);
+        representable(&second, &request).unwrap();
+        let (prepared, rules) =
+            prepare_with_rules(&second, &provider(), &secret(), &request).unwrap();
+        assert_eq!(body(&prepared)["max_tokens"], 4096);
+        assert_eq!(body(&prepared)["thinking"]["budget_tokens"], 2048);
+        assert_eq!(
+            rules
+                .iter()
+                .filter(|rule| **rule == "messages.default-max-tokens.v1")
+                .count(),
+            1
+        );
+        assert_eq!(request, before);
+        assert_eq!(
+            first
+                .representation
+                .messages()
+                .unwrap()
+                .default_output_tokens,
+            Some(1024)
+        );
     }
 
     #[test]
@@ -310,7 +390,14 @@ mod native_bindings {
         let chat_request = Adapter::new(Profile::Chat, Dialect::Standard, None)
             .decode_request(br#"{"model":"public","messages":[{"role":"user","content":"hello"}]}"#)
             .unwrap();
-        // Messages requires max_tokens; an uncapped Chat request gets the fixed default.
+        // Only trusted target policy may fill the missing Chat ceiling.
+        assert!(representable(&native, &chat_request).is_err());
+        assert!(prepare(&native, &p, &secret(), &chat_request).is_err());
+        native
+            .representation
+            .messages_mut()
+            .unwrap()
+            .default_output_tokens = Some(32_000);
         representable(&native, &chat_request).unwrap();
         let prepared = prepare(&native, &p, &secret(), &chat_request).unwrap();
         assert_eq!(body(&prepared)["max_tokens"], 32_000);

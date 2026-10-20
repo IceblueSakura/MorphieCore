@@ -274,6 +274,10 @@ impl Endpoint {
             .model_limits()
             .validate()
             .map_err(|_| TopologyError::ContractUnsatisfiable)?;
+        if let Some(caps) = self.representation.messages() {
+            caps.validate()
+                .map_err(|_| TopologyError::ContractUnsatisfiable)?;
+        }
         if self.upstream_model.is_empty()
             || self.upstream_model.len() > 256
             || self

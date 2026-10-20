@@ -40,6 +40,9 @@ impl MessagesBinding {
     pub fn endpoint(&self) -> Endpoint {
         let provider = self.provider();
         let mut representation = TargetCaps::new(Profile::AdaptiveTextTools, Dialect::OpenCodeGo);
+        // Preserve the pinned OpenCode Messages fallback as binding policy.
+        // https://github.com/anomalyco/opencode/blob/e5a557efeee02c94486d391afc48f24a49ebc9a5/packages/ai/src/protocols/anthropic-messages.ts
+        representation.default_output_tokens = Some(32_000);
         representation.sampling = crate::protocol::anthropic::SamplingPolicy::Fixed;
         representation.manual_thinking = false;
         representation.automatic_cache_default =

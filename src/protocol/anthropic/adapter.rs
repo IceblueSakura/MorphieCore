@@ -64,6 +64,8 @@ pub struct TargetCaps {
     pub carriers: super::Carriers,
     pub sampling: SamplingPolicy,
     pub manual_thinking: bool,
+    /// Trusted insertion policy, independent of the model maximum.
+    pub default_output_tokens: Option<u64>,
     pub automatic_cache_default: Option<crate::semantic::task::generation::PrefixCacheTtl>,
 }
 impl TargetCaps {
@@ -78,12 +80,26 @@ impl TargetCaps {
             carriers: Default::default(),
             sampling: SamplingPolicy::Native,
             manual_thinking: true,
+            default_output_tokens: None,
             automatic_cache_default: None,
             cache: CacheProjection {
                 session_id: dialect == Dialect::OpenCodeGo,
                 ..Default::default()
             },
         }
+    }
+    pub fn validate(&self) -> Result<(), CodecError> {
+        self.model_limits.validate()?;
+        if self.default_output_tokens.is_some_and(|default| {
+            default == 0
+                || self
+                    .model_limits
+                    .maximum_output_tokens
+                    .is_some_and(|maximum| default > maximum)
+        }) {
+            return Err(CodecError::Invalid("Messages default output tokens"));
+        }
+        Ok(())
     }
     fn check_context(&self, request: &Request) -> Result<(), CodecError> {
         request.check_grouping()?;
@@ -123,6 +139,7 @@ impl TargetCaps {
         request: &Request,
         target: &ReplayTarget,
     ) -> Result<NativeProjection, AdapterError> {
+        self.validate()?;
         request.task.semantic.validate().map_err(CodecError::from)?;
         let mut projected = std::borrow::Cow::Borrowed(request);
         let mut reasoning_rule = None;
@@ -205,6 +222,13 @@ impl TargetCaps {
         request.check_semantic(&self.profile.representation_contract())?;
         let mut semantic = group_client_history(&request.task.semantic, true)?;
         let mut settings = semantic.settings().clone();
+        let default_output = settings.controls.max_output_tokens.is_none();
+        if default_output {
+            settings.controls.max_output_tokens =
+                Some(self.default_output_tokens.ok_or_else(|| {
+                    CodecError::Unsupported("Messages missing target output default".into())
+                })?);
+        }
         let default_cache = settings.automatic_prefix_cache.is_none()
             && !crate::semantic::task::generation::GenerationRequirements::derive(&semantic)
                 .explicit_cache
@@ -222,6 +246,9 @@ impl TargetCaps {
             &request.service_policy,
             &self.model_limits,
         )?;
+        if default_output {
+            projection.rules.push(RequestRule::DefaultMaxTokens);
+        }
         if default_cache {
             projection.rules.push(RequestRule::DefaultAutomaticCache);
         }
