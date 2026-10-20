@@ -21,6 +21,26 @@ fn fixture() {
             std::io::stdout().write_all(&input).unwrap();
             std::io::stderr().write_all(b"synthetic-stderr").unwrap();
         }
+        #[cfg(unix)]
+        Ok("descendant") => {
+            let mut socket = std::net::TcpStream::connect(
+                std::env::var("MORPHIECORE_SYNTHETIC_SOCKET").unwrap(),
+            )
+            .unwrap();
+            socket.write_all(b"ready").unwrap();
+            loop {
+                std::thread::park();
+            }
+        }
+        #[cfg(unix)]
+        Ok("tree") => {
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "process_tests::fixture", "--nocapture"])
+                .env("MORPHIECORE_SYNTHETIC_CHILD", "descendant")
+                .spawn()
+                .unwrap();
+            child.wait().unwrap();
+        }
         _ => {}
     }
 }
@@ -63,4 +83,49 @@ async fn child_limits_timeout_exit_and_concurrent_capture_are_distinct() {
         .await
         .unwrap();
     assert_eq!(output.status.code(), Some(7));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn child_group_timeout_and_cancellation_release_descendant_resources() {
+    use tokio::io::AsyncReadExt;
+    for cancel in [false, true] {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let task = tokio::spawn(async move {
+            let mut command = command("tree");
+            command.env("MORPHIECORE_SYNTHETIC_SOCKET", address);
+            crate::child_process::run(
+                &mut command,
+                b"",
+                Duration::from_secs(if cancel { 30 } else { 2 }),
+                4096,
+            )
+            .await
+        });
+        let (mut socket, _) = tokio::time::timeout(Duration::from_secs(3), listener.accept())
+            .await
+            .unwrap()
+            .unwrap();
+        let mut ready = [0; 5];
+        tokio::time::timeout(Duration::from_secs(3), socket.read_exact(&mut ready))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(&ready, b"ready");
+        if cancel {
+            task.abort();
+            assert!(task.await.unwrap_err().is_cancelled());
+        } else {
+            assert_eq!(task.await.unwrap().unwrap_err(), "child timeout");
+        }
+        let mut byte = [0];
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(3), socket.read(&mut byte))
+                .await
+                .unwrap()
+                .unwrap(),
+            0
+        );
+    }
 }

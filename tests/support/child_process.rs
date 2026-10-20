@@ -8,6 +8,18 @@ use tokio::{
     process::Command,
 };
 
+#[cfg(unix)]
+struct ProcessGroup(u32);
+#[cfg(unix)]
+impl Drop for ProcessGroup {
+    fn drop(&mut self) {
+        // Every member belongs to the test-owned child group, never the caller's group.
+        unsafe {
+            libc::kill(-(self.0 as libc::pid_t), libc::SIGKILL);
+        }
+    }
+}
+
 async fn capture(reader: impl AsyncRead + Unpin, limit: usize) -> Result<Vec<u8>, &'static str> {
     let mut bytes = Vec::new();
     reader
@@ -27,6 +39,8 @@ pub async fn run(
     deadline: Duration,
     limit: usize,
 ) -> Result<Output, &'static str> {
+    #[cfg(unix)]
+    command.process_group(0);
     let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -34,6 +48,8 @@ pub async fn run(
         .kill_on_drop(true)
         .spawn()
         .map_err(|_| "child spawn failed")?;
+    #[cfg(unix)]
+    let _group = ProcessGroup(child.id().ok_or("missing child identity")?);
     let mut stdin = child.stdin.take().ok_or("missing child stdin")?;
     let stdout = child.stdout.take().ok_or("missing child stdout")?;
     let stderr = child.stderr.take().ok_or("missing child stderr")?;

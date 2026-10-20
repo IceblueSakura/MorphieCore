@@ -19,7 +19,7 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
   - [Verification and integration boundary](#verification-and-integration-boundary)
 - [Integration handoff](#integration-handoff)
   - [P7 boundary review](#p7-boundary-review)
-  - [Routing acceptance — pending](#routing-acceptance--pending)
+  - [Controlled routing acceptance](#controlled-routing-acceptance)
 - [Pending decisions](#pending-decisions)
   - [Ownership and projection decisions](#ownership-and-projection-decisions)
   - [Scheduling and product decisions](#scheduling-and-product-decisions)
@@ -39,14 +39,14 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
 
 | Area | State | Next step |
 |---|---|---|
-| Routing | Functional phase complete under the [stable routing baseline](architecture.md#failover); feature development closed. Selected R1a/R2 Router/SDK synthetic recovery passed | Complete the [remaining client recovery gates](#routing-acceptance--pending); real failover remains separately scheduled |
+| Routing | Functional phase complete under the [stable routing baseline](architecture.md#failover); feature development closed. Selected [controlled acceptance](#controlled-routing-acceptance) passed through Router, SDK and installed clients | Real Provider failover remains [separately scheduled](#deferred-acceptance); no routing feature expansion |
 | Generation IR/codec | Selected stage-1 codec implementation complete, with independent native oracles, stored/stateless history parity and pinned SDK/client-carrier checks; [inventory](refs/2026-10-19-same-protocol-inventory.md) retains explicit exclusions | [Human design review](#generation-design-review-gate) and P7/per-loop readiness before stage-2 acceptance; no implicit activation |
 | Client compatibility | Rejection audit and policy selection complete: [phase transfer/return](architecture.md#message-phase-transfer), guarded extended-retention omission and retained citation rejection | Client-carrier acceptance and target storage evidence during reconnection |
-| Integration | R1a and the selected R2 native pi profile passed their bounded loops; the user deferred R1b on 2026-10-19 | R1b still needs the [report design](api-expansion-design.md#lifecycle-settings-and-service-reports-unselected) and explicit rescheduling; routing acceptance remains separate |
+| Integration | R1a, the selected R2 native pi profile and controlled routing acceptance passed their bounded scopes. The user retained separate R1b design review on 2026-10-20 | R1b still needs the [report design](api-expansion-design.md#lifecycle-settings-and-service-reports-unselected) and explicit rescheduling; S2 remains open |
 | Cross-protocol conversion and counting | Target-value limits, missing-cap policy and attribution rules are selected; implementation and Interactions snapshot design remain pending | [Stage-3 work plan](#stage-3-work-plan), with counting dependent on its own input projection rather than every conversion |
 | Embedding, other modalities and file resources | Stage 4 includes audio/image/video API adaptation and Files/multipart Uploads | Follow the [operation work packages](#stage-4-scope); existing paths remain maintenance-only until their slices |
 | Stage-5 follow-ups | Citations, tool discovery, hosted tools, server-side compaction, Batch and Realtime are recorded but **unscheduled** | No implementation queue or delivery commitment; select each slice before starting it |
-| Real acceptance | R1a passed selected SDK/Provider and pi/OpenCode loops. R2 passed installed pi SSE, native JSON continuation, reported 5m/1h cache classes/reads and scoped signed replay on 2026-10-19. R1b JSON passed but SSE remains blocked | Preserve the [scope and limitations](#stage-2-work-plan); R1, overall design review, routing and [deferred acceptance](#deferred-acceptance) remain open |
+| Real acceptance | R1a passed selected SDK/Provider and pi/OpenCode loops. R2 passed installed pi SSE, native JSON continuation, reported 5m/1h cache classes/reads and scoped signed replay on 2026-10-19. R1b JSON passed but SSE remains blocked | Preserve the [scope and limitations](#stage-2-work-plan); R1, overall design review and [deferred acceptance](#deferred-acceptance), including real failover, remain open |
 
 The user explicitly resumed R1 closure on 2026-10-19, then selected analysis only for the newly observed R1b report boundary. This does not approve that design or close the overall Generation review. The user separately resumed Messages owner-local cache admission on 2026-10-19; its [all-native configured contract](architecture.md#owner-local-cache-admission) is implemented without activating bindings or changing routes. Other real acceptance gates remain open. Google value guards and Interactions snapshots belong to stage 3: no Google client endpoint forms a same-protocol pair. Provider-specific reset dialects, persistence and cooldown tuning need separate evidence and approval; no background probes, balancing or multi-round retries are scheduled.
 
@@ -119,6 +119,8 @@ Every selected loop must leave no unclassified ignored request fields: `ignored_
 
 ### Stage 2 work plan
 
+**Status: R1a, the selected R2 profile and controlled routing acceptance are complete within their declared scopes. S2 is not complete.** On 2026-10-20 the user selected routing-client acceptance first and separate R1b design review afterward; no report semantic change or R1b resumption is approved by that choice. The overall human review gate also remains open.
+
 These packages implement the [selected reconnection contracts](#first-reconnection-slices), not a new admission policy. Protocol-local handoff does not bypass the pending human design review, P7 boundary review or binding evidence. R1a and R1b are separate acceptance slices; neither needs R2 or stage-3 conversions to succeed.
 
 R1a's explicitly resumed bounded scope passed on 2026-10-19: DashScope Chat, ordinary non-strict functions, low effort, explicit total output cap and readable reasoning history. Independent Router/SDK JSON/SSE oracles cover tool/result/final/next history and failure boundaries. Live SDK JSON/SSE and installed pi 1.3.0 / OpenCode 2.0.6+e5ecb57 each completed their selected three-turn loops. Client runs used scratch state, at most three serial upstream requests, a 2048-token cap, 120-second request deadlines, one gateway attempt and no forwarded retry; successful checks reported zero ignored request fields. A streamed SDK accumulator and a pi assertion were corrected before their successful checks; those earlier harness failures are not Provider failures. This accepts only the tested profiles, not every effort alias, tool schema, client version or model feature.
@@ -132,8 +134,7 @@ Installed pi 1.3.0 completed a five-request SSE session: `read` → final, repla
 | Package | Dependency and work | Exit condition |
 |---|---|---|
 | S2-0 Per-loop readiness | Repeat for the next selected loop after its [stage-1 handoff](#stage-1-to-stage-2-handoff). Confirm exact client request shape, model-effective carrier evidence, public admission and shared preflight/preparation behavior; classify every ignored field | The loop has an explicit carrier/profile contract and no unclassified ignored fields. Capability declarations distinguish exact support, adaptation and rejection. Any unsupported boundary is recorded without activating another binding |
-| S2-2 R1b | **Deferred by the user on 2026-10-19; blocked on design selection.** Keep report analysis separate from implementation | Preserve existing JSON evidence; after explicit design approval and rescheduling, verify independent SSE/lifecycle expectations and bounded pi/OpenCode/Provider loops. Keep stateless/stored history, phase-only manifest return where used and replay isolation |
-| S2-4 Routing acceptance | Selected R1a/R2 Router/SDK recovery checks passed; complete installed-client recovery under the unchanged routing contract. See [scope and remaining gates](#routing-acceptance--pending) | Conversation identity, exact-credential affinity, migration, all-cooling/`Retry-After`, cancellation and post-publication failure have explicit evidence at their responsible layers. Count client retries separately from gateway attempts; real failover remains separately scheduled |
+| S2-2 R1b | **Deferred; separate design review retained on 2026-10-20.** Keep report analysis separate from implementation | Preserve existing JSON evidence; after explicit design approval and rescheduling, verify independent SSE/lifecycle expectations and bounded pi/OpenCode/Provider loops. Keep stateless/stored history, phase-only manifest return where used and replay isolation |
 
 For each loop, establish independent static and SSE expectations before real acceptance, including tool errors, strict EOF, cancellation and no replay after publication. Use the [existing SDK and client procedures](development.md), not a new acceptance framework. Before every real run fix the target, request count, output cap and timeout; run serially through the project loader with no hidden retries and body-free reporting.
 
@@ -313,21 +314,17 @@ The [selected contract](architecture.md#public-capability-and-adaptation-notice)
    Verify phase-only manifest return through the selected pinned clients; the codec carrier does not prove clients retain it. Before enabling extended-retention omission, review each target's default storage policy without treating cache presence as retention evidence.
 4. Require the full offline baseline and connected SDK gate per slice, then schedule bounded pi/opencode and Provider acceptance.
 
-### Routing acceptance — pending
+### Controlled routing acceptance
 
-Select a small set of admitted bindings and exact client carriers first. Do not weaken admission to make a loop pass.
+**Status: selected controlled scope passed on 2026-10-20; real Provider failover remains separately scheduled.** Admission and routing policy are unchanged.
 
 The 2026-10-20 S2 continuation selects controlled synthetic recovery for the already accepted R1a DashScope Chat and R2 native Go/Haiku Messages profiles. It does not resume R1b, close the overall human design review, activate bindings or change routing policy.
 
 The [Router and SDK recovery checks](development.md#sdk-loopback-gate) passed on 2026-10-20, alongside the full offline baseline and connected synthetic SDK gate. They cover JSON/SSE tool feedback moving from the primary to a secondary managed key, honest primary recovery in another conversation and sticky continuation on the secondary. Each delivery uses four client requests/five upstream attempts for Chat and six/seven for Messages, with zero SDK retries; independent upstream expectations validate failed and successful tool-result attempts. Native session identity and signed/redacted history are checked through migration. Separate selected-profile HTTP checks create both cooldowns from upstream replies, then require a sanitized local `503`, the remaining `Retry-After` window and zero further dispatches. Existing executor and publication gates retain exclusive recovery, generation fences, cancellation, strict EOF and no replay after publication.
 
-Remaining acceptance work is installed pi recovery on the selected Chat/Messages profiles and OpenCode recovery on the selected Chat profile, including their actual session carriers and separately counted client retries. SDK recovery is not installed-client evidence. These serial synthetic managed-key checks also do not prove real account-compatible replay, concurrent network recovery or Provider failure/cache behavior.
+The separate [installed-client gate](development.md#installed-client-synthetic-recovery) passed with pi 1.3.0 Chat/Messages and OpenCode 2.0.6+e5ecb57 Chat, using the CLI project loader, a test-owned managed-key pool and synthetic upstream. Each case observed four client requests/five upstream attempts, no extra client transmissions, successful `read`/final/next history, an independent primary recovery probe and sticky continuation on the secondary. Client-reported session IDs matched ingress carriers; native session and exact signed/redacted history survived the synthetic migration. Client completion and final text were checked independently of upstream success. Diagnostics reported zero unclassified ignored request fields. Full offline, SDK and installed-client gates passed separately.
 
-- Verify pi/opencode conversation identity, tool-result/final-answer loops and exact-credential affinity on the selected protocols.
-- Use controlled synthetic failures for client-visible failover, affinity migration, all-cooling responses, `Retry-After`, cancellation and post-publication termination. Count client retries separately from gateway attempts.
-- Use separately bounded real Provider checks for failure scopes and reported cache usage. Missing cache usage is unknown, not a miss.
-
-Exit condition: selected client loops and recovery scenarios have explicit results, offline and connected SDK gates stay green, and unverified bindings remain identified. Follow the [real-client and Provider procedures](development.md); this stage authorizes no deployment or routing features.
+This closes only the selected controlled routing slice, not S2, R1b or the overall design review. Serial synthetic migration does not establish real account-compatible replay, concurrent network recovery, other bindings or Provider failure/cache behavior. [Real failover](#deferred-acceptance) needs its own bounded run; missing cache usage remains unknown, not a miss. No deployment, routing feature or credential-lifecycle change is authorized by these results.
 
 ## Pending decisions
 

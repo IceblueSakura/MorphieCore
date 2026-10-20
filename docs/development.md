@@ -12,6 +12,7 @@ This guide owns tooling, test procedures and evidence reporting. Use offline, sy
   - [Documentation checks](#documentation-checks)
 - [Coverage and pruning](#coverage-and-pruning)
 - [Online acceptance](#online-acceptance)
+  - [Installed-client synthetic recovery](#installed-client-synthetic-recovery)
   - [Real Provider checks](#real-provider-checks)
   - [pi acceptance](#pi-acceptance)
   - [opencode acceptance](#opencode-acceptance)
@@ -38,6 +39,7 @@ direnv users can allow the root `.envrc` once. Update nixpkgs separately with `n
 | `tests/credential` | Credential CLI with synthetic stores and authorities |
 | `tests/gateway` | Router → synthetic Provider and isolated binary startup |
 | `tests/sdk_loopback` | Ignored by default; pinned Python SDK over loopback |
+| `tests/clients` | Ignored by default, Unix; explicitly selected installed clients against a CLI-loaded synthetic gateway |
 
 Shared builders live in `tests/support/`. Test selection follows the lean policy in [AGENTS.md](../AGENTS.md#tests).
 
@@ -174,6 +176,25 @@ Coverage proves execution, not assertions. Never remove safety-invariant tests j
 ## Online acceptance
 
 Record the tested binary version separately from the pinned source revision. An installed-client gate does not establish behavior for a different pinned revision or every protocol route.
+
+### Installed-client synthetic recovery
+
+This is a separate gate from SDK loopback and real Provider acceptance. `tests/clients.rs` creates a private synthetic credential store through `CredentialManager`; `tests/clients/recovery.py` starts the real gateway CLI with explicit scratch files and a loopback-only candidate. `drivers.py` runs pi RPC or OpenCode standalone with empty allowlisted environments, scratch HOME/XDG paths and no project resources. Supply **unwrapped** binaries explicitly: a PATH wrapper can source host secrets even under `env -i`.
+
+```sh
+MORPHIECORE_PI_BIN=/absolute/path/to/unwrapped/pi \
+MORPHIECORE_OPENCODE_BIN=/absolute/path/to/unwrapped/opencode \
+  cargo test --locked --offline --test clients -- \
+  --ignored --test-threads=1 --nocapture
+```
+
+Python 3 from the development environment needs only its standard library; `MORPHIECORE_CLIENT_PYTHON` optionally selects it. The gate checks and reports pi `1.3.0` and OpenCode `2.0.6+e5ecb57`; selecting a new version requires deliberate profile review.
+
+Each of the three serial cases (pi Chat, pi native Messages, OpenCode Chat) fixes four client Generation requests and five upstream attempts: initial `read` on the primary, unpublished `503` on tool feedback, the same feedback completed by the secondary, an independent conversation recovering the primary, then original-session continuation on the secondary. Wire caps are 2048 tokens; candidate/route/exchange deadlines are 3/8/10 seconds, with a 120-second driver bound. The transparent admission forwarder counts client POSTs independently, rejects duplicates/excess requests and never rewrites payloads or session headers. pi retries are disabled; OpenCode's zero extra transmissions are observed, not inferred from an unsupported retry setting.
+
+Independent wire expectations check ordered history, call/result IDs, readable reasoning and native signatures/redacted blocks. Client events and scratch OpenCode database state establish actual tool completion, final text and idle success; observed session carriers must match the clients' reported session IDs. Gateway diagnostics require honest completion, a real foreground recovery probe and zero unclassified ignored request fields. Native session carriers remain stable through migration and differ for the probe.
+
+Owned HTTP sockets/workers and child process groups are bounded and released, including incomplete headers, timeout and cancellation. Focused authority-oracle checks live in `tests/sdk/test_client_recovery.py`; descendant teardown checks extend `tests/sdk/process.rs`. These checks call no real Providers and do not prove account-compatible replay, Provider cache behavior, R1b Responses or every failure/concurrency scenario.
 
 ### Real Provider checks
 
