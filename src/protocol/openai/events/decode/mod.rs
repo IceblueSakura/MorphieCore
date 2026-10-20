@@ -7,30 +7,23 @@ use serde_json::json;
 pub struct EventDecoder {
     pub(super) profile: Profile,
     pub(super) adaptation: crate::protocol::openai::dialect::adaptation::Adaptation,
+    /// Everything both protocols advance: accepted state, fidelity and identity.
     pub(super) state: Option<StreamState>,
     pub(super) fidelity: FidelityRecords,
     pub(super) metadata: Option<ResponseMetadata>,
-    native_reports: Option<crate::semantic::context::ResponseReports>,
-    native_instructions: Option<Vec<(ItemId, Item)>>,
-    native_configurations: Vec<(usize, ConfigurationUpdate)>,
     pub(super) origin: Option<ReplayOrigin>,
     pub(super) ids: Vec<ItemId>,
     pub(super) next_part: u64,
     pub(super) poisoned: bool,
-    sequence: Option<u64>,
+    /// Accepted events and skipped unregistered types; both bound the stream.
     events: usize,
     ignored: usize,
-    queued_creation_pending: bool,
-    pub(super) chat_pending: Option<(StreamTerminal, TerminalDetails)>,
-    pub(super) chat_finish_reason: Option<String>,
-    chat_extras: crate::protocol::openai::dialect::adapter_shapes::Extras,
-    pub(super) chat_owner: Option<ItemId>,
-    pub(super) chat_calls: Vec<ItemId>,
-    pub(super) chat_reasoning: Option<ItemId>,
-    /// Message position of the open reasoning item's first detail.
-    pub(super) chat_detail_base: u64,
-    pub(super) chat_pending_part: Option<PartKind>,
-    pub(super) chat_audio_bytes: crate::protocol::openai::chat::audio::ChunkBytes,
+    /// Responses ordering; Chat chunks carry no sequence number.
+    sequence: Option<u64>,
+    /// Chunk-only bookkeeping: no Responses payload contributes to any of it.
+    chat: chat::State,
+    /// Snapshot-only bookkeeping: no Chat chunk contributes to any of it.
+    responses: responses::State,
 }
 impl EventDecoder {
     pub fn new(profile: Profile) -> Self {
@@ -40,26 +33,15 @@ impl EventDecoder {
             state: Some(StreamState::new()),
             fidelity: FidelityRecords::default(),
             metadata: None,
-            native_reports: None,
-            native_instructions: None,
-            native_configurations: vec![],
+            chat: Default::default(),
+            responses: Default::default(),
             origin: None,
             ids: vec![],
             next_part: 0,
             poisoned: false,
-            sequence: None,
             events: 0,
             ignored: 0,
-            queued_creation_pending: false,
-            chat_pending: None,
-            chat_finish_reason: None,
-            chat_extras: Default::default(),
-            chat_owner: None,
-            chat_calls: vec![],
-            chat_reasoning: None,
-            chat_detail_base: 0,
-            chat_pending_part: None,
-            chat_audio_bytes: Default::default(),
+            sequence: None,
         }
     }
     /// Unregistered Responses event types skipped so far; names are never kept.
@@ -171,9 +153,9 @@ impl EventDecoder {
             } else {
                 self.chat(o)?
             };
-            if self.profile == Profile::Chat && self.chat_pending.is_some() {
-                self.chat_extras.extend(extras);
-                crate::protocol::openai::dialect::adapter_shapes::check_budget(&self.chat_extras)?;
+            if self.profile == Profile::Chat && self.chat.pending.is_some() {
+                self.chat.extras.extend(extras);
+                crate::protocol::openai::dialect::adapter_shapes::check_budget(&self.chat.extras)?;
             } else if self.profile == Profile::Responses
                 && !extras.is_empty()
                 && self
@@ -225,14 +207,14 @@ impl EventDecoder {
         if self.profile != Profile::Chat || self.poisoned {
             return Err(CodecError::Invalid("DONE"));
         }
-        let Some((terminal, details)) = self.chat_pending.take() else {
+        let Some((terminal, details)) = self.chat.pending.take() else {
             self.poisoned = true;
             return Err(CodecError::Invalid("DONE before finish"));
         };
         let result = (|| {
             let mut out = vec![];
             self.emit(StreamEvent::Terminal { terminal, details }, &mut out)?;
-            if !self.chat_extras.is_empty() {
+            if !self.chat.extras.is_empty() {
                 let semantic = materialize(self.state()?)?;
                 let id = self
                     .metadata
@@ -242,7 +224,7 @@ impl EventDecoder {
                 self.fidelity.capture_routing_extras(
                     self.profile,
                     &self.adaptation,
-                    std::mem::take(&mut self.chat_extras),
+                    std::mem::take(&mut self.chat.extras),
                     &semantic,
                     id,
                 )?;
@@ -320,16 +302,17 @@ impl EventDecoder {
             native.validate()?;
             if let Some(instructions) = native.instruction_messages {
                 if self
+                    .responses
                     .native_instructions
                     .as_ref()
                     .is_some_and(|old| old != &instructions)
                 {
                     return Err(CodecError::Invalid("reported instructions changed"));
                 }
-                self.native_instructions = Some(instructions);
+                self.responses.native_instructions = Some(instructions);
             }
-            self.native_reports = Some(crate::protocol::reports::observe(
-                self.native_reports.as_ref(),
+            self.responses.native_reports = Some(crate::protocol::reports::observe(
+                self.responses.native_reports.as_ref(),
                 &native.reports,
                 self.adaptation.rules.responses_lifecycle_reports,
             )?);

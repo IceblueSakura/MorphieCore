@@ -1,10 +1,23 @@
 //! Incoming Chat chunks and their explicit framing-level DONE boundary.
 use crate::protocol::openai::events::*;
+
+/// Chat-only chunk bookkeeping. The shared stream state stays in the decoder.
+#[derive(Default)]
+pub(super) struct State {
+    pub(super) pending: Option<(StreamTerminal, TerminalDetails)>,
+    pub(super) finish_reason: Option<String>,
+    pub(super) extras: crate::protocol::openai::dialect::adapter_shapes::Extras,
+    pub(super) owner: Option<ItemId>,
+    pub(super) calls: Vec<ItemId>,
+    pub(super) reasoning: Option<ItemId>,
+    /// Message position of the open reasoning item's first detail.
+    pub(super) detail_base: u64,
+    pub(super) pending_part: Option<PartKind>,
+    pub(super) audio_bytes: crate::protocol::openai::chat::audio::ChunkBytes,
+}
+
 impl EventDecoder {
-    pub(in crate::protocol::openai::events) fn chat(
-        &mut self,
-        o: &Map<String, Value>,
-    ) -> Result<Vec<StreamEvent>, CodecError> {
+    pub(super) fn chat(&mut self, o: &Map<String, Value>) -> Result<Vec<StreamEvent>, CodecError> {
         crate::protocol::openai::chat::items::reject_moderation(o)?;
         DecodeDirection::Upstream.fields(
             o,
@@ -31,7 +44,7 @@ impl EventDecoder {
             .get("choices")
             .and_then(Value::as_array)
             .ok_or(CodecError::Invalid("choices"))?;
-        if self.chat_pending.is_some() {
+        if self.chat.pending.is_some() {
             if !choices.is_empty() {
                 if !self.adaptation.rules.repeated_finish_usage || choices.len() != 1 {
                     return Err(CodecError::Invalid("chunk after finish"));
@@ -41,7 +54,7 @@ impl EventDecoder {
                     .fields(choice, &["index", "delta", "finish_reason", "logprobs"])?;
                 if choice.get("index").and_then(Value::as_u64) != Some(0)
                     || choice.get("finish_reason").and_then(Value::as_str)
-                        != self.chat_finish_reason.as_deref()
+                        != self.chat.finish_reason.as_deref()
                     || choice.get("logprobs").is_some_and(|v| !v.is_null())
                 {
                     return Err(CodecError::Invalid("repeated finish"));
@@ -138,7 +151,7 @@ impl EventDecoder {
         {
             return Err(CodecError::Invalid("role"));
         }
-        let prior = self.chat_reasoning.and_then(|id| {
+        let prior = self.chat.reasoning.and_then(|id| {
             self.state
                 .as_ref()?
                 .item(id)
@@ -154,7 +167,7 @@ impl EventDecoder {
                 delta,
                 &self.adaptation,
                 prior,
-                self.chat_detail_base,
+                self.chat.detail_base,
                 DecodeDirection::Upstream,
             )?
         } else {
@@ -242,8 +255,8 @@ impl EventDecoder {
             )?;
             // The value closes its item; a later detail opens the next one.
             let details = self.state()?.item(item)?.parts.len() as u64 + 1;
-            self.chat_detail_base += details;
-            self.chat_reasoning = None;
+            self.chat.detail_base += details;
+            self.chat.reasoning = None;
         }
         // One Chat candidate owns an assistant message even when it only contains
         // calls. The owner is allocated at the first message-owned signal so
@@ -258,7 +271,7 @@ impl EventDecoder {
                 .is_some_and(|fragment| !fragment.is_empty())
             || delta.get("tool_calls").is_some_and(|v| !v.is_null())
             || delta.get("audio").is_some_and(|v| !v.is_null());
-        if message_owned && self.chat_owner.is_none() {
+        if message_owned && self.chat.owner.is_none() {
             let id = self.allocate_item()?;
             self.emit(
                 StreamEvent::ItemStarted {
@@ -268,17 +281,17 @@ impl EventDecoder {
                 },
                 &mut out,
             )?;
-            self.chat_owner = Some(id);
+            self.chat.owner = Some(id);
         }
-        let owner = self.chat_owner;
+        let owner = self.chat.owner;
         for (key, kind) in [("content", PartKind::Text), ("refusal", PartKind::Refusal)] {
             if let Some(v) = delta.get(key).filter(|v| !v.is_null()) {
                 let fragment = v.as_str().ok_or(CodecError::Invalid("text delta"))?;
-                if fragment.is_empty() && self.chat_owner.is_none() {
+                if fragment.is_empty() && self.chat.owner.is_none() {
                     // An opening empty fragment defers the carrier message so
                     // readable reasoning keeps its static order ahead of it.
-                    if self.chat_pending_part.is_none() {
-                        self.chat_pending_part = Some(kind);
+                    if self.chat.pending_part.is_none() {
+                        self.chat.pending_part = Some(kind);
                     }
                     continue;
                 }
@@ -331,7 +344,7 @@ impl EventDecoder {
             }
         }
         if let Some(audio) = delta.get("audio").filter(|v| !v.is_null()) {
-            let item = self.chat_owner.ok_or(CodecError::Invalid("audio owner"))?;
+            let item = self.chat.owner.ok_or(CodecError::Invalid("audio owner"))?;
             if self
                 .state()?
                 .item(item)?
@@ -364,7 +377,7 @@ impl EventDecoder {
             };
             let update = crate::protocol::openai::chat::audio::read_update(
                 audio,
-                &mut self.chat_audio_bytes,
+                &mut self.chat.audio_bytes,
             )?;
             self.emit(StreamEvent::AudioDelta { item, part, update }, &mut out)?;
         }
@@ -374,7 +387,7 @@ impl EventDecoder {
             } else {
                 "refusal"
             };
-            let existing = self.chat_owner.and_then(|item| {
+            let existing = self.chat.owner.and_then(|item| {
                 self.state()
                     .ok()?
                     .item(item)
@@ -390,11 +403,11 @@ impl EventDecoder {
                 (item, part)
             } else {
                 if delta.get(key).and_then(Value::as_str).is_none()
-                    && self.chat_pending_part != Some(kind)
+                    && self.chat.pending_part != Some(kind)
                 {
                     return Err(CodecError::Invalid("probability owner"));
                 }
-                let item = if let Some(item) = self.chat_owner {
+                let item = if let Some(item) = self.chat.owner {
                     item
                 } else {
                     let item = self.allocate_item()?;
@@ -406,12 +419,12 @@ impl EventDecoder {
                         },
                         &mut out,
                     )?;
-                    self.chat_owner = Some(item);
+                    self.chat.owner = Some(item);
                     item
                 };
                 let part = self.allocate_part()?;
                 self.emit(StreamEvent::PartStarted { item, part, kind }, &mut out)?;
-                self.chat_pending_part = None;
+                self.chat.pending_part = None;
                 (item, part)
             };
             if probs.is_empty() {
@@ -458,8 +471,8 @@ impl EventDecoder {
                 };
                 reject_chat_orchestration(f)?;
                 DecodeDirection::Upstream.fields(f, &["name", "arguments"])?;
-                let established = n < self.chat_calls.len();
-                let item = if n == self.chat_calls.len() {
+                let established = n < self.chat.calls.len();
+                let item = if n == self.chat.calls.len() {
                     let item = self.allocate_item()?;
                     let kind = ItemKind::ToolCall {
                         format: ArgumentFormat::Raw,
@@ -484,11 +497,12 @@ impl EventDecoder {
                         },
                         &mut out,
                     )?;
-                    self.chat_calls.push(item);
+                    self.chat.calls.push(item);
                     item
                 } else {
                     *self
-                        .chat_calls
+                        .chat
+                        .calls
                         .get(n)
                         .ok_or(CodecError::Invalid("tool index"))?
                 };
@@ -528,7 +542,7 @@ impl EventDecoder {
             }
         }
         if let Some(reason) = choice.get("finish_reason").filter(|v| !v.is_null()) {
-            let owner = if let Some(id) = self.chat_owner {
+            let owner = if let Some(id) = self.chat.owner {
                 id
             } else {
                 let id = self.allocate_item()?;
@@ -540,12 +554,12 @@ impl EventDecoder {
                     },
                     &mut out,
                 )?;
-                self.chat_owner = Some(id);
+                self.chat.owner = Some(id);
                 id
             };
             // A deferred opening fragment materializes its empty part only when
             // no other content won the part, matching static `content: ""`.
-            if let Some(kind) = self.chat_pending_part.take()
+            if let Some(kind) = self.chat.pending_part.take()
                 && self.state()?.item(owner)?.parts.is_empty()
             {
                 let part = self.allocate_part()?;
@@ -561,7 +575,7 @@ impl EventDecoder {
             let terminal = match reason.as_str() {
                 // Forced tool choice can report `stop` beside its calls.
                 Some("stop") => StreamTerminal::Completed,
-                Some("tool_calls") if !self.chat_calls.is_empty() => StreamTerminal::Completed,
+                Some("tool_calls") if !self.chat.calls.is_empty() => StreamTerminal::Completed,
                 Some("length" | "content_filter") => StreamTerminal::Incomplete,
                 _ => return Err(CodecError::Unsupported("finish reason".into())),
             };
@@ -610,7 +624,7 @@ impl EventDecoder {
                 )?;
             }
             // The calls belong to the message that opened before them.
-            if !self.chat_calls.is_empty() {
+            if !self.chat.calls.is_empty() {
                 if self
                     .state()?
                     .item(owner)?
@@ -621,7 +635,7 @@ impl EventDecoder {
                     return Err(CodecError::Invalid("refusal with tool calls"));
                 }
                 let mut members = vec![owner];
-                members.extend(&self.chat_calls);
+                members.extend(&self.chat.calls);
                 let group = MessageEnvelope::new(
                     GroupId::new(owner.scope(), owner.get()),
                     MessageEnvelopeRole::Assistant,
@@ -629,8 +643,8 @@ impl EventDecoder {
                 )?;
                 self.emit(StreamEvent::MessageEnvelope(group), &mut out)?;
             }
-            self.chat_finish_reason = reason.as_str().map(str::to_owned);
-            self.chat_pending = Some((
+            self.chat.finish_reason = reason.as_str().map(str::to_owned);
+            self.chat.pending = Some((
                 terminal,
                 if terminal == StreamTerminal::Incomplete {
                     TerminalDetails {
@@ -664,10 +678,10 @@ impl EventDecoder {
         Ok(out)
     }
     fn reasoning_owner(&mut self, out: &mut Vec<StreamEvent>) -> Result<ItemId, CodecError> {
-        if self.chat_owner.is_some() {
+        if self.chat.owner.is_some() {
             return Err(CodecError::Unsupported("late Chat reasoning owner".into()));
         }
-        if let Some(item) = self.chat_reasoning {
+        if let Some(item) = self.chat.reasoning {
             return Ok(item);
         }
         let item = self.allocate_item()?;
@@ -679,7 +693,7 @@ impl EventDecoder {
             },
             out,
         )?;
-        self.chat_reasoning = Some(item);
+        self.chat.reasoning = Some(item);
         Ok(item)
     }
 }

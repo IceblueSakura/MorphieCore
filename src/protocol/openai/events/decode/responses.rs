@@ -2,6 +2,15 @@
 use super::*;
 use crate::protocol::openai::events::responses_wire::*;
 
+/// Snapshot-only bookkeeping. The shared stream state stays in the decoder.
+#[derive(Default)]
+pub(super) struct State {
+    pub(super) native_reports: Option<crate::semantic::context::ResponseReports>,
+    pub(super) native_instructions: Option<Vec<(ItemId, Item)>>,
+    pub(super) native_configurations: Vec<(usize, ConfigurationUpdate)>,
+    pub(super) queued_creation_pending: bool,
+}
+
 // Fixed structural failure labels only; never include IDs, text or ciphertext.
 fn terminal_snapshot_difference(actual: &[Value], expected: &[Value]) -> &'static str {
     if actual.len() != expected.len() {
@@ -113,12 +122,12 @@ impl EventDecoder {
                 match typ {
                     "response.queued" => self.emit(StreamEvent::Queued, &mut out)?,
                     "response.created" => {
-                        if self.queued_creation_pending {
+                        if self.responses.queued_creation_pending {
                             return Err(CodecError::Invalid("duplicate queued creation"));
                         }
                         if queued_creation {
                             self.emit(StreamEvent::Queued, &mut out)?;
-                            self.queued_creation_pending = true;
+                            self.responses.queued_creation_pending = true;
                         } else {
                             self.emit(StreamEvent::Started, &mut out)?;
                         }
@@ -126,9 +135,9 @@ impl EventDecoder {
                     _ => {
                         // The queued snapshot cannot prove generation has started;
                         // this actual progress event supplies the transition.
-                        if self.queued_creation_pending {
+                        if self.responses.queued_creation_pending {
                             self.emit(StreamEvent::Started, &mut out)?;
-                            self.queued_creation_pending = false;
+                            self.responses.queued_creation_pending = false;
                         }
                         if !self.state()?.started() {
                             return Err(CodecError::Invalid("response not started"));
@@ -1049,6 +1058,7 @@ impl EventDecoder {
             return Err(CodecError::Limit);
         }
         if let Some((_, old)) = self
+            .responses
             .native_configurations
             .iter()
             .find(|(key, _)| *key == index)
@@ -1057,7 +1067,7 @@ impl EventDecoder {
                 return Err(CodecError::Invalid("configuration snapshot changed"));
             }
         } else {
-            self.native_configurations.push((index, update));
+            self.responses.native_configurations.push((index, update));
         }
         Ok(update)
     }
@@ -1172,7 +1182,7 @@ impl EventDecoder {
             )?);
             // The synthetic terminal still enters the native decoder once.
             // Reuse validated native controls instead of decoding canonical levels again.
-            for (index, update) in &self.native_configurations {
+            for (index, update) in &self.responses.native_configurations {
                 if let Some(effort) = crate::protocol::openai::reasoning::effort_label(update)? {
                     summary["output"][*index]["reasoning"] = json!({"effort":effort});
                 }
