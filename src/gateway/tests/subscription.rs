@@ -141,17 +141,13 @@ async fn missing_media_does_not_relax_sse_terminal_or_eof_validation() {
         b"<html>not a response</html>".to_vec(),
         serde_json::to_vec(&wire::response(2)).unwrap(),
     ];
-    for dialect in [
-        crate::protocol::openai::Dialect::Codex,
-        crate::protocol::openai::Dialect::Siwc,
-    ] {
-        for (index, bytes) in cases.iter().enumerate() {
-            for stream in [false, true] {
-                assert!(
-                    consume(dialect, &[], bytes.clone(), stream).await.is_none(),
-                    "{dialect:?} case={index} stream={stream}"
-                );
-            }
+    let dialect = crate::protocol::openai::Dialect::Siwc;
+    for (index, bytes) in cases.iter().enumerate() {
+        for stream in [false, true] {
+            assert!(
+                consume(dialect, &[], bytes.clone(), stream).await.is_none(),
+                "{dialect:?} case={index} stream={stream}"
+            );
         }
     }
 }

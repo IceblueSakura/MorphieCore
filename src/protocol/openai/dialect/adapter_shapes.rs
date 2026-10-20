@@ -309,7 +309,6 @@ pub(crate) fn decode<'a>(
         && !adaptation.rules.responses_billing_view
         && !adaptation.rules.responses_inactive_state
         && !adaptation.rules.responses_reported_schema_alias
-        && !adaptation.rules.responses_product_accounting
         && !adaptation.rules.responses_access_programs
         && !adaptation.rules.responses_zero_tool_accounting
         && !adaptation.rules.responses_inactive_reports
@@ -363,22 +362,14 @@ pub(crate) fn decode<'a>(
         Extras::new()
     };
     if profile == Profile::Responses {
-        if adaptation.rules.responses_product_accounting {
-            crate::protocol::openai::dialect::accounting_shapes::product(
-                o,
-                &mut extras,
-                direction,
-            )?;
-        } else if adaptation.rules.responses_access_programs {
+        if adaptation.rules.responses_access_programs {
             crate::protocol::openai::dialect::accounting_shapes::programs(
                 o,
                 &mut extras,
                 direction,
             )?;
         }
-        if !adaptation.rules.responses_product_accounting
-            && adaptation.rules.responses_zero_tool_accounting
-        {
+        if adaptation.rules.responses_zero_tool_accounting {
             crate::protocol::openai::dialect::accounting_shapes::zero_tools(o, &mut extras)?;
         }
         if adaptation.rules.responses_context_accounting {
@@ -391,9 +382,7 @@ pub(crate) fn decode<'a>(
         if adaptation.rules.responses_inactive_reports {
             crate::protocol::openai::dialect::accounting_shapes::inactive_reports(o, &mut extras)?;
         }
-        if !adaptation.rules.responses_product_accounting
-            && adaptation.rules.responses_usage_attribution
-        {
+        if adaptation.rules.responses_usage_attribution {
             crate::protocol::openai::dialect::accounting_shapes::usage_attribution(
                 o,
                 &mut extras,

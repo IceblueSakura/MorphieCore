@@ -1,5 +1,5 @@
 //! Closed, source-bound accounting views, not substitutes for Generation usage.
-//! Product response metadata is not authority to invoke programs or hosted tools.
+//! Public access-program reports are not authority to invoke programs or hosted tools.
 use crate::protocol::openai::{
     CodecError, dialect::adapter_shapes::Extras, shape::DecodeDirection,
 };
@@ -56,16 +56,6 @@ fn null_moderation(o: &mut Map<String, Value>, extras: &mut Extras) -> Result<()
         take(o, "moderation", "/moderation", extras);
     }
     Ok(())
-}
-pub(in crate::protocol::openai) fn product(
-    o: &mut Map<String, Value>,
-    extras: &mut Extras,
-    direction: DecodeDirection,
-) -> Result<(), CodecError> {
-    programs(o, extras, direction)?;
-    null_moderation(o, extras)?;
-    zero_tools(o, extras)?;
-    usage_attribution(o, extras, direction)
 }
 pub(in crate::protocol::openai) fn usage_attribution(
     o: &mut Map<String, Value>,

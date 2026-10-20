@@ -173,7 +173,6 @@ impl FidelityRecords {
             if !(adaptation.rules.routing_extras
                 || adaptation.rules.chat_stop_diagnostics
                 || adaptation.rules.reported_request_id
-                || adaptation.rules.responses_product_accounting
                 || adaptation.rules.responses_access_programs
                 || adaptation.rules.responses_zero_tool_accounting
                 || adaptation.rules.responses_inactive_reports
@@ -210,7 +209,6 @@ impl FidelityRecords {
                 (adaptation.rules.routing_extras
                     || adaptation.rules.chat_stop_diagnostics
                     || adaptation.rules.reported_request_id
-                    || adaptation.rules.responses_product_accounting
                     || adaptation.rules.responses_access_programs
                     || adaptation.rules.responses_zero_tool_accounting
                     || adaptation.rules.responses_inactive_reports

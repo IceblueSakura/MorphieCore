@@ -13,7 +13,6 @@ pub enum Dialect {
     #[default]
     Standard,
     Siwc,
-    Codex,
     Grok,
     MorphieCore,
     DeepSeek,
@@ -43,17 +42,6 @@ impl Dialect {
                     responses_inactive_reports: true,
                     responses_usage_attribution: true,
                     responses_event_owned_output: true,
-                    responses_sse_without_content_type: true,
-                    ..Default::default()
-                },
-            ),
-            Self::Codex => (
-                "codex-v1",
-                WireRules {
-                    response_extras: true,
-                    responses_product_accounting: true,
-                    responses_event_owned_output: true,
-                    responses_forced_stream: true,
                     responses_sse_without_content_type: true,
                     ..Default::default()
                 },

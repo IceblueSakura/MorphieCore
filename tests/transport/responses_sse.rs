@@ -386,20 +386,11 @@ fn empty_terminal_summary_requires_real_closed_items_and_exact_nonempty_snapshot
     };
     let events = crate::wire::events(2);
     for (dialect, finished, output, accepted) in [
-        (Dialect::Codex, true, json!([]), true),
         (Dialect::Siwc, true, json!([]), true),
         (Dialect::Standard, true, json!([]), false),
         (Dialect::Grok, true, json!([]), false),
-        (Dialect::Codex, false, json!([]), false),
         (Dialect::Siwc, false, json!([]), false),
-        (Dialect::Codex, true, Value::Null, false),
         (Dialect::Siwc, true, Value::Null, false),
-        (
-            Dialect::Codex,
-            true,
-            json!([{"type":"message","id":"other","role":"assistant","status":"completed","content":[]}]),
-            false,
-        ),
         (
             Dialect::Siwc,
             true,

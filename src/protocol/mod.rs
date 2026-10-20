@@ -12,7 +12,6 @@ pub(crate) mod attachments;
 pub(crate) mod attribution;
 pub mod cache;
 mod decoded;
-pub mod extensions;
 pub mod fidelity;
 mod generation_controls;
 pub mod model_limits;

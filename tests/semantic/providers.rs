@@ -7,8 +7,6 @@ mod cache_projection;
 mod chat_wire;
 #[path = "providers/dashscope_controls.rs"]
 mod dashscope_controls;
-#[path = "providers/extensions.rs"]
-mod extensions;
 #[path = "providers/modelbest.rs"]
 mod modelbest;
 #[path = "providers/provider_profiles.rs"]

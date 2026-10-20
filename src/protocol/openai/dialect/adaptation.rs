@@ -9,12 +9,10 @@ pub struct WireRules {
     /// Public SIWC is a restricted Responses operation, not a product-backend alias.
     /// https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations
     pub responses_siwc: bool,
-    /// Product backend requires SSE regardless of downstream delivery.
-    /// Source: https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/codex-api/src/common.rs
+    /// Public SIWC requires upstream SSE regardless of downstream delivery.
+    /// https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference
     pub responses_forced_stream: bool,
-    /// Closed product access/zero-tool accounting, retained as scoped fidelity.
-    pub responses_product_accounting: bool,
-    /// Closed public access-program report, not product moderation/tool accounting.
+    /// Closed public access-program report, not permission to execute hosted tools.
     /// https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference
     pub responses_access_programs: bool,
     /// Exact zero-only tool counters are inactive source reports, not hosted usage.
