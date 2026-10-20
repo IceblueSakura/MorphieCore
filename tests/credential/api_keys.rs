@@ -1,8 +1,8 @@
 //! API-key CLI input and on-disk shape are checked independently of its encoder.
 use crate::test_files::Directory;
 use serde_json::Value;
-use std::{process::Stdio, time::Duration};
-use tokio::{process::Command, time::timeout};
+use std::time::Duration;
+use tokio::process::Command;
 
 async fn command(dir: &Directory, args: &[&str], input: Option<&[u8]>) -> std::process::Output {
     use std::os::unix::fs::PermissionsExt;
@@ -32,21 +32,11 @@ async fn command(dir: &Directory, args: &[&str], input: Option<&[u8]>) -> std::p
             }
         })
         .collect();
-    let child = Command::new(env!("CARGO_BIN_EXE_morphiecore-auth"))
-        .args(args)
-        .arg("--store")
-        .arg(&dir.path)
-        .env_clear()
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .unwrap();
-    timeout(Duration::from_secs(10), child.wait_with_output())
+    let mut command = Command::new(env!("CARGO_BIN_EXE_morphiecore-auth"));
+    command.args(args).arg("--store").arg(&dir.path).env_clear();
+    crate::child_process::run(&mut command, b"", Duration::from_secs(10), 64 << 10)
         .await
-        .unwrap()
-        .unwrap()
+        .expect("bounded API-key CLI operation")
 }
 #[tokio::test]
 async fn api_key_cli_uses_explicit_file_and_never_reports_material() {
@@ -142,16 +132,6 @@ async fn api_key_cli_rejects_argv_secrets_and_invalid_input_without_creating_sto
             "never-print-this",
         ],
         vec!["api-key", "add", "--domain", "synthetic", "--alias", "one"],
-        vec![
-            "api-key",
-            "add",
-            "--domain",
-            "../escape",
-            "--alias",
-            "one",
-            "--secret-fd",
-            "0",
-        ],
         vec!["api-key", "list", "--secret-fd", "0"],
     ] {
         let dir = Directory::new();
@@ -184,4 +164,59 @@ async fn api_key_cli_rejects_argv_secrets_and_invalid_input_without_creating_sto
         assert!(!result.status.success());
         assert!(!dir.path.exists());
     }
+    let dir = Directory::new();
+    let result = command(
+        &dir,
+        &[
+            "api-key",
+            "replace",
+            "--domain",
+            "synthetic",
+            "--alias",
+            "one",
+            "--revision",
+            "1",
+            "--secret-file",
+            "INPUT_FILE",
+        ],
+        Some(b""),
+    )
+    .await;
+    assert!(!result.status.success());
+    assert!(result.stdout.is_empty());
+    assert!(!dir.path.exists());
+}
+
+#[tokio::test]
+async fn api_key_cli_rejects_domain_traversal_after_parsing() {
+    let dir = Directory::new();
+    let result = command(
+        &dir,
+        &[
+            "api-key",
+            "add",
+            "--domain",
+            "../escape",
+            "--alias",
+            "one",
+            "--secret-file",
+            "INPUT_FILE",
+        ],
+        Some(b"synthetic-private-value"),
+    )
+    .await;
+    assert!(!result.status.success());
+    assert!(result.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(result.stderr).unwrap(),
+        "Credential operation failed: invalid account or client identifier\n"
+    );
+    assert!(!dir.path.parent().unwrap().join("escape.json").exists());
+    assert_eq!(
+        std::fs::read_dir(&dir.path)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>(),
+        ["store.lock"]
+    );
 }

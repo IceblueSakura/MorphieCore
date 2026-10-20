@@ -341,36 +341,44 @@ mod unix {
     }
 
     #[tokio::test]
-    async fn browser_registration_errors_are_rejected_before_store_creation() {
+    async fn invalid_profiles_and_login_options_are_rejected_before_store_creation() {
         let dir = Directory::existing();
         let store = dir.path.join("not-created");
-        for flags in [
-            vec![
-                "codex",
-                "login",
-                "--method",
-                "browser",
-                "--callback-port",
-                "0",
-            ],
-            vec!["siwc", "login", "--method", "browser"],
-            vec!["openai", "login", "--method", "device"],
-            vec![
-                "openai",
-                "login",
-                "--method",
-                "browser",
-                "--client-id",
-                "unrelated-client",
-            ],
-            vec![
-                "grok",
-                "login",
-                "--method",
-                "browser",
-                "--client-id",
-                "invalid client",
-            ],
+        for (flags, expected) in [
+            (
+                vec!["codex", "login", "--method", "browser"],
+                "unknown authorization profile",
+            ),
+            (
+                vec!["siwc", "login", "--method", "browser"],
+                "unknown authorization profile",
+            ),
+            (
+                vec!["openai", "login", "--method", "device"],
+                "invalid account or client identifier",
+            ),
+            (
+                vec![
+                    "openai",
+                    "login",
+                    "--method",
+                    "browser",
+                    "--client-id",
+                    "unrelated-client",
+                ],
+                "invalid account or client identifier",
+            ),
+            (
+                vec![
+                    "grok",
+                    "login",
+                    "--method",
+                    "browser",
+                    "--client-id",
+                    "invalid client",
+                ],
+                "invalid account or client identifier",
+            ),
         ] {
             let mut args: Vec<&std::ffi::OsStr> = flags.iter().map(AsRef::as_ref).collect();
             args.extend([
@@ -380,9 +388,14 @@ mod unix {
                 "personal".as_ref(),
             ]);
             let result = command(&args).await;
-            assert!(!result.status.success());
-            assert!(result.stdout.is_empty());
-            assert!(!store.exists());
+            assert!(!result.status.success(), "{flags:?}");
+            assert!(result.stdout.is_empty(), "{flags:?}");
+            assert_eq!(
+                String::from_utf8(result.stderr).unwrap(),
+                format!("Credential operation failed: {expected}\n"),
+                "{flags:?}"
+            );
+            assert!(!store.exists(), "{flags:?}");
         }
     }
 

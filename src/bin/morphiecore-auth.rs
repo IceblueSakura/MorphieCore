@@ -170,34 +170,38 @@ async fn execute(options: Options) -> Result<(), Error> {
     }
     match options.command {
         Command::ApiKey { operation } => {
-            // Validate input before opening a new destination store.
-            let input = match &operation {
-                KeyCommand::Add { secret_file, .. } | KeyCommand::Replace { secret_file, .. } => {
-                    Some(secret(secret_file)?)
-                }
-                _ => None,
-            };
-            let manager = CredentialManager::new(root, vec![])?;
             match operation {
-                KeyCommand::Add { key, .. } => {
-                    print(&manager.add_api_key(&key.domain, &key.alias, input.unwrap())?)
+                KeyCommand::Add { key, secret_file } => {
+                    // Validate input before opening a new destination store.
+                    let input = secret(&secret_file)?;
+                    let manager = CredentialManager::new(root, vec![])?;
+                    print(&manager.add_api_key(&key.domain, &key.alias, input)?)
                 }
-                KeyCommand::Replace { key, revision, .. } => print(&manager.replace_api_key(
-                    &key.domain,
-                    &key.alias,
+                KeyCommand::Replace {
+                    key,
                     revision,
-                    input.unwrap(),
-                )?),
+                    secret_file,
+                } => {
+                    let input = secret(&secret_file)?;
+                    let manager = CredentialManager::new(root, vec![])?;
+                    print(&manager.replace_api_key(&key.domain, &key.alias, revision, input)?)
+                }
                 KeyCommand::Enable { key, revision } => {
+                    let manager = CredentialManager::new(root, vec![])?;
                     print(&manager.set_api_key_enabled(&key.domain, &key.alias, revision, true)?)
                 }
                 KeyCommand::Disable { key, revision } => {
+                    let manager = CredentialManager::new(root, vec![])?;
                     print(&manager.set_api_key_enabled(&key.domain, &key.alias, revision, false)?)
                 }
                 KeyCommand::Remove { key, revision } => {
+                    let manager = CredentialManager::new(root, vec![])?;
                     print(&manager.remove_api_key(&key.domain, &key.alias, revision)?)
                 }
-                KeyCommand::List { domain } => print(&manager.list_api_keys(domain.as_deref())?),
+                KeyCommand::List { domain } => {
+                    let manager = CredentialManager::new(root, vec![])?;
+                    print(&manager.list_api_keys(domain.as_deref())?)
+                }
             }
         }
         Command::Pool { operation } => {
