@@ -1,8 +1,6 @@
 //! Native request representation; validation never executes tools or rewrites schemas.
-use super::{
-    media::{MAX_IMAGES, Media, ResultBlock, ResultContent},
-    response::Block,
-    shape::*,
+use crate::protocol::anthropic::messages::{
+    Media, ResultBlock, ResultContent, media::MAX_IMAGES, shape::*, wire::content::Block,
 };
 use crate::{
     protocol::CodecError,
@@ -21,7 +19,7 @@ pub struct CacheMarked<T> {
     pub cache: Option<PrefixCacheTtl>,
 }
 impl<T> CacheMarked<T> {
-    pub(super) fn read(
+    pub(in crate::protocol::anthropic::messages) fn read(
         value: &Value,
         read: impl FnOnce(&Value) -> Result<T, CodecError>,
     ) -> Result<Self, CodecError> {
@@ -36,7 +34,10 @@ impl<T> CacheMarked<T> {
             cache: cache.value().copied(),
         })
     }
-    pub(super) fn wire(&self, encode: impl FnOnce(&T) -> Value) -> Value {
+    pub(in crate::protocol::anthropic::messages) fn wire(
+        &self,
+        encode: impl FnOnce(&T) -> Value,
+    ) -> Value {
         let mut value = encode(&self.content);
         if let Some(ttl) = self.cache {
             value["cache_control"] = CacheControl::breakpoint_wire(&ttl);
@@ -50,7 +51,7 @@ pub enum TextContent {
     Blocks(Vec<CacheMarked<String>>),
 }
 impl TextContent {
-    pub(super) fn read(v: &Value) -> Result<Self, CodecError> {
+    pub(in crate::protocol::anthropic::messages) fn read(v: &Value) -> Result<Self, CodecError> {
         if v.is_string() {
             return Ok(Self::Text(string(v)?));
         }
@@ -70,7 +71,7 @@ impl TextContent {
                 .collect::<Result<_, _>>()?,
         ))
     }
-    pub(super) fn bytes(&self) -> Result<usize, CodecError> {
+    pub(in crate::protocol::anthropic::messages) fn bytes(&self) -> Result<usize, CodecError> {
         let mut n = 0;
         match self {
             Self::Text(s) => charge(&mut n, text(s)?)?,
@@ -86,13 +87,13 @@ impl TextContent {
         }
         Ok(n)
     }
-    pub(super) fn nodes(&self) -> usize {
+    pub(in crate::protocol::anthropic::messages) fn nodes(&self) -> usize {
         match self {
             Self::Text(_) => 1,
             Self::Blocks(a) => 1 + a.len() * 10,
         }
     }
-    pub(super) fn wire(&self) -> Value {
+    pub(in crate::protocol::anthropic::messages) fn wire(&self) -> Value {
         match self {
             Self::Text(s) => json!(s),
             Self::Blocks(a) => json!(
@@ -112,7 +113,7 @@ pub enum Role {
     System,
 }
 impl Role {
-    pub(super) fn read(v: &Value) -> Result<Self, CodecError> {
+    pub(in crate::protocol::anthropic::messages) fn read(v: &Value) -> Result<Self, CodecError> {
         match v.as_str() {
             Some("user") => Ok(Self::User),
             Some("assistant") => Ok(Self::Assistant),
@@ -120,7 +121,7 @@ impl Role {
             _ => Err(CodecError::Invalid("Anthropic role")),
         }
     }
-    pub(super) fn wire(self) -> &'static str {
+    pub(in crate::protocol::anthropic::messages) fn wire(self) -> &'static str {
         match self {
             Self::User => "user",
             Self::Assistant => "assistant",
@@ -131,7 +132,9 @@ impl Role {
 /// A run of system messages is judged together. A run carrying content follows a user
 /// turn and precedes an assistant turn or ends the list; an effort-only run may appear
 /// anywhere. `(role, content)` marks whether each message carries blocks.
-pub(super) fn validate_system_placement(messages: &[(Role, bool)]) -> Result<(), CodecError> {
+pub(in crate::protocol::anthropic::messages) fn validate_system_placement(
+    messages: &[(Role, bool)],
+) -> Result<(), CodecError> {
     let mut end = 0;
     for run in messages.chunk_by(|a, b| a.0 == b.0) {
         let start = end;
@@ -161,7 +164,7 @@ pub struct InputMessage {
     pub effort: Option<Effort>,
 }
 impl InputMessage {
-    pub(super) fn carries_content(&self) -> bool {
+    pub(in crate::protocol::anthropic::messages) fn carries_content(&self) -> bool {
         match &self.content {
             MessageContent::Text(s) => !s.is_empty(),
             MessageContent::Blocks(blocks) => !blocks.is_empty(),
@@ -238,7 +241,9 @@ impl InputMessage {
     }
 }
 /// Absent, null, `{}` and a null effort all mean no per-message change.
-pub(super) fn read_message_effort(o: &Map<String, Value>) -> Result<Option<Effort>, CodecError> {
+pub(in crate::protocol::anthropic::messages) fn read_message_effort(
+    o: &Map<String, Value>,
+) -> Result<Option<Effort>, CodecError> {
     match o.get("output_config") {
         None | Some(Value::Null) => Ok(None),
         Some(config) => match closed(config, &["effort"])?.get("effort") {
@@ -254,7 +259,7 @@ pub enum ToolTarget {
     Definition(Tool),
 }
 impl ToolTarget {
-    pub(super) fn read(v: &Value) -> Result<Self, CodecError> {
+    pub(in crate::protocol::anthropic::messages) fn read(v: &Value) -> Result<Self, CodecError> {
         let o = object(v)?;
         match required(o, "type")?.as_str() {
             Some("tool_reference") => Ok(Self::Reference(string(required(
@@ -270,7 +275,7 @@ impl ToolTarget {
             )),
         }
     }
-    pub(super) fn bytes(&self) -> Result<usize, CodecError> {
+    pub(in crate::protocol::anthropic::messages) fn bytes(&self) -> Result<usize, CodecError> {
         match self {
             Self::Reference(tool) => {
                 name(tool, 128)?;
@@ -279,7 +284,7 @@ impl ToolTarget {
             Self::Definition(tool) => tool.bytes(),
         }
     }
-    pub(super) fn wire(&self) -> Value {
+    pub(in crate::protocol::anthropic::messages) fn wire(&self) -> Value {
         match self {
             Self::Reference(name) => json!({"type":"tool_reference","name":name}),
             Self::Definition(tool) => json!({"type":"tool_definition","definition":tool.wire()}),
@@ -297,7 +302,7 @@ pub struct Tool {
     pub defer_loading: bool,
     pub eager_input_streaming: Presence<bool>,
 }
-pub(super) const TOOL_FIELDS: &[&str] = &[
+pub(in crate::protocol::anthropic::messages) const TOOL_FIELDS: &[&str] = &[
     "name",
     "description",
     "input_schema",
@@ -307,7 +312,7 @@ pub(super) const TOOL_FIELDS: &[&str] = &[
     "eager_input_streaming",
 ];
 impl Tool {
-    pub(super) fn read(v: &Value) -> Result<Self, CodecError> {
+    pub(in crate::protocol::anthropic::messages) fn read(v: &Value) -> Result<Self, CodecError> {
         let o = closed(v, TOOL_FIELDS)?;
         let defer = presence(o, "defer_loading", boolean)?;
         nonnull(&defer)?;
@@ -321,7 +326,7 @@ impl Tool {
             eager_input_streaming: presence(o, "eager_input_streaming", boolean)?,
         })
     }
-    pub(super) fn bytes(&self) -> Result<usize, CodecError> {
+    pub(in crate::protocol::anthropic::messages) fn bytes(&self) -> Result<usize, CodecError> {
         name(&self.name, 128)?;
         nonnull(&self.description)?;
         nonnull(&self.strict)?;
@@ -380,7 +385,7 @@ pub struct ToolChoice {
     pub disable_parallel_tool_use: Presence<bool>,
 }
 impl ToolChoice {
-    pub(super) fn read(v: &Value) -> Result<Self, CodecError> {
+    pub(in crate::protocol::anthropic::messages) fn read(v: &Value) -> Result<Self, CodecError> {
         let o = closed(v, &["type", "name", "disable_parallel_tool_use"])?;
         let selection = match required(o, "type")?.as_str() {
             Some("tool") => Selection::Tool(string(required(o, "name")?)?),
@@ -419,7 +424,7 @@ pub enum Display {
     Omitted,
 }
 impl Display {
-    pub(super) fn read(v: &Value) -> Result<Self, CodecError> {
+    pub(in crate::protocol::anthropic::messages) fn read(v: &Value) -> Result<Self, CodecError> {
         match v.as_str() {
             Some("summarized") => Ok(Self::Summarized),
             Some("omitted") => Ok(Self::Omitted),
@@ -447,7 +452,9 @@ pub enum PrefixMismatch {
     DropBlock,
 }
 impl PrefixMismatch {
-    pub(super) fn read(v: Option<&Value>) -> Result<Option<Self>, CodecError> {
+    pub(in crate::protocol::anthropic::messages) fn read(
+        v: Option<&Value>,
+    ) -> Result<Option<Self>, CodecError> {
         let Some(v) = v.filter(|v| !v.is_null()) else {
             return Ok(None);
         };
@@ -575,7 +582,7 @@ pub struct OutputConfig {
     pub format: Presence<SchemaDocument>,
 }
 impl OutputConfig {
-    pub(super) fn read(v: &Value) -> Result<Self, CodecError> {
+    pub(in crate::protocol::anthropic::messages) fn read(v: &Value) -> Result<Self, CodecError> {
         let o = closed(v, &["effort", "format"])?;
         Ok(Self {
             effort: presence(o, "effort", Effort::read)?,
@@ -610,7 +617,9 @@ pub enum CacheControl {
     OneHour,
 }
 impl CacheControl {
-    pub(super) fn read_breakpoint(v: &Value) -> Result<PrefixCacheTtl, CodecError> {
+    pub(in crate::protocol::anthropic::messages) fn read_breakpoint(
+        v: &Value,
+    ) -> Result<PrefixCacheTtl, CodecError> {
         let o = closed(v, &["type", "ttl"])?;
         if required(o, "type")?.as_str() != Some("ephemeral") {
             return Err(CodecError::Unsupported("Anthropic cache type".into()));
@@ -628,16 +637,16 @@ impl CacheControl {
             PrefixCacheTtl::OneHour => json!({"type":"ephemeral","ttl":"1h"}),
         }
     }
-    pub(super) fn read(v: &Value) -> Result<Self, CodecError> {
+    pub(in crate::protocol::anthropic::messages) fn read(v: &Value) -> Result<Self, CodecError> {
         Ok(Self::from_ttl(Self::read_breakpoint(v)?))
     }
-    pub(super) fn from_ttl(ttl: PrefixCacheTtl) -> Self {
+    pub(in crate::protocol::anthropic::messages) fn from_ttl(ttl: PrefixCacheTtl) -> Self {
         match ttl {
             PrefixCacheTtl::FiveMinutes => Self::Ephemeral,
             PrefixCacheTtl::OneHour => Self::OneHour,
         }
     }
-    pub(super) fn ttl(self) -> PrefixCacheTtl {
+    pub(in crate::protocol::anthropic::messages) fn ttl(self) -> PrefixCacheTtl {
         match self {
             Self::Ephemeral => PrefixCacheTtl::FiveMinutes,
             Self::OneHour => PrefixCacheTtl::OneHour,
@@ -649,7 +658,7 @@ impl CacheControl {
 }
 /// Empty text cannot own an explicit or automatic cache breakpoint.
 /// https://platform.claude.com/docs/en/build-with-claude/prompt-caching#what-cannot-be-cached
-pub(super) fn text_cache_eligible(
+pub(crate) fn text_cache_eligible(
     text: &str,
     cache: Option<PrefixCacheTtl>,
 ) -> Result<bool, CodecError> {
@@ -660,7 +669,7 @@ pub(super) fn text_cache_eligible(
 }
 /// Messages admits four ordered prefix breakpoints; longer TTLs must come first.
 /// https://platform.claude.com/docs/en/build-with-claude/prompt-caching
-pub(super) fn validate_cache_breakpoints(
+pub(in crate::protocol::anthropic::messages) fn validate_cache_breakpoints(
     ttls: impl IntoIterator<Item = PrefixCacheTtl>,
 ) -> Result<(), CodecError> {
     let ttls = ttls.into_iter();
@@ -679,7 +688,7 @@ pub(super) fn validate_cache_breakpoints(
     }
     Ok(())
 }
-pub(super) fn validate_automatic_cache(
+pub(in crate::protocol::anthropic::messages) fn validate_automatic_cache(
     breakpoints: &mut Vec<PrefixCacheTtl>,
     last_cache: Option<PrefixCacheTtl>,
     automatic: Option<PrefixCacheTtl>,
@@ -728,7 +737,7 @@ impl std::fmt::Debug for Request {
     }
 }
 impl Request {
-    pub(super) fn read(v: &Value) -> Result<Self, CodecError> {
+    pub(in crate::protocol::anthropic::messages) fn read(v: &Value) -> Result<Self, CodecError> {
         let o = closed(
             v,
             &[
@@ -759,7 +768,7 @@ impl Request {
                 None => None,
             },
             user_id: read_user_id(o)?,
-            service_policy: super::service::read_policy(o)?,
+            service_policy: crate::protocol::anthropic::messages::service::read_policy(o)?,
             max_tokens: uint(required(o, "max_tokens")?)?,
             stop_sequences: crate::protocol::generation_controls::stops(
                 o.get("stop_sequences"),
@@ -790,7 +799,7 @@ impl Request {
         label(&self.model)?;
         nonnull(&self.service_policy)?;
         if let Some(policy) = self.service_policy.value() {
-            super::service::policy_wire(*policy)?;
+            crate::protocol::anthropic::messages::service::policy_wire(*policy)?;
         }
         if self.max_tokens == 0 {
             return Err(CodecError::Invalid("Anthropic max_tokens"));
@@ -1051,7 +1060,7 @@ impl Request {
         }
         Ok(())
     }
-    pub(super) fn wire(&self) -> Value {
+    pub(in crate::protocol::anthropic::messages) fn wire(&self) -> Value {
         let mut v = json!({
             "model": self.model,
             "max_tokens": self.max_tokens,
@@ -1078,7 +1087,10 @@ impl Request {
         }
         put(o, "system", &self.system, TextContent::wire);
         put(o, "service_tier", &self.service_policy, |policy| {
-            json!(super::service::policy_wire(*policy).expect("validated service policy"))
+            json!(
+                crate::protocol::anthropic::messages::service::policy_wire(*policy)
+                    .expect("validated service policy")
+            )
         });
         put(o, "tools", &self.tools, |a| {
             json!(a.iter().map(Tool::wire).collect::<Vec<_>>())
@@ -1091,7 +1103,7 @@ impl Request {
         v
     }
 }
-pub(super) fn sampling(
+pub(in crate::protocol::anthropic::messages) fn sampling(
     o: &Map<String, Value>,
     key: &'static str,
     max: f64,
@@ -1105,7 +1117,9 @@ pub(super) fn sampling(
         })
         .transpose()
 }
-pub(super) fn validate_user_id(value: &Presence<String>) -> Result<(), CodecError> {
+pub(in crate::protocol::anthropic::messages) fn validate_user_id(
+    value: &Presence<String>,
+) -> Result<(), CodecError> {
     if value
         .value()
         .is_some_and(|s| s.chars().count() > 512 || s.len() > 2048)
@@ -1114,7 +1128,9 @@ pub(super) fn validate_user_id(value: &Presence<String>) -> Result<(), CodecErro
     }
     Ok(())
 }
-pub(super) fn read_user_id(o: &Map<String, Value>) -> Result<Presence<String>, CodecError> {
+pub(in crate::protocol::anthropic::messages) fn read_user_id(
+    o: &Map<String, Value>,
+) -> Result<Presence<String>, CodecError> {
     let Some(metadata) = o.get("metadata") else {
         return Ok(Presence::Absent);
     };

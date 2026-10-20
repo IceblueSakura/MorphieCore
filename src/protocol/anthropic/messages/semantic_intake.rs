@@ -1,5 +1,7 @@
 //! Explicit block/container intake and Provider/model compatibility association.
-use super::{Block, Media, ResultBlock, ResultContent, Role, request::text_cache_eligible};
+use crate::protocol::anthropic::messages::{
+    Block, Media, ResultBlock, ResultContent, Role, wire::request::text_cache_eligible,
+};
 use crate::protocol::native::ReplayTarget;
 use crate::{
     protocol::{CodecError, fidelity::FidelityRecords},
