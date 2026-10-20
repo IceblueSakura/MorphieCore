@@ -47,7 +47,7 @@ Protocol mappings need independently hand-written wire→IR and IR→wire expect
 
 Select checks from the relevant [roadmap package](roadmap.md#planned-order). Same-protocol fidelity needs a pinned revision/domain and independent request, response, JSON/SSE and returned-history expectations; a successful tool loop does not prove losslessness. Independent tasks and resources need their own lifecycle checks, not Generation round trips.
 
-The [design-review gate](roadmap.md#generation-design-review-gate) owns coverage authorization and pending approval. Use counterexamples to support that review; do not encode unresolved defects as successful expectations. Passing checks, measured coverage and agent review are not human design approval.
+The [design-review gate](roadmap.md#generation-design-review-gate) owns approved scope, coverage authorization and outstanding approval requirements. Use counterexamples to support design review; do not encode unresolved defects as successful expectations. Passing checks, measured coverage and agent review are not human design approval.
 
 ## Verification gates
 
