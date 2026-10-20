@@ -53,6 +53,26 @@ The [pinned Google proto](https://github.com/googleapis/googleapis/blob/8cc2927c
 
 Existing token probabilities can retain unknown bytes and sparse alternative facts. General explanations/aggregates/token identity need the [proposed owners](../api-expansion-design.md#google-output-report-owners-unselected), not a generic extras bag or reconstruction from token values. These checks used public sources and synthetic data; no real Provider or client-loop behavior is established.
 
+#### Streamed score scope, 2026-10-20
+
+The user requested further streaming-scope research instead of selecting the proposed terminal-only aggregate profile. Public definitions and the supplemental Python SDK `364889a` establish the following boundaries:
+
+| Evidence | Established meaning | Not established |
+|---|---|---|
+| [Developer API Candidate/LogprobsResult](https://ai.google.dev/api/generate-content#LogprobsResult) and pinned proto | Candidate average; sum for all tokens; token/top-candidate reports indexed by decoding step | Whether an SSE candidate's aggregates describe its content fragment, the cumulative candidate, or a later summary; no explicit merge/reset/coverage rule |
+| [`models.py` streamed intake](https://github.com/googleapis/python-genai/blob/364889aafe40bfa8f3b9db847ba272d299f7d632/google/genai/models.py#L4775-L4814) | Parse and yield each native response separately | No shared probability accumulator or proof that last/sum is the correct reduction |
+| [`StreamContinuation.observe`](https://github.com/googleapis/python-genai/blob/364889aafe40bfa8f3b9db847ba272d299f7d632/google/genai/_extra_utils.py#L880-L974) | Within-hop usage snapshots and across-hop usage have distinct rules; returned candidate scores are not accumulated there | Usage's documented accumulation rules do not transfer to scores |
+| [`merge_pydantic_models`](https://github.com/googleapis/python-genai/blob/364889aafe40bfa8f3b9db847ba272d299f7d632/google/genai/_extra_utils.py#L1199-L1313) | Separate continuation-hop responses add numeric `_sum` fields and preserve the latest non-null scalar average | This helper is not an ordinary SSE-frame reducer or a guarantee of a combined candidate-wide average |
+| [SDK probability types](https://github.com/googleapis/python-genai/blob/364889aafe40bfa8f3b9db847ba272d299f7d632/google/genai/types.py#L8192-L8235) | Token values and aggregate sum are optional; sum is marked unsupported in Vertex AI | SDK Optional/None does not establish every native JSON null/default rule or aggregate coverage |
+
+A schema-expressible stream reporting sums `-0.2`, then `-0.6` has different reductions under disjoint fragments (`-0.8`) and cumulative snapshots (`-0.6`). The public field descriptions alone do not disambiguate them. A finish reason closes generation; it does not independently prove the score's token coverage. Missing final metrics cannot authorize carrying an earlier checkpoint forward as a reported final value. Explicit zero remains a value, not absence.
+
+The continuation helper is also not an average oracle. In a hypothetical two-hop response with one token/sum `-1` and three tokens/sum `-6`, the combined mean would be `-1.75`; preserving hop two's mean yields `-2`. This is an arithmetic counterexample to treating the helper's latest scalar as a reweighted whole-output score, not an observed Provider defect or evidence that ordinary stream chunks are separate hops. The inspected SDK's `test_log_probs` uses non-streaming `generate_content`; continuation sum assertions are synthetic multi-request tests, not native streamed-score fixtures.
+
+The [Vertex inference reference](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/model-reference/inference), rechecked on this date, warns that `responseLogprobs` and `logprobs` are deprecated for Gemini 3.x and will be deprecated completely. This is Vertex evidence, not a Developer API deprecation guarantee. The current [Gemini 3.8 Flash Developer model page](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash) does not settle the streamed-score contract.
+
+No real Provider calls were made. A selected model/endpoint/API version and redacted native observations could establish a narrow profile, not a universal merge rule. Before selecting aggregate owners, require evidence for coverage, repeated reports, absence, terminal-only reports and content-free final frames. Keep general terminal explanations and source-bound token identity separate from this unresolved aggregation question. The [design proposal](../api-expansion-design.md#google-output-report-owners-unselected) remains unselected.
+
 ### P7 binding evidence, 2026-10-18
 
 These findings concern registered bindings, not inspected private deployments. No Provider calls were made. Public source/model documentation was rechecked on 2026-10-18; the [reconnection sequence](../roadmap.md#first-reconnection-slices) owns scheduling and unresolved selections.
