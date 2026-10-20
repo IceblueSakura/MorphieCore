@@ -1017,10 +1017,8 @@ impl EventDecoder {
             "status": "incomplete",
             "output": [v],
         });
-        let decoded = crate::protocol::openai::static_response::decode_responses_with(
-            &wrapper,
-            &self.adaptation,
-        )?;
+        let decoded =
+            crate::protocol::openai::responses::response::decode_with(&wrapper, &self.adaptation)?;
         let mut normalized = crate::protocol::openai::responses::items::encode_items(
             decoded.semantic.items(),
             &decoded.fidelity,
@@ -1196,7 +1194,7 @@ impl EventDecoder {
         };
         self.observe_metadata(p)?;
         let decoded =
-            crate::protocol::openai::static_response::decode_responses_with(r, &self.adaptation)?;
+            crate::protocol::openai::responses::response::decode_with(r, &self.adaptation)?;
         if self.adaptation.rules.responses_terminal_reasoning
             && terminal == StreamTerminal::Completed
         {

@@ -170,7 +170,7 @@ impl EventEncoder {
                 v["choices"] = json!([]);
                 v
             };
-            v["usage"] = crate::protocol::openai::static_response::encode_usage(
+            v["usage"] = crate::protocol::openai::accounting::encode_usage(
                 usage,
                 Profile::Chat,
                 &self.contract.adaptation.rules,

@@ -1,7 +1,7 @@
 //! Pure codecs for explicitly admitted OpenAI operations.
-//! `chat`/`responses` expose envelopes, task requests and shared item codecs.
-//! `events` owns payload state/grammar; SSE framing stays with each protocol.
-//! `lowering` checks representability before wire encoding.
+//! `chat`/`responses` own one whole request and response each; `accounting` and
+//! `context` hold what both profiles report identically. `events` owns payload
+//! state/grammar; SSE framing stays with each protocol.
 pub mod adapter;
 pub use adapter::{Adapter, Dialect};
 pub(crate) mod bailian;
@@ -14,10 +14,12 @@ pub mod lowering;
 pub mod responses;
 mod target;
 pub use target::TargetCaps;
+pub(crate) mod accounting;
 mod common;
 pub(crate) use common::DecodeDirection;
 pub use common::IgnoredFields;
 pub(crate) use common::validate_identity;
+pub(crate) mod context;
 pub mod embeddings;
 mod function_tools;
 pub mod images;
@@ -27,7 +29,6 @@ pub(crate) mod reports;
 mod service;
 mod settings;
 pub mod speech;
-pub(crate) mod static_response;
 mod strict_schema;
 mod terminal;
 #[cfg(test)]

@@ -300,7 +300,7 @@ impl Adapter {
         let mut decoded = match self.protocol {
             Profile::Chat => {
                 openai::chat::envelope::validate_response(&value)?;
-                openai::static_response::decode_chat_with(&value, &self.adaptation)?
+                openai::chat::response::decode_with(&value, &self.adaptation)?
             }
             Profile::Responses => {
                 openai::responses::envelope::validate_response_snapshot_with(
@@ -308,7 +308,7 @@ impl Adapter {
                     &self.adaptation,
                     openai::DecodeDirection::Upstream,
                 )?;
-                openai::static_response::decode_responses_with(&value, &self.adaptation)?
+                openai::responses::response::decode_with(&value, &self.adaptation)?
             }
         };
         if let Some(scope) = &self.adaptation.scope {

@@ -84,7 +84,7 @@ impl EventDecoder {
                     return Err(CodecError::Invalid("content after finish"));
                 }
             }
-            let usage = crate::protocol::openai::static_response::usage(
+            let usage = crate::protocol::openai::accounting::usage(
                 o.get("usage"),
                 Profile::Chat,
                 &self.adaptation,
@@ -651,7 +651,7 @@ impl EventDecoder {
                 },
             ));
             if let Some(value) = terminal_usage {
-                let usage = crate::protocol::openai::static_response::usage(
+                let usage = crate::protocol::openai::accounting::usage(
                     Some(value),
                     Profile::Chat,
                     &self.adaptation,

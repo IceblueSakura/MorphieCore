@@ -334,7 +334,7 @@ impl EventDecoder {
                 self.adaptation.rules.responses_lifecycle_reports,
             )?);
         }
-        let mut m = crate::protocol::openai::static_response::metadata(
+        let mut m = crate::protocol::openai::context::metadata(
             o,
             self.profile,
             &self.adaptation,

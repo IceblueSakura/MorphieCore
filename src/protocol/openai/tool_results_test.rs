@@ -121,8 +121,8 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
                 attachment: None,
             };
             let result = match profile {
-                Profile::Chat => static_response::encode_chat(&forged),
-                Profile::Responses => static_response::encode_responses(&forged),
+                Profile::Chat => crate::protocol::openai::chat::encode_response(&forged),
+                Profile::Responses => crate::protocol::openai::responses::encode_response(&forged),
             };
             assert!(matches!(result, Err(CodecError::Unsupported(_))));
         }
