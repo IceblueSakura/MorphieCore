@@ -84,6 +84,10 @@ downstream HTTP: authenticate and collect within bounds
 
 Directories follow the Rust module tree. Keep architectural root boundaries; group internals by domain and expose deliberate entry points. Do not add compatibility-only aliases or a generic plugin framework.
 
+Generation validation keeps ordered item/dependency traversal and aggregate charging together; `semantic/task/generation/validate/controls.rs` owns tool/output controls. The stream reducer retains the consuming entry point and global guards; its private `reduce/items.rs` helpers own item identity, result replacement and closure at the original transition positions. They do not expose resumable mutable state after rejection. Execution delivery, body acknowledgement and credential lifecycle remain separate ownership boundaries, not a common dispatcher.
+
+Catalog binding families own both their static declarations and endpoint/public-model construction. `topology/catalog.rs` assembles those families and owns configured ordering; it does not hide individual binding construction among assembly passes.
+
 Protocol implementation is organized by the wire responsibility being reviewed:
 
 | Review boundary | Owner |
@@ -96,8 +100,10 @@ Protocol implementation is organized by the wire responsibility being reviewed:
 | Messages client admission versus delivery | `anthropic/client/{request,response}.rs`; `client/mod.rs` exposes the deliberate client API and `client_events.rs` owns outgoing stream state |
 | Messages shared accounting and terminal meaning | `anthropic/{accounting,terminal}.rs`; native mappings and client JSON/SSE use these owners, not helpers belonging to another front end |
 | OpenAI wire prefix fingerprints | `openai/cache_affinity.rs`; the disposable routing index and affinity decisions remain in `gateway` |
+| Shared fidelity state, bounds and owner pruning | `fidelity.rs` owns the aggregate; private `fidelity/{replay,response_records}.rs` implementations group replay binding and output-only report associations |
+| Attachment manifests, wire carriers and reconstruction | `attachments.rs` owns the manifest and output view; `attachments/carriers.rs` owns wire recognition/construction and `restore.rs` owns trial-based reconstruction and fallback |
 
-Paths in this table are relative to `src/protocol/`. Public codec entry points remain at their protocol façades; private item and grammar modules are not additional APIs. Fidelity aggregates and attachment reconstruction retain their existing shared ownership rather than being split merely by file size.
+Paths in this table are relative to `src/protocol/`. Public codec entry points remain at their protocol façades; private item and grammar modules are not additional APIs. Fidelity retains one aggregate and attachment reconstruction retains one trial/commit boundary; grouping their implementations does not create separate stores or independent restoration passes.
 
 Request transforms stay with their request owner. Stream grammar, state, reduction and materialization share a stream boundary. Chat and Responses own their envelopes and SSE codecs; only genuinely shared content and state logic is shared.
 
@@ -806,6 +812,8 @@ Capture is opt-in and off by default. Use private local storage, restrictive fil
 Credentials are excluded even in full mode. Redact Authorization/Proxy-Authorization, authentication cookies, API keys, token-bearing query values, known authentication body fields and credential material before enqueueing or writing. Configuration cannot disable this step. If a capture unit cannot be sanitized safely, omit it and record the reason. Complete business capture is not byte-for-byte credential-bearing wire capture.
 
 Capture belongs at gateway/transport I/O boundaries; codecs remain pure and only return bounded typed adaptation evidence. Stream incrementally within existing lifecycle bounds, sanitize at safe parsing boundaries and do not buffer the whole response or wait for storage before publication. Associate capture with an exchange-local identity and existing attempt ordinal without changing routing, retry or cancellation.
+
+`gateway/capture.rs` owns queue/retention accounting and observed-body lifetime. Its private `capture/redaction.rs` owns the pure credential-removal policy; sanitization still precedes enqueueing. Body-free diagnostics and opt-in business capture remain separate disclosure contracts.
 
 The startup-owned [capture configuration](usage.md#private-exchange-capture) selects four independent header/body boundaries. Authenticated client traffic and Generation upstream I/O use a private exclusive-create writer. Static upstream JSON borrows the existing intake buffer; SSE uses bounded event framing. Unsafe serialized-argument fragments and URI headers are omitted explicitly, not logged as raw strings. Frozen standalone-task upstream capture remains outside these hooks.
 
