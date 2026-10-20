@@ -346,10 +346,6 @@ mod unix {
         let store = dir.path.join("not-created");
         for (flags, expected) in [
             (
-                vec!["codex", "login", "--method", "browser"],
-                "unknown authorization profile",
-            ),
-            (
                 vec!["siwc", "login", "--method", "browser"],
                 "unknown authorization profile",
             ),

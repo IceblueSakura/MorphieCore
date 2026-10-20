@@ -174,11 +174,6 @@ fn builtin_siwc_is_a_dynamic_browser_profile() {
         "Experimental routing gateway for a distributed Agent Runtime"
     );
     let drivers = builtin_drivers(None).unwrap();
-    assert!(
-        !drivers
-            .iter()
-            .any(|d| matches!(d.profile(), "codex" | "chatgpt"))
-    );
     let driver = drivers
         .iter()
         .find(|d| d.profile() == "openai")

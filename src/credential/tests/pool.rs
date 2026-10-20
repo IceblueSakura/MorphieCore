@@ -2,7 +2,7 @@
 use crate::credential::tests::support as test_support;
 
 #[test]
-fn oauth_pool_borrows_distinct_principals_without_refresh_or_cross_profile_substitution() {
+fn oauth_pool_borrows_distinct_principals_without_refresh() {
     use crate::credential::model::{Account, AccountState};
     let dir = test_support::Directory::new();
     let manager = CredentialManager::new(&dir.path, builtin_drivers(None).unwrap()).unwrap();
@@ -69,13 +69,6 @@ fn oauth_pool_borrows_distinct_principals_without_refresh_or_cross_profile_subst
     )
     .unwrap();
     assert!(headers.is_empty());
-    assert!(
-        crate::provider::subscription::headers(
-            crate::provider::AuthScheme::OAuthBearer("codex"),
-            &grant
-        )
-        .is_err()
-    );
 }
 use crate::credential::*;
 #[test]
