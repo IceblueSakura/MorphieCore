@@ -263,7 +263,7 @@ fn scoped_accounting_preserves_opening_ttls_and_replaces_cumulative_tool_reports
     use morphiecore::{
         adapter::ClientAdapter,
         execution::ResponseDelivery,
-        protocol::openai::stream::Obfuscation,
+        protocol::openai::obfuscation::Obfuscation,
         semantic::task::generation::{StreamEvent, ToolUsageKind, UsageStage},
     };
     let mut values = frames();
@@ -486,7 +486,9 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
     use morphiecore::{
         execution::ResponseDelivery,
         protocol::{
-            openai::{Adapter, Dialect, Profile as ClientProfile, TargetCaps, stream::Obfuscation},
+            openai::{
+                Adapter, Dialect, Profile as ClientProfile, TargetCaps, obfuscation::Obfuscation,
+            },
             replay_envelope,
         },
         semantic::task::generation::{Item, Outcome, ToolArguments},
@@ -760,7 +762,7 @@ fn eager_partial_arguments_keep_exact_bytes_only_on_incomplete_native_sse() {
         adapter::ClientAdapter,
         execution::ResponseDelivery,
         protocol::{
-            anthropic::messages::client::encode_client_response, openai::stream::Obfuscation,
+            anthropic::messages::client::encode_client_response, openai::obfuscation::Obfuscation,
         },
         semantic::{context::StreamOptions, task::generation::*},
     };

@@ -17,7 +17,7 @@ use morphiecore::{
                 sse::{ChatSseDecoder, ChatSseEncoder},
             },
             lowering::{lower_request, lower_response},
-            stream::Obfuscation,
+            obfuscation::Obfuscation,
         },
         stream::SseLimits,
     },

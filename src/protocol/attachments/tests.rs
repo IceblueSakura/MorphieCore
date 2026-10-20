@@ -8,7 +8,7 @@ use crate::{
     protocol::{
         google::generate_content::{GenerationSseDecoder, encode_generation_request},
         native::ReplayTarget,
-        openai::{Adapter, Dialect, Profile, TargetCaps, stream::Obfuscation},
+        openai::{Adapter, Dialect, Profile, TargetCaps, obfuscation::Obfuscation},
         stream::SseLimits,
     },
 };

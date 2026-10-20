@@ -6,7 +6,7 @@ use morphiecore::{
     protocol::{
         openai::{
             Adapter, Dialect, Profile, TargetCaps as Contract, chat::sse::ChatSseDecoder,
-            responses::sse::ResponsesSseDecoder, stream::Obfuscation,
+            obfuscation::Obfuscation, responses::sse::ResponsesSseDecoder,
         },
         stream::SseLimits,
     },

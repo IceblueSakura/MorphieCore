@@ -5,7 +5,7 @@ use morphiecore::{
             Adapter, Dialect, Profile, TargetCaps as Contract,
             chat::sse::{ChatSseDecoder, ChatSseEncoder},
             events::EventEncoder,
-            stream::Obfuscation,
+            obfuscation::Obfuscation,
         },
         stream::SseLimits,
     },

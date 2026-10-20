@@ -1,9 +1,8 @@
 //! Generation event codecs. Protocol indexes are mappings, never semantic identities.
 //! Payloads exclude SSE framing. Rejected streams are poisoned and cannot resume.
-mod chat;
 mod decode;
 mod encode;
-mod responses;
+mod responses_wire;
 use crate::protocol::openai::TargetCaps;
 use crate::protocol::openai::{CodecError, Profile, ResponseMetadata, common::*};
 use crate::{

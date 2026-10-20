@@ -5,7 +5,7 @@ use crate::protocol::{
         CodecError, DecodedResponse, Profile, ResponseMetadata,
         chat::envelope as chat_envelope,
         events::{EventDecoder, EventEncoder},
-        stream::{Obfuscation, charge_padding, pad_payload},
+        obfuscation::{Obfuscation, charge_padding, pad_payload},
     },
     stream::{SseError, SseLimits, validate_http},
 };

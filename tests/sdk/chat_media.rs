@@ -11,7 +11,7 @@ use morphiecore::{
     protocol::{
         openai::{
             Adapter, Dialect, Profile, TargetCaps as Contract, chat::sse::ChatSseEncoder,
-            stream::Obfuscation,
+            obfuscation::Obfuscation,
         },
         stream::SseLimits,
     },

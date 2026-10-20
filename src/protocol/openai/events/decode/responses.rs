@@ -1,6 +1,6 @@
 //! Responses event grammar and exact terminal snapshot verification.
 use super::*;
-use crate::protocol::openai::events::responses::*;
+use crate::protocol::openai::events::responses_wire::*;
 
 // Fixed structural failure labels only; never include IDs, text or ciphertext.
 fn terminal_snapshot_difference(actual: &[Value], expected: &[Value]) -> &'static str {

@@ -6,7 +6,7 @@ use crate::protocol::openai::{
     events::{EventDecoder, EventEncoder},
 };
 use crate::protocol::{
-    openai::stream::{Obfuscation, charge_padding, pad_payload},
+    openai::obfuscation::{Obfuscation, charge_padding, pad_payload},
     stream::{SseError, SseLimits, validate_http},
 };
 use crate::{

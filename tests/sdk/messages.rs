@@ -17,7 +17,7 @@ use morphiecore::{
             messages::{Dialect, Profile, TargetCaps},
         },
         native::ReplayTarget,
-        openai::stream::Obfuscation,
+        openai::obfuscation::Obfuscation,
         stream::SseLimits,
     },
     semantic::{context::StreamOptions, task::generation::*},

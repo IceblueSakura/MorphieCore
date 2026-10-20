@@ -1,4 +1,5 @@
 //! Outgoing event driver: contract locking, projection and semantic reduction.
+mod chat;
 mod responses;
 use crate::protocol::openai::events::*;
 use crate::protocol::openai::lowering::projection;

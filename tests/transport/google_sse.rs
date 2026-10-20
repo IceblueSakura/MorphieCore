@@ -4,7 +4,7 @@ use morphiecore::{
     execution::{Attempt, ResponseDelivery},
     protocol::{
         native::ReplayTarget,
-        openai::{Adapter, Dialect, Profile, TargetCaps, stream::Obfuscation},
+        openai::{Adapter, Dialect, Profile, TargetCaps, obfuscation::Obfuscation},
         stream::SseLimits,
     },
     semantic::{

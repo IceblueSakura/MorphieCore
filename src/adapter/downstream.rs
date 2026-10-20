@@ -6,8 +6,8 @@ use crate::{
         CodecError, DecodedResponse, ResponseMetadata,
         fidelity::FidelityRecords,
         openai::{
-            Adapter, Profile, TargetCaps, chat::sse::ChatSseEncoder,
-            responses::sse::ResponsesSseEncoder, stream::Obfuscation,
+            Adapter, Profile, TargetCaps, chat::sse::ChatSseEncoder, obfuscation::Obfuscation,
+            responses::sse::ResponsesSseEncoder,
         },
         stream::{SseError, SseLimits},
     },

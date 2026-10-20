@@ -365,7 +365,7 @@ mod identity_tests {
         execution::ResponseDelivery,
         protocol::{
             native::ReplayTarget,
-            openai::{Adapter, Dialect, Profile, TargetCaps, stream::Obfuscation},
+            openai::{Adapter, Dialect, Profile, TargetCaps, obfuscation::Obfuscation},
         },
         semantic::context::StreamOptions,
     };

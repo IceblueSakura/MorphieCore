@@ -21,13 +21,13 @@ pub(crate) use common::validate_identity;
 pub mod embeddings;
 mod function_tools;
 pub mod images;
+pub mod obfuscation;
 mod reasoning;
 pub(crate) mod reports;
 mod service;
 mod settings;
 pub mod speech;
 pub(crate) mod static_response;
-pub mod stream;
 mod strict_schema;
 mod terminal;
 #[cfg(test)]

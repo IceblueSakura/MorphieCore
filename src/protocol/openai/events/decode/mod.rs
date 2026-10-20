@@ -1,4 +1,5 @@
 //! Incoming payload driver: state, rejection, metadata and profile dispatch.
+mod chat;
 mod responses;
 use crate::protocol::openai::events::*;
 use serde_json::json;

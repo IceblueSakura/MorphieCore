@@ -4,7 +4,8 @@ use crate::{
     adapter::{ClientAdapter, ClientEncoder, ClientProtocol},
     execution::{Attempt, AttemptError, Lifecycle},
     protocol::{
-        ResponseMetadata, fidelity::FidelityRecords, openai::stream::Obfuscation, stream::SseLimits,
+        ResponseMetadata, fidelity::FidelityRecords, openai::obfuscation::Obfuscation,
+        stream::SseLimits,
     },
     semantic::{context::StreamOptions, task::generation::StreamEvent},
 };

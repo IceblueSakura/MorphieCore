@@ -393,7 +393,7 @@ mod tests {
                 "public",
                 Default::default(),
                 Default::default(),
-                crate::protocol::openai::stream::Obfuscation::Disabled,
+                crate::protocol::openai::obfuscation::Obfuscation::Disabled,
             );
             delivery.encode_json(&attempt).unwrap();
             assert!(
@@ -416,7 +416,7 @@ mod tests {
                     include_obfuscation: crate::semantic::value::Presence::Value(false),
                     ..Default::default()
                 },
-                crate::protocol::openai::stream::Obfuscation::Disabled,
+                crate::protocol::openai::obfuscation::Obfuscation::Disabled,
             );
             let (owner, call) = source
                 .semantic
@@ -489,7 +489,7 @@ mod tests {
                         include_obfuscation: crate::semantic::value::Presence::Value(false),
                         ..Default::default()
                     },
-                    crate::protocol::openai::stream::Obfuscation::Disabled,
+                    crate::protocol::openai::obfuscation::Obfuscation::Disabled,
                 )
                 .unwrap();
             encoder
@@ -532,7 +532,7 @@ mod tests {
                             include_obfuscation: crate::semantic::value::Presence::Value(false),
                             ..Default::default()
                         },
-                        crate::protocol::openai::stream::Obfuscation::Disabled,
+                        crate::protocol::openai::obfuscation::Obfuscation::Disabled,
                     )
                     .unwrap();
                 failed
@@ -590,7 +590,7 @@ mod tests {
                 metadata.clone(),
                 Default::default(),
                 Default::default(),
-                crate::protocol::openai::stream::Obfuscation::Disabled,
+                crate::protocol::openai::obfuscation::Obfuscation::Disabled,
             )
             .unwrap();
         messages

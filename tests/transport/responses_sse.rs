@@ -7,8 +7,8 @@ use morphiecore::{
         openai::{
             Profile, TargetCaps,
             events::EventDecoder,
+            obfuscation::Obfuscation,
             responses::sse::{ResponsesSseDecoder, ResponsesSseEncoder, encode_frame},
-            stream::Obfuscation,
         },
         stream::SseLimits,
     },

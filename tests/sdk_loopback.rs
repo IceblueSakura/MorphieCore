@@ -45,11 +45,11 @@ use morphiecore::{
         openai::{
             Profile, TargetCaps,
             lowering::{lower_request, lower_response},
+            obfuscation::Obfuscation,
             responses::{
                 envelope,
                 sse::{ResponsesSseDecoder, ResponsesSseEncoder, encode_frame},
             },
-            stream::Obfuscation,
         },
         stream::SseLimits,
     },

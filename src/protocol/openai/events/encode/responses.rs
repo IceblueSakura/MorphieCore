@@ -1,6 +1,6 @@
 //! Responses event coordinates, item snapshots and wire rendering.
 use super::*;
-use crate::protocol::openai::events::responses::*;
+use crate::protocol::openai::events::responses_wire::*;
 
 impl EventEncoder {
     fn index(&self, id: ItemId) -> Result<usize, CodecError> {

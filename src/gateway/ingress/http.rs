@@ -231,7 +231,7 @@ fn failed_stream(
         entry.public.id.as_str(),
         Default::default(),
         Default::default(),
-        crate::protocol::openai::stream::Obfuscation::Disabled,
+        crate::protocol::openai::obfuscation::Obfuscation::Disabled,
     );
     let frames = delivery.fail_stream(&error.body()).map_err(|_| *error)?;
     Response::builder()
