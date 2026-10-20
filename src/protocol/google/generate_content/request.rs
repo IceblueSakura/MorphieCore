@@ -1,9 +1,16 @@
 //! Candidate-local generateContent request projection.
 //! Source: <https://ai.google.dev/api/generate-content>.
-use super::signature::Signed;
+use super::replay::Signed;
 use crate::{
-    protocol::{CodecError, fidelity::FidelityRecords, native::ReplayTarget},
-    semantic::{task::generation::*, value::Presence},
+    protocol::{
+        CodecError,
+        fidelity::FidelityRecords,
+        native::{ReplayTarget, group_client_history},
+    },
+    semantic::{
+        task::generation::*,
+        value::{Presence, json_size},
+    },
 };
 use serde_json::{Map, Value, json};
 use std::collections::BTreeSet;
@@ -475,7 +482,7 @@ fn item_parts(
                 return Err(CodecError::Invalid("Gemini replay dependency"));
             }
             let token = value.replay_token().ok_or_else(unsupported)?;
-            if r.parts.is_empty() && super::signature::is_legacy(token) {
+            if r.parts.is_empty() && super::replay::is_legacy(token) {
                 rules.insert(RequestRule::OmitLegacySignature);
                 return Ok(());
             }
@@ -629,4 +636,60 @@ fn media(
         }
         _ => Err(unsupported()),
     }
+}
+
+/// Pure IR → `streamGenerateContent` body for one target, with the rules applied.
+pub fn encode_generation_request(
+    request: &GenerationRequest,
+    fidelity: &FidelityRecords,
+    target: &ReplayTarget,
+    resource_time: Option<std::time::SystemTime>,
+) -> Result<(Value, Vec<RequestRule>), CodecError> {
+    encode_with_identity(
+        request,
+        fidelity,
+        target,
+        resource_time,
+        &Default::default(),
+    )
+}
+pub(super) fn encode_with_identity(
+    request: &GenerationRequest,
+    fidelity: &FidelityRecords,
+    target: &ReplayTarget,
+    resource_time: Option<std::time::SystemTime>,
+    identity: &crate::semantic::context::ClientIdentityHints,
+) -> Result<(Value, Vec<RequestRule>), CodecError> {
+    let (request, fidelity, transferred) = crate::protocol::native::native_reasoning_history(
+        request,
+        fidelity,
+        target,
+        &[
+            crate::semantic::task::generation::ReplayFormat::GoogleGenerateContentPart,
+            crate::semantic::task::generation::ReplayFormat::GoogleGenerateContentSignature,
+        ],
+    )?;
+    let request = group_client_history(&request, false)?;
+    request.validate()?;
+    if let Some(reference) = request.cached_context() {
+        fidelity.check_cached_context(reference, &target.origin(), resource_time)?;
+    }
+    let mut rules = std::collections::BTreeSet::new();
+    if transferred {
+        rules.insert(RequestRule::TransferVisibleHistory);
+    }
+    let phase = crate::protocol::phase::omit_request(&request)?;
+    if phase.is_some() {
+        rules.insert(RequestRule::OmitMessagePhase);
+    }
+    let value = project(
+        phase.as_ref().unwrap_or(&request),
+        &fidelity,
+        target,
+        &mut rules,
+        identity,
+    )?;
+    json_size(&value, crate::semantic::task::generation::MAX_TOTAL_BYTES)
+        .map_err(|_| CodecError::Limit)?;
+    Ok((value, rules.into_iter().collect()))
 }

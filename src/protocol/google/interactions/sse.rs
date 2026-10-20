@@ -1,6 +1,6 @@
 //! Bounded Interactions step intake; terminals are released only after strict EOF.
 //! Source: <https://ai.google.dev/gemini-api/docs/interactions/streaming>.
-use super::signature::Signed;
+use super::{accounting::usage, replay::Signed};
 use crate::{
     protocol::{
         CodecError, DecodedResponse, ResponseMetadata,
@@ -48,10 +48,13 @@ pub struct GenerationSseDecoder {
     closed: bool,
     rejected: bool,
 }
-fn invalid(what: &'static str) -> SseError {
+pub(super) fn invalid(what: &'static str) -> SseError {
     CodecError::Invalid(what).into()
 }
-fn object<'a>(v: &'a Value, what: &'static str) -> Result<&'a Map<String, Value>, SseError> {
+pub(super) fn object<'a>(
+    v: &'a Value,
+    what: &'static str,
+) -> Result<&'a Map<String, Value>, SseError> {
     v.as_object().ok_or_else(|| invalid(what))
 }
 fn string<'a>(o: &'a Map<String, Value>, key: &'static str) -> Result<Option<&'a str>, SseError> {
@@ -66,7 +69,10 @@ fn required<'a>(o: &'a Map<String, Value>, key: &'static str) -> Result<&'a str,
         .filter(|s| !s.is_empty())
         .ok_or_else(|| invalid(key))
 }
-fn field<'a>(o: &'a Map<String, Value>, key: &'static str) -> Result<&'a Value, SseError> {
+pub(super) fn field<'a>(
+    o: &'a Map<String, Value>,
+    key: &'static str,
+) -> Result<&'a Value, SseError> {
     o.get(key).ok_or_else(|| invalid(key))
 }
 fn check_lifecycle(i: &Map<String, Value>) -> Result<(), SseError> {
@@ -85,53 +91,6 @@ fn check_annotations(p: &Map<String, Value>) -> Result<(), SseError> {
         return Err(CodecError::Unsupported("Interactions annotations".into()).into());
     }
     Ok(())
-}
-fn counter(o: &Map<String, Value>, key: &'static str) -> Result<Option<u64>, SseError> {
-    match o.get(key) {
-        None | Some(Value::Null) => Ok(None),
-        Some(v) => v.as_u64().map(Some).ok_or_else(|| invalid(key)),
-    }
-}
-fn usage(v: &Value, scope: UsageScope, stage: UsageStage) -> Result<UsageReport, SseError> {
-    let o = object(v, "Interactions usage")?;
-    let output = counter(o, "total_output_tokens")?;
-    let thoughts = counter(o, "total_thought_tokens")?;
-    let mut u = Usage::operation(0, 0, 0);
-    u.input_tokens = counter(o, "total_input_tokens")?;
-    u.cached_input_tokens = counter(o, "total_cached_tokens")?;
-    u.reasoning_tokens = thoughts;
-    u.output_tokens = output;
-    u.output_relation = OutputTokenRelation::ExcludesReasoning;
-    u.total_relation = TotalTokenRelation::Unreported;
-    u.total_tokens = counter(o, "total_tokens")?;
-    let mut report = UsageReport::operation(u);
-    report.scope = scope;
-    report.stage = stage;
-    report.accounting = UsageAccounting::SplitGeneration {
-        tool_input_tokens: counter(o, "total_tool_use_tokens")?,
-        tool_input_relation: ToolInputRelation::Unreported,
-        total_relation: SplitTotalRelation::Unreported,
-    };
-    for (field, bucket) in [
-        ("input_tokens_by_modality", UsageBucket::Input),
-        ("tool_use_tokens_by_modality", UsageBucket::ToolInput),
-        ("output_tokens_by_modality", UsageBucket::Output),
-        ("cached_tokens_by_modality", UsageBucket::CacheRead),
-    ] {
-        if let Some(value) = o.get(field).filter(|v| !v.is_null()) {
-            report
-                .details
-                .modalities
-                .extend(crate::protocol::usage::modality_tokens(
-                    value, bucket, false,
-                )?);
-        }
-    }
-    if let Some(value) = o.get("grounding_tool_count").filter(|v| !v.is_null()) {
-        report.details.tool_requests = crate::protocol::usage::grounding_counts(value)?;
-    }
-    report.validate().map_err(CodecError::from)?;
-    Ok(report)
 }
 impl GenerationSseDecoder {
     pub fn new(

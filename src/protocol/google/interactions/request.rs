@@ -356,7 +356,7 @@ fn steps(
                     if !fidelity.replay_matches_request(*id, r, Some(&target.origin()), request) {
                         return Err(CodecError::Invalid("Interactions replay dependency"));
                     }
-                    let value = super::signature::Signed::decode(
+                    let value = super::replay::Signed::decode(
                         value.replay_token().ok_or_else(unsupported)?,
                     )?;
                     let mut step = json!({"type":"thought"});
@@ -486,4 +486,42 @@ fn media(
         }
         _ => Err(unsupported()),
     }
+}
+
+/// Full history as steps, always streamed and never stored by the upstream.
+pub fn encode_generation_request(
+    request: &GenerationRequest,
+    fidelity: &FidelityRecords,
+    target: &ReplayTarget,
+) -> Result<(Value, Vec<RequestRule>), CodecError> {
+    let (request, fidelity, transferred) = crate::protocol::native::native_reasoning_history(
+        request,
+        fidelity,
+        target,
+        &[crate::semantic::task::generation::ReplayFormat::GoogleInteractionsV1Thought],
+    )?;
+    let request = crate::protocol::native::group_client_history(&request, false)?;
+    request.validate()?;
+    if request.cached_context().is_some() {
+        return Err(CodecError::Unsupported(
+            "Interactions cached context".into(),
+        ));
+    }
+    let mut rules = std::collections::BTreeSet::new();
+    if transferred {
+        rules.insert(RequestRule::TransferVisibleHistory);
+    }
+    let phase = crate::protocol::phase::omit_request(&request)?;
+    if phase.is_some() {
+        rules.insert(RequestRule::OmitMessagePhase);
+    }
+    let value = project(
+        phase.as_ref().unwrap_or(&request),
+        &fidelity,
+        target,
+        &mut rules,
+    )?;
+    crate::semantic::value::json_size(&value, crate::semantic::task::generation::MAX_TOTAL_BYTES)
+        .map_err(|_| CodecError::Limit)?;
+    Ok((value, rules.into_iter().collect()))
 }
