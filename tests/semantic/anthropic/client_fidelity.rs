@@ -2,8 +2,8 @@ use morphiecore::{
     protocol::{
         CodecError, DecodedResponse,
         anthropic::messages::{
+            client::sse::ClientEventEncoder,
             client::{decode_client_request, encode_client_response},
-            client_events::ClientEventEncoder,
         },
         openai::{Adapter, Dialect, Profile},
     },

@@ -38,7 +38,7 @@ pub struct ClientEventEncoder {
     progress: InteractionProgress,
     usage: Option<UsageReport>,
     /// Already published optional observations cannot be erased by absent delta fields.
-    opening_usage: Option<super::Usage>,
+    opening_usage: Option<crate::protocol::anthropic::messages::Usage>,
     attachment: Option<crate::protocol::attachments::Carrier>,
     limits: crate::protocol::stream::SseLimits,
     wire_bytes: usize,
@@ -115,7 +115,7 @@ impl ClientEventEncoder {
                 return Err(CodecError::Invalid("Messages stream closed"));
             }
             if let Some(value) = class.value() {
-                super::service::class_wire(*value)?;
+                crate::protocol::anthropic::messages::service::class_wire(*value)?;
             }
             if (self.started || self.seen_start || !self.service_class.is_absent())
                 && self.service_class != class
@@ -137,15 +137,18 @@ impl ClientEventEncoder {
             self.started = true;
             let mut usage = match &self.usage {
                 Some(report) => {
-                    let wire = super::accounting::wire(report, Presence::Absent)
-                        .expect("selected Messages report");
+                    let wire = crate::protocol::anthropic::messages::accounting::wire(
+                        report,
+                        Presence::Absent,
+                    )
+                    .expect("selected Messages report");
                     let value = wire.wire();
                     self.opening_usage = Some(wire);
                     value
                 }
                 None => json!({"input_tokens":0,"output_tokens":0}),
             };
-            super::service::write_class(
+            crate::protocol::anthropic::messages::service::write_class(
                 usage.as_object_mut().expect("usage object"),
                 &self.service_class,
             )
@@ -157,19 +160,22 @@ impl ClientEventEncoder {
     }
     fn report(&mut self, source: &UsageReport, out: &mut Vec<Bytes>) -> Result<(), CodecError> {
         source.validate()?;
-        let selected = match super::accounting::project(source) {
+        let selected = match crate::protocol::anthropic::messages::accounting::project(source) {
             Ok(selected) => selected,
             // An incomplete checkpoint need not have a representable delivery view yet.
             Err(_) if source.stage == UsageStage::Checkpoint => None,
             Err(error) => return Err(error),
         };
-        for loss in super::client::report_losses(source, selected.as_ref(), "event.encode") {
+        for loss in super::projection::report_losses(source, selected.as_ref(), "event.encode") {
             if !self.losses.contains(&loss) {
                 self.losses.push(loss);
             }
         }
         if let Some(selected) = selected {
-            let wire = super::accounting::wire(&selected, Presence::Absent)?;
+            let wire = crate::protocol::anthropic::messages::accounting::wire(
+                &selected,
+                Presence::Absent,
+            )?;
             if self.started {
                 if wire.cache_creation.value()
                     != self
@@ -287,7 +293,7 @@ impl ClientEventEncoder {
                 .is_some_and(|(_, kind, _)| *kind == Kind::Text) =>
             {
                 if *kind == PartKind::Refusal {
-                    let loss = super::client::refusal_loss("event.encode");
+                    let loss = super::projection::refusal_loss("event.encode");
                     if !self.losses.contains(&loss) {
                         self.losses.push(loss);
                     }
@@ -369,8 +375,10 @@ impl ClientEventEncoder {
                     .as_ref()
                     .map(|r| r.value.as_str().to_owned())
                     .or(signature);
-                let redacted =
-                    index.is_none() && signature.as_deref().is_some_and(super::client::redacted);
+                let redacted = index.is_none()
+                    && signature
+                        .as_deref()
+                        .is_some_and(super::projection::redacted);
                 let index = match index {
                     Some(index) => index,
                     None if redacted => open_block(
@@ -429,8 +437,12 @@ impl ClientEventEncoder {
                     StreamTerminal::Failed | StreamTerminal::Error => Outcome::Failed,
                     StreamTerminal::Cancelled => Outcome::Cancelled,
                 };
-                let (stop, sequence) =
-                    super::terminal::encode(outcome, self.progress, self.calls, details)?;
+                let (stop, sequence) = crate::protocol::anthropic::messages::terminal::encode(
+                    outcome,
+                    self.progress,
+                    self.calls,
+                    details,
+                )?;
                 // Close every started block by its wire index. Text items own no block;
                 // a thinking item without content has not opened one yet.
                 let mut started: Vec<usize> =
@@ -456,7 +468,7 @@ impl ClientEventEncoder {
                     })));
                     out.push(frame(&json!({"type":"content_block_stop","index":index})));
                 }
-                let mut usage = super::accounting::wire(
+                let mut usage = crate::protocol::anthropic::messages::accounting::wire(
                     self.usage
                         .as_ref()
                         .ok_or(CodecError::Invalid("Messages usage"))?,

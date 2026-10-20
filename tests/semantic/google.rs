@@ -505,9 +505,7 @@ fn stream_maps_thoughts_text_calls_and_owned_signatures() {
             .is_err()
     );
     let mut messages =
-        morphiecore::protocol::anthropic::messages::client_events::ClientEventEncoder::new(
-            "r", "m",
-        );
+        morphiecore::protocol::anthropic::messages::client::sse::ClientEventEncoder::new("r", "m");
     messages.encode(&StreamEvent::Started).unwrap();
     assert!(
         messages

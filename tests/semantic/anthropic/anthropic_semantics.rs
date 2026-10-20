@@ -364,9 +364,7 @@ fn native_stop_reasons_have_independent_terminal_owners() {
     .unwrap();
     let mut state = StreamState::new();
     let mut client =
-        morphiecore::protocol::anthropic::messages::client_events::ClientEventEncoder::new(
-            "r", "m",
-        );
+        morphiecore::protocol::anthropic::messages::client::sse::ClientEventEncoder::new("r", "m");
     let mut output = Vec::new();
     let mut rest = bytes.as_bytes();
     while !rest.is_empty() {

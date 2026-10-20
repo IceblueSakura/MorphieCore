@@ -387,7 +387,7 @@ mod tests {
             Err(CodecError::Unsupported(field)) if field == "Messages delta cache breakdown")
         );
 
-        let mut encoder = super::super::client_events::ClientEventEncoder::new("id", "model");
+        let mut encoder = super::super::client::sse::ClientEventEncoder::new("id", "model");
         assert!(encoder.encode(&StreamEvent::Started).unwrap().is_empty());
         let frames = encoder
             .encode(&StreamEvent::ItemStarted {
@@ -416,7 +416,7 @@ mod tests {
             },
         };
         for field in 0..5 {
-            let mut encoder = super::super::client_events::ClientEventEncoder::new("id", "model");
+            let mut encoder = super::super::client::sse::ClientEventEncoder::new("id", "model");
             encoder.encode(&StreamEvent::Started).unwrap();
             assert!(
                 !encoder

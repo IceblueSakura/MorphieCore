@@ -307,7 +307,7 @@ impl ClientAdapter {
         let encoder = match self {
             Self::Messages => {
                 let mut encoder =
-                    crate::protocol::anthropic::messages::client_events::ClientEventEncoder::new(
+                    crate::protocol::anthropic::messages::client::sse::ClientEventEncoder::new(
                         metadata.required_id()?,
                         &metadata.model,
                     )
@@ -414,7 +414,7 @@ fn safety_assessment_loss(direction: &'static str) -> LossEvidence {
 enum Encoder {
     Responses(ResponsesSseEncoder),
     Chat(ChatSseEncoder),
-    Messages(crate::protocol::anthropic::messages::client_events::ClientEventEncoder),
+    Messages(crate::protocol::anthropic::messages::client::sse::ClientEventEncoder),
 }
 pub(crate) struct ClientEncoder {
     losses: Vec<crate::lowering::generation::LossEvidence>,

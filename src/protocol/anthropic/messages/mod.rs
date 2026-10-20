@@ -5,7 +5,6 @@
 mod accounting;
 mod carriers;
 pub mod client;
-pub mod client_events;
 pub mod sse;
 pub use sse::{GenerationSseDecoder, MessageSseDecoder};
 mod target;
