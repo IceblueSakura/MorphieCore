@@ -1,5 +1,6 @@
 //! Incremental native semantic mapping over the same strict wire reducer as aggregation.
-use super::{Block, Delta, Event, Message, MessageSseDecoder};
+use crate::protocol::anthropic::messages::sse::MessageSseDecoder;
+use crate::protocol::anthropic::messages::{Block, Delta, Event, Message};
 use crate::{
     protocol::{
         CodecError, ResponseMetadata,
@@ -75,7 +76,10 @@ impl GenerationSseDecoder {
                 if message.model != self.target.model() {
                     return Err(CodecError::Invalid("native model binding").into());
                 }
-                let usage = super::accounting::report(&message.usage, UsageStage::Checkpoint);
+                let usage = crate::protocol::anthropic::messages::accounting::report(
+                    &message.usage,
+                    UsageStage::Checkpoint,
+                );
                 self.metadata = Some(ResponseMetadata {
                     storage: None,
                     id: Some(message.id),
@@ -252,11 +256,14 @@ impl GenerationSseDecoder {
                         .map_err(CodecError::from)?
                 };
                 out.push(StreamEvent::MessageEnvelope(group));
-                out.push(StreamEvent::UsageReport(super::accounting::report(
-                    &message.usage,
-                    UsageStage::Final,
-                )));
-                let (outcome, progress, details) = super::terminal::decode(message)?;
+                out.push(StreamEvent::UsageReport(
+                    crate::protocol::anthropic::messages::accounting::report(
+                        &message.usage,
+                        UsageStage::Final,
+                    ),
+                ));
+                let (outcome, progress, details) =
+                    crate::protocol::anthropic::messages::terminal::decode(message)?;
                 if progress != InteractionProgress::Unreported {
                     out.push(StreamEvent::Progress(progress));
                 }
@@ -278,14 +285,16 @@ impl GenerationSseDecoder {
                     self.fidelity
                         .record_omission(crate::protocol::fidelity::INPUT_TRANSFORMATIONS_OMISSION);
                 }
-                out.push(StreamEvent::UsageReport(super::accounting::report(
-                    &message.usage,
-                    UsageStage::Checkpoint,
-                )));
+                out.push(StreamEvent::UsageReport(
+                    crate::protocol::anthropic::messages::accounting::report(
+                        &message.usage,
+                        UsageStage::Checkpoint,
+                    ),
+                ));
             }
             Event::Ping => {}
             Event::Error { kind, .. } => {
-                return Err(CodecError::StreamFailure(super::sse::error_status(&kind)).into());
+                return Err(CodecError::StreamFailure(super::wire::error_status(&kind)).into());
             }
         }
         Ok(out)

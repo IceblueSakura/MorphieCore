@@ -1,5 +1,5 @@
 //! Shared native wire reducer; only strict EOF exposes the complete aggregated message.
-use super::{Block, Delta, Event, Message, Profile};
+use crate::protocol::anthropic::messages::{Block, Delta, Event, Message, Profile};
 use crate::{
     protocol::{
         CodecError,

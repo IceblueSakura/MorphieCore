@@ -3,12 +3,15 @@
 //! and client admission/delivery (`client`). Accounting and terminal mappings are
 //! shared by those directions, not owned by a delivery front end.
 mod accounting;
-mod adapter;
 mod carriers;
 pub mod client;
 pub mod client_events;
-pub use adapter::{Dialect, SamplingPolicy, TargetCaps};
+pub mod sse;
+pub use sse::{GenerationSseDecoder, MessageSseDecoder};
+mod target;
 pub use carriers::Carriers;
+pub use target::{Dialect, SamplingPolicy, TargetCaps};
+mod media;
 mod request;
 mod response;
 mod semantic;
@@ -16,14 +19,9 @@ mod semantic_intake;
 mod semantic_request;
 mod service;
 mod shape;
-mod sse;
 mod strict_schema;
 mod terminal;
-pub use sse::MessageSseDecoder;
-mod events;
-mod media;
 use crate::protocol::CodecError;
-pub use events::GenerationSseDecoder;
 pub use media::{Media, ResultBlock, ResultContent, Source};
 pub use request::*;
 pub use response::*;
