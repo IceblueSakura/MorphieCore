@@ -219,32 +219,34 @@ impl Request {
                 }
             }
         }
-        let semantic = self
-            .task
-            .semantic
-            .clone()
-            .retain_items(|id, _| !foreign.contains(&id))?;
-        let mut items = semantic.items().to_vec();
-        for (id, item) in &mut items {
-            match item {
-                Item::Message(message) => {
-                    for part in &mut message.parts {
-                        if foreign_parts.contains(&(*id, part.id)) {
-                            part.replay = None;
-                            copy.task.fidelity.remove_part_replay(*id, part.id);
+        if !foreign.is_empty() {
+            copy.task.semantic = copy
+                .task
+                .semantic
+                .retain_items(|id, _| !foreign.contains(&id))?;
+        }
+        if !foreign_parts.is_empty() || !foreign_calls.is_empty() {
+            let mut items = copy.task.semantic.items().to_vec();
+            for (id, item) in &mut items {
+                match item {
+                    Item::Message(message) => {
+                        for part in &mut message.parts {
+                            if foreign_parts.contains(&(*id, part.id)) {
+                                part.replay = None;
+                                copy.task.fidelity.remove_part_replay(*id, part.id);
+                            }
                         }
                     }
+                    Item::ToolCall(call) if foreign_calls.contains(id) => {
+                        call.replay = None;
+                        copy.task.fidelity.remove_replay(*id);
+                    }
+                    _ => {}
                 }
-                Item::ToolCall(call) if foreign_calls.contains(id) => {
-                    call.replay = None;
-                    copy.task.fidelity.remove_replay(*id);
-                }
-                _ => {}
             }
+            copy.task.semantic = copy.task.semantic.with_items(items)?;
         }
-        let semantic = semantic.with_items(items)?;
-        copy.task.fidelity.retain_owners(semantic.items());
-        copy.task.semantic = semantic;
+        copy.task.fidelity.retain_owners(copy.task.semantic.items());
         Ok(Some(copy))
     }
 }

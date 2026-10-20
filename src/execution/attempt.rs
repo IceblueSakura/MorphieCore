@@ -179,7 +179,8 @@ enum Intake {
     Pending,
     Static(Vec<u8>),
     Stream(Box<GenerationDecoder>),
-    Closed,
+    Finished(Box<DecodedResponse>),
+    Rejected,
 }
 
 impl Attempt {
@@ -200,9 +201,7 @@ pub struct Attempt {
     body_limit: usize,
     limits: SseLimits,
     intake: Intake,
-    decoded: Option<DecodedResponse>,
     terminal: Option<StreamEvent>,
-    rejected: bool,
 }
 impl Attempt {
     /// Native observations (structured arguments, native stops) need projection
@@ -222,13 +221,11 @@ impl Attempt {
             body_limit,
             limits,
             intake: Intake::Pending,
-            decoded: None,
             terminal: None,
-            rejected: false,
         }
     }
     pub fn begin(&mut self, status: u16, content_type: &str) -> Result<(), AttemptError> {
-        if self.rejected || !matches!(self.intake, Intake::Pending) {
+        if !matches!(self.intake, Intake::Pending) {
             return Err(AttemptError::Protocol("attempt already began"));
         }
         let result = (|| {
@@ -266,7 +263,7 @@ impl Attempt {
     /// At most one upstream frame is consumed; the caller retains the suffix and
     /// awaits downstream readiness before invoking this again.
     pub fn push(&mut self, chunk: &[u8]) -> Result<(usize, Vec<StreamEvent>), AttemptError> {
-        if self.rejected {
+        if matches!(self.intake, Intake::Rejected) {
             return Err(AttemptError::Protocol("rejected attempt"));
         }
         let result = (|| {
@@ -302,28 +299,24 @@ impl Attempt {
         }
     }
     pub fn metadata(&self) -> Option<&ResponseMetadata> {
-        if let Some(decoded) = &self.decoded {
-            return Some(&decoded.metadata);
-        }
         match &self.intake {
+            Intake::Finished(decoded) => Some(&decoded.metadata),
             Intake::Stream(d) => d.metadata(),
             _ => None,
         }
     }
     pub fn fidelity(&self) -> Option<&FidelityRecords> {
-        if let Some(decoded) = &self.decoded {
-            return Some(&decoded.fidelity);
-        }
         match &self.intake {
+            Intake::Finished(decoded) => Some(&decoded.fidelity),
             Intake::Stream(d) => Some(d.fidelity()),
             _ => None,
         }
     }
     pub fn finish(&mut self) -> Result<&DecodedResponse, AttemptError> {
-        if self.rejected {
+        if matches!(self.intake, Intake::Rejected) {
             return Err(AttemptError::Protocol("rejected attempt"));
         }
-        if self.decoded.is_none() {
+        if !matches!(self.intake, Intake::Finished(_)) {
             let result = (|| -> Result<DecodedResponse, AttemptError> {
                 Ok(match &mut self.intake {
                     Intake::Static(body) => self.adapter.decode_response(body)?,
@@ -333,8 +326,7 @@ impl Attempt {
             })();
             match result {
                 Ok(decoded) => {
-                    self.decoded = Some(decoded);
-                    self.intake = Intake::Closed;
+                    self.intake = Intake::Finished(Box::new(decoded));
                 }
                 Err(error) => {
                     self.reject();
@@ -342,17 +334,14 @@ impl Attempt {
                 }
             }
         }
-        self.decoded
-            .as_ref()
-            .ok_or(AttemptError::Protocol("attempt not finished"))
+        self.response()
     }
     pub fn response(&self) -> Result<&DecodedResponse, AttemptError> {
-        if self.rejected {
-            return Err(AttemptError::Protocol("rejected attempt"));
+        match &self.intake {
+            Intake::Finished(decoded) => Ok(decoded),
+            Intake::Rejected => Err(AttemptError::Protocol("rejected attempt")),
+            _ => Err(AttemptError::Protocol("attempt not finished")),
         }
-        self.decoded
-            .as_ref()
-            .ok_or(AttemptError::Protocol("attempt not finished"))
     }
     pub(crate) fn terminal_event(&self) -> Result<&StreamEvent, AttemptError> {
         self.response()?;
@@ -364,9 +353,7 @@ impl Attempt {
         self.reject();
     }
     fn reject(&mut self) {
-        self.rejected = true;
-        self.intake = Intake::Closed;
-        self.decoded = None;
+        self.intake = Intake::Rejected;
         self.terminal = None;
     }
 }
@@ -404,7 +391,10 @@ mod identity_tests {
         let (_, events) = attempt.push(wire.as_bytes()).unwrap();
         attempt.finish().unwrap();
         // Simulate a protocol that does not report response identity.
-        attempt.decoded.as_mut().unwrap().metadata.id = None;
+        let Intake::Finished(decoded) = &mut attempt.intake else {
+            panic!("finished attempt")
+        };
+        decoded.metadata.id = None;
         let observed = attempt.response().unwrap().clone();
         let delivery = || {
             ResponseDelivery::new(

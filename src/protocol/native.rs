@@ -8,6 +8,7 @@ use crate::{
         value::{Presence, ReplayOrigin, Text},
     },
 };
+use std::borrow::Cow;
 
 /// Trusted compatibility labels, never an upstream URL, credential locator or client hint.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -47,14 +48,14 @@ fn label(s: &str) -> Result<Text, CodecError> {
 
 /// Direct native codecs first verify issuer/dependencies, then omit complete
 /// reasoning in an incompatible carrier format before assembling target groups.
-pub(crate) fn native_reasoning_history(
-    request: &GenerationRequest,
+pub(crate) fn native_reasoning_history<'a>(
+    request: &'a GenerationRequest,
     fidelity: &crate::protocol::fidelity::FidelityRecords,
     target: &ReplayTarget,
     formats: &[ReplayFormat],
 ) -> Result<
     (
-        GenerationRequest,
+        Cow<'a, GenerationRequest>,
         crate::protocol::fidelity::FidelityRecords,
         bool,
     ),
@@ -74,49 +75,73 @@ pub(crate) fn native_reasoning_history(
             omitted.push(*id);
         }
     }
-    let request = request
-        .clone()
-        .retain_items(|id, _| !omitted.contains(&id))?;
+    // Deletion validates envelopes before attachment checks, including empty anchors.
+    let mut request = if omitted.is_empty() {
+        Cow::Borrowed(request)
+    } else {
+        Cow::Owned(
+            request
+                .clone()
+                .retain_items(|id, _| !omitted.contains(&id))?,
+        )
+    };
     let mut fidelity = fidelity.clone();
     let mut transferred = !omitted.is_empty();
-    let mut items = request.items().to_vec();
-    for (owner, item) in &mut items {
-        match item {
-            Item::Message(message) => {
-                for part in &mut message.parts {
-                    if let Some(value) = &part.replay
+    let foreign_attachments = request.items().iter().any(|(_, item)| match item {
+        Item::Message(message) => message.parts.iter().any(|part| {
+            part.replay
+                .as_ref()
+                .is_some_and(|value| !formats.contains(&value.format()))
+        }),
+        Item::ToolCall(call) => call
+            .replay
+            .as_ref()
+            .is_some_and(|value| !formats.contains(&value.format())),
+        _ => false,
+    });
+    if foreign_attachments {
+        let mut items = request.items().to_vec();
+        for (owner, item) in &mut items {
+            match item {
+                Item::Message(message) => {
+                    for part in &mut message.parts {
+                        if let Some(value) = &part.replay
+                            && !formats.contains(&value.format())
+                        {
+                            if message.status != ItemLifecycle::Completed
+                                || value.replay_token().is_none()
+                            {
+                                return Err(CodecError::Unsupported(
+                                    "partial foreign attachment".into(),
+                                ));
+                            }
+                            part.replay = None;
+                            fidelity.remove_part_replay(*owner, part.id);
+                            transferred = true;
+                        }
+                    }
+                }
+                Item::ToolCall(call) => {
+                    if let Some(value) = &call.replay
                         && !formats.contains(&value.format())
                     {
-                        if message.status != ItemLifecycle::Completed
-                            || value.replay_token().is_none()
+                        if call.status != ItemLifecycle::Completed || value.replay_token().is_none()
                         {
                             return Err(CodecError::Unsupported(
                                 "partial foreign attachment".into(),
                             ));
                         }
-                        part.replay = None;
-                        fidelity.remove_part_replay(*owner, part.id);
+                        call.replay = None;
+                        fidelity.remove_replay(*owner);
+                        fidelity.remove_response_item_id(*owner);
                         transferred = true;
                     }
                 }
+                _ => {}
             }
-            Item::ToolCall(call) => {
-                if let Some(value) = &call.replay
-                    && !formats.contains(&value.format())
-                {
-                    if call.status != ItemLifecycle::Completed || value.replay_token().is_none() {
-                        return Err(CodecError::Unsupported("partial foreign attachment".into()));
-                    }
-                    call.replay = None;
-                    fidelity.remove_replay(*owner);
-                    fidelity.remove_response_item_id(*owner);
-                    transferred = true;
-                }
-            }
-            _ => {}
         }
+        request = Cow::Owned(request.into_owned().with_items(items)?);
     }
-    let request = request.with_items(items)?;
     fidelity.retain_owners(request.items());
     Ok((request, fidelity, transferred))
 }

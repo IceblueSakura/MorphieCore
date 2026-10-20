@@ -860,6 +860,129 @@ fn foreign_signed_text_drops_only_replay_and_affected_call_aliases() {
 }
 
 #[test]
+fn native_history_edits_only_foreign_carriers_and_prunes_stale_aliases() {
+    let (source, _) = source();
+    let request = GenerationRequest::new(
+        source.semantic.items().to_vec(),
+        GenerationControls::default(),
+    )
+    .unwrap();
+    let mut fidelity = source.fidelity;
+    let stale = ItemId::new(999);
+    fidelity.record_response_item_id(stale, "stale").unwrap();
+    let before = fidelity.clone();
+    use ReplayFormat::{
+        GoogleGenerateContentPart as Thought, GoogleGenerateContentSignature as Signed,
+    };
+    for (formats, reasoning, attachments) in [
+        (vec![Thought, Signed], true, true),
+        (vec![Signed], false, true),
+        (vec![Thought], true, false),
+        (vec![], false, false),
+    ] {
+        let (projected, pruned, transferred) = crate::protocol::native::native_reasoning_history(
+            &request,
+            &fidelity,
+            &target(),
+            &formats,
+        )
+        .unwrap();
+        assert_eq!(projected.items().len(), if reasoning { 4 } else { 3 });
+        assert_eq!(
+            projected
+                .items()
+                .iter()
+                .any(|(_, item)| matches!(item, Item::Reasoning(_))),
+            reasoning
+        );
+        for (owner, item) in projected.items() {
+            match item {
+                Item::Message(message) => {
+                    for part in &message.parts {
+                        assert_eq!(part.replay.is_some(), attachments);
+                        assert_eq!(
+                            pruned.part_replay_origin(*owner, part.id).is_some(),
+                            attachments
+                        );
+                    }
+                }
+                Item::ToolCall(call) => {
+                    assert_eq!(call.replay.is_some(), attachments);
+                    assert_eq!(pruned.replay_origin(*owner).is_some(), attachments);
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(transferred, !reasoning || !attachments);
+        if !transferred {
+            assert!(matches!(projected, std::borrow::Cow::Borrowed(_)));
+        }
+        assert_eq!(pruned.response_item_id(stale), None);
+        assert_eq!(fidelity, before);
+        assert_eq!(request.items(), source.semantic.items());
+    }
+    let reasoning = request
+        .clone()
+        .retain_items(|_, item| matches!(item, Item::Reasoning(_)))
+        .unwrap();
+    fidelity.retain_owners(reasoning.items());
+    assert!(matches!(
+        crate::protocol::native::native_reasoning_history(&reasoning, &fidelity, &target(), &[]),
+        Err(CodecError::Semantic(GenerationError::EmptyInput))
+    ));
+}
+
+#[test]
+fn native_history_validates_deleted_anchors_before_partial_attachments() {
+    let (source, _) = source();
+    let mut fidelity = source.fidelity;
+    let mut items = source.semantic.items().to_vec();
+    let anchor = items[0].0;
+    let (owner, Item::Message(message)) = &mut items[1] else {
+        panic!("signed message")
+    };
+    message.status = ItemLifecycle::Incomplete;
+    let part = &mut message.parts[0];
+    let replay = part.replay.take().unwrap();
+    part.replay = Some(ReplayValue::partial(
+        replay.format(),
+        Text::new(replay.as_str(), "fixture", MAX_TEXT_BYTES).unwrap(),
+    ));
+    fidelity.remove_part_replay(*owner, part.id);
+    fidelity
+        .record_part_replay(*owner, message.status, 0, part, Some(target().origin()))
+        .unwrap();
+    let request = GenerationRequest::new(items, GenerationControls::default()).unwrap();
+    assert!(matches!(
+        crate::protocol::native::native_reasoning_history(&request, &fidelity, &target(), &[]),
+        Err(CodecError::Unsupported(reason)) if reason == "partial foreign attachment"
+    ));
+    let request = request
+        .with_message_envelopes(vec![MessageEnvelope::empty(
+            GroupId::new(LocalScope::ROOT, 99),
+            MessageEnvelopeRole::Assistant,
+            Some(anchor),
+        )])
+        .unwrap();
+    assert!(matches!(
+        crate::protocol::native::native_reasoning_history(&request, &fidelity, &target(), &[]),
+        Err(CodecError::Semantic(GenerationError::InvalidMessageGroup))
+    ));
+    let request = crate::adapter::Request::from_generation(
+        crate::protocol::DecodedRequest {
+            semantic: request,
+            fidelity,
+        },
+        "public",
+    )
+    .unwrap();
+    assert!(matches!(
+        request.without_foreign_reasoning(Some(&ReplayTarget::new("other", "other").unwrap().origin())),
+        Err(CodecError::Unsupported(reason)) if reason == "partial foreign attachment"
+    ));
+}
+
+#[test]
 fn manifests_reject_duplicate_keys_and_oversized_parts() {
     let baseline = r#"{"items":[{"type":"message","status":"completed","phase":null,"parts":[{"bytes":2,"hash":"fixture-hash","replay":"fixture-replay"}]}],"groups":[]}"#;
     let encoded = |raw: &[u8]| format!("{PREFIX}{}", URL_SAFE_NO_PAD.encode(raw));

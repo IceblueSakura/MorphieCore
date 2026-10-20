@@ -32,6 +32,36 @@ fn responses_refusal() -> Value {
 }
 
 #[test]
+fn response_details_require_a_matching_outcome_and_an_error_code() {
+    assert_eq!(
+        GenerationResponse::new(vec![], Outcome::Incomplete)
+            .unwrap()
+            .with_details(TerminalDetails {
+                completion: Some(CompletionCause::Natural),
+                ..Default::default()
+            })
+            .unwrap_err(),
+        GenerationError::InvalidResponse
+    );
+    assert_eq!(
+        GenerationResponse::new(vec![], Outcome::Failed)
+            .unwrap()
+            .with_details(TerminalDetails {
+                error: Some(ResponseError {
+                    code: None,
+                    message: morphiecore::semantic::value::Text::new("failed", "fixture", 64)
+                        .unwrap(),
+                    param: None,
+                    original_type: None,
+                }),
+                ..Default::default()
+            })
+            .unwrap_err(),
+        GenerationError::InvalidResponse
+    );
+}
+
+#[test]
 fn incomplete_and_failed_responses_do_not_encode_as_success() {
     let mut chat_wire = chat_refusal();
     chat_wire["choices"][0]["message"] = json!({"role":"assistant","content":"Partial"});

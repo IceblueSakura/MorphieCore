@@ -167,12 +167,22 @@ impl GenerationResponse {
     }
     pub fn with_usage_reports(mut self, usage: UsageReports) -> Result<Self, GenerationError> {
         self.usage = usage;
-        let details = self.details.clone();
-        self.with_details(details)
+        self.validate_details_and_bounds()?;
+        Ok(self)
     }
     pub fn with_details(mut self, details: TerminalDetails) -> Result<Self, GenerationError> {
-        details.validate(self.outcome)?;
-        if details.error.as_ref().is_some_and(|e| e.code.is_none()) {
+        self.details = details;
+        self.validate_details_and_bounds()?;
+        Ok(self)
+    }
+    fn validate_details_and_bounds(&self) -> Result<(), GenerationError> {
+        self.details.validate(self.outcome)?;
+        if self
+            .details
+            .error
+            .as_ref()
+            .is_some_and(|e| e.code.is_none())
+        {
             return Err(GenerationError::InvalidResponse);
         }
         let bytes = if self.items.is_empty() {
@@ -181,7 +191,7 @@ impl GenerationResponse {
             crate::semantic::task::generation::validate::items(&self.items, true, &self.resources)?
         };
         if bytes
-            .saturating_add(details.bytes())
+            .saturating_add(self.details.bytes())
             .saturating_add(self.resources.uncharged_bytes(&self.items)?)
             .saturating_add(self.usage.bytes())
             .saturating_add(self.envelopes.validate(&self.items)?)
@@ -192,8 +202,7 @@ impl GenerationResponse {
         {
             return Err(GenerationError::Limit);
         }
-        self.details = details;
-        Ok(self)
+        Ok(())
     }
     pub fn items(&self) -> &[(ItemId, Item)] {
         &self.items
@@ -206,8 +215,8 @@ impl GenerationResponse {
         reports: Vec<crate::semantic::task::generation::SafetyReport>,
     ) -> Result<Self, GenerationError> {
         self.safety_reports = reports;
-        let details = self.details.clone();
-        self.with_details(details)
+        self.validate_details_and_bounds()?;
+        Ok(self)
     }
     pub fn message_envelopes(&self) -> &[crate::semantic::task::generation::MessageEnvelope] {
         self.envelopes.values()
@@ -221,8 +230,8 @@ impl GenerationResponse {
                 &self.items,
                 groups,
             )?;
-        let details = self.details.clone();
-        self.with_details(details)
+        self.validate_details_and_bounds()?;
+        Ok(self)
     }
     pub const fn outcome(&self) -> Outcome {
         self.outcome
@@ -241,8 +250,8 @@ impl GenerationResponse {
         resources: crate::semantic::task::generation::ResourceTable,
     ) -> Result<Self, GenerationError> {
         self.resources = resources;
-        let details = self.details.clone();
-        self.with_details(details)
+        self.validate_details_and_bounds()?;
+        Ok(self)
     }
     pub fn details(&self) -> &TerminalDetails {
         &self.details

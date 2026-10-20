@@ -137,7 +137,48 @@ fn incremental_chain_emits_before_terminal_and_does_not_commit_by_encoding() {
         };
         assert_eq!(decoded.metadata.model, "public-model");
         assert_eq!(decoded.semantic, intake.response().unwrap().semantic);
+        let observed = intake.response().unwrap().clone();
+        assert_eq!(intake.finish().unwrap(), &observed);
+        assert_eq!(intake.metadata(), Some(&observed.metadata));
+        assert_eq!(intake.fidelity(), Some(&observed.fidelity));
+        assert!(matches!(
+            intake.begin(200, "text/event-stream"),
+            Err(AttemptError::Protocol("attempt already began"))
+        ));
+        assert_eq!(intake.response().unwrap(), &observed);
+        assert!(matches!(
+            intake.push(b""),
+            Err(AttemptError::Protocol("attempt is closed"))
+        ));
+        assert!(matches!(
+            intake.finish(),
+            Err(AttemptError::Protocol("rejected attempt"))
+        ));
+        assert!(intake.response().is_err());
+        assert!(intake.metadata().is_none());
+        assert!(intake.fidelity().is_none());
     }
+}
+
+#[test]
+fn static_intake_finish_is_idempotent_and_cancellation_discards_the_result() {
+    let mut intake = Attempt::new(standard(Profile::Responses), 1 << 20, SseLimits::default());
+    intake.begin(200, "application/json").unwrap();
+    let body = wire::response(2).to_string();
+    assert_eq!(intake.push(body.as_bytes()).unwrap().0, body.len());
+    let observed = intake.finish().unwrap().clone();
+    assert_eq!(intake.finish().unwrap(), &observed);
+    assert_eq!(intake.metadata(), Some(&observed.metadata));
+    assert_eq!(intake.fidelity(), Some(&observed.fidelity));
+    assert_eq!(intake.ignored_events(), 0);
+    intake.cancel();
+    assert!(intake.response().is_err());
+    assert!(intake.metadata().is_none());
+    assert!(intake.fidelity().is_none());
+    assert!(matches!(
+        intake.finish(),
+        Err(AttemptError::Protocol("rejected attempt"))
+    ));
 }
 
 #[test]
@@ -422,6 +463,9 @@ fn cancellation_closes_intake_and_delivery_without_success() {
         intake.cancel();
         output.cancel();
         assert!(intake.finish().is_err());
+        assert!(intake.response().is_err());
+        assert!(intake.metadata().is_none());
+        assert!(intake.fidelity().is_none());
         assert!(output.finish_stream(&intake).is_err());
         assert!(!output.lifecycle().may_retry_or_fallback());
     }
