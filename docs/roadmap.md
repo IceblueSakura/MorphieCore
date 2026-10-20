@@ -75,6 +75,8 @@ The P7 boundary review becomes eligible after first-stage local completion, with
 
 The packages below refine the selected scope, not design approval or binding activation. IDs name coherent deliverables, not a required commit count. Stage-4 ordering is recommended; exact operation contracts still need selection. Stage 5 has no execution queue.
 
+Inference frameworks such as llama.cpp and SGLang are design references, not integration targets. Use their input-preparation, generation-constraint and output-interpretation designs to improve the existing gateway boundaries. This adds no backend work package, engine dependency or generic session/plugin framework; [inference-engine integration is not planned](#not-planned).
+
 1. Stage-1 selected codec work is implemented; use its [inventory and boundaries](refs/2026-10-19-same-protocol-inventory.md) for review and per-loop readiness. No all-official-semantics or real-loop completeness is implied.
 2. The selected R1a, R2 and R1b loops completed independently under their own carriers and approval/admission gates. A future loop waits for its own readiness, not every stage-1 package; no additional client/model matrix is scheduled.
 3. R2 readiness concerns its implemented pi Haiku profile, not wider native manual-budget or sampling support. An observed defect in a carrier actually used by R2 must still be fixed before accepting it.
@@ -86,7 +88,8 @@ Every implementation package follows the same bounded workflow:
 
 - **Entry:** name the pinned source revision, dialect, feature domain, relevant binding/client profile, existing owners and unresolved decisions. Extend sourced `docs/refs/` notes for protocol findings; do not create run-report documents.
 - **Delivery:** implement one coherent request/result/event/history or resource-lifecycle slice. Present a minimal counterexample and options before introducing an unselected semantic structure; a decision blocks only dependent work.
-- **Evidence:** write independent directional expectations and focused failure checks at the responsible layer. Separate equivalent normalization, exact carriage, approved loss, rejection and unassessed cases. Prepare the [human review](#generation-design-review-gate) evidence incrementally; no passing test or agent review closes that gate.
+- **Preparation and continuation:** preserve the gateway's existing retained binding for request preparation and response decoding, with fresh mutable decoder state per attempt. Keep candidate projections independent and preserve [history-prefix stability](architecture.md#candidate-local-projection) as turns are appended. These are invariants to maintain during each slice, not a new session/snapshot deliverable; change ownership only for a demonstrated gap.
+- **Evidence:** write independent directional expectations and focused failure checks at the responsible layer. Separate equivalent normalization, exact carriage, approved loss, rejection and unassessed cases. Distinguish IR expression, protocol carriers, binding admission, model effectiveness and accepted client loops; a generic tool-support claim cannot establish required/named choice, strict schemas, parallel calls or streamed arguments. Scope new capability acceptance to the selected profile, including history continuation, without dropping existing regression assertions. Prepare the [human review](#generation-design-review-gate) evidence incrementally; no passing test or agent review closes that gate.
 - **Exit:** apply the [publication and integration gates](#verification-and-integration-boundary). Report codec, admission, SDK and real-client/Provider status separately, including blocked checks. Commit/push only after the applicable checks; remove completed packages from this page and keep accepted decisions in Architecture.
 
 ### Stage 1 work plan
@@ -144,7 +147,7 @@ The stage covers request projection, selected cross-protocol loops, Interactions
 
 | Package | Dependency and work | Exit condition |
 |---|---|---|
-| S3-1 Model-effective value guards | Implement bounded allowed-effort and maximum-output declarations in trusted binding policy. Apply them through the shared encoder after projection, including ordered updates and inserted defaults | Preflight/preparation agree; documented invalid Gemini effort/output examples reject at the intended target check. Keep protocol-wide carriers, source IR, existing approved mappings and route selection unchanged; no new clamping |
+| S3-1 Model-effective value guards | Implement bounded allowed-effort and maximum-output declarations in trusted binding policy. Apply final typed target checks through the shared encoder after projection and default insertion, covering retained ordered updates as well as reply controls | Preflight/preparation agree on final values and combinations; documented invalid Gemini effort/output examples reject at the intended target check. Keep protocol-wide carriers, source IR, existing approved mappings and route selection unchanged; no new clamping or post-encoding repair |
 | S3-2 Messages missing-cap default | Select the bounded configuration shape and per-binding values; replace fixed `32000` insertion with the trusted default only when the source has no ceiling. Integrate with S3-1 final checks | Explicit caps survive; the default is distinct from the model maximum; incompatible ordinary budget/default combinations reject without adjustment. Named insertion evidence appears once on the candidate copy |
 | S3-3 Cross-protocol attribution | Build on native identity preservation and the field inventory; implement the selected [end-user attribution](architecture.md#end-user-attribution) priority rules, including generateContent safety labels | Independent directional checks cover safety-ID priority, null/empty/absent, same-priority conflicts and target bounds. Source fields remain unchanged; identity loss and legacy cache-bucketing loss are separate. No inferred Interactions carrier |
 | S3-4 Google → Chat/Responses loops | After S3-1 and the carriers required by each selected profile, verify generateContent → Chat, then Responses, one direction/binding at a time. Check request projection, tool results, final answers, usage and signed-history return | JSON/SSE loops pass applicable offline, SDK and separately bounded real gates. Preserve safety/terminal rejection and late-report honesty. Google client/static intake and Google → Messages final-answer conversion are not opened implicitly |
@@ -153,9 +156,15 @@ The stage covers request projection, selected cross-protocol loops, Interactions
 
 S3-2 uses S3-1's final validation; S3-4 needs S3-3 only if its chosen profile exercises attribution. S3-5 is not a prerequisite for generateContent or counting. S3-6 may proceed once its own projection is stable rather than waiting for every cross-protocol pair. Unsupported protected semantics continue to reject; completing these packages does not imply full official-protocol coverage.
 
+S3-1/S3-2 exit evidence must cover projection-generated values, explicit caps, inserted defaults and incompatible combinations at the final target boundary, not an earlier admission failure. Projection receipts must describe the checked request that preparation serializes. Reuse the encoder rules without retaining every candidate's serialized body; transport consumes the prepared request without reinterpreting its semantics.
+
 #### Stage 3 counting scope
 
-Complete `POST /v1/messages/count_tokens` during cross-protocol work, as an independent counting operation over the selected model's effective input projection. Preserve count-relevant instructions, tools, media and settings; identify the native model/tokenizer scope and preserve the source's counting meaning. A count does not reserve the next Generation route or promise billing equality. Unsupported counting rejects rather than silently estimating or invoking inference. The [proposed Responses counting companion](api-expansion-design.md#token-counting) remains a surface-selection decision.
+Complete `POST /v1/messages/count_tokens` during cross-protocol work, as an independent counting operation over one selected model/target profile. Follow the [counting contract](api-expansion-design.md#token-counting): share the rules that determine Generation's effective input, including instructions, ordered history, tool declarations/calls/results, media and input-affecting settings/defaults. Keep operation-specific validation and encoding separate; counting is not Generation with a zero output cap or a call to its full execution preparation.
+
+Exit evidence must independently establish the count request's effective input and result meaning, and agreement with the selected generation projection on count-relevant input. Do not create generation tasks, initialize unnecessary output decoders or maintain separate message/default rules. Counting can still require authorized resource access and preprocessing; verify applicable byte/time bounds and cancellation without moving I/O into pure codecs or treating no generation as no resource cost.
+
+Identify the model/tokenizer and projection scope without exposing trusted routing or credentials. One candidate's count neither covers other fallback candidates nor reserves the next Generation route. Preserve documented upstream estimates rather than promise billing equality; an opaque Provider template does not justify a local-template precision claim. Unsupported counting rejects rather than silently estimating or invoking inference. The proposed Responses counting companion remains a separate surface-selection decision.
 
 ### Stage 4 scope
 
@@ -423,6 +432,7 @@ Maintenance only, when a refactor requires it:
 
 ### Not planned
 
+- Inference-engine integration, including llama.cpp/SGLang server bindings or embedded model execution, and engine GPU/KV-cache scheduling.
 - Raw wire passthrough, post-encoding JSON patches or weakened schemas.
 - Invented tool results or changed roles for orphan results.
 - Message-content hashes as conversation identity, or LLM classifiers for routing.
