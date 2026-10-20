@@ -815,7 +815,7 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
         );
     }
     assert!(
-        morphiecore::protocol::google::encode_generation_request(
+        morphiecore::protocol::google::generate_content::encode_generation_request(
             &client.task.semantic,
             &client.task.fidelity,
             &target(),
@@ -824,7 +824,7 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
         .is_err()
     );
     assert!(
-        morphiecore::protocol::interactions::encode_generation_request(
+        morphiecore::protocol::google::interactions::encode_generation_request(
             &client.task.semantic,
             &client.task.fidelity,
             &target()

@@ -339,7 +339,7 @@ mod phase {
     #[test]
     fn foreign_requests_omit_phase_without_editing_responses_history() {
         use morphiecore::protocol::{
-            anthropic, google, interactions,
+            anthropic, google::{generate_content as google, interactions},
             native::ReplayTarget,
             openai::{Adapter, Dialect, TargetCaps},
         };

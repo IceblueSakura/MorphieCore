@@ -1,11 +1,15 @@
 //! Independent Interactions request expectations; no native encoder builds the oracle.
 use morphiecore::protocol::{
-    interactions::encode_generation_request,
+    google::interactions::encode_generation_request,
     native::ReplayTarget,
     openai::{Adapter, Dialect, Profile},
 };
 use morphiecore::{
-    protocol::{fidelity::FidelityRecords, interactions::RequestRule, replay_envelope::issuer},
+    protocol::{
+        fidelity::FidelityRecords,
+        google::interactions::RequestRule,
+        replay_envelope::issuer,
+    },
     semantic::{task::generation::*, value::Text},
 };
 use serde_json::json;
@@ -31,7 +35,9 @@ fn decode_interaction(
     frames: &[serde_json::Value],
     done: bool,
 ) -> Result<morphiecore::protocol::DecodedResponse, String> {
-    use morphiecore::protocol::{interactions::GenerationSseDecoder, stream::SseLimits};
+    use morphiecore::protocol::{
+        google::interactions::GenerationSseDecoder, stream::SseLimits,
+    };
     let mut d = GenerationSseDecoder::new(
         200,
         "text/event-stream",
@@ -477,8 +483,8 @@ fn projects_stateless_steps_tools_and_controls() {
     );
     let mut endpoint = morphiecore::topology::catalog::GOOGLE_BINDINGS[0].interactions_endpoint();
     assert!(endpoint.encode_request_with_rules(&request).is_err());
-    endpoint.representation = morphiecore::protocol::interactions::TargetCaps {
-        semantics: morphiecore::protocol::interactions::representation_contract(),
+    endpoint.representation = morphiecore::protocol::google::interactions::TargetCaps {
+        semantics: morphiecore::protocol::google::interactions::representation_contract(),
         ..Default::default()
     }
     .into();
@@ -505,7 +511,7 @@ fn projects_stateless_steps_tools_and_controls() {
         })
     );
     assert!(
-        morphiecore::protocol::interactions::semantic_contract()
+        morphiecore::protocol::google::interactions::semantic_contract()
             .check(&controlled)
             .is_err()
     );
@@ -820,7 +826,7 @@ fn tool_result_execution_reports_match_their_error_flag() {
     let encode = |request: &GenerationRequest| {
         let interactions = encode_generation_request(request, &fidelity, &target)
             .map(|(wire, _)| wire["input"][2].clone());
-        let generate = morphiecore::protocol::google::encode_generation_request(
+        let generate = morphiecore::protocol::google::generate_content::encode_generation_request(
             request, &fidelity, &target, None,
         )
         .map(|(wire, _)| wire["contents"][2]["parts"][0]["functionResponse"]["response"].clone());

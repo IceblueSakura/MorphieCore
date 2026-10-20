@@ -718,7 +718,7 @@ mod native_catalog {
             .clone()
             .with_settings(settings)
             .unwrap();
-        let mut caps = morphiecore::protocol::google::TargetCaps::default();
+        let mut caps = morphiecore::protocol::google::generate_content::TargetCaps::default();
         google.representation = caps.clone().into();
         assert!(google.encode_request(&request).is_err());
         caps.reasoning_policy = Some(OFF.clone());

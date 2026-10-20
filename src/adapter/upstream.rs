@@ -100,7 +100,7 @@ impl UpstreamAdapter {
                 target: target.clone(),
             },
             Self::GoogleGenerateContent { target } => {
-                GenerationDecoder::Google(crate::protocol::google::GenerationSseDecoder::new(
+                GenerationDecoder::Google(crate::protocol::google::generate_content::GenerationSseDecoder::new(
                     status,
                     content_type,
                     native_limits,
@@ -109,7 +109,7 @@ impl UpstreamAdapter {
                 )?)
             }
             Self::GoogleInteractions { target } => GenerationDecoder::Interactions(
-                crate::protocol::interactions::GenerationSseDecoder::new(
+                crate::protocol::google::interactions::GenerationSseDecoder::new(
                     status,
                     content_type,
                     native_limits,
@@ -130,8 +130,8 @@ pub(crate) enum GenerationDecoder {
         profile: anthropic::Profile,
         target: crate::protocol::native::ReplayTarget,
     },
-    Google(crate::protocol::google::GenerationSseDecoder),
-    Interactions(crate::protocol::interactions::GenerationSseDecoder),
+    Google(crate::protocol::google::generate_content::GenerationSseDecoder),
+    Interactions(crate::protocol::google::interactions::GenerationSseDecoder),
 }
 impl GenerationDecoder {
     pub(crate) fn consume(&mut self, bytes: &[u8]) -> Result<(usize, Vec<StreamEvent>), SseError> {

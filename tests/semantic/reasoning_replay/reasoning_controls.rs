@@ -112,7 +112,7 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
     assert_eq!(effort.reasoning.mode, Presence::Value(ReasoningMode::Pro));
     effort.reasoning.mode = Presence::Absent;
     let allocated = GenerationRequest::from_settings(vec![], allocated).unwrap();
-    let (wire, _) = morphiecore::protocol::google::encode_generation_request(
+    let (wire, _) = morphiecore::protocol::google::generate_content::encode_generation_request(
         &allocated,
         &FidelityRecords::default(),
         &morphiecore::protocol::native::ReplayTarget::new("synthetic", "m").unwrap(),

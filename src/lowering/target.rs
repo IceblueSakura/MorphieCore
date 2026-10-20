@@ -1,7 +1,12 @@
 //! Protocol-owned endpoint capabilities, not a client protocol or execution policy.
 use crate::protocol::openai::TargetCaps as OpenAiCaps;
 use crate::{
-    protocol::{anthropic, cache::CacheProjection, google},
+    protocol::{
+        anthropic,
+        cache::CacheProjection,
+        google::generate_content as google_generate_content,
+        google::interactions as google_interactions,
+    },
     semantic::task::generation::GenerationSemanticContract,
 };
 
@@ -9,8 +14,8 @@ use crate::{
 pub enum TargetCaps {
     OpenAi(Box<OpenAiCaps>),
     AnthropicMessages(Box<anthropic::TargetCaps>),
-    GoogleGenerateContent(Box<google::TargetCaps>),
-    GoogleInteractions(Box<crate::protocol::interactions::TargetCaps>),
+    GoogleGenerateContent(Box<google_generate_content::TargetCaps>),
+    GoogleInteractions(Box<google_interactions::TargetCaps>),
 }
 impl From<OpenAiCaps> for TargetCaps {
     fn from(value: OpenAiCaps) -> Self {
@@ -22,13 +27,13 @@ impl From<anthropic::TargetCaps> for TargetCaps {
         Self::AnthropicMessages(Box::new(value))
     }
 }
-impl From<google::TargetCaps> for TargetCaps {
-    fn from(value: google::TargetCaps) -> Self {
+impl From<google_generate_content::TargetCaps> for TargetCaps {
+    fn from(value: google_generate_content::TargetCaps) -> Self {
         Self::GoogleGenerateContent(Box::new(value))
     }
 }
-impl From<crate::protocol::interactions::TargetCaps> for TargetCaps {
-    fn from(value: crate::protocol::interactions::TargetCaps) -> Self {
+impl From<google_interactions::TargetCaps> for TargetCaps {
+    fn from(value: google_interactions::TargetCaps) -> Self {
         Self::GoogleInteractions(Box::new(value))
     }
 }

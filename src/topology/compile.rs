@@ -323,10 +323,10 @@ fn compile_deployments(
                     Some(ceiling)
                 }
                 super::ProtocolProfile::GoogleGenerateContent => {
-                    Some(crate::protocol::google::semantic_contract())
+                    Some(crate::protocol::google::generate_content::semantic_contract())
                 }
                 super::ProtocolProfile::GoogleInteractions => {
-                    Some(crate::protocol::interactions::semantic_contract())
+                    Some(crate::protocol::google::interactions::semantic_contract())
                 }
                 _ => None,
             };

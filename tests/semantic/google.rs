@@ -3,7 +3,7 @@ use morphiecore::{
     adapter::Request,
     protocol::{
         DecodedResponse,
-        google::{GenerationSseDecoder, encode_generation_request},
+        google::generate_content::{GenerationSseDecoder, encode_generation_request},
         native::ReplayTarget,
         openai::{Adapter, Dialect, Profile},
         stream::SseLimits,
@@ -244,7 +244,7 @@ fn cross_format_reasoning_is_removed_before_grouping_but_partial_values_reject()
             );
             assert_eq!(
                 rules,
-                [morphiecore::protocol::google::RequestRule::TransferVisibleHistory]
+                [morphiecore::protocol::google::generate_content::RequestRule::TransferVisibleHistory]
             );
             assert_eq!(request.items().len(), 3);
         } else {
@@ -908,8 +908,8 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
     );
     let mut endpoint = morphiecore::topology::catalog::GOOGLE_BINDINGS[0].endpoint();
     assert!(endpoint.encode_request_with_rules(&source).is_err());
-    endpoint.representation = morphiecore::protocol::google::TargetCaps {
-        semantics: morphiecore::protocol::google::representation_contract(),
+    endpoint.representation = morphiecore::protocol::google::generate_content::TargetCaps {
+        semantics: morphiecore::protocol::google::generate_content::representation_contract(),
         ..Default::default()
     }
     .into();
@@ -941,12 +941,12 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
         })
     );
     assert!(
-        morphiecore::protocol::google::semantic_contract()
+        morphiecore::protocol::google::generate_content::semantic_contract()
             .check(&controlled)
             .is_err()
     );
     assert!(
-        morphiecore::protocol::interactions::encode_generation_request(
+        morphiecore::protocol::google::interactions::encode_generation_request(
             &controlled,
             &source.task.fidelity,
             &target()
@@ -1134,12 +1134,12 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
         .is_err()
     );
     assert!(
-        morphiecore::protocol::google::semantic_contract()
+        morphiecore::protocol::google::generate_content::semantic_contract()
             .check(&cached.task.semantic)
             .is_err()
     );
     assert!(
-        morphiecore::protocol::google::representation_contract()
+        morphiecore::protocol::google::generate_content::representation_contract()
             .check(&cached.task.semantic)
             .is_ok()
     );
@@ -1158,7 +1158,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
             .is_err()
     );
     assert!(
-        morphiecore::protocol::interactions::encode_generation_request(
+        morphiecore::protocol::google::interactions::encode_generation_request(
             &cached.task.semantic,
             &cached.task.fidelity,
             &target()
@@ -1209,12 +1209,12 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
         })
     );
     assert!(
-        morphiecore::protocol::google::semantic_contract()
+        morphiecore::protocol::google::generate_content::semantic_contract()
             .check(&policy.task.semantic)
             .is_err()
     );
     assert!(
-        morphiecore::protocol::google::representation_contract()
+        morphiecore::protocol::google::generate_content::representation_contract()
             .check(&policy.task.semantic)
             .is_ok()
     );
@@ -1233,7 +1233,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
             .is_err()
     );
     assert!(
-        morphiecore::protocol::interactions::encode_generation_request(
+        morphiecore::protocol::google::interactions::encode_generation_request(
             &policy.task.semantic,
             &policy.task.fidelity,
             &target()

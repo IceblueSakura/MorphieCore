@@ -6,7 +6,7 @@ use crate::{
         replay::{CLIENT_ORIGIN, open_from_client, seal_for_client},
     },
     protocol::{
-        google::{GenerationSseDecoder, encode_generation_request},
+        google::generate_content::{GenerationSseDecoder, encode_generation_request},
         native::ReplayTarget,
         openai::{Adapter, Dialect, Profile, TargetCaps, stream::Obfuscation},
         stream::SseLimits,

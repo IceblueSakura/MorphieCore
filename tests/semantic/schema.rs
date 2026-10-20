@@ -148,7 +148,7 @@ mod schema_admission {
             &json!({"input":"go","tools":[{"type":"function","name":"lookup","parameters":{"type":"object"}}]}),
         )
         .unwrap();
-        let mut native = morphiecore::protocol::google::semantic_contract();
+        let mut native = morphiecore::protocol::google::generate_content::semantic_contract();
         native.strict_tools = true;
         assert_eq!(
             native.check(&normalized.semantic),

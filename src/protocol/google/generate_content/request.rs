@@ -624,7 +624,7 @@ fn media(
                 "mimeType": media_type.as_str(), "data": data_base64.as_str()}}))
         }
         ResourceLocation::Url(url) if !tool => {
-            super::check_public_media_url(url.as_str())?;
+            crate::protocol::google::check_public_media_url(url.as_str())?;
             Ok(json!({"fileData": {"fileUri": url.as_str()}}))
         }
         _ => Err(unsupported()),

@@ -103,7 +103,7 @@ fn signed_text_and_partial_outputs_keep_replay_and_terminal_contracts() {
         )
         .unwrap();
     morphiecore::execution::replay::open_from_client(&mut returned).unwrap();
-    let (encoded, _) = morphiecore::protocol::google::encode_generation_request(
+    let (encoded, _) = morphiecore::protocol::google::generate_content::encode_generation_request(
         &returned.task.semantic,
         &returned.task.fidelity,
         &ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap(),
@@ -122,7 +122,7 @@ fn signed_text_and_partial_outputs_keep_replay_and_terminal_contracts() {
         ContentPart::Text(Text::new("edited", "synthetic", 64).unwrap().into());
     returned.task.semantic = returned.task.semantic.with_items(items).unwrap();
     assert!(
-        morphiecore::protocol::google::encode_generation_request(
+        morphiecore::protocol::google::generate_content::encode_generation_request(
             &returned.task.semantic,
             &returned.task.fidelity,
             &ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap(),

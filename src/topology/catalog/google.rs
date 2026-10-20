@@ -1,6 +1,9 @@
 //! Google AI Studio bindings. One public model, its Google endpoints in failover order.
 use crate::{
-    protocol::{google, model_limits::ModelLimits},
+    protocol::{
+        google::{generate_content, interactions},
+        model_limits::ModelLimits,
+    },
     provider::{CredentialBindingId, CredentialKind, ProviderDefinition, catalog},
     topology::*,
 };
@@ -55,7 +58,7 @@ impl GoogleBinding {
             protocol: ProtocolProfile::GoogleGenerateContent,
             upstream_model: self.upstream.into(),
             canonical_model: ModelId::new(self.model).expect("static model"),
-            representation: google::TargetCaps {
+            representation: generate_content::TargetCaps {
                 model_limits: self.model_limits(),
                 ..Default::default()
             }
@@ -89,7 +92,7 @@ impl GoogleBinding {
             EndpointId::new(&format!("google-{}-interactions", self.model)).expect("static id");
         endpoint.protocol = ProtocolProfile::GoogleInteractions;
         endpoint.target.path = self.provider().interactions.expect("declared path");
-        endpoint.representation = crate::protocol::interactions::TargetCaps {
+        endpoint.representation = interactions::TargetCaps {
             model_limits: self.model_limits(),
             ..Default::default()
         }
@@ -103,7 +106,7 @@ impl GoogleBinding {
             model,
             TaskKind::Generation,
             self.route().id,
-            google::semantic_contract(),
+            generate_content::semantic_contract(),
         );
         public.standard_context = false;
         public
@@ -112,7 +115,7 @@ impl GoogleBinding {
         CanonicalModel {
             id: ModelId::new(self.model).expect("static model"),
             task: TaskKind::Generation,
-            contract: google::semantic_contract(),
+            contract: generate_content::semantic_contract(),
         }
     }
 }
