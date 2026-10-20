@@ -224,7 +224,13 @@ impl Profile {
         fidelity: &FidelityRecords,
         target: &ReplayTarget,
     ) -> Result<NativeProjection, CodecError> {
-        self.encode_request_envelope(request, fidelity, target, &Presence::Absent)
+        self.encode_request_envelope(
+            request,
+            fidelity,
+            target,
+            &Presence::Absent,
+            &Default::default(),
+        )
     }
     pub(super) fn encode_request_envelope(
         self,
@@ -232,6 +238,7 @@ impl Profile {
         fidelity: &FidelityRecords,
         target: &ReplayTarget,
         policy: &Presence<crate::semantic::context::ServicePolicy>,
+        limits: &crate::protocol::model_limits::ModelLimits,
     ) -> Result<NativeProjection, CodecError> {
         let (request, fidelity, transferred) = crate::protocol::native::native_reasoning_history(
             request,
@@ -261,6 +268,16 @@ impl Profile {
             &mut rules,
         )?;
         wire.service_policy = policy.clone();
+        limits.check_values(
+            Some(wire.max_tokens),
+            wire.output_config
+                .value()
+                .and_then(|config| config.effort.value())
+                .copied()
+                .into_iter()
+                .chain(wire.messages.iter().filter_map(|message| message.effort))
+                .map(effort_level),
+        )?;
         let value = self.encode_request(&wire)?;
         Ok(NativeProjection {
             value,

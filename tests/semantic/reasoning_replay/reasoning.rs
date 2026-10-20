@@ -304,6 +304,19 @@ fn configuration_update_is_an_ordered_effort_item_not_a_settings_patch() {
         .unwrap();
     assert_eq!(wire["input"][0]["reasoning"]["effort"], "high");
     assert_eq!(rules, ["synthetic.configuration-effort.v1"]);
+    let mut limited = Contract::full();
+    limited.model_limits.allowed_effort = Some(vec![EffortLevel::Low].into());
+    assert!(matches!(
+        adapter.encode_request(&request, "m", &limited),
+        Err(morphiecore::adapter::AdapterError::Representation(
+            morphiecore::lowering::generation::RepresentationError::Controls
+        ))
+    ));
+    limited.model_limits.allowed_effort = Some(vec![EffortLevel::High].into());
+    assert_eq!(
+        adapter.encode_request(&request, "m", &limited).unwrap()["input"][0]["reasoning"]["effort"],
+        "high"
+    );
     assert_eq!(request, before);
     let scoped = morphiecore::protocol::reasoning::ReasoningRequestPolicy {
         canonical_model: "m".into(),

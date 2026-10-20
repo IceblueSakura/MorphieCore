@@ -716,6 +716,24 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
                 "output_config":{"effort":"medium"}})
     );
 
+    // A retained historical level must satisfy the binding even when the reply's
+    // level is allowed. Missing-carrier flattening is checked on its final value.
+    let mut limited = caps.clone();
+    limited.model_limits.allowed_effort = Some(vec![EffortLevel::High, EffortLevel::Medium].into());
+    let before = decoded.clone();
+    assert!(matches!(limited.encode_request(&decoded, &target),
+        Err(morphiecore::adapter::AdapterError::Codec(
+            morphiecore::protocol::CodecError::Unsupported(value))) if value == "target effort"));
+    limited.carriers.message_effort = false;
+    let flattened = limited.encode_request(&decoded, &target).unwrap();
+    assert_eq!(flattened.value["output_config"], json!({"effort":"medium"}));
+    assert!(
+        flattened
+            .rules
+            .contains(&anthropic::RequestRule::FlattenMessageEffort)
+    );
+    assert_eq!(decoded, before);
+
     // Without carriers: tolerant binding is omitted, the reply's effort is the level in
     // effect for it, and the tool set is the final available one.
     caps.carriers = Default::default();

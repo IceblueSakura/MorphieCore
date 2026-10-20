@@ -846,6 +846,56 @@ fn configured_failover_orders_and_limits_a_models_providers() {
             },
         )
         .unwrap();
+    let limits_config = serde_json::json!({"models":{google.model:{"candidates":[
+        {"binding":google.endpoint().id.as_str(),
+            "allowed_effort":["medium","high"],"maximum_output_tokens":4096},
+        {"binding":google.interactions_endpoint().id.as_str()}
+    ]}}});
+    private_write(&models_file, limits_config.clone());
+    let configured = Bootstrap::from_files(&gateway_file, &store).unwrap();
+    for protocol in [Profile::Chat, Profile::Responses] {
+        let entry = &configured.gateway.state.entries
+            [&(crate::gateway::family(protocol), google.model.into())];
+        assert_eq!(entry.candidates.len(), 2);
+        let limits = entry.candidates[0].endpoint.representation.model_limits();
+        assert_eq!(limits.maximum_output_tokens, Some(4096));
+        assert_eq!(
+            limits.allowed_effort.as_deref(),
+            Some(
+                &[
+                    crate::semantic::task::generation::EffortLevel::Medium,
+                    crate::semantic::task::generation::EffortLevel::High,
+                ][..]
+            )
+        );
+        assert_eq!(
+            entry.candidates[1].endpoint.representation.model_limits(),
+            google.interactions_endpoint().representation.model_limits()
+        );
+    }
+    for (name, value) in [
+        ("allowed_effort", serde_json::json!([])),
+        ("allowed_effort", serde_json::json!(["high", "high"])),
+        ("allowed_effort", serde_json::json!(["minimal"])),
+        ("allowed_effort", serde_json::json!(["unknown"])),
+        (
+            "allowed_effort",
+            serde_json::json!(["high", "medium", "low", "minimal", "xhigh", "max", "high"]),
+        ),
+        ("allowed_effort", serde_json::json!("high")),
+        ("maximum_output_tokens", serde_json::json!(0)),
+        ("maximum_output_tokens", serde_json::json!(65537)),
+        ("maximum_output_tokens", serde_json::json!(-1)),
+        ("maximum_output_tokens", serde_json::json!(1.5)),
+    ] {
+        let mut invalid = limits_config.clone();
+        invalid["models"][google.model]["candidates"][0][name] = value;
+        private_write(&models_file, invalid);
+        assert!(
+            Bootstrap::from_files(&gateway_file, &store).is_err(),
+            "{name}"
+        );
+    }
     let mut models = serde_json::json!({"models":{google.model:{
         "thinking_tokens":{"minimal":1024,"low":2048,"medium":3072,"high":8192,"xhigh":16384,"max":24576},
         "candidates":[{"binding":google.endpoint().id.as_str(),"thinking_conversion":"effort_to_budget"}]

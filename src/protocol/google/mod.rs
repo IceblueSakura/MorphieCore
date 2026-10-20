@@ -145,6 +145,7 @@ pub fn encode_generation_request(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TargetCaps {
     pub semantics: GenerationSemanticContract,
+    pub model_limits: crate::protocol::model_limits::ModelLimits,
     /// Supplied by the boundary; pure codecs never read a clock.
     pub resource_time: Option<std::time::SystemTime>,
     pub cache: CacheProjection,
@@ -155,6 +156,7 @@ impl Default for TargetCaps {
     fn default() -> Self {
         Self {
             semantics: semantic_contract(),
+            model_limits: Default::default(),
             resource_time: None,
             cache: CacheProjection::default(),
             reasoning_policy: None,
@@ -234,6 +236,7 @@ impl TargetCaps {
             .clone()
             .with_settings(settings)
             .map_err(CodecError::from)?;
+        self.model_limits.check_request(&semantic)?;
         let (wire, mut rules) = encode_generation_request(
             &semantic,
             &request.task.fidelity,

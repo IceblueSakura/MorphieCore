@@ -1,6 +1,6 @@
 //! Google AI Studio bindings. One public model, its Google endpoints in failover order.
 use crate::{
-    protocol::google,
+    protocol::{google, model_limits::ModelLimits},
     provider::{CredentialBindingId, CredentialKind, ProviderDefinition, catalog},
     topology::*,
 };
@@ -21,6 +21,14 @@ pub const GOOGLE_BINDINGS: &[GoogleBinding] = &[GoogleBinding {
     developer: "Google",
 }];
 impl GoogleBinding {
+    fn model_limits(&self) -> ModelLimits {
+        use crate::semantic::task::generation::EffortLevel::{High, Low, Medium};
+        // https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash (2026-10-20).
+        ModelLimits {
+            allowed_effort: Some(vec![Low, Medium, High].into()),
+            maximum_output_tokens: Some(65_536),
+        }
+    }
     pub fn provider(&self) -> ProviderDefinition {
         catalog::google()
     }
@@ -47,7 +55,11 @@ impl GoogleBinding {
             protocol: ProtocolProfile::GoogleGenerateContent,
             upstream_model: self.upstream.into(),
             canonical_model: ModelId::new(self.model).expect("static model"),
-            representation: google::TargetCaps::default().into(),
+            representation: google::TargetCaps {
+                model_limits: self.model_limits(),
+                ..Default::default()
+            }
+            .into(),
             execution: ExecutionContract {
                 streaming: true,
                 retry_before_commit: false,
@@ -77,7 +89,11 @@ impl GoogleBinding {
             EndpointId::new(&format!("google-{}-interactions", self.model)).expect("static id");
         endpoint.protocol = ProtocolProfile::GoogleInteractions;
         endpoint.target.path = self.provider().interactions.expect("declared path");
-        endpoint.representation = crate::protocol::interactions::TargetCaps::default().into();
+        endpoint.representation = crate::protocol::interactions::TargetCaps {
+            model_limits: self.model_limits(),
+            ..Default::default()
+        }
+        .into();
         endpoint
     }
     pub fn public_model(&self) -> PublicModel {

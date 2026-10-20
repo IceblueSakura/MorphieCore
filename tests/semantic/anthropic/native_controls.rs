@@ -56,6 +56,42 @@ fn typed(budget: Option<u64>) -> Request {
     .unwrap()
 }
 #[test]
+fn model_maximum_checks_inserted_default_without_replacing_explicit_caps() {
+    use morphiecore::adapter::AdapterError;
+    let mut request = typed(None);
+    let mut settings = request.task.semantic.settings().clone();
+    settings.controls.max_output_tokens = None;
+    request.task.semantic = request.task.semantic.with_settings(settings).unwrap();
+    let before = request.clone();
+    let mut limited = caps();
+    limited.model_limits.maximum_output_tokens = Some(31_999);
+    assert!(matches!(limited.encode_request(&request, &target()),
+        Err(AdapterError::Codec(CodecError::Unsupported(value)))
+            if value == "target maximum output tokens"));
+    limited.model_limits.maximum_output_tokens = Some(32_000);
+    let projected = limited.encode_request(&request, &target()).unwrap();
+    assert_eq!(projected.value["max_tokens"], 32_000);
+    assert_eq!(
+        projected
+            .rules
+            .iter()
+            .filter(|rule| **rule == anthropic::RequestRule::DefaultMaxTokens)
+            .count(),
+        1
+    );
+    assert_eq!(request, before);
+    limited.model_limits.maximum_output_tokens = Some(4096);
+    let explicit = typed(None);
+    assert_eq!(
+        limited.encode_request(&explicit, &target()).unwrap().value["max_tokens"],
+        4096
+    );
+    limited.model_limits.maximum_output_tokens = Some(4095);
+    assert!(matches!(limited.encode_request(&explicit, &target()),
+        Err(AdapterError::Codec(CodecError::Unsupported(value)))
+            if value == "target maximum output tokens"));
+}
+#[test]
 fn ordinary_budgets_preserve_numeric_intent_and_native_strict_relation() {
     let wire = json!({"model":"m","max_tokens":4096,"thinking":{"type":"enabled","budget_tokens":1024},
             "messages":[{"role":"user","content":"go"}]});

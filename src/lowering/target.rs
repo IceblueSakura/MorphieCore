@@ -33,6 +33,22 @@ impl From<crate::protocol::interactions::TargetCaps> for TargetCaps {
     }
 }
 impl TargetCaps {
+    pub fn model_limits(&self) -> &crate::protocol::model_limits::ModelLimits {
+        match self {
+            Self::OpenAi(c) => &c.model_limits,
+            Self::AnthropicMessages(c) => &c.model_limits,
+            Self::GoogleGenerateContent(c) => &c.model_limits,
+            Self::GoogleInteractions(c) => &c.model_limits,
+        }
+    }
+    pub fn model_limits_mut(&mut self) -> &mut crate::protocol::model_limits::ModelLimits {
+        match self {
+            Self::OpenAi(c) => &mut c.model_limits,
+            Self::AnthropicMessages(c) => &mut c.model_limits,
+            Self::GoogleGenerateContent(c) => &mut c.model_limits,
+            Self::GoogleInteractions(c) => &mut c.model_limits,
+        }
+    }
     pub fn openai(&self) -> Option<&OpenAiCaps> {
         match self {
             Self::OpenAi(c) => Some(c),

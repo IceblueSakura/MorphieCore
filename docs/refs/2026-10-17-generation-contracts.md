@@ -19,6 +19,7 @@ Later observations retain their own dates and evidence scope below. [Architectur
 - [Scoped accounting contract](#scoped-accounting-contract)
 - [Selected visible-history transfer](#selected-visible-history-transfer)
 - [Messages budget and identity boundaries, 2026-10-19](#messages-budget-and-identity-boundaries-2026-10-19)
+- [Model-effective limits, 2026-10-20](#model-effective-limits-2026-10-20)
 - [Cross-provider user attribution, 2026-10-19](#cross-provider-user-attribution-2026-10-19)
 - [Loss-policy decisions still needed](#loss-policy-decisions-still-needed)
 - [Contract and evidence map](#contract-and-evidence-map)
@@ -265,6 +266,12 @@ The [extended-thinking guide](https://platform.claude.com/docs/en/build-with-cla
 - **Selected attribution policy:** the subsequent [three-Provider comparison](#cross-provider-user-attribution-2026-10-19) supersedes the earlier prohibition on mapping user attribution into safety identifiers. Preserve independent source fields; project shared attribution to admitted safety carriers under explicit priority and conflict rules. Authentication, routing, credentials and session identity remain separate. The Messages carrier and shared-bound change remain implementation work.
 
 Model-effective validation is separate from protocol grammar. The [Gemini 3.8 Flash page](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash), rechecked on the same date, lists low/medium/high thinking, rejects minimal and limits output to 65,536 tokens. The generic encoder still carries minimal and 65,537, as the earlier P7 probes showed. The selected design keeps limits in a small trusted binding policy, checked after projection by the shared preflight/preparation encoder, including ordered effort updates and inserted defaults. Preserve protocol-wide carriers and existing selected mappings. Do not add clamping now; a concrete compatibility problem may motivate a separate field-specific decision later. This is selected ownership and policy, not implemented model guards.
+
+## Model-effective limits, 2026-10-20
+
+The [Gemini 3.8 Flash model page](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash) was rechecked on 2026-10-20: it lists 65,536 output tokens, low/medium/high thinking and explicit rejection of minimal. The [thinking guide](https://ai.google.dev/gemini-api/docs/thinking) confirms the same levels for this model and uses `generation_config.thinking_level` on Interactions; `max_output_tokens` includes thought tokens. These are model declarations, not a reason to remove the generic protocols' minimal carrier.
+
+The existing generateContent and Interactions catalog bindings now declare those limits through [trusted target caps](../architecture.md#model-effective-values). Synthetic directional and preflight/preparation checks cover minimal, 65,537 and a budget conversion producing minimal; no live Provider enforcement was tested. The 2026-10-18/19 gaps above describe the earlier state, not the current binding guard. Other models require their own evidence; changing a deployment or wire alias does not establish another model's limits.
 
 ## Cross-provider user attribution, 2026-10-19
 

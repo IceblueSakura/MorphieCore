@@ -57,6 +57,7 @@ pub struct TargetCaps {
     pub profile: Profile,
     pub dialect: Dialect,
     pub semantics: GenerationSemanticContract,
+    pub model_limits: crate::protocol::model_limits::ModelLimits,
     pub cache: CacheProjection,
     pub reasoning_policy: Option<crate::protocol::reasoning::ReasoningRequestPolicy>,
     pub reasoning_as_text: bool,
@@ -71,6 +72,7 @@ impl TargetCaps {
             profile,
             dialect,
             semantics: profile.semantic_contract(),
+            model_limits: Default::default(),
             reasoning_policy: None,
             reasoning_as_text: false,
             carriers: Default::default(),
@@ -218,6 +220,7 @@ impl TargetCaps {
             &request.task.fidelity,
             target,
             &request.service_policy,
+            &self.model_limits,
         )?;
         if default_cache {
             projection.rules.push(RequestRule::DefaultAutomaticCache);

@@ -270,6 +270,10 @@ impl Endpoint {
         use crate::topology::TopologyError;
         self.adapter()
             .map_err(|_| TopologyError::ContractUnsatisfiable)?;
+        self.representation
+            .model_limits()
+            .validate()
+            .map_err(|_| TopologyError::ContractUnsatisfiable)?;
         if self.upstream_model.is_empty()
             || self.upstream_model.len() > 256
             || self

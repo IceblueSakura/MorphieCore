@@ -188,6 +188,10 @@ Replace the placeholders with a registered public label, one of its catalog endp
 | Candidate | `attempt_timeout_ms` | One upstream attempt's timeout, further bounded by the remaining exchange deadline |
 | Candidate | `reasoning_as_text` | Permit the existing named history conversion; default `false` |
 | Candidate | `thinking_conversion` | `budget_to_effort` or `effort_to_budget`; omission performs no numeric conversion |
+| Candidate | `allowed_effort` | Optional nonempty array of distinct `minimal`, `low`, `medium`, `high`, `xhigh`, `max` levels; narrows the catalog declaration when present |
+| Candidate | `maximum_output_tokens` | Optional positive `u64` model-output maximum, not a default; cannot exceed a catalog-declared maximum |
+
+Omitted model-value fields inherit the binding's declaration. These limits apply after target projection, including numeric/qualitative effort conversions and retained per-message updates; they do not rewrite conversion tables or grant missing protocol carriers. Values outside the effective target contract reject without clamping. A narrowed maximum can reject Messages' current inserted `32000` default rather than lower it automatically. See [model-effective values](architecture.md#model-effective-values).
 
 Timeout values accept 1–86400000 milliseconds. Attempt ceilings span all endpoint and credential candidates; they do not multiply each other or schedule extra retries of an exhausted candidate list. Beginning local credential resolution counts as an attempt; skipped candidates do not. Array order remains stable, except for an available conversation preference and health gating. Selection scans past ineligible successors while preserving every prior failure restriction. Publication always prohibits replay.
 

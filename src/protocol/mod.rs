@@ -15,6 +15,7 @@ mod decoded;
 pub mod extensions;
 pub mod fidelity;
 mod generation_controls;
+pub mod model_limits;
 pub mod native;
 pub(crate) mod phase;
 pub mod reasoning;

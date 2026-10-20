@@ -42,6 +42,8 @@ pub(super) struct Model {
 #[serde(deny_unknown_fields)]
 struct Candidate {
     binding: String,
+    allowed_effort: Option<Vec<String>>,
+    maximum_output_tokens: Option<u64>,
     base_url: Option<String>,
     upstream_model: Option<String>,
     credential: Option<String>,
@@ -263,6 +265,26 @@ impl Models {
                     candidate.thinking_conversion,
                     &table,
                 )?;
+                let limits = crate::protocol::model_limits::ModelLimits {
+                    allowed_effort: candidate
+                        .allowed_effort
+                        .map(|levels| {
+                            if levels.is_empty() || levels.len() > 6 {
+                                return Err(invalid());
+                            }
+                            levels
+                                .into_iter()
+                                .map(|level| level.parse().map_err(|_| invalid()))
+                                .collect::<Result<Box<[_]>, _>>()
+                        })
+                        .transpose()?,
+                    maximum_output_tokens: candidate.maximum_output_tokens,
+                };
+                *endpoint.representation.model_limits_mut() = endpoint
+                    .representation
+                    .model_limits()
+                    .narrowed(limits)
+                    .map_err(|_| invalid())?;
                 let native = endpoint.protocol == ProtocolProfile::AnthropicMessages;
                 let semantics = endpoint.representation.semantics();
                 native_owner_cache &= native && semantics.explicit_cache;

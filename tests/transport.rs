@@ -16,6 +16,8 @@ mod chat;
 mod framing;
 #[path = "transport/google_sse.rs"]
 mod google_sse;
+#[path = "transport/model_values.rs"]
+mod model_values;
 #[path = "transport/native.rs"]
 mod native;
 #[path = "transport/planning.rs"]

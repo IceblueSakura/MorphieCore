@@ -15,6 +15,7 @@ pub struct TargetCaps {
     /// explicitly demands the strict complete form.
     pub reported_facts: ReportedFactPolicy,
     pub semantics: GenerationSemanticContract,
+    pub model_limits: crate::protocol::model_limits::ModelLimits,
     pub images: crate::protocol::image_constraints::ImageConstraints,
     pub files: crate::protocol::file_constraints::FileConstraints,
     pub cache: crate::protocol::cache::CacheProjection,
@@ -32,6 +33,7 @@ impl TargetCaps {
             resource_time: None,
             reported_facts: ReportedFactPolicy::Faithful,
             semantics: GenerationSemanticContract::full(),
+            model_limits: Default::default(),
             images: crate::protocol::image_constraints::ImageConstraints::all(),
             files: crate::protocol::file_constraints::FileConstraints::all(),
             cache: crate::protocol::cache::CacheProjection::all(),

@@ -252,6 +252,9 @@ pub fn lower_request<'a>(
         }
     }
     validate_wire_ids(r.items(), fidelity, false)?;
+    c.model_limits
+        .check_request(r)
+        .map_err(|_| RepresentationError::Controls)?;
     Ok(RequestRepresentation {
         adaptation: c.adaptation,
         semantic,

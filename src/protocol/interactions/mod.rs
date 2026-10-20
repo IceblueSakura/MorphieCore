@@ -119,6 +119,7 @@ pub fn representation_contract() -> GenerationSemanticContract {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TargetCaps {
     pub semantics: GenerationSemanticContract,
+    pub model_limits: crate::protocol::model_limits::ModelLimits,
     pub cache: CacheProjection,
     pub reasoning_policy: Option<crate::protocol::reasoning::ReasoningRequestPolicy>,
     pub reasoning_as_text: bool,
@@ -127,6 +128,7 @@ impl Default for TargetCaps {
     fn default() -> Self {
         Self {
             semantics: semantic_contract(),
+            model_limits: Default::default(),
             cache: CacheProjection::default(),
             reasoning_policy: None,
             reasoning_as_text: false,
@@ -197,6 +199,7 @@ impl TargetCaps {
             .clone()
             .with_settings(settings)
             .map_err(CodecError::from)?;
+        self.model_limits.check_request(&semantic)?;
         let (wire, mut rules) =
             encode_generation_request(&semantic, &request.task.fidelity, target)?;
         if !self.reasoning_as_text && rules.contains(&RequestRule::ReasoningAsText) {
