@@ -65,12 +65,13 @@ fn decode_interaction(
 }
 
 #[test]
-fn lifecycle_requires_identity_and_distinguishes_invalid_from_unsupported_status() {
+fn lifecycle_distinguishes_optional_opening_from_invalid_or_unsupported_fields() {
     let frames = interaction_frames();
     assert!(decode_interaction(&frames, true).is_ok());
     for index in [0, 1, frames.len() - 1] {
         let key = if index == 1 { "interaction_id" } else { "id" };
         for value in [None, Some(json!(null)), Some(json!(17)), Some(json!(""))] {
+            let opening_omission = index == 0 && value.is_none();
             let mut changed = frames.clone();
             let owner = if index == 1 {
                 changed[index].as_object_mut().unwrap()
@@ -84,6 +85,10 @@ fn lifecycle_requires_identity_and_distinguishes_invalid_from_unsupported_status
                 None => {
                     owner.remove(key);
                 }
+            }
+            if opening_omission {
+                assert!(decode_interaction(&changed, true).is_ok());
+                continue;
             }
             assert!(
                 decode_interaction(&changed, true)
@@ -111,6 +116,7 @@ fn lifecycle_requires_identity_and_distinguishes_invalid_from_unsupported_status
             Some(json!(17)),
             Some(json!("invented")),
         ] {
+            let opening_omission = index == 0 && value.is_none();
             let mut changed = frames.clone();
             let owner = if index == 1 {
                 changed[index].as_object_mut().unwrap()
@@ -124,6 +130,10 @@ fn lifecycle_requires_identity_and_distinguishes_invalid_from_unsupported_status
                 None => {
                     owner.remove("status");
                 }
+            }
+            if opening_omission {
+                assert!(decode_interaction(&changed, true).is_ok());
+                continue;
             }
             let error = decode_interaction(&changed, true).unwrap_err();
             assert!(
@@ -153,6 +163,80 @@ fn lifecycle_requires_identity_and_distinguishes_invalid_from_unsupported_status
             .unwrap_err()
             .contains("invalid event_id")
     );
+}
+
+#[test]
+fn partial_opening_binds_the_first_reported_identity_without_inventing_status() {
+    use morphiecore::protocol::{google::interactions::GenerationSseDecoder, stream::SseLimits};
+    let original = interaction_frames();
+    let expected = decode_interaction(&original, true).unwrap();
+    let mut frames = original;
+    for key in ["id", "status"] {
+        frames[0]["interaction"]
+            .as_object_mut()
+            .unwrap()
+            .remove(key);
+    }
+    let mut decoder = GenerationSseDecoder::new(
+        200,
+        "text/event-stream",
+        SseLimits::default(),
+        LocalScope::new(2),
+        ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap(),
+    )
+    .unwrap();
+    let (_, events) = decoder
+        .consume(format!("data: {}\n\n", frames[0]).as_bytes())
+        .unwrap();
+    assert_eq!(events, [StreamEvent::Started]);
+    assert_eq!(decoder.metadata().unwrap().id, None);
+    decoder
+        .consume(format!("data: {}\n\n", frames[1]).as_bytes())
+        .unwrap();
+    assert_eq!(decoder.metadata().unwrap().id.as_deref(), Some("i"));
+    for frame in &frames[2..] {
+        decoder
+            .consume(format!("data: {frame}\n\n").as_bytes())
+            .unwrap();
+    }
+    decoder.consume(b"event: done\ndata: [DONE]\n\n").unwrap();
+    assert_eq!(decoder.finish().unwrap(), expected);
+    let mut first_at_terminal = frames.clone();
+    first_at_terminal.remove(1);
+    assert_eq!(
+        decode_interaction(&first_at_terminal, true).unwrap(),
+        expected
+    );
+    let mut contradictory = frames.clone();
+    contradictory[1]["interaction_id"] = json!("first");
+    assert!(
+        decode_interaction(&contradictory, true)
+            .unwrap_err()
+            .contains("identity changed")
+    );
+    let mut overlong = frames.clone();
+    overlong[1]["interaction_id"] = json!("x".repeat(257));
+    assert!(
+        decode_interaction(&overlong, true)
+            .unwrap_err()
+            .contains("interaction_id")
+    );
+    for (key, value) in [
+        ("id", json!(null)),
+        ("id", json!(17)),
+        ("id", json!("")),
+        ("status", json!(null)),
+        ("status", json!(17)),
+        ("status", json!("invented")),
+    ] {
+        let mut malformed = frames.clone();
+        malformed[0]["interaction"][key] = value;
+        assert!(
+            decode_interaction(&malformed, true)
+                .unwrap_err()
+                .contains(key)
+        );
+    }
 }
 
 #[test]

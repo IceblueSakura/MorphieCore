@@ -219,13 +219,12 @@ impl ResponseDelivery {
         if let Some((id, storage)) = &self.storage {
             metadata.id = Some(id.clone());
             metadata.storage = Some(storage.clone());
+        } else if let Some(id) = &self.generated_id {
+            // A later source identity must not replace an already chosen client envelope.
+            metadata.id = Some(id.clone());
         }
         if metadata.id.is_none() {
-            metadata.id = Some(
-                self.generated_id
-                    .clone()
-                    .ok_or(AttemptError::Delivery("missing delivery identity"))?,
-            );
+            return Err(AttemptError::Delivery("missing delivery identity"));
         }
         if attempt.is_native() {
             // This is the Gateway envelope's creation time, not an upstream report.

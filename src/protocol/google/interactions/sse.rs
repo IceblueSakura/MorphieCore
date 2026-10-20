@@ -223,9 +223,28 @@ impl GenerationSseDecoder {
         self.members.push(item);
         Ok((item, PartId::scoped(self.scope, n * (MAX_ITEMS as u64 + 1))))
     }
-    fn check_identity(&self, o: &Map<String, Value>, key: &'static str) -> Result<(), SseError> {
-        if self.metadata.as_ref().and_then(|m| m.id.as_deref()) != Some(required(o, key)?) {
+    fn check_identity(
+        &mut self,
+        o: &Map<String, Value>,
+        key: &'static str,
+    ) -> Result<(), SseError> {
+        let id = required(o, key)?;
+        if id.len() > 256 {
+            return Err(invalid(key));
+        }
+        let metadata = self
+            .metadata
+            .as_mut()
+            .ok_or_else(|| invalid("interaction"))?;
+        if metadata
+            .id
+            .as_deref()
+            .is_some_and(|previous| previous != id)
+        {
             return Err(invalid("interaction identity changed"));
+        }
+        if metadata.id.is_none() {
+            metadata.id = Some(id.into());
         }
         Ok(())
     }
@@ -266,9 +285,9 @@ impl GenerationSseDecoder {
             let i = object(field(o, "interaction")?, "interaction")?;
             check_lifecycle(i)?;
             super::snapshots::reconcile(i.get("steps"), &self.steps, &self.state)?;
-            // Fresh foreground streams start actively. Other schema-valid opening
-            // states require a separately selected admission/observation contract.
-            if status(i)? != "in_progress" {
+            // Creation starts the native stream, not a reported execution state.
+            // A supplied status still has the selected fresh-foreground constraint.
+            if i.contains_key("status") && status(i)? != "in_progress" {
                 return Err(CodecError::Unsupported("Interactions creation status".into()).into());
             }
             if string(i, "object")?.is_some_and(|v| v != "interaction") {
@@ -276,7 +295,11 @@ impl GenerationSseDecoder {
             }
             let metadata = ResponseMetadata {
                 storage: None,
-                id: Some(required(i, "id")?.into()),
+                id: if i.contains_key("id") {
+                    Some(required(i, "id")?.into())
+                } else {
+                    None
+                },
                 model: required(i, "model")?.into(),
                 created: None,
                 context: Default::default(),
