@@ -18,13 +18,14 @@ pub(crate) fn project_snapshot(response: &mut DecodedResponse) -> Result<(), Cod
         || response
             .metadata
             .context
-            .settings
-            .as_ref()
-            .is_some_and(|settings| !settings.safety.is_empty())
+            .reports
+            .iter()
+            .any(|r| r.settings.as_ref().is_some_and(|s| !s.safety.is_empty()))
     {
         return Err(CodecError::Unsupported("Messages safety report".into()));
     }
-    if let Some(class) = response.metadata.context.service_class.value() {
+    crate::protocol::openai::reports::single_view(&mut response.metadata.context.reports)?;
+    if let Some(class) = response.metadata.context.service_class().value() {
         wire::service::class_wire(*class)?;
     }
     if response.metadata.context.execution != crate::semantic::context::ExecutionHints::default() {
@@ -32,7 +33,9 @@ pub(crate) fn project_snapshot(response: &mut DecodedResponse) -> Result<(), Cod
             "Messages reported execution context".into(),
         ));
     }
-    response.metadata.context.settings = None;
+    for report in response.metadata.context.reports.iter_mut() {
+        report.settings = None;
+    }
     response.metadata.context.instruction_messages = None;
     response.metadata.instruction_fidelity = Default::default();
     response.metadata.context.system_fingerprint = Presence::Absent;
@@ -47,7 +50,13 @@ pub(crate) fn metadata_losses(
     metadata: &crate::protocol::ResponseMetadata,
 ) -> Vec<crate::lowering::generation::LossEvidence> {
     let mut losses = vec![];
-    if metadata.context.settings.is_some() || metadata.context.instruction_messages.is_some() {
+    if metadata
+        .context
+        .reports
+        .iter()
+        .any(|r| r.settings.is_some())
+        || metadata.context.instruction_messages.is_some()
+    {
         losses.push(crate::lowering::generation::LossEvidence {
             rule: "messages.omit-incidental-settings.v1",
             field: "response.reported.settings",
@@ -176,14 +185,16 @@ pub(crate) fn encode_client_response_with(
     model: &str,
     attachment: Option<&crate::protocol::attachments::Carrier>,
 ) -> Result<Value, CodecError> {
+    response.metadata.validate()?;
+    crate::protocol::openai::reports::validate_single(&response.metadata.context.reports)?;
     let semantic = &response.semantic;
     if !semantic.safety_reports().is_empty()
         || response
             .metadata
             .context
-            .settings
-            .as_ref()
-            .is_some_and(|settings| !settings.safety.is_empty())
+            .reports
+            .iter()
+            .any(|r| r.settings.as_ref().is_some_and(|s| !s.safety.is_empty()))
     {
         return Err(CodecError::Unsupported("Messages safety report".into()));
     }
@@ -267,7 +278,7 @@ pub(crate) fn encode_client_response_with(
     let mut usage = wire::accounting::json(&selected)?;
     wire::service::write_class(
         usage.as_object_mut().expect("usage object"),
-        &response.metadata.context.service_class,
+        response.metadata.context.service_class(),
     )?;
     v.insert("usage".into(), usage);
     let v = Value::Object(v);

@@ -20,6 +20,7 @@ pub struct EventEncoder {
 impl EventEncoder {
     pub fn new(profile: Profile, metadata: ResponseMetadata) -> Result<Self, CodecError> {
         metadata.validate()?;
+        crate::protocol::openai::reports::relation(&metadata.context.reports, true)?;
         validate_metadata(profile, &metadata)?;
         Ok(Self {
             profile,
@@ -64,6 +65,24 @@ impl EventEncoder {
             }
             metadata.validate()?;
             validate_metadata(self.profile, &metadata)?;
+            if self.profile == Profile::Responses
+                && self.sequence != 0
+                && matches!(
+                    self.metadata.context.reports,
+                    crate::semantic::context::ResponseReports::Lifecycle { .. }
+                )
+                && self
+                    .metadata
+                    .context
+                    .reports
+                    .at(crate::semantic::context::ReportPhase::Opening)
+                    != metadata
+                        .context
+                        .reports
+                        .at(crate::semantic::context::ReportPhase::Opening)
+            {
+                return Err(CodecError::Invalid("emitted opening report changed"));
+            }
             if self.profile == Profile::Chat && self.state()?.started() {
                 let old = &self.metadata.context;
                 if !old.system_fingerprint.is_absent()
@@ -73,11 +92,10 @@ impl EventEncoder {
                     return Err(CodecError::Invalid("bound Chat metadata changed"));
                 }
             }
-            if !self.metadata.context.service_class.is_absent()
-                && self.metadata.context.service_class != metadata.context.service_class
-            {
-                return Err(CodecError::Invalid("reported service changed"));
-            }
+            crate::protocol::openai::reports::update(
+                &self.metadata.context.reports,
+                &metadata.context.reports,
+            )?;
             Ok(())
         })();
         if result.is_err() {
@@ -107,7 +125,7 @@ impl EventEncoder {
         let checked_projection = self.projection.len();
         let result = (|| {
             if self.profile == Profile::Chat
-                && (self.metadata.context.settings.is_some()
+                && (self.metadata.context.settings().is_some()
                     || self.metadata.context.instruction_messages.is_some())
             {
                 if self.contract.reported_facts
@@ -244,13 +262,15 @@ impl EventEncoder {
     }
 }
 fn validate_metadata(profile: Profile, metadata: &ResponseMetadata) -> Result<(), CodecError> {
-    if let Some(class) = metadata.context.service_class.value() {
-        crate::protocol::openai::service::class_wire(*class, profile)?;
-    }
-    if let Some(settings) = &metadata.context.settings {
-        settings.validate()?;
-        if !settings.safety.is_empty() {
-            return Err(CodecError::Unsupported("reported safety settings".into()));
+    for report in metadata.context.reports.iter() {
+        if let Some(class) = report.service_class.value() {
+            crate::protocol::openai::service::class_wire(*class, profile)?;
+        }
+        if let Some(settings) = &report.settings {
+            settings.validate()?;
+            if !settings.safety.is_empty() {
+                return Err(CodecError::Unsupported("reported safety settings".into()));
+            }
         }
     }
     metadata.required_id()?;
@@ -259,6 +279,7 @@ fn validate_metadata(profile: Profile, metadata: &ResponseMetadata) -> Result<()
         .as_ref()
         .ok_or(CodecError::Invalid("created time"))?;
     if profile == Profile::Chat {
+        crate::protocol::openai::reports::validate_single(&metadata.context.reports)?;
         crate::protocol::openai::chat::envelope::validate_context(&metadata.context.execution)?;
         if created.as_u64().is_none() || !metadata.context.execution.metadata.is_absent() {
             // Chat chunks have no metadata slot; never silently discard a static fact.

@@ -82,7 +82,12 @@ impl GenerationSseDecoder {
                     model: message.model,
                     created: None,
                     context: crate::semantic::context::ResponseContext {
-                        service_class: message.usage.service_class,
+                        reports: crate::semantic::context::ResponseReports::single(
+                            crate::semantic::context::ResponseReport {
+                                service_class: message.usage.service_class,
+                                ..Default::default()
+                            },
+                        ),
                         ..Default::default()
                     },
                     instruction_fidelity: Default::default(),

@@ -6,6 +6,7 @@ pub const MAX_PROJECTION_STAGES: usize = 16;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LossRule {
+    OmitOpeningReport,
     UsageReportView,
     OmitReportedReasoningControls,
     OmitChatReportedSettings,
@@ -29,6 +30,7 @@ pub enum LossRule {
 impl LossRule {
     pub const fn name(self) -> &'static str {
         match self {
+            Self::OmitOpeningReport => "responses.terminal-report-snapshot.v1",
             Self::UsageReportView => "generation.usage-report-view.v1",
             Self::OmitReportedReasoningControls => {
                 "responses.omit-incidental-reasoning-controls.v1"
@@ -58,6 +60,7 @@ impl LossRule {
     }
     pub const fn owner(self) -> &'static str {
         match self {
+            Self::OmitOpeningReport => "response.reports.opening",
             Self::UsageReportView => "generation.usage.reports",
             Self::OmitReportedReasoningControls => "response.reported.reasoning",
             Self::OmitChatReportedSettings => "response.reported.settings",
@@ -104,64 +107,76 @@ pub(crate) fn reported_settings(
         .context
         .validate()
         .map_err(|_| RepresentationError::Metadata)?;
+    crate::protocol::openai::reports::relation(&metadata.context.reports, true)
+        .map_err(|_| RepresentationError::Metadata)?;
     if metadata
         .context
-        .settings
-        .as_ref()
-        .is_some_and(|settings| !settings.safety.is_empty())
+        .reports
+        .iter()
+        .any(|r| r.settings.as_ref().is_some_and(|s| !s.safety.is_empty()))
     {
         return Err(RepresentationError::Safety);
     }
     if profile == Profile::Chat {
-        if metadata.context.settings.is_none() && metadata.context.instruction_messages.is_none() {
-            return Ok(None);
+        let had_settings = metadata
+            .context
+            .reports
+            .iter()
+            .any(|r| r.settings.is_some())
+            || metadata.context.instruction_messages.is_some();
+        crate::protocol::openai::reports::single_view(&mut metadata.context.reports)
+            .map_err(|_| RepresentationError::Metadata)?;
+        for report in metadata.context.reports.iter_mut() {
+            report.settings = None;
         }
-        metadata.context.settings = None;
         metadata.context.instruction_messages = None;
         metadata.instruction_fidelity = Default::default();
-        return Ok(Some(LossRule::OmitChatReportedSettings));
+        return Ok(had_settings.then_some(LossRule::OmitChatReportedSettings));
     }
-    let Some(settings) = &mut metadata.context.settings else {
-        return Ok(None);
-    };
-    if settings
-        .tools
-        .iter()
-        .flatten()
-        .flat_map(ToolDefinition::leaves)
-        .any(|tool| matches!(tool, ToolDefinition::Function(tool) if tool.cache.is_some()))
-    {
-        return Err(RepresentationError::Controls);
+    let mut changed = false;
+    for report in metadata.context.reports.iter_mut() {
+        let Some(settings) = &mut report.settings else {
+            continue;
+        };
+        if settings
+            .tools
+            .iter()
+            .flatten()
+            .flat_map(ToolDefinition::leaves)
+            .any(|tool| matches!(tool, ToolDefinition::Function(tool) if tool.cache.is_some()))
+        {
+            return Err(RepresentationError::Controls);
+        }
+        let before = settings.clone();
+        settings.reasoning.budget_tokens = None;
+        settings.reasoning.display = Presence::Absent;
+        if matches!(
+            settings.reasoning.mode.value(),
+            Some(ReasoningMode::Adaptive | ReasoningMode::Budgeted)
+        ) {
+            settings.reasoning.mode = Presence::Absent;
+        }
+        if settings.reasoning.summary() == Some(ReasoningSummary::Disabled) {
+            settings.reasoning.summary = Presence::Absent;
+        }
+        if settings
+            .effort
+            .value()
+            .is_some_and(|effort| effort.scope == EffortScope::Response)
+        {
+            settings.effort = Presence::Absent;
+        }
+        if settings.reasoning.activation == Presence::Null
+            || settings.reasoning.activation == Presence::Value(ReasoningActivation::Enabled)
+                && settings.effort.value().is_none()
+        {
+            settings.reasoning.activation = Presence::Absent;
+        }
+        settings.validate()?;
+        changed |= before != *settings;
     }
-    let before = settings.clone();
-    settings.reasoning.budget_tokens = None;
-    settings.reasoning.display = Presence::Absent;
-    if matches!(
-        settings.reasoning.mode.value(),
-        Some(ReasoningMode::Adaptive | ReasoningMode::Budgeted)
-    ) {
-        settings.reasoning.mode = Presence::Absent;
-    }
-    if settings.reasoning.summary() == Some(ReasoningSummary::Disabled) {
-        settings.reasoning.summary = Presence::Absent;
-    }
-    if settings
-        .effort
-        .value()
-        .is_some_and(|effort| effort.scope == EffortScope::Response)
-    {
-        settings.effort = Presence::Absent;
-    }
-    if settings.reasoning.activation == Presence::Null
-        || settings.reasoning.activation == Presence::Value(ReasoningActivation::Enabled)
-            && settings.effort.value().is_none()
-    {
-        settings.reasoning.activation = Presence::Absent;
-    }
-    settings.validate()?;
-    Ok((before != *settings).then_some(LossRule::OmitReportedReasoningControls))
+    Ok(changed.then_some(LossRule::OmitReportedReasoningControls))
 }
-
 /// Evidence describes a checked value, not authorization or issuer acceptance.
 /// Empty loss means exact for this stage, not that an earlier loss was undone.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -274,7 +289,12 @@ mod tests {
             model: "m".into(),
             created: None,
             context: crate::semantic::context::ResponseContext {
-                settings: Some(settings),
+                reports: crate::semantic::context::ResponseReports::single(
+                    crate::semantic::context::ResponseReport {
+                        settings: Some(settings),
+                        ..Default::default()
+                    },
+                ),
                 ..Default::default()
             },
             instruction_fidelity: Default::default(),
@@ -299,14 +319,14 @@ mod tests {
             reported_settings(&mut chat, Profile::Chat),
             Ok(Some(LossRule::OmitChatReportedSettings))
         );
-        assert!(chat.context.settings.is_none());
+        assert!(chat.context.settings().is_none());
 
         let mut responses = metadata(settings.clone());
         assert_eq!(
             reported_settings(&mut responses, Profile::Responses),
             Ok(Some(LossRule::OmitReportedReasoningControls))
         );
-        let kept = responses.context.settings.unwrap();
+        let kept = responses.context.settings().unwrap();
         assert_eq!(kept.reasoning.budget_tokens, None);
         assert_eq!(kept.reasoning.mode, Presence::Absent);
         assert_eq!(kept.effort, Presence::Absent);

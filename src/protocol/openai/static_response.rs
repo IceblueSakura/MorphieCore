@@ -32,7 +32,12 @@ pub(super) fn metadata(
     } else {
         (
             crate::semantic::context::ResponseContext {
-                service_class: super::service::read_class(o, Profile::Chat)?,
+                reports: crate::semantic::context::ResponseReports::single(
+                    crate::semantic::context::ResponseReport {
+                        service_class: super::service::read_class(o, Profile::Chat)?,
+                        ..Default::default()
+                    },
+                ),
                 execution: crate::semantic::context::ExecutionHints::read(
                     o,
                     Profile::Chat,
@@ -51,7 +56,10 @@ pub(super) fn metadata(
     context.validate()?;
     if let Some(mapping) = adaptation.effort_mapping {
         mapping.validate()?;
-        if let Some(settings) = &mut context.settings
+        if let Some(settings) = context
+            .reports
+            .latest_mut()
+            .and_then(|r| r.settings.as_mut())
             && let Some(control) = settings.effort.value().copied()
         {
             if control.scope != mapping.scope {
@@ -699,7 +707,7 @@ pub fn encode_chat(target: &ResponseRepresentation<'_>) -> Result<Value, CodecEr
     );
     super::service::write_class(
         value.as_object_mut().expect("object"),
-        &m.context.service_class,
+        m.context.service_class(),
         Profile::Chat,
     )?;
     crate::protocol::openai::responses::envelope::write_response_extras(

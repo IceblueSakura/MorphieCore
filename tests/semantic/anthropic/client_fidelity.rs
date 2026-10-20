@@ -128,15 +128,49 @@ fn messages_final_usage_requires_reported_counts_and_unambiguous_cache_categorie
                 "cache_read_input_tokens":2,"cache_creation_input_tokens":0})
     );
     use morphiecore::semantic::context::ServiceClass;
-    response.metadata.context.service_class = Presence::Value(ServiceClass::StandardCapacity);
+    response
+        .metadata
+        .context
+        .reports
+        .latest_mut()
+        .expect("report")
+        .service_class = Presence::Value(ServiceClass::StandardCapacity);
     assert_eq!(
         encode_client_response(&response, "m").unwrap()["usage"]["service_tier"],
         "standard"
     );
     let mut wrong_service = response.clone();
-    wrong_service.metadata.context.service_class =
-        Presence::Value(ServiceClass::StandardProcessing);
+    wrong_service
+        .metadata
+        .context
+        .reports
+        .latest_mut()
+        .expect("report")
+        .service_class = Presence::Value(ServiceClass::StandardProcessing);
     assert!(encode_client_response(&wrong_service, "m").is_err());
+    for terminal_class in [
+        Presence::Absent,
+        Presence::Value(ServiceClass::PriorityCapacity),
+    ] {
+        let mut phased = response.clone();
+        phased.metadata.context.reports =
+            morphiecore::semantic::context::ResponseReports::Lifecycle {
+                opening: Some(Box::new(morphiecore::semantic::context::ResponseReport {
+                    settings: None,
+                    service_class: Presence::Value(ServiceClass::StandardCapacity),
+                })),
+                terminal: Some(Box::new(morphiecore::semantic::context::ResponseReport {
+                    settings: None,
+                    service_class: terminal_class,
+                })),
+            };
+        assert!(matches!(
+            encode_client_response(&phased, "m"),
+            Err(morphiecore::protocol::CodecError::Invalid(
+                "service tier changed"
+            )) | Err(morphiecore::protocol::CodecError::Unsupported(_))
+        ));
+    }
     let mut late_service = ClientEventEncoder::new("r", "m");
     late_service.encode(&StreamEvent::Started).unwrap();
     assert!(
@@ -176,8 +210,8 @@ fn messages_final_usage_requires_reported_counts_and_unambiguous_cache_categorie
     assert_eq!(wire["usage"]["input_tokens"], 8);
     assert_eq!(wire["usage"]["service_tier"], "standard");
     assert_eq!(
-        retained.metadata.context.service_class,
-        response.metadata.context.service_class
+        retained.metadata.context.service_class().clone(),
+        response.metadata.context.service_class().clone()
     );
     let retained_usage = retained.semantic.usage().unwrap();
     assert_eq!(retained_usage.input_tokens, Some(8));
@@ -189,7 +223,7 @@ fn messages_final_usage_requires_reported_counts_and_unambiguous_cache_categorie
     assert_eq!(response, original);
     let mut stream = ClientEventEncoder::new("r", "m");
     stream
-        .update_service_class(response.metadata.context.service_class.clone())
+        .update_service_class(response.metadata.context.service_class().clone())
         .unwrap();
     let mut frames = stream.encode(&StreamEvent::Usage(usage)).unwrap();
     frames.extend(
@@ -219,7 +253,13 @@ fn messages_final_usage_requires_reported_counts_and_unambiguous_cache_categorie
     stream.finish().unwrap();
 
     // Inclusive cache categories may overlap; their sum cannot be subtracted.
-    response.metadata.context.service_class = Presence::Absent;
+    response
+        .metadata
+        .context
+        .reports
+        .latest_mut()
+        .expect("report")
+        .service_class = Presence::Absent;
     usage.input_cache_write_tokens = Some(1);
     response.semantic = response.semantic.with_usage(Some(usage)).unwrap();
     assert!(encode_client_response(&response, "m").is_err());

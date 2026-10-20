@@ -3,6 +3,9 @@ use crate::semantic::value::ReplayOrigin;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct WireRules {
+    /// Closed opening-to-terminal reasoning/service resolutions on the selected
+    /// OpenRouter Responses contract. Same-phase drift is never admitted.
+    pub responses_lifecycle_reports: bool,
     /// Public SIWC is a restricted Responses operation, not a product-backend alias.
     /// https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations
     pub responses_siwc: bool,

@@ -18,13 +18,30 @@ def responses_completion(client, params, stream):
             completed = 0
             for event in events:
                 check(event.type not in ("error", "response.failed", "response.incomplete"))
+                if event.type in ("response.created", "response.in_progress"):
+                    opening = event.response.model_dump(exclude_unset=True)
+                    check(opening["reasoning"] == {"effort": "low", "summary": "auto"})
+                    check(opening["service_tier"] == "auto")
                 completed += event.type == "response.completed"
             value = events.get_final_response()
         check(completed == 1)
     else:
         value = client.responses.create(**params)
     check(value.status == "completed")
-    return value.model_dump(exclude_unset=True)
+    result = value.model_dump(exclude_unset=True)
+    # The streaming accumulator adds SDK-only parsed=None attributes. They are
+    # not wire observations and must not become fields in replayed input items.
+    for item in result["output"]:
+        if item["type"] == "function_call" and "parsed_arguments" in item:
+            check(item.pop("parsed_arguments") is None)
+        if item["type"] == "message":
+            for part in item["content"]:
+                if "parsed" in part:
+                    check(part.pop("parsed") is None)
+    check(result["reasoning"] == {"effort": "low", "summary": "detailed",
+                                  "context": "all_turns", "mode": "standard"})
+    check(result["service_tier"] == "default")
+    return result
 
 
 
@@ -61,7 +78,7 @@ def run(base):
                     if stored:
                         params.update(previous_response_id=result["id"], input=[new])
                         retrieved = client.responses.retrieve(result["id"])
-                        check(retrieved.status == "completed")
+                        check(retrieved.model_dump(exclude_unset=True) == result)
                     else:
                         params["input"].extend([*output, new])
     print(json.dumps({"requests": requests, "protocols": 1, "deliveries": 2,

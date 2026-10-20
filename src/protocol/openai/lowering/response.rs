@@ -25,7 +25,7 @@ pub fn require_reported_facts(
     if c.reported_facts != ReportedFactPolicy::StrictComplete {
         return Ok(());
     }
-    let echo_complete = metadata.context.settings.as_ref().is_some_and(|settings| {
+    let echo_complete = metadata.context.settings().is_some_and(|settings| {
         settings.tools.is_some()
             && settings.tool_choice.is_some()
             && settings.parallel_tool_calls.is_some()
@@ -83,6 +83,21 @@ pub fn lower_response<'a>(
             profile,
             c.adaptation.profile_id,
             Some(loss),
+        ));
+    }
+    crate::protocol::openai::reports::relation(&metadata.context.reports, true)
+        .map_err(|_| RepresentationError::Metadata)?;
+    if profile == Profile::Responses
+        && crate::protocol::openai::reports::terminal_view(&mut metadata.to_mut().context.reports)
+            .map_err(|_| RepresentationError::Metadata)?
+    {
+        if c.reported_facts == ReportedFactPolicy::StrictComplete {
+            return Err(RepresentationError::ReportedFacts);
+        }
+        projection.push(projection::ProjectionStage::response(
+            profile,
+            c.adaptation.profile_id,
+            Some(projection::LossRule::OmitOpeningReport),
         ));
     }
     if profile == Profile::Responses && !metadata.context.system_fingerprint.is_absent() {
@@ -152,7 +167,7 @@ fn validate_response(
     profile: Profile,
     c: &TargetCaps,
 ) -> Result<(), RepresentationError> {
-    if let Some(settings) = &metadata.context.settings {
+    if let Some(settings) = metadata.context.settings() {
         settings.validate()?;
         if crate::protocol::openai::reasoning::requires_extended_controls(settings) {
             return Err(RepresentationError::Reasoning);
@@ -164,8 +179,7 @@ fn validate_response(
     }
     if metadata
         .context
-        .settings
-        .as_ref()
+        .settings()
         .is_some_and(|s| !s.audio.is_absent() || !s.output_modalities.is_absent())
     {
         return Err(RepresentationError::UnmigratedSemantic);
@@ -174,8 +188,7 @@ fn validate_response(
     if profile == Profile::Responses
         && metadata
             .context
-            .settings
-            .as_ref()
+            .settings()
             .is_some_and(|s| s.reasoning.summary() == Some(ReasoningSummary::Disabled))
     {
         return Err(RepresentationError::Reasoning);
@@ -259,7 +272,7 @@ fn validate_response(
     {
         return Err(RepresentationError::Terminal);
     }
-    if let Some(class) = metadata.context.service_class.value() {
+    if let Some(class) = metadata.context.service_class().value() {
         crate::protocol::openai::service::class_wire(*class, profile)
             .map_err(|_| RepresentationError::Metadata)?;
     }

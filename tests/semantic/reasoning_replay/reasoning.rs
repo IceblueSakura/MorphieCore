@@ -40,7 +40,12 @@ fn typed_disabled_summary_is_valid_semantics_without_a_responses_carrier() {
         ));
     }
     let mut reported = metadata();
-    reported.context.settings = Some(settings);
+    reported
+        .context
+        .reports
+        .latest_mut()
+        .expect("report")
+        .settings = Some(settings);
     let response = GenerationResponse::new(vec![], Outcome::Completed).unwrap();
     let target = lower_response(
         &response,
@@ -55,8 +60,7 @@ fn typed_disabled_summary_is_valid_semantics_without_a_responses_carrier() {
         target
             .metadata()
             .context
-            .settings
-            .as_ref()
+            .settings()
             .unwrap()
             .reasoning
             .summary(),

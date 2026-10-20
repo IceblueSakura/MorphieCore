@@ -27,7 +27,7 @@ impl EventEncoder {
         );
         crate::protocol::openai::service::write_class(
             value.as_object_mut().expect("object"),
-            &self.metadata.context.service_class,
+            self.metadata.context.service_class(),
             Profile::Chat,
         )
         .expect("validated reported service");

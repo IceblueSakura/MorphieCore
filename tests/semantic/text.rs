@@ -1,4 +1,6 @@
 //! Text responses, admission, events, terminals and open upstream decoding.
+#[path = "text/lifecycle_reports.rs"]
+mod lifecycle_reports;
 #[path = "text/open_decoding.rs"]
 mod open_decoding;
 #[path = "text/response.rs"]

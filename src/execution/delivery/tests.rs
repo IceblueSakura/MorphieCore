@@ -79,6 +79,135 @@ fn prepared_batches_keep_the_metadata_snapshot_from_their_intake() {
 }
 
 #[test]
+fn lifecycle_reports_freeze_opening_batches_and_charge_both_observations() {
+    use crate::semantic::context::{ReportPhase, ServiceClass};
+    let mut adapter = Adapter::new(Profile::Responses, Dialect::OpenRouter, None);
+    adapter.adaptation.rules.responses_lifecycle_reports = true;
+    let mut attempt = Attempt::new(adapter, 65536, Default::default());
+    attempt.begin(200, "text/event-stream").unwrap();
+    let mut delivery = ResponseDelivery::new(
+        ClientAdapter::openai(
+            Adapter::new(Profile::Responses, Dialect::MorphieCore, None),
+            TargetCaps::full(),
+        ),
+        "public",
+        Default::default(),
+        StreamOptions {
+            include_obfuscation: Presence::Value(false),
+            ..Default::default()
+        },
+        Obfuscation::Disabled,
+    );
+    let opening = json!({"type":"response.created","sequence_number":0,"response":{"id":"reported","object":"response",
+        "created_at":1,"model":"model","status":"in_progress","output":[],
+        "reasoning":{"summary":"auto"},"service_tier":"auto"}});
+    let (_, events) = attempt
+        .push(format!("data: {opening}\n\n").as_bytes())
+        .unwrap();
+    let prepared = delivery.prepare_events(&attempt, &events).unwrap().unwrap();
+    let opening_bytes = prepared.context.retained_bytes().unwrap();
+    let terminal = json!({"type":"response.completed","sequence_number":1,"response":{"id":"reported","object":"response",
+        "created_at":1,"model":"model","status":"completed","output":[],
+        "reasoning":{"summary":"detailed","context":"all_turns","mode":"standard"},"service_tier":"default"}});
+    let (_, events) = attempt
+        .push(format!("data: {terminal}\n\n").as_bytes())
+        .unwrap();
+    assert!(events.is_empty(), "terminal remains EOF-gated");
+    attempt.finish().unwrap();
+    assert_eq!(
+        prepared
+            .context
+            .metadata
+            .context
+            .reports
+            .at(ReportPhase::Terminal),
+        None
+    );
+    assert_eq!(
+        prepared.context.metadata.context.service_class(),
+        &Presence::Value(ServiceClass::ConfiguredProcessing)
+    );
+    let wire: Vec<_> = delivery
+        .encode_prepared(prepared)
+        .unwrap()
+        .into_iter()
+        .flatten()
+        .collect();
+    let opening: Value = serde_json::from_str(
+        std::str::from_utf8(&wire)
+            .unwrap()
+            .lines()
+            .find_map(|s| s.strip_prefix("data: "))
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(opening["response"]["service_tier"], "auto");
+    let frames = delivery.finish_stream(&attempt).unwrap();
+    let wire: Vec<_> = frames.into_iter().flatten().collect();
+    let terminal: Value = serde_json::from_str(
+        std::str::from_utf8(&wire)
+            .unwrap()
+            .lines()
+            .find_map(|s| s.strip_prefix("data: "))
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(terminal["response"]["service_tier"], "default");
+    let retained = delivery
+        .prepared_source
+        .as_ref()
+        .unwrap()
+        .context
+        .retained_bytes()
+        .unwrap();
+    assert!(
+        retained > opening_bytes,
+        "both retained reports count against coalescing"
+    );
+}
+
+#[test]
+fn classified_failure_after_opening_has_no_invented_terminal_reports() {
+    // A classified failure after a native Responses opening has no upstream
+    // terminal report, but must still reach clients as response.failed.
+    let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    let mut attempt = Attempt::new(adapter.clone(), 65536, Default::default());
+    attempt.begin(200, "text/event-stream").unwrap();
+    let mut failure_delivery = ResponseDelivery::new(
+        ClientAdapter::openai(adapter, TargetCaps::full()),
+        "public",
+        Default::default(),
+        StreamOptions::default(),
+        Obfuscation::Disabled,
+    );
+    let opening = json!({"type":"response.created","sequence_number":0,"response":{
+        "id":"failed-report","object":"response","created_at":1,"model":"m",
+        "status":"in_progress","output":[],"reasoning":{"summary":"auto"},"service_tier":"auto"}});
+    let (_, events) = attempt
+        .push(format!("data: {opening}\n\n").as_bytes())
+        .unwrap();
+    failure_delivery.encode_events(&attempt, &events).unwrap();
+    let frames = failure_delivery.fail_stream(&json!({"error":{
+        "code":"context_length_exceeded","type":"invalid_request_error","message":"Context limit"}})).unwrap();
+    let bytes: Vec<_> = frames.into_iter().flatten().collect();
+    let value: Value = serde_json::from_str(
+        std::str::from_utf8(&bytes)
+            .unwrap()
+            .lines()
+            .find_map(|s| s.strip_prefix("data: "))
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(value["type"], "response.failed");
+    assert_eq!(
+        value["response"]["error"]["code"],
+        "context_length_exceeded"
+    );
+    assert!(value["response"].get("reasoning").is_none());
+    assert!(value["response"].get("service_tier").is_none());
+}
+
+#[test]
 fn coalescing_preserves_first_content_barriers_and_attempt_isolation() {
     let policy = DeltaCoalescing {
         max_delay_ms: 10,

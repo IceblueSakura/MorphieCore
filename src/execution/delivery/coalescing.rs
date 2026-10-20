@@ -42,7 +42,7 @@ pub(super) fn escaped_bytes(text: &str) -> usize {
         .sum()
 }
 impl EventContext {
-    fn retained_bytes(&self) -> Option<usize> {
+    pub(super) fn retained_bytes(&self) -> Option<usize> {
         *self.accounted_bytes.get_or_init(|| self.account_context())
     }
     // Large reported settings must not be revalidated for every bypassed delta.
@@ -58,23 +58,29 @@ impl EventContext {
         {
             return None;
         }
+        let report_storage = context.reports.iter().count()
+            * std::mem::size_of::<crate::semantic::context::ResponseReport>();
+        // Only variable text/JSON needs the escaped-payload allowance. Applying
+        // it to the fixed report structure would bypass small buffers even for
+        // empty metadata.
         let settings = context
-            .settings
-            .as_ref()
-            .map(|s| s.validate())
-            .transpose()
+            .reports
+            .validate()
             .ok()?
-            .unwrap_or(0);
-        let owners = context.settings.as_ref().map_or(0, |settings| {
-            std::mem::size_of_val(settings)
-                + settings
-                    .tools
-                    .as_deref()
-                    .unwrap_or_default()
-                    .iter()
-                    .map(|tool| {
-                        std::mem::size_of_val(tool)
-                            + match tool {
+            .saturating_sub(report_storage);
+        let owners: usize = context
+            .reports
+            .iter()
+            .filter_map(|r| r.settings.as_ref())
+            .map(|settings| {
+                std::mem::size_of_val(settings)
+                    + settings
+                        .tools
+                        .as_deref()
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|tool| {
+                            std::mem::size_of_val(tool) + match tool {
                                 crate::semantic::task::generation::ToolDefinition::Namespace(
                                     group,
                                 ) => {
@@ -85,9 +91,10 @@ impl EventContext {
                                 }
                                 _ => 0,
                             }
-                    })
-                    .sum::<usize>()
-        });
+                        })
+                        .sum::<usize>()
+            })
+            .sum();
         let execution = serde_json::to_vec(&context.execution).ok()?.len();
         let diagnostics = serde_json::to_vec(&context.cache_diagnostics).ok()?.len();
         Some(
@@ -102,6 +109,7 @@ impl EventContext {
                     .and_then(|s| s.previous_response_id.value())
                     .map_or(0, String::len)
                 + settings.saturating_mul(64)
+                + report_storage
                 + owners
                 + execution.saturating_mul(64)
                 + diagnostics.saturating_mul(64)

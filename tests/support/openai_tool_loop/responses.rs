@@ -5,6 +5,8 @@ use serde_json::{Value, json};
 pub fn snapshot(turn: usize) -> Value {
     json!({"id":format!("response-{turn}"),"object":"response","created_at":1,
         "completed_at":2,"model":"openai/gpt-6-luna","status":"completed","error":null,
+        "reasoning":{"effort":"low","summary":"detailed","context":"all_turns","mode":"standard"},
+        "service_tier":"default",
         "incomplete_details":null,"output":if turn == 1 {json!([
             {"id":"reason","type":"reasoning","status":"completed",
                 "summary":[{"type":"summary_text","text":"Plan 🧪"}],
@@ -21,7 +23,17 @@ pub fn snapshot(turn: usize) -> Value {
             "input_tokens_details":{"cached_tokens":3},"output_tokens_details":{"reasoning_tokens":2}}})
 }
 pub fn events(turn: usize) -> Vec<Value> {
-    crate::responses_wire::response_events(snapshot(turn))
+    let mut events = crate::responses_wire::response_events(snapshot(turn));
+    for event in &mut events {
+        if matches!(
+            event["type"].as_str(),
+            Some("response.created" | "response.in_progress")
+        ) {
+            event["response"]["reasoning"] = json!({"effort":"low","summary":"auto"});
+            event["response"]["service_tier"] = json!("auto");
+        }
+    }
+    events
 }
 
 pub fn assert_request(body: &Value) -> usize {

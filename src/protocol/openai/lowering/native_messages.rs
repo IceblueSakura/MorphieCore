@@ -514,7 +514,12 @@ mod tests {
                 .encode(&StreamEvent::Started, &source.fidelity)
                 .unwrap();
             let mut reported = metadata.clone();
-            reported.context.settings = Some(safety_settings.clone());
+            reported
+                .context
+                .reports
+                .latest_mut()
+                .expect("report")
+                .settings = Some(safety_settings.clone());
             assert!(encoder.update_metadata(reported).is_err());
             assert!(encoder.encode(&terminal, &source.fidelity).is_err());
             assert!(encoder.finish().is_err());
@@ -629,7 +634,12 @@ mod tests {
                 .iter()
                 .any(|loss| loss.rule == "messages.usage-view.v1")
         );
-        metadata.context.settings = Some(safety_settings);
+        metadata
+            .context
+            .reports
+            .latest_mut()
+            .expect("report")
+            .settings = Some(safety_settings);
         assert!(messages.update_metadata(metadata).is_err());
         assert!(messages.encode(&terminal, &source.fidelity).is_err());
         assert!(messages.finish().is_err());

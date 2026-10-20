@@ -111,6 +111,9 @@ impl ApiKeyBinding {
         };
         let scope = crate::protocol::replay_envelope::issuer(provider.id.as_str(), self.upstream);
         let mut adapter = Adapter::new(family, self.dialect, Some(scope.clone()));
+        adapter.adaptation.rules.responses_lifecycle_reports = self.dialect == Dialect::OpenRouter
+            && family == crate::protocol::openai::Profile::Responses
+            && self.canonical_model == "gpt-6-luna";
         let mut mappings = self
             .effort_mappings
             .iter()

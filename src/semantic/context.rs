@@ -1,5 +1,7 @@
 //! Standard request context and delivery intent, independent of wire dialects.
+mod reports;
 use super::value::Presence;
+pub use reports::{ReportPhase, ResponseReport, ResponseReports};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -252,7 +254,7 @@ pub enum CacheMissReason {
 /// this value and cannot restore deleted instructions or settings.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ResponseContext {
-    pub settings: Option<super::task::generation::GenerationSettings>,
+    pub reports: ResponseReports,
     /// Reported text-only instructions; no independent resource table is needed.
     pub instruction_messages: Option<
         Vec<(
@@ -261,12 +263,19 @@ pub struct ResponseContext {
         )>,
     >,
     pub execution: ExecutionHints,
-    pub service_class: Presence<ServiceClass>,
     pub completed_at: Presence<serde_json::Number>,
     pub cache_diagnostics: Presence<CacheDiagnostics>,
     pub system_fingerprint: Presence<String>,
 }
 impl ResponseContext {
+    pub fn settings(&self) -> Option<&super::task::generation::GenerationSettings> {
+        self.reports.latest().and_then(|r| r.settings.as_ref())
+    }
+    pub fn service_class(&self) -> &Presence<ServiceClass> {
+        self.reports
+            .latest()
+            .map_or(&Presence::Absent, |r| &r.service_class)
+    }
     pub fn validate(&self) -> Result<(), ContextError> {
         use super::task::generation::{GenerationControls, GenerationRequest, Item};
         self.execution.validate()?;
@@ -277,17 +286,15 @@ impl ResponseContext {
         {
             return Err(ContextError::Invalid("system fingerprint"));
         }
-        if let Some(settings) = &self.settings {
-            settings.validate()?;
-        }
+        self.reports.validate()?;
         if let Some(items) = &self.instruction_messages {
-            if self
-                .settings
-                .as_ref()
-                .is_some_and(|s| !s.instructions.is_absent())
-                || items
-                    .iter()
-                    .any(|(_, item)| !matches!(item, Item::Instruction(_)))
+            if self.reports.iter().any(|r| {
+                r.settings
+                    .as_ref()
+                    .is_some_and(|s| !s.instructions.is_absent())
+            }) || items
+                .iter()
+                .any(|(_, item)| !matches!(item, Item::Instruction(_)))
             {
                 return Err(ContextError::Invalid("instruction echoes"));
             }

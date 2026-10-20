@@ -296,7 +296,14 @@ impl Profile {
             return Err(unsupported());
         }
         let mut context = response.metadata.context.clone();
-        let service_class = std::mem::take(&mut context.service_class);
+        crate::protocol::openai::reports::single_view(&mut context.reports)?;
+        let service_class = std::mem::take(
+            &mut context
+                .reports
+                .latest_mut()
+                .expect("single report")
+                .service_class,
+        );
         if response.metadata.model != target.model()
             || response.metadata.created.is_some()
             || context != Default::default()

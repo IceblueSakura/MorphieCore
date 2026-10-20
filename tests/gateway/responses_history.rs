@@ -19,6 +19,16 @@ async fn request(client: &reqwest::Client, base: &str, body: &Value) -> Value {
     let mut terminal = None;
     for line in wire.lines().filter_map(|l| l.strip_prefix("data: ")) {
         let event: Value = serde_json::from_str(line).unwrap();
+        if matches!(
+            event["type"].as_str(),
+            Some("response.created" | "response.in_progress")
+        ) {
+            assert_eq!(
+                event["response"]["reasoning"],
+                json!({"effort":"low","summary":"auto"})
+            );
+            assert_eq!(event["response"]["service_tier"], "auto");
+        }
         if event["type"] == "response.completed" {
             assert!(terminal.replace(event["response"].clone()).is_none());
         }
@@ -51,6 +61,29 @@ async fn stored_and_stateless_tool_history_agree_in_json_and_sse() {
                     "stream={stream}, stored={stored}, turn={turn}: {response}"
                 );
                 assert_eq!(response["status"], "completed");
+                assert_eq!(
+                    response["reasoning"],
+                    json!({"effort":"low","summary":"detailed","context":"all_turns","mode":"standard"})
+                );
+                assert_eq!(response["service_tier"], "default");
+                if stored {
+                    let retrieved = client
+                        .get(format!(
+                            "{}/responses/{}",
+                            fixture.base,
+                            response["id"].as_str().unwrap()
+                        ))
+                        .bearer_auth(fixture::CLIENT_KEY)
+                        .send()
+                        .await
+                        .unwrap();
+                    assert_eq!(retrieved.status(), 200);
+                    assert_eq!(
+                        retrieved.json::<Value>().await.unwrap(),
+                        response,
+                        "GET retains the delivered terminal view"
+                    );
+                }
                 assert_eq!(
                     response["usage"]["output_tokens_details"]["reasoning_tokens"],
                     2

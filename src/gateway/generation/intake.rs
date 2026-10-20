@@ -160,7 +160,7 @@ async fn produce(
             trace.reported_settings(
                 attempt
                     .metadata()
-                    .and_then(|metadata| metadata.context.settings.as_ref()),
+                    .and_then(|metadata| metadata.context.settings()),
                 attempt.fidelity(),
             );
             if used == 0 {
@@ -218,7 +218,7 @@ async fn produce(
     trace.reported_settings(
         attempt
             .metadata()
-            .and_then(|metadata| metadata.context.settings.as_ref()),
+            .and_then(|metadata| metadata.context.settings()),
         attempt.fidelity(),
     );
     trace.stage(Stage::Projection);

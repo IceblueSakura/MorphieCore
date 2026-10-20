@@ -9,7 +9,7 @@ pub struct EventDecoder {
     pub(super) state: Option<StreamState>,
     pub(super) fidelity: FidelityRecords,
     pub(super) metadata: Option<ResponseMetadata>,
-    native_settings: Option<GenerationSettings>,
+    native_reports: Option<crate::semantic::context::ResponseReports>,
     native_instructions: Option<Vec<(ItemId, Item)>>,
     native_configurations: Vec<(usize, ConfigurationUpdate)>,
     pub(super) origin: Option<ReplayOrigin>,
@@ -39,7 +39,7 @@ impl EventDecoder {
             state: Some(StreamState::new()),
             fidelity: FidelityRecords::default(),
             metadata: None,
-            native_settings: None,
+            native_reports: None,
             native_instructions: None,
             native_configurations: vec![],
             origin: None,
@@ -91,6 +91,7 @@ impl EventDecoder {
     }
     pub fn push(&mut self, payload: &Value) -> Result<Vec<StreamEvent>, CodecError> {
         if self.poisoned || self.state.as_ref().is_none_or(|s| s.terminal().is_some()) {
+            self.poisoned = true;
             return Err(CodecError::Invalid("event after terminal or rejection"));
         }
         self.events += 1;
@@ -326,16 +327,11 @@ impl EventDecoder {
                 }
                 self.native_instructions = Some(instructions);
             }
-            if let Some(settings) = native.settings {
-                if self
-                    .native_settings
-                    .as_ref()
-                    .is_some_and(|old| old != &settings)
-                {
-                    return Err(CodecError::Invalid("reported settings changed"));
-                }
-                self.native_settings = Some(settings);
-            }
+            self.native_reports = Some(crate::protocol::openai::reports::observe(
+                self.native_reports.as_ref(),
+                &native.reports,
+                self.adaptation.rules.responses_lifecycle_reports,
+            )?);
         }
         let mut m = crate::protocol::openai::static_response::metadata(
             o,
@@ -361,13 +357,23 @@ impl EventDecoder {
                 }
                 m.created = old.created.clone();
             }
-            if !old.context.service_class.is_absent() {
-                if !m.context.service_class.is_absent()
-                    && old.context.service_class != m.context.service_class
+            if self.profile == Profile::Responses {
+                m.context.reports = crate::protocol::openai::reports::observe(
+                    Some(&old.context.reports),
+                    &m.context.reports,
+                    self.adaptation.rules.responses_lifecycle_reports,
+                )?;
+            } else if !old.context.service_class().is_absent() {
+                if !m.context.service_class().is_absent()
+                    && old.context.service_class() != m.context.service_class()
                 {
                     return Err(CodecError::Invalid("service tier changed"));
                 }
-                m.context.service_class = old.context.service_class.clone();
+                m.context
+                    .reports
+                    .latest_mut()
+                    .expect("single report")
+                    .service_class = old.context.service_class().clone();
             }
             if !old.context.system_fingerprint.is_absent() {
                 if !m.context.system_fingerprint.is_absent()

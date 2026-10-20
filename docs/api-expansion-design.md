@@ -146,40 +146,14 @@ The 2026-10-19 Bailian review selected [existing-IR-only adaptation](architectur
 
 A future proposal would need independently owned answer/thought/total limits, precedence and contradiction rules, native source/target mappings and cross-protocol refusal behavior. No representation is selected here. Current codecs reject the unrepresentable combination and numeric allocations outside the existing IR relation; they do not widen IR or reinterpret effort as tokens.
 
-#### Lifecycle settings and service reports (unselected)
 
-**Analysis only, requested on 2026-10-19. No semantic change is approved.** R1b exposed a difference between opening/progress and terminal Responses reports; the [dated evidence](refs/2026-10-17-generation-contracts.md#responses-lifecycle-reports-2026-10-19) separates observations from interpretation. Current source-conflict rejection remains authoritative.
+#### Assistant history annotations (unselected)
 
-The current [observer](../src/protocol/openai/events/decode/mod.rs) compares complete native `GenerationSettings` values, then separately checks service-class agreement. Both checks precede target projection. Fixing only settings would expose the service conflict next; the [encoder](../src/protocol/openai/events/encode/mod.rs) also forbids changing an already reported service class. This is not just a decoder flag.
+The resumed Responses acceptance exposed a separate client-input boundary: installed OpenCode completes a tool round, then its next-turn assistant text rejects with `Invalid("annotations")`. The [dated source comparison](refs/2026-10-17-generation-contracts.md#responses-lifecycle-reports-2026-10-19) distinguishes the client's omitted field from the pinned OpenAI required parameter.
 
-Minimal independent examples use one identity, increasing sequence numbers and valid empty output snapshots, first `in_progress`, then `completed`:
+Minimal input: `{"role":"assistant","content":[{"type":"output_text","text":"hello"}]}` rejects, while the same part with `annotations: []` or the existing string shorthand `content: "hello"` is admitted.
 
-| Opening report | Terminal report | Question |
-|---|---|---|
-| `reasoning: {"summary":"auto"}` | `reasoning: {"summary":"detailed"}` | Is this an approved resolution or a contradictory report? |
-| `reasoning: {}` | `reasoning: {"context":"current_turn","mode":"standard"}` | Can a later report supply previously unreported fields? |
-| `service_tier: "auto"` | `service_tier: "default"` | Does lifecycle distinguish configured processing from the class actually used? |
-
-These are independently chosen counterexamples, not copied exchanges or claims about unconfirmed live enum values. Official request-versus-response tier semantics do not by themselves establish opening-versus-terminal authority. Until sourced, call them **opening** and **terminal reports**, not “request echo” and “effective truth.”
-
-| Option | Benefit | Cost and required decision |
-|---|---|---|
-| Keep strict rejection | No ownership or loss-policy change | R1b SSE stays blocked; terminal-only JSON can still succeed |
-| Narrow terminal-resolution rules within the existing owner | Smaller implementation; allow only selected field transitions | Overwriting loses an observation, while field-wise merging can invent a combination no snapshot reported. Requires explicit transition and loss policies; no generic missing-field tolerance or last-wins |
-| Bounded phase-tagged reports, reusing existing typed values | Preserve both observations and distinguish their authority without a raw bag or event log | Needs selected ownership, cross-phase rules, accounting and delivery projections. Two slots alone do not make arbitrary drift legitimate |
-
-**Recommendation:** select the third option for the observed OpenRouter dialect, initially restricted to explicitly justified transitions. Reuse `GenerationSettings` and `Presence<ServiceClass>` in one authoritative phase-tagged report owner associated with response context. Do not duplicate an independently mutable “current settings” value beside a report archive, place reports in task content, or use fidelity records as hidden semantic storage. Exact type placement remains a design decision, not an approved Rust layout.
-
-Proposed invariants:
-
-- Opening/progress reports must agree within their phase; terminal repeats must agree within theirs. Cross-phase changes need a closed selected relation, not unrestricted replacement.
-- Distinguish absent, null and concrete values. Later field introduction is a separate rule from `auto` resolution; neither permits concrete-to-different-concrete drift.
-- Validate native types and conflicts before effort aliases, normalization or omission. Identity, instructions, content/arguments, signatures, call/result links, usage and terminal facts retain their existing checks.
-- Do not infer effective settings from the request or infer an opening report from a terminal-only JSON response. This design changes no model selection, retry, affinity, credential or publication rule.
-
-Delivery is a separate decision. Native Responses SSE has opening and terminal carriers; JSON and stored-response retrieval expose one terminal snapshot, not an event log. Preserving both in source metadata therefore requires a selected terminal-only projection/loss policy or rejection when a destination cannot carry both. Stored history must retain the delivered snapshot, not claim to preserve an unseen opening observation. Chat/Messages omissions cannot bypass source validation.
-
-Before implementation, select: report ownership and retention; admitted dialect and exact transition relation; null/absent handling; and JSON/SSE/history projection policy. Independent tests then isolate each example, same-phase and concrete-value conflicts, aliases that would hide native differences, malformed known fields, encoder poisoning, bounds, EOF/cancellation and no replay after publication. No test should turn this unresolved design into a successful expectation.
+**Recommendation, not authorization:** accept only omitted `annotations` in client Responses assistant text history as an input shorthand, materializing an empty array with a named normalization receipt. Explicit null, malformed arrays and supplied citation semantics stay strict; upstream/static/SSE output snapshots still require the array. Do not reconstruct citations that the client discarded, rewrite client payloads in acceptance tooling or claim that such client loss is preserved. Keeping strict input rejection leaves the OpenCode next-turn gate blocked. Select this boundary before implementation.
 
 #### Review concrete ownership coupling
 

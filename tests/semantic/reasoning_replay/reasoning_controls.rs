@@ -195,7 +195,12 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
         };
         let request = GenerationRequest::from_settings(vec![], settings.clone()).unwrap();
         let mut metadata = crate::events_support::metadata();
-        metadata.context.settings = Some(settings);
+        metadata
+            .context
+            .reports
+            .latest_mut()
+            .expect("report")
+            .settings = Some(settings);
         let response = GenerationResponse::new(
             vec![(
                 ItemId::new(1),
@@ -225,7 +230,7 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
                     .unwrap();
             assert!(target.projection().iter().any(|stage| stage.loss.is_some()));
             assert_eq!(
-                metadata.context.settings.as_ref().unwrap().reasoning,
+                metadata.context.settings().unwrap().reasoning,
                 request.settings().reasoning
             );
             let json = match profile {
@@ -240,7 +245,7 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
             if profile == Profile::Responses {
                 assert_eq!(json["reasoning"], serde_json::json!({"effort":"high"}));
             } else {
-                assert!(target.metadata().context.settings.is_none());
+                assert!(target.metadata().context.settings().is_none());
             }
             let mut encoder = EventEncoder::new(profile, metadata.clone()).unwrap();
             let mut frames = encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
@@ -278,8 +283,8 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
             }
             let materialized = intake.materialize().unwrap();
             assert_eq!(
-                materialized.metadata.context.settings,
-                target.metadata().context.settings
+                materialized.metadata.context.settings(),
+                target.metadata().context.settings()
             );
             assert!(
                 matches!(&materialized.semantic.items()[0].1, Item::Message(message)

@@ -294,9 +294,9 @@ impl ClientAdapter {
     ) -> Result<ClientEncoder, SseError> {
         if metadata
             .context
-            .settings
-            .as_ref()
-            .is_some_and(|settings| !settings.safety.is_empty())
+            .reports
+            .iter()
+            .any(|r| r.settings.as_ref().is_some_and(|s| !s.safety.is_empty()))
         {
             return Err(CodecError::Unsupported("reported safety settings".into()).into());
         }
@@ -308,7 +308,8 @@ impl ClientAdapter {
                         &metadata.model,
                     )
                     .with_limits(limits)?;
-                encoder.update_service_class(metadata.context.service_class)?;
+                crate::protocol::openai::reports::validate_single(&metadata.context.reports)?;
+                encoder.update_service_class(metadata.context.service_class().clone())?;
                 Encoder::Messages(encoder)
             }
             Self::OpenAi { adapter, contract } => match adapter.protocol {
@@ -478,24 +479,34 @@ impl ClientEncoder {
             Encoder::Chat(e) => e.update_metadata(metadata),
             Encoder::Responses(e) => e.update_metadata(metadata),
             Encoder::Messages(e) => {
-                metadata.context.validate().map_err(CodecError::from)?;
+                if let Err(error) = metadata.context.validate() {
+                    e.reject();
+                    return Err(CodecError::from(error).into());
+                }
+                if let Err(error) =
+                    crate::protocol::openai::reports::validate_single(&metadata.context.reports)
+                {
+                    e.reject();
+                    return Err(error.into());
+                }
                 if metadata
                     .context
-                    .settings
-                    .as_ref()
-                    .is_some_and(|settings| !settings.safety.is_empty())
+                    .reports
+                    .iter()
+                    .any(|r| r.settings.as_ref().is_some_and(|s| !s.safety.is_empty()))
                 {
                     e.reject();
                     return Err(CodecError::Unsupported("reported safety settings".into()).into());
                 }
                 if metadata.context.execution != crate::semantic::context::ExecutionHints::default()
                 {
+                    e.reject();
                     return Err(CodecError::Unsupported(
                         "Messages reported execution context".into(),
                     )
                     .into());
                 }
-                e.update_service_class(metadata.context.service_class.clone())?;
+                e.update_service_class(metadata.context.service_class().clone())?;
                 for mut loss in crate::protocol::anthropic::client::metadata_losses(&metadata) {
                     loss.direction = "event.encode";
                     if !self.losses.contains(&loss) {

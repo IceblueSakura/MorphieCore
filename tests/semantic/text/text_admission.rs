@@ -91,10 +91,20 @@ fn known_unrepresentable_event_fields_and_changed_bound_metadata_fail_early() {
         assert!(encoder.finish().is_err());
     }
     let mut metadata = metadata;
-    metadata.context.service_class = Presence::Value(ServiceClass::StandardProcessing);
+    metadata
+        .context
+        .reports
+        .latest_mut()
+        .expect("report")
+        .service_class = Presence::Value(ServiceClass::StandardProcessing);
     let mut encoder = EventEncoder::new(Profile::Chat, metadata.clone()).unwrap();
     encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
-    metadata.context.service_class = Presence::Value(ServiceClass::PriorityProcessing);
+    metadata
+        .context
+        .reports
+        .latest_mut()
+        .expect("report")
+        .service_class = Presence::Value(ServiceClass::PriorityProcessing);
     assert!(encoder.update_metadata(metadata).is_err());
     assert!(encoder.finish().is_err());
     use morphiecore::protocol::{

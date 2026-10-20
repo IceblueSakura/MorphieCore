@@ -58,6 +58,7 @@ impl EventEncoder {
             "output": output,
         });
         let mut delivered = self.metadata.clone();
+        crate::protocol::openai::reports::opening_view(&mut delivered.context.reports)?;
         let loss = projection::reported_settings(&mut delivered, self.profile)
             .map_err(|_| CodecError::Unsupported("reported settings".into()))?;
         if loss.is_some()
@@ -393,10 +394,25 @@ impl EventEncoder {
             }
             StreamEvent::Terminal { terminal, .. } => {
                 let response = materialize(self.state()?)?;
+                let mut metadata = self.metadata.clone();
+                // The stream already carried its opening observation. Only the
+                // terminal frame uses this view; static snapshots record the loss.
+                if *terminal == StreamTerminal::Failed
+                    && matches!(
+                        metadata.context.reports,
+                        crate::semantic::context::ResponseReports::Lifecycle { terminal: None, .. }
+                    )
+                {
+                    // A gateway-classified failure has no upstream terminal
+                    // report. Emit the failure without inventing reported values.
+                    metadata.context.reports = Default::default();
+                } else {
+                    crate::protocol::openai::reports::terminal_view(&mut metadata.context.reports)?;
+                }
                 let mut target = crate::protocol::openai::lowering::lower_response(
                     &response,
                     &self.fidelity,
-                    &self.metadata,
+                    &metadata,
                     Profile::Responses,
                     self.contract.clone(),
                 )

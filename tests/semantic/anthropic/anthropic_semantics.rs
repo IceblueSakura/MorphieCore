@@ -93,7 +93,10 @@ fn native_intake_keeps_independent_error_execution_progress_and_signature_owners
         serde_json::from_slice::<Value>(response()).unwrap()
     );
     use morphiecore::semantic::context::ServiceClass;
-    assert_eq!(observed.metadata.context.service_class, Presence::Absent);
+    assert_eq!(
+        observed.metadata.context.service_class().clone(),
+        Presence::Absent
+    );
     let mut reported: Value = serde_json::from_slice(response()).unwrap();
     reported["usage"]["service_tier"] = json!("priority");
     let decoded = p
@@ -104,17 +107,29 @@ fn native_intake_keeps_independent_error_execution_progress_and_signature_owners
         )
         .unwrap();
     assert_eq!(
-        decoded.metadata.context.service_class,
+        decoded.metadata.context.service_class().clone(),
         Presence::Value(ServiceClass::PriorityCapacity)
     );
     let mut manual = observed.clone();
-    manual.metadata.context.service_class = Presence::Value(ServiceClass::PriorityCapacity);
+    manual
+        .metadata
+        .context
+        .reports
+        .latest_mut()
+        .expect("report")
+        .service_class = Presence::Value(ServiceClass::PriorityCapacity);
     assert_eq!(
         p.encode_generation_response(&manual, &source, &target())
             .unwrap(),
         reported
     );
-    manual.metadata.context.service_class = Presence::Value(ServiceClass::PriorityProcessing);
+    manual
+        .metadata
+        .context
+        .reports
+        .latest_mut()
+        .expect("report")
+        .service_class = Presence::Value(ServiceClass::PriorityProcessing);
     assert!(
         p.encode_generation_response(&manual, &source, &target())
             .is_err()

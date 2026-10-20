@@ -615,7 +615,7 @@ fn reported_cache_context_is_an_independent_response_fact() {
         Presence::Value(ServicePolicy::ProjectConfigured)
     );
     assert_eq!(
-        decoded.metadata.context.service_class,
+        decoded.metadata.context.service_class().clone(),
         Presence::Value(ServiceClass::StandardProcessing)
     );
     requested.context.service_policy = Presence::Value(ServicePolicy::PriorityProcessing);
@@ -636,7 +636,13 @@ fn reported_cache_context_is_an_independent_response_fact() {
     invalid["service_tier"] = json!("standard");
     assert!(envelope::decode_response(&invalid).is_err());
     let mut reported = decoded.clone();
-    reported.metadata.context.service_class = Presence::Value(ServiceClass::PriorityProcessing);
+    reported
+        .metadata
+        .context
+        .reports
+        .latest_mut()
+        .expect("report")
+        .service_class = Presence::Value(ServiceClass::PriorityProcessing);
     let target = lower_response(
         &reported.semantic,
         &reported.fidelity,

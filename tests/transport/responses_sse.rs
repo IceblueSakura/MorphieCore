@@ -355,7 +355,12 @@ fn rejected_metadata_update_poisoned_stream_cannot_emit_success() {
         .encode(&StreamEvent::Started, &FidelityRecords::default())
         .unwrap();
     let mut changed = metadata;
-    changed.context.service_class = morphiecore::semantic::value::Presence::Value(
+    changed
+        .context
+        .reports
+        .latest_mut()
+        .expect("report")
+        .service_class = morphiecore::semantic::value::Presence::Value(
         morphiecore::semantic::context::ServiceClass::PriorityProcessing,
     );
     assert!(encoder.update_metadata(changed).is_err());

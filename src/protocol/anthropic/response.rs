@@ -519,7 +519,12 @@ impl Message {
             model: self.model.clone(),
             created: None,
             context: crate::semantic::context::ResponseContext {
-                service_class: self.usage.service_class.clone(),
+                reports: crate::semantic::context::ResponseReports::single(
+                    crate::semantic::context::ResponseReport {
+                        service_class: self.usage.service_class.clone(),
+                        ..Default::default()
+                    },
+                ),
                 ..Default::default()
             },
             instruction_fidelity: Default::default(),

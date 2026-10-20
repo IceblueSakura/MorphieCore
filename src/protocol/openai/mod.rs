@@ -21,6 +21,7 @@ pub mod embeddings;
 mod function_tools;
 pub mod images;
 mod reasoning;
+pub(crate) mod reports;
 mod service;
 mod settings;
 pub mod speech;

@@ -311,10 +311,20 @@ impl ResponseContext {
             None
         };
         let value = Self {
-            settings: s,
+            reports: crate::semantic::context::ResponseReports::phased(
+                match o.get("status").and_then(Value::as_str) {
+                    Some("queued" | "in_progress") => {
+                        crate::semantic::context::ReportPhase::Opening
+                    }
+                    _ => crate::semantic::context::ReportPhase::Terminal,
+                },
+                crate::semantic::context::ResponseReport {
+                    settings: s,
+                    service_class: super::super::service::read_class(o, Profile::Responses)?,
+                },
+            ),
             instruction_messages,
             execution: ExecutionHints::read(&execution, Profile::Responses, direction)?,
-            service_class: super::super::service::read_class(o, Profile::Responses)?,
             completed_at: read_presence(o, "completed_at", timestamp)?,
             cache_diagnostics: read_presence(o, "prompt_cache_diagnostics", |v| {
                 serde_json::from_value(v.clone())
@@ -334,11 +344,11 @@ impl ResponseContext {
         completed: bool,
     ) -> Result<(), CodecError> {
         self.validate()?;
-        if let Some(s) = &self.settings {
+        if let Some(s) = self.settings() {
             settings::write(s, o)?;
         }
         self.execution.write(o)?;
-        super::super::service::write_class(o, &self.service_class, Profile::Responses)?;
+        super::super::service::write_class(o, self.service_class(), Profile::Responses)?;
         if let Some(messages) = &self.instruction_messages {
             o.insert(
                 "instructions".into(),
