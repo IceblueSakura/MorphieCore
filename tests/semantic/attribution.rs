@@ -2,7 +2,7 @@
 use morphiecore::{
     adapter::Request,
     protocol::{
-        anthropic::{
+        anthropic::messages::{
             Dialect as MessagesDialect, Profile as MessagesProfile, TargetCaps as MessagesCaps,
         },
         native::ReplayTarget,
@@ -25,7 +25,7 @@ fn source(profile: Profile, fields: Value) -> Result<Request, morphiecore::proto
     Adapter::new(profile, Dialect::Standard, None)
         .decode_client_request(wire.to_string().as_bytes())
 }
-fn messages(request: &Request) -> morphiecore::protocol::anthropic::NativeProjection {
+fn messages(request: &Request) -> morphiecore::protocol::anthropic::messages::NativeProjection {
     MessagesCaps::new(
         MessagesProfile::AdaptiveTextTools,
         MessagesDialect::Standard,
@@ -122,7 +122,7 @@ fn openai_preserves_independent_fields_and_checks_all_source_bounds() {
                 .is_err()
         );
     }
-    assert!(morphiecore::protocol::anthropic::client::decode_client_request(
+    assert!(morphiecore::protocol::anthropic::messages::client::decode_client_request(
         br#"{"model":"m","max_tokens":32,"messages":[{"role":"user","content":"go"}],"metadata":{"user_id":"a","user_id":"b"}}"#
     ).is_err());
 }
@@ -222,7 +222,7 @@ fn single_carriers_preserve_priority_presence_and_separate_legacy_cache_loss() {
     assert!(wire.get("metadata").is_none());
     assert!(rules.contains(&"generation.omit-identity-hints.v1"));
     assert!(rules.contains(&"cache.omit-legacy-user-bucketing.v1"));
-    let native = morphiecore::protocol::anthropic::client::decode_client_request(
+    let native = morphiecore::protocol::anthropic::messages::client::decode_client_request(
         r#"{"model":"m","max_tokens":4096,"metadata":{"user_id":"native_用户"},"messages":[{"role":"user","content":"go"}]}"#.as_bytes()
     ).unwrap();
     let (wire, rules) = GOOGLE_BINDINGS[0]

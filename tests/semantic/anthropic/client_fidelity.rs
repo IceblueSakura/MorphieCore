@@ -1,7 +1,7 @@
 use morphiecore::{
     protocol::{
         CodecError, DecodedResponse,
-        anthropic::{
+        anthropic::messages::{
             client::{decode_client_request, encode_client_response},
             client_events::ClientEventEncoder,
         },
@@ -690,12 +690,12 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
     assert_eq!(items[10], &effort(EffortLevel::Medium));
 
     let target = ReplayTarget::new("synthetic", "synthetic").unwrap();
-    let mut caps = anthropic::TargetCaps::new(
-        anthropic::Profile::AdaptiveTextTools,
-        anthropic::Dialect::Standard,
+    let mut caps = anthropic::messages::TargetCaps::new(
+        anthropic::messages::Profile::AdaptiveTextTools,
+        anthropic::messages::Dialect::Standard,
     );
-    caps.semantics = anthropic::Profile::AdaptiveTextTools.representation_contract();
-    caps.carriers = anthropic::Carriers::all();
+    caps.semantics = anthropic::messages::Profile::AdaptiveTextTools.representation_contract();
+    caps.carriers = anthropic::messages::Carriers::all();
     let exact = caps.encode_request(&decoded, &target).unwrap();
     assert!(exact.rules.is_empty(), "{:?}", exact.rules);
     let wire = &exact.value;
@@ -730,7 +730,7 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
     assert!(
         flattened
             .rules
-            .contains(&anthropic::RequestRule::FlattenMessageEffort)
+            .contains(&anthropic::messages::RequestRule::FlattenMessageEffort)
     );
     assert_eq!(decoded, before);
 
@@ -828,9 +828,9 @@ fn client_intake_carries_caps_and_rejects_active_fields_it_cannot_carry() {
             ToolDefinition::Function(t) if t.strict == FunctionStrictness::Explicit(true)));
     use morphiecore::protocol::{anthropic, native::ReplayTarget};
     let target = ReplayTarget::new("synthetic", "synthetic").unwrap();
-    let mut caps = anthropic::TargetCaps::new(
-        anthropic::Profile::AdaptiveTextTools,
-        anthropic::Dialect::Standard,
+    let mut caps = anthropic::messages::TargetCaps::new(
+        anthropic::messages::Profile::AdaptiveTextTools,
+        anthropic::messages::Dialect::Standard,
     );
     use morphiecore::semantic::context::ServicePolicy;
     let mut selected = body.clone();
@@ -850,7 +850,7 @@ fn client_intake_carries_caps_and_rejects_active_fields_it_cannot_carry() {
     let wire = caps.encode_request(&manual, &target).unwrap().value;
     assert_eq!(wire["service_tier"], "auto");
     assert!(
-        anthropic::Profile::AdaptiveTextTools
+        anthropic::messages::Profile::AdaptiveTextTools
             .decode_generation_request(wire.to_string().as_bytes(), LocalScope::ROOT, &target)
             .is_err()
     );

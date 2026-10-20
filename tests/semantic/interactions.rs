@@ -6,9 +6,7 @@ use morphiecore::protocol::{
 };
 use morphiecore::{
     protocol::{
-        fidelity::FidelityRecords,
-        google::interactions::RequestRule,
-        replay_envelope::issuer,
+        fidelity::FidelityRecords, google::interactions::RequestRule, replay_envelope::issuer,
     },
     semantic::{task::generation::*, value::Text},
 };
@@ -35,9 +33,7 @@ fn decode_interaction(
     frames: &[serde_json::Value],
     done: bool,
 ) -> Result<morphiecore::protocol::DecodedResponse, String> {
-    use morphiecore::protocol::{
-        google::interactions::GenerationSseDecoder, stream::SseLimits,
-    };
+    use morphiecore::protocol::{google::interactions::GenerationSseDecoder, stream::SseLimits};
     let mut d = GenerationSseDecoder::new(
         200,
         "text/event-stream",
@@ -656,7 +652,7 @@ fn media_become_v1_content_and_video_has_no_carrier() {
             .unwrap_err(),
         morphiecore::protocol::CodecError::Unsupported("instruction content".into())
     );
-    let strict = morphiecore::protocol::anthropic::client::decode_client_request(
+    let strict = morphiecore::protocol::anthropic::messages::client::decode_client_request(
         json!({"model":"public","max_tokens":8,"messages":[{"role":"user","content":[
             {"type":"image","source":{"type":"base64","media_type":"image/png","data":"AQID"},
                 "transformations":{"oversized_image":"error"}}]}]})
@@ -755,7 +751,7 @@ fn projects_instructions_tool_choice_effort_summaries_and_result_errors() {
     assert_eq!(rules, ["interactions.summarize-reasoning.v1"]);
 
     // Messages tool errors keep their flag on the result step.
-    let request = morphiecore::protocol::anthropic::client::decode_client_request(
+    let request = morphiecore::protocol::anthropic::messages::client::decode_client_request(
         json!({"model":"public","max_tokens":64,"messages":[
             {"role":"user","content":"go"},
             {"role":"assistant","content":[{"type":"tool_use","id":"c1","name":"read","input":{}}]},

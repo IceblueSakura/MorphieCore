@@ -2,7 +2,10 @@ use morphiecore::{
     adapter::Request,
     protocol::{
         CodecError, DecodedRequest,
-        anthropic::{self, Dialect, Profile, SamplingPolicy, TargetCaps},
+        anthropic::{
+            self,
+            messages::{Dialect, Profile, SamplingPolicy, TargetCaps},
+        },
         fidelity::FidelityRecords,
         native::ReplayTarget,
     },
@@ -83,7 +86,7 @@ fn model_maximum_checks_inserted_default_without_replacing_explicit_caps() {
         projected
             .rules
             .iter()
-            .filter(|rule| **rule == anthropic::RequestRule::DefaultMaxTokens)
+            .filter(|rule| **rule == anthropic::messages::RequestRule::DefaultMaxTokens)
             .count(),
         1
     );
@@ -96,7 +99,7 @@ fn model_maximum_checks_inserted_default_without_replacing_explicit_caps() {
     assert!(
         !projected
             .rules
-            .contains(&anthropic::RequestRule::DefaultMaxTokens)
+            .contains(&anthropic::messages::RequestRule::DefaultMaxTokens)
     );
     limited.model_limits.maximum_output_tokens = Some(4095);
     assert!(matches!(limited.encode_request(&explicit, &target()),
@@ -161,7 +164,7 @@ fn output_defaults_check_budgets_after_selected_conversions() {
         projected
             .rules
             .iter()
-            .filter(|r| **r == anthropic::RequestRule::DefaultMaxTokens)
+            .filter(|r| **r == anthropic::messages::RequestRule::DefaultMaxTokens)
             .count(),
         1
     );
@@ -203,7 +206,8 @@ fn output_defaults_check_budgets_after_selected_conversions() {
 fn ordinary_budgets_preserve_numeric_intent_and_native_strict_relation() {
     let wire = json!({"model":"m","max_tokens":4096,"thinking":{"type":"enabled","budget_tokens":1024},
             "messages":[{"role":"user","content":"go"}]});
-    let decoded = anthropic::client::decode_client_request(wire.to_string().as_bytes()).unwrap();
+    let decoded =
+        anthropic::messages::client::decode_client_request(wire.to_string().as_bytes()).unwrap();
     assert_eq!(decoded.task.semantic.reasoning().budget_tokens, Some(1024));
     assert_eq!(
         decoded.task.semantic.reasoning().mode,
@@ -221,7 +225,7 @@ fn ordinary_budgets_preserve_numeric_intent_and_native_strict_relation() {
         native
             .rules
             .iter()
-            .all(|r| !matches!(r, anthropic::RequestRule::ReasoningPolicy(_)))
+            .all(|r| !matches!(r, anthropic::messages::RequestRule::ReasoningPolicy(_)))
     );
     assert_eq!(request, before);
     for (budget, cap) in [
@@ -234,7 +238,7 @@ fn ordinary_budgets_preserve_numeric_intent_and_native_strict_relation() {
         bad["thinking"]["budget_tokens"] = json!(budget);
         bad["max_tokens"] = json!(cap);
         assert!(matches!(
-            anthropic::client::decode_client_request(bad.to_string().as_bytes()),
+            anthropic::messages::client::decode_client_request(bad.to_string().as_bytes()),
             Err(CodecError::Invalid("thinking budget"))
         ));
         assert!(
@@ -258,7 +262,8 @@ fn ordinary_budgets_preserve_numeric_intent_and_native_strict_relation() {
 fn sampling_is_native_unless_the_trusted_target_selects_fixed_policy() {
     let wire = json!({"model":"m","max_tokens":4096,"temperature":0.25,"top_p":0.75,"top_k":7,
             "messages":[{"role":"user","content":"go"}]});
-    let decoded = anthropic::client::decode_client_request(wire.to_string().as_bytes()).unwrap();
+    let decoded =
+        anthropic::messages::client::decode_client_request(wire.to_string().as_bytes()).unwrap();
     assert_eq!(decoded.task.semantic.controls().temperature(), Some(0.25));
     assert_eq!(decoded.task.semantic.controls().top_p(), Some(0.75));
     assert_eq!(decoded.task.semantic.controls().top_k, Some(7));
@@ -277,7 +282,11 @@ fn sampling_is_native_unless_the_trusted_target_selects_fixed_policy() {
     assert_eq!(native.value["temperature"], 0.25);
     assert_eq!(native.value["top_p"], 0.75);
     assert_eq!(native.value["top_k"], 7);
-    assert!(!native.rules.contains(&anthropic::RequestRule::OmitSampling));
+    assert!(
+        !native
+            .rules
+            .contains(&anthropic::messages::RequestRule::OmitSampling)
+    );
     let mut fixed = caps();
     fixed.sampling = SamplingPolicy::Fixed;
     assert!(fixed.encode_request(&request, &target()).is_err());
@@ -290,7 +299,7 @@ fn sampling_is_native_unless_the_trusted_target_selects_fixed_policy() {
     assert!(
         projected
             .rules
-            .contains(&anthropic::RequestRule::OmitSampling)
+            .contains(&anthropic::messages::RequestRule::OmitSampling)
     );
     assert_eq!(request.task.semantic.controls().temperature(), Some(0.25));
     assert_eq!(source.task.semantic.controls().top_k, Some(7));
@@ -303,7 +312,8 @@ fn native_identity_keeps_presence_and_bounds_with_selected_cross_projection() {
         let wire = json!({"model":"m","max_tokens":4096,"metadata":{"user_id":value},
                 "messages":[{"role":"user","content":"go"}]});
         let decoded =
-            anthropic::client::decode_client_request(wire.to_string().as_bytes()).unwrap();
+            anthropic::messages::client::decode_client_request(wire.to_string().as_bytes())
+                .unwrap();
         let expected = if value.is_null() {
             Presence::Null
         } else {
@@ -330,7 +340,10 @@ fn native_identity_keeps_presence_and_bounds_with_selected_cross_projection() {
     ] {
         let wire = json!({"model":"m","max_tokens":4096,"metadata":metadata,
                 "messages":[{"role":"user","content":"go"}]});
-        assert!(anthropic::client::decode_client_request(wire.to_string().as_bytes()).is_err());
+        assert!(
+            anthropic::messages::client::decode_client_request(wire.to_string().as_bytes())
+                .is_err()
+        );
     }
     let plain = caps().encode_request(&typed(None), &target()).unwrap();
     assert!(plain.value.get("metadata").is_none());

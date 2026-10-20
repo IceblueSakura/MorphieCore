@@ -505,7 +505,9 @@ fn stream_maps_thoughts_text_calls_and_owned_signatures() {
             .is_err()
     );
     let mut messages =
-        morphiecore::protocol::anthropic::client_events::ClientEventEncoder::new("r", "m");
+        morphiecore::protocol::anthropic::messages::client_events::ClientEventEncoder::new(
+            "r", "m",
+        );
     messages.encode(&StreamEvent::Started).unwrap();
     assert!(
         messages
@@ -1153,7 +1155,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
             .is_err()
     );
     assert!(
-        morphiecore::protocol::anthropic::Profile::AdaptiveTextTools
+        morphiecore::protocol::anthropic::messages::Profile::AdaptiveTextTools
             .encode_generation_request(&cached.task.semantic, &cached.task.fidelity, &target())
             .is_err()
     );
@@ -1228,7 +1230,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
             .is_err()
     );
     assert!(
-        morphiecore::protocol::anthropic::Profile::AdaptiveTextTools
+        morphiecore::protocol::anthropic::messages::Profile::AdaptiveTextTools
             .encode_generation_request(&policy.task.semantic, &policy.task.fidelity, &target())
             .is_err()
     );
@@ -1400,8 +1402,10 @@ fn image_sizes_remain_strict() {
         let raw = json!({"model":"gemini","max_tokens":8,"messages":[{"role":"user","content":[
             {"type":"image","source":{"type":"base64","media_type":"image/png","data":"AQID"},
                 "transformations":{"oversized_image":oversized}}]}]});
-        morphiecore::protocol::anthropic::client::decode_client_request(raw.to_string().as_bytes())
-            .unwrap()
+        morphiecore::protocol::anthropic::messages::client::decode_client_request(
+            raw.to_string().as_bytes(),
+        )
+        .unwrap()
     };
     for (request, ok) in [(messages("downsize"), true), (messages("error"), false)] {
         let result = encode_generation_request(

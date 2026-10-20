@@ -3,7 +3,7 @@ use crate::events_support::{
 };
 use morphiecore::{
     protocol::{
-        anthropic::{client::encode_client_response, client_events::ClientEventEncoder},
+        anthropic::messages::{client::encode_client_response, client_events::ClientEventEncoder},
         fidelity::FidelityRecords,
         openai::{
             Profile, TargetCaps,

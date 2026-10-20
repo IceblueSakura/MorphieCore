@@ -3,7 +3,7 @@ use morphiecore::{
     adapter::UpstreamAdapter,
     execution::Attempt,
     protocol::{
-        anthropic::{MessageSseDecoder, Profile},
+        anthropic::messages::{MessageSseDecoder, Profile},
         native::ReplayTarget,
         stream::{SseError, SseLimits},
     },
@@ -416,7 +416,7 @@ fn known_upstream_fields_stay_strict() {
 
 #[test]
 fn incremental_native_events_reduce_to_the_independent_static_semantics() {
-    use morphiecore::protocol::anthropic::GenerationSseDecoder;
+    use morphiecore::protocol::anthropic::messages::GenerationSseDecoder;
     use morphiecore::semantic::task::generation::{StreamState, materialize, reduce};
     let target = ReplayTarget::new("synthetic-provider", "synthetic-model").unwrap();
     for variant in 0..4 {
@@ -684,7 +684,9 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
 
 #[test]
 fn input_transformations_are_validated_then_omitted_with_a_receipt() {
-    use morphiecore::protocol::{anthropic::GenerationSseDecoder, fidelity::Normalization};
+    use morphiecore::protocol::{
+        anthropic::messages::GenerationSseDecoder, fidelity::Normalization,
+    };
     let target = ReplayTarget::new("synthetic-provider", "synthetic-model").unwrap();
     let omitted = Normalization::Omitted {
         rule: "messages.omit-input-transformations.v1",
@@ -757,7 +759,9 @@ fn eager_partial_arguments_keep_exact_bytes_only_on_incomplete_native_sse() {
     use morphiecore::{
         adapter::ClientAdapter,
         execution::ResponseDelivery,
-        protocol::{anthropic::client::encode_client_response, openai::stream::Obfuscation},
+        protocol::{
+            anthropic::messages::client::encode_client_response, openai::stream::Obfuscation,
+        },
         semantic::{context::StreamOptions, task::generation::*},
     };
     for signed in [false, true] {
@@ -852,7 +856,7 @@ fn eager_partial_arguments_keep_exact_bytes_only_on_incomplete_native_sse() {
             {"role":"assistant","content":[{"type":"tool_use","id":"c","name":"lookup","input":"{\"key\":\"unfinis"}]},
             {"role":"user","content":[{"type":"tool_result","tool_use_id":"c","content":"error"}]}]});
         assert!(
-            morphiecore::protocol::anthropic::client::decode_client_request(
+            morphiecore::protocol::anthropic::messages::client::decode_client_request(
                 history.to_string().as_bytes()
             )
             .is_err()
@@ -896,7 +900,7 @@ fn eager_partial_input_cannot_relax_duplicates_limits_or_honest_eof() {
 }
 #[test]
 fn typed_native_partial_values_reject_every_json_or_opening_carrier_without_panicking() {
-    use morphiecore::protocol::anthropic::{
+    use morphiecore::protocol::anthropic::messages::{
         Block, CacheMarked, Event, InputMessage, MessageContent, Role,
     };
     use morphiecore::semantic::value::Presence;
@@ -919,7 +923,8 @@ fn typed_native_partial_values_reject_every_json_or_opening_carrier_without_pani
         .decode_response(expected().to_string().as_bytes())
         .unwrap();
     message.content = vec![partial.clone()];
-    message.stop_reason = Presence::Value(morphiecore::protocol::anthropic::StopReason::MaxTokens);
+    message.stop_reason =
+        Presence::Value(morphiecore::protocol::anthropic::messages::StopReason::MaxTokens);
     assert!(profile.encode_response(&message).is_err());
     assert!(profile.encode_event(&Event::MessageStart(message)).is_err());
     let mut request=profile.decode_request(br#"{"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":"go"}]}"#).unwrap();

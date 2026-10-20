@@ -1,7 +1,7 @@
 //! Independent native image/document oracles; inert sources, no fetch or file API.
 #[test]
 fn native_image_count_includes_tool_result_images() {
-    use morphiecore::protocol::anthropic::Profile;
+    use morphiecore::protocol::anthropic::messages::Profile;
     use serde_json::json;
     let image = json!({"type":"image","source":{
             "type":"base64","media_type":"image/png","data":"AQID"}});
@@ -23,7 +23,9 @@ fn native_image_count_includes_tool_result_images() {
 
 #[test]
 fn native_image_size_counts_encoded_base64_bytes() {
-    use morphiecore::protocol::anthropic::{Block, Media, MessageContent, Profile, Source};
+    use morphiecore::protocol::anthropic::messages::{
+        Block, Media, MessageContent, Profile, Source,
+    };
     use serde_json::json;
     let profile = Profile::AdaptiveTextTools;
     let mut request = profile
@@ -60,7 +62,7 @@ fn native_image_size_counts_encoded_base64_bytes() {
     assert!(profile.encode_request(&request).is_err());
 }
 use morphiecore::{
-    protocol::{anthropic::Profile, native::ReplayTarget},
+    protocol::{anthropic::messages::Profile, native::ReplayTarget},
     semantic::task::generation::*,
     topology::catalog,
 };
@@ -175,7 +177,7 @@ fn unrepresentable_sources_and_uncalibrated_options_fail_without_losing_filename
         let raw =
             json!({"model":"m","max_tokens":8,"messages":[{"role":"user","content":[block]}]});
         assert!(
-            morphiecore::protocol::anthropic::client::decode_client_request(
+            morphiecore::protocol::anthropic::messages::client::decode_client_request(
                 &serde_json::to_vec(&raw).unwrap()
             )
             .is_err()
@@ -184,7 +186,7 @@ fn unrepresentable_sources_and_uncalibrated_options_fail_without_losing_filename
     let uncited = json!({"model":"m","max_tokens":8,"messages":[{"role":"user","content":[
             {"type":"text","text":"x","citations":null}]}]});
     assert!(
-        morphiecore::protocol::anthropic::client::decode_client_request(
+        morphiecore::protocol::anthropic::messages::client::decode_client_request(
             &serde_json::to_vec(&uncited).unwrap()
         )
         .is_ok()
@@ -250,9 +252,9 @@ fn unrepresentable_sources_and_uncalibrated_options_fail_without_losing_filename
     let later = ordered(json!([{"role":"user","content":"go"},
             {"role":"developer","content":"Be brief."}]));
     let mut closed = endpoint.clone();
-    closed.representation = morphiecore::protocol::anthropic::TargetCaps::new(
+    closed.representation = morphiecore::protocol::anthropic::messages::TargetCaps::new(
         Profile::AdaptiveTextTools,
-        morphiecore::protocol::anthropic::Dialect::OpenCodeGo,
+        morphiecore::protocol::anthropic::messages::Dialect::OpenCodeGo,
     )
     .into();
     assert!(closed.encode_request_with_rules(&later).is_err());
@@ -291,10 +293,11 @@ fn unrepresentable_sources_and_uncalibrated_options_fail_without_losing_filename
         let raw = json!({"model":"m","max_tokens":8,"messages":[{"role":"user","content":[
                 {"type":"image","source":{"type":"url","url":"https://example.invalid/a.png"},
                     "transformations":{"oversized_image":oversized}}]}]});
-        let mut request = morphiecore::protocol::anthropic::client::decode_client_request(
-            &serde_json::to_vec(&raw).unwrap(),
-        )
-        .unwrap();
+        let mut request =
+            morphiecore::protocol::anthropic::messages::client::decode_client_request(
+                &serde_json::to_vec(&raw).unwrap(),
+            )
+            .unwrap();
         request.conversation = Some(
             morphiecore::semantic::context::ConversationContext::conversation("synthetic").unwrap(),
         );

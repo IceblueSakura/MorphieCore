@@ -1,5 +1,5 @@
 //! Untrusted client Messages: registered fields, protected controls and IR admission.
-use crate::protocol::anthropic::{
+use crate::protocol::anthropic::messages::{
     self as wire, Block, OutputConfig, Role, Selection, TextContent as WireText, Tool,
     ToolChoice as WireChoice,
     semantic_intake::{Intake, text},

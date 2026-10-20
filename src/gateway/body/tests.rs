@@ -112,9 +112,9 @@ async fn observed_response(
     let mut endpoint = template.endpoint.clone();
     if stream {
         endpoint.protocol = crate::topology::ProtocolProfile::AnthropicMessages;
-        endpoint.representation = crate::protocol::anthropic::TargetCaps::new(
-            crate::protocol::anthropic::Profile::AdaptiveTextTools,
-            crate::protocol::anthropic::Dialect::Standard,
+        endpoint.representation = crate::protocol::anthropic::messages::TargetCaps::new(
+            crate::protocol::anthropic::messages::Profile::AdaptiveTextTools,
+            crate::protocol::anthropic::messages::Dialect::Standard,
         )
         .into();
     } else {

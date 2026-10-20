@@ -18,7 +18,7 @@ pub enum UpstreamAdapter {
     OpenAi(Box<Adapter>),
     /// Native intake labels opaque values with the trusted Provider/model binding.
     AnthropicMessages {
-        profile: anthropic::Profile,
+        profile: anthropic::messages::Profile,
         target: crate::protocol::native::ReplayTarget,
     },
     GoogleGenerateContent {
@@ -89,7 +89,7 @@ impl UpstreamAdapter {
                 }
             },
             Self::AnthropicMessages { profile, target } => GenerationDecoder::Messages {
-                decoder: anthropic::GenerationSseDecoder::new(
+                decoder: anthropic::messages::GenerationSseDecoder::new(
                     status,
                     content_type,
                     native_limits,
@@ -99,15 +99,15 @@ impl UpstreamAdapter {
                 profile: *profile,
                 target: target.clone(),
             },
-            Self::GoogleGenerateContent { target } => {
-                GenerationDecoder::Google(crate::protocol::google::generate_content::GenerationSseDecoder::new(
+            Self::GoogleGenerateContent { target } => GenerationDecoder::Google(
+                crate::protocol::google::generate_content::GenerationSseDecoder::new(
                     status,
                     content_type,
                     native_limits,
                     NATIVE_SCOPE,
                     target.clone(),
-                )?)
-            }
+                )?,
+            ),
             Self::GoogleInteractions { target } => GenerationDecoder::Interactions(
                 crate::protocol::google::interactions::GenerationSseDecoder::new(
                     status,
@@ -126,8 +126,8 @@ pub(crate) enum GenerationDecoder {
     Responses(ResponsesSseDecoder),
     Chat(ChatSseDecoder),
     Messages {
-        decoder: anthropic::GenerationSseDecoder,
-        profile: anthropic::Profile,
+        decoder: anthropic::messages::GenerationSseDecoder,
+        profile: anthropic::messages::Profile,
         target: crate::protocol::native::ReplayTarget,
     },
     Google(crate::protocol::google::generate_content::GenerationSseDecoder),

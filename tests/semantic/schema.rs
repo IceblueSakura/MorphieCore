@@ -3,7 +3,7 @@
 mod schema_admission {
     use morphiecore::{
         protocol::{
-            anthropic::client::decode_client_request as decode_messages,
+            anthropic::messages::client::decode_client_request as decode_messages,
             openai::{
                 Adapter, Dialect, Profile, TargetCaps,
                 lowering::lower_request,

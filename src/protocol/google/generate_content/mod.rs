@@ -25,7 +25,6 @@ use crate::{
 };
 use serde_json::Value;
 
-
 /// Default binding admission, kept separate from codec carrier availability.
 pub fn semantic_contract() -> GenerationSemanticContract {
     GenerationSemanticContract {

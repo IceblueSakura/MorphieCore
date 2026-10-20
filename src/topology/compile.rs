@@ -314,7 +314,8 @@ fn compile_deployments(
             let native = match endpoint.protocol {
                 super::ProtocolProfile::AnthropicMessages => {
                     let mut ceiling =
-                        crate::protocol::anthropic::Profile::AdaptiveTextTools.semantic_contract();
+                        crate::protocol::anthropic::messages::Profile::AdaptiveTextTools
+                            .semantic_contract();
                     // Reviewed binding opt-ins only; other codec-only features stay closed.
                     ceiling.explicit_cache = true;
                     ceiling.strict_tools = true;

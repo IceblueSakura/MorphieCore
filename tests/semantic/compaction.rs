@@ -3,7 +3,7 @@ use crate::events_support::*;
 use morphiecore::{
     execution::replay::{CLIENT_ORIGIN, open_from_client, seal_event, seal_for_client},
     protocol::{
-        anthropic::{client::encode_client_response, client_events::ClientEventEncoder},
+        anthropic::messages::{client::encode_client_response, client_events::ClientEventEncoder},
         fidelity::FidelityRecords,
         openai::{
             Adapter, Dialect, Profile, TargetCaps,
@@ -269,7 +269,7 @@ fn compaction_replay_rejects_incompatible_or_unbound_context_without_stripping()
     );
     assert_eq!(request, saved);
     for caps in [
-        morphiecore::protocol::anthropic::Profile::AdaptiveTextTools.semantic_contract(),
+        morphiecore::protocol::anthropic::messages::Profile::AdaptiveTextTools.semantic_contract(),
         morphiecore::protocol::google::generate_content::semantic_contract(),
         morphiecore::protocol::google::interactions::semantic_contract(),
     ] {

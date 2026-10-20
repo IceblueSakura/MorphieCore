@@ -243,7 +243,7 @@ mod tests {
     const BODY: &[u8] = br#"{"id":"native","type":"message","role":"assistant","model":"model","content":[{"type":"thinking","thinking":"plan","signature":"synthetic-signature"},{"type":"tool_use","id":"c","name":"lookup","input":{"n":9007199254740993.125}}],"stop_reason":"tool_use","usage":{"input_tokens":11,"cache_read_input_tokens":3,"cache_creation_input_tokens":2,"output_tokens":7}}"#;
 
     fn fixture() -> DecodedResponse {
-        let profile = anthropic::Profile::AdaptiveTextTools;
+        let profile = anthropic::messages::Profile::AdaptiveTextTools;
         let target = crate::protocol::native::ReplayTarget::new("provider", "model").unwrap();
         profile
             .decode_generation_response(BODY, LocalScope::new(3), &target)
@@ -378,7 +378,7 @@ mod tests {
                 crate::adapter::ClientAdapter::openai(adapter.clone(), contract.clone());
             let mut attempt = crate::execution::Attempt::new(
                 crate::adapter::UpstreamAdapter::AnthropicMessages {
-                    profile: anthropic::Profile::AdaptiveTextTools,
+                    profile: anthropic::messages::Profile::AdaptiveTextTools,
                     target: crate::protocol::native::ReplayTarget::new("provider", "model")
                         .unwrap(),
                 },

@@ -163,7 +163,7 @@ fn scoped_session_and_standard_cache_key_remain_independent_on_both_wires() {
         .unwrap();
     assert_eq!(wire["safety_identifier"], "synthetic-user");
     assert!(!rules.contains(&"generation.omit-identity-hints.v1"));
-    use morphiecore::protocol::anthropic::{
+    use morphiecore::protocol::anthropic::messages::{
         Dialect as MessagesDialect, Profile as MessagesProfile, RequestRule, TargetCaps,
     };
     let text_only = client(Profile::Chat)

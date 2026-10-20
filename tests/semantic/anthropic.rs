@@ -14,7 +14,7 @@ mod native_controls;
 #[test]
 fn native_identity_projects_to_openai_safety_not_legacy_cache_bucketing() {
     use morphiecore::protocol::{
-        anthropic::client::decode_client_request,
+        anthropic::messages::client::decode_client_request,
         openai::{Adapter, Dialect, Profile, TargetCaps},
     };
     use serde_json::{Value, json};

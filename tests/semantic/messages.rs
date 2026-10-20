@@ -339,7 +339,8 @@ mod phase {
     #[test]
     fn foreign_requests_omit_phase_without_editing_responses_history() {
         use morphiecore::protocol::{
-            anthropic, google::{generate_content as google, interactions},
+            anthropic,
+            google::{generate_content as google, interactions},
             native::ReplayTarget,
             openai::{Adapter, Dialect, TargetCaps},
         };
@@ -375,16 +376,16 @@ mod phase {
             1
         );
         let target = ReplayTarget::new("fixture", "target").unwrap();
-        let messages = anthropic::TargetCaps::new(
-            anthropic::Profile::AdaptiveTextTools,
-            anthropic::Dialect::Standard,
+        let messages = anthropic::messages::TargetCaps::new(
+            anthropic::messages::Profile::AdaptiveTextTools,
+            anthropic::messages::Dialect::Standard,
         )
         .encode_request(&request, &target)
         .unwrap();
         assert!(
             messages
                 .rules
-                .contains(&anthropic::RequestRule::OmitMessagePhase)
+                .contains(&anthropic::messages::RequestRule::OmitMessagePhase)
         );
         assert_eq!(
             messages.value["messages"][1]["content"],

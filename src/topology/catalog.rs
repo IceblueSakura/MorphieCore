@@ -289,9 +289,9 @@ fn declared_topology_compiles() {
     }
     let binding = &MESSAGES_BINDINGS[0];
     assert!(
-        !crate::protocol::anthropic::TargetCaps::new(
-            crate::protocol::anthropic::Profile::AdaptiveTextTools,
-            crate::protocol::anthropic::Dialect::OpenCodeGo
+        !crate::protocol::anthropic::messages::TargetCaps::new(
+            crate::protocol::anthropic::messages::Profile::AdaptiveTextTools,
+            crate::protocol::anthropic::messages::Dialect::OpenCodeGo
         )
         .semantics
         .explicit_cache

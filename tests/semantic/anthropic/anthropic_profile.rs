@@ -1,5 +1,5 @@
 //! Independent native wire shapes; no registry, credentials or semantic round-trip oracle.
-use morphiecore::protocol::{CodecError, anthropic::Profile};
+use morphiecore::protocol::{CodecError, anthropic::messages::Profile};
 use serde_json::{Value, json};
 
 fn request() -> Value {
@@ -135,7 +135,7 @@ fn audit_consecutive_messages_share_tool_turn_validation_without_reordering() {
 }
 #[test]
 fn audit_protected_client_controls_are_not_discarded() {
-    use morphiecore::protocol::anthropic::client::decode_client_request;
+    use morphiecore::protocol::anthropic::messages::client::decode_client_request;
     let base = json!({"model":"m","max_tokens":8,"messages":[{"role":"user","content":"go"}]});
     assert!(decode_client_request(base.to_string().as_bytes()).is_ok());
     for (key, value) in [
@@ -414,7 +414,7 @@ fn individual_native_event_shapes_do_not_claim_cross_event_closure() {
 #[test]
 fn native_typed_edits_cannot_escape_local_resource_limits() {
     use morphiecore::{
-        protocol::anthropic::Block,
+        protocol::anthropic::messages::Block,
         semantic::{task::generation::StructuredValue, value::Presence},
     };
     let p = Profile::AdaptiveTextTools;
@@ -424,7 +424,7 @@ fn native_typed_edits_cannot_escape_local_resource_limits() {
     assert!(matches!(p.encode_request(&req), Err(CodecError::Limit)));
     let mut req = p.decode_request(request().to_string().as_bytes()).unwrap();
     req.system = morphiecore::semantic::value::Presence::Value(
-        morphiecore::protocol::anthropic::TextContent::Text(
+        morphiecore::protocol::anthropic::messages::TextContent::Text(
             "x".repeat(morphiecore::semantic::task::generation::MAX_TEXT_BYTES + 1),
         ),
     );

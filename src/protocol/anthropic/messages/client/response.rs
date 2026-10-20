@@ -1,10 +1,10 @@
 //! Client Messages delivery projection, named losses and JSON rendering.
-use crate::protocol::{CodecError, DecodedResponse, anthropic as wire, replay_envelope};
+use crate::protocol::{CodecError, DecodedResponse, anthropic::messages as wire, replay_envelope};
 use crate::semantic::{task::generation::*, value::Presence};
 use serde_json::{Map, Value, json};
 
 /// Client values are sealed envelopes; the format tag keeps a redacted block's type.
-pub(in crate::protocol::anthropic) fn redacted(sealed: &str) -> bool {
+pub(crate) fn redacted(sealed: &str) -> bool {
     matches!(
         replay_envelope::open(sealed),
         Some((_, ReplayFormat::AnthropicMessagesRedactedThinking, _))

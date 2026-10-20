@@ -40,7 +40,7 @@ fn zhipu_effort_lands_on_its_three_levels_by_a_named_rule() {
 /// under a named rule; explicit block-binding enforcement rejects.
 #[test]
 fn messages_only_controls_leave_chat_targets_by_named_rules() {
-    use morphiecore::protocol::{CodecError, anthropic::client::decode_client_request};
+    use morphiecore::protocol::{CodecError, anthropic::messages::client::decode_client_request};
     use morphiecore::topology::{ProtocolProfile, catalog::API_KEY_BINDINGS};
     let endpoint = API_KEY_BINDINGS
         .iter()

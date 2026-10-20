@@ -3,7 +3,7 @@
 use morphiecore::{
     adapter::Request,
     protocol::{
-        anthropic::client::decode_client_request,
+        anthropic::messages::client::decode_client_request,
         openai::{Adapter, Dialect, Profile, TargetCaps},
     },
     semantic::{context::ConversationContext, task::generation::*},
@@ -92,9 +92,9 @@ fn messages_format_is_an_unnamed_strict_schema_with_native_and_openai_carriers()
         protocol::{anthropic, native::ReplayTarget},
         semantic::value::Presence,
     };
-    let caps = anthropic::TargetCaps::new(
-        anthropic::Profile::AdaptiveTextTools,
-        anthropic::Dialect::Standard,
+    let caps = anthropic::messages::TargetCaps::new(
+        anthropic::messages::Profile::AdaptiveTextTools,
+        anthropic::messages::Dialect::Standard,
     );
     assert!(!caps.semantics.verbosity);
     assert!(GenerationRequirements::derive(&source.task.semantic).verbosity);

@@ -76,9 +76,11 @@ pub(crate) fn responses_marker(fields: &serde_json::Map<String, Value>) -> Optio
         Carried::Unusable
     })
 }
-pub(crate) fn messages_marker(block: &crate::protocol::anthropic::Block) -> Option<Carried> {
+pub(crate) fn messages_marker(
+    block: &crate::protocol::anthropic::messages::Block,
+) -> Option<Carried> {
     match block {
-        crate::protocol::anthropic::Block::Thinking {
+        crate::protocol::anthropic::messages::Block::Thinking {
             thinking,
             signature,
         } if is_marker(signature) => Some(if thinking.is_empty() {
@@ -86,7 +88,7 @@ pub(crate) fn messages_marker(block: &crate::protocol::anthropic::Block) -> Opti
         } else {
             Carried::Unusable
         }),
-        crate::protocol::anthropic::Block::RedactedThinking(data) if is_marker(data) => {
+        crate::protocol::anthropic::messages::Block::RedactedThinking(data) if is_marker(data) => {
             Some(Carried::Unusable)
         }
         _ => None,

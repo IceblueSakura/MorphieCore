@@ -12,7 +12,10 @@ use morphiecore::{
     adapter::{ClientAdapter, UpstreamAdapter},
     execution::{Attempt, ResponseDelivery},
     protocol::{
-        anthropic::{self, Dialect, Profile, TargetCaps},
+        anthropic::{
+            self,
+            messages::{Dialect, Profile, TargetCaps},
+        },
         native::ReplayTarget,
         openai::stream::Obfuscation,
         stream::SseLimits,
@@ -37,7 +40,8 @@ async fn handle(
             .body(Body::empty())
             .unwrap();
     }
-    let request = anthropic::client::decode_client_request(&body).expect("synthetic SDK request");
+    let request =
+        anthropic::messages::client::decode_client_request(&body).expect("synthetic SDK request");
     assert_eq!(
         request.context.identity.user,
         morphiecore::semantic::value::Presence::Value("sdk-user".into())
@@ -66,7 +70,8 @@ async fn handle(
         let decoded = Profile::AdaptiveTextTools
             .decode_generation_response(wire.to_string().as_bytes(), LocalScope::new(2), &target)
             .unwrap();
-        let output = anthropic::client::encode_client_response(&decoded, "fixture-model").unwrap();
+        let output =
+            anthropic::messages::client::encode_client_response(&decoded, "fixture-model").unwrap();
         return Response::builder()
             .header("content-type", "application/json")
             .body(Body::from(output.to_string()))

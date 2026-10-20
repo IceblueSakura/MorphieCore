@@ -395,7 +395,9 @@ impl ResponseDelivery {
             self.ready()?;
             let terminal = attempt.terminal_event()?;
             if self.is_messages() {
-                crate::protocol::anthropic::client::validate_tool_calls(attempt.response()?)?;
+                crate::protocol::anthropic::messages::client::validate_tool_calls(
+                    attempt.response()?,
+                )?;
             }
             if self
                 .encoder

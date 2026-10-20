@@ -1,6 +1,6 @@
 //! Native Messages bindings. Directory bootstrap activates one only when `models` lists it.
 use crate::{
-    protocol::anthropic::{Carriers, Dialect, Profile, TargetCaps},
+    protocol::anthropic::messages::{Carriers, Dialect, Profile, TargetCaps},
     provider::{CredentialBindingId, CredentialKind, ProviderDefinition, catalog},
     semantic::task::generation::GenerationSemanticContract,
     topology::*,
@@ -43,7 +43,7 @@ impl MessagesBinding {
         // Preserve the pinned OpenCode Messages fallback as binding policy.
         // https://github.com/anomalyco/opencode/blob/e5a557efeee02c94486d391afc48f24a49ebc9a5/packages/ai/src/protocols/anthropic-messages.ts
         representation.default_output_tokens = Some(32_000);
-        representation.sampling = crate::protocol::anthropic::SamplingPolicy::Fixed;
+        representation.sampling = crate::protocol::anthropic::messages::SamplingPolicy::Fixed;
         representation.manual_thinking = false;
         representation.automatic_cache_default =
             Some(crate::semantic::task::generation::PrefixCacheTtl::FiveMinutes);

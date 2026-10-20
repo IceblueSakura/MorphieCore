@@ -1,6 +1,6 @@
 //! Independent semantic mapping and append-only native continuation expectations.
 use morphiecore::{
-    protocol::{DecodedRequest, anthropic::Profile, native::ReplayTarget},
+    protocol::{DecodedRequest, anthropic::messages::Profile, native::ReplayTarget},
     semantic::{
         task::generation::*,
         value::{Presence, Text},
@@ -269,7 +269,8 @@ fn native_stop_reasons_have_independent_terminal_owners() {
     assert_eq!(thinking.semantic.usage().unwrap().reasoning_tokens, Some(5));
     let window = decode("model_context_window_exceeded", Value::Null).unwrap();
     let window_wire =
-        morphiecore::protocol::anthropic::client::encode_client_response(&window, "m").unwrap();
+        morphiecore::protocol::anthropic::messages::client::encode_client_response(&window, "m")
+            .unwrap();
     assert_eq!(window_wire["stop_reason"], "model_context_window_exceeded");
     // OpenAI has no context-window reason: Chat reports `length` and Responses an
     // unspecified incomplete reason, each under a named rule; neither becomes success.
@@ -353,7 +354,7 @@ fn native_stop_reasons_have_independent_terminal_owners() {
         .iter()
         .map(|v| format!("event: {}\ndata: {v}\n\n", v["type"].as_str().unwrap()))
         .collect::<String>();
-    let mut decoder = morphiecore::protocol::anthropic::GenerationSseDecoder::new(
+    let mut decoder = morphiecore::protocol::anthropic::messages::GenerationSseDecoder::new(
         200,
         "text/event-stream",
         Default::default(),
@@ -363,7 +364,9 @@ fn native_stop_reasons_have_independent_terminal_owners() {
     .unwrap();
     let mut state = StreamState::new();
     let mut client =
-        morphiecore::protocol::anthropic::client_events::ClientEventEncoder::new("r", "m");
+        morphiecore::protocol::anthropic::messages::client_events::ClientEventEncoder::new(
+            "r", "m",
+        );
     let mut output = Vec::new();
     let mut rest = bytes.as_bytes();
     while !rest.is_empty() {
@@ -382,7 +385,8 @@ fn native_stop_reasons_have_independent_terminal_owners() {
     assert!(output.contains("\"stop_reason\":\"stop_sequence\""));
     assert!(output.contains("\"stop_sequence\":\"END\""));
     let static_wire =
-        morphiecore::protocol::anthropic::client::encode_client_response(&expected, "m").unwrap();
+        morphiecore::protocol::anthropic::messages::client::encode_client_response(&expected, "m")
+            .unwrap();
     assert_eq!(static_wire["stop_sequence"], "END");
     let mut conflict = frames;
     conflict.insert(4, json!({"type":"message_delta","delta":{"stop_reason":"stop_sequence","stop_sequence":"DIFFERENT"},"usage":{"output_tokens":7}}));
@@ -390,7 +394,7 @@ fn native_stop_reasons_have_independent_terminal_owners() {
         .iter()
         .map(|v| format!("event: {}\ndata: {v}\n\n", v["type"].as_str().unwrap()))
         .collect::<String>();
-    let mut decoder = morphiecore::protocol::anthropic::MessageSseDecoder::new(
+    let mut decoder = morphiecore::protocol::anthropic::messages::MessageSseDecoder::new(
         200,
         "text/event-stream",
         Default::default(),
@@ -474,7 +478,8 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
         .decode_generation_request(content_wire, LocalScope::new(1), &target())
         .unwrap();
     let content_client =
-        morphiecore::protocol::anthropic::client::decode_client_request(content_wire).unwrap();
+        morphiecore::protocol::anthropic::messages::client::decode_client_request(content_wire)
+            .unwrap();
     assert_eq!(
         content.semantic.settings(),
         content_client.task.semantic.settings()
@@ -665,7 +670,7 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
         )
         .unwrap();
     assert!(
-        morphiecore::protocol::anthropic::client::decode_client_request(
+        morphiecore::protocol::anthropic::messages::client::decode_client_request(
             empty_wire.to_string().as_bytes()
         )
         .is_ok()
@@ -682,7 +687,10 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
             Some(error.clone())
         );
         assert_eq!(
-            morphiecore::protocol::anthropic::client::decode_client_request(bytes.as_bytes()).err(),
+            morphiecore::protocol::anthropic::messages::client::decode_client_request(
+                bytes.as_bytes()
+            )
+            .err(),
             Some(error)
         );
     };
@@ -736,7 +744,7 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
         Some(conflict_error.clone())
     );
     assert_eq!(
-        morphiecore::protocol::anthropic::client::decode_client_request(
+        morphiecore::protocol::anthropic::messages::client::decode_client_request(
             automatic_conflict.to_string().as_bytes()
         )
         .err(),
@@ -761,7 +769,8 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
                 && tool.parameters.as_ref().unwrap().root() == &json!({"type":"object"}))
     );
     let client =
-        morphiecore::protocol::anthropic::client::decode_client_request(cached_wire).unwrap();
+        morphiecore::protocol::anthropic::messages::client::decode_client_request(cached_wire)
+            .unwrap();
     assert_eq!(client.task.semantic.settings(), cached.semantic.settings());
     assert!(GenerationRequirements::derive(&client.task.semantic).explicit_cache);
     let encoded = p
@@ -835,8 +844,10 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
         .unwrap()
         .replace("\"1h\"", "\"1d\"");
     assert!(
-        morphiecore::protocol::anthropic::client::decode_client_request(invalid.as_bytes())
-            .is_err()
+        morphiecore::protocol::anthropic::messages::client::decode_client_request(
+            invalid.as_bytes()
+        )
+        .is_err()
     );
     let mut bounded: Value = serde_json::from_slice(cached_wire).unwrap();
     bounded["tools"] = json!(
@@ -877,7 +888,7 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
     bounded["tools"].as_array_mut().unwrap().truncate(2);
     bounded["tools"][0]["cache_control"]["ttl"] = json!("5m");
     assert!(
-        morphiecore::protocol::anthropic::client::decode_client_request(
+        morphiecore::protocol::anthropic::messages::client::decode_client_request(
             bounded.to_string().as_bytes()
         )
         .is_err()
@@ -949,12 +960,13 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
         .is_ok()
     );
     assert!(
-        morphiecore::protocol::anthropic::client::decode_client_request(
+        morphiecore::protocol::anthropic::messages::client::decode_client_request(
             automatic.to_string().as_bytes()
         )
         .is_ok()
     );
-    let client = morphiecore::protocol::anthropic::client::decode_client_request(raw).unwrap();
+    let client =
+        morphiecore::protocol::anthropic::messages::client::decode_client_request(raw).unwrap();
     assert_eq!(
         client.task.semantic.reasoning().activation,
         Presence::Value(ReasoningActivation::Disabled)
@@ -963,8 +975,10 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
         .unwrap()
         .replace("\"disabled\"", "7");
     assert!(
-        morphiecore::protocol::anthropic::client::decode_client_request(invalid.as_bytes())
-            .is_err()
+        morphiecore::protocol::anthropic::messages::client::decode_client_request(
+            invalid.as_bytes()
+        )
+        .is_err()
     );
     // Pure codecs require a resolved ceiling; only trusted target caps insert defaults.
     let mut settings = decoded.semantic.settings().clone();
@@ -978,7 +992,7 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
         let mut invalid: Value = serde_json::from_slice(raw).unwrap();
         invalid["max_tokens"] = max_tokens;
         assert!(
-            morphiecore::protocol::anthropic::client::decode_client_request(
+            morphiecore::protocol::anthropic::messages::client::decode_client_request(
                 invalid.to_string().as_bytes()
             )
             .is_err()
@@ -987,7 +1001,7 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
     let mut missing: Value = serde_json::from_slice(raw).unwrap();
     missing.as_object_mut().unwrap().remove("max_tokens");
     assert!(
-        morphiecore::protocol::anthropic::client::decode_client_request(
+        morphiecore::protocol::anthropic::messages::client::decode_client_request(
             missing.to_string().as_bytes()
         )
         .is_err()

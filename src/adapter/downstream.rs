@@ -100,7 +100,9 @@ impl ClientAdapter {
     pub fn decode_client_request(&self, bytes: &[u8]) -> Result<Request, CodecError> {
         match self {
             Self::OpenAi { adapter, .. } => adapter.decode_client_request(bytes),
-            Self::Messages => crate::protocol::anthropic::client::decode_client_request(bytes),
+            Self::Messages => {
+                crate::protocol::anthropic::messages::client::decode_client_request(bytes)
+            }
         }
     }
     pub(crate) fn project_native(
@@ -208,18 +210,20 @@ impl ClientAdapter {
         }
         let value = match self {
             Self::Messages => {
-                losses.extend(crate::protocol::anthropic::client::metadata_losses(
-                    &decoded.metadata,
-                ));
-                losses.extend(crate::protocol::anthropic::client::content_losses(
-                    &decoded.semantic,
-                ));
+                losses.extend(
+                    crate::protocol::anthropic::messages::client::metadata_losses(
+                        &decoded.metadata,
+                    ),
+                );
+                losses.extend(
+                    crate::protocol::anthropic::messages::client::content_losses(&decoded.semantic),
+                );
                 let usage = decoded.semantic.usage();
-                crate::protocol::anthropic::client::project_snapshot(&mut decoded)?;
+                crate::protocol::anthropic::messages::client::project_snapshot(&mut decoded)?;
                 if usage != decoded.semantic.usage() {
-                    losses.push(crate::protocol::anthropic::client::usage_loss());
+                    losses.push(crate::protocol::anthropic::messages::client::usage_loss());
                 }
-                crate::protocol::anthropic::client::encode_client_response_with(
+                crate::protocol::anthropic::messages::client::encode_client_response_with(
                     &decoded,
                     &decoded.metadata.model,
                     attachment.as_ref(),
@@ -303,7 +307,7 @@ impl ClientAdapter {
         let encoder = match self {
             Self::Messages => {
                 let mut encoder =
-                    crate::protocol::anthropic::client_events::ClientEventEncoder::new(
+                    crate::protocol::anthropic::messages::client_events::ClientEventEncoder::new(
                         metadata.required_id()?,
                         &metadata.model,
                     )
@@ -410,7 +414,7 @@ fn safety_assessment_loss(direction: &'static str) -> LossEvidence {
 enum Encoder {
     Responses(ResponsesSseEncoder),
     Chat(ChatSseEncoder),
-    Messages(crate::protocol::anthropic::client_events::ClientEventEncoder),
+    Messages(crate::protocol::anthropic::messages::client_events::ClientEventEncoder),
 }
 pub(crate) struct ClientEncoder {
     losses: Vec<crate::lowering::generation::LossEvidence>,
@@ -507,7 +511,9 @@ impl ClientEncoder {
                     .into());
                 }
                 e.update_service_class(metadata.context.service_class().clone())?;
-                for mut loss in crate::protocol::anthropic::client::metadata_losses(&metadata) {
+                for mut loss in
+                    crate::protocol::anthropic::messages::client::metadata_losses(&metadata)
+                {
                     loss.direction = "event.encode";
                     if !self.losses.contains(&loss) {
                         self.losses.push(loss);

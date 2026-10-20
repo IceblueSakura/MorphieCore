@@ -125,9 +125,9 @@ fn another_target_gets_visible_history_without_foreign_thinking() {
     assert_eq!(rules, ["responses.transfer-visible-history.v1"]);
     assert_eq!(request, before);
     let target = morphiecore::protocol::native::ReplayTarget::new("other", "model-b").unwrap();
-    let native = morphiecore::protocol::anthropic::TargetCaps::new(
-        morphiecore::protocol::anthropic::Profile::AdaptiveTextTools,
-        morphiecore::protocol::anthropic::Dialect::Standard,
+    let native = morphiecore::protocol::anthropic::messages::TargetCaps::new(
+        morphiecore::protocol::anthropic::messages::Profile::AdaptiveTextTools,
+        morphiecore::protocol::anthropic::messages::Dialect::Standard,
     );
     native.encode_request(&request, &target).unwrap();
     let mut partial = body;

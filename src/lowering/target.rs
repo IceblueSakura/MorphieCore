@@ -2,9 +2,7 @@
 use crate::protocol::openai::TargetCaps as OpenAiCaps;
 use crate::{
     protocol::{
-        anthropic,
-        cache::CacheProjection,
-        google::generate_content as google_generate_content,
+        anthropic, cache::CacheProjection, google::generate_content as google_generate_content,
         google::interactions as google_interactions,
     },
     semantic::task::generation::GenerationSemanticContract,
@@ -13,7 +11,7 @@ use crate::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TargetCaps {
     OpenAi(Box<OpenAiCaps>),
-    AnthropicMessages(Box<anthropic::TargetCaps>),
+    AnthropicMessages(Box<anthropic::messages::TargetCaps>),
     GoogleGenerateContent(Box<google_generate_content::TargetCaps>),
     GoogleInteractions(Box<google_interactions::TargetCaps>),
 }
@@ -22,8 +20,8 @@ impl From<OpenAiCaps> for TargetCaps {
         Self::OpenAi(Box::new(value))
     }
 }
-impl From<anthropic::TargetCaps> for TargetCaps {
-    fn from(value: anthropic::TargetCaps) -> Self {
+impl From<anthropic::messages::TargetCaps> for TargetCaps {
+    fn from(value: anthropic::messages::TargetCaps) -> Self {
         Self::AnthropicMessages(Box::new(value))
     }
 }
@@ -66,13 +64,13 @@ impl TargetCaps {
             _ => None,
         }
     }
-    pub fn messages(&self) -> Option<&anthropic::TargetCaps> {
+    pub fn messages(&self) -> Option<&anthropic::messages::TargetCaps> {
         match self {
             Self::AnthropicMessages(c) => Some(c),
             _ => None,
         }
     }
-    pub fn messages_mut(&mut self) -> Option<&mut anthropic::TargetCaps> {
+    pub fn messages_mut(&mut self) -> Option<&mut anthropic::messages::TargetCaps> {
         match self {
             Self::AnthropicMessages(c) => Some(c),
             _ => None,
