@@ -4,7 +4,6 @@ use crate::{
     protocol::CodecError,
     semantic::{context::ServiceClass, task::generation::*, value::Presence},
 };
-use serde_json::{Value, json};
 
 pub(super) fn counts(wire: &super::Usage) -> Usage {
     let mut counts = Usage::operation(0, wire.output_tokens, 0);
@@ -79,9 +78,8 @@ fn tools(report: &UsageReport) -> Option<ServerToolUsage> {
 
 /// Messages usage: input excludes cache reads and reported cache writes.
 /// An unreported write category stays absent; the remaining input keeps any such writes.
-fn scalar_json(u: Option<&Usage>) -> Result<Value, CodecError> {
+fn project_usage(u: Usage) -> Result<Usage, CodecError> {
     let unsupported = || CodecError::Unsupported("Messages usage".into());
-    let u = u.ok_or_else(unsupported)?;
     u.validate()?;
     let input = u.input_tokens.ok_or_else(unsupported)?;
     let input = match u.input_relation {
@@ -106,45 +104,13 @@ fn scalar_json(u: Option<&Usage>) -> Result<Value, CodecError> {
             .ok_or_else(unsupported)?,
         OutputTokenRelation::Unreported => return Err(unsupported()),
     };
-    let mut v = json!({"input_tokens":input,"output_tokens":output});
-    if let Some(read) = u.cached_input_tokens {
-        v["cache_read_input_tokens"] = json!(read);
-    }
-    if let Some(write) = u.input_cache_write_tokens {
-        v["cache_creation_input_tokens"] = json!(write);
-    }
-    if let Some(thinking) = u.reasoning_tokens {
-        v["output_tokens_details"] = json!({ "thinking_tokens": thinking });
-    }
-    Ok(v)
-}
-fn project_usage(source: Usage) -> Result<Usage, CodecError> {
-    let wire = scalar_json(Some(&source))?;
-    let count = |key: &str| -> Result<u64, CodecError> {
-        wire[key]
-            .as_u64()
-            .ok_or(CodecError::Invalid("Messages projected usage"))
-    };
-    let selected = counts(&super::Usage {
-        service_class: Presence::Absent,
-        cache_creation: Presence::Absent,
-        server_tool_use: Presence::Absent,
-        input_tokens: Presence::Value(count("input_tokens")?),
-        output_tokens: count("output_tokens")?,
-        cache_read_input_tokens: wire
-            .get("cache_read_input_tokens")
-            .map(|_| count("cache_read_input_tokens"))
-            .transpose()?
-            .map_or(Presence::Absent, Presence::Value),
-        cache_creation_input_tokens: wire
-            .get("cache_creation_input_tokens")
-            .map(|_| count("cache_creation_input_tokens"))
-            .transpose()?
-            .map_or(Presence::Absent, Presence::Value),
-        thinking_tokens: source
-            .reasoning_tokens
-            .map_or(Presence::Absent, Presence::Value),
-    });
+    let mut selected = Usage::operation(input, output, 0);
+    selected.total_tokens = None;
+    selected.total_relation = TotalTokenRelation::Unreported;
+    selected.input_relation = InputTokenRelation::ExcludesCacheReadAndWrite;
+    selected.cached_input_tokens = u.cached_input_tokens;
+    selected.input_cache_write_tokens = u.input_cache_write_tokens;
+    selected.reasoning_tokens = u.reasoning_tokens;
     Ok(selected)
 }
 
@@ -235,6 +201,43 @@ pub(super) fn json(reports: &UsageReports) -> Result<serde_json::Value, CodecErr
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn scalar_projection_preserves_missing_counts_and_checks_accounting_premises() {
+        let mut source = Usage::operation(20, 5, 25);
+        source.cached_input_tokens = Some(3);
+        let selected = project_usage(source).unwrap();
+        assert_eq!(selected.input_tokens, Some(17));
+        assert_eq!(selected.output_tokens, Some(5));
+        assert_eq!(selected.input_cache_write_tokens, None);
+        assert_eq!(selected.total_tokens, None);
+        assert_eq!(
+            selected.input_relation,
+            InputTokenRelation::ExcludesCacheReadAndWrite
+        );
+        source.input_cache_write_tokens = Some(4);
+        source.validate().unwrap();
+        assert!(matches!(
+            project_usage(source),
+            Err(CodecError::Unsupported(_))
+        ));
+        source.cached_input_tokens = Some(0);
+        assert_eq!(project_usage(source).unwrap().input_tokens, Some(16));
+        source.input_relation = InputTokenRelation::ExcludesCacheReadAndWrite;
+        source.output_relation = OutputTokenRelation::ExcludesReasoning;
+        source.total_relation = TotalTokenRelation::Unreported;
+        source.total_tokens = None;
+        source.reasoning_tokens = Some(2);
+        assert_eq!(project_usage(source).unwrap().output_tokens, Some(7));
+        for output in [None, Some(u64::MAX)] {
+            source.output_tokens = output;
+            source.validate().unwrap();
+            assert!(matches!(
+                project_usage(source),
+                Err(CodecError::Unsupported(_))
+            ));
+        }
+    }
 
     fn expected() -> UsageReport {
         let mut counts = Usage::operation(11, 7, 0);
