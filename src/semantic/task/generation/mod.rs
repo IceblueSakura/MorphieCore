@@ -20,7 +20,8 @@ pub use content::audio::{
     OutputModality,
 };
 pub use content::citation::{
-    Annotation, Citation, CitationKind, ClaimAnchor, SourceCoordinates, TextRange, TextUnit,
+    Annotation, Citation, CitationKind, ClaimAnchor, SourceCoordinates, TextPoint, TextRange,
+    TextUnit,
 };
 pub use content::item::{
     ConfigurationUpdate, ContentPart, InputPart, Instruction, InstructionAuthority, Item, Message,

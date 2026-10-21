@@ -1,5 +1,5 @@
 //! Native annotation syntax stays outside the semantic model.
-//! https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/responses/response_output_text.py
+//! https://github.com/openai/openai-python/blob/547ecb1e4fc233f19030736c29fee4374dfbaca1/src/openai/types/responses/response_output_text.py
 use crate::protocol::openai::content::intake::Items;
 use crate::protocol::openai::{CodecError, Profile, shape::*};
 use crate::semantic::{task::generation::*, value::Text};
@@ -79,17 +79,13 @@ pub(in crate::protocol::openai) fn read(
             None,
             CitationKind::Citation,
         ),
-        WireAnnotation::FileCitation {
-            file_id,
-            filename,
-            index,
-        } => (
-            ResourceLocation::OpaqueReference(text(&file_id, "citation file", 256)?),
-            ClaimAnchor::Unreported,
-            Some(label(filename)?),
-            Some(index),
-            CitationKind::Citation,
-        ),
+        // The pinned source calls this a text insertion position, not a list ordinal.
+        // Native units are unresolved; do not invent a point from the integer.
+        WireAnnotation::FileCitation { .. } => {
+            return Err(CodecError::Unsupported(
+                "file_citation insertion units".into(),
+            ));
+        }
         WireAnnotation::ContainerFileCitation {
             container_id,
             file_id,
@@ -164,13 +160,17 @@ fn wire(annotation: &Annotation, resources: &ResourceTable) -> Result<WireAnnota
         (
             CitationKind::Citation,
             ClaimAnchor::Unreported,
-            ResourceLocation::OpaqueReference(file),
-            Some(index),
-        ) => Ok(WireAnnotation::FileCitation {
-            file_id: file.as_str().into(),
-            filename: label()?,
-            index,
-        }),
+            ResourceLocation::OpaqueReference(_),
+            Some(_),
+        )
+        | (
+            CitationKind::Citation,
+            ClaimAnchor::Point(_),
+            ResourceLocation::OpaqueReference(_),
+            _,
+        ) => Err(CodecError::Unsupported(
+            "file_citation insertion units".into(),
+        )),
         (
             CitationKind::Citation,
             ClaimAnchor::Range(TextRange {
@@ -216,6 +216,11 @@ pub(in crate::protocol::openai) fn check_snapshot(
     items.direction.fields(o, known_fields(kind))?;
     let reported: WireAnnotation =
         serde_json::from_value(value.clone()).map_err(|_| CodecError::Invalid("annotation"))?;
+    if matches!(reported, WireAnnotation::FileCitation { .. }) {
+        return Err(CodecError::Unsupported(
+            "file_citation insertion units".into(),
+        ));
+    }
     // Compare known facts, not raw extension keys, without redeclaring resources.
     if wire(annotation, &items.resources)? != reported {
         return Err(CodecError::Invalid("annotation snapshot"));

@@ -92,6 +92,105 @@ proptest! {
 }
 
 #[test]
+fn point_annotations_wait_for_owner_text_closure_and_cannot_be_rewritten() {
+    use morphiecore::semantic::value::Presence;
+    let item = ItemId::new(1);
+    let part = PartId::new(1);
+    let source = ResourceId::new(1);
+    let resource =
+        ResourceLocation::OpaqueReference(Text::new("synthetic-document", "source", 256).unwrap());
+    let resources = ResourceTable::new(vec![(source, resource.clone())]).unwrap();
+    let annotation = |offset| {
+        Annotation::new(
+            Citation {
+                kind: CitationKind::Citation,
+                claim: ClaimAnchor::Point(TextPoint {
+                    unit: TextUnit::UnicodeScalars,
+                    offset,
+                }),
+                source,
+                coordinates: SourceCoordinates::Unreported,
+                label: None,
+                reported_ordinal: None,
+            },
+            &resources,
+        )
+        .unwrap()
+    };
+    let mut state = StreamState::new();
+    for value in [
+        event(0),
+        StreamEvent::ResourceDeclared {
+            id: source,
+            resource,
+        },
+        event(1),
+        event(2),
+        StreamEvent::AnnotationAdded {
+            item,
+            part,
+            annotation: annotation(2),
+        },
+        StreamEvent::AnnotationAdded {
+            item,
+            part,
+            annotation: annotation(2),
+        },
+    ] {
+        state = reduce(state, value).unwrap();
+    }
+    let metadata = |offset| StreamEvent::TextMetadata {
+        item,
+        part,
+        annotations: vec![annotation(offset), annotation(offset)],
+        logprobs: Presence::Absent,
+    };
+    let empty = reduce(state.clone(), event(4)).unwrap();
+    assert!(matches!(
+        reduce(empty.clone(), metadata(2)),
+        Err(EventError::Semantic(GenerationError::InvalidCitation))
+    ));
+    assert!(matches!(
+        reduce(empty, event(5)),
+        Err(EventError::Semantic(GenerationError::InvalidCitation))
+    ));
+    state = reduce(
+        state,
+        StreamEvent::Delta {
+            item,
+            part,
+            fragment: "é😀X".into(),
+            logprobs: vec![],
+        },
+    )
+    .unwrap();
+    state = reduce(state, event(4)).unwrap();
+    assert!(matches!(
+        reduce(state.clone(), metadata(1)),
+        Err(EventError::Lifecycle)
+    ));
+    state = reduce(state, metadata(2)).unwrap();
+    for value in [event(5), event(6), event(7)] {
+        state = reduce(state, value).unwrap();
+    }
+    let response = materialize(&state).unwrap();
+    let Item::Message(message) = &response.items()[0].1 else {
+        panic!("message")
+    };
+    let ContentPart::Text(text) = &message.parts[0].content else {
+        panic!("text")
+    };
+    assert_eq!(text.annotations(), &[annotation(2), annotation(2)]);
+    let request = ClientManaged::new(Default::default())
+        .unwrap()
+        .select_response(&response)
+        .unwrap()
+        .build()
+        .unwrap();
+    assert!(request.with_resources(ResourceTable::default()).is_err());
+}
+
+#[test]
 fn probability_deltas_and_final_metadata_share_the_part_budget() {
     use morphiecore::semantic::value::Presence;
     let item = ItemId::new(1);

@@ -33,10 +33,27 @@ impl TextRange {
         }
     }
 }
+/// An insertion boundary in one text part, not a span or annotation-list position.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TextPoint {
+    pub unit: TextUnit,
+    pub offset: usize,
+}
+impl TextPoint {
+    pub fn validate(self, text: &str) -> Result<(), GenerationError> {
+        TextRange {
+            unit: self.unit,
+            start: self.offset,
+            end: self.offset,
+        }
+        .validate(text)
+    }
+}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ClaimAnchor {
     Unreported,
     Whole,
+    Point(TextPoint),
     Range(TextRange),
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -118,8 +135,10 @@ impl Annotation {
         if self.bytes() > MAX_TEXT_BYTES {
             return Err(GenerationError::Limit);
         }
-        if let ClaimAnchor::Range(range) = self.value.claim {
-            range.validate(text)?;
+        match self.value.claim {
+            ClaimAnchor::Point(point) => point.validate(text)?,
+            ClaimAnchor::Range(range) => range.validate(text)?,
+            ClaimAnchor::Unreported | ClaimAnchor::Whole => {}
         }
         Ok(())
     }
@@ -130,6 +149,9 @@ impl Annotation {
         }
         if matches!(self.value.claim, ClaimAnchor::Range(r) if r.start > r.end) {
             return Err(GenerationError::InvalidCitation);
+        }
+        if matches!(self.value.claim, ClaimAnchor::Point(p) if p.offset > MAX_TEXT_BYTES) {
+            return Err(GenerationError::Limit);
         }
         match self.value.coordinates {
             SourceCoordinates::Text(range) if range.start > range.end => {

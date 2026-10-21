@@ -52,6 +52,57 @@ fn consume_all(d: &mut ResponsesSseDecoder, bytes: &[u8], chunk_len: usize) -> u
 }
 
 #[test]
+fn unresolved_file_citation_positions_reject_events_and_final_part_snapshots() {
+    use morphiecore::protocol::{CodecError, stream::SseError};
+    let annotation =
+        json!({"type":"file_citation","file_id":"synthetic-file","filename":"report","index":2});
+    for event_type in [
+        "response.output_text.annotation.added",
+        "response.content_part.done",
+    ] {
+        let mut values = wire::events(2);
+        let value = values.iter_mut().find(|v| v["type"] == event_type).unwrap();
+        if event_type == "response.output_text.annotation.added" {
+            value["annotation"] = annotation.clone();
+        } else {
+            value["part"]["annotations"] = json!([annotation.clone()]);
+        }
+        let mut decoder = decoder(SseLimits::default());
+        let mut rejected = false;
+        for value in &values {
+            let bytes = encode_frame(value, SseLimits::default().max_event_bytes).unwrap();
+            let mut rest = bytes.as_ref();
+            while !rest.is_empty() {
+                match decoder.consume(rest) {
+                    Ok((n, events)) => {
+                        assert!(
+                            !events
+                                .iter()
+                                .any(|v| matches!(v, StreamEvent::Terminal { .. }))
+                        );
+                        rest = &rest[n..];
+                    }
+                    Err(error) => {
+                        assert!(
+                            matches!(error, SseError::Codec(CodecError::Unsupported(ref label))
+                            if label == "file_citation insertion units")
+                        );
+                        rejected = true;
+                        break;
+                    }
+                }
+            }
+            if rejected {
+                break;
+            }
+        }
+        assert!(rejected);
+        assert!(decoder.finish().is_err());
+        assert!(decoder.materialize().is_err());
+    }
+}
+
+#[test]
 fn audit_repeated_citations_ignore_extensions_but_reject_changed_evidence() {
     for changed in [false, true] {
         let mut values = wire::events(2);
