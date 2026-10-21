@@ -70,6 +70,7 @@ impl Profile {
             audio_output: false,
             audio_history: false,
             file_input: true,
+            document_context: false,
             parallel_tool_calls: true,
             strict_tools: false,
             tool_examples: false,
@@ -88,6 +89,7 @@ impl Profile {
         let mut contract = self.semantic_contract();
         contract.strict_tools = true;
         contract.tool_examples = true;
+        contract.document_context = true;
         contract.explicit_cache = true;
         contract.automatic_prefix_cache = true;
         contract.stop_sequences = true;

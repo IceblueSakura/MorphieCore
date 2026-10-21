@@ -32,6 +32,7 @@ fn typed_file(name: Option<&str>) -> Resource {
         },
         description: ResourceDescription::File(FileDescription {
             filename: name.map(text),
+            context: morphiecore::semantic::value::Presence::Absent,
             detail: None,
         }),
     }

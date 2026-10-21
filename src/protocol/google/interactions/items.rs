@@ -189,7 +189,9 @@ fn media(
     };
     if match resource.description {
         ResourceDescription::Image { detail } => detail.is_some(),
-        ResourceDescription::File(file) => file.filename.is_some() || file.detail.is_some(),
+        ResourceDescription::File(file) => {
+            file.filename.is_some() || file.detail.is_some() || !file.context.is_absent()
+        }
         _ => false,
     } {
         return Err(unsupported());

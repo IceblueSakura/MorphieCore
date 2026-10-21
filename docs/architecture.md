@@ -147,13 +147,13 @@ When a concept cannot be expressed, show a minimal counterexample and structural
 
 #### Tool examples and document context
 
-Tool examples have bounded IR and native Messages carriers; binding admission remains closed pending deployed-profile evidence. Document context remains selected for the [Generation Text production closure](roadmap.md#generation-text-production-closure).
+Tool examples and document context have bounded IR and native Messages carriers. Their separate binding requirements remain closed pending deployed-profile evidence under the [Generation Text production closure](roadmap.md#generation-text-production-closure).
 
 Bounded, ordered input examples belong to `FunctionTool.input_examples`, including definitions introduced by `ToolChange`. They are model-visible input, not schema constraints or executable calls. Preserve absent versus an explicit empty list and exact object values/order without rewriting the schema or appending examples to the description. Messages rejects null lists and non-object elements. The separate `ToolExamples` requirement prevents ordinary tool support from implicitly activating examples; other protocol encoders reject without a selected carrier.
 
 The [source recheck](refs/2026-10-17-generation-contracts.md#anthropic-input-and-cache-recheck-2026-10-21) requires object examples and documents upstream schema validation. Existing `SchemaDocument` checks data shape and bounds, not instance validity. Keep these responsibilities explicit: no automatic schema/example repair, claim of local instance validation or new general validator follows from this owner selection. Native rejection remains an error, not a successful adaptation or reason for silent retry.
 
-Document context belongs to each file use, alongside its description, not to the shared resource identity. Two uses of the same source may have different contexts. Preserve context through ordinary message and tool-result carriers and returned history where the source permits them; do not turn it into another instruction or adjacent text.
+Document context belongs to each file use's `FileDescription.context: Presence<Text>`, not to shared resource identity. Two uses of the same source may have different contexts. Native Messages retains absent/null/empty/text through ordinary message and tool-result history without another instruction or adjacent text. `DocumentContext` admission stays separate from file support; unsupported targets reject rather than discard even explicit null. Context bytes remain redacted from Debug and participate in owner-bound report dependencies.
 
 Context is model-visible text, not citable document content or an arbitrary JSON object. Handle absent/null/empty from the pinned source rather than truthiness; a nullable SDK type alone does not prove runtime equivalence. Examples/context edits change model-visible input and cannot preserve an unchanged-prefix claim merely because the underlying tool name or resource source is unchanged.
 

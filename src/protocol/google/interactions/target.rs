@@ -46,6 +46,7 @@ pub fn semantic_contract() -> GenerationSemanticContract {
         audio_output: false,
         audio_history: false,
         file_input: true,
+        document_context: false,
         parallel_tool_calls: true,
         strict_tools: false,
         tool_examples: false,

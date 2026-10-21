@@ -94,6 +94,216 @@ fn view<'a>(request: &'a GenerationRequest, resource: &'a ResourceUse) -> Resour
 }
 
 #[test]
+fn document_context_preserves_per_use_presence_in_messages_and_tool_history() {
+    use morphiecore::semantic::value::{Presence, Text};
+    let text = |s: &str| Text::allowing_empty(s, "fixture", MAX_TOTAL_BYTES).unwrap();
+    let p = Profile::AdaptiveTextTools;
+    let source = ResourceId::new(1);
+    let resources = ResourceTable::new(vec![(
+        source,
+        ResourceLocation::Inline {
+            media_type: text("text/plain"),
+            data_base64: text("bm90ZXM="),
+        },
+    )])
+    .unwrap();
+    let contexts = [
+        Presence::Absent,
+        Presence::Null,
+        Presence::Value(text("")),
+        Presence::Value(text("private context")),
+    ];
+    for (index, context) in contexts.into_iter().enumerate() {
+        let mut first = json!({"type":"document","source":{"type":"text","media_type":"text/plain","data":"notes"}});
+        match &context {
+            Presence::Absent => {}
+            Presence::Null => first["context"] = Value::Null,
+            Presence::Value(value) => first["context"] = json!(value.as_str()),
+        }
+        let second = json!({"type":"document","source":{"type":"text","media_type":"text/plain","data":"notes"},
+            "context":"different use"});
+        let expected = json!([
+            {"role":"user","content":[first]},
+            {"role":"assistant","content":[{"type":"tool_use","id":"call","name":"lookup","input":{}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"call","content":[second]}]}
+        ]);
+        let wire = json!({"model":"synthetic-model","max_tokens":32,"messages":expected});
+        let decoded = p
+            .decode_generation_request(wire.to_string().as_bytes(), LocalScope::ROOT, &target())
+            .unwrap();
+        let Item::Message(message) = &decoded.semantic.items()[0].1 else {
+            panic!("message")
+        };
+        let ContentPart::Resource(resource) = &message.parts[0].content else {
+            panic!("resource")
+        };
+        let ResourceDescription::File(file) = &resource.description else {
+            panic!("file")
+        };
+        assert_eq!(file.context, context);
+        let Item::ToolResult(result) = &decoded.semantic.items()[2].1 else {
+            panic!("result")
+        };
+        let ToolOutput::Parts(parts) = &result.output else {
+            panic!("parts")
+        };
+        let InputPart::Resource(resource) = &parts[0].content else {
+            panic!("resource")
+        };
+        let ResourceDescription::File(file) = &resource.description else {
+            panic!("file")
+        };
+        assert_eq!(file.context, Presence::Value(text("different use")));
+
+        // Build the reverse direction independently, reusing one source identity
+        // with distinct per-use context rather than duplicating the document.
+        let use_with = |context| ResourceUse {
+            id: source,
+            description: ResourceDescription::File(FileDescription {
+                filename: None,
+                detail: None,
+                context,
+            }),
+        };
+        let mut controls = GenerationControls::default();
+        controls.max_output_tokens = Some(32);
+        let request = GenerationRequest::from_resources(
+            vec![
+                (
+                    ItemId::new(1),
+                    Item::Message(Message {
+                        role: MessageRole::User,
+                        status: ItemLifecycle::Completed,
+                        phase: None,
+                        parts: vec![Part::new(
+                            PartId::new(1),
+                            ContentPart::Resource(use_with(context.clone())),
+                        )],
+                    }),
+                ),
+                (
+                    ItemId::new(2),
+                    Item::ToolCall(ToolCall {
+                        call_id: text("call"),
+                        name: text("lookup"),
+                        arguments: ToolArguments::Structured(
+                            StructuredValue::new(json!({})).unwrap(),
+                        ),
+                        status: ItemLifecycle::Completed,
+                        context: Default::default(),
+                        cache: None,
+                        replay: None,
+                    }),
+                ),
+                (
+                    ItemId::new(3),
+                    Item::ToolResult(ToolResult {
+                        call_id: Some(text("call")),
+                        name: None,
+                        output: ToolOutput::Parts(vec![Part::new(
+                            PartId::new(2),
+                            InputPart::Resource(use_with(Presence::Value(text("different use")))),
+                        )]),
+                        is_error: None,
+                        execution: None,
+                        status: None,
+                        context: Default::default(),
+                        cache: None,
+                    }),
+                ),
+            ],
+            GenerationSettings {
+                controls,
+                ..Default::default()
+            },
+            resources.clone(),
+        )
+        .unwrap()
+        .with_message_envelopes(vec![
+            MessageEnvelope::new(
+                GroupId::new(LocalScope::ROOT, 1),
+                MessageEnvelopeRole::User,
+                vec![ItemId::new(1)],
+            )
+            .unwrap(),
+            MessageEnvelope::new(
+                GroupId::new(LocalScope::ROOT, 2),
+                MessageEnvelopeRole::Assistant,
+                vec![ItemId::new(2)],
+            )
+            .unwrap(),
+            MessageEnvelope::new(
+                GroupId::new(LocalScope::ROOT, 3),
+                MessageEnvelopeRole::User,
+                vec![ItemId::new(3)],
+            )
+            .unwrap(),
+        ])
+        .unwrap();
+        assert_eq!(request.resources().len(), 1);
+        let output = p
+            .encode_generation_request(&request, &Default::default(), &target())
+            .unwrap();
+        assert_eq!(output.value["messages"], expected, "presence {index}");
+        assert!(output.rules.is_empty());
+        let mut input = morphiecore::protocol::anthropic::messages::client::decode_client_request(
+            wire.to_string().as_bytes(),
+        )
+        .unwrap();
+        assert!(GenerationRequirements::derive(&input.task.semantic).document_context);
+        assert_eq!(
+            p.semantic_contract().check(&input.task.semantic),
+            Err(GenerationFeature::DocumentContext)
+        );
+        p.representation_contract()
+            .check(&input.task.semantic)
+            .unwrap();
+        // The same closed capability applies when context appears only in tool results.
+        let before = input.clone();
+        for profile in [
+            morphiecore::protocol::openai::Profile::Chat,
+            morphiecore::protocol::openai::Profile::Responses,
+        ] {
+            assert!(
+                morphiecore::protocol::openai::Adapter::new(
+                    profile,
+                    morphiecore::protocol::openai::Dialect::Standard,
+                    None,
+                )
+                .encode_request(
+                    &input,
+                    "m",
+                    &morphiecore::protocol::openai::TargetCaps::full()
+                )
+                .is_err()
+            );
+        }
+        assert_eq!(input, before);
+        input.task.semantic = request;
+        assert!(
+            catalog::MESSAGES_BINDINGS[0]
+                .endpoint()
+                .encode_request_with_rules(&input)
+                .is_err()
+        );
+    }
+    let mut too_large = Resource {
+        location: ResourceLocation::Url(text("https://example.invalid/a.pdf")),
+        description: ResourceDescription::File(FileDescription {
+            filename: None,
+            detail: None,
+            context: Presence::Value(text(&"x".repeat(MAX_TEXT_BYTES + 1))),
+        }),
+    };
+    assert_eq!(too_large.validate(), Err(GenerationError::Limit));
+    let ResourceDescription::File(file) = &mut too_large.description else {
+        unreachable!()
+    };
+    file.context = Presence::Value(text("private context"));
+    assert!(!format!("{too_large:?}").contains("private context"));
+}
+
+#[test]
 fn images_and_documents_map_to_inert_resources_and_back() {
     let raw = json!({"model":"synthetic-model","max_tokens":64,"messages":messages()});
     let p = Profile::AdaptiveTextTools;
@@ -141,7 +351,7 @@ fn images_and_documents_map_to_inert_resources_and_back() {
     // A document title is the model-visible file name.
     assert!(
         matches!(inputs[2].description, ResourceDescription::File(FileDescription {
-            filename: Some(name), detail: None }) if name.as_str() == "Report")
+            filename: Some(name), detail: None, context: morphiecore::semantic::value::Presence::Absent }) if name.as_str() == "Report")
     );
     assert!(inline("application/pdf", "BAUG"));
     // A text document is an inline text/plain file: base64("notes").
@@ -168,7 +378,7 @@ fn unrepresentable_sources_and_uncalibrated_options_fail_without_losing_filename
     for block in [
         json!({"type":"image","source":{"type":"file","file_id":"file_synthetic"}}),
         json!({"type":"document","source":{"type":"content","content":"x"}}),
-        json!({"type":"document","context":"private","source":{"type":"url","url":"https://example.invalid/a.pdf"}}),
+        json!({"type":"document","context":{},"source":{"type":"url","url":"https://example.invalid/a.pdf"}}),
         json!({"type":"image","source":{"type":"base64","media_type":"image/bmp","data":"AQID"}}),
         // Citations are deferred; dropping one would lose a known field silently.
         json!({"type":"text","text":"x","citations":[{"type":"char_location","cited_text":"x",

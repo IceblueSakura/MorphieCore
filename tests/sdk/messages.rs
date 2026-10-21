@@ -79,6 +79,13 @@ async fn handle(
         *n
     };
     assert!(turn <= 3);
+    if turn <= 2 {
+        assert_eq!(
+            native.value["messages"][0]["content"][1],
+            json!({"type":"document","source":{"type":"text","media_type":"text/plain",
+                "data":"synthetic notes"},"context":"summary-only"})
+        );
+    }
     if turn == 1 {
         let wire = json!({"id":"msg1","type":"message","role":"assistant","model":"fixture-model",
             "content":[{"type":"tool_use","id":"call_sdk","name":"lookup","input":{"n":7}}],

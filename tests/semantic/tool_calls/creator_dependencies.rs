@@ -8,6 +8,77 @@ use morphiecore::{
 };
 use serde_json::json;
 #[test]
+fn context_edits_invalidate_creator_reports_even_when_debug_is_redacted() {
+    use morphiecore::semantic::value::Presence;
+    let parsed = responses::decode_response(&envelope(
+        "completed",
+        json!([
+            {"id":"r","type":"function_call_output","call_id":"c","status":"completed",
+                "output":[{"type":"input_file","file_url":"https://example.test/a.pdf"}]}
+        ]),
+    ))
+    .unwrap();
+    let (owner, mut item) = parsed.semantic.items()[0].clone();
+    let context = |item: &mut Item, value| {
+        let Item::ToolResult(result) = item else {
+            unreachable!()
+        };
+        let ToolOutput::Parts(parts) = &mut result.output else {
+            unreachable!()
+        };
+        let InputPart::Resource(resource) = &mut parts[0].content else {
+            unreachable!()
+        };
+        let ResourceDescription::File(file) = &mut resource.description else {
+            unreachable!()
+        };
+        file.context = Presence::Value(text(value));
+    };
+    context(&mut item, "before");
+    let mut records = FidelityRecords::default();
+    records
+        .observe_created_by(
+            owner,
+            &item,
+            parsed.semantic.resources(),
+            Some(&json!("actor")),
+        )
+        .unwrap();
+    assert_eq!(
+        records.created_by(owner, &item, parsed.semantic.resources()),
+        Some("actor")
+    );
+    let before = format!("{item:?}");
+    context(&mut item, "after");
+    assert_eq!(format!("{item:?}"), before);
+    assert_eq!(
+        records.created_by(owner, &item, parsed.semantic.resources()),
+        None
+    );
+    let lower = |semantic: &GenerationResponse| {
+        morphiecore::protocol::openai::lowering::lower_response(
+            semantic,
+            &parsed.fidelity,
+            &parsed.metadata,
+            Profile::Responses,
+            morphiecore::protocol::openai::TargetCaps::full(),
+        )
+        .err()
+    };
+    assert_eq!(lower(&parsed.semantic), None);
+    let with_context = GenerationResponse::from_resources(
+        vec![(owner, item)],
+        Outcome::Completed,
+        parsed.semantic.resources().clone(),
+    )
+    .unwrap();
+    assert_eq!(
+        lower(&with_context),
+        Some(morphiecore::lowering::generation::RepresentationError::Tools)
+    );
+}
+
+#[test]
 fn unrelated_resources_preserve_creators_but_owned_filename_and_location_edits_do_not() {
     let wire = envelope(
         "completed",

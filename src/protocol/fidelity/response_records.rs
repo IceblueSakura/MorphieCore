@@ -286,6 +286,15 @@ fn creator_dependency(item: &Item, resources: &ResourceTable) -> [u8; 32] {
                             hash.update(name.as_str().as_bytes());
                         }
                     }
+                    match &file.context {
+                        crate::semantic::value::Presence::Absent => hash.update([0]),
+                        crate::semantic::value::Presence::Null => hash.update([1]),
+                        crate::semantic::value::Presence::Value(context) => {
+                            hash.update([2]);
+                            hash.update((context.as_str().len() as u64).to_le_bytes());
+                            hash.update(context.as_str().as_bytes());
+                        }
+                    }
                 }
             }
         }
@@ -318,6 +327,9 @@ fn response_dependency(response: &GenerationResponse) -> [u8; 32] {
         }
     }
     for (_, item) in response.items() {
+        if matches!(item, Item::ToolResult(_) | Item::CustomResult(_)) {
+            hash.update(creator_dependency(item, response.resources()));
+        }
         if let Item::Message(m) = item {
             for p in &m.parts {
                 if let Some(value) = &p.replay {

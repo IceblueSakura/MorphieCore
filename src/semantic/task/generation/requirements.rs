@@ -18,6 +18,7 @@ pub struct GenerationRequirements {
     pub audio_output: bool,
     pub audio_history: bool,
     pub file_inputs: usize,
+    pub document_context: bool,
     pub tool_count: usize,
     pub custom_tools: bool,
     pub text_metadata: bool,
@@ -65,6 +66,11 @@ impl GenerationRequirements {
             ResourceKind::Video => self.video_inputs += 1,
             ResourceKind::File => {
                 self.file_inputs += 1;
+                if let crate::semantic::task::generation::ResourceDescription::File(file) =
+                    resource.description
+                {
+                    self.document_context |= !file.context.is_absent();
+                }
                 // A file the model must see or hear also needs that modality, e.g. an
                 // audio data URL sent as a Responses `input_file`. Remote MIME is unknown.
                 if let ResourceLocation::Inline { media_type, .. } = resource.location {

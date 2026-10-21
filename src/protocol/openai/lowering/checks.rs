@@ -306,6 +306,11 @@ pub(super) fn text_items(
                     let Ok(resource) = resource.media(resources) else {
                         return true;
                     };
+                    if matches!(resource.description, ResourceDescription::File(file)
+                        if !file.context.is_absent())
+                    {
+                        return true;
+                    }
                     !request
                         || match resource.kind() {
                             ResourceKind::Image => {
@@ -461,11 +466,13 @@ fn structured_chat_reasoning_shape(items: &[(ItemId, Item)]) -> bool {
     })
 }
 fn result_representable(result: &ToolResult, profile: Profile, resources: &ResourceTable) -> bool {
-    let audio_or_video = match &result.output {
+    let unsupported_media = match &result.output {
         ToolOutput::Parts(parts) => parts.iter().any(|part| {
             matches!(&part.content, InputPart::Resource(r)
             if r.media(resources).is_ok_and(|r| {
                 matches!(r.kind(), ResourceKind::Audio | ResourceKind::Video)
+                    || matches!(r.description, ResourceDescription::File(file)
+                        if !file.context.is_absent())
             }))
         }),
         _ => false,
@@ -474,5 +481,5 @@ fn result_representable(result: &ToolResult, profile: Profile, resources: &Resou
         && result.is_error.is_none()
         && !matches!(result.output, ToolOutput::Structured(_))
         && (profile != Profile::Chat || result.output.is_text_only())
-        && !audio_or_video
+        && !unsupported_media
 }

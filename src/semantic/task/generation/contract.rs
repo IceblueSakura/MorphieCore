@@ -37,6 +37,7 @@ pub enum GenerationFeature {
     AudioOutput,
     AudioHistory,
     FileInput,
+    DocumentContext,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GenerationSemanticContract {
@@ -72,6 +73,7 @@ pub struct GenerationSemanticContract {
     pub audio_output: bool,
     pub audio_history: bool,
     pub file_input: bool,
+    pub document_context: bool,
     pub parallel_tool_calls: bool,
     pub strict_tools: bool,
     pub tool_examples: bool,
@@ -119,6 +121,7 @@ impl GenerationSemanticContract {
             audio_output: true,
             audio_history: true,
             file_input: true,
+            document_context: true,
             parallel_tool_calls: true,
             strict_tools: true,
             tool_examples: true,
@@ -164,6 +167,7 @@ impl GenerationSemanticContract {
             audio_output: false,
             audio_history: false,
             file_input: false,
+            document_context: false,
             parallel_tool_calls: true,
             strict_tools: false,
             tool_examples: false,
@@ -212,6 +216,7 @@ impl GenerationSemanticContract {
             (promise.audio_output, self.audio_output),
             (promise.audio_history, self.audio_history),
             (promise.file_input, self.file_input),
+            (promise.document_context, self.document_context),
             (promise.parallel_tool_calls, self.parallel_tool_calls),
             (promise.strict_tools, self.strict_tools),
             (promise.tool_examples, self.tool_examples),
@@ -353,6 +358,7 @@ impl GenerationSemanticContract {
             ),
             (q.strict_function_tools, self.strict_tools, StrictTools),
             (q.tool_examples, self.tool_examples, ToolExamples),
+            (q.document_context, self.document_context, DocumentContext),
             (q.tool_changes, self.tool_changes, ToolChanges),
             (
                 q.normalization_default_tools,

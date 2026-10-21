@@ -5,7 +5,10 @@
 use super::shape::*;
 use crate::{
     protocol::CodecError,
-    semantic::{task::generation::*, value::Text},
+    semantic::{
+        task::generation::*,
+        value::{Presence, Text},
+    },
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
@@ -40,16 +43,17 @@ pub enum Media {
     Document {
         source: Source,
         title: Option<String>,
+        context: Presence<String>,
     },
 }
 impl Media {
     pub(super) fn read(kind: &str, v: &Value) -> Result<Self, CodecError> {
         let o = object(v)?;
-        // These change what the model sees or returns and have no IR slot.
-        for key in ["context", "citations"] {
-            if o.get(key).is_some_and(|v| !v.is_null()) {
-                return Err(CodecError::Unsupported(format!("Anthropic document {key}")));
-            }
+        // Citations still need their own source/quote owners.
+        if o.get("citations").is_some_and(|v| !v.is_null()) {
+            return Err(CodecError::Unsupported(
+                "Anthropic document citations".into(),
+            ));
         }
         let source = object(required(o, "source")?)?;
         let field = |key| required(source, key).and_then(string);
@@ -84,6 +88,7 @@ impl Media {
             },
             _ => Self::Document {
                 source,
+                context: presence(o, "context", string)?,
                 title: match o.get("title") {
                     None | Some(Value::Null) => None,
                     Some(v) => Some(string(v)?),
@@ -125,7 +130,12 @@ impl Media {
             Self::Document { title: Some(t), .. } => text(t)?,
             _ => 0,
         };
+        let context = match self {
+            Self::Document { context, .. } => context.value().map_or(Ok(0), |c| text(c))?,
+            _ => 0,
+        };
         Ok(title
+            + context
             + match source {
                 Source::Base64 { media_type, data } => text(media_type)? + text(data)?,
                 Source::Url(url) | Source::Text(url) => text(url)?,
@@ -149,7 +159,17 @@ impl Media {
                 reject_oversized: true,
                 ..
             } => block["transformations"] = json!({"oversized_image":"error"}),
-            Self::Document { title: Some(t), .. } => block["title"] = json!(t),
+            Self::Document { title, context, .. } => {
+                if let Some(title) = title {
+                    block["title"] = json!(title);
+                }
+                put(
+                    block.as_object_mut().expect("document"),
+                    "context",
+                    context,
+                    |c| json!(c),
+                );
+            }
             _ => {}
         }
         block
@@ -160,7 +180,11 @@ impl Media {
             |s: &str, kind| Text::new(s, kind, MAX_TEXT_BYTES).map_err(|_| CodecError::Limit);
         let (source, description) = match self {
             Self::Image { source, .. } => (source, ResourceDescription::Image { detail: None }),
-            Self::Document { source, title } => (
+            Self::Document {
+                source,
+                title,
+                context,
+            } => (
                 source,
                 ResourceDescription::File(FileDescription {
                     filename: title
@@ -171,6 +195,14 @@ impl Media {
                         })
                         .transpose()?,
                     detail: None,
+                    context: match context {
+                        Presence::Absent => Presence::Absent,
+                        Presence::Null => Presence::Null,
+                        Presence::Value(c) => Presence::Value(
+                            Text::allowing_empty(c, "document context", MAX_TEXT_BYTES)
+                                .map_err(|_| CodecError::Limit)?,
+                        ),
+                    },
                 }),
             ),
         };
@@ -239,6 +271,14 @@ impl Media {
             },
             ResourceKind::File => Self::Document {
                 source,
+                context: match resource.description {
+                    ResourceDescription::File(file) => match &file.context {
+                        Presence::Absent => Presence::Absent,
+                        Presence::Null => Presence::Null,
+                        Presence::Value(c) => Presence::Value(c.as_str().into()),
+                    },
+                    _ => Presence::Absent,
+                },
                 title: match resource.description {
                     ResourceDescription::File(file) => {
                         file.filename.as_ref().map(|n| n.as_str().into())

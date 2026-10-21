@@ -48,6 +48,8 @@ pub struct FileDescription {
     /// The model-visible document name (OpenAI `filename`, Messages `title`), never a
     /// local path to open. Empty differs from omitted.
     pub filename: Option<Text>,
+    /// Per-use model-visible context, not citable source text or resource identity.
+    pub context: crate::semantic::value::Presence<Text>,
     /// Omitted differs from explicit auto; not an image option or lifecycle fact.
     pub detail: Option<FileDetail>,
 }
@@ -55,6 +57,14 @@ impl std::fmt::Debug for FileDescription {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FileDescription")
             .field("filename", &self.filename.as_ref().map(|_| "[redacted]"))
+            .field(
+                "context",
+                &match self.context {
+                    crate::semantic::value::Presence::Absent => "absent",
+                    crate::semantic::value::Presence::Null => "null",
+                    crate::semantic::value::Presence::Value(_) => "[redacted]",
+                },
+            )
             .field("detail", &self.detail)
             .finish()
     }
@@ -78,6 +88,7 @@ impl ResourceLocation {
     pub(in crate::semantic::task::generation) fn source_view(&self) -> ResourceView<'_> {
         static DESCRIPTION: ResourceDescription = ResourceDescription::File(FileDescription {
             filename: None,
+            context: crate::semantic::value::Presence::Absent,
             detail: None,
         });
         ResourceView {
@@ -175,7 +186,11 @@ impl ResourceView<'_> {
                 if filename_bytes > MAX_FILE_NAME_BYTES {
                     return Err(GenerationError::Limit);
                 }
-                filename_bytes + file.detail.map_or(0, |d| d.label().len())
+                let context_bytes = file.context.value().map_or(0, |v| v.as_str().len());
+                if context_bytes > MAX_TEXT_BYTES {
+                    return Err(GenerationError::Limit);
+                }
+                filename_bytes + context_bytes + file.detail.map_or(0, |d| d.label().len())
             }
         };
         let bytes = match &self.location {

@@ -67,7 +67,11 @@ pub(in crate::protocol::openai) fn read(
         .transpose()?;
     let resource = Resource {
         location,
-        description: ResourceDescription::File(FileDescription { filename, detail }),
+        description: ResourceDescription::File(FileDescription {
+            filename,
+            detail,
+            context: crate::semantic::value::Presence::Absent,
+        }),
     };
     resource.validate()?;
     Ok(resource)
