@@ -71,6 +71,7 @@ impl Block {
             "redacted_thinking" => Self::RedactedThinking(string(required(object(v)?, "data")?)?),
             "tool_use" => {
                 let o = object(v)?;
+                reject_toolset(o)?;
                 let input = required(o, "input")?;
                 if !input.is_object() {
                     return Err(CodecError::Invalid("Anthropic tool input object"));
@@ -90,6 +91,7 @@ impl Block {
             }
             "tool_result" => {
                 let o = object(v)?;
+                reject_toolset(o)?;
                 Self::ToolResult {
                     tool_use_id: string(required(o, "tool_use_id")?)?,
                     // Optional in the pinned ToolResultBlockParam; absence is no content.
@@ -264,4 +266,13 @@ impl Block {
             }
         }
     }
+}
+
+fn reject_toolset(o: &serde_json::Map<String, Value>) -> Result<(), CodecError> {
+    // Dispatch identity belongs to this block, never to its argument properties.
+    // Neither null nor an empty namespace has a proven omission equivalence.
+    if !presence(o, "toolset_name", string)?.is_absent() {
+        return Err(CodecError::Unsupported("Anthropic toolset identity".into()));
+    }
+    Ok(())
 }

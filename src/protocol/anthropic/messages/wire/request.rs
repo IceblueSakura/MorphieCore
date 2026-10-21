@@ -583,7 +583,11 @@ pub struct OutputConfig {
 }
 impl OutputConfig {
     pub(in crate::protocol::anthropic::messages) fn read(v: &Value) -> Result<Self, CodecError> {
-        let o = closed(v, &["effort", "format"])?;
+        let o = closed(v, &["effort", "format", "task_budget"])?;
+        // Nullable request syntax does not establish null/omission equivalence.
+        if o.contains_key("task_budget") {
+            return Err(CodecError::Unsupported("Anthropic task budget".into()));
+        }
         Ok(Self {
             effort: presence(o, "effort", Effort::read)?,
             format: presence(o, "format", |v| {

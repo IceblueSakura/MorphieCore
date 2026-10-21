@@ -817,6 +817,69 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
     ));
 }
 #[test]
+fn protected_messages_controls_reject_at_their_owner_not_inside_business_data() {
+    let p = morphiecore::protocol::anthropic::messages::Profile::AdaptiveTextTools;
+    let business = json!({"task_budget":{"type":"tokens","total":20},"toolset_name":"business"});
+    let body = json!({"model":"m","max_tokens":8,
+        "tools":[{"name":"lookup","strict":false,"input_schema":{"type":"object","properties":{
+            "task_budget":{"type":"object"},"toolset_name":{"type":"string"}}}}],
+        "messages":[
+            {"role":"user","content":"go"},
+            {"role":"assistant","content":[{"type":"tool_use","id":"c","name":"lookup","input":business}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"c","content":"ok"}]}]});
+    let source = decode_client_request(body.to_string().as_bytes()).unwrap();
+    let arguments = business.to_string();
+    assert!(source.task.semantic.items().iter().any(|(_, item)|
+        matches!(item, Item::ToolCall(c) if c.arguments.as_raw() == Some(arguments.as_str()))));
+    let native = p.decode_request(body.to_string().as_bytes()).unwrap();
+    let encoded = p.encode_request(&native).unwrap();
+    assert_eq!(encoded["messages"][1]["content"][0]["input"], business);
+    assert_eq!(
+        encoded["tools"][0]["input_schema"],
+        body["tools"][0]["input_schema"]
+    );
+
+    for budget in [
+        json!({"type":"tokens","total":20,"remaining":10}),
+        json!({"type":"tokens","total":0,"remaining":null}),
+        serde_json::Value::Null,
+    ] {
+        let mut active = body.clone();
+        active["output_config"] = json!({"task_budget":budget});
+        let bytes = active.to_string();
+        let expected = CodecError::Unsupported("Anthropic task budget".into());
+        assert_eq!(
+            decode_client_request(bytes.as_bytes()).unwrap_err(),
+            expected
+        );
+        assert_eq!(p.decode_request(bytes.as_bytes()).unwrap_err(), expected);
+    }
+    for index in [1, 2] {
+        for namespace in [json!("set"), json!(""), serde_json::Value::Null] {
+            let mut active = body.clone();
+            active["messages"][index]["content"][0]["toolset_name"] = namespace;
+            let bytes = active.to_string();
+            let expected = CodecError::Unsupported("Anthropic toolset identity".into());
+            assert_eq!(
+                decode_client_request(bytes.as_bytes()).unwrap_err(),
+                expected
+            );
+            assert_eq!(p.decode_request(bytes.as_bytes()).unwrap_err(), expected);
+        }
+    }
+    let mut extended = body;
+    extended["output_config"] = json!({"future_output_control":{"task_budget":20}});
+    extended["messages"][1]["content"][0]["future_block_control"] = json!({"toolset_name":"x"});
+    assert_eq!(
+        decode_client_request(extended.to_string().as_bytes())
+            .unwrap()
+            .task
+            .semantic,
+        source.task.semantic
+    );
+}
+
+#[test]
 fn client_intake_carries_caps_and_rejects_active_fields_it_cannot_carry() {
     let body = json!({"model":"m","max_tokens":8,"stop_sequences":[],
             "messages":[{"role":"user","content":"go"}]});

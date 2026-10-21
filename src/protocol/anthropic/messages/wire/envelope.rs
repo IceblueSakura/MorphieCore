@@ -194,6 +194,7 @@ impl Message {
         opening: bool,
     ) -> Result<Self, CodecError> {
         let o = object(v)?;
+        reject_fallback_reports(o)?;
         if required(o, "type")?.as_str() != Some("message")
             || required(o, "role")?.as_str() != Some("assistant")
         {
@@ -274,4 +275,29 @@ impl Message {
         put(o, "stop_sequence", &self.stop_sequence, |s| json!(s));
         v
     }
+}
+
+/// Beta execution/billing facts are protected even before refusal details have an IR owner.
+pub(in crate::protocol::anthropic::messages) fn reject_fallback_reports(
+    o: &serde_json::Map<String, Value>,
+) -> Result<(), CodecError> {
+    let Some(details) = o.get("stop_details").filter(|v| !v.is_null()) else {
+        return Ok(());
+    };
+    let details = object(details)?;
+    // `false` denies a retry form; it is not an inactive or missing report.
+    if presence(details, "fallback_has_prefill_claim", boolean)?
+        .value()
+        .is_some()
+    {
+        return Err(CodecError::Unsupported(
+            "Anthropic fallback_has_prefill_claim".into(),
+        ));
+    }
+    for key in ["fallback_credit_token", "recommended_model"] {
+        if presence(details, key, string)?.value().is_some() {
+            return Err(CodecError::Unsupported(format!("Anthropic {key}")));
+        }
+    }
+    Ok(())
 }

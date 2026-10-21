@@ -136,6 +136,75 @@ fn native_intake_keeps_independent_error_execution_progress_and_signature_owners
     );
 }
 #[test]
+fn native_protected_dispatch_and_fallback_reports_reject_before_projection() {
+    use morphiecore::protocol::CodecError;
+    let p = Profile::AdaptiveTextTools;
+    let original: Value = serde_json::from_slice(response()).unwrap();
+    for namespace in [json!("set"), json!(""), Value::Null] {
+        let mut wire = original.clone();
+        wire["content"][1]["toolset_name"] = namespace;
+        assert_eq!(
+            p.decode_generation_response(wire.to_string().as_bytes(), LocalScope::ROOT, &target())
+                .unwrap_err(),
+            CodecError::Unsupported("Anthropic toolset identity".into())
+        );
+    }
+    let mut refusal = json!({"id":"msg_refusal","type":"message","role":"assistant","model":"synthetic-model",
+        "content":[{"type":"text","text":"partial"}],"stop_reason":"refusal","stop_sequence":null,
+        "usage":{"input_tokens":11,"output_tokens":3}});
+    let plain = p
+        .decode_generation_response(refusal.to_string().as_bytes(), LocalScope::ROOT, &target())
+        .unwrap();
+    assert_eq!(plain.semantic.outcome(), Outcome::Incomplete);
+    for (field, value) in [
+        ("fallback_credit_token", json!("synthetic-credit")),
+        ("recommended_model", json!("synthetic-fallback")),
+        ("fallback_has_prefill_claim", json!(false)),
+        ("fallback_has_prefill_claim", json!(true)),
+    ] {
+        let mut details = json!({"type":"refusal","category":"cyber","explanation":"synthetic"});
+        details[field] = value;
+        if field == "fallback_has_prefill_claim" {
+            details["fallback_credit_token"] = json!("synthetic-credit");
+        }
+        refusal["stop_details"] = details;
+        assert_eq!(
+            p.decode_generation_response(
+                refusal.to_string().as_bytes(),
+                LocalScope::ROOT,
+                &target()
+            )
+            .unwrap_err(),
+            CodecError::Unsupported(format!("Anthropic {field}"))
+        );
+    }
+    // The pinned beta source explicitly uses null for unavailable facts.
+    refusal["stop_details"] = json!({"type":"refusal","fallback_credit_token":null,
+        "fallback_has_prefill_claim":null,"recommended_model":null,"future_report":false});
+    let absent = p
+        .decode_generation_response(refusal.to_string().as_bytes(), LocalScope::ROOT, &target())
+        .unwrap();
+    assert_eq!(absent.semantic, plain.semantic);
+    for (field, value, error) in [
+        ("fallback_credit_token", json!(false), "Anthropic string"),
+        ("recommended_model", json!({}), "Anthropic string"),
+        (
+            "fallback_has_prefill_claim",
+            json!("false"),
+            "Anthropic boolean",
+        ),
+    ] {
+        refusal["stop_details"] = json!({"type":"refusal"});
+        refusal["stop_details"][field] = value;
+        assert_eq!(
+            p.decode_response(refusal.to_string().as_bytes())
+                .unwrap_err(),
+            CodecError::Invalid(error)
+        );
+    }
+}
+
+#[test]
 fn native_stop_reasons_have_independent_terminal_owners() {
     let p = Profile::AdaptiveTextTools;
     let decode = |stop: &str, sequence: Value| {

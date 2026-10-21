@@ -66,6 +66,65 @@ fn expected() -> Value {
             "cache_creation_input_tokens":4,"cache_read_input_tokens":3}}"#).unwrap()
 }
 #[test]
+fn protected_reports_and_toolset_identity_cannot_hide_in_native_sse() {
+    use morphiecore::protocol::CodecError;
+    let p = Profile::AdaptiveTextTools;
+    let mut cases = vec![];
+    let mut tool = frames()[10].clone();
+    tool["content_block"]["toolset_name"] = json!("set");
+    cases.push((10, tool, "toolset identity"));
+    for (field, value, error) in [
+        (
+            "fallback_credit_token",
+            json!("synthetic-credit"),
+            "fallback_credit_token",
+        ),
+        (
+            "recommended_model",
+            json!("synthetic-fallback"),
+            "recommended_model",
+        ),
+        (
+            "fallback_has_prefill_claim",
+            json!(false),
+            "fallback_has_prefill_claim",
+        ),
+    ] {
+        let mut details = json!({"type":"refusal","category":"cyber","explanation":"synthetic"});
+        details[field] = value;
+        if field == "fallback_has_prefill_claim" {
+            details["fallback_credit_token"] = json!("synthetic-credit");
+        }
+        let mut opening = frames()[0].clone();
+        opening["message"]["stop_details"] = details.clone();
+        cases.push((0, opening, error));
+        let closing = json!({"type":"message_delta","delta":{"stop_reason":"refusal",
+            "stop_sequence":null,"stop_details":details},"usage":{"output_tokens":9}});
+        cases.push((15, closing, error));
+    }
+    for (index, event, error) in cases {
+        let expected = CodecError::Unsupported(format!("Anthropic {error}"));
+        assert_eq!(
+            p.decode_event(
+                event["type"].as_str().unwrap(),
+                event.to_string().as_bytes()
+            )
+            .unwrap_err(),
+            expected
+        );
+        let mut values = frames();
+        values[index] = event;
+        let mut decoder =
+            MessageSseDecoder::new(200, "text/event-stream", SseLimits::default()).unwrap();
+        assert!(matches!(
+            feed(&mut decoder, &wire(&values)),
+            Err(SseError::Codec(actual)) if actual == expected
+        ));
+        assert!(decoder.finish().is_err());
+    }
+}
+
+#[test]
 fn audit_nullable_usage_deltas_preserve_known_counts_but_zero_updates_them() {
     for read in [Value::Null, json!(0), json!(5)] {
         let mut values = frames();

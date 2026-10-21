@@ -199,7 +199,7 @@ Sources: SDK stable `message_create_params.py`, `message.py`, `usage.py`, raw ev
 | `model,max_tokens,messages,system` | E supported ordered input/explicit ceiling and trusted model selection; `anthropic/client.rs`, `anthropic/semantic_request.rs` |
 | `tools,tool_choice` | E supported function declarations and auto/none/any/tool, name, disable-parallel flag; `anthropic/request.rs` |
 | `thinking` | E disabled/adaptive/ordinary manual budget and display. Manual budgets require ≥1024 and < output ceiling at source and target; adaptive-only Go/Haiku R numeric budgets. Beta `between_tools` and wider manual-interleaved scope R; `anthropic/client.rs`, `anthropic/semantic_request.rs` |
-| `output_config` | E effort and unnamed JSON-schema format; beta **I `task_budget`** during client filtering, not an ordinary thinking budget; `anthropic/client.rs`, `anthropic/request.rs` |
+| `output_config` | E effort and unnamed JSON-schema format. **2026-10-21 repair:** beta `task_budget` R before filtering, including explicit null and zero-total budgets; not an ordinary thinking budget; `anthropic/messages/client/request.rs`, `anthropic/messages/wire/request.rs` |
 | `cache_control` | E explicit ephemeral default/5m/1h; native codec absence stays absent. The selected Go/Haiku target retains its marker-free default with named insertion, never beside explicit markers; `anthropic/semantic_request.rs`, `anthropic/adapter.rs` |
 | `stop_sequences` | E protocol carrier; R selected Haiku admission; `anthropic/mod.rs`, `anthropic/request.rs` |
 | `stream,service_tier` | E envelope delivery flag and auto/standard-only policy; direct semantic helper is not the transport envelope; `anthropic/adapter.rs`, `anthropic/service.rs` |
@@ -220,7 +220,7 @@ Sources: SDK stable `message_create_params.py`, `message.py`, `usage.py`, raw ev
 | Function `name,description,input_schema,strict,cache_control,defer_loading,eager_input_streaming` | E admitted values; false defer-loading normalizes; strict schema constraints reject, not rewrite; `anthropic/request.rs`, `anthropic/strict_schema.rs` |
 | Tool `type:custom`, `allowed_callers,input_examples` | Custom discriminator normalizes at intake; explicit callers/examples R. Hosted/versioned tool declarations R; `anthropic/client.rs` |
 | `tool_use.{id,name,input,caller}` | E complete object input and native call identity; direct caller normalizes, server caller R; `anthropic/response.rs`, `anthropic/semantic_intake.rs` |
-| `tool_use.toolset_name`, `tool_result.toolset_name` | I dispatch-bearing fields, including history. Not an exact ordinary-tool extension; `anthropic/client.rs`, `anthropic/response.rs` |
+| `tool_use.toolset_name`, `tool_result.toolset_name` | **2026-10-21 repair:** R dispatch identity, including null/empty and returned history. Same-named business argument/schema properties remain data; `anthropic/messages/client/request.rs`, `anthropic/messages/wire/content.rs` |
 | `tool_result.{tool_use_id,content,is_error,cache_control}` | E links/errors and string/text/image/document subset; missing content normalizes empty. Search-result/tool-reference/browser-state children R; `anthropic/media.rs` |
 | Image `source`, `transformations.oversized_image` | E URL/base64 and explicit error policy; downsize/default normalize; file source R; same owner |
 | Document `source,title,context,citations` | E supported PDF URL/base64/plain text/title; nested-content/file sources, active context/citations R; same owner |
@@ -234,6 +234,7 @@ Sources: SDK stable `message_create_params.py`, `message.py`, `usage.py`, raw ev
 |---|---|
 | Message `id,type,role,model,content,stop_reason,stop_sequence,usage` | E supported envelope/content. Stops E end-turn/tool-use/max-tokens/stop-sequence/refusal/context-window; pause-turn R; `anthropic/response.rs` |
 | Message `container,diagnostics,stop_details`; beta `context_management` | I reports, including structured refusal category/explanation; no exact report owner or omission receipt |
+| Beta `stop_details.{fallback_credit_token,fallback_has_prefill_claim,recommended_model}` | **2026-10-21 repair:** R typed non-null facts in full messages and `message_delta.delta`, including false prefill claims; documented unavailable null facts pass. No fallback execution/credit redemption; `anthropic/messages/wire/{envelope,event}.rs` |
 | Beta `input_transformations` | L validated omission of known thinking-dropped/mismatch-allowed reports and path; unknown transformation types ignored; `anthropic/response.rs` |
 | Usage `input_tokens,output_tokens,cache_creation_input_tokens,cache_read_input_tokens` | E disjoint buckets; no fabricated total; `anthropic/accounting.rs` |
 | Usage `cache_creation.{ephemeral_5m_input_tokens,ephemeral_1h_input_tokens}`, `server_tool_use.{web_search_requests,web_fetch_requests}`, `output_tokens_details.thinking_tokens,service_tier` | E supported native observations; optional null means no observation, nested non-null object replaces its scope |
@@ -241,7 +242,7 @@ Sources: SDK stable `message_create_params.py`, `message.py`, `usage.py`, raw ev
 | `message_start,content_block_start,content_block_delta,content_block_stop,message_delta,message_stop` | E supported lifecycle/content; sequential indices, closure and strict EOF required; `anthropic/sse.rs`, `anthropic/response.rs` |
 | `text_delta,thinking_delta,signature_delta,input_json_delta` | E supported fragments. Unfinished object JSON at `max_tokens` retains exact raw input and incomplete lifecycle for native SSE only. JSON/history, invalid successful terminals, malformed prefixes, duplicates and limits R; no repair |
 | `citations_delta`; beta `compaction_delta` | R unsupported content deltas |
-| Delta `container,stop_details`; beta `context_management` | I, as with static reports; supported stop/usage retained |
+| Delta `container,stop_details`; beta `context_management` | I stable details, as with static reports; protected beta fields R as above. Supported stop/usage retained |
 | `ping`, unknown event types, `error` | Ping/unknown event I; error is a failed attempt, not a successful Generation result |
 
 Existing test owners: `semantic/anthropic.rs`, `transport/{anthropic_sse,native}.rs`. Stage-1 additions cover native sampling versus fixed target policy, ordinary budget boundaries, identity states/bounds, exact partial fragments, signed-thinking coexistence and strict closure. The pinned Messages SDK gate additionally checks JSON tool input, returned call/result history and raw partial SSE. Opening-only input-transformation receipts and unselected report carriers remain outside this slice's exactness claim.
@@ -286,8 +287,8 @@ These are scoped findings, not new semantic decisions. Preserve unsupported/prot
 | S1-2 parity/presence | Reasoning+phase+call/result continuation and current controls | Handwritten independent native-input oracle covers stored/stateless paths and a second continuation; SDK/real-service claims stay separate |
 | S1-3a/b/c/d | Earlier generic sampling, numeric-budget, identity and partial-input gaps | Implemented selected native contracts; wider manual/interleaved, malformed-successful tool input and JSON/history partial carriage remain explicit exclusions |
 | S1-3 inventory maintenance | Earlier implicit automatic-cache insertion lacked evidence | Default moved to trusted target policy with named insertion; generic source absence preserved |
-| Deferred Messages controls | `output_config.task_budget`, `toolset_name`, `diagnostics` ignored; these are not ordinary thinking budget, function identity or generic metadata | Explicitly classified gaps outside selected pi carriers; no acceptance claim for them. Reopen only with the relevant owner/scope selection |
-| Deferred reports | Messages container/context-management/refusal/geo/speed/fallback/iteration reports ignored; deferred Responses hosted events skipped | Keep named inventory gaps distinct from existing rejection; scheduling later work does not make silent report loss lossless |
+| Protected Messages controls | `output_config.task_budget` and `toolset_name` were ignored; request `diagnostics` remains ignored | 2026-10-21 repair rejects the protected budget/dispatch owners; no task-budget/toolset support or broader admission. Diagnostic control remains an explicit gap |
+| Deferred reports | Messages container/context-management/stable-refusal/geo/speed/fallback-accounting/iteration reports ignored; deferred Responses hosted events skipped | Protected beta refusal credit/prefill/retry-target facts now reject; stable refusal carriage remains pending. Scheduling later work does not make silent report loss lossless |
 | Deferred citation/execution/resource semantics | Request citations/context/clear-at, hosted item/block variants, file IDs, protected execution controls | Retain current rejection; select separate owners and gates when scheduled |
 
 ## Selected source findings and implementation boundaries

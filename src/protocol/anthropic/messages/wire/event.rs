@@ -3,7 +3,7 @@ use crate::protocol::anthropic::messages::{
     shape::*,
     wire::{
         content::Block,
-        envelope::{Message, StopReason, Usage, input_transformations},
+        envelope::{Message, StopReason, Usage, input_transformations, reject_fallback_reports},
         request::Role,
     },
 };
@@ -124,6 +124,7 @@ impl Event {
             },
             "message_delta" => {
                 let d = object(required(o, "delta")?)?;
+                reject_fallback_reports(d)?;
                 Self::MessageDelta {
                     stop_reason: presence(d, "stop_reason", StopReason::read)?,
                     stop_sequence: presence(d, "stop_sequence", string)?,

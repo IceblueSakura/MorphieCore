@@ -64,12 +64,21 @@ fn block_fields(kind: Option<&str>) -> &'static [&'static str] {
         Some("text") => &["type", "text", "citations", "cache_control"],
         Some("thinking") => &["type", "thinking", "signature"],
         Some("redacted_thinking") => &["type", "data"],
-        Some("tool_use") => &["type", "id", "name", "input", "caller", "cache_control"],
+        Some("tool_use") => &[
+            "type",
+            "id",
+            "name",
+            "input",
+            "caller",
+            "toolset_name",
+            "cache_control",
+        ],
         Some("tool_result") => &[
             "type",
             "tool_use_id",
             "content",
             "is_error",
+            "toolset_name",
             "cache_control",
         ],
         Some("image") => &["type", "source", "transformations", "cache_control"],
@@ -333,7 +342,11 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     }
     if let Some(config) = o.get("output_config").filter(|v| !v.is_null()) {
         let mut config = config.clone();
-        keep(&mut config, &["effort", "format"], &mut ignored);
+        keep(
+            &mut config,
+            &["effort", "format", "task_budget"],
+            &mut ignored,
+        );
         if let Some(format) = config.get_mut("format") {
             keep(format, &["type", "schema"], &mut ignored);
         }
