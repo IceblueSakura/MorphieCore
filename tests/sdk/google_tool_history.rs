@@ -15,21 +15,13 @@ async fn exercise(api: fixture::Api, api_name: &str) {
             fixture::start(profile, api).await
         };
         let home = tempfile::tempdir().unwrap();
-        let mut command = tokio::process::Command::new(
-            std::env::var_os("MORPHIECORE_SDK_PYTHON").unwrap_or_else(|| "python3".into()),
-        );
-        command
-            .args([
-                "tests/sdk/google_tool_history.py",
-                &fixture.base,
-                name,
-                api_name,
-            ])
-            .current_dir(env!("CARGO_MANIFEST_DIR"))
-            .env_clear()
-            .env("HOME", home.path())
-            .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-            .kill_on_drop(true);
+        let mut command = super::isolated_sdk_python(home.path());
+        command.args([
+            "tests/sdk/google_tool_history.py",
+            &fixture.base,
+            name,
+            api_name,
+        ]);
         let output =
             super::child_process::run(&mut command, b"", Duration::from_secs(30), 64 << 10)
                 .await

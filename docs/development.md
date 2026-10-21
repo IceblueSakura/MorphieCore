@@ -43,6 +43,8 @@ direnv users can allow the root `.envrc` once. Update nixpkgs separately with `n
 
 Shared builders live in `tests/support/`. Test selection follows the lean policy in [AGENTS.md](../AGENTS.md#tests).
 
+Bootstrap fixtures take explicit service/models JSON and synthetic credential seeds, then call the real private-file loader. Keep model selection independent of installed keys and negative cases at their intended production boundary. Raw malformed-file cases retain a byte writer; JSON values cannot preserve duplicate keys. SDK command helpers share only identical environment setup, not process ownership, protocol oracles or report assertions.
+
 Protocol mappings need independently hand-written wire→IR and IR→wire expectations. Do not generate an oracle with the encoder under test. Round trips are supplementary.
 
 Select checks from the relevant [roadmap package](roadmap.md#planned-order). Same-protocol fidelity needs a pinned revision/domain and independent request, response, JSON/SSE and returned-history expectations; a successful tool loop does not prove losslessness. Independent tasks and resources need their own lifecycle checks, not Generation round trips.

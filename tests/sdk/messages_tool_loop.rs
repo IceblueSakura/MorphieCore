@@ -3,7 +3,6 @@ use super::child_process;
 use crate::messages_tool_fixture as fixture;
 use serde_json::Value;
 use std::time::Duration;
-use tokio::process::Command;
 
 #[tokio::test]
 #[ignore = "requires locked Anthropic SDK; synthetic native Messages JSON/SSE five-turn loops"]
@@ -26,19 +25,12 @@ async fn history_case(recovery_stream: Option<bool>) {
         fixture::start().await
     };
     let home = tempfile::tempdir().unwrap();
-    let mut command = Command::new(
-        std::env::var_os("MORPHIECORE_SDK_PYTHON").unwrap_or_else(|| "python3".into()),
-    );
-    command
-        .env_clear()
-        .env("HOME", home.path())
-        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-        .args([
-            "tests/sdk/messages_tool_loop.py",
-            &fixture.base,
-            fixture::KEY,
-        ])
-        .current_dir(env!("CARGO_MANIFEST_DIR"));
+    let mut command = super::isolated_sdk_python(home.path());
+    command.args([
+        "tests/sdk/messages_tool_loop.py",
+        &fixture.base,
+        fixture::KEY,
+    ]);
     if let Some(stream) = recovery_stream {
         command.arg(if stream { "sse" } else { "json" });
     }

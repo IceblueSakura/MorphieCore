@@ -1,5 +1,5 @@
 //! Messages activation, all-native contract publication and owner-local cache admission.
-use super::test_support::{Fixture, selected_models};
+use super::test_support::{Fixture, selected_models, service};
 use super::*;
 use crate::{
     adapter::{AdapterError, ClientAdapter},
@@ -13,23 +13,28 @@ use tower::ServiceExt;
 #[test]
 fn native_response_binding_activates_only_when_listed() {
     // Both protocol families share the same public contract; activation remains explicit.
-    let settings = |models: Option<&'static str>| {
-        move |name: &str| {
-            Ok(match name {
-                "client_key" => Some("synthetic-gateway-client-token-0001".into()),
-                "opencode-go-api-key" => Some("synthetic-upstream-only".into()),
-                "models" => models.map(Into::into),
-                _ => None,
-            })
-        }
-    };
+    let credentials = [(
+        "opencode-go",
+        "opencode-go-api-key",
+        "synthetic-upstream-only",
+    )];
     let haiku = "claude-haiku-5-5";
-    let boot = Fixture::from_lookup(settings(None)).unwrap();
+    let boot = Fixture::new(
+        service(),
+        selected_models(&["muse-spark-1.3-contributor"], &["opencode-go"]),
+        &credentials,
+    )
+    .unwrap();
     for protocol in [Profile::Chat, Profile::Responses] {
         let key = (crate::gateway::family(protocol), haiku.into());
         assert!(!boot.gateway.state.entries.contains_key(&key));
     }
-    let boot = Fixture::from_lookup(settings(Some(r#"["claude-haiku-5-5"]"#))).unwrap();
+    let boot = Fixture::new(
+        service(),
+        selected_models(&[haiku], &["opencode-go"]),
+        &credentials,
+    )
+    .unwrap();
     // Chat, Responses and Messages clients.
     assert_eq!(boot.gateway.state.entries.len(), 3);
     for protocol in [Profile::Chat, Profile::Responses] {
@@ -41,13 +46,14 @@ fn native_response_binding_activates_only_when_listed() {
         );
         assert_eq!(endpoint.target.path.as_str(), "/zen/go/v1/messages");
     }
-    let mixed = Fixture::from_lookup(|name| {
-        if name == "openrouter-api-key" {
-            Ok(Some("synthetic-router-key".into()))
-        } else {
-            settings(Some(r#"["claude-haiku-5-5"]"#))(name)
-        }
-    })
+    let mixed = Fixture::new(
+        service(),
+        selected_models(&[haiku], &["opencode-go", "openrouter"]),
+        &[
+            credentials[0],
+            ("openrouter", "openrouter-api-key", "synthetic-router-key"),
+        ],
+    )
     .unwrap();
     let body = br#"{"model":"claude-haiku-5-5","max_tokens":64,"messages":[
         {"role":"user","content":"read the file"},
@@ -88,14 +94,14 @@ fn native_response_binding_activates_only_when_listed() {
 
 fn configured_messages(providers: &[&str]) -> Fixture {
     let models = selected_models(&["claude-haiku-5-5"], providers);
-    Fixture::from_lookup(|name| {
-        Ok(match name {
-            "client_key" => Some("synthetic-gateway-client-token-0001".into()),
-            "opencode-go-api-key" | "openrouter-api-key" => Some("synthetic-upstream".into()),
-            "model_config" => Some(models.to_string()),
-            _ => None,
-        })
-    })
+    Fixture::new(
+        service(),
+        models,
+        &[
+            ("opencode-go", "opencode-go-api-key", "synthetic-upstream"),
+            ("openrouter", "openrouter-api-key", "synthetic-upstream"),
+        ],
+    )
     .unwrap()
 }
 
@@ -106,14 +112,14 @@ fn messages_output_defaults_inherit_override_or_clear_without_widening_maxima() 
             candidate["binding"] = json!("opencode-go-haiku-messages");
         }
         let models = json!({"models":{"claude-haiku-5-5":{"candidates":[candidate]}}});
-        Fixture::from_lookup(|name| {
-            Ok(match name {
-                "client_key" => Some("synthetic-gateway-client-token-0001".into()),
-                "opencode-go-api-key" | "openrouter-api-key" => Some("synthetic-upstream".into()),
-                "model_config" => Some(models.to_string()),
-                _ => None,
-            })
-        })
+        Fixture::new(
+            service(),
+            models,
+            &[
+                ("opencode-go", "opencode-go-api-key", "synthetic-upstream"),
+                ("openrouter", "openrouter-api-key", "synthetic-upstream"),
+            ],
+        )
     };
     for (configured, expected) in [
         (json!({}), Some(32_000)),

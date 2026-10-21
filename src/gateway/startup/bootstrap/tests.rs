@@ -5,13 +5,17 @@ use super::test_support::*;
 
 #[test]
 fn shared_provider_credentials_keep_model_and_protocol_targets_distinct() {
-    let boot = Fixture::from_lookup(|name| {
-        Ok(match name {
-            "client_key" => Some("synthetic-gateway-client-token-0001".into()),
-            "xiaomi-api-key" | "zhipu-api-key" => Some("synthetic-upstream".into()),
-            _ => None,
-        })
-    })
+    let boot = Fixture::new(
+        service(),
+        selected_models(
+            &["mimo-v2.6-pro", "mimo-v2.6-flash", "glm-5.3"],
+            &["xiaomi", "zhipu"],
+        ),
+        &[
+            ("xiaomi", "xiaomi-api-key", "synthetic-upstream"),
+            ("zhipu", "zhipu-api-key", "synthetic-upstream"),
+        ],
+    )
     .unwrap();
     for (model, upstream, credential, chat_prefix, responses_prefix) in [
         (
@@ -86,14 +90,15 @@ fn shared_provider_credentials_keep_model_and_protocol_targets_distinct() {
             );
         }
     }
-    let boot = Fixture::from_lookup(|name| {
-        Ok(match name {
-            "client_key" => Some("synthetic-gateway-client-token-0001".into()),
-            "aliyun-dashscope-cn-api-key" => Some("synthetic-metered-key".into()),
-            "models" => Some(r#"["glm-5.3-prime"]"#.into()),
-            _ => None,
-        })
-    })
+    let boot = Fixture::new(
+        service(),
+        selected_models(&["glm-5.3-prime"], &["aliyun-dashscope-cn"]),
+        &[(
+            "aliyun-dashscope-cn",
+            "aliyun-dashscope-cn-api-key",
+            "synthetic-metered-key",
+        )],
+    )
     .unwrap();
     let (entry, request) = crate::gateway::ingress::admission::prepare(
         &boot.gateway.state,
@@ -126,16 +131,30 @@ fn shared_provider_credentials_keep_model_and_protocol_targets_distinct() {
 #[test]
 fn subscription_and_metered_entries_never_exchange_credentials_or_origins() {
     for (subscription, metered) in [(true, false), (false, true), (true, true)] {
-        let boot = Fixture::from_lookup(|name| {
-            Ok(match name {
-                "client_key" => Some("synthetic-gateway-client-token-0001".into()),
-                "aliyun-tokenplan-cn-api-key" if subscription => {
-                    Some("synthetic-subscription-key".into())
-                }
-                "aliyun-dashscope-cn-api-key" if metered => Some("synthetic-metered-key".into()),
-                _ => None,
-            })
-        })
+        let mut credentials = vec![];
+        if subscription {
+            credentials.push((
+                "aliyun-tokenplan-cn",
+                "aliyun-tokenplan-cn-api-key",
+                "synthetic-subscription-key",
+            ));
+        }
+        if metered {
+            credentials.push((
+                "aliyun-dashscope-cn",
+                "aliyun-dashscope-cn-api-key",
+                "synthetic-metered-key",
+            ));
+        }
+        let providers: Vec<_> = credentials
+            .iter()
+            .map(|(provider, _, _)| *provider)
+            .collect();
+        let boot = Fixture::new(
+            service(),
+            selected_models(&["qwen3.8-flash", "qwen3.8-max"], &providers),
+            &credentials,
+        )
         .unwrap();
         for profile in [Profile::Chat, Profile::Responses] {
             for model in ["qwen3.8-flash", "qwen3.8-max"] {
@@ -236,34 +255,23 @@ fn subscription_and_metered_entries_never_exchange_credentials_or_origins() {
 
 #[test]
 fn bootstrap_is_loopback_and_requires_explicit_auth_and_provider_keys() {
-    let settings = |name: &str| {
-        Ok(match name {
-            "client_key" => Some("synthetic-gateway-client-token-0001".into()),
-            "deepseek-api-key" => Some("synthetic-upstream-only".into()),
-            _ => None,
-        })
-    };
-    assert!(Fixture::from_lookup(settings).is_ok());
+    let models = selected_models(&["deepseek-flash"], &["deepseek"]);
+    let credentials = [("deepseek", "deepseek-api-key", "synthetic-upstream-only")];
+    assert!(Fixture::new(service(), models.clone(), &credentials).is_ok());
     assert!(matches!(
-        Fixture::from_lookup(|_| Ok(None)),
-        Err(StartupError::Credentials)
+        Fixture::new(serde_json::json!({}), models.clone(), &credentials),
+        Err(StartupError::Configuration("gateway"))
     ));
+    let mut public = service();
+    public["bind"] = serde_json::json!("0.0.0.0:8080");
     assert!(matches!(
-        Fixture::from_lookup(|n| if n == "bind" {
-            Ok(Some("0.0.0.0:8080".into()))
-        } else {
-            settings(n)
-        }),
+        Fixture::new(public, models.clone(), &credentials),
         Err(StartupError::Listener)
     ));
-    assert!(
-        Fixture::from_lookup(|n| if n == "deepseek-api-key" {
-            Ok(None)
-        } else {
-            settings(n)
-        })
-        .is_err()
-    );
+    assert!(matches!(
+        Fixture::new(service(), models, &[]),
+        Err(StartupError::Credentials)
+    ));
 }
 
 #[test]
@@ -275,15 +283,12 @@ fn responses_chat_bridge_is_explicit_and_replaces_not_falls_back_to_native_respo
         .endpoint_id(crate::topology::ProtocolProfile::OpenAiChat);
     let config =
         serde_json::json!({"models":{"gpt-6-luna":{"candidates":[{"binding":binding.as_str()}]}}});
-    let settings = |name: &str| {
-        Ok(match name {
-            "client_key" => Some("synthetic-gateway-client-token-0001".into()),
-            "openrouter-api-key" => Some("synthetic-upstream-only".into()),
-            "model_config" => Some(config.to_string()),
-            _ => None,
-        })
-    };
-    let boot = Fixture::from_lookup(settings).unwrap();
+    let credentials = [(
+        "openrouter",
+        "openrouter-api-key",
+        "synthetic-upstream-only",
+    )];
+    let boot = Fixture::new(service(), config.clone(), &credentials).unwrap();
     let entry = &boot.gateway.state.entries[&(
         crate::gateway::family(Profile::Responses),
         "gpt-6-luna".into(),
@@ -300,43 +305,35 @@ fn responses_chat_bridge_is_explicit_and_replaces_not_falls_back_to_native_respo
     for invalid in ["unknown", "deepseek-flash-chat"] {
         let mut bad = config.clone();
         bad["models"]["gpt-6-luna"]["candidates"][0]["binding"] = serde_json::json!(invalid);
-        assert!(
-            Fixture::from_lookup(|name| if name == "model_config" {
-                Ok(Some(bad.to_string()))
-            } else {
-                settings(name)
-            })
-            .is_err()
-        );
+        assert!(Fixture::new(service(), bad, &credentials).is_err());
     }
     assert!(
-        Fixture::from_lookup(|name| if name == "model_config" {
-            Ok(Some(
-                r#"{"models":{"gpt-6-luna":{"candidates":[]}}}"#.into(),
-            ))
-        } else {
-            settings(name)
-        })
+        Fixture::new(
+            service(),
+            serde_json::json!({"models":{"gpt-6-luna":{"candidates":[]}}}),
+            &credentials
+        )
         .is_err()
     );
 }
 
 #[test]
 fn xiaomi_audio_is_explicit_and_prepares_its_own_json_contracts() {
-    let settings = |selected| {
-        move |name: &str| {
-            Ok(match name {
-                "client_key" => Some("synthetic-gateway-client-token-0001".into()),
-                "xiaomi-api-key" => Some("synthetic-upstream-only".into()),
-                "models" if selected => Some(r#"["mimo-v2.5-tts","mimo-v2.5-asr"]"#.into()),
-                _ => None,
-            })
-        }
-    };
-    let implicit = Fixture::from_lookup(settings(false)).unwrap();
+    let credentials = [("xiaomi", "xiaomi-api-key", "synthetic-upstream-only")];
+    let implicit = Fixture::new(
+        service(),
+        selected_models(&["mimo-v2.6-pro"], &["xiaomi"]),
+        &credentials,
+    )
+    .unwrap();
     assert!(implicit.gateway.state.speech.is_empty());
     assert!(implicit.gateway.state.transcriptions.is_empty());
-    let explicit = Fixture::from_lookup(settings(true)).unwrap();
+    let explicit = Fixture::new(
+        service(),
+        selected_models(&["mimo-v2.5-tts", "mimo-v2.5-asr"], &["xiaomi"]),
+        &credentials,
+    )
+    .unwrap();
     assert!(explicit.gateway.state.entries.is_empty());
     assert_eq!(explicit.gateway.state.speech.len(), 1);
     assert_eq!(explicit.gateway.state.transcriptions.len(), 1);
@@ -398,15 +395,18 @@ fn xiaomi_audio_is_explicit_and_prepares_its_own_json_contracts() {
 
 #[test]
 fn codex_history_reaches_the_native_binding_by_named_rules() {
-    let boot = Fixture::from_lookup(|name| {
-        Ok(match name {
-            "client_key" => Some("synthetic-gateway-client-token-0001".into()),
-            "opencode-go-api-key" => Some("synthetic-upstream-only".into()),
-            "models" => Some(r#"["claude-haiku-5-5"]"#.into()),
-            "reasoning_as_text" => Some("true".into()),
-            _ => None,
-        })
-    })
+    let mut models = selected_models(&["claude-haiku-5-5"], &["opencode-go"]);
+    models["models"]["claude-haiku-5-5"]["candidates"][0]["reasoning_as_text"] =
+        serde_json::json!(true);
+    let boot = Fixture::new(
+        service(),
+        models,
+        &[(
+            "opencode-go",
+            "opencode-go-api-key",
+            "synthetic-upstream-only",
+        )],
+    )
     .unwrap();
     let call = |id: &str, output: &str| {
         [
@@ -578,19 +578,7 @@ fn configured_failover_orders_and_limits_a_models_providers() {
     let gateway_file = directory.path().join("gateway.json");
     let models_file = directory.path().join("models.json");
     let private_write = |path: &std::path::Path, value: serde_json::Value| {
-        use std::io::Write;
-        let mut options = std::fs::OpenOptions::new();
-        options.write(true).create(true).truncate(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        options
-            .open(path)
-            .unwrap()
-            .write_all(&serde_json::to_vec(&value).unwrap())
-            .unwrap();
+        write_private(path, &serde_json::to_vec(&value).unwrap());
     };
     private_write(
         &gateway_file,
@@ -703,14 +691,10 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         .as_array_mut()
         .unwrap()
         .reverse();
-    let settings = |name: &str| {
-        Ok(match name {
-            "client_key" => Some("synthetic-gateway-client-token-0001".into()),
-            "opencode-go-api-key" | "openrouter-api-key" => Some("synthetic-upstream".into()),
-            "model_config" => Some(ordered.to_string()),
-            _ => None,
-        })
-    };
+    let credentials = [
+        ("opencode-go", "opencode-go-api-key", "synthetic-upstream"),
+        ("openrouter", "openrouter-api-key", "synthetic-upstream"),
+    ];
     let providers = |boot: &Fixture, protocol| {
         boot.gateway
             .state
@@ -728,7 +712,7 @@ fn configured_failover_orders_and_limits_a_models_providers() {
                     .collect::<Vec<_>>()
             })
     };
-    let boot = Fixture::from_lookup(settings).unwrap();
+    let boot = Fixture::new(test_support::service(), ordered.clone(), &credentials).unwrap();
     assert_eq!(
         providers(&boot, Profile::Chat).unwrap(),
         ["opencode-go", "openrouter"]
@@ -742,14 +726,7 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         .as_array_mut()
         .unwrap()
         .remove(1);
-    let boot = Fixture::from_lookup(|name| {
-        if name == "model_config" {
-            Ok(Some(unlisted.to_string()))
-        } else {
-            settings(name)
-        }
-    })
-    .unwrap();
+    let boot = Fixture::new(test_support::service(), unlisted, &credentials).unwrap();
     assert_eq!(providers(&boot, Profile::Chat).unwrap(), ["opencode-go"]);
     write_private(&models_file, br#"{"models":{},"models":{}}"#);
     assert!(Bootstrap::from_files(&gateway_file, &store).is_err());

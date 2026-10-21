@@ -27,7 +27,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use tokio::{net::TcpListener, process::Command};
+use tokio::net::TcpListener;
 
 async fn handle(
     State(seen): State<Arc<Mutex<usize>>>,
@@ -167,15 +167,8 @@ async fn sdk_messages_native_controls_history_and_partial_stream() {
     });
     let guard = ServerGuard(server.abort_handle());
     let home = tempfile::tempdir().unwrap();
-    let mut command = Command::new(
-        std::env::var_os("MORPHIECORE_SDK_PYTHON").unwrap_or_else(|| "python3".into()),
-    );
-    command
-        .env_clear()
-        .env("HOME", home.path())
-        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-        .args(["tests/sdk/messages_loop.py", &format!("http://{address}")])
-        .current_dir(env!("CARGO_MANIFEST_DIR"));
+    let mut command = super::isolated_sdk_python(home.path());
+    command.args(["tests/sdk/messages_loop.py", &format!("http://{address}")]);
     let output = child_process::run(&mut command, b"", Duration::from_secs(30), 16 << 10)
         .await
         .unwrap();

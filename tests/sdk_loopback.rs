@@ -69,6 +69,18 @@ use tokio::{net::TcpListener, process::Command};
 
 const SCRIPT: &str = "tests/sdk/responses_text_loop.py";
 
+fn isolated_sdk_python(home: &std::path::Path) -> Command {
+    let mut command = Command::new(
+        std::env::var_os("MORPHIECORE_SDK_PYTHON").unwrap_or_else(|| "python3".into()),
+    );
+    command
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .env_clear()
+        .env("HOME", home)
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default());
+    command
+}
+
 fn origin() -> ReplayOrigin {
     ReplayOrigin::new("synthetic-loopback").unwrap()
 }

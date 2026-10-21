@@ -19,16 +19,8 @@ async fn history_case(profile: Profile, recovery_stream: Option<bool>) {
         fixture::start(profile, false).await
     };
     let home = tempfile::tempdir().unwrap();
-    let mut command = tokio::process::Command::new(
-        std::env::var_os("MORPHIECORE_SDK_PYTHON").unwrap_or_else(|| "python3".into()),
-    );
-    command
-        .args([script, &fixture.base])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env_clear()
-        .env("HOME", home.path())
-        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-        .kill_on_drop(true);
+    let mut command = super::isolated_sdk_python(home.path());
+    command.args([script, &fixture.base]);
     if let Some(stream) = recovery_stream {
         command.arg(if stream { "sse" } else { "json" });
     }
