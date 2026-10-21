@@ -34,6 +34,7 @@ pub struct GenerationRequirements {
     pub tool_choice: Option<crate::semantic::task::generation::ToolChoice>,
     pub parallel_tool_calls: Option<bool>,
     pub strict_function_tools: bool,
+    pub tool_examples: bool,
     pub tool_changes: bool,
     pub normalization_default_tools: bool,
     pub explicit_cache: bool,
@@ -108,6 +109,7 @@ impl GenerationRequirements {
             truncation: r.controls().truncation.is_some(),
             strict_function_tools: functions()
                 .any(|t| matches!(t.strict, FunctionStrictness::Explicit(true))),
+            tool_examples: functions().any(|t| t.input_examples.is_some()),
             normalization_default_tools: functions()
                 .any(|t| t.strict == FunctionStrictness::Omitted(StrictDefault::NormalizeSchema)),
             explicit_cache: functions().any(|t| t.cache.is_some()),
@@ -215,6 +217,7 @@ impl GenerationRequirements {
                     {
                         x.strict_function_tools |=
                             matches!(t.strict, FunctionStrictness::Explicit(true));
+                        x.tool_examples |= t.input_examples.is_some();
                         x.normalization_default_tools |=
                             t.strict == FunctionStrictness::Omitted(StrictDefault::NormalizeSchema);
                     }

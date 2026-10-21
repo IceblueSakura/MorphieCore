@@ -20,7 +20,7 @@ with httpx.Client(trust_env=False, timeout=10) as http:
             metadata={"user_id": "sdk-user"},
             tools=[{"name": "lookup", "input_schema": {
                 "type": "object", "properties": {"n": {"type": "integer"}}
-            }}],
+            }, "input_examples": [{"n": 9007199254740993}, {"n": 7}]}],
         )
         history = [{"role": "user", "content": "go"}]
         first = client.messages.create(**shared, messages=history)

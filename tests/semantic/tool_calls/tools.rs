@@ -266,6 +266,7 @@ fn semantic_construction_cannot_bypass_identifier_or_control_validation() {
         strict: FunctionStrictness::Explicit(false),
         dispatch: ToolDispatch::default(),
         cache: None,
+        input_examples: None,
         eager_input: None,
     });
     assert!(

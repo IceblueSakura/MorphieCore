@@ -72,6 +72,7 @@ impl Profile {
             file_input: true,
             parallel_tool_calls: true,
             strict_tools: false,
+            tool_examples: false,
             tool_changes: false,
             normalization_default_tools: false,
             explicit_cache: false,
@@ -86,6 +87,7 @@ impl Profile {
     ) -> crate::semantic::task::generation::GenerationSemanticContract {
         let mut contract = self.semantic_contract();
         contract.strict_tools = true;
+        contract.tool_examples = true;
         contract.explicit_cache = true;
         contract.automatic_prefix_cache = true;
         contract.stop_sequences = true;

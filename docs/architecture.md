@@ -147,9 +147,9 @@ When a concept cannot be expressed, show a minimal counterexample and structural
 
 #### Tool examples and document context
 
-**Selected on 2026-10-21; implementation and admission are pending the [Generation Text production closure](roadmap.md#generation-text-production-closure).**
+Tool examples have bounded IR and native Messages carriers; binding admission remains closed pending deployed-profile evidence. Document context remains selected for the [Generation Text production closure](roadmap.md#generation-text-production-closure).
 
-Bounded, ordered input examples belong to the function-tool definition, including definitions introduced by `ToolChange`. They are model-visible input, not schema constraints or executable calls. Preserve their source-defined shape and presence without rewriting the schema or appending examples to the description.
+Bounded, ordered input examples belong to `FunctionTool.input_examples`, including definitions introduced by `ToolChange`. They are model-visible input, not schema constraints or executable calls. Preserve absent versus an explicit empty list and exact object values/order without rewriting the schema or appending examples to the description. Messages rejects null lists and non-object elements. The separate `ToolExamples` requirement prevents ordinary tool support from implicitly activating examples; other protocol encoders reject without a selected carrier.
 
 The [source recheck](refs/2026-10-17-generation-contracts.md#anthropic-input-and-cache-recheck-2026-10-21) requires object examples and documents upstream schema validation. Existing `SchemaDocument` checks data shape and bounds, not instance validity. Keep these responsibilities explicit: no automatic schema/example repair, claim of local instance validation or new general validator follows from this owner selection. Native rejection remains an error, not a successful adaptation or reason for silent retry.
 
@@ -157,7 +157,7 @@ Document context belongs to each file use, alongside its description, not to the
 
 Context is model-visible text, not citable document content or an arbitrary JSON object. Handle absent/null/empty from the pinned source rather than truthiness; a nullable SDK type alone does not prove runtime equivalence. Examples/context edits change model-visible input and cannot preserve an unchanged-prefix claim merely because the underlying tool name or resource source is unchanged.
 
-Implement accurate Messages carriers first. A target without an accurate carrier rejects either concept; no omission or prompt-rewriting approximation is selected. Existing bounds, owner-edit validation, candidate isolation and history-prefix stability apply. These owners do not select document citations, tool discovery, hosted execution or File services.
+Messages carriers come first. A target without an accurate carrier rejects either concept; no omission or prompt-rewriting approximation is selected. Existing bounds, owner-edit validation, candidate isolation and history-prefix stability apply. These owners do not select document citations, tool discovery, hosted execution or File services.
 
 #### Citation point anchors
 
@@ -1104,7 +1104,7 @@ These records preserve accepted choices and their consequences, grouped by domai
 | No default-strict-to-plain conversion | P8 rejects `DefaultStrictAsPlain`. Omitted Responses normalization defaults are not non-strict tools; preserve their source semantics or reject, without removing explicit constraints |
 | Predicted-output optimization | D3 selects named omission of Chat prediction after source validation until supported. Record the loss without changing generated text or fabricating usage |
 | Registered reasoning-view presence | Absent/null/empty plaintext views make no assertion; nonempty duplicates must agree. Explicit structured parts and replay ownership remain intact |
-| Unsupported known request semantics | Chat `moderation`, content-part `prompt_cache_breakpoint` and Messages tool `input_examples` reject before unknown-field filtering. Non-null Chat moderation reports reject in JSON and every SSE chunk, including usage tails; null is inactive. Neither security policy/reports, explicit cache boundaries nor model-visible tool examples may be silently discarded |
+| Unsupported known request semantics | Chat `moderation` and content-part `prompt_cache_breakpoint` reject before unknown-field filtering. Messages tool examples now have exact native carriers and a separate, initially closed binding requirement. Non-null Chat moderation reports reject in JSON and every SSE chunk, including usage tails; null is inactive. Neither security policy/reports, explicit cache boundaries nor model-visible tool examples may be silently discarded |
 | Layered capabilities | Source validity, acceptance through approved adaptation and faithful target support are distinct. Do not advertise lossy acceptance as native support or infer public promises from a union of candidates |
 | Declared adaptation | Named candidate-local losses; known fields strict, unknown protocol fields ignored |
 | Candidate-local tool errors | Messages admission preserves tool-result error flags regardless of the route. Native targets retain them; OpenAI targets apply a named loss on their private copy |

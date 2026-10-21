@@ -266,6 +266,7 @@ pub(super) fn read_tool(
         },
         dispatch,
         cache: None,
+        input_examples: None,
         eager_input: None,
     }))
 }
@@ -408,6 +409,9 @@ pub(super) fn write_tool(t: &ToolDefinition, profile: Profile) -> Result<Value, 
             "tools":group.tools.iter().map(|t| write_tool(t, profile)).collect::<Result<Vec<_>, _>>()?
         }),
         ToolDefinition::Function(t) => {
+            if t.input_examples.is_some() {
+                return Err(CodecError::Unsupported("tool input examples".into()));
+            }
             let mut f = json!({"name":t.name.as_str()});
             if let Some(d) = &t.description {
                 f["description"] = json!(d);

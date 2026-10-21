@@ -48,6 +48,7 @@ pub fn semantic_contract() -> GenerationSemanticContract {
         file_input: true,
         parallel_tool_calls: true,
         strict_tools: false,
+        tool_examples: false,
         tool_changes: false,
         normalization_default_tools: false,
         explicit_cache: false,

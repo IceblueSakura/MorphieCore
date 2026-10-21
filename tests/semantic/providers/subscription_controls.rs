@@ -39,6 +39,7 @@ fn tools(grouped: bool) -> Vec<ToolDefinition> {
         parameters: Some(json!({"type":"object","properties":{"n":{"type":"integer"}}}).into()),
         strict: FunctionStrictness::Explicit(false),
         output_schema: None,
+        input_examples: None,
         dispatch: Default::default(),
         cache: None,
         eager_input: None,

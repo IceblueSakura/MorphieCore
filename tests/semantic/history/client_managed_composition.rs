@@ -80,6 +80,7 @@ impl Sample {
             tools: Some(vec![ToolDefinition::Function(FunctionTool {
                 name: text("lookup"),
                 description: Some("original definition".into()),
+                input_examples: None,
                 parameters: Some(
                     serde_json::json!({"type":"object","properties":{"n":{"type":"integer"}}})
                         .into(),

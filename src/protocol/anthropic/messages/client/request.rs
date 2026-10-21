@@ -146,14 +146,8 @@ fn blocks(v: &mut Value, ignored: &mut BTreeSet<String>) -> Result<(), CodecErro
     }
     Ok(())
 }
-/// Close a tool definition to its known fields; dispatch and example fields that
-/// change model input or callers reject.
+/// Close a tool definition without filtering examples or other known model input.
 fn tool_fields(t: &mut Value, ignored: &mut BTreeSet<String>) -> Result<(), CodecError> {
-    if t.get("input_examples").is_some() {
-        return Err(CodecError::Unsupported(
-            "Anthropic tool input examples".into(),
-        ));
-    }
     if t.get("allowed_callers").is_some() {
         return Err(CodecError::Unsupported("Anthropic tool dispatch".into()));
     }

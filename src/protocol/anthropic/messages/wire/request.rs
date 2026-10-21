@@ -5,7 +5,7 @@ use crate::protocol::anthropic::messages::{
 use crate::{
     protocol::CodecError,
     semantic::{
-        task::generation::{MAX_TOOLS, PrefixCacheTtl, SchemaDocument},
+        task::generation::{MAX_TOOLS, PrefixCacheTtl, SchemaDocument, StructuredValue},
         value::Presence,
     },
 };
@@ -296,6 +296,7 @@ pub struct Tool {
     pub name: String,
     pub description: Presence<String>,
     pub input_schema: SchemaDocument,
+    pub input_examples: Presence<Vec<StructuredValue>>,
     pub strict: Presence<bool>,
     pub cache_control: Presence<PrefixCacheTtl>,
     /// Withheld until a later tool addition surfaces it.
@@ -306,6 +307,7 @@ pub(in crate::protocol::anthropic::messages) const TOOL_FIELDS: &[&str] = &[
     "name",
     "description",
     "input_schema",
+    "input_examples",
     "strict",
     "cache_control",
     "defer_loading",
@@ -320,6 +322,21 @@ impl Tool {
             name: string(required(o, "name")?)?,
             description: presence(o, "description", string)?,
             input_schema: required(o, "input_schema")?.clone().into(),
+            input_examples: presence(o, "input_examples", |v| {
+                let values = v
+                    .as_array()
+                    .ok_or(CodecError::Invalid("Anthropic input examples"))?;
+                count(values.len())?;
+                values
+                    .iter()
+                    .map(|v| {
+                        if !v.is_object() {
+                            return Err(CodecError::Invalid("Anthropic input example"));
+                        }
+                        Ok(StructuredValue::new(v.clone())?)
+                    })
+                    .collect()
+            })?,
             strict: presence(o, "strict", boolean)?,
             cache_control: presence(o, "cache_control", CacheControl::read_breakpoint)?,
             defer_loading: defer.value() == Some(&true),
@@ -332,6 +349,7 @@ impl Tool {
         nonnull(&self.strict)?;
         nonnull(&self.cache_control)?;
         nonnull(&self.eager_input_streaming)?;
+        nonnull(&self.input_examples)?;
         // A deferred definition cannot carry a breakpoint.
         if self.defer_loading && self.cache_control.value().is_some() {
             return Err(CodecError::Invalid("Anthropic deferred tool cache"));
@@ -340,6 +358,15 @@ impl Tool {
             return Err(CodecError::Unsupported("Anthropic object schema".into()));
         }
         let mut bytes = self.input_schema.validate()?;
+        if let Some(examples) = self.input_examples.value() {
+            count(examples.len())?;
+            for example in examples {
+                if !example.value().is_object() {
+                    return Err(CodecError::Invalid("Anthropic input example"));
+                }
+                charge(&mut bytes, example.bytes()?)?;
+            }
+        }
         if self.cache_control.value().is_some() {
             charge(&mut bytes, 32)?;
         }
@@ -354,6 +381,9 @@ impl Tool {
         let o = v.as_object_mut().expect("object");
         put(o, "description", &self.description, |s| json!(s));
         put(o, "strict", &self.strict, |b| json!(b));
+        put(o, "input_examples", &self.input_examples, |values| {
+            Value::Array(values.iter().map(|v| v.value().clone()).collect())
+        });
         put(
             o,
             "cache_control",

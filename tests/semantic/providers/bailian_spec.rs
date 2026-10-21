@@ -448,6 +448,7 @@ fn responses_non_strict_defaults_and_single_function_selection_have_native_oracl
         tools: Some(vec![ToolDefinition::Function(FunctionTool {
             name: text("lookup"),
             description: Some("lookup value".into()),
+            input_examples: None,
             parameters: Some(json!({"type":"object"}).into()),
             strict: FunctionStrictness::Explicit(false),
             output_schema: None,

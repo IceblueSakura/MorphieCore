@@ -70,6 +70,9 @@ pub struct FunctionTool {
     pub name: Text,
     pub description: Option<String>,
     pub parameters: Option<crate::semantic::task::generation::SchemaDocument>,
+    /// Ordered model-visible input objects, not locally schema-validated instances.
+    /// An explicit empty list differs from omission.
+    pub input_examples: Option<Vec<StructuredValue>>,
     pub strict: FunctionStrictness,
     pub output_schema: Option<crate::semantic::task::generation::SchemaDocument>,
     pub dispatch: ToolDispatch,

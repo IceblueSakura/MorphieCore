@@ -93,6 +93,17 @@ pub(in crate::semantic::task::generation) fn tools(
                 for schema in t.parameters.iter().chain(&t.output_schema) {
                     schema_bytes(&mut bytes, schema.validate()?)?;
                 }
+                if let Some(examples) = &t.input_examples {
+                    if examples.len() > MAX_ITEMS {
+                        return Err(GenerationError::Limit);
+                    }
+                    for example in examples {
+                        if !example.value().is_object() {
+                            return Err(GenerationError::InvalidToolDefinition);
+                        }
+                        charge(&mut bytes, example.bytes()?)?;
+                    }
+                }
             }
             ToolDefinition::Custom(t) => {
                 charge(&mut bytes, t.dispatch.validate()?)?;

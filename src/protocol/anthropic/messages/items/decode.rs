@@ -349,6 +349,7 @@ pub(in crate::protocol::anthropic::messages) fn function_tool(
         name: text(&tool.name)?,
         description: tool.description.value().cloned(),
         parameters: Some(tool.input_schema.clone()),
+        input_examples: tool.input_examples.value().cloned(),
         strict: tool
             .strict
             .value()

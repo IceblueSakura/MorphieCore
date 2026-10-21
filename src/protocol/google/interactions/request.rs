@@ -139,7 +139,11 @@ pub(super) fn project(
                 let ToolDefinition::Function(t) = tool else {
                     return Err(unsupported());
                 };
-                if !t.dispatch.is_inactive() || t.output_schema.is_some() || t.cache.is_some() {
+                if !t.dispatch.is_inactive()
+                    || t.output_schema.is_some()
+                    || t.cache.is_some()
+                    || t.input_examples.is_some()
+                {
                     return Err(unsupported());
                 }
                 match t.strict {

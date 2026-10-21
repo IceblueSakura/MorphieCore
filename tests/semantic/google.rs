@@ -1003,6 +1003,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
         name: Text::new("read", "fixture", 64).unwrap(),
         description: None,
         parameters: None,
+        input_examples: None,
         strict: FunctionStrictness::Omitted(StrictDefault::NonStrict),
         output_schema: None,
         dispatch: Default::default(),

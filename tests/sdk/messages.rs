@@ -47,11 +47,27 @@ async fn handle(
         morphiecore::semantic::value::Presence::Value("sdk-user".into())
     );
     assert_eq!(request.task.semantic.reasoning().budget_tokens, Some(1024));
+    let ToolDefinition::Function(tool) = &request.task.semantic.tools()[0] else {
+        panic!("function")
+    };
+    assert_eq!(
+        tool.input_examples
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|v| v.value().clone())
+            .collect::<Vec<_>>(),
+        vec![json!({"n":9007199254740993_u64}), json!({"n":7})]
+    );
     let mut caps = TargetCaps::new(Profile::AdaptiveTextTools, Dialect::Standard);
     caps.semantics = Profile::AdaptiveTextTools.representation_contract();
     let target = ReplayTarget::new("synthetic-sdk", "fixture-model").unwrap();
     let native = caps.encode_request(&request, &target).unwrap();
     assert_eq!(native.value["metadata"], json!({"user_id":"sdk-user"}));
+    assert_eq!(
+        native.value["tools"][0]["input_examples"],
+        json!([{"n":9007199254740993_u64},{"n":7}])
+    );
     assert_eq!(
         native.value["thinking"],
         json!({"type":"enabled","budget_tokens":1024})

@@ -15,6 +15,7 @@ pub enum GenerationFeature {
     Controls,
     ParallelTools,
     StrictTools,
+    ToolExamples,
     ToolChanges,
     ToolSchemaNormalization,
     ExplicitCache,
@@ -73,6 +74,7 @@ pub struct GenerationSemanticContract {
     pub file_input: bool,
     pub parallel_tool_calls: bool,
     pub strict_tools: bool,
+    pub tool_examples: bool,
     /// Ordered tool availability changes after the initial declaration.
     pub tool_changes: bool,
     /// Omitted strictness that requests schema normalization, not an explicit strict tool.
@@ -119,6 +121,7 @@ impl GenerationSemanticContract {
             file_input: true,
             parallel_tool_calls: true,
             strict_tools: true,
+            tool_examples: true,
             tool_changes: true,
             normalization_default_tools: true,
             explicit_cache: true,
@@ -163,6 +166,7 @@ impl GenerationSemanticContract {
             file_input: false,
             parallel_tool_calls: true,
             strict_tools: false,
+            tool_examples: false,
             tool_changes: false,
             // Preserve the admitted default separately from explicit strict-tool support.
             normalization_default_tools: true,
@@ -210,6 +214,7 @@ impl GenerationSemanticContract {
             (promise.file_input, self.file_input),
             (promise.parallel_tool_calls, self.parallel_tool_calls),
             (promise.strict_tools, self.strict_tools),
+            (promise.tool_examples, self.tool_examples),
             (promise.tool_changes, self.tool_changes),
             (
                 promise.normalization_default_tools,
@@ -347,6 +352,7 @@ impl GenerationSemanticContract {
                 ParallelTools,
             ),
             (q.strict_function_tools, self.strict_tools, StrictTools),
+            (q.tool_examples, self.tool_examples, ToolExamples),
             (q.tool_changes, self.tool_changes, ToolChanges),
             (
                 q.normalization_default_tools,

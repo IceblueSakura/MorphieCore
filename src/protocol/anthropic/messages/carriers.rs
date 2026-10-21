@@ -53,6 +53,11 @@ pub(super) fn project(
         rules.insert(RequestRule::FlattenMessageEffort);
     }
     if !carriers.tool_changes && items.iter().any(|(_, i)| matches!(i, Item::ToolChange(_))) {
+        if GenerationRequirements::derive(request).tool_examples {
+            return Err(CodecError::Unsupported(
+                "ordered tool input examples".into(),
+            ));
+        }
         settings.tools = Some(collapse_tools(request.tools(), &items)?);
         items.retain(|(_, item)| !matches!(item, Item::ToolChange(_)));
         rules.insert(RequestRule::CollapseToolChanges);

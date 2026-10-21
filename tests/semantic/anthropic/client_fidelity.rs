@@ -62,6 +62,236 @@ fn terminal() -> StreamEvent {
     }
 }
 #[test]
+fn messages_tool_examples_keep_order_presence_and_tool_change_owners() {
+    use morphiecore::protocol::{anthropic::messages::Profile as Messages, native::ReplayTarget};
+    let profile = Messages::AdaptiveTextTools;
+    let examples = json!([{"n":9007199254740993_u64,"sequence":["b","a"]},{"n":"not-an-integer"}]);
+    let schema = json!({"type":"object","properties":{"n":{"type":"integer"}}});
+    let definition = json!({"name":"lookup","strict":false,"input_schema":schema,
+        "input_examples":examples});
+    let body = json!({"model":"m","max_tokens":32,"tools":[definition],
+        "messages":[{"role":"user","content":[{"type":"text","text":"go"}]},
+        {"role":"system","content":[{"type":"tool_addition","tool":{"type":"tool_definition",
+            "definition":{"name":"later","strict":false,"input_schema":schema,"input_examples":[]}}}]}]});
+    let decoded = decode_client_request(body.to_string().as_bytes()).unwrap();
+    let ToolDefinition::Function(tool) = &decoded.task.semantic.tools()[0] else {
+        panic!("function")
+    };
+    assert_eq!(tool.parameters.as_ref().unwrap().root(), &schema);
+    assert_eq!(
+        tool.input_examples
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|v| v.value().clone())
+            .collect::<Vec<_>>(),
+        examples.as_array().unwrap().clone()
+    );
+    assert!(matches!(&decoded.task.semantic.items()[1].1,
+        Item::ToolChange(ToolChange { action: ToolChangeAction::AddDefinition(tool), .. })
+            if tool.input_examples == Some(vec![])));
+    assert!(GenerationRequirements::derive(&decoded.task.semantic).tool_examples);
+    assert_eq!(
+        profile.semantic_contract().check(&decoded.task.semantic),
+        Err(GenerationFeature::ToolExamples)
+    );
+    profile
+        .representation_contract()
+        .check(&decoded.task.semantic)
+        .unwrap();
+
+    // Independent IR-to-wire expectation; structural validity does not assert
+    // that the second example satisfies the integer property in the schema.
+    let text = |s: &str| morphiecore::semantic::value::Text::new(s, "fixture", 128).unwrap();
+    let root = FunctionTool {
+        name: text("lookup"),
+        description: None,
+        parameters: Some(schema.clone().into()),
+        input_examples: Some(
+            examples
+                .as_array()
+                .unwrap()
+                .iter()
+                .cloned()
+                .map(|v| StructuredValue::new(v).unwrap())
+                .collect(),
+        ),
+        strict: FunctionStrictness::Explicit(false),
+        output_schema: None,
+        dispatch: Default::default(),
+        cache: None,
+        eager_input: None,
+    };
+    let later = FunctionTool {
+        name: text("later"),
+        input_examples: Some(vec![]),
+        ..root.clone()
+    };
+    let mut controls = GenerationControls::default();
+    controls.max_output_tokens = Some(32);
+    let request = GenerationRequest::new(
+        vec![
+            (
+                ItemId::new(1),
+                Item::Message(Message {
+                    role: MessageRole::User,
+                    status: ItemLifecycle::Completed,
+                    phase: None,
+                    parts: vec![Part::new(
+                        PartId::new(1),
+                        ContentPart::Text(text("go").into()),
+                    )],
+                }),
+            ),
+            (
+                ItemId::new(2),
+                Item::ToolChange(ToolChange {
+                    action: ToolChangeAction::AddDefinition(Box::new(later)),
+                    cache: None,
+                }),
+            ),
+        ],
+        controls,
+    )
+    .unwrap()
+    .with_tools(
+        vec![ToolDefinition::Function(root.clone())],
+        ToolChoice::Auto,
+    )
+    .unwrap()
+    .with_message_envelopes(vec![
+        MessageEnvelope::new(
+            GroupId::new(LocalScope::ROOT, 1),
+            MessageEnvelopeRole::User,
+            vec![ItemId::new(1)],
+        )
+        .unwrap(),
+    ])
+    .unwrap();
+    let wire = profile
+        .encode_generation_request(
+            &request,
+            &Default::default(),
+            &ReplayTarget::new("synthetic", "m").unwrap(),
+        )
+        .unwrap()
+        .value;
+    assert_eq!(wire["tools"], body["tools"]);
+    assert_eq!(wire["messages"], body["messages"]);
+    let mut caps = morphiecore::protocol::anthropic::messages::TargetCaps::new(
+        profile,
+        morphiecore::protocol::anthropic::messages::Dialect::Standard,
+    );
+    caps.semantics = profile.representation_contract();
+    caps.carriers = morphiecore::protocol::anthropic::messages::Carriers::all();
+    let target = ReplayTarget::new("synthetic", "m").unwrap();
+    caps.encode_request(&decoded, &target).unwrap();
+    caps.carriers.tool_changes = false;
+    assert!(matches!(caps.encode_request(&decoded, &target),
+        Err(morphiecore::adapter::AdapterError::Codec(CodecError::Unsupported(label)))
+            if label == "ordered tool input examples"));
+    for (present, expected) in [(false, None), (true, Some(vec![]))] {
+        let mut simple = body.clone();
+        simple["messages"] = json!([{"role":"user","content":"go"}]);
+        simple["tools"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("input_examples");
+        if present {
+            simple["tools"][0]["input_examples"] = json!([]);
+        }
+        let decoded = decode_client_request(simple.to_string().as_bytes()).unwrap();
+        let ToolDefinition::Function(tool) = &decoded.task.semantic.tools()[0] else {
+            panic!("function")
+        };
+        assert_eq!(tool.input_examples, expected);
+        let mut settings = request.settings().clone();
+        settings.tools = Some(vec![ToolDefinition::Function(FunctionTool {
+            input_examples: expected,
+            ..root.clone()
+        })]);
+        let own = request.clone().with_settings(settings).unwrap();
+        let wire = profile
+            .encode_generation_request(
+                &own,
+                &Default::default(),
+                &ReplayTarget::new("synthetic", "m").unwrap(),
+            )
+            .unwrap()
+            .value;
+        assert_eq!(wire["tools"][0].get("input_examples").is_some(), present);
+    }
+    // Neither root nor by-value definitions may evade the new admission bit.
+    let mut only_inline = request.settings().clone();
+    only_inline.tools = None;
+    let only_inline = request.clone().with_settings(only_inline).unwrap();
+    assert!(GenerationRequirements::derive(&only_inline).tool_examples);
+    let bound = morphiecore::topology::catalog::MESSAGES_BINDINGS[0].endpoint();
+    assert!(!bound.representation.semantics().tool_examples);
+    for profile in [Profile::Chat, Profile::Responses] {
+        assert!(
+            Adapter::new(profile, Dialect::Standard, None)
+                .encode_request(
+                    &decoded,
+                    "m",
+                    &morphiecore::protocol::openai::TargetCaps::full()
+                )
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn messages_tool_examples_reject_nonobjects_and_account_for_resource_bounds() {
+    use morphiecore::protocol::anthropic::messages::Profile as Messages;
+    let body = json!({"model":"m","max_tokens":32,"tools":[
+        {"name":"lookup","strict":false,"input_schema":{"type":"object"}}],
+        "messages":[{"role":"user","content":"go"}]});
+    for value in [
+        json!(null),
+        json!({}),
+        json!([1]),
+        json!([null]),
+        json!([[]]),
+    ] {
+        let mut bad = body.clone();
+        bad["tools"][0]["input_examples"] = value;
+        assert!(decode_client_request(bad.to_string().as_bytes()).is_err());
+        assert!(
+            Messages::AdaptiveTextTools
+                .decode_request(bad.to_string().as_bytes())
+                .is_err()
+        );
+    }
+    let decoded = decode_client_request(body.to_string().as_bytes()).unwrap();
+    let mut settings = decoded.task.semantic.settings().clone();
+    let ToolDefinition::Function(tool) = &mut settings.tools.as_mut().unwrap()[0] else {
+        panic!("function")
+    };
+    tool.input_examples = Some(vec![StructuredValue::new(json!(1)).unwrap()]);
+    assert_eq!(
+        decoded
+            .task
+            .semantic
+            .clone()
+            .with_settings(settings.clone())
+            .unwrap_err(),
+        GenerationError::InvalidToolDefinition
+    );
+    let ToolDefinition::Function(tool) = &mut settings.tools.as_mut().unwrap()[0] else {
+        panic!("function")
+    };
+    tool.input_examples = Some(vec![
+        StructuredValue::new(json!({})).unwrap();
+        MAX_ITEMS + 1
+    ]);
+    assert_eq!(
+        decoded.task.semantic.with_settings(settings).unwrap_err(),
+        GenerationError::Limit
+    );
+}
+
+#[test]
 fn messages_final_usage_requires_reported_counts_and_unambiguous_cache_categories() {
     let mut response = response();
     assert!(encode_client_response(&response, "m").is_err());
@@ -966,7 +1196,7 @@ fn client_intake_carries_caps_and_rejects_active_fields_it_cannot_carry() {
     assert!(decode_client_request(flagged.to_string().as_bytes()).is_err());
     for (key, value) in [
         ("allowed_callers", json!(["code_execution_20250825"])),
-        ("input_examples", json!([{}])),
+        ("input_examples", json!([1])),
     ] {
         let mut active = strict.clone();
         active["tools"][0][key] = value;

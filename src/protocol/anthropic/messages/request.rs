@@ -337,6 +337,10 @@ fn native_tool(t: &FunctionTool) -> Result<super::Tool, CodecError> {
             .clone()
             .map_or(Presence::Absent, Presence::Value),
         input_schema: t.parameters.clone().ok_or_else(unsupported)?,
+        input_examples: t
+            .input_examples
+            .clone()
+            .map_or(Presence::Absent, Presence::Value),
         strict: match t.strict {
             FunctionStrictness::Omitted(StrictDefault::NonStrict) => Presence::Absent,
             FunctionStrictness::Explicit(false) => Presence::Value(false),
