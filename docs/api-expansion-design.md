@@ -35,7 +35,7 @@
 
 This page owns proposed operation, resource and advanced-Generation designs. The requested scope is confirmed; structural recommendations remain proposals unless already established in [Architecture](architecture.md). No new interface, binding, resource service or execution policy is activated by this document.
 
-[Roadmap](roadmap.md#planned-order) owns the five-stage sequence and the current routing freeze. `count_tokens` belongs to stage 3 alongside cross-protocol conversion; Embedding/audio/image/video adaptation and Files/multipart Uploads belong to stage 4. Server-side compaction, Batch and Realtime join citations/discovery/hosted tools in stage 5. **All stage-5 tasks are currently unscheduled:** scope placement is not a start or delivery commitment. Detailed operation designs and within-stage ordering remain proposals; record selected decisions and explicit slices before implementing new contracts or activating bindings. Stage-4/5 work is not an exit condition for earlier stages.
+[Roadmap](roadmap.md#planned-order) owns the five-stage sequence and the current routing freeze. Stage 3 closed its selected projection/loop scope with `count_tokens` deferred. The selected [Generation Text production closure](roadmap.md#generation-text-production-closure) precedes stage-4 Embedding/audio/image/video and Files/multipart Uploads. Server-side compaction, Batch and Realtime join complete citations/discovery/hosted tools in stage 5. **All stage-5 tasks are currently unscheduled:** scope placement is not a start or delivery commitment. Detailed operation designs remain proposals; stage-4/5 work is not an exit condition for earlier stages.
 
 Code and tests remain the behavior specification. This document records ownership, constraints and proposed work, not a model catalog, compatibility certification or implementation progress log. Provider and binding availability belongs to [the catalog](../src/topology/catalog.rs) and [startup](../src/gateway/startup/bootstrap.rs).
 
@@ -115,6 +115,8 @@ Extract a shared conversation-input aggregate only where counting and compaction
 
 ### Generation boundary review
 
+The 2026-10-21 production decisions now live in Architecture: [tool examples/document context](architecture.md#tool-examples-and-document-context), [citation point anchors](architecture.md#citation-point-anchors), [automatic TTL admission](architecture.md#caller-selected-automatic-cache-admission) and [explanatory reports](architecture.md#explanatory-terminal-reports). They are selected local contracts, not unresolved alternatives below or claims of implementation. The remaining proposals do not inherit that approval.
+
 #### Retain legitimate conversation semantics
 
 The existing [Generation request](../src/semantic/task/generation/request/mod.rs) owns conversation content and settings. Independent [Embedding](../src/semantic/task/embedding.rs), [SpeechSynthesis](../src/semantic/task/speech_synthesis.rs), [SpeechRecognition](../src/semantic/task/speech_recognition.rs) and [ImageGeneration](../src/semantic/task/image_generation.rs) contracts already exist. They are not standalone operations incorrectly hidden inside Generation.
@@ -155,21 +157,20 @@ The user selected the candidate-local configuration, explicit-cap-only generic c
 
 #### Google output report owners (unselected)
 
-These proposals are paused under the user's 2026-10-21 [basic-loop closure and Google API pause](roadmap.md#google-api-pause). The selected Messages terminal projection is not approval of any report owner below.
+Probability and token-identity proposals remain paused under the [Google API pause](roadmap.md#google-api-pause). The later 2026-10-21 decision moved bounded terminal explanations and service-source review to the accepted [report contract](architecture.md#explanatory-terminal-reports); it did not select the owners below.
 
-The 2026-10-20 repair plan selects classification and maintenance rejection, not new report structures. The [source counterexamples](refs/2026-10-17-generation-contracts.md#google-foreground-contracts-2026-10-20) require design review before broader carriage:
+The [source counterexamples](refs/2026-10-17-generation-contracts.md#google-foreground-contracts-2026-10-20) still require design review before broader probability carriage:
 
 | Fact | Minimal proposed owner | Required decision |
 |---|---|---|
-| General `finishMessage` | Optional bounded explanation on existing `TerminalDetails` | Preserve it independently of outcome and known stop/incomplete reason; choose cross-protocol carriage or an explicit report-loss policy. Do not turn it into generated text or an error |
 | Reported average and sum log probabilities | One bounded output/candidate probability-report owner with independent optional numbers | Define chunk/checkpoint/final scope from evidence, replacement/conflict rules, edit dependencies and delivery. An aggregate may arrive without token reports; never recompute it as the reported value |
 | Internal vocabulary token ID | Typed source-bound fidelity tied to the unchanged text/probability owner and chosen/alternative position | Select retention bounds and invalidation/carriers; it is neither portable token bytes nor replay authority |
 
-The terminal-only first profile was proposed but not selected: the user requested [complete streaming-scope research](refs/2026-10-17-generation-contracts.md#streamed-score-scope-2026-10-20) first. Public sources define candidate averages/sums but do not establish ordinary SSE fragment-versus-cumulative coverage or repeated/missing-field reduction. A final finish reason alone does not establish whole-output score coverage. The SDK's cross-continuation-hop sum/latest-scalar merge is not a single-request stream oracle.
+A terminal-only aggregate-score profile remains unselected after the [streaming-scope research](refs/2026-10-17-generation-contracts.md#streamed-score-scope-2026-10-20). Public sources define candidate averages/sums but do not establish ordinary SSE fragment-versus-cumulative coverage or repeated/missing-field reduction. A final finish reason alone does not establish whole-output score coverage. The SDK's cross-continuation-hop sum/latest-scalar merge is not a single-request stream oracle.
 
-Recommendation after research: retain aggregate rejection until a concrete model/endpoint/API-version profile establishes coverage and report replacement. Do not select a universal response-score owner, infer totals from usage/token arrays, treat last checkpoint as final, or introduce an event archive merely to avoid that decision. Terminal explanations and source-bound token identity can be reviewed independently; aggregate uncertainty does not prove they need the same scope or structure.
+Recommendation after research: retain aggregate rejection until a concrete model/endpoint/API-version profile establishes coverage and report replacement. Do not select a universal response-score owner, infer totals from usage/token arrays, treat last checkpoint as final, or introduce an event archive merely to avoid that decision. The selected terminal explanation is independent of these score-scope questions.
 
-The explanation uses the existing terminal text and total-response budgets, retaining an explicit empty string if supplied. Token-identity records use signed int32 values and the existing token/top-candidate and fidelity budgets; bind them to source origin/model, readable owner, exact probabilities and chosen/alternative positions. Owner/probability edits invalidate them. Targets without an exact carrier reject by default; no new report-omission rule, token-byte inference, probability-request admission or Google downstream endpoint is selected by this proposal.
+Proposed token-identity records use signed int32 values and the existing token/top-candidate and fidelity budgets; bind them to source origin/model, readable owner, exact probabilities and chosen/alternative positions. Owner/probability edits invalidate them. Targets without an exact carrier reject by default; the selected explanation-only omission policy does not cover probability reports or token identity. No token-byte inference, probability-request admission or Google downstream endpoint is selected.
 
 Prefer those local additions over a new generic report store. Existing `TopLogprob` already preserves absent alternative token/probability values and needs no new owner. Existing Provider-tool observations are the first candidate for future URL retrieval facts, but their Google mapping and delivery are not selected. Keep nonempty URL-context reports rejected without activating hosted tools or full citation support.
 
@@ -357,7 +358,7 @@ The [stage-5 backlog](roadmap.md#stage-5-backlog) has no implementation queue or
 
 ### 1C design: Messages citations
 
-This is an unscheduled stage-5 proposal, not a prerequisite for stages 1–4. Citation-bearing requests/responses retain their existing rejection until the design is selected, scheduled and implemented.
+This is an unscheduled stage-5 proposal, not a prerequisite for stages 1–4. Citation-bearing requests/responses retain their existing rejection until the design is selected, scheduled and implemented. The selected document-context and point-anchor additions do not supply the missing citation enable flag, quote or request-document association below.
 
 Counterexample: a request holds two PDF documents with `citations: {"enabled": true}`. The response cites `{"type":"page_location","document_index":1,"document_title":"B","cited_text":"…","start_page_number":2,"end_page_number":3}`, and the client returns that text block with its citation. The IR has page coordinates but cannot hold the per-document flag, the cited text or a reference to the second request document: `Citation.source` resolves only in its owner's resource table.
 
@@ -464,11 +465,11 @@ These recommendations have not been adopted merely by requesting this document.
 | Custom voices | Recommend authorized voice references first; voice creation/consent management as a separate resource slice. Broader audio resource coverage may be selected explicitly | Voice-resource endpoints, not ordinary speech |
 | Video contracts | Select current operations/endpoints, task versus content ownership, artifact access and any required job lifecycle before implementation | Video implementation, not stages 1–3 |
 | Realtime design | Client scenario, session/transport and interruption/recovery contracts are unselected; keep stage 5 unscheduled | Realtime implementation |
-| Within-stage scheduling | Stage 3 closed its projection and loop scope with counting deferred; stage 4 includes Embedding/audio/image/video and Files/multipart Uploads. All stage-5 tasks remain unscheduled; placing them in the plan does not queue implementation | Per-slice activation and full-chain acceptance |
+| Later-operation selection | Generation Text closure is now selected in the roadmap; stage-4 operation contracts still need just-in-time selection. All stage-5 tasks remain unscheduled | Per-operation design, activation and full-chain acceptance |
 
 ## Execution handoff
 
-The [roadmap work packages](roadmap.md#execution-sequence-and-work-package-rules) own sequence, dependencies and acceptance gates. This page does not maintain a second implementation queue. Before starting a package, select its request/result/event and lifecycle boundaries, record accepted choices in Architecture, and retain only unresolved alternatives here.
+The [roadmap work packages](roadmap.md#execution-sequence-and-work-package-rules) own sequence, dependencies and acceptance gates, including the selected pre-stage-4 production closure. This page does not maintain a second implementation queue. Before starting a package, select its request/result/event and lifecycle boundaries, record accepted choices in Architecture, and retain only unresolved alternatives here.
 
 Extract shared values only when the selected operation needs them. Direct-input media do not depend on the complete file service; authorized file-reference paths do. Stage-4 native media jobs keep their own lifecycle without implying the general Batch API. Do not perform a repository-wide ownership rewrite or prebuild stage-5 infrastructure as a prerequisite for the first operation.
 
