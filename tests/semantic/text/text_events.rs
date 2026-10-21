@@ -48,11 +48,13 @@ fn empty_failed_and_incomplete_static_event_closure_keeps_details() {
                 }),
                 incomplete: None,
                 completion: None,
+                ..Default::default()
             },
             StreamTerminal::Incomplete => TerminalDetails {
                 error: None,
                 incomplete: Some(IncompleteReason::MaxOutputTokens),
                 completion: None,
+                ..Default::default()
             },
             _ => TerminalDetails::default(),
         };

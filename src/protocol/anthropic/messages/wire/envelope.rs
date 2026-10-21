@@ -3,7 +3,13 @@ use crate::protocol::anthropic::messages::{
     shape::*,
     wire::{content::Block, request::Role},
 };
-use crate::{protocol::CodecError, semantic::value::Presence};
+use crate::{
+    protocol::CodecError,
+    semantic::{
+        task::generation::{MAX_TERMINAL_REPORT_BYTES, RefusalCategory, RefusalDetails},
+        value::{Presence, Text},
+    },
+};
 use serde_json::{Value, json};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -13,7 +19,7 @@ pub enum StopReason {
     MaxTokens,
     StopSequence,
     ModelContextWindowExceeded,
-    /// HTTP 200 with `stop_details`; the details are not carried.
+    /// HTTP 200 with optional structured policy/explanation observations.
     Refusal,
 }
 impl StopReason {
@@ -153,6 +159,7 @@ pub struct Message {
     pub content: Vec<Block>,
     pub stop_reason: Presence<StopReason>,
     pub stop_sequence: Presence<String>,
+    pub stop_details: Presence<RefusalDetails>,
     pub usage: Usage,
     /// The upstream reported changes to its request input. Entries index the upstream
     /// request, so they are never forwarded.
@@ -194,7 +201,7 @@ impl Message {
         opening: bool,
     ) -> Result<Self, CodecError> {
         let o = object(v)?;
-        reject_fallback_reports(o)?;
+        let stop_details = read_refusal(o)?;
         if required(o, "type")?.as_str() != Some("message")
             || required(o, "role")?.as_str() != Some("assistant")
         {
@@ -209,6 +216,7 @@ impl Message {
                 .collect::<Result<_, _>>()?,
             stop_reason: presence(o, "stop_reason", StopReason::read)?,
             stop_sequence: presence(o, "stop_sequence", string)?,
+            stop_details,
             usage: Usage::read(required(o, "usage")?)?,
             input_transformations: input_transformations(o)?,
         };
@@ -237,6 +245,13 @@ impl Message {
             return Err(CodecError::Invalid("Anthropic final stop"));
         }
         let mut bytes = self.id.len() + self.model.len();
+        if let Some(details) = self.stop_details.value() {
+            details.validate()?;
+            if !opening && self.stop_reason != Presence::Value(StopReason::Refusal) {
+                return Err(CodecError::Invalid("Anthropic refusal detail stop"));
+            }
+            charge(&mut bytes, details.bytes())?;
+        }
         if let Presence::Value(s) = &self.stop_sequence {
             charge(&mut bytes, text(s)?)?;
         }
@@ -273,11 +288,69 @@ impl Message {
         let o = v.as_object_mut().expect("object");
         put(o, "stop_reason", &self.stop_reason, |s| json!(s.wire()));
         put(o, "stop_sequence", &self.stop_sequence, |s| json!(s));
+        write_refusal(o, &self.stop_details);
         v
     }
 }
 
-/// Beta execution/billing facts are protected even before refusal details have an IR owner.
+/// Read stable details only after excluding beta execution/billing authority.
+pub(in crate::protocol::anthropic::messages) fn read_refusal(
+    o: &serde_json::Map<String, Value>,
+) -> Result<Presence<RefusalDetails>, CodecError> {
+    reject_fallback_reports(o)?;
+    presence(o, "stop_details", |value| {
+        let fields = object(value)?;
+        if required(fields, "type")?.as_str() != Some("refusal") {
+            return Err(CodecError::Unsupported("Anthropic stop details".into()));
+        }
+        let result = RefusalDetails {
+            category: presence(fields, "category", |value| {
+                Ok(match value.as_str() {
+                    Some("cyber") => RefusalCategory::Cyber,
+                    Some("bio") => RefusalCategory::Biological,
+                    Some("frontier_llm") => RefusalCategory::FrontierModelDevelopment,
+                    Some("reasoning_extraction") => RefusalCategory::ReasoningExtraction,
+                    Some("general_harms") => RefusalCategory::GeneralHarms,
+                    _ => return Err(CodecError::Invalid("Anthropic refusal category")),
+                })
+            })?,
+            explanation: presence(fields, "explanation", |value| {
+                Text::allowing_empty(
+                    string(value)?,
+                    "refusal explanation",
+                    MAX_TERMINAL_REPORT_BYTES,
+                )
+                .map_err(|_| CodecError::Limit)
+            })?,
+        };
+        result.validate()?;
+        Ok(result)
+    })
+}
+pub(in crate::protocol::anthropic::messages) fn write_refusal(
+    o: &mut serde_json::Map<String, Value>,
+    details: &Presence<RefusalDetails>,
+) {
+    put(o, "stop_details", details, |details| {
+        let mut value = json!({"type":"refusal"});
+        let fields = value.as_object_mut().expect("refusal details");
+        put(fields, "category", &details.category, |category| {
+            json!(match category {
+                RefusalCategory::Cyber => "cyber",
+                RefusalCategory::Biological => "bio",
+                RefusalCategory::FrontierModelDevelopment => "frontier_llm",
+                RefusalCategory::ReasoningExtraction => "reasoning_extraction",
+                RefusalCategory::GeneralHarms => "general_harms",
+            })
+        });
+        put(fields, "explanation", &details.explanation, |text| {
+            json!(text.as_str())
+        });
+        value
+    });
+}
+
+/// Protected beta facts never enter the stable explanatory owner.
 pub(in crate::protocol::anthropic::messages) fn reject_fallback_reports(
     o: &serde_json::Map<String, Value>,
 ) -> Result<(), CodecError> {

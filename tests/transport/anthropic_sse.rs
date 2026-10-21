@@ -66,6 +66,105 @@ fn expected() -> Value {
             "cache_creation_input_tokens":4,"cache_read_input_tokens":3}}"#).unwrap()
 }
 #[test]
+fn stable_refusal_details_survive_sse_and_reject_repeated_policy_or_explanation_drift() {
+    use morphiecore::{
+        protocol::{CodecError, anthropic::messages::client::sse::ClientEventEncoder},
+        semantic::{task::generation::*, value::Presence},
+    };
+    for conflict in [
+        None,
+        Some(json!({"type":"refusal","category":"bio","explanation":"same"})),
+        Some(json!({"type":"refusal","category":"cyber","explanation":"changed"})),
+        Some(Value::Null),
+    ] {
+        let details = json!({"type":"refusal","category":"cyber","explanation":"same"});
+        let mut events = vec![
+            json!({"type":"message_start","message":{"id":"msg_refusal","type":"message","role":"assistant",
+                "model":"synthetic-model","content":[],"stop_reason":null,"stop_sequence":null,
+                "stop_details":null,"usage":{"input_tokens":11,"output_tokens":0}}}),
+            json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}),
+            json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"partial"}}),
+            json!({"type":"content_block_stop","index":0}),
+            json!({"type":"message_delta","delta":{"stop_reason":"refusal","stop_sequence":null,
+                "stop_details":details},"usage":{"output_tokens":3}}),
+        ];
+        let mut repeated = events.last().unwrap().clone();
+        repeated["delta"]["stop_details"] = conflict.clone().unwrap_or(details.clone());
+        events.push(repeated);
+        events.push(json!({"type":"message_stop"}));
+        let mut decoder =
+            MessageSseDecoder::new(200, "text/event-stream", SseLimits::default()).unwrap();
+        let result = feed(&mut decoder, &wire(&events));
+        if conflict.is_some() {
+            assert!(matches!(
+                result,
+                Err(SseError::Codec(CodecError::Invalid(
+                    "Anthropic refusal details changed"
+                )))
+            ));
+            assert!(decoder.finish().is_err());
+            continue;
+        }
+        result.unwrap();
+        let final_wire = decoder.finish().unwrap();
+        assert_eq!(
+            Profile::AdaptiveTextTools
+                .encode_response(&final_wire)
+                .unwrap()["stop_details"],
+            details
+        );
+        let target = ReplayTarget::new("synthetic-provider", "synthetic-model").unwrap();
+        let mut attempt = native_attempt(target);
+        attempt.begin(200, "text/event-stream").unwrap();
+        let mut output = ClientEventEncoder::new("msg_client", "synthetic-model");
+        let mut rendered = vec![];
+        let bytes = wire(&events);
+        for fragment in bytes.chunks(7) {
+            let mut rest = fragment;
+            while !rest.is_empty() {
+                let (used, events) = attempt.push(rest).unwrap();
+                for event in events {
+                    assert!(!matches!(event, StreamEvent::Terminal { .. }));
+                    rendered.extend(output.encode(&event).unwrap());
+                }
+                rest = &rest[used..];
+            }
+        }
+        attempt.finish().unwrap();
+        let response = attempt.response().unwrap();
+        assert_eq!(
+            response.semantic.details().refusal,
+            Presence::Value(RefusalDetails {
+                category: Presence::Value(RefusalCategory::Cyber),
+                explanation: Presence::Value(
+                    morphiecore::semantic::value::Text::new("same", "fixture", 32).unwrap()
+                ),
+            })
+        );
+        rendered.extend(
+            output
+                .encode(&StreamEvent::Terminal {
+                    terminal: StreamTerminal::Incomplete,
+                    details: response.semantic.details().clone(),
+                })
+                .unwrap(),
+        );
+        output.finish().unwrap();
+        let bytes: Vec<u8> = rendered.into_iter().flatten().collect();
+        let mut client =
+            MessageSseDecoder::new(200, "text/event-stream", SseLimits::default()).unwrap();
+        feed(&mut client, &bytes).unwrap();
+        let final_client = client.finish().unwrap();
+        assert_eq!(
+            Profile::AdaptiveTextTools
+                .encode_response(&final_client)
+                .unwrap()["stop_details"],
+            details
+        );
+    }
+}
+
+#[test]
 fn protected_reports_and_toolset_identity_cannot_hide_in_native_sse() {
     use morphiecore::protocol::CodecError;
     let p = Profile::AdaptiveTextTools;

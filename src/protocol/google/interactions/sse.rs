@@ -730,6 +730,7 @@ impl GenerationSseDecoder {
                     error: None,
                     incomplete,
                     completion: None,
+                    ..Default::default()
                 },
             },
             out,

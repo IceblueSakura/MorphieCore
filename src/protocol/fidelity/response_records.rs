@@ -307,6 +307,9 @@ fn response_dependency(response: &GenerationResponse) -> [u8; 32] {
     use sha2::{Digest, Sha256};
     let mut hash = Sha256::new();
     hash.update(format!("{response:?}").as_bytes());
+    if let Some(details) = response.details().refusal.value() {
+        hash.update(details.fingerprint());
+    }
     for (id, value) in response.resources().iter() {
         hash.update(id.scope().get().to_le_bytes());
         hash.update(id.get().to_le_bytes());

@@ -27,6 +27,7 @@ pub(super) fn decode(
                 incomplete: Some(IncompleteReason::MaxOutputTokens),
                 error: None,
                 completion: None,
+                ..Default::default()
             },
         ),
         super::StopReason::ModelContextWindowExceeded => (
@@ -36,6 +37,7 @@ pub(super) fn decode(
                 incomplete: Some(IncompleteReason::ContextWindowExceeded),
                 error: None,
                 completion: None,
+                ..Default::default()
             },
         ),
         super::StopReason::Refusal => (
@@ -45,6 +47,7 @@ pub(super) fn decode(
                 incomplete: Some(IncompleteReason::ContentFilter),
                 error: None,
                 completion: None,
+                ..Default::default()
             },
         ),
     };
@@ -58,6 +61,7 @@ pub(super) fn decode(
         )?)),
         _ => None,
     };
+    details.refusal = message.stop_details.clone();
     Ok((outcome, progress, details))
 }
 

@@ -145,6 +145,7 @@ impl Profile {
             content,
             stop_reason: Presence::Value(stop_reason),
             stop_sequence,
+            stop_details: response.semantic.details().refusal.clone(),
             usage: super::accounting::wire(report, service_class)?,
             input_transformations: false,
         })

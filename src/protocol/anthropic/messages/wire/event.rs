@@ -3,7 +3,9 @@ use crate::protocol::anthropic::messages::{
     shape::*,
     wire::{
         content::Block,
-        envelope::{Message, StopReason, Usage, input_transformations, reject_fallback_reports},
+        envelope::{
+            Message, StopReason, Usage, input_transformations, read_refusal, write_refusal,
+        },
         request::Role,
     },
 };
@@ -72,6 +74,7 @@ pub enum Event {
     MessageDelta {
         stop_reason: Presence<StopReason>,
         stop_sequence: Presence<String>,
+        stop_details: Presence<crate::semantic::task::generation::RefusalDetails>,
         usage: Usage,
         input_transformations: bool,
     },
@@ -124,10 +127,10 @@ impl Event {
             },
             "message_delta" => {
                 let d = object(required(o, "delta")?)?;
-                reject_fallback_reports(d)?;
                 Self::MessageDelta {
                     stop_reason: presence(d, "stop_reason", StopReason::read)?,
                     stop_sequence: presence(d, "stop_sequence", string)?,
+                    stop_details: read_refusal(d)?,
                     usage: Usage::read(required(o, "usage")?)?,
                     input_transformations: input_transformations(o)?,
                 }
@@ -164,9 +167,19 @@ impl Event {
             Self::MessageDelta {
                 stop_reason,
                 stop_sequence,
+                stop_details,
                 usage,
                 ..
             } => {
+                if let Some(details) = stop_details.value() {
+                    details.validate()?;
+                    if stop_reason
+                        .value()
+                        .is_some_and(|reason| *reason != StopReason::Refusal)
+                    {
+                        return Err(CodecError::Invalid("Anthropic refusal detail stop"));
+                    }
+                }
                 usage.validate()?;
                 if !usage.cache_creation.is_absent() {
                     return Err(CodecError::Unsupported(
@@ -216,6 +229,7 @@ impl Event {
             Self::MessageDelta {
                 stop_reason,
                 stop_sequence,
+                stop_details,
                 usage,
                 ..
             } => {
@@ -223,6 +237,7 @@ impl Event {
                 let o = delta.as_object_mut().expect("object");
                 put(o, "stop_reason", stop_reason, |s| json!(s.wire()));
                 put(o, "stop_sequence", stop_sequence, |s| json!(s));
+                write_refusal(o, stop_details);
                 json!({"type":"message_delta","delta":delta,"usage":usage.wire()})
             }
             Self::MessageStop => json!({"type":"message_stop"}),

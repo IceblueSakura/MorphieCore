@@ -655,7 +655,7 @@ mod native_catalog {
         "content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn",
         "usage":{"input_tokens":1,"output_tokens":1}});
         let expected = p.decode_response(base.to_string().as_bytes()).unwrap();
-        for key in ["stop_details", "private-business-key"] {
+        for key in ["future-report", "private-business-key"] {
             let mut wire = base.clone();
             wire[key] = serde_json::Value::Null;
             assert_eq!(

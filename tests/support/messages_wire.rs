@@ -9,6 +9,9 @@ pub fn native_stream_body(value: &Value) -> String {
     let mut initial = value.clone();
     initial["content"] = json!([]);
     initial["stop_reason"] = Value::Null;
+    if initial.get("stop_details").is_some() {
+        initial["stop_details"] = Value::Null;
+    }
     initial["usage"]["output_tokens"] = json!(0);
     let mut events = vec![json!({"type":"message_start","message":initial})];
     for (index, block) in value["content"].as_array().unwrap().iter().enumerate() {
@@ -36,6 +39,9 @@ pub fn native_stream_body(value: &Value) -> String {
         events.push(json!({"type":"content_block_stop","index":index}));
     }
     events.push(json!({"type":"message_delta","delta":{"stop_reason":value["stop_reason"]},"usage":{"output_tokens":value["usage"]["output_tokens"]}}));
+    if let Some(details) = value.get("stop_details") {
+        events.last_mut().unwrap()["delta"]["stop_details"] = details.clone();
+    }
     events.push(json!({"type":"message_stop"}));
     events
         .iter()

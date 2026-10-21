@@ -718,6 +718,7 @@ impl GenerationSseDecoder {
                         .is_none()
                         .then_some(CompletionCause::NaturalOrStopSequence),
                     incomplete,
+                    ..Default::default()
                 },
             },
             out,

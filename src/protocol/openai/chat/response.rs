@@ -101,6 +101,7 @@ pub(crate) fn decode_with(
                 } else {
                     IncompleteReason::MaxOutputTokens
                 }),
+                ..Default::default()
             }
         } else {
             TerminalDetails {

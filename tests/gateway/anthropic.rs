@@ -213,7 +213,10 @@ async fn answer(
             "truncated" => response["stop_reason"] = json!("max_tokens"),
             "refusal" => {
                 response["stop_reason"] = json!("refusal");
-                response["stop_details"] = json!({"category":"cyber","explanation":"synthetic"});
+                // This lane tests explanation-only cross-protocol delivery.
+                // A reported policy category has no selected OpenAI carrier.
+                response["stop_details"] =
+                    json!({"type":"refusal","category":null,"explanation":"synthetic"});
             }
             "malformed" => response["usage"]["input_tokens"] = json!("invalid"),
             "bad-signature" => {

@@ -26,6 +26,7 @@ pub enum LossRule {
     RecitationAsContentFilter,
     ContextWindowAsLength,
     OmitResponsesContextWindowReason,
+    OmitExplanatoryRefusalDetails,
 }
 impl LossRule {
     pub const fn name(self) -> &'static str {
@@ -56,6 +57,7 @@ impl LossRule {
             Self::RecitationAsContentFilter => "openai.recitation-as-content-filter.v1",
             Self::ContextWindowAsLength => "chat.context-window-as-length.v1",
             Self::OmitResponsesContextWindowReason => "responses.omit-context-window-reason.v1",
+            Self::OmitExplanatoryRefusalDetails => "openai.omit-explanatory-refusal-details.v1",
         }
     }
     pub const fn owner(self) -> &'static str {
@@ -86,6 +88,7 @@ impl LossRule {
             Self::RecitationAsContentFilter
             | Self::ContextWindowAsLength
             | Self::OmitResponsesContextWindowReason => "response.terminal.incomplete",
+            Self::OmitExplanatoryRefusalDetails => "response.terminal.refusal",
         }
     }
 }

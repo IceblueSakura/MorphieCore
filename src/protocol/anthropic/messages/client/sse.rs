@@ -495,9 +495,14 @@ impl ClientEventEncoder {
                     .as_object_mut()
                     .expect("usage")
                     .remove("cache_creation");
-                out.push(frame(&json!({"type":"message_delta",
+                let mut event = json!({"type":"message_delta",
                     "delta":{"stop_reason":stop,"stop_sequence":sequence},
-                    "usage":usage})));
+                    "usage":usage});
+                crate::protocol::anthropic::messages::wire::envelope::write_refusal(
+                    event["delta"].as_object_mut().expect("message delta"),
+                    &details.refusal,
+                );
+                out.push(frame(&event));
                 out.push(frame(&json!({"type":"message_stop"})));
                 self.finished = true;
             }

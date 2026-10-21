@@ -685,6 +685,7 @@ impl EventDecoder {
                     } else {
                         IncompleteReason::MaxOutputTokens
                     }),
+                    ..Default::default()
                 }
             } else {
                 TerminalDetails {

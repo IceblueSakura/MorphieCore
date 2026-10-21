@@ -79,6 +79,7 @@ pub(super) fn decode_details(o: &Map<String, Value>) -> Result<TerminalDetails, 
         error,
         incomplete,
         completion: None,
+        ..Default::default()
     })
 }
 /// Chat has two distinct non-success finish reasons; neither is a successful stop.
@@ -126,6 +127,16 @@ pub(super) fn terminal_losses(
 ) -> Result<Vec<LossRule>, CodecError> {
     use crate::protocol::openai::Profile;
     let mut losses = vec![];
+    if details
+        .refusal
+        .value()
+        .is_some_and(|report| report.category.value().is_some())
+    {
+        return Err(CodecError::Unsupported("refusal policy category".into()));
+    }
+    if !details.refusal.is_absent() {
+        losses.push(LossRule::OmitExplanatoryRefusalDetails);
+    }
     match (&details.completion, profile) {
         (None, _) => {}
         (Some(CompletionCause::NaturalOrStopSequence), Profile::Chat) => {}

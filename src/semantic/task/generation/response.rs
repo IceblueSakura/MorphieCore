@@ -1,8 +1,9 @@
 //! Completed or partial Generation output, independent of transport success.
 use crate::semantic::task::generation::{
-    GenerationError, Item, ItemId, ItemLifecycle, MAX_TEXT_BYTES, Usage, UsageReports,
+    GenerationError, Item, ItemId, ItemLifecycle, MAX_TEXT_BYTES, RefusalDetails, Usage,
+    UsageReports,
 };
-use crate::semantic::value::Text;
+use crate::semantic::value::{Presence, Text};
 
 /// Result of one response, not completion of the logical turn or tool execution.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -36,6 +37,7 @@ pub struct TerminalDetails {
     pub error: Option<ResponseError>,
     pub incomplete: Option<IncompleteReason>,
     pub completion: Option<CompletionCause>,
+    pub refusal: Presence<RefusalDetails>,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CompletionCause {
@@ -52,7 +54,8 @@ impl TerminalDetails {
                 + e.param.as_ref().map_or(0, |p| p.as_str().len())
                 + e.original_type.as_ref().map_or(0, |p| p.as_str().len())
         });
-        error
+        self.refusal.value().map_or(0, RefusalDetails::bytes)
+            + error
             + match &self.completion {
                 Some(CompletionCause::StopSequence(text)) => text.as_str().len(),
                 Some(_) => 1,
@@ -65,6 +68,14 @@ impl TerminalDetails {
             }
     }
     pub fn validate(&self, outcome: Outcome) -> Result<(), GenerationError> {
+        if let Some(report) = self.refusal.value() {
+            report.validate()?;
+            if outcome != Outcome::Incomplete
+                || self.incomplete != Some(IncompleteReason::ContentFilter)
+            {
+                return Err(GenerationError::InvalidResponse);
+            }
+        }
         if self.error.is_some() && outcome != Outcome::Failed
             || self.incomplete.is_some() && outcome != Outcome::Incomplete
             || self.completion.is_some() && outcome != Outcome::Completed

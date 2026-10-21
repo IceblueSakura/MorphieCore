@@ -184,7 +184,14 @@ fn native_protected_dispatch_and_fallback_reports_reject_before_projection() {
     let absent = p
         .decode_generation_response(refusal.to_string().as_bytes(), LocalScope::ROOT, &target())
         .unwrap();
-    assert_eq!(absent.semantic, plain.semantic);
+    assert_eq!(absent.semantic.outcome(), plain.semantic.outcome());
+    assert_eq!(
+        absent.semantic.details().refusal,
+        Presence::Value(RefusalDetails {
+            category: Presence::Absent,
+            explanation: Presence::Absent,
+        })
+    );
     for (field, value, error) in [
         ("fallback_credit_token", json!(false), "Anthropic string"),
         ("recommended_model", json!({}), "Anthropic string"),
@@ -205,13 +212,221 @@ fn native_protected_dispatch_and_fallback_reports_reject_before_projection() {
 }
 
 #[test]
+fn stable_refusal_details_have_independent_native_directions_and_guarded_delivery_loss() {
+    use morphiecore::protocol::{CodecError, DecodedResponse, ResponseMetadata};
+    let p = Profile::AdaptiveTextTools;
+    let text = |s: &str| Text::allowing_empty(s, "fixture", MAX_TERMINAL_REPORT_BYTES).unwrap();
+    let source = p
+        .decode_generation_request(request(), LocalScope::new(1), &target())
+        .unwrap();
+    for (wire_details, expected) in [
+        (None, Presence::Absent),
+        (Some(Value::Null), Presence::Null),
+        (
+            Some(json!({"type":"refusal"})),
+            Presence::Value(RefusalDetails {
+                category: Presence::Absent,
+                explanation: Presence::Absent,
+            }),
+        ),
+        (
+            Some(json!({"type":"refusal","category":null,"explanation":null})),
+            Presence::Value(RefusalDetails {
+                category: Presence::Null,
+                explanation: Presence::Null,
+            }),
+        ),
+        (
+            Some(
+                json!({"type":"refusal","category":"cyber","explanation":"synthetic explanation"}),
+            ),
+            Presence::Value(RefusalDetails {
+                category: Presence::Value(RefusalCategory::Cyber),
+                explanation: Presence::Value(text("synthetic explanation")),
+            }),
+        ),
+        (
+            Some(json!({"type":"refusal","category":null,"explanation":""})),
+            Presence::Value(RefusalDetails {
+                category: Presence::Null,
+                explanation: Presence::Value(text("")),
+            }),
+        ),
+    ] {
+        let mut wire = json!({"id":"msg_refusal","type":"message","role":"assistant","model":"synthetic-model",
+            "content":[{"type":"text","text":"partial"}],"stop_reason":"refusal","stop_sequence":null,
+            "usage":{"input_tokens":11,"output_tokens":3}});
+        if let Some(value) = wire_details {
+            wire["stop_details"] = value;
+        }
+        let decoded = p
+            .decode_generation_response(wire.to_string().as_bytes(), LocalScope::new(2), &target())
+            .unwrap();
+        assert_eq!(decoded.semantic.details().refusal, expected);
+        assert_eq!(decoded.semantic.outcome(), Outcome::Incomplete);
+        // The reverse oracle is constructed without decoding the report under test.
+        let id = ItemId::scoped(LocalScope::new(3), 1);
+        let mut usage = Usage::operation(11, 3, 14);
+        usage.total_tokens = None;
+        usage.total_relation = TotalTokenRelation::Unreported;
+        usage.input_relation = InputTokenRelation::ExcludesCacheReadAndWrite;
+        let semantic = GenerationResponse::new(
+            vec![(
+                id,
+                Item::Message(Message {
+                    role: MessageRole::Assistant,
+                    status: ItemLifecycle::Completed,
+                    phase: None,
+                    parts: vec![Part::new(
+                        PartId::scoped(LocalScope::new(3), 1),
+                        ContentPart::Text(text("partial").into()),
+                    )],
+                }),
+            )],
+            Outcome::Incomplete,
+        )
+        .unwrap()
+        .with_message_envelopes(vec![
+            MessageEnvelope::new(
+                GroupId::new(LocalScope::new(3), 1),
+                MessageEnvelopeRole::Assistant,
+                vec![id],
+            )
+            .unwrap(),
+        ])
+        .unwrap()
+        .with_usage(Some(usage))
+        .unwrap()
+        .with_details(TerminalDetails {
+            incomplete: Some(IncompleteReason::ContentFilter),
+            refusal: expected.clone(),
+            ..Default::default()
+        })
+        .unwrap();
+        let manual = DecodedResponse {
+            semantic,
+            fidelity: Default::default(),
+            metadata: ResponseMetadata {
+                id: Some("msg_refusal".into()),
+                model: "synthetic-model".into(),
+                storage: None,
+                created: None,
+                context: Default::default(),
+                instruction_fidelity: Default::default(),
+            },
+        };
+        assert_eq!(
+            p.encode_generation_response(&manual, &source, &target())
+                .unwrap(),
+            wire
+        );
+        assert_eq!(
+            morphiecore::protocol::anthropic::messages::client::encode_client_response(
+                &manual,
+                "synthetic-model"
+            )
+            .unwrap(),
+            wire
+        );
+        for profile in [
+            morphiecore::protocol::openai::Profile::Chat,
+            morphiecore::protocol::openai::Profile::Responses,
+        ] {
+            // Isolate reports with a target-representable incomplete text item;
+            // native lifecycle/usage projection has separate checks.
+            let mut items = manual.semantic.items().to_vec();
+            let Item::Message(message) = &mut items[0].1 else {
+                unreachable!()
+            };
+            message.status = ItemLifecycle::Incomplete;
+            let report_only = GenerationResponse::new(items, Outcome::Incomplete)
+                .unwrap()
+                .with_details(manual.semantic.details().clone())
+                .unwrap();
+            let metadata = crate::events_support::metadata();
+            let result = morphiecore::protocol::openai::lowering::lower_response(
+                &report_only,
+                &manual.fidelity,
+                &metadata,
+                profile,
+                morphiecore::protocol::openai::TargetCaps::full(),
+            );
+            if expected
+                .value()
+                .is_some_and(|v| v.category.value().is_some())
+            {
+                assert_eq!(
+                    result.err(),
+                    Some(morphiecore::lowering::generation::RepresentationError::Terminal)
+                );
+            } else {
+                let lowered = result.unwrap();
+                assert_eq!(
+                    lowered.projection().iter().any(|v| v
+                        .loss
+                        .is_some_and(|r| r.name() == "openai.omit-explanatory-refusal-details.v1")),
+                    !expected.is_absent()
+                );
+            }
+        }
+        if let Some(report) = expected.value() {
+            assert!(!format!("{report:?}").contains("synthetic explanation"));
+        }
+    }
+    for (details, label) in [
+        (json!({"type":"other"}), "Anthropic stop details"),
+        (
+            json!({"type":"refusal","category":"unknown"}),
+            "Anthropic refusal category",
+        ),
+        (
+            json!({"type":"refusal","explanation":false}),
+            "Anthropic string",
+        ),
+    ] {
+        let wire = json!({"id":"msg_refusal","type":"message","role":"assistant","model":"synthetic-model",
+            "content":[],"stop_reason":"refusal","stop_sequence":null,"stop_details":details,
+            "usage":{"input_tokens":11,"output_tokens":3}});
+        let error = p.decode_response(wire.to_string().as_bytes()).unwrap_err();
+        assert!(
+            matches!(error, CodecError::Invalid(value) if value == label)
+                || matches!(error, CodecError::Unsupported(ref value) if value == label)
+        );
+    }
+    let details = TerminalDetails {
+        refusal: Presence::Value(RefusalDetails {
+            category: Presence::Null,
+            explanation: Presence::Value(text("synthetic explanation")),
+        }),
+        ..Default::default()
+    };
+    assert_eq!(
+        details.validate(Outcome::Completed),
+        Err(GenerationError::InvalidResponse)
+    );
+    let mut large = details;
+    large.incomplete = Some(IncompleteReason::ContentFilter);
+    large.refusal = Presence::Value(RefusalDetails {
+        category: Presence::Absent,
+        explanation: Presence::Value(text(&"x".repeat(MAX_TERMINAL_REPORT_BYTES))),
+    });
+    assert_eq!(
+        large.validate(Outcome::Incomplete),
+        Err(GenerationError::Limit)
+    );
+}
+
+#[test]
 fn native_stop_reasons_have_independent_terminal_owners() {
     let p = Profile::AdaptiveTextTools;
     let decode = |stop: &str, sequence: Value| {
-        let wire = json!({"id":"msg_synthetic","type":"message","role":"assistant","model":"synthetic-model",
+        let mut wire = json!({"id":"msg_synthetic","type":"message","role":"assistant","model":"synthetic-model",
                 "content":[{"type":"text","text":"partial"}],"stop_reason":stop,"stop_sequence":sequence,
-                "stop_details":{"category":"cyber","explanation":"synthetic"},
                 "usage":{"input_tokens":11,"output_tokens":7}});
+        if stop == "refusal" {
+            wire["stop_details"] =
+                json!({"type":"refusal","category":"cyber","explanation":"synthetic"});
+        }
         p.decode_generation_response(wire.to_string().as_bytes(), LocalScope::new(2), &target())
     };
     for (stop, sequence, outcome, progress, incomplete) in [

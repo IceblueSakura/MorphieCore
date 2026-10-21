@@ -78,7 +78,7 @@ async fn handle(
         *n += 1;
         *n
     };
-    assert!(turn <= 3);
+    assert!(turn <= 5);
     if turn <= 2 {
         assert_eq!(
             native.value["messages"][0]["content"][1],
@@ -86,10 +86,16 @@ async fn handle(
                 "data":"synthetic notes"},"context":"summary-only"})
         );
     }
-    if turn == 1 {
-        let wire = json!({"id":"msg1","type":"message","role":"assistant","model":"fixture-model",
+    if turn == 1 || turn == 4 {
+        let mut wire = json!({"id":"msg1","type":"message","role":"assistant","model":"fixture-model",
             "content":[{"type":"tool_use","id":"call_sdk","name":"lookup","input":{"n":7}}],
             "stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1}});
+        if turn == 4 {
+            wire["content"] = json!([{"type":"text","text":"partial"}]);
+            wire["stop_reason"] = json!("refusal");
+            wire["stop_details"] =
+                json!({"type":"refusal","category":"cyber","explanation":"synthetic explanation"});
+        }
         let decoded = Profile::AdaptiveTextTools
             .decode_generation_response(wire.to_string().as_bytes(), LocalScope::new(2), &target)
             .unwrap();
@@ -111,10 +117,10 @@ async fn handle(
         json!({"type":"message_start","message":{"id":"msg2","type":"message","role":"assistant","model":"fixture-model",
         "content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":2,"output_tokens":0}}}),
     ];
-    if turn == 2 {
+    if turn != 3 {
         frames.extend([
             json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}),
-            json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"done"}}),
+            json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":if turn == 2 {"done"} else {"partial"}}}),
         ]);
     } else {
         frames.extend([
@@ -122,9 +128,16 @@ async fn handle(
             json!({"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"n\":"}}),
         ]);
     }
+    let mut closing = json!({"type":"message_delta","delta":{
+        "stop_reason":match turn { 2 => "end_turn", 3 => "max_tokens", _ => "refusal" },
+        "stop_sequence":null},"usage":{"output_tokens":2}});
+    if turn == 5 {
+        closing["delta"]["stop_details"] = json!({"type":"refusal","category":"cyber",
+            "explanation":"synthetic explanation"});
+    }
     frames.extend([
         json!({"type":"content_block_stop","index":0}),
-        json!({"type":"message_delta","delta":{"stop_reason":if turn==2{"end_turn"}else{"max_tokens"},"stop_sequence":null},"usage":{"output_tokens":2}}),
+        closing,
         json!({"type":"message_stop"}),
     ]);
     let mut attempt = Attempt::new(
@@ -202,7 +215,10 @@ async fn sdk_messages_native_controls_history_and_partial_stream() {
         "synthetic Messages SDK failure: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(*observed.lock().unwrap(), 3);
+    assert_eq!(*observed.lock().unwrap(), 5);
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report, json!({"requests":3,"partial":true}));
+    assert_eq!(
+        report,
+        json!({"requests":5,"partial":true,"refusal_details":true})
+    );
 }

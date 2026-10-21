@@ -152,7 +152,7 @@ uv run --project tests/sdk --locked --offline cargo test --locked --offline --te
 
 All listeners and credentials are synthetic and test-owned. The gate uses no real Providers or environment proxies.
 
-The Messages codec gate extends the same loopback suite: native manual-budget/identity request controls, JSON tool input, SDK-returned call/result history, ordinary SSE and raw unfinished argument deltas at `max_tokens`. It uses an empty child environment and scratch HOME. Raw-event acceptance is not a claim that an SDK's accumulated-message helper or tool runner can replay unfinished parameters; native JSON/history rejection remains required.
+The Messages codec gate extends the same loopback suite: native manual-budget/identity controls, tool examples, document context, JSON tool input, SDK-returned call/result history, ordinary SSE, raw unfinished arguments at `max_tokens` and typed static/SSE refusal details. Its five requests use an empty child environment and scratch HOME. Raw-event acceptance does not establish replay of unfinished parameters; native JSON/history rejection remains required. Refusal details are output observations, not request-history controls.
 This fixture covers codec/Attempt/delivery, not full gateway Router acceptance. Its buffered HTTP response does not measure incremental network publication; the transport suite independently checks incremental delivery and EOF withholding.
 
 Production Router gates are organized by protocol and behavior, not roadmap package:

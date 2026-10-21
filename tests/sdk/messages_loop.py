@@ -60,4 +60,20 @@ with httpx.Client(trust_env=False, timeout=10) as http:
             assert stop == ("max_tokens" if partial else "end_turn")
             assert "".join(fragments) == ('{"n":' if partial else "")
             assert "".join(text) == ("" if partial else "done")
-print(json.dumps({"requests": 3, "partial": True}))
+        for streamed in [False, True]:
+            result = client.messages.create(**shared, messages=[{"role": "user", "content": "go"}],
+                stream=streamed)
+            if not streamed:
+                assert result.stop_reason == "refusal"
+                details = result.stop_details
+            else:
+                details = None
+                with result as stream:
+                    for event in stream:
+                        if event.type == "message_delta":
+                            assert event.delta.stop_reason == "refusal"
+                            details = event.delta.stop_details
+            assert details is not None
+            assert details.type == "refusal" and details.category == "cyber"
+            assert details.explanation == "synthetic explanation"
+print(json.dumps({"requests": 5, "partial": True, "refusal_details": True}))
