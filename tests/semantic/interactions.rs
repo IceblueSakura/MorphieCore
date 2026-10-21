@@ -8,7 +8,10 @@ use morphiecore::{
     protocol::{
         fidelity::FidelityRecords, google::interactions::RequestRule, replay_envelope::issuer,
     },
-    semantic::{task::generation::*, value::Text},
+    semantic::{
+        task::generation::*,
+        value::{Presence, Text},
+    },
 };
 use serde_json::json;
 
@@ -495,6 +498,80 @@ fn audit_step_errors_and_unrepresented_lifecycle_facts_cannot_complete() {
             "{key}"
         );
     }
+}
+
+#[test]
+fn service_reports_preserve_matching_v1_phases_without_inference_or_capacity_aliases() {
+    use morphiecore::semantic::context::{ReportPhase, ServiceClass};
+    let base = interaction_frames();
+    let expected = decode_interaction(&base, true).unwrap();
+    assert!(expected.metadata.context.service_class().is_absent());
+    for (native, class) in [
+        ("standard", ServiceClass::StandardProcessing),
+        ("flex", ServiceClass::FlexibleProcessing),
+        ("priority", ServiceClass::PriorityProcessing),
+    ] {
+        let mut frames = base.clone();
+        frames[0]["interaction"]["service_tier"] = json!(native);
+        frames.last_mut().unwrap()["interaction"]["service_tier"] = json!(native);
+        let reported = decode_interaction(&frames, true).unwrap();
+        for phase in [ReportPhase::Opening, ReportPhase::Terminal] {
+            assert_eq!(
+                reported
+                    .metadata
+                    .context
+                    .reports
+                    .at(phase)
+                    .unwrap()
+                    .service_class,
+                Presence::Value(class)
+            );
+        }
+        assert_eq!(reported.semantic, expected.semantic);
+        let mut drift = frames.clone();
+        drift.last_mut().unwrap()["interaction"]["service_tier"] = json!(if native == "standard" {
+            "priority"
+        } else {
+            "standard"
+        });
+        assert!(
+            decode_interaction(&drift, true)
+                .unwrap_err()
+                .contains("service_tier changed")
+        );
+        for phase in [0, frames.len() - 1] {
+            let mut erased = frames.clone();
+            erased[phase]["interaction"]
+                .as_object_mut()
+                .unwrap()
+                .remove("service_tier");
+            assert!(
+                decode_interaction(&erased, true)
+                    .unwrap_err()
+                    .contains("service_tier changed")
+            );
+        }
+    }
+    for value in [
+        serde_json::Value::Null,
+        json!(false),
+        json!("deferred"),
+        json!("unspecified"),
+        json!("unknown"),
+    ] {
+        for phase in [0, base.len() - 1] {
+            let mut frames = base.clone();
+            frames[phase]["interaction"]["service_tier"] = value.clone();
+            assert!(decode_interaction(&frames, true).is_err());
+        }
+    }
+    let mut wrong_owner = base;
+    wrong_owner[1]["service_tier"] = json!("standard");
+    assert!(
+        decode_interaction(&wrong_owner, true)
+            .unwrap_err()
+            .contains("Interactions status service_tier")
+    );
 }
 
 #[test]

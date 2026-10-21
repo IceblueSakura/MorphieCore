@@ -328,6 +328,79 @@ fn google_finish_explanation_omission_keeps_incomplete_source_and_requires_recei
 }
 
 #[test]
+fn google_service_reports_keep_processing_meaning_in_clients_and_reject_capacity_targets() {
+    for interactions in [false, true] {
+        for profile in [Profile::Chat, Profile::Responses] {
+            for stream in [false, true] {
+                let (endpoint, request, mut frames) = fixture(interactions, false);
+                if interactions {
+                    frames[0]["interaction"]["service_tier"] = json!("priority");
+                    frames.last_mut().unwrap()["interaction"]["service_tier"] = json!("priority");
+                } else {
+                    frames[0]["candidates"][0]["content"]["parts"][0]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("thoughtSignature");
+                    frames[0]["usageMetadata"]["serviceTier"] = json!("priority");
+                }
+                let mut source =
+                    Attempt::new(endpoint.adapter().unwrap(), 65536, Default::default());
+                source.begin(200, "text/event-stream").unwrap();
+                let mut client = ResponseDelivery::new(
+                    ClientAdapter::openai(
+                        Adapter::new(profile, Dialect::MorphieCore, None),
+                        TargetCaps::full(),
+                    ),
+                    "public",
+                    Default::default(),
+                    StreamOptions {
+                        include_usage: Presence::Value(true),
+                        include_obfuscation: Presence::Value(false),
+                    },
+                    Obfuscation::Disabled,
+                )
+                .with_request(&endpoint, &request);
+                let mut body = feed(&mut source, &mut client, &frames, stream, interactions);
+                source.finish().unwrap();
+                let original = source.response().unwrap().clone();
+                if stream {
+                    body.extend(client.finish_stream(&source).unwrap().concat());
+                    assert!(
+                        String::from_utf8_lossy(&body).contains("\"service_tier\":\"priority\"")
+                    );
+                } else {
+                    body = client.encode_json(&source).unwrap();
+                    let value: Value = serde_json::from_slice(&body).unwrap();
+                    assert_eq!(value["service_tier"], "priority");
+                }
+                assert_eq!(
+                    original.metadata.context.service_class(),
+                    &Presence::Value(crate::semantic::context::ServiceClass::PriorityProcessing)
+                );
+                let mut incompatible = delivery(&endpoint, &request);
+                assert!(
+                    incompatible
+                        .encode_json(&source)
+                        .unwrap_err()
+                        .to_string()
+                        .contains("Messages reported service")
+                );
+                let mut incompatible = delivery(&endpoint, &request);
+                assert!(
+                    incompatible
+                        .finish_stream(&source)
+                        .unwrap_err()
+                        .to_string()
+                        .contains("Messages reported service")
+                );
+                assert!(incompatible.finish_stream(&source).is_err());
+                assert_eq!(source.response().unwrap(), &original);
+            }
+        }
+    }
+}
+
+#[test]
 fn google_messages_projection_requires_context_and_never_repairs_failure() {
     for interactions in [false, true] {
         let (endpoint, request, frames) = fixture(interactions, false);

@@ -11,6 +11,7 @@ use crate::{
         stream::{SseError, SseLimits},
     },
     semantic::{
+        context::{ResponseReport, ResponseReports},
         task::generation::*,
         value::{JsonLimits, Presence, Text, parse_json},
     },
@@ -206,6 +207,15 @@ impl GenerationSseDecoder {
             self.emit(StreamEvent::Started, out)?;
         }
         if let Some(v) = o.get("usageMetadata") {
+            let service_class =
+                super::super::service::read(object(v, "usageMetadata")?, "serviceTier")?;
+            let reports = ResponseReports::single(ResponseReport {
+                service_class,
+                ..Default::default()
+            });
+            let metadata = self.metadata.as_mut().expect("Gemini metadata");
+            crate::protocol::reports::update(&metadata.context.reports, &reports)?;
+            metadata.context.reports = reports;
             self.usage = Some(usage(v)?);
         }
         if let Some(feedback) = o.get("promptFeedback")

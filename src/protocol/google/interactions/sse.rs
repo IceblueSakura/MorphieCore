@@ -9,6 +9,7 @@ use crate::{
         stream::{SseError, SseLimits},
     },
     semantic::{
+        context::{ReportPhase, ResponseReport, ResponseReports},
         task::generation::*,
         value::{JsonLimits, Text, parse_json},
     },
@@ -81,14 +82,6 @@ pub(super) fn field<'a>(
     key: &'static str,
 ) -> Result<&'a Value, SseError> {
     o.get(key).ok_or_else(|| invalid(key))
-}
-fn check_lifecycle(i: &Map<String, Value>) -> Result<(), SseError> {
-    // Service reports still need a selected source baseline and mapping.
-    check_continuation(i)?;
-    if i.get("service_tier").is_some_and(|v| !v.is_null()) {
-        return Err(CodecError::Unsupported("Interactions service_tier".into()).into());
-    }
-    Ok(())
 }
 fn check_continuation(o: &Map<String, Value>) -> Result<(), SseError> {
     if let Some(value) = o.get("continuation_token").filter(|v| !v.is_null()) {
@@ -285,7 +278,8 @@ impl GenerationSseDecoder {
                 return Err(invalid("duplicate interaction"));
             }
             let i = object(field(o, "interaction")?, "interaction")?;
-            check_lifecycle(i)?;
+            check_continuation(i)?;
+            let service_class = super::super::service::read(i, "service_tier")?;
             super::snapshots::reconcile(i.get("steps"), &self.steps, &self.state)?;
             // Creation starts the native stream, not a reported execution state.
             // A supplied status still has the selected fresh-foreground constraint.
@@ -295,7 +289,7 @@ impl GenerationSseDecoder {
             if string(i, "object")?.is_some_and(|v| v != "interaction") {
                 return Err(invalid("interaction object"));
             }
-            let metadata = ResponseMetadata {
+            let mut metadata = ResponseMetadata {
                 storage: None,
                 id: if i.contains_key("id") {
                     Some(required(i, "id")?.into())
@@ -307,6 +301,15 @@ impl GenerationSseDecoder {
                 context: Default::default(),
                 instruction_fidelity: Default::default(),
             };
+            if !service_class.is_absent() {
+                metadata.context.reports = ResponseReports::phased(
+                    ReportPhase::Opening,
+                    ResponseReport {
+                        service_class,
+                        ..Default::default()
+                    },
+                );
+            }
             metadata.validate()?;
             self.metadata = Some(metadata);
             self.emit(StreamEvent::Started, out)?;
@@ -329,6 +332,12 @@ impl GenerationSseDecoder {
             "interaction.status_update" => {
                 self.check_identity(o, "interaction_id")?;
                 check_continuation(o)?;
+                if o.contains_key("service_tier") {
+                    super::super::service::read(o, "service_tier")?;
+                    return Err(
+                        CodecError::Unsupported("Interactions status service_tier".into()).into(),
+                    );
+                }
                 // Updates are observations, not completion or tool authorization.
                 // The final envelope alone supplies outcome/progress; no transition
                 // graph or equality with an earlier checkpoint is inferred.
@@ -675,7 +684,8 @@ impl GenerationSseDecoder {
         if self.open.is_some() {
             return Err(invalid("unclosed Interactions step"));
         }
-        check_lifecycle(i)?;
+        check_continuation(i)?;
+        let service_class = super::super::service::read(i, "service_tier")?;
         self.check_identity(i, "id")?;
         super::snapshots::reconcile(i.get("steps"), &self.steps, &self.state)?;
         if let Some(model) = string(i, "model")?
@@ -703,6 +713,23 @@ impl GenerationSseDecoder {
             "failed" | "cancelled" => return Err(CodecError::StreamFailure(500).into()),
             _ => return Err(invalid("Interactions terminal status")),
         };
+        let metadata = self.metadata.as_mut().expect("Interactions metadata");
+        if metadata.context.service_class() != &service_class {
+            return Err(invalid("Interactions service_tier changed"));
+        }
+        if !service_class.is_absent() {
+            metadata.context.reports = crate::protocol::reports::observe(
+                Some(&metadata.context.reports),
+                &ResponseReports::phased(
+                    ReportPhase::Terminal,
+                    ResponseReport {
+                        service_class,
+                        ..Default::default()
+                    },
+                ),
+                false,
+            )?;
+        }
         let group = GroupId::new(self.scope, 1);
         let envelope = if self.members.is_empty() {
             MessageEnvelope::empty(group, MessageEnvelopeRole::Assistant, None)

@@ -3,5 +3,6 @@
 pub mod generate_content;
 pub mod interactions;
 mod media;
+mod service;
 
 pub(crate) use media::check_public_media_url;

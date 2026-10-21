@@ -789,6 +789,78 @@ fn candidate_reports_reject_unowned_or_malformed_fields() {
 }
 
 #[test]
+fn service_reports_map_only_concrete_processing_classes_and_keep_strict_updates() {
+    use morphiecore::semantic::context::ServiceClass;
+    let base = json!({"responseId":"r","modelVersion":"gemini-synthetic",
+        "candidates":[{"content":{"role":"model","parts":[{"text":"A"}]},"finishReason":"STOP"}],
+        "usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":2,"totalTokenCount":3}});
+    let expected = decode(&wire(std::slice::from_ref(&base))).unwrap();
+    assert!(expected.metadata.context.service_class().is_absent());
+    for (native, class) in [
+        ("standard", ServiceClass::StandardProcessing),
+        ("flex", ServiceClass::FlexibleProcessing),
+        ("priority", ServiceClass::PriorityProcessing),
+    ] {
+        let mut frame = base.clone();
+        frame["usageMetadata"]["serviceTier"] = json!(native);
+        let reported = decode(&wire(std::slice::from_ref(&frame))).unwrap();
+        assert_eq!(
+            reported.metadata.context.service_class(),
+            &Presence::Value(class)
+        );
+        assert_eq!(reported.semantic, expected.semantic);
+        let mut opening = frame.clone();
+        opening["candidates"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("finishReason");
+        assert!(decode(&wire(&[opening.clone(), frame.clone()])).is_ok());
+        for later in [
+            Value::Null,
+            json!("unspecified"),
+            json!("unknown"),
+            json!(17),
+        ] {
+            let mut changed = frame.clone();
+            changed["usageMetadata"]["serviceTier"] = later;
+            assert!(decode(&wire(&[opening.clone(), changed])).is_err());
+        }
+        let mut erased = frame.clone();
+        erased["usageMetadata"]
+            .as_object_mut()
+            .unwrap()
+            .remove("serviceTier");
+        assert!(
+            decode(&wire(&[opening.clone(), erased]))
+                .unwrap_err()
+                .contains("reported service changed")
+        );
+        let mut changed = frame;
+        changed["usageMetadata"]["serviceTier"] = json!(if native == "standard" {
+            "priority"
+        } else {
+            "standard"
+        });
+        assert!(
+            decode(&wire(&[opening, changed]))
+                .unwrap_err()
+                .contains("reported service changed")
+        );
+    }
+    for invalid in [
+        Value::Null,
+        json!(false),
+        json!("unspecified"),
+        json!("deferred"),
+        json!("unknown"),
+    ] {
+        let mut frame = base.clone();
+        frame["usageMetadata"]["serviceTier"] = invalid;
+        assert!(decode(&wire(&[frame])).is_err());
+    }
+}
+
+#[test]
 fn candidate_finish_explanations_are_bounded_observations_with_real_finish_reasons() {
     for (reason, outcome, incomplete) in [
         ("STOP", Outcome::Completed, None),

@@ -369,15 +369,23 @@ fn messages_final_usage_requires_reported_counts_and_unambiguous_cache_categorie
         encode_client_response(&response, "m").unwrap()["usage"]["service_tier"],
         "standard"
     );
-    let mut wrong_service = response.clone();
-    wrong_service
-        .metadata
-        .context
-        .reports
-        .latest_mut()
-        .expect("report")
-        .service_class = Presence::Value(ServiceClass::StandardProcessing);
-    assert!(encode_client_response(&wrong_service, "m").is_err());
+    for class in [
+        ServiceClass::StandardProcessing,
+        ServiceClass::FlexibleProcessing,
+        ServiceClass::PriorityProcessing,
+    ] {
+        let mut wrong_service = response.clone();
+        wrong_service
+            .metadata
+            .context
+            .reports
+            .latest_mut()
+            .expect("report")
+            .service_class = Presence::Value(class);
+        assert!(matches!(encode_client_response(&wrong_service, "m"),
+            Err(morphiecore::protocol::CodecError::Unsupported(reason))
+                if reason == "Messages reported service"));
+    }
     for terminal_class in [
         Presence::Absent,
         Presence::Value(ServiceClass::PriorityCapacity),

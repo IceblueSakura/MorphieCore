@@ -777,26 +777,32 @@ fn reported_cache_context_is_an_independent_response_fact() {
     let mut invalid = wire::response(2);
     invalid["service_tier"] = json!("standard");
     assert!(envelope::decode_response(&invalid).is_err());
-    let mut reported = decoded.clone();
-    reported
-        .metadata
-        .context
-        .reports
-        .latest_mut()
-        .expect("report")
-        .service_class = Presence::Value(ServiceClass::PriorityProcessing);
-    let target = lower_response(
-        &reported.semantic,
-        &reported.fidelity,
-        &reported.metadata,
-        Profile::Responses,
-        morphiecore::protocol::openai::TargetCaps::full(),
-    )
-    .unwrap();
-    assert_eq!(
-        envelope::encode_response(&target).unwrap()["service_tier"],
-        "priority"
-    );
+    for (class, expected) in [
+        (ServiceClass::StandardProcessing, "default"),
+        (ServiceClass::FlexibleProcessing, "flex"),
+        (ServiceClass::PriorityProcessing, "priority"),
+    ] {
+        let mut reported = decoded.clone();
+        reported
+            .metadata
+            .context
+            .reports
+            .latest_mut()
+            .expect("report")
+            .service_class = Presence::Value(class);
+        let target = lower_response(
+            &reported.semantic,
+            &reported.fidelity,
+            &reported.metadata,
+            Profile::Responses,
+            morphiecore::protocol::openai::TargetCaps::full(),
+        )
+        .unwrap();
+        assert_eq!(
+            envelope::encode_response(&target).unwrap()["service_tier"],
+            expected
+        );
+    }
     // Nothing is invented for absent echoes.
     let mut bare = wire::response(2);
     for key in [
