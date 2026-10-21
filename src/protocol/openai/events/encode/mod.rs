@@ -8,10 +8,10 @@ use serde_json::json;
 pub struct EventEncoder {
     pub(super) profile: Profile,
     pub(super) metadata: ResponseMetadata,
+    /// None is rejection, including failures before or after semantic reduction.
     pub(super) state: Option<StreamState>,
     pub(super) fidelity: FidelityRecords,
     pub(super) contract: TargetCaps,
-    poisoned: bool,
     target_locked: bool,
     sequence: u64,
     pub(super) attachment: Option<crate::protocol::attachments::Carrier>,
@@ -29,7 +29,6 @@ impl EventEncoder {
             state: Some(StreamState::new()),
             fidelity: FidelityRecords::default(),
             contract: TargetCaps::full(),
-            poisoned: false,
             target_locked: false,
             sequence: 0,
             attachment: None,
@@ -45,7 +44,7 @@ impl EventEncoder {
             self.profile,
             self.contract.adaptation.rules.structured_chat_reasoning,
         )?;
-        if self.poisoned || self.state()?.terminal().is_some() || self.attachment.is_some() {
+        if self.state.is_none() || self.state()?.terminal().is_some() || self.attachment.is_some() {
             return Err(CodecError::Invalid("attachment carrier"));
         }
         self.attachment = Some(value);
@@ -53,7 +52,7 @@ impl EventEncoder {
     }
     /// Refresh reported settings/completion metadata without changing response identity.
     pub fn update_metadata(&mut self, metadata: ResponseMetadata) -> Result<(), CodecError> {
-        if self.poisoned {
+        if self.state.is_none() {
             return Err(CodecError::Invalid("rejected stream"));
         }
         let result = (|| {
@@ -100,7 +99,7 @@ impl EventEncoder {
             Ok(())
         })();
         if result.is_err() {
-            self.poisoned = true;
+            self.state = None;
         } else {
             self.metadata = metadata;
         }
@@ -108,7 +107,7 @@ impl EventEncoder {
     }
     pub fn with_contract(mut self, contract: TargetCaps) -> Self {
         if self.target_locked && self.contract != contract {
-            self.poisoned = true;
+            self.state = None;
         } else {
             self.contract = contract;
         }
@@ -119,7 +118,7 @@ impl EventEncoder {
         event: &StreamEvent,
         source: &FidelityRecords,
     ) -> Result<Vec<Value>, CodecError> {
-        if self.poisoned {
+        if self.state.is_none() {
             return Err(CodecError::Invalid("rejected stream"));
         }
         self.target_locked = true;
@@ -230,13 +229,13 @@ impl EventEncoder {
             Ok(values)
         })();
         if result.is_err() {
-            self.poisoned = true;
+            self.state = None;
             self.projection.truncate(checked_projection);
         }
         result
     }
     pub fn finish(&self) -> Result<(), CodecError> {
-        if self.poisoned {
+        if self.state.is_none() {
             return Err(CodecError::Invalid("rejected stream"));
         }
         end_of_stream(self.state()?)?;

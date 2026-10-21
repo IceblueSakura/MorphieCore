@@ -138,9 +138,18 @@ fn non_success_terminals_keep_partial_output_and_error_is_not_materializable() {
 fn event_encoder_rejects_duplicate_terminal_and_unrepresentable_chat_grouping() {
     let mut e = EventEncoder::new(Profile::Responses, metadata()).unwrap();
     let f = FidelityRecords::default();
+    assert!(
+        e.finish().is_err(),
+        "an early completeness check is not rejection"
+    );
     e.encode(&StreamEvent::Started, &f).unwrap();
     e.encode(&terminal(StreamTerminal::Completed), &f).unwrap();
+    e.finish().unwrap();
     assert!(e.encode(&terminal(StreamTerminal::Completed), &f).is_err());
+    assert!(
+        e.finish().is_err(),
+        "a rejected completed stream stays rejected"
+    );
     let mut e = EventEncoder::new(Profile::Chat, metadata()).unwrap();
     e.encode(&StreamEvent::Started, &f).unwrap();
     e.encode(&start(1, ItemKind::Message { phase: None }), &f)
@@ -149,4 +158,6 @@ fn event_encoder_rejects_duplicate_terminal_and_unrepresentable_chat_grouping() 
         e.encode(&start(2, ItemKind::Message { phase: None }), &f)
             .is_err()
     );
+    assert!(e.encode(&terminal(StreamTerminal::Completed), &f).is_err());
+    assert!(e.finish().is_err());
 }

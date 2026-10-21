@@ -21,6 +21,55 @@ fn coalesce_events(
 }
 
 #[test]
+fn finalized_json_still_needs_handoff_and_cannot_resume_after_rejection() {
+    let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    let mut attempt = Attempt::new(adapter.clone(), 4096, Default::default());
+    attempt.begin(200, "application/json").unwrap();
+    attempt.push(br#"{"id":"r","object":"response","created_at":1,"model":"m","status":"completed","output":[]}"#).unwrap();
+    attempt.finish().unwrap();
+    for reject in [false, true] {
+        let mut delivery = ResponseDelivery::new(
+            ClientAdapter::openai(adapter.clone(), TargetCaps::full()),
+            "public",
+            Default::default(),
+            StreamOptions::default(),
+            Obfuscation::Disabled,
+        );
+        let body = delivery.encode_json(&attempt).unwrap();
+        assert_eq!(
+            delivery.lifecycle().state(),
+            crate::execution::DeliveryState::Uncommitted
+        );
+        assert_eq!(delivery.snapshot(&attempt).unwrap().1, body);
+        assert!(matches!(
+            delivery.complete(&attempt),
+            Err(AttemptError::Delivery("delivery not complete"))
+        ));
+        if reject {
+            assert!(matches!(
+                delivery.encode_json(&attempt),
+                Err(AttemptError::Protocol("delivery closed"))
+            ));
+            assert!(matches!(
+                delivery.commit(),
+                Err(AttemptError::Delivery("no deliverable output"))
+            ));
+            assert!(matches!(
+                delivery.complete(&attempt),
+                Err(AttemptError::Delivery("delivery not complete"))
+            ));
+        } else {
+            delivery.commit().unwrap();
+            delivery.complete(&attempt).unwrap();
+            assert_eq!(
+                delivery.lifecycle().state(),
+                crate::execution::DeliveryState::Terminal
+            );
+        }
+    }
+}
+
+#[test]
 fn prepared_batches_keep_the_metadata_snapshot_from_their_intake() {
     // A later report must not become visible in an earlier pending batch.
     let adapter = Adapter::new(Profile::Chat, Dialect::Standard, None);

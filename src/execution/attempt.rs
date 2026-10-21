@@ -178,8 +178,14 @@ pub(crate) fn prepare_with_evidence(
 enum Intake {
     Pending,
     Static(Vec<u8>),
-    Stream(Box<GenerationDecoder>),
-    Finished(Box<DecodedResponse>),
+    Stream {
+        decoder: Box<GenerationDecoder>,
+        terminal: Option<StreamEvent>,
+    },
+    Finished {
+        decoded: Box<DecodedResponse>,
+        terminal: Option<StreamEvent>,
+    },
     Rejected,
 }
 
@@ -201,7 +207,6 @@ pub struct Attempt {
     body_limit: usize,
     limits: SseLimits,
     intake: Intake,
-    terminal: Option<StreamEvent>,
 }
 impl Attempt {
     /// Native observations (structured arguments, native stops) need projection
@@ -233,7 +238,6 @@ impl Attempt {
             body_limit,
             limits,
             intake: Intake::Pending,
-            terminal: None,
         }
     }
     pub fn begin(&mut self, status: u16, content_type: &str) -> Result<(), AttemptError> {
@@ -251,12 +255,15 @@ impl Attempt {
                 .trim()
                 .to_ascii_lowercase();
             self.intake = if media == "text/event-stream" {
-                Intake::Stream(Box::new(self.adapter.stream_decoder(
-                    status,
-                    content_type,
-                    self.limits,
-                    self.body_limit,
-                )?))
+                Intake::Stream {
+                    decoder: Box::new(self.adapter.stream_decoder(
+                        status,
+                        content_type,
+                        self.limits,
+                        self.body_limit,
+                    )?),
+                    terminal: None,
+                }
             } else if self.adapter.accepts_json()
                 && (media == "application/json"
                     || media.starts_with("application/") && media.ends_with("+json"))
@@ -279,7 +286,7 @@ impl Attempt {
             return Err(AttemptError::Protocol("rejected attempt"));
         }
         let result = (|| {
-            let (n, mut events) = match &mut self.intake {
+            let (n, events) = match &mut self.intake {
                 Intake::Static(body) => {
                     if body.len().saturating_add(chunk.len()) > self.body_limit {
                         return Err(AttemptError::Limit);
@@ -287,12 +294,15 @@ impl Attempt {
                     body.extend_from_slice(chunk);
                     (chunk.len(), vec![])
                 }
-                Intake::Stream(decoder) => decoder.consume(chunk)?,
+                Intake::Stream { decoder, terminal } => {
+                    let (n, mut events) = decoder.consume(chunk)?;
+                    if matches!(events.last(), Some(StreamEvent::Terminal { .. })) {
+                        *terminal = events.pop();
+                    }
+                    (n, events)
+                }
                 _ => return Err(AttemptError::Protocol("attempt is closed")),
             };
-            if matches!(events.last(), Some(StreamEvent::Terminal { .. })) {
-                self.terminal = events.pop();
-            }
             Ok((n, events))
         })();
         if result.is_err() {
@@ -306,21 +316,21 @@ impl Attempt {
     /// Unregistered upstream event types skipped so far.
     pub fn ignored_events(&self) -> usize {
         match &self.intake {
-            Intake::Stream(d) => d.ignored_events(),
+            Intake::Stream { decoder, .. } => decoder.ignored_events(),
             _ => 0,
         }
     }
     pub fn metadata(&self) -> Option<&ResponseMetadata> {
         match &self.intake {
-            Intake::Finished(decoded) => Some(&decoded.metadata),
-            Intake::Stream(d) => d.metadata(),
+            Intake::Finished { decoded, .. } => Some(&decoded.metadata),
+            Intake::Stream { decoder, .. } => decoder.metadata(),
             _ => None,
         }
     }
     pub fn fidelity(&self) -> Option<&FidelityRecords> {
         match &self.intake {
-            Intake::Finished(decoded) => Some(&decoded.fidelity),
-            Intake::Stream(d) => Some(d.fidelity()),
+            Intake::Finished { decoded, .. } => Some(&decoded.fidelity),
+            Intake::Stream { decoder, .. } => Some(decoder.fidelity()),
             _ => None,
         }
     }
@@ -328,17 +338,21 @@ impl Attempt {
         if matches!(self.intake, Intake::Rejected) {
             return Err(AttemptError::Protocol("rejected attempt"));
         }
-        if !matches!(self.intake, Intake::Finished(_)) {
-            let result = (|| -> Result<DecodedResponse, AttemptError> {
-                Ok(match &mut self.intake {
-                    Intake::Static(body) => self.adapter.decode_response(body)?,
-                    Intake::Stream(d) => d.finish()?,
+        if !matches!(self.intake, Intake::Finished { .. }) {
+            let result = (|| -> Result<Intake, AttemptError> {
+                let (decoded, terminal) = match &mut self.intake {
+                    Intake::Static(body) => (self.adapter.decode_response(body)?, None),
+                    Intake::Stream { decoder, terminal } => (decoder.finish()?, terminal.take()),
                     _ => return Err(AttemptError::Protocol("attempt is closed")),
+                };
+                Ok(Intake::Finished {
+                    decoded: Box::new(decoded),
+                    terminal,
                 })
             })();
             match result {
-                Ok(decoded) => {
-                    self.intake = Intake::Finished(Box::new(decoded));
+                Ok(finished) => {
+                    self.intake = finished;
                 }
                 Err(error) => {
                     self.reject();
@@ -350,23 +364,26 @@ impl Attempt {
     }
     pub fn response(&self) -> Result<&DecodedResponse, AttemptError> {
         match &self.intake {
-            Intake::Finished(decoded) => Ok(decoded),
+            Intake::Finished { decoded, .. } => Ok(decoded),
             Intake::Rejected => Err(AttemptError::Protocol("rejected attempt")),
             _ => Err(AttemptError::Protocol("attempt not finished")),
         }
     }
     pub(crate) fn terminal_event(&self) -> Result<&StreamEvent, AttemptError> {
         self.response()?;
-        self.terminal
-            .as_ref()
-            .ok_or(AttemptError::Delivery("upstream was not a stream"))
+        match &self.intake {
+            Intake::Finished {
+                terminal: Some(terminal),
+                ..
+            } => Ok(terminal),
+            _ => Err(AttemptError::Delivery("upstream was not a stream")),
+        }
     }
     pub fn cancel(&mut self) {
         self.reject();
     }
     fn reject(&mut self) {
         self.intake = Intake::Rejected;
-        self.terminal = None;
     }
 }
 
@@ -403,7 +420,7 @@ mod identity_tests {
         let (_, events) = attempt.push(wire.as_bytes()).unwrap();
         attempt.finish().unwrap();
         // Simulate a protocol that does not report response identity.
-        let Intake::Finished(decoded) = &mut attempt.intake else {
+        let Intake::Finished { decoded, .. } = &mut attempt.intake else {
             panic!("finished attempt")
         };
         decoded.metadata.id = None;

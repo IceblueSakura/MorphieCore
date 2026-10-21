@@ -8,13 +8,13 @@ pub struct EventDecoder {
     pub(super) profile: Profile,
     pub(super) adaptation: crate::protocol::openai::dialect::adaptation::Adaptation,
     /// Everything both protocols advance: accepted state, fidelity and identity.
+    /// None is rejection; retained metadata and fidelity remain observable.
     pub(super) state: Option<StreamState>,
     pub(super) fidelity: FidelityRecords,
     pub(super) metadata: Option<ResponseMetadata>,
     pub(super) origin: Option<ReplayOrigin>,
     pub(super) ids: Vec<ItemId>,
     pub(super) next_part: u64,
-    pub(super) poisoned: bool,
     /// Accepted events and skipped unregistered types; both bound the stream.
     events: usize,
     ignored: usize,
@@ -38,7 +38,6 @@ impl EventDecoder {
             origin: None,
             ids: vec![],
             next_part: 0,
-            poisoned: false,
             events: 0,
             ignored: 0,
             sequence: None,
@@ -73,8 +72,8 @@ impl EventDecoder {
         self
     }
     pub fn push(&mut self, payload: &Value) -> Result<Vec<StreamEvent>, CodecError> {
-        if self.poisoned || self.state.as_ref().is_none_or(|s| s.terminal().is_some()) {
-            self.poisoned = true;
+        if self.state.as_ref().is_none_or(|s| s.terminal().is_some()) {
+            self.state = None;
             return Err(CodecError::Invalid("event after terminal or rejection"));
         }
         self.events += 1;
@@ -179,7 +178,7 @@ impl EventDecoder {
             Ok(events)
         })();
         if result.is_err() {
-            self.poisoned = true;
+            self.state = None;
         }
         result
     }
@@ -191,7 +190,7 @@ impl EventDecoder {
         &self.fidelity
     }
     pub fn finish(&self) -> Result<(), CodecError> {
-        if self.poisoned {
+        if self.state.is_none() {
             return Err(CodecError::Invalid("rejected stream"));
         }
         end_of_stream(
@@ -203,11 +202,11 @@ impl EventDecoder {
     }
     /// Framing calls this only for a real Chat `[DONE]`, never for transport EOF.
     pub fn done(&mut self) -> Result<Vec<StreamEvent>, CodecError> {
-        if self.profile != Profile::Chat || self.poisoned {
+        if self.profile != Profile::Chat || self.state.is_none() {
             return Err(CodecError::Invalid("DONE"));
         }
         let Some((terminal, details)) = self.chat.pending.take() else {
-            self.poisoned = true;
+            self.state = None;
             return Err(CodecError::Invalid("DONE before finish"));
         };
         let result = (|| {
@@ -231,7 +230,7 @@ impl EventDecoder {
             Ok(out)
         })();
         if result.is_err() {
-            self.poisoned = true;
+            self.state = None;
         }
         result
     }

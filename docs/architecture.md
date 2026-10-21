@@ -305,6 +305,8 @@ Explicit null, malformed arrays and supplied citations retain strict validation;
 
 Each candidate starts from the unchanged source IR. Static and streaming paths use the same named rules.
 
+OpenAI request projection carries one candidate-local owner through the existing ordered transforms, borrowing the source until an edit is needed. Settings-only edits avoid a separate history replacement. Source validation and intermediate target checks retain their positions; final-only validation must not sanitize invalid source controls into acceptance.
+
 Semantic support, wire representation, execution properties and client promises are separate capability layers. Public capability is not the union of all candidates.
 
 For a fixed target, earlier history projects byte-identically as later turns are added; cache markers may move. Rules must not reinterpret earlier content based on the current turn or request position. This protects cache prefixes and preserved-thinking replay.
@@ -1104,6 +1106,7 @@ These records preserve accepted choices and their consequences, grouped by domai
 | Bounded text-delta coalescing | Startup-only, disabled-by-default optimization after client projection and before encoding. One pending run retains its prepared context and fixed deadline; invalid bounds fail startup. Final-only clients retain existing materialization; original intake validation and publication safety remain authoritative |
 | Scoped source accounting | Retain raw buckets and latest operation/step snapshots independently; derive delivery views without summing snapshots or inferring unknown inclusion relations. Source-default zeros and optional counts remain distinguishable |
 | Honest delivery | Publication forbids advancement; success requires validated EOF and handoff |
+| Owner-local state representation | Delivery projection closure is separate from acknowledged lifecycle completion. Attempts retain withheld terminals only with stream/finished intake; OpenAI codec rejection invalidates the semantic state slot without erasing metadata or successful-prefix evidence. Messages delivery retains checked native usage separately from its published opening snapshot |
 | Agent-shaped failures | Sanitized error classes match pinned client behavior; refusals are not retries |
 | Delivery-local identity | Generated client IDs/timestamps are not upstream facts and remain stable once selected, even if an upstream ID is first reported later. Keep the source fact on its own metadata owner. Responses allocates a gateway-owned ID; only a stored, fully delivered snapshot makes it a history key |
 | Terminal stop evidence | Completion cause is separate from outcome and turn progress, including Google STOP beside calls. Source reports never derive from sent controls or output text. Chat coarsens and Responses omits causes under the [selected terminal approximations](#selected-request-approximations); the [Google Messages profile](#google-messages-terminal-projection) changes only a delivery copy with recorded context/approximation. Strict native codecs, non-success outcomes and unknown-context rejection remain unchanged |

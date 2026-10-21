@@ -70,6 +70,13 @@ pub(crate) struct PreparedEvents {
     barrier: bool,
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum ProjectionPhase {
+    Open,
+    Finalized,
+    Rejected,
+}
+
 pub struct ResponseDelivery {
     losses: Vec<crate::lowering::generation::LossEvidence>,
     client: ClientAdapter,
@@ -84,8 +91,7 @@ pub struct ResponseDelivery {
     source: Option<std::sync::Arc<()>>,
     lifecycle: Lifecycle,
     rendered: bool,
-    terminal: bool,
-    rejected: bool,
+    phase: ProjectionPhase,
     native_created: Option<serde_json::Number>,
     /// Request-local envelope identity, never stored as upstream metadata or history.
     generated_id: Option<String>,
@@ -114,8 +120,7 @@ impl ResponseDelivery {
             source: None,
             lifecycle: Lifecycle::new(),
             rendered: false,
-            terminal: false,
-            rejected: false,
+            phase: ProjectionPhase::Open,
             native_created: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .ok()
@@ -206,7 +211,7 @@ impl ResponseDelivery {
         if self.messages_terminal.is_some()
             && self.messages_terminal != attempt.messages_terminal_source()
         {
-            self.rejected = true;
+            self.phase = ProjectionPhase::Rejected;
             return Err(AttemptError::Delivery("terminal projection source changed"));
         }
         if self
@@ -214,7 +219,7 @@ impl ResponseDelivery {
             .as_ref()
             .is_some_and(|source| !std::sync::Arc::ptr_eq(source, attempt.identity()))
         {
-            self.rejected = true;
+            self.phase = ProjectionPhase::Rejected;
             return Err(AttemptError::Delivery("attempt changed"));
         }
         self.source = Some(attempt.identity().clone());
@@ -255,7 +260,7 @@ impl ResponseDelivery {
         Ok(metadata)
     }
     fn ready(&self) -> Result<(), AttemptError> {
-        if self.rejected || self.terminal {
+        if self.phase != ProjectionPhase::Open {
             Err(AttemptError::Protocol("delivery closed"))
         } else {
             Ok(())
@@ -323,7 +328,7 @@ impl ResponseDelivery {
         attempt: &Attempt,
         request: &crate::adapter::Request,
     ) -> Option<crate::adapter::Request> {
-        if self.rejected
+        if self.phase == ProjectionPhase::Rejected
             || self.is_messages()
             || self.lifecycle.state() != crate::execution::DeliveryState::Terminal
             || attempt.response().ok()?.semantic.outcome()
@@ -355,11 +360,11 @@ impl ResponseDelivery {
             self.bind(attempt)?;
             let snapshot = self.snapshot(attempt)?;
             self.rendered = true;
-            self.terminal = true;
+            self.phase = ProjectionPhase::Finalized;
             Ok(snapshot)
         })();
         if result.is_err() {
-            self.rejected = true;
+            self.phase = ProjectionPhase::Rejected;
         }
         result
     }
@@ -412,7 +417,7 @@ impl ResponseDelivery {
         })();
         self.collect_losses();
         if result.is_err() {
-            self.rejected = true;
+            self.phase = ProjectionPhase::Rejected;
         }
         result
     }
@@ -463,14 +468,14 @@ impl ResponseDelivery {
                 .as_ref()
                 .ok_or(AttemptError::Delivery("missing stream encoder"))?
                 .finish()?;
-            self.terminal = true;
+            self.phase = ProjectionPhase::Finalized;
             if let Some(coalescer) = &mut self.coalescer {
                 coalescer.close();
             }
             Ok(frames)
         })();
         if result.is_err() {
-            self.rejected = true;
+            self.phase = ProjectionPhase::Rejected;
         }
         result
     }
@@ -614,7 +619,7 @@ impl ResponseDelivery {
         })();
         self.collect_losses();
         if result.is_err() {
-            self.rejected = true;
+            self.phase = ProjectionPhase::Rejected;
         }
         result
     }
@@ -655,21 +660,22 @@ impl ResponseDelivery {
             if let Some(coalescer) = &mut self.coalescer {
                 coalescer.close();
             }
-            self.terminal = terminal;
-            if !terminal {
-                self.rejected = true;
-            }
+            self.phase = if terminal {
+                ProjectionPhase::Finalized
+            } else {
+                ProjectionPhase::Rejected
+            };
             Ok(pending)
         })();
         self.collect_losses();
         if result.is_err() {
-            self.rejected = true;
+            self.phase = ProjectionPhase::Rejected;
         }
         result
     }
     /// Call at the external visibility boundary, not when bytes are merely encoded.
     pub fn commit(&mut self) -> Result<(), AttemptError> {
-        if self.rejected || !self.rendered {
+        if self.phase == ProjectionPhase::Rejected || !self.rendered {
             return Err(AttemptError::Delivery("no deliverable output"));
         }
         Ok(self.lifecycle.commit()?)
@@ -678,13 +684,13 @@ impl ResponseDelivery {
     pub fn complete(&mut self, attempt: &Attempt) -> Result<(), AttemptError> {
         self.bind(attempt)?;
         attempt.response()?;
-        if self.rejected || !self.terminal || self.lifecycle.may_retry_or_fallback() {
+        if self.phase != ProjectionPhase::Finalized || self.lifecycle.may_retry_or_fallback() {
             return Err(AttemptError::Delivery("delivery not complete"));
         }
         Ok(self.lifecycle.terminal()?)
     }
     pub fn cancel(&mut self) {
-        self.rejected = true;
+        self.phase = ProjectionPhase::Rejected;
         self.encoder = None;
         self.prepared_source = None;
         if let Some(coalescer) = &mut self.coalescer {

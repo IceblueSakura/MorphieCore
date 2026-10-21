@@ -316,6 +316,11 @@ fn byte_event_and_wire_limits_cannot_be_evaded_by_fragmentation() {
 #[test]
 fn rejected_metadata_update_poisoned_stream_cannot_emit_success() {
     let mut decoder = EventDecoder::new(Profile::Responses).with_replay_origin(origin());
+    assert!(decoder.finish().is_err());
+    assert!(
+        decoder.done().is_err(),
+        "wrong-profile DONE does not poison"
+    );
     decoder.push(&wire::events(2)[0]).unwrap();
     let metadata = decoder.metadata().unwrap().clone();
     let mut encoder = ResponsesSseEncoder::new(
@@ -343,6 +348,7 @@ fn rejected_metadata_update_poisoned_stream_cannot_emit_success() {
     update["response"]["service_tier"] = json!("priority");
     assert!(decoder.push(&update).is_err());
     assert!(decoder.finish().is_err());
+    assert!(decoder.push(&wire::events(2)[1]).is_err());
 
     let mut encoder = ResponsesSseEncoder::new(
         metadata.clone(),

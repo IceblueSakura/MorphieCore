@@ -23,11 +23,14 @@ pub(super) struct Coalescer {
     text: Option<(ItemId, PartId)>,
     seen_content: bool,
     closed: bool,
-    pending: Option<Pending>,
+    pending: Option<PendingText>,
     pub(super) peak_bytes: usize,
 }
-struct Pending {
-    batch: PreparedEvents,
+struct PendingText {
+    item: ItemId,
+    part: PartId,
+    fragment: String,
+    context: Arc<EventContext>,
     deadline: Instant,
     bytes: usize,
     encoded_text: usize,
@@ -153,7 +156,16 @@ impl Coalescer {
         self.pending.as_ref().map(|p| p.deadline)
     }
     pub(super) fn flush(&mut self) -> Option<PreparedEvents> {
-        self.pending.take().map(|p| p.batch)
+        self.pending.take().map(|p| PreparedEvents {
+            events: vec![StreamEvent::Delta {
+                item: p.item,
+                part: p.part,
+                fragment: p.fragment,
+                logprobs: vec![],
+            }],
+            context: p.context,
+            barrier: false,
+        })
     }
     pub(super) fn close(&mut self) {
         self.pending = None;
@@ -162,7 +174,7 @@ impl Coalescer {
     }
     pub(super) fn push(
         &mut self,
-        batch: PreparedEvents,
+        mut batch: PreparedEvents,
         now: Instant,
         frame_limit: usize,
     ) -> Vec<PreparedEvents> {
@@ -214,9 +226,9 @@ impl Coalescer {
         let encoded = escaped_bytes(fragment);
         let added = fragment.len().saturating_mul(2).saturating_add(encoded);
         let same_run = self.pending.as_ref().is_some_and(|pending| {
-            Arc::ptr_eq(&pending.batch.context, &batch.context)
-                && matches!(pending.batch.events.as_slice(),
-                    [StreamEvent::Delta { item: old_item, part: old_part, .. }] if *old_item == item && *old_part == part)
+            Arc::ptr_eq(&pending.context, &batch.context)
+                && pending.item == item
+                && pending.part == part
                 && pending.deadline > now
                 && pending.bytes.saturating_add(added) <= self.policy.max_pending_bytes
                 && pending.encoded_text.saturating_add(encoded)
@@ -224,11 +236,8 @@ impl Coalescer {
         });
         if same_run {
             let pending = self.pending.as_mut().expect("pending run");
-            let StreamEvent::Delta { fragment: text, .. } = &mut pending.batch.events[0] else {
-                unreachable!()
-            };
-            text.reserve_exact(fragment.len());
-            text.push_str(fragment);
+            pending.fragment.reserve_exact(fragment.len());
+            pending.fragment.push_str(fragment);
             pending.bytes += added;
             pending.encoded_text += encoded;
             self.peak_bytes = self.peak_bytes.max(pending.bytes);
@@ -243,8 +252,14 @@ impl Coalescer {
             && encoded <= frame_limit.saturating_sub(batch.context.frame_overhead())
         {
             self.peak_bytes = self.peak_bytes.max(bytes);
-            self.pending = Some(Pending {
-                batch,
+            let Some(StreamEvent::Delta { fragment, .. }) = batch.events.pop() else {
+                unreachable!("eligible text delta");
+            };
+            self.pending = Some(PendingText {
+                item,
+                part,
+                fragment,
+                context: batch.context,
                 bytes,
                 encoded_text: encoded,
                 deadline: now + Duration::from_millis(self.policy.max_delay_ms),
