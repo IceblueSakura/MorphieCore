@@ -7,7 +7,7 @@
 
 ## Working approach
 
-- Follow the [five-stage plan](docs/roadmap.md#planned-order): same-protocol lossless IR codecs; basic agent tool loops; cross-protocol stability plus `count_tokens`; Embedding/audio/image/video APIs and Files/multipart Uploads; then unscheduled citations, tool discovery, hosted tools, server-side compaction, Batch and Realtime. Stage 5 is a backlog, not a scheduled delivery commitment.
+- Follow the [five-stage plan](docs/roadmap.md#planned-order): same-protocol lossless IR codecs; basic agent tool loops; cross-protocol stability plus `count_tokens`, which is [deferred](docs/roadmap.md#deferred-token-counting); Embedding/audio/image/video APIs and Files/multipart Uploads; then unscheduled citations, tool discovery, hosted tools, server-side compaction, Batch and Realtime. Stage 5 is a backlog, not a scheduled delivery commitment.
 - Investigate proactively: trace actual client workflows, primary protocol sources and existing implementations. Challenge weak premises, compare alternatives and recommend simpler designs with concrete trade-offs.
 - Own implementation choices within the agreed scope. Explore and propose architectural improvements; when a semantic or structural decision is unresolved, show a minimal counterexample and a recommendation for user selection. Continue independent work meanwhile. Research does not reopen frozen implementation scope.
 - Develop small, coherent slices. State consequential behavior goals and exit conditions in the roadmap, but choose the investigation, prototyping and verification sequence that fits the uncertainty. Do not turn every change into a test-first ritual or a new framework.

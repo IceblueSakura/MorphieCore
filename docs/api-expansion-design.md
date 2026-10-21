@@ -45,7 +45,7 @@ The user selected OpenAI-first downstream contracts, broad coverage of current a
 
 | Requested surface | Expansion goal |
 |---|---|
-| `POST /v1/messages/count_tokens` | Stage 3: count a structured model input under the selected target/projection contract, without generation |
+| `POST /v1/messages/count_tokens` | Stage 3, deferred 2026-10-21: count a structured model input under the selected target/projection contract, without generation |
 | `POST /v1/responses/compact` | Stage 5, unscheduled: execute native context compaction and return reusable context |
 | `POST /v1/embeddings` | Complete the existing independent embedding contract |
 | `POST /v1/audio/speech` | Complete standalone speech synthesis, including supported streaming |
@@ -221,7 +221,7 @@ Keep diagnostics body-free. Apply the existing private-capture policy deliberate
 
 ### Token counting
 
-Selected for stage 3 with cross-protocol conversion. The Messages `count_tokens` surface is confirmed; the Responses counting companion still requires selection.
+Selected for stage 3 with cross-protocol conversion and **deferred on 2026-10-21** ([roadmap](roadmap.md#deferred-token-counting)); the contract below is unstarted design reference. The Messages `count_tokens` surface is confirmed; the Responses counting companion still requires selection.
 
 Model a count request from count-relevant conversation content: instructions, ordered history, tools, media and applicable settings. It is not generation with a zero output cap. A count result is not inference usage and must not contain fabricated generated output.
 
@@ -456,7 +456,7 @@ These recommendations have not been adopted merely by requesting this document.
 |---|---|---|
 | Task grouping and shared content | Recommend independent TokenCount/Compaction, AudioToText variants, and Image Generate/Edit variants; share content without inheriting Generation execution | New task type and public Rust contract changes |
 | Counting companion surface | Recommend Responses input-token counting; image generations/edits already belong to stage 4 | Adding the Responses counting surface to delivery scope |
-| Counting profile and public scope | Select the public-model/target profile, upstream reliability criteria, coarse estimation rule/input coverage and client-visible scope/provenance. [Upstream preference, explicit estimates for inaccurate reports, no gateway tokenizer counting and no inference side effects](architecture.md#token-counting-policy) are selected, not open alternatives | Cross-protocol counting admission and client promises |
+| Counting profile and public scope | **Deferred scheduling; profile unselected.** When reopened, select the public-model/target profile, upstream reliability criteria, coarse estimation rule/input coverage and client-visible scope/provenance. [Upstream preference, explicit estimates for inaccurate reports, no gateway tokenizer counting and no inference side effects](architecture.md#token-counting-policy) are selected, not open alternatives | Cross-protocol counting admission and client promises, only after reopening |
 | File authority | Recommend upstream-native content plus gateway public IDs/durable mappings first. Gateway-owned content with target replicas improves portability but adds storage and replication ownership | Files/Uploads and resource-based failover |
 | Retention and deletion | Select expiry, deletion with active jobs/history, cascade behavior and restart guarantees. Durable jobs and resource mappings cannot inherit process-local Responses TTL accidentally | Resource/job lifecycle implementation |
 | Batch execution | Recommend native Provider batches. A gateway scheduler is a separate product with different billing, timing and cancellation semantics | Batch implementation |
@@ -464,7 +464,7 @@ These recommendations have not been adopted merely by requesting this document.
 | Custom voices | Recommend authorized voice references first; voice creation/consent management as a separate resource slice. Broader audio resource coverage may be selected explicitly | Voice-resource endpoints, not ordinary speech |
 | Video contracts | Select current operations/endpoints, task versus content ownership, artifact access and any required job lifecycle before implementation | Video implementation, not stages 1–3 |
 | Realtime design | Client scenario, session/transport and interruption/recovery contracts are unselected; keep stage 5 unscheduled | Realtime implementation |
-| Within-stage scheduling | Stage 3 includes counting; stage 4 includes Embedding/audio/image/video and Files/multipart Uploads. All stage-5 tasks remain unscheduled; placing them in the plan does not queue implementation | Per-slice activation and full-chain acceptance |
+| Within-stage scheduling | Stage 3 closed its projection and loop scope with counting deferred; stage 4 includes Embedding/audio/image/video and Files/multipart Uploads. All stage-5 tasks remain unscheduled; placing them in the plan does not queue implementation | Per-slice activation and full-chain acceptance |
 
 ## Execution handoff
 
