@@ -194,7 +194,7 @@ MORPHIECORE_OPENCODE_BIN=/absolute/path/to/unwrapped/opencode \
   --ignored --test-threads=1 --nocapture
 ```
 
-Python 3 from the development environment needs only its standard library; `MORPHIECORE_CLIENT_PYTHON` optionally selects it. The gate checks and reports pi `1.3.0` and OpenCode `2.0.6+e5ecb57`; selecting a new version requires deliberate profile review.
+Python 3 from the development environment needs only its standard library; `MORPHIECORE_CLIENT_PYTHON` optionally selects it. The gate checks and reports pi `1.3.0` and OpenCode `2.0.6+e5ecb57`. The [OpenCode version-continuity decision](architecture.md#scope-and-activation-decisions) preserves those results across the change to `2.0.32`; reuse existing scripts without a version-driven profile review or script migration. Record the actual binary version for each new run.
 
 Each of the three serial cases (pi Chat, pi native Messages, OpenCode Chat) fixes four client Generation requests and five upstream attempts: initial `read` on the primary, unpublished `503` on tool feedback, the same feedback completed by the secondary, an independent conversation recovering the primary, then original-session continuation on the secondary. Wire caps are 2048 tokens; candidate/route/exchange deadlines are 3/8/10 seconds, with a 120-second driver bound. The transparent admission forwarder counts client POSTs independently, rejects duplicates/excess requests and never rewrites payloads or session headers. pi retries are disabled; OpenCode's zero extra transmissions are observed, not inferred from an unsupported retry setting.
 
