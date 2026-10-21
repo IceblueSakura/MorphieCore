@@ -1,9 +1,10 @@
-"""Pinned OpenAI SDK against the Google Router fixture; no Provider calls."""
+"""Pinned OpenAI/Anthropic SDKs against the Google Router fixture; no Provider calls."""
 import json
 import sys
 
 import httpx2 as httpx
 import openai
+import anthropic
 
 KEY = "synthetic-google-loop-client-000001"
 
@@ -57,6 +58,8 @@ def responses_completion(client, params, stream):
 
 def run(base, profile, api):
     check(api in ("generate_content", "interactions"))
+    if profile == "messages":
+        return run_messages(base, api)
     function = {"name": "read", "strict": False, "parameters": {
         "type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}
     transmissions = []
@@ -112,6 +115,55 @@ def run(base, profile, api):
                         check(any(item["type"] == "message" and item["content"][0]["text"] ==
                                   ("cedar-71" if turn == 3 else "continued") for item in output))
                         params["input"].append({"role": "user", "content": "Continue."})
+    check(requests == 8 and len(transmissions) == requests)
+    print(json.dumps({"upstream": api, "requests": requests, "http_requests": len(transmissions),
+                      "deliveries": 2, "tool_correction_and_final_history": True}))
+
+
+def run_messages(base, api):
+    transmissions = []
+    requests = 0
+    with httpx.Client(trust_env=False, event_hooks={"request": [transmissions.append]}) as http, \
+            anthropic.Anthropic(base_url=base.removesuffix("/v1"), api_key=KEY, max_retries=0,
+                                timeout=5.0, http_client=http) as client:
+        for stream in (False, True):
+            params = dict(model="gemini-3.8-flash", max_tokens=256,
+                          thinking={"type": "adaptive"}, output_config={"effort": "low"},
+                          tools=[{"name": "read", "input_schema": {
+                              "type": "object", "properties": {"path": {"type": "string"}},
+                              "required": ["path"]}}],
+                          messages=[{"role": "user", "content": "Read."}])
+            for turn in range(1, 5):
+                requests += 1
+                if stream:
+                    with client.beta.messages.stream(**params) as events:
+                        completed = 0
+                        for event in events:
+                            check(event.type != "error")
+                            completed += event.type == "message_stop"
+                        value = events.get_final_message()
+                    check(completed == 1)
+                else:
+                    value = client.beta.messages.create(**params)
+                result = value.model_dump(exclude_unset=True)
+                check(result["stop_reason"] == ("tool_use" if turn <= 2 else "end_turn"))
+                check(result["usage"]["input_tokens"] == 10 and result["usage"]["output_tokens"] == 5)
+                content = result["content"]
+                params["messages"].append({"role": "assistant", "content": content})
+                calls = [p for p in content if p["type"] == "tool_use"]
+                if turn <= 2:
+                    call, = calls
+                    check(call["id"] == f"c{turn}" and call["name"] == "read")
+                    check(call["input"] == {"path": "missing" if turn == 1 else "found"})
+                    check(any(p.get("signature", "").startswith("mca") for p in content))
+                    params["messages"].append({"role": "user", "content": [{
+                        "type": "tool_result", "tool_use_id": call["id"], "is_error": turn == 1,
+                        "content": "missing file" if turn == 1 else "cedar-71"}]})
+                else:
+                    check(not calls)
+                    check(any(p["type"] == "text" and p["text"] ==
+                              ("cedar-71" if turn == 3 else "continued") for p in content))
+                    params["messages"].append({"role": "user", "content": "Continue."})
     check(requests == 8 and len(transmissions) == requests)
     print(json.dumps({"upstream": api, "requests": requests, "http_requests": len(transmissions),
                       "deliveries": 2, "tool_correction_and_final_history": True}))

@@ -84,6 +84,31 @@ impl TargetCaps {
             Self::GoogleInteractions(c) => &c.semantics,
         }
     }
+    pub(crate) fn messages_terminal_policy(
+        &self,
+        request: &crate::adapter::Request,
+    ) -> Option<anthropic::messages::client::GoogleTerminalPolicy> {
+        // Both Google encoders forward nonempty stop controls unchanged and never
+        // insert defaults. Absence here is therefore an effective-request fact.
+        if !request.task.semantic.controls().stop_sequences.is_empty() {
+            return None;
+        }
+        self.google_messages_terminal_profile()
+    }
+    pub(crate) fn google_messages_terminal_profile(
+        &self,
+    ) -> Option<anthropic::messages::client::GoogleTerminalPolicy> {
+        use anthropic::messages::client::GoogleTerminalPolicy as Policy;
+        match self {
+            Self::GoogleGenerateContent(c) if c.messages_terminal_projection => {
+                Some(Policy::GenerateContentWithoutStops)
+            }
+            Self::GoogleInteractions(c) if c.messages_terminal_projection => {
+                Some(Policy::InteractionsWithoutStops)
+            }
+            _ => None,
+        }
+    }
     /// Accepted request features after selected adaptation, not native support.
     /// Value/mode restrictions still belong to the shared target encoder.
     pub(crate) fn accepted_semantics(&self) -> GenerationSemanticContract {

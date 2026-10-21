@@ -155,6 +155,8 @@ The user selected the candidate-local configuration, explicit-cap-only generic c
 
 #### Google output report owners (unselected)
 
+These proposals are paused under the user's 2026-10-21 [basic-loop closure and Google API pause](roadmap.md#google-api-pause). The selected Messages terminal projection is not approval of any report owner below.
+
 The 2026-10-20 repair plan selects classification and maintenance rejection, not new report structures. The [source counterexamples](refs/2026-10-17-generation-contracts.md#google-foreground-contracts-2026-10-20) require design review before broader carriage:
 
 | Fact | Minimal proposed owner | Required decision |

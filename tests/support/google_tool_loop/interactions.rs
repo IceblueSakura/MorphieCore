@@ -9,20 +9,30 @@ use axum::{
 use morphiecore::protocol::openai::Profile;
 use serde_json::{Value, json};
 
-fn expected_input(turn: usize) -> Value {
+fn expected_input(turn: usize, messages: bool) -> Value {
     let mut input = vec![json!({"type":"user_input","content":[{"type":"text","text":"Read."}]})];
     if turn >= 2 {
+        let mut result =
+            json!({"type":"function_result","call_id":"c1","name":"read","result":ERROR});
+        if messages {
+            result["is_error"] = json!(true);
+        }
         input.push(json!({"type":"thought","summary":[{"type":"text","text":"Plan 1"}],"signature":"synthetic-thought-1"}));
         input.extend([
             json!({"type":"function_call","id":"c1","name":"read","arguments":{"path":"missing"},"signature":"synthetic-call-1"}),
-            json!({"type":"function_result","call_id":"c1","name":"read","result":ERROR}),
+            result,
         ]);
     }
     if turn >= 3 {
+        let mut result =
+            json!({"type":"function_result","call_id":"c2","name":"read","result":RESULT});
+        if messages {
+            result["is_error"] = json!(false);
+        }
         input.push(json!({"type":"thought","summary":[{"type":"text","text":"Plan 2"}],"signature":"synthetic-thought-2"}));
         input.extend([
             json!({"type":"function_call","id":"c2","name":"read","arguments":{"path":"found"},"signature":"synthetic-call-2"}),
-            json!({"type":"function_result","call_id":"c2","name":"read","result":RESULT}),
+            result,
         ]);
     }
     if turn >= 4 {
@@ -59,7 +69,7 @@ pub(super) async fn answer(
     assert_eq!(
         body,
         json!({"model":"gemini-3.8-flash","store":false,"stream":true,
-        "input":expected_input(turn), "generation_config":config,
+        "input":expected_input(turn, state.messages), "generation_config":config,
         "tools":[{"type":"function","name":"read","parameters":{
             "type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}]})
     );
@@ -110,9 +120,17 @@ pub(super) async fn answer(
         ]);
         steps.push(json!({"type":"model_output","content":[{"type":"text","text":text}]}));
     }
+    // Missing counters remain unknown on the existing OpenAI lane. Messages
+    // success uses an independent, explicit report rather than filling defaults.
+    let usage = if state.messages {
+        json!({"total_input_tokens":10,"total_cached_tokens":0,"total_output_tokens":3,
+            "total_thought_tokens":2,"total_tool_use_tokens":0,"total_tokens":15})
+    } else {
+        json!({"total_input_tokens":10,"total_output_tokens":5,"total_tokens":15})
+    };
     frames.push(json!({"event_type":"interaction.completed","interaction":{
         "status":if turn <= 2 {"requires_action"} else {"completed"}, "steps":steps,
-        "usage":{"total_input_tokens":10,"total_output_tokens":5,"total_tokens":15}}}));
+        "usage":usage}}));
     let mut wire = frames
         .iter()
         .map(|frame| {

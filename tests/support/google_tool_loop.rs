@@ -45,16 +45,22 @@ impl Drop for Fixture {
 #[derive(Clone)]
 struct Upstream {
     profile: Profile,
+    messages: bool,
     seen: Arc<Mutex<Vec<Value>>>,
 }
-fn expected_history(turn: usize) -> Value {
+fn expected_history(turn: usize, messages: bool) -> Value {
     let mut history = vec![json!({"role":"user","parts":[{"text":"Read."}]})];
     if turn >= 2 {
+        let result = if messages {
+            json!({"error":ERROR})
+        } else {
+            json!({"output":ERROR})
+        };
         history.extend([
             json!({"role":"model","parts":[{"functionCall":{"id":"c1","name":"read",
                 "args":{"path":"missing"}},"thoughtSignature":"U0lHLTE="}]}),
             json!({"role":"user","parts":[{"functionResponse":{"id":"c1","name":"read",
-                "response":{"output":ERROR}}}]}),
+                "response":result}}]}),
         ]);
     }
     if turn >= 3 {
@@ -100,7 +106,7 @@ async fn answer(
     assert_eq!(
         body,
         json!({
-            "contents":expected_history(turn),
+            "contents":expected_history(turn, state.messages),
             "tools":[{"functionDeclarations":[{"name":"read","parametersJsonSchema":{
                 "type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}]}],
             "generationConfig":{"maxOutputTokens":256,"thinkingConfig":thinking},
@@ -135,6 +141,12 @@ async fn answer(
         .unwrap()
 }
 pub async fn start(profile: Profile, api: Api) -> Fixture {
+    start_with(profile, api, false).await
+}
+pub async fn start_messages(api: Api) -> Fixture {
+    start_with(Profile::Chat, api, true).await
+}
+async fn start_with(profile: Profile, api: Api, messages: bool) -> Fixture {
     let binding = &GOOGLE_BINDINGS[0];
     let seen = Arc::new(Mutex::new(Vec::new()));
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -159,6 +171,7 @@ pub async fn start(profile: Profile, api: Api) -> Fixture {
     }
     .with_state(Upstream {
         profile,
+        messages,
         seen: seen.clone(),
     });
     let upstream = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });

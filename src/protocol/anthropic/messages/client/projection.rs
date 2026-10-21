@@ -3,6 +3,71 @@ use crate::protocol::{CodecError, DecodedResponse, anthropic::messages as wire, 
 use crate::semantic::{task::generation::*, value::Presence};
 use serde_json::Value;
 
+/// Selected only for a trusted Google binding whose effective request has no
+/// stop sequences. This is client delivery policy, never native source decoding.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum GoogleTerminalPolicy {
+    GenerateContentWithoutStops,
+    InteractionsWithoutStops,
+}
+impl GoogleTerminalPolicy {
+    pub(crate) fn project(
+        self,
+        source: &GenerationResponse,
+        direction: &'static str,
+    ) -> Result<Option<(TerminalDetails, crate::lowering::generation::LossEvidence)>, CodecError>
+    {
+        source.details().validate(source.outcome())?;
+        if source.outcome() != Outcome::Completed {
+            return Ok(None);
+        }
+        let calls = source
+            .items()
+            .iter()
+            .any(|(_, i)| matches!(i, Item::ToolCall(_)));
+        let (completion, rule, action) = match (
+            self,
+            source.progress(),
+            calls,
+            source.details().completion.as_ref(),
+        ) {
+            (
+                Self::GenerateContentWithoutStops,
+                InteractionProgress::AwaitingToolResults,
+                true,
+                Some(CompletionCause::NaturalOrStopSequence),
+            ) => (None, "messages.google-tool-stop.v1", "omit"),
+            (
+                Self::GenerateContentWithoutStops,
+                InteractionProgress::TurnFinished,
+                false,
+                Some(CompletionCause::NaturalOrStopSequence),
+            ) => (
+                Some(CompletionCause::Natural),
+                "messages.google-stop-without-sequences.v1",
+                "resolve",
+            ),
+            (Self::InteractionsWithoutStops, InteractionProgress::TurnFinished, false, None) => (
+                Some(CompletionCause::Natural),
+                "messages.interactions-completed-as-end-turn.v1",
+                "approximate",
+            ),
+            _ => return Ok(None),
+        };
+        let mut details = source.details().clone();
+        details.completion = completion;
+        Ok(Some((
+            details,
+            crate::lowering::generation::LossEvidence {
+                rule,
+                field: "generation.completion_cause",
+                direction,
+                action,
+            },
+        )))
+    }
+}
+
 /// Client values are sealed envelopes; the format tag keeps a redacted block's type.
 pub(crate) fn redacted(sealed: &str) -> bool {
     matches!(

@@ -73,6 +73,7 @@ pub(crate) struct PreparedEvents {
 pub struct ResponseDelivery {
     losses: Vec<crate::lowering::generation::LossEvidence>,
     client: ClientAdapter,
+    messages_terminal: Option<crate::protocol::anthropic::messages::client::GoogleTerminalPolicy>,
     public_label: String,
     limits: SseLimits,
     options: StreamOptions,
@@ -102,6 +103,7 @@ impl ResponseDelivery {
         Self {
             losses: vec![],
             client,
+            messages_terminal: None,
             public_label: public_label.into(),
             limits,
             options,
@@ -124,6 +126,16 @@ impl ResponseDelivery {
     }
     pub fn is_messages(&self) -> bool {
         self.client.protocol() == ClientProtocol::Messages
+    }
+    pub(crate) fn with_request(
+        mut self,
+        endpoint: &crate::topology::Endpoint,
+        request: &crate::adapter::Request,
+    ) -> Self {
+        if self.is_messages() {
+            self.messages_terminal = endpoint.representation.messages_terminal_policy(request);
+        }
+        self
     }
     pub(crate) fn with_coalescing(mut self, policy: Option<DeltaCoalescing>) -> Self {
         self.coalescer = policy.map(coalescing::Coalescer::new);
@@ -191,6 +203,12 @@ impl ResponseDelivery {
     // Wire IDs can repeat across attempts; only the execution-owned token binds
     // this delivery. A different attempt needs a fresh uncommitted delivery.
     fn bind(&mut self, attempt: &Attempt) -> Result<(), AttemptError> {
+        if self.messages_terminal.is_some()
+            && self.messages_terminal != attempt.messages_terminal_source()
+        {
+            self.rejected = true;
+            return Err(AttemptError::Delivery("terminal projection source changed"));
+        }
         if self
             .source
             .as_ref()
@@ -269,11 +287,20 @@ impl ResponseDelivery {
         let mut decoded = attempt.response()?.clone();
         decoded.metadata = self.metadata(attempt)?;
         super::replay::seal_for_client(&mut decoded, &super::replay::CLIENT_ORIGIN)?;
-        let losses = if attempt.is_native() {
+        let mut losses = if attempt.is_native() {
             self.client.project_native(&mut decoded)?
         } else {
             vec![]
         };
+        if let Some(policy) = self.messages_terminal
+            && let Some((details, loss)) = policy.project(&decoded.semantic, "response.encode")?
+        {
+            decoded.semantic = decoded
+                .semantic
+                .with_details(details)
+                .map_err(crate::protocol::CodecError::from)?;
+            losses.push(loss);
+        }
         if self.client.protocol() == ClientProtocol::Responses || attempt.is_native() {
             for (owner, _) in decoded.semantic.items() {
                 if decoded.fidelity.response_item_id(*owner).is_none() {
@@ -393,11 +420,22 @@ impl ResponseDelivery {
     pub fn finish_stream(&mut self, attempt: &Attempt) -> Result<Vec<Bytes>, AttemptError> {
         let result = (|| {
             self.ready()?;
-            let terminal = attempt.terminal_event()?;
+            let mut terminal = attempt.terminal_event()?.clone();
             if self.is_messages() {
                 crate::protocol::anthropic::messages::client::validate_tool_calls(
                     attempt.response()?,
                 )?;
+            }
+            if let Some(policy) = self.messages_terminal
+                && let Some((projected, loss)) =
+                    policy.project(&attempt.response()?.semantic, "event.encode")?
+            {
+                if let StreamEvent::Terminal { details, .. } = &mut terminal {
+                    *details = projected;
+                }
+                if !self.losses.contains(&loss) {
+                    self.losses.push(loss);
+                }
             }
             if self
                 .encoder
@@ -420,7 +458,7 @@ impl ResponseDelivery {
                     .ok_or(AttemptError::Delivery("missing stream encoder"))?
                     .set_attachment(packet.encode()?)?;
             }
-            frames.extend(self.encode(attempt, std::slice::from_ref(terminal))?);
+            frames.extend(self.encode(attempt, std::slice::from_ref(&terminal))?);
             self.encoder
                 .as_ref()
                 .ok_or(AttemptError::Delivery("missing stream encoder"))?
@@ -658,5 +696,7 @@ impl ResponseDelivery {
     }
 }
 
+#[cfg(test)]
+mod google_messages_tests;
 #[cfg(test)]
 mod tests;

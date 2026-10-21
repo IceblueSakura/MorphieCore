@@ -73,6 +73,8 @@ pub struct TargetCaps {
     pub cache: CacheProjection,
     pub reasoning_policy: Option<crate::protocol::reasoning::ReasoningRequestPolicy>,
     pub reasoning_as_text: bool,
+    /// Selected downstream terminal projection; native source facts stay unchanged.
+    pub messages_terminal_projection: bool,
 }
 impl Default for TargetCaps {
     fn default() -> Self {
@@ -82,6 +84,7 @@ impl Default for TargetCaps {
             cache: CacheProjection::default(),
             reasoning_policy: None,
             reasoning_as_text: false,
+            messages_terminal_projection: false,
         }
     }
 }

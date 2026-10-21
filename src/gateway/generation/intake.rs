@@ -436,6 +436,7 @@ pub(in crate::gateway) async fn produce_candidate(
         options,
         padding,
     )
+    .with_request(&candidate.endpoint, request)
     .with_coalescing(stream.then_some(limits.delta_coalescing).flatten());
     if let Some(history) = history {
         delivery = delivery.with_storage(&history.id, history.options.metadata());

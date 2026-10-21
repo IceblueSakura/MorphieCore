@@ -81,6 +81,7 @@ impl GoogleBinding {
             representation: generate_content::TargetCaps {
                 model_limits: self.model_limits(),
                 reasoning_policy: self.reasoning_policy(),
+                messages_terminal_projection: self.model == "gemini-3.8-flash",
                 ..Default::default()
             }
             .into(),
@@ -116,6 +117,7 @@ impl GoogleBinding {
         endpoint.representation = interactions::TargetCaps {
             model_limits: self.model_limits(),
             reasoning_policy: self.reasoning_policy(),
+            messages_terminal_projection: self.model == "gemini-3.8-flash",
             ..Default::default()
         }
         .into();
