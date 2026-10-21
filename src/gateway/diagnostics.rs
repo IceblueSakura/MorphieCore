@@ -1,18 +1,14 @@
 //! Opt-in operator metadata. Never observes bodies, arbitrary headers or identities.
 //! Request paths only try-send to a bounded writer; failures cannot alter responses.
 use serde::Serialize;
-use std::{fs::OpenOptions, io::Write, path::Path, sync::mpsc, time::Instant};
+use std::time::Instant;
+mod writer;
+pub(super) use writer::Sink;
 
-const LIMIT: usize = 1 << 20;
-#[derive(Clone)]
-pub(super) struct Sink(mpsc::SyncSender<Message>);
-enum Message {
-    Record(Box<Record>),
-    Flush(tokio::sync::oneshot::Sender<()>),
-}
-#[derive(Clone, Copy, Serialize)]
+#[derive(Clone, Copy, Default, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(super) enum Stage {
+    #[default]
     Admission,
     Prepare,
     Connect,
@@ -23,9 +19,10 @@ pub(super) enum Stage {
     Delivery,
     Complete,
 }
-#[derive(Clone, Copy, Serialize)]
+#[derive(Clone, Copy, Default, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(super) enum Outcome {
+    #[default]
     Error,
     Interrupted,
     Timeout,
@@ -74,9 +71,11 @@ fn decode_failure(error: &crate::execution::AttemptError) -> &'static str {
                 "invalid_after_finish"
             }
             "sequence" => "invalid_sequence",
-            "metadata changed" | "service tier changed" | "fingerprint changed" => {
-                "invalid_metadata"
-            }
+            "metadata changed"
+            | "service tier changed"
+            | "fingerprint changed"
+            | "reported service changed"
+            | "Interactions service_tier changed" => "invalid_metadata",
             "reported settings changed" => "reported_settings_conflict",
             "configuration snapshot changed" => "configuration_conflict",
             "item snapshot" => "invalid_item_snapshot",
@@ -171,8 +170,9 @@ struct ImageAccountingObservation {
     #[serde(skip_serializing_if = "Option::is_none")]
     image_billing_omitted: Option<bool>,
 }
-#[derive(Serialize)]
+#[derive(Default, Serialize)]
 struct Record {
+    request_id: Option<String>,
     #[serde(flatten)]
     routing: RoutingObservation,
     #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
@@ -194,6 +194,7 @@ struct Record {
     elapsed_ms: u64,
     upstream_head_ms: Option<u64>,
     first_upstream_bytes_ms: Option<u64>,
+    first_upstream_delta_ms: Option<u64>,
     candidates: Vec<CandidateRecord>,
     /// Maximum accounted delivery buffer bytes observed at an attempt's exit.
     #[serde(skip_serializing_if = "is_zero")]
@@ -238,53 +239,6 @@ struct AffinityObservation {
     #[serde(skip_serializing_if = "Option::is_none")]
     affinity_session_sent: Option<bool>,
 }
-impl Sink {
-    pub(super) fn open(path: &Path) -> std::io::Result<Self> {
-        let mut options = OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut file = options.open(path)?;
-        let (tx, rx) = mpsc::sync_channel(64);
-        std::thread::Builder::new()
-            .name("gateway-metadata".into())
-            .spawn(move || {
-                let mut used = 0;
-                for message in rx {
-                    match message {
-                        Message::Record(record) => {
-                            let Ok(mut bytes) = serde_json::to_vec(&record) else {
-                                continue;
-                            };
-                            bytes.push(b'\n');
-                            if used + bytes.len() > LIMIT {
-                                continue;
-                            }
-                            if file.write_all(&bytes).is_err() {
-                                break;
-                            }
-                            used += bytes.len();
-                        }
-                        Message::Flush(done) => {
-                            let _ = file.flush();
-                            let _ = done.send(());
-                        }
-                    }
-                }
-            })?;
-        Ok(Self(tx))
-    }
-    pub(super) async fn flush(&self) {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        if self.0.try_send(Message::Flush(tx)).is_ok() {
-            let _ = tokio::time::timeout(std::time::Duration::from_secs(2), rx).await;
-        }
-    }
-}
-
 pub(super) struct Trace {
     reported_reasoning: Option<serde_json::Value>,
     losses: Vec<LossObservation>,
@@ -306,31 +260,8 @@ impl Trace {
             capture_attempt: 0,
             sink: sink.cloned(),
             record: Record {
-                routing: RoutingObservation::default(),
-                selection_skips: Default::default(),
-                input_losses: vec![],
-                capture_exchange: None,
-                affinity: AffinityObservation::default(),
-                reported_cached_tokens: None,
-                stage: Stage::Admission,
-                outcome: Outcome::Error,
-                upstream_status: None,
-                retry_after_seconds: None,
-                received_bytes: 0,
-                handed_off_bytes: 0,
-                elapsed_ms: 0,
-                upstream_head_ms: None,
-                first_upstream_bytes_ms: None,
-                coalescing_peak_bytes: 0,
-                candidates: vec![],
-                executor_order: None,
-                decode_failure: None,
-                projection_failure: None,
-                reported_usage_detail_mask: None,
-                ignored_request_field_count: 0,
-                ignored_upstream_events: 0,
-                events: EventCounts::default(),
-                image: ImageAccountingObservation::default(),
+                request_id: sink.and_then(Sink::request_id),
+                ..Default::default()
             },
             start: Instant::now(),
             candidate_start: None,
@@ -701,6 +632,12 @@ impl Trace {
             }
             let counts = &mut self.record.events;
             match event {
+                StreamEvent::Delta { fragment, .. } if !fragment.is_empty() => {
+                    self.record.first_upstream_delta_ms.get_or_insert_with(|| {
+                        self.start.elapsed().as_millis().min(u64::MAX as u128) as u64
+                    });
+                    counts.event_deltas = counts.event_deltas.saturating_add(1);
+                }
                 StreamEvent::ItemStarted { kind, .. } => {
                     counts.event_items = counts.event_items.saturating_add(1);
                     if matches!(kind, ItemKind::Reasoning) {
@@ -767,37 +704,7 @@ impl Drop for Trace {
         if let Some(sink) = self.sink.take() {
             self.record.capture_exchange = self.capture.as_ref().map(super::capture::Exchange::id);
             self.record.elapsed_ms = self.start.elapsed().as_millis().min(u64::MAX as u128) as u64;
-            let placeholder = Record {
-                routing: RoutingObservation::default(),
-                selection_skips: Default::default(),
-                input_losses: vec![],
-                capture_exchange: None,
-                affinity: AffinityObservation::default(),
-                reported_cached_tokens: None,
-                stage: Stage::Complete,
-                outcome: Outcome::Complete,
-                upstream_status: None,
-                retry_after_seconds: None,
-                received_bytes: 0,
-                handed_off_bytes: 0,
-                elapsed_ms: 0,
-                upstream_head_ms: None,
-                first_upstream_bytes_ms: None,
-                coalescing_peak_bytes: 0,
-                candidates: vec![],
-                executor_order: None,
-                decode_failure: None,
-                projection_failure: None,
-                reported_usage_detail_mask: None,
-                ignored_request_field_count: 0,
-                ignored_upstream_events: 0,
-                events: EventCounts::default(),
-                image: ImageAccountingObservation::default(),
-            };
-            let _ = sink.0.try_send(Message::Record(Box::new(std::mem::replace(
-                &mut self.record,
-                placeholder,
-            ))));
+            sink.record(Box::new(std::mem::take(&mut self.record)));
         }
     }
 }
@@ -806,6 +713,7 @@ impl Drop for Trace {
 mod tests {
     use super::*;
     use axum::http::HeaderMap;
+    use std::sync::mpsc;
     #[test]
     fn image_accounting_observation_is_exact_opt_in_and_body_free() {
         use crate::{
@@ -816,7 +724,7 @@ mod tests {
         let projected =
             project_response(&response, AccountingPolicy::OmitUnrepresentableAccounting).unwrap();
         let (tx, _rx) = mpsc::sync_channel(1);
-        let sink = Sink(tx);
+        let sink = Sink::from_sender(tx);
         for enabled in [false, true] {
             let mut trace = Trace::new(enabled.then_some(&sink));
             trace.image_accounting(response.usage.value(), projected.loss);
@@ -834,7 +742,7 @@ mod tests {
     #[test]
     fn candidate_observations_do_not_mix_status_bytes_or_unbounded_identity() {
         let (tx, _rx) = mpsc::sync_channel(1);
-        let sink = Sink(tx);
+        let sink = Sink::from_sender(tx);
         let mut trace = Trace::new(Some(&sink));
         let mut fidelity = crate::protocol::fidelity::FidelityRecords::default();
         fidelity.record_history_annotations_default();
@@ -988,7 +896,7 @@ mod tests {
             semantic::task::generation::*,
         };
         let (tx, _rx) = mpsc::sync_channel(1);
-        let sink = Sink(tx);
+        let sink = Sink::from_sender(tx);
         let mut trace = Trace::new(Some(&sink));
         for (cause, expected) in [
             (None, "Messages terminal"),
@@ -1061,7 +969,7 @@ mod tests {
             semantic::task::generation::{ItemId, PartId, StreamEvent},
         };
         let (tx, _rx) = mpsc::sync_channel(1);
-        let sink = Sink(tx);
+        let sink = Sink::from_sender(tx);
         let mut trace = Trace::new(Some(&sink));
         trace.events(&[StreamEvent::Delta {
             item: ItemId::new(1),
@@ -1069,6 +977,7 @@ mod tests {
             fragment: "synthetic-private-body".into(),
             logprobs: vec![],
         }]);
+        assert!(trace.record.first_upstream_delta_ms.is_some());
         trace.projection_error(&AttemptError::Adapter(
             crate::adapter::AdapterError::Representation(
                 crate::lowering::generation::RepresentationError::UsageDetails,
@@ -1126,7 +1035,7 @@ mod tests {
     #[test]
     fn full_or_disconnected_sink_does_not_block_a_request() {
         let (tx, rx) = mpsc::sync_channel(1);
-        let sink = Sink(tx);
+        let sink = Sink::from_sender(tx);
         drop(Trace::new(Some(&sink)));
         let trace = Trace::new(Some(&sink));
         let (done, completed) = mpsc::channel();
@@ -1157,12 +1066,18 @@ mod tests {
         drop(Trace::new(None));
         sink.flush().await;
         let text = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(text.lines().count(), 1);
         assert!(!text.contains("synthetic"));
-        let value: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+        let records: Vec<serde_json::Value> = text
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .filter(|value: &serde_json::Value| value["event"] == "request")
+            .collect();
+        assert_eq!(records.len(), 1);
+        let value = &records[0];
+        assert_eq!(value["request_id"].as_str().unwrap().find(':'), Some(32));
         assert_eq!(value["upstream_status"], 429);
         assert_eq!(value["retry_after_seconds"], 7);
-        assert!(text.len() <= LIMIT);
+        assert!(text.len() <= 1 << 20);
         drop(sink);
     }
 }

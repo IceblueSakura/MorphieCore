@@ -141,10 +141,24 @@ Create private `gateway.json` and `models.json` files in `$HOME/.local/share/mor
 | `concurrency` | Concurrent exchanges; default 16, range 1–256 |
 | `exchange_timeout_ms` | Service-wide exchange ceiling; default 3600000, range 1–86400000 |
 | `delta_coalescing` | Optional bounded text delivery batching; omitted or `null` disables it. See [Delta coalescing](#delta-coalescing) |
-| `diagnostics` | Path for a new private diagnostics file; no bodies are recorded |
+| `diagnostics` | Private bounded diagnostics path, reusable after a clean restart; no bodies are recorded. See [Body-free diagnostics](#body-free-diagnostics) |
 | `capture` | Optional private exchange capture; omitted or all-disabled selections record no content |
 
 Paths in the service file resolve relative to that file, not the process working directory. CLI paths remain explicit process-relative or absolute paths.
+
+### Body-free diagnostics
+
+Diagnostics remain opt-in, separate from [private exchange capture](#private-exchange-capture). Use an existing trusted directory that other users cannot modify; mode `0700` is recommended on Unix, and created files use mode `0600`. No parent directories are created implicitly.
+
+The configured path and `<path>.1` retain at most 1 MiB each. Rotation preserves complete JSONL records and discards only the oldest recognized archive. `<path>.lock` and `<path>.1.lock` are reserved zero-byte lock files; do not use either data slot as another active writer's base path. One writer holds both locks, including across rotation. Do not externally rotate, replace or edit these files while it runs.
+
+Each line has `kind:"morphiecore_diagnostics"` and `version:1`. The `event` is `file` for an ownership marker, `request` for the existing metadata record, or `logging_status` for cumulative loss/failure/recovery counters. Readers counting requests must select `event:"request"`, not count all lines. Request `request_id` is a generated run nonce plus sequence; its candidate ordinals identify attempts, not user sessions or routing authority.
+
+The 64-record queue never blocks request completion. Queue/oversize losses, failed writes and incomplete flushes are counted. Nonzero health is written to a healthy diagnostics file; when file output fails, the background worker issues rate-limited fixed stderr warnings without paths, I/O error text or record contents. Logging failures do not change client results. Flush is best effort with a two-second acknowledgement bound, not `fsync` durability or a promise that dropped records were written.
+
+After the old process exits, reuse the same path. Valid records remain; a recognized incomplete final record is truncated and its lost byte count is reported. Unmarked, empty, aliased, oversized or unknown-version files are not adopted, including old-format diagnostics. Move those files aside or select a fresh path while stopped; an interrupted first ownership marker may also need this operator action. Persistent lock files need not be removed.
+
+`first_upstream_bytes_ms` and `first_upstream_delta_ms` are request-relative monotonic timings. A decoded nonempty text/reasoning/tool-argument delta is not a client-receive event, token count or provider-only latency; earlier attempts can contribute. Client-visible first-content acceptance uses the separate [production-profile procedure](development.md#production-profile-acceptance).
 
 ### Model configuration
 

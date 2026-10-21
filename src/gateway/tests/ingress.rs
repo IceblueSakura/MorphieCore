@@ -270,7 +270,12 @@ async fn diagnostics_only_record_authenticated_requests_and_never_expose_headers
     }
     gate.flush_diagnostics().await;
     let text = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(text.lines().count(), 1);
+    let records: Vec<serde_json::Value> = text
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .filter(|value: &serde_json::Value| value["event"] == "request")
+        .collect();
+    assert_eq!(records.len(), 1);
     assert!(!text.contains(KEY));
     assert!(!text.contains("invalid json"));
     assert!(text.contains("admission"));

@@ -379,6 +379,8 @@ def main():
             gateway.process.send_signal(signal.SIGINT)
             gateway.wait(timeout=5)
             records = [json.loads(line) for line in (root / "diagnostics.jsonl").read_text().splitlines()]
+            check(all(r.get("event") in ("file", "request") for r in records), "gateway_logging_loss")
+            records = [r for r in records if r.get("event") == "request"]
             check(len(records) == 4 and all(r["outcome"] == "complete" for r in records),
                   "gateway_completion_records")
             check(all(r.get("ignored_request_field_count", 0) == 0 for r in records),
@@ -393,6 +395,7 @@ def main():
             diagnostic_path = root / "diagnostics.jsonl"
             if diagnostic_path.exists():
                 records = [json.loads(line) for line in diagnostic_path.read_text().splitlines()]
+                records = [r for r in records if r.get("event") == "request"]
                 fields = ["stage", "outcome", "stop_reason", "selection_skips", "candidates",
                           "executor_order", "ignored_request_field_count", "upstream_status"]
                 print(json.dumps({"diagnostics": [{k: r[k] for k in fields if k in r} for r in records]}),

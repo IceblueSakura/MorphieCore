@@ -201,6 +201,7 @@ async fn diagnostic_status_and_final_intake_are_from_the_original_attempt() {
     let records: Vec<serde_json::Value> = raw
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
+        .filter(|value: &serde_json::Value| value["event"] == "request")
         .collect();
     assert_eq!(records.len(), 3);
     for (record, status) in records.iter().zip([429, 503, 200]) {

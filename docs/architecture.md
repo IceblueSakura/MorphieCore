@@ -999,6 +999,10 @@ Keep operational telemetry body-free and preserve business behavior when export 
 
 The current bespoke JSONL diagnostics are an interim implementation, not a framework to expand. Instrumentation and migration follow the [acceptance-driven follow-up](roadmap.md#observability-follow-up): add only signals that answer demonstrated investigation needs, not an exhaustive field/event catalogue.
 
+The selected local maintenance keeps the existing 64-record try-send boundary and one writer. It retains two private, whole-record files of at most 1 MiB each, recognizes its versioned format, locks both data-file namespaces and rejects unrelated/empty files or aliases. Recognized incomplete tails are repaired with a byte-loss count; this is not power-loss durability. Healthy output records cumulative loss/flush health; failed file output uses fixed, body-free background stderr warnings. Neither request recording nor the two-second best-effort flush waits for stderr. See [operator procedures](usage.md#body-free-diagnostics).
+
+Each request receives a gateway-generated run-nonce/sequence correlation ID; candidate ordinals are scoped to that request. This is neither authentication nor evidence of a client turn/session and is not forwarded upstream. `first_upstream_delta_ms` measures the first decoded nonempty text/reasoning/argument delta relative to request start, including previous attempts. It is distinct from first bytes and actual client visibility; installed-client timing still requires its controlled consumer-side observation.
+
 ### Configurable exchange capture
 
 P6 selects configurable full business-message capture for this internal gateway, not just field summaries. Keep independent header/body controls for four boundaries: inbound client request, outbound upstream request, inbound upstream response and outbound client response. Body capture includes JSON, streamed application content, tool arguments/results and non-authentication opaque payloads when enabled. Capture is not a source of replay or semantic restoration.
