@@ -1,8 +1,12 @@
 //! Independent native wires and guarded Messages terminal projection at real EOF.
 use super::*;
 use crate::{
-    protocol::{CodecError, anthropic::messages::client::GoogleTerminalPolicy},
-    semantic::task::generation::*,
+    protocol::{
+        CodecError,
+        anthropic::messages::client::GoogleTerminalPolicy,
+        openai::{Adapter, Dialect, Profile, TargetCaps},
+    },
+    semantic::{task::generation::*, value::Presence},
     topology::{Endpoint, catalog::GOOGLE_BINDINGS},
 };
 use serde_json::{Value, json};
@@ -228,6 +232,97 @@ fn google_messages_terminals_keep_source_facts_and_ordered_calls() {
                 assert_eq!(attempt.response().unwrap(), &original);
                 assert_eq!(attempt.terminal_event().unwrap(), &original_terminal);
             }
+        }
+    }
+}
+
+#[test]
+fn google_finish_explanation_omission_keeps_incomplete_source_and_requires_receipts() {
+    for client in [
+        ClientAdapter::Messages,
+        ClientAdapter::openai(
+            Adapter::new(Profile::Chat, Dialect::MorphieCore, None),
+            TargetCaps::full(),
+        ),
+        ClientAdapter::openai(
+            Adapter::new(Profile::Responses, Dialect::MorphieCore, None),
+            TargetCaps::full(),
+        ),
+    ] {
+        for stream in [false, true] {
+            let (endpoint, request, mut frames) = fixture(false, false);
+            frames[0]["candidates"][0]["finishReason"] = json!("MAX_TOKENS");
+            frames[0]["candidates"][0]["finishMessage"] = json!("synthetic explanation");
+            let mut delivery = ResponseDelivery::new(
+                client.clone(),
+                "public",
+                Default::default(),
+                StreamOptions {
+                    include_usage: Presence::Value(true),
+                    include_obfuscation: Presence::Value(false),
+                },
+                Obfuscation::Disabled,
+            )
+            .with_request(&endpoint, &request);
+            let mut attempt = Attempt::new(endpoint.adapter().unwrap(), 65536, Default::default());
+            attempt.begin(200, "text/event-stream").unwrap();
+            let mut output = feed(&mut attempt, &mut delivery, &frames, stream, false);
+            assert!(!String::from_utf8_lossy(&output).contains("message_stop"));
+            assert!(!String::from_utf8_lossy(&output).contains("response.incomplete"));
+            attempt.finish().unwrap();
+            let original = attempt.response().unwrap().clone();
+            assert_eq!(original.semantic.outcome(), Outcome::Incomplete);
+            assert_eq!(
+                original.semantic.details().incomplete,
+                Some(IncompleteReason::MaxOutputTokens)
+            );
+            assert!(matches!(
+                original.semantic.details().explanation,
+                Presence::Value(_)
+            ));
+            if stream {
+                output.extend(delivery.finish_stream(&attempt).unwrap().concat());
+                let body = String::from_utf8_lossy(&output);
+                assert!(body.contains(match client.protocol() {
+                    ClientProtocol::Messages => "\"stop_reason\":\"max_tokens\"",
+                    ClientProtocol::Chat => "\"finish_reason\":\"length\"",
+                    ClientProtocol::Responses => "event: response.incomplete",
+                }));
+                assert!(!body.contains("event: response.completed"));
+            } else {
+                let (_, bytes) = delivery.encode_json_snapshot(&attempt).unwrap();
+                let value: Value = serde_json::from_slice(&bytes).unwrap();
+                match client.protocol() {
+                    ClientProtocol::Messages => assert_eq!(value["stop_reason"], "max_tokens"),
+                    ClientProtocol::Chat => {
+                        assert_eq!(value["choices"][0]["finish_reason"], "length")
+                    }
+                    ClientProtocol::Responses => assert_eq!(value["status"], "incomplete"),
+                }
+                output.extend(bytes);
+            }
+            assert!(!String::from_utf8_lossy(&output).contains("synthetic explanation"));
+            let rule = if client.protocol() == ClientProtocol::Messages {
+                "messages.omit-terminal-explanation.v1"
+            } else {
+                "openai.omit-terminal-explanation.v1"
+            };
+            let reports: Vec<_> = delivery
+                .losses()
+                .iter()
+                .filter(|l| l.rule == rule)
+                .collect();
+            assert_eq!(reports.len(), 1);
+            assert_eq!(
+                reports[0].direction,
+                if stream {
+                    "event.encode"
+                } else {
+                    "response.encode"
+                }
+            );
+            assert_eq!(reports[0].action, "omit");
+            assert_eq!(attempt.response().unwrap(), &original);
         }
     }
 }

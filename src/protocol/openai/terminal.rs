@@ -137,6 +137,9 @@ pub(super) fn terminal_losses(
     if !details.refusal.is_absent() {
         losses.push(LossRule::OmitExplanatoryRefusalDetails);
     }
+    if !details.explanation.is_absent() {
+        losses.push(LossRule::OmitTerminalExplanation);
+    }
     match (&details.completion, profile) {
         (None, _) => {}
         (Some(CompletionCause::NaturalOrStopSequence), Profile::Chat) => {}

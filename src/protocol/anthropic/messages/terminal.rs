@@ -72,6 +72,11 @@ pub(super) fn encode(
     details: &TerminalDetails,
 ) -> Result<(&'static str, Option<&str>), CodecError> {
     details.validate(outcome)?;
+    if !details.explanation.is_absent() {
+        return Err(CodecError::Unsupported(
+            "Messages terminal explanation".into(),
+        ));
+    }
     if progress == InteractionProgress::NeedsContinuation {
         return Err(CodecError::Unsupported("Messages continuation".into()));
     }

@@ -27,6 +27,7 @@ pub enum LossRule {
     ContextWindowAsLength,
     OmitResponsesContextWindowReason,
     OmitExplanatoryRefusalDetails,
+    OmitTerminalExplanation,
 }
 impl LossRule {
     pub const fn name(self) -> &'static str {
@@ -58,6 +59,7 @@ impl LossRule {
             Self::ContextWindowAsLength => "chat.context-window-as-length.v1",
             Self::OmitResponsesContextWindowReason => "responses.omit-context-window-reason.v1",
             Self::OmitExplanatoryRefusalDetails => "openai.omit-explanatory-refusal-details.v1",
+            Self::OmitTerminalExplanation => "openai.omit-terminal-explanation.v1",
         }
     }
     pub const fn owner(self) -> &'static str {
@@ -89,6 +91,7 @@ impl LossRule {
             | Self::ContextWindowAsLength
             | Self::OmitResponsesContextWindowReason => "response.terminal.incomplete",
             Self::OmitExplanatoryRefusalDetails => "response.terminal.refusal",
+            Self::OmitTerminalExplanation => "response.terminal.explanation",
         }
     }
 }

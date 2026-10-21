@@ -52,3 +52,28 @@ impl std::fmt::Debug for RefusalDetails {
             .finish()
     }
 }
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct TerminalExplanation {
+    pub text: Text,
+}
+impl TerminalExplanation {
+    pub fn bytes(&self) -> usize {
+        std::mem::size_of::<Self>().saturating_add(self.text.as_str().len())
+    }
+    pub fn validate(&self) -> Result<(), GenerationError> {
+        if self.bytes() > MAX_TERMINAL_REPORT_BYTES {
+            return Err(GenerationError::Limit);
+        }
+        Ok(())
+    }
+    pub(crate) fn fingerprint(&self) -> [u8; 32] {
+        use sha2::{Digest, Sha256};
+        Sha256::digest(self.text.as_str().as_bytes()).into()
+    }
+}
+impl std::fmt::Debug for TerminalExplanation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("TerminalExplanation([redacted])")
+    }
+}

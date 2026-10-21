@@ -38,6 +38,7 @@ pub struct TerminalDetails {
     pub incomplete: Option<IncompleteReason>,
     pub completion: Option<CompletionCause>,
     pub refusal: Presence<RefusalDetails>,
+    pub explanation: Presence<super::TerminalExplanation>,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CompletionCause {
@@ -55,6 +56,7 @@ impl TerminalDetails {
                 + e.original_type.as_ref().map_or(0, |p| p.as_str().len())
         });
         self.refusal.value().map_or(0, RefusalDetails::bytes)
+            + self.explanation.value().map_or(0, |v| v.bytes())
             + error
             + match &self.completion {
                 Some(CompletionCause::StopSequence(text)) => text.as_str().len(),
@@ -68,6 +70,18 @@ impl TerminalDetails {
             }
     }
     pub fn validate(&self, outcome: Outcome) -> Result<(), GenerationError> {
+        if self
+            .refusal
+            .value()
+            .map_or(0, RefusalDetails::bytes)
+            .saturating_add(self.explanation.value().map_or(0, |v| v.bytes()))
+            > super::MAX_TERMINAL_REPORT_BYTES
+        {
+            return Err(GenerationError::Limit);
+        }
+        if let Some(explanation) = self.explanation.value() {
+            explanation.validate()?;
+        }
         if let Some(report) = self.refusal.value() {
             report.validate()?;
             if outcome != Outcome::Incomplete

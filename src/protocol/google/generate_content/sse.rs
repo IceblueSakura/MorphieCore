@@ -12,7 +12,7 @@ use crate::{
     },
     semantic::{
         task::generation::*,
-        value::{JsonLimits, Text, parse_json},
+        value::{JsonLimits, Presence, Text, parse_json},
     },
     transport::sse::SseDecoder,
 };
@@ -224,7 +224,7 @@ impl GenerationSseDecoder {
             }
             self.emit(StreamEvent::SafetyReport(report), out)?;
             if blocked {
-                return self.terminal(Some(IncompleteReason::ContentFilter), out);
+                return self.terminal(Some(IncompleteReason::ContentFilter), Presence::Absent, out);
             }
         }
         let candidates = match o.get("candidates") {
@@ -266,13 +266,21 @@ impl GenerationSseDecoder {
                 }
             }
         }
-        if let Some(message) = string(candidate, "finishMessage")? {
-            if message.len() > MAX_TEXT_BYTES {
-                return Err(SseError::Limit);
+        let reason = string(candidate, "finishReason")?;
+        let explanation = match string(candidate, "finishMessage")? {
+            None => Presence::Absent,
+            Some(_) if reason.is_none() => {
+                return Err(invalid("Gemini finishMessage without finishReason"));
             }
-            // An explanation is neither generated text nor a different stop reason.
-            return Err(unsupported("finishMessage"));
-        }
+            Some(message) => Presence::Value(TerminalExplanation {
+                text: Text::allowing_empty(
+                    message,
+                    "Gemini finishMessage",
+                    MAX_TERMINAL_REPORT_BYTES,
+                )
+                .map_err(|_| SseError::Limit)?,
+            }),
+        };
         let mut probabilities = candidate
             .get("logprobsResult")
             .map(super::logprobs::read)
@@ -336,12 +344,12 @@ impl GenerationSseDecoder {
                 }
             }
         }
-        if let Some(reason) = string(candidate, "finishReason")? {
+        if let Some(reason) = reason {
             if let Some(report) = super::safety::report(candidate, SafetySubject::Output)? {
                 self.emit(StreamEvent::SafetyReport(report), out)?;
             }
             let incomplete = finish_reason(reason)?;
-            return self.terminal(incomplete, out);
+            return self.terminal(incomplete, explanation, out);
         }
         if let Some(report) = super::safety::report(candidate, SafetySubject::Output)? {
             self.emit(StreamEvent::SafetyReport(report), out)?;
@@ -681,6 +689,7 @@ impl GenerationSseDecoder {
     fn terminal(
         &mut self,
         incomplete: Option<IncompleteReason>,
+        explanation: Presence<TerminalExplanation>,
         out: &mut Vec<StreamEvent>,
     ) -> Result<(), SseError> {
         self.close(out)?;
@@ -718,6 +727,7 @@ impl GenerationSseDecoder {
                         .is_none()
                         .then_some(CompletionCause::NaturalOrStopSequence),
                     incomplete,
+                    explanation,
                     ..Default::default()
                 },
             },

@@ -109,6 +109,10 @@ pub(crate) fn project_snapshot(response: &mut DecodedResponse) -> Result<(), Cod
         return Err(CodecError::Invalid("Messages usage"));
     }
     response.semantic = response.semantic.clone().with_usage_reports(selected)?;
+    let mut details = response.semantic.details().clone();
+    details.validate(response.semantic.outcome())?;
+    details.explanation = Presence::Absent;
+    response.semantic = response.semantic.clone().with_details(details)?;
     Ok(())
 }
 pub(crate) fn metadata_losses(
@@ -153,6 +157,9 @@ pub(crate) fn content_losses(
     response: &GenerationResponse,
 ) -> Vec<crate::lowering::generation::LossEvidence> {
     let mut losses = Vec::new();
+    if !response.details().explanation.is_absent() {
+        losses.push(explanation_loss("response.encode"));
+    }
     if wire::accounting::project_reports(response.usage_reports())
         .is_ok_and(|selected| selected != *response.usage_reports())
         && (response.usage_reports().has_details()
@@ -169,6 +176,16 @@ pub(crate) fn content_losses(
     });
     losses.extend(refusal.then(|| refusal_loss("response.encode")));
     losses
+}
+pub(super) fn explanation_loss(
+    direction: &'static str,
+) -> crate::lowering::generation::LossEvidence {
+    crate::lowering::generation::LossEvidence {
+        rule: "messages.omit-terminal-explanation.v1",
+        field: "generation.terminal.explanation",
+        direction,
+        action: "omit",
+    }
 }
 /// Shared by JSON and SSE delivery. Lost report detail/scope and a changed scalar usage
 /// view are independent receipts; a report without a selected view records only the former.

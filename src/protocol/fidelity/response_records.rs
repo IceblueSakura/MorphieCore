@@ -310,6 +310,9 @@ fn response_dependency(response: &GenerationResponse) -> [u8; 32] {
     if let Some(details) = response.details().refusal.value() {
         hash.update(details.fingerprint());
     }
+    if let Some(explanation) = response.details().explanation.value() {
+        hash.update(explanation.fingerprint());
+    }
     for (id, value) in response.resources().iter() {
         hash.update(id.scope().get().to_le_bytes());
         hash.update(id.get().to_le_bytes());
@@ -352,4 +355,52 @@ fn response_dependency(response: &GenerationResponse) -> [u8; 32] {
         }
     }
     hash.finalize().into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::response_dependency;
+    use crate::semantic::{
+        task::generation::*,
+        value::{Presence, Text},
+    };
+
+    #[test]
+    fn redacted_terminal_prose_edits_invalidate_response_dependencies() {
+        for refusal in [false, true] {
+            let make = |value: &str| {
+                let text = Text::new(value, "fixture", 128).unwrap();
+                let details = if refusal {
+                    TerminalDetails {
+                        incomplete: Some(IncompleteReason::ContentFilter),
+                        refusal: Presence::Value(RefusalDetails {
+                            category: Presence::Value(RefusalCategory::GeneralHarms),
+                            explanation: Presence::Value(text),
+                        }),
+                        ..Default::default()
+                    }
+                } else {
+                    TerminalDetails {
+                        explanation: Presence::Value(TerminalExplanation { text }),
+                        ..Default::default()
+                    }
+                };
+                GenerationResponse::new(
+                    vec![],
+                    if refusal {
+                        Outcome::Incomplete
+                    } else {
+                        Outcome::Completed
+                    },
+                )
+                .unwrap()
+                .with_details(details)
+                .unwrap()
+            };
+            let before = make("first");
+            let after = make("second");
+            assert_eq!(format!("{before:?}"), format!("{after:?}"));
+            assert_ne!(response_dependency(&before), response_dependency(&after));
+        }
+    }
 }

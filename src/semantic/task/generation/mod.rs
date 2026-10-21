@@ -63,7 +63,7 @@ pub use resources::{
     ResourceKind, ResourceLocation, ResourceView,
 };
 pub use schema::SchemaDocument;
-pub use terminal_reports::{RefusalCategory, RefusalDetails};
+pub use terminal_reports::{RefusalCategory, RefusalDetails, TerminalExplanation};
 pub const MAX_TERMINAL_REPORT_BYTES: usize = 64 << 10;
 pub use stream::audio::{AudioBuffer, AudioUpdate};
 pub use stream::value::StreamPartValue;

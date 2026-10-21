@@ -454,11 +454,20 @@ impl ClientEventEncoder {
                     StreamTerminal::Failed | StreamTerminal::Error => Outcome::Failed,
                     StreamTerminal::Cancelled => Outcome::Cancelled,
                 };
+                let mut details = details.clone();
+                details.validate(outcome)?;
+                if !details.explanation.is_absent() {
+                    let loss = super::projection::explanation_loss("event.encode");
+                    if !self.losses.contains(&loss) {
+                        self.losses.push(loss);
+                    }
+                    details.explanation = Presence::Absent;
+                }
                 let (stop, sequence) = crate::protocol::anthropic::messages::terminal::encode(
                     outcome,
                     self.progress,
                     self.calls,
-                    details,
+                    &details,
                 )?;
                 // Close every started block by its wire index. Text items own no block;
                 // a thinking item without content has not opened one yet.

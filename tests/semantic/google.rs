@@ -8,7 +8,10 @@ use morphiecore::{
         openai::{Adapter, Dialect, Profile},
         stream::SseLimits,
     },
-    semantic::{task::generation::*, value::Text},
+    semantic::{
+        task::generation::*,
+        value::{Presence, Text},
+    },
 };
 use serde_json::{Value, json};
 
@@ -683,7 +686,7 @@ fn stream_maps_thoughts_text_calls_and_owned_signatures() {
 }
 
 #[test]
-fn unowned_candidate_reports_reject_instead_of_disappearing() {
+fn candidate_reports_reject_unowned_or_malformed_fields() {
     let frame = json!({"responseId":"r","modelVersion":"gemini-synthetic",
         "candidates":[{"content":{"role":"model","parts":[{"text":"A"}]},
             "finishReason":"STOP"}]});
@@ -697,12 +700,6 @@ fn unowned_candidate_reports_reject_instead_of_disappearing() {
             }]}),
             "urlContextMetadata",
         ),
-        (
-            "finishMessage",
-            json!("Generation ended normally"),
-            "finishMessage",
-        ),
-        ("finishMessage", json!(""), "finishMessage"),
         ("avgLogprobs", json!(-0.25), "avgLogprobs"),
         ("avgLogprobs", json!(0), "avgLogprobs"),
         (
@@ -780,7 +777,7 @@ fn unowned_candidate_reports_reject_instead_of_disappearing() {
             .any(|e| matches!(e, StreamEvent::Delta { fragment, .. } if fragment == "A"))
     );
     let mut late = frame;
-    late["candidates"][0]["finishMessage"] = json!("explanation");
+    late["candidates"][0]["finishMessage"] = json!(false);
     assert!(
         decoder
             .consume(&wire(&[late]))
@@ -789,6 +786,95 @@ fn unowned_candidate_reports_reject_instead_of_disappearing() {
             .contains("finishMessage")
     );
     assert!(decoder.finish().is_err());
+}
+
+#[test]
+fn candidate_finish_explanations_are_bounded_observations_with_real_finish_reasons() {
+    for (reason, outcome, incomplete) in [
+        ("STOP", Outcome::Completed, None),
+        (
+            "MAX_TOKENS",
+            Outcome::Incomplete,
+            Some(IncompleteReason::MaxOutputTokens),
+        ),
+        (
+            "SAFETY",
+            Outcome::Incomplete,
+            Some(IncompleteReason::ContentFilter),
+        ),
+    ] {
+        for message in ["", "synthetic explanation"] {
+            let frame = json!({"responseId":"r","modelVersion":"gemini-synthetic",
+                "candidates":[{"index":0,"content":{"role":"model","parts":[{"text":"A"}]},
+                    "finishReason":reason,"finishMessage":message}]});
+            let observed = decode(&wire(std::slice::from_ref(&frame))).unwrap();
+            assert_eq!(observed.semantic.outcome(), outcome);
+            assert_eq!(observed.semantic.details().incomplete, incomplete);
+            assert!(observed.semantic.details().error.is_none());
+            assert!(observed.semantic.details().refusal.is_absent());
+            assert_eq!(
+                observed.semantic.details().explanation,
+                Presence::Value(TerminalExplanation {
+                    text: Text::allowing_empty(message, "fixture", 128).unwrap(),
+                })
+            );
+            let Item::Message(text) = &observed.semantic.items()[0].1 else {
+                panic!()
+            };
+            assert!(matches!(&text.parts[0].content, ContentPart::Text(t) if t.as_str() == "A"));
+            assert!(
+                !format!("{:?}", observed.semantic.details()).contains("synthetic explanation")
+            );
+            // Existing strict closure rejects all data after terminal, even an equal report.
+            for repeated in [frame.clone(), {
+                let mut changed = frame.clone();
+                changed["candidates"][0]["finishMessage"] = json!("changed");
+                changed
+            }] {
+                let mut decoder = GenerationSseDecoder::new(
+                    200,
+                    "text/event-stream",
+                    SseLimits::default(),
+                    LocalScope::new(2),
+                    target(),
+                )
+                .unwrap();
+                decoder
+                    .consume(&wire(std::slice::from_ref(&frame)))
+                    .unwrap();
+                assert!(
+                    decoder
+                        .consume(&wire(&[repeated]))
+                        .unwrap_err()
+                        .to_string()
+                        .contains("Gemini chunk after finish")
+                );
+                assert!(decoder.finish().is_err());
+            }
+        }
+    }
+    for (reason, message, expected) in [
+        (
+            None,
+            json!("explanation"),
+            "Gemini finishMessage without finishReason",
+        ),
+        (None, json!(""), "Gemini finishMessage without finishReason"),
+        (Some("STOP"), Value::Null, "finishMessage"),
+        (Some("STOP"), json!(false), "finishMessage"),
+        (
+            Some("STOP"),
+            json!("x".repeat(MAX_TERMINAL_REPORT_BYTES)),
+            "limit",
+        ),
+    ] {
+        let mut frame = json!({"responseId":"r","modelVersion":"gemini-synthetic",
+            "candidates":[{"content":{"role":"model","parts":[{"text":"A"}]},"finishMessage":message}]});
+        if let Some(reason) = reason {
+            frame["candidates"][0]["finishReason"] = json!(reason);
+        }
+        assert!(decode(&wire(&[frame])).unwrap_err().contains(expected));
+    }
 }
 
 #[test]
