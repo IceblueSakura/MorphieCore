@@ -30,7 +30,7 @@
 - Keep known upstream fields strict and ignore unknown ones. Reject unrepresentable critical semantics; use named, recorded rules for approved degradations. Follow [Adaptation](docs/architecture.md#adaptation).
 - Prefer existing solutions and direct code over speculative abstractions. Add checks for concrete failures and remove obsolete code. Update `Cargo.lock` for dependency changes and verify with `--locked`.
 - Name code, fixtures and tests by protocol or behavior, not roadmap phases or package IDs. Keep scheduling identifiers in planning and acceptance documentation.
-- Use concise English for documentation, comments and commits. Do not inspect/edit build caches by hand or commit `testdata/{generated,reports,dist,runtime}/`.
+- Write all documentation, comments and commits in concise English. Do not inspect/edit build caches by hand or commit `testdata/{generated,reports,dist,runtime}/`.
 
 ## Tests
 

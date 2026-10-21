@@ -474,13 +474,11 @@ Extract shared values only when the selected operation needs them. Direct-input 
 
 ## Verification
 
-1. Pin and inspect current official schemas and streaming grammars before each codec implementation. Separate documented fields from model-effective support; do not maintain model lists here.
-2. Use independent hand-written wire-to-IR and IR-to-wire expectations. Extend existing same-layer tests; preserve the lean suite and safety assertions. Follow the roadmap's phase-specific scope and coverage authorization.
-3. Keep one positive and one negative case per contract at the lowest owner. Do not build per-model/Provider variant matrices. Resource/job safety assertions should address concrete authorization, recovery, cancellation and uncertain-submission scenarios.
-4. Run affected checks, then the [full offline baseline](development.md#offline-baseline). Do not weaken checks or repair unrelated frozen routing to make a new slice appear integrated.
-5. When connected, run the [SDK loopback gate](development.md#sdk-loopback-gate) and compare the [OpenAPI summary](openapi.json) with implemented ingress and codecs. Do not publish planned endpoints as implemented API paths.
-6. Run separately scoped real Provider checks only when needed. Fix target, count, output cap and timeout; use the project credential loader and redacted reporting.
-7. Record exact uncovered layers. A codec test is not public admission; compilation is not runtime acceptance; a static result is not streaming support; a remote success is not crash recovery.
+Pin current official schemas and streaming grammars before implementation; documented carriers do not prove model-effective support. Use the existing [test design](development.md#test-layout), [design-review gate](roadmap.md#generation-design-review-gate) and [verification procedures](development.md#verification-gates), including separately scoped [real Provider checks](development.md#real-provider-checks).
+
+Keep independent wire-to-IR and IR-to-wire expectations, covering success and intended rejection at the responsible owner. Extend existing tests rather than building per-model/Provider matrices. Resource/job checks must address authorization, recovery, cancellation and uncertain submission.
+
+Compare the [OpenAPI summary](openapi.json) with implemented ingress and codecs; never publish planned endpoints as implemented paths. Preserve safety assertions and frozen routing. Report uncovered layers: codec support is not public admission, compilation is not runtime acceptance, static results are not streaming support, and remote success is not crash recovery.
 
 ## Protocol references
 

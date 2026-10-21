@@ -86,9 +86,9 @@ downstream HTTP: authenticate and collect within bounds
 
 Directories follow the Rust module tree. Keep architectural root boundaries; group internals by domain and expose deliberate entry points. Do not add compatibility-only aliases or a generic plugin framework.
 
-Generation validation keeps ordered item/dependency traversal and aggregate charging together; `semantic/task/generation/validate/controls.rs` owns tool/output controls. The stream reducer retains the consuming entry point and global guards; its private `reduce/items.rs` helpers own item identity, result replacement and closure at the original transition positions. They do not expose resumable mutable state after rejection. Execution delivery, body acknowledgement and credential lifecycle remain separate ownership boundaries, not a common dispatcher.
+Generation validation owns ordered dependency traversal and aggregate charging; `semantic/task/generation/validate/controls.rs` owns tool/output controls. Stream reduction consumes state, keeping global guards and private `reduce/items.rs` transitions in order; rejected streams cannot resume. Delivery, body acknowledgement and credential lifecycle remain separate owners.
 
-Catalog binding families own both their static declarations and endpoint/public-model construction. `topology/catalog.rs` assembles those families and owns configured ordering; it does not hide individual binding construction among assembly passes.
+Catalog binding families own declarations and endpoint/public-model construction. `topology/catalog.rs` assembles them in configured order.
 
 Protocol implementation is organized by the wire responsibility being reviewed:
 
@@ -107,13 +107,17 @@ Protocol implementation is organized by the wire responsibility being reviewed:
 | Shared fidelity state, bounds and owner pruning | `fidelity.rs` owns the aggregate; private `fidelity/{replay,response_records}.rs` implementations group replay binding and output-only report associations |
 | Attachment manifests, wire carriers and reconstruction | `attachments.rs` owns the manifest and output view; `attachments/carriers.rs` owns wire recognition/construction and `restore.rs` owns trial-based reconstruction and fallback |
 
-Paths in this table are relative to `src/protocol/`. Public codec entry points remain at their protocol façades; private item and grammar modules are not additional APIs. Fidelity retains one aggregate and attachment reconstruction retains one trial/commit boundary; grouping their implementations does not create separate stores or independent restoration passes.
+Paths are relative to `src/protocol/`. Public entry points stay at protocol façades. Private helpers introduce no public codec APIs or independent fidelity/restoration stores: fidelity has one aggregate and restoration one trial/commit boundary. Request transforms stay with their owner; stream grammar, reduction and materialization share a boundary. Chat and Responses own their envelopes/SSE codecs. Native Anthropic and Google adapters do not borrow OpenAI switches.
 
-Request transforms stay with their request owner. Stream grammar, state, reduction and materialization share a stream boundary. Chat and Responses own their envelopes and SSE codecs; only genuinely shared content and state logic is shared.
+Execution is typed dataflow with scoped state machines, not a generic pipeline or detached workers. Stages may transform their output, never another stage's authority or the trusted candidate set:
 
-Protocol differences stay in protocol modules. Native Anthropic, Google and Interactions adapters do not borrow OpenAI switches.
-
-Execution is typed dataflow coordinated by scoped state machines. Semantic reduction, protocol representation, attempt intake and acknowledged delivery each own their state. A stage may transform its output but cannot rewrite another stage's authority or expand the trusted candidate set. Optional delivery stages do not require a generic pipeline registry or detached workers.
+| Owner | State authority |
+|---|---|
+| OpenAI event codec | Rejection invalidates accepted semantic state, retaining metadata, fidelity and successful-prefix evidence |
+| Attempt intake | Withheld terminals belong to stream/finished intake; terminal publication requires strict EOF validation |
+| Delivery projection | Encoded finalization is separate from rendered output and acknowledged lifecycle completion |
+| Messages SSE | Checked native usage is separate from the published opening snapshot |
+| Delta coalescer | One prepared text run retains its context and fixed deadline under the [merge contract](#optional-delta-coalescing) |
 
 ## Semantic contracts
 
@@ -1106,7 +1110,7 @@ These records preserve accepted choices and their consequences, grouped by domai
 | Bounded text-delta coalescing | Startup-only, disabled-by-default optimization after client projection and before encoding. One pending run retains its prepared context and fixed deadline; invalid bounds fail startup. Final-only clients retain existing materialization; original intake validation and publication safety remain authoritative |
 | Scoped source accounting | Retain raw buckets and latest operation/step snapshots independently; derive delivery views without summing snapshots or inferring unknown inclusion relations. Source-default zeros and optional counts remain distinguishable |
 | Honest delivery | Publication forbids advancement; success requires validated EOF and handoff |
-| Owner-local state representation | Delivery projection closure is separate from acknowledged lifecycle completion. Attempts retain withheld terminals only with stream/finished intake; OpenAI codec rejection invalidates the semantic state slot without erasing metadata or successful-prefix evidence. Messages delivery retains checked native usage separately from its published opening snapshot |
+| Owner-local state representation | Each [pipeline owner](#layers-and-data-flow) retains its own rejection, finalization or acknowledgement authority; no shared dispatcher or global completion flag |
 | Agent-shaped failures | Sanitized error classes match pinned client behavior; refusals are not retries |
 | Delivery-local identity | Generated client IDs/timestamps are not upstream facts and remain stable once selected, even if an upstream ID is first reported later. Keep the source fact on its own metadata owner. Responses allocates a gateway-owned ID; only a stored, fully delivered snapshot makes it a history key |
 | Terminal stop evidence | Completion cause is separate from outcome and turn progress, including Google STOP beside calls. Source reports never derive from sent controls or output text. Chat coarsens and Responses omits causes under the [selected terminal approximations](#selected-request-approximations); the [Google Messages profile](#google-messages-terminal-projection) changes only a delivery copy with recorded context/approximation. Strict native codecs, non-success outcomes and unknown-context rejection remain unchanged |
