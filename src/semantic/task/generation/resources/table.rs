@@ -95,7 +95,7 @@ impl ResourceTable {
             crate::semantic::task::generation::Item,
         )],
     ) -> Vec<ResourceId> {
-        let mut ids: BTreeSet<_> = Self::content_uses(items).into_iter().collect();
+        let mut ids = Self::content_uses(items);
         for (_, item) in items {
             if let crate::semantic::task::generation::Item::Message(message) = item {
                 for part in &message.parts {
@@ -114,7 +114,7 @@ impl ResourceTable {
             crate::semantic::task::generation::ItemId,
             crate::semantic::task::generation::Item,
         )],
-    ) -> Vec<ResourceId> {
+    ) -> BTreeSet<ResourceId> {
         use crate::semantic::task::generation::{ContentPart, InputPart, Item, ToolOutput};
         let mut ids = BTreeSet::new();
         for (_, item) in items {
@@ -142,7 +142,7 @@ impl ResourceTable {
                 }
             }
         }
-        ids.into_iter().collect()
+        ids
     }
     pub(crate) fn select_items(
         &self,

@@ -92,6 +92,78 @@ proptest! {
 }
 
 #[test]
+fn probability_deltas_and_final_metadata_share_the_part_budget() {
+    use morphiecore::semantic::value::Presence;
+    let item = ItemId::new(1);
+    let part = PartId::new(1);
+    let mut state = StreamState::new();
+    for event in [event(0), event(1), event(2)] {
+        state = reduce(state, event).unwrap();
+    }
+    let probability = |token: &str| Logprob {
+        token: token.into(),
+        logprob: serde_json::Number::from_f64(-0.5).unwrap(),
+        bytes: None,
+        top_logprobs: None,
+    };
+    let probabilities = vec![probability("a"), probability("b")];
+    let metadata_bytes = serde_json::to_vec(&probabilities).unwrap().len();
+    for (fragment, probability) in [
+        (
+            "x".repeat(MAX_TEXT_BYTES - metadata_bytes),
+            probabilities[0].clone(),
+        ),
+        (String::new(), probabilities[1].clone()),
+    ] {
+        state = reduce(
+            state,
+            StreamEvent::Delta {
+                item,
+                part,
+                fragment,
+                logprobs: vec![probability],
+            },
+        )
+        .unwrap();
+    }
+    assert_eq!(
+        state.part(item, part).unwrap().logprobs,
+        Presence::Value(probabilities.clone())
+    );
+    assert!(matches!(
+        reduce(
+            state.clone(),
+            StreamEvent::Delta {
+                item,
+                part,
+                fragment: "!".into(),
+                logprobs: vec![],
+            }
+        ),
+        Err(EventError::Limit)
+    ));
+    state = reduce(state, StreamEvent::ValueFinished { item, part }).unwrap();
+    let metadata = |logprobs| StreamEvent::TextMetadata {
+        item,
+        part,
+        annotations: vec![],
+        logprobs: Presence::Value(logprobs),
+    };
+    assert!(matches!(
+        reduce(
+            state.clone(),
+            metadata(vec![probability("changed"), probability("b")])
+        ),
+        Err(EventError::Lifecycle)
+    ));
+    state = reduce(state, metadata(probabilities)).unwrap();
+    for event in [event(5), event(6), event(7)] {
+        state = reduce(state, event).unwrap();
+    }
+    assert_eq!(materialize(&state).unwrap().outcome(), Outcome::Completed);
+}
+
+#[test]
 fn replay_replacement_refunds_only_its_previous_charge_at_the_stream_limit() {
     let mut state = reduce(StreamState::new(), StreamEvent::Started).unwrap();
     let item = ItemId::new(1);

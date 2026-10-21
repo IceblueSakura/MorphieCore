@@ -148,7 +148,6 @@ impl GenerationRequest {
         &self.settings.reasoning
     }
     pub fn with_settings(mut self, settings: GenerationSettings) -> Result<Self, GenerationError> {
-        settings.validate()?;
         self.settings = std::sync::Arc::new(settings);
         self.validate()?;
         Ok(self)

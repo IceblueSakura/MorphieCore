@@ -169,17 +169,15 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                     .unwrap_or_default();
                 probs.extend(logprobs);
                 validate_logprobs(&probs)?;
-                let bytes = metadata_cost(
-                    &state.part(item, part)?.annotations,
-                    &crate::semantic::value::Presence::Value(probs.clone()),
-                )?;
+                let probs = crate::semantic::value::Presence::Value(probs);
+                let bytes = metadata_cost(&state.part(item, part)?.annotations, &probs)?;
                 state.charge(bytes.saturating_sub(state.part(item, part)?.metadata_bytes))?;
                 let p = state.open_part(item, part)?;
                 if p.data.bytes()?.saturating_add(bytes) > MAX_TEXT_BYTES {
                     return Err(EventError::Limit);
                 }
                 p.metadata_bytes = bytes;
-                p.logprobs = crate::semantic::value::Presence::Value(probs);
+                p.logprobs = probs;
             }
         }
         StreamEvent::AudioDelta { item, part, update } => {
@@ -290,9 +288,10 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             {
                 return Err(EventError::Lifecycle);
             }
-            let old = p.logprobs.value().cloned().unwrap_or_default();
-            let next = logprobs.value().cloned().unwrap_or_default();
-            if !compatible_logprobs(&old, &next) {
+            if !compatible_logprobs(
+                p.logprobs.value().map(Vec::as_slice).unwrap_or_default(),
+                logprobs.value().map(Vec::as_slice).unwrap_or_default(),
+            ) {
                 return Err(EventError::Lifecycle);
             }
             let content = TextContent::new(
