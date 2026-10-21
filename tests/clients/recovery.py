@@ -46,7 +46,7 @@ def stage(body):
     return 1
 
 
-def assert_history(body, phase, native, path):
+def assert_profile(body, native):
     check(body["model"] == ("claude-haiku-5-5" if native else "qwen3.8-flash"), "upstream_model")
     check(body["stream"] is True, "client_not_streaming")
     check(body["max_tokens" if native else "max_completion_tokens"] == 2048, "wire_output_cap")
@@ -63,6 +63,10 @@ def assert_history(body, phase, native, path):
     else:
         check(body["reasoning_effort"] == "low", "chat_effort")
         check(read[0].get("strict") in (None, False), "chat_tool_strictness")
+
+
+def assert_history(body, phase, native, path):
+    assert_profile(body, native)
     if phase in (0, 1):
         check(not any(m["role"] == "assistant" for m in body["messages"]), "unexpected_initial_history")
         return
@@ -101,7 +105,7 @@ def assert_history(body, phase, native, path):
                   "chat_final_history")
 
 
-def chat_events(phase, path):
+def chat_events(phase, path, answer=TEXT):
     def chunk(delta, finish=None):
         return {"id": f"chat-client-{phase}", "object": "chat.completion.chunk", "created": 1,
                 "model": "qwen3.8-flash", "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
@@ -110,7 +114,7 @@ def chat_events(phase, path):
         values.append(chunk({"tool_calls": [{"index": 0, "id": CALL, "type": "function",
             "function": {"name": "read", "arguments": json.dumps({"path": str(path)})}}]}))
     else:
-        values.append(chunk({"content": TEXT}))
+        values.append(chunk({"content": answer}))
     values.append(chunk({}, "tool_calls" if phase == 1 else "stop"))
     values.append({"id": f"chat-client-{phase}", "object": "chat.completion.chunk", "created": 1,
                    "model": "qwen3.8-flash", "choices": [],
@@ -118,11 +122,11 @@ def chat_events(phase, path):
     return ("".join(f"data: {json.dumps(v)}\n\n" for v in values) + "data: [DONE]\n\n").encode()
 
 
-def native_events(phase, path):
+def native_events(phase, path, answer=TEXT):
     blocks = ([{"type": "thinking", "thinking": PLAN, "signature": SIGNATURE},
                {"type": "redacted_thinking", "data": REDACTED},
                {"type": "tool_use", "id": CALL, "name": "read", "input": {"path": str(path)}}]
-              if phase == 1 else [{"type": "text", "text": TEXT}])
+              if phase == 1 else [{"type": "text", "text": answer}])
     values = [{"type": "message_start", "message": {"id": f"msg-client-{phase}", "type": "message",
         "role": "assistant", "model": "claude-haiku-5-5", "content": [], "stop_reason": None,
         "stop_sequence": None, "usage": {"input_tokens": 11, "output_tokens": 0}}}]
@@ -134,7 +138,7 @@ def native_events(phase, path):
         values.append({"type": "content_block_start", "index": index, "content_block": start})
         deltas = ([{"type": "thinking_delta", "thinking": PLAN}, {"type": "signature_delta", "signature": SIGNATURE}]
                   if kind == "thinking" else [{"type": "input_json_delta", "partial_json": json.dumps(block["input"])}]
-                  if kind == "tool_use" else [{"type": "text_delta", "text": TEXT}] if kind == "text" else [])
+                  if kind == "tool_use" else [{"type": "text_delta", "text": answer}] if kind == "text" else [])
         values.extend({"type": "content_block_delta", "index": index, "delta": delta} for delta in deltas)
         values.append({"type": "content_block_stop", "index": index})
     values.extend([{"type": "message_delta", "delta": {"stop_reason": "tool_use" if phase == 1 else "end_turn"},
@@ -204,6 +208,12 @@ def handler(state, ingress):
 
         def log_message(self, *_):
             pass
+
+        def send_error(self, code, message=None, explain=None):
+            if code == 501:
+                with state.lock:
+                    state.errors.append("unsupported_http_method")
+            super().send_error(code, message, explain)
 
         def do_POST(self):
             try:

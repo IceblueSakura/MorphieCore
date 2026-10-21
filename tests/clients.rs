@@ -7,7 +7,7 @@ mod filesystem;
 use morphiecore::credential::{CredentialManager, CredentialPool, CredentialRef, Secret};
 use std::{path::PathBuf, time::Duration};
 
-async fn recovery_case(case: &str, variable: &str) {
+async fn installed_case(script: &str, case: &str, variable: &str) -> serde_json::Value {
     // Explicit unwrapped binaries only: PATH entries may source host credentials.
     let binary =
         PathBuf::from(std::env::var_os(variable).expect("set the unwrapped client binary"));
@@ -54,28 +54,34 @@ async fn recovery_case(case: &str, variable: &str) {
         .env_clear()
         .env("PATH", std::env::var_os("PATH").unwrap_or_default())
         .env("HOME", root)
-        .args(["tests/clients/recovery.py", case])
+        .arg(format!("tests/clients/{script}.py"))
+        .arg(case)
         .arg(root)
         .arg(env!("CARGO_BIN_EXE_morphiecore"))
         .arg(binary)
         .current_dir(env!("CARGO_MANIFEST_DIR"));
     let output = child_process::run(&mut command, b"", Duration::from_secs(120), 16 << 10)
         .await
-        .expect("bounded installed-client recovery process");
+        .expect("bounded installed-client process");
     assert!(
         output.status.success(),
-        "{case} recovery failed: {}",
+        "{case} {script} failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["case"], case);
     // The Python driver validates the supported major before launching the case.
     assert!(report["version"].as_str().is_some_and(|v| !v.is_empty()));
+    eprintln!("{report}");
+    report
+}
+
+async fn recovery_case(case: &str, variable: &str) {
+    let report = installed_case("recovery", case, variable).await;
     assert_eq!(report["client_requests"], 4);
     assert_eq!(report["upstream_attempts"], 5);
     assert_eq!(report["extra_client_requests"], 0);
     assert_eq!(report["sticky_after_recovery"], true);
-    eprintln!("{report}");
 }
 
 #[tokio::test]
@@ -94,4 +100,24 @@ async fn pi_messages_credential_recovery() {
 #[ignore = "requires explicit unwrapped installed OpenCode; synthetic Chat recovery"]
 async fn opencode_chat_credential_recovery() {
     recovery_case("opencode-chat", "MORPHIECORE_OPENCODE_BIN").await;
+}
+
+async fn pi_summary_case(case: &str) {
+    let report = installed_case("summary", case, "MORPHIECORE_PI_BIN").await;
+    assert_eq!(report["client_requests"], 6);
+    assert_eq!(report["upstream_attempts"], 6);
+    assert_eq!(report["ordinary_summaries"], 1);
+    assert_eq!(report["rebuilt_tool_history"], true);
+}
+
+#[tokio::test]
+#[ignore = "requires explicit unwrapped installed pi; ordinary Chat summary and rebuilt tools"]
+async fn pi_chat_summary_and_rebuilt_tool_history() {
+    pi_summary_case("pi-chat").await;
+}
+
+#[tokio::test]
+#[ignore = "requires explicit unwrapped installed pi; ordinary Messages summary and rebuilt tools"]
+async fn pi_messages_summary_and_rebuilt_tool_history() {
+    pi_summary_case("pi-messages").await;
 }

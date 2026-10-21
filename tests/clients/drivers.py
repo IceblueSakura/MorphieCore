@@ -172,7 +172,7 @@ def environment(root):
     return env
 
 
-def pi_configuration(root, origin, native):
+def pi_configuration(root, origin, native, compaction=None):
     directory = root / "pi-agent"
     directory.mkdir(mode=0o700)
     compat = ({"supportsMidConvoEffort": True, "supportsMidConvoSystemMessages": True,
@@ -191,7 +191,7 @@ def pi_configuration(root, origin, native):
                     "maxTokens": 2048, "compat": compat}]}}})
     private_json(directory / "settings.json", {"retry": {"enabled": False,
         "provider": {"maxRetries": 0, "timeoutMs": 5000}},
-        "compaction": {"enabled": False}, "cacheWarming": "off"})
+        "compaction": {"enabled": False, **(compaction or {})}, "cacheWarming": "off"})
     return directory, model
 
 

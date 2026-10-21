@@ -15,6 +15,7 @@ This guide owns tooling, test procedures and evidence reporting. Use offline, sy
 - [Online acceptance](#online-acceptance)
   - [Production-profile acceptance](#production-profile-acceptance)
   - [Installed-client synthetic recovery](#installed-client-synthetic-recovery)
+  - [Installed-client synthetic summaries](#installed-client-synthetic-summaries)
   - [Real Provider checks](#real-provider-checks)
   - [pi acceptance](#pi-acceptance)
   - [opencode acceptance](#opencode-acceptance)
@@ -43,7 +44,7 @@ direnv users can allow the root `.envrc` once. Update nixpkgs separately with `n
 | `tests/process.rs` → `process/` | Offline child I/O limits, timeout, cancellation and descendant cleanup |
 | `tests/sdk_loopback.rs` → `sdk/` | Pinned Python SDK loopback scenarios; ignored by default |
 | `tests/clients.rs` → `clients/` | Ignored by default, Unix; explicitly selected installed clients against a synthetic CLI gateway |
-| `tests/{sdk,clients,gateway}/test_*.py` | Separate Python unittest discovery for SDK oracles, client-recovery oracles and OpenAPI schemas |
+| `tests/{sdk,clients,gateway}/test_*.py` | Separate Python unittest discovery for SDK oracles, installed-client oracles and OpenAPI schemas |
 | Pinned pi probe | Separate ignored library test and Node scripts; see the [probe procedure](#pinned-pi-history-carrier-probe) |
 
 Top-level Rust files are Cargo integration targets; nested files are registered modules, not additional targets. Keep roots small, but retain small target-local shared types there instead of adding forwarding modules. Do not flatten child modules into `tests/*.rs` merely to shorten paths. Test selection follows the lean policy in [AGENTS.md](../AGENTS.md#tests).
@@ -254,13 +255,13 @@ Use the existing `dashscope-flash-chat` and `opencode-go-haiku-messages` binding
 
 Recovery allows exactly four client requests/five synthetic attempts per profile. It classifies initial tool declaration, tool feedback, an independent no-tool-invocation recovery conversation, and original-session continuation. It rejects duplicates, strict downgrades, summaries and other auxiliary transmissions rather than silently widening that budget. The 2026-10-21 rerun passed all three cases with local pi `1.3.0` and OpenCode `2.0.32`; this is synthetic recovery evidence only.
 
-Later capability gates must fix their own schema/choice/thinking combinations; these read loops establish neither structured output nor required/named choice. The separately documented Responses profile remains distinct, including explicit non-strict tools. Long-session acceptance selects ordinary Generation summarization on the same binding/model, not native compaction or an implicit summary model. Summary, split-summary, nudge and retry shapes still need bounded synthetic characterization before live acceptance; recovery does not cover them.
+Later capability gates must fix their own schema/choice/thinking combinations; these read loops establish neither structured output nor required/named choice. The separately documented Responses profile remains distinct, including explicit non-strict tools. Long-session acceptance selects ordinary Generation summarization on the same binding/model, not native compaction or an implicit summary model. The [ordinary pi summary gate](#installed-client-synthetic-summaries) is separate from recovery. Split-summary, strict downgrade, retry and OpenCode summary/nudge shapes still need bounded synthetic characterization before their live acceptance.
 
-Required sustained-operation diagnostics are narrowly scoped: observable dropped/failed logging, bounded restart-safe logging, body-free request/attempt correlation and client-side first-content timing against delayed terminal/EOF. Upstream first-byte timing is not client visibility. Bring these signals forward when an acceptance needs them; the current diagnostics queue/file cap and exclusive-create writer do not yet satisfy the saturation/restart gate. Follow [Observability](architecture.md#observability), not another diagnostics framework.
+Required sustained-operation diagnostics are narrowly scoped: observable dropped/failed logging, bounded restart-safe logging, body-free request/attempt correlation and client-side first-content timing against delayed terminal/EOF. Local writer maintenance implements record-aligned rotation, recognized-file recovery and visible loss/flush counters; bounded saturation/restart acceptance remains separate. Upstream first-byte or decoded-delta timing is not client visibility. Follow [Observability](architecture.md#observability), not another diagnostics framework.
 
 ### Installed-client synthetic recovery
 
-This is a separate gate from SDK loopback and real Provider acceptance. `tests/clients.rs` creates a private synthetic credential store through `CredentialManager`; `tests/clients/recovery.py` starts the real gateway CLI with explicit scratch files and a loopback-only candidate. `drivers.py` runs pi RPC or OpenCode standalone with empty allowlisted environments, scratch HOME/XDG paths and no project resources. Supply **unwrapped** binaries explicitly: a PATH wrapper can source host secrets even under `env -i`.
+This is a separate gate from SDK loopback and real Provider acceptance. `tests/clients.rs` creates a private synthetic credential store through `CredentialManager`; `tests/clients/recovery.py` starts the real gateway CLI with explicit scratch files and a loopback-only candidate. `drivers.py` runs pi RPC or OpenCode standalone with empty allowlisted environments, scratch HOME/XDG paths and no project resources. The command below runs three recovery and two ordinary pi summary cases serially. Supply **unwrapped** binaries explicitly: a PATH wrapper can source host secrets even under `env -i`.
 
 ```sh
 MORPHIECORE_PI_BIN=/absolute/path/to/unwrapped/pi \
@@ -276,6 +277,16 @@ Each of the three serial cases (pi Chat, pi native Messages, OpenCode Chat) fixe
 Independent wire expectations check ordered history, call/result IDs, readable reasoning and native signatures/redacted blocks. Client events and scratch OpenCode database state establish actual tool completion, final text and idle success; observed session carriers must match the clients' reported session IDs. Gateway diagnostics require honest completion, a real foreground recovery probe and zero unclassified ignored request fields. Native session carriers remain stable through migration and differ for the probe.
 
 Owned HTTP sockets/workers and child process groups are bounded and released, including incomplete headers, timeout and cancellation. Focused authority-oracle checks live in `tests/clients/test_client_recovery.py`; descendant teardown checks live in `tests/process/child_process.rs`. These checks call no real Providers and do not prove account-compatible replay, Provider cache behavior, R1b Responses or every failure/concurrency scenario.
+
+### Installed-client synthetic summaries
+
+`tests/clients/summary.py` reuses the isolated drivers, bounded HTTP authority and CLI loader for pi Chat and native Messages. Each profile fixes **six client requests/six upstream attempts**: an initial read/tool-result loop, a no-tool recent user span, one manual ordinary Generation summary, then a new read/tool-result loop. The same bindings, models, compat flags, 2048-token cap and 3/8/10-second candidate/route/exchange deadlines apply. Automatic compaction, warming and client retries remain off; the candidate attempt cap is one.
+
+The test sets `keepRecentTokens:512` and a bounded 4096-character recent user span to select a complete user boundary. It verifies the standalone summary's ordered serialized user/tool/result/answer exchange, omission of reasoning/signature prose and exclusion of the retained span. Merely setting the retained budget to zero does not mean retaining nothing: pi can select a split-turn cut, which is outside this case. The summary uses the same model, no declared tools and no implicit native-compaction endpoint.
+
+The summary request has no caller cache markers or affinity headers. Native Messages still receives the trusted binding's five-minute automatic cache default and a distinct generated upstream session; ordinary requests retain their original client/native affinity. Native adaptive display/block-binding controls, root-high/system-low effort and the new signed tool history are checked separately. Client events establish fresh read execution and final text; projected history must retain the summary plus the recent span, without the summarized native tool exchange.
+
+The final verdict runs after successful client shutdown and joined HTTP workers, counting late or unsupported-method failures as failures. Diagnostics must show six honest completions with one attempt each and zero unclassified ignored fields. Independent negative oracles live in `tests/clients/test_client_summary.py`. The 2026-10-21 installed pi `1.3.0` runs passed both profiles; this is synthetic summarization/history evidence, not real Provider, retry, split-summary, long-session capacity or client-first-content acceptance.
 
 ### Real Provider checks
 
