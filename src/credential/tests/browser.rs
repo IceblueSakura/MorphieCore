@@ -26,7 +26,7 @@ use tokio::{
 const CLIENT: &str = "synthetic-browser-client";
 const SCOPES: &str = "openid profile email offline_access grok-cli:access api:access";
 fn keys() -> Value {
-    json!({"keys":[serde_json::from_str::<Value>(include_str!("../../../tests/fixtures/auth/grok-test-jwk.json")).unwrap()]})
+    json!({"keys":[serde_json::from_str::<Value>(include_str!("../../../testdata/auth/grok-test-jwk.json")).unwrap()]})
 }
 fn claims(nonce: &str) -> Value {
     let timestamp = SystemTime::now()
@@ -39,7 +39,7 @@ fn sign(header: Value, claims: Value) -> String {
     let random = ring::rand::SystemRandom::new();
     let pair = ring::signature::EcdsaKeyPair::from_pkcs8(
         &ring::signature::ECDSA_P256_SHA256_FIXED_SIGNING,
-        include_bytes!("../../../tests/fixtures/auth/grok-test-p256.pk8"),
+        include_bytes!("../../../testdata/auth/grok-test-p256.pk8"),
         &random,
     )
     .unwrap();

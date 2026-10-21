@@ -1,7 +1,5 @@
 //! Test-only Chat handler over the same IR and bounded byte adapters as offline tests.
-#[path = "../support/chat_profile.rs"]
-pub(super) mod wire;
-use super::{Suite, failure};
+use super::{Suite, chat_wire as wire, failure};
 use axum::{
     body::{Body, Bytes},
     extract::State,

@@ -39,16 +39,17 @@ direnv users can allow the root `.envrc` once. Update nixpkgs separately with `n
 | `tests/transport.rs` → `transport/` | Offline SSE framing/decoding, candidate preparation and Attempt/delivery lifecycle |
 | `tests/credential.rs` → `credential/` | Offline credential CLI checks with synthetic stores/authorities; Unix-gated |
 | `tests/gateway.rs` → `gateway/` | Offline Router → synthetic Provider and isolated binary startup |
-| `tests/sdk_loopback.rs` → `sdk/` | Pinned Python SDK scenarios are ignored by default; process-helper tests run in the offline baseline |
+| `tests/process.rs` → `process/` | Offline child I/O limits, timeout, cancellation and descendant cleanup |
+| `tests/sdk_loopback.rs` → `sdk/` | Pinned Python SDK loopback scenarios; ignored by default |
 | `tests/clients.rs` → `clients/` | Ignored by default, Unix; explicitly selected installed clients against a synthetic CLI gateway |
-| `tests/sdk/test_*.py` | Python unittest discovery for harness assertions, OpenAPI and client-recovery oracles; separate from Rust discovery |
+| `tests/{sdk,clients,gateway}/test_*.py` | Separate Python unittest discovery for SDK oracles, client-recovery oracles and OpenAPI schemas |
 | Pinned pi probe | Separate ignored library test and Node scripts; see the [probe procedure](#pinned-pi-history-carrier-probe) |
 
-The six top-level Rust files are Cargo integration targets; nested files are registered modules, not additional targets. Do not flatten them into `tests/*.rs` merely to shorten paths. Test selection follows the lean policy in [AGENTS.md](../AGENTS.md#tests).
+Top-level Rust files are Cargo integration targets; nested files are registered modules, not additional targets. Keep roots small, but retain small target-local shared types there instead of adding forwarding modules. Do not flatten child modules into `tests/*.rs` merely to shorten paths. Test selection follows the lean policy in [AGENTS.md](../AGENTS.md#tests).
 
-Shared fixture code lives in `tests/support/` and may serve multiple integration targets or source-local tests. Literal corpus data lives at `testdata/<scenario>/<api>/`; synthetic auth assets remain in `tests/fixtures/auth/`. Keep scenario/API boundaries, but avoid wrapper directories with no independent meaning. Generated output, reports and runtime state stay in ignored `testdata/{generated,reports,dist,runtime}/`, separate from committed inputs.
+Shared fixture code lives in `tests/support/` and may serve multiple integration targets or source-local tests. Consumers import it directly, not through another scenario module. External static inputs live in `testdata/`: literal corpus data at `<scenario>/<api>/` and synthetic auth assets at `auth/`. Keep scenario/API boundaries, but avoid wrapper directories with no independent meaning. Generated output, reports and runtime state stay in ignored `testdata/{generated,reports,dist,runtime}/`, separate from committed inputs.
 
-Semantic domain entries declare child modules; Rust module paths, not physical filenames or roadmap IDs, select tests. CLI startup checks live in `tests/gateway/bootstrap.rs`. Capture redaction, incomplete-source and retention checks live in `src/gateway/capture/tests.rs`, separate from body-free diagnostics. Cross-owner HTTP/cancellation assertions stay at their integration owner.
+Semantic domain entries declare child modules; Rust module paths, not physical filenames or roadmap IDs, select tests. The OAuth CLI module remains `unix` in `tests/credential/oauth_accounts.rs`; the Router smoke and SDK text loops use `router_smoke::` and `text_loop::`. CLI startup checks live in `tests/gateway/bootstrap.rs`. Capture redaction, incomplete-source and retention checks live in `src/gateway/capture/tests.rs`, separate from body-free diagnostics. Cross-owner HTTP/cancellation assertions stay at their integration owner.
 
 Bootstrap fixtures take explicit service/models JSON and synthetic credential seeds, then call the real private-file loader. Keep model selection independent of installed keys and negative cases at their intended production boundary. Raw malformed-file cases retain a byte writer; JSON values cannot preserve duplicate keys. SDK command helpers share only identical environment setup, not process ownership, protocol oracles or report assertions.
 
@@ -86,6 +87,28 @@ Focused examples:
 cargo test --locked --offline --test semantic tool_calls::reported_tool_results::
 cargo test --locked --offline --test semantic provider_observations::
 cargo test --locked --offline --test gateway bootstrap::
+cargo test --locked --offline --test process
+```
+
+### Python checks
+
+The shared Python environment stays in `tests/sdk/`; test ownership does not determine environment location. Python and dependencies are pinned by `.python-version` and `uv.lock` there, including the selected OpenAI and Anthropic releases. uv owns the ignored `.venv/`; do not edit it by hand.
+
+Discover the suites separately so moving a test cannot silently drop it from a recursive search:
+
+```sh
+uv sync --project tests/sdk --locked
+uv run --project tests/sdk --locked --offline python -m unittest discover -s tests/sdk -p 'test_*.py'
+uv run --project tests/sdk --locked --offline python -m unittest discover -s tests/clients -p 'test_*.py'
+uv run --project tests/sdk --locked --offline python -m unittest discover -s tests/gateway -p 'test_*.py'
+```
+
+These check SDK oracles, synthetic client-recovery authorities/drivers and public OpenAPI schemas, respectively. They neither launch installed clients nor replace SDK loopback acceptance. Client-recovery checks need only the standard library when run independently; the shared locked environment supports running all three suites.
+
+For OpenAPI-only changes, select the schema checks:
+
+```sh
+uv run --project tests/sdk --locked --offline python -m unittest discover -s tests/gateway -p 'test_openapi_schema.py'
 ```
 
 ### Reusable Generation sessions
@@ -120,12 +143,10 @@ This corpus exercises public codec/Attempt/delivery APIs with synthetic profiles
 
 ### SDK loopback gate
 
-Python and dependencies are pinned by `tests/sdk/.python-version` and `tests/sdk/uv.lock`, including the selected OpenAI and Anthropic releases. uv owns the ignored `tests/sdk/.venv/`; do not edit it by hand.
+Use the shared locked environment from [Python checks](#python-checks). Run the ignored SDK scenarios explicitly and serially:
 
 ```sh
-uv sync --project tests/sdk --locked
 uv run --project tests/sdk --locked --offline cargo test --locked --offline --test sdk_loopback -- --ignored --test-threads=1
-uv run --project tests/sdk --locked --offline python -m unittest discover -s tests/sdk -p 'test_*.py'
 ```
 
 All listeners and credentials are synthetic and test-owned. The gate uses no real Providers or environment proxies.
@@ -175,19 +196,13 @@ MORPHIECORE_PI_SOURCE=/path/to/pinned/pi \
 
 The test clears the child environment, uses a temporary HOME, and replaces fetch with fixed synthetic SSE. It performs 24 serial fetches, two per case, with no retries, a 32-token cap and a five-second deadline per stream. Cases cover three protocols, equal-text owners, empty signed text, an exact-number mutation that drops its carrier, and phase-only history with unlabelled prefixes. The pinned Chat builder drops the opaque-only empty turn; that case asserts the [accepted limitation](refs/2026-10-17-generation-contracts.md#signed-google-parts) instead of restoration. Returned history is checked separately from request-control/tool admission. This is not a live-client, opencode, Provider or routed full-chain acceptance gate.
 
-For OpenAPI-only changes, run the affected schema checks:
-
-```sh
-uv run --project tests/sdk --locked --offline python -m unittest discover -s tests/sdk -p 'test_openapi_schema.py'
-```
-
 ### Documentation checks
 
 The fixed document set is defined in [AGENTS.md](../AGENTS.md#documentation).
 
 For Markdown changes, check local paths and heading anchors, then run `git diff --check`. When moving sections, update incoming links across the fixed document set, verify that no contract or approval boundary was lost, and keep the original source dates. Do not add a second plan or specification at the old location. Recheck external sources when changing a protocol claim; a link check is not evidence of current API behavior.
 
-For OpenAPI changes, also run the schema checks above and compare paths, authentication and error envelopes with the gateway code. The OpenAPI file is an API summary, not a second codec implementation.
+For OpenAPI changes, also run the [schema checks](#python-checks) and compare paths, authentication and error envelopes with the gateway code. The OpenAPI file is an API summary, not a second codec implementation.
 
 ## Coverage and pruning
 
@@ -231,7 +246,7 @@ Each of the three serial cases (pi Chat, pi native Messages, OpenCode Chat) fixe
 
 Independent wire expectations check ordered history, call/result IDs, readable reasoning and native signatures/redacted blocks. Client events and scratch OpenCode database state establish actual tool completion, final text and idle success; observed session carriers must match the clients' reported session IDs. Gateway diagnostics require honest completion, a real foreground recovery probe and zero unclassified ignored request fields. Native session carriers remain stable through migration and differ for the probe.
 
-Owned HTTP sockets/workers and child process groups are bounded and released, including incomplete headers, timeout and cancellation. Focused authority-oracle checks live in `tests/sdk/test_client_recovery.py`; descendant teardown checks extend `tests/sdk/process.rs`. These checks call no real Providers and do not prove account-compatible replay, Provider cache behavior, R1b Responses or every failure/concurrency scenario.
+Owned HTTP sockets/workers and child process groups are bounded and released, including incomplete headers, timeout and cancellation. Focused authority-oracle checks live in `tests/clients/test_client_recovery.py`; descendant teardown checks live in `tests/process/child_process.rs`. These checks call no real Providers and do not prove account-compatible replay, Provider cache behavior, R1b Responses or every failure/concurrency scenario.
 
 ### Real Provider checks
 
