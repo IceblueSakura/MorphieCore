@@ -538,6 +538,70 @@ fn saved_observation_and_appended_error_encode_the_independent_native_history() 
     }
 }
 #[test]
+fn automatic_cache_keeps_examples_context_and_deferred_definitions() {
+    use morphiecore::protocol::CodecError;
+    let p = Profile::AdaptiveTextTools;
+    let body = json!({"model":"synthetic-model","max_tokens":32,
+    "tools":[
+        {"name":"visible","input_schema":{"type":"object"},
+            "input_examples":[{"n":9007199254740993_u64}],
+            "cache_control":{"type":"ephemeral","ttl":"1h"}},
+        {"name":"later","input_schema":{"type":"object"},"defer_loading":true}
+    ],
+    "cache_control":{"type":"ephemeral","ttl":"1h"},
+    "messages":[{"role":"user","content":[
+        {"type":"document","source":{"type":"text","media_type":"text/plain","data":"notes"},
+            "context":"not citable","cache_control":{"type":"ephemeral","ttl":"1h"}},
+        {"type":"text","text":""}
+    ]}]});
+    let exact = p
+        .decode_generation_request(body.to_string().as_bytes(), LocalScope::ROOT, &target())
+        .unwrap();
+    assert_eq!(
+        p.encode_generation_request(&exact.semantic, &exact.fidelity, &target())
+            .unwrap()
+            .value["tools"],
+        body["tools"]
+    );
+    let mut conflict = body.clone();
+    conflict["cache_control"]["ttl"] = json!("5m");
+    let error = CodecError::Invalid("Anthropic automatic cache TTL conflict");
+    assert_eq!(
+        p.decode_request(conflict.to_string().as_bytes()).err(),
+        Some(error.clone())
+    );
+    assert_eq!(
+        morphiecore::protocol::anthropic::messages::client::decode_client_request(
+            conflict.to_string().as_bytes()
+        )
+        .err(),
+        Some(error.clone())
+    );
+    let mut settings = exact.semantic.settings().clone();
+    settings.automatic_prefix_cache = Some(PrefixCacheTtl::FiveMinutes);
+    let edited = exact.semantic.clone().with_settings(settings).unwrap();
+    assert_eq!(
+        p.encode_generation_request(&edited, &exact.fidelity, &target())
+            .err(),
+        Some(error)
+    );
+    let mut extended = body.clone();
+    extended["messages"].as_array_mut().unwrap().push(json!({
+        "role":"system","content":[{"type":"tool_addition","tool":{"type":"tool_definition",
+            "definition":{"name":"inline","input_schema":{"type":"object"},
+                "input_examples":[{}],"cache_control":{"type":"ephemeral","ttl":"1h"}}}}]
+    }));
+    let decoded = p
+        .decode_generation_request(extended.to_string().as_bytes(), LocalScope::ROOT, &target())
+        .unwrap();
+    let output = p
+        .encode_generation_request(&decoded.semantic, &decoded.fidelity, &target())
+        .unwrap();
+    assert_eq!(output.value["tools"], body["tools"]);
+    assert_eq!(output.value["messages"], extended["messages"]);
+}
+
+#[test]
 fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners() {
     let p = Profile::AdaptiveTextTools;
     let content_wire = br#"{"model":"synthetic-model","max_tokens":32,"system":[{"type":"text","text":"stable","cache_control":{"type":"ephemeral","ttl":"1h"}},{"type":"text","text":"changing"}],"cache_control":{"type":"ephemeral"},"messages":[{"role":"user","content":[{"type":"text","text":"go","cache_control":{"type":"ephemeral"}}]}]}"#;

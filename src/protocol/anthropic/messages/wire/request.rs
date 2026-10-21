@@ -724,7 +724,8 @@ pub(in crate::protocol::anthropic::messages) fn validate_cache_breakpoints(
 }
 pub(in crate::protocol::anthropic::messages) fn validate_automatic_cache(
     breakpoints: &mut Vec<PrefixCacheTtl>,
-    last_cache: Option<PrefixCacheTtl>,
+    // None means no rendered eligible owner; Some(None) means an unmarked owner.
+    last_cache: Option<Option<PrefixCacheTtl>>,
     automatic: Option<PrefixCacheTtl>,
 ) -> Result<(), CodecError> {
     if let Some(ttl) = automatic {
@@ -735,13 +736,13 @@ pub(in crate::protocol::anthropic::messages) fn validate_automatic_cache(
             return Err(CodecError::Limit);
         }
         match last_cache {
-            Some(last) if last != ttl => {
+            Some(Some(last)) if last != ttl => {
                 return Err(CodecError::Invalid(
                     "Anthropic automatic cache TTL conflict",
                 ));
             }
-            Some(_) => {}
-            None => breakpoints.push(ttl),
+            Some(None) => breakpoints.push(ttl),
+            Some(Some(_)) | None => {}
         }
     }
     validate_cache_breakpoints(breakpoints.iter().copied())
@@ -899,14 +900,14 @@ impl Request {
         let mut last_cache = self
             .tools
             .value()
-            .and_then(|tools| tools.last())
-            .and_then(|tool| tool.cache_control.value().copied());
+            .and_then(|tools| tools.iter().rev().find(|tool| !tool.defer_loading))
+            .map(|tool| tool.cache_control.value().copied());
         match self.system.value() {
-            Some(TextContent::Text(s)) if !s.is_empty() => last_cache = None,
+            Some(TextContent::Text(s)) if !s.is_empty() => last_cache = Some(None),
             Some(TextContent::Blocks(blocks)) => {
                 for block in blocks {
                     if text_cache_eligible(&block.content, block.cache)? {
-                        last_cache = block.cache;
+                        last_cache = Some(block.cache);
                     }
                     breakpoints.extend(block.cache);
                 }
@@ -917,7 +918,7 @@ impl Request {
             match &message.content {
                 MessageContent::Text(s) => {
                     if text_cache_eligible(s, None)? {
-                        last_cache = None;
+                        last_cache = Some(None);
                     }
                 }
                 MessageContent::Blocks(blocks) => {
@@ -942,7 +943,7 @@ impl Request {
                                 return Err(CodecError::Invalid("Anthropic tool change cache"));
                             }
                             breakpoints.push(*ttl);
-                            last_cache = Some(*ttl);
+                            last_cache = Some(Some(*ttl));
                             continue;
                         }
                         let eligible = match &block.content {
@@ -951,7 +952,7 @@ impl Request {
                             _ => true,
                         };
                         if eligible {
-                            last_cache = block.cache;
+                            last_cache = Some(block.cache);
                         }
                         breakpoints.extend(block.cache);
                     }
@@ -1171,4 +1172,29 @@ pub(in crate::protocol::anthropic::messages) fn read_user_id(
     let value = presence(closed(metadata, &["user_id"])?, "user_id", string)?;
     validate_user_id(&value)?;
     Ok(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn automatic_placement_distinguishes_missing_and_unmarked_eligible_tails() {
+        let mut markers = vec![];
+        validate_automatic_cache(&mut markers, None, Some(PrefixCacheTtl::OneHour)).unwrap();
+        assert!(markers.is_empty());
+        validate_automatic_cache(&mut markers, Some(None), Some(PrefixCacheTtl::OneHour)).unwrap();
+        assert_eq!(markers, [PrefixCacheTtl::OneHour]);
+        validate_automatic_cache(
+            &mut markers,
+            Some(Some(PrefixCacheTtl::OneHour)),
+            Some(PrefixCacheTtl::OneHour),
+        )
+        .unwrap();
+        assert_eq!(markers, [PrefixCacheTtl::OneHour]);
+        markers.resize(4, PrefixCacheTtl::OneHour);
+        assert_eq!(
+            validate_automatic_cache(&mut markers, None, Some(PrefixCacheTtl::OneHour)),
+            Err(CodecError::Limit)
+        );
+    }
 }

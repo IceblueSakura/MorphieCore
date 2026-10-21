@@ -230,6 +230,8 @@ The current [caching guide](https://platform.claude.com/docs/en/build-with-claud
 
 Examples and context change model-visible input, not resource identity alone. Inline tool additions should preserve the root tools and append history; deferred tools and the first inline-definition activation affect the rendered prefix. Existing [cache checks](../../src/protocol/anthropic/messages/wire/request.rs) already cover many marker/TTL cases; review eligible-tail derivation rather than replacing them with another cache model. These source rules do not prove deployed Go forwarding or caching.
 
+The [tool-cache guide](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching), rechecked on 2026-10-21, explicitly excludes deferred definitions from the system prefix. The general caching guide also documents one full miss when the first inline definition activates tool prompting and root `tools` has no non-deferred tool. Local validation now skips deferred root definitions and distinguishes a missing eligible owner from an unmarked one. Native regression retains examples/context and root-prefix structure across an inline addition. These are local checks, not cache-hit evidence; an otherwise empty user message still rejects before native cache validation.
+
 ### pi Messages request profile, 2026-10-19
 
 At pi v1.3.0 (`71023ae`, the installed binary), `packages/ai/src/api/anthropic-messages.ts` is unchanged from `8efd314` and builds these Messages fields:

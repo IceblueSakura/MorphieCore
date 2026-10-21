@@ -376,8 +376,8 @@ pub(in crate::protocol::anthropic::messages) fn validate_cache(
             _ => None,
         })
         .collect::<Vec<_>>();
-    let mut last = request.tools().last().and_then(|tool| match tool {
-        ToolDefinition::Function(tool) => tool.cache,
+    let mut last = request.tools().iter().rev().find_map(|tool| match tool {
+        ToolDefinition::Function(tool) if !tool.dispatch.defer_loading => Some(tool.cache),
         _ => None,
     });
     if request
@@ -386,7 +386,7 @@ pub(in crate::protocol::anthropic::messages) fn validate_cache(
         .value()
         .is_some_and(|text| !text.as_str().is_empty())
     {
-        last = None;
+        last = Some(None);
     }
     for (_, item) in request.items() {
         match item {
@@ -396,7 +396,7 @@ pub(in crate::protocol::anthropic::messages) fn validate_cache(
                         continue;
                     }
                     markers.extend(part.cache);
-                    last = part.cache;
+                    last = Some(part.cache);
                 }
             }
             Item::Message(m) => {
@@ -407,12 +407,12 @@ pub(in crate::protocol::anthropic::messages) fn validate_cache(
                         continue;
                     }
                     markers.extend(part.cache);
-                    last = part.cache;
+                    last = Some(part.cache);
                 }
             }
             Item::ToolCall(c) => {
                 markers.extend(c.cache);
-                last = c.cache;
+                last = Some(c.cache);
             }
             Item::ToolResult(r) => {
                 if let ToolOutput::Parts(parts) = &r.output {
@@ -424,7 +424,7 @@ pub(in crate::protocol::anthropic::messages) fn validate_cache(
                     }
                 }
                 markers.extend(r.cache);
-                last = r.cache;
+                last = Some(r.cache);
             }
             // The marker sits on the block or inside the definition, never both.
             Item::ToolChange(change) => {
@@ -437,7 +437,7 @@ pub(in crate::protocol::anthropic::messages) fn validate_cache(
                 }
                 let cache = change.cache.or(definition);
                 markers.extend(cache);
-                last = cache;
+                last = Some(cache);
             }
             _ => {}
         }
