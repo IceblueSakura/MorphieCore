@@ -443,11 +443,15 @@ fn reasoning(
         }
         TargetCaps::GoogleGenerateContent(caps) => {
             caps.reasoning_as_text = as_text;
-            caps.reasoning_policy = policy;
+            if policy.is_some() {
+                caps.reasoning_policy = policy;
+            }
         }
         TargetCaps::GoogleInteractions(caps) => {
             caps.reasoning_as_text = as_text;
-            caps.reasoning_policy = policy;
+            if policy.is_some() {
+                caps.reasoning_policy = policy;
+            }
         }
     }
     Ok(())

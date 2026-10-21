@@ -61,7 +61,7 @@ fn promised(
     semantic: &GenerationSemanticContract,
     endpoint: &crate::lowering::target::TargetCaps,
 ) -> bool {
-    endpoint.semantics().supports(semantic)
+    endpoint.accepted_semantics().supports(semantic)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -334,10 +334,7 @@ fn compile_deployments(
             // A skippable candidate may be narrower than the public contract: requests it
             // cannot represent skip it, reducing failover rather than admission.
             if let Some(native) = native
-                && (!native.supports(endpoint.representation.semantics())
-                    || route.policy.candidates == super::CandidatePolicy::RequireAll
-                        && !native.supports(&model.contract)
-                    || model.standard_context)
+                && (!native.supports(endpoint.representation.semantics()) || model.standard_context)
             {
                 return Err(TopologyError::ContractUnsatisfiable);
             }

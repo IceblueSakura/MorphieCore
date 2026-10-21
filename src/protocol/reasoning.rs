@@ -88,6 +88,47 @@ pub struct ReasoningRequestPolicy {
     pub conversion: ReasoningConversion,
 }
 impl ReasoningRequestPolicy {
+    pub fn validate(&self) -> Result<(), CodecError> {
+        if self.rule.is_empty() || self.canonical_model.is_empty() {
+            return Err(CodecError::Invalid("reasoning policy identity"));
+        }
+        match &self.conversion {
+            ReasoningConversion::Scope { from, to, levels } => {
+                if from == to
+                    || levels.is_empty()
+                    || levels.len() > 6
+                    || levels
+                        .iter()
+                        .enumerate()
+                        .any(|(i, (key, _))| levels[..i].iter().any(|(k, _)| k == key))
+                {
+                    return Err(CodecError::Invalid("reasoning scope policy"));
+                }
+            }
+            ReasoningConversion::BudgetToEffort { table, .. }
+            | ReasoningConversion::EffortToBudget { table, .. } => table.validate()?,
+            ReasoningConversion::PreserveDisabled => {}
+        }
+        Ok(())
+    }
+
+    /// Scope policies apply only to their declared input scope. Other controls
+    /// still reach ordinary target validation; this is not a fallback mapping.
+    pub(crate) fn applies_to(&self, source: &GenerationRequest) -> bool {
+        let ReasoningConversion::Scope { from, .. } = self.conversion else {
+            return true;
+        };
+        source
+            .settings()
+            .effort
+            .value()
+            .is_some_and(|c| c.scope == from)
+            || source.items().iter().any(|(_, item)| {
+                matches!(item, Item::ConfigurationUpdate(update)
+                    if update.effort.is_some_and(|c| c.scope == from))
+            })
+    }
+
     pub(crate) fn receipt(
         &self,
         source: &GenerationRequest,
@@ -144,22 +185,10 @@ impl ReasoningRequestPolicy {
     }
     pub fn project(&self, source: &GenerationSettings) -> Result<GenerationSettings, CodecError> {
         source.validate()?;
-        if self.rule.is_empty() || self.canonical_model.is_empty() {
-            return Err(CodecError::Invalid("reasoning policy identity"));
-        }
+        self.validate()?;
         let mut target = source.clone();
         match &self.conversion {
             ReasoningConversion::Scope { from, to, levels } => {
-                if from == to
-                    || levels.is_empty()
-                    || levels.len() > 6
-                    || levels
-                        .iter()
-                        .enumerate()
-                        .any(|(i, (key, _))| levels[..i].iter().any(|(k, _)| k == key))
-                {
-                    return Err(CodecError::Invalid("reasoning scope policy"));
-                }
                 if let Some(control) = source.effort.value() {
                     if control.scope != *from {
                         return Err(CodecError::Unsupported("reasoning scope".into()));
@@ -175,7 +204,6 @@ impl ReasoningRequestPolicy {
                 }
             }
             ReasoningConversion::BudgetToEffort { scope, table } => {
-                table.validate()?;
                 if let Some(budget) = source.reasoning.budget_tokens {
                     if !source.effort.is_absent() {
                         return Err(CodecError::Unsupported(
@@ -194,7 +222,6 @@ impl ReasoningRequestPolicy {
                 }
             }
             ReasoningConversion::EffortToBudget { scope, table } => {
-                table.validate()?;
                 if let Some(control) = source.effort.value() {
                     if control.scope != *scope || source.reasoning.budget_tokens.is_some() {
                         return Err(CodecError::Unsupported("thinking allocation scope".into()));

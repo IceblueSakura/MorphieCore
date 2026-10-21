@@ -873,6 +873,66 @@ fn configured_failover_orders_and_limits_a_models_providers() {
             google.interactions_endpoint().representation.model_limits()
         );
     }
+    // The loader retains the catalog scope policy when no conversion override is supplied.
+    let (entry, request) = crate::gateway::ingress::admission::prepare_messages(
+        &configured.gateway.state,
+        &serde_json::to_vec(&serde_json::json!({"model":google.model,"max_tokens":2048,
+            "thinking":{"type":"adaptive"},"output_config":{"effort":"medium"},
+            "messages":[{"role":"user","content":"go"}]}))
+        .unwrap(),
+    )
+    .unwrap();
+    let before = request.clone();
+    for candidate in &entry.candidates {
+        use crate::semantic::task::generation::{EffortControl, EffortLevel, EffortScope};
+        let projection = candidate
+            .endpoint
+            .encode_request_with_evidence(&request)
+            .unwrap();
+        let evidence: Vec<_> = projection
+            .controls
+            .iter()
+            .filter_map(|c| match c {
+                crate::lowering::generation::RequestControlLoss::Reasoning {
+                    rule,
+                    input,
+                    output,
+                    preset_tokens,
+                } => Some((rule, input, output, preset_tokens)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(evidence.len(), 1);
+        let (rule, input, output, preset) = evidence[0];
+        assert_eq!(
+            *rule,
+            "google.gemini-3.8-flash.response-effort-to-thinking.v1"
+        );
+        assert_eq!(
+            input.effort.value(),
+            Some(&EffortControl {
+                scope: EffortScope::Response,
+                level: EffortLevel::Medium,
+            })
+        );
+        let mut expected = input.clone();
+        expected.effort = crate::semantic::value::Presence::Value(EffortControl {
+            scope: EffortScope::Reasoning,
+            level: EffortLevel::Medium,
+        });
+        assert_eq!(output, &expected);
+        assert_eq!(*preset, None);
+        assert_eq!(input.max_output_tokens, Some(2048));
+        assert!(
+            !candidate
+                .endpoint
+                .representation
+                .semantics()
+                .response_effort
+        );
+    }
+    assert_eq!(request, before);
+    let scoped_request = request;
     for (name, value) in [
         ("allowed_effort", serde_json::json!([])),
         ("allowed_effort", serde_json::json!(["high", "high"])),
@@ -919,6 +979,14 @@ fn configured_failover_orders_and_limits_a_models_providers() {
     );
     assert!(rules.contains(&"configured.effort-to-budget.v1"));
     assert_eq!(request, before);
+    assert!(
+        matches!(
+            entry.candidates[0].endpoint.encode_request(&scoped_request),
+            Err(crate::adapter::AdapterError::Codec(crate::protocol::CodecError::Unsupported(reason)))
+                if reason == "thinking allocation scope"
+        ),
+        "an explicit numeric policy replaces, rather than chains with, the scope policy"
+    );
     models["models"][google.model]["thinking_tokens"]["medium"] = serde_json::json!(7000);
     private_write(&models_file, models);
     let configured = Bootstrap::from_files(&gateway_file, &store).unwrap();

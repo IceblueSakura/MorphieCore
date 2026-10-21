@@ -114,10 +114,11 @@ impl Endpoint {
             TargetCaps::GoogleGenerateContent(caps) => caps.reasoning_policy.as_ref(),
             TargetCaps::GoogleInteractions(caps) => caps.reasoning_policy.as_ref(),
         };
-        if reasoning_policy
-            .is_some_and(|policy| policy.canonical_model != self.canonical_model.as_str())
-        {
-            return Err(CodecError::Invalid("reasoning policy model"));
+        if let Some(policy) = reasoning_policy {
+            policy.validate()?;
+            if policy.canonical_model != self.canonical_model.as_str() {
+                return Err(CodecError::Invalid("reasoning policy model"));
+            }
         }
         Ok(match (&self.protocol, &self.representation) {
             (ProtocolProfile::AnthropicMessages, TargetCaps::AnthropicMessages(caps)) => {

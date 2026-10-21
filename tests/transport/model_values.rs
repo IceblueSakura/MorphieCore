@@ -26,6 +26,213 @@ fn source(value: Value) -> Request {
         .unwrap()
 }
 
+fn messages(value: Value) -> Request {
+    morphiecore::adapter::ClientAdapter::Messages
+        .decode_client_request(value.to_string().as_bytes())
+        .unwrap()
+}
+
+#[test]
+fn google_response_effort_is_a_selected_direction_not_native_support() {
+    use morphiecore::{execution::admit, topology::*};
+    let binding = &GOOGLE_BINDINGS[0];
+    let rule = "google.gemini-3.8-flash.response-effort-to-thinking.v1";
+    for mut endpoint in [binding.endpoint(), binding.interactions_endpoint()] {
+        assert!(!endpoint.representation.semantics().response_effort);
+        let mut public = binding.public_model();
+        // RequireAll checks the selected input contract, not a fabricated native bit.
+        public.contract = endpoint.representation.semantics().clone();
+        public.contract.response_effort = true;
+        let mut route = binding.route();
+        route.endpoints = vec![endpoint.id.clone()];
+        route.policy.candidates = CandidatePolicy::RequireAll;
+        let compile_one = |endpoint: Endpoint| {
+            compile(
+                vec![binding.provider()],
+                vec![endpoint],
+                vec![route.clone()],
+                vec![public.clone()],
+                vec![binding.canonical_model()],
+            )
+        };
+        assert!(compile_one(endpoint.clone()).is_ok());
+
+        for (level, expected) in [
+            ("low", EffortLevel::Low),
+            ("medium", EffortLevel::Medium),
+            ("high", EffortLevel::High),
+        ] {
+            let request = messages(json!({"model":binding.model,"max_tokens":2048,
+                "thinking":{"type":"adaptive"},"output_config":{"effort":level},
+                "messages":[{"role":"user","content":"go"}]}));
+            assert_eq!(
+                request.task.semantic.settings().effort.value(),
+                Some(&EffortControl {
+                    scope: EffortScope::Response,
+                    level: expected
+                })
+            );
+            assert_eq!(
+                request.task.semantic.reasoning().mode.value(),
+                Some(&ReasoningMode::Adaptive)
+            );
+            let before = request.clone();
+            assert!(admit(&public, &request).is_ok());
+            assert_eq!(representable(&endpoint, &request), Ok(()));
+            let (wire, rules) = endpoint.encode_request_with_rules(&request).unwrap();
+            assert_eq!(rules.iter().filter(|r| **r == rule).count(), 1);
+            let prepared = prepare(
+                &endpoint,
+                &binding.provider(),
+                &SecretMaterial::new("synthetic").unwrap(),
+                &request,
+            )
+            .unwrap();
+            assert_eq!(
+                serde_json::from_slice::<Value>(&prepared.body).unwrap(),
+                wire
+            );
+            if endpoint.protocol == ProtocolProfile::GoogleGenerateContent {
+                assert_eq!(
+                    wire["generationConfig"],
+                    json!({"maxOutputTokens":2048,
+                    "thinkingConfig":{"thinkingLevel":level.to_uppercase()}})
+                );
+            } else {
+                assert_eq!(
+                    wire["generation_config"],
+                    json!({"max_output_tokens":2048,"thinking_level":level})
+                );
+            }
+            assert_eq!(request, before);
+        }
+        // A response-wide effort does not by itself insert thinking activation.
+        let request = messages(json!({"model":binding.model,"max_tokens":2048,
+            "output_config":{"effort":"low"},"messages":[{"role":"user","content":"go"}]}));
+        assert!(request.task.semantic.reasoning().activation.is_absent());
+        let before = request.clone();
+        assert!(endpoint.encode_request(&request).is_ok());
+        assert_eq!(request, before);
+        for request in [
+            source(json!({"model":binding.model,"input":"go","reasoning":{"effort":"low"}})),
+            Adapter::new(Profile::Chat, Dialect::Standard, None)
+                .decode_request(
+                    json!({"model":binding.model,"messages":[{"role":"user","content":"go"}],
+                    "reasoning_effort":"low"})
+                    .to_string()
+                    .as_bytes(),
+                )
+                .unwrap(),
+            source(json!({"model":binding.model,"input":"go"})),
+        ] {
+            let (wire, rules) = endpoint.encode_request_with_rules(&request).unwrap();
+            assert!(
+                !rules.contains(&rule),
+                "already native or absent controls stay unchanged"
+            );
+            if request.task.semantic.settings().effort.is_absent() {
+                assert!(wire.pointer("/generationConfig/thinkingConfig").is_none());
+                assert!(wire.pointer("/generation_config/thinking_level").is_none());
+            }
+        }
+        for fabricated_native_support in [false, true] {
+            let mut invalid = endpoint.clone();
+            let (semantics, policy) = match &mut invalid.representation {
+                morphiecore::lowering::target::TargetCaps::GoogleGenerateContent(c) => {
+                    (&mut c.semantics, &mut c.reasoning_policy)
+                }
+                morphiecore::lowering::target::TargetCaps::GoogleInteractions(c) => {
+                    (&mut c.semantics, &mut c.reasoning_policy)
+                }
+                _ => unreachable!(),
+            };
+            if fabricated_native_support {
+                semantics.response_effort = true;
+            } else {
+                policy.as_mut().unwrap().conversion = ReasoningConversion::Scope {
+                    from: EffortScope::Response,
+                    to: EffortScope::Reasoning,
+                    levels: &[],
+                };
+            }
+            assert_eq!(
+                compile_one(invalid),
+                Err(TopologyError::ContractUnsatisfiable)
+            );
+        }
+        match &mut endpoint.representation {
+            morphiecore::lowering::target::TargetCaps::GoogleGenerateContent(c) => {
+                c.reasoning_policy = None
+            }
+            morphiecore::lowering::target::TargetCaps::GoogleInteractions(c) => {
+                c.reasoning_policy = None
+            }
+            _ => unreachable!(),
+        }
+        assert!(endpoint.encode_request(&request).is_err());
+        assert_eq!(
+            compile_one(endpoint),
+            Err(TopologyError::ContractUnsatisfiable)
+        );
+    }
+}
+
+#[test]
+fn google_scope_mapping_does_not_saturate_disable_or_allocate() {
+    let binding = &GOOGLE_BINDINGS[0];
+    for endpoint in [binding.endpoint(), binding.interactions_endpoint()] {
+        let base = json!({"model":binding.model,"max_tokens":2048,
+            "output_config":{"effort":"low"},"messages":[{"role":"user","content":"go"}]});
+        for level in ["xhigh", "max"] {
+            let mut body = base.clone();
+            body["output_config"]["effort"] = json!(level);
+            let request = messages(body);
+            assert!(morphiecore::execution::admit(&binding.public_model(), &request).is_ok());
+            rejected(&endpoint, &request, "unmapped reasoning scope");
+        }
+        for thinking in [
+            json!({"type":"disabled"}),
+            json!({"type":"enabled","budget_tokens":1024}),
+        ] {
+            let mut body = base.clone();
+            body["thinking"] = thinking;
+            let request = messages(body);
+            let before = request.clone();
+            assert!(morphiecore::execution::admit(&binding.public_model(), &request).is_ok());
+            assert_eq!(
+                representable(&endpoint, &request),
+                Err(RejectionReason::Representation)
+            );
+            assert!(
+                prepare(
+                    &endpoint,
+                    &binding.provider(),
+                    &SecretMaterial::new("synthetic").unwrap(),
+                    &request
+                )
+                .is_err()
+            );
+            assert_eq!(request, before);
+        }
+        let request = messages(json!({"model":binding.model,"max_tokens":2048,
+            "messages":[{"role":"system","content":"","output_config":{"effort":"low"}},
+                {"role":"user","content":"go"}]}));
+        assert!(
+            request
+                .task
+                .semantic
+                .items()
+                .iter()
+                .any(|(_, item)| matches!(item, Item::ConfigurationUpdate(_)))
+        );
+        assert!(morphiecore::execution::admit(&binding.public_model(), &request).is_ok());
+        assert_eq!(
+            representable(&endpoint, &request),
+            Err(RejectionReason::Representation)
+        );
+    }
+}
+
 fn rejected(endpoint: &Endpoint, request: &Request, reason: &str) {
     let before = request.clone();
     assert!(matches!(endpoint.encode_request(request),

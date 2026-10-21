@@ -84,6 +84,34 @@ impl TargetCaps {
             Self::GoogleInteractions(c) => &c.semantics,
         }
     }
+    /// Accepted request features after selected adaptation, not native support.
+    /// Value/mode restrictions still belong to the shared target encoder.
+    pub(crate) fn accepted_semantics(&self) -> GenerationSemanticContract {
+        use crate::{
+            protocol::reasoning::ReasoningConversion, semantic::task::generation::EffortScope,
+        };
+        let mut contract = self.semantics().clone();
+        let policy = match self {
+            Self::GoogleGenerateContent(c) => c.reasoning_policy.as_ref(),
+            Self::GoogleInteractions(c) => c.reasoning_policy.as_ref(),
+            _ => None,
+        };
+        if contract.reasoning
+            && policy.is_some_and(|p| {
+                matches!(
+                    p.conversion,
+                    ReasoningConversion::Scope {
+                        from: EffortScope::Response,
+                        to: EffortScope::Reasoning,
+                        ..
+                    }
+                )
+            })
+        {
+            contract.response_effort = true;
+        }
+        contract
+    }
     pub fn cache(&self) -> CacheProjection {
         match self {
             Self::OpenAi(c) => c.cache,

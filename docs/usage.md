@@ -223,7 +223,9 @@ For `thinking_tokens`, provide all six positive values, for example:
 
 Place this object on the public model, alongside `candidates`. At least one candidate must select a conversion when a custom table is supplied. A conversion without a custom table uses the [shared preset](architecture.md#thinking-budget-quantization). Duplicate token values are allowed; nearest-budget matching and highest-level ties retain the existing algorithm.
 
-`budget_to_effort` uses the target's declared effort scope: response-wide for Messages, reasoning-only for the other current protocols. `effort_to_budget` accepts reasoning-scoped effort and currently requires a generateContent binding. An existing qualitative effort calibration cannot be combined with a numeric conversion. Unsupported target levels, incompatible controls and over-ceiling budgets still reject; the table does not widen model admission or change dialects.
+`budget_to_effort` uses the target's declared effort scope: response-wide for Messages, reasoning-only for the other current protocols. `effort_to_budget` accepts reasoning-scoped effort and currently requires a generateContent binding. An existing OpenAI qualitative level calibration cannot be combined with a numeric conversion. Unsupported target levels, incompatible controls and over-ceiling budgets still reject; the table does not widen model admission or change dialects.
+
+The existing Gemini 3.8 Flash bindings inherit the selected [response-effort scope approximation](architecture.md#google-response-effort-projection) without a new configuration field. Omitted `thinking_conversion` retains it; an explicit numeric conversion replaces it, never chains the two. Request-scoped low/medium/high support does not open Messages final-answer delivery or promise equivalent Claude effort behavior.
 
 `reasoning_as_text` controls the explicit conversion of unattributed readable history reasoning into assistant text, not visibility of new reasoning output. With the default `false`, a candidate needing that conversion rejects. Separately, complete reasoning demonstrably belonging to another target is omitted under the named visible-history transfer policy, never promoted to an assistant answer. Visible messages and real call/results remain; partial reasoning, damaged compatible replay and required compacted/cached context cannot be repaired by omission. Valid native carriers remain available.
 
@@ -517,5 +519,7 @@ OpenAI routes return `{"error":{"message","type","param","code"}}`. Messages han
 Messages maps exhausted quota to 402 and upstream overload to 529. Reported delays and local `upstream_unavailable` recovery delays may appear as `Retry-After`; they are not promises of recovery.
 
 A Responses stream with classified context overflow or exhausted quota may return HTTP 200 with `response.failed`. HTTP 200 alone does not mean success. After body publication, errors can only report failure or abort delivery; no candidate replay or fabricated success terminal is allowed.
+
+Body-free diagnostics distinguish known Messages codec projection failures as `projection_failure: "terminal"` or `"usage"`, including nested adapter/SSE errors. Unclassified errors remain `"codec"`; arbitrary error strings, token values and payloads are not included. Classification changes no client error envelope or completion behavior.
 
 Resource defaults and bounds are in [Limits](../src/gateway/startup/config.rs). Configuration fields above do not expose every embedded-library limit.

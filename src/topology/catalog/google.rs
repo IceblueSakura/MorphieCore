@@ -3,6 +3,7 @@ use crate::{
     protocol::{
         google::{generate_content, interactions},
         model_limits::ModelLimits,
+        reasoning::{ReasoningConversion, ReasoningRequestPolicy},
     },
     provider::{CredentialBindingId, CredentialKind, ProviderDefinition, catalog},
     topology::*,
@@ -24,6 +25,25 @@ pub const GOOGLE_BINDINGS: &[GoogleBinding] = &[GoogleBinding {
     developer: "Google",
 }];
 impl GoogleBinding {
+    fn reasoning_policy(&self) -> Option<ReasoningRequestPolicy> {
+        use crate::semantic::task::generation::{EffortLevel::*, EffortScope};
+        // Selected scope approximation, not equivalence of response-wide effort.
+        (self.model == "gemini-3.8-flash").then(|| ReasoningRequestPolicy {
+            canonical_model: self.model.into(),
+            rule: "google.gemini-3.8-flash.response-effort-to-thinking.v1",
+            conversion: ReasoningConversion::Scope {
+                from: EffortScope::Response,
+                to: EffortScope::Reasoning,
+                levels: &[(Low, Low), (Medium, Medium), (High, High)],
+            },
+        })
+    }
+    fn accepted_contract(&self) -> GenerationSemanticContract {
+        let mut contract = generate_content::semantic_contract();
+        contract.response_effort = self.reasoning_policy().is_some();
+        contract
+    }
+
     fn model_limits(&self) -> ModelLimits {
         use crate::semantic::task::generation::EffortLevel::{High, Low, Medium};
         // https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash (2026-10-20).
@@ -60,6 +80,7 @@ impl GoogleBinding {
             canonical_model: ModelId::new(self.model).expect("static model"),
             representation: generate_content::TargetCaps {
                 model_limits: self.model_limits(),
+                reasoning_policy: self.reasoning_policy(),
                 ..Default::default()
             }
             .into(),
@@ -94,6 +115,7 @@ impl GoogleBinding {
         endpoint.target.path = self.provider().interactions.expect("declared path");
         endpoint.representation = interactions::TargetCaps {
             model_limits: self.model_limits(),
+            reasoning_policy: self.reasoning_policy(),
             ..Default::default()
         }
         .into();
@@ -106,7 +128,7 @@ impl GoogleBinding {
             model,
             TaskKind::Generation,
             self.route().id,
-            generate_content::semantic_contract(),
+            self.accepted_contract(),
         );
         public.standard_context = false;
         public
@@ -115,7 +137,7 @@ impl GoogleBinding {
         CanonicalModel {
             id: ModelId::new(self.model).expect("static model"),
             task: TaskKind::Generation,
-            contract: generate_content::semantic_contract(),
+            contract: self.accepted_contract(),
         }
     }
 }

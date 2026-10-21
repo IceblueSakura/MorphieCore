@@ -124,6 +124,7 @@ impl TargetCaps {
         let mut reasoning_rule = None;
         let mut controls = vec![];
         if let Some(policy) = &self.reasoning_policy
+            && policy.applies_to(&request.task.semantic)
             && let Some(semantic) = policy.project_request(&request.task.semantic)?
         {
             controls.push(policy.receipt(&request.task.semantic, &semantic)?);

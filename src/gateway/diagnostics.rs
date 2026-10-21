@@ -613,8 +613,10 @@ impl Trace {
     }
     pub(super) fn projection_error(&mut self, error: &crate::execution::AttemptError) {
         use crate::{
-            adapter::AdapterError, execution::AttemptError,
+            adapter::AdapterError,
+            execution::AttemptError,
             lowering::generation::RepresentationError as R,
+            protocol::{CodecError, stream::SseError},
         };
         if self.sink.is_none() {
             return;
@@ -633,6 +635,28 @@ impl Trace {
                 R::Terminal => "terminal",
                 R::Safety => "safety",
                 _ => "other",
+            },
+            AttemptError::Codec(error)
+            | AttemptError::Adapter(AdapterError::Codec(error))
+            | AttemptError::Sse(SseError::Codec(error)) => match error {
+                // Exact internal labels only. Never serialize an Unsupported string
+                // or classify by an untrusted prefix.
+                CodecError::Unsupported(reason) => match reason.as_str() {
+                    "Messages terminal"
+                    | "Messages completion cause"
+                    | "Messages continuation"
+                    | "Messages partial tool terminal" => "terminal",
+                    "Messages usage"
+                    | "Messages usage report"
+                    | "Messages usage scopes"
+                    | "Messages late cache breakdown"
+                    | "Messages erased usage observation" => "usage",
+                    _ => "codec",
+                },
+                CodecError::Invalid(
+                    "Messages usage" | "Messages output usage" | "Messages projected usage",
+                ) => "usage",
+                _ => "codec",
             },
             _ => "codec",
         };
@@ -952,6 +976,82 @@ mod tests {
         );
         assert!(wire.get("endpoint").is_none());
         assert!(wire.get("body").is_none());
+    }
+    #[test]
+    fn messages_projection_classifies_real_codec_failures_without_relaxing_them() {
+        use crate::{
+            adapter::AdapterError,
+            execution::AttemptError,
+            protocol::{
+                CodecError, anthropic::messages::client::sse::ClientEventEncoder, stream::SseError,
+            },
+            semantic::task::generation::*,
+        };
+        let (tx, _rx) = mpsc::sync_channel(1);
+        let sink = Sink(tx);
+        let mut trace = Trace::new(Some(&sink));
+        for (cause, expected) in [
+            (None, "Messages terminal"),
+            (
+                Some(CompletionCause::NaturalOrStopSequence),
+                "Messages completion cause",
+            ),
+        ] {
+            let mut encoder = ClientEventEncoder::new("synthetic", "synthetic");
+            let mut usage = Usage::operation(10, 3, 13);
+            usage.cached_input_tokens = Some(0);
+            encoder.encode(&StreamEvent::Usage(usage)).unwrap();
+            encoder
+                .encode(&StreamEvent::Progress(InteractionProgress::TurnFinished))
+                .unwrap();
+            let error = encoder
+                .encode(&StreamEvent::Terminal {
+                    terminal: StreamTerminal::Completed,
+                    details: TerminalDetails {
+                        completion: cause,
+                        ..Default::default()
+                    },
+                })
+                .unwrap_err();
+            assert!(matches!(&error, CodecError::Unsupported(reason) if reason == expected));
+            trace.projection_error(&AttemptError::Codec(error));
+            assert_eq!(trace.record.projection_failure, Some("terminal"));
+            assert!(encoder.finish().is_err());
+        }
+        let mut encoder = ClientEventEncoder::new("synthetic", "synthetic");
+        // Includes-cache input without a cache count cannot become Messages input.
+        let error = encoder
+            .encode(&StreamEvent::Usage(Usage::operation(10, 3, 13)))
+            .unwrap_err();
+        assert!(matches!(&error, CodecError::Unsupported(reason) if reason == "Messages usage"));
+        trace.projection_error(&AttemptError::Adapter(AdapterError::Codec(error)));
+        assert_eq!(trace.record.projection_failure, Some("usage"));
+        let mut encoder = ClientEventEncoder::new("synthetic", "synthetic");
+        encoder
+            .encode(&StreamEvent::Progress(InteractionProgress::TurnFinished))
+            .unwrap();
+        let error = encoder
+            .encode(&StreamEvent::Terminal {
+                terminal: StreamTerminal::Completed,
+                details: TerminalDetails {
+                    completion: Some(CompletionCause::Natural),
+                    ..Default::default()
+                },
+            })
+            .unwrap_err();
+        assert!(matches!(error, CodecError::Invalid("Messages usage")));
+        trace.projection_error(&AttemptError::Sse(SseError::Codec(error)));
+        assert_eq!(trace.record.projection_failure, Some("usage"));
+        assert!(encoder.finish().is_err());
+        trace.projection_error(&AttemptError::Codec(CodecError::Unsupported(
+            "Messages usage: synthetic-private-value".into(),
+        )));
+        assert_eq!(trace.record.projection_failure, Some("codec"));
+        assert!(
+            !serde_json::to_string(&trace.record)
+                .unwrap()
+                .contains("synthetic")
+        );
     }
     #[test]
     fn decode_failure_never_serializes_untrusted_names_or_values() {
