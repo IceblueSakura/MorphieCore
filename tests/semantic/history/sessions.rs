@@ -179,7 +179,7 @@ struct Source {
 
 fn directory(api: Api) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("testdata/sessions/repair-and-recall")
+        .join("testdata/repair-and-recall")
         .join(api.name())
 }
 fn load(api: Api) -> Corpus {

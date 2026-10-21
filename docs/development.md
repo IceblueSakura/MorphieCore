@@ -32,19 +32,23 @@ direnv users can allow the root `.envrc` once. Update nixpkgs separately with `n
 
 ## Test layout
 
-| Target | Scope |
+| Entry | Scope and execution |
 |---|---|
-| `src/**` unit tests | Module internals, credential ownership, ingress and affinity |
-| `tests/semantic` | IR, codecs, lowering, replay and history editing |
-| `tests/transport` | SSE framing/decoding, candidate planning, bindings and body lifecycle |
-| `tests/credential` | Credential CLI with synthetic stores and authorities |
-| `tests/gateway` | Router → synthetic Provider and isolated binary startup |
-| `tests/sdk_loopback` | Ignored by default; pinned Python SDK over loopback |
-| `tests/clients` | Ignored by default, Unix; explicitly selected installed clients against a CLI-loaded synthetic gateway |
+| `src/**` unit tests | Owner-local contracts, including private state, credential lifecycle and synthetic Router regressions |
+| `tests/semantic.rs` → `semantic/` | Offline IR, codecs, lowering, replay and history editing |
+| `tests/transport.rs` → `transport/` | Offline SSE framing/decoding, candidate preparation and Attempt/delivery lifecycle |
+| `tests/credential.rs` → `credential/` | Offline credential CLI checks with synthetic stores/authorities; Unix-gated |
+| `tests/gateway.rs` → `gateway/` | Offline Router → synthetic Provider and isolated binary startup |
+| `tests/sdk_loopback.rs` → `sdk/` | Pinned Python SDK scenarios are ignored by default; process-helper tests run in the offline baseline |
+| `tests/clients.rs` → `clients/` | Ignored by default, Unix; explicitly selected installed clients against a synthetic CLI gateway |
+| `tests/sdk/test_*.py` | Python unittest discovery for harness assertions, OpenAPI and client-recovery oracles; separate from Rust discovery |
+| Pinned pi probe | Separate ignored library test and Node scripts; see the [probe procedure](#pinned-pi-history-carrier-probe) |
 
-Shared builders live in `tests/support/`. Test selection follows the lean policy in [AGENTS.md](../AGENTS.md#tests).
+The six top-level Rust files are Cargo integration targets; nested files are registered modules, not additional targets. Do not flatten them into `tests/*.rs` merely to shorten paths. Test selection follows the lean policy in [AGENTS.md](../AGENTS.md#tests).
 
-Semantic domain entries declare child modules; Rust module paths, not physical filenames or roadmap IDs, select tests. Router fixtures stay in the gateway target; CLI startup checks live in `tests/gateway/bootstrap.rs`. Capture redaction, incomplete-source and retention checks live in `src/gateway/capture/tests.rs`, separate from body-free diagnostics. Cross-owner HTTP/cancellation assertions stay at their integration owner.
+Shared fixture code lives in `tests/support/` and may serve multiple integration targets or source-local tests. Literal corpus data lives at `testdata/<scenario>/<api>/`; synthetic auth assets remain in `tests/fixtures/auth/`. Keep scenario/API boundaries, but avoid wrapper directories with no independent meaning. Generated output, reports and runtime state stay in ignored `testdata/{generated,reports,dist,runtime}/`, separate from committed inputs.
+
+Semantic domain entries declare child modules; Rust module paths, not physical filenames or roadmap IDs, select tests. CLI startup checks live in `tests/gateway/bootstrap.rs`. Capture redaction, incomplete-source and retention checks live in `src/gateway/capture/tests.rs`, separate from body-free diagnostics. Cross-owner HTTP/cancellation assertions stay at their integration owner.
 
 Bootstrap fixtures take explicit service/models JSON and synthetic credential seeds, then call the real private-file loader. Keep model selection independent of installed keys and negative cases at their intended production boundary. Raw malformed-file cases retain a byte writer; JSON values cannot preserve duplicate keys. SDK command helpers share only identical environment setup, not process ownership, protocol oracles or report assertions.
 
@@ -86,7 +90,7 @@ cargo test --locked --offline --test gateway bootstrap::
 
 ### Reusable Generation sessions
 
-The committed [session corpus](../testdata/sessions/repair-and-recall/) is synthetic offline input, not a Provider capture or a serialization of the whole IR. It supplements focused codec tests with one coherent eight-generation repair/recall story, five native API variants and bounded failure forks. Run it without credentials, network services or fixture generation:
+The committed [session corpus](../testdata/repair-and-recall/) is synthetic offline input, not a Provider capture or a serialization of the whole IR. It supplements focused codec tests with one coherent eight-generation repair/recall story, five native API variants and bounded failure forks. Run it without credentials, network services or fixture generation:
 
 ```sh
 cargo test --locked --offline --test semantic history::sessions::
