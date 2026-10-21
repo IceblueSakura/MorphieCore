@@ -89,6 +89,36 @@ cargo test --locked --offline --test semantic provider_observations::
 cargo test --locked --offline --test gateway bootstrap::
 ```
 
+### Reusable Generation sessions
+
+The committed [session corpus](../testdata/sessions/repair-and-recall/) is synthetic offline input, not a Provider capture or a serialization of the whole IR. It supplements focused codec tests with one coherent eight-generation repair/recall story, five native API variants and bounded failure forks. Run it without credentials, network services or fixture generation:
+
+```sh
+cargo test --locked --offline --test semantic history::sessions::
+# One native API, including its complete returned history:
+cargo test --locked --offline --test semantic history::sessions::interactions_repair_and_recall
+```
+
+The story starts with two ordered `read` calls and reverse-order results, one reporting a missing file. A `locate` call repairs the input, `patch` changes the configuration, `verify` reports a failure, and a second patch/check succeeds. The final answer enters history before a second user task requests a recall with an empty current tool set and higher effort. A final unsent next-user projection also checks replay of that second answer; there is no ninth generation or actual tool execution.
+
+| Native variant | Client history carrier | Additional independent expectations |
+|---|---|---|
+| Chat | MorphieCore Chat | Raw argument whitespace/escapes and `9007199254740993`, interleaved indexed call fragments, null-content assistant shell, unreported progress |
+| Responses | MorphieCore Responses | Item IDs distinct from call IDs, commentary/final phases, encrypted reasoning, explicit empty report arrays |
+| Messages | Messages | Signed and redacted thinking, split signature deltas, structured arguments, explicit error flags, response-scoped effort and disjoint cache accounting |
+| generateContent | MorphieCore Responses | Signed call owners, two identical `OK` texts with different signatures, original STOP ambiguity, split accounting |
+| Interactions v1 | MorphieCore Responses | Separate thought/call signatures, argument fragments and full step snapshots, explicit `requires_action`, unknown accounting relationships |
+
+Each variant contains `session.json` and literal `.sse` wires. The manifest has independently authored initial client/native requests; each turn supplies native JSON where supported, an SSE filename, selected expected IR facts, literal client feedback and native history additions. `client_update` and `upstream_update` replace only named current-request fields, never historical items. `request_rules` pins the selected request losses. The Rust reader rejects unknown manifest fields and the oracle rejects unselected item kinds. These are finite protocol fixtures, not an action language, a production Session abstraction or a snapshot-update framework.
+
+The verifier checks source wire → IR against the explicit facts, then reconstructs actual client history through delivery/intake and compares **complete** projected native requests against the accumulated independent oracle. It checks call/result order, error-report presence, effort scope, exact raw/structured arguments, owner-bound replay, source immutability and operation accounting. Runtime manifests are returned unchanged, not goldenized or rebuilt from original source content. Static intake is checked for the three supported APIs; every API also uses SSE at 13-byte and one-byte boundaries.
+
+The incomplete-final forks reuse the successful six-turn prefix in native JSON where supported and SSE, preserving incomplete outcome/cause. Premature-EOF cuts remove the required last frame: Chat/Interactions DONE and Messages `message_stop` while retaining the preceding status/usage; the terminal report itself for Responses/generateContent. Exact closure errors are checked. Even complete terminal bytes cannot publish a final value before validated EOF. The sparse Interactions fork preserves unknown counters and does not fabricate an OpenAI scalar usage view. A separate mutation edits returned reasoning after a passing projection and requires the precise replay-dependency rejection, rather than an unrelated admission failure.
+
+Extend these checked-in cases instead of rebuilding temporary sessions. Add independent wire/IR/history expectations from the accepted protocol contract; never obtain expected values by dumping the codec under test. Use only synthetic labels/signatures and safe fixture text. Add a different story only for a distinct invariant, keep optional/native features in their own variants, and retain focused guards at their responsible layers.
+
+This corpus exercises public codec/Attempt/delivery APIs with synthetic profiles and JSON client delivery. It does **not** establish configured binding admission, downstream incremental SSE timing, SDK/client execution, real tool behavior, billing, live Providers or all protocol pairs. Google stays upstream-SSE-only with no new native client/static intake; its [API expansion pause](roadmap.md#google-api-pause) is unchanged. Media/resources, hosted tools and other unselected semantics remain outside this corpus, not implicitly supported.
+
 ### SDK loopback gate
 
 Python and dependencies are pinned by `tests/sdk/.python-version` and `tests/sdk/uv.lock`, including the selected OpenAI and Anthropic releases. uv owns the ignored `tests/sdk/.venv/`; do not edit it by hand.

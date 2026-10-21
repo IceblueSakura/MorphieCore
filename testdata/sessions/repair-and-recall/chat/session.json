@@ -1,0 +1,1155 @@
+{
+  "name": "repair-and-recall",
+  "client_request": {
+    "model": "session-model",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Repair configuration; preserve naïve 🧪 and exact IDs."
+      }
+    ],
+    "max_completion_tokens": 1024,
+    "reasoning_effort": "low",
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "read",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "serial": {
+                "type": "integer"
+              },
+              "label": {
+                "type": "string"
+              }
+            }
+          },
+          "strict": false
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "locate",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "glob": {
+                "type": "string"
+              }
+            }
+          },
+          "strict": false
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "patch",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer"
+              }
+            }
+          },
+          "strict": false
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "verify",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "suite": {
+                "type": "string"
+              }
+            }
+          },
+          "strict": false
+        }
+      }
+    ],
+    "stream": false
+  },
+  "upstream_request": {
+    "model": "session-model",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Repair configuration; preserve naïve 🧪 and exact IDs."
+      }
+    ],
+    "max_completion_tokens": 1024,
+    "reasoning_effort": "low",
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "read",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "serial": {
+                "type": "integer"
+              },
+              "label": {
+                "type": "string"
+              }
+            }
+          },
+          "strict": false
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "locate",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "glob": {
+                "type": "string"
+              }
+            }
+          },
+          "strict": false
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "patch",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer"
+              }
+            }
+          },
+          "strict": false
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "verify",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "suite": {
+                "type": "string"
+              }
+            }
+          },
+          "strict": false
+        }
+      }
+    ],
+    "stream": false
+  },
+  "turns": [
+    {
+      "name": "inspect",
+      "source": {
+        "sse": "00-inspect.sse",
+        "json": {
+          "id": "chat-0",
+          "object": "chat.completion",
+          "created": 1,
+          "model": "session-model",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [
+                  {
+                    "id": "call-z",
+                    "type": "function",
+                    "function": {
+                      "name": "read",
+                      "arguments": "{ \"path\": \"settings.json\", \"serial\": 9007199254740993, \"label\": \"\\u0061\" }"
+                    }
+                  },
+                  {
+                    "id": "call-a",
+                    "type": "function",
+                    "function": {
+                      "name": "read",
+                      "arguments": "{\"path\":\"missing.json\"}"
+                    }
+                  }
+                ]
+              },
+              "finish_reason": "tool_calls"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 100,
+            "completion_tokens": 20,
+            "total_tokens": 120,
+            "prompt_tokens_details": {
+              "cached_tokens": 10,
+              "cache_write_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 5
+            }
+          }
+        },
+        "expect": {
+          "outcome": "Completed",
+          "progress": "Unreported",
+          "completion": null,
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "message",
+              "role": "Assistant",
+              "status": "Completed",
+              "phase": null,
+              "parts": []
+            },
+            {
+              "kind": "call",
+              "id": "call-z",
+              "name": "read",
+              "status": "Completed",
+              "arguments": {
+                "raw": "{ \"path\": \"settings.json\", \"serial\": 9007199254740993, \"label\": \"\\u0061\" }"
+              },
+              "replay": null
+            },
+            {
+              "kind": "call",
+              "id": "call-a",
+              "name": "read",
+              "status": "Completed",
+              "arguments": {
+                "raw": "{\"path\":\"missing.json\"}"
+              },
+              "replay": null
+            }
+          ],
+          "usage": {
+            "input": 100,
+            "output": 20,
+            "total": 120,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": 0,
+            "input_relation": "IncludesCache",
+            "output_relation": "IncludesReasoning",
+            "total_relation": "InputAndOutput",
+            "stage": "Final",
+            "accounting": {
+              "kind": "direct"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "data: [DONE]\n"
+      },
+      "client_append": [
+        {
+          "role": "tool",
+          "tool_call_id": "call-a",
+          "content": "ENOENT: missing.json"
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call-z",
+          "content": "revision=9007199254740993; label=a"
+        }
+      ],
+      "upstream_append": [
+        {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "call-z",
+              "type": "function",
+              "function": {
+                "name": "read",
+                "arguments": "{ \"path\": \"settings.json\", \"serial\": 9007199254740993, \"label\": \"\\u0061\" }"
+              }
+            },
+            {
+              "id": "call-a",
+              "type": "function",
+              "function": {
+                "name": "read",
+                "arguments": "{\"path\":\"missing.json\"}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call-a",
+          "content": "ENOENT: missing.json"
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call-z",
+          "content": "revision=9007199254740993; label=a"
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "locate",
+      "source": {
+        "sse": "01-locate.sse",
+        "json": {
+          "id": "chat-1",
+          "object": "chat.completion",
+          "created": 1,
+          "model": "session-model",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [
+                  {
+                    "id": "call-locate",
+                    "type": "function",
+                    "function": {
+                      "name": "locate",
+                      "arguments": "{\"glob\":\"**/fallback.json\"}"
+                    }
+                  }
+                ]
+              },
+              "finish_reason": "tool_calls"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 117,
+            "completion_tokens": 21,
+            "total_tokens": 138,
+            "prompt_tokens_details": {
+              "cached_tokens": 10,
+              "cache_write_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 5
+            }
+          }
+        },
+        "expect": {
+          "outcome": "Completed",
+          "progress": "Unreported",
+          "completion": null,
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "message",
+              "role": "Assistant",
+              "status": "Completed",
+              "phase": null,
+              "parts": []
+            },
+            {
+              "kind": "call",
+              "id": "call-locate",
+              "name": "locate",
+              "status": "Completed",
+              "arguments": {
+                "raw": "{\"glob\":\"**/fallback.json\"}"
+              },
+              "replay": null
+            }
+          ],
+          "usage": {
+            "input": 117,
+            "output": 21,
+            "total": 138,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": 0,
+            "input_relation": "IncludesCache",
+            "output_relation": "IncludesReasoning",
+            "total_relation": "InputAndOutput",
+            "stage": "Final",
+            "accounting": {
+              "kind": "direct"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "data: [DONE]\n"
+      },
+      "client_append": [
+        {
+          "role": "tool",
+          "tool_call_id": "call-locate",
+          "content": "fallback.json: expected encoding=utf8"
+        }
+      ],
+      "upstream_append": [
+        {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "call-locate",
+              "type": "function",
+              "function": {
+                "name": "locate",
+                "arguments": "{\"glob\":\"**/fallback.json\"}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call-locate",
+          "content": "fallback.json: expected encoding=utf8"
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "patch",
+      "source": {
+        "sse": "02-patch.sse",
+        "json": {
+          "id": "chat-2",
+          "object": "chat.completion",
+          "created": 1,
+          "model": "session-model",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [
+                  {
+                    "id": "call-patch",
+                    "type": "function",
+                    "function": {
+                      "name": "patch",
+                      "arguments": "{\"path\":\"settings.json\",\"value\":\"naïve 🧪\"}"
+                    }
+                  }
+                ]
+              },
+              "finish_reason": "tool_calls"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 134,
+            "completion_tokens": 22,
+            "total_tokens": 156,
+            "prompt_tokens_details": {
+              "cached_tokens": 10,
+              "cache_write_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 5
+            }
+          }
+        },
+        "expect": {
+          "outcome": "Completed",
+          "progress": "Unreported",
+          "completion": null,
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "message",
+              "role": "Assistant",
+              "status": "Completed",
+              "phase": null,
+              "parts": []
+            },
+            {
+              "kind": "call",
+              "id": "call-patch",
+              "name": "patch",
+              "status": "Completed",
+              "arguments": {
+                "raw": "{\"path\":\"settings.json\",\"value\":\"naïve 🧪\"}"
+              },
+              "replay": null
+            }
+          ],
+          "usage": {
+            "input": 134,
+            "output": 22,
+            "total": 156,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": 0,
+            "input_relation": "IncludesCache",
+            "output_relation": "IncludesReasoning",
+            "total_relation": "InputAndOutput",
+            "stage": "Final",
+            "accounting": {
+              "kind": "direct"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "data: [DONE]\n"
+      },
+      "client_append": [
+        {
+          "role": "tool",
+          "tool_call_id": "call-patch",
+          "content": "updated revision=1"
+        }
+      ],
+      "upstream_append": [
+        {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "call-patch",
+              "type": "function",
+              "function": {
+                "name": "patch",
+                "arguments": "{\"path\":\"settings.json\",\"value\":\"naïve 🧪\"}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call-patch",
+          "content": "updated revision=1"
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "check",
+      "source": {
+        "sse": "03-check.sse",
+        "json": {
+          "id": "chat-3",
+          "object": "chat.completion",
+          "created": 1,
+          "model": "session-model",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [
+                  {
+                    "id": "call-check",
+                    "type": "function",
+                    "function": {
+                      "name": "verify",
+                      "arguments": "{\"suite\":\"config\"}"
+                    }
+                  }
+                ]
+              },
+              "finish_reason": "tool_calls"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 151,
+            "completion_tokens": 23,
+            "total_tokens": 174,
+            "prompt_tokens_details": {
+              "cached_tokens": 10,
+              "cache_write_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 5
+            }
+          }
+        },
+        "expect": {
+          "outcome": "Completed",
+          "progress": "Unreported",
+          "completion": null,
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "message",
+              "role": "Assistant",
+              "status": "Completed",
+              "phase": null,
+              "parts": []
+            },
+            {
+              "kind": "call",
+              "id": "call-check",
+              "name": "verify",
+              "status": "Completed",
+              "arguments": {
+                "raw": "{\"suite\":\"config\"}"
+              },
+              "replay": null
+            }
+          ],
+          "usage": {
+            "input": 151,
+            "output": 23,
+            "total": 174,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": 0,
+            "input_relation": "IncludesCache",
+            "output_relation": "IncludesReasoning",
+            "total_relation": "InputAndOutput",
+            "stage": "Final",
+            "accounting": {
+              "kind": "direct"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "data: [DONE]\n"
+      },
+      "client_append": [
+        {
+          "role": "tool",
+          "tool_call_id": "call-check",
+          "content": "FAIL: encoding still ascii"
+        }
+      ],
+      "upstream_append": [
+        {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "call-check",
+              "type": "function",
+              "function": {
+                "name": "verify",
+                "arguments": "{\"suite\":\"config\"}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call-check",
+          "content": "FAIL: encoding still ascii"
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "repair",
+      "source": {
+        "sse": "04-repair.sse",
+        "json": {
+          "id": "chat-4",
+          "object": "chat.completion",
+          "created": 1,
+          "model": "session-model",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [
+                  {
+                    "id": "call-repair",
+                    "type": "function",
+                    "function": {
+                      "name": "patch",
+                      "arguments": "{\"path\":\"settings.json\",\"value\":\"naïve 🧪\",\"revision\":2}"
+                    }
+                  }
+                ]
+              },
+              "finish_reason": "tool_calls"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 168,
+            "completion_tokens": 24,
+            "total_tokens": 192,
+            "prompt_tokens_details": {
+              "cached_tokens": 10,
+              "cache_write_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 5
+            }
+          }
+        },
+        "expect": {
+          "outcome": "Completed",
+          "progress": "Unreported",
+          "completion": null,
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "message",
+              "role": "Assistant",
+              "status": "Completed",
+              "phase": null,
+              "parts": []
+            },
+            {
+              "kind": "call",
+              "id": "call-repair",
+              "name": "patch",
+              "status": "Completed",
+              "arguments": {
+                "raw": "{\"path\":\"settings.json\",\"value\":\"naïve 🧪\",\"revision\":2}"
+              },
+              "replay": null
+            }
+          ],
+          "usage": {
+            "input": 168,
+            "output": 24,
+            "total": 192,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": 0,
+            "input_relation": "IncludesCache",
+            "output_relation": "IncludesReasoning",
+            "total_relation": "InputAndOutput",
+            "stage": "Final",
+            "accounting": {
+              "kind": "direct"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "data: [DONE]\n"
+      },
+      "client_append": [
+        {
+          "role": "tool",
+          "tool_call_id": "call-repair",
+          "content": "updated revision=2; encoding=utf8"
+        }
+      ],
+      "upstream_append": [
+        {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "call-repair",
+              "type": "function",
+              "function": {
+                "name": "patch",
+                "arguments": "{\"path\":\"settings.json\",\"value\":\"naïve 🧪\",\"revision\":2}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call-repair",
+          "content": "updated revision=2; encoding=utf8"
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "recheck",
+      "source": {
+        "sse": "05-recheck.sse",
+        "json": {
+          "id": "chat-5",
+          "object": "chat.completion",
+          "created": 1,
+          "model": "session-model",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [
+                  {
+                    "id": "call-recheck",
+                    "type": "function",
+                    "function": {
+                      "name": "verify",
+                      "arguments": "{\"suite\":\"config\"}"
+                    }
+                  }
+                ]
+              },
+              "finish_reason": "tool_calls"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 185,
+            "completion_tokens": 25,
+            "total_tokens": 210,
+            "prompt_tokens_details": {
+              "cached_tokens": 10,
+              "cache_write_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 5
+            }
+          }
+        },
+        "expect": {
+          "outcome": "Completed",
+          "progress": "Unreported",
+          "completion": null,
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "message",
+              "role": "Assistant",
+              "status": "Completed",
+              "phase": null,
+              "parts": []
+            },
+            {
+              "kind": "call",
+              "id": "call-recheck",
+              "name": "verify",
+              "status": "Completed",
+              "arguments": {
+                "raw": "{\"suite\":\"config\"}"
+              },
+              "replay": null
+            }
+          ],
+          "usage": {
+            "input": 185,
+            "output": 25,
+            "total": 210,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": 0,
+            "input_relation": "IncludesCache",
+            "output_relation": "IncludesReasoning",
+            "total_relation": "InputAndOutput",
+            "stage": "Final",
+            "accounting": {
+              "kind": "direct"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "data: [DONE]\n"
+      },
+      "client_append": [
+        {
+          "role": "tool",
+          "tool_call_id": "call-recheck",
+          "content": "PASS: config and Unicode checks"
+        }
+      ],
+      "upstream_append": [
+        {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "call-recheck",
+              "type": "function",
+              "function": {
+                "name": "verify",
+                "arguments": "{\"suite\":\"config\"}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call-recheck",
+          "content": "PASS: config and Unicode checks"
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "final",
+      "source": {
+        "sse": "06-final.sse",
+        "json": {
+          "id": "chat-6",
+          "object": "chat.completion",
+          "created": 1,
+          "model": "session-model",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "Updated naïve 🧪; recovery read=ok; checks=pass."
+              },
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 202,
+            "completion_tokens": 26,
+            "total_tokens": 228,
+            "prompt_tokens_details": {
+              "cached_tokens": 10,
+              "cache_write_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 5
+            }
+          }
+        },
+        "expect": {
+          "outcome": "Completed",
+          "progress": "Unreported",
+          "completion": "NaturalOrStopSequence",
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "message",
+              "role": "Assistant",
+              "status": "Completed",
+              "phase": null,
+              "parts": [
+                {
+                  "text": "Updated naïve 🧪; recovery read=ok; checks=pass.",
+                  "replay": null
+                }
+              ]
+            }
+          ],
+          "usage": {
+            "input": 202,
+            "output": 26,
+            "total": 228,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": 0,
+            "input_relation": "IncludesCache",
+            "output_relation": "IncludesReasoning",
+            "total_relation": "InputAndOutput",
+            "stage": "Final",
+            "accounting": {
+              "kind": "direct"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "data: [DONE]\n"
+      },
+      "client_append": [
+        {
+          "role": "user",
+          "content": "Recall both failures and their corrections. Do not use tools."
+        }
+      ],
+      "upstream_append": [
+        {
+          "role": "assistant",
+          "content": "Updated naïve 🧪; recovery read=ok; checks=pass."
+        },
+        {
+          "role": "user",
+          "content": "Recall both failures and their corrections. Do not use tools."
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "recall",
+      "source": {
+        "sse": "07-recall.sse",
+        "json": {
+          "id": "chat-7",
+          "object": "chat.completion",
+          "created": 1,
+          "model": "session-model",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "The missing read was located; the first check failed and the second passed."
+              },
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 219,
+            "completion_tokens": 27,
+            "total_tokens": 246,
+            "prompt_tokens_details": {
+              "cached_tokens": 10,
+              "cache_write_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 5
+            }
+          }
+        },
+        "expect": {
+          "outcome": "Completed",
+          "progress": "Unreported",
+          "completion": "NaturalOrStopSequence",
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "message",
+              "role": "Assistant",
+              "status": "Completed",
+              "phase": null,
+              "parts": [
+                {
+                  "text": "The missing read was located; the first check failed and the second passed.",
+                  "replay": null
+                }
+              ]
+            }
+          ],
+          "usage": {
+            "input": 219,
+            "output": 27,
+            "total": 246,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": 0,
+            "input_relation": "IncludesCache",
+            "output_relation": "IncludesReasoning",
+            "total_relation": "InputAndOutput",
+            "stage": "Final",
+            "accounting": {
+              "kind": "direct"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "data: [DONE]\n"
+      },
+      "client_append": [
+        {
+          "role": "user",
+          "content": "Keep the final answer for the next task."
+        }
+      ],
+      "upstream_append": [
+        {
+          "role": "assistant",
+          "content": "The missing read was located; the first check failed and the second passed."
+        },
+        {
+          "role": "user",
+          "content": "Keep the final answer for the next task."
+        }
+      ],
+      "request_rules": [],
+      "client_update": {
+        "tools": [],
+        "reasoning_effort": "high"
+      },
+      "upstream_update": {
+        "tools": [],
+        "reasoning_effort": "high"
+      }
+    }
+  ],
+  "incomplete": {
+    "sse": "incomplete-final.sse",
+    "json": {
+      "id": "chat-6",
+      "object": "chat.completion",
+      "created": 1,
+      "model": "session-model",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "Partial naïve 🧪"
+          },
+          "finish_reason": "length"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 202,
+        "completion_tokens": 26,
+        "total_tokens": 228,
+        "prompt_tokens_details": {
+          "cached_tokens": 10,
+          "cache_write_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 5
+        }
+      }
+    },
+    "expect": {
+      "outcome": "Incomplete",
+      "progress": "Unreported",
+      "completion": null,
+      "incomplete": "MaxOutputTokens",
+      "items": [
+        {
+          "kind": "message",
+          "role": "Assistant",
+          "status": "Incomplete",
+          "phase": null,
+          "parts": [
+            {
+              "text": "Partial naïve 🧪",
+              "replay": null
+            }
+          ]
+        }
+      ],
+      "usage": {
+        "input": 202,
+        "output": 26,
+        "total": 228,
+        "reasoning": 5,
+        "cached": 10,
+        "cache_write": 0,
+        "input_relation": "IncludesCache",
+        "output_relation": "IncludesReasoning",
+        "total_relation": "InputAndOutput",
+        "stage": "Final",
+        "accounting": {
+          "kind": "direct"
+        },
+        "defaulted": []
+      }
+    },
+    "terminal_marker": "data: [DONE]\n"
+  }
+}

@@ -1,0 +1,4 @@
+data: {"responseId":"gen-6","modelVersion":"session-model","candidates":[{"index":0,"content":{"role":"model","parts":[{"text":"Partial naïve 🧪"}]}}]}
+
+data: {"responseId":"gen-6","modelVersion":"session-model","candidates":[{"index":0,"finishReason":"MAX_TOKENS"}],"usageMetadata":{"promptTokenCount":202,"candidatesTokenCount":26,"thoughtsTokenCount":5,"cachedContentTokenCount":10,"toolUsePromptTokenCount":2,"totalTokenCount":235}}
+

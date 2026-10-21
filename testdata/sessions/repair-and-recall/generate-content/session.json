@@ -1,0 +1,1141 @@
+{
+  "name": "repair-and-recall",
+  "client_request": {
+    "model": "session-model",
+    "input": [
+      {
+        "type": "message",
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "Repair configuration; preserve naïve 🧪 and exact IDs."
+          }
+        ]
+      }
+    ],
+    "max_output_tokens": 1024,
+    "reasoning": {
+      "effort": "low",
+      "summary": "auto"
+    },
+    "tools": [
+      {
+        "type": "function",
+        "name": "read",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "serial": {
+              "type": "integer"
+            },
+            "label": {
+              "type": "string"
+            }
+          }
+        },
+        "strict": false
+      },
+      {
+        "type": "function",
+        "name": "locate",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "glob": {
+              "type": "string"
+            }
+          }
+        },
+        "strict": false
+      },
+      {
+        "type": "function",
+        "name": "patch",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            },
+            "revision": {
+              "type": "integer"
+            }
+          }
+        },
+        "strict": false
+      },
+      {
+        "type": "function",
+        "name": "verify",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "suite": {
+              "type": "string"
+            }
+          }
+        },
+        "strict": false
+      }
+    ],
+    "store": false,
+    "stream": false
+  },
+  "upstream_request": {
+    "contents": [
+      {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Repair configuration; preserve naïve 🧪 and exact IDs."
+          }
+        ]
+      }
+    ],
+    "generationConfig": {
+      "maxOutputTokens": 1024,
+      "thinkingConfig": {
+        "thinkingLevel": "LOW",
+        "includeThoughts": true
+      }
+    },
+    "tools": [
+      {
+        "functionDeclarations": [
+          {
+            "name": "read",
+            "parametersJsonSchema": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "serial": {
+                  "type": "integer"
+                },
+                "label": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          {
+            "name": "locate",
+            "parametersJsonSchema": {
+              "type": "object",
+              "properties": {
+                "glob": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          {
+            "name": "patch",
+            "parametersJsonSchema": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                },
+                "revision": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          {
+            "name": "verify",
+            "parametersJsonSchema": {
+              "type": "object",
+              "properties": {
+                "suite": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "turns": [
+    {
+      "name": "inspect",
+      "source": {
+        "sse": "00-inspect.sse",
+        "json": null,
+        "expect": {
+          "outcome": "Completed",
+          "progress": "AwaitingToolResults",
+          "completion": "NaturalOrStopSequence",
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "reasoning",
+              "status": "Completed",
+              "parts": [
+                {
+                  "summary": "Plan 🧪"
+                }
+              ],
+              "replay": {
+                "format": "GoogleGenerateContentPart",
+                "token": "{\"anchor\":\"thought\"}"
+              }
+            },
+            {
+              "kind": "call",
+              "id": "call-z",
+              "name": "read",
+              "status": "Completed",
+              "arguments": {
+                "json": "{\"path\":\"settings.json\",\"serial\":9007199254740993,\"label\":\"a\"}"
+              },
+              "replay": {
+                "format": "GoogleGenerateContentSignature",
+                "token": "c3ludGhldGljLWNhbGwteg=="
+              }
+            },
+            {
+              "kind": "call",
+              "id": "call-a",
+              "name": "read",
+              "status": "Completed",
+              "arguments": {
+                "json": "{\"path\":\"missing.json\"}"
+              },
+              "replay": {
+                "format": "GoogleGenerateContentSignature",
+                "token": "c3ludGhldGljLWNhbGwtYQ=="
+              }
+            }
+          ],
+          "usage": {
+            "input": 100,
+            "output": 20,
+            "total": 127,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": null,
+            "input_relation": "IncludesCache",
+            "output_relation": "ExcludesReasoning",
+            "total_relation": "Unreported",
+            "stage": "Final",
+            "accounting": {
+              "kind": "split",
+              "tool_input": 2,
+              "tool_relation": "Additional",
+              "total_relation": "InputToolOutputAndReasoning"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "data: {\"responseId\":\"gen-0\",\"modelVersion\":\"session-model\",\"candidates\":[{\"index\":0,\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":100,\"candidatesTokenCount\":20,\"thoughtsTokenCount\":5,\"cachedContentTokenCount\":10,\"toolUsePromptTokenCount\":2,\"totalTokenCount\":127}}"
+      },
+      "client_append": [
+        {
+          "type": "function_call_output",
+          "call_id": "call-a",
+          "output": "ENOENT: missing.json"
+        },
+        {
+          "type": "function_call_output",
+          "call_id": "call-z",
+          "output": "revision=9007199254740993; label=a"
+        }
+      ],
+      "upstream_append": [
+        {
+          "role": "model",
+          "parts": [
+            {
+              "thought": true,
+              "text": "Plan 🧪"
+            },
+            {
+              "functionCall": {
+                "id": "call-z",
+                "name": "read",
+                "args": {
+                  "path": "settings.json",
+                  "serial": 9007199254740993,
+                  "label": "a"
+                }
+              },
+              "thoughtSignature": "c3ludGhldGljLWNhbGwteg=="
+            },
+            {
+              "functionCall": {
+                "id": "call-a",
+                "name": "read",
+                "args": {
+                  "path": "missing.json"
+                }
+              },
+              "thoughtSignature": "c3ludGhldGljLWNhbGwtYQ=="
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "parts": [
+            {
+              "functionResponse": {
+                "id": "call-a",
+                "name": "read",
+                "response": {
+                  "output": "ENOENT: missing.json"
+                }
+              }
+            },
+            {
+              "functionResponse": {
+                "id": "call-z",
+                "name": "read",
+                "response": {
+                  "output": "revision=9007199254740993; label=a"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "locate",
+      "source": {
+        "sse": "01-locate.sse",
+        "json": null,
+        "expect": {
+          "outcome": "Completed",
+          "progress": "AwaitingToolResults",
+          "completion": "NaturalOrStopSequence",
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "reasoning",
+              "status": "Completed",
+              "parts": [
+                {
+                  "summary": "Plan 🧪"
+                }
+              ],
+              "replay": {
+                "format": "GoogleGenerateContentPart",
+                "token": "{\"anchor\":\"thought\"}"
+              }
+            },
+            {
+              "kind": "call",
+              "id": "call-locate",
+              "name": "locate",
+              "status": "Completed",
+              "arguments": {
+                "json": "{\"glob\":\"**/fallback.json\"}"
+              },
+              "replay": {
+                "format": "GoogleGenerateContentSignature",
+                "token": "c3ludGhldGljLWNhbGwtbG9jYXRl"
+              }
+            }
+          ],
+          "usage": {
+            "input": 117,
+            "output": 21,
+            "total": 145,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": null,
+            "input_relation": "IncludesCache",
+            "output_relation": "ExcludesReasoning",
+            "total_relation": "Unreported",
+            "stage": "Final",
+            "accounting": {
+              "kind": "split",
+              "tool_input": 2,
+              "tool_relation": "Additional",
+              "total_relation": "InputToolOutputAndReasoning"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "data: {\"responseId\":\"gen-1\",\"modelVersion\":\"session-model\",\"candidates\":[{\"index\":0,\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":117,\"candidatesTokenCount\":21,\"thoughtsTokenCount\":5,\"cachedContentTokenCount\":10,\"toolUsePromptTokenCount\":2,\"totalTokenCount\":145}}"
+      },
+      "client_append": [
+        {
+          "type": "function_call_output",
+          "call_id": "call-locate",
+          "output": "fallback.json: expected encoding=utf8"
+        }
+      ],
+      "upstream_append": [
+        {
+          "role": "model",
+          "parts": [
+            {
+              "thought": true,
+              "text": "Plan 🧪"
+            },
+            {
+              "functionCall": {
+                "id": "call-locate",
+                "name": "locate",
+                "args": {
+                  "glob": "**/fallback.json"
+                }
+              },
+              "thoughtSignature": "c3ludGhldGljLWNhbGwtbG9jYXRl"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "parts": [
+            {
+              "functionResponse": {
+                "id": "call-locate",
+                "name": "locate",
+                "response": {
+                  "output": "fallback.json: expected encoding=utf8"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "patch",
+      "source": {
+        "sse": "02-patch.sse",
+        "json": null,
+        "expect": {
+          "outcome": "Completed",
+          "progress": "AwaitingToolResults",
+          "completion": "NaturalOrStopSequence",
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "reasoning",
+              "status": "Completed",
+              "parts": [
+                {
+                  "summary": "Plan 🧪"
+                }
+              ],
+              "replay": {
+                "format": "GoogleGenerateContentPart",
+                "token": "{\"anchor\":\"thought\"}"
+              }
+            },
+            {
+              "kind": "call",
+              "id": "call-patch",
+              "name": "patch",
+              "status": "Completed",
+              "arguments": {
+                "json": "{\"path\":\"settings.json\",\"value\":\"naïve 🧪\"}"
+              },
+              "replay": {
+                "format": "GoogleGenerateContentSignature",
+                "token": "c3ludGhldGljLWNhbGwtcGF0Y2g="
+              }
+            }
+          ],
+          "usage": {
+            "input": 134,
+            "output": 22,
+            "total": 163,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": null,
+            "input_relation": "IncludesCache",
+            "output_relation": "ExcludesReasoning",
+            "total_relation": "Unreported",
+            "stage": "Final",
+            "accounting": {
+              "kind": "split",
+              "tool_input": 2,
+              "tool_relation": "Additional",
+              "total_relation": "InputToolOutputAndReasoning"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "data: {\"responseId\":\"gen-2\",\"modelVersion\":\"session-model\",\"candidates\":[{\"index\":0,\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":134,\"candidatesTokenCount\":22,\"thoughtsTokenCount\":5,\"cachedContentTokenCount\":10,\"toolUsePromptTokenCount\":2,\"totalTokenCount\":163}}"
+      },
+      "client_append": [
+        {
+          "type": "function_call_output",
+          "call_id": "call-patch",
+          "output": "updated revision=1"
+        }
+      ],
+      "upstream_append": [
+        {
+          "role": "model",
+          "parts": [
+            {
+              "thought": true,
+              "text": "Plan 🧪"
+            },
+            {
+              "functionCall": {
+                "id": "call-patch",
+                "name": "patch",
+                "args": {
+                  "path": "settings.json",
+                  "value": "naïve 🧪"
+                }
+              },
+              "thoughtSignature": "c3ludGhldGljLWNhbGwtcGF0Y2g="
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "parts": [
+            {
+              "functionResponse": {
+                "id": "call-patch",
+                "name": "patch",
+                "response": {
+                  "output": "updated revision=1"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "check",
+      "source": {
+        "sse": "03-check.sse",
+        "json": null,
+        "expect": {
+          "outcome": "Completed",
+          "progress": "AwaitingToolResults",
+          "completion": "NaturalOrStopSequence",
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "reasoning",
+              "status": "Completed",
+              "parts": [
+                {
+                  "summary": "Plan 🧪"
+                }
+              ],
+              "replay": {
+                "format": "GoogleGenerateContentPart",
+                "token": "{\"anchor\":\"thought\"}"
+              }
+            },
+            {
+              "kind": "call",
+              "id": "call-check",
+              "name": "verify",
+              "status": "Completed",
+              "arguments": {
+                "json": "{\"suite\":\"config\"}"
+              },
+              "replay": {
+                "format": "GoogleGenerateContentSignature",
+                "token": "c3ludGhldGljLWNhbGwtY2hlY2s="
+              }
+            }
+          ],
+          "usage": {
+            "input": 151,
+            "output": 23,
+            "total": 181,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": null,
+            "input_relation": "IncludesCache",
+            "output_relation": "ExcludesReasoning",
+            "total_relation": "Unreported",
+            "stage": "Final",
+            "accounting": {
+              "kind": "split",
+              "tool_input": 2,
+              "tool_relation": "Additional",
+              "total_relation": "InputToolOutputAndReasoning"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "data: {\"responseId\":\"gen-3\",\"modelVersion\":\"session-model\",\"candidates\":[{\"index\":0,\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":151,\"candidatesTokenCount\":23,\"thoughtsTokenCount\":5,\"cachedContentTokenCount\":10,\"toolUsePromptTokenCount\":2,\"totalTokenCount\":181}}"
+      },
+      "client_append": [
+        {
+          "type": "function_call_output",
+          "call_id": "call-check",
+          "output": "FAIL: encoding still ascii"
+        }
+      ],
+      "upstream_append": [
+        {
+          "role": "model",
+          "parts": [
+            {
+              "thought": true,
+              "text": "Plan 🧪"
+            },
+            {
+              "functionCall": {
+                "id": "call-check",
+                "name": "verify",
+                "args": {
+                  "suite": "config"
+                }
+              },
+              "thoughtSignature": "c3ludGhldGljLWNhbGwtY2hlY2s="
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "parts": [
+            {
+              "functionResponse": {
+                "id": "call-check",
+                "name": "verify",
+                "response": {
+                  "output": "FAIL: encoding still ascii"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "repair",
+      "source": {
+        "sse": "04-repair.sse",
+        "json": null,
+        "expect": {
+          "outcome": "Completed",
+          "progress": "AwaitingToolResults",
+          "completion": "NaturalOrStopSequence",
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "reasoning",
+              "status": "Completed",
+              "parts": [
+                {
+                  "summary": "Plan 🧪"
+                }
+              ],
+              "replay": {
+                "format": "GoogleGenerateContentPart",
+                "token": "{\"anchor\":\"thought\"}"
+              }
+            },
+            {
+              "kind": "call",
+              "id": "call-repair",
+              "name": "patch",
+              "status": "Completed",
+              "arguments": {
+                "json": "{\"path\":\"settings.json\",\"value\":\"naïve 🧪\",\"revision\":2}"
+              },
+              "replay": {
+                "format": "GoogleGenerateContentSignature",
+                "token": "c3ludGhldGljLWNhbGwtcmVwYWly"
+              }
+            }
+          ],
+          "usage": {
+            "input": 168,
+            "output": 24,
+            "total": 199,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": null,
+            "input_relation": "IncludesCache",
+            "output_relation": "ExcludesReasoning",
+            "total_relation": "Unreported",
+            "stage": "Final",
+            "accounting": {
+              "kind": "split",
+              "tool_input": 2,
+              "tool_relation": "Additional",
+              "total_relation": "InputToolOutputAndReasoning"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "data: {\"responseId\":\"gen-4\",\"modelVersion\":\"session-model\",\"candidates\":[{\"index\":0,\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":168,\"candidatesTokenCount\":24,\"thoughtsTokenCount\":5,\"cachedContentTokenCount\":10,\"toolUsePromptTokenCount\":2,\"totalTokenCount\":199}}"
+      },
+      "client_append": [
+        {
+          "type": "function_call_output",
+          "call_id": "call-repair",
+          "output": "updated revision=2; encoding=utf8"
+        }
+      ],
+      "upstream_append": [
+        {
+          "role": "model",
+          "parts": [
+            {
+              "thought": true,
+              "text": "Plan 🧪"
+            },
+            {
+              "functionCall": {
+                "id": "call-repair",
+                "name": "patch",
+                "args": {
+                  "path": "settings.json",
+                  "value": "naïve 🧪",
+                  "revision": 2
+                }
+              },
+              "thoughtSignature": "c3ludGhldGljLWNhbGwtcmVwYWly"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "parts": [
+            {
+              "functionResponse": {
+                "id": "call-repair",
+                "name": "patch",
+                "response": {
+                  "output": "updated revision=2; encoding=utf8"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "recheck",
+      "source": {
+        "sse": "05-recheck.sse",
+        "json": null,
+        "expect": {
+          "outcome": "Completed",
+          "progress": "AwaitingToolResults",
+          "completion": "NaturalOrStopSequence",
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "reasoning",
+              "status": "Completed",
+              "parts": [
+                {
+                  "summary": "Plan 🧪"
+                }
+              ],
+              "replay": {
+                "format": "GoogleGenerateContentPart",
+                "token": "{\"anchor\":\"thought\"}"
+              }
+            },
+            {
+              "kind": "call",
+              "id": "call-recheck",
+              "name": "verify",
+              "status": "Completed",
+              "arguments": {
+                "json": "{\"suite\":\"config\"}"
+              },
+              "replay": {
+                "format": "GoogleGenerateContentSignature",
+                "token": "c3ludGhldGljLWNhbGwtcmVjaGVjaw=="
+              }
+            }
+          ],
+          "usage": {
+            "input": 185,
+            "output": 25,
+            "total": 217,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": null,
+            "input_relation": "IncludesCache",
+            "output_relation": "ExcludesReasoning",
+            "total_relation": "Unreported",
+            "stage": "Final",
+            "accounting": {
+              "kind": "split",
+              "tool_input": 2,
+              "tool_relation": "Additional",
+              "total_relation": "InputToolOutputAndReasoning"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "data: {\"responseId\":\"gen-5\",\"modelVersion\":\"session-model\",\"candidates\":[{\"index\":0,\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":185,\"candidatesTokenCount\":25,\"thoughtsTokenCount\":5,\"cachedContentTokenCount\":10,\"toolUsePromptTokenCount\":2,\"totalTokenCount\":217}}"
+      },
+      "client_append": [
+        {
+          "type": "function_call_output",
+          "call_id": "call-recheck",
+          "output": "PASS: config and Unicode checks"
+        }
+      ],
+      "upstream_append": [
+        {
+          "role": "model",
+          "parts": [
+            {
+              "thought": true,
+              "text": "Plan 🧪"
+            },
+            {
+              "functionCall": {
+                "id": "call-recheck",
+                "name": "verify",
+                "args": {
+                  "suite": "config"
+                }
+              },
+              "thoughtSignature": "c3ludGhldGljLWNhbGwtcmVjaGVjaw=="
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "parts": [
+            {
+              "functionResponse": {
+                "id": "call-recheck",
+                "name": "verify",
+                "response": {
+                  "output": "PASS: config and Unicode checks"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "final",
+      "source": {
+        "sse": "06-final.sse",
+        "json": null,
+        "expect": {
+          "outcome": "Completed",
+          "progress": "TurnFinished",
+          "completion": "NaturalOrStopSequence",
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "reasoning",
+              "status": "Completed",
+              "parts": [
+                {
+                  "summary": "Plan 🧪"
+                }
+              ],
+              "replay": {
+                "format": "GoogleGenerateContentPart",
+                "token": "{\"anchor\":\"thought\"}"
+              }
+            },
+            {
+              "kind": "message",
+              "role": "Assistant",
+              "status": "Completed",
+              "phase": null,
+              "parts": [
+                {
+                  "text": "OK",
+                  "replay": {
+                    "format": "GoogleGenerateContentSignature",
+                    "token": "c3ludGhldGljLXRleHQtNi0w"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "message",
+              "role": "Assistant",
+              "status": "Completed",
+              "phase": null,
+              "parts": [
+                {
+                  "text": "OK",
+                  "replay": {
+                    "format": "GoogleGenerateContentSignature",
+                    "token": "c3ludGhldGljLXRleHQtNi0x"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "message",
+              "role": "Assistant",
+              "status": "Completed",
+              "phase": null,
+              "parts": [
+                {
+                  "text": "Updated naïve 🧪; recovery read=ok; checks=pass.",
+                  "replay": {
+                    "format": "GoogleGenerateContentSignature",
+                    "token": "c3ludGhldGljLXRleHQtNi0y"
+                  }
+                }
+              ]
+            }
+          ],
+          "usage": {
+            "input": 202,
+            "output": 26,
+            "total": 235,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": null,
+            "input_relation": "IncludesCache",
+            "output_relation": "ExcludesReasoning",
+            "total_relation": "Unreported",
+            "stage": "Final",
+            "accounting": {
+              "kind": "split",
+              "tool_input": 2,
+              "tool_relation": "Additional",
+              "total_relation": "InputToolOutputAndReasoning"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "data: {\"responseId\":\"gen-6\",\"modelVersion\":\"session-model\",\"candidates\":[{\"index\":0,\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":202,\"candidatesTokenCount\":26,\"thoughtsTokenCount\":5,\"cachedContentTokenCount\":10,\"toolUsePromptTokenCount\":2,\"totalTokenCount\":235}}"
+      },
+      "client_append": [
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "Recall both failures and their corrections. Do not use tools."
+            }
+          ]
+        }
+      ],
+      "upstream_append": [
+        {
+          "role": "model",
+          "parts": [
+            {
+              "thought": true,
+              "text": "Plan 🧪"
+            },
+            {
+              "text": "OK",
+              "thoughtSignature": "c3ludGhldGljLXRleHQtNi0w"
+            },
+            {
+              "text": "OK",
+              "thoughtSignature": "c3ludGhldGljLXRleHQtNi0x"
+            },
+            {
+              "text": "Updated naïve 🧪; recovery read=ok; checks=pass.",
+              "thoughtSignature": "c3ludGhldGljLXRleHQtNi0y"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "Recall both failures and their corrections. Do not use tools."
+            }
+          ]
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "recall",
+      "source": {
+        "sse": "07-recall.sse",
+        "json": null,
+        "expect": {
+          "outcome": "Completed",
+          "progress": "TurnFinished",
+          "completion": "NaturalOrStopSequence",
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "reasoning",
+              "status": "Completed",
+              "parts": [
+                {
+                  "summary": "Plan 🧪"
+                }
+              ],
+              "replay": {
+                "format": "GoogleGenerateContentPart",
+                "token": "{\"anchor\":\"thought\"}"
+              }
+            },
+            {
+              "kind": "message",
+              "role": "Assistant",
+              "status": "Completed",
+              "phase": null,
+              "parts": [
+                {
+                  "text": "The missing read was located; the first check failed and the second passed.",
+                  "replay": {
+                    "format": "GoogleGenerateContentSignature",
+                    "token": "c3ludGhldGljLXRleHQtNy0w"
+                  }
+                }
+              ]
+            }
+          ],
+          "usage": {
+            "input": 219,
+            "output": 27,
+            "total": 253,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": null,
+            "input_relation": "IncludesCache",
+            "output_relation": "ExcludesReasoning",
+            "total_relation": "Unreported",
+            "stage": "Final",
+            "accounting": {
+              "kind": "split",
+              "tool_input": 2,
+              "tool_relation": "Additional",
+              "total_relation": "InputToolOutputAndReasoning"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "data: {\"responseId\":\"gen-7\",\"modelVersion\":\"session-model\",\"candidates\":[{\"index\":0,\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":219,\"candidatesTokenCount\":27,\"thoughtsTokenCount\":5,\"cachedContentTokenCount\":10,\"toolUsePromptTokenCount\":2,\"totalTokenCount\":253}}"
+      },
+      "client_append": [
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "Keep the final answer for the next task."
+            }
+          ]
+        }
+      ],
+      "upstream_append": [
+        {
+          "role": "model",
+          "parts": [
+            {
+              "thought": true,
+              "text": "Plan 🧪"
+            },
+            {
+              "text": "The missing read was located; the first check failed and the second passed.",
+              "thoughtSignature": "c3ludGhldGljLXRleHQtNy0w"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "Keep the final answer for the next task."
+            }
+          ]
+        }
+      ],
+      "request_rules": [],
+      "client_update": {
+        "tools": [],
+        "reasoning": {
+          "effort": "high",
+          "summary": "auto"
+        }
+      },
+      "upstream_update": {
+        "tools": [
+          {
+            "functionDeclarations": []
+          }
+        ],
+        "generationConfig": {
+          "maxOutputTokens": 1024,
+          "thinkingConfig": {
+            "thinkingLevel": "HIGH",
+            "includeThoughts": true
+          }
+        }
+      }
+    }
+  ],
+  "incomplete": {
+    "sse": "incomplete-final.sse",
+    "json": null,
+    "expect": {
+      "outcome": "Incomplete",
+      "progress": "Unreported",
+      "completion": null,
+      "incomplete": "MaxOutputTokens",
+      "items": [
+        {
+          "kind": "message",
+          "role": "Assistant",
+          "status": "Completed",
+          "phase": null,
+          "parts": [
+            {
+              "text": "Partial naïve 🧪",
+              "replay": null
+            }
+          ]
+        }
+      ],
+      "usage": {
+        "input": 202,
+        "output": 26,
+        "total": 235,
+        "reasoning": 5,
+        "cached": 10,
+        "cache_write": null,
+        "input_relation": "IncludesCache",
+        "output_relation": "ExcludesReasoning",
+        "total_relation": "Unreported",
+        "stage": "Final",
+        "accounting": {
+          "kind": "split",
+          "tool_input": 2,
+          "tool_relation": "Additional",
+          "total_relation": "InputToolOutputAndReasoning"
+        },
+        "defaulted": []
+      }
+    },
+    "terminal_marker": "data: {\"responseId\":\"gen-6\",\"modelVersion\":\"session-model\",\"candidates\":[{\"index\":0,\"finishReason\":\"MAX_TOKENS\"}],\"usageMetadata\":{\"promptTokenCount\":202,\"candidatesTokenCount\":26,\"thoughtsTokenCount\":5,\"cachedContentTokenCount\":10,\"toolUsePromptTokenCount\":2,\"totalTokenCount\":235}}"
+  }
+}

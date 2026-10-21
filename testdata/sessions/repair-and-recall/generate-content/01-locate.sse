@@ -1,0 +1,6 @@
+data: {"responseId":"gen-1","modelVersion":"session-model","candidates":[{"index":0,"content":{"role":"model","parts":[{"thought":true,"text":"Plan 🧪"}]}}]}
+
+data: {"responseId":"gen-1","modelVersion":"session-model","candidates":[{"index":0,"content":{"role":"model","parts":[{"functionCall":{"id":"call-locate","name":"locate","args":{"glob":"**/fallback.json"}},"thoughtSignature":"c3ludGhldGljLWNhbGwtbG9jYXRl"}]}}]}
+
+data: {"responseId":"gen-1","modelVersion":"session-model","candidates":[{"index":0,"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":117,"candidatesTokenCount":21,"thoughtsTokenCount":5,"cachedContentTokenCount":10,"toolUsePromptTokenCount":2,"totalTokenCount":145}}
+

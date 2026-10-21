@@ -1,0 +1,1099 @@
+{
+  "name": "repair-and-recall",
+  "client_request": {
+    "model": "session-model",
+    "input": [
+      {
+        "type": "message",
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "Repair configuration; preserve naïve 🧪 and exact IDs."
+          }
+        ]
+      }
+    ],
+    "max_output_tokens": 1024,
+    "reasoning": {
+      "effort": "low",
+      "summary": "auto"
+    },
+    "tools": [
+      {
+        "type": "function",
+        "name": "read",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "serial": {
+              "type": "integer"
+            },
+            "label": {
+              "type": "string"
+            }
+          }
+        },
+        "strict": false
+      },
+      {
+        "type": "function",
+        "name": "locate",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "glob": {
+              "type": "string"
+            }
+          }
+        },
+        "strict": false
+      },
+      {
+        "type": "function",
+        "name": "patch",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            },
+            "revision": {
+              "type": "integer"
+            }
+          }
+        },
+        "strict": false
+      },
+      {
+        "type": "function",
+        "name": "verify",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "suite": {
+              "type": "string"
+            }
+          }
+        },
+        "strict": false
+      }
+    ],
+    "store": false,
+    "stream": false
+  },
+  "upstream_request": {
+    "model": "session-model",
+    "input": [
+      {
+        "type": "user_input",
+        "content": [
+          {
+            "type": "text",
+            "text": "Repair configuration; preserve naïve 🧪 and exact IDs."
+          }
+        ]
+      }
+    ],
+    "store": false,
+    "stream": true,
+    "generation_config": {
+      "max_output_tokens": 1024,
+      "thinking_level": "low",
+      "thinking_summaries": "auto"
+    },
+    "tools": [
+      {
+        "type": "function",
+        "name": "read",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "serial": {
+              "type": "integer"
+            },
+            "label": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "type": "function",
+        "name": "locate",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "glob": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "type": "function",
+        "name": "patch",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            },
+            "revision": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      {
+        "type": "function",
+        "name": "verify",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "suite": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "turns": [
+    {
+      "name": "inspect",
+      "source": {
+        "sse": "00-inspect.sse",
+        "json": null,
+        "expect": {
+          "outcome": "Completed",
+          "progress": "AwaitingToolResults",
+          "completion": null,
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "reasoning",
+              "status": "Completed",
+              "parts": [
+                {
+                  "summary": "Plan 🧪"
+                }
+              ],
+              "replay": {
+                "format": "GoogleInteractionsV1Thought",
+                "token": "{\"anchor\":\"thought\",\"signature\":\"synthetic-thought-0\"}"
+              }
+            },
+            {
+              "kind": "call",
+              "id": "call-z",
+              "name": "read",
+              "status": "Completed",
+              "arguments": {
+                "json": "{\"path\":\"settings.json\",\"serial\":9007199254740993,\"label\":\"a\"}"
+              },
+              "replay": {
+                "format": "GoogleInteractionsV1FunctionCall",
+                "token": "{\"anchor\":\"function_call\",\"signature\":\"synthetic-call-z\"}"
+              }
+            },
+            {
+              "kind": "call",
+              "id": "call-a",
+              "name": "read",
+              "status": "Completed",
+              "arguments": {
+                "json": "{\"path\":\"missing.json\"}"
+              },
+              "replay": {
+                "format": "GoogleInteractionsV1FunctionCall",
+                "token": "{\"anchor\":\"function_call\",\"signature\":\"synthetic-call-a\"}"
+              }
+            }
+          ],
+          "usage": {
+            "input": 100,
+            "output": 20,
+            "total": 127,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": null,
+            "input_relation": "IncludesCache",
+            "output_relation": "ExcludesReasoning",
+            "total_relation": "Unreported",
+            "stage": "Final",
+            "accounting": {
+              "kind": "split",
+              "tool_input": 2,
+              "tool_relation": "Unreported",
+              "total_relation": "Unreported"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "event: done\n"
+      },
+      "client_append": [
+        {
+          "type": "function_call_output",
+          "call_id": "call-a",
+          "output": "ENOENT: missing.json"
+        },
+        {
+          "type": "function_call_output",
+          "call_id": "call-z",
+          "output": "revision=9007199254740993; label=a"
+        }
+      ],
+      "upstream_append": [
+        {
+          "type": "thought",
+          "summary": [
+            {
+              "type": "text",
+              "text": "Plan 🧪"
+            }
+          ],
+          "signature": "synthetic-thought-0"
+        },
+        {
+          "type": "function_call",
+          "id": "call-z",
+          "name": "read",
+          "arguments": {
+            "path": "settings.json",
+            "serial": 9007199254740993,
+            "label": "a"
+          },
+          "signature": "synthetic-call-z"
+        },
+        {
+          "type": "function_call",
+          "id": "call-a",
+          "name": "read",
+          "arguments": {
+            "path": "missing.json"
+          },
+          "signature": "synthetic-call-a"
+        },
+        {
+          "type": "function_result",
+          "call_id": "call-a",
+          "name": "read",
+          "result": "ENOENT: missing.json"
+        },
+        {
+          "type": "function_result",
+          "call_id": "call-z",
+          "name": "read",
+          "result": "revision=9007199254740993; label=a"
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "locate",
+      "source": {
+        "sse": "01-locate.sse",
+        "json": null,
+        "expect": {
+          "outcome": "Completed",
+          "progress": "AwaitingToolResults",
+          "completion": null,
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "reasoning",
+              "status": "Completed",
+              "parts": [
+                {
+                  "summary": "Plan 🧪"
+                }
+              ],
+              "replay": {
+                "format": "GoogleInteractionsV1Thought",
+                "token": "{\"anchor\":\"thought\",\"signature\":\"synthetic-thought-1\"}"
+              }
+            },
+            {
+              "kind": "call",
+              "id": "call-locate",
+              "name": "locate",
+              "status": "Completed",
+              "arguments": {
+                "json": "{\"glob\":\"**/fallback.json\"}"
+              },
+              "replay": {
+                "format": "GoogleInteractionsV1FunctionCall",
+                "token": "{\"anchor\":\"function_call\",\"signature\":\"synthetic-call-locate\"}"
+              }
+            }
+          ],
+          "usage": {
+            "input": 117,
+            "output": 21,
+            "total": 145,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": null,
+            "input_relation": "IncludesCache",
+            "output_relation": "ExcludesReasoning",
+            "total_relation": "Unreported",
+            "stage": "Final",
+            "accounting": {
+              "kind": "split",
+              "tool_input": 2,
+              "tool_relation": "Unreported",
+              "total_relation": "Unreported"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "event: done\n"
+      },
+      "client_append": [
+        {
+          "type": "function_call_output",
+          "call_id": "call-locate",
+          "output": "fallback.json: expected encoding=utf8"
+        }
+      ],
+      "upstream_append": [
+        {
+          "type": "thought",
+          "summary": [
+            {
+              "type": "text",
+              "text": "Plan 🧪"
+            }
+          ],
+          "signature": "synthetic-thought-1"
+        },
+        {
+          "type": "function_call",
+          "id": "call-locate",
+          "name": "locate",
+          "arguments": {
+            "glob": "**/fallback.json"
+          },
+          "signature": "synthetic-call-locate"
+        },
+        {
+          "type": "function_result",
+          "call_id": "call-locate",
+          "name": "locate",
+          "result": "fallback.json: expected encoding=utf8"
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "patch",
+      "source": {
+        "sse": "02-patch.sse",
+        "json": null,
+        "expect": {
+          "outcome": "Completed",
+          "progress": "AwaitingToolResults",
+          "completion": null,
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "reasoning",
+              "status": "Completed",
+              "parts": [
+                {
+                  "summary": "Plan 🧪"
+                }
+              ],
+              "replay": {
+                "format": "GoogleInteractionsV1Thought",
+                "token": "{\"anchor\":\"thought\",\"signature\":\"synthetic-thought-2\"}"
+              }
+            },
+            {
+              "kind": "call",
+              "id": "call-patch",
+              "name": "patch",
+              "status": "Completed",
+              "arguments": {
+                "json": "{\"path\":\"settings.json\",\"value\":\"naïve 🧪\"}"
+              },
+              "replay": {
+                "format": "GoogleInteractionsV1FunctionCall",
+                "token": "{\"anchor\":\"function_call\",\"signature\":\"synthetic-call-patch\"}"
+              }
+            }
+          ],
+          "usage": {
+            "input": 134,
+            "output": 22,
+            "total": 163,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": null,
+            "input_relation": "IncludesCache",
+            "output_relation": "ExcludesReasoning",
+            "total_relation": "Unreported",
+            "stage": "Final",
+            "accounting": {
+              "kind": "split",
+              "tool_input": 2,
+              "tool_relation": "Unreported",
+              "total_relation": "Unreported"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "event: done\n"
+      },
+      "client_append": [
+        {
+          "type": "function_call_output",
+          "call_id": "call-patch",
+          "output": "updated revision=1"
+        }
+      ],
+      "upstream_append": [
+        {
+          "type": "thought",
+          "summary": [
+            {
+              "type": "text",
+              "text": "Plan 🧪"
+            }
+          ],
+          "signature": "synthetic-thought-2"
+        },
+        {
+          "type": "function_call",
+          "id": "call-patch",
+          "name": "patch",
+          "arguments": {
+            "path": "settings.json",
+            "value": "naïve 🧪"
+          },
+          "signature": "synthetic-call-patch"
+        },
+        {
+          "type": "function_result",
+          "call_id": "call-patch",
+          "name": "patch",
+          "result": "updated revision=1"
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "check",
+      "source": {
+        "sse": "03-check.sse",
+        "json": null,
+        "expect": {
+          "outcome": "Completed",
+          "progress": "AwaitingToolResults",
+          "completion": null,
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "reasoning",
+              "status": "Completed",
+              "parts": [
+                {
+                  "summary": "Plan 🧪"
+                }
+              ],
+              "replay": {
+                "format": "GoogleInteractionsV1Thought",
+                "token": "{\"anchor\":\"thought\",\"signature\":\"synthetic-thought-3\"}"
+              }
+            },
+            {
+              "kind": "call",
+              "id": "call-check",
+              "name": "verify",
+              "status": "Completed",
+              "arguments": {
+                "json": "{\"suite\":\"config\"}"
+              },
+              "replay": {
+                "format": "GoogleInteractionsV1FunctionCall",
+                "token": "{\"anchor\":\"function_call\",\"signature\":\"synthetic-call-check\"}"
+              }
+            }
+          ],
+          "usage": {
+            "input": 151,
+            "output": 23,
+            "total": 181,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": null,
+            "input_relation": "IncludesCache",
+            "output_relation": "ExcludesReasoning",
+            "total_relation": "Unreported",
+            "stage": "Final",
+            "accounting": {
+              "kind": "split",
+              "tool_input": 2,
+              "tool_relation": "Unreported",
+              "total_relation": "Unreported"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "event: done\n"
+      },
+      "client_append": [
+        {
+          "type": "function_call_output",
+          "call_id": "call-check",
+          "output": "FAIL: encoding still ascii"
+        }
+      ],
+      "upstream_append": [
+        {
+          "type": "thought",
+          "summary": [
+            {
+              "type": "text",
+              "text": "Plan 🧪"
+            }
+          ],
+          "signature": "synthetic-thought-3"
+        },
+        {
+          "type": "function_call",
+          "id": "call-check",
+          "name": "verify",
+          "arguments": {
+            "suite": "config"
+          },
+          "signature": "synthetic-call-check"
+        },
+        {
+          "type": "function_result",
+          "call_id": "call-check",
+          "name": "verify",
+          "result": "FAIL: encoding still ascii"
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "repair",
+      "source": {
+        "sse": "04-repair.sse",
+        "json": null,
+        "expect": {
+          "outcome": "Completed",
+          "progress": "AwaitingToolResults",
+          "completion": null,
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "reasoning",
+              "status": "Completed",
+              "parts": [
+                {
+                  "summary": "Plan 🧪"
+                }
+              ],
+              "replay": {
+                "format": "GoogleInteractionsV1Thought",
+                "token": "{\"anchor\":\"thought\",\"signature\":\"synthetic-thought-4\"}"
+              }
+            },
+            {
+              "kind": "call",
+              "id": "call-repair",
+              "name": "patch",
+              "status": "Completed",
+              "arguments": {
+                "json": "{\"path\":\"settings.json\",\"value\":\"naïve 🧪\",\"revision\":2}"
+              },
+              "replay": {
+                "format": "GoogleInteractionsV1FunctionCall",
+                "token": "{\"anchor\":\"function_call\",\"signature\":\"synthetic-call-repair\"}"
+              }
+            }
+          ],
+          "usage": {
+            "input": 168,
+            "output": 24,
+            "total": 199,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": null,
+            "input_relation": "IncludesCache",
+            "output_relation": "ExcludesReasoning",
+            "total_relation": "Unreported",
+            "stage": "Final",
+            "accounting": {
+              "kind": "split",
+              "tool_input": 2,
+              "tool_relation": "Unreported",
+              "total_relation": "Unreported"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "event: done\n"
+      },
+      "client_append": [
+        {
+          "type": "function_call_output",
+          "call_id": "call-repair",
+          "output": "updated revision=2; encoding=utf8"
+        }
+      ],
+      "upstream_append": [
+        {
+          "type": "thought",
+          "summary": [
+            {
+              "type": "text",
+              "text": "Plan 🧪"
+            }
+          ],
+          "signature": "synthetic-thought-4"
+        },
+        {
+          "type": "function_call",
+          "id": "call-repair",
+          "name": "patch",
+          "arguments": {
+            "path": "settings.json",
+            "value": "naïve 🧪",
+            "revision": 2
+          },
+          "signature": "synthetic-call-repair"
+        },
+        {
+          "type": "function_result",
+          "call_id": "call-repair",
+          "name": "patch",
+          "result": "updated revision=2; encoding=utf8"
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "recheck",
+      "source": {
+        "sse": "05-recheck.sse",
+        "json": null,
+        "expect": {
+          "outcome": "Completed",
+          "progress": "AwaitingToolResults",
+          "completion": null,
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "reasoning",
+              "status": "Completed",
+              "parts": [
+                {
+                  "summary": "Plan 🧪"
+                }
+              ],
+              "replay": {
+                "format": "GoogleInteractionsV1Thought",
+                "token": "{\"anchor\":\"thought\",\"signature\":\"synthetic-thought-5\"}"
+              }
+            },
+            {
+              "kind": "call",
+              "id": "call-recheck",
+              "name": "verify",
+              "status": "Completed",
+              "arguments": {
+                "json": "{\"suite\":\"config\"}"
+              },
+              "replay": {
+                "format": "GoogleInteractionsV1FunctionCall",
+                "token": "{\"anchor\":\"function_call\",\"signature\":\"synthetic-call-recheck\"}"
+              }
+            }
+          ],
+          "usage": {
+            "input": 185,
+            "output": 25,
+            "total": 217,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": null,
+            "input_relation": "IncludesCache",
+            "output_relation": "ExcludesReasoning",
+            "total_relation": "Unreported",
+            "stage": "Final",
+            "accounting": {
+              "kind": "split",
+              "tool_input": 2,
+              "tool_relation": "Unreported",
+              "total_relation": "Unreported"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "event: done\n"
+      },
+      "client_append": [
+        {
+          "type": "function_call_output",
+          "call_id": "call-recheck",
+          "output": "PASS: config and Unicode checks"
+        }
+      ],
+      "upstream_append": [
+        {
+          "type": "thought",
+          "summary": [
+            {
+              "type": "text",
+              "text": "Plan 🧪"
+            }
+          ],
+          "signature": "synthetic-thought-5"
+        },
+        {
+          "type": "function_call",
+          "id": "call-recheck",
+          "name": "verify",
+          "arguments": {
+            "suite": "config"
+          },
+          "signature": "synthetic-call-recheck"
+        },
+        {
+          "type": "function_result",
+          "call_id": "call-recheck",
+          "name": "verify",
+          "result": "PASS: config and Unicode checks"
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "final",
+      "source": {
+        "sse": "06-final.sse",
+        "json": null,
+        "expect": {
+          "outcome": "Completed",
+          "progress": "TurnFinished",
+          "completion": null,
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "reasoning",
+              "status": "Completed",
+              "parts": [
+                {
+                  "summary": "Plan 🧪"
+                }
+              ],
+              "replay": {
+                "format": "GoogleInteractionsV1Thought",
+                "token": "{\"anchor\":\"thought\",\"signature\":\"synthetic-thought-6\"}"
+              }
+            },
+            {
+              "kind": "message",
+              "role": "Assistant",
+              "status": "Completed",
+              "phase": null,
+              "parts": [
+                {
+                  "text": "Updated naïve 🧪; recovery read=ok; checks=pass.",
+                  "replay": null
+                }
+              ]
+            }
+          ],
+          "usage": {
+            "input": 202,
+            "output": 26,
+            "total": 235,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": null,
+            "input_relation": "IncludesCache",
+            "output_relation": "ExcludesReasoning",
+            "total_relation": "Unreported",
+            "stage": "Final",
+            "accounting": {
+              "kind": "split",
+              "tool_input": 2,
+              "tool_relation": "Unreported",
+              "total_relation": "Unreported"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "event: done\n"
+      },
+      "client_append": [
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "Recall both failures and their corrections. Do not use tools."
+            }
+          ]
+        }
+      ],
+      "upstream_append": [
+        {
+          "type": "thought",
+          "summary": [
+            {
+              "type": "text",
+              "text": "Plan 🧪"
+            }
+          ],
+          "signature": "synthetic-thought-6"
+        },
+        {
+          "type": "model_output",
+          "content": [
+            {
+              "type": "text",
+              "text": "Updated naïve 🧪; recovery read=ok; checks=pass."
+            }
+          ]
+        },
+        {
+          "type": "user_input",
+          "content": [
+            {
+              "type": "text",
+              "text": "Recall both failures and their corrections. Do not use tools."
+            }
+          ]
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "recall",
+      "source": {
+        "sse": "07-recall.sse",
+        "json": null,
+        "expect": {
+          "outcome": "Completed",
+          "progress": "TurnFinished",
+          "completion": null,
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "reasoning",
+              "status": "Completed",
+              "parts": [
+                {
+                  "summary": "Plan 🧪"
+                }
+              ],
+              "replay": {
+                "format": "GoogleInteractionsV1Thought",
+                "token": "{\"anchor\":\"thought\",\"signature\":\"synthetic-thought-7\"}"
+              }
+            },
+            {
+              "kind": "message",
+              "role": "Assistant",
+              "status": "Completed",
+              "phase": null,
+              "parts": [
+                {
+                  "text": "The missing read was located; the first check failed and the second passed.",
+                  "replay": null
+                }
+              ]
+            }
+          ],
+          "usage": {
+            "input": 219,
+            "output": 27,
+            "total": 253,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": null,
+            "input_relation": "IncludesCache",
+            "output_relation": "ExcludesReasoning",
+            "total_relation": "Unreported",
+            "stage": "Final",
+            "accounting": {
+              "kind": "split",
+              "tool_input": 2,
+              "tool_relation": "Unreported",
+              "total_relation": "Unreported"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "event: done\n"
+      },
+      "client_append": [
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "Keep the final answer for the next task."
+            }
+          ]
+        }
+      ],
+      "upstream_append": [
+        {
+          "type": "thought",
+          "summary": [
+            {
+              "type": "text",
+              "text": "Plan 🧪"
+            }
+          ],
+          "signature": "synthetic-thought-7"
+        },
+        {
+          "type": "model_output",
+          "content": [
+            {
+              "type": "text",
+              "text": "The missing read was located; the first check failed and the second passed."
+            }
+          ]
+        },
+        {
+          "type": "user_input",
+          "content": [
+            {
+              "type": "text",
+              "text": "Keep the final answer for the next task."
+            }
+          ]
+        }
+      ],
+      "request_rules": [],
+      "client_update": {
+        "tools": [],
+        "reasoning": {
+          "effort": "high",
+          "summary": "auto"
+        }
+      },
+      "upstream_update": {
+        "tools": [],
+        "generation_config": {
+          "max_output_tokens": 1024,
+          "thinking_level": "high",
+          "thinking_summaries": "auto"
+        }
+      }
+    }
+  ],
+  "incomplete": {
+    "sse": "incomplete-final.sse",
+    "json": null,
+    "expect": {
+      "outcome": "Incomplete",
+      "progress": "Unreported",
+      "completion": null,
+      "incomplete": "Unspecified",
+      "items": [
+        {
+          "kind": "message",
+          "role": "Assistant",
+          "status": "Completed",
+          "phase": null,
+          "parts": [
+            {
+              "text": "Partial naïve 🧪",
+              "replay": null
+            }
+          ]
+        }
+      ],
+      "usage": {
+        "input": 202,
+        "output": 26,
+        "total": 235,
+        "reasoning": 5,
+        "cached": 10,
+        "cache_write": null,
+        "input_relation": "IncludesCache",
+        "output_relation": "ExcludesReasoning",
+        "total_relation": "Unreported",
+        "stage": "Final",
+        "accounting": {
+          "kind": "split",
+          "tool_input": 2,
+          "tool_relation": "Unreported",
+          "total_relation": "Unreported"
+        },
+        "defaulted": []
+      }
+    },
+    "terminal_marker": "event: done\n"
+  },
+  "sparse": {
+    "sse": "sparse-final.sse",
+    "json": null,
+    "expect": {
+      "outcome": "Completed",
+      "progress": "TurnFinished",
+      "completion": null,
+      "incomplete": null,
+      "items": [
+        {
+          "kind": "message",
+          "role": "Assistant",
+          "status": "Completed",
+          "phase": null,
+          "parts": [
+            {
+              "text": "Sparse accounting is unknown.",
+              "replay": null
+            }
+          ]
+        }
+      ],
+      "usage": {
+        "input": 202,
+        "output": 26,
+        "total": null,
+        "reasoning": null,
+        "cached": null,
+        "cache_write": null,
+        "input_relation": "IncludesCache",
+        "output_relation": "ExcludesReasoning",
+        "total_relation": "Unreported",
+        "stage": "Final",
+        "accounting": {
+          "kind": "split",
+          "tool_input": null,
+          "tool_relation": "Unreported",
+          "total_relation": "Unreported"
+        },
+        "defaulted": []
+      }
+    },
+    "terminal_marker": "event: done\n"
+  }
+}

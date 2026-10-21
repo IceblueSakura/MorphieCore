@@ -1,0 +1,8 @@
+data: {"responseId":"gen-0","modelVersion":"session-model","candidates":[{"index":0,"content":{"role":"model","parts":[{"thought":true,"text":"Plan 🧪"}]}}]}
+
+data: {"responseId":"gen-0","modelVersion":"session-model","candidates":[{"index":0,"content":{"role":"model","parts":[{"functionCall":{"id":"call-z","name":"read","args":{"path":"settings.json","serial":9007199254740993,"label":"a"}},"thoughtSignature":"c3ludGhldGljLWNhbGwteg=="}]}}]}
+
+data: {"responseId":"gen-0","modelVersion":"session-model","candidates":[{"index":0,"content":{"role":"model","parts":[{"functionCall":{"id":"call-a","name":"read","args":{"path":"missing.json"}},"thoughtSignature":"c3ludGhldGljLWNhbGwtYQ=="}]}}]}
+
+data: {"responseId":"gen-0","modelVersion":"session-model","candidates":[{"index":0,"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":20,"thoughtsTokenCount":5,"cachedContentTokenCount":10,"toolUsePromptTokenCount":2,"totalTokenCount":127}}
+

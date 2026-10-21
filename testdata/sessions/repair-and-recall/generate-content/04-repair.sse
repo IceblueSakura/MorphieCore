@@ -1,0 +1,6 @@
+data: {"responseId":"gen-4","modelVersion":"session-model","candidates":[{"index":0,"content":{"role":"model","parts":[{"thought":true,"text":"Plan 🧪"}]}}]}
+
+data: {"responseId":"gen-4","modelVersion":"session-model","candidates":[{"index":0,"content":{"role":"model","parts":[{"functionCall":{"id":"call-repair","name":"patch","args":{"path":"settings.json","value":"naïve 🧪","revision":2}},"thoughtSignature":"c3ludGhldGljLWNhbGwtcmVwYWly"}]}}]}
+
+data: {"responseId":"gen-4","modelVersion":"session-model","candidates":[{"index":0,"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":168,"candidatesTokenCount":24,"thoughtsTokenCount":5,"cachedContentTokenCount":10,"toolUsePromptTokenCount":2,"totalTokenCount":199}}
+

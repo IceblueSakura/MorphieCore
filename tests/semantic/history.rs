@@ -9,5 +9,7 @@ mod context_transforms;
 mod request_edits;
 #[path = "history/resource_table.rs"]
 mod resource_table;
+#[path = "history/sessions.rs"]
+mod sessions;
 #[path = "history/stream_invariants.rs"]
 mod stream_invariants;

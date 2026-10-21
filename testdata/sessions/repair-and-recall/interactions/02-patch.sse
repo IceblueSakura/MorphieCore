@@ -1,0 +1,39 @@
+event: interaction.created
+data: {"event_type":"interaction.created","interaction":{"id":"int-2","model":"session-model"}}
+
+event: interaction.status_update
+data: {"event_type":"interaction.status_update","status":"in_progress"}
+
+event: step.start
+data: {"event_type":"step.start","index":0,"step":{"type":"thought"}}
+
+event: step.delta
+data: {"event_type":"step.delta","index":0,"delta":{"type":"thought_summary","content":{"type":"text","text":"Plan "}}}
+
+event: step.delta
+data: {"event_type":"step.delta","index":0,"delta":{"type":"thought_summary","content":{"type":"text","text":"🧪"}}}
+
+event: step.delta
+data: {"event_type":"step.delta","index":0,"delta":{"type":"thought_signature","signature":"synthetic-thought-2"}}
+
+event: step.stop
+data: {"event_type":"step.stop","index":0}
+
+event: step.start
+data: {"event_type":"step.start","index":1,"step":{"type":"function_call","id":"call-patch","name":"patch","arguments":{},"signature":"synthetic-call-patch"}}
+
+event: step.delta
+data: {"event_type":"step.delta","index":1,"delta":{"type":"arguments_delta","arguments":"{\"path\":\"settings.jso"}}
+
+event: step.delta
+data: {"event_type":"step.delta","index":1,"delta":{"type":"arguments_delta","arguments":"n\",\"value\":\"naïve 🧪\"}"}}
+
+event: step.stop
+data: {"event_type":"step.stop","index":1}
+
+event: interaction.completed
+data: {"event_type":"interaction.completed","interaction":{"id":"int-2","model":"session-model","status":"requires_action","steps":[{"type":"thought","summary":[{"type":"text","text":"Plan 🧪"}],"signature":"synthetic-thought-2"},{"type":"function_call","id":"call-patch","name":"patch","arguments":{"path":"settings.json","value":"naïve 🧪"},"signature":"synthetic-call-patch"}],"usage":{"total_input_tokens":134,"total_output_tokens":22,"total_thought_tokens":5,"total_cached_tokens":10,"total_tool_use_tokens":2,"total_tokens":163}}}
+
+event: done
+data: [DONE]
+

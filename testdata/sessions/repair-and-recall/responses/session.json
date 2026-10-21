@@ -1,0 +1,1443 @@
+{
+  "name": "repair-and-recall",
+  "client_request": {
+    "model": "session-model",
+    "input": [
+      {
+        "type": "message",
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "Repair configuration; preserve naïve 🧪 and exact IDs."
+          }
+        ]
+      }
+    ],
+    "max_output_tokens": 1024,
+    "reasoning": {
+      "effort": "low",
+      "summary": "auto"
+    },
+    "tools": [
+      {
+        "type": "function",
+        "name": "read",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "serial": {
+              "type": "integer"
+            },
+            "label": {
+              "type": "string"
+            }
+          }
+        },
+        "strict": false
+      },
+      {
+        "type": "function",
+        "name": "locate",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "glob": {
+              "type": "string"
+            }
+          }
+        },
+        "strict": false
+      },
+      {
+        "type": "function",
+        "name": "patch",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            },
+            "revision": {
+              "type": "integer"
+            }
+          }
+        },
+        "strict": false
+      },
+      {
+        "type": "function",
+        "name": "verify",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "suite": {
+              "type": "string"
+            }
+          }
+        },
+        "strict": false
+      }
+    ],
+    "store": false,
+    "stream": false
+  },
+  "upstream_request": {
+    "model": "session-model",
+    "input": [
+      {
+        "type": "message",
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "Repair configuration; preserve naïve 🧪 and exact IDs."
+          }
+        ]
+      }
+    ],
+    "max_output_tokens": 1024,
+    "reasoning": {
+      "effort": "low",
+      "summary": "auto"
+    },
+    "tools": [
+      {
+        "type": "function",
+        "name": "read",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "serial": {
+              "type": "integer"
+            },
+            "label": {
+              "type": "string"
+            }
+          }
+        },
+        "strict": false
+      },
+      {
+        "type": "function",
+        "name": "locate",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "glob": {
+              "type": "string"
+            }
+          }
+        },
+        "strict": false
+      },
+      {
+        "type": "function",
+        "name": "patch",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            },
+            "revision": {
+              "type": "integer"
+            }
+          }
+        },
+        "strict": false
+      },
+      {
+        "type": "function",
+        "name": "verify",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "suite": {
+              "type": "string"
+            }
+          }
+        },
+        "strict": false
+      }
+    ],
+    "store": false,
+    "stream": false
+  },
+  "turns": [
+    {
+      "name": "inspect",
+      "source": {
+        "sse": "00-inspect.sse",
+        "json": {
+          "id": "response-0",
+          "object": "response",
+          "created_at": 1,
+          "model": "session-model",
+          "status": "completed",
+          "error": null,
+          "incomplete_details": null,
+          "output": [
+            {
+              "id": "reason-0",
+              "type": "reasoning",
+              "status": "completed",
+              "summary": [
+                {
+                  "type": "summary_text",
+                  "text": "Plan 🧪"
+                }
+              ],
+              "encrypted_content": "synthetic-reason-0"
+            },
+            {
+              "id": "comment-0",
+              "type": "message",
+              "role": "assistant",
+              "status": "completed",
+              "phase": "commentary",
+              "content": [
+                {
+                  "type": "output_text",
+                  "text": "Checking.",
+                  "annotations": [],
+                  "logprobs": []
+                }
+              ]
+            },
+            {
+              "id": "item-call-z",
+              "type": "function_call",
+              "status": "completed",
+              "call_id": "call-z",
+              "name": "read",
+              "arguments": "{ \"path\": \"settings.json\", \"serial\": 9007199254740993, \"label\": \"\\u0061\" }"
+            },
+            {
+              "id": "item-call-a",
+              "type": "function_call",
+              "status": "completed",
+              "call_id": "call-a",
+              "name": "read",
+              "arguments": "{\"path\":\"missing.json\"}"
+            }
+          ],
+          "usage": {
+            "input_tokens": 100,
+            "output_tokens": 20,
+            "total_tokens": 120,
+            "input_tokens_details": {
+              "cached_tokens": 10,
+              "cache_write_tokens": 0
+            },
+            "output_tokens_details": {
+              "reasoning_tokens": 5
+            }
+          }
+        },
+        "expect": {
+          "outcome": "Completed",
+          "progress": "Unreported",
+          "completion": null,
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "reasoning",
+              "status": "Completed",
+              "parts": [
+                {
+                  "summary": "Plan 🧪"
+                }
+              ],
+              "replay": {
+                "format": "ResponsesEncrypted",
+                "token": "synthetic-reason-0"
+              }
+            },
+            {
+              "kind": "message",
+              "role": "Assistant",
+              "status": "Completed",
+              "phase": "Commentary",
+              "parts": [
+                {
+                  "text": "Checking.",
+                  "replay": null
+                }
+              ]
+            },
+            {
+              "kind": "call",
+              "id": "call-z",
+              "name": "read",
+              "status": "Completed",
+              "arguments": {
+                "raw": "{ \"path\": \"settings.json\", \"serial\": 9007199254740993, \"label\": \"\\u0061\" }"
+              },
+              "replay": null
+            },
+            {
+              "kind": "call",
+              "id": "call-a",
+              "name": "read",
+              "status": "Completed",
+              "arguments": {
+                "raw": "{\"path\":\"missing.json\"}"
+              },
+              "replay": null
+            }
+          ],
+          "usage": {
+            "input": 100,
+            "output": 20,
+            "total": 120,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": 0,
+            "input_relation": "IncludesCache",
+            "output_relation": "IncludesReasoning",
+            "total_relation": "InputAndOutput",
+            "stage": "Final",
+            "accounting": {
+              "kind": "direct"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "event: response.completed\n"
+      },
+      "client_append": [
+        {
+          "type": "function_call_output",
+          "call_id": "call-a",
+          "output": "ENOENT: missing.json"
+        },
+        {
+          "type": "function_call_output",
+          "call_id": "call-z",
+          "output": "revision=9007199254740993; label=a"
+        }
+      ],
+      "upstream_append": [
+        {
+          "id": "reason-0",
+          "type": "reasoning",
+          "summary": [
+            {
+              "type": "summary_text",
+              "text": "Plan 🧪"
+            }
+          ],
+          "encrypted_content": "synthetic-reason-0"
+        },
+        {
+          "id": "comment-0",
+          "type": "message",
+          "role": "assistant",
+          "phase": "commentary",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "Checking.",
+              "annotations": [],
+              "logprobs": []
+            }
+          ]
+        },
+        {
+          "id": "item-call-z",
+          "type": "function_call",
+          "call_id": "call-z",
+          "name": "read",
+          "arguments": "{ \"path\": \"settings.json\", \"serial\": 9007199254740993, \"label\": \"\\u0061\" }"
+        },
+        {
+          "id": "item-call-a",
+          "type": "function_call",
+          "call_id": "call-a",
+          "name": "read",
+          "arguments": "{\"path\":\"missing.json\"}"
+        },
+        {
+          "type": "function_call_output",
+          "call_id": "call-a",
+          "output": "ENOENT: missing.json"
+        },
+        {
+          "type": "function_call_output",
+          "call_id": "call-z",
+          "output": "revision=9007199254740993; label=a"
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "locate",
+      "source": {
+        "sse": "01-locate.sse",
+        "json": {
+          "id": "response-1",
+          "object": "response",
+          "created_at": 1,
+          "model": "session-model",
+          "status": "completed",
+          "error": null,
+          "incomplete_details": null,
+          "output": [
+            {
+              "id": "reason-1",
+              "type": "reasoning",
+              "status": "completed",
+              "summary": [
+                {
+                  "type": "summary_text",
+                  "text": "Plan 🧪"
+                }
+              ],
+              "encrypted_content": "synthetic-reason-1"
+            },
+            {
+              "id": "item-call-locate",
+              "type": "function_call",
+              "status": "completed",
+              "call_id": "call-locate",
+              "name": "locate",
+              "arguments": "{\"glob\":\"**/fallback.json\"}"
+            }
+          ],
+          "usage": {
+            "input_tokens": 117,
+            "output_tokens": 21,
+            "total_tokens": 138,
+            "input_tokens_details": {
+              "cached_tokens": 10,
+              "cache_write_tokens": 0
+            },
+            "output_tokens_details": {
+              "reasoning_tokens": 5
+            }
+          }
+        },
+        "expect": {
+          "outcome": "Completed",
+          "progress": "Unreported",
+          "completion": null,
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "reasoning",
+              "status": "Completed",
+              "parts": [
+                {
+                  "summary": "Plan 🧪"
+                }
+              ],
+              "replay": {
+                "format": "ResponsesEncrypted",
+                "token": "synthetic-reason-1"
+              }
+            },
+            {
+              "kind": "call",
+              "id": "call-locate",
+              "name": "locate",
+              "status": "Completed",
+              "arguments": {
+                "raw": "{\"glob\":\"**/fallback.json\"}"
+              },
+              "replay": null
+            }
+          ],
+          "usage": {
+            "input": 117,
+            "output": 21,
+            "total": 138,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": 0,
+            "input_relation": "IncludesCache",
+            "output_relation": "IncludesReasoning",
+            "total_relation": "InputAndOutput",
+            "stage": "Final",
+            "accounting": {
+              "kind": "direct"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "event: response.completed\n"
+      },
+      "client_append": [
+        {
+          "type": "function_call_output",
+          "call_id": "call-locate",
+          "output": "fallback.json: expected encoding=utf8"
+        }
+      ],
+      "upstream_append": [
+        {
+          "id": "reason-1",
+          "type": "reasoning",
+          "summary": [
+            {
+              "type": "summary_text",
+              "text": "Plan 🧪"
+            }
+          ],
+          "encrypted_content": "synthetic-reason-1"
+        },
+        {
+          "id": "item-call-locate",
+          "type": "function_call",
+          "call_id": "call-locate",
+          "name": "locate",
+          "arguments": "{\"glob\":\"**/fallback.json\"}"
+        },
+        {
+          "type": "function_call_output",
+          "call_id": "call-locate",
+          "output": "fallback.json: expected encoding=utf8"
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "patch",
+      "source": {
+        "sse": "02-patch.sse",
+        "json": {
+          "id": "response-2",
+          "object": "response",
+          "created_at": 1,
+          "model": "session-model",
+          "status": "completed",
+          "error": null,
+          "incomplete_details": null,
+          "output": [
+            {
+              "id": "reason-2",
+              "type": "reasoning",
+              "status": "completed",
+              "summary": [
+                {
+                  "type": "summary_text",
+                  "text": "Plan 🧪"
+                }
+              ],
+              "encrypted_content": "synthetic-reason-2"
+            },
+            {
+              "id": "item-call-patch",
+              "type": "function_call",
+              "status": "completed",
+              "call_id": "call-patch",
+              "name": "patch",
+              "arguments": "{\"path\":\"settings.json\",\"value\":\"naïve 🧪\"}"
+            }
+          ],
+          "usage": {
+            "input_tokens": 134,
+            "output_tokens": 22,
+            "total_tokens": 156,
+            "input_tokens_details": {
+              "cached_tokens": 10,
+              "cache_write_tokens": 0
+            },
+            "output_tokens_details": {
+              "reasoning_tokens": 5
+            }
+          }
+        },
+        "expect": {
+          "outcome": "Completed",
+          "progress": "Unreported",
+          "completion": null,
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "reasoning",
+              "status": "Completed",
+              "parts": [
+                {
+                  "summary": "Plan 🧪"
+                }
+              ],
+              "replay": {
+                "format": "ResponsesEncrypted",
+                "token": "synthetic-reason-2"
+              }
+            },
+            {
+              "kind": "call",
+              "id": "call-patch",
+              "name": "patch",
+              "status": "Completed",
+              "arguments": {
+                "raw": "{\"path\":\"settings.json\",\"value\":\"naïve 🧪\"}"
+              },
+              "replay": null
+            }
+          ],
+          "usage": {
+            "input": 134,
+            "output": 22,
+            "total": 156,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": 0,
+            "input_relation": "IncludesCache",
+            "output_relation": "IncludesReasoning",
+            "total_relation": "InputAndOutput",
+            "stage": "Final",
+            "accounting": {
+              "kind": "direct"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "event: response.completed\n"
+      },
+      "client_append": [
+        {
+          "type": "function_call_output",
+          "call_id": "call-patch",
+          "output": "updated revision=1"
+        }
+      ],
+      "upstream_append": [
+        {
+          "id": "reason-2",
+          "type": "reasoning",
+          "summary": [
+            {
+              "type": "summary_text",
+              "text": "Plan 🧪"
+            }
+          ],
+          "encrypted_content": "synthetic-reason-2"
+        },
+        {
+          "id": "item-call-patch",
+          "type": "function_call",
+          "call_id": "call-patch",
+          "name": "patch",
+          "arguments": "{\"path\":\"settings.json\",\"value\":\"naïve 🧪\"}"
+        },
+        {
+          "type": "function_call_output",
+          "call_id": "call-patch",
+          "output": "updated revision=1"
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "check",
+      "source": {
+        "sse": "03-check.sse",
+        "json": {
+          "id": "response-3",
+          "object": "response",
+          "created_at": 1,
+          "model": "session-model",
+          "status": "completed",
+          "error": null,
+          "incomplete_details": null,
+          "output": [
+            {
+              "id": "reason-3",
+              "type": "reasoning",
+              "status": "completed",
+              "summary": [
+                {
+                  "type": "summary_text",
+                  "text": "Plan 🧪"
+                }
+              ],
+              "encrypted_content": "synthetic-reason-3"
+            },
+            {
+              "id": "item-call-check",
+              "type": "function_call",
+              "status": "completed",
+              "call_id": "call-check",
+              "name": "verify",
+              "arguments": "{\"suite\":\"config\"}"
+            }
+          ],
+          "usage": {
+            "input_tokens": 151,
+            "output_tokens": 23,
+            "total_tokens": 174,
+            "input_tokens_details": {
+              "cached_tokens": 10,
+              "cache_write_tokens": 0
+            },
+            "output_tokens_details": {
+              "reasoning_tokens": 5
+            }
+          }
+        },
+        "expect": {
+          "outcome": "Completed",
+          "progress": "Unreported",
+          "completion": null,
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "reasoning",
+              "status": "Completed",
+              "parts": [
+                {
+                  "summary": "Plan 🧪"
+                }
+              ],
+              "replay": {
+                "format": "ResponsesEncrypted",
+                "token": "synthetic-reason-3"
+              }
+            },
+            {
+              "kind": "call",
+              "id": "call-check",
+              "name": "verify",
+              "status": "Completed",
+              "arguments": {
+                "raw": "{\"suite\":\"config\"}"
+              },
+              "replay": null
+            }
+          ],
+          "usage": {
+            "input": 151,
+            "output": 23,
+            "total": 174,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": 0,
+            "input_relation": "IncludesCache",
+            "output_relation": "IncludesReasoning",
+            "total_relation": "InputAndOutput",
+            "stage": "Final",
+            "accounting": {
+              "kind": "direct"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "event: response.completed\n"
+      },
+      "client_append": [
+        {
+          "type": "function_call_output",
+          "call_id": "call-check",
+          "output": "FAIL: encoding still ascii"
+        }
+      ],
+      "upstream_append": [
+        {
+          "id": "reason-3",
+          "type": "reasoning",
+          "summary": [
+            {
+              "type": "summary_text",
+              "text": "Plan 🧪"
+            }
+          ],
+          "encrypted_content": "synthetic-reason-3"
+        },
+        {
+          "id": "item-call-check",
+          "type": "function_call",
+          "call_id": "call-check",
+          "name": "verify",
+          "arguments": "{\"suite\":\"config\"}"
+        },
+        {
+          "type": "function_call_output",
+          "call_id": "call-check",
+          "output": "FAIL: encoding still ascii"
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "repair",
+      "source": {
+        "sse": "04-repair.sse",
+        "json": {
+          "id": "response-4",
+          "object": "response",
+          "created_at": 1,
+          "model": "session-model",
+          "status": "completed",
+          "error": null,
+          "incomplete_details": null,
+          "output": [
+            {
+              "id": "reason-4",
+              "type": "reasoning",
+              "status": "completed",
+              "summary": [
+                {
+                  "type": "summary_text",
+                  "text": "Plan 🧪"
+                }
+              ],
+              "encrypted_content": "synthetic-reason-4"
+            },
+            {
+              "id": "item-call-repair",
+              "type": "function_call",
+              "status": "completed",
+              "call_id": "call-repair",
+              "name": "patch",
+              "arguments": "{\"path\":\"settings.json\",\"value\":\"naïve 🧪\",\"revision\":2}"
+            }
+          ],
+          "usage": {
+            "input_tokens": 168,
+            "output_tokens": 24,
+            "total_tokens": 192,
+            "input_tokens_details": {
+              "cached_tokens": 10,
+              "cache_write_tokens": 0
+            },
+            "output_tokens_details": {
+              "reasoning_tokens": 5
+            }
+          }
+        },
+        "expect": {
+          "outcome": "Completed",
+          "progress": "Unreported",
+          "completion": null,
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "reasoning",
+              "status": "Completed",
+              "parts": [
+                {
+                  "summary": "Plan 🧪"
+                }
+              ],
+              "replay": {
+                "format": "ResponsesEncrypted",
+                "token": "synthetic-reason-4"
+              }
+            },
+            {
+              "kind": "call",
+              "id": "call-repair",
+              "name": "patch",
+              "status": "Completed",
+              "arguments": {
+                "raw": "{\"path\":\"settings.json\",\"value\":\"naïve 🧪\",\"revision\":2}"
+              },
+              "replay": null
+            }
+          ],
+          "usage": {
+            "input": 168,
+            "output": 24,
+            "total": 192,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": 0,
+            "input_relation": "IncludesCache",
+            "output_relation": "IncludesReasoning",
+            "total_relation": "InputAndOutput",
+            "stage": "Final",
+            "accounting": {
+              "kind": "direct"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "event: response.completed\n"
+      },
+      "client_append": [
+        {
+          "type": "function_call_output",
+          "call_id": "call-repair",
+          "output": "updated revision=2; encoding=utf8"
+        }
+      ],
+      "upstream_append": [
+        {
+          "id": "reason-4",
+          "type": "reasoning",
+          "summary": [
+            {
+              "type": "summary_text",
+              "text": "Plan 🧪"
+            }
+          ],
+          "encrypted_content": "synthetic-reason-4"
+        },
+        {
+          "id": "item-call-repair",
+          "type": "function_call",
+          "call_id": "call-repair",
+          "name": "patch",
+          "arguments": "{\"path\":\"settings.json\",\"value\":\"naïve 🧪\",\"revision\":2}"
+        },
+        {
+          "type": "function_call_output",
+          "call_id": "call-repair",
+          "output": "updated revision=2; encoding=utf8"
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "recheck",
+      "source": {
+        "sse": "05-recheck.sse",
+        "json": {
+          "id": "response-5",
+          "object": "response",
+          "created_at": 1,
+          "model": "session-model",
+          "status": "completed",
+          "error": null,
+          "incomplete_details": null,
+          "output": [
+            {
+              "id": "reason-5",
+              "type": "reasoning",
+              "status": "completed",
+              "summary": [
+                {
+                  "type": "summary_text",
+                  "text": "Plan 🧪"
+                }
+              ],
+              "encrypted_content": "synthetic-reason-5"
+            },
+            {
+              "id": "item-call-recheck",
+              "type": "function_call",
+              "status": "completed",
+              "call_id": "call-recheck",
+              "name": "verify",
+              "arguments": "{\"suite\":\"config\"}"
+            }
+          ],
+          "usage": {
+            "input_tokens": 185,
+            "output_tokens": 25,
+            "total_tokens": 210,
+            "input_tokens_details": {
+              "cached_tokens": 10,
+              "cache_write_tokens": 0
+            },
+            "output_tokens_details": {
+              "reasoning_tokens": 5
+            }
+          }
+        },
+        "expect": {
+          "outcome": "Completed",
+          "progress": "Unreported",
+          "completion": null,
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "reasoning",
+              "status": "Completed",
+              "parts": [
+                {
+                  "summary": "Plan 🧪"
+                }
+              ],
+              "replay": {
+                "format": "ResponsesEncrypted",
+                "token": "synthetic-reason-5"
+              }
+            },
+            {
+              "kind": "call",
+              "id": "call-recheck",
+              "name": "verify",
+              "status": "Completed",
+              "arguments": {
+                "raw": "{\"suite\":\"config\"}"
+              },
+              "replay": null
+            }
+          ],
+          "usage": {
+            "input": 185,
+            "output": 25,
+            "total": 210,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": 0,
+            "input_relation": "IncludesCache",
+            "output_relation": "IncludesReasoning",
+            "total_relation": "InputAndOutput",
+            "stage": "Final",
+            "accounting": {
+              "kind": "direct"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "event: response.completed\n"
+      },
+      "client_append": [
+        {
+          "type": "function_call_output",
+          "call_id": "call-recheck",
+          "output": "PASS: config and Unicode checks"
+        }
+      ],
+      "upstream_append": [
+        {
+          "id": "reason-5",
+          "type": "reasoning",
+          "summary": [
+            {
+              "type": "summary_text",
+              "text": "Plan 🧪"
+            }
+          ],
+          "encrypted_content": "synthetic-reason-5"
+        },
+        {
+          "id": "item-call-recheck",
+          "type": "function_call",
+          "call_id": "call-recheck",
+          "name": "verify",
+          "arguments": "{\"suite\":\"config\"}"
+        },
+        {
+          "type": "function_call_output",
+          "call_id": "call-recheck",
+          "output": "PASS: config and Unicode checks"
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "final",
+      "source": {
+        "sse": "06-final.sse",
+        "json": {
+          "id": "response-6",
+          "object": "response",
+          "created_at": 1,
+          "model": "session-model",
+          "status": "completed",
+          "error": null,
+          "incomplete_details": null,
+          "output": [
+            {
+              "id": "reason-6",
+              "type": "reasoning",
+              "status": "completed",
+              "summary": [
+                {
+                  "type": "summary_text",
+                  "text": "Plan 🧪"
+                }
+              ],
+              "encrypted_content": "synthetic-reason-6"
+            },
+            {
+              "id": "answer-6",
+              "type": "message",
+              "role": "assistant",
+              "status": "completed",
+              "phase": "final_answer",
+              "content": [
+                {
+                  "type": "output_text",
+                  "text": "Updated naïve 🧪; recovery read=ok; checks=pass.",
+                  "annotations": [],
+                  "logprobs": []
+                }
+              ]
+            }
+          ],
+          "usage": {
+            "input_tokens": 202,
+            "output_tokens": 26,
+            "total_tokens": 228,
+            "input_tokens_details": {
+              "cached_tokens": 10,
+              "cache_write_tokens": 0
+            },
+            "output_tokens_details": {
+              "reasoning_tokens": 5
+            }
+          }
+        },
+        "expect": {
+          "outcome": "Completed",
+          "progress": "Unreported",
+          "completion": null,
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "reasoning",
+              "status": "Completed",
+              "parts": [
+                {
+                  "summary": "Plan 🧪"
+                }
+              ],
+              "replay": {
+                "format": "ResponsesEncrypted",
+                "token": "synthetic-reason-6"
+              }
+            },
+            {
+              "kind": "message",
+              "role": "Assistant",
+              "status": "Completed",
+              "phase": "FinalAnswer",
+              "parts": [
+                {
+                  "text": "Updated naïve 🧪; recovery read=ok; checks=pass.",
+                  "replay": null
+                }
+              ]
+            }
+          ],
+          "usage": {
+            "input": 202,
+            "output": 26,
+            "total": 228,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": 0,
+            "input_relation": "IncludesCache",
+            "output_relation": "IncludesReasoning",
+            "total_relation": "InputAndOutput",
+            "stage": "Final",
+            "accounting": {
+              "kind": "direct"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "event: response.completed\n"
+      },
+      "client_append": [
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "Recall both failures and their corrections. Do not use tools."
+            }
+          ]
+        }
+      ],
+      "upstream_append": [
+        {
+          "id": "reason-6",
+          "type": "reasoning",
+          "summary": [
+            {
+              "type": "summary_text",
+              "text": "Plan 🧪"
+            }
+          ],
+          "encrypted_content": "synthetic-reason-6"
+        },
+        {
+          "id": "answer-6",
+          "type": "message",
+          "role": "assistant",
+          "phase": "final_answer",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "Updated naïve 🧪; recovery read=ok; checks=pass.",
+              "annotations": [],
+              "logprobs": []
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "Recall both failures and their corrections. Do not use tools."
+            }
+          ]
+        }
+      ],
+      "request_rules": []
+    },
+    {
+      "name": "recall",
+      "source": {
+        "sse": "07-recall.sse",
+        "json": {
+          "id": "response-7",
+          "object": "response",
+          "created_at": 1,
+          "model": "session-model",
+          "status": "completed",
+          "error": null,
+          "incomplete_details": null,
+          "output": [
+            {
+              "id": "reason-7",
+              "type": "reasoning",
+              "status": "completed",
+              "summary": [
+                {
+                  "type": "summary_text",
+                  "text": "Plan 🧪"
+                }
+              ],
+              "encrypted_content": "synthetic-reason-7"
+            },
+            {
+              "id": "answer-7",
+              "type": "message",
+              "role": "assistant",
+              "status": "completed",
+              "phase": "final_answer",
+              "content": [
+                {
+                  "type": "output_text",
+                  "text": "The missing read was located; the first check failed and the second passed.",
+                  "annotations": [],
+                  "logprobs": []
+                }
+              ]
+            }
+          ],
+          "usage": {
+            "input_tokens": 219,
+            "output_tokens": 27,
+            "total_tokens": 246,
+            "input_tokens_details": {
+              "cached_tokens": 10,
+              "cache_write_tokens": 0
+            },
+            "output_tokens_details": {
+              "reasoning_tokens": 5
+            }
+          }
+        },
+        "expect": {
+          "outcome": "Completed",
+          "progress": "Unreported",
+          "completion": null,
+          "incomplete": null,
+          "items": [
+            {
+              "kind": "reasoning",
+              "status": "Completed",
+              "parts": [
+                {
+                  "summary": "Plan 🧪"
+                }
+              ],
+              "replay": {
+                "format": "ResponsesEncrypted",
+                "token": "synthetic-reason-7"
+              }
+            },
+            {
+              "kind": "message",
+              "role": "Assistant",
+              "status": "Completed",
+              "phase": "FinalAnswer",
+              "parts": [
+                {
+                  "text": "The missing read was located; the first check failed and the second passed.",
+                  "replay": null
+                }
+              ]
+            }
+          ],
+          "usage": {
+            "input": 219,
+            "output": 27,
+            "total": 246,
+            "reasoning": 5,
+            "cached": 10,
+            "cache_write": 0,
+            "input_relation": "IncludesCache",
+            "output_relation": "IncludesReasoning",
+            "total_relation": "InputAndOutput",
+            "stage": "Final",
+            "accounting": {
+              "kind": "direct"
+            },
+            "defaulted": []
+          }
+        },
+        "terminal_marker": "event: response.completed\n"
+      },
+      "client_append": [
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "Keep the final answer for the next task."
+            }
+          ]
+        }
+      ],
+      "upstream_append": [
+        {
+          "id": "reason-7",
+          "type": "reasoning",
+          "summary": [
+            {
+              "type": "summary_text",
+              "text": "Plan 🧪"
+            }
+          ],
+          "encrypted_content": "synthetic-reason-7"
+        },
+        {
+          "id": "answer-7",
+          "type": "message",
+          "role": "assistant",
+          "phase": "final_answer",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "The missing read was located; the first check failed and the second passed.",
+              "annotations": [],
+              "logprobs": []
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "Keep the final answer for the next task."
+            }
+          ]
+        }
+      ],
+      "request_rules": [],
+      "client_update": {
+        "tools": [],
+        "reasoning": {
+          "effort": "high",
+          "summary": "auto"
+        }
+      },
+      "upstream_update": {
+        "tools": [],
+        "reasoning": {
+          "effort": "high",
+          "summary": "auto"
+        }
+      }
+    }
+  ],
+  "incomplete": {
+    "sse": "incomplete-final.sse",
+    "json": {
+      "id": "response-6",
+      "object": "response",
+      "created_at": 1,
+      "model": "session-model",
+      "status": "incomplete",
+      "error": null,
+      "incomplete_details": {
+        "reason": "max_output_tokens"
+      },
+      "output": [
+        {
+          "id": "answer-6",
+          "type": "message",
+          "role": "assistant",
+          "status": "incomplete",
+          "phase": "final_answer",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "Partial naïve 🧪",
+              "annotations": [],
+              "logprobs": []
+            }
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 202,
+        "output_tokens": 26,
+        "total_tokens": 228,
+        "input_tokens_details": {
+          "cached_tokens": 10,
+          "cache_write_tokens": 0
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 5
+        }
+      }
+    },
+    "expect": {
+      "outcome": "Incomplete",
+      "progress": "Unreported",
+      "completion": null,
+      "incomplete": "MaxOutputTokens",
+      "items": [
+        {
+          "kind": "message",
+          "role": "Assistant",
+          "status": "Incomplete",
+          "phase": "FinalAnswer",
+          "parts": [
+            {
+              "text": "Partial naïve 🧪",
+              "replay": null
+            }
+          ]
+        }
+      ],
+      "usage": {
+        "input": 202,
+        "output": 26,
+        "total": 228,
+        "reasoning": 5,
+        "cached": 10,
+        "cache_write": 0,
+        "input_relation": "IncludesCache",
+        "output_relation": "IncludesReasoning",
+        "total_relation": "InputAndOutput",
+        "stage": "Final",
+        "accounting": {
+          "kind": "direct"
+        },
+        "defaulted": []
+      }
+    },
+    "terminal_marker": "event: response.incomplete\n"
+  }
+}

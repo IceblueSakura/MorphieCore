@@ -1,0 +1,21 @@
+event: interaction.created
+data: {"event_type":"interaction.created","interaction":{"id":"int-6","model":"session-model"}}
+
+event: interaction.status_update
+data: {"event_type":"interaction.status_update","status":"in_progress"}
+
+event: step.start
+data: {"event_type":"step.start","index":0,"step":{"type":"model_output"}}
+
+event: step.delta
+data: {"event_type":"step.delta","index":0,"delta":{"type":"text","text":"Sparse accounting is unknown."}}
+
+event: step.stop
+data: {"event_type":"step.stop","index":0}
+
+event: interaction.completed
+data: {"event_type":"interaction.completed","interaction":{"id":"int-6","model":"session-model","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"Sparse accounting is unknown."}]}],"usage":{"total_input_tokens":202,"total_output_tokens":26}}}
+
+event: done
+data: [DONE]
+
