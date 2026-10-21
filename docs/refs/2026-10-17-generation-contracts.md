@@ -10,6 +10,7 @@ Later observations retain their own dates and evidence scope below. [Architectur
 - [Exact carriers and source validation](#exact-carriers-and-source-validation)
   - [Google foreground contracts, 2026-10-20](#google-foreground-contracts-2026-10-20)
     - [Interactions partial opening and service evidence, 2026-10-20](#interactions-partial-opening-and-service-evidence-2026-10-20)
+    - [Google installed-client acceptance, 2026-10-21](#google-installed-client-acceptance-2026-10-21)
   - [P7 binding evidence, 2026-10-18](#p7-binding-evidence-2026-10-18)
   - [Messages owner-local cache admission, 2026-10-19](#messages-owner-local-cache-admission-2026-10-19)
   - [pi Messages request profile, 2026-10-19](#pi-messages-request-profile-2026-10-19)
@@ -73,6 +74,25 @@ The separately bounded v1 SDK tool loop (at most eight serial requests, 2048 out
 The inspected [v1 function-call schema](https://ai.google.dev/api/interactions-api-v1) and [pinned SDK function-call type](https://github.com/googleapis/python-genai/blob/78f6d3412caaaed44f99ce57be2d16d0b8c407cb/google/genai/_gaos/types/interactions/functioncallstep.py) omit that signature field. The [stateless function-calling guide](https://ai.google.dev/gemini-api/docs/function-calling#stateless-function-calling) requires all model-generated steps, including thoughts and function calls, to be returned exactly as received; its REST examples use v1beta. The user separately selected the [observed-v1 call-only replay profile](../architecture.md#reasoning-replay). This is not silent field loss, thought reattribution or automatic admission from another protocol's signature rules, and it does not certify native input/SDK/installed-client behavior without their independent gates.
 
 After that selected repair, a fresh CLI and native SDK accumulators passed a separately bounded v1 run: eight serial Generation requests, Chat four then Responses four, 2048 output-token cap/45 seconds/one candidate/one attempt each, SDK retries disabled. Both completed missing-file feedback → corrective call → final synthetic result → next-user full-history return. Independent synthetic native oracles additionally require distinct call/thought signatures on exact native owners, including input `function_call.signature`; real acceptance establishes the selected model/binding/SSE profile, not every stream shape, service report, installed client or replay across accounts. No actual signature, ID or business body was printed or retained as a fixture.
+
+#### Google installed-client acceptance, 2026-10-21
+
+The gateway CLI built from `b2b65c7` used the project loader and application-owned Google credential pool, with only one Google binding selected per case. Unwrapped installed pi 1.3.0 and OpenCode 2.0.32 ran serially with scratch HOME/XDG state and synthetic files, without host agent configuration. The [version-continuity decision](../architecture.md#scope-and-activation-decisions) retained earlier acceptance and required no version-driven changes to existing test scripts.
+
+| Installed client | Client protocol | Selected Google upstream | Successful Generation requests | Delivered manifest counts by response |
+|---|---|---|---|---|
+| pi 1.3.0 | Chat Completions SSE | generateContent | 4 | 1, 1, 1, 1 |
+| pi 1.3.0 | Chat Completions SSE | Interactions v1 | 4 | 1, 1, 0, 0 |
+| OpenCode 2.0.32 | Responses SSE | generateContent | 4 | 1, 1, 1, 1 |
+| OpenCode 2.0.32 | Responses SSE | Interactions v1 | 4 | 1, 1, 0, 0 |
+
+Each case fixed Gemini 3.8 Flash, low effort, a 2048-token output ceiling, a 45-second upstream deadline and one candidate/attempt. The real client read a nonexistent scratch file, returned the actual tool error, executed the corrective read of a valid file, received the unpredictable synthetic label, then repeated it in a new user turn without tools. Client events independently established failed/successful reads and final answers; OpenCode's scratch database also required the exact assistant finish sequence and successful idle outcome. Each next request retained all previously delivered call IDs/names/arguments, ordered results and signature-manifest values; the fourth request included the delivered final answer. This proves observed carrier return, not independent inspection of raw native signatures.
+
+A rejecting loopback guard checked caps, effort, request count, duplicate/history shape and exact scratch tool paths without rewriting payloads. It latched failures before any later dispatch and bounded response collection to 8 MiB. To prevent an off-scope read, it validated each complete SSE response before publishing those unchanged bytes to the client. Thus these runs exercise actual client SSE parsing and tool/history behavior, not incremental client-facing publication timing. Each accepted case observed exactly four client transmissions, four forwarded requests and four complete gateway records, each with one attempt, upstream 200 and zero ignored request fields. pi reported four `stop` reasons for generateContent, preserving native Google STOP even beside calls; Interactions reported `toolUse, toolUse, stop, stop`. OpenCode reported `tool-calls, tool-calls, stop, stop` for both APIs.
+
+Two earlier pi/generateContent attempts are not accepted runs. The first omitted the configured environment proxy from the isolated gateway environment and timed out during connection after one attempt, with no upstream response. After restoring the existing CLI-loader environment-proxy path, a four-request run completed at the gateway but failed an incorrect harness expectation of pi `toolUse` for Google STOP; the expectation was corrected without changing gateway semantics, followed by a fresh passing run. Across the entire session there were 21 upstream attempts: 16 in accepted cases, four in that harness-failed run and one connection timeout. All were explicit serial runs, with no hidden retries.
+
+No capture was enabled, no credential/body/signature values were printed, and scratch state and owned process groups/sockets were released. These results do not establish pi Responses, OpenCode Chat, simultaneous multi-call ordering, every native field/delta, service-report admission, media tools, accounting accuracy, another model or cross-account replay/failover. Existing synthetic native oracles and SDK gates retain their independent scopes; these installed-client results do not replace them.
 
 #### Streamed score scope, 2026-10-20
 
