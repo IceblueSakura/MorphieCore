@@ -9,26 +9,19 @@ use axum::{
 use morphiecore::protocol::openai::Profile;
 use serde_json::{Value, json};
 
-fn expected_input(turn: usize, profile: Profile) -> Value {
+fn expected_input(turn: usize) -> Value {
     let mut input = vec![json!({"type":"user_input","content":[{"type":"text","text":"Read."}]})];
     if turn >= 2 {
         input.push(json!({"type":"thought","summary":[{"type":"text","text":"Plan 1"}],"signature":"synthetic-thought-1"}));
-        // Chat returns an empty logical assistant shell, not an empty text part.
-        if profile == Profile::Chat {
-            input.push(json!({"type":"model_output","content":[]}));
-        }
         input.extend([
-            json!({"type":"function_call","id":"c1","name":"read","arguments":{"path":"missing"}}),
+            json!({"type":"function_call","id":"c1","name":"read","arguments":{"path":"missing"},"signature":"synthetic-call-1"}),
             json!({"type":"function_result","call_id":"c1","name":"read","result":ERROR}),
         ]);
     }
     if turn >= 3 {
         input.push(json!({"type":"thought","summary":[{"type":"text","text":"Plan 2"}],"signature":"synthetic-thought-2"}));
-        if profile == Profile::Chat {
-            input.push(json!({"type":"model_output","content":[]}));
-        }
         input.extend([
-            json!({"type":"function_call","id":"c2","name":"read","arguments":{"path":"found"}}),
+            json!({"type":"function_call","id":"c2","name":"read","arguments":{"path":"found"},"signature":"synthetic-call-2"}),
             json!({"type":"function_result","call_id":"c2","name":"read","result":RESULT}),
         ]);
     }
@@ -52,11 +45,11 @@ pub(super) async fn answer(
     assert!(uri.query().is_none());
     assert_eq!(headers["x-goog-api-key"], "synthetic-google-loop-upstream");
     assert!(headers.get("authorization").is_none());
-    let turn = match (state.profile, body["input"].as_array().unwrap().len()) {
-        (_, 1) => 1,
-        (Profile::Chat, 5) | (Profile::Responses, 4) => 2,
-        (Profile::Chat, 9) | (Profile::Responses, 7) => 3,
-        (Profile::Chat, 12) | (Profile::Responses, 10) => 4,
+    let turn = match body["input"].as_array().unwrap().len() {
+        1 => 1,
+        4 => 2,
+        7 => 3,
+        10 => 4,
         _ => panic!("unexpected Interactions history length: {body}"),
     };
     let mut config = json!({"max_output_tokens":256,"thinking_level":"low"});
@@ -66,7 +59,7 @@ pub(super) async fn answer(
     assert_eq!(
         body,
         json!({"model":"gemini-3.8-flash","store":false,"stream":true,
-        "input":expected_input(turn, state.profile), "generation_config":config,
+        "input":expected_input(turn), "generation_config":config,
         "tools":[{"type":"function","name":"read","parameters":{
             "type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}]})
     );
@@ -85,7 +78,8 @@ pub(super) async fn answer(
         let signature = format!("synthetic-thought-{turn}");
         frames.extend([
             json!({"event_type":"step.start","index":0,"step":{"type":"thought"}}),
-            json!({"event_type":"step.delta","index":0,"delta":{"type":"thought_summary","content":{"type":"text","text":summary}}}),
+            json!({"event_type":"step.delta","index":0,"delta":{"type":"thought_summary","content":{"type":"text","text":"Plan "}}}),
+            json!({"event_type":"step.delta","index":0,"delta":{"type":"thought_summary","content":{"type":"text","text":turn.to_string()}}}),
             json!({"event_type":"step.delta","index":0,"delta":{"type":"thought_signature","signature":signature}}),
             json!({"event_type":"step.stop","index":0}),
         ]);
@@ -100,12 +94,12 @@ pub(super) async fn answer(
             "\"found\"}"
         };
         frames.extend([
-            json!({"event_type":"step.start","index":1,"step":{"type":"function_call","id":id,"name":"read","arguments":{}}}),
+            json!({"event_type":"step.start","index":1,"step":{"type":"function_call","id":id,"name":"read","arguments":{},"signature":format!("synthetic-call-{turn}")}}),
             json!({"event_type":"step.delta","index":1,"delta":{"type":"arguments_delta","arguments":"{\"path\":"}}),
             json!({"event_type":"step.delta","index":1,"delta":{"type":"arguments_delta","arguments":tail}}),
             json!({"event_type":"step.stop","index":1}),
         ]);
-        steps.push(json!({"type":"function_call","id":id,"name":"read","arguments":{"path":path}}));
+        steps.push(json!({"type":"function_call","id":id,"name":"read","arguments":{"path":path},"signature":format!("synthetic-call-{turn}")}));
     } else {
         let index = usize::from(turn == 3);
         let text = if turn == 3 { RESULT } else { "continued" };

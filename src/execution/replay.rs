@@ -40,7 +40,8 @@ fn open_attachment(value: &ReplayValue) -> Result<(ReplayOrigin, ReplayValue), C
         ReplayValue::Partial { .. } => ReplayValue::partial(format, payload),
         ReplayValue::Final { .. } => ReplayValue::final_value(format, payload),
     };
-    value.validate_attachment()?;
+    // The opened request and per-owner fidelity enforce part versus call purpose.
+    value.validate()?;
     Ok((origin, value))
 }
 

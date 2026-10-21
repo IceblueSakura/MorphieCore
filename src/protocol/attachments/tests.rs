@@ -1113,6 +1113,44 @@ fn independent_empty_carriers_rebuild_once_and_share_aggregate_budgets() {
     ));
 }
 #[test]
+fn opening_revalidates_the_inner_attachment_format_for_the_actual_part_owner() {
+    for (inner, accepted) in [
+        (ReplayFormat::GoogleGenerateContentSignature, true),
+        (ReplayFormat::GoogleInteractionsV1FunctionCall, false),
+    ] {
+        let mut request = Adapter::new(Profile::Chat, Dialect::Standard, None)
+            .decode_request(
+                json!({"model":"public","messages":[
+                    {"role":"user","content":"go"},
+                    {"role":"assistant","content":"OK"}
+                ]})
+                .to_string()
+                .as_bytes(),
+            )
+            .unwrap();
+        let mut items = request.task.semantic.items().to_vec();
+        let (_, Item::Message(message)) = items
+            .iter_mut()
+            .find(|(_, item)| matches!(item, Item::Message(m) if m.role == MessageRole::Assistant))
+            .unwrap()
+        else {
+            panic!("message")
+        };
+        message.parts[0].replay = Some(ReplayValue::final_value(
+            ReplayFormat::GoogleGenerateContentSignature,
+            replay_envelope::seal(&CLIENT_ORIGIN, inner, "synthetic-signature").unwrap(),
+        ));
+        // The outer part format is valid before opening; only the inner purpose differs.
+        request.task.semantic = request.task.semantic.clone().with_items(items).unwrap();
+        let result = open_from_client(&mut request);
+        assert_eq!(result.is_ok(), accepted);
+        if !accepted {
+            assert!(result.unwrap_err().to_string().contains("replay"));
+        }
+    }
+}
+
+#[test]
 fn restore_keeps_described_phase_and_drops_unsplittable_carriers() {
     let token = replay_envelope::seal(
         &CLIENT_ORIGIN,

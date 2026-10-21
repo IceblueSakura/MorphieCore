@@ -402,7 +402,7 @@ impl GenerationSseDecoder {
             return Err(invalid("step signature"));
         }
         let step_type = required(s, "type")?;
-        if signature.is_some() && step_type != "thought" {
+        if signature.is_some() && !matches!(step_type, "thought" | "function_call") {
             return Err(CodecError::Unsupported("Interactions signature owner".into()).into());
         }
         let (kind, item_kind) = match step_type {
@@ -575,14 +575,14 @@ impl GenerationSseDecoder {
             _ => Err(CodecError::Unsupported("Interactions delta type".into()).into()),
         }
     }
-    fn reasoning(
+    fn replay(
         &mut self,
         item: ItemId,
         signed: Signed,
         out: &mut Vec<StreamEvent>,
     ) -> Result<(), SseError> {
         let value = ReplayValue::final_value(
-            ReplayFormat::GoogleInteractionsV1Thought,
+            signed.format(),
             Text::new(signed.encode(), "Interactions signature", MAX_TEXT_BYTES)
                 .map_err(|_| SseError::Limit)?,
         );
@@ -597,16 +597,22 @@ impl GenerationSseDecoder {
             },
             out,
         )?;
-        let Item::Reasoning(r) = self
+        let snapshot = self
             .state
             .item(item)
             .and_then(|i| i.snapshot())
-            .map_err(CodecError::from)?
-        else {
-            return Err(invalid("reasoning owner"));
+            .map_err(CodecError::from)?;
+        match snapshot {
+            Item::Reasoning(r) => {
+                self.fidelity
+                    .record_replay(item, &r, Some(self.target.origin()))?
+            }
+            Item::ToolCall(c) => {
+                self.fidelity
+                    .record_call_replay(item, &c, Some(self.target.origin()))?
+            }
+            _ => return Err(invalid("Interactions replay owner")),
         };
-        self.fidelity
-            .record_replay(item, &r, Some(self.target.origin()))?;
         Ok(())
     }
     fn stop(&mut self, out: &mut Vec<StreamEvent>) -> Result<(), SseError> {
@@ -641,14 +647,13 @@ impl GenerationSseDecoder {
                 out,
             )?;
         }
-        if matches!(open.kind, Kind::Thought) {
-            self.reasoning(
-                open.item,
-                Signed {
-                    signature: open.signature,
-                },
-                out,
-            )?;
+        let signed = match (&open.kind, open.signature) {
+            (Kind::Thought, signature) => Some(Signed::Thought(signature)),
+            (Kind::Call { .. }, Some(signature)) => Some(Signed::Call(signature)),
+            _ => None,
+        };
+        if let Some(signed) = signed {
+            self.replay(open.item, signed, out)?;
         } else {
             self.emit(
                 StreamEvent::ItemFinished {

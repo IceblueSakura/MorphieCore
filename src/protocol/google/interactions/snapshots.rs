@@ -78,20 +78,26 @@ pub(super) fn reconcile(
             }
         }
         if let Some(signature) = string(step, "signature")? {
-            if kind != "thought" {
-                return Err(CodecError::Unsupported("Interactions signature owner".into()).into());
-            }
+            let format = match kind {
+                "thought" => ReplayFormat::GoogleInteractionsV1Thought,
+                "function_call" => ReplayFormat::GoogleInteractionsV1FunctionCall,
+                _ => {
+                    return Err(
+                        CodecError::Unsupported("Interactions signature owner".into()).into(),
+                    );
+                }
+            };
             if signature.is_empty() {
                 return Err(invalid("step signature"));
             }
             let replay = item
                 .and_then(|item| item.replay.as_ref())
                 .ok_or_else(mismatch)?;
-            if replay.value.format() != ReplayFormat::GoogleInteractionsV1Thought {
+            if replay.value.format() != format {
                 return Err(mismatch());
             }
-            let actual = Signed::decode(replay.value.replay_token().ok_or_else(mismatch)?)?;
-            if actual.signature.as_deref() != Some(signature) {
+            let actual = Signed::decode(replay.value.replay_token().ok_or_else(mismatch)?, format)?;
+            if actual.signature() != Some(signature) {
                 return Err(mismatch());
             }
         }

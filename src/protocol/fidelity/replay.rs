@@ -47,7 +47,7 @@ impl FidelityRecords {
             self.remove_replay(owner);
             return Ok(());
         };
-        value.validate_attachment()?;
+        value.validate_call_attachment()?;
         self.record_opaque(
             owner,
             value,

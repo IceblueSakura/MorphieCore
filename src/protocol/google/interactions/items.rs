@@ -80,12 +80,13 @@ pub(super) fn steps(
                     }
                     let value = super::replay::Signed::decode(
                         value.replay_token().ok_or_else(unsupported)?,
+                        ReplayFormat::GoogleInteractionsV1Thought,
                     )?;
                     let mut step = json!({"type":"thought"});
                     if !content.is_empty() {
                         step["summary"] = content.into();
                     }
-                    if let Some(signature) = value.signature {
+                    if let Some(signature) = value.signature() {
                         step["signature"] = signature.into();
                     }
                     steps.push(step);
@@ -108,8 +109,21 @@ pub(super) fn steps(
                     if !args.is_object() {
                         return Err(unsupported());
                     }
-                    steps.push(json!({"type":"function_call","id":c.call_id.as_str(),
-                        "name":c.name.as_str(),"arguments":args}));
+                    let mut step = json!({"type":"function_call","id":c.call_id.as_str(),
+                        "name":c.name.as_str(),"arguments":args});
+                    if let Some(value) = &c.replay {
+                        if value.format() != ReplayFormat::GoogleInteractionsV1FunctionCall
+                            || !fidelity.call_replay_matches(*id, c, Some(&target.origin()))
+                        {
+                            return Err(CodecError::Invalid("Interactions call replay dependency"));
+                        }
+                        let signed = super::replay::Signed::decode(
+                            value.replay_token().ok_or_else(unsupported)?,
+                            ReplayFormat::GoogleInteractionsV1FunctionCall,
+                        )?;
+                        step["signature"] = signed.signature().ok_or_else(unsupported)?.into();
+                    }
+                    steps.push(step);
                 }
                 Item::ToolResult(r) => {
                     if !r.context.is_direct()

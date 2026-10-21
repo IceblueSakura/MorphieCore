@@ -80,6 +80,7 @@ fn final_item_replay_cannot_be_revoked_or_rewritten_at_closure() {
         (ItemKind::Reasoning, ReplayFormat::ResponsesEncrypted),
         (ItemKind::Compaction, ReplayFormat::ResponsesCompaction),
         (call(), ReplayFormat::GoogleGenerateContentSignature),
+        (call(), ReplayFormat::GoogleInteractionsV1FunctionCall),
     ] {
         let final_value = value(format, true, "synthetic-final", Some("origin-a"));
         let state = ready(kind, final_value.clone());
@@ -121,7 +122,7 @@ fn final_item_replay_cannot_be_revoked_or_rewritten_at_closure() {
 
 #[test]
 fn partial_call_replay_may_finish_but_cannot_change_intake_origin() {
-    let format = ReplayFormat::GoogleGenerateContentSignature;
+    let format = ReplayFormat::GoogleInteractionsV1FunctionCall;
     for (old, new) in [
         (Some("origin-a"), Some("origin-b")),
         (None, Some("origin-a")),
@@ -182,4 +183,66 @@ fn partial_call_replay_may_finish_but_cannot_change_intake_origin() {
             .replay_token(),
         None
     );
+}
+
+#[test]
+fn function_call_format_does_not_widen_reasoning_or_part_purpose() {
+    let format = ReplayFormat::GoogleInteractionsV1FunctionCall;
+    let replay = value(format, true, "synthetic-call", Some("origin-a"));
+    assert!(replay.validate(&call()).is_ok());
+    assert!(replay.validate(&ItemKind::Reasoning).is_err());
+    assert!(replay.validate(&ItemKind::Compaction).is_err());
+    let mut state = reduce(StreamState::new(), StreamEvent::Started).unwrap();
+    for event in [
+        StreamEvent::ItemStarted {
+            item: ItemId::new(1),
+            kind: ItemKind::Message { phase: None },
+            replay: None,
+        },
+        StreamEvent::PartStarted {
+            item: ItemId::new(1),
+            part: PartId::new(1),
+            kind: PartKind::Text,
+        },
+        StreamEvent::Delta {
+            item: ItemId::new(1),
+            part: PartId::new(1),
+            fragment: "X".into(),
+            logprobs: vec![],
+        },
+        StreamEvent::ValueFinished {
+            item: ItemId::new(1),
+            part: PartId::new(1),
+        },
+    ] {
+        state = reduce(state, event).unwrap();
+    }
+    let attach = |replay| StreamEvent::PartReplay {
+        item: ItemId::new(1),
+        part: PartId::new(1),
+        replay,
+    };
+    assert!(reduce(state.clone(), attach(replay)).is_err());
+    assert!(
+        reduce(
+            state,
+            attach(value(
+                ReplayFormat::GoogleGenerateContentSignature,
+                true,
+                "synthetic-part",
+                Some("origin-a")
+            ))
+        )
+        .is_ok()
+    );
+    let oversized = ReplayValue::final_value(
+        format,
+        Text::new(
+            "x".repeat(MAX_TEXT_BYTES + 1),
+            "oversized",
+            MAX_TEXT_BYTES + 1,
+        )
+        .unwrap(),
+    );
+    assert!(oversized.validate().is_err());
 }

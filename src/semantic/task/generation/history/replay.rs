@@ -6,6 +6,8 @@ pub enum ReplayFormat {
     ResponsesEncrypted,
     ResponsesCompaction,
     GoogleInteractionsV1Thought,
+    /// Opaque signature owned by one Interactions function-call step.
+    GoogleInteractionsV1FunctionCall,
     GoogleGenerateContentPart,
     /// Opaque signature of an actual non-thought text part or function call.
     GoogleGenerateContentSignature,
@@ -76,6 +78,16 @@ impl ReplayValue {
         }
         self.validate()
     }
+    pub(crate) fn validate_call_attachment(&self) -> Result<(), GenerationError> {
+        if !matches!(
+            self.format(),
+            ReplayFormat::GoogleGenerateContentSignature
+                | ReplayFormat::GoogleInteractionsV1FunctionCall
+        ) {
+            return Err(GenerationError::InvalidReplay);
+        }
+        self.validate()
+    }
     pub(crate) fn fingerprint(&self) -> [u8; 32] {
         use sha2::{Digest, Sha256};
         let mut hash = Sha256::new();
@@ -87,6 +99,7 @@ impl ReplayValue {
             ReplayFormat::AnthropicMessagesRedactedThinking => 5,
             ReplayFormat::ResponsesCompaction => 6,
             ReplayFormat::GoogleGenerateContentSignature => 7,
+            ReplayFormat::GoogleInteractionsV1FunctionCall => 8,
         }]);
         hash.update([u8::from(self.replay_token().is_some())]);
         hash.update(self.as_str().as_bytes());
@@ -120,7 +133,7 @@ impl ItemReplay {
         match kind {
             ItemKind::Reasoning => self.value.validate_reasoning(),
             ItemKind::Compaction => self.value.validate_compaction(),
-            ItemKind::ToolCall { .. } => self.value.validate_attachment(),
+            ItemKind::ToolCall { .. } => self.value.validate_call_attachment(),
             _ => Err(GenerationError::InvalidReplay),
         }
     }

@@ -465,7 +465,13 @@ fn chat_details_keep_item_boundaries_and_survive_pi_and_opencode_replays() {
             }
         }
     }
-    let summary = |s: &str| json!({"reasoning_content":s,"reasoning_details":[{"type":"reasoning.summary","summary":s,"format":"openai-responses-v1","index":0}]});
+    let summary = |s: &str, first: bool| {
+        let mut detail = json!({"type":"reasoning.summary","summary":s,"index":0});
+        if first {
+            detail["format"] = json!("openai-responses-v1");
+        }
+        json!({"reasoning_content":s,"reasoning_details":[detail]})
+    };
     let sealed = |n: usize| json!({"reasoning_details":[{"type":"reasoning.encrypted","format":"openai-responses-v1","index":n,"id":format!("r{}", n / 2 + 1)}]});
     let without_data: Vec<_> = deltas
         .iter()
@@ -479,13 +485,13 @@ fn chat_details_keep_item_boundaries_and_survive_pi_and_opencode_replays() {
             delta
         })
         .collect();
-    // No empty reasoning opener; every readable delta has both fields.
+    // Both views persist; constant format occurs once, avoiding SDK string concatenation.
     assert_eq!(
         without_data[..8],
         [
             json!({"role":"assistant"}),
-            summary("A"),
-            summary("a"),
+            summary("A", true),
+            summary("a", false),
             sealed(1),
             json!({"reasoning_content":"B","reasoning_details":[{"type":"reasoning.text","text":"B","format":"openai-responses-v1","index":2}]}),
             sealed(3),

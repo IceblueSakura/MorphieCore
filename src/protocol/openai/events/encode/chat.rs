@@ -112,6 +112,12 @@ impl EventEncoder {
         fragment: &str,
         structured: bool,
     ) -> Result<Value, CodecError> {
+        let first_text = !fragment.is_empty()
+            && self
+                .state()?
+                .part(item, part)?
+                .text()
+                .is_some_and(|text| text.len() == fragment.len());
         Ok(match self.state()?.part(item, part)?.kind {
             PartKind::Text => json!({ "content": fragment }),
             PartKind::Refusal => json!({ "refusal": fragment }),
@@ -124,21 +130,25 @@ impl EventEncoder {
             }
             PartKind::ReasoningText if !structured => json!({ "reasoning_content": fragment }),
             PartKind::ReasoningText => {
-                let detail = json!({
+                let mut detail = json!({
                     "type": "reasoning.text",
                     "text": fragment,
-                    "format": "openai-responses-v1",
                     "index": self.detail_index(item, Some(part))?,
                 });
+                if first_text {
+                    detail["format"] = json!("openai-responses-v1");
+                }
                 json!({ "reasoning_content": fragment, "reasoning_details": [detail] })
             }
             PartKind::Summary if structured => {
-                let detail = json!({
+                let mut detail = json!({
                     "type": "reasoning.summary",
                     "summary": fragment,
-                    "format": "openai-responses-v1",
                     "index": self.detail_index(item, Some(part))?,
                 });
+                if first_text {
+                    detail["format"] = json!("openai-responses-v1");
+                }
                 json!({ "reasoning_content": fragment, "reasoning_details": [detail] })
             }
             _ => return Err(CodecError::Unsupported("Chat reasoning".into())),
@@ -158,7 +168,16 @@ impl EventEncoder {
         let mut chunks = vec![];
         // The owned replay manifest precedes the finishing chunk of its message.
         if let Some(carrier) = self.attachment.take() {
-            let detail = crate::protocol::attachments::chat_detail(carrier.as_str());
+            let mut detail = crate::protocol::attachments::chat_detail(carrier.as_str());
+            // SDK list-delta accumulation needs a new slot after native reasoning.
+            let index: usize = self
+                .state()?
+                .items()
+                .iter()
+                .filter(|item| matches!(item.kind, ItemKind::Reasoning))
+                .map(|item| item.parts.len() + usize::from(item.replay.is_some()))
+                .sum();
+            detail["index"] = json!(index);
             chunks.push(self.chunk(json!({ "reasoning_details": [detail] }), Value::Null));
         }
         chunks.push(self.chunk(json!({}), json!(finish)));

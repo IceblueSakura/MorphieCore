@@ -9,7 +9,6 @@
   - [Generation boundary review](#generation-boundary-review)
     - [Missing Messages output ceilings](#missing-messages-output-ceilings)
     - [Google output report owners (unselected)](#google-output-report-owners-unselected)
-    - [Interactions call-signature replay (unselected)](#interactions-call-signature-replay-unselected)
   - [Resource and execution safety](#resource-and-execution-safety)
 - [Operation contracts](#operation-contracts)
   - [Token counting](#token-counting)
@@ -171,18 +170,6 @@ Recommendation after research: retain aggregate rejection until a concrete model
 The explanation uses the existing terminal text and total-response budgets, retaining an explicit empty string if supplied. Token-identity records use signed int32 values and the existing token/top-candidate and fidelity budgets; bind them to source origin/model, readable owner, exact probabilities and chosen/alternative positions. Owner/probability edits invalidate them. Targets without an exact carrier reject by default; no new report-omission rule, token-byte inference, probability-request admission or Google downstream endpoint is selected by this proposal.
 
 Prefer those local additions over a new generic report store. Existing `TopLogprob` already preserves absent alternative token/probability values and needs no new owner. Existing Provider-tool observations are the first candidate for future URL retrieval facts, but their Google mapping and delivery are not selected. Keep nonempty URL-context reports rejected without activating hosted tools or full citation support.
-
-#### Interactions call-signature replay (unselected)
-
-The [native v1 counterexample](refs/2026-10-17-generation-contracts.md#interactions-partial-opening-and-service-evidence-2026-10-20) contains a `function_call` step with ID, name, object arguments and string `signature`. The inspected v1 reference and pinned SDK do not list that field on function calls; the stateless guide nevertheless requires returning every generated step unchanged. Current rejection is honest but prevents the observed Gemini 3.8 Flash tool loop.
-
-Recommend a narrow extension using the existing `ToolCall.replay`, not another semantic owner or raw step bag:
-
-- Add a distinct Interactions v1 function-call replay format. Do not reuse the thought format or the generateContent part/signature formats. Enforce call-only ownership explicitly; widening the shared attachment validator must not admit this format on message parts or reasoning.
-- Keep the payload codec-local and bounded. Retain the opaque step signature unchanged, bind it through existing fidelity to exact call identity/name/arguments/context and trusted deployment/model origin, and follow existing edit/foreign-state rules. Do not interpret it as credentials, tool execution or a status report.
-- Intake the selected source carrier, seal only on call closure, return it through existing client attachment manifests, and encode it only on its native `function_call` input step. Supplied same-owner snapshots compare with already-observed state; snapshot-only/new signatures still reject. This adds no generic lifecycle framework, hosted tools or snapshot buffering.
-
-After explicit design approval, independently verify wire→IR and IR→wire, wrong-owner and edited/foreign replay rejection, null/empty/oversize handling, snapshot disagreement and Router/SDK returned history. Keep real Provider acceptance separately bounded and do not claim support from unsigned synthetic calls.
 
 #### Review concrete ownership coupling
 

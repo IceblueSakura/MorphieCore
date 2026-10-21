@@ -209,7 +209,7 @@ pub fn items(
             }
             Item::ToolCall(c) => {
                 if let Some(value) = &c.replay {
-                    value.validate_attachment()?;
+                    value.validate_call_attachment()?;
                     if c.status == ItemLifecycle::Completed && value.replay_token().is_none() {
                         return Err(GenerationError::InvalidReplay);
                     }

@@ -296,7 +296,10 @@ pub fn encode_generation_request(
         request,
         fidelity,
         target,
-        &[crate::semantic::task::generation::ReplayFormat::GoogleInteractionsV1Thought],
+        &[
+            crate::semantic::task::generation::ReplayFormat::GoogleInteractionsV1Thought,
+            crate::semantic::task::generation::ReplayFormat::GoogleInteractionsV1FunctionCall,
+        ],
     )?;
     let request = crate::protocol::native::group_client_history(&request, false)?;
     request.validate()?;

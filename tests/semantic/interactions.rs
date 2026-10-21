@@ -612,7 +612,7 @@ fn lifecycle_snapshots_compare_source_ordinals_without_republishing_content() {
             change(2, "arguments", json!({"path":"b"})),
             "snapshot steps",
         ),
-        (change(2, "signature", json!("new")), "signature owner"),
+        (change(2, "signature", json!("new")), "snapshot steps"),
         (change(0, "type", json!("thought")), "snapshot steps"),
     ] {
         let mut changed = frames.clone();
@@ -721,13 +721,50 @@ fn step_stream_preserves_usage_call_arguments_and_thought_signature() {
         serde_json::from_str::<serde_json::Value>(value.replay_token().unwrap()).unwrap(),
         json!({"anchor":"thought","signature":"synthetic-thought"})
     );
-    let mut unsupported = interaction_frames();
-    unsupported[6]["step"]["signature"] = json!("not-an-official-call-carrier");
-    assert!(
-        decode_interaction(&unsupported, true)
-            .unwrap_err()
-            .contains("Interactions signature owner")
+    let mut signed = interaction_frames();
+    signed[6]["step"]["signature"] = json!("synthetic-call");
+    let signed = decode_interaction(&signed, true).unwrap();
+    assert_eq!(signed.semantic.items().len(), 2);
+    let Item::ToolCall(call) = &signed.semantic.items()[1].1 else {
+        panic!("call")
+    };
+    let value = call.replay.as_ref().unwrap();
+    assert_eq!(
+        value.format(),
+        ReplayFormat::GoogleInteractionsV1FunctionCall
     );
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(value.replay_token().unwrap()).unwrap(),
+        json!({"anchor":"function_call","signature":"synthetic-call"})
+    );
+    let mut full = interaction_frames();
+    full[6]["step"]["signature"] = json!("synthetic-call");
+    full[6]["step"]["arguments"] = json!({"path":"a"});
+    full.drain(7..9);
+    assert_eq!(decode_interaction(&full, true).unwrap(), signed);
+    let mut snapshots = interaction_frames();
+    snapshots[6]["step"]["signature"] = json!("synthetic-call");
+    let last = snapshots.len() - 1;
+    snapshots[last]["interaction"]["steps"] = json!([
+        {"type":"thought","signature":"synthetic-thought"},
+        {"type":"function_call","id":"c1","name":"read","arguments":{"path":"a"},"signature":"synthetic-call"}
+    ]);
+    assert_eq!(decode_interaction(&snapshots, true).unwrap(), signed);
+    snapshots[last]["interaction"]["steps"][1]["signature"] = json!("different");
+    assert!(
+        decode_interaction(&snapshots, true)
+            .unwrap_err()
+            .contains("snapshot steps")
+    );
+    for signature in [json!(null), json!(17), json!("")] {
+        let mut malformed = interaction_frames();
+        malformed[6]["step"]["signature"] = signature;
+        assert!(
+            decode_interaction(&malformed, true)
+                .unwrap_err()
+                .contains("signature")
+        );
+    }
     let usage = decoded.semantic.usage().unwrap();
     assert_eq!(
         (
@@ -935,6 +972,97 @@ fn signed_history(format: ReplayFormat) -> (GenerationRequest, FidelityRecords) 
         .with_items(items)
         .unwrap();
     (request, fidelity)
+}
+
+#[test]
+fn function_call_signatures_are_native_and_dependency_bound() {
+    let target = ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap();
+    let origin = issuer("synthetic-google", "gemini-synthetic");
+    let history = |payload: serde_json::Value| {
+        let (request, mut fidelity) = signed_history(ReplayFormat::GoogleInteractionsV1Thought);
+        let mut items = request.items().to_vec();
+        let (id, Item::ToolCall(call)) = &mut items[2] else {
+            panic!("call")
+        };
+        call.replay = Some(ReplayValue::final_value(
+            ReplayFormat::GoogleInteractionsV1FunctionCall,
+            Text::new(payload.to_string(), "call signature", MAX_TEXT_BYTES).unwrap(),
+        ));
+        fidelity
+            .record_call_replay(*id, call, Some(origin.clone()))
+            .unwrap();
+        let (owner, call) = (*id, call.clone());
+        (request.with_items(items).unwrap(), fidelity, owner, call)
+    };
+    let (request, fidelity, owner, call) =
+        history(json!({"anchor":"function_call","signature":"synthetic-call"}));
+    let (wire, rules) = encode_generation_request(&request, &fidelity, &target).unwrap();
+    assert_eq!(
+        wire["input"],
+        json!([
+            {"type":"user_input","content":[{"type":"text","text":"Read."}]},
+            {"type":"thought","summary":[{"type":"text","text":"Plan"}],"signature":"synthetic-thought"},
+            {"type":"function_call","id":"c1","name":"read","arguments":{},"signature":"synthetic-call"},
+            {"type":"function_result","call_id":"c1","name":"read","result":"done"}
+        ])
+    );
+    assert!(rules.is_empty());
+    for field in ["id", "name", "arguments", "context", "status", "signature"] {
+        let mut edited = call.clone();
+        match field {
+            "id" => edited.call_id = Text::new("different", "id", 64).unwrap(),
+            "name" => edited.name = Text::new("other", "name", 64).unwrap(),
+            "arguments" => edited.arguments = ToolArguments::Raw("{\"changed\":true}".into()),
+            "context" => edited.context.async_call = true,
+            "status" => edited.status = ItemLifecycle::Incomplete,
+            "signature" => {
+                edited.replay = Some(ReplayValue::final_value(
+                    ReplayFormat::GoogleInteractionsV1FunctionCall,
+                    Text::new(
+                        "{\"anchor\":\"function_call\",\"signature\":\"changed\"}",
+                        "fixture",
+                        256,
+                    )
+                    .unwrap(),
+                ))
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            !fidelity.call_replay_matches(owner, &edited, Some(&origin)),
+            "{field}"
+        );
+    }
+    for other in [
+        ReplayTarget::new("synthetic-google", "other-model").unwrap(),
+        ReplayTarget::new("other-deployment", "gemini-synthetic").unwrap(),
+    ] {
+        assert!(encode_generation_request(&request, &fidelity, &other).is_err());
+    }
+    let (foreign, receipt) =
+        morphiecore::protocol::google::generate_content::encode_generation_request(
+            &request, &fidelity, &target, None,
+        )
+        .unwrap();
+    assert!(!foreign.to_string().contains("synthetic-call"));
+    assert!(receipt.contains(
+        &morphiecore::protocol::google::generate_content::RequestRule::TransferVisibleHistory
+    ));
+    for payload in [
+        json!({"anchor":"thought","signature":"synthetic-call"}),
+        json!({"anchor":"function_call"}),
+        json!({"anchor":"function_call","signature":null}),
+        json!({"anchor":"function_call","signature":""}),
+        json!({"anchor":"function_call","signature":"x","unexpected":true}),
+    ] {
+        let (request, fidelity, _, _) = history(payload);
+        assert!(
+            encode_generation_request(&request, &fidelity, &target)
+                .unwrap_err()
+                .to_string()
+                .contains("signature payload")
+        );
+    }
 }
 
 #[test]

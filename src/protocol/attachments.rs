@@ -162,7 +162,8 @@ fn sealed(value: Option<&ReplayValue>) -> Result<Option<String>, CodecError> {
             if value.replay_token().is_none() {
                 return Err(unsupported());
             }
-            value.validate_attachment()?;
+            // Slot purpose was checked by the response's owner-bound fidelity.
+            value.validate()?;
             let (_, format, _) = replay_envelope::open(value.as_str()).ok_or_else(invalid)?;
             if format != value.format() {
                 return Err(invalid());
@@ -179,7 +180,8 @@ fn replay(value: Option<&str>) -> Result<Option<ReplayValue>, CodecError> {
                 format,
                 Text::new(value, "attachment", MAX_TEXT_BYTES).map_err(|_| invalid())?,
             );
-            replay.validate_attachment()?;
+            // Restoration validates purpose when recording the specific part/call.
+            replay.validate()?;
             Ok(replay)
         })
         .transpose()
