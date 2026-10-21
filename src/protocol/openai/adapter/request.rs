@@ -13,13 +13,14 @@ use crate::{
     },
 };
 use serde_json::Value;
+use std::borrow::Cow;
 
-fn with_effort_mapping(
-    request: &Request,
+fn with_effort_mapping<'a>(
+    request: Cow<'a, Request>,
     mapping: &crate::protocol::reasoning::ReasoningEffortMapping,
     profile: Profile,
     native_thinking: bool,
-) -> Result<Option<Request>, CodecError> {
+) -> Result<(Cow<'a, Request>, bool), CodecError> {
     mapping.validate()?;
     if openai::dialect::bailian::extended(
         request.task.semantic.settings(),
@@ -28,10 +29,15 @@ fn with_effort_mapping(
     ) {
         return Err(CodecError::Unsupported("reasoning controls".into()));
     }
-    let mut items = request.task.semantic.items().to_vec();
-    for (_, item) in &mut items {
+    let mut items = Cow::Borrowed(request.task.semantic.items());
+    for (index, (_, item)) in request.task.semantic.items().iter().enumerate() {
         if let crate::semantic::task::generation::Item::ConfigurationUpdate(update) = item {
-            openai::reasoning::admit_configuration_mapping(update, Some(mapping), false)?;
+            let mut mapped = *update;
+            openai::reasoning::admit_configuration_mapping(&mut mapped, Some(mapping), false)?;
+            if mapped != *update {
+                items.to_mut()[index].1 =
+                    crate::semantic::task::generation::Item::ConfigurationUpdate(mapped);
+            }
         }
     }
     let mut settings = request.task.semantic.settings().clone();
@@ -45,36 +51,70 @@ fn with_effort_mapping(
             level: mapped,
         });
     }
-    if &settings == request.task.semantic.settings() && items == request.task.semantic.items() {
-        return Ok(None);
+    if &settings == request.task.semantic.settings() && matches!(items, Cow::Borrowed(_)) {
+        return Ok((request, false));
     }
-    let mut copy = request.clone();
-    copy.task.semantic = copy
-        .task
-        .semantic
-        .with_settings(settings)?
-        .with_items(items)?;
-    Ok(Some(copy))
+    let items = match items {
+        Cow::Owned(items) => Some(items),
+        Cow::Borrowed(_) => None,
+    };
+    let mut request = request.into_owned();
+    request.task.semantic = request.task.semantic.with_settings(settings)?;
+    if let Some(items) = items {
+        request.task.semantic = request.task.semantic.with_items(items)?;
+    }
+    Ok((Cow::Owned(request), true))
 }
 
 /// OpenAI requires a schema name; Messages and Gemini formats have none. The fixed
 /// name is a wire label, not a new semantic output constraint.
-fn with_schema_name(request: &Request) -> Result<Option<Request>, CodecError> {
+fn with_schema_name(request: Cow<'_, Request>) -> Result<(Cow<'_, Request>, bool), CodecError> {
     use crate::semantic::{
         task::generation::OutputConstraint,
         value::{Presence, Text},
     };
+    if !matches!(
+        request.task.semantic.settings().text.format,
+        Presence::Value(OutputConstraint::JsonSchema { name: None, .. })
+    ) {
+        return Ok((request, false));
+    }
     let mut settings = request.task.semantic.settings().clone();
     let Presence::Value(OutputConstraint::JsonSchema {
         name: name @ None, ..
     }) = &mut settings.text.format
     else {
-        return Ok(None);
+        unreachable!("checked schema name");
     };
     *name = Some(Text::new("response", "schema name", 64).expect("static name"));
-    let mut copy = request.clone();
-    copy.task.semantic = copy.task.semantic.with_settings(settings)?;
-    Ok(Some(copy))
+    let mut request = request.into_owned();
+    request.task.semantic = request.task.semantic.with_settings(settings)?;
+    Ok((Cow::Owned(request), true))
+}
+
+fn without_tool_error_flags(
+    request: Cow<'_, Request>,
+) -> Result<(Cow<'_, Request>, bool), CodecError> {
+    use crate::semantic::task::generation::Item;
+    if request.source != Some(crate::adapter::ClientProtocol::Messages)
+        || !request
+            .task
+            .semantic
+            .items()
+            .iter()
+            .any(|(_, item)| matches!(item, Item::ToolResult(result) if result.is_error.is_some()))
+    {
+        return Ok((request, false));
+    }
+    let mut items = request.task.semantic.items().to_vec();
+    for (_, item) in &mut items {
+        if let Item::ToolResult(result) = item {
+            result.is_error = None;
+        }
+    }
+    let mut request = request.into_owned();
+    request.task.semantic = request.task.semantic.with_items(items)?;
+    Ok((Cow::Owned(request), true))
 }
 
 impl Adapter {
@@ -322,15 +362,14 @@ impl Adapter {
                 "responses.transfer-visible-history.v1"
             });
         }
-        let request = stripped.as_ref().unwrap_or(request);
+        let mut projected = stripped.map_or(Cow::Borrowed(request), Cow::Owned);
         if self.adaptation.reasoning_policy.is_some() && self.adaptation.effort_mapping.is_some() {
             return Err(CodecError::Invalid("overlapping reasoning policies").into());
         }
-        let mut projected = std::borrow::Cow::Borrowed(request);
         if let Some(policy) = &self.adaptation.reasoning_policy
-            && let Some(semantic) = policy.project_request(&request.task.semantic)?
+            && let Some(semantic) = policy.project_request(&projected.task.semantic)?
         {
-            controls.push(policy.receipt(&request.task.semantic, &semantic)?);
+            controls.push(policy.receipt(&projected.task.semantic, &semantic)?);
             projected.to_mut().task.semantic = semantic;
             rules.push(policy.rule);
         }
@@ -366,42 +405,29 @@ impl Adapter {
         ) {
             return Err(CodecError::Unsupported("reasoning controls".into()).into());
         }
-        let mapped = self
-            .adaptation
-            .effort_mapping
-            .map(|mapping| {
-                with_effort_mapping(
-                    request,
-                    mapping,
-                    self.protocol,
-                    self.adaptation.rules.thinking_controls,
-                )
-            })
-            .transpose()?
-            .flatten();
-        if let Some(mapped_request) = &mapped {
-            controls.push(RequestControlLoss::Reasoning {
-                rule: self
-                    .adaptation
-                    .effort_mapping
-                    .expect("selected mapping")
-                    .rule,
-                input: crate::lowering::generation::ReasoningControls::request(
-                    &request.task.semantic,
-                ),
-                output: crate::lowering::generation::ReasoningControls::request(
-                    &mapped_request.task.semantic,
-                ),
-                preset_tokens: None,
-            });
-            rules.push(
-                self.adaptation
-                    .effort_mapping
-                    .expect("selected mapping")
-                    .rule,
-            );
+        if let Some(mapping) = self.adaptation.effort_mapping {
+            let input =
+                crate::lowering::generation::ReasoningControls::request(&projected.task.semantic);
+            let changed;
+            (projected, changed) = with_effort_mapping(
+                projected,
+                mapping,
+                self.protocol,
+                self.adaptation.rules.thinking_controls,
+            )?;
+            if changed {
+                controls.push(RequestControlLoss::Reasoning {
+                    rule: mapping.rule,
+                    input,
+                    output: crate::lowering::generation::ReasoningControls::request(
+                        &projected.task.semantic,
+                    ),
+                    preset_tokens: None,
+                });
+                rules.push(mapping.rule);
+            }
         }
-        let request = mapped.as_ref().unwrap_or(request);
+        let request = projected.as_ref();
         if self.adaptation.rules.omit_image_detail
             && request
                 .task
@@ -422,23 +448,17 @@ impl Adapter {
                 CodecError::Unsupported("image detail without target policy".into()).into(),
             );
         }
-        let named = with_schema_name(request)?;
-        if named.is_some() {
+        let (projected, changed) = with_schema_name(projected)?;
+        if changed {
             rules.push("openai.default-schema-name.v1");
         }
-        let request = named.as_ref().unwrap_or(request);
         // Messages permits this named loss only on targets without an error carrier.
         // Keep the source and every native candidate unchanged.
-        let errors = if request.source == Some(crate::adapter::ClientProtocol::Messages) {
-            let mut copy = request.clone();
-            copy.drop_tool_error_flags()?.then_some(copy)
-        } else {
-            None
-        };
-        if errors.is_some() {
+        let (projected, changed) = without_tool_error_flags(projected)?;
+        if changed {
             rules.push("openai.omit-tool-result-errors.v1");
         }
-        let request = errors.as_ref().unwrap_or(request);
+        let request = projected.as_ref();
         request.check_context(contract.standard_context)?;
         let contract = self.contract(contract);
         if self.adaptation.rules.responses_siwc {
@@ -655,6 +675,75 @@ impl Request {
 mod tests {
     use super::*;
     use crate::protocol::openai::Dialect;
+
+    #[test]
+    fn schema_naming_and_tool_error_omission_are_candidate_local() {
+        use serde_json::json;
+        for profile in [Profile::Chat, Profile::Responses] {
+            let target = Adapter::new(profile, Dialect::Standard, None);
+            for marker in [None, Some(false), Some(true)] {
+                let mut result =
+                    json!({"type":"tool_result","tool_use_id":"call","content":"feedback"});
+                if let Some(marker) = marker {
+                    result["is_error"] = json!(marker);
+                }
+                let body = json!({"model":"m","max_tokens":64,
+                "output_config":{"format":{"type":"json_schema","schema":{
+                    "type":"object","properties":{"ok":{"type":"boolean"}},
+                    "required":["ok"],"additionalProperties":false}}},
+                "messages":[
+                    {"role":"assistant","content":[{"type":"tool_use","id":"call","name":"lookup","input":{}}]},
+                    {"role":"user","content":[result]}
+                ]});
+                let source = crate::adapter::ClientAdapter::Messages
+                    .decode_client_request(body.to_string().as_bytes())
+                    .unwrap();
+                let before = source.clone();
+                let projected = target
+                    .encode_request_with_evidence(&source, "m", &TargetCaps::full())
+                    .unwrap();
+                assert!(projected.rules.contains(&"openai.default-schema-name.v1"));
+                assert_eq!(
+                    projected
+                        .rules
+                        .contains(&"openai.omit-tool-result-errors.v1"),
+                    marker.is_some()
+                );
+                match profile {
+                    Profile::Chat => {
+                        assert_eq!(
+                            projected.value["response_format"]["json_schema"]["name"],
+                            "response"
+                        );
+                        assert_eq!(
+                            projected.value["messages"][1],
+                            json!({"role":"tool","tool_call_id":"call","content":"feedback"})
+                        );
+                    }
+                    Profile::Responses => {
+                        assert_eq!(projected.value["text"]["format"]["name"], "response");
+                        assert_eq!(
+                            projected.value["input"][1],
+                            json!({"type":"function_call_output","call_id":"call","output":"feedback"})
+                        );
+                    }
+                }
+                assert_eq!(source, before);
+                let mut invalid = source.clone();
+                invalid.context.metadata = Presence::Value(Default::default());
+                let before = invalid.clone();
+                let mut caps = TargetCaps::full();
+                caps.standard_context = false;
+                assert!(matches!(
+                    target.encode_request(&invalid, "m", &caps),
+                    Err(AdapterError::Representation(
+                        RepresentationError::UnmigratedSemantic
+                    ))
+                ));
+                assert_eq!(invalid, before);
+            }
+        }
+    }
 
     #[test]
     fn siwc_rejects_final_controls_and_ungrouped_tools_instead_of_dropping_them() {

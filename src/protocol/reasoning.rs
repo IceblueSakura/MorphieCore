@@ -156,8 +156,8 @@ impl ReasoningRequestPolicy {
         source: &GenerationRequest,
     ) -> Result<Option<GenerationRequest>, CodecError> {
         let settings = self.project(source.settings())?;
-        let mut items = source.items().to_vec();
-        for (_, item) in &mut items {
+        let mut items = Cow::Borrowed(source.items());
+        for (index, (_, item)) in source.items().iter().enumerate() {
             if let Item::ConfigurationUpdate(update) = item {
                 let mut controls = GenerationSettings {
                     effort: update.effort.map_or(Presence::Absent, Presence::Value),
@@ -173,15 +173,21 @@ impl ReasoningRequestPolicy {
                         "configuration budget carrier".into(),
                     ));
                 }
-                update.effort = projected.effort.value().copied();
+                let effort = projected.effort.value().copied();
+                if update.effort != effort {
+                    items.to_mut()[index].1 =
+                        Item::ConfigurationUpdate(ConfigurationUpdate { effort, ..*update });
+                }
             }
         }
-        if &settings == source.settings() && items == source.items() {
+        if &settings == source.settings() && matches!(items, Cow::Borrowed(_)) {
             return Ok(None);
         }
-        Ok(Some(
-            source.clone().with_settings(settings)?.with_items(items)?,
-        ))
+        let mut target = source.clone().with_settings(settings)?;
+        if let Cow::Owned(items) = items {
+            target = target.with_items(items)?;
+        }
+        Ok(Some(target))
     }
     pub fn project(&self, source: &GenerationSettings) -> Result<GenerationSettings, CodecError> {
         source.validate()?;
