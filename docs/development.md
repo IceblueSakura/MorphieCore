@@ -242,6 +242,22 @@ For the selected [production closure](roadmap.md#generation-text-production-clos
 
 Source-derived expectations are not fresh acceptance. Record exclusions, including unverified account-compatible replay and process-local Responses history across restart. Preserve existing version-continuity results without treating them as acceptance of newly exercised paths.
 
+#### Initial production-profile baseline
+
+Use the existing `dashscope-flash-chat` and `opencode-go-haiku-messages` bindings for the three recovery profiles below. Production initially promises a single candidate per route; the synthetic two-key recovery pool is not real failover acceptance. The drivers' explicit compat/config values are authoritative; do not substitute client defaults.
+
+| Profile | Fixed client declaration | Cache, session and auxiliary calls |
+|---|---|---|
+| pi Chat | `openai-completions`, `qwen3.8-flash`, low effort, 2048-token cap; developer role, strict mode and store disabled; reasoning effort and `max_completion_tokens` enabled | Short retention and OpenAI affinity headers; agent retries off, provider retries zero; warming and automatic compaction off |
+| pi Messages | `anthropic-messages`, `claude-haiku-5-5`, requested low effort, 2048-token cap; adaptive thinking, strict tools and mid-conversation effort/system/tool changes enabled; temperature disabled | Short retention and native affinity; root effort remains high, requested effort is system-scoped; same retry/warming/compaction restrictions as pi Chat |
+| OpenCode Chat | `@opencode/ai/providers/openai-compatible`, `qwen3.8-flash#low`, explicit 2048-token cap; only read permission | Explicit titles suppress title requests; warming and automatic compaction off; scratch persistent session resumed for continuation. Zero extra transmissions is checked, not an assertion that every client retry path is disabled |
+
+Recovery allows exactly four client requests/five synthetic attempts per profile. It classifies initial tool declaration, tool feedback, an independent no-tool-invocation recovery conversation, and original-session continuation. It rejects duplicates, strict downgrades, summaries and other auxiliary transmissions rather than silently widening that budget. The 2026-10-21 rerun passed all three cases with local pi `1.3.0` and OpenCode `2.0.32`; this is synthetic recovery evidence only.
+
+Later capability gates must fix their own schema/choice/thinking combinations; these read loops establish neither structured output nor required/named choice. The separately documented Responses profile remains distinct, including explicit non-strict tools. Long-session acceptance selects ordinary Generation summarization on the same binding/model, not native compaction or an implicit summary model. Summary, split-summary, nudge and retry shapes still need bounded synthetic characterization before live acceptance; recovery does not cover them.
+
+Required sustained-operation diagnostics are narrowly scoped: observable dropped/failed logging, bounded restart-safe logging, body-free request/attempt correlation and client-side first-content timing against delayed terminal/EOF. Upstream first-byte timing is not client visibility. Bring these signals forward when an acceptance needs them; the current diagnostics queue/file cap and exclusive-create writer do not yet satisfy the saturation/restart gate. Follow [Observability](architecture.md#observability), not another diagnostics framework.
+
 ### Installed-client synthetic recovery
 
 This is a separate gate from SDK loopback and real Provider acceptance. `tests/clients.rs` creates a private synthetic credential store through `CredentialManager`; `tests/clients/recovery.py` starts the real gateway CLI with explicit scratch files and a loopback-only candidate. `drivers.py` runs pi RPC or OpenCode standalone with empty allowlisted environments, scratch HOME/XDG paths and no project resources. Supply **unwrapped** binaries explicitly: a PATH wrapper can source host secrets even under `env -i`.
@@ -253,7 +269,7 @@ MORPHIECORE_OPENCODE_BIN=/absolute/path/to/unwrapped/opencode \
   --ignored --test-threads=1 --nocapture
 ```
 
-Python 3 from the development environment needs only its standard library; `MORPHIECORE_CLIENT_PYTHON` optionally selects it. The gate currently requires pi `1.3.0` and OpenCode `2.0.6+e5ecb57`. The [version-continuity decision](architecture.md#scope-and-activation-decisions) preserves earlier scoped results across the change to `2.0.32`, but both Rust and Python harnesses still reject that newer version. GT-1 in [production closure](roadmap.md#generation-text-production-closure) repairs those checks without redesigning the profile or harness. Until repaired, this command does not accept `2.0.32`; keep actual tested versions in every new result.
+Python 3 from the development environment needs only its standard library; `MORPHIECORE_CLIENT_PYTHON` optionally selects it. Use the locally available pi `1.x` and OpenCode `2.x`; the [version policy](architecture.md#scope-and-activation-decisions) gates only the major, not the minor/patch. Resolve their unwrapped entry points without executing credential-loading wrappers. Record full tested versions in every result. Pinned source revisions remain research evidence, not installed-binary version gates; a supported major does not establish behavior before the checks run.
 
 Each of the three serial cases (pi Chat, pi native Messages, OpenCode Chat) fixes four client Generation requests and five upstream attempts: initial `read` on the primary, unpublished `503` on tool feedback, the same feedback completed by the secondary, an independent conversation recovering the primary, then original-session continuation on the secondary. Wire caps are 2048 tokens; candidate/route/exchange deadlines are 3/8/10 seconds, with a 120-second driver bound. The transparent admission forwarder counts client POSTs independently, rejects duplicates/excess requests and never rewrites payloads or session headers. pi retries are disabled; OpenCode's zero extra transmissions are observed, not inferred from an unsupported retry setting.
 

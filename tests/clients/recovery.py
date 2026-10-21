@@ -14,7 +14,7 @@ import threading
 import time
 from urllib.parse import urlsplit
 
-from drivers import Child, KEY, NEXT, PROBE, READ, TEXT, check, environment, private_json, run_opencode, run_pi
+from drivers import Child, KEY, NEXT, PROBE, READ, TEXT, check, check_client_version, environment, private_json, run_opencode, run_pi
 
 PLAN = "Synthetic read plan"
 SIGNATURE = "synthetic-client-thinking-signature"
@@ -349,8 +349,7 @@ def main():
     env = environment(root)
     with Child([client_binary, "--version"], env, work) as client:
         version = client.wait(timeout=5).decode().strip()
-    check(version == ("opencode v2.0.6+e5ecb57" if case == "opencode-chat" else "1.3.0"),
-          "unaccepted_client_version")
+    check_client_version(case, version)
     with ExitStack() as stack:
         origin = stack.enter_context(server(state, False))
         binding = "opencode-go-haiku-messages" if native else "dashscope-flash-chat"

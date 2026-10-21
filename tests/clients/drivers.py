@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import queue
+import re
 import sqlite3
 import subprocess
 import threading
@@ -19,6 +20,12 @@ TEXT = "cedar-71"
 def check(condition, code):
     if not condition:
         raise RuntimeError(code)
+
+
+def check_client_version(case, version):
+    prefix, major = ("(?:opencode v)?", "2") if case == "opencode-chat" else ("", "1")
+    check(re.fullmatch(prefix + major + r"\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?", version)
+          is not None, "unaccepted_client_major_version")
 
 
 def private_json(path, value):

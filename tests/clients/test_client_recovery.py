@@ -15,6 +15,27 @@ import drivers
 class ClientRecoveryOracles(unittest.TestCase):
     path = Path("/synthetic/sample.txt")
 
+    def test_installed_clients_are_gated_by_major_not_minor_or_patch(self):
+        for case, versions in [
+            ("pi-chat", ["1.3.0", "1.99.12", "1.4.0-dev.1"]),
+            ("pi-messages", ["1.3.0+local", "1.12.3"]),
+            ("opencode-chat", ["opencode v2.0.6+e5ecb57", "opencode v2.0.32",
+                               "opencode v2.99.12-dev.1+local", "2.1.0"]),
+        ]:
+            for version in versions:
+                with self.subTest(case=case, version=version):
+                    drivers.check_client_version(case, version)
+        for case, versions in [
+            ("pi-chat", ["0.99.0", "2.0.0", "11.3.0", "1", "1.x", "1.3.0\nextra"]),
+            ("opencode-chat", ["opencode v1.0.0", "opencode v3.0.0", "opencode v20.0.0",
+                               "opencode v2", "unknown", ""]),
+        ]:
+            for version in versions:
+                with self.subTest(case=case, version=version), self.assertRaisesRegex(
+                    RuntimeError, "^unaccepted_client_major_version$"
+                ):
+                    drivers.check_client_version(case, version)
+
     def chat(self, final=False):
         history = [
             {"role": "user", "content": recovery.READ},
