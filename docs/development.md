@@ -13,6 +13,7 @@ This guide owns tooling, test procedures and evidence reporting. Use offline, sy
   - [Documentation checks](#documentation-checks)
 - [Coverage and pruning](#coverage-and-pruning)
 - [Online acceptance](#online-acceptance)
+  - [Production-profile acceptance](#production-profile-acceptance)
   - [Installed-client synthetic recovery](#installed-client-synthetic-recovery)
   - [Real Provider checks](#real-provider-checks)
   - [pi acceptance](#pi-acceptance)
@@ -228,6 +229,18 @@ Coverage proves execution, not assertions. Never remove safety-invariant tests j
 ## Online acceptance
 
 Record the tested binary version separately from the pinned source revision. An installed-client gate does not establish behavior for a different pinned revision or every protocol route.
+
+### Production-profile acceptance
+
+For the selected [production closure](roadmap.md#generation-text-production-closure), begin with the actual intended client profile, not an assumption that the earlier reduced acceptance configuration is its default. Keep the existing scratch-state, unwrapped-binary, loader and redaction boundaries; reuse the existing test layout rather than another harness framework.
+
+1. Record client version, API/model/compat flags, tool and strictness declarations, cache/session options, compaction mode/model, retries and auxiliary-request settings. Inspect only public source and test-owned configuration, never host credentials or private agent state.
+2. Characterize request shapes and internal retries against a synthetic upstream first. The [source recheck](refs/2026-10-17-generation-contracts.md#production-client-profiles-2026-10-21) identifies pi's independent strict-tool downgrade and summary retry, and OpenCode's native-compaction choice, summary nudge and retry path. Count client transmissions separately from gateway attempts; a single command or disabled SDK retry does not establish a single request. A downgraded strict request does not pass the stricter profile.
+3. Use ordinary Generation summarization for gateway long-session acceptance; do not select native compaction on a route without that operation. Bound all summary/continuation requests and verify the rebuilt history and next tool turn. Cache/session carriers may differ on summary calls; inspect the wire and trusted target defaults instead of inferring no caching from a client preference.
+4. Reproduce the intended profile without request/history rewriting, then run the selected bounded live checks. Fix target, total request count including summaries, wire caps and timeouts before each run, with no hidden retries. Unexpected calls stop the gate rather than expanding its budget. Keep fallback/downgrade characterization synthetic unless a separately selected live contract explicitly includes it.
+5. For incremental delivery, use a delayed synthetic upstream whose terminal/EOF follows actual client-visible content; separately record timing for a bounded no-tool live run. Do not remove the tool-validation guard to get a better timing result. After cancellation, verify release and no replay/success; connection closure does not prove that remote computation or billing stopped.
+
+Source-derived expectations are not fresh acceptance. Record exclusions, including unverified account-compatible replay and process-local Responses history across restart. Preserve existing version-continuity results without treating them as acceptance of newly exercised paths.
 
 ### Installed-client synthetic recovery
 

@@ -151,7 +151,11 @@ When a concept cannot be expressed, show a minimal counterexample and structural
 
 Bounded, ordered input examples belong to the function-tool definition, including definitions introduced by `ToolChange`. They are model-visible input, not schema constraints or executable calls. Preserve their source-defined shape and presence without rewriting the schema or appending examples to the description.
 
+The [source recheck](refs/2026-10-17-generation-contracts.md#anthropic-input-and-cache-recheck-2026-10-21) requires object examples and documents upstream schema validation. Existing `SchemaDocument` checks data shape and bounds, not instance validity. Keep these responsibilities explicit: no automatic schema/example repair, claim of local instance validation or new general validator follows from this owner selection. Native rejection remains an error, not a successful adaptation or reason for silent retry.
+
 Document context belongs to each file use, alongside its description, not to the shared resource identity. Two uses of the same source may have different contexts. Preserve context through ordinary message and tool-result carriers and returned history where the source permits them; do not turn it into another instruction or adjacent text.
+
+Context is model-visible text, not citable document content or an arbitrary JSON object. Handle absent/null/empty from the pinned source rather than truthiness; a nullable SDK type alone does not prove runtime equivalence. Examples/context edits change model-visible input and cannot preserve an unchanged-prefix claim merely because the underlying tool name or resource source is unchanged.
 
 Implement accurate Messages carriers first. A target without an accurate carrier rejects either concept; no omission or prompt-rewriting approximation is selected. Existing bounds, owner-edit validation, candidate isolation and history-prefix stability apply. These owners do not select document citations, tool discovery, hosted execution or File services.
 
@@ -159,9 +163,9 @@ Implement accurate Messages carriers first. A target without an accurate carrier
 
 **Selected on 2026-10-21; implementation is pending.** Add a bounded text-position anchor alongside whole-text and range anchors, distinct from a reported list ordinal. Two citations may name the same insertion position without sharing a list position.
 
-Map confirmed `file_citation.index` insertion semantics to that anchor. Pin the source revision and position unit before implementing Unicode and boundary validation; do not infer units from example strings. Check `file_path.index` independently rather than assigning semantics by field name. Ambiguous carriers reject until resolved.
+Map confirmed `file_citation.index` insertion semantics to that anchor only after resolving native units. The [source recheck](refs/2026-10-17-generation-contracts.md#openai-citation-positions-2026-10-21) confirms the existing `547ecb1` baseline but not its Unicode unit. Implement and validate the unit-explicit local owner independently; unresolved native mapping rejects rather than retaining the old ordinal interpretation. `file_path.index` remains a distinct reported file-list index; neither its spelling nor event `annotation_index` makes it a text point.
 
-Static, event and final-snapshot representations must retain the same source/text association. Text and resource edits follow existing dependency invalidation, not a stale position restored from fidelity. This local correction selects neither complete Messages citations nor source/quote extensions, Files or hosted search.
+Static, event and final-snapshot representations must retain the same source/text-part association. Arrival-time checks bound the annotation; full-text position validation waits for owner closure, not the current text prefix. Text and resource edits follow existing dependency invalidation, not a stale position restored from fidelity. Synthetic Unicode tests do not prove native units. This local correction selects neither complete Messages citations nor source/quote extensions, Files or hosted search.
 
 #### Responses item and event observations
 
@@ -320,6 +324,8 @@ Parsing direction is explicit: client input, upstream reports and encoder checks
 
 The 2026-10-21 production-closure decision requires unsupported known budget and dispatch controls, including Messages `output_config.task_budget` and `toolset_name`, to reject before permissive filtering. Their current inventory classification as ignored is a repair target, not permission to discard protected meaning. Determine active/null/empty source semantics before adding checks; genuinely unknown extensions remain ignored. This selects rejection, not task-budget or toolset execution support.
 
+Check actual protocol owners: request-level task budget and tool-use/result dispatch identity, including upstream calls and returned history. Do not recursively treat identically named argument/schema properties as controls. The [refusal-detail recheck](refs/2026-10-17-generation-contracts.md#refusal-detail-boundaries-2026-10-21) additionally identifies protected beta credit/prefill/retry-target reports; rejecting them is a field-handling repair, not fallback execution support.
+
 #### Client Responses history shorthand
 
 The user selected an input-only compatibility rule on 2026-10-20. A client Responses assistant-history `output_text` part may omit `annotations`, like the already supported assistant string shorthand. Intake materializes the empty annotation list and records `responses.default-history-annotations.v1` once as a body-free `request.decode` insertion receipt. This is not an ignored field or a report of upstream annotation completeness.
@@ -393,7 +399,11 @@ Validate source types, bounds, presence and repeated/final reports before projec
 
 A cross-protocol delivery copy may omit explicitly classified explanation-only information under a named, body-free receipt when no accurate carrier exists. Never use this permission to omit refusal state, safety blocking, terminal causes, usage or execution policy, or to fabricate a successful terminal. Preserve source IR; native report carriage is not replaced by omission merely for convenience.
 
+Classify fields before omission. Messages refusal `category` reports a policy class; it is not automatically covered by permission to omit `explanation`. Unsupported non-null beta `fallback_credit_token`, `fallback_has_prefill_claim` and `recommended_model` must be validated and rejected before projection, including a supplied false claim. Do not retain/redeem credit tokens, authorize prefill or choose a retry target through this report slice. See the [pinned fields](refs/2026-10-17-generation-contracts.md#refusal-detail-boundaries-2026-10-21).
+
 The narrow Google pause exception also selects source-version review of `serviceTier` and `service_tier`. Reuse the existing service-class owner only when the selected API/model profile and equivalent meaning are established. Service classes are outside the explanatory-omission permission: incompatible or unresolved reports reject. Do not infer a service report from a request, map Google processing class to Messages capacity merely by name, or add new service-policy semantics without another decision.
+
+The [current v1 OpenAPI](refs/2026-10-17-generation-contracts.md#google-text-report-source-recheck-2026-10-21) establishes service fields on created/completed resources, not status updates; beta/SDK `deferred` does not widen that profile. Candidate `finishMessage` requires reported finish-reason evidence. Source discovery resolves field existence, not lifecycle drift, explicit-default normalization or body/header agreement. Existing strict consistency remains the default; no new header carrier, request-policy mapping or usage rule is selected.
 
 #### Service policies and reports
 
@@ -805,6 +815,8 @@ The Messages capability view distinguishes valid owner-local 5m/1h breakpoints f
 **Selected on 2026-10-21; public admission remains closed until implementation and acceptance.** Reuse existing request-wide automatic-cache controls, initially for the Go/Haiku binding. Publish support only when every selected candidate is an opted-in native Messages target with verified support; do not infer it from owner-local markers or the marker-free default.
 
 Preserve explicit 5m/1h intent and existing marker-count, TTL-order and automatic/marker conflict checks. Absence keeps the existing target default policy; explicit input is neither replaced by that default nor silently omitted on mixed routes. Preflight, preparation and capability publication must agree without changing route membership, order or affinity. Cache-use reports do not prove measured retention or invoice accuracy. No prewarming, cached-context lifecycle or new File service is selected.
+
+Placement follows the nearest eligible tail, not simply the last serialized block; no eligible block means no automatic placement. Keep four-marker rejection distinct from same-TTL placement no-op, and review deferred/inline tools against the rendered prefix. A client's local `cacheRetention:"none"` preference is not an upstream disable field when its wire request merely omits markers; it does not override the selected target default. [Input/cache](refs/2026-10-17-generation-contracts.md#anthropic-input-and-cache-recheck-2026-10-21) and [client-source](refs/2026-10-17-generation-contracts.md#production-client-profiles-2026-10-21) evidence define these verification boundaries.
 
 ### Response rules
 

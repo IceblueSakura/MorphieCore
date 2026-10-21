@@ -13,14 +13,20 @@ Later observations retain their own dates and evidence scope below. [Architectur
     - [Google installed-client acceptance, 2026-10-21](#google-installed-client-acceptance-2026-10-21)
     - [Google Messages client boundary probes, 2026-10-21](#google-messages-client-boundary-probes-2026-10-21)
     - [Google Messages basic-loop closure, 2026-10-21](#google-messages-basic-loop-closure-2026-10-21)
+    - [Google text-report source recheck, 2026-10-21](#google-text-report-source-recheck-2026-10-21)
   - [P7 binding evidence, 2026-10-18](#p7-binding-evidence-2026-10-18)
+    - [Feature combinations and endpoint evidence, 2026-10-21](#feature-combinations-and-endpoint-evidence-2026-10-21)
   - [Messages owner-local cache admission, 2026-10-19](#messages-owner-local-cache-admission-2026-10-19)
+  - [Anthropic input and cache recheck, 2026-10-21](#anthropic-input-and-cache-recheck-2026-10-21)
   - [pi Messages request profile, 2026-10-19](#pi-messages-request-profile-2026-10-19)
   - [R2 native client and replay evidence, 2026-10-19](#r2-native-client-and-replay-evidence-2026-10-19)
   - [Responses lifecycle reports, 2026-10-19](#responses-lifecycle-reports-2026-10-19)
   - [Responses text-container presence, 2026-10-20](#responses-text-container-presence-2026-10-20)
+  - [Production client profiles, 2026-10-21](#production-client-profiles-2026-10-21)
   - [Signed Google parts](#signed-google-parts)
 - [Protected semantics without complete owners](#protected-semantics-without-complete-owners)
+  - [Refusal-detail boundaries, 2026-10-21](#refusal-detail-boundaries-2026-10-21)
+  - [OpenAI citation positions, 2026-10-21](#openai-citation-positions-2026-10-21)
 - [Scoped accounting contract](#scoped-accounting-contract)
 - [Selected visible-history transfer](#selected-visible-history-transfer)
 - [Messages budget and identity boundaries, 2026-10-19](#messages-budget-and-identity-boundaries-2026-10-19)
@@ -154,6 +160,22 @@ The [Vertex inference reference](https://docs.cloud.google.com/vertex-ai/generat
 
 No real Provider calls were made. A selected model/endpoint/API version and redacted native observations could establish a narrow profile, not a universal merge rule. Before selecting aggregate owners, require evidence for coverage, repeated reports, absence, terminal-only reports and content-free final frames. Keep general terminal explanations and source-bound token identity separate from this unresolved aggregation question. The [design proposal](../api-expansion-design.md#google-output-report-owners-unselected) remains unselected.
 
+#### Google text-report source recheck, 2026-10-21
+
+This source review made no inference calls. The local Google checkout is `364889a`, also compared with the `78f6d34` baseline. The current [v1 OpenAPI](https://ai.google.dev/static/api/interactions-v1.openapi.json) and [v1beta OpenAPI](https://ai.google.dev/static/api/interactions.openapi.json) were read directly; both report `Last-Modified: 2026-10-21 00:59:25 GMT`. Their SHA-256 digests are respectively `809db6ee195b03a6fee667f31772b8f8dfb45e84f2b012947ccd24d38f6120af` and `e99222a8d099cfe89df9a1b6ffddb358bb83e922670e75ad36e464cb6b46e77f`.
+
+| Carrier | Established source fact | Remaining boundary |
+|---|---|---|
+| Interactions `service_tier` | v1 declares optional, non-nullable `flex`, `standard`, `priority` on create requests, full resources and created/completed partial resources; status updates have no tier field | Beta and both inspected SDK unions additionally admit `deferred`; that does not widen v1 |
+| generateContent `usageMetadata.serviceTier` | The current [reference](https://ai.google.dev/api/generate-content) lists `unspecified`, `standard`, `flex`, `priority`; this is response service metadata, not a token counter | The pinned proto predates this field. The SDK's unrelated `UsageMetadata.service_tier` is not evidence for `GenerateContentResponseUsageMetadata`, which lacks it at the inspected revisions |
+| Candidate `finishMessage` | The reference and [pinned proto](https://github.com/googleapis/googleapis/blob/8cc2927c2ea64e6876568683050deabf2b52ce56/google/ai/generativelanguage/v1beta/generative_service.proto#L766) describe an optional explanation populated with a finish reason | Candidate-owned explanation, not generated content, an operation error or independent completion evidence |
+
+This resolves the earlier question of whether v1 declares a service-tier carrier. The base-page extractor still returned an older field set, while the [dated page variant](https://ai.google.dev/api/interactions-api-v1?authuser) and direct specification agreed; the cache/rendering cause is unknown. Preserve the older observation as history, not the current source gate.
+
+[Optimization](https://ai.google.dev/gemini-api/docs/optimization) distinguishes standard, flex and priority processing, not Messages committed-capacity classes. The [priority guide](https://ai.google.dev/gemini-api/docs/priority-inference) describes downgrade and an `x-gemini-service-tier` response header; it does not establish body/header equality or an allowed opening-to-terminal transition. Request values never prove reported values. `deferred`, explicit `unspecified` normalization, repeated/final omission and tier drift still need their own evidence or conservative rejection. This research selects no header carrier, request policy or new service class.
+
+The Google SDK's continuation-hop merger takes the last hop's `finish_message`; it is not a same-request SSE reducer. Neither it nor a nullable SDK field establishes arbitrary report replacement. The current codecs still reject terminal explanations/Interactions tiers and omit the unhandled generateContent tier; source discovery is not implementation or live acceptance.
+
 ### P7 binding evidence, 2026-10-18
 
 These findings concern registered bindings, not inspected private deployments. No Provider calls were made. Public source/model documentation was rechecked on 2026-10-18; the [reconnection sequence](../roadmap.md#first-reconnection-slices) owns scheduling and unresolved selections.
@@ -169,6 +191,14 @@ Focused synthetic request probes confirmed that the proposed Qwen Chat and Luna 
 
 The `ExplicitCache` rejection above records the 2026-10-18 boundary. It is superseded only for the selected all-native configured route by the following 2026-10-19 admission slice; generic and mixed-route admission remain closed.
 
+#### Feature combinations and endpoint evidence, 2026-10-21
+
+[OpenRouter structured-output guidance](https://openrouter.ai/docs/guides/features/structured-outputs) makes support endpoint-specific, not merely model-specific; [provider selection](https://openrouter.ai/docs/guides/routing/provider-selection) documents `require_parameters` as the strict parameter-support filter. MorphieCore already sends `provider.require_parameters:true` under its trusted OpenRouter dialect in [request preparation](../../src/protocol/openai/adapter/request.rs), with Responses history expectations retaining it. That is local request evidence, not proof of the routed backend's enforcement or a reason to add another routing selector.
+
+The current [Anthropic API primer](https://platform.claude.com/docs/en/claude_api_primer) distinguishes manual thinking from adaptive thinking for forced tool choice, including model-specific exclusions and skipped thinking for accepted forced calls. Strict tools, output schemas, required/named choice and parallel calls are separate promises. Probe the exact selected binding and combination; do not remove strictness, change thinking or repair output to make a check pass. A well-formed answer alone does not prove constrained decoding. Ordinary refusal and truncation remain separate outcomes.
+
+These public sources do not establish deployed Go/Haiku handling or every OpenRouter Responses combination. Native field support, preflight/preparation agreement, SDK accumulation and live model effectiveness require distinct evidence.
+
 ### Messages owner-local cache admission, 2026-10-19
 
 The user resumed this bounded admission slice after the initial P7 scope choice. The [Claude caching guide](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) and [Haiku 5.5 model reference](https://platform.claude.com/docs/en/models/haiku-5-5/overview) establish owner-local 5m/default and 1h cache carriers. Explicit breakpoints are limited to four in tools → system → messages prefix order, with longer TTLs before shorter ones. Four explicit markers plus automatic caching, or an automatic TTL conflicting with the tail marker, return an error. Empty text and direct thinking markers are not valid cache owners.
@@ -178,6 +208,25 @@ At pi `8efd314`, `packages/ai/src/api/anthropic-messages.ts` defaults to short c
 The pinned [Go handler](https://github.com/anomalyco/opencode/blob/e5a557efeee02c94486d391afc48f24a49ebc9a5/packages/console/app/src/routes/zen/util/handler.ts) calls `requestBody.stream(providerModel ?? model, false)`. The [body forwarder](https://github.com/anomalyco/opencode/blob/e5a557efeee02c94486d391afc48f24a49ebc9a5/packages/console/app/src/routes/zen/util/requestBody.ts) replaces only the root model value and forwards remaining bytes; the [inference bridge](https://github.com/anomalyco/opencode/blob/e5a557efeee02c94486d391afc48f24a49ebc9a5/packages/console/app/src/lib/inference-proxy.ts) maps the legacy Messages path to the inference service. That hop does not strip or rebuild marker/TTL fields. [Current Go documentation](https://opencode.ai/v2/docs/console/go) lists Haiku cache pricing and a newer public endpoint; it does not certify deployed legacy-path compatibility or explicitly promise 1h handling at the destination.
 
 This evidence supports exact request forwarding on the selected binding, not live cache effectiveness. The [admission contract](../architecture.md#owner-local-cache-admission) opens only all-native configured candidates and suppresses unrequested automatic caching beside explicit markers. Mixed routes and caller-selected automatic policy remain closed. Actual writes/reads, billed TTL, proxy version and account-compatible signed-thinking replay remain separate acceptance gates; cache admission does not imply storage retention or ZDR.
+
+### Anthropic input and cache recheck, 2026-10-21
+
+The clean local SDK remains `bcd55fe`. The following source shapes refine implementation checks, not live Provider acceptance:
+
+| Field | Pinned source and meaning | Boundary |
+|---|---|---|
+| Request `output_config.task_budget` | [Beta output config](https://github.com/anthropics/anthropic-sdk-python/blob/bcd55fe1d3f0f1240765f8cef04295b67337f55a/src/anthropic/types/beta/beta_output_config_param.py) has an optional nullable token-task budget; `type:"tokens"` and integer `total` are required, `remaining` is optional/nullable | Per-message output config has only effort. [Task budgets](https://platform.claude.com/docs/en/build-with-claude/task-budgets) are advisory model-visible loop budgets, not enforceable response ceilings or ordinary thinking allocations |
+| `toolset_name` | [Tool use](https://github.com/anthropics/anthropic-sdk-python/blob/bcd55fe1d3f0f1240765f8cef04295b67337f55a/src/anthropic/types/tool_use_block_param.py), [tool result](https://github.com/anthropics/anthropic-sdk-python/blob/bcd55fe1d3f0f1240765f8cef04295b67337f55a/src/anthropic/types/tool_result_block_param.py) and returned-call types permit an optional nullable string | [Client toolsets](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-reference#client-toolsets) dispatch by `(toolset_name,name)`. Inspect actual block owners before filtering and in shared JSON/SSE/history readers, not ordinary tools or arbitrary argument objects |
+| Tool `input_examples` | [Tool definition](https://github.com/anthropics/anthropic-sdk-python/blob/bcd55fe1d3f0f1240765f8cef04295b67337f55a/src/anthropic/types/tool_param.py) declares an optional array of input objects; inline tool additions reuse the definition | [Define tools](https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools#providing-tool-use-examples) requires schema-valid examples and documents API 400 for invalid ones; examples add prompt tokens |
+| Document `context` | [Document blocks](https://github.com/anthropics/anthropic-sdk-python/blob/bcd55fe1d3f0f1240765f8cef04295b67337f55a/src/anthropic/types/document_block_param.py) declare optional nullable text, including documents in supported tool-result content | [Citation documentation](https://platform.claude.com/docs/en/build-with-claude/citations#citable-versus-non-citable-content) says title/context reach the model but are not citable source content. A stringified JSON context is still text, not an object |
+
+SDK nullable shapes do not alone prove server equivalence to omission. Keep absent/null/empty handling explicit; `{}` is not a valid task-budget positive case, and non-null dispatch identity cannot be ignored as an ordinary call. Argument/schema properties named `toolset_name` or `task_budget` are business data, not those protocol controls.
+
+MorphieCore's [SchemaDocument](../../src/semantic/task/generation/schema.rs) bounds schema data; it does not validate example instances. Separate local object/presence/precision/bounds checks from the documented upstream schema check. A schema-invalid object must neither be repaired nor described as locally validated. This research selects no generic validator. Root tools and by-value additions need the same rules, and definition edits must not reuse stale examples without revalidation at the responsible boundary.
+
+The current [caching guide](https://platform.claude.com/docs/en/build-with-claude/prompt-caching#automatic-caching) targets the nearest eligible tail, walking backward or skipping caching if none exists. Empty text/direct thinking markers are ineligible. Four existing explicit markers reject even if equal-TTL tail placement would otherwise be a no-op; conflicting tail TTLs reject, and longer TTLs precede shorter ones. TTL starts at the request's read/write start and refreshes on reads; minimum-length and lookback rules still apply. An immediate hit proves neither elapsed retention nor invoice accuracy.
+
+Examples and context change model-visible input, not resource identity alone. Inline tool additions should preserve the root tools and append history; deferred tools and the first inline-definition activation affect the rendered prefix. Existing [cache checks](../../src/protocol/anthropic/messages/wire/request.rs) already cover many marker/TTL cases; review eligible-tail derivation rather than replacing them with another cache model. These source rules do not prove deployed Go forwarding or caching.
 
 ### pi Messages request profile, 2026-10-19
 
@@ -238,6 +287,17 @@ The [text-config type](https://github.com/openai/openai-python/blob/547ecb1e4fc2
 The minimal codec counterexample is two same-phase snapshots with `temperature:0.5`, one also containing `text:null` and the other omitting `text`. The former boolean container marker merged these reports and lost the null on native delivery. The [local repair](../architecture.md#reported-text-configuration) reuses `Presence<()>` for this one container, prohibits children under absent/null and keeps request null invalid. No lifecycle transition or default insertion is added.
 
 Independent wire-to-IR and IR-to-JSON/SSE expectations live in [text_profile.rs](../../tests/semantic/text/text_profile.rs); [lifecycle_reports.rs](../../tests/semantic/text/lifecycle_reports.rs) rejects null/absent/object drift at the intended report check, including under the selected OpenRouter lifecycle rules. The existing [Router history oracle](../../tests/gateway/responses_history.rs) now supplies null reports and checks opening/terminal preservation, exact GET parity and non-inheritance into subsequent requests. These are synthetic checks, not a rerun or expansion of the earlier real-client/Provider acceptance.
+
+### Production client profiles, 2026-10-21
+
+Read-only source review used the clean pi `71023ae` checkout and public OpenCode files at the existing `e5a557e` pin. No installed-client, SDK or Provider run was made; source behavior is not a new acceptance result or proof about every installed binary.
+
+- pi's [Responses tool builder](https://github.com/earendil-works/pi/blob/71023aec1546d6d677a65669c5665c0927ce0dd0/packages/ai/src/api/openai-responses-shared.ts#L385) separates the model's strict-mode flag, tool constrained-sampling intent and the emitted `strict` field. The outer adapter's false `supportsStrictMode` default can omit the field even though that helper option defaults true; the helper's ordinary `strict` default is false. Preserve the accepted explicit non-strict profile; do not extrapolate it to built-in tools.
+- pi's [Messages adapter](https://github.com/earendil-works/pi/blob/71023aec1546d6d677a65669c5665c0927ce0dd0/packages/ai/src/api/anthropic-messages.ts#L645) has a preferred-strict grammar-limit downgrade loop separate from SDK transport retries. `maxRetries:0` alone does not prevent that second request. It also defaults retention to short unless explicitly set; `PI_CACHE_RETENTION=none` is not that option.
+- pi [summarization](https://github.com/earendil-works/pi/blob/71023aec1546d6d677a65669c5665c0927ce0dd0/packages/coding-agent/src/core/compaction/compaction.ts#L619) uses ordinary Generation with `cacheRetention:"none"`, caller/fresh session identity and its own retry wrapper. Conversation text is serialized into a standalone summary request, then history is rebuilt. A split span can need multiple summaries; neither one compaction command nor disabled agent retries establishes one HTTP request. The cache preference also changes wire/session carriers; it does not override MorphieCore's trusted marker-free Messages default.
+- OpenCode [compaction](https://github.com/anomalyco/opencode/blob/e5a557efeee02c94486d391afc48f24a49ebc9a5/packages/core/src/session/compaction.ts#L205) chooses native compaction when model configuration selects it, otherwise ordinary summarization, potentially with a configured compaction model. A summary response omitting the expected template headings can cause a second nudge; oversize handling and the [session retry policy](https://github.com/anomalyco/opencode/blob/e5a557efeee02c94486d391afc48f24a49ebc9a5/packages/core/src/session/runner/retry.ts) can cause further calls. A gateway profile must select the supported summarization path, not assume `/responses/compact` exists.
+
+Production acceptance therefore needs an explicit client profile: version, model/compat flags, tool/schema policy, cache/session behavior, compaction mode/model and retry/auxiliary-request bounds. First check that profile against synthetic upstreams, independently counting client transmissions and gateway attempts. Then perform bounded live checks, including summary requests and the rebuilt next turn. Preserve prior version-continuity acceptance; it does not certify newly exercised compaction or retry paths.
 
 ### Function strictness defaults
 
@@ -314,6 +374,14 @@ The extended pinned pi probe (`8efd314`, Node 24.21.0) passed 24 serial syntheti
 - `speed` affects execution/pricing; beta `fallbacks` and `fallback_credit_token` affect fallback/billing behavior. Current client intake rejects active values. This does not implement refusal retries or billing-token forwarding.
 - [Preserved thinking](https://platform.claude.com/docs/en/build-with-claude/preserved-thinking): beta `thinking.block_binding.prefix_mismatch_behavior` selects rejection or dropping invalid thinking blocks. Explicit `"error"` can opt older accounts into enforcement; it is not universally equivalent to omission. The 2026-10-18 drop-only intake policy is superseded by the [2026-10-19 typed request profile](#pi-messages-request-profile-2026-10-19). Adaptive thinking preserves both explicit values when the trusted target enables the carrier. Without it, `drop_block` is omitted under a named rule and explicit `"error"` rejects; absent/null/empty controls retain the default. Returned `input_transformations` are validated and omitted under `messages.omit-input-transformations.v1`, because their paths index the upstream request. This is selected report loss, not exact report carriage.
 
+### Refusal-detail boundaries, 2026-10-21
+
+At Anthropic `bcd55fe`, [stable refusal details](https://github.com/anthropics/anthropic-sdk-python/blob/bcd55fe1d3f0f1240765f8cef04295b67337f55a/src/anthropic/types/refusal_stop_details.py) contain `type:"refusal"`, nullable policy `category` and nullable human-readable `explanation`. Both full messages and `message_delta.delta` have the optional nullable `stop_details` carrier. A category is not interchangeable with arbitrary explanatory prose.
+
+The [beta type](https://github.com/anthropics/anthropic-sdk-python/blob/bcd55fe1d3f0f1240765f8cef04295b67337f55a/src/anthropic/types/beta/beta_refusal_stop_details.py) adds `fallback_credit_token`, `fallback_has_prefill_claim` and `recommended_model`. The [fallback-credit contract](https://platform.claude.com/docs/en/build-with-claude/fallback-credit) ties them to billing credit, permission to append partial assistant content and suggested retry targets. They are protected facts, not explanation-only information. A supplied false prefill claim is still a reported restriction. Unsupported non-null fields must be type-checked and rejected before explanatory projection; neither new routing authority nor token redemption is selected.
+
+The SDK reducer replaces details from deltas, but that does not prove arbitrary server-side category or authorization drift is valid. Native source reports and repeated/final consistency must be checked before any selected delivery omission. The current gateway does not yet carry these details; this is an existing repair target, not successful report acceptance.
+
 ### Attribution
 
 Google [`CitationMetadata`](https://ai.google.dev/api/generate-content#CitationMetadata) can report training-data attribution without a hosted search tool. `CitationSource` includes byte offsets, URI and licence. Current IR claim coordinates support units, but citation licence and some source-association facts lack owners. Nonempty citation metadata and grounding metadata reject instead of becoming plain text.
@@ -323,6 +391,16 @@ Interactions `TextContent.annotations` appears in initial model-output content, 
 Messages document/search citations remain the separate [1C proposal](../api-expansion-design.md#1c-design-messages-citations): request-document ordinals, cited text and enable flags need explicit owners.
 
 The newer OpenAI SDK describes `file_citation.index` as an insertion position in output text, whereas the earlier pin described a file-list index. Existing `reported_ordinal` is explicitly not a text offset. Do not relabel this silently: select the updated baseline, offset units and point-anchor semantics, with a distinct `file_path.index` contract.
+
+#### OpenAI citation positions, 2026-10-21
+
+The clean local SDK already matches `547ecb1`. Its [output type](https://github.com/openai/openai-python/blob/547ecb1e4fc233f19030736c29fee4374dfbaca1/src/openai/types/responses/response_output_text.py), history-input type and [annotation event](https://github.com/openai/openai-python/blob/547ecb1e4fc233f19030736c29fee4374dfbaca1/src/openai/types/responses/response_output_text_annotation_added_event.py) define `file_citation.index` as an output-text insertion position. At [older pin `be9d666`](https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/responses/response_output_text.py), it was described as a file-list position. This comment difference does not date a server behavior change. `file_path.index` still names a file-list position; event `annotation_index` indexes annotations within a content part.
+
+The inspected [Responses event reference](https://developers.openai.com/api/reference/resources/responses/streaming-events) does not define the insertion unit or guarantee that a point fits the text prefix already delivered when its annotation arrives. For `é😀X`, the position after the emoji is 6 UTF-8 bytes, 2 Unicode scalars or 3 UTF-16 code units. SDK implementation language, file encoding and application-side citation-marker parsers do not resolve the native unit.
+
+`output_text.done` finalizes text, while `content_part.done` carries text and annotations together. The [existing reducer](../../src/semantic/task/generation/stream/reduce.rs) already separates value completion from metadata/part closure. Preserve part ownership, validate bounded annotation facts on arrival, and perform full-text position checks at owner closure once units are established; later snapshots cannot rewrite published facts. Do not use concatenated response-wide `output_text` as the coordinate space.
+
+Implement the selected unit-explicit point owner independently of native mapping. Current [code](../../src/protocol/openai/content/citations.rs) and [tests](../../tests/semantic/chat/citation_bindings.rs) still treat file citations as ordinals; conservative rejection is a pending correction, not current behavior. Synthetic non-ASCII tests prove local validation, not Provider units. Direct file input does not guarantee a native citation, and the documented hosted-search path is outside this slice; unresolved carrier admission must not force Files/hosted-tool implementation or block unrelated closure work.
 
 ### Interactions lifecycle and failures
 
