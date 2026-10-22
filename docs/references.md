@@ -41,6 +41,7 @@ The SDK loopback gate uses the versions locked in `tests/sdk/uv.lock`, independe
 | Domain | Note | Evidence boundary |
 |---|---|---|
 | Media and resource carriers | [Multimodal carriers](refs/multimodal.md) | Input/tool-result media, Provider-owned file references and generated-media sources; collected 2026-10-12 with dated updates |
+| Embedding and standalone Images | [Embedding and Image contracts](refs/2026-10-22-embedding-image-contracts.md) | Official input/encoding/defaults, pinned SDK behavior, Edit and SSE owners, source discrepancies and current code gaps; checked 2026-10-22. Design evidence only, no SDK or live acceptance |
 | Grok Imagine images and video | [Imagine contracts](refs/2026-10-22-grok-imagine.md) | Official generation/polling shapes, image-quality retirement, lite capabilities and unresolved schema/OAuth evidence; checked 2026-10-22, no live generation acceptance |
 | Generation controls and projection | [Generation projection contracts](refs/2026-10-15-generation-projections.md) | Protocol/dialect distinctions, reasoning, budgets, sampling and service controls; researched 2026-10-15 |
 | Chat custom tools | [Custom-tool carriers](refs/2026-10-16-chat-custom-tools.md) | Native definition, call/result and missing SSE carriers; checked 2026-10-16 |

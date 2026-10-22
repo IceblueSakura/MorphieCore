@@ -13,8 +13,15 @@
 - [Operation contracts](#operation-contracts)
   - [Token counting](#token-counting)
   - [Embeddings](#embeddings)
+    - [Embedding inputs and admission](#embedding-inputs-and-admission)
+    - [Embedding results and encoding](#embedding-results-and-encoding)
+    - [Embedding design review](#embedding-design-review)
   - [Audio](#audio)
   - [Image production and editing](#image-production-and-editing)
+    - [Image requests and target admission](#image-requests-and-target-admission)
+    - [Image results and delivery compatibility](#image-results-and-delivery-compatibility)
+    - [Image streaming lifecycle](#image-streaming-lifecycle)
+    - [Image design review](#image-design-review)
   - [Video API and implementation](#video-api-and-implementation)
 - [Resource services](#resource-services)
   - [Files and uploads](#files-and-uploads)
@@ -38,6 +45,8 @@ This page owns proposed operation, resource and advanced-Generation designs. The
 [Roadmap](roadmap.md#planned-order) owns the five-stage sequence and the current routing freeze. Stage 3 closed its selected projection/loop scope with `count_tokens` deferred. The selected [Generation Text production closure](roadmap.md#generation-text-production-closure) precedes stage-4 Embedding/audio/image/video and Files/multipart Uploads. Server-side compaction, Batch and Realtime join complete citations/discovery/hosted tools in stage 5. **All stage-5 tasks are currently unscheduled:** scope placement is not a start or delivery commitment. Detailed operation designs remain proposals; stage-4/5 work is not an exit condition for earlier stages.
 
 Code and tests remain the behavior specification. This document records ownership, constraints and proposed work, not a model catalog, compatibility certification or implementation progress log. Provider and binding availability belongs to [the catalog](../src/topology/catalog.rs) and [startup](../src/gateway/startup/bootstrap.rs).
+
+On 2026-10-22 the user prioritized **Embedding and Images design**. The detailed proposals below are the current review surface, not approval of new IR layouts, delivery dialects, comprehensive coverage or bindings. Audio, Files and deferred video keep their existing scope; the [roadmap](roadmap.md#stage-4-scope) owns scheduling.
 
 ## Requested scope
 
@@ -236,17 +245,63 @@ Exit evidence: independent request/result oracles cover upstream preference and 
 
 ### Embeddings
 
-Extend the existing independent task rather than representing vectors as messages or tool output.
+Extend the [independent task](architecture.md#independent-embedding-path), not Generation. The current implementation accepts text and float JSON only. The [source review](refs/2026-10-22-embedding-image-contracts.md#embeddings) establishes four official input shapes and two output encodings; importantly, the pinned Python SDK requests Base64 when its caller omits encoding. A working explicit-float request is not ordinary SDK compatibility.
 
-| Concern | Required distinction |
+#### Embedding inputs and admission
+
+Propose one homogeneous, ordered input alternative per request:
+
+```text
+EmbeddingInput =
+  Text(nonempty ordered strings)
+  TokenIds(nonempty ordered token sequences, logical tokenizer scope)
+EmbeddingRequest = { input, optional dimensions }
+```
+
+Scalar text and one token sequence normalize to one-element batches; wire shape is the codec's responsibility. Reject empty inputs, mixed text/token batches, negative/fractional/boolean/overflow token IDs and empty inner sequences. Propose bounded unsigned 32-bit IDs; tokenizer vocabulary and special-token restrictions belong to the selected tokenizer contract, not an assumption that every nonnegative ID is valid.
+
+Token IDs acquire a logical tokenizer scope from the trusted public-model contract. The same integer sequence under another tokenizer can mean different text. A bounded codec input carrier may hold unbound token sequences while the adapter resolves that contract; only scoped values enter the task. Pure codecs receive explicit parsing context where needed, never consult topology or credentials. A target must attest the same tokenizer scope before encoding. Do not detokenize, retokenize, silently concatenate inputs, chunk text or split a batch into multiple requests. This introduces no gateway tokenizer execution or token-counting endpoint.
+
+Keep model names, identity, downstream encoding, target selection and runtime limits outside the task. Extend the existing target contract rather than introducing a capability registry:
+
+| Contract fact | Proposed use |
 |---|---|
-| Inputs | Text and token-ID inputs are different typed alternatives; token IDs need tokenizer/model scope |
-| Output | Preserve input/result indexes, dimensions and exact reported vector values |
-| Encoding | Float/base64 wire representation belongs to the codec/delivery boundary |
-| Usage | Preserve reported accounting; absent is not zero |
-| Routing | Equal vector dimensions do not establish embedding-space compatibility |
+| Admitted input kinds and tokenizer scope | Reject unsupported token inputs before dispatch; public model aliases cannot imply tokenizer equivalence |
+| Default dimensions | Resolve omitted dimensions for output-budget admission and subsequent result validation |
+| Explicit dimension support | Separately express unsupported, selected values or an upper bound; a fixed-size model need not accept an explicit control equal to its default |
+| Per-input and aggregate token limits | Check token-sequence lengths exactly. Text byte limits are not token counts; leave text token enforcement upstream unless separately selected |
+| Float/Base64 support and binary layout | Choose upstream representation on a typed target copy while retaining the client's delivery preference |
+| Input count, body bytes, vector-value and time limits | Enforce independent local and target ceilings without hidden fan-out |
 
-Retrieval task intent or multimodal embeddings may enter the task only when selected official requirements justify them. Do not silently detokenize token IDs or apply Generation's cross-model failover without an explicit embedding-space contract. Chunking, vector indexes and retrieval remain caller responsibilities.
+Initially retain the local 128-input, 256-KiB text, 8,192-dimension and 60,000-vector-value ceilings unless a concrete selected profile justifies a revision. Token inputs also need aggregate-ID and serialized-request byte limits; an integer vector is not charged as an empty text input. Official limits and local limits remain distinct. The source's ambiguous “any array … 2048 dimensions” wording needs profile-specific resolution, not silent application to every token sequence.
+
+Preflight checked `input_count × effective_dimensions` for both explicit and default dimensions. Current lowering checks only explicit dimensions: 40 inputs at the catalog's 1,536-dimensional reference model produce 61,440 values, over the existing result budget, even when admission accepts omitted dimensions. Reject this predictable overflow before upstream work. If a target has no established default or finite output bound, it is not ready for that omitted-dimensions profile.
+
+#### Embedding results and encoding
+
+Retain ordered vectors, each with its reported input index. Require exactly one result per input, unique indexes covering `0..input_count`, consistent dimensions and agreement with admitted effective dimensions. Array position cannot replace the reported index; preserve response order. Do not truncate, pad, renormalize or substitute a nearby embedding space.
+
+Keep exact JSON numbers authoritative for float reports. Base64 is a wire encoding, not an opaque semantic vector. Its selected binary layout must define finite binary32 elements and byte order; reject invalid padding/length, non-multiple-of-four payloads, nonfinite values and dimension/budget mismatches before retaining decoded vectors. SDK-native `float32` parsing is evidence of precision, not a portable byte-order specification.
+
+**Representation recommendation for review:** first evaluate reusing the exact-number vector with exact binary32-to-decimal expansion and lossless reverse conversion. This avoids a second numeric authority but needs a bounded conversion implementation, signed-zero policy and decimal-length proof. A narrowly typed `ExactNumbers | Binary32` vector is the alternative if it materially simplifies correctness or cost; binary32 is a numeric value domain, not retained protocol bytes. Do not switch all vectors to `f32` or retain an unvalidated Base64 sidecar.
+
+The conversion counterexample is JSON `0.1`: its exact value differs from binary32 `0.100000001490116119384765625`. Therefore float-only upstream → Base64 downstream must not silently round arbitrary reported numbers. Prefer native Base64 upstream for Base64 delivery; otherwise require an exact conversion or reject before dispatch when lossless delivery cannot be guaranteed. A lossy precision rule would need separate explicit selection. Base64 → float must preserve the selected numeric authority, not merely print an unrelated short decimal.
+
+Raw HTTP omission of `encoding_format` means float; SDK omission can arrive as explicit Base64. Preserve that distinction at ingress. Upstream encoding can differ from downstream only under the selected exact conversion rules; decoding validates the expected upstream representation. A base64 response is still one static JSON response, not an embedding stream.
+
+Preserve reported model and usage separately from requested/public identities. Standard OpenAI output requires `prompt_tokens` and `total_tokens`; absent is not zero, `total < prompt` rejects, and token-array length is not a fabricated usage report. Retain DashScope's named input-only-total interpretation only in its existing profile. Ancillary response-ID omission remains a recorded delivery projection on a copy. Ignore unknown upstream members while validating every known field and strict JSON; do not carry the existing closed-object helper into expanded response parsing.
+
+Keep one static attempt, bounded intake through EOF, deadlines and cancellation. No new credential fallback or cross-model failover is selected; equal dimensions prove neither tokenizer nor embedding-space compatibility. Retrieval intent, multimodal embeddings, sparse vectors, indexes and chunking remain outside this slice.
+
+#### Embedding design review
+
+| Decision | Recommendation and alternative | Blocks |
+|---|---|---|
+| Token scope and input construction | Trusted logical tokenizer contract plus scoped token inputs; text-only profiles remain valid. Reject unknown scope instead of adding a local tokenizer | Token-ID admission, not text repairs |
+| Numeric authority and binary layout | Prefer the existing exact-number owner if a bounded exact conversion works; otherwise use a local binary32 alternative. Pin byte order and signed-zero behavior before encoding fixtures | Base64 codecs/delivery and ordinary SDK acceptance |
+| Profile and bounds | Keep existing local ceilings; add trusted default dimensions and explicit-control support. Use OpenAI `text-embedding-3-small` as a protocol reference, not an implicitly selected live target | Implementation profile and end-to-end acceptance |
+
+Review evidence should include independent directional examples for all input alternatives and both encodings, default/explicit-dimension parity, reordered indexes, exact decimal and binary fixtures, intended malformed-field failures and cancellation/EOF. SDK acceptance must exercise omitted, explicit-float and explicit-Base64 calls, including the pinned Python sync/async paths. Real acceptance requires a separately named accessible binding; catalog registration is not evidence of credentials or availability.
 
 ### Audio
 
@@ -306,15 +361,96 @@ Treat this as a separate optional audio slice: migrate existing static mappings 
 
 ### Image production and editing
 
-Propose explicit `Generate` and `Edit` variants, sharing output controls, artifacts and accounting. An edit requires ordered source images, a mask association where present, edit intent and applicable input-preservation controls. A prompt alone cannot express editing a particular photograph.
+The current task and execution path implement bounded static Generate, not Edit or streaming. The selected Grok codec does not establish a downstream contract or gateway binding. [Dated OpenAI evidence](refs/2026-10-22-embedding-image-contracts.md#images) and [Grok observations](refs/2026-10-22-grok-imagine.md#images) distinguish the official schema, model-effective controls and unresolved source discrepancies.
 
-Complete current output-format, size, quality, background, compression and applicable safety controls without preserving obsolete model-only carriers for compatibility. Effective support stays binding-specific, not a universal promise derived from the schema.
+#### Image requests and target admission
 
-Support current multipart and JSON-reference input forms where the selected operation admits them. Distinguish uploaded binary content, inert URLs/data URLs and authorized file references. Never turn an arbitrary Provider file ID into an authorized input.
+Propose explicit operation variants, reusing existing controls and artifacts:
 
-Static and streamed delivery share final-artifact semantics. Partial images are previews, not final outputs or progress inferred from their count. Preserve preview ordering and final-image identity; do not satisfy a requested final count with previews.
+```text
+ImageRequest =
+  Generate { prompt, output_controls }
+  Edit {
+    prompt, ordered_sources,
+    optional mask { source_index, content },
+    optional input_fidelity,
+    output_controls
+  }
+```
 
-Exit evidence: source/mask ownership, independent generate/edit wire oracles, correct artifact/usage projection, partial-versus-final streams and rejection of incompatible options. Direct-input support can precede File API integration.
+An edit of photograph A is not generation with a longer prompt; source identity/order, mask association and preservation intent are protected task meaning. Keep model, client identity, transport and runtime state in their existing envelopes. The family need not force a repository-wide rename or generic media-task framework.
+
+Direct sources distinguish bounded image content from inert URL/data-URL references. Reuse only suitable neutral values, not Generation resource tables or replay owners. Multipart filenames are untrusted transport metadata, never local paths or target selectors. Preserve part order and MIME declarations without treating them as verified pixel/format facts.
+
+Recommend immutable owned/shared bytes for the first direct-input slice, with deliberately small fixed aggregate memory limits; defer spooling. Pure multipart encoding consumes those bounded bytes and produces a bounded body; budget the intake, encoded body and output copies, not only source payload size. Content ownership lasts through preparation/upload and releases on completion, error or cancellation. This fits the current byte-owned execution request without promising full upstream file-size coverage. If larger inputs later justify spooling, first select request-local content identities, an external content owner and a pure multipart part plan; handles, I/O and cleanup never enter IR. Merely adding a spool limit would not establish that ownership seam.
+
+For OpenAI, encode ordered multipart `image`/`image[]` or the selected JSON `images` reference form without changing meaning. JSON entries choose exactly one source form. File-ID forms remain rejected until authorized Files resolution exists. Remote URLs may be passed only to targets with an admitted native reference carrier; do not add gateway URL downloading, redirects or credential forwarding to make multipart-only targets work.
+
+OpenAI applies a mask to the first image. Decode that into explicit source-zero association and reject other associations on encoding; never reorder images to conceal a mismatch. The mask is editing guidance, not a promise of pixel-exact preservation. Recommend retaining the accepted [inert-media boundary](architecture.md#media): validate source shape, declared type and encoded/decoded byte bounds locally; leave actual format, alpha and matching pixel dimensions to the native upstream validator for both inline and URL forms. A target without the required validation contract rejects. MIME declarations are not validation evidence. A future bounded metadata inspector would require an explicit standalone-Edit policy exception, resource limits and a declared-versus-observed fact owner; this proposal does not introduce image decoding or change Generation media handling.
+
+The mask sources conflict: the pinned SDK specifies PNG below 4 MB and matching dimensions; the current guide describes matching format/size below 50 MB with alpha. Recommend an initial conservative masked profile with PNG-declared source and mask, mask below 4,000,000 bytes, and native validation of PNG/alpha/matching dimensions, clearly documented as a local subset rather than local pixel verification. Choose finite per-image, aggregate and materialized-body limits separately before implementation. “Up to 16 images below 50 MB each” is not permission to buffer 800 MB per request.
+
+| Control | Proposed meaning and admission |
+|---|---|
+| Count | Exact final-artifact count, initially existing 1–10 bound; target restrictions can be narrower |
+| Output encoding | PNG/JPEG/WebP intent, separate from Base64/URL carriage. OpenAI omission means PNG, not unconstrained target choice |
+| Size | Keep Auto and exact pixels. Model profiles enforce multiples, aspect, pixel/edge limits where applicable; a schema string is not universal model support |
+| Native ratio/resolution | Proposed separate typed aspect-ratio and resolution-tier intent for Grok, not an approximation of exact pixels. Public exposure and conflicting-control rules need selection |
+| Quality/background | Preserve Auto versus explicit choices. Auto is delegated choice, not a measured result; xhigh/max or transparency admission is model-specific |
+| Compression/moderation | Preserve supported explicit controls; JPEG/WebP compression is not PNG compression, and moderation choice is not a safety assessment |
+| Input fidelity | Edit-only preservation effort, not byte identity. Unsupported explicit values reject; documented automatic-high behavior needs a named exact rule before omitting an explicit high |
+| Streaming/previews | Delivery-specific stream selection and optional preview ceiling, not part of requested final count |
+
+Resolve protocol defaults on typed target copies before encoding. Do not invent reported settings from those defaults. Preserve absent/null/explicit states only where their source contract permits them; null is not a universal reset. Both OpenAI identity inputs and reported effective safety identifiers need their own bounded envelope/report carriers, never output controls or inferred values.
+
+Operation admission must distinguish Generate, Edit, static and streaming support on one model identity. The current one-operation/API-key-only topology restrictions need responsible-layer changes only when their selected integration begins; do not invent duplicate model names to bypass them. Grok has no inspected equivalent mask or input-fidelity carrier and no established OpenAI preview stream: those combinations reject.
+
+#### Image results and delivery compatibility
+
+Share ordered final artifacts and optional **reported** creation time, serving model and accounting while retaining operation identity at the task boundary. Each artifact owns data and its actual reports; a top-level static report is valid only when it describes every artifact. Retain current bounded Base64 delivery for the first static slice; URL-only artifacts do not authorize automatic downloading or caller-directed upload destinations.
+
+Maintain three distinct facts: requested controls, stream-reported settings (which can remain Auto), and concrete artifact reports. Never put `quality:auto` into an effective `ImageQuality`, infer dimensions from a requested size, or treat event `created_at` as static image creation time. Absent, null and zero accounting are distinct. Monetary ticks remain money, cached tokens remain subsets, and native sparse usage cannot fill required OpenAI counters.
+
+**Public compatibility is a design gate, not wiring:**
+
+| Minimal counterexample | Consequence and recommendation |
+|---|---|
+| Grok returns only `data:[{b64_json:...}]` | Valid native output lacks OpenAI's required `created`. Keep strict OpenAI delivery; never insert the gateway clock or request start time |
+| OpenAI request omits `output_format`; Grok returns JPEG | OpenAI's PNG default was not preserved. Reject the binding/profile before dispatch unless an explicitly different client contract or verified exact transformation is selected |
+| Source reports serving model/native billing without standard carriers | Preserve the source; select explicit dialect carriage or a named allowed report omission. The existing accounting projection does not authorize model/time loss |
+| Artifact reports disagree across outputs | Do not collapse them into a misleading top-level report; reject incompatible standard delivery or use a selected richer carrier |
+
+Recommend keeping strict OpenAI Images as the standard dialect and designing an **explicit MorphieCore Images dialect** for optional native reports and ratio/tier controls if Grok activation remains desired. Its selection mechanism, field layout, defaults and SDK implications require human review. Alternatives are a separately selected native surface or leaving Grok disconnected. Do not silently relax the standard schema for one model, add fields to OpenAPI before implementation, or claim that a lenient SDK parser establishes conformance. Image transcoding is a separate capability, not a default repair.
+
+#### Image streaming lifecycle
+
+Propose a small task-specific event vocabulary, not the Generation reducer:
+
+```text
+Preview { output_slot, preview_index, artifact, event_time, reported_settings }
+Completed { final_artifacts, event_time, reported_settings, reported_usage }
+```
+
+An internal output slot is association within one operation, not an invented upstream/public ID. The inspected OpenAI stream has `partial_image_index` but no final-output index. Recommend **one final output for the initial streaming profile**; then every preview belongs to slot zero. Multi-output static delivery remains independent. Do not guess multi-output associations or reuse preview indexes as final-image identity.
+
+The requested 0–3 partial images are a ceiling, not guaranteed work or percentage progress. The inspected references do not establish omission's default. Recommend forwarding omission unchanged to the same native contract while enforcing a separate local maximum of three previews; do not silently turn omission into zero. Explicit null needs a source-backed profile rule (preserve, normalize to omission or reject), not a universal reset. Select that rule for Generate and Edit before admission.
+
+Accept zero/fewer previews and a final image arriving early. Preserve reported preview indexes and arrival order; initially require nonnegative, unique increasing indexes within the effective local/explicit bound without inventing missing previews. Pin any stronger contiguity rule before implementation. Reject previews with an explicit zero ceiling, incompatible event types, duplicate completion, post-terminal data and malformed known settings.
+
+Stream incrementally without retaining every preview; charge cumulative encoded/decoded bytes, per-event bytes, event count, final-artifact bytes, idle/total time and concurrency independently. The current 8-MiB aggregate final-image budget is not a new 8-MiB allowance for each preview. Select finite stream/upload limits before implementing those paths.
+
+Success requires an operation-correct completed event, the requested final count and validated EOF. Preview publication forbids replay; on later failure abort/fail the existing delivery rather than replay or emit a successful terminal. Hold successful completion behind EOF, release upstreams on disconnect/deadline, and retain reported final usage once rather than summing preview observations. SSE `created_at` cannot automatically produce a static `created`; reject unsupported static↔stream conversions until a source-backed mapping is selected. Buffered static images split into chunks do not establish upstream progressive delivery.
+
+#### Image design review
+
+| Decision | Recommendation and alternative | Blocks |
+|---|---|---|
+| Operation/source ownership | Generate/Edit family, ordered neutral sources and explicit source-zero mask. Start with immutable byte-owned inputs and a total materialization budget; a later spool-backed part plan is a separate choice | Edit IR and multipart execution, not existing Generate maintenance |
+| Grok public contract and native controls | Strict OpenAI baseline plus a separately selected explicit MorphieCore dialect; alternatively native surface or disconnected Grok | Grok public admission, defaults and binding, not its existing pure codec |
+| Mask profile and validation | Conservative PNG-declared source/mask and byte subset, retaining native pixel/alpha validation. Local metadata inspection instead needs an explicit inert-media policy exception | Masked Edit admission, not unmasked direct-input design |
+| Stream association and reports | Initially one final output; task-local preview/final lifecycle and separate settings/event-time owners. Select omission/null behavior without inventing a preview default | Streaming, not static Generate/Edit |
+
+Independent directional oracles must cover Generate and Edit, multipart and JSON, source/mask ordering, defaults and target-specific restrictions, optional/native result reports and intended negative cases. Streaming needs independent preview/final fixtures, omitted/null/zero preview controls, fewer previews, Auto reports, errors/truncation/post-terminal data, cumulative bounds and cancellation without replay. SDK multipart/static and native SSE consumption are separate integration gates; a genuine incremental transport check is required in addition to an SDK accumulator. Real calls wait for a selected target and bounded acceptance plan. Files, hosted image tools, deferred jobs, video, cross-Provider failover and automatic media sweeps remain excluded.
 
 ### Video API and implementation
 
@@ -455,6 +591,7 @@ These recommendations have not been adopted merely by requesting this document.
 
 | Decision | Options and recommendation | Blocks |
 |---|---|---|
+| Prioritized Embedding and Images | The [Embedding review](#embedding-design-review) and [Image review](#image-design-review) own the concrete pending choices; the user selected design work, not their structural alternatives | Dependent S4-1/S4-3 implementation and integration only |
 | Task grouping and shared content | Recommend independent TokenCount/Compaction, AudioToText variants, and Image Generate/Edit variants; share content without inheriting Generation execution | New task type and public Rust contract changes |
 | Counting companion surface | Recommend Responses input-token counting; image generations/edits already belong to stage 4 | Adding the Responses counting surface to delivery scope |
 | Counting profile and public scope | **Deferred scheduling; profile unselected.** When reopened, select the public-model/target profile, upstream reliability criteria, coarse estimation rule/input coverage and client-visible scope/provenance. [Upstream preference, explicit estimates for inaccurate reports, no gateway tokenizer counting and no inference side effects](architecture.md#token-counting-policy) are selected, not open alternatives | Cross-protocol counting admission and client promises, only after reopening |
@@ -465,7 +602,7 @@ These recommendations have not been adopted merely by requesting this document.
 | Custom voices | Recommend authorized voice references first; voice creation/consent management as a separate resource slice. Broader audio resource coverage may be selected explicitly | Voice-resource endpoints, not ordinary speech |
 | Video contracts | Select current operations/endpoints, task versus content ownership, artifact access and any required job lifecycle before implementation | Video implementation, not stages 1–3 |
 | Realtime design | Client scenario, session/transport and interruption/recovery contracts are unselected; keep stage 5 unscheduled | Realtime implementation |
-| Later-operation selection | Generation Text closure is now selected in the roadmap; stage-4 operation contracts still need just-in-time selection. All stage-5 tasks remain unscheduled | Per-operation design, activation and full-chain acceptance |
+| Later-operation selection | Generation Text closure is complete; Embedding and Images are the current design priority. Other stage-4 operation contracts still need just-in-time selection. All stage-5 tasks remain unscheduled | Per-operation design, activation and full-chain acceptance |
 
 ## Execution handoff
 
