@@ -13,6 +13,11 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
   - [Generation Text production closure](#generation-text-production-closure)
   - [Stage 4 scope](#stage-4-scope)
   - [Stage 5 backlog](#stage-5-backlog)
+- [Code simplification plan](#code-simplification-plan)
+  - [Preferred simplification slices](#preferred-simplification-slices)
+  - [Optional local cleanups](#optional-local-cleanups)
+  - [Simplification exclusions](#simplification-exclusions)
+  - [Simplification verification and exit](#simplification-verification-and-exit)
 - [Phase rules](#phase-rules)
   - [Generation design review gate](#generation-design-review-gate)
   - [Observability follow-up](#observability-follow-up)
@@ -48,6 +53,7 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
 | Integration | Selected R1a/R1b/R2 client loops and controlled routing acceptance passed their bounded scopes. R1b lifecycle reports and client history shorthand were explicitly selected on 2026-10-20 | [Production closure](#generation-text-production-closure): bounded capability and sustained-operation acceptance, not a full client/model matrix |
 | Cross-protocol conversion and counting | Stage 3 closed its selected projection and loop scope; counting is deferred | Preserve that evidence; the [Google pause](#google-api-pause) now has only a selected text-report exception, not general API reopening |
 | Generation Text production readiness | Selected [production closure](#generation-text-production-closure) complete on 2026-10-22, with explicit unsupported-carrier and failover exclusions | Select the next [stage-4 operation](#stage-4-scope); no operation implementation follows automatically |
+| Code simplification | [Bounded plan](#code-simplification-plan) prepared; implementation not started | Select a local slice before execution; no new prerequisite for stage 4 or reopening of frozen paths |
 | Embedding, other modalities and file resources | Stage 4 includes audio/image/video API adaptation and Files/multipart Uploads | After production closure, follow the [operation work packages](#stage-4-scope); existing paths remain maintenance-only until their slices |
 | Stage-5 follow-ups | Citations, tool discovery, hosted tools, server-side compaction, Batch and Realtime are recorded but **unscheduled** | No implementation queue or delivery commitment; select each slice before starting it |
 | Real acceptance | Selected stage-2 loops and bounded [production gates](#generation-text-production-closure) have recorded version/profile-specific evidence | Preserve historical limitations and [other deferred acceptance](#deferred-acceptance); new profiles or stronger claims need their own gates |
@@ -228,6 +234,61 @@ Reopening a task requires its client scenario, minimum semantic/resource depende
 - **Server-side compaction:** include the explicit Provider-executed `/responses/compact` operation. Receiving/replaying compaction items remains existing Generation scope. Automatic compaction triggers, mutation of stored conversations and background execution are not implied by the explicit operation.
 - **Batch:** select supported typed tasks, file dependencies, submission reconciliation, durable job identity, cancellation and per-record outcomes.
 - **Realtime:** select client scenarios, session/transport ownership, event/media contracts, interruption, recovery and resource bounds. Stage-4 audio/video adaptation does not implement Realtime.
+
+## Code simplification plan
+
+**Status: plan only, prepared on 2026-10-22 against `d42e4a6`; implementation has not started.** The goal is fewer concepts, synchronized facts and unnecessary conversions, not fewer lines or tests. This plan proposes bounded behavior-preserving work; it is not implementation authorization, a new stage-4 prerequisite or approval of API/semantic changes.
+
+Shared boundaries:
+
+- Preserve the [layer boundaries](architecture.md#layers-and-data-flow), pure codecs/lowering and protocol-owned wire rules. Similar mappings across protocols need not share an implementation.
+- Preserve accepted inputs, wire values, errors and their precedence, named projection evidence, source immutability, cancellation, permit/drop timing, EOF-gated publication and replay isolation. Keep security and lifecycle assertions.
+- Prefer deletion and existing helpers over new traits, macros, mode switches or caches. A helper must reduce total complexity in callers and tests as well as its implementation.
+- The [routing freeze](#temporary-routing-freeze), [Google pause](#google-api-pause) and [standalone maintenance boundary](#frozen-scope) remain unchanged. A policy discrepancy or public API removal is separate work, not cleanup.
+
+### Preferred simplification slices
+
+The order below starts with local codec deletions, then startup and ingress ownership, then projection bookkeeping. CS-1 and CS-2 share callers and may ship together; the other slices have no dependency on them. Use coherent commits rather than one repository-wide rewrite.
+
+| Slice | Scope and complexity removed | Behavior to preserve and focused evidence |
+|---|---|---|
+| **CS-1 — Typed Messages terminal** | In [terminal encoding](../src/protocol/anthropic/messages/terminal.rs), return the existing `StopReason` instead of a wire string. Remove the string → JSON value → enum conversion in [native response encoding](../src/protocol/anthropic/messages/response.rs); use `.wire()` at client JSON/SSE callers | Identical stop reasons/sequences, terminal rejection rules and error values across all three callers. Reuse [semantic Messages checks](../tests/semantic/anthropic.rs) and [SSE checks](../tests/transport/anthropic_sse.rs). Keep the exhaustive `Event::Error` handling; do not replace it with a panic |
+| **CS-2 — Remove unused Messages rule plumbing** | Delete only the unused `_rules` argument of [item encoding](../src/protocol/anthropic/messages/items/encode.rs), its caller arguments, unused imports and any obsolete argument-count allowance | Keep the enclosing request rule collection and the mutated normalized/omitted outputs. Existing native request, response and history expectations must remain unchanged. This slice does not include Google's unused parameters |
+| **CS-3 — Lazy startup client construction** | Move client adapter/capability preparation inside the existing `or_insert_with` in [startup configuration](../src/gateway/startup/config.rs). Avoid preparing discarded values for an existing protocol/model group | Preserve the first group's client dialect, reported-fact policy, replay scope and candidate order. Do not introduce per-credential adapter clones or an adapter cache. Check [bootstrap bindings](../src/gateway/startup/bootstrap/messages_tests.rs) and [gateway model publication](../src/gateway/tests/models.rs); claim no measured speedup |
+| **CS-4 — Explicit ingress protocol** | Replace the internal `Option<Profile>` Messages sentinel with existing `ClientProtocol` in [HTTP dispatch](../src/gateway/ingress/http.rs). Consolidate ordinary Chat/Messages preparation in [admission](../src/gateway/ingress/admission.rs); remove redundant family aliases where this reduces indirection | Keep managed Responses history preparation separate, Messages error envelopes and Responses pre-publication failure handling unchanged. Preserve public startup entries and route keys. Check [ingress](../src/gateway/tests/ingress.rs), [Messages loops](../tests/gateway/messages_tool_loop.rs), [Responses history](../tests/gateway/responses_history.rs) and [body lifecycle](../src/gateway/body/tests.rs) |
+| **CS-5 — Reuse event projection recording** | Replace the duplicated early Chat omission block with existing `record_loss` in [event encoding](../src/protocol/openai/events/encode/mod.rs). Consolidate terminal insertion only if a small local helper is clearer than the two explicit loops | Preserve complete stages, including `loss: None`, first-observation order, full-stage equality and rollback to the saved prefix after failure. No set/sort conversion or rule-list expansion. Check [projection assertions](../tests/semantic/usage/projection.rs) and [Chat](../tests/transport/chat.rs)/[Responses](../tests/transport/responses_sse.rs) streams |
+
+### Optional local cleanups
+
+These are lower-value candidates, not a second mandatory batch. Select them only when the local benefit exceeds review churn; none blocks the preferred slices.
+
+| Area | Bounded option | Required guard |
+|---|---|---|
+| Stream conditions | Remove the locally redundant annotation-count condition in [the reducer](../src/semantic/task/generation/stream/reduce.rs); simplify the Chat `PartStarted` predicate in [event lowering](../src/protocol/openai/lowering/events.rs) | Keep the earlier global bound and error precedence. Prove the predicate over all `PartKind` combinations; Text → Audio remains allowed and Audio → Text rejected. Do not impose a generic recharge helper on append and snapshot paths |
+| JSON parser layering | Remove the redundant ceiling layer in [JSON parsing](../src/semantic/value/json.rs) while retaining the image-response entry point | Recheck that every `IMAGE_RESPONSE` limit is no greater than `ENVELOPE`. Ordinary callers still cannot enlarge hard bounds; preserve duplicate-key handling, numeric precision and byte/depth/node errors |
+| Ingress permit acquisition | Share only shutdown checking and permit acquisition between Generation ingress and Responses snapshot operations | Keep checks at their current positions and return the owned permit to its existing lifetime owner. Do not combine headers/body handling or edit frozen standalone handlers |
+| Disposable construction | Construct the final plan once in [execution planning](../src/execution/plan.rs); replace pure manual candidate clones only where fields are truly unchanged | Keep public `derive`, candidate ordering, rejection evidence and error priority. In tests, retain explicit fallback/attempt settings and distinguish cloning a candidate from cloning its `Arc`; no generic fixture framework |
+
+### Simplification exclusions
+
+Do not include these in the execution queue without a separately demonstrated need:
+
+- **Cross-protocol or task frameworks:** shared Google encoder skeletons, generic standalone bind/topology builders and incidental Google cleanup. Keep explicit protocol differences and the existing freeze boundaries.
+- **Public surface or capability generation:** deleting locally unused public getters/re-exports or generating the semantic contract through a macro. Repository-local reference counts do not establish external non-use; no missing capability pair was established by this review.
+- **Diagnostics and adapter caching:** regrouping fields with different request/candidate lifetimes, changing diagnostics file recognition, or caching adapters in publicly mutable endpoints. These need their own lifetime, compatibility or measurement evidence.
+- **Semantic policy changes:** unifying Provider-observation resources with model-input media, changing model-name admission, or copying normalization flag lists between processing stages. Treat any suspected mismatch as a separate behavior investigation, not an established bug or equivalent cleanup.
+- **Blanket test reduction:** a universal `Gateway::new` fixture, test-count targets or pruning based on duplicate-line statistics. Keep meaningful profile-preservation assertions; follow [coverage and pruning](development.md#coverage-and-pruning) only for a separately selected pruning pass.
+
+### Simplification verification and exit
+
+For each selected slice:
+
+1. Recheck the current functions, callers and Git state against the implementation base. State the concrete burden removed and the error, ownership and serialization contracts at risk. If equivalence requires an unselected policy, stop that part and continue independent work.
+2. Reuse the focused assertions listed above. Extend existing tests only for a concrete uncovered failure mode; retain independent wire→IR and IR→wire expectations. Do not update expected wire values merely to make a cleanup pass.
+3. Before publishing code, run the [full offline baseline](development.md#offline-baseline) and applicable [integration gates](#verification-and-integration-boundary), including the connected SDK gate. Review-time tests are baseline evidence, not proof of an unimplemented refactor. Keep real-client/Provider acceptance separate; this plan creates no new live-acceptance claim.
+4. Review the final diff for incidental API, policy, allocation, drop-timing and test changes. Report the removed complexity, actual checks and remaining gaps. Remove completed slices from this page; record a lasting architectural decision only if one was actually selected.
+
+This plan-only change requires [documentation checks](development.md#documentation-checks), not Rust or SDK execution. Leave code unchanged when a proposed abstraction has no clear net benefit.
 
 ## Phase rules
 
