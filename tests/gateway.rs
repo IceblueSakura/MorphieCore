@@ -5,6 +5,8 @@
 mod chat_wire;
 #[path = "support/credential_recovery.rs"]
 mod credential_recovery;
+#[path = "support/filesystem.rs"]
+mod filesystem;
 #[path = "support/google_tool_loop.rs"]
 mod google_tool_fixture;
 #[path = "support/messages_stream.rs"]

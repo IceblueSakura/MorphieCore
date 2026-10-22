@@ -10,6 +10,8 @@ mod chat_wire;
 mod child_process;
 #[path = "support/credential_recovery.rs"]
 mod credential_recovery;
+#[path = "support/filesystem.rs"]
+mod filesystem;
 #[path = "sdk/gateway.rs"]
 mod gateway_sdk;
 #[path = "support/google_tool_loop.rs"]

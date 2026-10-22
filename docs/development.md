@@ -257,11 +257,11 @@ Recovery allows exactly four client requests/five synthetic attempts per profile
 
 Later capability gates must fix their own schema/choice/thinking combinations; these read loops establish neither structured output nor required/named choice. The separately documented Responses profile remains distinct, including explicit non-strict tools. Long-session acceptance selects ordinary Generation summarization on the same binding/model, not native compaction or an implicit summary model. The [summary and strict-fallback gates](#installed-client-synthetic-summaries) are separate from recovery; their synthetic characterization does not accept retries, downgrade or auxiliary requests in a live capability gate.
 
-Required sustained-operation diagnostics are narrowly scoped: observable dropped/failed logging, bounded restart-safe logging, body-free request/attempt correlation and client-side first-content timing against delayed terminal/EOF. Local writer maintenance implements record-aligned rotation, recognized-file recovery and visible loss/flush counters; bounded saturation/restart acceptance remains separate. Upstream first-byte or decoded-delta timing is not client visibility. Follow [Observability](architecture.md#observability), not another diagnostics framework.
+Required sustained-operation diagnostics are narrowly scoped: observable dropped/failed logging, bounded restart-safe logging, body-free request/attempt correlation and consumer-side first-content timing against delayed terminal/EOF. The separate [sustained-operation checks](#sustained-operation-acceptance) exercise their composition; upstream first-byte or decoded-delta timing is not client visibility. Follow [Observability](architecture.md#observability), not another diagnostics framework.
 
 ### Installed-client synthetic recovery
 
-This is a separate gate from SDK loopback and real Provider acceptance. `tests/clients.rs` creates a private synthetic credential store through `CredentialManager`; `tests/clients/recovery.py` starts the real gateway CLI with explicit scratch files and a loopback-only candidate. `drivers.py` runs pi RPC or OpenCode standalone with empty allowlisted environments, scratch HOME/XDG paths and no project resources. The command below runs recovery, summaries and strict-fallback characterization serially. Supply **unwrapped** binaries explicitly: a PATH wrapper can source host secrets even under `env -i`.
+This is a separate gate from SDK loopback and real Provider acceptance. `tests/clients.rs` creates a private synthetic credential store through `CredentialManager`; `tests/clients/recovery.py` starts the real gateway CLI with explicit scratch files and a loopback-only candidate. `drivers.py` runs pi RPC or OpenCode standalone with empty allowlisted environments, scratch HOME/XDG paths and no project resources. The command below runs recovery, summaries, strict-fallback characterization and lifecycle checks serially. Supply **unwrapped** binaries explicitly: a PATH wrapper can source host secrets even under `env -i`.
 
 ```sh
 MORPHIECORE_PI_BIN=/absolute/path/to/unwrapped/pi \
@@ -298,6 +298,30 @@ Two additional cases characterize auxiliary requests without widening the ordina
 Installed OpenCode `2.0.32` lacks the pinned source's `session.wait` operation. The gate instead observes the test-owned SQLite compaction record read-only, bounded to 20 seconds with 100ms sampling, before submitting the next prompt. It requires a completed checkpoint with the exact synthetic summary, actual CLI tool/final events and final idle success. The private foreground server's requested SIGINT must exit 130 with drained pipes; the gateway must exit successfully. No host service/configuration is used.
 
 Final verdicts run after expected client shutdown and joined HTTP workers, counting late or unsupported-method failures as failures. Diagnostics require one attempt per gateway request and zero unclassified ignored fields. Independent negative oracles live in `tests/clients/test_client_summary.py`, `test_strict_tools.py` and `test_opencode_summary.py`. The 2026-10-21 installed pi `1.3.0` runs passed the four summary cases and strict-fallback characterization; OpenCode `2.0.32` passed its separate retry/nudge/checkpoint case. This is synthetic evidence, not real Provider, native compaction, long-session capacity or client-first-content acceptance.
+
+### Sustained-operation acceptance
+
+`tests/clients/lifecycle.py` uses the preceding three declared profiles, the real CLI loader and direct client→gateway delivery, not the recovery gate's buffering admission forwarder. Each case fixes two Generation requests/two synthetic upstream attempts: held content → cancel, then same-session recovery. Gateway concurrency is one; candidate/route/exchange deadlines are 20/25/30 seconds, while client and observation deadlines remain bounded. A compatible two-key synthetic pool stays eligible so no extra attempt can hide behind a one-attempt configuration.
+
+The authority flushes a nonempty text delta but withholds every block/turn terminal and HTTP EOF. Require actual consumer receipt while that stream remains open:
+
+| Consumer | Observed boundary | Cancellation |
+|---|---|---|
+| pi Chat and Messages RPC | `message_update` with `assistantMessageEvent.type:text_delta` and nonempty `delta`, not lifecycle or a completed message | Correlated `abort`, aborted assistant/settlement, then idle recovery in the same process/session |
+| OpenCode Chat core | Nonempty `session.text.delta` on the installed server's independently opened `event.subscribe` SSE; introspect `/openapi.json` before accepting that surface | First CLI SIGINT exits 130; matching execution reports user interruption, then the same server/session completes recovery |
+
+OpenCode `run --format json` emits completed text blocks, not first text deltas. Its core-SSE observation proves installed agent receipt, not early CLI stdout/TUI rendering. Never relabel `step_start`, reasoning, a completed block or SDK cumulative snapshots as first text.
+
+Before fixture teardown, passively require upstream peer EOF/reset; a cleanup-induced close or a later failed write is not the oracle. Require no cancelled success, no extra request/attempt, no post-publication advance, zero ignored fields and an honest final answer through the recovered single permit. The 2026-10-22 pi `1.3.0` and OpenCode `2.0.32` cases passed independently with two requests/attempts each. Run `cargo test --locked --offline --test clients incremental_lifecycle -- --ignored --test-threads=1 --nocapture` with the explicit binary variables above. Focused authority oracles live in `test_client_lifecycle.py`.
+
+Service composition remains at existing owners:
+
+- `tests/gateway/tool_publication.rs` stops reading after actual Responses content, keeps terminal/EOF unavailable, checks `429/gateway_busy` without dispatch and authentication before history lookup, then observes upstream drop and recovers within eight explicit admission probes. Exactly two upstream requests dispatch. This does not claim saturated TCP buffers, an RSS bound or measured read-ahead.
+- `tests/gateway/responses_history.rs` runs real loopback services with one entry/64 KiB retention: a 96 KiB input and a full entry reject, DELETE releases capacity, GET preserves the delivered terminal JSON, and restart loses old lookup/continuation without dispatch. Four requests dispatch before restart and one independent generation after it; expiry/non-refreshing TTL stays with the explicit-clock owner tests.
+- `tests/gateway/bootstrap.rs` runs the actual CLI through 1 MiB record-aligned rotation, nine-byte recognized-tail recovery, new run correlation and successful shutdown. Both files stay bounded; complete records survive, loss/failure/flush counters remain zero, and business/auth markers remain absent. Unrelated diagnostics and existing enabled capture files refuse startup before readiness or upstream calls, preserving sentinels. Fixtures use the existing private-directory owner, not relaxed permissions.
+- The same bootstrap owner checks 1 KiB capture retention saturation across eight authenticated model GETs: all remain HTTP 200, no upstream calls, finite retained JSONL, exact retention-drop accounting, zero queue/write failure and redacted auth. `src/gateway/diagnostics.rs` separately proves full/disconnected metadata queues cannot change real HTTP admission errors; writer-local queue/failed-write/health oracles remain required.
+
+These bounded checks and the ordinary summary/rebuilt-history cases establish selected long-session/resource behavior, not an unbounded endurance benchmark, persisted Responses history, remote cancellation or real multi-Provider failover.
 
 ### Real Provider checks
 
@@ -348,11 +372,24 @@ uv run --project tests/sdk --locked --offline python tests/sdk/messages_capabili
 
 The existing Go/Haiku binding, loader, single-attempt routing, temporary private capture and deadlines follow the preceding native input gate. This profile fixes seven serial requests: structured JSON, structured SSE using returned history, an SSE `max_tokens:1` truncation, then required JSON and named SSE tool/result pairs. Other requests use 2048 tokens. Keep adaptive thinking with summarized display and `drop_block`, root-high/system-low effort, explicit strict tools, numeric `record` enum `[71,82]`, and single-call `disable_parallel_tool_use:true` unchanged. The named control selects `inspect` despite the prompt suggesting `lookup`; result turns explicitly select `none`. Use only model-issued call IDs and untouched returned content.
 
-Require exact complete JSON values, source-aligned SSE termination, `max_tokens` rather than a successful schema claim on truncation, honest final answers and seven request/attempt records with zero ignored fields. Prepared captures must retain schema/strictness/choice/effort values. Four focused offline oracles cover the plan, failed terminals, safe diagnostics and actual pinned-SDK JSON/SSE request serialization. Native binding preparation separately checks the full wire and original unsupported-string-enum rejection. Do not invoke SDK schema simplification or repair output.
+Require exact complete JSON values, source-aligned SSE termination, `max_tokens` rather than a successful schema claim on truncation, honest final answers and seven request/attempt records with zero ignored fields. Prepared captures must retain schema/strictness/choice/effort values. Five focused offline oracles cover the plan, failed terminals, safe diagnostics, actual pinned-SDK JSON/SSE serialization and JSON Boolean identity: Python's `True == 1` must not accept numeric `1` as `true`. Native binding preparation separately checks the full wire and original unsupported-string-enum rejection. Do not invoke SDK schema simplification or repair output.
 
-This concrete profile passed all seven requests/attempts on 2026-10-22. An earlier proposed string-enum tool profile stopped locally before its fourth upstream attempt; it remains rejected, not converted into this numeric profile. The investigation also repaired missing JSON-output subset validation. A separate seven-request numeric sample completed but its final capture assertion failed because the synthetic property `key` was correctly redacted as authentication-shaped; `record` avoids that fixture collision without changing the redaction policy. Capture is a redacted observation, never a raw-wire or replay authority. Failed gates report body-free counts and diagnostic classifications before scratch cleanup.
+This concrete profile passed all seven requests/attempts on 2026-10-22. A later independent three-request structured/history/truncation prefix recheck passed with explicit JSON Boolean identity. An earlier proposed string-enum tool profile stopped locally before its fourth upstream attempt; it remains rejected, not converted into this numeric profile. The investigation also repaired missing JSON-output subset validation. A separate seven-request numeric sample completed but its final capture assertion failed because the synthetic property `key` was correctly redacted as authentication-shaped; `record` avoids that fixture collision without changing the redaction policy. Capture is a redacted observation, never a raw-wire or replay authority. Failed gates report body-free counts and diagnostic classifications before scratch cleanup.
 
 This accepts only the declared schema/control combination. It does not certify arbitrary schemas, parallel calls, a real refusal event, other Providers or whole-client strict fallback. Existing independent SDK refusal/error oracles remain separate; no live safety refusal is induced.
+
+#### No-tool text timing
+
+`tests/sdk/text_timing_live.py` is a separately enabled one-request Go/Haiku check:
+
+```sh
+uv run --project tests/sdk --locked --offline python tests/sdk/text_timing_live.py \
+  --gateway-bin /absolute/path/to/morphiecore
+```
+
+Use the same loader, native adaptive/root-high/system-low profile, private scratch cleanup and 120-second bounds as the preceding companion, with 2048 output tokens, no declared tools, explicit `tool_choice:none`, one candidate/attempt and zero SDK retries. Observe only source text deltas, not reasoning or cumulative SDK snapshots; reject unexpected calls and incomplete completion without executing or repairing them. Offline ordering oracles live in `test_text_timing_live.py`.
+
+The single 2026-10-22 pinned-SDK sample passed one request/attempt: client first text at 1730.680 ms, terminal at 4568.093 ms; source first delta/elapsed were 1709/4564 ms. Client and source clocks begin at different boundaries and are reported separately. These are one-run observations, not a benchmark, latency SLO, evidence of first content before **upstream** EOF, actual installed-CLI timing, or real remote cancellation. The controlled consumer/authority gate above supplies the terminal/EOF ordering evidence.
 
 ### pi acceptance
 

@@ -714,6 +714,58 @@ mod tests {
     use super::*;
     use axum::http::HeaderMap;
     use std::sync::mpsc;
+
+    #[tokio::test]
+    async fn full_or_disconnected_logging_cannot_change_admission_errors() {
+        use axum::{
+            body::{Body, to_bytes},
+            http::Request,
+        };
+        use tower::ServiceExt;
+        for disconnected in [false, true] {
+            let (tx, rx) = mpsc::sync_channel(1);
+            let mut gate =
+                crate::gateway::tests::support::gateway(crate::gateway::Limits::default());
+            std::sync::Arc::get_mut(&mut gate.state)
+                .unwrap()
+                .diagnostics = Some(Sink::from_sender(tx.clone()));
+            let request = || {
+                Request::post("/v1/chat/completions")
+                    .header(
+                        "authorization",
+                        format!("Bearer {}", crate::gateway::tests::support::KEY),
+                    )
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"model":"missing","messages":[{"role":"user","content":"synthetic"}]}"#,
+                    ))
+                    .unwrap()
+            };
+            let first = gate.router().oneshot(request()).await.unwrap();
+            assert_eq!(first.status(), 404);
+            // First establish that this HTTP path actually records metadata.
+            assert!(matches!(rx.try_recv(), Ok(writer::Message::Record(_))));
+            let mut rx = Some(rx);
+            if disconnected {
+                drop(rx.take());
+            } else {
+                let (ack, _) = tokio::sync::oneshot::channel();
+                assert!(tx.try_send(writer::Message::Flush(ack)).is_ok());
+            }
+            let response = gate.router().oneshot(request()).await.unwrap();
+            assert_eq!(response.status(), 404);
+            let bytes = to_bytes(response.into_body(), 64 << 10).await.unwrap();
+            assert_eq!(
+                serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()["error"]["code"],
+                "model_not_found"
+            );
+            if let Some(rx) = rx {
+                assert!(matches!(rx.try_recv(), Ok(writer::Message::Flush(_))));
+                assert!(matches!(rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
+            }
+        }
+    }
+
     #[test]
     fn image_accounting_observation_is_exact_opt_in_and_body_free() {
         use crate::{

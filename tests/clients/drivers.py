@@ -122,11 +122,15 @@ class Pi(Child):
             env, work, rpc=True)
         self.serial = 0
 
-    def command(self, kind, **fields):
+    def submit(self, kind, **fields):
         self.serial += 1
         identity = str(self.serial)
         self.process.stdin.write(json.dumps({"id": identity, "type": kind, **fields}).encode() + b"\n")
         self.process.stdin.flush()
+        return identity
+
+    def command(self, kind, **fields):
+        identity = self.submit(kind, **fields)
         deadline = time.monotonic() + 20
         events = []
         acknowledged = False

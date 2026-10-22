@@ -140,6 +140,13 @@ class ConstrainedProfileOracles(unittest.TestCase):
             with self.assertRaisesRegex(live.GateError, f"^{error}$"):
                 live.verify_wires(changed)
 
+    def test_schema_boolean_never_accepts_numeric_one_in_json_or_sse(self):
+        for turn, record, error in [(0, 71, "structured_json_answer"), (1, 82, "structured_sse_history_answer")]:
+            gateway, client = self.gateway(), Client()
+            client.replies[turn]["content"] = [{"type": "text", "text": json.dumps({"record": record, "ok": 1})}]
+            with self.assertRaisesRegex(live.GateError, f"^{error}$"):
+                live.structured(gateway, client)
+
     def test_truncation_and_missing_stream_terminal_never_become_success(self):
         gateway, client = self.gateway(), Client()
         client.replies[2]["stop_reason"] = "end_turn"

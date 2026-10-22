@@ -173,3 +173,31 @@ async fn opencode_chat_summary_retry_nudge_and_rebuilt_tool_history() {
     assert_eq!(report["summary_nudges"], 1);
     assert_eq!(report["rebuilt_tool_history"], true);
 }
+
+async fn lifecycle_case(case: &str, variable: &str) {
+    let report = installed_case("lifecycle", case, variable, &[]).await;
+    assert_eq!(report["client_requests"], 2);
+    assert_eq!(report["upstream_attempts"], 2);
+    assert_eq!(report["content_before_terminal_and_eof"], true);
+    assert_eq!(report["upstream_cancelled"], true);
+    assert_eq!(report["single_permit_recovery"], true);
+    assert_eq!(report["post_publication_replays"], 0);
+}
+
+#[tokio::test]
+#[ignore = "requires installed pi; held Chat content, cancellation and single-permit recovery"]
+async fn pi_chat_incremental_lifecycle() {
+    lifecycle_case("pi-chat", "MORPHIECORE_PI_BIN").await;
+}
+
+#[tokio::test]
+#[ignore = "requires installed pi; held Messages content, cancellation and single-permit recovery"]
+async fn pi_messages_incremental_lifecycle() {
+    lifecycle_case("pi-messages", "MORPHIECORE_PI_BIN").await;
+}
+
+#[tokio::test]
+#[ignore = "requires installed OpenCode; core delta, interrupt and single-permit recovery"]
+async fn opencode_chat_incremental_lifecycle() {
+    lifecycle_case("opencode-chat", "MORPHIECORE_OPENCODE_BIN").await;
+}

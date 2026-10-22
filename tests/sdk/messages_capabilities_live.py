@@ -73,12 +73,14 @@ def structured(gateway, client):
     messages = [user("Return a JSON object with record 71 and ok true. No extra properties or commentary."),
                 copy.deepcopy(EFFORT)]
     first = sdk_generate(gateway, client, profile(messages, structured=True), False, "constrained-json")
-    require(json.loads(answer(first)) == {"record": 71, "ok": True}, "structured_json_answer")
+    value = json.loads(answer(first))
+    require(value == {"record": 71, "ok": True} and value["ok"] is True, "structured_json_answer")
     history = messages + [{"role": "assistant", "content": first["content"]},
                           user("Now return record 82 and ok true, using the same output format."),
                           copy.deepcopy(EFFORT)]
     second = sdk_generate(gateway, client, profile(history, structured=True), True, "constrained-json")
-    require(json.loads(answer(second)) == {"record": 82, "ok": True}, "structured_sse_history_answer")
+    value = json.loads(answer(second))
+    require(value == {"record": 82, "ok": True} and value["ok"] is True, "structured_sse_history_answer")
     truncated = sdk_generate(gateway, client, profile(messages, structured=True, cap=1), True, "constrained-truncation")
     require(truncated.get("stop_reason") == "max_tokens", "truncation_not_observed")
 

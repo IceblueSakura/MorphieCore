@@ -1,6 +1,5 @@
 //! Synthetic managed pool and a single pre-publication failure during tool feedback.
-#[path = "filesystem.rs"]
-mod filesystem;
+use crate::filesystem;
 use axum::{body::Body, http::HeaderMap, response::Response};
 use morphiecore::{
     credential::{CredentialManager, CredentialPool, CredentialRef, Secret},

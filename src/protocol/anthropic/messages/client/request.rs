@@ -83,8 +83,8 @@ fn block_fields(kind: Option<&str>) -> &'static [&'static str] {
         ],
         Some("image") => &["type", "source", "transformations", "cache_control"],
         Some("tool_addition" | "tool_removal") => &["type", "tool", "cache_control"],
-        // `context` and `citations` are kept so `Media::read` rejects them; they
-        // change model-visible content.
+        // `context` has a per-use owner; keep `citations` so active citation
+        // requests reject instead of silently changing model-visible content.
         Some("document") => &[
             "type",
             "source",
