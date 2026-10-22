@@ -34,8 +34,8 @@ pub struct Options {
 }
 #[derive(Subcommand)]
 enum Command {
-    /// Fetch one model-list page. Follow next_cursor explicitly; no inference calls.
-    Models(Models),
+    /// Fetch and print the full model-list JSON response once; no pagination or inference.
+    Models(Target),
     /// Send one fixed short prompt to an exact upstream model, without retries.
     Probe(Probe),
 }
@@ -69,14 +69,6 @@ struct Target {
     /// Whole operation deadline, including credential refresh and response EOF.
     #[arg(long, default_value_t = 60, value_parser = clap::value_parser!(u64).range(1..=300))]
     timeout_seconds: u64,
-}
-#[derive(Args)]
-struct Models {
-    #[command(flatten)]
-    target: Target,
-    /// Opaque cursor from the previous Google/Anthropic page; not a URL.
-    #[arg(long)]
-    cursor: Option<String>,
 }
 #[derive(Args)]
 struct Probe {
@@ -167,7 +159,7 @@ struct Plan {
 impl Command {
     fn target(&self) -> &Target {
         match self {
-            Self::Models(c) => &c.target,
+            Self::Models(c) => c,
             Self::Probe(c) => &c.target,
         }
     }
@@ -248,27 +240,7 @@ impl Command {
             .as_str()
             .to_owned();
         let body = match self {
-            Self::Models(options) => {
-                if let Some(cursor) = &options.cursor {
-                    if cursor.is_empty()
-                        || cursor.len() > 4096
-                        || cursor.chars().any(char::is_control)
-                    {
-                        return Err(Error::Invalid);
-                    }
-                    let key = match target.protocol {
-                        Protocol::Google => "pageToken",
-                        Protocol::Anthropic => "after_id",
-                        _ => return Err(Error::Invalid),
-                    };
-                    let query = url::form_urlencoded::Serializer::new(String::new())
-                        .append_pair(key, cursor)
-                        .finish();
-                    path.push('?');
-                    path.push_str(&query);
-                }
-                None
-            }
+            Self::Models(_) => None,
             Self::Probe(options) => {
                 if options.model.is_empty()
                     || options.model.len() > 256
@@ -457,21 +429,19 @@ async fn run(
         }
         bytes.extend_from_slice(&chunk);
     }
-    let result = match command {
-        Command::Models(options) => wire::models(
-            &bytes,
-            target.protocol,
-            plan.siwc,
-            options.cursor.as_deref(),
-        )?,
-        Command::Probe(_) if plan.siwc => wire::responses_stream(&bytes)?,
-        Command::Probe(_) => wire::probe(&bytes, target.protocol)?,
+    let Command::Probe(options) = command else {
+        let value = wire::decode(&bytes)?;
+        if contains_secret(&value, secret.expose()) {
+            return Err(Error::Response);
+        }
+        return Ok(value);
     };
-    let model = match command {
-        Command::Probe(options) => Some(options.model.as_str()),
-        _ => None,
+    let result = if plan.siwc {
+        wire::responses_stream(&bytes)?
+    } else {
+        wire::probe(&bytes, target.protocol)?
     };
-    let report = json!({"operation":if plan.body.is_some() {"probe"} else {"models"}, "provider":target.provider, "model":model, "protocol":target.protocol.name(), "http_status":status, "requests":1, "oauth_refreshed":refreshed, "elapsed_ms":start.elapsed().as_millis(), "response_bytes":bytes.len(), "result":result});
+    let report = json!({"operation":"probe", "provider":target.provider, "model":options.model, "protocol":target.protocol.name(), "http_status":status, "requests":1, "oauth_refreshed":refreshed, "elapsed_ms":start.elapsed().as_millis(), "response_bytes":bytes.len(), "result":result});
     // Only allowlisted metadata is reported; even an adversarial list must not echo auth.
     if contains_secret(&report, secret.expose()) {
         return Err(Error::Response);

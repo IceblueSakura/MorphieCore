@@ -123,7 +123,7 @@ Callbacks listen on `127.0.0.1`. Login checks issuer, client and subject. Gatewa
 
 Build with `cargo build --locked --offline --bin morphiecore-upstream`, then use `target/debug/morphiecore-upstream` (or an installed binary) in these examples. `--api-key main` and `--account personal` name local records, never secret values. Select an alternate store with `--store`.
 
-### List a model page
+### List upstream models
 
 ```sh
 morphiecore-upstream models \
@@ -136,7 +136,7 @@ morphiecore-upstream models \
   --provider openai --account personal --protocol openai-responses
 ```
 
-The JSON result contains model `ids`, `count`, `complete` and `next_cursor`. Google names retain their `models/` prefix; SIWC uses account-specific `slug` values, including entries not intended for a model picker. Google and Anthropic pagination is **manual**: pass `--cursor` from the previous result to fetch the next page. No inference is triggered by enumeration. A listed model does not establish account entitlement or working inference; an unlisted model may still be callable.
+The command prints the complete upstream JSON response, preserving all fields rather than extracting IDs or wrapping it in a diagnostic report. It makes one request and does not interpret or follow pagination; any upstream pagination fields remain in the output. There is no `--cursor` option. The response is complete for that request, not necessarily the Provider's entire catalog. No inference is triggered by enumeration. A listed model does not establish account entitlement or working inference; an unlisted model may still be callable.
 
 Built-in list paths are `/v1/models` for OpenAI and xAI, `/models` for DeepSeek, `/api/v1/models` for OpenRouter and `/v1beta/models` for Google, under their catalog origins. xAI's list API is documented for API keys; OAuth entitlement remains unverified and may reject. Other Providers need an explicit `--path`; OpenAI-compatible inference does not prove a list operation exists.
 
@@ -182,13 +182,13 @@ morphiecore-upstream probe \
   --origin https://api.example.com --path /v1/messages --model upstream-model
 ```
 
-`--origin` is a trusted operator decision to send that domain's key to the destination. It requires `--path`; URLs with userinfo, query, fragment or path are rejected. HTTPS is required except for literal loopback HTTP. The operation path has no query or fragment. For Google probes, supply a collection path such as `/v1beta/models`; the validated model and `:generateContent` suffix are appended. Cursors are encoded as query values, never followed as URLs.
+`--origin` is a trusted operator decision to send that domain's key to the destination. It requires `--path`; URLs with userinfo, query, fragment or path are rejected. HTTPS is required except for literal loopback HTTP. The operation path has no query or fragment. For Google probes, supply a collection path such as `/v1beta/models`; the validated model and `:generateContent` suffix are appended.
 
 Registered probe targets reuse the catalog's operation path and authentication. Custom paths use the selected protocol's default authentication where no operation is declared. API-key dialects may explicitly select `--auth bearer`, `--auth x-api-key` or `--auth x-goog-api-key`; raw headers are not accepted. Anthropic requests also send `anthropic-version: 2023-06-01`. Catalog defaults may themselves need maintenance; a diagnostic failure never silently migrates a Provider.
 
 OAuth supports the registered `openai` and `grok` profiles with `openai-responses` only. `--origin`, `--path` and `--auth` overrides are forbidden for OAuth. The manager pins the chosen account identity, refreshes locally expired access once or completes an existing pending renewal, and persists through its existing lifecycle. There is no login, permission escalation, refresh after HTTP 401, account replacement or inference replay. Failed or interrupted refresh may require explicit recovery with `morphiecore-auth`.
 
-`--timeout-seconds` defaults to 60 and accepts 1–300, covering refresh and upstream response intake. The HTTP response ceiling is 4 MiB; JSON keeps the shared structural limits, model pages allow at most 10,000 IDs, and SIWC limits events to 1 MiB each/10,000 total. Responses are buffered for diagnostic validation, not delivered incrementally to stdout. `--proxy` explicitly applies to both upstream HTTP and OAuth; upstream requests ignore environment proxies. Ctrl-C cancels local work. Neither cancellation nor socket release proves remote computation stopped.
+`--timeout-seconds` defaults to 60 and accepts 1–300, covering refresh and upstream response intake. The HTTP response ceiling is 4 MiB; JSON keeps the shared structural limits, and SIWC limits events to 1 MiB each/10,000 total. Responses are buffered, not delivered incrementally to stdout. Oversized responses fail rather than print a truncated result. Authentication material echoed by an upstream is rejected before output. `--proxy` explicitly applies to both upstream HTTP and OAuth; upstream requests ignore environment proxies. Ctrl-C cancels local work. Neither cancellation nor socket release proves remote computation stopped.
 
 ## Configure the gateway
 

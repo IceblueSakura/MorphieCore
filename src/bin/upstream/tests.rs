@@ -130,7 +130,7 @@ fn target_selection_is_explicit_and_oauth_cannot_be_redirected() {
     }
 }
 #[test]
-fn native_requests_paths_headers_and_cursors_are_not_inferred_from_model_names() {
+fn native_requests_paths_and_headers_are_not_inferred_from_model_names() {
     for (protocol, path, auth, body) in [
         (
             "anthropic",
@@ -178,12 +178,10 @@ fn native_requests_paths_headers_and_cursors_are_not_inferred_from_model_names()
         "one",
         "--protocol",
         "google",
-        "--cursor",
-        "a&key=other",
     ])
     .plan()
     .unwrap();
-    assert_eq!(plan.path, "/v1beta/models?pageToken=a%26key%3Dother");
+    assert_eq!(plan.path, "/v1beta/models");
     assert!(plan.body.is_none());
     for model in ["../other", "x?key=y", "x/other", "models/"] {
         assert!(
@@ -234,81 +232,18 @@ fn native_requests_paths_headers_and_cursors_are_not_inferred_from_model_names()
     }
 }
 #[test]
-fn model_pages_preserve_ids_and_report_incomplete_lists_without_following_urls() {
-    for (protocol, siwc, source, expected) in [
-        (
-            Protocol::OpenaiChat,
-            false,
-            json!({"data":[{"id":"new-model","unknown":1}]}),
-            json!({"ids":["new-model"],"count":1,"complete":true,"next_cursor":null}),
-        ),
-        (
-            Protocol::OpenaiResponses,
-            true,
-            json!({"models":[{"slug":"gpt-new","visibility":"list"}]}),
-            json!({"ids":["gpt-new"],"count":1,"complete":true,"next_cursor":null}),
-        ),
-        (
-            Protocol::Google,
-            false,
-            json!({"models":[{"name":"models/new"}],"nextPageToken":"opaque"}),
-            json!({"ids":["models/new"],"count":1,"complete":false,"next_cursor":"opaque"}),
-        ),
-        (
-            Protocol::Anthropic,
-            false,
-            json!({"data":[{"id":"new"}],"has_more":true,"last_id":"new"}),
-            json!({"ids":["new"],"count":1,"complete":false,"next_cursor":"new"}),
-        ),
-    ] {
-        assert_eq!(
-            wire::models(&serde_json::to_vec(&source).unwrap(), protocol, siwc, None).unwrap(),
-            expected
-        );
-    }
-    for source in [
-        json!({"data":[{"id":"same"},{"id":"same"}]}),
-        json!({"data":[{"id":1}]}),
-        json!({"data":[],"error":{"message":"private"}}),
-        json!({"data":[],"has_more":true}),
-    ] {
-        assert!(
-            wire::models(
-                &serde_json::to_vec(&source).unwrap(),
-                Protocol::OpenaiChat,
-                false,
-                None
-            )
-            .is_err()
-        );
-    }
-    assert!(
-        wire::models(
-            br#"{"data":[],"data":[]}"#,
-            Protocol::OpenaiChat,
-            false,
-            None
-        )
-        .is_err()
+fn model_json_preserves_metadata_without_interpreting_pagination() {
+    let value = wire::decode(br#"{"data":[{"id":"new","metadata":{"context":123}}],"has_more":true,"last_id":"new","nextPageToken":"opaque"}"#).unwrap();
+    assert_eq!(
+        value,
+        json!({"data":[{"id":"new","metadata":{"context":123}}],"has_more":true,"last_id":"new","nextPageToken":"opaque"})
     );
-    assert!(
-        wire::models(
-            br#"{"nextPageToken":"same"}"#,
-            Protocol::Google,
-            false,
-            Some("same")
-        )
-        .is_err()
-    );
-    assert!(
-        wire::models(
-            br#"{"data":[],"has_more":"false"}"#,
-            Protocol::Anthropic,
-            false,
-            None
-        )
-        .is_err()
-    );
+    assert!(wire::decode(br#"{"data":[],"data":[]}"#).is_err());
+    assert!(contains_secret(
+        &json!({"metadata":{"key":"synthetic-secret"}}),
+        "synthetic-secret"
+    ));
+    assert!(!contains_secret(&value, "synthetic-secret"));
 }
 fn response() -> Value {
     json!({"status":"completed","output":[{"type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"OK"}]}]})

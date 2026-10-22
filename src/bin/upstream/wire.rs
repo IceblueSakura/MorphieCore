@@ -23,7 +23,7 @@ pub(super) fn request(protocol: Protocol, model: &str, siwc: bool) -> Value {
         }
     }
 }
-fn decode(bytes: &[u8]) -> Result<Value, Error> {
+pub(super) fn decode(bytes: &[u8]) -> Result<Value, Error> {
     parse_json(bytes, JsonLimits::ENVELOPE).map_err(|_| Error::Response)
 }
 fn string(value: &Value) -> Result<&str, Error> {
@@ -40,65 +40,6 @@ fn no_error(value: &Value) -> Result<(), Error> {
         return Err(Error::Response);
     }
     Ok(())
-}
-pub(super) fn models(
-    bytes: &[u8],
-    protocol: Protocol,
-    siwc: bool,
-    cursor: Option<&str>,
-) -> Result<Value, Error> {
-    let value = decode(bytes)?;
-    no_error(&value)?;
-    let (field, id) = if siwc {
-        ("models", "slug")
-    } else if protocol == Protocol::Google {
-        ("models", "name")
-    } else {
-        ("data", "id")
-    };
-    let empty = vec![];
-    let records = if protocol == Protocol::Google && value.get(field).is_none() {
-        &empty
-    } else {
-        array(&value[field])?
-    };
-    if records.len() > 10000 {
-        return Err(Error::Limit);
-    }
-    let mut ids = Vec::with_capacity(records.len());
-    let mut seen = std::collections::BTreeSet::new();
-    for record in records {
-        let id = string(&record[id])?;
-        if id.len() > 256 || !seen.insert(id) {
-            return Err(Error::Response);
-        }
-        ids.push(id);
-    }
-    let next = match protocol {
-        Protocol::Google => match value.get("nextPageToken") {
-            None => None,
-            Some(v) if v.as_str() == Some("") => None,
-            Some(v) => Some(string(v)?),
-        },
-        Protocol::Anthropic => match value.get("has_more").and_then(Value::as_bool) {
-            Some(true) => Some(string(&value["last_id"])?),
-            Some(false) => None,
-            None => return Err(Error::Response),
-        },
-        _ => {
-            if let Some(more) = value.get("has_more") {
-                match more.as_bool() {
-                    Some(false) => {}
-                    _ => return Err(Error::Response),
-                }
-            }
-            None
-        }
-    };
-    if next.is_some() && next == cursor {
-        return Err(Error::Response);
-    }
-    Ok(json!({"ids":ids,"count":ids.len(),"complete":next.is_none(),"next_cursor":next}))
 }
 fn text_parts(parts: &[Value], kind: &str) -> Result<usize, Error> {
     let mut bytes = 0;
