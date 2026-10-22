@@ -25,6 +25,7 @@ impl std::fmt::Debug for Request {
 pub enum Profile {
     GptImage,
     OpenRouterFlare,
+    GrokImagineImage2,
 }
 impl Profile {
     pub fn encode_request(
@@ -36,6 +37,9 @@ impl Profile {
             Self::GptImage => crate::protocol::openai::images::encode_request(request, model),
             Self::OpenRouterFlare => {
                 crate::protocol::openrouter_images::encode_request(request, model)
+            }
+            Self::GrokImagineImage2 => {
+                crate::protocol::grok::images::encode_request(request, model)
             }
         }
     }
@@ -49,6 +53,7 @@ impl Profile {
         match self {
             Self::GptImage => crate::protocol::openai::images::decode_response(bytes),
             Self::OpenRouterFlare => crate::protocol::openrouter_images::decode_response(bytes),
+            Self::GrokImagineImage2 => crate::protocol::grok::images::decode_response(bytes),
         }
     }
 }

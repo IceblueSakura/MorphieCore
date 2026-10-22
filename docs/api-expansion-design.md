@@ -318,7 +318,7 @@ Exit evidence: source/mask ownership, independent generate/edit wire oracles, co
 
 ### Video API and implementation
 
-The first concrete target is the selected [Grok Imagine slice](roadmap.md#grok-imagine-adaptation), with [bounded synchronous waiting](architecture.md#scope-and-activation-decisions) over native asynchronous generation. Its public wire schemas and typed owners still need operation design; it does not select durable jobs or broader video APIs. For later operations, pin current official contracts before selecting input/output, generation or editing behavior. Separate conversational video content from standalone production operations; the wire endpoint name does not determine the task owner.
+Video integration is explicitly [deferred](roadmap.md#grok-imagine-adaptation). On resumption, use Grok's native asynchronous API as the primary design reference; the earlier synchronous-wait choice is superseded. Public wire schemas, typed owners, job authorization and persistence remain unselected. Do not label a Grok job or synchronous wrapper as OpenAI Videos compatibility. For each operation, pin current official contracts before selecting input/output, generation or editing behavior. Separate conversational video content from standalone production operations; the wire endpoint name does not determine the task owner.
 
 For each selected operation, specify supported input references, required media controls, output artifacts and reported accounting. If the native API is asynchronous, select submission identity, status, cancellation, artifact access and uncertain-submission handling explicitly. Do not reuse a completed text response as evidence of video completion or turn a returned artifact URL into unrestricted server-side fetching.
 

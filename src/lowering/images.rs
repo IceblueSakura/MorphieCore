@@ -35,14 +35,21 @@ fn standard_details(details: &ImageTokenBreakdown, total: u64) -> bool {
         .all(|v| v.is_absent())
 }
 pub(crate) fn standard_tokens_representable(usage: &ImageUsage) -> bool {
+    let (Some(input), Some(output), Some(_)) = (
+        usage.input.value(),
+        usage.output.value(),
+        usage.total.value(),
+    ) else {
+        return false;
+    };
     usage
         .input_details
         .value()
-        .is_some_and(|d| standard_details(d, usage.input))
+        .is_some_and(|d| standard_details(d, *input))
         && usage
             .output_details
             .value()
-            .is_none_or(|d| standard_details(d, usage.output))
+            .is_none_or(|d| standard_details(d, *output))
 }
 pub fn project_response(
     response: &ImageGenerationResponse,

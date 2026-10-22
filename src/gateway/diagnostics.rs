@@ -667,8 +667,8 @@ impl Trace {
             return;
         }
         self.record.image = ImageAccountingObservation {
-            reported_input_tokens: usage.map(|u| u.input),
-            reported_output_tokens: usage.map(|u| u.output),
+            reported_input_tokens: usage.and_then(|u| u.input.value()).copied(),
+            reported_output_tokens: usage.and_then(|u| u.output.value()).copied(),
             reported_image_cost_usd: usage
                 .and_then(|u| u.billing.cost.value())
                 .map(|v| v.amount().to_string()),

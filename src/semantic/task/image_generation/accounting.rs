@@ -89,23 +89,46 @@ impl ImageBilling {
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImageUsage {
-    pub input: u64,
+    pub input: Presence<u64>,
     pub input_details: Presence<ImageTokenBreakdown>,
-    pub output: u64,
+    pub output: Presence<u64>,
     pub output_details: Presence<ImageTokenBreakdown>,
-    pub total: u64,
+    pub total: Presence<u64>,
     pub billing: ImageBilling,
 }
 impl ImageUsage {
     pub fn validate(&self) -> Result<(), ImageError> {
-        if self.input.checked_add(self.output) != Some(self.total) {
+        if let (Some(input), Some(output)) = (self.input.value(), self.output.value()) {
+            let sum = input.checked_add(*output).ok_or(ImageError)?;
+            if self.total.value().is_some_and(|total| sum != *total) {
+                return Err(ImageError);
+            }
+        }
+        if let Some(total) = self.total.value()
+            && [self.input.value(), self.output.value()]
+                .into_iter()
+                .flatten()
+                .any(|value| value > total)
+        {
             return Err(ImageError);
         }
         if let Some(details) = self.input_details.value() {
-            details.validate(self.input)?;
+            details.validate(
+                self.input
+                    .value()
+                    .or(self.total.value())
+                    .copied()
+                    .unwrap_or(u64::MAX),
+            )?;
         }
         if let Some(details) = self.output_details.value() {
-            details.validate(self.output)?;
+            details.validate(
+                self.output
+                    .value()
+                    .or(self.total.value())
+                    .copied()
+                    .unwrap_or(u64::MAX),
+            )?;
         }
         Ok(())
     }

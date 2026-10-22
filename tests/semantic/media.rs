@@ -384,6 +384,7 @@ mod openrouter_images {
     use morphiecore::{
         lowering::images::{AccountingPolicy, project_response},
         protocol::{openai::images, openrouter_images},
+        semantic::value::Presence,
     };
     use serde_json::json;
     #[test]
@@ -391,7 +392,7 @@ mod openrouter_images {
         let bytes=br#"{"created":42,"data":[{"b64_json":"AQID","media_type":"image/png"}],"usage":{"prompt_tokens":7,"completion_tokens":9,"total_tokens":16,"cost":0.01234567890123456789,"is_byok":false,"prompt_tokens_details":{"cached_tokens":2},"completion_tokens_details":{"image_tokens":8,"reasoning_tokens":1}}}"#;
         let response = openrouter_images::decode_response(bytes).unwrap();
         let usage = response.usage.value().unwrap();
-        assert_eq!(usage.input, 7);
+        assert_eq!(usage.input, Presence::Value(7));
         assert!(usage.input_details.value().unwrap().text.is_absent());
         assert_eq!(
             usage.input_details.value().unwrap().cached.value(),
@@ -416,7 +417,7 @@ mod openrouter_images {
         );
         assert_eq!(
             response.usage.value().unwrap().input,
-            7,
+            Presence::Value(7),
             "projection cannot mutate the source"
         );
     }

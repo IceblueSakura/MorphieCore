@@ -239,7 +239,8 @@ pub use accounting::{
 };
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImageGenerationResponse {
-    pub created: u64,
+    pub created: Presence<u64>,
+    pub model: Presence<String>,
     pub images: Vec<GeneratedImage>,
     pub usage: Presence<ImageUsage>,
 }
@@ -258,7 +259,8 @@ impl ImageGenerationResponse {
     }
     pub fn new(created: u64, images: Vec<GeneratedImage>) -> Result<Self, ImageError> {
         let response = Self {
-            created,
+            created: Presence::Value(created),
+            model: Presence::Absent,
             images,
             usage: Presence::Absent,
         };
@@ -275,6 +277,11 @@ impl ImageGenerationResponse {
     pub fn validate(&self) -> Result<(), ImageError> {
         if !(1..=usize::from(MAX_IMAGE_COUNT)).contains(&self.images.len())
             || self.decoded_bytes()? > MAX_IMAGES_BYTES
+            || self.model.value().is_some_and(|model| {
+                model.is_empty()
+                    || model.len() > 256
+                    || model.chars().any(|c| c.is_control() || c.is_whitespace())
+            })
         {
             return Err(ImageError);
         }

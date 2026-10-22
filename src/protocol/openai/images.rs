@@ -244,11 +244,11 @@ fn usage(value: &Value) -> Result<ImageUsage, CodecError> {
         ],
     )?;
     let usage = ImageUsage {
-        input: number(required(map, "input_tokens")?)?,
+        input: Presence::Value(number(required(map, "input_tokens")?)?),
         input_details: Presence::Value(breakdown(required(map, "input_tokens_details")?)?),
-        output: number(required(map, "output_tokens")?)?,
+        output: Presence::Value(number(required(map, "output_tokens")?)?),
         output_details: optional(map, "output_tokens_details", breakdown)?,
-        total: number(required(map, "total_tokens")?)?,
+        total: Presence::Value(number(required(map, "total_tokens")?)?),
         billing: ImageBilling::default(),
     };
     usage.validate().map_err(|_| invalid())?;
@@ -326,13 +326,22 @@ fn breakdown_value(v: &ImageTokenBreakdown) -> Value {
 }
 fn usage_value(v: &ImageUsage) -> Value {
     let mut map = Map::new();
-    map.insert("input_tokens".into(), json!(v.input));
+    map.insert(
+        "input_tokens".into(),
+        json!(v.input.value().expect("validated input")),
+    );
     map.insert(
         "input_tokens_details".into(),
         breakdown_value(v.input_details.value().expect("validated input details")),
     );
-    map.insert("output_tokens".into(), json!(v.output));
-    map.insert("total_tokens".into(), json!(v.total));
+    map.insert(
+        "output_tokens".into(),
+        json!(v.output.value().expect("validated output")),
+    );
+    map.insert(
+        "total_tokens".into(),
+        json!(v.total.value().expect("validated total")),
+    );
     put(
         &mut map,
         "output_tokens_details",
@@ -343,6 +352,10 @@ fn usage_value(v: &ImageUsage) -> Value {
 }
 pub fn encode_response(response: &ImageGenerationResponse) -> Result<Value, CodecError> {
     response.validate().map_err(|_| invalid())?;
+    let created = response.created.value().ok_or_else(invalid)?;
+    if !response.model.is_absent() {
+        return Err(invalid());
+    }
     let image = &response.images[0];
     if response
         .images
@@ -357,7 +370,7 @@ pub fn encode_response(response: &ImageGenerationResponse) -> Result<Value, Code
         return Err(invalid());
     }
     let mut map = Map::new();
-    map.insert("created".into(), json!(response.created));
+    map.insert("created".into(), json!(created));
     map.insert(
         "data".into(),
         Value::Array(

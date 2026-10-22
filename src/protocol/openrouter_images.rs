@@ -133,9 +133,9 @@ fn usage(value: &Value) -> Result<ImageUsage, CodecError> {
         ],
     )?;
     let usage = ImageUsage {
-        input: number(required(m, "prompt_tokens")?)?,
-        output: number(required(m, "completion_tokens")?)?,
-        total: number(required(m, "total_tokens")?)?,
+        input: Presence::Value(number(required(m, "prompt_tokens")?)?),
+        output: Presence::Value(number(required(m, "completion_tokens")?)?),
+        total: Presence::Value(number(required(m, "total_tokens")?)?),
         input_details: optional(m, "prompt_tokens_details", input_details)?,
         output_details: optional(m, "completion_tokens_details", output_details)?,
         billing: ImageBilling {
