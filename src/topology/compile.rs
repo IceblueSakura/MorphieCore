@@ -319,6 +319,9 @@ fn compile_deployments(
                     // Reviewed binding opt-ins only; other codec-only features stay closed.
                     ceiling.explicit_cache = true;
                     ceiling.strict_tools = true;
+                    ceiling.tool_examples = true;
+                    ceiling.document_context = true;
+                    ceiling.automatic_prefix_cache = true;
                     ceiling.ordered_instructions = true;
                     ceiling.tool_changes = true;
                     Some(ceiling)

@@ -22,10 +22,12 @@ pub const MESSAGES_BINDINGS: &[MessagesBinding] = &[MessagesBinding {
     released_at: 1_791_331_200,
     developer: "Anthropic",
 }];
-/// pi's built-in Haiku profile: strict tools, mid-conversation system messages and
-/// ordered tool changes.
+/// Reviewed native Haiku inputs and pi's ordered agent profile.
 fn haiku_contract(mut contract: GenerationSemanticContract) -> GenerationSemanticContract {
     contract.strict_tools = true;
+    contract.tool_examples = true;
+    contract.document_context = true;
+    contract.automatic_prefix_cache = true;
     contract.ordered_instructions = true;
     contract.tool_changes = true;
     contract

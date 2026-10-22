@@ -280,12 +280,13 @@ fn document_context_preserves_per_use_presence_in_messages_and_tool_history() {
         }
         assert_eq!(input, before);
         input.task.semantic = request;
-        assert!(
-            catalog::MESSAGES_BINDINGS[0]
-                .endpoint()
-                .encode_request_with_rules(&input)
-                .is_err()
+        input.conversation = Some(
+            morphiecore::semantic::context::ConversationContext::conversation("synthetic").unwrap(),
         );
+        catalog::MESSAGES_BINDINGS[0]
+            .endpoint()
+            .encode_request_with_rules(&input)
+            .unwrap();
     }
     let mut too_large = Resource {
         location: ResourceLocation::Url(text("https://example.invalid/a.pdf")),

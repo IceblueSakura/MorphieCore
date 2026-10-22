@@ -74,30 +74,52 @@ impl<'a> Entry<'a> {
             }
         }
         if protocol == ClientProtocol::Messages {
-            let admitted = entry.public.contract.explicit_cache;
-            if !admitted
-                || entry.candidates.iter().all(|candidate| {
+            let native_all = |supports: fn(
+                &crate::semantic::task::generation::GenerationSemanticContract,
+            ) -> bool| {
+                entry.candidates.iter().all(|candidate| {
                     candidate.endpoint.protocol
                         == crate::topology::ProtocolProfile::AnthropicMessages
-                        && candidate.endpoint.representation.semantics().explicit_cache
+                        && supports(candidate.endpoint.representation.semantics())
                 })
-            {
-                request.push(Case::new(
+            };
+            for (admitted, supported, feature, domain) in [
+                (
+                    entry.public.contract.tool_examples,
+                    native_all(|c| c.tool_examples),
+                    "generation.tools",
+                    "bounded_ordered_input_examples",
+                ),
+                (
+                    entry.public.contract.document_context,
+                    native_all(|c| c.document_context),
+                    "generation.document_context",
+                    "per_use_presence_in_documents_and_tool_results",
+                ),
+                (
+                    entry.public.contract.explicit_cache,
+                    native_all(|c| c.explicit_cache),
                     "generation.cache",
                     "valid_owner_local_breakpoints_5m_or_1h",
-                    if admitted {
-                        Treatment::Faithful
-                    } else {
-                        Treatment::Rejected
-                    },
-                ));
-            }
-            if !entry.public.contract.automatic_prefix_cache {
-                request.push(Case::new(
+                ),
+                (
+                    entry.public.contract.automatic_prefix_cache,
+                    native_all(|c| c.automatic_prefix_cache),
                     "generation.cache",
                     "request_wide_automatic_policy",
-                    Treatment::Rejected,
-                ));
+                ),
+            ] {
+                if !admitted || supported {
+                    request.push(Case::new(
+                        feature,
+                        domain,
+                        if admitted {
+                            Treatment::Faithful
+                        } else {
+                            Treatment::Rejected
+                        },
+                    ));
+                }
             }
         }
         let (settings_domain, settings_rule, settings_admitted) = match &entry.client {

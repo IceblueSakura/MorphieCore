@@ -277,7 +277,7 @@ async fn configured_messages_cache_admission_requires_all_native_candidates() {
                 .values()
                 .all(|entry| entry.public.contract.explicit_cache == admitted)
         );
-        assert!(!entry.public.contract.automatic_prefix_cache);
+        assert_eq!(entry.public.contract.automatic_prefix_cache, admitted);
         assert_eq!(entry.public.contract.strict_tools, admitted);
         assert_eq!(entry.public.contract.ordered_instructions, admitted);
         assert_eq!(entry.public.contract.tool_changes, admitted);
@@ -321,7 +321,8 @@ async fn configured_messages_cache_admission_requires_all_native_candidates() {
             vec![
                 json!({"feature":"generation.cache","domain":"valid_owner_local_breakpoints_5m_or_1h",
                 "treatment":if admitted {"faithful"} else {"rejected"}}),
-                json!({"feature":"generation.cache","domain":"request_wide_automatic_policy","treatment":"rejected"}),
+                json!({"feature":"generation.cache","domain":"request_wide_automatic_policy",
+                    "treatment":if admitted {"faithful"} else {"rejected"}}),
             ]
         );
         assert_eq!(capabilities["provider_effectiveness"], "not_asserted");
@@ -427,32 +428,29 @@ async fn configured_messages_cache_admission_requires_all_native_candidates() {
             assert_eq!(wire["max_tokens"], 64);
             assert_eq!(request, original);
         }
-        // Reach admission, not an earlier invalid marker combination.
+        // Caller-selected automatic policy preserves the existing same-TTL tail.
         {
-            let feature = GenerationFeature::AutomaticPrefixCache;
             let mut body = input.clone();
             body["system"].as_array_mut().unwrap().pop();
             body["cache_control"] = json!({"type":"ephemeral"});
             let mut request = ClientAdapter::Messages
                 .decode_client_request(&serde_json::to_vec(&body).unwrap())
                 .unwrap();
-            assert!(matches!(admit(&entry.public, &request),
-                Err(AttemptError::Adapter(AdapterError::Representation(
-                    RepresentationError::Admission(found)))) if found == feature));
+            admit(&entry.public, &request).unwrap();
             request.conversation = Some(
                 crate::semantic::context::ConversationContext::conversation("synthetic").unwrap(),
             );
             let candidate = &entry.candidates[0];
-            assert!(representable(&candidate.endpoint, &request).is_err());
-            assert!(
-                prepare(
-                    &candidate.endpoint,
-                    &candidate.provider,
-                    &candidate.secret.resolve().unwrap().0,
-                    &request
-                )
-                .is_err()
-            );
+            representable(&candidate.endpoint, &request).unwrap();
+            let prepared = prepare(
+                &candidate.endpoint,
+                &candidate.provider,
+                &candidate.secret.resolve().unwrap().0,
+                &request,
+            )
+            .unwrap();
+            let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
+            assert_eq!(wire["cache_control"], json!({"type":"ephemeral"}));
         }
     }
 }
@@ -520,4 +518,139 @@ fn native_response_admit_strict_changed_tools_and_message_effort() {
         beta.1,
         "mid-conversation-output-config-2026-07-01,thinking-binding-controls-2026-08-01,inline-tools-2026-09-15"
     );
+}
+
+#[tokio::test]
+async fn configured_messages_input_features_require_every_native_candidate() {
+    let schema = json!({"type":"object","properties":{"key":{"type":"string"}},"required":["key"]});
+    let root = json!({"name":"lookup","strict":false,"input_schema":schema,
+        "input_examples":[{"key":"cedar"},{"key":"birch"}]});
+    let inline = json!({"name":"inspect","strict":false,"input_schema":schema,"input_examples":[]});
+    let examples = json!({"model":"claude-haiku-5-5","max_tokens":64,"tools":[root],
+        "messages":[{"role":"user","content":[{"type":"text","text":"lookup"}]},
+        {"role":"system","content":[{"type":"tool_addition","tool":{
+            "type":"tool_definition","definition":inline}}]}]});
+    let context = json!({"model":"claude-haiku-5-5","max_tokens":64,
+    "messages":[{"role":"user","content":[
+        {"type":"document","source":{"type":"text","media_type":"text/plain","data":"cedar"},
+            "context":"first use"},
+        {"type":"document","source":{"type":"text","media_type":"text/plain","data":"cedar"},
+            "context":"second use"}
+    ]}]});
+    let automatic = json!({"model":"claude-haiku-5-5","max_tokens":64,
+        "cache_control":{"type":"ephemeral","ttl":"1h"},
+        "messages":[{"role":"user","content":[{"type":"text","text":"lookup"}]}]});
+    let cases = [
+        (
+            GenerationFeature::ToolExamples,
+            "bounded_ordered_input_examples",
+            examples,
+        ),
+        (
+            GenerationFeature::DocumentContext,
+            "per_use_presence_in_documents_and_tool_results",
+            context,
+        ),
+        (
+            GenerationFeature::AutomaticPrefixCache,
+            "request_wide_automatic_policy",
+            automatic,
+        ),
+    ];
+    for (providers, admitted) in [
+        (&["opencode-go"][..], true),
+        (&["openrouter"][..], false),
+        (&["openrouter", "opencode-go"][..], false),
+    ] {
+        let boot = configured_messages(providers);
+        let state = &boot.gateway.state;
+        assert!(
+            state
+                .entries
+                .values()
+                .all(|entry| entry.public.contract.tool_examples == admitted
+                    && entry.public.contract.document_context == admitted
+                    && entry.public.contract.automatic_prefix_cache == admitted)
+        );
+        let response = boot
+            .gateway
+            .router()
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/v1/morphiecore/capabilities")
+                    .header(
+                        "authorization",
+                        "Bearer synthetic-gateway-client-token-0001",
+                    )
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        let bytes = axum::body::to_bytes(response.into_body(), 32 << 10)
+            .await
+            .unwrap();
+        let view: Value = serde_json::from_slice(&bytes).unwrap();
+        let messages = view["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["protocol"] == "messages")
+            .unwrap();
+        let entry = &state.entries[&(crate::gateway::MESSAGES_FAMILY, "claude-haiku-5-5".into())];
+        for (feature, domain, input) in &cases {
+            let case = messages["request"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|case| case["domain"] == *domain)
+                .unwrap();
+            assert_eq!(
+                case["treatment"],
+                if admitted { "faithful" } else { "rejected" }
+            );
+            let decoded = ClientAdapter::Messages
+                .decode_client_request(&serde_json::to_vec(input).unwrap())
+                .unwrap();
+            if !admitted {
+                assert!(matches!(admit(&entry.public, &decoded),
+                    Err(AttemptError::Adapter(AdapterError::Representation(
+                        RepresentationError::Admission(found)))) if found == *feature));
+                assert!(
+                    crate::gateway::ingress::admission::prepare_messages(
+                        state,
+                        &serde_json::to_vec(input).unwrap()
+                    )
+                    .is_err()
+                );
+                continue;
+            }
+            let (_, mut request) = crate::gateway::ingress::admission::prepare_messages(
+                state,
+                &serde_json::to_vec(input).unwrap(),
+            )
+            .unwrap();
+            request.conversation = Some(
+                crate::semantic::context::ConversationContext::conversation("synthetic").unwrap(),
+            );
+            let original = request.clone();
+            let candidate = &entry.candidates[0];
+            representable(&candidate.endpoint, &request).unwrap();
+            let prepared = prepare(
+                &candidate.endpoint,
+                &candidate.provider,
+                &candidate.secret.resolve().unwrap().0,
+                &request,
+            )
+            .unwrap();
+            let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
+            assert_eq!(wire["tools"], input["tools"]);
+            assert_eq!(wire["messages"], input["messages"]);
+            if let Some(control) = input.get("cache_control") {
+                assert_eq!(&wire["cache_control"], control);
+            }
+            assert_eq!(request, original);
+        }
+    }
 }

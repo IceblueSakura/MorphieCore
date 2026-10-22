@@ -193,6 +193,9 @@ impl Models {
             let mut deployments = BTreeSet::new();
             let mut native_owner_cache = true;
             let mut native_agent_profile = true;
+            let mut native_tool_examples = true;
+            let mut native_document_context = true;
+            let mut native_automatic_cache = true;
             for (candidate_index, candidate) in config.candidates.into_iter().enumerate() {
                 let binding = EndpointId::new(&candidate.binding).map_err(|_| invalid())?;
                 if !template_route.endpoints.contains(&binding) {
@@ -306,6 +309,9 @@ impl Models {
                 let native = endpoint.protocol == ProtocolProfile::AnthropicMessages;
                 let semantics = endpoint.representation.semantics();
                 native_owner_cache &= native && semantics.explicit_cache;
+                native_tool_examples &= native && semantics.tool_examples;
+                native_document_context &= native && semantics.document_context;
+                native_automatic_cache &= native && semantics.automatic_prefix_cache;
                 native_agent_profile &= native
                     && semantics.strict_tools
                     && semantics.ordered_instructions
@@ -326,6 +332,9 @@ impl Models {
             // Publish only the selected all-native contract, never a union that
             // admits cache-bearing requests by skipping incompatible candidates.
             public.contract.explicit_cache |= native_owner_cache;
+            public.contract.tool_examples |= native_tool_examples;
+            public.contract.document_context |= native_document_context;
+            public.contract.automatic_prefix_cache |= native_automatic_cache;
             // pi's built-in Messages profile: strict tools, mid-conversation system
             // messages and tool changes, under the same all-native rule.
             if native_agent_profile {

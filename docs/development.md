@@ -319,6 +319,24 @@ For tool-result image checks, first obtain a real tool call from the selected mo
 
 Distinguish HTTP success, honest completion and visual recognition. Check a known feature of the synthetic image without logging response text. A successful public-URL sample does not prove URL availability or justify automatic retries after an earlier failure.
 
+#### Native Messages input acceptance
+
+`tests/sdk/messages_inputs_live.py` is an explicit live companion, not an offline test. It starts the CLI with scratch service/model configuration, resolves only existing Go/Haiku credentials through the project loader, and uses one candidate with one attempt per request. Each case fixes a 2048-token output ceiling, 120-second attempt/route/exchange deadlines, 256 KiB client requests and 8 MiB responses. No SDK/client retry, model fallback, URL fetch, Files ID or real tool execution is involved.
+
+Run cases separately and serially after building the selected CLI:
+
+```sh
+python3 tests/sdk/messages_inputs_live.py --gateway-bin /absolute/path/to/morphiecore examples
+python3 tests/sdk/messages_inputs_live.py --gateway-bin /absolute/path/to/morphiecore context
+python3 tests/sdk/messages_inputs_live.py --gateway-bin /absolute/path/to/morphiecore cache
+```
+
+The examples case fixes three requests: root examples → model-issued result with a by-value example definition → second real-call result/final answer. The context case fixes three: distinct contexts for two uses of one plain-text source, a real fetch call, then a contextual document in its result. The cache case fixes four: unique synthetic prefixes of 2,000 words, immediately repeated under explicit 5m and 1h automatic policies. Require positive reported cache writes/reads and the requested TTL write class; absent counters are not zero. Prepared 5m may use the documented omitted-default representation; 1h must remain explicit.
+
+Every case requires honest completion, exact request/attempt counts and zero ignored request fields. Opt-in private upstream-request capture checks examples/schema/order, per-use contexts or automatic TTL without using capture as replay input; temporary captures/configuration are deleted before exit. Only fixed status/error codes and numeric reports are printed. Offline runner oracles live in `test_messages_inputs_live.py`; separate directional/native SDK gates remain required.
+
+The 2026-10-22 Go/Haiku cases passed 3/3/4 requests respectively. The accepted cache run reported 14,056 written/read tokens for 5m and 14,055 for 1h, with matching write classes. An earlier four-request cache run completed but its final harness assertion incorrectly required an explicit 5m field; the corrected offline oracle and separate bounded rerun resolved that harness failure. An earlier runner startup type error made no HTTP request. These are bounded binding checks, not complete protocol/model conformance, measured retention, invoice accuracy, signed-thinking reuse or deployment authorization.
+
 ### pi acceptance
 
 Use pi's real binary against the CLI gateway, not a wrapper that sources private environment.

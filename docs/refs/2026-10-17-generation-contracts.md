@@ -18,6 +18,7 @@ Later observations retain their own dates and evidence scope below. [Architectur
     - [Feature combinations and endpoint evidence, 2026-10-21](#feature-combinations-and-endpoint-evidence-2026-10-21)
   - [Messages owner-local cache admission, 2026-10-19](#messages-owner-local-cache-admission-2026-10-19)
   - [Anthropic input and cache recheck, 2026-10-21](#anthropic-input-and-cache-recheck-2026-10-21)
+  - [Deployed Messages inputs, 2026-10-22](#deployed-messages-inputs-2026-10-22)
   - [pi Messages request profile, 2026-10-19](#pi-messages-request-profile-2026-10-19)
   - [R2 native client and replay evidence, 2026-10-19](#r2-native-client-and-replay-evidence-2026-10-19)
   - [Responses lifecycle reports, 2026-10-19](#responses-lifecycle-reports-2026-10-19)
@@ -233,6 +234,12 @@ The current [caching guide](https://platform.claude.com/docs/en/build-with-claud
 Examples and context change model-visible input, not resource identity alone. Inline tool additions should preserve the root tools and append history; deferred tools and the first inline-definition activation affect the rendered prefix. Existing [cache checks](../../src/protocol/anthropic/messages/wire/request.rs) already cover many marker/TTL cases; review eligible-tail derivation rather than replacing them with another cache model. These source rules do not prove deployed Go forwarding or caching.
 
 The [tool-cache guide](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching), rechecked on 2026-10-21, explicitly excludes deferred definitions from the system prefix. The general caching guide also documents one full miss when the first inline definition activates tool prompting and root `tools` has no non-deferred tool. Local validation now skips deferred root definitions and distinguishes a missing eligible owner from an unmarked one. Native regression retains examples/context and root-prefix structure across an inline addition. These are local checks, not cache-hit evidence; an otherwise empty user message still rejects before native cache validation.
+
+### Deployed Messages inputs, 2026-10-22
+
+The explicit [native input companion](../development.md#native-messages-input-acceptance) used the existing `claude-haiku-5-5` / `opencode-go-haiku-messages` binding and the CLI loader, with one candidate/attempt, 2048-token ceilings and 120-second deadlines. Three-request examples and context cases passed independently: prepared root/by-value examples retained exact values/order and unchanged schemas; distinct per-use document contexts survived direct and model-issued tool-result history. The model issued the expected calls; no call IDs or signatures were fabricated.
+
+A separate four-request automatic-cache case passed explicit 5m and 1h immediate write/read pairs, with positive reported TTL write classes. The prepared 5m field may omit the default TTL, while 1h remains explicit; the first run exposed that mistaken harness byte-shape assumption, not a Provider failure. The corrected oracle and bounded rerun passed. Private request capture was deleted and used only for preparation evidence, never replay. The deployed proxy/backend revision, elapsed retention, invoices and signed-thinking cache reuse remain unproven. These results support only the selected existing binding and all-native admission, not other targets or full Generation conformance.
 
 ### pi Messages request profile, 2026-10-19
 

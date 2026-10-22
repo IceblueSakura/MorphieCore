@@ -227,7 +227,7 @@ fn messages_tool_examples_keep_order_presence_and_tool_change_owners() {
     let only_inline = request.clone().with_settings(only_inline).unwrap();
     assert!(GenerationRequirements::derive(&only_inline).tool_examples);
     let bound = morphiecore::topology::catalog::MESSAGES_BINDINGS[0].endpoint();
-    assert!(!bound.representation.semantics().tool_examples);
+    assert!(bound.representation.semantics().tool_examples);
     for profile in [Profile::Chat, Profile::Responses] {
         assert!(
             Adapter::new(profile, Dialect::Standard, None)

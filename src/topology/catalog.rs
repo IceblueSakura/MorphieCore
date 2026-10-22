@@ -296,14 +296,14 @@ fn declared_topology_compiles() {
         .semantics
         .explicit_cache
     );
-    // pi's Haiku profile features are reviewed opt-ins; other codec features stay closed.
+    // Reviewed native inputs and pi's Haiku profile do not open other codec features.
     let semantics = &binding.endpoint().representation.semantics().clone();
     assert!(semantics.strict_tools && semantics.ordered_instructions && semantics.tool_changes);
     for feature in 0..2 {
         let mut endpoint = binding.endpoint();
         let semantics = &mut endpoint.representation.messages_mut().unwrap().semantics;
         match feature {
-            0 => semantics.automatic_prefix_cache = true,
+            0 => semantics.cached_context = true,
             _ => semantics.normalization_default_tools = true,
         }
         assert_eq!(
