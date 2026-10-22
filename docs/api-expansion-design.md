@@ -15,6 +15,7 @@
   - [Embeddings](#embeddings)
     - [Embedding inputs and admission](#embedding-inputs-and-admission)
     - [Embedding results and encoding](#embedding-results-and-encoding)
+    - [Google Embedding profile](#google-embedding-profile)
     - [Embedding design review](#embedding-design-review)
   - [Audio](#audio)
   - [Image production and editing](#image-production-and-editing)
@@ -47,6 +48,8 @@ This page owns proposed operation, resource and advanced-Generation designs. The
 Code and tests remain the behavior specification. This document records ownership, constraints and proposed work, not a model catalog, compatibility certification or implementation progress log. Provider and binding availability belongs to [the catalog](../src/topology/catalog.rs) and [startup](../src/gateway/startup/bootstrap.rs).
 
 On 2026-10-22 the user prioritized **Embedding and Images design**. The detailed proposals below are the current review surface, not approval of new IR layouts, delivery dialects, comprehensive coverage or bindings. Audio, Files and deferred video keep their existing scope; the [roadmap](roadmap.md#stage-4-scope) owns scheduling.
+
+The subsequent Google-model and encoding selection is recorded separately in [Architecture](architecture.md#embedding-encoding-compatibility): all four float/Base64 delivery combinations, including named standard binary32 rounding, are now selected behavior. The numeric layout below remains proposed; the older exact-only conversion recommendation is superseded.
 
 ## Requested scope
 
@@ -283,25 +286,50 @@ Retain ordered vectors, each with its reported input index. Require exactly one 
 
 Keep exact JSON numbers authoritative for float reports. Base64 is a wire encoding, not an opaque semantic vector. Its selected binary layout must define finite binary32 elements and byte order; reject invalid padding/length, non-multiple-of-four payloads, nonfinite values and dimension/budget mismatches before retaining decoded vectors. SDK-native `float32` parsing is evidence of precision, not a portable byte-order specification.
 
-**Representation recommendation for review:** first evaluate reusing the exact-number vector with exact binary32-to-decimal expansion and lossless reverse conversion. This avoids a second numeric authority but needs a bounded conversion implementation, signed-zero policy and decimal-length proof. A narrowly typed `ExactNumbers | Binary32` vector is the alternative if it materially simplifies correctness or cost; binary32 is a numeric value domain, not retained protocol bytes. Do not switch all vectors to `f32` or retain an unvalidated Base64 sidecar.
+**Representation recommendation for review:** use one numeric alternative per vector, `ExactJsonNumbers | FiniteBinary32`. Float reports keep the existing exact-number owner; validated binary reports retain finite binary32 values/bits. There are not two authorities for the same vector, and no unvalidated Base64 sidecar. This avoids exact decimal expansions and a general precision framework while preserving existing float-only callers. Do not switch all source reports to `f32`.
 
-The conversion counterexample is JSON `0.1`: its exact value differs from binary32 `0.100000001490116119384765625`. Therefore float-only upstream → Base64 downstream must not silently round arbitrary reported numbers. Prefer native Base64 upstream for Base64 delivery; otherwise require an exact conversion or reject before dispatch when lossless delivery cannot be guaranteed. A lossy precision rule would need separate explicit selection. Base64 → float must preserve the selected numeric authority, not merely print an unrelated short decimal.
+The [selected encoding policy](architecture.md#embedding-encoding-compatibility) replaces exact-only conversion rejection and owns all four conversion behaviors and precision/range rules. Request preparation selects upstream encoding independently from the client's output preference; the execution/delivery path carries both choices without changing task meaning.
 
-Raw HTTP omission of `encoding_format` means float; SDK omission can arrive as explicit Base64. Preserve that distinction at ingress. Upstream encoding can differ from downstream only under the selected exact conversion rules; decoding validates the expected upstream representation. A base64 response is still one static JSON response, not an embedding stream.
+Propose explicit little-endian IEEE-754 binary32 for the downstream OpenAI-compatible Base64 profile, standard alphabet/padding, and separate upstream layout declarations. Pin independent byte fixtures before implementation acceptance; SDK-native-endian code is not universal wire evidence. Numeric review cases include JSON `0.1`, Base64 decoded into binary64-client-visible JSON, signed zero, subnormals and a decimal just above a binary32 midpoint where intermediate binary64 would hide the difference. These exercise the selected policy rather than require exact decimal/binary32 equality.
+
+Raw HTTP omission of `encoding_format` means float; SDK omission can arrive as explicit Base64. Preserve that distinction at ingress. Decoding validates the expected upstream representation, and conversion completes before response publication. A Base64 response is still one static JSON response, not an embedding stream.
 
 Preserve reported model and usage separately from requested/public identities. Standard OpenAI output requires `prompt_tokens` and `total_tokens`; absent is not zero, `total < prompt` rejects, and token-array length is not a fabricated usage report. Retain DashScope's named input-only-total interpretation only in its existing profile. Ancillary response-ID omission remains a recorded delivery projection on a copy. Ignore unknown upstream members while validating every known field and strict JSON; do not carry the existing closed-object helper into expanded response parsing.
 
 Keep one static attempt, bounded intake through EOF, deadlines and cancellation. No new credential fallback or cross-model failover is selected; equal dimensions prove neither tokenizer nor embedding-space compatibility. Retrieval intent, multimodal embeddings, sparse vectors, indexes and chunking remain outside this slice.
+
+#### Google Embedding profile
+
+The [selected target list](roadmap.md#embedding-integration-targets) now includes stable **`gemini-embedding-2`**, initially text-only. Its larger 8,192-token window and upstream normalization at reduced dimensions make it preferable here to `gemini-embedding-001` (2,048 tokens and caller normalization below its default). Neither model is a failover substitute for the other. The [dated Google sources](refs/2026-10-22-embedding-image-contracts.md#google-embedding-selection) own model observations and protocol disagreements.
+
+Recommend native synchronous `POST /v1beta/models/gemini-embedding-2:batchEmbedContents` through the existing trusted Google origin and API-key loader. This keeps the actual native contract visible; Google's OpenAI compatibility guide currently lacks a full embedding parameter/result contract and still shows the preview slug. It does not establish stable-model Base64, token inputs, dimensions or usage behavior.
+
+Each downstream input becomes one native `requests[]` entry with one text `Content`; use the same bounded synchronous carrier for scalar and batch requests. Do not put separate inputs into one `Content.parts` array: Embedding 2 can aggregate those into one vector. Native response order supplies indexes only because this protocol explicitly guarantees request order; other protocols retain their reported indexes. A synchronous batch-shaped request is one HTTP attempt, not stage-5 Batch jobs or gateway fan-out.
+
+Map dimensions to the pinned native `embedContentConfig.outputDimensionality` carrier after resolving its discrepancy with older top-level SDK/examples. Default is 3,072; the documented range is 128–3,072, not `UpTo(3072)` from one. The existing 60,000-value cap admits at most 19 default-sized inputs; a 20-input request requires a smaller admitted dimension or rejects before dispatch. Do not raise the cap implicitly or normalize/truncate vectors locally. Upstream-native reduced-dimension normalization is a model behavior, not a new gateway transformation.
+
+Native vectors are numeric arrays, so Google float→Base64 will use the selected gateway conversion; Google need not provide Base64 natively. Native input admits text content, not pretokenized integer IDs. Retain text-only admission until a real tokenizer-compatible carrier exists; accepting OpenAI token IDs and guessing Google text would change the input. Embedding 2 does not support `taskType`: do not inject query/document prefixes or titles into caller text.
+
+Two report owners need review before wiring the binding:
+
+- **Model identity:** keep public/requested/bound identity separate from optional upstream-reported identity. The native result does not report a serving model. Recommend emitting the selected bound public model as downstream `model` with explicit bound-model provenance, not storing it as an upstream report.
+- **Usage:** the current REST schema includes optional `usageMetadata.promptTokenCount` and modality details, but no total counter. Recommend a named input-only accounting projection when the report is actually present; absence stays unknown. Select the missing-report downstream policy before activation rather than inventing zero, text-token counts or a `countTokens` side request. The required OpenAI usage envelope remains a compatibility blocker until that choice is made.
+
+Protect against silent text truncation. The REST schema exposes `embedContentConfig.autoTruncate`, while SDK support differs; establish that the selected Gemini API profile honors explicit false before promising over-limit rejection. Byte admission does not prove a text-token limit, and an SDK that drops an unsupported setting is not evidence that the upstream honored it.
+
+Compatibility should cover all realizable OpenAI features per model, not the intersection of their native encodings. Text/batches, supported dimensions and both output encodings are the main-path goal for all three targets. Token-ID inputs, dimension ranges and upstream identity forwarding remain genuinely model-specific; do not manufacture those semantics to claim uniform full support. A downstream `user` value lacking a native carrier needs an explicitly selected gateway-local identity policy or rejection, not a claim of forwarded upstream abuse monitoring.
 
 #### Embedding design review
 
 | Decision | Recommendation and alternative | Blocks |
 |---|---|---|
 | Token scope and input construction | Trusted logical tokenizer contract plus scoped token inputs; text-only profiles remain valid. Reject unknown scope instead of adding a local tokenizer | Token-ID admission, not text repairs |
-| Numeric authority and binary layout | Prefer the existing exact-number owner if a bounded exact conversion works; otherwise use a local binary32 alternative. Pin byte order and signed-zero behavior before encoding fixtures | Base64 codecs/delivery and ordinary SDK acceptance |
-| Profile and bounds | Keep existing local ceilings; add trusted default dimensions and explicit-control support. Use OpenAI `text-embedding-3-small` as a protocol reference, not an implicitly selected live target | Implementation profile and end-to-end acceptance |
+| Numeric owner and binary layout | Four encoding combinations and standard rounding are selected. Recommend a local exact-JSON/binary32 alternative and explicit little-endian wire profile; review numeric structure and independent byte fixtures | Base64 codecs/delivery and ordinary SDK acceptance |
+| Profile and bounds | Keep existing local ceilings; add trusted default dimensions and range-aware explicit controls. The [target list](roadmap.md#embedding-integration-targets) now includes Google; binding/account access remain separate | Implementation profile and end-to-end acceptance |
+| Google model/usage/truncation | Native per-input synchronous request; select bound-versus-reported identity, present/missing input-only accounting delivery and verified no-truncation carrier | Google codec result ownership and binding, not shared encoding conversion |
+| Identity hints without native carrier | Recommend an explicit gateway-local identity scope where useful; never pretend `user` was forwarded or silently weaken its documented scope | That request option on targets without an exact carrier |
 
-Review evidence should include independent directional examples for all input alternatives and both encodings, default/explicit-dimension parity, reordered indexes, exact decimal and binary fixtures, intended malformed-field failures and cancellation/EOF. SDK acceptance must exercise omitted, explicit-float and explicit-Base64 calls, including the pinned Python sync/async paths. Real acceptance requires a separately named accessible binding; catalog registration is not evidence of credentials or availability.
+Review evidence should include independent directional examples for all admitted input alternatives, all four encoding combinations, default/explicit-dimension parity, reordered indexes, exact decimal and binary fixtures, midpoint/subnormal/signed-zero/range cases, intended malformed-field failures and cancellation/EOF. Add Google per-input-versus-aggregation, response order, model/usage provenance and truncation cases. SDK acceptance must exercise omitted, explicit-float and explicit-Base64 calls through each selected profile, including a synthetic Base64-only upstream → float client and a float-only Google-shaped upstream → SDK-default client. Real acceptance requires a separately named accessible binding; catalog registration is not evidence of credentials or availability.
 
 ### Audio
 

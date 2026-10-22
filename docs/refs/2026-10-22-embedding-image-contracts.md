@@ -30,7 +30,28 @@ The parser establishes binary32 practice but uses native-endian numeric interpre
 - Existing result validation preserves order and unique reported indexes and validates count/dimensions against the request. Extend it with admitted defaults rather than replacing indexes with array positions.
 - Standard response parsing uses the shared closed-object helper, rejecting unknown fields. This differs from the intended strict-known/ignore-unknown upstream policy; tolerant unknown parsing must not weaken known types, duplicate-key rejection or bounds.
 
-JSON `0.1` is not exactly binary32 `0.100000001490116119384765625`. A small standard-library `struct`/`Decimal` check confirmed that arithmetic distinction during this review; it does not validate a Rust conversion implementation. Arbitrary exact JSON-number reports cannot silently pass through binary32 and remain unchanged. A Base64 design must select numeric authority, exact conversions and signed-zero behavior rather than assuming that wire encoding is always numerically neutral.
+JSON `0.1` is not exactly binary32 `0.100000001490116119384765625`. A small standard-library `struct`/`Decimal` check confirmed that arithmetic distinction during this review; it does not validate a Rust conversion implementation. Arbitrary exact JSON-number reports cannot pass through binary32 and remain unchanged. The later user selection permits standard rounding on a delivery copy under the [named encoding policy](../architecture.md#embedding-encoding-compatibility), superseding the earlier exact-only recommendation; float→float source precision remains unchanged.
+
+### Google Embedding selection
+
+Official sources rechecked on 2026-10-22 (Google documentation CC-BY-4.0; samples Apache-2.0):
+
+- [Stable Embedding 2 model](https://ai.google.dev/gemini-api/docs/models/gemini-embedding-2) and [Embedding 001 model](https://ai.google.dev/gemini-api/docs/models/gemini-embedding-001), pages dated 2026-04-28
+- [Embedding guide](https://ai.google.dev/gemini-api/docs/embeddings), page dated 2026-09-04
+- [Native Embeddings REST](https://ai.google.dev/api/embeddings), page dated 2026-08-28
+- [OpenAI compatibility](https://ai.google.dev/gemini-api/docs/openai), page dated 2026-10-13
+
+Both models are stable, default to 3,072 dimensions and document a 128–3,072 range. Embedding 2 has an 8,192-token input limit versus 2,048 for 001, supports multimodal inputs and automatically normalizes reduced-dimensional output. The selected initial profile is text-only. The guide says the two embedding spaces are incompatible and migration requires re-embedding; no cross-model failover is justified.
+
+Embedding 2 does not accept `task_type`; text task instructions are caller-authored prefixes rather than a native task control. Do not inject those prefixes silently. For multiple inputs, separate `Content` objects produce separate vectors; multiple parts in one content can produce an aggregate vector. Native synchronous `batchEmbedContents` takes one `EmbedContentRequest` per input and guarantees response vectors in request order. This is distinct from `asyncBatchEmbedContent` and the general Batch API.
+
+Native `ContentEmbedding.values` is a numeric array; no Base64 output control or integer-token input is documented. The current native schema places `outputDimensionality` and other controls under `embedContentConfig`, retaining deprecated top-level controls and older examples. It also exposes `autoTruncate` without documenting its default or an embedding-result truncation flag. Model cards' dimension minimum disagrees with older API examples requesting 10 dimensions; profile limits must follow selected model evidence rather than copy those examples.
+
+The current REST response schema includes `usageMetadata` with `promptTokenCount` and modality details, but no total-token counter or reported serving-model identity. Presence in a schema is not a guarantee that every model response contains usage. These facts need independent semantic/result and downstream projections; filling a required “reported model” from the request or absent counts with zero would invent source facts.
+
+Google's OpenAI-compatible endpoint is documented at `/v1beta/openai/embeddings`, but its embedding examples still name `gemini-embedding-2-preview` while the model/guide sources name stable `gemini-embedding-2`. The inspected compatibility section does not establish complete token-input, dimensions, encoding or usage behavior. Its examples using a default OpenAI SDK request do not prove that its response is Base64 or that the stable slug has identical support. Those contracts remain unverified, not proven unsupported.
+
+Selection therefore favors the native synchronous contract for design, not an assertion that it works with current credentials. No Google model enumeration, embedding inference, SDK or Provider acceptance was performed.
 
 ## Images
 
