@@ -47,6 +47,14 @@ Credential management is a separate CLI:
 cargo run --locked --offline --bin morphiecore-auth -- --help
 ```
 
+For manual model enumeration and one-request upstream diagnostics, use
+[`morphiecore-upstream`](docs/usage.md#manual-upstream-diagnostics). It uses the
+local credential store without starting the gateway or activating models:
+
+```sh
+cargo run --locked --offline --bin morphiecore-upstream -- --help
+```
+
 ## Source navigation
 
 [Architecture's layer map](docs/architecture.md#layers-and-data-flow) owns module responsibilities. Current Providers and model bindings come from [the Provider catalog](src/provider/catalog.rs), [topology catalog](src/topology/catalog.rs) and [startup](src/gateway/startup/bootstrap.rs), not a duplicated model list in documentation. [Development](docs/development.md#test-layout) maps the test suites.

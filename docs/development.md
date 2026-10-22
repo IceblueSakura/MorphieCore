@@ -37,6 +37,7 @@ direnv users can allow the root `.envrc` once. Update nixpkgs separately with `n
 | Entry | Scope and execution |
 |---|---|
 | `src/**` unit tests | Owner-local contracts, including private state, credential lifecycle and synthetic Router regressions |
+| `src/bin/upstream/tests.rs` | Manual diagnostic target/wire contracts and credential-manager refresh checks; no real upstream requests |
 | `tests/semantic.rs` → `semantic/` | Offline IR, codecs, lowering, replay and history editing |
 | `tests/transport.rs` → `transport/` | Offline SSE framing/decoding, candidate preparation and Attempt/delivery lifecycle |
 | `tests/credential.rs` → `credential/` | Offline credential CLI checks with synthetic stores/authorities; Unix-gated |

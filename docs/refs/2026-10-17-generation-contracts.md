@@ -7,6 +7,7 @@ Later observations retain their own dates and evidence scope below. [Architectur
 ## Contents
 
 - [Sources](#sources)
+- [Manual model enumeration, 2026-10-22](#manual-model-enumeration-2026-10-22)
 - [Exact carriers and source validation](#exact-carriers-and-source-validation)
   - [Google foreground contracts, 2026-10-20](#google-foreground-contracts-2026-10-20)
     - [Interactions partial opening and service evidence, 2026-10-20](#interactions-partial-opening-and-service-evidence-2026-10-20)
@@ -51,6 +52,22 @@ Later observations retain their own dates and evidence scope below. [Architectur
 | [pi](https://github.com/earendil-works/pi/tree/8efd314fa3d3232ce197d8d7a6a5660530b9d83e) | `8efd314fa3d3232ce197d8d7a6a5660530b9d83e` | MIT | Actual cross-model history conversion, tool-turn regression and replay identity handling |
 
 Research checkouts live outside the repository under `/home/sakura/codespace/generation-codec-audit/`. No third-party test code or dataset is vendored. SDK shapes and official prose establish the contract; reference-library fixtures are not an oracle when they contradict required fields or arithmetic. These observations supplement, rather than silently replace, the baseline pins in [References](../references.md).
+
+## Manual model enumeration, 2026-10-22
+
+Documentation-only recheck for the manual upstream CLI, not account access or live acceptance:
+
+| Source | Observed contract |
+|---|---|
+| [OpenAI Models](https://developers.openai.com/api/reference/resources/models/methods/list) | `GET /v1/models`, standard `data[].id` |
+| [SIWC models and inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference.md) | Same public origin/list path with OAuth; account catalog uses `models[].slug`, not standard API-key `data`. Public Responses requires `store:false`, `stream:true`; success needs `response.completed`, not HTTP 200 or a delta |
+| [DeepSeek Models](https://api-docs.deepseek.com/api/list-models/) | `GET https://api.deepseek.com/models`, Bearer, `data[].id` |
+| [OpenRouter Models](https://openrouter.ai/docs/api/api-reference/models/list-all-models-and-their-properties) | `GET /api/v1/models`, `data`; the documented default without offset/limit returns the full catalog |
+| [Google Models](https://ai.google.dev/api/models) | `GET /v1beta/models`, `models[].name`, `nextPageToken` supplied as `pageToken` on the next request |
+| [Anthropic Models](https://platform.claude.com/docs/en/api/models/list) | `GET /v1/models`, `data[].id`, Boolean `has_more`, `last_id` supplied as `after_id` |
+| [xAI Models](https://docs.x.ai/developers/rest-api-reference/inference/models) | `GET /v1/models`, `data[].id`; the reference describes API-key access, not proof of OAuth entitlement |
+
+No default model-list path was established for MiMo, Go, ModelBest, NVIDIA, DashScope, Token Plan or Zhipu in this bounded pass. This is an evidence gap, not an unsupported-operation verdict. Require an operator-specified path rather than infer listing from a Chat-compatible base. The Go documentation now describes different inference prefixes from the project's pinned catalog; diagnostics do not silently migrate them. SIWC's existing unsupported output-cap policy and event-owned terminal summary remain separate from standard Responses.
 
 ## Exact carriers and source validation
 
