@@ -53,6 +53,61 @@ Google's OpenAI-compatible endpoint is documented at `/v1beta/openai/embeddings`
 
 Selection therefore favors the native synchronous contract for design, not an assertion that it works with current credentials. No Google model enumeration, embedding inference, SDK or Provider acceptance was performed.
 
+### Google wire source reconciliation
+
+A deeper same-day recheck compared current REST/Discovery against versioned implementations. Public-source downloads only; no credentials or inference. Google documentation is CC-BY-4.0 and the SDK/protobuf sources below are Apache-2.0.
+
+| Source | Pinned observation |
+|---|---|
+| [Developer v1beta Discovery](https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta) | Revision `20261020`, downloaded 2026-10-22; SHA-256 `5f91d2b54b79def5f0c5d81205411c5fad922401123f89ca53392bbf20349b31`. This fingerprint identifies the observed bytes, not an immutable URL |
+| [Python converter](https://github.com/googleapis/python-genai/blob/c97ae02ff87b5138bee29100b56c04c649233fed/google/genai/models.py#L749-L796) | Revision `c97ae02ff87b5138bee29100b56c04c649233fed`; Developer API writes legacy per-entry dimensions and raises for `auto_truncate` |
+| [Python response converter](https://github.com/googleapis/python-genai/blob/c97ae02ff87b5138bee29100b56c04c649233fed/google/genai/models.py#L1009-L1030) | Copies `embeddings`, `metadata` and SDK HTTP metadata, but not `usageMetadata` |
+| [JS request converter](https://github.com/googleapis/js-genai/blob/38f6ebcda2c39edc588f4274f4abdd2d41e31e9c/src/converters/_models_converters.ts#L886-L945) and [response converter](https://github.com/googleapis/js-genai/blob/38f6ebcda2c39edc588f4274f4abdd2d41e31e9c/src/converters/_models_converters.ts#L1231-L1260) | Same legacy-control, Developer API truncation rejection and missing usage-conversion boundaries |
+| [Public v1beta protobuf](https://github.com/googleapis/googleapis/blob/bc7e3baa28fbb223fa93782e130260fab8205bfc/google/ai/generativelanguage/v1beta/generative_service.proto#L1232-L1309) | Revision `bc7e3baa28fbb223fa93782e130260fab8205bfc` predates the newer nested config/usage fields; absence here does not refute the newer Discovery/REST contract |
+
+REST and Discovery agree on the following candidate native baseline:
+
+```json
+{
+  "requests": [
+    {
+      "model": "models/gemini-embedding-2",
+      "content": {"parts": [{"text": "synthetic first input"}]},
+      "embedContentConfig": {"outputDimensionality": 768, "autoTruncate": false}
+    },
+    {
+      "model": "models/gemini-embedding-2",
+      "content": {"parts": [{"text": "synthetic second input"}]},
+      "embedContentConfig": {"outputDimensionality": 768, "autoTruncate": false}
+    }
+  ]
+}
+```
+
+This is a source-backed request example, not an executed fixture. The fixed path is `/v1beta/models/gemini-embedding-2:batchEmbedContents`, with `x-goog-api-key` auth. Each entry's model must match the path; config is per entry, not batch-wide. Do not send old and nested controls together: precedence is undocumented. Single `embedContent` uses singular `embedding`, while this synchronous batch returns plural `embeddings` in input order. The gateway can use one-entry batches without a separate scalar executor.
+
+The deeper schema review adds these distinctions:
+
+- `ContentEmbedding.values` is an array of `format:float`; `shape` is also a known field for soft-token tensors. Dense text support is not tensor/soft-token support, and a shape-only response cannot pass as an empty vector.
+- `EmbeddingUsageMetadata` contains optional `promptTokenCount` and `promptTokenDetails`, both at request/batch scope. Each detail has modality/token count. No total, serving-model/version or truncation-result field is documented. Omission does not assert zero; do not infer aggregate equality from the detail array.
+- No synchronous `requests.maxItems` is declared in the inspected current schemas. The [older first-party SDK's 100-item limit](https://github.com/google-gemini/generative-ai-python/blob/7a7cc5474ddaa0255a4410e05361028a24400abd/google/generativeai/embedding.py#L32) is useful conservative precedent, not model-specific acceptance.
+- Both inspected SDKs use synchronous `batchEmbedContents` for Developer API embedding, but their converted response can hide newer reports. “SDK usage missing” cannot establish “wire usage missing.”
+- `autoTruncate` has no documented Developer API default or explicit false→error guarantee. The guide's silent-truncation warning is in PDF handling and does not settle the text-only case.
+- [Vertex/Agent Platform embedContent](https://docs.cloud.google.com/gemini-enterprise-agent-platform/reference/rest/v1/projects.locations.publishers.models/embedContent) has different resource paths and reporting, including a truncation report and broader usage. Its `promptTokensDetails` spelling, defaults and SDK mode are not the selected Developer API contract.
+
+The implementation baseline should therefore use direct native HTTP parsing, pin current nested controls and keep activation behind a bounded no-truncation/configuration check. SDK lag is not permission to silently omit a requested protection or treat an old alias as equivalent.
+
+### Compatibility and existing-target evidence
+
+The public [agentgateway issue #2451](https://github.com/agentgateway/agentgateway/issues/2451), opened 2026-07-07, reports successful Google OpenAI-compatible **001** responses without `usage`; [fix #2455](https://github.com/agentgateway/agentgateway/pull/2455) makes that parsing optional. This is useful integration evidence, not an observation of stable Embedding 2. Official compatibility cookbook vector access likewise does not validate every required OpenAI response field.
+
+The subsequent user selection accepts [named Google ancillary projection](../architecture.md#google-embedding-compatibility), not fabricated zero accounting. A source input count can justify an explicitly derived input-only total; a missing count cannot. Bound model labeling is execution provenance, not an upstream model report. Unsupported `user` omission is a recorded loss, not an invented local attribution service.
+
+Two current-model source checks constrain the shared work:
+
+- [DashScope synchronous API](https://help.aliyun.com/en/model-studio/text-embedding-synchronous-api), rechecked 2026-10-22, documents default 1,024 dimensions, 20 text inputs and **float-only** output for its compatible interface. The model table and generic dimension prose differ in model-specific allowances; retain the catalog-selected widths until a scoped recheck. This makes float→Base64 gateway conversion essential, not an optional Google enhancement.
+- [OpenRouter Embeddings](https://openrouter.ai/docs/api/api-reference/embeddings/submit-an-embedding-request), rechecked 2026-10-22, admits text/token alternatives and both float/Base64 in the request schema. That is codec evidence, not every target's tokenizer/encoding acceptance. Preserve reported indexes and current accounting; do not import `input_type`, routing preferences or other nonstandard controls into the selected downstream contract implicitly.
+
 ## Images
 
 ### Official and pinned sources

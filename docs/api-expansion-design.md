@@ -13,6 +13,7 @@
 - [Operation contracts](#operation-contracts)
   - [Token counting](#token-counting)
   - [Embeddings](#embeddings)
+    - [Embedding chain and ownership](#embedding-chain-and-ownership)
     - [Embedding inputs and admission](#embedding-inputs-and-admission)
     - [Embedding results and encoding](#embedding-results-and-encoding)
     - [Google Embedding profile](#google-embedding-profile)
@@ -49,7 +50,7 @@ Code and tests remain the behavior specification. This document records ownershi
 
 On 2026-10-22 the user prioritized **Embedding and Images design**. The detailed proposals below are the current review surface, not approval of new IR layouts, delivery dialects, comprehensive coverage or bindings. Audio, Files and deferred video keep their existing scope; the [roadmap](roadmap.md#stage-4-scope) owns scheduling.
 
-The subsequent Google-model and encoding selection is recorded separately in [Architecture](architecture.md#embedding-encoding-compatibility): all four float/Base64 delivery combinations, including named standard binary32 rounding, are now selected behavior. The numeric layout below remains proposed; the older exact-only conversion recommendation is superseded.
+The subsequent Google-model, encoding and ancillary compatibility selections are recorded separately in Architecture: [four-way encoding](architecture.md#embedding-encoding-compatibility), including named standard binary32 rounding, and [Google report/identity projection](architecture.md#google-embedding-compatibility) are selected behavior. The layouts below remain proposed; the older exact-only conversion and strict-missing-usage recommendations are superseded.
 
 ## Requested scope
 
@@ -250,6 +251,37 @@ Exit evidence: independent request/result oracles cover upstream preference and 
 
 Extend the [independent task](architecture.md#independent-embedding-path), not Generation. The current implementation accepts text and float JSON only. The [source review](refs/2026-10-22-embedding-image-contracts.md#embeddings) establishes four official input shapes and two output encodings; importantly, the pinned Python SDK requests Base64 when its caller omits encoding. A working explicit-float request is not ordinary SDK compatibility.
 
+The encoding and [Google ancillary compatibility policies](architecture.md#google-embedding-compatibility) are selected behavior. The following is the converged implementation recommendation, not a claim that its structures or bindings exist. Keep the three-target scope in the [roadmap](roadmap.md#embedding-integration-targets); do not make Google-specific uncertainties block independent shared conversion work.
+
+#### Embedding chain and ownership
+
+Preserve the existing authenticated, single-target request chain:
+
+```text
+auth → bounded ingress / strict JSON → activated model → pure target preparation
+  → one credential resolution / HTTP request
+  → bounded native intake through EOF → source validation / request association
+  → typed client projection + receipts → client encoding / size check
+  → acknowledged body handoff → success
+```
+
+Preflight and actual preparation use one pure target-projection function, not independent mapping tables or post-serialization JSON patches. Carry a small operation-local expectation containing input count, effective dimensions, selected upstream encoding and downstream delivery policy to intake/projection. Retain the immutable client request; target copies resolve defaults and permitted omissions. Emit applied receipts once for the actual attempt, not again for a dry-run preflight.
+
+| Responsible owner | Minimal adaptation |
+|---|---|
+| [Task values](../src/semantic/task/embedding.rs) | Ordered input alternatives, one numeric authority per vector, source usage with independent report presence/basis. No protocols, credentials or execution state |
+| [Adapter](../src/adapter/embeddings.rs) | Client output preference, optional reported model/response ID and a trusted native profile. Keep bound/public identity outside the source report |
+| [Lowering](../src/lowering/embeddings.rs) | Effective defaults and range-aware admission; typed target/client projection and bounded operation-local receipts. Reuse no Generation reducer or universal loss framework |
+| [OpenAI codec](../src/protocol/openai/embeddings.rs) and proposed Google codec | Directional wire parsing/encoding, numeric wire layouts and native request-order association. Stop importing the image codec's closed-object reader for upstream responses; validate known fields and ignore unknown members locally |
+| [Execution](../src/execution/embeddings.rs) and [gateway handler](../src/gateway/tasks/embeddings.rs) | Trusted path/auth, expected upstream representation, EOF validation, projection and bounded delivery. No retry, asynchronous job or hidden per-item fan-out |
+| [Topology](../src/topology/embeddings.rs), [catalog](../src/topology/catalog/embeddings.rs) and startup | Fixed model-effective profile and one nonfallback API-key source; explicit activation. For the one selected Google model, declare its concrete operation path rather than adding a generic path-template/router framework |
+
+The current gateway checks admission before resolving credentials, then re-prepares, receives JSON through EOF, validates against the request and projects. Retain its separate body/exchange deadlines, shutdown/client-drop cancellation, permit lifetime and handoff acknowledgement. Conversion failure must occur before any output is published. Do not extend time limits just because a request is a native synchronous batch.
+
+Close integration gaps at their existing owners: retain the currently discarded response-ID-omission evidence; add body-free Embedding projection receipts to diagnostics; propagate the capture exchange handle to explicitly enabled upstream capture with auth redaction. Extend the existing authenticated capability snapshot/possible-adaptation notice to activated Embedding profiles, covering input kinds, effective dimension/default/count bounds, both encodings and selected report rules. `/v1/models` remains discovery, not a capability bag. A public optional-usage promise must not ship without that profile description.
+
+Non-200 responses currently discard the error body. Add a small capped native-error read within the same deadline and release lifecycle; classify only established HTTP/status/reason facts into existing safe error codes, preserve bounded Retry-After where applicable, and never relay upstream messages/details. `INVALID_ARGUMENT` alone is not proof of token overflow; an unrecognized error remains `upstream_error`. Malformed, oversized or incomplete error bodies cannot turn into success.
+
 #### Embedding inputs and admission
 
 Propose one homogeneous, ordered input alternative per request:
@@ -271,12 +303,14 @@ Keep model names, identity, downstream encoding, target selection and runtime li
 |---|---|
 | Admitted input kinds and tokenizer scope | Reject unsupported token inputs before dispatch; public model aliases cannot imply tokenizer equivalence |
 | Default dimensions | Resolve omitted dimensions for output-budget admission and subsequent result validation |
-| Explicit dimension support | Separately express unsupported, selected values or an upper bound; a fixed-size model need not accept an explicit control equal to its default |
+| Explicit dimension support | Separately express unsupported, a closed range or selected values; a fixed-size model need not accept an explicit control equal to its default |
 | Per-input and aggregate token limits | Check token-sequence lengths exactly. Text byte limits are not token counts; leave text token enforcement upstream unless separately selected |
 | Float/Base64 support and binary layout | Choose upstream representation on a typed target copy while retaining the client's delivery preference |
 | Input count, body bytes, vector-value and time limits | Enforce independent local and target ceilings without hidden fan-out |
 
 Initially retain the local 128-input, 256-KiB text, 8,192-dimension and 60,000-vector-value ceilings unless a concrete selected profile justifies a revision. Token inputs also need aggregate-ID and serialized-request byte limits; an integer vector is not charged as an empty text input. Official limits and local limits remain distinct. The source's ambiguous “any array … 2048 dimensions” wording needs profile-specific resolution, not silent application to every token sequence.
+
+Keep current 256-KiB serialized upstream requests, 4-MiB upstream response and 120-second target deadline as initial ceilings, intersected with configured runtime limits. Text bytes, JSON wrappers/escaping, decoded numeric bytes/values and encoded client bytes are separate budgets. Base64 compression is not permission to exceed vector-value or expanded JSON delivery limits. No client-visible dimension reduction or automatic splitting repairs an over-budget request.
 
 Preflight checked `input_count × effective_dimensions` for both explicit and default dimensions. Current lowering checks only explicit dimensions: 40 inputs at the catalog's 1,536-dimensional reference model produce 61,440 values, over the existing result budget, even when admission accepts omitted dimensions. Reject this predictable overflow before upstream work. If a target has no established default or finite output bound, it is not ready for that omitted-dimensions profile.
 
@@ -294,7 +328,11 @@ Propose explicit little-endian IEEE-754 binary32 for the downstream OpenAI-compa
 
 Raw HTTP omission of `encoding_format` means float; SDK omission can arrive as explicit Base64. Preserve that distinction at ingress. Decoding validates the expected upstream representation, and conversion completes before response publication. A Base64 response is still one static JSON response, not an embedding stream.
 
-Preserve reported model and usage separately from requested/public identities. Standard OpenAI output requires `prompt_tokens` and `total_tokens`; absent is not zero, `total < prompt` rejects, and token-array length is not a fabricated usage report. Retain DashScope's named input-only-total interpretation only in its existing profile. Ancillary response-ID omission remains a recorded delivery projection on a copy. Ignore unknown upstream members while validating every known field and strict JSON; do not carry the existing closed-object helper into expanded response parsing.
+Separate the native `Response` from the typed client delivery view. Recommend optional reported model/ID in the adapter; an explicit bound-model input to projection supplies the selected Google label without changing native provenance. Keep independent input/total report presence and a narrowly typed accounting basis in `EmbeddingUsage`, plus bounded modality details. Preserve the existing DashScope constructor's meaning: reported input-only total → input view is not Google's reported input → derived total. An empty/missing aggregate cannot become a constructor-supplied zero.
+
+Strict OpenAI encoding still requires its complete report shape. The explicit Google client profile may encode the selected missing-usage view; other profiles do not inherit it. Known null/wrong-type/negative/overflow counters reject instead of being reclassified as missing. Preserve valid detail reports when the aggregate is absent, but do not sum them into an aggregate. With both scalar reports present, retain `total >= input` validation. Source usage remains reported facts; derived delivery counters and omission provenance belong to the projection result.
+
+Use a closed Embedding receipt set for numeric rounding, selected model/accounting/user projection and existing response-ID omission. Include rule, direction and fixed action/presence only—no text, vector components, `user` value or arbitrary source keys. Give the existing ID-omission projection the fixed receipt name `embedding.omit-response-id.v1`; do not import Generation state or create an evidence service. Native errors and malformed known fields are validation failures, not allowed losses.
 
 Keep one static attempt, bounded intake through EOF, deadlines and cancellation. No new credential fallback or cross-model failover is selected; equal dimensions prove neither tokenizer nor embedding-space compatibility. Retrieval intent, multimodal embeddings, sparse vectors, indexes and chunking remain outside this slice.
 
@@ -302,22 +340,25 @@ Keep one static attempt, bounded intake through EOF, deadlines and cancellation.
 
 The [selected target list](roadmap.md#embedding-integration-targets) now includes stable **`gemini-embedding-2`**, initially text-only. Its larger 8,192-token window and upstream normalization at reduced dimensions make it preferable here to `gemini-embedding-001` (2,048 tokens and caller normalization below its default). Neither model is a failover substitute for the other. The [dated Google sources](refs/2026-10-22-embedding-image-contracts.md#google-embedding-selection) own model observations and protocol disagreements.
 
-Recommend native synchronous `POST /v1beta/models/gemini-embedding-2:batchEmbedContents` through the existing trusted Google origin and API-key loader. This keeps the actual native contract visible; Google's OpenAI compatibility guide currently lacks a full embedding parameter/result contract and still shows the preview slug. It does not establish stable-model Base64, token inputs, dimensions or usage behavior.
+Recommend native synchronous `POST /v1beta/models/gemini-embedding-2:batchEmbedContents` through the existing trusted Google origin and API-key loader. Pin the [REST/Discovery baseline](refs/2026-10-22-embedding-image-contracts.md#google-wire-source-reconciliation), not the SDK's older converted object. Google's OpenAI compatibility endpoint is not a shortcut: its guide still uses the preview slug, lacks the full parameter contract, and historical missing-usage evidence concerns 001 rather than stable Embedding 2.
 
 Each downstream input becomes one native `requests[]` entry with one text `Content`; use the same bounded synchronous carrier for scalar and batch requests. Do not put separate inputs into one `Content.parts` array: Embedding 2 can aggregate those into one vector. Native response order supplies indexes only because this protocol explicitly guarantees request order; other protocols retain their reported indexes. A synchronous batch-shaped request is one HTTP attempt, not stage-5 Batch jobs or gateway fan-out.
 
-Map dimensions to the pinned native `embedContentConfig.outputDimensionality` carrier after resolving its discrepancy with older top-level SDK/examples. Default is 3,072; the documented range is 128–3,072, not `UpTo(3072)` from one. The existing 60,000-value cap admits at most 19 default-sized inputs; a 20-input request requires a smaller admitted dimension or rejects before dispatch. Do not raise the cap implicitly or normalize/truncate vectors locally. Upstream-native reduced-dimension normalization is a model behavior, not a new gateway transformation.
+Place `model:"models/gemini-embedding-2"`, `content.parts:[{text:...}]` and `embedContentConfig` inside **each** request entry. The batch envelope has no shared config. Use current nested `outputDimensionality` and candidate `autoTruncate:false`; never send deprecated top-level controls at the same time or retry with them after rejection. Omit role, task type, title, OCR and audio controls. Omitted dimensions stay omitted on the wire but resolve to 3,072 for admission/result validation.
+
+The documented dimension range is 128–3,072, not `UpTo(3072)` from one; 768/1,536/3,072 are recommendations, not an exhaustive enum. Propose a conservative 100-entry local batch cap, based on historical SDK practice rather than a current model guarantee, further bounded by `min(128, floor(60000 / effective_dimensions))`. At default width only 19 inputs fit; 20 must reject before dispatch. A body-size ceiling may lower that count further. Do not raise the cap, shrink dimensions or split requests implicitly.
+
+Current `ContentEmbedding.values` supplies dense numeric arrays. Require exact cardinality and width; zero/missing/shortened result lists reject the entire operation. The current schema's `shape` belongs to soft-token tensors, not dense Embedding output: validate a supplied shape's integer structure and reject nonempty tensor shape in this profile rather than silently flattening it. Known numeric fields remain strict; unknown members are ignored. No synchronous per-item error/partial-success union is selected.
 
 Native vectors are numeric arrays, so Google float→Base64 will use the selected gateway conversion; Google need not provide Base64 natively. Native input admits text content, not pretokenized integer IDs. Retain text-only admission until a real tokenizer-compatible carrier exists; accepting OpenAI token IDs and guessing Google text would change the input. Embedding 2 does not support `taskType`: do not inject query/document prefixes or titles into caller text.
 
-Two report owners need review before wiring the binding:
+The [selected Google compatibility policy](architecture.md#google-embedding-compatibility) now resolves model/usage/`user` behavior; only its typed representation and activation evidence remain. Native usage is **batch-level** `usageMetadata.promptTokenCount` and `promptTokenDetails`, not a per-vector count and not Vertex's differently named report. Keep reported aggregate presence, derive only the selected client view, and explicitly advertise possible omission of the entire usage object. Do not confuse loose SDK parsing with strict OpenAI conformance.
 
-- **Model identity:** keep public/requested/bound identity separate from optional upstream-reported identity. The native result does not report a serving model. Recommend emitting the selected bound public model as downstream `model` with explicit bound-model provenance, not storing it as an upstream report.
-- **Usage:** the current REST schema includes optional `usageMetadata.promptTokenCount` and modality details, but no total counter. Recommend a named input-only accounting projection when the report is actually present; absence stays unknown. Select the missing-report downstream policy before activation rather than inventing zero, text-token counts or a `countTokens` side request. The required OpenAI usage envelope remains a compatibility blocker until that choice is made.
+**Remaining wire gate:** establish that nested config is honored and explicit `autoTruncate:false` prevents input loss for this Developer API model. REST and Discovery describe it, but both inspected SDKs locally reject it; neither a successful short request nor the Vertex default settles the issue. A specific over-limit rejection compared with an admitted short control is required. If unsupported or ineffective, stop activation and select another evidenced no-loss contract or seek explicit truncation approval; never silently remove the control. Byte admission does not prove a token limit. This gate does not block shared conversion, pure codec fixtures or existing-model repair.
 
-Protect against silent text truncation. The REST schema exposes `embedContentConfig.autoTruncate`, while SDK support differs; establish that the selected Gemini API profile honors explicit false before promising over-limit rejection. Byte admission does not prove a text-token limit, and an SDK that drops an unsupported setting is not evidence that the upstream honored it.
+The existing [publication workflow](roadmap.md#embedding-integration-targets) keeps account access and bounded Provider gates separate. Google API-key authentication uses `x-goog-api-key`; do not route through Vertex project/location endpoints or substitute an OpenAI Bearer request to bypass native-contract questions.
 
-Compatibility should cover all realizable OpenAI features per model, not the intersection of their native encodings. Text/batches, supported dimensions and both output encodings are the main-path goal for all three targets. Token-ID inputs, dimension ranges and upstream identity forwarding remain genuinely model-specific; do not manufacture those semantics to claim uniform full support. A downstream `user` value lacking a native carrier needs an explicitly selected gateway-local identity policy or rejection, not a claim of forwarded upstream abuse monitoring.
+Compatibility covers realizable OpenAI features per model, not the intersection of their encodings. Text/batches, native dimensions and both client output encodings are the main path. Token-ID admission remains per tokenizer/carrier; native model restrictions are not losses that numeric-rounding approval can waive. Upstream normalization at selected dimensions is left intact, with no local vector rewriting or automatic task prefix.
 
 #### Embedding design review
 
@@ -326,10 +367,12 @@ Compatibility should cover all realizable OpenAI features per model, not the int
 | Token scope and input construction | Trusted logical tokenizer contract plus scoped token inputs; text-only profiles remain valid. Reject unknown scope instead of adding a local tokenizer | Token-ID admission, not text repairs |
 | Numeric owner and binary layout | Four encoding combinations and standard rounding are selected. Recommend a local exact-JSON/binary32 alternative and explicit little-endian wire profile; review numeric structure and independent byte fixtures | Base64 codecs/delivery and ordinary SDK acceptance |
 | Profile and bounds | Keep existing local ceilings; add trusted default dimensions and range-aware explicit controls. The [target list](roadmap.md#embedding-integration-targets) now includes Google; binding/account access remain separate | Implementation profile and end-to-end acceptance |
-| Google model/usage/truncation | Native per-input synchronous request; select bound-versus-reported identity, present/missing input-only accounting delivery and verified no-truncation carrier | Google codec result ownership and binding, not shared encoding conversion |
-| Identity hints without native carrier | Recommend an explicit gateway-local identity scope where useful; never pretend `user` was forwarded or silently weaken its documented scope | That request option on targets without an exact carrier |
+| Google wire baseline | Use nested config from pinned REST/Discovery; keep fixed per-input synchronous carrier and conservative local bounds. Verify no-truncation behavior directly | Google activation, not offline codec/shared conversion |
+| Native reports and delivery view | Ancillary behavior is selected. Review optional reported model, independent usage presence/basis and typed client view; no anonymous zero/default injection | Google result implementation and its capability/notice disclosure |
 
-Review evidence should include independent directional examples for all admitted input alternatives, all four encoding combinations, default/explicit-dimension parity, reordered indexes, exact decimal and binary fixtures, midpoint/subnormal/signed-zero/range cases, intended malformed-field failures and cancellation/EOF. Add Google per-input-versus-aggregation, response order, model/usage provenance and truncation cases. SDK acceptance must exercise omitted, explicit-float and explicit-Base64 calls through each selected profile, including a synthetic Base64-only upstream → float client and a float-only Google-shaped upstream → SDK-default client. Real acceptance requires a separately named accessible binding; catalog registration is not evidence of credentials or availability.
+Review evidence should include independent directional examples for all admitted input alternatives, all four encoding combinations, default/explicit-dimension parity, reordered indexes, exact decimal and binary fixtures, midpoint/subnormal/signed-zero/range cases, intended malformed-field failures and cancellation/EOF. Add Google per-input-versus-aggregation, response order, model/usage provenance, nonempty tensor-shape rejection and truncation cases. SDK acceptance must exercise omitted/float/Base64 calls through each selected profile, including a synthetic Base64-only upstream→float client and float-only Google-shaped upstream→SDK-default client. Check strict-client rejection of intentionally missing usage as a declared limitation, not a failing vector parser to bypass.
+
+Use synthetic Router checks for missing/malformed reports, aggregate-plus-details versus detail-only receipt actions exactly once, permitted `user` omission, one transmitted request, local batch/default-width bounds, errors/Retry-After, source immutability, withheld EOF, cancellation/permit release, body-free receipts and opt-in capture redaction. Repair the startup test's assumption that every Embedding provider has an `API_KEY_BINDINGS` Generation entry; Google must activate independently, without enabling its Generation routes. Do not use compilation or catalog registration as account/access evidence.
 
 ### Audio
 
