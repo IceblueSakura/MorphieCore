@@ -337,6 +337,23 @@ Every case requires honest completion, exact request/attempt counts and zero ign
 
 The 2026-10-22 Go/Haiku cases passed 3/3/4 requests respectively. The accepted cache run reported 14,056 written/read tokens for 5m and 14,055 for 1h, with matching write classes. An earlier four-request cache run completed but its final harness assertion incorrectly required an explicit 5m field; the corrected offline oracle and separate bounded rerun resolved that harness failure. An earlier runner startup type error made no HTTP request. These are bounded binding checks, not complete protocol/model conformance, measured retention, invoice accuracy, signed-thinking reuse or deployment authorization.
 
+#### Constrained Messages profile acceptance
+
+Run `messages_capabilities_live.py` explicitly with the [locked SDK environment](#python-checks):
+
+```sh
+uv run --project tests/sdk --locked --offline python tests/sdk/messages_capabilities_live.py \
+  --gateway-bin /absolute/path/to/morphiecore
+```
+
+The existing Go/Haiku binding, loader, single-attempt routing, temporary private capture and deadlines follow the preceding native input gate. This profile fixes seven serial requests: structured JSON, structured SSE using returned history, an SSE `max_tokens:1` truncation, then required JSON and named SSE tool/result pairs. Other requests use 2048 tokens. Keep adaptive thinking with summarized display and `drop_block`, root-high/system-low effort, explicit strict tools, numeric `record` enum `[71,82]`, and single-call `disable_parallel_tool_use:true` unchanged. The named control selects `inspect` despite the prompt suggesting `lookup`; result turns explicitly select `none`. Use only model-issued call IDs and untouched returned content.
+
+Require exact complete JSON values, source-aligned SSE termination, `max_tokens` rather than a successful schema claim on truncation, honest final answers and seven request/attempt records with zero ignored fields. Prepared captures must retain schema/strictness/choice/effort values. Four focused offline oracles cover the plan, failed terminals, safe diagnostics and actual pinned-SDK JSON/SSE request serialization. Native binding preparation separately checks the full wire and original unsupported-string-enum rejection. Do not invoke SDK schema simplification or repair output.
+
+This concrete profile passed all seven requests/attempts on 2026-10-22. An earlier proposed string-enum tool profile stopped locally before its fourth upstream attempt; it remains rejected, not converted into this numeric profile. The investigation also repaired missing JSON-output subset validation. A separate seven-request numeric sample completed but its final capture assertion failed because the synthetic property `key` was correctly redacted as authentication-shaped; `record` avoids that fixture collision without changing the redaction policy. Capture is a redacted observation, never a raw-wire or replay authority. Failed gates report body-free counts and diagnostic classifications before scratch cleanup.
+
+This accepts only the declared schema/control combination. It does not certify arbitrary schemas, parallel calls, a real refusal event, other Providers or whole-client strict fallback. Existing independent SDK refusal/error oracles remain separate; no live safety refusal is induced.
+
 ### pi acceptance
 
 Use pi's real binary against the CLI gateway, not a wrapper that sources private environment.

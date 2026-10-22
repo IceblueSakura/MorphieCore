@@ -36,6 +36,7 @@ fn strict_tool_schemas_admit_only_the_native_subset_and_budget() {
         vec!["email".into(), "count".into(), "tags".into()],
     );
     assert!(admitted(encode(vec![tool(rich.clone())], None)));
+    assert!(admitted(encode(vec![], Some(rich.clone()))));
     for (path, value) in [
         ("/properties/email/format", json!("binary")),
         ("/properties/email/type", json!([])),
@@ -54,7 +55,8 @@ fn strict_tool_schemas_admit_only_the_native_subset_and_budget() {
             schema.pointer_mut(parent).unwrap()
         };
         target[key] = value;
-        assert!(rejected(encode(vec![tool(schema)], None)), "{path}");
+        assert!(rejected(encode(vec![tool(schema.clone())], None)), "{path}");
+        assert!(rejected(encode(vec![], Some(schema))), "output {path}");
     }
 
     let optional = |n: usize| {

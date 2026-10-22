@@ -16,6 +16,7 @@ Later observations retain their own dates and evidence scope below. [Architectur
     - [Google text-report source recheck, 2026-10-21](#google-text-report-source-recheck-2026-10-21)
   - [P7 binding evidence, 2026-10-18](#p7-binding-evidence-2026-10-18)
     - [Feature combinations and endpoint evidence, 2026-10-21](#feature-combinations-and-endpoint-evidence-2026-10-21)
+    - [Constrained Messages profiles, 2026-10-22](#constrained-messages-profiles-2026-10-22)
   - [Messages owner-local cache admission, 2026-10-19](#messages-owner-local-cache-admission-2026-10-19)
   - [Anthropic input and cache recheck, 2026-10-21](#anthropic-input-and-cache-recheck-2026-10-21)
   - [Deployed Messages inputs, 2026-10-22](#deployed-messages-inputs-2026-10-22)
@@ -201,6 +202,14 @@ The `ExplicitCache` rejection above records the 2026-10-18 boundary. It is super
 The current [Anthropic API primer](https://platform.claude.com/docs/en/claude_api_primer) distinguishes manual thinking from adaptive thinking for forced tool choice, including model-specific exclusions and skipped thinking for accepted forced calls. Strict tools, output schemas, required/named choice and parallel calls are separate promises. Probe the exact selected binding and combination; do not remove strictness, change thinking or repair output to make a check pass. A well-formed answer alone does not prove constrained decoding. Ordinary refusal and truncation remain separate outcomes.
 
 These public sources do not establish deployed Go/Haiku handling or every OpenRouter Responses combination. Native field support, preflight/preparation agreement, SDK accumulation and live model effectiveness require distinct evidence.
+
+#### Constrained Messages profiles, 2026-10-22
+
+The current [thinking guide](https://platform.claude.com/docs/en/build-with-claude/thinking), [tool-choice guide](https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools) and [Haiku migration guide](https://platform.claude.com/docs/en/models/haiku-5-5/migration-guide) explicitly permit adaptive forced choice on Haiku 5.5, unlike the listed Opus/Sonnet/Fable/Mythos exceptions. An accepted forced call starts with the tool call and skips its preceding thinking block; this does not authorize switching requested thinking off.
+
+The [structured-output guide](https://platform.claude.com/docs/en/build-with-claude/structured-outputs) says string enum/const capitalization is not guaranteed for **both JSON output and strict tools**. Local strict-tool rejection was already correct; output-only schemas had applied only complexity accounting. Both owners now share subset validation, preserving unsupported-constraint rejection without SDK simplification. Source parsing still retains the original schema and no target projection edits it to fit.
+
+The [bounded deployed companion](../development.md#constrained-messages-profile-acceptance) passed seven Go/Haiku pinned-SDK requests with numeric enum schemas, adaptive thinking, root-high/system-low effort and explicit strict required/named controls. JSON/SSE history, model-issued call/result IDs and a one-token honest truncation were observed; prepared schemas and controls matched. The original string-enum proposal stopped locally and stays excluded. A numeric fixture named `key` exposed correct capture redaction, not wire mutation; the independently checked `record` fixture avoids that observation collision. No real refusal, arbitrary-schema guarantee, parallel-call acceptance, other Provider or whole-client fallback follows.
 
 ### Messages owner-local cache admission, 2026-10-19
 

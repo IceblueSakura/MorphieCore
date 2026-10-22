@@ -30,11 +30,12 @@ pub(super) fn admits_request(request: &super::Request) -> bool {
             return false;
         }
     }
+    // JSON outputs share the native subset/casing limits, not only its grammar budget.
     request
         .output_config
         .value()
         .and_then(|config| config.format.value())
-        .is_none_or(|schema| budget.charge(schema.root()))
+        .is_none_or(|schema| admits(schema.root()) && budget.charge(schema.root()))
 }
 
 #[derive(Default)]

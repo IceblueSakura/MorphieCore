@@ -106,6 +106,91 @@ fn configured_messages(providers: &[&str]) -> Fixture {
 }
 
 #[test]
+fn configured_messages_adaptive_forced_tools_keep_strictness_and_effort() {
+    let boot = configured_messages(&["opencode-go"]);
+    let schema = json!({"type":"object","properties":{"record":{"type":"integer","enum":[71,82]}},
+        "required":["record"],"additionalProperties":false});
+    let tools: Vec<Value> = ["lookup", "inspect"].into_iter().map(|name| {
+        json!({"name":name,"description":"Retrieve one synthetic record.","strict":true,"input_schema":schema})
+    }).collect();
+    let mut body = json!({"model":"claude-haiku-5-5","max_tokens":2048,"stream":false,
+        "thinking":{"type":"adaptive","display":"summarized","block_binding":{"prefix_mismatch_behavior":"drop_block"}},
+        "output_config":{"effort":"high"},"tools":tools,
+        "messages":[{"role":"user","content":[{"type":"text","text":"Return record 71."}]},
+            {"role":"system","content":[],"output_config":{"effort":"low"}}]});
+    for choice in [
+        json!({"type":"any","disable_parallel_tool_use":true}),
+        json!({"type":"tool","name":"inspect","disable_parallel_tool_use":true}),
+    ] {
+        body["tool_choice"] = choice.clone();
+        let (entry, mut request) = crate::gateway::ingress::admission::prepare_messages(
+            &boot.gateway.state,
+            body.to_string().as_bytes(),
+        )
+        .unwrap();
+        request.conversation =
+            Some(crate::semantic::context::ConversationContext::conversation("synthetic").unwrap());
+        let candidate = &entry.candidates[0];
+        let secret = candidate.secret.resolve().unwrap().0;
+        let (prepared, _) = crate::execution::prepare_with_rules(
+            &candidate.endpoint,
+            &candidate.provider,
+            &secret,
+            &request,
+        )
+        .unwrap();
+        let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
+        assert_eq!(wire["tool_choice"], choice);
+        assert_eq!(entry.eligible(&request).unwrap().len(), 1);
+        assert_eq!(wire["thinking"], body["thinking"]);
+        assert_eq!(wire["output_config"], json!({"effort":"high"}));
+        assert_eq!(wire["tools"], json!(tools));
+        assert_eq!(wire["messages"][1], body["messages"][1]);
+        let mut unsupported = body.clone();
+        unsupported["tools"][0]["input_schema"]["properties"]["record"] =
+            json!({"type":"string","enum":["cedar","birch"]});
+        let (_, mut rejected) = crate::gateway::ingress::admission::prepare_messages(
+            &boot.gateway.state,
+            unsupported.to_string().as_bytes(),
+        )
+        .unwrap();
+        rejected.conversation = request.conversation.clone();
+        let error = crate::execution::prepare_with_rules(
+            &candidate.endpoint,
+            &candidate.provider,
+            &secret,
+            &rejected,
+        )
+        .unwrap_err();
+        assert!(matches!(error, AttemptError::Adapter(AdapterError::Codec(
+            crate::protocol::CodecError::Unsupported(ref reason))) if reason == "Anthropic strict tool schema"));
+    }
+    body.as_object_mut().unwrap().remove("tools");
+    body.as_object_mut().unwrap().remove("tool_choice");
+    body["output_config"]["format"] = json!({"type":"json_schema","schema":{
+        "type":"object","properties":{"record":{"type":"integer","enum":[71,82]},"ok":{"type":"boolean"}},
+        "required":["record","ok"],"additionalProperties":false}});
+    let (entry, mut request) = crate::gateway::ingress::admission::prepare_messages(
+        &boot.gateway.state,
+        body.to_string().as_bytes(),
+    )
+    .unwrap();
+    request.conversation =
+        Some(crate::semantic::context::ConversationContext::conversation("synthetic").unwrap());
+    let candidate = &entry.candidates[0];
+    let secret = candidate.secret.resolve().unwrap().0;
+    let (prepared, _) = crate::execution::prepare_with_rules(
+        &candidate.endpoint,
+        &candidate.provider,
+        &secret,
+        &request,
+    )
+    .unwrap();
+    let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
+    assert_eq!(wire["output_config"], body["output_config"]);
+}
+
+#[test]
 fn messages_output_defaults_inherit_override_or_clear_without_widening_maxima() {
     let load = |mut candidate: Value| {
         if candidate.get("binding").is_none() {
