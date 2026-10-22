@@ -6,23 +6,20 @@ use morphiecore::{
 };
 use serde_json::{Value, json};
 
-pub(super) fn request(protocol: Protocol, model: &str, cap: Option<u32>, siwc: bool) -> Value {
+pub(super) fn request(protocol: Protocol, model: &str, siwc: bool) -> Value {
     match protocol {
         Protocol::OpenaiChat => {
-            json!({"model":model,"messages":[{"role":"user","content":PROMPT}],"max_tokens":cap,"stream":false})
+            json!({"model":model,"messages":[{"role":"user","content":PROMPT}],"stream":false})
         }
         Protocol::OpenaiResponses => {
-            let mut value = json!({"model":model,"input":[{"role":"user","content":PROMPT}],"store":false,"stream":siwc});
-            if let Some(cap) = cap {
-                value["max_output_tokens"] = json!(cap);
-            }
-            value
+            json!({"model":model,"input":[{"role":"user","content":PROMPT}],"store":false,"stream":siwc})
         }
         Protocol::Anthropic => {
-            json!({"model":model,"messages":[{"role":"user","content":PROMPT}],"max_tokens":cap,"stream":false})
+            // Messages requires max_tokens; other protocols retain their upstream defaults.
+            json!({"model":model,"messages":[{"role":"user","content":PROMPT}],"max_tokens":128,"stream":false})
         }
         Protocol::Google => {
-            json!({"contents":[{"role":"user","parts":[{"text":PROMPT}]}],"generationConfig":{"maxOutputTokens":cap}})
+            json!({"contents":[{"role":"user","parts":[{"text":PROMPT}]}]})
         }
     }
 }

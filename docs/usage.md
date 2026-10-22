@@ -145,7 +145,7 @@ Built-in list paths are `/v1/models` for OpenAI and xAI, `/models` for DeepSeek,
 ```sh
 morphiecore-upstream probe \
   --provider deepseek --api-key main --protocol openai-chat \
-  --model deepseek-flash --max-output-tokens 128
+  --model deepseek-flash
 
 morphiecore-upstream probe \
   --provider opencode-go --api-key main --protocol anthropic \
@@ -162,9 +162,9 @@ morphiecore-upstream probe \
 
 The four protocol choices are `openai-chat`, `openai-responses`, `anthropic` and `google` (generateContent). Model names need not appear in the local catalog or a previous list. The fixed prompt is `Reply with the single word OK.`; no user payload, tools or history are accepted.
 
-The default requested output ceiling is 128 tokens; `--max-output-tokens` accepts 1–4096. Chat uses `max_tokens`, Responses uses `max_output_tokens`, Messages uses `max_tokens` and Google uses `generationConfig.maxOutputTokens`. These are deliberately small native profiles, not model-specific compatibility adaptations. A target requiring different controls can reject; the CLI never silently changes the request or retries.
+The probe leaves optional generation controls, including token limits, to the upstream defaults. There is no token-limit CLI option or reporting policy. Anthropic Messages alone requires `max_tokens`, so its minimal request retains a fixed `128`. A target requiring other controls can reject; the CLI never silently changes the request or retries. Local deadlines and byte bounds do not guarantee bounded remote computation or billing.
 
-**SIWC is different:** it requires `store:false` and `stream:true`, and has no supported output-token cap. Supplying `--max-output-tokens` rejects before credential access; omission produces a warning and a null requested cap in the report. Local deadlines and byte bounds do not guarantee bounded remote computation or billing. Other probes use static JSON; SIWC consumes SSE through strict EOF and requires a completed response with text, including closed event-owned output when the final summary is empty.
+SIWC requires `store:false` and `stream:true`. Other probes use static JSON; SIWC consumes SSE through strict EOF and requires a completed response with text, including closed event-owned output when the final summary is empty.
 
 Success means nonempty text plus an ordinary completion (`stop`, `completed`, `end_turn` or `STOP`), not merely HTTP 200 or an exact `OK` answer. Truncation, refusal without text, failed/incomplete terminals and malformed responses fail. Reports include status, elapsed time, response bytes, text byte count and whether OAuth refreshed; they do not print generated text, raw upstream errors, headers, credentials, account identities or private target URLs. This is a basic service observation, not gateway compatibility, streaming-latency, tool-loop or capability certification.
 

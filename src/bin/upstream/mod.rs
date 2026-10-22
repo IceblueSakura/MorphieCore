@@ -85,9 +85,6 @@ struct Probe {
     /// Exact upstream name; need not exist in the local catalog or a model-list result.
     #[arg(long)]
     model: String,
-    /// Output-token ceiling (default 128). SIWC has no supported cap and rejects this option.
-    #[arg(long, value_parser = clap::value_parser!(u32).range(1..=4096))]
-    max_output_tokens: Option<u32>,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 enum Protocol {
@@ -144,10 +141,6 @@ pub(super) enum Error {
     Endpoint,
     #[error("OAuth requires its registered Provider, protocol and target; overrides are forbidden")]
     OAuthTarget,
-    #[error(
-        "SIWC does not support an output-token cap; omit --max-output-tokens or use an API-key target"
-    )]
-    UnsupportedCap,
     #[error("credential operation: {0}")]
     Credential(#[from] CredentialError),
     #[error("transport failed; no retry")]
@@ -283,14 +276,8 @@ impl Command {
                         .model
                         .chars()
                         .any(|c| c.is_control() || c.is_whitespace())
-                    || options
-                        .max_output_tokens
-                        .is_some_and(|cap| !(1..=4096).contains(&cap))
                 {
                     return Err(Error::Invalid);
-                }
-                if siwc && options.max_output_tokens.is_some() {
-                    return Err(Error::UnsupportedCap);
                 }
                 if target.protocol == Protocol::Google {
                     let model = options
@@ -309,16 +296,7 @@ impl Command {
                         .as_str()
                         .into();
                 }
-                Some(wire::request(
-                    target.protocol,
-                    &options.model,
-                    if siwc {
-                        None
-                    } else {
-                        Some(options.max_output_tokens.unwrap_or(128))
-                    },
-                    siwc,
-                ))
+                Some(wire::request(target.protocol, &options.model, siwc))
             }
         };
         Ok(Plan {
@@ -381,11 +359,6 @@ pub async fn execute(options: Options) -> Result<Value, Error> {
         vec![]
     };
     let manager = CredentialManager::new(root, drivers)?;
-    if plan.siwc && plan.body.is_some() {
-        eprintln!(
-            "SIWC probe has no upstream output-token cap. The local deadline/byte bound does not guarantee bounded remote computation or billing."
-        );
-    }
     tokio::time::timeout(
         Duration::from_secs(target.timeout_seconds),
         run(&options.command, plan, &manager, &transport),
@@ -498,11 +471,7 @@ async fn run(
         Command::Probe(options) => Some(options.model.as_str()),
         _ => None,
     };
-    let cap = match command {
-        Command::Probe(options) if !plan.siwc => Some(options.max_output_tokens.unwrap_or(128)),
-        _ => None,
-    };
-    let report = json!({"operation":if plan.body.is_some() {"probe"} else {"models"}, "provider":target.provider, "model":model, "protocol":target.protocol.name(), "http_status":status, "requests":1, "requested_max_output_tokens":cap, "oauth_refreshed":refreshed, "elapsed_ms":start.elapsed().as_millis(), "response_bytes":bytes.len(), "result":result});
+    let report = json!({"operation":if plan.body.is_some() {"probe"} else {"models"}, "provider":target.provider, "model":model, "protocol":target.protocol.name(), "http_status":status, "requests":1, "oauth_refreshed":refreshed, "elapsed_ms":start.elapsed().as_millis(), "response_bytes":bytes.len(), "result":result});
     // Only allowlisted metadata is reported; even an adversarial list must not echo auth.
     if contains_secret(&report, secret.expose()) {
         return Err(Error::Response);

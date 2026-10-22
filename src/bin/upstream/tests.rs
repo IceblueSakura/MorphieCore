@@ -32,7 +32,7 @@ fn target_selection_is_explicit_and_oauth_cannot_be_redirected() {
     assert_eq!(plan.path, "/chat/completions");
     assert_eq!(
         plan.body.unwrap(),
-        json!({"model":"not-in-catalog","messages":[{"role":"user","content":"Reply with the single word OK."}],"max_tokens":128,"stream":false})
+        json!({"model":"not-in-catalog","messages":[{"role":"user","content":"Reply with the single word OK."}],"stream":false})
     );
     let oauth = command(&[
         "probe",
@@ -136,13 +136,13 @@ fn native_requests_paths_headers_and_cursors_are_not_inferred_from_model_names()
             "anthropic",
             "/v1/messages",
             AuthScheme::ApiKeyHeader("x-api-key"),
-            json!({"model":"new","messages":[{"role":"user","content":"Reply with the single word OK."}],"max_tokens":64,"stream":false}),
+            json!({"model":"new","messages":[{"role":"user","content":"Reply with the single word OK."}],"max_tokens":128,"stream":false}),
         ),
         (
             "google",
             "/v1beta/models/new:generateContent",
             AuthScheme::ApiKeyHeader("x-goog-api-key"),
-            json!({"contents":[{"role":"user","parts":[{"text":"Reply with the single word OK."}]}],"generationConfig":{"maxOutputTokens":64}}),
+            json!({"contents":[{"role":"user","parts":[{"text":"Reply with the single word OK."}]}]}),
         ),
     ] {
         let base = if protocol == "google" {
@@ -164,8 +164,6 @@ fn native_requests_paths_headers_and_cursors_are_not_inferred_from_model_names()
             base,
             "--model",
             "new",
-            "--max-output-tokens",
-            "64",
         ]);
         let plan = request.plan().unwrap();
         assert_eq!(plan.path, path);
