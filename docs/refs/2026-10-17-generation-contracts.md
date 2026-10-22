@@ -67,7 +67,7 @@ Documentation-only recheck for the manual upstream CLI, not account access or li
 | [Anthropic Models](https://platform.claude.com/docs/en/api/models/list) | `GET /v1/models`, `data[].id`, Boolean `has_more`, `last_id` supplied as `after_id` |
 | [xAI Models](https://docs.x.ai/developers/rest-api-reference/inference/models) | `GET /v1/models`, `data[].id`; the reference describes API-key access, not proof of OAuth entitlement |
 
-No default model-list path was established for MiMo, Go, ModelBest, NVIDIA, DashScope, Token Plan or Zhipu in this bounded pass. This is an evidence gap, not an unsupported-operation verdict. Require an operator-specified path rather than infer listing from a Chat-compatible base. The Go documentation now describes different inference prefixes from the project's pinned catalog; diagnostics do not silently migrate them. SIWC's existing unsupported output-cap policy and event-owned terminal summary remain separate from standard Responses.
+No default model-list path was established for MiMo, Go, ModelBest, NVIDIA, DashScope, Token Plan or Zhipu in this bounded pass. This is an evidence gap, not an unsupported-operation verdict. A confirmed metadata entry is required rather than inferring listing from a Chat-compatible base. The Go documentation now describes different inference prefixes from the project's pinned catalog; diagnostics do not silently migrate them. SIWC's existing unsupported output-cap policy and event-owned terminal summary remain separate from standard Responses.
 
 ## Exact carriers and source validation
 

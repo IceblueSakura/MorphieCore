@@ -247,15 +247,13 @@ impl Endpoint {
     }
     /// The target path the Provider's declared operation entry implies for this binding:
     /// the entry itself, or for generateContent the model inside its collection.
-    pub(crate) fn declared_path(&self, entry: &EndpointPath) -> String {
-        match self.protocol {
-            ProtocolProfile::GoogleGenerateContent => format!(
-                "{}/{}:streamGenerateContent",
-                entry.as_str(),
-                self.upstream_model
-            ),
-            _ => entry.as_str().into(),
-        }
+    pub(crate) fn declared_path(
+        &self,
+        entry: &EndpointPath,
+    ) -> Result<EndpointPath, crate::provider::ProviderError> {
+        self.protocol
+            .operation()
+            .resolve_path(entry, &self.upstream_model, true)
     }
     /// Relative request target. generateContent names the model in its path and
     /// selects SSE framing with a fixed query, never business input.

@@ -95,7 +95,7 @@ pub(crate) fn operation_auth(
         .ok_or(AttemptError::Protocol("undeclared operation"))?;
     if provider.id != endpoint.provider
         || provider.origin != endpoint.target.origin
-        || endpoint.declared_path(entry.path) != endpoint.target.path.as_str()
+        || endpoint.declared_path(entry.path).as_ref().ok() != Some(&endpoint.target.path)
         || entry.auth.kind() != endpoint.execution.credential_kind
         || entry.auth.kind() != provider.auth.kind()
     {

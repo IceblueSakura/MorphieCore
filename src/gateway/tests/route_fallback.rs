@@ -128,11 +128,24 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
             let provider = ProviderDefinition {
                 id: ProviderId::new(id).unwrap(),
                 origin: TrustedOrigin::parse(&format!("http://{upstream_addr}")).unwrap(),
-                chat_completions: Some(EndpointPath::new(&format!("/{id}")).unwrap()),
-                responses: Some(EndpointPath::new(&format!("/{id}")).unwrap()),
-                messages: None,
-                generate_content: None,
-                interactions: None,
+                endpoints: [
+                    (
+                        crate::provider::ProviderOperation::ChatCompletions,
+                        crate::provider::ProviderEndpoint {
+                            path: EndpointPath::new(&format!("/{id}")).unwrap(),
+                            auth: None,
+                        },
+                    ),
+                    (
+                        crate::provider::ProviderOperation::Responses,
+                        crate::provider::ProviderEndpoint {
+                            path: EndpointPath::new(&format!("/{id}")).unwrap(),
+                            auth: None,
+                        },
+                    ),
+                ]
+                .into(),
+                credential_pool: None,
                 auth: AuthScheme::Bearer,
             };
             let credential = CredentialBindingId::new(&format!("{id}-key")).unwrap();
@@ -179,7 +192,11 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
                 provider: provider.id.clone(),
                 target: EndpointTarget {
                     origin: provider.origin.clone(),
-                    path: provider.responses.clone().unwrap(),
+                    path: provider
+                        .entry(crate::provider::ProviderOperation::Responses)
+                        .unwrap()
+                        .path
+                        .clone(),
                 },
                 task: TaskKind::Generation,
                 protocol: ProtocolProfile::OpenAiResponses,

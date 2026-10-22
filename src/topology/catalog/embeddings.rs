@@ -1,7 +1,9 @@
 //! Explicit text embedding bindings. No Generation or file-service admission is inferred.
 use crate::{
     adapter::embeddings::{Contract, DimensionSupport, Profile},
-    provider::{CredentialBindingId, CredentialKind, EndpointPath, ProviderDefinition, catalog},
+    provider::{
+        CredentialBindingId, CredentialKind, ProviderDefinition, ProviderOperation, catalog,
+    },
     topology::{
         EndpointId, EndpointTarget, ExecutionContract, ModelId, ModelMetadata, RouteId,
         embeddings::{EmbeddingEndpoint, EmbeddingRoute, ProviderEntry},
@@ -10,9 +12,7 @@ use crate::{
 pub struct EmbeddingBinding {
     pub model: &'static str,
     pub upstream: &'static str,
-    pub credential: &'static str,
     pub provider: fn() -> ProviderDefinition,
-    pub path: &'static str,
     pub max_inputs: usize,
     pub dimensions: &'static [usize],
     pub max_dimensions: usize,
@@ -27,9 +27,7 @@ pub const EMBEDDING_BINDINGS: &[EmbeddingBinding] = &[
     EmbeddingBinding {
         model: "qwen3.7-text-embedding",
         upstream: "qwen3.7-text-embedding",
-        credential: "aliyun-dashscope-cn-api-key",
         provider: catalog::aliyun_dashscope_cn,
-        path: "/compatible-mode/v1/embeddings",
         max_inputs: 20,
         dimensions: &[256, 512, 768, 1024, 1536, 2048, 2560],
         max_dimensions: 2560,
@@ -43,9 +41,7 @@ pub const EMBEDDING_BINDINGS: &[EmbeddingBinding] = &[
     EmbeddingBinding {
         model: "text-embedding-3-small",
         upstream: "openai/text-embedding-3-small",
-        credential: "openrouter-api-key",
         provider: catalog::openrouter,
-        path: "/api/v1/embeddings",
         max_inputs: 128,
         dimensions: &[],
         max_dimensions: 1536,
@@ -57,13 +53,24 @@ pub const EMBEDDING_BINDINGS: &[EmbeddingBinding] = &[
     },
 ];
 impl EmbeddingBinding {
+    pub fn credential(&self) -> CredentialBindingId {
+        (self.provider)()
+            .credential_pool
+            .expect("catalog credential pool")
+    }
     pub fn metadata(&self) -> ModelMetadata {
         ModelMetadata::new(self.released_at, self.developer).expect("static publication")
     }
     pub fn operation(&self) -> ProviderEntry {
+        let provider = (self.provider)();
+        let path = provider
+            .entry(ProviderOperation::Embeddings)
+            .expect("embedding entry")
+            .path
+            .clone();
         ProviderEntry {
-            provider: (self.provider)().id,
-            path: EndpointPath::new(self.path).expect("static path"),
+            provider: provider.id,
+            path,
         }
     }
     pub fn route(&self) -> EmbeddingRoute {
@@ -93,7 +100,7 @@ impl EmbeddingBinding {
                     },
                     user: self.user,
                 },
-                credential: CredentialBindingId::new(self.credential).expect("static credential"),
+                credential: self.credential(),
                 execution: ExecutionContract {
                     streaming: false,
                     retry_before_commit: false,

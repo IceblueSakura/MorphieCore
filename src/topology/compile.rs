@@ -228,7 +228,7 @@ fn compile_deployments(
         let operation = definition
             .generation_entry(endpoint.protocol.operation())
             .ok_or(TopologyError::TargetMismatch)?;
-        if endpoint.declared_path(operation.path) != endpoint.target.path.as_str()
+        if endpoint.declared_path(operation.path).as_ref().ok() != Some(&endpoint.target.path)
             || operation.auth.kind() != endpoint.execution.credential_kind
             || operation.auth.kind() != definition.auth.kind()
         {
@@ -388,11 +388,24 @@ mod tests {
         ProviderDefinition {
             id: ProviderId::new("fixture").unwrap(),
             origin: TrustedOrigin::parse("http://127.0.0.1:39217").unwrap(),
-            chat_completions: Some(EndpointPath::new("/chat/completions").unwrap()),
-            responses: Some(EndpointPath::new("/responses").unwrap()),
-            messages: None,
-            generate_content: None,
-            interactions: None,
+            endpoints: [
+                (
+                    crate::provider::ProviderOperation::ChatCompletions,
+                    crate::provider::ProviderEndpoint {
+                        path: EndpointPath::new("/chat/completions").unwrap(),
+                        auth: None,
+                    },
+                ),
+                (
+                    crate::provider::ProviderOperation::Responses,
+                    crate::provider::ProviderEndpoint {
+                        path: EndpointPath::new("/responses").unwrap(),
+                        auth: None,
+                    },
+                ),
+            ]
+            .into(),
+            credential_pool: None,
             auth: AuthScheme::Bearer,
         }
     }
@@ -589,7 +602,9 @@ mod tests {
     #[test]
     fn target_must_stay_bound_to_provider_origin_and_protocol_entry() {
         let mut chat_only = provider();
-        chat_only.responses = None;
+        chat_only
+            .endpoints
+            .remove(&crate::provider::ProviderOperation::Responses);
         assert_eq!(
             compile(
                 vec![chat_only.clone()],
@@ -628,7 +643,11 @@ mod tests {
         );
         // Wrong entry: a Responses endpoint cannot ride the chat entry path.
         let mut wrong_entry = endpoint(ProtocolProfile::OpenAiResponses);
-        wrong_entry.target.path = provider().chat_completions.unwrap();
+        wrong_entry.target.path = provider()
+            .entry(crate::provider::ProviderOperation::ChatCompletions)
+            .unwrap()
+            .path
+            .clone();
         assert_eq!(
             compile_fixture(
                 vec![wrong_entry],

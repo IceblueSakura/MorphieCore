@@ -251,11 +251,10 @@ impl Models {
                         return Err(invalid());
                     }
                     let entry = provider
-                        .generate_content
-                        .as_ref()
+                        .generation_entry(endpoint.protocol.operation())
                         .ok_or(StartupError::Binding)?;
                     endpoint.target.path =
-                        EndpointPath::new(&endpoint.declared_path(entry)).map_err(|_| invalid())?;
+                        endpoint.declared_path(entry.path).map_err(|_| invalid())?;
                 }
                 if let Some(ms) = candidate.attempt_timeout_ms {
                     endpoint.execution.timeout_ms = timeout(ms)?;
@@ -402,13 +401,11 @@ fn deploy(
     })
     .map_err(|_| invalid())?;
     provider.origin = origin.clone();
-    match endpoint.protocol {
-        ProtocolProfile::OpenAiChat => provider.chat_completions = Some(path.clone()),
-        ProtocolProfile::OpenAiResponses => provider.responses = Some(path.clone()),
-        ProtocolProfile::AnthropicMessages => provider.messages = Some(path.clone()),
-        ProtocolProfile::GoogleGenerateContent => provider.generate_content = Some(path.clone()),
-        ProtocolProfile::GoogleInteractions => provider.interactions = Some(path.clone()),
-    }
+    provider
+        .endpoints
+        .get_mut(&endpoint.protocol.operation().into())
+        .ok_or(StartupError::Binding)?
+        .path = path.clone();
     endpoint.target.origin = origin;
     endpoint.target.path = path;
     Ok(())

@@ -8,7 +8,6 @@ use crate::{
 pub struct MessagesBinding {
     pub model: &'static str,
     pub upstream: &'static str,
-    pub credential: &'static str,
     pub released_at: u64,
     pub developer: &'static str,
 }
@@ -17,7 +16,6 @@ pub struct MessagesBinding {
 pub const MESSAGES_BINDINGS: &[MessagesBinding] = &[MessagesBinding {
     model: "claude-haiku-5-5",
     upstream: "claude-haiku-5-5",
-    credential: "opencode-go-api-key",
     // Source: https://www.anthropic.com/claude-haiku-5-5 (2026-10-07).
     released_at: 1_791_331_200,
     developer: "Anthropic",
@@ -33,6 +31,11 @@ fn haiku_contract(mut contract: GenerationSemanticContract) -> GenerationSemanti
     contract
 }
 impl MessagesBinding {
+    pub fn credential(&self) -> CredentialBindingId {
+        self.provider()
+            .credential_pool
+            .expect("catalog credential pool")
+    }
     pub fn provider(&self) -> ProviderDefinition {
         catalog::opencode_go()
     }
@@ -54,12 +57,17 @@ impl MessagesBinding {
         representation.semantics.explicit_cache = true;
         representation.semantics = haiku_contract(representation.semantics);
         representation.carriers = Carriers::all();
+        let path = provider
+            .generation_entry(crate::provider::GenerationOperation::AnthropicMessages)
+            .expect("declared path")
+            .path
+            .clone();
         Endpoint {
             id: EndpointId::new("opencode-go-haiku-messages").expect("static id"),
             provider: provider.id,
             target: EndpointTarget {
                 origin: provider.origin,
-                path: provider.messages.expect("declared path"),
+                path,
             },
             task: TaskKind::Generation,
             protocol: ProtocolProfile::AnthropicMessages,
@@ -74,7 +82,7 @@ impl MessagesBinding {
                 credential_kind: CredentialKind::ApiKey,
                 timeout_ms: super::GENERATION_TIMEOUT_MS,
             },
-            credential: CredentialBindingId::new(self.credential).expect("static credential"),
+            credential: self.credential(),
         }
     }
     pub fn route(&self) -> Route {

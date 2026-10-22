@@ -20,11 +20,24 @@ pub(crate) fn topology_at(origin: &str) -> CompiledTopology {
     let provider = ProviderDefinition {
         id: ProviderId::new("fixture").unwrap(),
         origin: TrustedOrigin::parse(origin).unwrap(),
-        chat_completions: Some(EndpointPath::new("/chat/completions").unwrap()),
-        responses: Some(EndpointPath::new("/responses").unwrap()),
-        messages: None,
-        generate_content: None,
-        interactions: None,
+        endpoints: [
+            (
+                crate::provider::ProviderOperation::ChatCompletions,
+                crate::provider::ProviderEndpoint {
+                    path: EndpointPath::new("/chat/completions").unwrap(),
+                    auth: None,
+                },
+            ),
+            (
+                crate::provider::ProviderOperation::Responses,
+                crate::provider::ProviderEndpoint {
+                    path: EndpointPath::new("/responses").unwrap(),
+                    auth: None,
+                },
+            ),
+        ]
+        .into(),
+        credential_pool: None,
         auth: AuthScheme::Bearer,
     };
     let canonical = ModelId::new("fixture-canonical").unwrap();
@@ -71,9 +84,17 @@ pub(crate) fn topology_at(origin: &str) -> CompiledTopology {
             target: EndpointTarget {
                 origin: provider.origin.clone(),
                 path: if profile == Profile::Chat {
-                    provider.chat_completions.clone().unwrap()
+                    provider
+                        .entry(crate::provider::ProviderOperation::ChatCompletions)
+                        .unwrap()
+                        .path
+                        .clone()
                 } else {
-                    provider.responses.clone().unwrap()
+                    provider
+                        .entry(crate::provider::ProviderOperation::Responses)
+                        .unwrap()
+                        .path
+                        .clone()
                 },
             },
             task: TaskKind::Generation,

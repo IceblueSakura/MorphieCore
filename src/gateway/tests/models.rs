@@ -371,11 +371,15 @@ fn aliases(count: usize, metadata: bool) -> crate::topology::CompiledTopology {
     let provider = ProviderDefinition {
         id: ProviderId::new("synthetic").unwrap(),
         origin: TrustedOrigin::parse("http://127.0.0.1:9").unwrap(),
-        chat_completions: Some(EndpointPath::new("/chat/completions").unwrap()),
-        responses: None,
-        messages: None,
-        generate_content: None,
-        interactions: None,
+        endpoints: [(
+            crate::provider::ProviderOperation::ChatCompletions,
+            crate::provider::ProviderEndpoint {
+                path: EndpointPath::new("/chat/completions").unwrap(),
+                auth: None,
+            },
+        )]
+        .into(),
+        credential_pool: None,
         auth: AuthScheme::Bearer,
     };
     let endpoint = Endpoint {
@@ -384,7 +388,11 @@ fn aliases(count: usize, metadata: bool) -> crate::topology::CompiledTopology {
         provider: provider.id.clone(),
         target: EndpointTarget {
             origin: provider.origin.clone(),
-            path: provider.chat_completions.clone().unwrap(),
+            path: provider
+                .entry(crate::provider::ProviderOperation::ChatCompletions)
+                .unwrap()
+                .path
+                .clone(),
         },
         task: TaskKind::Generation,
         protocol: ProtocolProfile::OpenAiChat,

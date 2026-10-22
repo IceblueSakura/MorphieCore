@@ -1,204 +1,222 @@
-//! Trusted origin, protocol path and authentication definitions, not a live inventory.
-//!
-//! Follow topology bindings and gateway bootstrap for public-model admission.
-//! Official source links are lookup starting points; recheck them when changing a
-//! binding. A registered entry does not prove account access or live compatibility.
-
-use crate::provider::{
-    auth::AuthScheme,
-    definition::{EndpointPath, ProviderDefinition, ProviderId, TrustedOrigin},
+//! Validated, compile-time Provider metadata shared by topology and manual diagnostics.
+//! Edit providers.json and rebuild; no runtime files, overrides or hot reload.
+use crate::{
+    provider::{
+        AuthScheme, CredentialBindingId, EndpointPath, ProviderDefinition, ProviderEndpoint,
+        ProviderError, ProviderId, ProviderOperation, TrustedOrigin,
+    },
+    semantic::value::{JsonLimits, parse_json},
 };
+use serde::Deserialize;
+use std::{collections::BTreeMap, sync::OnceLock};
 
-/// OpenAI-compatible entries; source: <https://api-docs.deepseek.com/guides/responses_api/>.
-pub fn deepseek() -> ProviderDefinition {
-    ProviderDefinition {
-        id: ProviderId::new("deepseek").expect("static identity"),
-        origin: TrustedOrigin::parse("https://api.deepseek.com").expect("static origin"),
-        chat_completions: Some(EndpointPath::new("/chat/completions").expect("static path")),
-        responses: Some(EndpointPath::new("/responses").expect("static path")),
-        messages: None,
-        generate_content: None,
-        interactions: None,
-        auth: AuthScheme::Bearer,
+#[derive(Clone, Copy, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum Authentication {
+    Bearer,
+    XApiKey,
+    XGoogApiKey,
+    #[serde(rename = "oauth")]
+    OAuth {
+        profile: Profile,
+    },
+}
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Profile {
+    Openai,
+    Grok,
+}
+impl Authentication {
+    fn scheme(self) -> AuthScheme {
+        match self {
+            Self::Bearer => AuthScheme::Bearer,
+            Self::XApiKey => AuthScheme::ApiKeyHeader("x-api-key"),
+            Self::XGoogApiKey => AuthScheme::ApiKeyHeader("x-goog-api-key"),
+            Self::OAuth {
+                profile: Profile::Openai,
+            } => AuthScheme::OAuthBearer("openai"),
+            Self::OAuth {
+                profile: Profile::Grok,
+            } => AuthScheme::OAuthBearer("grok"),
+        }
     }
 }
-
-/// MiMo binds Bearer rather than exposing authentication choice to requests.
-/// Source: <https://mimo.mi.com/docs/zh-CN/api/chat/responses>.
-pub fn xiaomi() -> ProviderDefinition {
-    ProviderDefinition {
-        id: ProviderId::new("xiaomi").expect("static identity"),
-        origin: TrustedOrigin::parse("https://api.xiaomimimo.com").expect("static origin"),
-        chat_completions: Some(EndpointPath::new("/v1/chat/completions").expect("static path")),
-        responses: Some(EndpointPath::new("/v1/responses").expect("static path")),
-        messages: None,
-        generate_content: None,
-        interactions: None,
-        auth: AuthScheme::Bearer,
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Definition {
+    base_url: String,
+    auth: Authentication,
+    credential_pool: String,
+    endpoints: BTreeMap<ProviderOperation, Entry>,
+    sources: Vec<String>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Entry {
+    path: String,
+    auth: Option<Authentication>,
+}
+fn parse(bytes: &[u8]) -> Result<BTreeMap<String, ProviderDefinition>, ProviderError> {
+    let invalid = || ProviderError::InvalidCatalog;
+    let value = parse_json(bytes, JsonLimits::ENVELOPE).map_err(|_| invalid())?;
+    let raw: BTreeMap<String, Definition> = serde_json::from_value(value).map_err(|_| invalid())?;
+    if raw.is_empty() || raw.len() > 64 {
+        return Err(invalid());
     }
+    raw.into_iter()
+        .map(|(name, definition)| {
+            let auth = definition.auth.scheme();
+            if definition.endpoints.is_empty()
+                || definition.sources.is_empty()
+                || definition
+                    .sources
+                    .iter()
+                    .any(|s| !s.starts_with("https://") || s.chars().any(char::is_control))
+                || matches!(auth, AuthScheme::OAuthBearer(profile) if profile != name)
+            {
+                return Err(invalid());
+            }
+            let endpoints = definition
+                .endpoints
+                .into_iter()
+                .map(|(operation, entry)| {
+                    let override_auth = entry.auth.map(Authentication::scheme);
+                    if override_auth.is_some_and(|a| a.kind() != auth.kind()) {
+                        return Err(invalid());
+                    }
+                    Ok((
+                        operation,
+                        ProviderEndpoint {
+                            path: EndpointPath::new(&entry.path)?,
+                            auth: override_auth,
+                        },
+                    ))
+                })
+                .collect::<Result<_, ProviderError>>()?;
+            let provider = ProviderDefinition {
+                id: ProviderId::new(&name)?,
+                origin: TrustedOrigin::parse(&definition.base_url)?,
+                endpoints,
+                credential_pool: Some(CredentialBindingId::new(&definition.credential_pool)?),
+                auth,
+            };
+            Ok((name, provider))
+        })
+        .collect()
 }
-
-/// Go operation entries are separate from model admission and the Zen balance API.
-/// Source: <https://opencode.ai/docs/go/#endpoints> and the pinned Messages route
-/// in `docs/references.md`.
-pub fn opencode_go() -> ProviderDefinition {
-    let mut provider = chat_provider(
-        "opencode-go",
-        "https://opencode.ai",
-        "/zen/go/v1/chat/completions",
-    );
-    provider.messages = Some(EndpointPath::new("/zen/go/v1/messages").expect("static path"));
-    provider.responses = Some(EndpointPath::new("/zen/go/v1/responses").expect("static path"));
-    provider
+fn registry() -> &'static BTreeMap<String, ProviderDefinition> {
+    static CATALOG: OnceLock<BTreeMap<String, ProviderDefinition>> = OnceLock::new();
+    CATALOG.get_or_init(|| {
+        parse(include_bytes!("providers.json")).expect("valid embedded provider catalog")
+    })
 }
-
-/// Aggregator entries; source: <https://openrouter.ai/docs/api/reference/responses/overview>.
-pub fn openrouter() -> ProviderDefinition {
-    ProviderDefinition {
-        id: ProviderId::new("openrouter").expect("static identity"),
-        origin: TrustedOrigin::parse("https://openrouter.ai").expect("static origin"),
-        chat_completions: Some(EndpointPath::new("/api/v1/chat/completions").expect("static path")),
-        responses: Some(EndpointPath::new("/api/v1/responses").expect("static path")),
-        messages: None,
-        generate_content: None,
-        interactions: None,
-        auth: AuthScheme::Bearer,
-    }
-}
-
-fn chat_provider(id: &str, origin: &str, path: &str) -> ProviderDefinition {
-    ProviderDefinition {
-        id: ProviderId::new(id).expect("static identity"),
-        origin: TrustedOrigin::parse(origin).expect("static origin"),
-        chat_completions: Some(EndpointPath::new(path).expect("static path")),
-        responses: None,
-        messages: None,
-        generate_content: None,
-        interactions: None,
-        auth: AuthScheme::Bearer,
-    }
-}
-
-/// Hosted OpenAI-compatible Chat; no native Responses operation is inferred.
-/// Source: <https://github.com/OpenBMB/MiniCPM-V/blob/main/docs/api.md>.
-pub fn modelbest() -> ProviderDefinition {
-    chat_provider(
-        "modelbest",
-        "https://api.modelbest.cn",
-        "/v1/chat/completions",
-    )
-}
-
-/// Hosted origin, not an arbitrary self-hosted NIM deployment.
-/// Source: <https://docs.nvidia.com/nim/large-language-models/latest/api-reference.html>.
-pub fn nvidia() -> ProviderDefinition {
-    ProviderDefinition {
-        responses: Some(EndpointPath::new("/v1/responses").expect("static path")),
-        ..chat_provider(
-            "nvidia",
-            "https://integrate.api.nvidia.com",
-            "/v1/chat/completions",
-        )
-    }
-}
-/// Region-bound endpoint; credentials must belong to the selected region.
-/// Sources: <https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions>,
-/// <https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-responses>.
-pub fn aliyun_dashscope_cn() -> ProviderDefinition {
-    ProviderDefinition {
-        responses: Some(EndpointPath::new("/compatible-mode/v1/responses").expect("static path")),
-        ..chat_provider(
-            "aliyun-dashscope-cn",
-            "https://dashscope.aliyuncs.com",
-            "/compatible-mode/v1/chat/completions",
-        )
-    }
-}
-/// Subscription credentials belong to this origin, never the metered endpoint.
-/// Native Responses is declared by the official Codex configuration, not inferred
-/// from the shared Chat wire. These entries do not bypass plan usage restrictions.
-/// Sources: <https://help.aliyun.com/zh/model-studio/base-url>,
-/// <https://help.aliyun.com/zh/model-studio/codex>.
-pub fn aliyun_tokenplan_cn() -> ProviderDefinition {
-    ProviderDefinition {
-        responses: Some(EndpointPath::new("/compatible-mode/v1/responses").expect("static path")),
-        ..chat_provider(
-            "aliyun-tokenplan-cn",
-            "https://token-plan.cn-beijing.maas.aliyuncs.com",
-            "/compatible-mode/v1/chat/completions",
-        )
-    }
-}
-/// The native Responses base path differs from Chat; never append to the Chat base.
-/// Sources: <https://docs.bigmodel.cn/cn/guide/develop/openai/introduction>,
-/// <https://docs.bigmodel.cn/cn/guide/develop/responses/introduction>.
-pub fn zhipu() -> ProviderDefinition {
-    ProviderDefinition {
-        responses: Some(EndpointPath::new("/api/v1/responses").expect("static path")),
-        ..chat_provider(
-            "zhipu",
-            "https://open.bigmodel.cn",
-            "/api/paas/v4/chat/completions",
-        )
-    }
-}
-
-/// Public SIWC Responses; permission is checked on each access snapshot.
-/// Source: https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference
-pub fn openai() -> ProviderDefinition {
-    ProviderDefinition {
-        messages: None,
-        generate_content: None,
-        interactions: None,
-        auth: AuthScheme::OAuthBearer("openai"),
-        responses: Some(EndpointPath::new("/v1/responses").expect("static path")),
-        id: ProviderId::new("openai").expect("static identity"),
-        origin: TrustedOrigin::parse("https://api.openai.com").expect("static origin"),
-        chat_completions: None,
-    }
-}
-/// Public Responses OAuth route; not the Grok CLI subscription proxy.
-/// Source: https://docs.x.ai/developers/model-capabilities/text/generate-text
-pub fn grok() -> ProviderDefinition {
-    ProviderDefinition {
-        messages: None,
-        generate_content: None,
-        interactions: None,
-        auth: AuthScheme::OAuthBearer("grok"),
-        responses: Some(EndpointPath::new("/v1/responses").expect("static path")),
-        id: ProviderId::new("grok").expect("static identity"),
-        origin: TrustedOrigin::parse("https://api.x.ai").expect("static origin"),
-        chat_completions: None,
-    }
-}
-/// Google AI Studio; generateContent paths name the model under `/v1beta/models`.
-/// Source: <https://ai.google.dev/api/generate-content>.
-pub fn google() -> ProviderDefinition {
-    ProviderDefinition {
-        id: ProviderId::new("google").expect("static identity"),
-        origin: TrustedOrigin::parse("https://generativelanguage.googleapis.com")
-            .expect("static origin"),
-        chat_completions: None,
-        responses: None,
-        messages: None,
-        generate_content: Some(EndpointPath::new("/v1beta/models").expect("static path")),
-        interactions: Some(EndpointPath::new("/v1/interactions").expect("static path")),
-        auth: AuthScheme::ApiKeyHeader("x-goog-api-key"),
-    }
+pub fn get(id: &str) -> Option<&'static ProviderDefinition> {
+    registry().get(id)
 }
 pub fn all() -> Vec<ProviderDefinition> {
-    vec![
-        openai(),
-        grok(),
-        deepseek(),
-        xiaomi(),
-        modelbest(),
-        openrouter(),
-        opencode_go(),
-        nvidia(),
-        aliyun_dashscope_cn(),
-        aliyun_tokenplan_cn(),
-        zhipu(),
-        google(),
-    ]
+    registry().values().cloned().collect()
+}
+
+// Named constructors keep model declarations concise; all facts live in the JSON source.
+macro_rules! providers {
+    ($($function:ident => $id:literal),* $(,)?) => { $(
+        pub fn $function() -> ProviderDefinition { get($id).expect("catalog provider").clone() }
+    )* };
+}
+providers! {
+    openai => "openai", grok => "grok", deepseek => "deepseek", xiaomi => "xiaomi",
+    modelbest => "modelbest", openrouter => "openrouter", opencode_go => "opencode-go",
+    nvidia => "nvidia", aliyun_dashscope_cn => "aliyun-dashscope-cn",
+    aliyun_tokenplan_cn => "aliyun-tokenplan-cn", zhipu => "zhipu", google => "google",
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::provider::GenerationOperation;
+    #[test]
+    fn metadata_preserves_trusted_targets_authentication_and_default_pools() {
+        assert_eq!(all().len(), 12);
+        let go = opencode_go();
+        assert_eq!(
+            go.entry(ProviderOperation::Messages).unwrap().auth,
+            AuthScheme::ApiKeyHeader("x-api-key")
+        );
+        assert_eq!(
+            go.entry(ProviderOperation::ChatCompletions).unwrap().auth,
+            AuthScheme::Bearer
+        );
+        assert_eq!(
+            go.entry(ProviderOperation::Responses)
+                .unwrap()
+                .path
+                .as_str(),
+            "/zen/go/v1/responses"
+        );
+        assert!(go.entry(ProviderOperation::Models).is_none());
+        assert_eq!(
+            deepseek()
+                .entry(ProviderOperation::Models)
+                .unwrap()
+                .path
+                .as_str(),
+            "/models"
+        );
+        assert_eq!(openai().credential_pool.unwrap().as_str(), "openai-oauth");
+        let google = google();
+        let collection = google
+            .entry(ProviderOperation::GenerateContent)
+            .unwrap()
+            .path;
+        for (streaming, expected) in [
+            (false, "/v1beta/models/new:generateContent"),
+            (true, "/v1beta/models/new:streamGenerateContent"),
+        ] {
+            assert_eq!(
+                GenerationOperation::GoogleGenerateContent
+                    .resolve_path(collection, "new", streaming)
+                    .unwrap()
+                    .as_str(),
+                expected
+            );
+        }
+        assert!(
+            GenerationOperation::GoogleGenerateContent
+                .resolve_path(collection, "../other", false)
+                .is_err()
+        );
+    }
+    #[test]
+    fn embedded_schema_rejects_duplicate_fields_and_unsafe_or_unknown_declarations() {
+        assert!(parse(br#"{"deepseek":{},"deepseek":{}}"#).is_err());
+        let original: serde_json::Value =
+            serde_json::from_slice(include_bytes!("providers.json")).unwrap();
+        for (pointer, replacement) in [
+            (
+                "/deepseek/base_url",
+                serde_json::json!("https://key@host.invalid"),
+            ),
+            (
+                "/deepseek/endpoints/models/path",
+                serde_json::json!("/models?key=secret"),
+            ),
+            (
+                "/deepseek/auth",
+                serde_json::json!({"kind":"oauth","profile":"other"}),
+            ),
+            (
+                "/deepseek/endpoints/models/auth",
+                serde_json::json!({"kind":"oauth","profile":"openai"}),
+            ),
+        ] {
+            let mut value = original.clone();
+            if let Some(slot) = value.pointer_mut(pointer) {
+                *slot = replacement;
+            } else {
+                value["deepseek"]["endpoints"]["models"]["auth"] = replacement;
+            }
+            assert!(parse(&serde_json::to_vec(&value).unwrap()).is_err());
+        }
+    }
 }

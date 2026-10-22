@@ -111,11 +111,24 @@ fn gateway(origin: &str, profile: Profile, dialect: Dialect) -> Gateway {
     let provider = ProviderDefinition {
         id: ProviderId::new("fixture").unwrap(),
         origin: TrustedOrigin::parse(origin).unwrap(),
-        chat_completions: Some(EndpointPath::new("/upstream").unwrap()),
-        responses: Some(EndpointPath::new("/upstream").unwrap()),
-        messages: None,
-        generate_content: None,
-        interactions: None,
+        endpoints: [
+            (
+                crate::provider::ProviderOperation::ChatCompletions,
+                crate::provider::ProviderEndpoint {
+                    path: EndpointPath::new("/upstream").unwrap(),
+                    auth: None,
+                },
+            ),
+            (
+                crate::provider::ProviderOperation::Responses,
+                crate::provider::ProviderEndpoint {
+                    path: EndpointPath::new("/upstream").unwrap(),
+                    auth: None,
+                },
+            ),
+        ]
+        .into(),
+        credential_pool: None,
         auth: AuthScheme::Bearer,
     };
     let endpoint = Endpoint {
@@ -123,7 +136,11 @@ fn gateway(origin: &str, profile: Profile, dialect: Dialect) -> Gateway {
         provider: provider.id.clone(),
         target: EndpointTarget {
             origin: provider.origin.clone(),
-            path: provider.responses.clone().unwrap(),
+            path: provider
+                .entry(crate::provider::ProviderOperation::Responses)
+                .unwrap()
+                .path
+                .clone(),
         },
         task: TaskKind::Generation,
         protocol: if profile == Profile::Chat {

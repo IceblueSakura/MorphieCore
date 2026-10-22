@@ -57,7 +57,6 @@ pub struct ApiKeyBinding {
     pub canonical_model: &'static str,
     /// Exact model spelling accepted by this Provider, injected during encoding.
     pub upstream: &'static str,
-    pub credential: &'static str,
     pub protocols: &'static [ProtocolProfile],
     pub effort_mappings: &'static [(ProtocolProfile, &'static ReasoningEffortMapping)],
     pub replay_responses: bool,
@@ -76,6 +75,11 @@ use crate::{
     },
 };
 impl ApiKeyBinding {
+    pub fn credential(&self) -> CredentialBindingId {
+        (self.provider)()
+            .credential_pool
+            .expect("catalog credential pool")
+    }
     pub fn public_model(&self) -> PublicModel {
         PublicModel {
             id: ModelId::new(self.model).expect("static id"),
@@ -95,12 +99,20 @@ impl ApiKeyBinding {
         let (family, path, replay) = match protocol {
             ProtocolProfile::OpenAiChat => (
                 crate::protocol::openai::Profile::Chat,
-                provider.chat_completions.clone().expect("declared entry"),
+                provider
+                    .generation_entry(protocol.operation())
+                    .expect("declared entry")
+                    .path
+                    .clone(),
                 self.replay_chat,
             ),
             ProtocolProfile::OpenAiResponses => (
                 crate::protocol::openai::Profile::Responses,
-                provider.responses.clone().expect("declared entry"),
+                provider
+                    .generation_entry(protocol.operation())
+                    .expect("declared entry")
+                    .path
+                    .clone(),
                 self.replay_responses,
             ),
             ProtocolProfile::AnthropicMessages
@@ -161,7 +173,7 @@ impl ApiKeyBinding {
                 credential_kind: CredentialKind::ApiKey,
                 timeout_ms: GENERATION_TIMEOUT_MS,
             },
-            credential: CredentialBindingId::new(self.credential).expect("static binding"),
+            credential: self.credential(),
         })
     }
     pub fn endpoint_id(&self, protocol: ProtocolProfile) -> EndpointId {
@@ -237,7 +249,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "mimo-v2.6-pro-ultraspeed",
         canonical_model: "mimo-v2.6-pro-ultraspeed",
         upstream: "mimo-v2.6-pro-ultraspeed",
-        credential: "xiaomi-api-key",
         protocols: BOTH,
         replay_responses: false,
         replay_chat: false,
@@ -253,7 +264,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "muse-spark-1.3-contributor",
         canonical_model: "muse-spark-1.3-contributor",
         upstream: "muse-spark-1.3-contributor",
-        credential: "opencode-go-api-key",
         protocols: RESPONSES,
         replay_responses: false,
         replay_chat: false,
@@ -268,7 +278,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "mimo-v2.6-pro",
         canonical_model: "mimo-v2.6-pro",
         upstream: "mimo-v2.6-pro",
-        credential: "opencode-go-api-key",
         protocols: CHAT,
         replay_responses: false,
         replay_chat: false,
@@ -283,7 +292,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "mimo-v2.6-flash",
         canonical_model: "mimo-v2.6-flash",
         upstream: "mimo-v2.6-flash",
-        credential: "opencode-go-api-key",
         protocols: CHAT,
         replay_responses: false,
         replay_chat: false,
@@ -298,7 +306,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "qwen3.8-flash",
         canonical_model: "qwen3.8-flash",
         upstream: "qwen3.8-flash",
-        credential: "aliyun-dashscope-cn-api-key",
         protocols: BOTH,
         replay_responses: false,
         replay_chat: false,
@@ -314,7 +321,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "kimi-k3",
         canonical_model: "kimi-k3",
         upstream: "kimi-k3",
-        credential: "aliyun-dashscope-cn-api-key",
         protocols: CHAT,
         replay_responses: false,
         replay_chat: false,
@@ -329,7 +335,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "glm-5.3",
         canonical_model: "glm-5.3",
         upstream: "glm-5.3",
-        credential: "aliyun-dashscope-cn-api-key",
         protocols: CHAT,
         replay_responses: false,
         replay_chat: false,
@@ -346,7 +351,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "glm-5.3-prime",
         canonical_model: "glm-5.3",
         upstream: "glm-5.3-prime",
-        credential: "aliyun-dashscope-cn-api-key",
         protocols: CHAT,
         replay_responses: false,
         replay_chat: false,
@@ -361,7 +365,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "qwen3.8-max",
         canonical_model: "qwen3.8-max",
         upstream: "qwen3.8-max",
-        credential: "aliyun-tokenplan-cn-api-key",
         protocols: BOTH,
         replay_responses: false,
         replay_chat: false,
@@ -376,7 +379,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "glm-5.3",
         canonical_model: "glm-5.3",
         upstream: "glm-5.3",
-        credential: "aliyun-tokenplan-cn-api-key",
         protocols: CHAT,
         replay_responses: false,
         replay_chat: false,
@@ -392,7 +394,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "gpt-audio-mini",
         canonical_model: "gpt-audio-mini",
         upstream: "openai/gpt-audio-mini",
-        credential: "openrouter-api-key",
         protocols: CHAT,
         replay_responses: false,
         replay_chat: false,
@@ -407,7 +408,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "deepseek-flash",
         canonical_model: "deepseek-flash",
         upstream: "deepseek-flash",
-        credential: "deepseek-api-key",
         protocols: BOTH,
         replay_responses: true,
         replay_chat: false,
@@ -422,7 +422,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "mimo-v2.6-pro",
         canonical_model: "mimo-v2.6-pro",
         upstream: "mimo-v2.6-pro",
-        credential: "xiaomi-api-key",
         protocols: BOTH,
         replay_responses: false,
         replay_chat: false,
@@ -440,7 +439,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "mimo-v2.6-flash",
         canonical_model: "mimo-v2.6-flash",
         upstream: "mimo-v2.6-flash",
-        credential: "xiaomi-api-key",
         protocols: BOTH,
         replay_responses: false,
         replay_chat: false,
@@ -457,7 +455,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "gpt-6-luna",
         canonical_model: "gpt-6-luna",
         upstream: "openai/gpt-6-luna",
-        credential: "openrouter-api-key",
         protocols: BOTH,
         replay_responses: true,
         replay_chat: true,
@@ -472,7 +469,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "nemotron-3-super",
         canonical_model: "nemotron-3-super",
         upstream: "nvidia/nemotron-3-super-120b-a12b",
-        credential: "nvidia-api-key",
         protocols: BOTH,
         replay_responses: false,
         replay_chat: false,
@@ -487,7 +483,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "qwen3.8-max",
         canonical_model: "qwen3.8-max",
         upstream: "qwen3.8-max",
-        credential: "aliyun-dashscope-cn-api-key",
         protocols: BOTH,
         replay_responses: false,
         replay_chat: false,
@@ -502,7 +497,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "qwen3.8-flash",
         canonical_model: "qwen3.8-flash",
         upstream: "qwen3.8-flash",
-        credential: "aliyun-tokenplan-cn-api-key",
         protocols: BOTH,
         replay_responses: false,
         replay_chat: false,
@@ -517,7 +511,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "minicpm5-1b",
         canonical_model: "minicpm5-1b",
         upstream: "MiniCPM5-1B",
-        credential: "modelbest-api-key",
         protocols: CHAT,
         replay_responses: false,
         replay_chat: false,
@@ -532,7 +525,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "minicpm5-2b",
         canonical_model: "minicpm5-2b",
         upstream: "MiniCPM5-2B",
-        credential: "modelbest-api-key",
         protocols: CHAT,
         replay_responses: false,
         replay_chat: false,
@@ -547,7 +539,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "MiniCPM-V-4.7-1B",
         canonical_model: "MiniCPM-V-4.7-1B",
         upstream: "MiniCPM-V-4.7-1B",
-        credential: "modelbest-api-key",
         protocols: CHAT,
         replay_responses: false,
         replay_chat: false,
@@ -562,7 +553,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "MiniCPM-V-4.7-35B-A3B",
         canonical_model: "MiniCPM-V-4.7-35B-A3B",
         upstream: "MiniCPM-V-4.7-35B-A3B",
-        credential: "modelbest-api-key",
         protocols: CHAT,
         replay_responses: false,
         replay_chat: false,
@@ -577,7 +567,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "hy4-preview",
         canonical_model: "hy4-preview",
         upstream: "hy4-preview",
-        credential: "opencode-go-api-key",
         protocols: CHAT,
         replay_responses: false,
         replay_chat: false,
@@ -595,7 +584,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "glm-5.3",
         canonical_model: "glm-5.3",
         upstream: "glm-5.3",
-        credential: "zhipu-api-key",
         protocols: BOTH,
         replay_responses: false,
         replay_chat: false,
@@ -611,7 +599,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "claude-haiku-5-5",
         canonical_model: "claude-haiku-5-5",
         upstream: "anthropic/claude-haiku-5.5",
-        credential: "openrouter-api-key",
         protocols: CHAT,
         replay_responses: false,
         replay_chat: true,
@@ -629,7 +616,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "glm-5.3-flash",
         canonical_model: "glm-5.3-flash",
         upstream: "glm-5.3-flash",
-        credential: "zhipu-api-key",
         protocols: BOTH,
         replay_responses: false,
         replay_chat: false,
@@ -646,7 +632,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "glm-5.3-flash",
         canonical_model: "glm-5.3-flash",
         upstream: "z-ai/glm-5.3-flash",
-        credential: "openrouter-api-key",
         protocols: BOTH,
         replay_responses: false,
         replay_chat: false,

@@ -122,6 +122,13 @@ impl CredentialManager {
         }
         Ok(pools)
     }
+    /// Read one explicitly named pool without inspecting unrelated credential domains.
+    pub fn pool(&self, provider: &str, binding: &str) -> Result<Option<PoolStatus>, Error> {
+        super::model::valid_profile(provider)?;
+        valid_alias(binding)?;
+        let tx = self.store.transaction()?;
+        Ok(tx.provider(provider)?.pools.remove(binding))
+    }
     pub fn bind_pool(&self, provider: &str, config: &CredentialPool) -> Result<PoolAccess, Error> {
         config.validate()?;
         let mut members = Vec::new();

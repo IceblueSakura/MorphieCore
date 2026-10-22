@@ -873,7 +873,13 @@ mod tests {
         responses.protocol = crate::topology::ProtocolProfile::OpenAiResponses;
         responses.representation = crate::protocol::openai::TargetCaps::full().into();
         let mut provider = (binding.provider)();
-        provider.responses = Some(responses.target.path.clone());
+        provider.endpoints.insert(
+            crate::provider::ProviderOperation::Responses,
+            crate::provider::ProviderEndpoint {
+                path: responses.target.path.clone(),
+                auth: None,
+            },
+        );
         let (_, rules, losses) = crate::execution::attempt::prepare_with_evidence(
             &responses,
             &provider,

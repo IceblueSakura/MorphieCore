@@ -89,11 +89,15 @@ async fn same_provider_fallback_is_ordered_bounded_and_never_crosses_publication
         let provider = ProviderDefinition {
             id: ProviderId::new("fixture").unwrap(),
             origin: TrustedOrigin::parse(&origin).unwrap(),
-            responses: Some(EndpointPath::new("/responses").unwrap()),
-            chat_completions: None,
-            messages: None,
-            generate_content: None,
-            interactions: None,
+            endpoints: [(
+                crate::provider::ProviderOperation::Responses,
+                crate::provider::ProviderEndpoint {
+                    path: EndpointPath::new("/responses").unwrap(),
+                    auth: None,
+                },
+            )]
+            .into(),
+            credential_pool: None,
             auth: AuthScheme::Bearer,
         };
         let endpoint = Endpoint {
@@ -101,7 +105,11 @@ async fn same_provider_fallback_is_ordered_bounded_and_never_crosses_publication
             provider: provider.id.clone(),
             target: EndpointTarget {
                 origin: provider.origin.clone(),
-                path: provider.responses.clone().unwrap(),
+                path: provider
+                    .entry(crate::provider::ProviderOperation::Responses)
+                    .unwrap()
+                    .path
+                    .clone(),
             },
             task: TaskKind::Generation,
             protocol: ProtocolProfile::OpenAiResponses,

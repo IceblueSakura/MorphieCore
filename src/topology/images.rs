@@ -64,6 +64,12 @@ impl CompiledTopology {
                 .ok_or(TopologyError::UnknownProvider)?;
             if endpoint.target.origin != provider.origin
                 || paths.get(&endpoint.provider) != Some(&endpoint.target.path)
+                || provider
+                    .entry(crate::provider::ProviderOperation::Images)
+                    .is_some_and(|entry| {
+                        entry.path != &endpoint.target.path
+                            || entry.auth.kind() != CredentialKind::ApiKey
+                    })
                 || provider.auth.kind() != CredentialKind::ApiKey
                 || endpoint.execution.credential_kind != CredentialKind::ApiKey
             {

@@ -2,7 +2,7 @@
 use crate::{
     adapter::speech::Profile,
     lowering::speech::SpeechCapabilities,
-    provider::{CredentialBindingId, CredentialKind, EndpointPath, catalog},
+    provider::{CredentialBindingId, CredentialKind, ProviderOperation, catalog},
     semantic::value::AudioEncoding,
     topology::{
         EndpointId, EndpointTarget, ExecutionContract, ModelId, ModelMetadata, RouteId,
@@ -11,12 +11,10 @@ use crate::{
 };
 pub struct SpeechBinding {
     pub provider: fn() -> crate::provider::ProviderDefinition,
-    pub path: &'static str,
     pub identity: &'static str,
     pub profile: Profile,
     pub model: &'static str,
     pub upstream: &'static str,
-    pub credential: &'static str,
     pub voices: &'static [&'static str],
     pub released_at: u64,
     pub developer: &'static str,
@@ -27,12 +25,10 @@ pub struct SpeechBinding {
 pub const SPEECH_BINDINGS: &[SpeechBinding] = &[
     SpeechBinding {
         provider: catalog::xiaomi,
-        path: "/v1/chat/completions",
         identity: "xiaomi-speech",
         profile: Profile::Xiaomi,
         model: "mimo-v2.5-tts",
         upstream: "mimo-v2.5-tts",
-        credential: "xiaomi-api-key",
         voices: crate::protocol::xiaomi_audio::VOICES,
         // https://mimo.mi.com/docs/updates/model (2026-04-23).
         released_at: 1_776_902_400,
@@ -40,12 +36,10 @@ pub const SPEECH_BINDINGS: &[SpeechBinding] = &[
     },
     SpeechBinding {
         provider: catalog::openrouter,
-        path: "/api/v1/audio/speech",
         identity: "openrouter-qwen-speech",
         profile: Profile::OpenRouterMp3,
         model: "qwen-audio-3.0-tts-flash",
         upstream: "qwen/qwen-audio-3.0-tts-flash",
-        credential: "openrouter-api-key",
         voices: &["loongjohn", "longanhuan_v3.6"],
         // Developer release announcement (2026-07-21), UTC midnight, not router listing time.
         // https://www.alibabacloud.com/blog/qwen-audio-3-0-tts-more-multilingual-easier-to-direct_603379
@@ -54,12 +48,10 @@ pub const SPEECH_BINDINGS: &[SpeechBinding] = &[
     },
     SpeechBinding {
         provider: catalog::aliyun_tokenplan_cn,
-        path: "/api/v1/services/audio/tts/SpeechSynthesizer",
         identity: "tokenplan-qwen-speech",
         profile: Profile::AliyunMp3,
         model: "qwen-audio-3.0-tts-plus",
         upstream: "qwen-audio-3.0-tts-plus",
-        credential: "aliyun-tokenplan-cn-api-key",
         // https://help.aliyun.com/en/model-studio/qwen-audio-tts-voice-list
         voices: &["longanlingxin", "longanlufeng"],
         // Developer announcement, shared family release; not plan registration time.
@@ -69,6 +61,11 @@ pub const SPEECH_BINDINGS: &[SpeechBinding] = &[
     },
 ];
 impl SpeechBinding {
+    pub fn credential(&self) -> CredentialBindingId {
+        self.provider()
+            .credential_pool
+            .expect("catalog credential pool")
+    }
     pub fn metadata(&self) -> ModelMetadata {
         ModelMetadata::new(self.released_at, self.developer).expect("static publication")
     }
@@ -76,9 +73,15 @@ impl SpeechBinding {
         (self.provider)()
     }
     pub fn operation(&self) -> ProviderEntry {
+        let provider = self.provider();
+        let path = provider
+            .entry(ProviderOperation::Speech)
+            .expect("speech entry")
+            .path
+            .clone();
         ProviderEntry {
-            provider: self.provider().id,
-            path: EndpointPath::new(self.path).expect("static Speech path"),
+            provider: provider.id,
+            path,
         }
     }
     pub fn route(&self) -> SpeechRoute {
@@ -108,7 +111,7 @@ impl SpeechBinding {
                     instructions: self.profile == Profile::Xiaomi,
                     speed: false,
                 },
-                credential: CredentialBindingId::new(self.credential).expect("static binding"),
+                credential: self.credential(),
                 execution: ExecutionContract {
                     streaming: self.profile.upstream_sse(),
                     retry_before_commit: false,

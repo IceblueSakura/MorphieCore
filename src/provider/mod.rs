@@ -13,8 +13,8 @@ pub(crate) mod subscription;
 
 pub use auth::{AuthScheme, CredentialBindingId, CredentialKind, SecretMaterial};
 pub use definition::{
-    EndpointPath, GenerationEntry, GenerationOperation, ProviderDefinition, ProviderId,
-    TrustedOrigin,
+    EndpointPath, GenerationOperation, OperationEntry, ProviderDefinition, ProviderEndpoint,
+    ProviderId, ProviderOperation, TrustedOrigin,
 };
 pub use errors::{
     ErrorClass, FailureKind, ProviderError, StatusClass, classify_failure, classify_status,

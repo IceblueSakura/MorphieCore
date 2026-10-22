@@ -40,7 +40,10 @@ pub fn prepare(
         method: "POST",
         path: route.endpoint.target.path.as_str().into(),
         safe_headers: headers,
-        auth_header: provider.auth.auth_header(secret),
+        auth_header: provider
+            .entry(crate::provider::ProviderOperation::Speech)
+            .map_or(provider.auth, |entry| entry.auth)
+            .auth_header(secret),
         body: serde_json::to_vec(&value)
             .map_err(|_| AttemptError::Protocol("speech serialization"))?,
     })

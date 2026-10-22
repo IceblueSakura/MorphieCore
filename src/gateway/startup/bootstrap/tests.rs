@@ -874,7 +874,7 @@ fn configured_failover_orders_and_limits_a_models_providers() {
     manager
         .set_pool(
             provider.id.as_str(),
-            google.credential,
+            google.credential().as_str(),
             0,
             crate::credential::CredentialPool {
                 members: vec![crate::credential::CredentialRef::ApiKey {

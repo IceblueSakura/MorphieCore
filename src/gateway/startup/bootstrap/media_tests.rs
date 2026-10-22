@@ -20,7 +20,7 @@ fn embeddings_need_explicit_selection_and_a_single_nonfallback_key() {
         let mut status = manager
             .set_pool(
                 provider.id.as_str(),
-                binding.credential,
+                binding.credential().as_str(),
                 0,
                 CredentialPool {
                     members: vec![CredentialRef::ApiKey {
@@ -43,7 +43,9 @@ fn embeddings_need_explicit_selection_and_a_single_nonfallback_key() {
         assert!(boot.gateway.state.models.models.contains_key(binding.model));
         let text = catalog::API_KEY_BINDINGS
             .iter()
-            .find(|b| b.credential == binding.credential && !b.public_model().contract.audio_input)
+            .find(|b| {
+                b.credential() == binding.credential() && !b.public_model().contract.audio_input
+            })
             .unwrap();
         write_configuration(
             dir.path(),
@@ -69,7 +71,7 @@ fn embeddings_need_explicit_selection_and_a_single_nonfallback_key() {
             status = manager
                 .set_pool(
                     provider.id.as_str(),
-                    binding.credential,
+                    binding.credential().as_str(),
                     status.revision,
                     CredentialPool {
                         members: aliases
@@ -111,7 +113,7 @@ fn tokenplan_audio_requires_explicit_selection_and_nonfallback_single_source() {
         let manager = CredentialManager::new(directory.path().join("credentials"), vec![]).unwrap();
         let text = catalog::API_KEY_BINDINGS
             .iter()
-            .find(|b| b.credential == "aliyun-tokenplan-cn-api-key")
+            .find(|b| b.credential().as_str() == "aliyun-tokenplan-cn-api-key")
             .unwrap();
         write_configuration(
             directory.path(),
@@ -189,7 +191,7 @@ fn openrouter_speech_requires_explicit_selection_and_single_nonfallback_pool() {
         let manager = CredentialManager::new(dir.path().join("credentials"), vec![]).unwrap();
         let text = catalog::API_KEY_BINDINGS
             .iter()
-            .find(|b| b.credential == "openrouter-api-key")
+            .find(|b| b.credential().as_str() == "openrouter-api-key")
             .unwrap();
         write_configuration(
             dir.path(),

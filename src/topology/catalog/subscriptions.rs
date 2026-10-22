@@ -56,8 +56,9 @@ impl SubscriptionBinding {
         contract
     }
     pub fn credential(&self) -> CredentialBindingId {
-        CredentialBindingId::new(&format!("{}-oauth", (self.provider)().id.as_str()))
-            .expect("static binding")
+        (self.provider)()
+            .credential_pool
+            .expect("catalog credential pool")
     }
     pub fn endpoint_id(&self) -> EndpointId {
         EndpointId::new(&format!("{}-responses", self.identity)).expect("static id")
@@ -95,13 +96,18 @@ impl SubscriptionBinding {
             standard_context: false,
             ..TargetCaps::full()
         };
+        let path = provider
+            .generation_entry(crate::provider::GenerationOperation::Responses)
+            .expect("declared path")
+            .path
+            .clone();
         Endpoint {
             id: self.endpoint_id(),
             canonical_model: ModelId::new(self.model).unwrap(),
             provider: provider.id,
             target: EndpointTarget {
                 origin: provider.origin,
-                path: provider.responses.unwrap(),
+                path,
             },
             task: TaskKind::Generation,
             protocol: ProtocolProfile::OpenAiResponses,

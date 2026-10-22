@@ -30,7 +30,10 @@ pub fn prepare(
             ("content-type".into(), "application/json".into()),
             ("accept".into(), "application/json".into()),
         ],
-        auth_header: provider.auth.auth_header(secret),
+        auth_header: provider
+            .entry(crate::provider::ProviderOperation::Images)
+            .map_or(provider.auth, |entry| entry.auth)
+            .auth_header(secret),
         body: serde_json::to_vec(&value)
             .map_err(|_| AttemptError::Protocol("image serialization"))?,
     })

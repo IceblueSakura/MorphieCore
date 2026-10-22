@@ -15,221 +15,168 @@ fn command(args: &[&str]) -> Command {
         .command
 }
 #[test]
-fn target_selection_is_explicit_and_oauth_cannot_be_redirected() {
-    let chat = command(&[
+fn shared_metadata_selects_targets_without_cli_endpoint_overrides() {
+    let plan = command(&["models", "deepseek"]).plan().unwrap();
+    assert_eq!(plan.provider.origin.as_str(), "https://api.deepseek.com");
+    assert_eq!(plan.path.as_str(), "/models");
+    assert!(plan.body.is_none());
+    let plan = command(&[
         "probe",
-        "--provider",
         "deepseek",
-        "--api-key",
-        "one",
         "--protocol",
         "openai-chat",
         "--model",
         "not-in-catalog",
-    ]);
-    let plan = chat.plan().unwrap();
-    assert_eq!(plan.origin.as_str(), "https://api.deepseek.com");
-    assert_eq!(plan.path, "/chat/completions");
+    ])
+    .plan()
+    .unwrap();
+    assert_eq!(plan.path.as_str(), "/chat/completions");
     assert_eq!(
         plan.body.unwrap(),
         json!({"model":"not-in-catalog","messages":[{"role":"user","content":"Reply with the single word OK."}],"stream":false})
     );
-    let oauth = command(&[
+    let plan = command(&[
         "probe",
-        "--provider",
         "openai",
-        "--account",
-        "one",
         "--protocol",
         "openai-responses",
         "--model",
         "new-model",
-    ]);
-    let plan = oauth.plan().unwrap();
+    ])
+    .plan()
+    .unwrap();
     assert_eq!(plan.oauth, Some("openai"));
     assert_eq!(
         plan.body.unwrap(),
         json!({"model":"new-model","input":[{"role":"user","content":"Reply with the single word OK."}],"stream":true,"store":false})
     );
-    for suffix in [
+    for args in [
+        vec!["models", "unknown"],
+        vec!["models", "aliyun-tokenplan-cn"],
         vec![
-            "--origin",
-            "https://other.invalid",
-            "--path",
-            "/v1/responses",
-        ],
-        vec!["--path", "/other"],
-        vec!["--auth", "bearer"],
-    ] {
-        let mut args = vec![
             "probe",
-            "--provider",
-            "openai",
-            "--account",
-            "one",
+            "google",
             "--protocol",
             "openai-responses",
             "--model",
             "x",
-        ];
-        args.extend(suffix);
-        assert!(matches!(command(&args).plan(), Err(Error::OAuthTarget)));
-    }
-    for provider in ["unknown", "google"] {
-        assert!(
-            command(&[
-                "probe",
-                "--provider",
-                provider,
-                "--account",
-                "one",
-                "--protocol",
-                "openai-responses",
-                "--model",
-                "x"
-            ])
-            .plan()
-            .is_err()
-        );
-    }
-    assert!(
-        command(&[
-            "models",
-            "--provider",
-            "aliyun-tokenplan-cn",
-            "--api-key",
-            "one",
-            "--protocol",
-            "openai-chat"
-        ])
-        .plan()
-        .is_err()
-    );
-    for origin in [
-        "https://user:key@host.invalid",
-        "http://host.invalid",
-        "https://host.invalid?token=x",
+        ],
+        vec!["models", "openai", "--api-key", "one"],
+        vec!["models", "deepseek", "--account", "one"],
     ] {
-        assert!(
-            command(&[
-                "models",
-                "--provider",
-                "custom",
-                "--api-key",
-                "one",
-                "--protocol",
-                "openai-chat",
-                "--origin",
-                origin,
-                "--path",
-                "/models"
-            ])
-            .plan()
-            .is_err()
-        );
+        assert!(command(&args).plan().is_err());
+    }
+    for args in [
+        vec!["models", "deepseek", "--protocol", "openai-chat"],
+        vec!["models", "deepseek", "--origin", "https://other.invalid"],
+        vec!["models", "deepseek", "--path", "/other"],
+        vec!["models", "deepseek", "--auth", "bearer"],
+        vec!["models", "deepseek", "--api-key", "one", "--account", "two"],
+    ] {
+        assert!(Options::try_parse_from(std::iter::once("upstream").chain(args)).is_err());
     }
 }
 #[test]
-fn native_requests_paths_and_headers_are_not_inferred_from_model_names() {
-    for (protocol, path, auth, body) in [
+fn native_probe_paths_and_headers_follow_the_shared_entries() {
+    for (provider, protocol, path, auth, body) in [
         (
+            "opencode-go",
             "anthropic",
-            "/v1/messages",
+            "/zen/go/v1/messages",
             AuthScheme::ApiKeyHeader("x-api-key"),
             json!({"model":"new","messages":[{"role":"user","content":"Reply with the single word OK."}],"max_tokens":1024,"stream":false}),
         ),
         (
+            "google",
             "google",
             "/v1beta/models/new:generateContent",
             AuthScheme::ApiKeyHeader("x-goog-api-key"),
             json!({"contents":[{"role":"user","parts":[{"text":"Reply with the single word OK."}]}]}),
         ),
     ] {
-        let base = if protocol == "google" {
-            "/v1beta/models"
-        } else {
-            "/v1/messages"
-        };
-        let request = command(&[
-            "probe",
-            "--provider",
-            "custom",
-            "--api-key",
-            "one",
-            "--protocol",
-            protocol,
-            "--origin",
-            "https://example.invalid",
-            "--path",
-            base,
-            "--model",
-            "new",
-        ]);
-        let plan = request.plan().unwrap();
-        assert_eq!(plan.path, path);
+        let plan = command(&["probe", provider, "--protocol", protocol, "--model", "new"])
+            .plan()
+            .unwrap();
+        assert_eq!(plan.path.as_str(), path);
         assert_eq!(plan.auth, auth);
         assert_eq!(plan.body, Some(body));
     }
-    let plan = command(&[
-        "models",
-        "--provider",
-        "google",
-        "--api-key",
-        "one",
-        "--protocol",
-        "google",
-    ])
-    .plan()
-    .unwrap();
-    assert_eq!(plan.path, "/v1beta/models");
-    assert!(plan.body.is_none());
     for model in ["../other", "x?key=y", "x/other", "models/"] {
         assert!(
-            command(&[
-                "probe",
-                "--provider",
-                "google",
-                "--api-key",
-                "one",
-                "--protocol",
-                "google",
-                "--model",
-                model
-            ])
-            .plan()
-            .is_err()
+            command(&["probe", "google", "--protocol", "google", "--model", model])
+                .plan()
+                .is_err()
         );
     }
-    let go = command(&[
-        "probe",
-        "--provider",
-        "opencode-go",
-        "--api-key",
-        "one",
-        "--protocol",
-        "anthropic",
-        "--model",
-        "new",
-    ])
-    .plan()
-    .unwrap();
-    assert_eq!(go.auth, AuthScheme::ApiKeyHeader("x-api-key"));
-    assert_eq!(go.path, "/zen/go/v1/messages");
-    for args in [
-        vec![
-            "probe",
-            "--provider",
-            "custom",
-            "--api-key",
-            "secret",
-            "--account",
+}
+#[tokio::test]
+async fn default_pool_uses_only_its_first_member_and_explicit_alias_bypasses_it() {
+    let directory = filesystem::private_directory();
+    let manager = CredentialManager::new(directory.path(), vec![]).unwrap();
+    let first = manager
+        .add_api_key(
+            "deepseek",
             "one",
-        ],
-        vec!["models", "--provider", "custom", "--protocol", "google"],
-        vec!["models", "--provider", "custom", "--key", "never-print"],
-    ] {
-        assert!(Options::try_parse_from(std::iter::once("upstream").chain(args)).is_err());
-    }
+            Secret::new("synthetic-first".into()).unwrap(),
+        )
+        .unwrap();
+    manager
+        .add_api_key(
+            "deepseek",
+            "two",
+            Secret::new("synthetic-second".into()).unwrap(),
+        )
+        .unwrap();
+    let selected = command(&["models", "deepseek"]);
+    let plan = selected.plan().unwrap();
+    assert!(matches!(
+        selected_credential(&manager, selected.target(), &plan),
+        Err(Error::Pool)
+    ));
+    manager
+        .set_pool(
+            "deepseek",
+            "deepseek-api-key",
+            0,
+            morphiecore::credential::CredentialPool {
+                members: vec![
+                    CredentialRef::ApiKey {
+                        alias: "one".into(),
+                    },
+                    CredentialRef::ApiKey {
+                        alias: "two".into(),
+                    },
+                ],
+                fallback: true,
+                max_attempts: 2,
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        credential(&manager, selected.target(), &plan)
+            .await
+            .unwrap()
+            .0
+            .expose(),
+        "synthetic-first"
+    );
+    manager
+        .set_api_key_enabled("deepseek", "one", first.revision, false)
+        .unwrap();
+    assert!(
+        credential(&manager, selected.target(), &plan)
+            .await
+            .is_err()
+    );
+    let explicit = command(&["models", "deepseek", "--api-key", "two"]);
+    assert_eq!(
+        credential(&manager, explicit.target(), &explicit.plan().unwrap())
+            .await
+            .unwrap()
+            .0
+            .expose(),
+        "synthetic-second"
+    );
 }
 #[test]
 fn model_json_preserves_metadata_without_interpreting_pagination() {
@@ -382,18 +329,36 @@ async fn expired_oauth_refreshes_once_through_manager_and_persists_without_rebin
             .login("grok", "one", LoginOptions::default(), |_| {})
             .await
             .unwrap();
+        let pool = morphiecore::credential::CredentialPool {
+            members: vec![CredentialRef::OAuth {
+                profile: "grok".into(),
+                alias: "one".into(),
+            }],
+            fallback: false,
+            max_attempts: 1,
+        };
+        manager
+            .set_pool("grok", "grok-oauth", 0, pool.clone())
+            .unwrap();
+        manager
+            .set_pool("deepseek", "deepseek-api-key", 0, pool)
+            .unwrap();
+        let wrong = command(&["models", "deepseek"]);
+        assert!(matches!(
+            credential(&manager, wrong.target(), &wrong.plan().unwrap()).await,
+            Err(Error::CredentialMismatch)
+        ));
+        assert_eq!(refreshes.load(Ordering::SeqCst), 0);
         let command = command(&[
             "probe",
-            "--provider",
             "grok",
-            "--account",
-            "one",
             "--protocol",
             "openai-responses",
             "--model",
             "new",
         ]);
-        let result = credential(&manager, command.target(), Some("grok")).await;
+        let plan = command.plan().unwrap();
+        let result = credential(&manager, command.target(), &plan).await;
         assert_eq!(refreshes.load(Ordering::SeqCst), usize::from(expired));
         if fail {
             assert!(matches!(
@@ -418,9 +383,7 @@ async fn expired_oauth_refreshes_once_through_manager_and_persists_without_rebin
                     "synthetic-old-access"
                 }
             );
-            let (_, again) = credential(&manager, command.target(), Some("grok"))
-                .await
-                .unwrap();
+            let (_, again) = credential(&manager, command.target(), &plan).await.unwrap();
             assert!(!again);
             assert_eq!(refreshes.load(Ordering::SeqCst), usize::from(expired));
         }

@@ -57,6 +57,6 @@ cargo run --locked --offline --bin morphiecore-upstream -- --help
 
 ## Source navigation
 
-[Architecture's layer map](docs/architecture.md#layers-and-data-flow) owns module responsibilities. Current Providers and model bindings come from [the Provider catalog](src/provider/catalog.rs), [topology catalog](src/topology/catalog.rs) and [startup](src/gateway/startup/bootstrap.rs), not a duplicated model list in documentation. [Development](docs/development.md#test-layout) maps the test suites.
+[Architecture's layer map](docs/architecture.md#layers-and-data-flow) owns module responsibilities. Current Providers and model bindings come from [shared Provider metadata](src/provider/providers.json), [its loader](src/provider/catalog.rs), [topology catalog](src/topology/catalog.rs) and [startup](src/gateway/startup/bootstrap.rs), not a duplicated model list in documentation. [Development](docs/development.md#test-layout) maps the test suites.
 
 Original code and docs use the [MIT License](LICENSE). External material keeps its source and license.

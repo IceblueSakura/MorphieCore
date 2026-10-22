@@ -30,11 +30,24 @@ mod native_bindings {
         ProviderDefinition {
             id: ProviderId::new("synthetic").unwrap(),
             origin: TrustedOrigin::parse("https://synthetic.invalid").unwrap(),
-            chat_completions: Some(EndpointPath::new("/chat/completions").unwrap()),
-            responses: None,
-            messages: Some(EndpointPath::new("/messages").unwrap()),
-            generate_content: None,
-            interactions: None,
+            endpoints: [
+                (
+                    morphiecore::provider::ProviderOperation::ChatCompletions,
+                    morphiecore::provider::ProviderEndpoint {
+                        path: EndpointPath::new("/chat/completions").unwrap(),
+                        auth: None,
+                    },
+                ),
+                (
+                    morphiecore::provider::ProviderOperation::Messages,
+                    morphiecore::provider::ProviderEndpoint {
+                        path: EndpointPath::new("/messages").unwrap(),
+                        auth: Some(AuthScheme::ApiKeyHeader("x-api-key")),
+                    },
+                ),
+            ]
+            .into(),
+            credential_pool: None,
             auth: AuthScheme::Bearer,
         }
     }
@@ -197,7 +210,9 @@ mod native_bindings {
             );
         }
         let mut missing_path = p.clone();
-        missing_path.messages = None;
+        missing_path
+            .endpoints
+            .remove(&morphiecore::provider::ProviderOperation::Messages);
         assert_eq!(
             compile_endpoints(missing_path, vec![native.clone()]).unwrap_err(),
             TopologyError::TargetMismatch

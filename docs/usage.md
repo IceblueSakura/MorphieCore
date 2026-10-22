@@ -119,76 +119,69 @@ Callbacks listen on `127.0.0.1`. Login checks issuer, client and subject. Gatewa
 
 ## Manual upstream diagnostics
 
-`morphiecore-upstream` is an operator CLI for maintaining model integrations, not a gateway endpoint or an acceptance suite. It does not read `models.json`, select a pool, register models, change routes or infer capabilities. Each invocation makes **one upstream operation request**, without retries, failover or redirects. OAuth preparation may make separate authority requests through the existing credential manager.
+`morphiecore-upstream` uses the same [embedded Provider metadata](architecture.md#shared-provider-metadata) as the gateway. It does not read `models.json`, register models or change routes. Each invocation makes **one upstream operation request**, without retries, failover or redirects. OAuth preparation may make separate authority requests through the existing credential manager.
 
-Build with `cargo build --locked --offline --bin morphiecore-upstream`, then use `target/debug/morphiecore-upstream` (or an installed binary) in these examples. `--api-key main` and `--account personal` name local records, never secret values. Select an alternate store with `--store`.
+Build with `cargo build --locked --offline --bin morphiecore-upstream`, then use `target/debug/morphiecore-upstream` (or an installed binary) in these examples. Provider names are positional; the old `--provider`, `--origin`, `--path` and `--auth` options are removed.
 
 ### List upstream models
 
 ```sh
-morphiecore-upstream models \
-  --provider deepseek --api-key main --protocol openai-chat
-
-morphiecore-upstream models \
-  --provider google --api-key main --protocol google
-
-morphiecore-upstream models \
-  --provider openai --account personal --protocol openai-responses
+morphiecore-upstream models deepseek
+morphiecore-upstream models google
+morphiecore-upstream models openai
 ```
 
-The command prints the complete upstream JSON response, preserving all fields rather than extracting IDs or wrapping it in a diagnostic report. It makes one request and does not interpret or follow pagination; any upstream pagination fields remain in the output. There is no `--cursor` option. The response is complete for that request, not necessarily the Provider's entire catalog. No inference is triggered by enumeration. A listed model does not establish account entitlement or working inference; an unlisted model may still be callable.
+No protocol argument is required or accepted. The Provider's `models` endpoint supplies its path and authentication. The command prints the complete upstream JSON response, preserving all fields rather than extracting IDs or wrapping it in a report. Pagination fields remain untouched; no further page is fetched. There is no `--cursor` option. A complete response does not necessarily contain the entire Provider catalog or prove model entitlement.
 
-Built-in list paths are `/v1/models` for OpenAI and xAI, `/models` for DeepSeek, `/api/v1/models` for OpenRouter and `/v1beta/models` for Google, under their catalog origins. xAI's list API is documented for API keys; OAuth entitlement remains unverified and may reject. Other Providers need an explicit `--path`; OpenAI-compatible inference does not prove a list operation exists.
+If the Provider has no declared `models` endpoint, the command fails before credential access; it never guesses a path. Confirm the endpoint and update the repository metadata before rebuilding. xAI's list API is documented for API keys; OAuth entitlement remains unverified and may reject.
 
 ### Probe an exact upstream model
 
 ```sh
-morphiecore-upstream probe \
-  --provider deepseek --api-key main --protocol openai-chat \
-  --model deepseek-flash
+morphiecore-upstream probe deepseek \
+  --model deepseek-flash --protocol openai-chat
 
-morphiecore-upstream probe \
-  --provider opencode-go --api-key main --protocol anthropic \
-  --model claude-haiku-5-5
+morphiecore-upstream probe opencode-go \
+  --model claude-haiku-5-5 --protocol anthropic
 
-morphiecore-upstream probe \
-  --provider google --api-key main --protocol google \
-  --model gemini-3.8-flash
+morphiecore-upstream probe google \
+  --model gemini-3.8-flash --protocol google
 
-morphiecore-upstream probe \
-  --provider openai --account personal --protocol openai-responses \
-  --model gpt-6-astra
+morphiecore-upstream probe openai \
+  --model gpt-6-astra --protocol openai-responses
 ```
 
-The four protocol choices are `openai-chat`, `openai-responses`, `anthropic` and `google` (generateContent). Model names need not appear in the local catalog or a previous list. The fixed prompt is `Reply with the single word OK.`; no user payload, tools or history are accepted.
+The protocol choices are `openai-chat`, `openai-responses`, `anthropic` and `google` (generateContent). The operation must be declared by the Provider, but the model name is an ordinary upstream string: it need not appear in the local catalog or a previous model list. The fixed prompt is `Reply with the single word OK.`; no user payload, tools or history are accepted.
 
-The probe leaves optional generation controls, including token limits, to the upstream defaults. There is no token-limit CLI option or reporting policy. Anthropic Messages alone requires `max_tokens`, so its minimal request retains a fixed `1024`. A target requiring other controls can reject; the CLI never silently changes the request or retries. Local deadlines and byte bounds do not guarantee bounded remote computation or billing.
+Optional token limits are omitted. Anthropic Messages alone requires `max_tokens`, so its request uses a fixed `1024`. SIWC requires `store:false` and `stream:true`; other probes use static JSON. SIWC consumes SSE through strict EOF, including closed event-owned output when its final summary is empty. Local deadlines and byte bounds do not guarantee bounded remote computation or billing.
 
-SIWC requires `store:false` and `stream:true`. Other probes use static JSON; SIWC consumes SSE through strict EOF and requires a completed response with text, including closed event-owned output when the final summary is empty.
+Success requires nonempty text plus an ordinary completion (`stop`, `completed`, `end_turn` or `STOP`), not merely HTTP 200 or an exact `OK` answer. Truncation, failed/incomplete terminals and malformed responses fail. Reports contain status, elapsed time, byte counts and whether OAuth refreshed, not generated text, raw errors, credentials or private identities. This is a basic service observation, not gateway compatibility or capability certification.
 
-Success means nonempty text plus an ordinary completion (`stop`, `completed`, `end_turn` or `STOP`), not merely HTTP 200 or an exact `OK` answer. Truncation, refusal without text, failed/incomplete terminals and malformed responses fail. Reports include status, elapsed time, response bytes, text byte count and whether OAuth refreshed; they do not print generated text, raw upstream errors, headers, credentials, account identities or private target URLs. This is a basic service observation, not gateway compatibility, streaming-latency, tool-loop or capability certification.
+### Credential selection and optional controls
 
-### Explicit targets and credential preparation
+Without an explicit alias, the tool loads the Provider's `credential_pool` from the project credential manager and selects **the first configured member only**. It ignores the pool's runtime fallback policy: a disabled, missing or unusable first member fails rather than selecting another. Missing pools must be created with `morphiecore-auth pool set`; the tool does not create pools, scan keys or choose an account by availability.
 
-For a new API-key Provider, first add its key under a dedicated credential domain using `morphiecore-auth api-key add`. Then explicitly select the destination without adding a gateway binding:
+For example, `deepseek` defaults to `deepseek-api-key` and `openai` to `openai-oauth`. All default names are maintained in `providers.json`, not a second CLI table. The gateway uses these same binding defaults but retains its own routing/fallback policy.
+
+| Option | Meaning |
+|---|---|
+| `--api-key ALIAS` | Bypass the default pool with one API-key alias in this Provider's domain; never a key value |
+| `--account ALIAS` | Bypass the default pool with one OAuth account in the Provider's declared profile |
+| `--store PATH` | Select another project credential store |
+| `--proxy URL` | Explicit proxy for upstream HTTP and OAuth operations |
+| `--timeout-seconds N` | Whole refresh/request deadline, default 60, range 1–300 |
+
+The two credential overrides are mutually exclusive and must match the endpoint's credential kind/profile. They cannot change the destination or authentication scheme. To inspect a different API-key member without changing the pool:
 
 ```sh
-morphiecore-upstream models \
-  --provider new-service --api-key main --protocol anthropic \
-  --origin https://api.example.com --path /v1/models
-
-morphiecore-upstream probe \
-  --provider new-service --api-key main --protocol anthropic \
-  --origin https://api.example.com --path /v1/messages --model upstream-model
+morphiecore-upstream models deepseek --api-key secondary
 ```
 
-`--origin` is a trusted operator decision to send that domain's key to the destination. It requires `--path`; URLs with userinfo, query, fragment or path are rejected. HTTPS is required except for literal loopback HTTP. The operation path has no query or fragment. For Google probes, supply a collection path such as `/v1beta/models`; the validated model and `:generateContent` suffix are appended.
+OAuth pins the selected identity, refreshes locally expired access once or completes a pending renewal, and persists through the existing manager. There is no login, permission escalation, refresh after HTTP 401, account replacement or inference replay. Failed/interrupted refresh may require recovery with `morphiecore-auth`. Gateway inference still never refreshes credentials.
 
-Registered probe targets reuse the catalog's operation path and authentication. Custom paths use the selected protocol's default authentication where no operation is declared. API-key dialects may explicitly select `--auth bearer`, `--auth x-api-key` or `--auth x-goog-api-key`; raw headers are not accepted. Anthropic requests also send `anthropic-version: 2023-06-01`. Catalog defaults may themselves need maintenance; a diagnostic failure never silently migrates a Provider.
+To add a Provider for manual diagnostics, edit `src/provider/providers.json` with its trusted origin, auth, default pool and confirmed endpoints, then rebuild. Provision its credentials/pool separately through `morphiecore-auth`. No gateway model binding is required for a probe. There is **no runtime Provider file or hot reload**. Existing gateway deployment overrides remain gateway configuration, not tool flags.
 
-OAuth supports the registered `openai` and `grok` profiles with `openai-responses` only. `--origin`, `--path` and `--auth` overrides are forbidden for OAuth. The manager pins the chosen account identity, refreshes locally expired access once or completes an existing pending renewal, and persists through its existing lifecycle. There is no login, permission escalation, refresh after HTTP 401, account replacement or inference replay. Failed or interrupted refresh may require explicit recovery with `morphiecore-auth`.
-
-`--timeout-seconds` defaults to 60 and accepts 1–300, covering refresh and upstream response intake. The HTTP response ceiling is 4 MiB; JSON keeps the shared structural limits, and SIWC limits events to 1 MiB each/10,000 total. Responses are buffered, not delivered incrementally to stdout. Oversized responses fail rather than print a truncated result. Authentication material echoed by an upstream is rejected before output. `--proxy` explicitly applies to both upstream HTTP and OAuth; upstream requests ignore environment proxies. Ctrl-C cancels local work. Neither cancellation nor socket release proves remote computation stopped.
+The HTTP response ceiling is 4 MiB; JSON keeps shared structural limits, and SIWC limits events to 1 MiB each/10,000 total. Responses are buffered; oversized responses fail rather than print a truncated result. Echoed authentication material is rejected before output. Upstream HTTP ignores environment proxies. Ctrl-C cancels local work; socket release does not prove remote computation stopped.
 
 ## Configure the gateway
 

@@ -8,6 +8,7 @@ This page owns accepted principles, domain contracts and decision records. [Road
 
 - [System boundaries](#system-boundaries)
   - [Protocols](#protocols)
+  - [Shared Provider metadata](#shared-provider-metadata)
   - [Layers and data flow](#layers-and-data-flow)
 - [Semantic contracts](#semantic-contracts)
   - [Semantic IR](#semantic-ir)
@@ -57,7 +58,29 @@ Generation supports JSON and SSE. Google upstreams use streaming intake even for
 
 All three Generation client protocols use the public model's configured ordered candidates. A Messages client does not imply a native Anthropic upstream. Standalone Embeddings, Images, Speech and Transcription have separate contracts and remain maintenance-only until their [stage-4 slices](roadmap.md#stage-4-scope).
 
-Provider definitions, public models and bindings are maintained in [provider/catalog.rs](../src/provider/catalog.rs), [topology/catalog.rs](../src/topology/catalog.rs) and [gateway bootstrap](../src/gateway/startup/bootstrap.rs). Registration does not prove activation or live account access.
+Provider facts live in [providers.json](../src/provider/providers.json), validated by [provider/catalog.rs](../src/provider/catalog.rs). Public models and bindings remain in [topology/catalog.rs](../src/topology/catalog.rs) and [gateway bootstrap](../src/gateway/startup/bootstrap.rs). Registration does not prove activation or live account access.
+
+### Shared Provider metadata
+
+`src/provider/providers.json` is the single repository-owned source for Provider origins, operation paths, authentication and default credential-pool names. Both the gateway and `morphiecore-upstream` consume its typed definitions. The file is embedded with `include_bytes!`, validated once and retained immutably; editing it requires rebuilding. There is no external Provider-file lookup, merge policy or hot reload.
+
+The top-level object is keyed by Provider ID:
+
+| Field | Contract |
+|---|---|
+| `base_url` | Trusted origin only, without an API prefix, query, fragment or userinfo |
+| `auth` | `{ "kind": "bearer" }`, `x_api_key`, `x_goog_api_key`, or `{ "kind": "oauth", "profile": "openai" \| "grok" }` |
+| `credential_pool` | Default local pool name; never a secret, account alias or business-request selector |
+| `endpoints` | Closed operation map: `models`, `chat_completions`, `responses`, `messages`, `generate_content`, `interactions`, `embeddings`, `images`, `speech`, `transcription` |
+| Endpoint `path` | Full concrete path relative to `base_url`; omission of an operation means undeclared, not inferred |
+| Endpoint `auth` | Optional override of the default header scheme; cannot change credential kind or OAuth profile |
+| `sources` | Nonempty list of public HTTPS references; evidence starting points, not live acceptance |
+
+Unknown fields/operations, duplicate JSON keys, unsafe paths and invalid authentication declarations reject. The catalog's OAuth profile must match its Provider ID. Metadata contains no credentials and grants no new model admission. API dialects, model capabilities and request controls stay in their current owners.
+
+One resolver constructs Google's model-bearing path from its collection entry, validated model name and static/streaming choice. The gateway retains its fixed SSE query; other protocols use their declared paths directly. No arbitrary path template language is introduced.
+
+Catalog model bindings derive their default credential locator from the same Provider metadata. Gateway deployment overrides still modify only a private compiled definition; they do not mutate the registry. Explicit library-created definitions may omit a default pool and supply their own trusted task declarations. Manual diagnostics use the default pool's first member only, whereas gateway candidate ordering and fallback retain their existing rules.
 
 ### Layers and data flow
 
@@ -1054,7 +1077,7 @@ These records preserve accepted choices and their consequences, grouped by domai
 | Initial production support boundary (2026-10-22) | Retain the declared [profile baseline](development.md#initial-production-profile-baseline), a single candidate and an effective attempt ceiling of one for initial real production claims. Synthetic recovery, codec fidelity and configured multi-candidate admission are not real failover acceptance; a stronger claim needs compatible real credentials/Providers and replay/sticky-continuation evidence. This is an acceptance boundary, not automatic rewriting of user configuration, a new binding or deployment approval |
 | Protocol tree and dialect ownership (2026-10-20) | Protocol code groups by vendor, wire API and responsibility; the vendor name is where the wire API is defined, not which Provider serves it. Dialect is a named deviation inside that API, model capability and adaptation policy are separate, and trusted bindings select them. A shared rule moves to its nearest common owner; protocols keep their real asymmetries instead of gaining placeholder modules |
 | OpenAI access paths (2026-10-20) | Retain standard API-key codecs and [public SIWC](#subscription-responses), not the legacy Codex product backend. Removing its dialect and unused carriers does not remove downstream Codex compatibility or activate new model bindings |
-| Manual upstream diagnostics (2026-10-22) | `morphiecore-upstream` owns one-request model-list JSON retrieval without pagination and one-request native text probes outside the gateway/IR. It reuses the local credential manager, including expiry-triggered OAuth refresh, without changing gateway no-refresh behavior. OAuth destinations remain pinned; custom API-key targets require operator selection. No discovery-driven activation, fallback, automatic inference sweep or capability claim |
+| Manual upstream diagnostics (2026-10-22) | `morphiecore-upstream` owns one-request model-list JSON retrieval without pagination and one-request native text probes outside the gateway/IR. Shared embedded Provider metadata fixes targets/auth/default pools; no CLI endpoint overrides or hot reload. Select the default pool's first member or an explicit compatible alias, without availability scanning/fallback. Expiry-triggered OAuth refresh remains outside gateway inference. No discovery-driven activation, automatic inference sweep or capability claim |
 | Native carrier availability is not activation | Native `representation_contract()` describes codec carriers; default `semantic_contract()` keeps generic binding admission unchanged. The selected [all-native Go/Haiku contract](#owner-local-cache-admission) is a narrow configured exception, not activation of other carriers. Public/topology checks remain narrower elsewhere until the scheduled integration review |
 | Transitional test scope | While IR/codec contracts are incomplete, defer success scenarios that assume unselected completion conversions or binding admission. Keep established local contracts and safety assertions, measure pruning coverage, and rebuild selected integration coverage after the contracts stabilize. A green reduced suite does not establish the deferred client loops |
 

@@ -113,6 +113,8 @@ pub fn classify_failure(status: u16, body: &[u8]) -> FailureKind {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ProviderError {
+    #[error("invalid embedded provider catalog")]
+    InvalidCatalog,
     #[error("invalid provider identity")]
     InvalidId,
     #[error("invalid trusted origin")]

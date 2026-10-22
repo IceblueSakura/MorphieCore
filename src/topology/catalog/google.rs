@@ -11,7 +11,6 @@ use crate::{
 pub struct GoogleBinding {
     pub model: &'static str,
     pub upstream: &'static str,
-    pub credential: &'static str,
     pub released_at: u64,
     pub developer: &'static str,
 }
@@ -19,12 +18,16 @@ pub struct GoogleBinding {
 pub const GOOGLE_BINDINGS: &[GoogleBinding] = &[GoogleBinding {
     model: "gemini-3.8-flash",
     upstream: "gemini-3.8-flash",
-    credential: "google-api-key",
     // Source: https://ai.google.dev/gemini-api/docs/changelog (2026-09-02).
     released_at: 1_788_307_200,
     developer: "Google",
 }];
 impl GoogleBinding {
+    pub fn credential(&self) -> CredentialBindingId {
+        self.provider()
+            .credential_pool
+            .expect("catalog credential pool")
+    }
     fn reasoning_policy(&self) -> Option<ReasoningRequestPolicy> {
         use crate::semantic::task::generation::{EffortLevel::*, EffortScope};
         // Selected scope approximation, not equivalence of response-wide effort.
@@ -60,19 +63,20 @@ impl GoogleBinding {
     }
     pub fn endpoint(&self) -> Endpoint {
         let provider = self.provider();
-        let collection = provider.generate_content.expect("declared path");
+        let collection = provider
+            .generation_entry(crate::provider::GenerationOperation::GoogleGenerateContent)
+            .expect("declared path")
+            .path;
+        let path = crate::provider::GenerationOperation::GoogleGenerateContent
+            .resolve_path(collection, self.upstream, true)
+            .expect("static path");
         Endpoint {
             id: EndpointId::new(&format!("google-{}-generate-content", self.model))
                 .expect("static id"),
             provider: provider.id,
             target: EndpointTarget {
                 origin: provider.origin,
-                path: crate::provider::EndpointPath::new(&format!(
-                    "{}/{}:streamGenerateContent",
-                    collection.as_str(),
-                    self.upstream
-                ))
-                .expect("static path"),
+                path,
             },
             task: TaskKind::Generation,
             protocol: ProtocolProfile::GoogleGenerateContent,
@@ -93,7 +97,7 @@ impl GoogleBinding {
                 credential_kind: CredentialKind::ApiKey,
                 timeout_ms: super::GENERATION_TIMEOUT_MS,
             },
-            credential: CredentialBindingId::new(self.credential).expect("static credential"),
+            credential: self.credential(),
         }
     }
     pub fn route(&self) -> Route {
@@ -113,7 +117,12 @@ impl GoogleBinding {
         endpoint.id =
             EndpointId::new(&format!("google-{}-interactions", self.model)).expect("static id");
         endpoint.protocol = ProtocolProfile::GoogleInteractions;
-        endpoint.target.path = self.provider().interactions.expect("declared path");
+        endpoint.target.path = self
+            .provider()
+            .generation_entry(crate::provider::GenerationOperation::GoogleInteractions)
+            .expect("declared path")
+            .path
+            .clone();
         endpoint.representation = interactions::TargetCaps {
             model_limits: self.model_limits(),
             reasoning_policy: self.reasoning_policy(),

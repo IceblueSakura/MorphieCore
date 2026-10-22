@@ -39,7 +39,10 @@ pub fn prepare(
         method: "POST",
         path: endpoint.target.path.as_str().into(),
         safe_headers: headers,
-        auth_header: provider.auth.auth_header(secret),
+        auth_header: provider
+            .entry(crate::provider::ProviderOperation::Transcription)
+            .map_or(provider.auth, |entry| entry.auth)
+            .auth_header(secret),
         body: serde_json::to_vec(&value)
             .map_err(|_| AttemptError::Protocol("transcription serialization"))?,
     })

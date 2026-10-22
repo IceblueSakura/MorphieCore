@@ -3,7 +3,9 @@
 //! https://help.aliyun.com/en/model-studio/fun-asr-flash-recorded-speech-recognition-http-api
 use crate::{
     adapter::transcription::Profile,
-    provider::{CredentialBindingId, CredentialKind, EndpointPath, ProviderDefinition, catalog},
+    provider::{
+        CredentialBindingId, CredentialKind, ProviderDefinition, ProviderOperation, catalog,
+    },
     topology::{
         EndpointId, EndpointTarget, ExecutionContract, ModelId, ModelMetadata, RouteId,
         transcription::{ProviderEntry, TranscriptionEndpoint, TranscriptionRoute},
@@ -13,12 +15,10 @@ pub struct TranscriptionBinding {
     pub model: &'static str,
     pub canonical_model: &'static str,
     pub upstream: &'static str,
-    pub credential: &'static str,
     pub provider: fn() -> ProviderDefinition,
     pub endpoint_id: &'static str,
     pub released_at: u64,
     pub developer: &'static str,
-    pub path: &'static str,
     pub profile: Profile,
 }
 pub const TRANSCRIPTION_BINDINGS: &[TranscriptionBinding] = &[
@@ -26,43 +26,42 @@ pub const TRANSCRIPTION_BINDINGS: &[TranscriptionBinding] = &[
         model: "mimo-v2.5-asr",
         canonical_model: "mimo-v2.5-asr",
         upstream: "mimo-v2.5-asr",
-        credential: "xiaomi-api-key",
         provider: catalog::xiaomi,
         endpoint_id: "xiaomi-asr",
         // https://mimo.mi.com/docs/updates/model (2026-06-02).
         released_at: 1_780_358_400,
         developer: "Xiaomi",
-        path: "/v1/chat/completions",
         profile: Profile::Xiaomi,
     },
     TranscriptionBinding {
         model: "qwen-audio-3.0-asr-flash",
         canonical_model: "qwen-audio-3.0-asr-flash",
         upstream: "qwen-audio-3.0-asr-flash",
-        credential: "aliyun-tokenplan-cn-api-key",
         provider: catalog::aliyun_tokenplan_cn,
         endpoint_id: "tokenplan-qwen-asr",
         // Developer release notes, 2026-07-30 UTC midnight, not plan registration.
         // https://help.aliyun.com/zh/model-studio/newly-released-models
         released_at: 1_785_369_600,
         developer: "Alibaba",
-        path: "/api/v1/services/aigc/multimodal-generation/generation",
         profile: Profile::AliyunFlash,
     },
     TranscriptionBinding {
         model: "qwen-audio-3.0-asr-flash",
         canonical_model: "qwen-audio-3.0-asr-flash",
         upstream: "qwen-audio-3.0-asr-flash",
-        credential: "aliyun-dashscope-cn-api-key",
         provider: catalog::aliyun_dashscope_cn,
         endpoint_id: "dashscope-qwen-asr",
         released_at: 1_785_369_600,
         developer: "Alibaba",
-        path: "/api/v1/services/aigc/multimodal-generation/generation",
         profile: Profile::AliyunFlash,
     },
 ];
 impl TranscriptionBinding {
+    pub fn credential(&self) -> CredentialBindingId {
+        self.provider()
+            .credential_pool
+            .expect("catalog credential pool")
+    }
     pub fn provider(&self) -> ProviderDefinition {
         (self.provider)()
     }
@@ -70,9 +69,15 @@ impl TranscriptionBinding {
         ModelMetadata::new(self.released_at, self.developer).expect("static publication")
     }
     pub fn operation(&self) -> ProviderEntry {
+        let provider = self.provider();
+        let path = provider
+            .entry(ProviderOperation::Transcription)
+            .expect("transcription entry")
+            .path
+            .clone();
         ProviderEntry {
-            provider: self.provider().id,
-            path: EndpointPath::new(self.path).expect("static ASR path"),
+            provider: provider.id,
+            path,
         }
     }
     pub fn route(&self) -> TranscriptionRoute {
@@ -92,8 +97,7 @@ impl TranscriptionBinding {
                 upstream_model: self.upstream.into(),
                 canonical_model: canonical,
                 profile: self.profile,
-                credential: CredentialBindingId::new(self.credential)
-                    .expect("static credential binding"),
+                credential: self.credential(),
                 execution: ExecutionContract {
                     streaming: false,
                     retry_before_commit: false,

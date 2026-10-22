@@ -1,4 +1,4 @@
-//! Explicit operator targets and credential lifecycle; no gateway or model registration.
+//! Manual diagnostics over the same embedded Provider metadata as the gateway.
 #[cfg(test)]
 mod tests;
 mod wire;
@@ -6,12 +6,13 @@ mod wire;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use morphiecore::{
     credential::{
-        CredentialError, CredentialManager, Secret, builtin_drivers, resolve_store_directory,
+        CredentialError, CredentialManager, CredentialRef, Secret, builtin_drivers,
+        resolve_store_directory,
     },
     execution::UpstreamRequest,
     provider::{
-        AuthScheme, CredentialKind, EndpointPath, GenerationOperation, ProviderId, SecretMaterial,
-        TrustedOrigin, catalog,
+        AuthScheme, CredentialKind, EndpointPath, GenerationOperation, ProviderDefinition,
+        ProviderOperation, SecretMaterial, catalog,
     },
     transport::http::HttpTransport,
 };
@@ -26,7 +27,7 @@ const PROMPT: &str = "Reply with the single word OK.";
 
 #[derive(Parser)]
 #[command(
-    about = "Manually list upstream models or send one bounded text probe; never activates models"
+    about = "Query a Provider's model list or send one text probe using shared embedded metadata"
 )]
 pub struct Options {
     #[command(subcommand)]
@@ -34,39 +35,27 @@ pub struct Options {
 }
 #[derive(Subcommand)]
 enum Command {
-    /// Fetch and print the full model-list JSON response once; no pagination or inference.
+    /// Print the full model-list JSON response once; no pagination or inference.
     Models(Target),
-    /// Send one fixed short prompt to an exact upstream model, without retries.
+    /// Send a fixed short prompt to an exact upstream model, without retries.
     Probe(Probe),
 }
 #[derive(Args)]
 struct Target {
-    /// Registered Provider ID, or the credential domain for an explicit custom target.
-    #[arg(long)]
+    /// Provider ID from the compiled providers.json catalog.
     provider: String,
-    #[arg(long, value_enum)]
-    protocol: Protocol,
-    /// Local API-key alias, not the key itself. Mutually exclusive with --account.
-    #[arg(long, conflicts_with = "account", required_unless_present = "account")]
+    /// Override the default pool with one local API-key alias, never a key value.
+    #[arg(long, conflicts_with = "account")]
     api_key: Option<String>,
-    /// Local OAuth account alias in the selected Provider's registered profile.
-    #[arg(long, conflicts_with = "api_key", required_unless_present = "api_key")]
+    /// Override the default pool with one local OAuth account alias.
+    #[arg(long, conflicts_with = "api_key")]
     account: Option<String>,
     #[arg(long)]
     store: Option<PathBuf>,
-    /// Explicit trusted origin, without path/query; API keys only. Requires --path.
-    #[arg(long, requires = "path")]
-    origin: Option<String>,
-    /// Explicit operation path; API keys only. Google probe paths are model collections.
-    #[arg(long)]
-    path: Option<String>,
-    /// Override API-key header scheme for a provider dialect. Never accepts raw headers.
-    #[arg(long, value_enum)]
-    auth: Option<KeyAuth>,
-    /// Explicit proxy for both credential refresh and upstream HTTP. No environment proxy.
+    /// Explicit proxy for credential refresh and upstream HTTP.
     #[arg(long)]
     proxy: Option<String>,
-    /// Whole operation deadline, including credential refresh and response EOF.
+    /// Deadline for credential refresh and upstream response EOF.
     #[arg(long, default_value_t = 60, value_parser = clap::value_parser!(u64).range(1..=300))]
     timeout_seconds: u64,
 }
@@ -74,9 +63,11 @@ struct Target {
 struct Probe {
     #[command(flatten)]
     target: Target,
-    /// Exact upstream name; need not exist in the local catalog or a model-list result.
+    /// Exact upstream name; need not exist in the local model catalog.
     #[arg(long)]
     model: String,
+    #[arg(long, value_enum)]
+    protocol: Protocol,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 enum Protocol {
@@ -85,21 +76,6 @@ enum Protocol {
     Anthropic,
     Google,
 }
-#[derive(Clone, Copy, ValueEnum)]
-enum KeyAuth {
-    Bearer,
-    XApiKey,
-    XGoogApiKey,
-}
-impl KeyAuth {
-    fn scheme(self) -> AuthScheme {
-        match self {
-            Self::Bearer => AuthScheme::Bearer,
-            Self::XApiKey => AuthScheme::ApiKeyHeader("x-api-key"),
-            Self::XGoogApiKey => AuthScheme::ApiKeyHeader("x-goog-api-key"),
-        }
-    }
-}
 impl Protocol {
     fn operation(self) -> GenerationOperation {
         match self {
@@ -107,13 +83,6 @@ impl Protocol {
             Self::OpenaiResponses => GenerationOperation::Responses,
             Self::Anthropic => GenerationOperation::AnthropicMessages,
             Self::Google => GenerationOperation::GoogleGenerateContent,
-        }
-    }
-    fn auth(self) -> AuthScheme {
-        match self {
-            Self::OpenaiChat | Self::OpenaiResponses => AuthScheme::Bearer,
-            Self::Anthropic => AuthScheme::ApiKeyHeader("x-api-key"),
-            Self::Google => AuthScheme::ApiKeyHeader("x-goog-api-key"),
         }
     }
     fn name(self) -> &'static str {
@@ -127,12 +96,16 @@ impl Protocol {
 }
 #[derive(Debug, thiserror::Error)]
 pub(super) enum Error {
-    #[error("invalid target or operation options")]
+    #[error("invalid operation options")]
     Invalid,
-    #[error("no documented default endpoint; specify --path with an API-key credential")]
+    #[error("unknown Provider; update providers.json and rebuild")]
+    Provider,
+    #[error("operation endpoint is not declared in providers.json")]
     Endpoint,
-    #[error("OAuth requires its registered Provider, protocol and target; overrides are forbidden")]
-    OAuthTarget,
+    #[error("default credential pool is missing; configure it or select an explicit credential")]
+    Pool,
+    #[error("credential kind/profile does not match the Provider endpoint")]
+    CredentialMismatch,
     #[error("credential operation: {0}")]
     Credential(#[from] CredentialError),
     #[error("transport failed; no retry")]
@@ -149,8 +122,8 @@ pub(super) enum Error {
     Incomplete,
 }
 struct Plan {
-    origin: TrustedOrigin,
-    path: String,
+    provider: &'static ProviderDefinition,
+    path: EndpointPath,
     auth: AuthScheme,
     oauth: Option<&'static str>,
     siwc: bool,
@@ -165,82 +138,25 @@ impl Command {
     }
     fn plan(&self) -> Result<Plan, Error> {
         let target = self.target();
-        ProviderId::new(&target.provider).map_err(|_| Error::Invalid)?;
-        if target.api_key.is_some() == target.account.is_some()
+        if target.api_key.is_some() && target.account.is_some()
             || !(1..=300).contains(&target.timeout_seconds)
         {
             return Err(Error::Invalid);
         }
-        let provider = catalog::all()
-            .into_iter()
-            .find(|p| p.id.as_str() == target.provider);
-        let oauth = if target.account.is_some() {
-            if target.origin.is_some()
-                || target.path.is_some()
-                || target.auth.is_some()
-                || target.protocol != Protocol::OpenaiResponses
-            {
-                return Err(Error::OAuthTarget);
-            }
-            match provider.as_ref().map(|p| p.auth.kind()) {
-                Some(CredentialKind::OAuth(profile)) => Some(profile),
-                _ => return Err(Error::OAuthTarget),
-            }
-        } else {
-            None
+        let provider = catalog::get(&target.provider).ok_or(Error::Provider)?;
+        let operation = match self {
+            Self::Models(_) => ProviderOperation::Models,
+            Self::Probe(options) => options.protocol.operation().into(),
+        };
+        let entry = provider.entry(operation).ok_or(Error::Endpoint)?;
+        let oauth = match entry.auth.kind() {
+            CredentialKind::OAuth(profile) if target.api_key.is_none() => Some(profile),
+            CredentialKind::ApiKey if target.account.is_none() => None,
+            _ => return Err(Error::CredentialMismatch),
         };
         let siwc = oauth == Some("openai");
-        let origin = match &target.origin {
-            Some(origin) if target.path.is_some() => {
-                TrustedOrigin::parse(origin).map_err(|_| Error::Invalid)?
-            }
-            Some(_) => return Err(Error::Invalid),
-            None => provider.as_ref().ok_or(Error::Endpoint)?.origin.clone(),
-        };
-        let operation = provider
-            .as_ref()
-            .and_then(|p| p.generation_entry(target.protocol.operation()));
-        let auth = if let Some(profile) = oauth {
-            AuthScheme::OAuthBearer(profile)
-        } else {
-            target.auth.map(KeyAuth::scheme).unwrap_or_else(|| {
-                operation.map_or(target.protocol.auth(), |entry| match entry.auth {
-                    AuthScheme::OAuthBearer(_) => AuthScheme::Bearer,
-                    auth => auth,
-                })
-            })
-        };
-        let path = match self {
-            Self::Probe(_) => target
-                .path
-                .as_deref()
-                .or(operation.map(|e| e.path.as_str())),
-            Self::Models(_) => {
-                target
-                    .path
-                    .as_deref()
-                    .or(match (target.provider.as_str(), target.protocol) {
-                        ("openai" | "grok", Protocol::OpenaiChat | Protocol::OpenaiResponses) => {
-                            Some("/v1/models")
-                        }
-                        ("deepseek", Protocol::OpenaiChat | Protocol::OpenaiResponses) => {
-                            Some("/models")
-                        }
-                        ("openrouter", Protocol::OpenaiChat | Protocol::OpenaiResponses) => {
-                            Some("/api/v1/models")
-                        }
-                        ("google", Protocol::Google) => Some("/v1beta/models"),
-                        _ => None,
-                    })
-            }
-        }
-        .ok_or(Error::Endpoint)?;
-        let mut path = EndpointPath::new(path)
-            .map_err(|_| Error::Invalid)?
-            .as_str()
-            .to_owned();
-        let body = match self {
-            Self::Models(_) => None,
+        let (path, body) = match self {
+            Self::Models(_) => (entry.path.clone(), None),
             Self::Probe(options) => {
                 if options.model.is_empty()
                     || options.model.len() > 256
@@ -251,77 +167,101 @@ impl Command {
                 {
                     return Err(Error::Invalid);
                 }
-                if target.protocol == Protocol::Google {
-                    let model = options
+                let model = if options.protocol == Protocol::Google {
+                    options
                         .model
                         .strip_prefix("models/")
-                        .unwrap_or(&options.model);
-                    if model.is_empty()
-                        || !model
-                            .bytes()
-                            .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
-                    {
-                        return Err(Error::Invalid);
-                    }
-                    path = EndpointPath::new(&format!("{path}/{model}:generateContent"))
-                        .map_err(|_| Error::Invalid)?
-                        .as_str()
-                        .into();
-                }
-                Some(wire::request(target.protocol, &options.model, siwc))
+                        .unwrap_or(&options.model)
+                } else {
+                    &options.model
+                };
+                let path = options
+                    .protocol
+                    .operation()
+                    .resolve_path(entry.path, model, siwc)
+                    .map_err(|_| Error::Invalid)?;
+                (
+                    path,
+                    Some(wire::request(options.protocol, &options.model, siwc)),
+                )
             }
         };
         Ok(Plan {
-            origin,
+            provider,
             path,
-            auth,
+            auth: entry.auth,
             oauth,
             siwc,
             body,
         })
     }
 }
-
-/// Refresh only locally expired access or a pending verified renewal. Never on HTTP failure.
+fn selected_credential(
+    manager: &CredentialManager,
+    target: &Target,
+    plan: &Plan,
+) -> Result<CredentialRef, Error> {
+    let member = if let Some(alias) = &target.api_key {
+        CredentialRef::ApiKey {
+            alias: alias.clone(),
+        }
+    } else if let Some(alias) = &target.account {
+        CredentialRef::OAuth {
+            profile: plan.oauth.ok_or(Error::CredentialMismatch)?.into(),
+            alias: alias.clone(),
+        }
+    } else {
+        let binding = plan.provider.credential_pool.as_ref().ok_or(Error::Pool)?;
+        let pool = manager
+            .pool(plan.provider.id.as_str(), binding.as_str())?
+            .ok_or(Error::Pool)?;
+        pool.config.validate()?;
+        pool.config.members.into_iter().next().ok_or(Error::Pool)?
+    };
+    match (&member, plan.auth.kind()) {
+        (CredentialRef::ApiKey { .. }, CredentialKind::ApiKey) => {}
+        (CredentialRef::OAuth { profile, .. }, CredentialKind::OAuth(expected))
+            if profile == expected => {}
+        _ => return Err(Error::CredentialMismatch),
+    }
+    Ok(member)
+}
+/// Only the selected member is borrowed. Expiry may refresh it; failure never selects another.
 async fn credential(
     manager: &CredentialManager,
     target: &Target,
-    profile: Option<&str>,
+    plan: &Plan,
 ) -> Result<(Secret, bool), Error> {
-    if let Some(profile) = profile {
-        let alias = target.account.as_deref().ok_or(Error::Invalid)?;
-        let binding = manager.bind_access(profile, alias)?;
-        let pending = manager
-            .list(Some(profile))?
-            .iter()
-            .any(|s| s.account == alias && s.renewal_pending);
-        if pending {
-            manager.refresh(profile, alias).await?;
-            return Ok((binding.borrow()?.access, true));
-        }
-        match binding.borrow() {
-            Ok(grant) => Ok((grant.access, false)),
-            Err(CredentialError::Expired) => {
-                manager.refresh(profile, alias).await?;
-                Ok((binding.borrow()?.access, true))
-            }
-            Err(error) => Err(error.into()),
-        }
-    } else {
-        Ok((
+    match selected_credential(manager, target, plan)? {
+        CredentialRef::ApiKey { alias } => Ok((
             manager
-                .bind_api_key(
-                    &target.provider,
-                    target.api_key.as_deref().ok_or(Error::Invalid)?,
-                )?
+                .bind_api_key(plan.provider.id.as_str(), &alias)?
                 .borrow()?,
             false,
-        ))
+        )),
+        CredentialRef::OAuth { profile, alias } => {
+            let binding = manager.bind_access(&profile, &alias)?;
+            let pending = manager
+                .list(Some(&profile))?
+                .iter()
+                .any(|s| s.account == alias && s.renewal_pending);
+            if pending {
+                manager.refresh(&profile, &alias).await?;
+                return Ok((binding.borrow()?.access, true));
+            }
+            match binding.borrow() {
+                Ok(grant) => Ok((grant.access, false)),
+                Err(CredentialError::Expired) => {
+                    manager.refresh(&profile, &alias).await?;
+                    Ok((binding.borrow()?.access, true))
+                }
+                Err(error) => Err(error.into()),
+            }
+        }
     }
 }
-
 pub async fn execute(options: Options) -> Result<Value, Error> {
-    let plan = options.command.plan()?; // Reject unsafe targets before loading or refreshing credentials.
+    let plan = options.command.plan()?;
     let target = options.command.target();
     let transport = HttpTransport::new(target.proxy.as_deref()).map_err(|_| Error::Invalid)?;
     let root = resolve_store_directory(target.store.clone())?;
@@ -346,7 +286,7 @@ async fn run(
 ) -> Result<Value, Error> {
     let start = Instant::now();
     let target = command.target();
-    let (secret, refreshed) = credential(manager, target, plan.oauth).await?;
+    let (secret, refreshed) = credential(manager, target, &plan).await?;
     let material = SecretMaterial::new(secret.expose()).map_err(|_| Error::Invalid)?;
     let mut headers = vec![(
         "accept".into(),
@@ -360,12 +300,12 @@ async fn run(
     if plan.body.is_some() {
         headers.push(("content-type".into(), "application/json".into()));
     }
-    if target.protocol == Protocol::Anthropic {
+    if matches!(command, Command::Probe(options) if options.protocol == Protocol::Anthropic) {
         headers.push(("anthropic-version".into(), "2023-06-01".into()));
     }
     let prepared = UpstreamRequest {
-        origin: plan.origin.as_str().into(),
-        path: plan.path,
+        origin: plan.provider.origin.as_str().into(),
+        path: plan.path.as_str().into(),
         method: if plan.body.is_some() { "POST" } else { "GET" },
         safe_headers: headers,
         auth_header: plan.auth.auth_header(&material),
@@ -439,16 +379,14 @@ async fn run(
     let result = if plan.siwc {
         wire::responses_stream(&bytes)?
     } else {
-        wire::probe(&bytes, target.protocol)?
+        wire::probe(&bytes, options.protocol)?
     };
-    let report = json!({"operation":"probe", "provider":target.provider, "model":options.model, "protocol":target.protocol.name(), "http_status":status, "requests":1, "oauth_refreshed":refreshed, "elapsed_ms":start.elapsed().as_millis(), "response_bytes":bytes.len(), "result":result});
-    // Only allowlisted metadata is reported; even an adversarial list must not echo auth.
+    let report = json!({"operation":"probe", "provider":target.provider, "model":options.model, "protocol":options.protocol.name(), "http_status":status, "requests":1, "oauth_refreshed":refreshed, "elapsed_ms":start.elapsed().as_millis(), "response_bytes":bytes.len(), "result":result});
     if contains_secret(&report, secret.expose()) {
         return Err(Error::Response);
     }
     Ok(report)
 }
-
 fn contains_secret(value: &Value, secret: &str) -> bool {
     match value {
         Value::String(text) => text.contains(secret),

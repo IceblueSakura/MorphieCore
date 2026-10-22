@@ -10,7 +10,7 @@ use axum::{
 use morphiecore::{
     gateway::{Entry, Gateway, Limits},
     protocol::openai::Profile,
-    provider::{CredentialBindingId, SecretMaterial, TrustedOrigin},
+    provider::{SecretMaterial, TrustedOrigin},
     topology::{self, catalog::GOOGLE_BINDINGS},
 };
 use serde_json::{Value, json};
@@ -167,7 +167,7 @@ async fn stateless_json_and_sse_replay_signatures_and_cancel_upstream() {
             ..Default::default()
         },
         BTreeMap::from([(
-            CredentialBindingId::new(binding.credential).unwrap(),
+            binding.credential(),
             Arc::new(SecretMaterial::new("synthetic-upstream").unwrap()),
         )]),
         SecretMaterial::new(super::support::CLIENT_KEY).unwrap(),

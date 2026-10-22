@@ -112,9 +112,67 @@ pub enum GenerationOperation {
     GoogleGenerateContent,
     GoogleInteractions,
 }
+impl GenerationOperation {
+    /// Google has a model-bearing path; all other operations use the declared entry.
+    pub fn resolve_path(
+        self,
+        entry: &EndpointPath,
+        model: &str,
+        streaming: bool,
+    ) -> Result<EndpointPath, ProviderError> {
+        if self != Self::GoogleGenerateContent {
+            return Ok(entry.clone());
+        }
+        if model.is_empty()
+            || !model
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+        {
+            return Err(ProviderError::InvalidPath);
+        }
+        let action = if streaming {
+            "streamGenerateContent"
+        } else {
+            "generateContent"
+        };
+        EndpointPath::new(&format!("{}/{model}:{action}", entry.as_str()))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderOperation {
+    Models,
+    ChatCompletions,
+    Responses,
+    Messages,
+    GenerateContent,
+    Interactions,
+    Embeddings,
+    Images,
+    Speech,
+    Transcription,
+}
+impl From<GenerationOperation> for ProviderOperation {
+    fn from(operation: GenerationOperation) -> Self {
+        match operation {
+            GenerationOperation::ChatCompletions => Self::ChatCompletions,
+            GenerationOperation::Responses => Self::Responses,
+            GenerationOperation::AnthropicMessages => Self::Messages,
+            GenerationOperation::GoogleGenerateContent => Self::GenerateContent,
+            GenerationOperation::GoogleInteractions => Self::Interactions,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProviderEndpoint {
+    pub path: EndpointPath,
+    pub auth: Option<AuthScheme>,
+}
 /// A borrowed operation declaration; endpoints cannot override its path or auth.
 #[derive(Clone, Copy, Debug)]
-pub struct GenerationEntry<'a> {
+pub struct OperationEntry<'a> {
     pub path: &'a EndpointPath,
     pub auth: AuthScheme,
 }
@@ -123,39 +181,22 @@ pub struct GenerationEntry<'a> {
 pub struct ProviderDefinition {
     pub id: ProviderId,
     pub origin: TrustedOrigin,
-    /// Absent when this provider has no admitted native Chat entry.
-    pub chat_completions: Option<EndpointPath>,
-    /// Absent when this provider has no admitted native Responses entry.
-    pub responses: Option<EndpointPath>,
-    /// A native Messages operation declaration, not a usable public model binding.
-    pub messages: Option<EndpointPath>,
-    /// The model collection of generateContent; an endpoint appends
-    /// `/{model}:streamGenerateContent`.
-    pub generate_content: Option<EndpointPath>,
-    /// Stateless Interactions operation, independent of the model collection.
-    pub interactions: Option<EndpointPath>,
-    /// Credential-domain default, also used by independently declared media operations.
+    /// Operation declarations do not activate models or establish account access.
+    pub endpoints: std::collections::BTreeMap<ProviderOperation, ProviderEndpoint>,
+    /// Catalog defaults are absent for programmatically constructed definitions.
+    pub credential_pool: Option<crate::provider::CredentialBindingId>,
     pub auth: AuthScheme,
 }
 impl ProviderDefinition {
-    pub fn generation_entry(&self, operation: GenerationOperation) -> Option<GenerationEntry<'_>> {
-        let (path, auth) = match operation {
-            GenerationOperation::ChatCompletions => (self.chat_completions.as_ref()?, self.auth),
-            GenerationOperation::Responses => (self.responses.as_ref()?, self.auth),
-            GenerationOperation::AnthropicMessages => (
-                self.messages.as_ref()?,
-                AuthScheme::ApiKeyHeader("x-api-key"),
-            ),
-            GenerationOperation::GoogleGenerateContent => (
-                self.generate_content.as_ref()?,
-                AuthScheme::ApiKeyHeader("x-goog-api-key"),
-            ),
-            GenerationOperation::GoogleInteractions => (
-                self.interactions.as_ref()?,
-                AuthScheme::ApiKeyHeader("x-goog-api-key"),
-            ),
-        };
-        Some(GenerationEntry { path, auth })
+    pub fn entry(&self, operation: ProviderOperation) -> Option<OperationEntry<'_>> {
+        let endpoint = self.endpoints.get(&operation)?;
+        Some(OperationEntry {
+            path: &endpoint.path,
+            auth: endpoint.auth.unwrap_or(self.auth),
+        })
+    }
+    pub fn generation_entry(&self, operation: GenerationOperation) -> Option<OperationEntry<'_>> {
+        self.entry(operation.into())
     }
 }
 

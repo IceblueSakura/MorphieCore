@@ -16,11 +16,8 @@ pub fn provider(origin: &str) -> ProviderDefinition {
     ProviderDefinition {
         id: ProviderId::new("speech-fixture").unwrap(),
         origin: TrustedOrigin::parse(origin).unwrap(),
-        chat_completions: None,
-        responses: None,
-        messages: None,
-        generate_content: None,
-        interactions: None,
+        endpoints: [].into(),
+        credential_pool: None,
         auth: AuthScheme::Bearer,
     }
 }

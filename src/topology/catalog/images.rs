@@ -2,7 +2,7 @@
 use crate::{
     adapter::images::Profile,
     lowering::images::AccountingPolicy,
-    provider::{CredentialBindingId, CredentialKind, EndpointPath, catalog},
+    provider::{CredentialBindingId, CredentialKind, ProviderOperation, catalog},
     topology::{
         EndpointId, EndpointTarget, ExecutionContract, ModelId, ModelMetadata, RouteId,
         images::{ImageEndpoint, ImageRoute, ProviderEntry},
@@ -11,7 +11,6 @@ use crate::{
 pub struct ImageBinding {
     pub model: &'static str,
     pub upstream: &'static str,
-    pub credential: &'static str,
     pub released_at: u64,
     pub developer: &'static str,
 }
@@ -19,12 +18,16 @@ pub struct ImageBinding {
 pub const IMAGE_BINDINGS: &[ImageBinding] = &[ImageBinding {
     model: "gpt-image-2.5-flare",
     upstream: "openai/gpt-image-2.5-flare",
-    credential: "openrouter-api-key",
     // Source: https://openai.com/index/introducing-chatgpt-images-2-5/ (2026-09-08).
     released_at: 1_788_825_600,
     developer: "OpenAI",
 }];
 impl ImageBinding {
+    pub fn credential(&self) -> CredentialBindingId {
+        self.provider()
+            .credential_pool
+            .expect("catalog credential pool")
+    }
     pub fn metadata(&self) -> ModelMetadata {
         ModelMetadata::new(self.released_at, self.developer).expect("static publication")
     }
@@ -32,9 +35,15 @@ impl ImageBinding {
         catalog::openrouter()
     }
     pub fn operation(&self) -> ProviderEntry {
+        let provider = self.provider();
+        let path = provider
+            .entry(ProviderOperation::Images)
+            .expect("image entry")
+            .path
+            .clone();
         ProviderEntry {
-            provider: self.provider().id,
-            path: EndpointPath::new("/api/v1/images").expect("static Images path"),
+            provider: provider.id,
+            path,
         }
     }
     pub fn route(&self) -> ImageRoute {
@@ -55,8 +64,7 @@ impl ImageBinding {
                 upstream_model: self.upstream.into(),
                 canonical_model: canonical,
                 profile: Profile::OpenRouterFlare,
-                credential: CredentialBindingId::new(self.credential)
-                    .expect("static credential binding"),
+                credential: self.credential(),
                 execution: ExecutionContract {
                     streaming: false,
                     retry_before_commit: false,

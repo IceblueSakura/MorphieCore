@@ -137,11 +137,8 @@ mod image_binding {
         ProviderDefinition {
             id: ProviderId::new("fixture").unwrap(),
             origin: TrustedOrigin::parse(ORIGIN).unwrap(),
-            chat_completions: None,
-            responses: None,
-            messages: None,
-            generate_content: None,
-            interactions: None,
+            endpoints: [].into(),
+            credential_pool: None,
             auth: AuthScheme::Bearer,
         }
     }

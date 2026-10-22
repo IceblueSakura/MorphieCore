@@ -352,7 +352,7 @@ async fn native_fixture() -> NativeFixture {
         },
         BTreeMap::from([
             (
-                CredentialBindingId::new(binding.credential).unwrap(),
+                binding.credential(),
                 Arc::new(SecretMaterial::new("synthetic-upstream").unwrap()),
             ),
             (

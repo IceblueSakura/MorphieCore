@@ -4,7 +4,7 @@ use axum::{Json, Router, extract::State, http::HeaderMap, response::Response, ro
 use morphiecore::{
     gateway::{Entry, Gateway, Limits, TaskEntries},
     protocol::openai::Profile,
-    provider::{CredentialBindingId, SecretMaterial, TrustedOrigin},
+    provider::{SecretMaterial, TrustedOrigin},
     topology::{self, catalog::MESSAGES_BINDINGS},
 };
 use serde_json::{Value, json};
@@ -221,7 +221,7 @@ async fn start_with_recovery(recover: bool) -> Fixture {
     } else {
         (
             BTreeMap::from([(
-                CredentialBindingId::new(binding.credential).unwrap(),
+                binding.credential(),
                 Arc::new(SecretMaterial::new("synthetic-messages-upstream").unwrap()),
             )])
             .into(),

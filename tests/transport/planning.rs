@@ -16,11 +16,15 @@ mod candidates {
         ProviderDefinition {
             id: ProviderId::new(id).unwrap(),
             origin: TrustedOrigin::parse("https://synthetic.invalid").unwrap(),
-            chat_completions: None,
-            responses: Some(EndpointPath::new("/responses").unwrap()),
-            messages: None,
-            generate_content: None,
-            interactions: None,
+            endpoints: [(
+                morphiecore::provider::ProviderOperation::Responses,
+                morphiecore::provider::ProviderEndpoint {
+                    path: EndpointPath::new("/responses").unwrap(),
+                    auth: None,
+                },
+            )]
+            .into(),
+            credential_pool: None,
             auth: AuthScheme::Bearer,
         }
     }
@@ -39,7 +43,11 @@ mod candidates {
                 provider: provider.id.clone(),
                 target: EndpointTarget {
                     origin: provider.origin.clone(),
-                    path: provider.responses.clone().unwrap(),
+                    path: provider
+                        .entry(morphiecore::provider::ProviderOperation::Responses)
+                        .unwrap()
+                        .path
+                        .clone(),
                 },
                 canonical_model: model_id.clone(),
                 task: TaskKind::Generation,

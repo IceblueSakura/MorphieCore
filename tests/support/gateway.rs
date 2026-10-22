@@ -36,11 +36,24 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool) -> Gateway {
     let provider = ProviderDefinition {
         id: ProviderId::new("fixture").unwrap(),
         origin: TrustedOrigin::parse(origin).unwrap(),
-        chat_completions: Some(EndpointPath::new("/chat/completions").unwrap()),
-        responses: Some(EndpointPath::new("/responses").unwrap()),
-        messages: None,
-        generate_content: None,
-        interactions: None,
+        endpoints: [
+            (
+                morphiecore::provider::ProviderOperation::ChatCompletions,
+                morphiecore::provider::ProviderEndpoint {
+                    path: EndpointPath::new("/chat/completions").unwrap(),
+                    auth: None,
+                },
+            ),
+            (
+                morphiecore::provider::ProviderOperation::Responses,
+                morphiecore::provider::ProviderEndpoint {
+                    path: EndpointPath::new("/responses").unwrap(),
+                    auth: None,
+                },
+            ),
+        ]
+        .into(),
+        credential_pool: None,
         auth: AuthScheme::Bearer,
     };
     let (embedding_operation, embedding_route) = embedding_support::binding(&provider);
@@ -54,11 +67,11 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool) -> Gateway {
         provider: provider.id.clone(),
         target: EndpointTarget {
             origin: provider.origin.clone(),
-            path: if protocol == ProtocolProfile::OpenAiChat {
-                provider.chat_completions.clone().expect("test Chat entry")
-            } else {
-                provider.responses.clone().expect("test Responses entry")
-            },
+            path: provider
+                .generation_entry(protocol.operation())
+                .expect("test entry")
+                .path
+                .clone(),
         },
         task: TaskKind::Generation,
         protocol,
