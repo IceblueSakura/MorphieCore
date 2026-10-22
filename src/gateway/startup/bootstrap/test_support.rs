@@ -42,6 +42,15 @@ pub(super) fn selected_models(labels: &[&str], providers: &[&str]) -> serde_json
                 .map(|endpoint| serde_json::json!({"binding":endpoint.id.as_str()}))
                 .collect();
             serde_json::json!({"candidates":candidates})
+        } else if catalog.transcription_model(label).is_some() {
+            let mut bindings = crate::topology::catalog::TRANSCRIPTION_BINDINGS
+                .iter()
+                .filter(|binding| {
+                    binding.model == *label && providers.contains(&binding.provider().id.as_str())
+                });
+            let binding = bindings.next().expect("selected transcription provider");
+            assert!(bindings.next().is_none(), "select exactly one ASR binding");
+            serde_json::json!({"binding":binding.endpoint_id})
         } else {
             serde_json::json!({})
         };

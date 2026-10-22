@@ -50,7 +50,7 @@ pub const TRANSCRIPTION_BINDINGS: &[TranscriptionBinding] = &[
         profile: Profile::AliyunFlash,
     },
     TranscriptionBinding {
-        model: "qwen-audio-3.0-asr-flash-dashscope",
+        model: "qwen-audio-3.0-asr-flash",
         canonical_model: "qwen-audio-3.0-asr-flash",
         upstream: "qwen-audio-3.0-asr-flash",
         credential: "aliyun-dashscope-cn-api-key",

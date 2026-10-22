@@ -136,7 +136,7 @@ impl CompiledTopology {
             if self.model(route.model.as_str()).is_some()
                 || self.image_route(route.model.as_str()).is_some()
                 || self.speech_route(route.model.as_str()).is_some()
-                || self.transcription_route(route.model.as_str()).is_some()
+                || self.transcription_model(route.model.as_str()).is_some()
                 || self
                     .embedding_routes
                     .insert(route.model.as_str().into(), route)

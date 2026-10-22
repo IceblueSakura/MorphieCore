@@ -31,6 +31,7 @@ fn enabled() -> bool {
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Model {
+    binding: Option<String>,
     #[serde(default)]
     candidates: Vec<Candidate>,
     max_attempts: Option<usize>,
@@ -133,6 +134,17 @@ impl Models {
             )
         };
         for (model_index, (label, config)) in self.models.into_iter().enumerate() {
+            let transcription = match &config.binding {
+                Some(binding) => Some(
+                    catalog
+                        .transcription_binding(
+                            &label,
+                            &EndpointId::new(binding).map_err(|_| invalid())?,
+                        )
+                        .ok_or(StartupError::Binding)?,
+                ),
+                None => catalog.transcription_route(&label),
+            };
             let Some(public) = catalog.model(&label) else {
                 // Frozen tasks keep their single catalog target and existing pool rules.
                 if !config.candidates.is_empty()
@@ -148,10 +160,11 @@ impl Models {
                 } else if let Some(route) = catalog.speech_route(&label) {
                     entries.speech.push(SpeechEntry { model: label });
                     (&route.endpoint.provider, &route.endpoint.credential)
-                } else if let Some(route) = catalog.transcription_route(&label) {
-                    entries
-                        .transcriptions
-                        .push(TranscriptionEntry { model: label });
+                } else if let Some(route) = transcription {
+                    entries.transcriptions.push(TranscriptionEntry {
+                        model: label,
+                        binding: Some(route.endpoint.id.clone()),
+                    });
                     (&route.endpoint.provider, &route.endpoint.credential)
                 } else if let Some(route) = catalog.embedding_route(&label) {
                     entries.embeddings.push(EmbeddingEntry { model: label });
@@ -162,7 +175,8 @@ impl Models {
                 bind_pool(provider.as_str(), credential.as_str(), credential.clone())?;
                 continue;
             };
-            if config.candidates.is_empty()
+            if config.binding.is_some()
+                || config.candidates.is_empty()
                 || config.candidates.len() > 64
                 || config.max_attempts.is_some_and(|n| !(1..=64).contains(&n))
                 || config.thinking_tokens.is_some()

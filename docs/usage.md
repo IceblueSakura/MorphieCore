@@ -245,7 +245,21 @@ The existing Gemini 3.8 Flash bindings inherit the selected [response-effort sco
 
 `reasoning_as_text` controls the explicit conversion of unattributed readable history reasoning into assistant text, not visibility of new reasoning output. With the default `false`, a candidate needing that conversion rejects. Separately, complete reasoning demonstrably belonging to another target is omitted under the named visible-history transfer policy, never promoted to an assistant answer. Visible messages and real call/results remain; partial reasoning, damaged compatible replay and required compacted/cached context cannot be repaired by omission. Valid native carriers remain available.
 
-Only listed models are activated. Frozen Images, Speech, Transcription and Embeddings entries use an empty object (`"configured-frozen-model": {}`); they retain their existing single catalog target and pool constraints, without Generation overrides.
+Only listed models are activated. Frozen Images, Speech and Embeddings entries use an empty object (`"configured-frozen-model": {}`); they retain their existing single catalog target and pool constraints, without Generation overrides.
+
+Transcription also accepts an empty object when the model has exactly one catalog binding. Shared models require an explicit model-level `binding`, not a Generation `candidates` list:
+
+```json
+{
+  "models": {
+    "qwen-audio-3.0-asr-flash": {
+      "binding": "dashscope-qwen-asr"
+    }
+  }
+}
+```
+
+Select `dashscope-qwen-asr` for the metered DashScope pool or `tokenplan-qwen-asr` for the Token Plan pool. Both expose the same `qwen-audio-3.0-asr-flash` model; their trusted origins and credential domains remain separate. The former `qwen-audio-3.0-asr-flash-dashscope` alias is removed. Missing or mismatched selections reject at startup. Execution uses one binding and one credential source, without automatic Provider selection, failover or Generation overrides.
 
 The file supports at most 64 models and 64 candidates per model; expanded credential candidates retain the existing runtime bound. Unknown bindings, mismatched model identities, duplicate deployments, missing pools and invalid bounds fail startup. See [service loading](../src/gateway/startup/bootstrap.rs) and [model assembly](../src/gateway/startup/models.rs).
 

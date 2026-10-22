@@ -272,6 +272,7 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool) -> Gateway {
             ],
             transcriptions: vec![morphiecore::gateway::TranscriptionEntry {
                 model: "native-transcription".into(),
+                binding: None,
             }],
             embeddings: if embeddings {
                 vec![morphiecore::gateway::EmbeddingEntry {

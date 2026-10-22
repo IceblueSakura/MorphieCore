@@ -229,17 +229,17 @@ pub fn topology(
                         b.metadata(),
                     )
                 }))
-                // Public credential-domain aliases share the original canonical publication.
+                // Provider bindings share one canonical publication.
                 .chain(
                     TRANSCRIPTION_BINDINGS
                         .iter()
-                        .filter(|b| b.model == b.canonical_model)
                         .map(|b| {
                             (
-                                ModelId::new(b.model).expect("static transcription id"),
+                                ModelId::new(b.canonical_model).expect("static transcription id"),
                                 b.metadata(),
                             )
-                        }),
+                        })
+                        .collect::<std::collections::BTreeMap<_, _>>(),
                 ),
         )
 }
@@ -343,10 +343,61 @@ fn declared_topology_compiles() {
         assert!(topology.model_metadata(&route.canonical_model).is_some());
     }
     for binding in TRANSCRIPTION_BINDINGS {
-        let route = topology.transcription_route(binding.model).unwrap();
-        assert!(topology.model_metadata(&route.canonical_model).is_some());
+        let route = topology
+            .transcription_binding(
+                binding.model,
+                &EndpointId::new(binding.endpoint_id).unwrap(),
+            )
+            .unwrap();
+        assert_eq!(
+            topology.model_metadata(&route.canonical_model),
+            Some(&binding.metadata())
+        );
     }
 }
+#[cfg(test)]
+#[test]
+fn transcription_bindings_share_identity_without_implicit_provider_selection() {
+    let topology = default_topology().unwrap();
+    let model = "qwen-audio-3.0-asr-flash";
+    assert!(topology.transcription_route(model).is_none());
+    for (binding, provider, origin) in [
+        (
+            "tokenplan-qwen-asr",
+            "aliyun-tokenplan-cn",
+            "https://token-plan.cn-beijing.maas.aliyuncs.com",
+        ),
+        (
+            "dashscope-qwen-asr",
+            "aliyun-dashscope-cn",
+            "https://dashscope.aliyuncs.com",
+        ),
+    ] {
+        let id = EndpointId::new(binding).unwrap();
+        let route = topology.transcription_binding(model, &id).unwrap();
+        assert_eq!(route.model.as_str(), model);
+        assert_eq!(route.canonical_model.as_str(), model);
+        assert_eq!(route.endpoint.upstream_model, model);
+        assert_eq!(route.endpoint.provider.as_str(), provider);
+        assert_eq!(route.endpoint.target.origin.as_str(), origin);
+        assert_eq!(
+            route.endpoint.credential.as_str(),
+            format!("{provider}-api-key")
+        );
+        assert!(!route.endpoint.execution.retry_before_commit);
+        assert!(
+            topology
+                .transcription_binding("mimo-v2.5-asr", &id)
+                .is_none()
+        );
+        assert!(
+            topology
+                .transcription_binding("qwen-audio-3.0-asr-flash-dashscope", &id)
+                .is_none()
+        );
+    }
+}
+
 #[cfg(test)]
 #[test]
 fn modelbest_vision_versions_use_upstream_ids_and_multimodal_chat_contracts() {

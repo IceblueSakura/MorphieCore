@@ -30,6 +30,7 @@ pub struct SpeechEntry {
 #[derive(Clone, Debug)]
 pub struct TranscriptionEntry {
     pub model: String,
+    pub binding: Option<EndpointId>,
 }
 #[derive(Clone, Debug)]
 pub struct EmbeddingEntry {

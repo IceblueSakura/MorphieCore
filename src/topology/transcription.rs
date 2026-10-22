@@ -29,8 +29,31 @@ pub struct TranscriptionRoute {
     pub endpoint: TranscriptionEndpoint,
 }
 impl CompiledTopology {
+    /// All bindings of a public label must share this canonical identity.
+    pub fn transcription_model(&self, model: &str) -> Option<&ModelId> {
+        self.transcription_routes
+            .values()
+            .find(|route| route.model.as_str() == model)
+            .map(|route| &route.canonical_model)
+    }
+    /// Implicit selection is valid only for a single-binding model.
     pub fn transcription_route(&self, model: &str) -> Option<&TranscriptionRoute> {
-        self.transcription_routes.get(model)
+        let mut routes = self
+            .transcription_routes
+            .values()
+            .filter(|r| r.model.as_str() == model);
+        let route = routes.next()?;
+        routes.next().is_none().then_some(route)
+    }
+    /// Select one trusted binding without introducing runtime fallback.
+    pub fn transcription_binding(
+        &self,
+        model: &str,
+        binding: &EndpointId,
+    ) -> Option<&TranscriptionRoute> {
+        self.transcription_routes
+            .get(binding.as_str())
+            .filter(|route| route.model.as_str() == model)
     }
     pub fn with_transcriptions(
         mut self,
@@ -122,13 +145,15 @@ impl CompiledTopology {
                 || self.embedding_route(route.model.as_str()).is_some()
                 || self.image_route(route.model.as_str()).is_some()
                 || self.speech_route(route.model.as_str()).is_some()
-                || self
-                    .transcription_routes
-                    .insert(route.model.as_str().into(), route)
-                    .is_some()
+                || self.transcription_routes.values().any(|existing| {
+                    existing.model == route.model
+                        && existing.canonical_model != route.canonical_model
+                })
             {
                 return Err(TopologyError::DuplicateModel);
             }
+            self.transcription_routes
+                .insert(endpoint.id.as_str().into(), route);
         }
         Ok(self)
     }

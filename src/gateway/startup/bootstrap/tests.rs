@@ -320,6 +320,66 @@ fn responses_chat_bridge_is_explicit_and_replaces_not_falls_back_to_native_respo
 }
 
 #[test]
+fn transcription_model_requires_one_explicit_binding_when_providers_share_identity() {
+    let model = "qwen-audio-3.0-asr-flash";
+    let config = |selection: serde_json::Value| serde_json::json!({"models":{model:selection}});
+    for (binding, provider, pool) in [
+        (
+            "tokenplan-qwen-asr",
+            "aliyun-tokenplan-cn",
+            "aliyun-tokenplan-cn-api-key",
+        ),
+        (
+            "dashscope-qwen-asr",
+            "aliyun-dashscope-cn",
+            "aliyun-dashscope-cn-api-key",
+        ),
+    ] {
+        let credentials = [(provider, pool, "synthetic-asr-key")];
+        let selection = serde_json::json!({"binding":binding});
+        let boot = Fixture::new(service(), config(selection.clone()), &credentials).unwrap();
+        assert_eq!(boot.gateway.state.transcriptions.len(), 1);
+        assert!(boot.gateway.state.transcriptions.contains_key(model));
+        assert!(boot.gateway.state.entries.is_empty());
+        let discovery: serde_json::Value =
+            serde_json::from_slice(&boot.gateway.state.models.list).unwrap();
+        assert_eq!(discovery["data"].as_array().unwrap().len(), 1);
+        assert_eq!(discovery["data"][0]["id"], model);
+        assert_eq!(discovery["data"][0]["owned_by"], "Alibaba");
+        assert!(matches!(
+            Fixture::new(service(), config(selection.clone()), &[]),
+            Err(StartupError::Credentials)
+        ));
+        for invalid in [
+            serde_json::json!({}),
+            serde_json::json!({"binding":"unknown"}),
+            serde_json::json!({"binding":"xiaomi-asr"}),
+            serde_json::json!({"binding":binding,"max_attempts":2}),
+            serde_json::json!({"binding":binding,"candidates":[{"binding":binding}]}),
+        ] {
+            assert!(Fixture::new(service(), config(invalid), &credentials).is_err());
+        }
+        let old = serde_json::json!({"models":{
+            "qwen-audio-3.0-asr-flash-dashscope":selection
+        }});
+        assert!(Fixture::new(service(), old, &credentials).is_err());
+    }
+    let wrong_pool = [(
+        "aliyun-tokenplan-cn",
+        "aliyun-tokenplan-cn-api-key",
+        "synthetic-asr-key",
+    )];
+    assert!(matches!(
+        Fixture::new(
+            service(),
+            config(serde_json::json!({"binding":"dashscope-qwen-asr"})),
+            &wrong_pool
+        ),
+        Err(StartupError::Credentials)
+    ));
+}
+
+#[test]
 fn xiaomi_audio_is_explicit_and_prepares_its_own_json_contracts() {
     let credentials = [("xiaomi", "xiaomi-api-key", "synthetic-upstream-only")];
     let implicit = Fixture::new(

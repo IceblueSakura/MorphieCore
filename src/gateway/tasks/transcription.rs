@@ -33,10 +33,12 @@ pub(in crate::gateway) fn bind(
     }
     let mut result = BTreeMap::new();
     for entry in entries {
-        let route = topology
-            .transcription_route(&entry.model)
-            .ok_or(StartupError::Binding)?
-            .clone();
+        let route = match &entry.binding {
+            Some(binding) => topology.transcription_binding(&entry.model, binding),
+            None => topology.transcription_route(&entry.model),
+        }
+        .ok_or(StartupError::Binding)?
+        .clone();
         let provider = topology
             .provider(route.endpoint.provider.as_str())
             .ok_or(StartupError::Binding)?
