@@ -1,5 +1,5 @@
 //! Semantically blind trusted HTTP transport. No inbound header propagation,
-//! redirects or implicit retries. Environment proxies require explicit startup opt-in.
+//! redirects or implicit retries. Explicit proxies override system/environment defaults.
 #[cfg(test)]
 #[path = "http_tests.rs"]
 mod tests;
@@ -15,7 +15,7 @@ pub struct HttpTransport {
 }
 impl HttpTransport {
     pub fn new(proxy: Option<&str>) -> Result<Self, ErrorClass> {
-        Self::with_environment_proxy(proxy, false)
+        Self::with_environment_proxy(proxy, true)
     }
     pub(crate) fn with_environment_proxy(
         proxy: Option<&str>,

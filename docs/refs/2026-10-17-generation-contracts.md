@@ -69,6 +69,8 @@ Documentation-only recheck for the manual upstream CLI, not account access or li
 
 No default model-list path was established for MiMo, Go, ModelBest, NVIDIA, DashScope, Token Plan or Zhipu in this bounded pass. This is an evidence gap, not an unsupported-operation verdict. A confirmed metadata entry is required rather than inferring listing from a Chat-compatible base. The Go documentation now describes different inference prefixes from the project's pinned catalog; diagnostics do not silently migrate them. SIWC's existing unsupported output-cap policy and event-owned terminal summary remain separate from standard Responses.
 
+A later same-day source recheck established MiMo's [documented model-list endpoint](https://mimo.mi.com/docs/en-US/api/model/list-models), `https://api.xiaomimimo.com/v1/models`, with both API-key-header and Bearer authentication; Go's [current model-list example](https://opencode.ai/v2/docs/console/go), `https://opencode.ai/inference/go/v1/models`; and NVIDIA's [public hosted JSON catalog](https://integrate.api.nvidia.com/v1/models). These three list entries are now declared independently of inference paths. The remaining ModelBest, Zhipu and Aliyun list paths are still unconfirmed here. List availability does not certify inference or account entitlement.
+
 ## Exact carriers and source validation
 
 ### Google foreground contracts, 2026-10-20

@@ -15,23 +15,25 @@
     "auth": { "kind": "bearer" },
     "credential_pool": "xiaomi-api-key",
     "endpoints": {
+      "models": { "path": "/v1/models" },
       "chat_completions": { "path": "/v1/chat/completions" },
       "responses": { "path": "/v1/responses" },
       "speech": { "path": "/v1/chat/completions" },
       "transcription": { "path": "/v1/chat/completions" }
     },
-    "sources": ["https://mimo.mi.com/docs/zh-CN/api/chat/responses", "https://mimo.mi.com/docs/updates/model"]
+    "sources": ["https://mimo.mi.com/docs/zh-CN/api/chat/responses", "https://mimo.mi.com/docs/updates/model", "https://mimo.mi.com/docs/en-US/api/model/list-models"]
   },
   "opencode-go": {
     "base_url": "https://opencode.ai",
     "auth": { "kind": "bearer" },
     "credential_pool": "opencode-go-api-key",
     "endpoints": {
+      "models": { "path": "/inference/go/v1/models" },
       "chat_completions": { "path": "/zen/go/v1/chat/completions" },
       "responses": { "path": "/zen/go/v1/responses" },
       "messages": { "path": "/zen/go/v1/messages", "auth": { "kind": "x_api_key" } }
     },
-    "sources": ["https://opencode.ai/docs/go/#endpoints"]
+    "sources": ["https://opencode.ai/docs/go/#endpoints", "https://opencode.ai/v2/docs/console/go"]
   },
   "openrouter": {
     "base_url": "https://openrouter.ai",
@@ -61,10 +63,11 @@
     "auth": { "kind": "bearer" },
     "credential_pool": "nvidia-api-key",
     "endpoints": {
+      "models": { "path": "/v1/models" },
       "chat_completions": { "path": "/v1/chat/completions" },
       "responses": { "path": "/v1/responses" }
     },
-    "sources": ["https://docs.nvidia.com/nim/large-language-models/latest/api-reference.html"]
+    "sources": ["https://docs.nvidia.com/nim/large-language-models/latest/api-reference.html", "https://integrate.api.nvidia.com/v1/models"]
   },
   "aliyun-dashscope-cn": {
     "base_url": "https://dashscope.aliyuncs.com",

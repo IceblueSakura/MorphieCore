@@ -154,7 +154,10 @@ mod tests {
                 .as_str(),
             "/zen/go/v1/responses"
         );
-        assert!(go.entry(ProviderOperation::Models).is_none());
+        assert_eq!(
+            go.entry(ProviderOperation::Models).unwrap().path.as_str(),
+            "/inference/go/v1/models"
+        );
         assert_eq!(
             deepseek()
                 .entry(ProviderOperation::Models)

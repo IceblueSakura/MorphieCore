@@ -52,7 +52,7 @@ struct Target {
     account: Option<String>,
     #[arg(long)]
     store: Option<PathBuf>,
-    /// Explicit proxy for credential refresh and upstream HTTP.
+    /// Override system/environment proxies for credential refresh and upstream HTTP.
     #[arg(long)]
     proxy: Option<String>,
     /// Deadline for credential refresh and upstream response EOF.

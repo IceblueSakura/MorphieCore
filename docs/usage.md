@@ -168,7 +168,7 @@ For example, `deepseek` defaults to `deepseek-api-key` and `openai` to `openai-o
 | `--api-key ALIAS` | Bypass the default pool with one API-key alias in this Provider's domain; never a key value |
 | `--account ALIAS` | Bypass the default pool with one OAuth account in the Provider's declared profile |
 | `--store PATH` | Select another project credential store |
-| `--proxy URL` | Explicit proxy for upstream HTTP and OAuth operations |
+| `--proxy URL` | Override system/environment proxies for upstream HTTP and OAuth operations |
 | `--timeout-seconds N` | Whole refresh/request deadline, default 60, range 1–300 |
 
 The two credential overrides are mutually exclusive and must match the endpoint's credential kind/profile. They cannot change the destination or authentication scheme. To inspect a different API-key member without changing the pool:
@@ -181,7 +181,7 @@ OAuth pins the selected identity, refreshes locally expired access once or compl
 
 To add a Provider for manual diagnostics, edit `src/provider/providers.json` with its trusted origin, auth, default pool and confirmed endpoints, then rebuild. Provision its credentials/pool separately through `morphiecore-auth`. No gateway model binding is required for a probe. There is **no runtime Provider file or hot reload**. Existing gateway deployment overrides remain gateway configuration, not tool flags.
 
-The HTTP response ceiling is 4 MiB; JSON keeps shared structural limits, and SIWC limits events to 1 MiB each/10,000 total. Responses are buffered; oversized responses fail rather than print a truncated result. Echoed authentication material is rejected before output. Upstream HTTP ignores environment proxies. Ctrl-C cancels local work; socket release does not prove remote computation stopped.
+The HTTP response ceiling is 4 MiB; JSON keeps shared structural limits, and SIWC limits events to 1 MiB each/10,000 total. Responses are buffered; oversized responses fail rather than print a truncated result. Echoed authentication material is rejected before output. Like the gateway and auth CLI, upstream HTTP follows system/environment proxy settings by default; an explicit proxy overrides them without direct fallback. Ctrl-C cancels local work; socket release does not prove remote computation stopped.
 
 ## Configure the gateway
 
@@ -398,6 +398,8 @@ cargo run --locked --offline --bin morphiecore -- \
 ```
 
 Proxy precedence is CLI → config → environment proxy settings. A failing explicit proxy does not fall back to a direct connection.
+
+All three executables (`morphiecore`, `morphiecore-auth`, `morphiecore-upstream`) use the HTTP client's system/environment proxy defaults when no explicit proxy is selected. On Linux this includes `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` and their lowercase forms. Auth and upstream have no service configuration layer, so their precedence is CLI → system/environment. No proxy values or authentication are printed.
 
 Ctrl-C shuts down the listener and cancels in-flight upstream work.
 

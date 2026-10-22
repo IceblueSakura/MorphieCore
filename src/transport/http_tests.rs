@@ -18,9 +18,9 @@ async fn environment_proxy_child() {
     let target = std::env::var("MORPHIECORE_TEST_PROXY_TARGET").unwrap();
     let proxy = std::env::var("MORPHIECORE_TEST_PROXY_OVERRIDE").ok();
     let transport = if std::env::var_os("MORPHIECORE_TEST_PROXY_ISOLATED").is_some() {
-        HttpTransport::new(None)
+        HttpTransport::with_environment_proxy(None, false)
     } else {
-        HttpTransport::with_environment_proxy(proxy.as_deref(), true)
+        HttpTransport::new(proxy.as_deref())
     }
     .unwrap();
     let result = transport
@@ -104,7 +104,7 @@ async fn redirects_are_not_followed_server_errors_are_not_retried_and_timeouts_a
         axum::serve(listener, app).await.unwrap();
     });
     let _server = Guard(server.abort_handle());
-    let transport = HttpTransport::new(None).unwrap();
+    let transport = HttpTransport::with_environment_proxy(None, false).unwrap();
     let request = |path: &str| UpstreamRequest {
         origin: origin.clone(),
         method: "POST",
