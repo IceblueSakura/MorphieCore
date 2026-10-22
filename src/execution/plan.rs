@@ -142,24 +142,26 @@ impl ExecutionPlan {
             .model(&request.model)
             .ok_or(PlanError::UnknownModel)?;
         super::admit(public, request).map_err(|_| PlanError::InvalidRequest)?;
-        let mut plan = Self::derive(
-            topology,
-            &request.model,
-            public.task,
-            if request.delivery.streaming() {
+        let route = topology
+            .route(&public.route)
+            .ok_or(PlanError::UnknownModel)?;
+        let selected = select_candidates(
+            request,
+            route.policy.candidates,
+            topology.route_endpoints(&public.route),
+        )?;
+        Ok(Self {
+            model: public.id.clone(),
+            task: public.task,
+            delivery: if request.delivery.streaming() {
                 Delivery::Stream
             } else {
                 Delivery::Json
             },
-        )?;
-        let selected = select_candidates(
-            request,
-            plan.policy.candidates,
-            topology.route_endpoints(&public.route),
-        )?;
-        plan.candidates = selected.candidates;
-        plan.rejections = selected.rejections;
-        Ok(plan)
+            policy: route.policy.clone(),
+            candidates: selected.candidates,
+            rejections: selected.rejections,
+        })
     }
     /// Derive the plan for one public model label. The label is the only model
     /// input a request supplies; targets, credentials and profiles stay fixed.

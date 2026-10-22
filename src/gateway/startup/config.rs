@@ -308,28 +308,31 @@ impl Gateway {
                         caps.replay_origin = Some(scope.clone());
                     }
                 }
-                // Provider compatibility does not authorize private downstream
-                // Responses carriers. Chat retains its explicit compatibility profile.
-                let dialect = match entry.protocol {
-                    Profile::Responses => Dialect::Standard,
-                    Profile::Chat => Dialect::MorphieCore,
-                };
-                let client_scope = crate::execution::replay::CLIENT_ORIGIN.clone();
-                let client = Adapter::new(entry.protocol, dialect, Some(client_scope.clone()));
-                // Model input admission must not filter facts reported on the client wire
-                // (e.g. empty logprobs or defaults a model cannot accept as controls).
-                let downstream = TargetCaps {
-                    replay_origin: Some(client_scope),
-                    reported_facts: public.reported_facts,
-                    ..TargetCaps::full()
-                };
                 let group = bound
                     .entry((family(entry.protocol), entry.model.clone()))
-                    .or_insert_with(|| BoundEntry {
-                        public: public.clone(),
-                        client: crate::adapter::ClientAdapter::openai(client, downstream),
-                        policy: route.policy.clone(),
-                        candidates: vec![],
+                    .or_insert_with(|| {
+                        // Provider compatibility does not authorize private downstream
+                        // Responses carriers. Chat retains its explicit compatibility profile.
+                        let dialect = match entry.protocol {
+                            Profile::Responses => Dialect::Standard,
+                            Profile::Chat => Dialect::MorphieCore,
+                        };
+                        let client_scope = crate::execution::replay::CLIENT_ORIGIN.clone();
+                        let client =
+                            Adapter::new(entry.protocol, dialect, Some(client_scope.clone()));
+                        // Model input admission must not filter facts reported on the client wire
+                        // (e.g. empty logprobs or defaults a model cannot accept as controls).
+                        let downstream = TargetCaps {
+                            replay_origin: Some(client_scope),
+                            reported_facts: public.reported_facts,
+                            ..TargetCaps::full()
+                        };
+                        BoundEntry {
+                            public: public.clone(),
+                            client: crate::adapter::ClientAdapter::openai(client, downstream),
+                            policy: route.policy.clone(),
+                            candidates: vec![],
+                        }
                     });
                 if group.candidates.len() >= crate::execution::plan::MAX_CANDIDATES {
                     return Err(StartupError::Binding);

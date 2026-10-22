@@ -291,11 +291,8 @@ pub fn check_event(
             if profile == Profile::Chat
                 && matches!(state.item(*item)?.kind, ItemKind::Message { .. })
                 && state.item(*item)?.parts.iter().any(|p| {
-                    p.kind == *kind
-                        || p.kind == PartKind::Audio
-                        || p.kind == PartKind::Refusal
-                        || *kind == PartKind::Refusal
-                        || (p.kind != PartKind::Audio && *kind != PartKind::Audio)
+                    *kind != PartKind::Audio
+                        || matches!(p.kind, PartKind::Audio | PartKind::Refusal)
                 }) =>
         {
             return Err(RepresentationError::MessageGrouping);

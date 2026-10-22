@@ -238,7 +238,7 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 return Err(EventError::Limit);
             }
             let p = state.open_part(item, part)?;
-            if p.kind != PartKind::Text || p.annotations.len() >= MAX_ITEMS {
+            if p.kind != PartKind::Text {
                 return Err(EventError::Lifecycle);
             }
             if p.metadata_finished {

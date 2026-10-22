@@ -702,42 +702,40 @@ pub(in crate::protocol::anthropic::messages) fn project(
                 continue;
             }
             blocks.extend(
-                item_blocks(
-                    *owner, item, request, fidelity, target, normalized, omitted, rules,
-                )?
-                .into_iter()
-                .enumerate()
-                .map(|(index, block)| super::CacheMarked {
-                    cache: match item {
-                        Item::Message(m) => m.parts[index].cache,
-                        Item::ToolCall(c) => c.cache,
-                        Item::ToolResult(r) => r.cache,
-                        _ => None,
-                    },
-                    content: match block {
-                        Block::ToolUse {
-                            id,
-                            name,
-                            input,
-                            caller,
-                        } => Block::ToolUse {
-                            id: call_id(&id, rules),
-                            name,
-                            input,
-                            caller,
+                item_blocks(*owner, item, request, fidelity, target, normalized, omitted)?
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, block)| super::CacheMarked {
+                        cache: match item {
+                            Item::Message(m) => m.parts[index].cache,
+                            Item::ToolCall(c) => c.cache,
+                            Item::ToolResult(r) => r.cache,
+                            _ => None,
                         },
-                        Block::ToolResult {
-                            tool_use_id,
-                            content,
-                            is_error,
-                        } => Block::ToolResult {
-                            tool_use_id: call_id(&tool_use_id, rules),
-                            content,
-                            is_error,
+                        content: match block {
+                            Block::ToolUse {
+                                id,
+                                name,
+                                input,
+                                caller,
+                            } => Block::ToolUse {
+                                id: call_id(&id, rules),
+                                name,
+                                input,
+                                caller,
+                            },
+                            Block::ToolResult {
+                                tool_use_id,
+                                content,
+                                is_error,
+                            } => Block::ToolResult {
+                                tool_use_id: call_id(&tool_use_id, rules),
+                                content,
+                                is_error,
+                            },
+                            other => other,
                         },
-                        other => other,
-                    },
-                }),
+                    }),
             );
         }
         messages.push(InputMessage {

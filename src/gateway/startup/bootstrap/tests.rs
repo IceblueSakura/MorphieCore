@@ -2,6 +2,8 @@
 use super::*;
 
 use super::test_support::*;
+use crate::adapter::ClientProtocol;
+use crate::gateway::family;
 
 #[test]
 fn shared_provider_credentials_keep_model_and_protocol_targets_distinct() {
@@ -83,7 +85,7 @@ fn shared_provider_credentials_keep_model_and_protocol_targets_distinct() {
             assert!(
                 crate::gateway::ingress::admission::prepare(
                     &boot.gateway.state,
-                    protocol,
+                    family(protocol),
                     &serde_json::to_vec(&request).unwrap()
                 )
                 .is_ok()
@@ -102,7 +104,7 @@ fn shared_provider_credentials_keep_model_and_protocol_targets_distinct() {
     .unwrap();
     let (entry, request) = crate::gateway::ingress::admission::prepare(
         &boot.gateway.state,
-        Profile::Chat,
+        ClientProtocol::Chat,
         br#"{"model":"glm-5.3-prime","messages":[{"role":"user","content":"hi"}],"max_completion_tokens":64}"#,
     ).unwrap();
     assert_eq!(entry.public.canonical_model.as_str(), "glm-5.3");
@@ -165,7 +167,7 @@ fn subscription_and_metered_entries_never_exchange_credentials_or_origins() {
                 };
                 let admitted = crate::gateway::ingress::admission::prepare(
                     &boot.gateway.state,
-                    profile,
+                    family(profile),
                     &serde_json::to_vec(&value).unwrap(),
                 );
                 let (entry, request) = admitted.unwrap();
@@ -430,7 +432,7 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
     let prepare = |reasoning, input: &[serde_json::Value]| {
         let (entry, mut request) = crate::gateway::ingress::admission::prepare(
             &boot.gateway.state,
-            Profile::Responses,
+            ClientProtocol::Responses,
             &serde_json::to_vec(&body(reasoning, input)).unwrap(),
         )
         .unwrap();
@@ -499,7 +501,7 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
     history.extend(call("call_2", "again"));
     let (entry, mut rejected) = crate::gateway::ingress::admission::prepare(
         &boot.gateway.state,
-        Profile::Responses,
+        ClientProtocol::Responses,
         &serde_json::to_vec(&body(serde_json::Value::Null, &history)).unwrap(),
     )
     .unwrap();
@@ -851,8 +853,9 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         );
     }
     // The loader retains the catalog scope policy when no conversion override is supplied.
-    let (entry, request) = crate::gateway::ingress::admission::prepare_messages(
+    let (entry, request) = crate::gateway::ingress::admission::prepare(
         &configured.gateway.state,
+        ClientProtocol::Messages,
         &serde_json::to_vec(&serde_json::json!({"model":google.model,"max_tokens":2048,
             "thinking":{"type":"adaptive"},"output_config":{"effort":"medium"},
             "messages":[{"role":"user","content":"go"}]}))
@@ -940,7 +943,7 @@ fn configured_failover_orders_and_limits_a_models_providers() {
     private_write(&models_file, models.clone());
     let configured = Bootstrap::from_files(&gateway_file, &store).unwrap();
     let (entry, request) = crate::gateway::ingress::admission::prepare(
-        &configured.gateway.state, Profile::Responses,
+        &configured.gateway.state, ClientProtocol::Responses,
         &serde_json::to_vec(&serde_json::json!({
             "model":google.model,"input":"hi","reasoning":{"effort":"medium"},"max_output_tokens":6000
         })).unwrap(),

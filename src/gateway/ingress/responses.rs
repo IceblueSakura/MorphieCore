@@ -1,9 +1,9 @@
 //! Authenticated local snapshot operations; none can contact a Provider.
+use super::admission::acquire_permit;
 use crate::gateway::{ApiError, Runtime};
 use axum::{
     body::Body,
     extract::{Path, RawQuery, State},
-    http::StatusCode,
     response::{IntoResponse, Response},
 };
 use bytes::Bytes;
@@ -11,16 +11,6 @@ use serde_json::json;
 use std::sync::Arc;
 use tokio::{sync::OwnedSemaphorePermit, time::Instant};
 
-fn admit(state: &Runtime) -> Result<OwnedSemaphorePermit, ApiError> {
-    if state.shutdown.is_cancelled() {
-        return Err(ApiError::shutdown());
-    }
-    state
-        .permits
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| ApiError::new(StatusCode::TOO_MANY_REQUESTS, "gateway_busy"))
-}
 fn response(
     bytes: Bytes,
     permit: OwnedSemaphorePermit,
@@ -46,7 +36,7 @@ pub(in crate::gateway) async fn retrieve(
     RawQuery(query): RawQuery,
 ) -> Response {
     (|| {
-        let permit = admit(&state)?;
+        let permit = acquire_permit(&state)?;
         crate::protocol::openai::responses::managed::validate_retrieve_query(query.as_deref())
             .map_err(|_| ApiError::invalid())?;
         let snapshot = state.history.get(&id, Instant::now())?;
@@ -60,7 +50,7 @@ pub(in crate::gateway) async fn delete(
     RawQuery(query): RawQuery,
 ) -> Response {
     (|| {
-        let permit = admit(&state)?;
+        let permit = acquire_permit(&state)?;
         if query.is_some_and(|query| !query.is_empty()) {
             return Err(ApiError::invalid());
         }
@@ -85,7 +75,7 @@ pub(in crate::gateway) async fn input_items(
     RawQuery(query): RawQuery,
 ) -> Response {
     (|| {
-        let permit = admit(&state)?;
+        let permit = acquire_permit(&state)?;
         let snapshot = state.history.get(&id, Instant::now())?;
         let value = crate::protocol::openai::responses::managed::input_items(
             &snapshot.input,

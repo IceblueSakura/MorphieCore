@@ -2,7 +2,7 @@
 use super::test_support::{Fixture, selected_models, service};
 use super::*;
 use crate::{
-    adapter::{AdapterError, ClientAdapter},
+    adapter::{AdapterError, ClientAdapter, ClientProtocol},
     execution::{AttemptError, admit, plan::representable, prepare},
     lowering::generation::RepresentationError,
     semantic::task::generation::{GenerationFeature, Item, PrefixCacheTtl},
@@ -60,10 +60,18 @@ fn native_response_binding_activates_only_when_listed() {
         {"role":"assistant","content":[{"type":"tool_use","id":"call-1","name":"read","input":{}}]},
         {"role":"user","content":[{"type":"tool_result","tool_use_id":"call-1","content":"failed","is_error":true}]}
     ]}"#;
-    let (_, native_request) =
-        crate::gateway::ingress::admission::prepare_messages(&boot.gateway.state, body).unwrap();
-    let (entry, mut request) =
-        crate::gateway::ingress::admission::prepare_messages(&mixed.gateway.state, body).unwrap();
+    let (_, native_request) = crate::gateway::ingress::admission::prepare(
+        &boot.gateway.state,
+        ClientProtocol::Messages,
+        body,
+    )
+    .unwrap();
+    let (entry, mut request) = crate::gateway::ingress::admission::prepare(
+        &mixed.gateway.state,
+        ClientProtocol::Messages,
+        body,
+    )
+    .unwrap();
     assert_eq!(request, native_request);
     request.conversation = Some(
         crate::semantic::context::ConversationContext::conversation("synthetic-conversation")
@@ -123,8 +131,9 @@ fn configured_messages_adaptive_forced_tools_keep_strictness_and_effort() {
         json!({"type":"tool","name":"inspect","disable_parallel_tool_use":true}),
     ] {
         body["tool_choice"] = choice.clone();
-        let (entry, mut request) = crate::gateway::ingress::admission::prepare_messages(
+        let (entry, mut request) = crate::gateway::ingress::admission::prepare(
             &boot.gateway.state,
+            ClientProtocol::Messages,
             body.to_string().as_bytes(),
         )
         .unwrap();
@@ -149,8 +158,9 @@ fn configured_messages_adaptive_forced_tools_keep_strictness_and_effort() {
         let mut unsupported = body.clone();
         unsupported["tools"][0]["input_schema"]["properties"]["record"] =
             json!({"type":"string","enum":["cedar","birch"]});
-        let (_, mut rejected) = crate::gateway::ingress::admission::prepare_messages(
+        let (_, mut rejected) = crate::gateway::ingress::admission::prepare(
             &boot.gateway.state,
+            ClientProtocol::Messages,
             unsupported.to_string().as_bytes(),
         )
         .unwrap();
@@ -170,8 +180,9 @@ fn configured_messages_adaptive_forced_tools_keep_strictness_and_effort() {
     body["output_config"]["format"] = json!({"type":"json_schema","schema":{
         "type":"object","properties":{"record":{"type":"integer","enum":[71,82]},"ok":{"type":"boolean"}},
         "required":["record","ok"],"additionalProperties":false}});
-    let (entry, mut request) = crate::gateway::ingress::admission::prepare_messages(
+    let (entry, mut request) = crate::gateway::ingress::admission::prepare(
         &boot.gateway.state,
+        ClientProtocol::Messages,
         body.to_string().as_bytes(),
     )
     .unwrap();
@@ -439,8 +450,9 @@ async fn configured_messages_cache_admission_requires_all_native_candidates() {
                 )))
             ));
             assert!(
-                crate::gateway::ingress::admission::prepare_messages(
+                crate::gateway::ingress::admission::prepare(
                     state,
+                    ClientProtocol::Messages,
                     &serde_json::to_vec(&input).unwrap()
                 )
                 .is_err()
@@ -450,8 +462,9 @@ async fn configured_messages_cache_admission_requires_all_native_candidates() {
         for stream in [false, true] {
             let mut body = input.clone();
             body["stream"] = json!(stream);
-            let (_, mut request) = crate::gateway::ingress::admission::prepare_messages(
+            let (_, mut request) = crate::gateway::ingress::admission::prepare(
                 state,
+                ClientProtocol::Messages,
                 &serde_json::to_vec(&body).unwrap(),
             )
             .unwrap();
@@ -569,8 +582,9 @@ fn native_response_admit_strict_changed_tools_and_message_effort() {
                 "eager_input_streaming":true}}}
         ],"output_config":{"effort":"low"}}),
     ]);
-    let (_, mut request) = crate::gateway::ingress::admission::prepare_messages(
+    let (_, mut request) = crate::gateway::ingress::admission::prepare(
         state,
+        ClientProtocol::Messages,
         &serde_json::to_vec(&rich).unwrap(),
     )
     .unwrap();
@@ -703,16 +717,18 @@ async fn configured_messages_input_features_require_every_native_candidate() {
                     Err(AttemptError::Adapter(AdapterError::Representation(
                         RepresentationError::Admission(found)))) if found == *feature));
                 assert!(
-                    crate::gateway::ingress::admission::prepare_messages(
+                    crate::gateway::ingress::admission::prepare(
                         state,
+                        ClientProtocol::Messages,
                         &serde_json::to_vec(input).unwrap()
                     )
                     .is_err()
                 );
                 continue;
             }
-            let (_, mut request) = crate::gateway::ingress::admission::prepare_messages(
+            let (_, mut request) = crate::gateway::ingress::admission::prepare(
                 state,
+                ClientProtocol::Messages,
                 &serde_json::to_vec(input).unwrap(),
             )
             .unwrap();

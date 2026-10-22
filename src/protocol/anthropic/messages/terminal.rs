@@ -70,7 +70,7 @@ pub(super) fn encode(
     progress: InteractionProgress,
     calls: bool,
     details: &TerminalDetails,
-) -> Result<(&'static str, Option<&str>), CodecError> {
+) -> Result<(super::StopReason, Option<&str>), CodecError> {
     details.validate(outcome)?;
     if !details.explanation.is_absent() {
         return Err(CodecError::Unsupported(
@@ -83,10 +83,10 @@ pub(super) fn encode(
     if let Some(cause) = &details.completion {
         return match (cause, progress, calls) {
             (CompletionCause::Natural, InteractionProgress::TurnFinished, false) => {
-                Ok(("end_turn", None))
+                Ok((super::StopReason::EndTurn, None))
             }
             (CompletionCause::StopSequence(text), InteractionProgress::TurnFinished, false) => {
-                Ok(("stop_sequence", Some(text.as_str())))
+                Ok((super::StopReason::StopSequence, Some(text.as_str())))
             }
             _ => Err(CodecError::Unsupported("Messages completion cause".into())),
         };
@@ -99,25 +99,25 @@ pub(super) fn encode(
             InteractionProgress::Unreported | InteractionProgress::AwaitingToolResults,
             true,
             _,
-        ) => "tool_use",
+        ) => super::StopReason::ToolUse,
         (
             Outcome::Incomplete,
             InteractionProgress::Unreported,
             _,
             Some(IncompleteReason::MaxOutputTokens),
-        ) => "max_tokens",
+        ) => super::StopReason::MaxTokens,
         (
             Outcome::Incomplete,
             InteractionProgress::Unreported,
             _,
             Some(IncompleteReason::ContextWindowExceeded),
-        ) => "model_context_window_exceeded",
+        ) => super::StopReason::ModelContextWindowExceeded,
         (
             Outcome::Incomplete,
             InteractionProgress::Unreported,
             _,
             Some(IncompleteReason::ContentFilter),
-        ) => "refusal",
+        ) => super::StopReason::Refusal,
         _ => return Err(CodecError::Unsupported("Messages terminal".into())),
     };
     Ok((stop_reason, None))

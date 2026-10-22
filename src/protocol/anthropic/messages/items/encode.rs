@@ -1,12 +1,10 @@
 //! IR item → Messages block encoding shared by request history and response output.
 use crate::protocol::anthropic::messages::{
-    Block, Media, RequestRule, ResultBlock, ResultContent, items::unsupported,
+    Block, Media, ResultBlock, ResultContent, items::unsupported,
 };
 use crate::protocol::{CodecError, fidelity::FidelityRecords, native::ReplayTarget};
 use crate::semantic::{task::generation::*, value::Presence};
-use std::collections::BTreeSet;
 
-#[allow(clippy::too_many_arguments)]
 pub(in crate::protocol::anthropic::messages) fn item_blocks(
     id: ItemId,
     item: &Item,
@@ -15,7 +13,6 @@ pub(in crate::protocol::anthropic::messages) fn item_blocks(
     target: &ReplayTarget,
     normalized: &mut Vec<ItemId>,
     omitted: &mut Vec<ItemId>,
-    _rules: &mut BTreeSet<RequestRule>,
 ) -> Result<Vec<Block>, CodecError> {
     let media = |part: PartId, resource: &ResourceUse| {
         Media::from_resource(

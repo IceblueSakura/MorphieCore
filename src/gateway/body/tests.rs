@@ -2,6 +2,7 @@
 use super::*;
 use crate::gateway::tests::responses_wire;
 use crate::{
+    adapter::ClientProtocol,
     gateway::{family, tests::support::gateway},
     protocol::openai::Profile,
 };
@@ -443,8 +444,9 @@ async fn messages_clients_get_anthropic_shapes_from_an_openai_target() {
         {"role":"assistant","content":[{"type":"thinking","thinking":"plan","signature":""},
             {"type":"tool_use","id":"call-local","name":"lookup","input":{}}]},
         {"role":"user","content":[{"type":"tool_result","tool_use_id":"call-local","content":"boom","is_error":true}]}]});
-    let (_, request) = crate::gateway::ingress::admission::prepare_messages(
+    let (_, request) = crate::gateway::ingress::admission::prepare(
         &gate.state,
+        ClientProtocol::Messages,
         body.to_string().as_bytes(),
     )
     .unwrap();

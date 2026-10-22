@@ -1,6 +1,7 @@
 //! File activation and replay epoch rebinding, without inference traffic.
 use super::test_support::{selected_models, write_configuration};
 use super::*;
+use crate::adapter::ClientProtocol;
 use crate::credential::{CredentialPool, CredentialRef};
 fn setup() -> (tempfile::TempDir, CredentialManager) {
     let dir = crate::credential::tests::support::private_directory();
@@ -47,7 +48,7 @@ fn bootstrap_loads_selected_key_and_requires_reactivation_after_rotation() {
     assert!(grant.is_none());
     let (_, request) = crate::gateway::ingress::admission::prepare(
         &first.gateway.state,
-        Profile::Responses,
+        ClientProtocol::Responses,
         br#"{"model":"deepseek-flash","input":"synthetic request"}"#,
     )
     .unwrap();

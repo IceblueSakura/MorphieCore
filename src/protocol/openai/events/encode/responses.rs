@@ -428,15 +428,7 @@ impl EventEncoder {
                     }
                     StreamTerminal::Error => unreachable!(),
                 };
-                let mut stages = target.projection().to_vec();
-                for stage in &mut stages {
-                    stage.direction = projection::ProjectionDirection::Event;
-                }
-                for stage in stages {
-                    if !self.projection.contains(&stage) {
-                        self.projection.push(stage);
-                    }
-                }
+                super::record_stages(&mut self.projection, target.projection().iter().cloned());
                 let mut out = vec![];
                 if let Some(carrier) = &target.attachment {
                     // The carrier is the last snapshot item; announce it like any other item.

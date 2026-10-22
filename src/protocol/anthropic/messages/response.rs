@@ -118,7 +118,6 @@ impl Profile {
                     target,
                     &mut vec![],
                     &mut vec![],
-                    &mut Default::default(),
                 )
             })
             .collect::<Result<Vec<_>, _>>()?
@@ -135,7 +134,6 @@ impl Profile {
                 .any(|(_, item)| item.is_call()),
             response.semantic.details(),
         )?;
-        let stop_reason = super::StopReason::read(&Value::String(stop_reason.into()))?;
         let stop_sequence = stop_sequence
             .map(|value| Presence::Value(value.to_owned()))
             .unwrap_or(Presence::Null);

@@ -205,13 +205,7 @@ impl EventEncoder {
             self.metadata.required_id()?,
             last.as_object_mut().expect("object"),
         );
-        for mut stage in target.projection().iter().cloned() {
-            stage.direction =
-                crate::protocol::openai::lowering::projection::ProjectionDirection::Event;
-            if !self.projection.contains(&stage) {
-                self.projection.push(stage);
-            }
-        }
+        super::record_stages(&mut self.projection, target.projection().iter().cloned());
         Ok(chunks)
     }
     pub(in crate::protocol::openai::events) fn chat(

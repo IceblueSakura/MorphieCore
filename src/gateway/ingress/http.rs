@@ -1,8 +1,8 @@
 //! HTTP ingress owns authentication ordering, request deadlines and listener lifecycle.
+use crate::adapter::ClientProtocol;
 use crate::gateway::{
     ApiError, Gateway, Runtime, diagnostics::Trace, generation::exchange, ingress::admission,
 };
-use crate::protocol::openai::Profile;
 use axum::{
     Router,
     extract::{Request, State},
@@ -137,32 +137,24 @@ pub(in crate::gateway) async fn authenticate(
     Response::from_parts(parts, body)
 }
 async fn chat(State(state): State<Arc<Runtime>>, request: Request) -> Response {
-    handle(state, Profile::Chat, request)
+    handle(state, ClientProtocol::Chat, request)
         .await
         .unwrap_or_else(IntoResponse::into_response)
 }
 async fn responses(State(state): State<Arc<Runtime>>, request: Request) -> Response {
-    handle(state, Profile::Responses, request)
+    handle(state, ClientProtocol::Responses, request)
         .await
         .unwrap_or_else(IntoResponse::into_response)
 }
 /// Anthropic Messages clients (Claude Code); errors use Anthropic's envelope.
 async fn messages(State(state): State<Arc<Runtime>>, request: Request) -> Response {
-    handle_client(state, None, request)
+    handle(state, ClientProtocol::Messages, request)
         .await
         .unwrap_or_else(ApiError::into_messages_response)
 }
 pub(in crate::gateway) async fn handle(
     state: Arc<Runtime>,
-    profile: Profile,
-    request: Request,
-) -> Result<Response, ApiError> {
-    handle_client(state, Some(profile), request).await
-}
-/// `None` is a Messages client.
-async fn handle_client(
-    state: Arc<Runtime>,
-    profile: Option<Profile>,
+    protocol: ClientProtocol,
     request: Request,
 ) -> Result<Response, ApiError> {
     let mut trace = Trace::new(state.diagnostics.as_ref());
@@ -170,14 +162,7 @@ async fn handle_client(
         .extensions()
         .get::<crate::gateway::capture::Exchange>()
         .cloned();
-    if state.shutdown.is_cancelled() {
-        return Err(ApiError::shutdown());
-    }
-    let permit = state
-        .permits
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| ApiError::new(StatusCode::TOO_MANY_REQUESTS, "gateway_busy"))?;
+    let permit = admission::acquire_permit(&state)?;
     admission::headers(request.headers(), state.limits.request_bytes)?;
     let conversation = admission::conversation(request.headers())?;
     let bytes = tokio::select! {
@@ -185,17 +170,13 @@ async fn handle_client(
         _=state.shutdown.cancelled()=>return Err(ApiError::shutdown()),
         result=tokio::time::timeout(state.limits.body_timeout,admission::collect(request.into_body(),state.limits.request_bytes))=>result.map_err(|_|ApiError::new(StatusCode::REQUEST_TIMEOUT,"request_timeout"))??,
     };
-    let (entry, mut semantic, history) = match profile {
-        Some(Profile::Responses) => {
+    let (entry, mut semantic, history) = match protocol {
+        ClientProtocol::Responses => {
             let (entry, request, history) = admission::prepare_responses(&state, &bytes)?;
             (entry, request, Some(Box::new(history)))
         }
-        Some(profile) => {
-            let (entry, request) = admission::prepare(&state, profile, &bytes)?;
-            (entry, request, None)
-        }
-        None => {
-            let (entry, request) = admission::prepare_messages(&state, &bytes)?;
+        protocol => {
+            let (entry, request) = admission::prepare(&state, protocol, &bytes)?;
             (entry, request, None)
         }
     };
@@ -210,7 +191,7 @@ async fn handle_client(
             timeout.min(state.limits.exchange_timeout)
         });
     let deadline = tokio::time::Instant::now() + timeout;
-    let failed = (profile == Some(Profile::Responses) && semantic.delivery.streaming())
+    let failed = (protocol == ClientProtocol::Responses && semantic.delivery.streaming())
         .then(|| entry.clone());
     match exchange::run(state, entry, semantic, history, deadline, permit, trace).await {
         Err(error) if error.streams_as_failed() && failed.is_some() => {

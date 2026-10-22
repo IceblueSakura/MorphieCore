@@ -10,7 +10,7 @@ use crate::gateway::{
     },
     *,
 };
-use crate::{provider::CredentialBindingId, topology::EndpointId};
+use crate::{adapter::ClientProtocol, provider::CredentialBindingId, topology::EndpointId};
 use axum::{
     Router,
     http::{HeaderMap, Request as HttpRequest, StatusCode},
@@ -128,9 +128,12 @@ fn ingress_unwraps_only_the_candidate_compatible_opaque_and_never_selects_a_targ
             {"type":"reasoning","id":"rs","summary":[],"encrypted_content":token.as_str()},
             {"role":"user","content":"next"}
         ]});
-        let (entry, request) =
-            admission::prepare(&gate.state, Profile::Responses, body.to_string().as_bytes())
-                .unwrap();
+        let (entry, request) = admission::prepare(
+            &gate.state,
+            ClientProtocol::Responses,
+            body.to_string().as_bytes(),
+        )
+        .unwrap();
         let before = request.clone();
         let candidates = entry.eligible(&request).unwrap();
         assert_eq!(candidates.len(), 1);
@@ -342,13 +345,13 @@ async fn identity_budget_and_scope_are_owned_by_trusted_ingress() {
             Some(200_000),
         ),
     ] {
-        let (_, request) = admission::prepare(&gate.state, Profile::Chat, wire).unwrap();
+        let (_, request) = admission::prepare(&gate.state, ClientProtocol::Chat, wire).unwrap();
         assert_eq!(request.task.semantic.controls().max_output_tokens, cap);
     }
     assert_eq!(
         admission::prepare(
             &gate.state,
-            Profile::Chat,
+            ClientProtocol::Chat,
             br#"{"model":"fixture-model","model":"missing","messages":[]}"#
         )
         .err()
@@ -360,7 +363,7 @@ async fn identity_budget_and_scope_are_owned_by_trusted_ingress() {
     assert_eq!(
         admission::prepare(
             &gate.state,
-            Profile::Chat,
+            ClientProtocol::Chat,
             br#"{"model":"missing","messages":null}"#
         )
         .err()
@@ -420,7 +423,7 @@ fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
         };
         let (base, admitted) = admission::prepare(
             &gate.state,
-            profile,
+            family(profile),
             &serde_json::to_vec(&original).unwrap(),
         )
         .unwrap();
@@ -435,9 +438,12 @@ fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
         ] {
             let mut wire = original.clone();
             wire[field] = value;
-            let (entry, request) =
-                admission::prepare(&gate.state, profile, &serde_json::to_vec(&wire).unwrap())
-                    .unwrap();
+            let (entry, request) = admission::prepare(
+                &gate.state,
+                family(profile),
+                &serde_json::to_vec(&wire).unwrap(),
+            )
+            .unwrap();
             assert_eq!(request.ignored_fields, [field]);
             assert_eq!(request.task, admitted.task);
             assert_eq!(
@@ -456,15 +462,18 @@ fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
                 serde_json::json!({"model":"fixture-model","input":[{"type":"future_item","content":"hi"}]}),
             )
         };
-        let (_, request) =
-            admission::prepare(&gate.state, profile, &serde_json::to_vec(&nested).unwrap())
-                .unwrap();
+        let (_, request) = admission::prepare(
+            &gate.state,
+            family(profile),
+            &serde_json::to_vec(&nested).unwrap(),
+        )
+        .unwrap();
         assert_eq!(request.ignored_fields, ["x_trace"]);
         // Discriminators are values; ignoring an unknown kind would drop content.
         assert!(
             admission::prepare(
                 &gate.state,
-                profile,
+                family(profile),
                 &serde_json::to_vec(&unknown_kind).unwrap()
             )
             .is_err()
@@ -472,10 +481,14 @@ fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
         let mut wire = original;
         wire["model"] = serde_json::json!("fixture/fixture-model");
         assert_eq!(
-            admission::prepare(&gate.state, profile, &serde_json::to_vec(&wire).unwrap())
-                .err()
-                .unwrap()
-                .status,
+            admission::prepare(
+                &gate.state,
+                family(profile),
+                &serde_json::to_vec(&wire).unwrap()
+            )
+            .err()
+            .unwrap()
+            .status,
             404
         );
     }
@@ -498,7 +511,7 @@ async fn concurrency_and_collection_timeout_fail_before_upstream() {
             .unwrap()
     };
     assert_eq!(
-        handle(gate.state.clone(), Profile::Chat, request())
+        handle(gate.state.clone(), ClientProtocol::Chat, request())
             .await
             .unwrap_err()
             .status,
@@ -508,7 +521,7 @@ async fn concurrency_and_collection_timeout_fail_before_upstream() {
     assert_eq!(
         tokio::time::timeout(
             Duration::from_secs(1),
-            handle(gate.state.clone(), Profile::Chat, request())
+            handle(gate.state.clone(), ClientProtocol::Chat, request())
         )
         .await
         .unwrap()
@@ -519,7 +532,7 @@ async fn concurrency_and_collection_timeout_fail_before_upstream() {
     assert_eq!(gate.state.permits.available_permits(), 1);
     gate.shutdown();
     assert_eq!(
-        handle(gate.state.clone(), Profile::Chat, request())
+        handle(gate.state.clone(), ClientProtocol::Chat, request())
             .await
             .unwrap_err()
             .status,

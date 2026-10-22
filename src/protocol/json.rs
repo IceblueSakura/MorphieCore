@@ -80,11 +80,16 @@ mod tests {
 
     #[test]
     fn raw_byte_budget_counts_whitespace_before_parsing() {
-        let mut input = vec![b' '; JsonLimits::ENVELOPE.bytes];
-        input[..4].copy_from_slice(b"null");
-        assert_eq!(decode(&input).unwrap(), Value::Null);
-        input.push(b' ');
-        assert_eq!(decode(&input), Err(CodecError::Limit));
+        for (limits, parse) in [
+            (JsonLimits::ENVELOPE, decode as fn(&[u8]) -> _),
+            (JsonLimits::IMAGE_RESPONSE, decode_image_response),
+        ] {
+            let mut input = vec![b' '; limits.bytes];
+            input[..4].copy_from_slice(b"null");
+            assert_eq!(parse(&input).unwrap(), Value::Null);
+            input.push(b' ');
+            assert_eq!(parse(&input), Err(CodecError::Limit));
+        }
     }
 
     #[test]

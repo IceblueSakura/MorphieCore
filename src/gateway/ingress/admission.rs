@@ -1,12 +1,24 @@
 //! Authenticated, bounded body collection and public-task admission before I/O.
-use crate::gateway::{ApiError, BoundEntry, Runtime, family};
-use crate::{adapter::Request, protocol::openai::Profile};
+use crate::adapter::{ClientProtocol, Request};
+use crate::gateway::{ApiError, BoundEntry, Runtime};
 use axum::{
     body::Body,
     http::{HeaderMap, StatusCode},
 };
 use futures_util::StreamExt;
 use std::sync::Arc;
+pub(super) fn acquire_permit(
+    state: &Runtime,
+) -> Result<tokio::sync::OwnedSemaphorePermit, ApiError> {
+    if state.shutdown.is_cancelled() {
+        return Err(ApiError::shutdown());
+    }
+    state
+        .permits
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| ApiError::new(StatusCode::TOO_MANY_REQUESTS, "gateway_busy"))
+}
 pub(in crate::gateway) fn conversation(
     headers: &HeaderMap,
 ) -> Result<crate::semantic::context::ConversationContext, ApiError> {
@@ -102,12 +114,14 @@ pub(in crate::gateway) async fn collect(body: Body, limit: usize) -> Result<Vec<
     }
     Ok(bytes)
 }
+/// Ordinary codec admission without managed history. Production Responses
+/// ingress uses `prepare_responses` to resolve history first.
 pub(in crate::gateway) fn prepare(
     state: &Runtime,
-    profile: Profile,
+    protocol: ClientProtocol,
     bytes: &[u8],
 ) -> Result<(Arc<BoundEntry>, Request), ApiError> {
-    prepare_in(state, family(profile), bytes, |entry| {
+    prepare_in(state, protocol, bytes, |entry| {
         entry.client.decode_client_request(bytes)
     })
 }
@@ -132,7 +146,7 @@ pub(in crate::gateway) fn prepare_responses(
         .map(|id| state.history.get(id, tokio::time::Instant::now()))
         .transpose()?;
     let mut input = None;
-    let (entry, request) = prepare_in(state, family(Profile::Responses), bytes, |entry| {
+    let (entry, request) = prepare_in(state, ClientProtocol::Responses, bytes, |entry| {
         let (request, _) = managed::decode(
             entry.client.as_openai()?.0,
             bytes,
@@ -145,15 +159,6 @@ pub(in crate::gateway) fn prepare_responses(
     })?;
     let pending = Pending::new(options, input, state.history.clone())?;
     Ok((entry, request, pending))
-}
-/// Messages clients use the model's Chat candidates through their own codec.
-pub(in crate::gateway) fn prepare_messages(
-    state: &Runtime,
-    bytes: &[u8],
-) -> Result<(Arc<BoundEntry>, Request), ApiError> {
-    prepare_in(state, crate::gateway::MESSAGES_FAMILY, bytes, |entry| {
-        entry.client.decode_client_request(bytes)
-    })
 }
 fn prepare_in(
     state: &Runtime,

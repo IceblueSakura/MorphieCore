@@ -380,6 +380,48 @@ fn audio_empty_text_refusal_padding_and_identity_boundaries() {
         "hello"
     );
 }
+#[test]
+fn chat_message_parts_allow_only_text_then_audio() {
+    use morphiecore::protocol::openai::lowering::{RepresentationError, events::check_event};
+    let contract = Contract::full();
+    let item = ItemId::new(1);
+    for first in [PartKind::Text, PartKind::Audio, PartKind::Refusal] {
+        let mut state = StreamState::new();
+        for event in [
+            StreamEvent::Started,
+            StreamEvent::ItemStarted {
+                item,
+                kind: ItemKind::Message { phase: None },
+                replay: None,
+            },
+            StreamEvent::PartStarted {
+                item,
+                part: PartId::new(1),
+                kind: first,
+            },
+        ] {
+            check_event(&state, &event, Profile::Chat, &contract).unwrap();
+            state = reduce(state, event).unwrap();
+        }
+        for second in [PartKind::Text, PartKind::Audio, PartKind::Refusal] {
+            let event = StreamEvent::PartStarted {
+                item,
+                part: PartId::new(2),
+                kind: second,
+            };
+            let expected = if (first, second) == (PartKind::Text, PartKind::Audio) {
+                Ok(())
+            } else {
+                Err(RepresentationError::MessageGrouping)
+            };
+            assert_eq!(
+                check_event(&state, &event, Profile::Chat, &contract),
+                expected,
+                "{first:?} -> {second:?}"
+            );
+        }
+    }
+}
 // The low-level typed events need an independent encoder oracle, not only decode round trips.
 #[test]
 fn byte_fragments_encode_as_one_base64_value() {

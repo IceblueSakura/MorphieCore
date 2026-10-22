@@ -103,7 +103,7 @@ pub(crate) fn encode_client_response_with(
     v.insert("role".into(), json!("assistant"));
     v.insert("model".into(), json!(model));
     v.insert("content".into(), json!(content));
-    v.insert("stop_reason".into(), json!(stop_reason));
+    v.insert("stop_reason".into(), json!(stop_reason.wire()));
     v.insert("stop_sequence".into(), json!(stop_sequence));
     wire::wire::envelope::write_refusal(&mut v, &semantic.details().refusal);
     let selected = wire::accounting::project_reports(semantic.usage_reports())?;

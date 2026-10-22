@@ -1,4 +1,5 @@
 //! Neutral ingress context, independent of Provider selection and real I/O.
+use crate::adapter::ClientProtocol;
 use crate::gateway::ingress::admission;
 use crate::gateway::*;
 use axum::{
@@ -53,10 +54,14 @@ fn public_chat_no_longer_accepts_provider_session_body() {
     ] {
         let body = serde_json::json!({"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"session_id":session});
         assert_eq!(
-            admission::prepare(&gate.state, Profile::Chat, body.to_string().as_bytes())
-                .err()
-                .unwrap()
-                .status,
+            admission::prepare(
+                &gate.state,
+                ClientProtocol::Chat,
+                body.to_string().as_bytes()
+            )
+            .err()
+            .unwrap()
+            .status,
             400
         );
     }

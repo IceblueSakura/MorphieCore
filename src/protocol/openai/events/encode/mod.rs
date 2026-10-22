@@ -133,15 +133,7 @@ impl EventEncoder {
                 {
                     return Err(CodecError::Unsupported("required reported settings".into()));
                 }
-                let mut stage = projection::ProjectionStage::response(
-                    self.profile,
-                    self.contract.adaptation.profile_id,
-                    Some(projection::LossRule::OmitChatReportedSettings),
-                );
-                stage.direction = projection::ProjectionDirection::Event;
-                if !self.projection.contains(&stage) {
-                    self.projection.push(stage);
-                }
+                self.record_loss(projection::LossRule::OmitChatReportedSettings);
             }
             crate::protocol::openai::lowering::events::check_event(
                 self.state()?,
@@ -246,19 +238,29 @@ impl EventEncoder {
         &self.projection
     }
     fn record_loss(&mut self, loss: projection::LossRule) {
-        use projection::{ProjectionDirection, ProjectionStage};
-        let mut stage = ProjectionStage::response(
-            self.profile,
-            self.contract.adaptation.profile_id,
-            Some(loss),
+        record_stages(
+            &mut self.projection,
+            [projection::ProjectionStage::response(
+                self.profile,
+                self.contract.adaptation.profile_id,
+                Some(loss),
+            )],
         );
-        stage.direction = ProjectionDirection::Event;
-        if !self.projection.contains(&stage) {
-            self.projection.push(stage);
-        }
     }
     pub(super) fn state(&self) -> Result<&StreamState, CodecError> {
         self.state.as_ref().ok_or(CodecError::Invalid("state"))
+    }
+}
+/// Event delivery re-labels every copied stage and keeps the first occurrence.
+fn record_stages(
+    projection: &mut Vec<projection::ProjectionStage>,
+    stages: impl IntoIterator<Item = projection::ProjectionStage>,
+) {
+    for mut stage in stages {
+        stage.direction = projection::ProjectionDirection::Event;
+        if !projection.contains(&stage) {
+            projection.push(stage);
+        }
     }
 }
 fn validate_metadata(profile: Profile, metadata: &ResponseMetadata) -> Result<(), CodecError> {
