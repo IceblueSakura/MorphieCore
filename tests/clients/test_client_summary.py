@@ -129,6 +129,44 @@ class ClientSummaryOracles(unittest.TestCase):
         self.assertFalse(summary.has_cache_marker({"content": '{"cache_control": "business data"}'}))
         self.assertTrue(summary.has_cache_marker({"content": [{"cache_control": {"type": "ephemeral"}}]}))
 
+    def test_split_summary_keeps_only_the_selected_turn_prefix(self):
+        body = self.standalone(True)
+        body["messages"][-1]["content"] = (
+            f"# Conversation\n[User]: {summary.RECENT_PROMPT}\n\n"
+            "# Instructions\n## Original Request\nSummarize only earlier context.")
+        self.assertEqual(summary.classify(body), "prefix-summary")
+        summary.assert_summary(body, True, self.path, prefix=True)
+        for leak in [summary.FOCUS, str(self.path), "[Assistant]: fabricated continuation"]:
+            changed = copy.deepcopy(body)
+            changed["messages"][-1]["content"] += leak
+            with self.assertRaisesRegex(RuntimeError, "^prefix_summary_serialized_exchange$"):
+                summary.assert_summary(changed, True, self.path, prefix=True)
+        rebuilt = self.rebuilt(True)
+        rebuilt["messages"].pop(1)
+        rebuilt["messages"][0]["content"] += (
+            "\n\n---\n\n**Turn Context (split turn):**\n\n" + summary.PREFIX_SUMMARY)
+        summary.assert_rebuilt(rebuilt, "rebuilt-feedback", True, self.path, split=True)
+        rebuilt["messages"][0]["content"] += summary.RECENT_PROMPT
+        with self.assertRaisesRegex(RuntimeError, "^rebuilt_split_prefix$"):
+            summary.assert_rebuilt(rebuilt, "rebuilt-feedback", True, self.path, split=True)
+
+    def test_summary_retry_is_exact_and_has_no_extra_attempt_budget(self):
+        state = summary.State(False, self.path, "retry")
+        state.attempts = [(phase, None) for phase in summary.ORDER[:3]]
+        headers = {"authorization": "Bearer synthetic-client-primary"}
+        body = self.standalone(False)
+        self.assertEqual(state.upstream(headers, body)[0], 503)
+        self.assertEqual(state.upstream(headers, copy.deepcopy(body))[0], 200)
+        # A third transmission fails at the count/order guard, not a permissive retry loop.
+        with self.assertRaisesRegex(RuntimeError, "^summary_attempt_order$"):
+            state.upstream(headers, body)
+        changed = summary.State(False, self.path, "retry")
+        changed.attempts = [(phase, None) for phase in summary.ORDER[:3]]
+        changed.upstream(headers, body)
+        body["messages"][-1]["content"] += "\nchanged retry"
+        with self.assertRaisesRegex(RuntimeError, "^summary_retry_changed_request$"):
+            changed.upstream(headers, body)
+
     def test_final_snapshot_includes_late_request_failure(self):
         state = summary.State(False, self.path)
         state.ingress = [(p, None if p == "summary" else "client") for p in summary.ORDER]

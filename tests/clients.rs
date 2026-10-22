@@ -7,7 +7,12 @@ mod filesystem;
 use morphiecore::credential::{CredentialManager, CredentialPool, CredentialRef, Secret};
 use std::{path::PathBuf, time::Duration};
 
-async fn installed_case(script: &str, case: &str, variable: &str) -> serde_json::Value {
+async fn installed_case(
+    script: &str,
+    case: &str,
+    variable: &str,
+    arguments: &[&str],
+) -> serde_json::Value {
     // Explicit unwrapped binaries only: PATH entries may source host credentials.
     let binary =
         PathBuf::from(std::env::var_os(variable).expect("set the unwrapped client binary"));
@@ -59,6 +64,7 @@ async fn installed_case(script: &str, case: &str, variable: &str) -> serde_json:
         .arg(root)
         .arg(env!("CARGO_BIN_EXE_morphiecore"))
         .arg(binary)
+        .args(arguments)
         .current_dir(env!("CARGO_MANIFEST_DIR"));
     let output = child_process::run(&mut command, b"", Duration::from_secs(120), 16 << 10)
         .await
@@ -77,7 +83,7 @@ async fn installed_case(script: &str, case: &str, variable: &str) -> serde_json:
 }
 
 async fn recovery_case(case: &str, variable: &str) {
-    let report = installed_case("recovery", case, variable).await;
+    let report = installed_case("recovery", case, variable, &[]).await;
     assert_eq!(report["client_requests"], 4);
     assert_eq!(report["upstream_attempts"], 5);
     assert_eq!(report["extra_client_requests"], 0);
@@ -102,22 +108,68 @@ async fn opencode_chat_credential_recovery() {
     recovery_case("opencode-chat", "MORPHIECORE_OPENCODE_BIN").await;
 }
 
-async fn pi_summary_case(case: &str) {
-    let report = installed_case("summary", case, "MORPHIECORE_PI_BIN").await;
-    assert_eq!(report["client_requests"], 6);
-    assert_eq!(report["upstream_attempts"], 6);
-    assert_eq!(report["ordinary_summaries"], 1);
+async fn pi_summary_case(case: &str, scenario: &str) {
+    let report = installed_case("summary", case, "MORPHIECORE_PI_BIN", &[scenario]).await;
+    let auxiliary = scenario != "ordinary";
+    assert_eq!(report["client_requests"], if auxiliary { 7 } else { 6 });
+    assert_eq!(report["upstream_attempts"], if auxiliary { 7 } else { 6 });
+    assert_eq!(
+        report["ordinary_summaries"],
+        if scenario == "split" { 2 } else { 1 }
+    );
+    assert_eq!(report["summary_retries"], u8::from(scenario == "retry"));
     assert_eq!(report["rebuilt_tool_history"], true);
 }
 
 #[tokio::test]
 #[ignore = "requires explicit unwrapped installed pi; ordinary Chat summary and rebuilt tools"]
 async fn pi_chat_summary_and_rebuilt_tool_history() {
-    pi_summary_case("pi-chat").await;
+    pi_summary_case("pi-chat", "ordinary").await;
 }
 
 #[tokio::test]
 #[ignore = "requires explicit unwrapped installed pi; ordinary Messages summary and rebuilt tools"]
 async fn pi_messages_summary_and_rebuilt_tool_history() {
-    pi_summary_case("pi-messages").await;
+    pi_summary_case("pi-messages", "ordinary").await;
+}
+
+#[tokio::test]
+#[ignore = "requires explicit unwrapped installed pi; split Messages summaries and rebuilt tools"]
+async fn pi_messages_split_summary_and_rebuilt_tool_history() {
+    pi_summary_case("pi-messages", "split").await;
+}
+
+#[tokio::test]
+#[ignore = "requires explicit unwrapped installed pi; one bounded Chat summary retry"]
+async fn pi_chat_summary_retry_and_rebuilt_tool_history() {
+    pi_summary_case("pi-chat", "retry").await;
+}
+
+#[tokio::test]
+#[ignore = "requires explicit unwrapped installed pi; synthetic strict-limit errors only"]
+async fn pi_messages_strict_fallback_and_gateway_error() {
+    let report = installed_case("strict_tools", "pi-messages", "MORPHIECORE_PI_BIN", &[]).await;
+    assert_eq!(report["direct_client_requests"], 2);
+    assert_eq!(report["direct_strict_fallbacks"], 1);
+    assert_eq!(report["client_requests"], 1);
+    assert_eq!(report["upstream_attempts"], 1);
+    assert_eq!(report["gateway_strict_fallbacks"], 0);
+    assert_eq!(report["honest_error"], true);
+}
+
+#[tokio::test]
+#[ignore = "requires explicit unwrapped installed OpenCode; ordinary summary retry/nudge and tools"]
+async fn opencode_chat_summary_retry_nudge_and_rebuilt_tool_history() {
+    let report = installed_case(
+        "opencode_summary",
+        "opencode-chat",
+        "MORPHIECORE_OPENCODE_BIN",
+        &[],
+    )
+    .await;
+    assert_eq!(report["client_requests"], 7);
+    assert_eq!(report["upstream_attempts"], 7);
+    assert_eq!(report["summary_retries"], 1);
+    assert_eq!(report["summary_nudges"], 1);
+    assert_eq!(report["rebuilt_tool_history"], true);
 }

@@ -81,7 +81,7 @@ class Child:
         except queue.Empty:
             raise RuntimeError("rpc_no_record") from None
 
-    def wait(self, timeout=30):
+    def wait(self, timeout=30, expected_status=0):
         try:
             status = self.process.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -91,7 +91,7 @@ class Child:
             check(not thread.is_alive(), "child_pipe_not_released")
         check(self.failure is None, "child_pipe_failure")
         # Never echo raw client diagnostics or request payloads.
-        if status != 0:
+        if status != expected_status:
             raise RuntimeError(f"client_exit_{status}")
         return bytes(self.output)
 
@@ -172,7 +172,7 @@ def environment(root):
     return env
 
 
-def pi_configuration(root, origin, native, compaction=None):
+def pi_configuration(root, origin, native, compaction=None, retry=None):
     directory = root / "pi-agent"
     directory.mkdir(mode=0o700)
     compat = ({"supportsMidConvoEffort": True, "supportsMidConvoSystemMessages": True,
@@ -190,7 +190,7 @@ def pi_configuration(root, origin, native, compaction=None):
         "models": [{"id": model, "reasoning": True, "contextWindow": 128000,
                     "maxTokens": 2048, "compat": compat}]}}})
     private_json(directory / "settings.json", {"retry": {"enabled": False,
-        "provider": {"maxRetries": 0, "timeoutMs": 5000}},
+        **(retry or {}), "provider": {"maxRetries": 0, "timeoutMs": 5000}},
         "compaction": {"enabled": False, **(compaction or {})}, "cacheWarming": "off"})
     return directory, model
 
@@ -214,10 +214,10 @@ def run_pi(binary, env, root, work, origin, native, path):
     return state["sessionId"], probe_state["sessionId"]
 
 
-def opencode_configuration(root, origin):
+def opencode_configuration(root, origin, compaction=None):
     path = root / "opencode.json"
     private_json(path, {"update": "disable", "share": "disabled", "snapshots": False,
-        "warming": False, "compaction": {"auto": False},
+        "warming": False, "compaction": {"auto": False, **(compaction or {})},
         "permissions": [{"action": "*", "resource": "*", "effect": "deny"},
                         {"action": "read", "resource": "*", "effect": "allow"}],
         "providers": {"recovery": {"package": "@opencode/ai/providers/openai-compatible",
@@ -241,24 +241,28 @@ def check_opencode_session(database, identity, expected):
     check(idle == ("succeeded",), "opencode_idle_outcome")
 
 
+def opencode_prompt(binary, env, work, prompt, title, session=None, origin=None):
+    args = [binary, "run", *(["--server", origin] if origin else ["--standalone"]),
+            "--format", "json", "--title", title, "-m", "recovery/qwen3.8-flash#low"]
+    if session:
+        args.extend(["--session", session])
+    with Child([*args, prompt], env, work) as child:
+        output = child.wait()
+    events = [json.loads(line) for line in output.split(b"\n") if line]
+    identities = {e["sessionID"] for e in events if "sessionID" in e}
+    check(len(identities) == 1, "opencode_session_event_identity")
+    check(not any(e.get("type") == "error" for e in events), "opencode_error_event")
+    check_opencode_output(events)
+    return identities.pop(), events
+
+
 def run_opencode(binary, env, root, work, origin, path):
     config = opencode_configuration(root, origin)
     env = {**env, "OPENCODE_CONFIG": str(config), "OPENCODE_DISABLE_AUTOUPDATE": "1",
            "OPENCODE_DISABLE_MODELS_FETCH": "1", "OPENCODE_DISABLE_PROJECT_CONFIG": "1"}
 
     def run(prompt, title, session=None):
-        args = [binary, "run", "--standalone", "--format", "json", "--title", title,
-                "-m", "recovery/qwen3.8-flash#low"]
-        if session:
-            args.extend(["--session", session])
-        with Child([*args, prompt], env, work) as child:
-            output = child.wait()
-        events = [json.loads(line) for line in output.split(b"\n") if line]
-        identities = {e["sessionID"] for e in events if "sessionID" in e}
-        check(len(identities) == 1, "opencode_session_event_identity")
-        check(not any(e.get("type") == "error" for e in events), "opencode_error_event")
-        check_opencode_output(events)
-        return identities.pop(), events
+        return opencode_prompt(binary, env, work, prompt, title, session)
 
     original, events = run(f"{READ}: Read {path}, then answer.", "recovery-a")
     tools = [e for e in events if e.get("type") == "tool_use"]

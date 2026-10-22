@@ -202,7 +202,7 @@ class State:
                   "native_recovery_session_not_independent")
 
 
-def handler(state, ingress):
+def handler(state, ingress, direct_client=False):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -221,7 +221,7 @@ def handler(state, ingress):
                 expected = "/v1/messages" if state.native else "/v1/chat/completions"
                 route = urlsplit(self.path)
                 check(route.path == expected, "unexpected_http_path")
-                check(not route.query or (ingress and state.native and route.query == "beta=true"),
+                check(not route.query or ((ingress or direct_client) and state.native and route.query == "beta=true"),
                       "unexpected_http_query")
                 length = int(self.headers.get("content-length", "0"))
                 check(0 < length <= 2 * 1024 * 1024, "request_body_limit")
@@ -280,13 +280,13 @@ class OwnedServer(ThreadingHTTPServer):
     """Bound sockets before parsing; explicitly release every request worker."""
     daemon_threads = True
 
-    def __init__(self, state, ingress):
+    def __init__(self, state, ingress, direct_client=False):
         self.guard = threading.Lock()
         self.sockets = set()
         self.workers = set()
         self.closing = False
         self.state = state
-        super().__init__(("127.0.0.1", 0), handler(state, ingress))
+        super().__init__(("127.0.0.1", 0), handler(state, ingress, direct_client))
 
     def track(self, connection):
         with self.guard:
@@ -335,8 +335,8 @@ class OwnedServer(ThreadingHTTPServer):
 
 
 @contextmanager
-def server(state, ingress):
-    with OwnedServer(state, ingress) as http:
+def server(state, ingress, direct_client=False):
+    with OwnedServer(state, ingress, direct_client) as http:
         thread = threading.Thread(target=http.serve_forever, daemon=True)
         thread.start()
         try:
