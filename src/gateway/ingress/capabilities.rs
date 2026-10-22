@@ -42,12 +42,91 @@ impl Case {
 struct Entry<'a> {
     model: &'a str,
     protocol: &'static str,
-    delivery_modes: [&'static str; 2],
+    delivery_modes: Vec<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    embedding: Option<EmbeddingContract<'a>>,
     request: Vec<Case>,
     delivery: Vec<Case>,
     history: Vec<Case>,
 }
+#[derive(Serialize)]
+struct EmbeddingContract<'a> {
+    input_kinds: [&'static str; 1],
+    default_dimensions: usize,
+    dimensions: &'a crate::lowering::embeddings::DimensionSupport,
+    max_inputs: usize,
+    max_inputs_at_default_dimensions: usize,
+    max_vector_values: usize,
+    max_text_bytes: usize,
+    upstream_encodings: crate::lowering::embeddings::EncodingSupport,
+    output_encodings: [&'static str; 2],
+}
 impl<'a> Entry<'a> {
+    fn from_embedding(
+        model: &'a str,
+        entry: &'a crate::gateway::tasks::embeddings::BoundEmbedding,
+    ) -> Self {
+        use crate::{lowering::embeddings::Rule, semantic::task::embedding::*};
+        let contract = &entry.route.endpoint.contract;
+        let mut rounding = Case::new(
+            "embedding.encoding",
+            "float_json_to_binary32",
+            Treatment::ApprovedAdaptation,
+        );
+        rounding.rules.push(Rule::RoundBinary32.name());
+        let mut identifier = Case::new(
+            "embedding.response_id",
+            "ancillary_report",
+            Treatment::ApprovedAdaptation,
+        );
+        identifier.rules.push(Rule::OmitResponseId.name());
+        Self {
+            model,
+            protocol: "embeddings",
+            delivery_modes: vec!["json"],
+            embedding: Some(EmbeddingContract {
+                input_kinds: ["text"],
+                default_dimensions: contract.default_dimensions,
+                dimensions: &contract.dimensions,
+                max_inputs: contract.max_inputs,
+                max_inputs_at_default_dimensions: contract
+                    .max_inputs
+                    .min(MAX_VECTOR_VALUES / contract.default_dimensions),
+                max_vector_values: MAX_VECTOR_VALUES,
+                max_text_bytes: MAX_INPUT_BYTES,
+                upstream_encodings: contract.encodings,
+                output_encodings: ["float", "base64"],
+            }),
+            request: vec![
+                Case::new("embedding.input", "token_ids", Treatment::Rejected),
+                Case::new(
+                    "embedding.user",
+                    "upstream_identity_hint",
+                    if contract.user {
+                        Treatment::Faithful
+                    } else {
+                        Treatment::Rejected
+                    },
+                ),
+            ],
+            delivery: vec![
+                rounding,
+                identifier,
+                Case::new(
+                    "embedding.usage",
+                    if entry.route.endpoint.profile
+                        == crate::adapter::embeddings::Profile::DashScope
+                    {
+                        "reported_input_only_total_or_explicit_input"
+                    } else {
+                        "reported_input_and_total"
+                    },
+                    Treatment::Faithful,
+                ),
+            ],
+            history: vec![],
+        }
+    }
     fn from_bound(entry: &'a BoundEntry) -> Self {
         let protocol = entry.client.protocol();
         let mut request = vec![];
@@ -287,7 +366,8 @@ impl<'a> Entry<'a> {
                 ClientProtocol::Responses => "responses",
                 ClientProtocol::Messages => "messages",
             },
-            delivery_modes: ["json", "sse"],
+            delivery_modes: vec!["json", "sse"],
+            embedding: None,
             request,
             delivery,
             history,
@@ -310,14 +390,20 @@ pub(in crate::gateway) struct CapabilityView(pub(in crate::gateway) Bytes);
 impl CapabilityView {
     pub(in crate::gateway) fn bind(
         entries: &BTreeMap<(ClientProtocol, String), Arc<BoundEntry>>,
+        embeddings: &BTreeMap<String, Arc<crate::gateway::tasks::embeddings::BoundEmbedding>>,
         response_bytes: usize,
     ) -> Result<Self, StartupError> {
-        if entries.len() > 64 * 3 {
+        if entries.len() > 64 * 3 || embeddings.len() > 64 {
             return Err(StartupError::Binding);
         }
         let data = entries
             .values()
             .map(|entry| Entry::from_bound(entry))
+            .chain(
+                embeddings
+                    .iter()
+                    .map(|(model, entry)| Entry::from_embedding(model, entry)),
+            )
             .collect();
         let value = Snapshot {
             object: "morphiecore.capabilities",

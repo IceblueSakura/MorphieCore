@@ -1,5 +1,5 @@
 //! Synthetic body and activation checks at the embedding owner; no live egress.
-use crate::adapter::embeddings::Profile;
+use crate::adapter::embeddings::{Encoding, Profile};
 use crate::gateway::{diagnostics::Trace, tests::support::source};
 use bytes::Bytes;
 const RESULT: &[u8] = br#"{"object":"list","model":"synthetic","data":[{"object":"embedding","index":0,"embedding":[0.5,1]}],"usage":{"prompt_tokens":1,"total_tokens":1}}"#;
@@ -14,6 +14,7 @@ async fn embedding_body_requires_eof_and_rejects_bad_heads_reads_and_limits() {
         4096,
         &mut trace,
         Profile::Standard,
+        Encoding::Float,
     ));
     assert!(futures_util::poll!(&mut pending).is_pending());
     drop(tx);
@@ -64,7 +65,8 @@ async fn embedding_body_requires_eof_and_rejects_bad_heads_reads_and_limits() {
                 response,
                 if case == 6 { 2 } else { 4096 },
                 &mut trace,
-                Profile::Standard
+                Profile::Standard,
+                Encoding::Float,
             )
             .await
             .is_err()
@@ -74,13 +76,26 @@ async fn embedding_body_requires_eof_and_rejects_bad_heads_reads_and_limits() {
 }
 #[tokio::test]
 async fn cancelled_embedding_intake_releases_its_body_without_a_result() {
+    let directory = crate::test_files::private_directory();
+    let path = directory.path().join("capture.jsonl");
+    let sink = crate::gateway::capture::Sink::open(
+        serde_json::from_value(serde_json::json!({
+            "path":path,"upstream_response":{"body":true}
+        }))
+        .unwrap(),
+    )
+    .unwrap();
     let mut trace = Trace::new(None);
-    let (_tx, response, dropped) = source(200, "application/json");
+    trace.capture = Some(sink.exchange());
+    trace.capture_attempt = 1;
+    let (tx, response, dropped) = source(200, "application/json");
+    tx.send(Ok(Bytes::from_static(RESULT))).await.unwrap();
     let mut pending = Box::pin(crate::gateway::tasks::embeddings::receive(
         response,
         4096,
         &mut trace,
         Profile::Standard,
+        Encoding::Float,
     ));
     assert!(futures_util::poll!(&mut pending).is_pending());
     drop(pending);
@@ -88,4 +103,8 @@ async fn cancelled_embedding_intake_releases_its_body_without_a_result() {
         .await
         .unwrap()
         .unwrap();
+    sink.flush().await;
+    let capture = std::fs::read_to_string(path).unwrap();
+    assert!(capture.contains("\"status\":\"incomplete\""));
+    assert!(!capture.contains("source_eof") && !capture.contains("body_unit"));
 }

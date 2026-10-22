@@ -58,9 +58,33 @@ impl EmbeddingRequest {
 }
 
 #[derive(Clone, Eq, PartialEq)]
+pub enum EmbeddingValues {
+    ExactJson(Vec<Number>),
+    Binary32(Vec<u32>),
+}
+impl EmbeddingValues {
+    pub fn len(&self) -> usize {
+        match self {
+            Self::ExactJson(values) => values.len(),
+            Self::Binary32(bits) => bits.len(),
+        }
+    }
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+// Numeric components are business payloads, including when nested in errors.
+impl std::fmt::Debug for EmbeddingValues {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EmbeddingValues")
+            .field("dimensions", &self.len())
+            .finish()
+    }
+}
+#[derive(Clone, Eq, PartialEq)]
 pub struct EmbeddingVector {
     index: usize,
-    values: Vec<Number>,
+    values: EmbeddingValues,
 }
 impl std::fmt::Debug for EmbeddingVector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -72,6 +96,12 @@ impl std::fmt::Debug for EmbeddingVector {
 }
 impl EmbeddingVector {
     pub fn new(index: usize, values: Vec<Number>) -> Result<Self, EmbeddingError> {
+        Self::from_values(index, EmbeddingValues::ExactJson(values))
+    }
+    pub fn from_binary32(index: usize, bits: Vec<u32>) -> Result<Self, EmbeddingError> {
+        Self::from_values(index, EmbeddingValues::Binary32(bits))
+    }
+    fn from_values(index: usize, values: EmbeddingValues) -> Result<Self, EmbeddingError> {
         let value = Self { index, values };
         value.validate()?;
         Ok(value)
@@ -79,16 +109,20 @@ impl EmbeddingVector {
     pub fn index(&self) -> usize {
         self.index
     }
-    pub fn values(&self) -> &[Number] {
+    pub fn values(&self) -> &EmbeddingValues {
         &self.values
     }
     pub fn validate(&self) -> Result<(), EmbeddingError> {
         if self.index >= MAX_INPUTS
             || !(1..=MAX_DIMENSIONS).contains(&self.values.len())
-            || self
-                .values
-                .iter()
-                .any(|n| n.to_string().len() > 128 || n.as_f64().is_none_or(|v| !v.is_finite()))
+            || match &self.values {
+                EmbeddingValues::ExactJson(values) => values
+                    .iter()
+                    .any(|n| n.as_str().len() > 128 || n.as_f64().is_none_or(|v| !v.is_finite())),
+                EmbeddingValues::Binary32(bits) => {
+                    bits.iter().any(|bits| !f32::from_bits(*bits).is_finite())
+                }
+            }
         {
             return Err(EmbeddingError);
         }
@@ -161,6 +195,17 @@ impl EmbeddingResponse {
     pub fn vectors(&self) -> &[EmbeddingVector] {
         &self.vectors
     }
+    pub(crate) fn with_vectors(
+        &self,
+        vectors: Vec<EmbeddingVector>,
+    ) -> Result<Self, EmbeddingError> {
+        let value = Self {
+            vectors,
+            usage: self.usage.clone(),
+        };
+        value.validate()?;
+        Ok(value)
+    }
     pub fn validate(&self) -> Result<(), EmbeddingError> {
         if !(1..=MAX_INPUTS).contains(&self.vectors.len()) {
             return Err(EmbeddingError);
@@ -174,6 +219,7 @@ impl EmbeddingResponse {
                 .checked_add(vector.values.len())
                 .ok_or(EmbeddingError)?;
             if total > MAX_VECTOR_VALUES
+                || vector.index >= self.vectors.len()
                 || vector.values.len() != dimensions
                 || !seen.insert(vector.index)
             {

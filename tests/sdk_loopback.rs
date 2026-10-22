@@ -10,6 +10,12 @@ mod chat_wire;
 mod child_process;
 #[path = "support/credential_recovery.rs"]
 mod credential_recovery;
+#[path = "support/embedding_loop.rs"]
+mod embedding_loop;
+#[path = "support/embeddings.rs"]
+mod embedding_support;
+#[path = "sdk/embeddings.rs"]
+mod embeddings;
 #[path = "support/filesystem.rs"]
 mod filesystem;
 #[path = "sdk/gateway.rs"]

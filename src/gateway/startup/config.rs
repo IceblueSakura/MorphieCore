@@ -396,6 +396,7 @@ impl Gateway {
         )?;
         let capabilities = crate::gateway::ingress::capabilities::CapabilityView::bind(
             &activated,
+            &embeddings,
             limits.response_bytes,
         )?;
         Ok(Self {

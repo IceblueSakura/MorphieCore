@@ -501,14 +501,21 @@ fn local_directory_encodes_empty_and_alias_views_with_inclusive_resource_limits(
     ));
 
     use crate::gateway::ingress::capabilities::CapabilityView;
-    let empty = CapabilityView::bind(&BTreeMap::new(), 256 << 10).unwrap();
+    let empty = CapabilityView::bind(&BTreeMap::new(), &BTreeMap::new(), 256 << 10).unwrap();
     let snapshot: Value = serde_json::from_slice(&empty.0).unwrap();
     assert_eq!(snapshot["data"], json!([]));
     let gate = crate::gateway::tests::support::gateway(Limits::default());
-    let view = CapabilityView::bind(&gate.state.entries, 256 << 10).unwrap();
-    assert!(CapabilityView::bind(&gate.state.entries, view.0.len()).is_ok());
+    let view =
+        CapabilityView::bind(&gate.state.entries, &gate.state.embeddings, 256 << 10).unwrap();
+    assert!(
+        CapabilityView::bind(&gate.state.entries, &gate.state.embeddings, view.0.len()).is_ok()
+    );
     assert!(matches!(
-        CapabilityView::bind(&gate.state.entries, view.0.len() - 1),
+        CapabilityView::bind(
+            &gate.state.entries,
+            &gate.state.embeddings,
+            view.0.len() - 1
+        ),
         Err(StartupError::Limits)
     ));
     let mut entry = (*gate.state.entries.values().next().unwrap().as_ref()).clone();
@@ -523,7 +530,7 @@ fn local_directory_encodes_empty_and_alias_views_with_inclusive_resource_limits(
         (family(Profile::Chat), "fixture-model".into()),
         Arc::new(entry),
     )]);
-    let view = CapabilityView::bind(&entries, 256 << 10).unwrap();
+    let view = CapabilityView::bind(&entries, &BTreeMap::new(), 256 << 10).unwrap();
     let snapshot: Value = serde_json::from_slice(&view.0).unwrap();
     assert_eq!(
         snapshot["data"][0]["request"],

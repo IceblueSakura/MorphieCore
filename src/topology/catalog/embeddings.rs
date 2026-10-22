@@ -1,6 +1,7 @@
 //! Explicit text embedding bindings. No Generation or file-service admission is inferred.
 use crate::{
     adapter::embeddings::{Contract, DimensionSupport, Profile},
+    lowering::embeddings::EncodingSupport,
     provider::{
         CredentialBindingId, CredentialKind, ProviderDefinition, ProviderOperation, catalog,
     },
@@ -16,6 +17,8 @@ pub struct EmbeddingBinding {
     pub max_inputs: usize,
     pub dimensions: &'static [usize],
     pub max_dimensions: usize,
+    pub default_dimensions: usize,
+    pub encodings: EncodingSupport,
     pub user: bool,
     pub profile: Profile,
     pub released_at: u64,
@@ -31,6 +34,8 @@ pub const EMBEDDING_BINDINGS: &[EmbeddingBinding] = &[
         max_inputs: 20,
         dimensions: &[256, 512, 768, 1024, 1536, 2048, 2560],
         max_dimensions: 2560,
+        default_dimensions: 1024,
+        encodings: EncodingSupport::Float,
         user: false,
         profile: Profile::DashScope,
         // https://platform.qianwenai.com/docs/changelog/models#2026年7月15日
@@ -45,6 +50,8 @@ pub const EMBEDDING_BINDINGS: &[EmbeddingBinding] = &[
         max_inputs: 128,
         dimensions: &[],
         max_dimensions: 1536,
+        default_dimensions: 1536,
+        encodings: EncodingSupport::Both,
         user: true,
         profile: Profile::OpenRouter,
         // https://openai.com/index/new-embedding-models-and-api-updates/ (2024-01-25).
@@ -93,6 +100,8 @@ impl EmbeddingBinding {
                 profile: self.profile,
                 contract: Contract {
                     max_inputs: self.max_inputs,
+                    default_dimensions: self.default_dimensions,
+                    encodings: self.encodings,
                     dimensions: if self.dimensions.is_empty() {
                         DimensionSupport::UpTo(self.max_dimensions)
                     } else {

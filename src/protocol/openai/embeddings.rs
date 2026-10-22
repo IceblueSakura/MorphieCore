@@ -1,4 +1,4 @@
-//! Selected standard text/float Embeddings profile; exact numeric reports remain authoritative.
+//! Text Embeddings with explicit float/LE-binary32 carriers and exact float reports.
 //! https://developers.openai.com/api/reference/resources/embeddings/methods/create
 pub use crate::adapter::embeddings::Encoding;
 use crate::protocol::openai::images::{number, object, required, string};
@@ -7,6 +7,7 @@ use crate::{
     protocol::CodecError,
     semantic::{task::embedding::*, value::Presence},
 };
+use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Map, Value, json};
 
 fn invalid() -> CodecError {
@@ -41,10 +42,11 @@ pub fn decode_request(bytes: &[u8]) -> Result<Request, CodecError> {
             Presence::Value(usize::try_from(number(d)?).map_err(|_| invalid())?);
     }
     if let Some(encoding) = map.get("encoding_format") {
-        if string(encoding)? != "float" {
-            return Err(invalid());
-        }
-        request.encoding = Presence::Value(Encoding::Float);
+        request.encoding = Presence::Value(match string(encoding)? {
+            "float" => Encoding::Float,
+            "base64" => Encoding::Base64,
+            _ => return Err(invalid()),
+        });
     }
     if let Some(user) = map.get("user") {
         let user = string(user)?;
@@ -76,8 +78,8 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
     if let Some(d) = request.task.dimensions.value() {
         map.insert("dimensions".into(), json!(d));
     }
-    if request.encoding.value().is_some() {
-        map.insert("encoding_format".into(), json!("float"));
+    if let Some(encoding) = request.encoding.value() {
+        map.insert("encoding_format".into(), json!(encoding.name()));
     }
     if let Some(user) = request.identity.user.value() {
         map.insert("user".into(), json!(user));
@@ -85,19 +87,22 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
     Ok(value)
 }
 pub fn decode_response(bytes: &[u8]) -> Result<Response, CodecError> {
-    decode_response_with(bytes, Profile::Standard)
+    decode_response_with(bytes, Profile::Standard, Encoding::Float)
 }
-pub(crate) fn decode_response_with(bytes: &[u8], profile: Profile) -> Result<Response, CodecError> {
+pub(crate) fn decode_response_with(
+    bytes: &[u8],
+    profile: Profile,
+    encoding: Encoding,
+) -> Result<Response, CodecError> {
     let value = crate::protocol::json::decode(bytes)?;
-    let fields: &[&str] = if profile == Profile::Standard {
-        &["object", "model", "data", "usage"]
-    } else {
-        &["object", "model", "data", "usage", "id"]
-    };
-    let map = object(&value, fields)?;
-    decode_map(map, profile)
+    let map = value.as_object().ok_or_else(invalid)?;
+    decode_map(map, profile, encoding)
 }
-fn decode_map(map: &Map<String, Value>, profile: Profile) -> Result<Response, CodecError> {
+fn decode_map(
+    map: &Map<String, Value>,
+    profile: Profile,
+    encoding: Encoding,
+) -> Result<Response, CodecError> {
     if string(required(map, "object")?)? != "list" {
         return Err(invalid());
     }
@@ -112,25 +117,47 @@ fn decode_map(map: &Map<String, Value>, profile: Profile) -> Result<Response, Co
     let mut vectors = Vec::with_capacity(data.len());
     let mut count = 0usize;
     for item in data {
-        let item = object(item, &["object", "index", "embedding"])?;
+        let item = item.as_object().ok_or_else(invalid)?;
         if string(required(item, "object")?)? != "embedding" {
             return Err(invalid());
         }
         let index = usize::try_from(number(required(item, "index")?)?).map_err(|_| invalid())?;
-        let values = required(item, "embedding")?
-            .as_array()
-            .ok_or_else(invalid)?;
-        count = count.checked_add(values.len()).ok_or(CodecError::Limit)?;
+        let wire = required(item, "embedding")?;
+        let vector = match encoding {
+            Encoding::Float => {
+                let values = wire.as_array().ok_or_else(invalid)?;
+                if values.len() > MAX_DIMENSIONS {
+                    return Err(CodecError::Limit);
+                }
+                let values = values
+                    .iter()
+                    .map(|v| v.as_number().cloned().ok_or_else(invalid))
+                    .collect::<Result<_, _>>()?;
+                EmbeddingVector::new(index, values).map_err(|_| invalid())?
+            }
+            Encoding::Base64 => {
+                let encoded = string(wire)?;
+                if encoded.len() > (MAX_DIMENSIONS * 4).div_ceil(3) * 4 {
+                    return Err(CodecError::Limit);
+                }
+                let bytes = STANDARD.decode(encoded).map_err(|_| invalid())?;
+                let (words, remainder) = bytes.as_chunks::<4>();
+                if !remainder.is_empty() {
+                    return Err(invalid());
+                }
+                let bits = words.iter().map(|v| u32::from_le_bytes(*v)).collect();
+                EmbeddingVector::from_binary32(index, bits).map_err(|_| invalid())?
+            }
+        };
+        count = count
+            .checked_add(vector.values().len())
+            .ok_or(CodecError::Limit)?;
         if count > MAX_VECTOR_VALUES {
             return Err(CodecError::Limit);
         }
-        let values = values
-            .iter()
-            .map(|v| v.as_number().cloned().ok_or_else(invalid))
-            .collect::<Result<Vec<_>, _>>()?;
-        vectors.push(EmbeddingVector::new(index, values).map_err(|_| invalid())?);
+        vectors.push(vector);
     }
-    let usage = object(required(map, "usage")?, &["prompt_tokens", "total_tokens"])?;
+    let usage = required(map, "usage")?.as_object().ok_or_else(invalid)?;
     let total = number(required(usage, "total_tokens")?)?;
     let usage = match usage.get("prompt_tokens") {
         Some(value) => EmbeddingUsage::new(number(value)?, total).map_err(|_| invalid())?,
@@ -151,6 +178,9 @@ fn decode_map(map: &Map<String, Value>, profile: Profile) -> Result<Response, Co
     Ok(response)
 }
 pub fn encode_response(response: &Response) -> Result<Value, CodecError> {
+    encode_response_as(response, Encoding::Float)
+}
+pub fn encode_response_as(response: &Response, encoding: Encoding) -> Result<Value, CodecError> {
     response.validate().map_err(|_| invalid())?;
     if response.id != Presence::Absent {
         return Err(invalid());
@@ -160,8 +190,28 @@ pub fn encode_response(response: &Response) -> Result<Value, CodecError> {
         .task
         .vectors()
         .iter()
-        .map(|v| json!({"object":"embedding","index":v.index(),"embedding":v.values()}))
-        .collect();
+        .map(|v| {
+            let values = match (encoding, v.values()) {
+                (Encoding::Float, EmbeddingValues::ExactJson(values)) => json!(values),
+                (Encoding::Float, EmbeddingValues::Binary32(bits)) => Value::Array(
+                    bits.iter()
+                        .map(|bits| {
+                            Value::Number(
+                                serde_json::Number::from_f64(f64::from(f32::from_bits(*bits)))
+                                    .expect("finite binary32"),
+                            )
+                        })
+                        .collect(),
+                ),
+                (Encoding::Base64, EmbeddingValues::Binary32(bits)) => {
+                    let bytes: Vec<_> = bits.iter().flat_map(|bits| bits.to_le_bytes()).collect();
+                    Value::String(STANDARD.encode(bytes))
+                }
+                (Encoding::Base64, EmbeddingValues::ExactJson(_)) => return Err(invalid()),
+            };
+            Ok(json!({"object":"embedding","index":v.index(),"embedding":values}))
+        })
+        .collect::<Result<_, _>>()?;
     let value = json!({"object":"list","model":response.model,"data":data,
         "usage":{"prompt_tokens":usage.input_tokens(),"total_tokens":usage.total_tokens()}});
     crate::semantic::value::json_size(&value, crate::semantic::value::JsonLimits::ENVELOPE.bytes)

@@ -282,6 +282,10 @@ impl<'de> DeserializeSeed<'de> for Seed<'_> {
                     .ok_or_else(|| de::Error::custom("JSON view number"))?;
                 Ok(Value::Number(value))
             }
+            // Number's integer fast path otherwise erases the sign of bare -0.
+            b'-' if value == "-0" => Ok(Value::Number(
+                "-0.0".parse::<Number>().map_err(de::Error::custom)?,
+            )),
             b'-' | b'0'..=b'9' => value
                 .parse::<Number>()
                 .map(Value::Number)
@@ -326,5 +330,20 @@ impl<'de> Visitor<'de> for Seed<'_> {
             values.insert(key, value);
         }
         Ok(Value::Object(values))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn signed_zero_survives_exact_numeric_ingestion_without_loosening_json() {
+        let value = parse_json(br#"[-0,-0.0,0,0.1]"#, JsonLimits::STRUCTURED).unwrap();
+        assert_eq!(value[0].to_string(), "-0.0");
+        assert_eq!(value[1].to_string(), "-0.0");
+        assert_eq!(value[2].to_string(), "0");
+        assert_eq!(value[3].to_string(), "0.1");
+        assert!(parse_json(br#"{"n":-0,"n":0}"#, JsonLimits::STRUCTURED).is_err());
+        assert!(parse_json(b"-00", JsonLimits::STRUCTURED).is_err());
     }
 }

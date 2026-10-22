@@ -18,15 +18,15 @@ pub fn prepare(
     {
         return Err(AttemptError::Protocol("embedding binding mismatch"));
     }
-    route
+    let projected = route
         .endpoint
         .contract
-        .admit(request)
+        .prepare(request)
         .map_err(|_| AttemptError::Protocol("embedding admission"))?;
     let value = route
         .endpoint
         .profile
-        .encode_request(request, &route.endpoint.upstream_model)?;
+        .encode_request(&projected.target, &route.endpoint.upstream_model)?;
     crate::semantic::value::json_size(&value, route.endpoint.execution.request_body_limit)
         .map_err(|_| AttemptError::Limit)?;
     Ok(UpstreamRequest {

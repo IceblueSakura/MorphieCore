@@ -2,11 +2,13 @@
 use crate::gateway::{
     ApiError, Credentials, EmbeddingEntry, Runtime, StartupError, body,
     diagnostics::{Stage, Trace},
-    ingress::admission,
+    ingress::{admission, capabilities},
     startup::credentials,
 };
 use crate::{
-    adapter::embeddings::{Profile, Request as EmbeddingRequest, Response as EmbeddingResponse},
+    adapter::embeddings::{
+        Encoding, Profile, Request as EmbeddingRequest, Response as EmbeddingResponse,
+    },
     protocol::openai::embeddings as codec,
     provider::{CredentialKind, ProviderDefinition},
     topology::{CompiledTopology, embeddings::EmbeddingRoute},
@@ -20,7 +22,7 @@ use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use tokio::time::Instant;
 
 pub(in crate::gateway) struct BoundEmbedding {
-    route: EmbeddingRoute,
+    pub(in crate::gateway) route: EmbeddingRoute,
     provider: ProviderDefinition,
     secret: credentials::Source,
 }
@@ -75,7 +77,11 @@ pub(in crate::gateway) async fn handle(
         .unwrap_or_else(IntoResponse::into_response)
 }
 async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, ApiError> {
-    let trace = Trace::new(runtime.diagnostics.as_ref());
+    let mut trace = Trace::new(runtime.diagnostics.as_ref());
+    trace.capture = request
+        .extensions()
+        .get::<crate::gateway::capture::Exchange>()
+        .cloned();
     if runtime.shutdown.is_cancelled() {
         return Err(ApiError::shutdown());
     }
@@ -97,17 +103,17 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
         .get(&request.model)
         .ok_or(ApiError::new(StatusCode::NOT_FOUND, "model_not_found"))?
         .clone();
-    entry
+    let projected = entry
         .route
         .endpoint
         .contract
-        .admit(&request)
+        .prepare(&request)
         .map_err(|_| ApiError::invalid())?;
     let value = entry
         .route
         .endpoint
         .profile
-        .encode_request(&request, &entry.route.endpoint.upstream_model)
+        .encode_request(&projected.target, &entry.route.endpoint.upstream_model)
         .map_err(|_| ApiError::invalid())?;
     crate::semantic::value::json_size(&value, entry.route.endpoint.execution.request_body_limit)
         .map_err(|_| ApiError::invalid())?;
@@ -129,6 +135,7 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
         trace,
     )
     .await
+    .map(capabilities::notice)
 }
 pub(in crate::gateway) async fn produce(
     runtime: Arc<Runtime>,
@@ -152,6 +159,14 @@ async fn produce_one(
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
     trace.stage(Stage::Prepare);
+    trace.executor(entry.provider.id.as_str());
+    let expectation = entry
+        .route
+        .endpoint
+        .contract
+        .prepare(request)
+        .map_err(|_| ApiError::invalid())?
+        .expectation;
     let (secret, grant) = entry.secret.resolve()?;
     if grant.is_some() {
         return Err(ApiError::upstream());
@@ -160,6 +175,9 @@ async fn produce_one(
         crate::execution::embeddings::prepare(&entry.route, &entry.provider, &secret, request)
             .map_err(|_| ApiError::invalid())?;
     trace.stage(Stage::Connect);
+    if let Some(capture) = &trace.capture {
+        capture.upstream_request(&prepared, trace.capture_attempt);
+    }
     let upstream = runtime
         .transport
         .send(prepared, deadline.saturating_duration_since(Instant::now()))
@@ -173,15 +191,19 @@ async fn produce_one(
             .min(entry.route.endpoint.execution.response_body_limit),
         trace,
         entry.route.endpoint.profile,
+        expectation.upstream_encoding,
     )
     .await?;
-    response
-        .validate_for(&request.task)
+    expectation
+        .validate_response(&response)
         .map_err(|_| ApiError::upstream())?;
     trace.stage(Stage::Projection);
-    let projected = crate::lowering::embeddings::project_response(&response)
+    let projected =
+        crate::lowering::embeddings::project_response(&response, expectation.client_encoding)
+            .map_err(|_| ApiError::upstream())?;
+    trace.embedding_receipts(&projected.receipts);
+    let value = codec::encode_response_as(&projected.response, expectation.client_encoding)
         .map_err(|_| ApiError::upstream())?;
-    let value = codec::encode_response(&projected.response).map_err(|_| ApiError::upstream())?;
     crate::semantic::value::json_size(&value, runtime.limits.response_bytes)
         .map_err(|_| ApiError::upstream())?;
     let output = serde_json::to_vec(&value).map_err(|_| ApiError::upstream())?;
@@ -196,9 +218,18 @@ pub(in crate::gateway) async fn receive(
     limit: usize,
     trace: &mut Trace,
     profile: Profile,
+    encoding: Encoding,
 ) -> Result<EmbeddingResponse, ApiError> {
     trace.stage(Stage::ResponseHead);
     trace.head(upstream.status().as_u16(), upstream.headers());
+    if let Some(capture) = &trace.capture {
+        capture.head(
+            crate::gateway::capture::Boundary::UpstreamResponse,
+            Some(trace.capture_attempt),
+            upstream.headers(),
+            None,
+        );
+    }
     if upstream.status().as_u16() != 200 {
         return Err(ApiError::status(upstream.status().as_u16()));
     }
@@ -234,6 +265,13 @@ pub(in crate::gateway) async fn receive(
         return Err(ApiError::upstream());
     }
     trace.stage(Stage::Intake);
+    let mut capture = trace.capture.as_ref().and_then(|c| {
+        c.body(
+            crate::gateway::capture::Boundary::UpstreamResponse,
+            Some(trace.capture_attempt),
+            "application/json",
+        )
+    });
     let mut bytes = Vec::new();
     while let Some(chunk) = upstream.chunk().await.map_err(|e| {
         if e.is_timeout() {
@@ -252,7 +290,11 @@ pub(in crate::gateway) async fn receive(
     if length.is_some_and(|n| n != bytes.len() as u64) {
         return Err(ApiError::upstream());
     }
+    if let Some(capture) = &mut capture {
+        capture.feed(&bytes);
+        capture.finish();
+    }
     profile
-        .decode_response(&bytes)
+        .decode_response_as(&bytes, encoding)
         .map_err(|_| ApiError::upstream())
 }

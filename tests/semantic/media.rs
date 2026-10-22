@@ -31,7 +31,7 @@ mod embeddings {
             json!({"dimensions":true}),
             json!({"dimensions":null}),
             json!({"dimensions":1.5}),
-            json!({"encoding_format":"base64"}),
+            json!({"encoding_format":"binary"}),
             json!({"encoding_format":null}),
             json!({"stream":false}),
             json!({"provider":null}),
@@ -66,10 +66,10 @@ mod embeddings {
         request.dimensions = Presence::Value(2);
         response.validate_for(&request).unwrap();
         assert_eq!(response.vectors()[0].index(), 1);
-        assert_eq!(
-            response.vectors()[0].values()[1].to_string(),
-            "0.12345678901234567890123456789"
-        );
+        let EmbeddingValues::ExactJson(values) = response.vectors()[0].values() else {
+            panic!("exact JSON")
+        };
+        assert_eq!(values[1].to_string(), "0.12345678901234567890123456789");
         assert_eq!(response.model(), "reported-vector");
         let encoded = embeddings::encode_response(&response).unwrap();
         assert_eq!(encoded["data"][0]["index"], 1);
@@ -83,7 +83,10 @@ mod embeddings {
 
     #[test]
     fn dashscope_input_only_usage_is_a_named_basis_not_missing_fact_inference() {
-        use morphiecore::{adapter::embeddings::Profile, lowering::embeddings::project_response};
+        use morphiecore::{
+            adapter::embeddings::{Encoding, Profile},
+            lowering::embeddings::{Rule, project_response},
+        };
         let wire = br#"{"object":"list","model":"synthetic-qwen","id":"synthetic-request-id",
         "data":[{"object":"embedding","index":0,"embedding":[0.5,-0.125]}],
         "usage":{"total_tokens":7}}"#;
@@ -97,8 +100,15 @@ mod embeddings {
         assert_eq!(usage.input_tokens(), 7);
         assert_eq!(usage.total_tokens(), 7);
         assert!(embeddings::encode_response(&response).is_err());
-        let projected = project_response(&response).unwrap();
-        assert!(projected.omitted_response_identifier);
+        let projected = project_response(&response, Encoding::Float).unwrap();
+        assert_eq!(
+            projected
+                .receipts
+                .iter()
+                .map(|r| r.rule)
+                .collect::<Vec<_>>(),
+            vec![Rule::OmitResponseId]
+        );
         assert_eq!(response.id, Presence::Value("synthetic-request-id".into()));
         assert_eq!(
             embeddings::encode_response(&projected.response).unwrap(),
@@ -123,7 +133,235 @@ mod embeddings {
         }
         let mut malformed = response;
         malformed.id = Presence::Value(String::new());
-        assert!(project_response(&malformed).is_err());
+        assert!(project_response(&malformed, Encoding::Float).is_err());
+    }
+
+    #[test]
+    fn decimal_delivery_rounds_directly_to_binary32_and_preserves_source() {
+        use morphiecore::{
+            adapter::embeddings::{Encoding, Profile},
+            lowering::embeddings::{Rule, project_response},
+        };
+        for (decimal, bits) in [
+            ("0.1", 0x3dcccccd),
+            ("1.000000059604644775390625", 0x3f800000),
+            ("1.0000000596046447753906250000000001", 0x3f800001),
+            ("1.000000178813934326171875", 0x3f800002),
+            ("1.0000001788139343261718749999999999", 0x3f800001),
+            ("1e-45", 1),
+            ("8e-46", 1),
+            ("3.4028235e38", 0x7f7fffff),
+            ("-0", 0x80000000),
+            ("-0.0", 0x80000000),
+            ("-0e-999", 0x80000000),
+            ("0e10", 0),
+        ] {
+            let wire = format!(
+                r#"{{"object":"list","model":"reported","data":[{{"object":"embedding","index":0,"embedding":[{decimal}]}}],"usage":{{"prompt_tokens":1,"total_tokens":1}}}}"#
+            );
+            let source = Profile::Standard.decode_response(wire.as_bytes()).unwrap();
+            let snapshot = source.clone();
+            let float = project_response(&source, Encoding::Float).unwrap();
+            assert!(float.receipts.is_empty());
+            assert_eq!(float.response, source);
+            let projected = project_response(&source, Encoding::Base64).unwrap();
+            assert_eq!(source, snapshot);
+            assert_eq!(
+                projected.response.vectors()[0].values(),
+                &EmbeddingValues::Binary32(vec![bits]),
+                "{decimal}"
+            );
+            assert_eq!(
+                projected
+                    .receipts
+                    .iter()
+                    .map(|r| r.rule)
+                    .collect::<Vec<_>>(),
+                vec![Rule::RoundBinary32]
+            );
+        }
+        for decimal in [
+            "7e-46",
+            "-7e-46",
+            "1e-1000",
+            "3.4028236e38",
+            "-3.4028236e38",
+        ] {
+            let source = morphiecore::adapter::embeddings::Response {
+                model: "reported".into(),
+                id: Presence::Absent,
+                task: EmbeddingResponse::new(
+                    vec![EmbeddingVector::new(0, vec![decimal.parse().unwrap()]).unwrap()],
+                    EmbeddingUsage::new(1, 1).unwrap(),
+                )
+                .unwrap(),
+            };
+            assert!(
+                project_response(&source, Encoding::Base64).is_err(),
+                "{decimal}"
+            );
+            assert!(
+                embeddings::encode_response(&source).is_ok(),
+                "float keeps {decimal}"
+            );
+        }
+    }
+
+    #[test]
+    fn binary_carriers_have_independent_bytes_and_binary64_visible_json() {
+        use morphiecore::{
+            adapter::embeddings::{Encoding, Profile},
+            lowering::embeddings::project_response,
+        };
+        for (encoded, bits, json_number) in [
+            ("AAAAAA==", 0, "0.0"),
+            ("AAAAgA==", 0x80000000, "-0.0"),
+            ("AQAAAA==", 1, "1.401298464324817e-45"),
+            ("zczMPQ==", 0x3dcccccd, "0.10000000149011612"),
+        ] {
+            let wire = json!({"object":"list","model":"reported","data":[{"object":"embedding","index":0,"embedding":encoded}],"usage":{"prompt_tokens":1,"total_tokens":1}});
+            let source = Profile::Standard
+                .decode_response_as(&serde_json::to_vec(&wire).unwrap(), Encoding::Base64)
+                .unwrap();
+            assert_eq!(
+                source.vectors()[0].values(),
+                &EmbeddingValues::Binary32(vec![bits])
+            );
+            for encoding in [Encoding::Float, Encoding::Base64] {
+                let projected = project_response(&source, encoding).unwrap();
+                assert!(projected.receipts.is_empty());
+                let output = embeddings::encode_response_as(&projected.response, encoding).unwrap();
+                assert_eq!(
+                    output["data"][0]["embedding"],
+                    if encoding == Encoding::Base64 {
+                        json!(encoded)
+                    } else {
+                        serde_json::from_str::<serde_json::Value>(&format!("[{json_number}]"))
+                            .unwrap()
+                    }
+                );
+            }
+        }
+        for bad in [
+            "",
+            "AAAA",
+            "AAAAAA",
+            "AAAAAA===",
+            "AAAAAB==",
+            "AACAfw==",
+            "AACA/w==",
+            "AADAfw==",
+        ] {
+            let wire = json!({"object":"list","model":"reported","data":[{"object":"embedding","index":0,"embedding":bad}],"usage":{"prompt_tokens":1,"total_tokens":1}});
+            assert!(
+                Profile::Standard
+                    .decode_response_as(&serde_json::to_vec(&wire).unwrap(), Encoding::Base64)
+                    .is_err(),
+                "{bad}"
+            );
+        }
+        let decimal = EmbeddingVector::new(0, vec!["0.1".parse().unwrap()]).unwrap();
+        let response = morphiecore::adapter::embeddings::Response {
+            model: "reported".into(),
+            id: Presence::Absent,
+            task: EmbeddingResponse::new(vec![decimal], EmbeddingUsage::new(1, 1).unwrap())
+                .unwrap(),
+        };
+        assert_eq!(
+            embeddings::encode_response_as(
+                &project_response(&response, Encoding::Base64)
+                    .unwrap()
+                    .response,
+                Encoding::Base64
+            )
+            .unwrap()["data"][0]["embedding"],
+            "zczMPQ=="
+        );
+    }
+
+    #[test]
+    fn target_expectations_resolve_defaults_and_do_not_weaken_wire_validation() {
+        use morphiecore::{
+            adapter::embeddings::{Encoding, Profile, Request},
+            lowering::embeddings::{Contract, DimensionSupport, EncodingSupport},
+        };
+        let mut contract = Contract {
+            max_inputs: 128,
+            default_dimensions: 1536,
+            dimensions: DimensionSupport::UpTo(1536),
+            encodings: EncodingSupport::Base64,
+            user: false,
+        };
+        let mut request = Request::new(
+            "selected",
+            EmbeddingRequest::new(vec!["x".into(); 39]).unwrap(),
+        );
+        let prepared = contract.prepare(&request).unwrap();
+        assert_eq!(request.encoding, Presence::Absent);
+        assert_eq!(prepared.target.task.dimensions, Presence::Absent);
+        assert_eq!(prepared.expectation.upstream_encoding, Encoding::Base64);
+        assert_eq!(prepared.expectation.client_encoding, Encoding::Float);
+        request.task = EmbeddingRequest::new(vec!["x".into(); 40]).unwrap();
+        assert!(contract.prepare(&request).is_err());
+        request.task.dimensions = Presence::Value(1536);
+        assert!(contract.prepare(&request).is_err());
+        request.task.dimensions = Presence::Value(128);
+        assert!(contract.prepare(&request).is_ok());
+        contract.dimensions = DimensionSupport::Range {
+            min: 128,
+            max: 1536,
+        };
+        request.task.dimensions = Presence::Value(127);
+        assert!(contract.prepare(&request).is_err());
+        let wire = br#"{"object":"list","model":"reported","unknown":{},"data":[{"object":"embedding","index":0,"embedding":[0.1],"unknown":true}],"usage":{"prompt_tokens":1,"total_tokens":1,"unknown":[]} }"#;
+        assert!(
+            Profile::Standard
+                .decode_response_as(wire, Encoding::Float)
+                .is_ok()
+        );
+        assert!(
+            Profile::Standard
+                .decode_response_as(wire, Encoding::Base64)
+                .is_err()
+        );
+        let bad = String::from_utf8(wire.to_vec())
+            .unwrap()
+            .replace("\"prompt_tokens\":1", "\"prompt_tokens\":null");
+        assert!(Profile::Standard.decode_response(bad.as_bytes()).is_err());
+        request.task = EmbeddingRequest::new(vec!["x".into()]).unwrap();
+        let expected = contract.prepare(&request).unwrap().expectation;
+        let response = Profile::Standard.decode_response(wire).unwrap();
+        assert!(
+            expected.validate_response(&response).is_err(),
+            "omitted default width must still match"
+        );
+    }
+
+    #[test]
+    fn numeric_projection_preserves_unreported_usage_but_strict_delivery_rejects_it() {
+        use morphiecore::{
+            adapter::embeddings::{Encoding, Response},
+            lowering::embeddings::project_response,
+        };
+        for vector in [
+            EmbeddingVector::new(0, vec!["0.1".parse().unwrap()]).unwrap(),
+            EmbeddingVector::from_binary32(0, vec![0x3dcccccd]).unwrap(),
+        ] {
+            let mut source = Response {
+                model: "reported".into(),
+                id: Presence::Absent,
+                task: EmbeddingResponse::new(vec![vector], EmbeddingUsage::new(1, 1).unwrap())
+                    .unwrap(),
+            };
+            source.task.usage = Presence::Absent;
+            let snapshot = source.clone();
+            for encoding in [Encoding::Float, Encoding::Base64] {
+                let projected = project_response(&source, encoding).unwrap();
+                assert_eq!(projected.response.task.usage, Presence::Absent);
+                assert!(embeddings::encode_response_as(&projected.response, encoding).is_err());
+                assert_eq!(source, snapshot);
+            }
+        }
     }
 }
 mod image_binding {

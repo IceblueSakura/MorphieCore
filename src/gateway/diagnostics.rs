@@ -133,6 +133,8 @@ fn reasoning_controls(
 }
 #[derive(Serialize)]
 struct CandidateRecord {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    embedding_receipts: Vec<crate::lowering::embeddings::Receipt>,
     #[serde(flatten)]
     routing: RoutingObservation,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -240,6 +242,7 @@ struct AffinityObservation {
     affinity_session_sent: Option<bool>,
 }
 pub(super) struct Trace {
+    embedding_receipts: Vec<crate::lowering::embeddings::Receipt>,
     reported_reasoning: Option<serde_json::Value>,
     losses: Vec<LossObservation>,
     pub(super) capture: Option<super::capture::Exchange>,
@@ -254,6 +257,7 @@ pub(super) struct Trace {
 impl Trace {
     pub(super) fn new(sink: Option<&Sink>) -> Self {
         Self {
+            embedding_receipts: vec![],
             reported_reasoning: None,
             losses: vec![],
             capture: None,
@@ -270,6 +274,7 @@ impl Trace {
         }
     }
     pub(super) fn begin_candidate(&mut self, ordinal: usize) {
+        self.embedding_receipts.clear();
         self.record.routing = RoutingObservation::default();
         self.capture_attempt = ordinal;
         self.losses.clear();
@@ -295,6 +300,7 @@ impl Trace {
             && self.record.candidates.len() < crate::topology::route::MAX_ROUTE_CANDIDATES
         {
             self.record.candidates.push(CandidateRecord {
+                embedding_receipts: std::mem::take(&mut self.embedding_receipts),
                 routing: self.record.routing,
                 reported_reasoning: self.reported_reasoning.take(),
                 losses: std::mem::take(&mut self.losses),
@@ -315,6 +321,11 @@ impl Trace {
     }
     pub(super) fn executor_order(&mut self, label: &'static str) {
         self.record.executor_order = Some(label);
+    }
+    pub(super) fn embedding_receipts(&mut self, receipts: &[crate::lowering::embeddings::Receipt]) {
+        if self.sink.is_some() {
+            self.embedding_receipts = receipts.to_vec();
+        }
     }
     pub(super) fn selection_skip(&mut self, reason: &'static str) {
         if self.sink.is_some() {

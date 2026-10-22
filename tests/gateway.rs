@@ -5,6 +5,10 @@
 mod chat_wire;
 #[path = "support/credential_recovery.rs"]
 mod credential_recovery;
+#[path = "support/embedding_loop.rs"]
+mod embedding_loop;
+#[path = "support/embeddings.rs"]
+mod embedding_support;
 #[path = "support/filesystem.rs"]
 mod filesystem;
 #[path = "support/google_tool_loop.rs"]
@@ -31,6 +35,8 @@ mod anthropic;
 mod bootstrap;
 #[path = "gateway/chat_tool_history.rs"]
 mod chat_tool_history;
+#[path = "gateway/embeddings.rs"]
+mod embeddings;
 #[path = "gateway/google_tool_loop.rs"]
 mod google_tool_loop;
 #[path = "gateway/interactions.rs"]

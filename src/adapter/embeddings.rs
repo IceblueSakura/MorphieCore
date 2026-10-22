@@ -5,6 +5,15 @@ use crate::semantic::{context::ClientIdentityHints, task::embedding::*, value::P
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Encoding {
     Float,
+    Base64,
+}
+impl Encoding {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Float => "float",
+            Self::Base64 => "base64",
+        }
+    }
 }
 /// Trusted response-report rules never expand the public standard request profile.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -27,7 +36,14 @@ impl Profile {
         crate::protocol::openai::embeddings::encode_request(&target, model)
     }
     pub fn decode_response(self, bytes: &[u8]) -> Result<Response, crate::protocol::CodecError> {
-        crate::protocol::openai::embeddings::decode_response_with(bytes, self)
+        self.decode_response_as(bytes, Encoding::Float)
+    }
+    pub fn decode_response_as(
+        self,
+        bytes: &[u8],
+        encoding: Encoding,
+    ) -> Result<Response, crate::protocol::CodecError> {
+        crate::protocol::openai::embeddings::decode_response_with(bytes, self, encoding)
     }
 }
 

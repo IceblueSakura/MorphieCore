@@ -41,20 +41,44 @@ fn embeddings_need_explicit_selection_and_a_single_nonfallback_key() {
         assert!(boot.gateway.state.entries.is_empty());
         assert_eq!(boot.gateway.state.embeddings.len(), 1);
         assert!(boot.gateway.state.models.models.contains_key(binding.model));
-        let text = catalog::API_KEY_BINDINGS
-            .iter()
-            .find(|b| {
-                b.credential() == binding.credential() && !b.public_model().contract.audio_input
-            })
-            .unwrap();
-        write_configuration(
-            dir.path(),
-            service.clone(),
-            selected_models(&[text.model], &[provider.id.as_str()]),
+        let snapshot: serde_json::Value =
+            serde_json::from_slice(&boot.gateway.state.capabilities.0).unwrap();
+        assert_eq!(snapshot["data"].as_array().unwrap().len(), 1);
+        assert_eq!(snapshot["data"][0]["model"], binding.model);
+        assert_eq!(snapshot["data"][0]["protocol"], "embeddings");
+        assert_eq!(
+            snapshot["data"][0]["embedding"]["default_dimensions"],
+            binding.default_dimensions
         );
-        let boot = Bootstrap::from_directory(dir.path()).unwrap();
-        assert!(boot.gateway.state.embeddings.is_empty());
-        assert!(!boot.gateway.state.entries.is_empty());
+        assert_eq!(
+            snapshot["data"][0]["embedding"]["output_encodings"],
+            json!(["float", "base64"])
+        );
+        let public = snapshot.to_string();
+        assert!(!public.contains(provider.origin.as_str()));
+        assert!(!public.contains(binding.credential().as_str()));
+        assert!(!public.contains("gemini-embedding-2"));
+        if let Some(text) = catalog::API_KEY_BINDINGS.iter().find(|b| {
+            b.credential() == binding.credential() && !b.public_model().contract.audio_input
+        }) {
+            write_configuration(
+                dir.path(),
+                service.clone(),
+                selected_models(&[text.model], &[provider.id.as_str()]),
+            );
+            let boot = Bootstrap::from_directory(dir.path()).unwrap();
+            assert!(boot.gateway.state.embeddings.is_empty());
+            assert!(!boot.gateway.state.entries.is_empty());
+            let snapshot: serde_json::Value =
+                serde_json::from_slice(&boot.gateway.state.capabilities.0).unwrap();
+            assert!(
+                snapshot["data"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|v| v["protocol"] != "embeddings")
+            );
+        }
         write_configuration(
             dir.path(),
             service,

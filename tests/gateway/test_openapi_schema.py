@@ -109,18 +109,19 @@ class OpenApiSchemaTests(unittest.TestCase):
 
 
 class EmbeddingSchemaTests(unittest.TestCase):
-    def test_text_float_request_and_deferred_unions(self):
+    def test_text_encoding_request_and_deferred_token_inputs(self):
         check = validator("EmbeddingRequest")
         request = {"model": "synthetic-vector", "input": "hello"}
         check.validate(request)
         check.validate({**request, "input": ["first", "第二条"], "dimensions": 2,
                         "encoding_format": "float", "user": "synthetic"})
+        check.validate({**request, "encoding_format": "base64"})
         for controls in (
             {"input": ""}, {"input": []}, {"input": ["x", ""]},
             {"input": [1, 2]}, {"input": ["x", 1]}, {"input": None},
             {"input": ["x"] * 129}, {"dimensions": 0}, {"dimensions": True},
             {"dimensions": None}, {"dimensions": 8193},
-            {"encoding_format": "base64"}, {"encoding_format": None},
+            {"encoding_format": "binary"}, {"encoding_format": None},
             {"stream": False}, {"provider": None}, {"_openbridge": {}}, {"user": None},
         ):
             self.assertFalse(check.is_valid({**request, **controls}))
@@ -128,19 +129,21 @@ class EmbeddingSchemaTests(unittest.TestCase):
         self.assertEqual(post["requestBody"]["content"]["application/json"]["schema"]["$ref"],
                          "#/components/schemas/EmbeddingRequest")
 
-    def test_required_float_reports_and_no_synthetic_usage(self):
+    def test_required_reports_and_both_encodings_without_synthetic_usage(self):
         check = validator("EmbeddingResponse")
         response = {"object": "list", "model": "reported-vector",
                     "data": [{"object": "embedding", "index": 0, "embedding": [0.5, -0.125]}],
                     "usage": {"prompt_tokens": 2, "total_tokens": 2}}
         check.validate(response)
+        check.validate({**response, "data": [{"object": "embedding", "index": 0,
+                                            "embedding": "AAAAPwAAAL4="}]})
         for pointer in ("object", "model", "data", "usage"):
             changed = copy.deepcopy(response)
             del changed[pointer]
             self.assertFalse(check.is_valid(changed))
         for data in ([], [{"object": "embedding", "index": -1, "embedding": [1]}],
                      [{"object": "embedding", "index": 0, "embedding": []}],
-                     [{"object": "embedding", "index": 0, "embedding": "AAAAAA=="}]):
+                     [{"object": "embedding", "index": 0, "embedding": "not-base64"}]):
             self.assertFalse(check.is_valid({**response, "data": data}))
         for usage in (None, {}, {"prompt_tokens": True, "total_tokens": 1},
                       {"prompt_tokens": -1, "total_tokens": 0}):

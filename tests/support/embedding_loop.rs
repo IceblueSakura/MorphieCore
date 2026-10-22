@@ -1,0 +1,188 @@
+//! One synthetic fixed-target Embedding exchange for raw Router and pinned SDK clients.
+use crate::embedding_support as binding;
+use axum::{
+    Router, body::Body, extract::State, http::HeaderMap, response::Response, routing::post,
+};
+use morphiecore::{
+    adapter::embeddings::Profile,
+    gateway::{EmbeddingEntry, Gateway, Limits, TaskEntries},
+    lowering::embeddings::EncodingSupport,
+    provider::{
+        AuthScheme, CredentialBindingId, ProviderDefinition, ProviderId, SecretMaterial,
+        TrustedOrigin,
+    },
+    topology::{self, ModelId, ModelMetadata},
+};
+use serde_json::{Value, json};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+};
+use tokio::net::TcpListener;
+pub const CLIENT_KEY: &str = "synthetic-embedding-client-key-0001";
+pub struct Fixture {
+    pub gateway: Gateway,
+    pub base: String,
+    pub seen: Arc<Mutex<Vec<Value>>>,
+    tasks: Vec<tokio::task::AbortHandle>,
+}
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        for task in &self.tasks {
+            task.abort();
+        }
+    }
+}
+#[derive(Clone)]
+struct Upstream {
+    seen: Arc<Mutex<Vec<Value>>>,
+    profile: Profile,
+    default_dimensions: usize,
+}
+async fn answer(
+    State(state): State<Upstream>,
+    headers: HeaderMap,
+    axum::Json(request): axum::Json<Value>,
+) -> Response {
+    assert_eq!(
+        headers["authorization"],
+        "Bearer synthetic-embedding-upstream-key-0001"
+    );
+    assert!(!headers.contains_key("x-never-forward"));
+    assert_eq!(request["model"], "private-vector");
+    let input = request["input"].as_array().unwrap();
+    assert!(request.get("stream").is_none());
+    state.seen.lock().unwrap().push(request.clone());
+    let binary = request["encoding_format"] == "base64";
+    assert!(binary || request["encoding_format"] == "float");
+    let dimensions = request["dimensions"]
+        .as_u64()
+        .map(|n| n as usize)
+        .unwrap_or(state.default_dimensions);
+    let values = if input[0] == "wrong-width" {
+        if binary {
+            json!("AAAAPw==")
+        } else {
+            json!([0.5])
+        }
+    } else if input[0] == "underflow" {
+        serde_json::from_str("[1e-1000,0]").unwrap()
+    } else if binary {
+        json!("zczMPQAAAL4=")
+    } else {
+        let mut values = vec![json!(0); dimensions];
+        values[0] = json!(0.1);
+        if dimensions > 1 {
+            values[1] = json!(-0.125);
+        }
+        json!(values)
+    };
+    let data: Vec<_> = (0..input.len())
+        .rev()
+        .map(|index| json!({"object":"embedding","index":index,"embedding":values}))
+        .collect();
+    let usage = if state.profile == Profile::DashScope {
+        json!({"total_tokens":7})
+    } else {
+        json!({"prompt_tokens":7,"total_tokens":7})
+    };
+    Response::builder().header("content-type", "application/json").body(Body::from(json!({
+        "object":"list","model":"reported-vector","id":"synthetic-id","data":data,"usage":usage,"unknown":true
+    }).to_string())).unwrap()
+}
+impl Fixture {
+    pub async fn start(
+        encodings: EncodingSupport,
+        capture: Option<&std::path::Path>,
+        diagnostics: Option<&std::path::Path>,
+    ) -> Self {
+        Self::start_with_dimensions(encodings, 2, 4, capture, diagnostics).await
+    }
+    pub async fn start_with_dimensions(
+        encodings: EncodingSupport,
+        default_dimensions: usize,
+        max_inputs: usize,
+        capture: Option<&std::path::Path>,
+        diagnostics: Option<&std::path::Path>,
+    ) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let provider = ProviderDefinition {
+            id: ProviderId::new("fixture").unwrap(),
+            origin: TrustedOrigin::parse(&origin).unwrap(),
+            endpoints: [].into(),
+            credential_pool: None,
+            auth: AuthScheme::Bearer,
+        };
+        let (operation, mut route) = binding::binding(&provider);
+        route.endpoint.contract.encodings = encodings;
+        route.endpoint.contract.default_dimensions = default_dimensions;
+        route.endpoint.contract.dimensions =
+            morphiecore::lowering::embeddings::DimensionSupport::UpTo(default_dimensions.max(16));
+        route.endpoint.contract.max_inputs = max_inputs;
+        route.endpoint.execution.response_body_limit = 1 << 20;
+        route.endpoint.profile = if encodings == EncodingSupport::Float {
+            Profile::DashScope
+        } else {
+            Profile::OpenRouter
+        };
+        let seen = Arc::new(Mutex::new(vec![]));
+        let router = Router::new()
+            .route("/embeddings", post(answer))
+            .with_state(Upstream {
+                seen: seen.clone(),
+                profile: route.endpoint.profile,
+                default_dimensions,
+            });
+        let upstream = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let topology = topology::compile(vec![provider], vec![], vec![], vec![], vec![])
+            .unwrap()
+            .with_embeddings(vec![operation], vec![route])
+            .unwrap()
+            .with_model_metadata([(
+                ModelId::new("canonical-vector").unwrap(),
+                ModelMetadata::new(1, "Synthetic").unwrap(),
+            )])
+            .unwrap();
+        let mut gateway = Gateway::new(
+            topology,
+            TaskEntries {
+                embeddings: vec![EmbeddingEntry {
+                    model: "public-vector".into(),
+                }],
+                ..Default::default()
+            },
+            BTreeMap::from([(
+                CredentialBindingId::new("fixture-key").unwrap(),
+                Arc::new(SecretMaterial::new("synthetic-embedding-upstream-key-0001").unwrap()),
+            )]),
+            SecretMaterial::new(CLIENT_KEY).unwrap(),
+            Limits::default(),
+            None,
+        )
+        .unwrap();
+        if let Some(path) = capture {
+            gateway = gateway.with_capture(serde_json::from_value(json!({"path":path,
+            "client_request":{"headers":true,"body":true},"upstream_request":{"headers":true,"body":true},
+            "upstream_response":{"headers":true,"body":true},"client_response":{"headers":true,"body":true}})).unwrap()).unwrap();
+        }
+        if let Some(path) = diagnostics {
+            gateway = gateway.with_diagnostics(path).unwrap();
+        }
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let serving = gateway.clone();
+        let server = tokio::spawn(async move {
+            serving
+                .serve(listener, std::future::pending())
+                .await
+                .unwrap()
+        });
+        Self {
+            gateway,
+            base,
+            seen,
+            tasks: vec![upstream.abort_handle(), server.abort_handle()],
+        }
+    }
+}

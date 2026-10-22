@@ -3,7 +3,7 @@
   "info": {
     "title": "MorphieCore HTTP API",
     "version": "0.1.0",
-    "description": "HTTP API summary for the local gateway, not full vendor API conformance. Generation uses a typed IR, stateless upstream history and bounded pre-publication failover. Responses enables gateway-managed TTL history by default; store:false opts out. Known fields are strict; unknown generation fields are ignored, not forwarded. Standalone media and Embeddings are frozen and require explicit activation. Codecs define exact admission; docs/usage.md explains setup."
+    "description": "HTTP API summary for the local gateway, not full vendor API conformance. Generation uses a typed IR, stateless upstream history and bounded pre-publication failover. Responses enables gateway-managed TTL history by default; store:false opts out. Known fields are strict; unknown generation fields are ignored, not forwarded. Standalone tasks require explicit activation. Embeddings accepts text with float/Base64 delivery; other media remain frozen. Codecs define exact admission; docs/usage.md explains setup."
   },
   "servers": [{"url": "http://127.0.0.1:8080"}],
   "security": [{"bearerAuth": []}, {"apiKeyAuth": []}],
@@ -11,7 +11,7 @@
     "/v1/morphiecore/capabilities": {
       "get": {
         "operationId": "generationCapabilities",
-        "summary": "Inspect partial gateway contracts for activated Generation clients",
+        "summary": "Inspect partial gateway contracts for activated Generation and Embedding clients",
         "description": "Startup-immutable, authenticated discovery with no request-body or upstream I/O. Unlisted cases are not assessed. Claims describe individual gateway boundaries, not complete exchange success or Provider-effective support. HEAD returns headers without a body.",
         "responses": {
           "200": {
@@ -141,8 +141,12 @@
         },
         "responses": {
           "200": {
-            "description": "Complete float vectors and reported usage after validated EOF. Fixed activated target, no fallback. Invalid indices, dimensions or incomplete batches fail.",
-            "headers": {"Cache-Control": {"schema": {"type": "string", "const": "no-store"}}},
+            "description": "Complete float or Base64 vectors and reported usage after validated EOF. Fixed activated target, no fallback. Invalid indices, effective dimensions or incomplete batches fail.",
+            "headers": {
+              "Cache-Control": {"schema": {"type": "string", "const": "no-store"}},
+              "X-MorphieCore-Adaptation": {"$ref": "#/components/headers/PossibleAdaptation"},
+              "Link": {"$ref": "#/components/headers/CapabilityLink"}
+            },
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/EmbeddingResponse"}}}
           },
           "400": {"$ref": "#/components/responses/Error"},
@@ -397,7 +401,7 @@
   "components": {
     "headers": {
       "PossibleAdaptation": {
-        "description": "Conservative notice on Generation JSON/SSE responses, including pre-frame Responses failure streams. Not an actual-loss receipt or a success assertion. Missing on pre-response errors and discovery/history operations; absence does not certify exactness.",
+        "description": "Conservative notice on Generation JSON/SSE and successful Embedding responses, including pre-frame Responses failure streams. Not an actual-loss receipt or a success assertion. Missing on pre-response errors and discovery/history operations; absence does not certify exactness.",
         "schema": {"const": "possible"}
       },
       "CapabilityLink": {
@@ -441,11 +445,35 @@
         "required": ["model", "protocol", "delivery_modes", "request", "delivery", "history"],
         "properties": {
           "model": {"$ref": "#/components/schemas/PublicModelLabel"},
-          "protocol": {"enum": ["chat_completions", "responses", "messages"]},
-          "delivery_modes": {"const": ["json", "sse"]},
+          "protocol": {"enum": ["chat_completions", "responses", "messages", "embeddings"]},
+          "delivery_modes": {"enum": [["json", "sse"], ["json"]]},
+          "embedding": {"$ref": "#/components/schemas/EmbeddingCapability"},
           "request": {"$ref": "#/components/schemas/CapabilityCases"},
           "delivery": {"$ref": "#/components/schemas/CapabilityCases"},
           "history": {"$ref": "#/components/schemas/CapabilityCases"}
+        },
+        "if": {"properties": {"protocol": {"const": "embeddings"}}},
+        "then": {"required": ["embedding"], "properties": {"delivery_modes": {"const": ["json"]}, "history": {"maxItems": 0}}},
+        "else": {"not": {"required": ["embedding"]}, "properties": {"delivery_modes": {"const": ["json", "sse"]}}}
+      },
+      "EmbeddingCapability": {
+        "type": "object", "additionalProperties": false,
+        "required": ["input_kinds", "default_dimensions", "dimensions", "max_inputs", "max_inputs_at_default_dimensions", "max_vector_values", "max_text_bytes", "upstream_encodings", "output_encodings"],
+        "properties": {
+          "input_kinds": {"const": ["text"]},
+          "default_dimensions": {"type": "integer", "minimum": 1, "maximum": 8192},
+          "dimensions": {"oneOf": [
+            {"const": "unsupported"},
+            {"type": "object", "required": ["up_to"], "additionalProperties": false, "properties": {"up_to": {"type": "integer", "minimum": 1, "maximum": 8192}}},
+            {"type": "object", "required": ["selected"], "additionalProperties": false, "properties": {"selected": {"type": "array", "minItems": 1, "maxItems": 8192, "uniqueItems": true, "items": {"type": "integer", "minimum": 1, "maximum": 8192}}}},
+            {"type": "object", "required": ["range"], "additionalProperties": false, "properties": {"range": {"type": "object", "required": ["min", "max"], "additionalProperties": false, "properties": {"min": {"type": "integer", "minimum": 1, "maximum": 8192}, "max": {"type": "integer", "minimum": 1, "maximum": 8192}}}}}
+          ]},
+          "max_inputs": {"type": "integer", "minimum": 1, "maximum": 128},
+          "max_inputs_at_default_dimensions": {"type": "integer", "minimum": 1, "maximum": 128},
+          "max_vector_values": {"const": 60000},
+          "max_text_bytes": {"const": 262144},
+          "upstream_encodings": {"enum": ["float", "base64", "both"]},
+          "output_encodings": {"const": ["float", "base64"]}
         }
       },
       "CapabilityCases": {
@@ -479,10 +507,10 @@
             ]
           },
           "dimensions": {"type": "integer", "minimum": 1, "maximum": 8192},
-          "encoding_format": {"const": "float", "default": "float"},
+          "encoding_format": {"enum": ["float", "base64"], "default": "float"},
           "user": {"type": "string", "minLength": 1, "maxLength": 256}
         },
-        "description": "Text input and float output only. Aggregate text is bounded to 256 KiB UTF-8; ingress may be tighter. Target-specific limits also apply. SDK callers must select encoding_format=float rather than Base64."
+        "description": "Text input; float or standard padded Base64 little-endian finite IEEE-754 binary32 output. HTTP omission defaults to float; the Python SDK normally sends Base64 on caller omission. Aggregate text is bounded to 256 KiB UTF-8; target/runtime limits may be tighter. Output budget preflight uses effective default dimensions even when omitted. Float-to-Base64 uses the named nearest/ties-to-even projection and rejects overflow or nonzero-to-zero underflow."
       },
       "EmbeddingResponse": {
         "type": "object", "required": ["object", "model", "data", "usage"], "additionalProperties": false,
@@ -508,7 +536,10 @@
         "properties": {
           "object": {"const": "embedding"},
           "index": {"type": "integer", "minimum": 0, "maximum": 127},
-          "embedding": {"type": "array", "minItems": 1, "maxItems": 8192, "items": {"type": "number"}}
+          "embedding": {"oneOf": [
+            {"type": "array", "minItems": 1, "maxItems": 8192, "items": {"type": "number"}},
+            {"type": "string", "minLength": 8, "maxLength": 43692, "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$", "contentEncoding": "base64"}
+          ], "description": "Runtime validates canonical padding, four-byte alignment, finite values and expected dimensions. Base64-to-float widens binary32 to binary64 before round-trip JSON formatting."}
         }
       },
       "Model": {

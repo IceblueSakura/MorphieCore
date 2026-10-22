@@ -566,7 +566,7 @@ This ID groups routing and cache affinity; it does not store history. Body `sess
 | `GET /v1/models` | List activated public models |
 | `GET /v1/models/{model}` | Retrieve an activated public model |
 | `DELETE /v1/models/{model}` | Denied: 403 for an activated model, 404 otherwise |
-| `GET /v1/morphiecore/capabilities` | Inspect partial gateway contracts for activated Generation clients |
+| `GET /v1/morphiecore/capabilities` | Inspect partial gateway contracts for activated Generation and Embedding clients |
 | `POST /v1/responses` | Responses, JSON or SSE |
 | `GET /v1/responses/{response_id}` | Retrieve a stored response |
 | `DELETE /v1/responses/{response_id}` | Delete a stored response |
@@ -574,11 +574,11 @@ This ID groups routing and cache affinity; it does not store history. Body `sess
 | `POST /v1/chat/completions` | Chat Completions, JSON or SSE |
 | `POST /v1/messages` | Messages, JSON or SSE, using the model's configured candidates |
 
-Frozen endpoints require explicit model activation:
+Standalone endpoints require explicit model activation:
 
 | Method and path | Purpose |
 |---|---|
-| `POST /v1/embeddings` | Text input, float vectors |
+| `POST /v1/embeddings` | Text input, float or Base64 vectors |
 | `POST /v1/images/generations` | Static inline images |
 | `POST /v1/audio/speech` | Binary audio |
 | `POST /v1/audio/transcriptions` | One WAV/MP3 multipart upload |
@@ -587,7 +587,9 @@ The [OpenAPI summary](openapi.json) describes envelopes and selected constraints
 
 ### Capability discovery and adaptation notice
 
-`GET /v1/morphiecore/capabilities` uses the ordinary ingress token. It returns a startup-immutable `version: 1` snapshot with `scope: "gateway_contract"` and `coverage: "partial"`. Each entry names an activated public model and client protocol, with separate `request`, `delivery` and `history` case lists. Frozen standalone tasks are not assessed. No upstream request or request-body collection occurs; HEAD omits the body. The complete snapshot must fit both `response_bytes` and 256 KiB or startup fails.
+`GET /v1/morphiecore/capabilities` uses the ordinary ingress token. It returns a startup-immutable `version: 1` snapshot with `scope: "gateway_contract"` and `coverage: "partial"`. Each entry names an activated public model and client protocol, with separate `request`, `delivery` and `history` case lists. Other standalone media tasks are not assessed. No upstream request or request-body collection occurs; HEAD omits the body. The complete snapshot must fit both `response_bytes` and 256 KiB or startup fails.
+
+Embedding entries use `protocol: "embeddings"` and JSON-only delivery. Their `embedding` descriptor declares text-only input, default/explicit dimension support, input-count and vector-value ceilings, both client encodings and native encoding selection. These ceilings are intersected with body/runtime limits, not promises that every maximum-sized combination fits. Omitted dimensions use the trusted default for admission and result validation without injecting a dimension control upstream. Raw HTTP encoding omission means float; the Python SDK normally sends Base64 when its caller omits encoding. Float-to-Base64 delivery rounds directly to IEEE-754 binary32, nearest/ties-to-even, under `embedding.float-json-to-binary32.v1`; overflow and nonzero-to-zero underflow reject before publication. Signed zero and finite subnormals survive. Base64 uses standard padded little-endian binary32. Input text and upstream source vectors remain unchanged. Required usage, the DashScope input-only-total basis and reported model are preserved; Google compatibility and binding activation remain future work.
 
 Each case names a `feature`, a limited `domain`, and `faithful`, `approved_adaptation` or `rejected` treatment. Approved adaptations include stable `rules` IDs. Unlisted cases are `not_assessed`, not implicitly supported or rejected. Statements concern that feature/domain only, assuming all other validation succeeds; neither model-effective settings nor full client loops are asserted.
 
@@ -599,7 +601,7 @@ Messages request cases distinguish `generation.cache` domain `valid_owner_local_
 
 Selected Google Messages entries additionally declare `generate_content_stop_without_configured_sequences` or `interactions_completed_without_configured_sequences` with their terminal rules. The general ambiguity rejection is scoped outside that selected no-stop profile. These cases still require valid outcome/progress/call shape, representable usage and successful EOF; they do not admit configured stops, unknown failure reasons or unsupported reports.
 
-Generation JSON/SSE responses carry `X-MorphieCore-Adaptation: possible` and `Link: </v1/morphiecore/capabilities>; rel="describedby"`. This is deliberately conservative, including when no adaptation occurs and when Responses returns a pre-frame failure stream. It is not an actual-loss receipt, a success assertion or proof of Provider-effective behavior. Clients may not display it. Pre-response auth/admission errors, discovery, history operations and standalone tasks do not receive the notice; missing headers do not prove exactness. The notice adds no response-body fields or SSE events; the existing replay/phase carriers have their own [contract](architecture.md#reasoning-replay). Actual receipts remain internal diagnostics.
+Generation JSON/SSE and successful Embedding responses carry `X-MorphieCore-Adaptation: possible` and `Link: </v1/morphiecore/capabilities>; rel="describedby"`. This is deliberately conservative, including when no adaptation occurs and when Responses returns a pre-frame failure stream. It is not an actual-loss receipt, a success assertion or proof of Provider-effective behavior. Clients may not display it. Pre-response auth/admission errors, discovery, history operations and other standalone tasks do not receive the notice; missing headers do not prove exactness. The notice adds no response-body fields or SSE events; the existing replay/phase carriers have their own [contract](architecture.md#reasoning-replay). Actual receipts remain internal diagnostics.
 
 ## Errors and limits
 

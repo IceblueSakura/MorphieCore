@@ -31,6 +31,8 @@ pub fn binding(provider: &ProviderDefinition) -> (ProviderEntry, EmbeddingRoute)
                 profile: Profile::DashScope,
                 contract: Contract {
                     max_inputs: 4,
+                    default_dimensions: 2,
+                    encodings: morphiecore::lowering::embeddings::EncodingSupport::Float,
                     dimensions: DimensionSupport::UpTo(16),
                     user: false,
                 },

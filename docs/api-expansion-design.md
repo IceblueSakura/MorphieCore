@@ -50,7 +50,7 @@ Code and tests remain the behavior specification. This document records ownershi
 
 On 2026-10-22 the user prioritized **Embedding and Images design**. The detailed proposals below are the current review surface, not approval of new IR layouts, delivery dialects, comprehensive coverage or bindings. Audio, Files and deferred video keep their existing scope; the [roadmap](roadmap.md#stage-4-scope) owns scheduling.
 
-The subsequent Google-model, encoding and ancillary compatibility selections are recorded separately in Architecture: [four-way encoding](architecture.md#embedding-encoding-compatibility), including named standard binary32 rounding, and [Google report/identity projection](architecture.md#google-embedding-compatibility) are selected behavior. The layouts below remain proposed; the older exact-only conversion and strict-missing-usage recommendations are superseded.
+The subsequent Google-model, encoding and ancillary compatibility selections are recorded separately in Architecture: [four-way encoding](architecture.md#embedding-encoding-compatibility), including named standard binary32 rounding, and [Google report/identity projection](architecture.md#google-embedding-compatibility) are selected behavior. Shared numeric/expectation owners are implemented; Google report and token layouts below remain proposed. The older exact-only conversion and strict-missing-usage recommendations are superseded.
 
 ## Requested scope
 
@@ -249,9 +249,9 @@ Exit evidence: independent request/result oracles cover upstream preference and 
 
 ### Embeddings
 
-Extend the [independent task](architecture.md#independent-embedding-path), not Generation. The current implementation accepts text and float JSON only. The [source review](refs/2026-10-22-embedding-image-contracts.md#embeddings) establishes four official input shapes and two output encodings; importantly, the pinned Python SDK requests Base64 when its caller omits encoding. A working explicit-float request is not ordinary SDK compatibility.
+Extend the [independent task](architecture.md#independent-embedding-path), not Generation. The shared text/float/Base64 slice is implemented; token alternatives and native Google/report projection remain future work. The [source review](refs/2026-10-22-embedding-image-contracts.md#embeddings) establishes four official input shapes and two output encodings; importantly, the pinned Python SDK requests Base64 when its caller omits encoding. Explicit-float success alone is not ordinary SDK compatibility.
 
-The encoding and [Google ancillary compatibility policies](architecture.md#google-embedding-compatibility) are selected behavior. The following is the converged implementation recommendation, not a claim that its structures or bindings exist. Keep the three-target scope in the [roadmap](roadmap.md#embedding-integration-targets); do not make Google-specific uncertainties block independent shared conversion work.
+The user authorized the converged sequence on 2026-10-22: shared encoding/current-model closure, native Google/source-report projection, bounded wire characterization, then connected Google activation; tokenizer-specific completion remains independent. The encoding and [Google ancillary compatibility policies](architecture.md#google-embedding-compatibility) are selected behavior. The chain, local exact-JSON/binary32 owner and explicit little-endian profile below are the implementation baseline, not a claim of completed code or live acceptance. Keep the three-target scope in the [roadmap](roadmap.md#embedding-integration-targets); Google-specific uncertainties do not block shared conversion work.
 
 #### Embedding chain and ownership
 
@@ -278,7 +278,7 @@ Preflight and actual preparation use one pure target-projection function, not in
 
 The current gateway checks admission before resolving credentials, then re-prepares, receives JSON through EOF, validates against the request and projects. Retain its separate body/exchange deadlines, shutdown/client-drop cancellation, permit lifetime and handoff acknowledgement. Conversion failure must occur before any output is published. Do not extend time limits just because a request is a native synchronous batch.
 
-Close integration gaps at their existing owners: retain the currently discarded response-ID-omission evidence; add body-free Embedding projection receipts to diagnostics; propagate the capture exchange handle to explicitly enabled upstream capture with auth redaction. Extend the existing authenticated capability snapshot/possible-adaptation notice to activated Embedding profiles, covering input kinds, effective dimension/default/count bounds, both encodings and selected report rules. `/v1/models` remains discovery, not a capability bag. A public optional-usage promise must not ship without that profile description.
+The shared slice retains response-ID-omission evidence, emits body-free Embedding receipts, propagates capture with auth redaction and extends authenticated capability discovery/notice to activated text profiles. Their descriptors cover input kinds, effective dimension/default/count bounds, both encodings and current report rules. `/v1/models` remains discovery, not a capability bag. Google must extend this owner with its selected report rules before publishing optional usage.
 
 Non-200 responses currently discard the error body. Add a small capped native-error read within the same deadline and release lifecycle; classify only established HTTP/status/reason facts into existing safe error codes, preserve bounded Retry-After where applicable, and never relay upstream messages/details. `INVALID_ARGUMENT` alone is not proof of token overflow; an unrecognized error remains `upstream_error`. Malformed, oversized or incomplete error bodies cannot turn into success.
 
@@ -312,7 +312,7 @@ Initially retain the local 128-input, 256-KiB text, 8,192-dimension and 60,000-v
 
 Keep current 256-KiB serialized upstream requests, 4-MiB upstream response and 120-second target deadline as initial ceilings, intersected with configured runtime limits. Text bytes, JSON wrappers/escaping, decoded numeric bytes/values and encoded client bytes are separate budgets. Base64 compression is not permission to exceed vector-value or expanded JSON delivery limits. No client-visible dimension reduction or automatic splitting repairs an over-budget request.
 
-Preflight checked `input_count × effective_dimensions` for both explicit and default dimensions. Current lowering checks only explicit dimensions: 40 inputs at the catalog's 1,536-dimensional reference model produce 61,440 values, over the existing result budget, even when admission accepts omitted dimensions. Reject this predictable overflow before upstream work. If a target has no established default or finite output bound, it is not ready for that omitted-dimensions profile.
+Preflight checks `input_count × effective_dimensions` for both explicit and default dimensions. The shared slice repairs the former explicit-only check: 40 inputs at the 1,536-dimensional reference model imply 61,440 values and now reject before dispatch regardless of dimension-field presence. If a target has no established default or finite output bound, it is not ready for that omitted-dimensions profile.
 
 #### Embedding results and encoding
 
@@ -320,11 +320,11 @@ Retain ordered vectors, each with its reported input index. Require exactly one 
 
 Keep exact JSON numbers authoritative for float reports. Base64 is a wire encoding, not an opaque semantic vector. Its selected binary layout must define finite binary32 elements and byte order; reject invalid padding/length, non-multiple-of-four payloads, nonfinite values and dimension/budget mismatches before retaining decoded vectors. SDK-native `float32` parsing is evidence of precision, not a portable byte-order specification.
 
-**Representation recommendation for review:** use one numeric alternative per vector, `ExactJsonNumbers | FiniteBinary32`. Float reports keep the existing exact-number owner; validated binary reports retain finite binary32 values/bits. There are not two authorities for the same vector, and no unvalidated Base64 sidecar. This avoids exact decimal expansions and a general precision framework while preserving existing float-only callers. Do not switch all source reports to `f32`.
+**Selected implementation owner:** use one numeric alternative per vector, `ExactJsonNumbers | FiniteBinary32`. Float reports keep the existing exact-number owner; validated binary reports retain finite binary32 bits. There are not two authorities for the same vector, and no unvalidated Base64 sidecar. This avoids exact decimal expansions and a general precision framework while preserving existing float-only callers. Do not switch all source reports to `f32`.
 
 The [selected encoding policy](architecture.md#embedding-encoding-compatibility) replaces exact-only conversion rejection and owns all four conversion behaviors and precision/range rules. Request preparation selects upstream encoding independently from the client's output preference; the execution/delivery path carries both choices without changing task meaning.
 
-Propose explicit little-endian IEEE-754 binary32 for the downstream OpenAI-compatible Base64 profile, standard alphabet/padding, and separate upstream layout declarations. Pin independent byte fixtures before implementation acceptance; SDK-native-endian code is not universal wire evidence. Numeric review cases include JSON `0.1`, Base64 decoded into binary64-client-visible JSON, signed zero, subnormals and a decimal just above a binary32 midpoint where intermediate binary64 would hide the difference. These exercise the selected policy rather than require exact decimal/binary32 equality.
+The implemented OpenAI-compatible Base64 profile uses explicit little-endian IEEE-754 binary32 and standard alphabet/padding. Keep other future native layouts in their codecs. Independent byte/numeric fixtures cover JSON `0.1`, binary64-client-visible JSON, signed zero, subnormals and decimal midpoints where intermediate binary64 hides the difference. These exercise the selected policy rather than require exact decimal/binary32 equality; SDK-native-endian code alone is not universal wire evidence.
 
 Raw HTTP omission of `encoding_format` means float; SDK omission can arrive as explicit Base64. Preserve that distinction at ingress. Decoding validates the expected upstream representation, and conversion completes before response publication. A Base64 response is still one static JSON response, not an embedding stream.
 
@@ -365,8 +365,8 @@ Compatibility covers realizable OpenAI features per model, not the intersection 
 | Decision | Recommendation and alternative | Blocks |
 |---|---|---|
 | Token scope and input construction | Trusted logical tokenizer contract plus scoped token inputs; text-only profiles remain valid. Reject unknown scope instead of adding a local tokenizer | Token-ID admission, not text repairs |
-| Numeric owner and binary layout | Four encoding combinations and standard rounding are selected. Recommend a local exact-JSON/binary32 alternative and explicit little-endian wire profile; review numeric structure and independent byte fixtures | Base64 codecs/delivery and ordinary SDK acceptance |
-| Profile and bounds | Keep existing local ceilings; add trusted default dimensions and range-aware explicit controls. The [target list](roadmap.md#embedding-integration-targets) now includes Google; binding/account access remain separate | Implementation profile and end-to-end acceptance |
+| Numeric owner and binary layout | Implemented local exact-JSON/binary32-bit alternative, direct standard rounding and explicit little-endian codec with independent numeric/byte oracles | Preserve these contracts; no generic precision framework |
+| Profile and bounds | Shared default/range-aware admission is implemented under existing local ceilings. Google must select its per-input/native batch restrictions before activation; binding/account access remain separate | Native Google implementation and end-to-end acceptance |
 | Google wire baseline | Use nested config from pinned REST/Discovery; keep fixed per-input synchronous carrier and conservative local bounds. Verify no-truncation behavior directly | Google activation, not offline codec/shared conversion |
 | Native reports and delivery view | Ancillary behavior is selected. Review optional reported model, independent usage presence/basis and typed client view; no anonymous zero/default injection | Google result implementation and its capability/notice disclosure |
 

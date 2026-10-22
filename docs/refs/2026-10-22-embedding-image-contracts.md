@@ -25,8 +25,8 @@ The parser establishes binary32 practice but uses native-endian numeric interpre
 ### Current code and design counterexamples
 
 - [Semantic input](../../src/semantic/task/embedding.rs) is bounded `Vec<String>`; exact `serde_json::Number` values are authoritative. Local limits are 128 inputs, 256 KiB text, 8,192 dimensions and 60,000 aggregate vector values.
-- [Codec](../../src/protocol/openai/embeddings.rs) and [adapter](../../src/adapter/embeddings.rs) accept text/float only. A pinned SDK call omitting encoding therefore encounters a known admission gap.
-- [Target admission](../../src/lowering/embeddings.rs) checks aggregate vector values only for explicit dimensions, with no default-dimension contract. At the [catalog's](../../src/topology/catalog/embeddings.rs) 1,536-dimensional model, 40 inputs imply 61,440 values: omitted dimensions pass that preflight while explicit 1,536 rejects. Both describe the same output size.
+- Before the shared encoding repair, the [codec](../../src/protocol/openai/embeddings.rs) and [adapter](../../src/adapter/embeddings.rs) accepted text/float only, rejecting pinned SDK defaults. The subsequent implementation adds both output encodings without pretending token-ID inputs are supported.
+- Before the effective-default repair, [target admission](../../src/lowering/embeddings.rs) checked aggregate vector values only for explicit dimensions. At the [catalog's](../../src/topology/catalog/embeddings.rs) 1,536-dimensional model, 40 inputs imply 61,440 values: omission passed while explicit 1,536 rejected. Both now reject before dispatch using the trusted default.
 - Existing result validation preserves order and unique reported indexes and validates count/dimensions against the request. Extend it with admitted defaults rather than replacing indexes with array positions.
 - Standard response parsing uses the shared closed-object helper, rejecting unknown fields. This differs from the intended strict-known/ignore-unknown upstream policy; tolerant unknown parsing must not weaken known types, duplicate-key rejection or bounds.
 

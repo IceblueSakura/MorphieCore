@@ -1,4 +1,5 @@
 //! Trusted synthetic topology shared by Router and explicit SDK gates.
+use crate::embedding_support;
 use morphiecore::{
     gateway::{Entry, Gateway, Limits},
     protocol::openai::{Profile, TargetCaps as Contract},
@@ -14,8 +15,6 @@ use morphiecore::{
     },
 };
 use std::{collections::BTreeMap, sync::Arc};
-#[path = "embeddings.rs"]
-mod embedding_support;
 #[path = "image_generation.rs"]
 mod image_support;
 #[path = "media_bindings.rs"]
