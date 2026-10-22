@@ -255,13 +255,27 @@ fn messages_tool_examples_reject_nonobjects_and_account_for_resource_bounds() {
         json!([[]]),
     ] {
         let mut bad = body.clone();
-        bad["tools"][0]["input_examples"] = value;
-        assert!(decode_client_request(bad.to_string().as_bytes()).is_err());
-        assert!(
-            Messages::AdaptiveTextTools
-                .decode_request(bad.to_string().as_bytes())
-                .is_err()
-        );
+        bad["tools"][0]["input_examples"] = value.clone();
+        let mut inline = body.clone();
+        inline.as_object_mut().unwrap().remove("tools");
+        inline["messages"].as_array_mut().unwrap().push(json!({
+            "role":"system","content":[{"type":"tool_addition","tool":{
+                "type":"tool_definition","definition":bad["tools"][0]}}]
+        }));
+        for request in [bad, inline] {
+            let bytes = request.to_string();
+            let native_error = Messages::AdaptiveTextTools
+                .decode_request(bytes.as_bytes())
+                .err()
+                .unwrap();
+            assert_eq!(
+                decode_client_request(bytes.as_bytes()).err().unwrap(),
+                native_error
+            );
+            if value.is_null() {
+                assert_eq!(native_error, CodecError::Invalid("Anthropic null"));
+            }
+        }
     }
     let decoded = decode_client_request(body.to_string().as_bytes()).unwrap();
     let mut settings = decoded.task.semantic.settings().clone();
@@ -289,6 +303,45 @@ fn messages_tool_examples_reject_nonobjects_and_account_for_resource_bounds() {
         decoded.task.semantic.with_settings(settings).unwrap_err(),
         GenerationError::Limit
     );
+}
+
+#[test]
+fn messages_tool_examples_share_root_and_inline_envelope_node_limits() {
+    use morphiecore::protocol::anthropic::messages::{
+        Block, CacheMarked, InputMessage, MessageContent, Profile as Messages, Role, ToolTarget,
+    };
+    let profile = Messages::AdaptiveTextTools;
+    let body = json!({"model":"m","max_tokens":32,"tools":[
+        {"name":"lookup","strict":false,"input_schema":{"type":"object"}}],
+        "messages":[{"role":"user","content":"go"}]});
+    let example = StructuredValue::new(json!({"a":vec![0; 8189]})).unwrap();
+    for inline in [false, true] {
+        for (count, valid) in [(127, true), (128, false)] {
+            let mut request = profile.decode_request(body.to_string().as_bytes()).unwrap();
+            let mut tool = request.tools.value().unwrap()[0].clone();
+            tool.input_examples = Presence::Value(vec![example.clone(); count]);
+            if inline {
+                request.tools = Presence::Absent;
+                request.messages.push(InputMessage {
+                    role: Role::System,
+                    content: MessageContent::Blocks(vec![CacheMarked {
+                        content: Block::ToolAddition(ToolTarget::Definition(tool)),
+                        cache: None,
+                    }]),
+                    effort: None,
+                });
+            } else {
+                request.tools = Presence::Value(vec![tool]);
+            }
+            let encoded = profile.encode_request(&request);
+            if valid {
+                let wire = serde_json::to_vec(&encoded.unwrap()).unwrap();
+                assert!(profile.decode_request(&wire).is_ok());
+            } else {
+                assert_eq!(encoded.err(), Some(CodecError::Limit));
+            }
+        }
+    }
 }
 
 #[test]

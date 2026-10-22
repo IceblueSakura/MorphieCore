@@ -376,6 +376,16 @@ impl Tool {
         }
         Ok(bytes)
     }
+    pub(in crate::protocol::anthropic::messages) fn nodes(&self) -> Result<usize, CodecError> {
+        let mut nodes = 24 + value_nodes(self.input_schema.root())?;
+        if let Presence::Value(examples) = &self.input_examples {
+            node_charge(&mut nodes, 1)?;
+            for example in examples {
+                node_charge(&mut nodes, value_nodes(example.value())?)?;
+            }
+        }
+        Ok(nodes)
+    }
     fn wire(&self) -> Value {
         let mut v = json!({"name":self.name,"input_schema":self.input_schema.root()});
         let o = v.as_object_mut().expect("object");
@@ -986,7 +996,7 @@ impl Request {
             }
             for tool in tools {
                 charge(&mut bytes, tool.bytes()?)?;
-                node_charge(&mut nodes, 24 + value_nodes(tool.input_schema.root())?)?;
+                node_charge(&mut nodes, tool.nodes()?)?;
                 if !names.insert(tool.name.as_str()) {
                     return Err(CodecError::Invalid("Anthropic duplicate tool"));
                 }

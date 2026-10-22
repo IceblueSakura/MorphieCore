@@ -290,7 +290,8 @@ fn google_finish_explanation_omission_keeps_incomplete_source_and_requires_recei
                 }));
                 assert!(!body.contains("event: response.completed"));
             } else {
-                let (_, bytes) = delivery.encode_json_snapshot(&attempt).unwrap();
+                let (retained, bytes) = delivery.encode_json_snapshot(&attempt).unwrap();
+                assert!(retained.semantic.details().explanation.is_absent());
                 let value: Value = serde_json::from_slice(&bytes).unwrap();
                 match client.protocol() {
                     ClientProtocol::Messages => assert_eq!(value["stop_reason"], "max_tokens"),
@@ -322,6 +323,10 @@ fn google_finish_explanation_omission_keeps_incomplete_source_and_requires_recei
                 }
             );
             assert_eq!(reports[0].action, "omit");
+            if stream {
+                let (retained, _) = delivery.snapshot(&attempt).unwrap();
+                assert!(retained.semantic.details().explanation.is_absent());
+            }
             assert_eq!(attempt.response().unwrap(), &original);
         }
     }

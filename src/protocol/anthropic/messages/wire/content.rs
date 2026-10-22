@@ -211,9 +211,7 @@ impl Block {
             + match self {
                 Self::ToolUse { input, .. } => value_nodes(input.value())?,
                 Self::ToolResult { content, .. } => content.nodes(),
-                Self::ToolAddition(super::ToolTarget::Definition(tool)) => {
-                    24 + value_nodes(tool.input_schema.root())?
-                }
+                Self::ToolAddition(super::ToolTarget::Definition(tool)) => tool.nodes()?,
                 _ => 0,
             })
     }

@@ -345,6 +345,8 @@ impl Intake {
 pub(in crate::protocol::anthropic::messages) fn function_tool(
     tool: &crate::protocol::anthropic::messages::Tool,
 ) -> Result<FunctionTool, CodecError> {
+    // Validate presence before the IR's optional fields erase native nulls.
+    tool.bytes()?;
     Ok(FunctionTool {
         name: text(&tool.name)?,
         description: tool.description.value().cloned(),

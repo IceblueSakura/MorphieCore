@@ -141,6 +141,12 @@ pub fn lower_response<'a>(
             }));
         }
     }
+    if !semantic.details().refusal.is_absent() || !semantic.details().explanation.is_absent() {
+        let mut details = semantic.details().clone();
+        details.refusal = crate::semantic::value::Presence::Absent;
+        details.explanation = crate::semantic::value::Presence::Absent;
+        semantic = std::borrow::Cow::Owned(semantic.into_owned().with_details(details)?);
+    }
     validate_response(&semantic, fidelity, &metadata, profile, &c)?;
     if projection.is_empty() {
         projection.push(projection::ProjectionStage::response(

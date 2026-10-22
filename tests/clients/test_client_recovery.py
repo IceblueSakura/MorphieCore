@@ -1,12 +1,16 @@
 """Independent failure-oracle checks for the synthetic installed-client authority."""
-from contextlib import closing
+from contextlib import closing, contextmanager, redirect_stdout
 import copy
 import http.client
+import io
 import json
 from pathlib import Path
 import socket
 import sqlite3
+import queue
+import tempfile
 import unittest
+from unittest.mock import MagicMock, patch
 
 import recovery
 import drivers
@@ -14,6 +18,46 @@ import drivers
 
 class ClientRecoveryOracles(unittest.TestCase):
     path = Path("/synthetic/sample.txt")
+
+    def test_main_cannot_publish_success_before_authority_teardown_verdict(self):
+        states = []
+        @contextmanager
+        def authority(state, ingress):
+            states.append(state)
+            try:
+                yield "http://127.0.0.1:1"
+            finally:
+                if ingress:
+                    state.errors.append("late_worker_failure")
+
+        def run(*_):
+            state = states[0]
+            state.ingress = [(1, "original"), (2, "original"), (0, "probe"), (3, "original")]
+            state.attempts = [(1, True, None, {}), (2, True, None, {}),
+                              (2, False, None, {}), (0, True, None, {}), (3, False, None, {})]
+            state.finish(("original", "probe"))
+            return "original", "probe"
+
+        version, gateway = MagicMock(), MagicMock()
+        for child in (version, gateway):
+            child.__enter__.return_value = child
+        version.wait.return_value = b"1.3.0"
+        gateway.first_line = queue.Queue()
+        gateway.first_line.put(b"MorphieCore listening on http://127.0.0.1:1\n")
+        with tempfile.TemporaryDirectory() as directory:
+            records = [{"event": "request", "outcome": "complete", "candidates": [
+                {"recovery_probe": True} for _ in range(count)]} for count in (1, 2, 1, 1)]
+            (Path(directory) / "diagnostics.jsonl").write_text(
+                "".join(json.dumps(record) + "\n" for record in records))
+            output = io.StringIO()
+            with patch.object(recovery.sys, "argv", ["recovery.py", "pi-chat", directory, "/gateway", "/pi"]), \
+                    patch.object(recovery, "Child", side_effect=[version, gateway]), \
+                    patch.object(recovery, "server", side_effect=authority), \
+                    patch.object(recovery, "run_pi", side_effect=run), redirect_stdout(output):
+                with self.assertRaisesRegex(RuntimeError,
+                        "^synthetic_http_check_failed:late_worker_failure$"):
+                    recovery.main()
+            self.assertEqual(output.getvalue(), "")
 
     def test_installed_clients_are_gated_by_major_not_minor_or_patch(self):
         for case, versions in [

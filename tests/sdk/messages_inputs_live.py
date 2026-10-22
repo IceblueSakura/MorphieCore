@@ -110,7 +110,7 @@ class Gateway:
         require(reply.get("stop_reason") in ("tool_use", "end_turn"), "incomplete_native_outcome")
         return reply
 
-    def verify(self):
+    def verify(self, exact=False):
         require(self.process.returncode == 0, "gateway_shutdown")
         records = [json.loads(line) for line in (self.root / "diagnostics.jsonl").read_text().splitlines()]
         require(all(record.get("event") in ("file", "request") for record in records), "diagnostic_loss")
@@ -123,6 +123,10 @@ class Gateway:
         require(all(record["dropped_before"] == 0 and record["status"] == "body_unit"
                     and record["boundary"] == "upstream_request" for record in capture), "capture_incomplete")
         require(len(capture) == self.budget, "captured_request_count")
+        require(len({record["exchange"] for record in capture}) == self.budget,
+                "duplicate_captured_exchange")
+        if exact:
+            require(all(record["redacted"] is False for record in capture), "redacted_history_observation")
         return [record["value"] for record in capture]
 
 

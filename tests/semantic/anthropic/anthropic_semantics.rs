@@ -361,6 +361,8 @@ fn stable_refusal_details_have_independent_native_directions_and_guarded_deliver
                 );
             } else {
                 let lowered = result.unwrap();
+                assert!(lowered.semantic().details().refusal.is_absent());
+                assert_eq!(report_only.details().refusal, expected);
                 assert_eq!(
                     lowered.projection().iter().any(|v| v
                         .loss

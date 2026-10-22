@@ -3,7 +3,10 @@ from contextlib import contextmanager
 import copy
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
+from pathlib import Path
+import tempfile
 import threading
+from types import SimpleNamespace
 import unittest
 from urllib.parse import urlsplit
 from unittest.mock import patch
@@ -39,6 +42,30 @@ def authority(status, reply):
 
 
 class MessagesInputRunnerOracles(unittest.TestCase):
+    def test_exact_capture_requires_unredacted_distinct_exchanges(self):
+        with tempfile.TemporaryDirectory() as directory:
+            gateway = live.Gateway.__new__(live.Gateway)
+            gateway.root = Path(directory)
+            gateway.process = SimpleNamespace(returncode=0)
+            gateway.requests = [{}]
+            gateway.budget = 1
+            diagnostic = {"event": "request", "outcome": "complete", "candidates": [{}]}
+            capture = {"exchange": "synthetic-1", "attempt": 1, "boundary": "upstream_request",
+                       "status": "body_unit", "dropped_before": 0, "redacted": False, "value": {}}
+            (gateway.root / "diagnostics.jsonl").write_text(json.dumps(diagnostic) + "\n")
+            path = gateway.root / "capture.jsonl"
+            path.write_text(json.dumps(capture) + "\n")
+            self.assertEqual(gateway.verify(exact=True), [{}])
+            path.write_text(json.dumps({**capture, "redacted": True}) + "\n")
+            with self.assertRaisesRegex(live.GateError, "^redacted_history_observation$"):
+                gateway.verify(exact=True)
+            gateway.requests *= 2
+            gateway.budget = 2
+            (gateway.root / "diagnostics.jsonl").write_text((json.dumps(diagnostic) + "\n") * 2)
+            path.write_text((json.dumps(capture) + "\n") * 2)
+            with self.assertRaisesRegex(live.GateError, "^duplicate_captured_exchange$"):
+                gateway.verify(exact=True)
+
     def gateway(self, address):
         gateway = live.Gateway.__new__(live.Gateway)
         gateway.address = address

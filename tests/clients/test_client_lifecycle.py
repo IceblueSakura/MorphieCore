@@ -1,11 +1,44 @@
 """Held-stream authority oracles, independent of installed clients and Providers."""
 import json
+from contextlib import closing
+import http.client
 import unittest
+from unittest.mock import Mock
+from urllib.parse import urlsplit
 
-from lifecycle import CANCEL, FIRST, RECOVER, State, frames
+from lifecycle import CANCEL, FIRST, RECOVER, State, authority, frames, observed_held_content
 
 
 class LifecycleOracles(unittest.TestCase):
+    def test_consumer_receipt_can_precede_flush_acknowledgement(self):
+        state = State(False)
+        def acknowledge(timeout):
+            self.assertEqual(timeout, 3)
+            state.sent.set()
+            return True
+        state.sent.wait = Mock(side_effect=acknowledge)
+        self.assertFalse(state.sent.is_set())
+        observed_held_content(state)
+        state.sent.wait.assert_called_once_with(timeout=3)
+        state.sent.wait = Mock(return_value=False)
+        with self.assertRaisesRegex(RuntimeError, "^content_not_observed_while_held$"):
+            observed_held_content(state)
+        state.sent.wait = Mock(return_value=True)
+        state.dropped.set()
+        with self.assertRaisesRegex(RuntimeError, "^content_not_observed_while_held$"):
+            observed_held_content(state)
+
+    def test_unsupported_method_is_recorded_before_authority_drains(self):
+        state = State(False)
+        with authority(state) as origin:
+            address = urlsplit(origin)
+            with closing(http.client.HTTPConnection(address.hostname, address.port, timeout=3)) as connection:
+                connection.request("GET", "/v1/chat/completions")
+                response = connection.getresponse()
+                self.assertEqual(response.status, 501)
+                response.read()
+        self.assertEqual(state.errors, ["unsupported_http_method"])
+
     def test_held_frames_have_content_without_any_success_terminal(self):
         for native in (False, True):
             raw = frames(native, FIRST, False).decode()

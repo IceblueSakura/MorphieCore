@@ -70,11 +70,22 @@ class State:
         return ordinal
 
 
+def observed_held_content(state):
+    # The consumer may run between the authority's flush and its acknowledgement.
+    check(state.sent.wait(timeout=3) and not state.dropped.is_set(),
+          "content_not_observed_while_held")
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def log_message(self, *_):
         pass
+
+    def send_error(self, code, message=None, explain=None):
+        if code == 501:
+            self.server.state.errors.append("unsupported_http_method")
+        super().send_error(code, message, explain)
 
     def do_POST(self):
         try:
@@ -152,7 +163,7 @@ def pi_case(binary, env, root, work, origin, state):
             delta = event.get("assistantMessageEvent", {})
             if event.get("type") == "message_update" and delta.get("type") == "text_delta" and FIRST in delta.get("delta", ""):
                 break
-        check(state.sent.is_set() and not state.dropped.is_set(), "content_not_observed_while_held")
+        observed_held_content(state)
         abort_id = pi.submit("abort")
         deadline = time.monotonic() + 5
         settled = False
@@ -284,7 +295,7 @@ def opencode_case(binary, env, root, work, origin, state):
                         identity = event["data"]["sessionID"]
                         check(isinstance(identity, str) and identity, "opencode_visible_session")
                         break
-                check(state.sent.is_set() and not state.dropped.is_set(), "content_not_observed_while_held")
+                observed_held_content(state)
                 client.process.send_signal(signal.SIGINT)
                 output = client.wait(timeout=5, expected_status=130)
                 seen = [json.loads(line) for line in output.splitlines() if line]

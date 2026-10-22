@@ -385,7 +385,6 @@ def main():
                 sessions = run_pi(client_binary, env, root, work, ingress, native, path)
             else:
                 sessions = run_opencode(client_binary, env, root, work, ingress, path)
-            state.finish(sessions)
             gateway.process.send_signal(signal.SIGINT)
             gateway.wait(timeout=5)
             records = [json.loads(line) for line in (root / "diagnostics.jsonl").read_text().splitlines()]
@@ -413,6 +412,8 @@ def main():
             print(json.dumps({"errors": state.errors, "ingress_phases": [p for p, _ in state.ingress],
                               "attempts": [[p, k] for p, k, _, _ in state.attempts]}), file=sys.stderr)
             raise
+    # Authority shutdown joins every worker before the final accounting verdict.
+    state.finish(sessions)
     print(json.dumps({"case": case, "version": version, "client_requests": 4, "upstream_attempts": 5,
         "extra_client_requests": 0, "sticky_after_recovery": True}))
 
