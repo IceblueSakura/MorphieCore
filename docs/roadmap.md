@@ -12,6 +12,7 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
   - [Stage 3 work plan](#stage-3-work-plan)
   - [Generation Text production closure](#generation-text-production-closure)
   - [Stage 4 scope](#stage-4-scope)
+    - [Grok Imagine adaptation](#grok-imagine-adaptation)
   - [Stage 5 backlog](#stage-5-backlog)
 - [Phase rules](#phase-rules)
   - [Generation design review gate](#generation-design-review-gate)
@@ -47,9 +48,9 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
 | Client compatibility | Rejection audit and policy selection complete: [phase transfer/return](architecture.md#message-phase-transfer), guarded extended-retention omission and retained citation rejection | Client-carrier acceptance and target storage evidence during reconnection |
 | Integration | Selected R1a/R1b/R2 client loops and controlled routing acceptance passed their bounded scopes. R1b lifecycle reports and client history shorthand were explicitly selected on 2026-10-20 | [Production closure](#generation-text-production-closure): bounded capability and sustained-operation acceptance, not a full client/model matrix |
 | Cross-protocol conversion and counting | Stage 3 closed its selected projection and loop scope; counting is deferred | Preserve that evidence; the [Google pause](#google-api-pause) now has only a selected text-report exception, not general API reopening |
-| Generation Text production readiness | Selected [production closure](#generation-text-production-closure) complete on 2026-10-22, with explicit unsupported-carrier and failover exclusions | Select the next [stage-4 operation](#stage-4-scope); no operation implementation follows automatically |
+| Generation Text production readiness | Selected [production closure](#generation-text-production-closure) complete on 2026-10-22, with explicit unsupported-carrier and failover exclusions | Preserve the closed baseline while designing the selected [Grok Imagine slice](#grok-imagine-adaptation) |
 | Code simplification | Completed on 2026-10-22: five preferred slices and selected local cleanups; full offline baseline and all 12 connected SDK scenarios passed | No remaining scheduled simplification; API/semantic contracts and freeze boundaries unchanged. Further cleanup needs its own demonstrated benefit; no new live-acceptance or measured-performance claim |
-| Embedding, other modalities and file resources | Stage 4 includes audio/image/video API adaptation and Files/multipart Uploads | After production closure, follow the [operation work packages](#stage-4-scope); existing paths remain maintenance-only until their slices |
+| Embedding, other modalities and file resources | Stage 4 includes audio/image/video API adaptation and Files/multipart Uploads; Grok Imagine models and bounded synchronous video execution selected on 2026-10-22 | Complete the [Grok Imagine operation design and acceptance gates](#grok-imagine-adaptation); unrelated operation scope remains unchanged |
 | Stage-5 follow-ups | Citations, tool discovery, hosted tools, server-side compaction, Batch and Realtime are recorded but **unscheduled** | No implementation queue or delivery commitment; select each slice before starting it |
 | Real acceptance | Selected stage-2 loops and bounded [production gates](#generation-text-production-closure) have recorded version/profile-specific evidence | Preserve historical limitations and [other deferred acceptance](#deferred-acceptance); new profiles or stronger claims need their own gates |
 
@@ -218,6 +219,19 @@ The [API expansion design](api-expansion-design.md) supplies operation proposals
 Files design can proceed alongside the first operation slices; implementation need not delay direct-input media. Speech, image and file implementations may advance independently once their own contracts are selected, but shared-owner changes must stay coordinated. Native video/media job lifecycle belongs to that operation, not the general Batch API.
 
 Optional Chat-carried audio is a separate slice after its task contract stabilizes: preserve the existing static path, then verify genuine upstream streaming if selected. It neither blocks the main audio path nor establishes Realtime. For every operation, update the OpenAPI/usage surface only when implemented, keep admission and actual Provider evidence separate, and use the [stage-specific verification](api-expansion-design.md#verification).
+
+#### Grok Imagine adaptation
+
+**Selected targets and execution policy on 2026-10-22; not implemented or live-accepted.** The user chose `grok-imagine-image-2.0`, `grok-imagine-video-1.5` and `grok-imagine-video-1.5-lite`. Do not add `grok-imagine-image-quality`, whose announced retirement is recorded in the [dated source notes](refs/2026-10-22-grok-imagine.md). The [accepted decision](architecture.md#scope-and-activation-decisions) selects bounded synchronous video waiting without durable task storage or a public submit/query service. This is the next selected operation-design slice; it does not require Embedding or Files implementation first.
+
+Implementation sequence and exit gates:
+
+1. **Pin request/result owners and wire contracts.** Start with static text-to-image, then text-to-video and single-image-to-video for the two selected video models. Distinguish aspect ratio, resolution tier and exact pixel size; retain reported MIME, model identity, moderation and accounting without invented timestamps or usage. Resolve public request/result shapes and the discrepancies between the image guide and REST schema before implementation. Native codec support is not blanket OpenAI SDK compatibility.
+2. **Images.** Extend the independent image path with a Grok codec and explicit model binding. Remove the API-key-only assumption at the responsible binding/execution layers without weakening Provider/profile checks. Use the existing single-account Grok OAuth pool, with no inference-triggered login/refresh or credential fallback. Reject unsupported controls rather than silently discarding them.
+3. **Video.** Add an independent typed task and bounded executor; do not reuse Generation or build a generic background-job framework. Submit once, poll the same trusted Provider with the same account under a total deadline and finite poll/body limits, and return only a verified final result. Submission uncertainty, pending/failed/expired states, moderation rejection and missing artifacts must not become success. A deadline or disconnect stops local work, not necessarily upstream computation or billing; there is no recovery across requests or restarts. Artifact URLs remain inert unless a separately bounded, trusted retrieval path is selected.
+4. **Acceptance.** Use `grok-imagine-video-1.5-lite` as the default video test model. The proposed first live case is one text-only, 1-second, 480p generation, followed separately by single-image input. Before each run fix the submission/poll/download counts, intervals, total timeout and response/artifact caps; use serial calls through the project loader, no submission retry, and redacted reporting. Model enumeration does not establish OAuth media entitlement. Verify each model's native request/result contract independently; lite acceptance alone does not prove the full model's account access.
+
+Initial exclusions: image editing/deferred image jobs/preview streams, video editing/extension/reference audio/multiple reference images/keyframes, Files references, caller-directed upload destinations, persisted job mappings, public job lifecycle APIs, cross-Provider failover and automatic media sweeps. These may be selected separately; the generic stage-4 entries are not implicit authorization to include them here.
 
 ### Stage 5 backlog
 

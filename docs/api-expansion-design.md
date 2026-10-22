@@ -318,7 +318,7 @@ Exit evidence: source/mask ownership, independent generate/edit wire oracles, co
 
 ### Video API and implementation
 
-Video is selected as a stage-4 modality, not an already chosen endpoint family. Pin current official contracts before selecting concrete input/output, generation or editing operations. Separate conversational video content from standalone production operations; the wire endpoint name does not determine the task owner.
+The first concrete target is the selected [Grok Imagine slice](roadmap.md#grok-imagine-adaptation), with [bounded synchronous waiting](architecture.md#scope-and-activation-decisions) over native asynchronous generation. Its public wire schemas and typed owners still need operation design; it does not select durable jobs or broader video APIs. For later operations, pin current official contracts before selecting input/output, generation or editing behavior. Separate conversational video content from standalone production operations; the wire endpoint name does not determine the task owner.
 
 For each selected operation, specify supported input references, required media controls, output artifacts and reported accounting. If the native API is asynchronous, select submission identity, status, cancellation, artifact access and uncertain-submission handling explicitly. Do not reuse a completed text response as evidence of video completion or turn a returned artifact URL into unrestricted server-side fetching.
 
