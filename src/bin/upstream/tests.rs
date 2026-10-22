@@ -136,7 +136,7 @@ fn native_requests_paths_and_headers_are_not_inferred_from_model_names() {
             "anthropic",
             "/v1/messages",
             AuthScheme::ApiKeyHeader("x-api-key"),
-            json!({"model":"new","messages":[{"role":"user","content":"Reply with the single word OK."}],"max_tokens":128,"stream":false}),
+            json!({"model":"new","messages":[{"role":"user","content":"Reply with the single word OK."}],"max_tokens":1024,"stream":false}),
         ),
         (
             "google",

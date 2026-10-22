@@ -162,7 +162,7 @@ morphiecore-upstream probe \
 
 The four protocol choices are `openai-chat`, `openai-responses`, `anthropic` and `google` (generateContent). Model names need not appear in the local catalog or a previous list. The fixed prompt is `Reply with the single word OK.`; no user payload, tools or history are accepted.
 
-The probe leaves optional generation controls, including token limits, to the upstream defaults. There is no token-limit CLI option or reporting policy. Anthropic Messages alone requires `max_tokens`, so its minimal request retains a fixed `128`. A target requiring other controls can reject; the CLI never silently changes the request or retries. Local deadlines and byte bounds do not guarantee bounded remote computation or billing.
+The probe leaves optional generation controls, including token limits, to the upstream defaults. There is no token-limit CLI option or reporting policy. Anthropic Messages alone requires `max_tokens`, so its minimal request retains a fixed `1024`. A target requiring other controls can reject; the CLI never silently changes the request or retries. Local deadlines and byte bounds do not guarantee bounded remote computation or billing.
 
 SIWC requires `store:false` and `stream:true`. Other probes use static JSON; SIWC consumes SSE through strict EOF and requires a completed response with text, including closed event-owned output when the final summary is empty.
 
