@@ -2,6 +2,8 @@
 
 Research date: **2026-10-23**. Evidence: official specifications, project documentation, release records and selected tagged source inspection. No authorization server was deployed and no agent SDK interoperability was tested. Versions below were the latest releases observed on that date, not dependency pins or security guarantees.
 
+The subsequent same-day clarification selects a single-deployer cluster with Agent-only attribution, not business users or tenants. [Architecture](../architecture.md#agent-identity-and-cluster-diagnostics) owns that converged future baseline; this note retains protocol and candidate evidence, not a second implementation plan.
+
 ## Goal and protocol fit
 
 The requested future deployment is a shared MorphieCore serving agents on multiple machines. Agent1 may launch agent2; a human approves agent2's access. Prefer existing OAuth infrastructure over a custom registration or credential-issuance protocol.
@@ -32,17 +34,15 @@ The `oauth2` and `openidconnect` crates are useful for client/protocol integrati
 
 ## Integration boundaries and validation
 
-Use a separate authorization service; MorphieCore is the resource server, not a new OAuth authorization-server implementation. Keep downstream access tokens separate from upstream Provider credentials. Business requests still cannot select origins, credential locators or auth/proxy headers.
-
-Validate access tokens for the trusted issuer, intended API audience, expiry and granted permissions. For JWTs, verify signatures and allowed algorithms with trusted key discovery; never merely decode claims or accept an ID token as API authorization. Opaque tokens require authenticated introspection. Choose short-lived access tokens with a documented revocation delay, or online checks when immediate rejection of new calls is required. Refresh-token revocation alone does not invalidate offline-verified JWTs.
+Follow the [Agent identity baseline](../architecture.md#agent-identity-and-cluster-diagnostics) and [scheduled-slice gates](../roadmap.md#agent-authorization-and-diagnostics-follow-up). Protocol-specific checks below remain prerequisites for selecting an authorization server. For JWTs, verify signatures and allowed algorithms using a trusted issuer/key configuration; never merely decode claims or accept an ID token as API authorization. Opaque tokens require authenticated introspection. Refresh-token revocation alone does not invalidate offline-verified JWTs.
 
 Before selection, verify:
 
 1. The actual agent SDK accepts a non-built-in issuer and public-client Device Flow, rather than only a hard-coded Provider login.
 2. Human approval, denial, expiry, polling backoff and successful API access work end to end.
 3. Token storage and automatic refresh work during a long-running agent session; audience and scopes remain correct after refresh.
-4. Two agent authorizations can be managed independently; revoking one blocks its renewal without affecting the other. Document the old access-token window and in-flight request policy.
+4. Two authorizations resolve to distinct stable Agent identities, including after refresh; revoking one blocks its renewal without affecting the other. Confirm the issuer's binding carrier rather than assuming `sub`, `client_id`, `jti` or `sid` has the required instance semantics. Document the old access-token window and in-flight request policy.
 5. MorphieCore rejects invalid signatures, wrong issuer/audience, expired tokens and insufficient permissions.
-6. Central deployment separately establishes HTTPS, trusted proxy handling and ownership isolation for history, files and future jobs. This research does not relax current loopback-only ingress.
+6. Central deployment separately establishes HTTPS, trusted proxy handling and authenticated cluster access to shared history and future resources, without weakening Provider-bound replay restrictions. This research does not relax current loopback-only ingress.
 
 If future requirements allow agent1 to authorize children without individual human approval, revisit bounded preauthorization or [RFC 8693 Token Exchange](https://www.rfc-editor.org/rfc/rfc8693.html). Neither Device Flow nor Token Exchange automatically supplies user consent, permission attenuation, shared budgets or cascading revocation. Do not make that larger delegation system a prerequisite for the initial flow.

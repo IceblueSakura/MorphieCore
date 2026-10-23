@@ -19,6 +19,7 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
 - [Phase rules](#phase-rules)
   - [Generation design review gate](#generation-design-review-gate)
   - [Observability follow-up](#observability-follow-up)
+  - [Agent authorization and diagnostics follow-up](#agent-authorization-and-diagnostics-follow-up)
   - [Temporary routing freeze](#temporary-routing-freeze)
   - [IR and codec migration](#ir-and-codec-migration)
   - [Verification and integration boundary](#verification-and-integration-boundary)
@@ -54,6 +55,7 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
 | Code simplification | Completed on 2026-10-22: five preferred slices and selected local cleanups; full offline baseline and all 12 connected SDK scenarios passed | No remaining scheduled simplification; API/semantic contracts and freeze boundaries unchanged. Further cleanup needs its own demonstrated benefit; no new live-acceptance or measured-performance claim |
 | Embedding, other modalities and file resources | Sample-centered Embedding, compatible delivery and native Google/OpenAI-model integration accepted on 2026-10-23: full offline baseline, scoped SDK and bounded Provider checks. Grok static codec has no gateway/live acceptance | Next: [static Images Generate contract review](#next-stage-4-slice). Further Embedding modalities and video remain unselected |
 | Stage-5 follow-ups | Citations, tool discovery, hosted tools, server-side compaction, Batch and Realtime are recorded but **unscheduled** | No implementation queue or delivery commitment; select each slice before starting it |
+| Agent authorization and diagnostics | [Single-deployer, Agent-centered baseline](architecture.md#agent-identity-and-cluster-diagnostics) selected on 2026-10-23; implementation **unscheduled** | [Follow-up gates](#agent-authorization-and-diagnostics-follow-up); not a stage-5 API assignment or a prerequisite for current modality work |
 | Real acceptance | Selected stage-2 loops and bounded [production gates](#generation-text-production-closure) have recorded version/profile-specific evidence | Preserve historical limitations and [other deferred acceptance](#deferred-acceptance); new profiles or stronger claims need their own gates |
 
 The [approved Generation baseline](#generation-design-review-gate) leaves inventory exclusions and binding boundaries unchanged. Other real acceptance gates remain open. Google value guards and Interactions snapshots belong to stage 3: no Google client endpoint forms a same-protocol pair. Provider-specific reset dialects, persistence and cooldown tuning need separate evidence and approval; no background probes, balancing or multi-round retries are scheduled.
@@ -314,7 +316,20 @@ The sourced [contract boundaries](refs/2026-10-17-generation-contracts.md) retai
 
 **Direction selected on 2026-10-20; minimal production work selected on 2026-10-21 and accepted on 2026-10-22.** Follow [Observability](architecture.md#observability). The completed [production closure](#generation-text-production-closure) adds only signals and bounded diagnostics maintenance/checks needed for concrete acceptance. Keep future investigation at those existing owners; broader instrumentation remains deferred, not a full programme or another stage-1/2 approval gate.
 
-Protocol, security and lifecycle defects retain their own gates. Use established libraries where needed; no telemetry backend deployment, content export or unrelated audit proposal is selected.
+Protocol, security and lifecycle defects retain their own gates. Use established libraries where needed. The later [Agent authorization and diagnostics baseline](#agent-authorization-and-diagnostics-follow-up) governs future cluster work; no telemetry backend deployment or content export is activated.
+
+### Agent authorization and diagnostics follow-up
+
+**Planning baseline selected on 2026-10-23; implementation and deployment remain unscheduled.** [Architecture](architecture.md#agent-identity-and-cluster-diagnostics) owns identity, shared-history and usage semantics; [exchange capture](architecture.md#configurable-exchange-capture) owns sensitive diagnostics. This does not change the five-stage API sequence, current loopback ingress or the active modality slice.
+
+When explicitly scheduled, use the following dependency order; each slice needs its own normal offline and applicable integration gates:
+
+1. **Authentication binding.** Select registry persistence and credential lifecycle; prove two registered clients remain distinct through API-key rotation, OAuth refresh and independent revocation. Verify a real SDK against the selected authorization server, trusted audience/permissions and a stable Agent binding. Do not accept successful login alone as identity acceptance.
+2. **Request and history attribution.** Carry one authenticated context through request/attempt completion. Verify restart/rename identity stability, creator versus caller attribution, shared-session handoff, and unchanged Provider replay restrictions. Select only the necessary history persistence and correlation carriers.
+3. **Usage and diagnostics.** Integrate established telemetry components with the existing responsible owners. Verify per-Agent aggregation across attempts, cumulative usage, estimates, missing reports and cancellation; expose recording loss. Verify sensitive capture, mandatory credential redaction, bounded streaming, collector/storage failure and honest completeness.
+4. **Cluster activation.** Select HTTPS/trusted-proxy topology, explicit collector destinations, retention/capacity and revocation windows/in-flight behavior. Run bounded two-Agent approval → inference → refresh → handoff → revoke acceptance. Deployment still requires explicit authorization.
+
+Do not prebuild multi-user IAM, tenant ACLs, automatic sub-Agent delegation, financial billing or strict quota settlement. Authorization-server choice and the remaining [integration decisions](api-expansion-design.md#centralized-agent-authorization) are not resolved by this planning baseline.
 
 ### Temporary routing freeze
 

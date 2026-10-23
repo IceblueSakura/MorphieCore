@@ -35,6 +35,7 @@ This page owns accepted principles, domain contracts and decision records. [Road
   - [Conversation and cache affinity](#conversation-and-cache-affinity)
   - [Streaming and delivery](#streaming-and-delivery)
   - [Credentials and security](#credentials-and-security)
+  - [Agent identity and cluster diagnostics](#agent-identity-and-cluster-diagnostics)
   - [Observability](#observability)
   - [Configurable exchange capture](#configurable-exchange-capture)
 - [Settled decisions](#settled-decisions)
@@ -1052,13 +1053,40 @@ Ingress accepts one configured token via Bearer or `x-api-key` and authenticates
 
 Transport uses trusted prepared requests, no redirects and no implicit HTTP retries. Environment proxies require explicit startup opt-in. Credentials, locators, private config and upstream bodies never reach clients.
 
+### Agent identity and cluster diagnostics
+
+**Future design baseline selected on 2026-10-23; not implemented or scheduled.** This is the primary reference for future downstream authorization, session attribution, usage statistics and diagnostics. MorphieCore, Agents and diagnostic infrastructure belong to one deployer. The business model has no users, tenants, owners or billing accounts: a registered **Agent binds one client instance** and is the attribution unit. An authorization server's human account is an approval mechanism, not a MorphieCore statistics dimension. [Roadmap](roadmap.md#agent-authorization-and-diagnostics-follow-up) owns execution gates; the existing single-token, loopback-only service remains unchanged.
+
+#### Identity and authentication
+
+| Identifier | Meaning and lifetime |
+|---|---|
+| `agent_id` | Gateway-owned stable identity; survives client restart, rename, key rotation and OAuth refresh. A newly registered Agent does not inherit a deleted same-name Agent's identity |
+| Credential/grant reference | Non-secret reference to a verified API key or OAuth authorization bound to that Agent; one Agent may rotate or hold multiple credentials |
+| `run_id` | Optional client execution identity, not authentication. Client-supplied labels and parent-run relationships remain declared correlation data |
+| Conversation, request and attempt IDs | Business conversation, gateway request and upstream attempt boundaries; none is a substitute for Agent identity |
+
+API-key and OAuth authentication resolve to the same immutable authenticated-Agent context at request admission. Keep it in gateway/runtime owners, outside semantic IR and Provider attribution hints. Names, hosts, IPs, request `user`/`metadata` and self-declared Agent IDs cannot establish identity. Requests with conflicting authentication credentials reject. If independent clients share a credential, their calls are indistinguishable and count as one Agent.
+
+Use an existing OAuth authorization server with Device Flow for human-approved headless access; MorphieCore is the resource server. Agent2 obtains its own authorization after agent1 launches it; process parentage grants no automatic authority. A public OAuth `client_id` identifies an application, and `iss`/`sub` commonly identifies its approving account, not an Agent instance. Token bytes, `jti` and an unverified interpretation of `sid` cannot supply stable identity. Require a verified refresh-stable authorization-instance binding or a separately selected controlled registration mechanism. Credential-to-Agent linking is a trusted management action, never an email/name match.
+
+API keys remain supported for simple or unattended clients. Reuse the authorization service for login, token issuance, refresh and revocation; do not build a user directory or custom OAuth server. Keep upstream Provider credentials separate. Rauthy is the first evaluation candidate, not a selected dependency; [dated research](refs/2026-10-23-downstream-oauth.md) owns server evidence and compatibility limitations. Access-token audience, permissions, independent revocation and old-token/in-flight behavior require explicit acceptance.
+
+#### Shared history and usage attribution
+
+The future session store is cluster-shared among admitted Agents, not tenant-private by default. Record the creating Agent and the actual Agent on every subsequent request; handoff does not rewrite history authorship. Shared data access does not grant credential-management privileges or bypass Provider/account-bound replay restrictions. Key revocation blocks the relevant future access under the selected revocation policy; it does not delete history. Durable storage is a separate choice from attribution and does not replace today's [process-local TTL history](#stateful-history).
+
+Fix attribution at request admission, not by looking up a credential's current binding during later aggregation. Usage belongs to the Agent making each request, not the conversation creator or parent Agent. Conversation and parent/child rollups are alternate views, never additional consumption. Preserve per-attempt source accounting and distinguish reported values, explicitly estimated values with provenance, and unknown usage. Do not sum cumulative streaming snapshots, treat failed/cancelled requests as free, or equate price-versioned cost estimates with Provider invoices.
+
+Internal statistics may be best effort with visible loss and completeness indicators; diagnostic logs are not a durable billing ledger or strict quota authority. This baseline selects neither financial billing nor a reservation/settlement subsystem. Structured events and full-content capture use shared Agent/request/attempt references but retain separate storage and reliability policies under [Observability](#observability) and [exchange capture](#configurable-exchange-capture).
+
 ### Observability
 
 Prefer `tracing` spans/events and established OpenTelemetry log, trace and metrics integrations where needed. Reuse ecosystem SDKs, subscribers and exporters with minimal application wiring; do not build a home-grown diagnostics library, event bus or parallel record framework.
 
 Organize observations around real request, client-turn and session boundaries. A client turn may span several tool-loop requests; upstream attempts belong to one request. Correlate turns/sessions only from established caller context, not prompts, timing or response ancestry. A conversation/cache key alone does not prove either boundary. Unknown associations stay unknown; correlation needs neither long-lived session spans nor a new agent/session store. Request instrumentation follows body completion, failure or cancellation, not merely the handler's return.
 
-Attach logs and adaptation summaries to the relevant request/attempt context instead of maintaining disconnected record trees. Use privacy-safe correlation fields, not high-cardinality metric labels. Semantic reports and projection evidence remain authoritative; do not duplicate their owners or add IR fields solely for telemetry.
+Attach logs and adaptation summaries to the relevant request/attempt context instead of maintaining disconnected record trees. Use privacy-safe correlation fields; request, run and conversation IDs belong in logs/traces, not unbounded metric labels. A bounded registered Agent population may use `agent_id` as a metric dimension under the [future attribution baseline](#agent-identity-and-cluster-diagnostics). Semantic reports and projection evidence remain authoritative; do not duplicate their owners or add IR fields solely for telemetry.
 
 Keep operational telemetry body-free and preserve business behavior when export fails. [Private exchange capture](#configurable-exchange-capture) remains a separate disclosure contract; adopting OpenTelemetry does not authorize business-content export.
 
@@ -1083,6 +1111,12 @@ Capture belongs at gateway/transport I/O boundaries; codecs remain pure and only
 The startup-owned [capture configuration](usage.md#private-exchange-capture) selects four independent header/body boundaries. Authenticated client traffic and Generation upstream I/O use a private exclusive-create writer. Static upstream JSON borrows the existing intake buffer; SSE uses bounded event framing. Unsafe serialized-argument fragments and URI headers are omitted explicitly, not logged as raw strings. Frozen standalone-task upstream capture remains outside these hooks.
 
 Capture is normalized application evidence, not a wire archive. Source EOF is distinct from semantic completion, body handoff and retained completeness. Queue, exchange and aggregate limits are finite; observed drops and writer failures remain queryable even when storage cannot retain a status record. No capture failure changes request acceptance or permits replay.
+
+**Future cluster diagnostics baseline (2026-10-23).** The deployer permits sensitive business histories, request/response headers, bodies and tool data in explicitly enabled diagnostic capture, including failed exchanges. The target may be a trusted, deployer-controlled cluster collector once configured and separately deployed; this is not permission to publish captures or send them to arbitrary third parties. Authentication redaction above remains mandatory. Retained bodies remain sensitive: arbitrary secrets embedded in business text cannot be assumed fully detected or removed.
+
+Keep structured operational events separate from full exchanges, joined by Agent/request/attempt and established conversation references rather than duplicating history in every error event. Capture must start while the exchange is in progress; an error cannot recover already discarded input or deltas. The initial planning default is bounded streaming capture with short success retention and longer error retention, not whole-response buffering or capture enabled only after failure. Storage choice, concrete limits and retention periods remain implementation decisions; export/storage failure must not block or fabricate inference completion.
+
+Distinguish a captured HTTP exchange, gateway-observed conversation history and a complete Agent execution trace. Local tools, omitted history and pre-compaction context never sent to MorphieCore remain unknown unless separately supplied through an explicit client integration. Report truncation, dropped records, redaction, crashes and interrupted streams honestly; capture does not become a replay store or prove full conversation completeness.
 
 ## Settled decisions
 
@@ -1240,6 +1274,7 @@ These records preserve accepted choices and their consequences, grouped by domai
 | Failover, not balancing | Legal candidates, bounded advancement and exact-credential affinity |
 | Conversation routing | No inferred turn, branch or message routing |
 | Separate credential lifecycle | Private file store and ordered pools; no inference-triggered login or refresh |
+| Agent-centered cluster identity (2026-10-23) | [Future baseline](#agent-identity-and-cluster-diagnostics): one deployer, no business user/tenant layer; stable Agent identity across credentials, shared history with per-request authorship and Agent-attributed usage. OAuth product/binding and execution remain gated; no current ingress or replay-policy change |
 | Independent CLI paths | Default configuration lives in the home-relative application directory, with credentials in its `credentials` child. CLI credential/proxy overrides beat file settings; omitted credential paths retain their independent home-relative default. File-relative paths resolve beside the declaring file; no legacy discovery or automatic migration |
 | Agent-sized bounds | Bodies, IR budgets and deadlines fit whole-history agent sessions and long turns: tens of MiB and one hour per exchange. Upstreams enforce their own maxima |
 | Inert, credential-free media | Inline data or URLs only; no gateway fetch or file service, and no client-supplied Provider file references |
@@ -1251,6 +1286,7 @@ These records preserve accepted choices and their consequences, grouped by domai
 | Ecosystem-first observability (2026-10-20) | Prefer `tracing` and OpenTelemetry with minimal custom glue, correlated to real request/turn/session boundaries without inferred agent state. Signal selection and migration follow stage acceptance, not an exhaustive audit checklist; [Observability](#observability) owns the design |
 | Required and incidental output evidence | P5 preserves required output facts and allows selected incidental-report loss after validation; request intent never fabricates upstream reports |
 | Configurable internal exchange capture | P6 permits opt-in business headers/bodies at all four I/O boundaries with separate controls, finite retention and best-effort writes. Credentials are always redacted; no switch permits credential-bearing logs |
+| Cluster diagnostics planning (2026-10-23) | [Future capture baseline](#configurable-exchange-capture) permits sensitive business diagnostics in explicitly configured deployer-owned infrastructure, preserves mandatory authentication redaction and bounded best-effort capture, and distinguishes observed exchanges from complete Agent traces. No backend deployment or export is activated |
 | Public capability and adaptation notice | P7 selects an authenticated capability snapshot distinguishing faithful support, approved adaptation and rejection, plus a conservative possible-adaptation HTTP notice. Actual receipts remain internal; standard response bodies and SSE stay unchanged. Implementation and reconnection remain separately scheduled |
 | Bounded text-delta coalescing | Startup-only, disabled-by-default optimization after client projection and before encoding. One pending run retains its prepared context and fixed deadline; invalid bounds fail startup. Final-only clients retain existing materialization; original intake validation and publication safety remain authoritative |
 | Scoped source accounting | Retain raw buckets and latest operation/step snapshots independently; derive delivery views without summing snapshots or inferring unknown inclusion relations. Source-default zeros and optional counts remain distinguishable |

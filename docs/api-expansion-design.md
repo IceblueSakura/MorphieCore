@@ -488,9 +488,9 @@ The [stage-5 backlog](roadmap.md#stage-5-backlog) has no implementation queue or
 
 ### Centralized agent authorization
 
-On 2026-10-23 the user requested planning for a shared deployment where agent1 can launch agent2 and a human approves agent2's access. Recommend an existing OAuth2/OIDC authorization server with standard Device Flow; MorphieCore remains the resource server. Rauthy is the first evaluation candidate. Keep application launch relationships separate from automatic security delegation, and keep downstream tokens separate from upstream Provider credentials.
+The converged 2026-10-23 [Agent identity and cluster diagnostics baseline](architecture.md#agent-identity-and-cluster-diagnostics) now owns the selected direction: one deployer, no business user/tenant model, credential-independent Agent attribution, shared history and sensitive diagnostics under mandatory authentication redaction. Do not reinterpret OAuth account identity as Agent identity or rebuild a separate user/ownership hierarchy here.
 
-The [dated OAuth research](refs/2026-10-23-downstream-oauth.md) owns candidate evidence, limitations and validation questions. Server selection, SDK interoperability, permissions, revocation semantics and centralized ingress/resource isolation remain unresolved. This is unscheduled deployment/authentication planning, not a stage-5 API assignment, implementation approval or a change to the current [credential and loopback boundaries](architecture.md#credentials-and-security).
+Unresolved integration choices are the authorization-server product, verified OAuth authorization-instance binding to `agent_id`, registry persistence/management, client correlation carriers, token permissions and revocation policy, and diagnostic storage/export/retention. Rauthy remains the first evaluation candidate; the [dated research](refs/2026-10-23-downstream-oauth.md) owns versioned evidence and limitations. [Roadmap](roadmap.md#agent-authorization-and-diagnostics-follow-up) owns the unscheduled dependency order and acceptance gates. This is not a stage-5 API assignment, implementation approval or change to current loopback ingress.
 
 ### 1C design: Messages citations
 
