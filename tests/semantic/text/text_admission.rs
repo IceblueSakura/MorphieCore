@@ -52,6 +52,7 @@ fn known_unrepresentable_event_fields_and_changed_bound_metadata_fail_early() {
         },
     };
     let metadata = ResponseMetadata {
+        delivery: None,
         storage: None,
         id: Some("c".into()),
         model: "m".into(),

@@ -85,7 +85,12 @@ def run(base, profile, api):
                 if api == "generate_content":
                     check(result["usage"]["total_tokens"] == 15)
                 else:
-                    check(result.get("usage") is None)
+                    # Preserve 10 input / 5 nonreasoning output; missing thought
+                    # accounting uses six visible UTF-8 bytes in turns 1..3.
+                    output = 7 if turn <= 3 else 5
+                    check(result["usage"]["total_tokens"] == 10 + output)
+                    check(result["usage"]["prompt_tokens" if profile == "chat" else "input_tokens"] == 10)
+                    check(result["usage"]["completion_tokens" if profile == "chat" else "output_tokens"] == output)
                 if profile == "chat":
                     choice = result["choices"][0]
                     expected_reason = "tool_calls" if api == "interactions" and turn <= 2 else "stop"
@@ -125,7 +130,7 @@ def run_messages(base, api):
     requests = 0
     with httpx.Client(trust_env=False, event_hooks={"request": [transmissions.append]}) as http, \
             anthropic.Anthropic(base_url=base.removesuffix("/v1"), api_key=KEY, max_retries=0,
-                                timeout=5.0, http_client=http) as client:
+                                timeout=5.0, http_client=http, _strict_response_validation=True) as client:
         for stream in (False, True):
             params = dict(model="gemini-3.8-flash", max_tokens=256,
                           thinking={"type": "adaptive"}, output_config={"effort": "low"},
@@ -147,7 +152,10 @@ def run_messages(base, api):
                     value = client.beta.messages.create(**params)
                 result = value.model_dump(exclude_unset=True)
                 check(result["stop_reason"] == ("tool_use" if turn <= 2 else "end_turn"))
-                check(result["usage"]["input_tokens"] == 10 and result["usage"]["output_tokens"] == 5)
+                if api == "interactions" and turn == 4:
+                    check(result["usage"]["input_tokens"] > 0 and result["usage"]["output_tokens"] == 3)
+                else:
+                    check(result["usage"]["input_tokens"] == 10 and result["usage"]["output_tokens"] == 5)
                 content = result["content"]
                 params["messages"].append({"role": "assistant", "content": content})
                 calls = [p for p in content if p["type"] == "tool_use"]

@@ -37,7 +37,10 @@ pub mod openrouter_images;
 pub mod openrouter_speech;
 pub mod xiaomi_audio;
 
-pub use decoded::{CodecError, DecodedRequest, DecodedResponse, ResponseMetadata, ResponseStorage};
+pub use decoded::{
+    CodecError, DecodedRequest, DecodedResponse, GenerationDelivery, ResponseMetadata,
+    ResponseStorage,
+};
 
 /// One pure upstream encoding and its body-free adaptation receipts.
 pub(crate) struct RequestProjection {

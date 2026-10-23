@@ -3,7 +3,7 @@
   "info": {
     "title": "MorphieCore HTTP API",
     "version": "0.1.0",
-    "description": "HTTP API summary for the local gateway, not full vendor API conformance. Generation uses a typed IR, stateless upstream history and bounded pre-publication failover. Responses enables gateway-managed TTL history by default; store:false opts out. Known fields are strict; unknown generation fields are ignored, not forwarded. Standalone tasks require explicit activation. Embeddings accepts text with float/Base64 delivery; other media remain frozen. Codecs define exact admission; docs/usage.md explains setup."
+    "description": "HTTP API summary for the local gateway, not full vendor API conformance. Generation uses a typed IR, stateless upstream history and bounded pre-publication failover. Downstream required fields prefer reported values, then justified inference and text-only estimates; usage may be approximate, not billing truth. Responses enables gateway-managed TTL history by default; store:false opts out. Known fields are strict; unknown generation fields are ignored, not forwarded. Standalone tasks require explicit activation. Embeddings accepts text with float/Base64 delivery; other media remain frozen. Codecs define exact admission; docs/usage.md explains setup."
   },
   "servers": [{"url": "http://127.0.0.1:8080"}],
   "security": [{"bearerAuth": []}, {"apiKeyAuth": []}],
@@ -107,7 +107,7 @@
         "operationId": "createMessage",
         "parameters": [{"$ref": "#/components/parameters/ConversationId"}],
         "summary": "Generate with Anthropic Messages",
-        "description": "Uses the public model's configured candidate array, shared by all Generation client protocols; candidates need not use a native Messages upstream. Handler errors use Anthropic envelopes; ingress auth errors use the shared OpenAI envelope.",
+        "description": "Uses the public model's configured candidate array, shared by all Generation client protocols; candidates need not use a native Messages upstream. Handler, authentication and method errors use Anthropic envelopes.",
         "requestBody": {
           "required": true,
           "content": {"application/json": {"schema": {"$ref": "#/components/schemas/MessagesRequest"}}}
@@ -115,10 +115,10 @@
         "responses": {
           "200": {"$ref": "#/components/responses/MessagesGeneration"},
           "400": {"$ref": "#/components/responses/MessagesError"},
-          "401": {"$ref": "#/components/responses/Error"},
+          "401": {"$ref": "#/components/responses/MessagesError"},
           "402": {"$ref": "#/components/responses/MessagesError"},
           "404": {"$ref": "#/components/responses/MessagesError"},
-          "405": {"$ref": "#/components/responses/Error"},
+          "405": {"$ref": "#/components/responses/MessagesError"},
           "408": {"$ref": "#/components/responses/MessagesError"},
           "413": {"$ref": "#/components/responses/MessagesError"},
           "415": {"$ref": "#/components/responses/MessagesError"},
@@ -1116,7 +1116,7 @@
         "content": {"application/json": {"schema": {"type": "object"}}, "text/event-stream": {"schema": {"type": "string"}}}
       },
       "MessagesError": {
-        "description": "Sanitized Messages handler error. Exhausted quota maps to 402; upstream overload maps to 529. All legal remaining targets cooling/probing returns 503 upstream_unavailable. Ingress auth and router method errors use the shared OpenAI envelope.",
+        "description": "Sanitized Messages error, including authentication and router errors. Exhausted quota maps to 402; upstream overload maps to 529. All legal remaining targets cooling/probing returns 503 upstream_unavailable.",
         "headers": {"Retry-After": {"description": "Optional bounded upstream or local recovery delay in seconds; not a guarantee of recovery.", "schema": {"type": "integer", "minimum": 0, "maximum": 86400}}},
         "content": {"application/json": {"schema": {"$ref": "#/components/schemas/MessagesError"}}}
       },

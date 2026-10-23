@@ -290,6 +290,7 @@ mod tests {
 
     fn metadata(settings: GenerationSettings) -> crate::protocol::ResponseMetadata {
         crate::protocol::ResponseMetadata {
+            delivery: None,
             storage: None,
             id: Some("resp".into()),
             model: "m".into(),

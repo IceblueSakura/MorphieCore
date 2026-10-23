@@ -178,8 +178,13 @@ async fn exercise_messages(api: fixture::Api) {
                 response["stop_reason"],
                 if turn <= 2 { "tool_use" } else { "end_turn" }
             );
-            assert_eq!(response["usage"]["input_tokens"], 10);
-            assert_eq!(response["usage"]["output_tokens"], 5);
+            if api == fixture::Api::Interactions && turn == 4 {
+                assert!(response["usage"]["input_tokens"].as_u64().unwrap() > 0);
+                assert_eq!(response["usage"]["output_tokens"], 3); // ceil(len("continued") / 4)
+            } else {
+                assert_eq!(response["usage"]["input_tokens"], 10);
+                assert_eq!(response["usage"]["output_tokens"], 5);
+            }
             let content = response["content"].as_array().unwrap();
             let calls: Vec<_> = content.iter().filter(|c| c["type"] == "tool_use").collect();
             let next = if turn <= 2 {
@@ -248,8 +253,12 @@ async fn exercise(api: fixture::Api) {
                 if api == fixture::Api::GenerateContent {
                     assert_eq!(response["usage"]["total_tokens"], 15);
                 } else {
-                    // Inclusion premises stay unknown; no OpenAI token total is fabricated.
-                    assert!(response["usage"].is_null());
+                    // Source accounting stays sparse; the delivery estimates
+                    // six visible reasoning bytes only for the first three turns.
+                    assert_eq!(
+                        response["usage"]["total_tokens"],
+                        if turn <= 3 { 17 } else { 15 }
+                    );
                 }
                 if profile == Profile::Chat {
                     // STOP stays stop; Interactions explicitly requires tool results.

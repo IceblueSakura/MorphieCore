@@ -232,8 +232,8 @@ impl ChatSseEncoder {
                 return Err(SseError::Closed);
             }
             let terminal = matches!(event, StreamEvent::Terminal { .. });
-            // Nullable usage preserves an unknown report; requesting its delivery
-            // never authorizes inventing counters or replacing a real terminal.
+            // Pure codecs preserve unknown usage. Gateway delivery supplies its
+            // explicit completed view; neither path may replace a real terminal.
             // https://developers.openai.com/api/reference/resources/chat/completions
             let values = self.codec.encode(event, source)?;
             let mut frames = vec![];

@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 
 fn metadata() -> ResponseMetadata {
     ResponseMetadata {
+        delivery: None,
         storage: None,
         id: Some("response_1".into()),
         model: "fixture-model".into(),

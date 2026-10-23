@@ -22,6 +22,9 @@ enum OpenItem {
     },
     ToolUse {
         index: usize,
+        /// SDK incremental JSON parsers reject a standalone whitespace prefix.
+        prefix: String,
+        arguments_started: bool,
     },
 }
 impl OpenItem {
@@ -29,7 +32,7 @@ impl OpenItem {
         match self {
             Self::Text => None,
             Self::Thinking { index, .. } => index,
-            Self::ToolUse { index } => Some(index),
+            Self::ToolUse { index, .. } => Some(index),
         }
     }
 }
@@ -49,6 +52,8 @@ pub struct ClientEventEncoder {
     incomplete_calls: bool,
     progress: InteractionProgress,
     usage: Option<crate::protocol::anthropic::messages::Usage>,
+    delivery_enabled: bool,
+    delivery_usage: Option<crate::semantic::task::generation::Usage>,
     /// Already published optional observations cannot be erased by absent delta fields.
     opening_usage: Option<crate::protocol::anthropic::messages::Usage>,
     attachment: Option<crate::protocol::attachments::Carrier>,
@@ -89,6 +94,8 @@ impl ClientEventEncoder {
             incomplete_calls: false,
             progress: InteractionProgress::Unreported,
             usage: None,
+            delivery_enabled: false,
+            delivery_usage: None,
             opening_usage: None,
             attachment: None,
             limits: Default::default(),
@@ -116,6 +123,13 @@ impl ClientEventEncoder {
     }
     pub(crate) fn reject(&mut self) {
         self.rejected = true;
+    }
+    pub(crate) fn update_delivery(
+        &mut self,
+        delivery: Option<&crate::protocol::GenerationDelivery>,
+    ) {
+        self.delivery_enabled = delivery.is_some();
+        self.delivery_usage = delivery.and_then(|d| d.usage);
     }
     /// Messages reports the assigned service in opening usage, not a late delta.
     pub fn update_service_class(
@@ -171,6 +185,7 @@ impl ClientEventEncoder {
             Ok(selected) => selected,
             // An incomplete checkpoint need not have a representable delivery view yet.
             Err(_) if source.stage == UsageStage::Checkpoint => None,
+            Err(CodecError::Unsupported(_)) if self.delivery_enabled => None,
             Err(error) => return Err(error),
         };
         for loss in super::projection::report_losses(source, selected.as_ref(), "event.encode") {
@@ -213,7 +228,16 @@ impl ClientEventEncoder {
             self.start(out);
         } else if source.scope == UsageScope::Operation {
             self.usage = None;
-            if source.stage == UsageStage::Final {
+            let published_details = self.opening_usage.as_ref().is_some_and(|usage| {
+                usage.cache_read_input_tokens.value().is_some()
+                    || usage.cache_creation_input_tokens.value().is_some()
+                    || usage.thinking_tokens.value().is_some()
+                    || usage.server_tool_use.value().is_some()
+                    || usage.cache_creation.value().is_some()
+            });
+            // Mandatory scalar completion cannot retract an optional observation
+            // already retained by SDK accumulators, or resurrect an old checkpoint.
+            if source.stage == UsageStage::Final && (!self.delivery_enabled || published_details) {
                 return Err(CodecError::Unsupported("Messages usage".into()));
             }
         }
@@ -278,6 +302,8 @@ impl ClientEventEncoder {
                         }
                         self.calls = true;
                         OpenItem::ToolUse {
+                            prefix: String::new(),
+                            arguments_started: false,
                             index: open_block(
                                 &mut self.next,
                                 &mut out,
@@ -357,10 +383,36 @@ impl ClientEventEncoder {
                         }),
                         json!({"type":"thinking_delta","thinking":fragment}),
                     ),
-                    OpenItem::ToolUse { index } => (
-                        *index,
-                        json!({"type":"input_json_delta","partial_json":fragment}),
-                    ),
+                    OpenItem::ToolUse {
+                        index,
+                        prefix,
+                        arguments_started,
+                    } => {
+                        if !*arguments_started {
+                            if prefix.len().saturating_add(fragment.len())
+                                > self.limits.max_event_bytes
+                            {
+                                return Err(CodecError::Limit);
+                            }
+                            prefix.push_str(fragment);
+                            if prefix
+                                .bytes()
+                                .all(|b| matches!(b, b' ' | b'\t' | b'\r' | b'\n'))
+                            {
+                                return Ok(out);
+                            }
+                            *arguments_started = true;
+                            (
+                                *index,
+                                json!({"type":"input_json_delta","partial_json":std::mem::take(prefix)}),
+                            )
+                        } else {
+                            (
+                                *index,
+                                json!({"type":"input_json_delta","partial_json":fragment}),
+                            )
+                        }
+                    }
                 };
                 out.push(frame(
                     &json!({"type":"content_block_delta","index":index,"delta":delta}),
@@ -382,7 +434,7 @@ impl ClientEventEncoder {
                         }
                         return Ok(out);
                     }
-                    OpenItem::ToolUse { index } => {
+                    OpenItem::ToolUse { index, .. } => {
                         if *status == crate::semantic::task::generation::ItemLifecycle::Incomplete {
                             self.incomplete_calls = true;
                         }
@@ -494,11 +546,18 @@ impl ClientEventEncoder {
                     })));
                     out.push(frame(&json!({"type":"content_block_stop","index":index})));
                 }
-                let mut usage = self
-                    .usage
-                    .as_ref()
-                    .ok_or(CodecError::Invalid("Messages usage"))?
-                    .wire();
+                let mut wire = self.usage.clone();
+                if let Some(counts) = self.delivery_usage {
+                    let completed =
+                        crate::protocol::anthropic::messages::accounting::delivery_wire(counts)?;
+                    if let Some(wire) = &mut wire {
+                        wire.input_tokens = completed.input_tokens;
+                        wire.output_tokens = completed.output_tokens;
+                    } else {
+                        wire = Some(completed);
+                    }
+                }
+                let mut usage = wire.ok_or(CodecError::Invalid("Messages usage"))?.wire();
                 // TTL detail has only an opening carrier in the pinned delta schema.
                 usage
                     .as_object_mut()
@@ -534,5 +593,84 @@ impl ClientEventEncoder {
     pub fn fail(&mut self, error: &Value) -> Vec<Bytes> {
         self.finished = true;
         vec![frame(error)]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::semantic::{
+        task::generation::{ArgumentFormat, Usage},
+        value::Text,
+    };
+
+    #[test]
+    fn scalar_completion_does_not_erase_published_optional_accounting() {
+        let mut encoder = ClientEventEncoder::new("r", "m");
+        encoder.update_delivery(Some(&crate::protocol::GenerationDelivery::default()));
+        let mut counts = Usage::operation(10, 5, 15);
+        counts.cached_input_tokens = Some(2);
+        let mut opening = UsageReport::operation(counts);
+        opening.stage = UsageStage::Checkpoint;
+        encoder.encode(&StreamEvent::UsageReport(opening)).unwrap();
+        counts.cached_input_tokens = None;
+        assert!(
+            encoder
+                .encode(&StreamEvent::UsageReport(UsageReport::operation(counts)))
+                .is_err()
+        );
+        assert!(encoder.finish().is_err());
+    }
+
+    #[test]
+    fn tool_whitespace_prefix_is_bounded_and_preserved_with_its_first_token() {
+        let start = StreamEvent::ItemStarted {
+            item: ItemId::new(1),
+            kind: ItemKind::ToolCall {
+                format: ArgumentFormat::Raw,
+                call_id: Text::new("c", "id", 64).unwrap(),
+                name: Text::new("lookup", "name", 64).unwrap(),
+                context: Default::default(),
+            },
+            replay: None,
+        };
+        let delta = |fragment: &str| StreamEvent::Delta {
+            item: ItemId::new(1),
+            part: PartId::new(1),
+            fragment: fragment.into(),
+            logprobs: vec![],
+        };
+        let mut encoder = ClientEventEncoder::new("r", "m");
+        encoder.encode(&start).unwrap();
+        for prefix in [" ", "\n\t"] {
+            assert!(encoder.encode(&delta(prefix)).unwrap().is_empty());
+        }
+        let mut arguments = String::new();
+        for fragment in ["{\"x\":", "1}"] {
+            for frame in encoder.encode(&delta(fragment)).unwrap() {
+                let text = std::str::from_utf8(&frame).unwrap();
+                let data = text
+                    .lines()
+                    .find_map(|line| line.strip_prefix("data: "))
+                    .unwrap();
+                let event: Value = serde_json::from_str(data).unwrap();
+                arguments.push_str(event["delta"]["partial_json"].as_str().unwrap());
+            }
+        }
+        assert_eq!(arguments, " \n\t{\"x\":1}");
+        let mut bounded = ClientEventEncoder::new("r", "m")
+            .with_limits(crate::protocol::stream::SseLimits {
+                max_event_bytes: 512,
+                ..Default::default()
+            })
+            .unwrap();
+        bounded.encode(&start).unwrap();
+        assert!(bounded.encode(&delta(&" ".repeat(256))).unwrap().is_empty());
+        assert_eq!(
+            bounded.encode(&delta(&" ".repeat(257))),
+            Err(CodecError::Limit)
+        );
+        assert!(bounded.encode(&delta("{}")).is_err());
+        assert!(bounded.finish().is_err());
     }
 }

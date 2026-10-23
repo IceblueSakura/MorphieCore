@@ -84,6 +84,7 @@ pub(super) fn metadata(
         crate::protocol::openai::chat::envelope::validate_context(&context.execution)?;
     }
     Ok(ResponseMetadata {
+        delivery: None,
         storage: if profile == Profile::Responses {
             crate::protocol::openai::responses::managed::read_storage(o)?
         } else {

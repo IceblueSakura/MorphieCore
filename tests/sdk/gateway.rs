@@ -79,6 +79,7 @@ struct Scenario {
     cross: bool,
     empty_owner: bool,
     nonstandard_usage: bool,
+    missing_usage: bool,
 }
 #[derive(Clone, Default)]
 struct Observed(
@@ -103,6 +104,7 @@ async fn provider(
     let stream = request["stream"] == true;
     let owner_case = request["metadata"]["case"] == "empty-owner";
     let nonstandard_usage = request["metadata"]["case"] == "nonstandard-usage";
+    let missing_usage = request["metadata"]["case"] == "missing-usage";
     let cross = request["metadata"]["case"] == "cross-tools";
     if cross {
         assert!(chat, "the Responses client must dispatch Chat upstream");
@@ -123,7 +125,7 @@ async fn provider(
             })
             .is_none()
     );
-    if !chat && !owner_case && !nonstandard_usage {
+    if !chat && !owner_case && !nonstandard_usage && !missing_usage {
         // The fixed SDK must keep file description and ordered source parts
         // in the initial request and the history it appends for tool replay.
         assert_eq!(
@@ -145,19 +147,20 @@ async fn provider(
                 cross,
                 empty_owner: owner_case,
                 nonstandard_usage,
+                missing_usage,
             })
             .or_default();
         *count += 1;
         *count
     };
     assert!(
-        turn <= if cross || owner_case || nonstandard_usage {
+        turn <= if cross || owner_case || nonstandard_usage || missing_usage {
             1
         } else {
             2
         }
     );
-    if !chat && !owner_case && !nonstandard_usage {
+    if !chat && !owner_case && !nonstandard_usage && !missing_usage {
         assert_eq!(
             request["reasoning"],
             json!({"summary": if turn == 1 { json!("auto") } else { Value::Null }})
@@ -230,6 +233,9 @@ async fn provider(
     }
     let snapshot = |mut value: Value| {
         value["model"] = json!("private-model");
+        if missing_usage {
+            value.as_object_mut().unwrap().remove("usage");
+        }
         if !chat {
             value["created_at"] = json!(1);
             if !value["completed_at"].is_null() {
@@ -239,6 +245,15 @@ async fn provider(
             if nonstandard_usage && value["usage"].is_object() {
                 value["usage"]["input_tokens_details"]["image_tokens"] = json!(1);
             }
+            if owner_case || missing_usage {
+                for field in ["tools", "tool_choice", "parallel_tool_calls"] {
+                    value.as_object_mut().unwrap().remove(field);
+                }
+                if let Some(usage) = value["usage"].as_object_mut() {
+                    usage.remove("input_tokens_details");
+                    usage.remove("output_tokens_details");
+                }
+            }
         }
         value
     };
@@ -247,9 +262,13 @@ async fn provider(
         let frames = if owner_case {
             owner_events()
         } else if chat {
-            chat_wire::events(turn)
+            chat_wire::events(if missing_usage { 2 } else { turn })
         } else {
-            tool_events(if nonstandard_usage { 2 } else { turn })
+            tool_events(if nonstandard_usage || missing_usage {
+                2
+            } else {
+                turn
+            })
         };
         for (sequence, mut value) in frames.into_iter().enumerate() {
             if !chat {
@@ -257,6 +276,12 @@ async fn provider(
             }
             if chat {
                 value["model"] = json!("private-model");
+                if missing_usage {
+                    if value["choices"].as_array().is_some_and(Vec::is_empty) {
+                        continue;
+                    }
+                    value.as_object_mut().unwrap().remove("usage");
+                }
             } else if value.get("response").is_some() {
                 value["response"] = snapshot(value["response"].take());
             }
@@ -277,9 +302,13 @@ async fn provider(
         serde_json::to_vec(&snapshot(if owner_case {
             owner_response()
         } else if chat {
-            chat_wire::response(turn)
+            chat_wire::response(if missing_usage { 2 } else { turn })
         } else {
-            tool_response(if nonstandard_usage { 2 } else { turn })
+            tool_response(if nonstandard_usage || missing_usage {
+                2
+            } else {
+                turn
+            })
         }))
         .unwrap()
     };
@@ -464,7 +493,7 @@ async fn sdk_uses_gateway_for_both_protocols_and_deliveries() {
         String::from_utf8_lossy(&output.stderr)
     );
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["requests"], 52);
+    assert_eq!(report["requests"], 56);
     assert_eq!(report["model_requests"], 7);
     assert_eq!(report["native_audio_requests"], 10);
     assert_eq!(report["speech_requests"], 9);
@@ -475,9 +504,13 @@ async fn sdk_uses_gateway_for_both_protocols_and_deliveries() {
     assert_eq!(observed.5.load(std::sync::atomic::Ordering::SeqCst), 3);
     {
         let observed = observed.0.lock().unwrap();
-        assert_eq!(observed.len(), 10);
+        assert_eq!(observed.len(), 14);
         assert!(observed.iter().all(|(scenario, count)| *count
-            == if scenario.cross || scenario.empty_owner || scenario.nonstandard_usage {
+            == if scenario.cross
+                || scenario.empty_owner
+                || scenario.nonstandard_usage
+                || scenario.missing_usage
+            {
                 1
             } else {
                 2

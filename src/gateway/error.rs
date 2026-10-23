@@ -133,6 +133,12 @@ impl ApiError {
     pub fn into_messages_response(self) -> Response {
         let (status, body) = self.messages_error();
         let mut response = (status, Json(body)).into_response();
+        if status == StatusCode::UNAUTHORIZED {
+            response.headers_mut().insert(
+                "www-authenticate",
+                axum::http::HeaderValue::from_static("Bearer"),
+            );
+        }
         if let Some(seconds) = self.retry_after {
             response
                 .headers_mut()

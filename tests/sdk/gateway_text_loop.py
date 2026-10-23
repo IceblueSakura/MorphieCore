@@ -11,6 +11,7 @@ from chat_bridge_checks import check_chat_bridge
 from urllib.parse import urlsplit
 
 import openai
+from openai.types.responses import Response
 
 
 def run(base_url: str) -> None:
@@ -146,8 +147,7 @@ def run(base_url: str) -> None:
                     ])
                 else:
                     check(result.output_text == '{"ok":false}')
-        # Validate empty owner items with a complete independent Responses envelope;
-        # do not invent missing Chat-reported settings to satisfy strict SDK validation.
+        # Sparse upstream settings/details still produce a complete public schema.
         for stream in (False, True):
             params = dict(model="public-model", input="lookup", store=False,
                           metadata={"case": "empty-owner"},
@@ -156,6 +156,8 @@ def run(base_url: str) -> None:
                 completed = 0
                 with client.responses.stream(**params) as events:
                     for event in events:
+                        if hasattr(event, "response"):
+                            Response.model_validate(event.response.model_dump(by_alias=True, exclude_unset=True))
                         completed += event.type == "response.completed"
                     result = events.get_final_response()
                 check(completed == 1)
@@ -164,6 +166,12 @@ def run(base_url: str) -> None:
             requests += 1
             check(result.model == "public-model" and result.status == "completed")
             check(len(result.output) == 2)
+            Response.model_validate(result.model_dump(by_alias=True, exclude_unset=True))
+            check(result.parallel_tool_calls is True and result.tool_choice == "auto")
+            check(result.tools[0].name == "lookup")
+            check(result.usage.input_tokens_details.cached_tokens == 0)
+            check(result.usage.input_tokens_details.cache_write_tokens == 0)
+            check(result.usage.output_tokens_details.reasoning_tokens == 0)
             owner, call = result.output
             check(owner.type == "message" and owner.status == "completed" and owner.content == [])
             check(call.type == "function_call" and call.call_id == "call-local")
@@ -185,6 +193,38 @@ def run(base_url: str) -> None:
             check(result.status == "completed" and result.usage.total_tokens == 8)
             check(result.usage.input_tokens == 3 and result.usage.output_tokens == 5)
             check("image_tokens" not in result.usage.input_tokens_details.model_dump(exclude_unset=True))
+        # Requested final usage remains present when upstream accounting is absent.
+        for chat in (False, True):
+            for streamed in (False, True):
+                params = dict(model="public-model", metadata={"case": "missing-usage"})
+                if chat:
+                    params["messages"] = [{"role": "user", "content": "lookup"}]
+                    if streamed:
+                        with client.chat.completions.stream(
+                            **params, stream_options={"include_usage": True}
+                        ) as events:
+                            for _ in events:
+                                pass
+                            result = events.get_final_completion()
+                    else:
+                        result = client.chat.completions.create(**params)
+                    check(result.usage.prompt_tokens > 0 and result.usage.completion_tokens > 0)
+                    check(result.usage.total_tokens ==
+                          result.usage.prompt_tokens + result.usage.completion_tokens)
+                else:
+                    params["input"] = "lookup"
+                    if streamed:
+                        with client.responses.stream(**params) as events:
+                            for event in events:
+                                if hasattr(event, "response"):
+                                    Response.model_validate(event.response.model_dump(by_alias=True, exclude_unset=True))
+                            result = events.get_final_response()
+                    else:
+                        result = client.responses.create(**params)
+                    check(result.usage.input_tokens > 0 and result.usage.output_tokens > 0)
+                    check(result.usage.total_tokens ==
+                          result.usage.input_tokens + result.usage.output_tokens)
+                requests += 1
         for index, count in enumerate((1, 2, 2)):
             params = dict(model="public-image", prompt="synthetic image", n=count,
                 stream=False, size="1536x1024", quality="high", background="transparent",

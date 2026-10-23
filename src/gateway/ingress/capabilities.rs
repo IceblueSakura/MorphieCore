@@ -286,6 +286,22 @@ impl<'a> Entry<'a> {
                 Treatment::Rejected,
             ),
         ];
+        let mut usage = Case::new(
+            "response.delivery.usage",
+            "reported_then_derived_then_estimated",
+            Treatment::ApprovedAdaptation,
+        );
+        usage.rules.push("generation.complete-delivery-usage.v1");
+        delivery.push(usage);
+        if protocol == ClientProtocol::Responses {
+            let mut required = Case::new(
+                "response.delivery.settings",
+                "missing_required_tool_settings",
+                Treatment::ApprovedAdaptation,
+            );
+            required.rules.push("responses.infer-required-settings.v1");
+            delivery.push(required);
+        }
         use crate::protocol::anthropic::messages::client::GoogleTerminalPolicy as GoogleTerminal;
         let selected_google = |profile| {
             protocol == ClientProtocol::Messages

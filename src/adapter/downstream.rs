@@ -314,6 +314,7 @@ impl ClientAdapter {
                     .with_limits(limits)?;
                 crate::protocol::reports::validate_single(&metadata.context.reports)?;
                 encoder.update_service_class(metadata.context.service_class().clone())?;
+                encoder.update_delivery(metadata.delivery.as_deref());
                 Encoder::Messages(encoder)
             }
             Self::OpenAi { adapter, contract } => match adapter.protocol {
@@ -512,6 +513,7 @@ impl ClientEncoder {
                     .into());
                 }
                 e.update_service_class(metadata.context.service_class().clone())?;
+                e.update_delivery(metadata.delivery.as_deref());
                 for mut loss in
                     crate::protocol::anthropic::messages::client::metadata_losses(&metadata)
                 {

@@ -155,6 +155,7 @@ impl super::Message {
     pub fn reported_metadata(&self) -> Result<crate::protocol::ResponseMetadata, CodecError> {
         self.validate(false)?;
         let metadata = crate::protocol::ResponseMetadata {
+            delivery: None,
             storage: None,
             id: Some(self.id.clone()),
             model: self.model.clone(),

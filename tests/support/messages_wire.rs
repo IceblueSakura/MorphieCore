@@ -32,6 +32,9 @@ pub fn native_stream_body(value: &Value) -> String {
             }
             "tool_use" => {
                 events.push(json!({"type":"content_block_start","index":index,"content_block":{"type":"tool_use","id":block["id"],"name":block["name"],"input":{}}}));
+                // A legal JSON prefix split before its first token must not break
+                // downstream SDK incremental argument accumulation.
+                events.push(json!({"type":"content_block_delta","index":index,"delta":{"type":"input_json_delta","partial_json":" \n\t"}}));
                 events.push(json!({"type":"content_block_delta","index":index,"delta":{"type":"input_json_delta","partial_json":block["input"].to_string()}}));
             }
             _ => panic!("fixture block"),

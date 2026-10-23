@@ -73,7 +73,8 @@ class OpenApiSchemaTests(unittest.TestCase):
         messages = DOCUMENT["paths"]["/v1/messages"]["post"]["responses"]
         self.assertIn("402", messages)
         self.assertIn("529", messages)
-        self.assertEqual(messages["401"]["$ref"], "#/components/responses/Error")
+        for status in ("401", "405"):
+            self.assertEqual(messages[status]["$ref"], "#/components/responses/MessagesError")
         self.assertFalse(validator("MessagesRequest").is_valid({
             "model": "synthetic", "messages": [{"role": "user", "content": "hello"}],
         }))

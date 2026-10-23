@@ -200,8 +200,11 @@ async fn stateless_json_and_sse_replay_signatures_and_cancel_upstream() {
     assert_eq!(response.status(), 200);
     let response: Value = response.json().await.unwrap();
     assert!(response["id"].as_str().unwrap().starts_with("resp_"));
-    // The source total is retained, but its inclusion relation is not an OpenAI contract.
-    assert!(response["usage"].is_null());
+    // Downstream sum derives from the selected input and inclusive output;
+    // the source's unreported total relationship remains unchanged.
+    assert_eq!(response["usage"]["input_tokens"], 10);
+    assert_eq!(response["usage"]["output_tokens"], 5);
+    assert_eq!(response["usage"]["total_tokens"], 15);
     assert!(!response.to_string().contains("synthetic-thought"));
     let mut next = request.clone();
     let input = next["input"].as_array_mut().unwrap();

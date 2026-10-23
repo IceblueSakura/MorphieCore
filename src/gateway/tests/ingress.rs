@@ -297,6 +297,32 @@ async fn diagnostics_only_record_authenticated_requests_and_never_expose_headers
 #[tokio::test]
 async fn authentication_runs_before_any_body_poll() {
     let gate = gateway(Limits::default());
+    for (path, expected, kind) in [
+        ("/v1/messages", 405, "invalid_request_error"),
+        ("/v1/messages/unsupported", 404, "not_found_error"),
+    ] {
+        let response = gate
+            .router()
+            .oneshot(
+                HttpRequest::builder()
+                    .method("GET")
+                    .uri(path)
+                    .header("x-api-key", KEY)
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), expected);
+        let body: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(response.into_body(), 4096)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(body["type"], "error");
+        assert_eq!(body["error"]["type"], kind);
+    }
     let directory = crate::test_files::private_directory();
     let disabled = directory.path().join("disabled.jsonl");
     let config = serde_json::from_value(serde_json::json!({"path":disabled})).unwrap();
@@ -313,22 +339,35 @@ async fn authentication_runs_before_any_body_poll() {
             gate.state.clone(),
             authenticate,
         ));
-    let forbidden = futures_util::stream::poll_fn(
-        |_| -> std::task::Poll<Option<Result<bytes::Bytes, std::io::Error>>> {
-            panic!("unauthenticated body was polled")
-        },
-    );
-    let response = app
-        .oneshot(
-            HttpRequest::builder()
-                .uri("/test")
-                .body(axum::body::Body::from_stream(forbidden))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), 401);
-    assert_eq!(response.headers()["www-authenticate"], "Bearer");
+    for path in ["/v1/chat/completions", "/v1/responses", "/v1/messages"] {
+        let forbidden = futures_util::stream::poll_fn(
+            |_| -> std::task::Poll<Option<Result<bytes::Bytes, std::io::Error>>> {
+                panic!("unauthenticated body was polled")
+            },
+        );
+        let response = app
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .uri(path)
+                    .body(axum::body::Body::from_stream(forbidden))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 401);
+        assert_eq!(response.headers()["www-authenticate"], "Bearer");
+        let bytes = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        if path == "/v1/messages" {
+            assert_eq!(body["type"], "error");
+            assert_eq!(body["error"]["type"], "authentication_error");
+        } else {
+            assert_eq!(body["error"]["code"], "unauthorized");
+        }
+    }
 }
 #[tokio::test]
 async fn identity_budget_and_scope_are_owned_by_trusted_ingress() {

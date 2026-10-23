@@ -307,6 +307,7 @@ fn stable_refusal_details_have_independent_native_directions_and_guarded_deliver
             semantic,
             fidelity: Default::default(),
             metadata: ResponseMetadata {
+                delivery: None,
                 id: Some("msg_refusal".into()),
                 model: "synthetic-model".into(),
                 storage: None,

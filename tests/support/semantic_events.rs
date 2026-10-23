@@ -15,6 +15,7 @@ pub fn text(s: &str) -> Text {
 }
 pub fn metadata() -> ResponseMetadata {
     ResponseMetadata {
+        delivery: None,
         storage: None,
         id: Some("r".into()),
         model: "synthetic".into(),

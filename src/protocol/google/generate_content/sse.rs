@@ -195,6 +195,7 @@ impl GenerationSseDecoder {
             }
         } else {
             let metadata = ResponseMetadata {
+                delivery: None,
                 storage: None,
                 id: Some(id.ok_or_else(|| invalid("responseId"))?.into()),
                 model: model.ok_or_else(|| invalid("modelVersion"))?.into(),

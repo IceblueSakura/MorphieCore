@@ -55,9 +55,17 @@ impl Gateway {
                 "/v1/audio/transcriptions",
                 post(crate::gateway::tasks::transcription::handle),
             )
-            .fallback(|| async { ApiError::new(StatusCode::NOT_FOUND, "not_found") })
-            .method_not_allowed_fallback(|| async {
-                ApiError::new(StatusCode::METHOD_NOT_ALLOWED, "method_not_allowed")
+            .fallback(|uri: axum::http::Uri| async move {
+                ingress_error(
+                    uri.path(),
+                    ApiError::new(StatusCode::NOT_FOUND, "not_found"),
+                )
+            })
+            .method_not_allowed_fallback(|uri: axum::http::Uri| async move {
+                ingress_error(
+                    uri.path(),
+                    ApiError::new(StatusCode::METHOD_NOT_ALLOWED, "method_not_allowed"),
+                )
             })
             .layer(middleware::from_fn_with_state(
                 self.state.clone(),
@@ -91,13 +99,23 @@ impl Gateway {
             .await
     }
 }
+fn ingress_error(path: &str, error: ApiError) -> Response {
+    if path == "/v1/messages" || path.starts_with("/v1/messages/") {
+        error.into_messages_response()
+    } else {
+        error.into_response()
+    }
+}
 pub(in crate::gateway) async fn authenticate(
     State(state): State<Arc<Runtime>>,
     mut request: Request,
     next: Next,
 ) -> Response {
     if !state.auth.accepts(request.headers()) {
-        return ApiError::new(StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+        return ingress_error(
+            request.uri().path(),
+            ApiError::new(StatusCode::UNAUTHORIZED, "unauthorized"),
+        );
     }
     let Some(sink) = &state.capture else {
         return next.run(request).await;

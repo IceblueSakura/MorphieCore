@@ -153,9 +153,22 @@ pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> 
         .as_ref()
         .ok_or(CodecError::Invalid("created time"))?;
     let usage = target
-        .semantic
-        .usage()
-        .map(|usage| accounting::encode_usage(usage, Profile::Responses, &target.adaptation.rules));
+        .metadata
+        .delivery
+        .as_ref()
+        .and_then(|delivery| delivery.usage)
+        .or_else(|| target.semantic.usage())
+        .map(|usage| {
+            crate::protocol::openai::lowering::projection::responses_usage(
+                usage,
+                &target.adaptation.rules,
+            )
+            .map(|(usage, _)| {
+                accounting::encode_usage(usage, Profile::Responses, &target.adaptation.rules)
+            })
+            .map_err(|_| CodecError::Unsupported("delivery usage".into()))
+        })
+        .transpose()?;
     let mut value = json!({
         "id": m.id,
         "object": "response",

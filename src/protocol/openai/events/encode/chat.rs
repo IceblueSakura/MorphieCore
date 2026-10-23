@@ -181,7 +181,13 @@ impl EventEncoder {
             chunks.push(self.chunk(json!({ "reasoning_details": [detail] }), Value::Null));
         }
         chunks.push(self.chunk(json!({}), json!(finish)));
-        if let Some(usage) = target.semantic().usage() {
+        if let Some(usage) = self
+            .metadata
+            .delivery
+            .as_ref()
+            .and_then(|d| d.usage)
+            .or_else(|| target.semantic().usage())
+        {
             let mut v = if self.contract.adaptation.rules.repeated_finish_usage {
                 self.chunk(json!({}), json!(finish))
             } else {

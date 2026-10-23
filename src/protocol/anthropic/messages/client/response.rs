@@ -106,8 +106,13 @@ pub(crate) fn encode_client_response_with(
     v.insert("stop_reason".into(), json!(stop_reason.wire()));
     v.insert("stop_sequence".into(), json!(stop_sequence));
     wire::wire::envelope::write_refusal(&mut v, &semantic.details().refusal);
-    let selected = wire::accounting::project_reports(semantic.usage_reports())?;
-    let mut usage = wire::accounting::json(&selected)?;
+    let fallback = response.metadata.delivery.as_ref().and_then(|d| d.usage);
+    let selected = match wire::accounting::project_reports(semantic.usage_reports()) {
+        Ok(selected) => selected,
+        Err(CodecError::Unsupported(_)) if fallback.is_some() => UsageReports::default(),
+        Err(error) => return Err(error),
+    };
+    let mut usage = wire::accounting::json_with_fallback(&selected, fallback)?;
     wire::service::write_class(
         usage.as_object_mut().expect("usage object"),
         response.metadata.context.service_class(),

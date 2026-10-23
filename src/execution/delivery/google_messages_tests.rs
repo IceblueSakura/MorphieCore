@@ -2,7 +2,6 @@
 use super::*;
 use crate::{
     protocol::{
-        CodecError,
         anthropic::messages::client::GoogleTerminalPolicy,
         openai::{Adapter, Dialect, Profile, TargetCaps},
     },
@@ -562,7 +561,15 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
     let mut d = delivery(&endpoint, &request);
     feed(&mut attempt, &mut d, &frames, false, true);
     attempt.finish().unwrap();
+    let source = attempt.response().unwrap().clone();
+    let value: Value = serde_json::from_slice(&d.encode_json(&attempt).unwrap()).unwrap();
+    assert_eq!(value["usage"]["input_tokens"], 10);
+    assert_eq!(value["usage"]["output_tokens"], 5);
+    assert!(value["usage"].get("cache_read_input_tokens").is_none());
+    assert_eq!(attempt.response().unwrap(), &source);
     assert!(
-        matches!(d.encode_json(&attempt),Err(AttemptError::Adapter(crate::adapter::AdapterError::Codec(CodecError::Unsupported(reason)))) if reason=="Messages usage")
+        d.losses()
+            .iter()
+            .any(|loss| loss.rule == "generation.complete-delivery-usage.v1")
     );
 }

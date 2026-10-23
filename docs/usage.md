@@ -605,6 +605,8 @@ Embedding entries use `protocol: "embeddings"` and JSON-only delivery. The descr
 
 Each case names a `feature`, a limited `domain`, and `faithful`, `approved_adaptation` or `rejected` treatment. Approved adaptations include stable `rules` IDs. Unlisted cases are `not_assessed`, not implicitly supported or rejected. Statements concern that feature/domain only, assuming all other validation succeeds; neither model-effective settings nor full client loops are asserted.
 
+Generation delivery declares `response.delivery.usage` with `generation.complete-delivery-usage.v1`: reported counts take priority, followed by accounting derivation and a text-only byte-based estimate. Usage can therefore be approximate and must not be treated as billing or quota truth, especially for media-bearing input. Responses additionally declares `responses.infer-required-settings.v1` for missing mandatory tool-setting echoes. See [the fallback rules and limitations](architecture.md#downstream-schema-completion); no nonstandard fields are inserted into SDK response objects.
+
 The first request slice lists explicit public-admission rejection of safety policy, cached-context references and normalization-default tools where applicable; absence does not establish support. Delivery lists selected incidental-settings omissions, assessment-only safety-report omission, protected blocking-safety rejection and completion-cause carriers equally for JSON/SSE. Natural or sequence-matched completion differs from ambiguous stop, and these cases exclude pending tool continuation. Chat lists `chat.coarsen-completion-cause.v1` and Responses `responses.omit-completion-cause.v1` where a cause has no exact carrier. Responses history preserves a successfully delivered stored projection within its TTL, not facts omitted before delivery or a promise of compatible replay to every target.
 
 Phase cases describe exact metadata carriers: native Responses assistant labels, or Chat/Messages text phases inside the bounded manifest. The history cases require returned native labels or an unchanged matching manifest. They do not promise phase-aware UI, client retention of opaque fields, or successful conversion of other content/terminals. `generation.return-message-phase.v1` records transport through a carrier, not permission to discard phase. Request-side phase transfer and cache-retention policies remain unassessed by this partial route-wide view.
@@ -617,7 +619,7 @@ Generation JSON/SSE and successful Embedding responses carry `X-MorphieCore-Adap
 
 ## Errors and limits
 
-OpenAI routes return `{"error":{"message","type","param","code"}}`. Messages handler errors use Anthropic's `{"type":"error","error":{"type","message"}}` envelope. Unclassified Messages errors put the OpenAI `code` in the message, for example `The request could not be completed (upstream_error).` Authentication fails before the handler and uses the OpenAI envelope on every route.
+OpenAI routes return `{"error":{"message","type","param","code"}}`. Messages errors, including authentication failures before body polling, use Anthropic's `{"type":"error","error":{"type","message"}}` envelope. Unclassified Messages errors put the diagnostic `code` in the message, for example `The request could not be completed (upstream_error).` Messages 401 errors use `authentication_error`.
 
 | HTTP | Meaning |
 |---|---|

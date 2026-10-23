@@ -546,7 +546,23 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 );
                 assert!(!body.to_string().contains("synthetic-private"));
                 if expected == 200 {
-                    assert!(body["usage"].is_null());
+                    assert_eq!(
+                        body["usage"][if responses {
+                            "input_tokens"
+                        } else {
+                            "prompt_tokens"
+                        }],
+                        11
+                    );
+                    assert_eq!(
+                        body["usage"][if responses {
+                            "output_tokens"
+                        } else {
+                            "completion_tokens"
+                        }],
+                        7
+                    );
+                    assert_eq!(body["usage"]["total_tokens"], 18);
                     let (reason, finish) = if prompt == "truncated" {
                         (json!("max_output_tokens"), "length")
                     } else {

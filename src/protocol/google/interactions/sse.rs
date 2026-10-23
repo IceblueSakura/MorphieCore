@@ -290,6 +290,7 @@ impl GenerationSseDecoder {
                 return Err(invalid("interaction object"));
             }
             let mut metadata = ResponseMetadata {
+                delivery: None,
                 storage: None,
                 id: if i.contains_key("id") {
                     Some(required(i, "id")?.into())

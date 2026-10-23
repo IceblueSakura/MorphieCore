@@ -1,5 +1,6 @@
 //! Incremental projection and explicit I/O-owned commit. Encoding is not delivery.
 mod coalescing;
+mod completion;
 use crate::{
     adapter::{ClientAdapter, ClientEncoder, ClientProtocol},
     execution::{Attempt, AttemptError, Lifecycle},
@@ -96,6 +97,8 @@ pub struct ResponseDelivery {
     /// Request-local envelope identity, never stored as upstream metadata or history.
     generated_id: Option<String>,
     storage: Option<(String, crate::protocol::ResponseStorage)>,
+    presentation: Option<Arc<crate::protocol::GenerationDelivery>>,
+    input_estimate: u64,
 }
 impl ResponseDelivery {
     pub fn new(
@@ -127,6 +130,8 @@ impl ResponseDelivery {
                 .map(|time| time.as_secs().into()),
             generated_id: None,
             storage: None,
+            presentation: None,
+            input_estimate: 0,
         }
     }
     pub fn is_messages(&self) -> bool {
@@ -137,6 +142,15 @@ impl ResponseDelivery {
         endpoint: &crate::topology::Endpoint,
         request: &crate::adapter::Request,
     ) -> Self {
+        self.presentation = Some(Arc::new(crate::protocol::GenerationDelivery {
+            settings: if self.client.protocol() == ClientProtocol::Responses {
+                completion::settings(&request.task.semantic)
+            } else {
+                Default::default()
+            },
+            usage: None,
+        }));
+        self.input_estimate = completion::input_estimate(&request.task.semantic);
         if self.is_messages() {
             self.messages_terminal = endpoint.representation.messages_terminal_policy(request);
         }
@@ -239,6 +253,7 @@ impl ResponseDelivery {
             .cloned()
             .ok_or(AttemptError::Protocol("missing response metadata"))?;
         metadata.model = self.public_label.clone();
+        metadata.delivery = self.presentation.clone();
         if let Some((id, storage)) = &self.storage {
             metadata.id = Some(id.clone());
             metadata.storage = Some(storage.clone());
@@ -369,10 +384,52 @@ impl ResponseDelivery {
         result
     }
     /// The same final representation serves creation, retrieval and stored replay.
+    fn complete_presentation(&mut self, attempt: &Attempt) -> Result<(), AttemptError> {
+        let Some(presentation) = self.presentation.as_mut() else {
+            return Ok(());
+        };
+        let response = attempt.response()?;
+        let action = completion::complete(
+            Arc::make_mut(presentation),
+            &response.semantic,
+            self.client.protocol(),
+            self.input_estimate,
+        )?;
+        if let Some(action) = action {
+            let loss = crate::lowering::generation::LossEvidence {
+                rule: "generation.complete-delivery-usage.v1",
+                field: "response.delivery.usage",
+                direction: "response.encode",
+                action,
+            };
+            if !self.losses.contains(&loss) {
+                self.losses.push(loss);
+            }
+        }
+        if self.client.protocol() == ClientProtocol::Responses
+            && response.metadata.context.settings().is_none_or(|s| {
+                s.tools.is_none() || s.tool_choice.is_none() || s.parallel_tool_calls.is_none()
+            })
+        {
+            let loss = crate::lowering::generation::LossEvidence {
+                rule: "responses.infer-required-settings.v1",
+                field: "response.delivery.settings",
+                direction: "response.encode",
+                action: "infer",
+            };
+            if !self.losses.contains(&loss) {
+                self.losses.push(loss);
+            }
+        }
+        // A final presentation is new even if the source metadata did not change.
+        self.prepared_source = None;
+        Ok(())
+    }
     pub(crate) fn snapshot(
         &mut self,
         attempt: &Attempt,
     ) -> Result<(crate::protocol::DecodedResponse, Vec<u8>), AttemptError> {
+        self.complete_presentation(attempt)?;
         let response = self.client_response(attempt)?;
         let (decoded, value, losses) = self.client.snapshot_with_evidence(response)?;
         for loss in losses {
@@ -426,6 +483,7 @@ impl ResponseDelivery {
         let result = (|| {
             self.ready()?;
             let mut terminal = attempt.terminal_event()?.clone();
+            self.complete_presentation(attempt)?;
             if self.is_messages() {
                 crate::protocol::anthropic::messages::client::validate_tool_calls(
                     attempt.response()?,
@@ -643,6 +701,7 @@ impl ResponseDelivery {
             let unopened =
                 if self.client.protocol() == ClientProtocol::Responses && self.encoder.is_none() {
                     Some(ResponseMetadata {
+                        delivery: self.presentation.clone(),
                         storage: None,
                         id: Some(response_id()?),
                         model: self.public_label.clone(),

@@ -196,7 +196,8 @@ pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> 
         .ok_or(CodecError::Invalid("created time"))?;
     let mut value = json!({"id":m.id,"object":"chat.completion","created":created,"model":m.model,
         "choices":[{"index":0,"message":message,"finish_reason":finish}],
-        "usage":target.semantic.usage().map(|usage| accounting::encode_usage(usage, Profile::Chat, &target.adaptation.rules))});
+        "usage":m.delivery.as_ref().and_then(|d| d.usage).or_else(|| target.semantic.usage())
+            .map(|usage| accounting::encode_usage(usage, Profile::Chat, &target.adaptation.rules))});
     if let Some(probabilities) =
         crate::protocol::openai::chat::logprobs::choice(target.semantic.items())?
     {

@@ -18,6 +18,8 @@ pub struct DecodedResponse {
 /// Envelope identity is not a task instruction or a routing input.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ResponseMetadata {
+    /// Explicit downstream presentation only; source decoders never populate it.
+    pub delivery: Option<std::sync::Arc<GenerationDelivery>>,
     /// API storage facts, separate from task settings and upstream execution hints.
     pub storage: Option<ResponseStorage>,
     /// Unreported upstream identity stays absent. Delivery may fill its own copy.
@@ -40,6 +42,12 @@ impl ResponseMetadata {
     }
     /// Validate shared facts without imposing a wire family's required fields.
     pub fn validate(&self) -> Result<(), CodecError> {
+        if let Some(delivery) = &self.delivery {
+            delivery.settings.validate()?;
+            if let Some(usage) = delivery.usage {
+                usage.validate()?;
+            }
+        }
         if let Some(storage) = &self.storage {
             storage.validate()?;
         }
@@ -62,6 +70,12 @@ impl ResponseMetadata {
         self.context.validate()?;
         Ok(())
     }
+}
+/// Inferred settings and completed accounting are not upstream observations.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct GenerationDelivery {
+    pub settings: crate::semantic::task::generation::GenerationSettings,
+    pub usage: Option<crate::semantic::task::generation::Usage>,
 }
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ResponseStorage {

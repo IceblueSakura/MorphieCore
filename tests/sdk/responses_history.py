@@ -2,6 +2,9 @@
 import json
 import sys
 import openai
+from openai.types.responses import Response
+from openai.types.responses.response_item import ResponseItem
+from pydantic import TypeAdapter
 
 KEY = "synthetic-tool-history-client-0001"
 RESULT = '{"error":"synthetic lookup unavailable","label":"cedar-71"}'
@@ -17,6 +20,8 @@ def responses_completion(client, params, stream):
         with client.responses.stream(**params) as events:
             completed = 0
             for event in events:
+                if hasattr(event, "response"):
+                    Response.model_validate(event.response.model_dump(by_alias=True, exclude_unset=True))
                 check(event.type not in ("error", "response.failed", "response.incomplete"))
                 if event.type in ("response.created", "response.in_progress"):
                     opening = event.response.model_dump(exclude_unset=True)
@@ -50,7 +55,8 @@ def run(base):
                 "parameters": {"type": "object", "properties": {"key": {"type": "string"}},
                                "required": ["key"]}}
     requests = 0
-    with openai.OpenAI(base_url=base, api_key=KEY, max_retries=0, timeout=5.0) as client:
+    with openai.OpenAI(base_url=base, api_key=KEY, max_retries=0, timeout=5.0,
+                      _strict_response_validation=True) as client:
         for stream in (False, True):
             for stored in (False, True):
                 params = dict(model="gpt-6-luna", tools=[{"type": "function", **function}],
@@ -79,6 +85,8 @@ def run(base):
                         params.update(previous_response_id=result["id"], input=[new])
                         retrieved = client.responses.retrieve(result["id"])
                         check(retrieved.model_dump(exclude_unset=True) == result)
+                        for item in client.responses.input_items.list(result["id"]):
+                            TypeAdapter(ResponseItem).validate_python(item.model_dump(by_alias=True, exclude_unset=True))
                     else:
                         params["input"].extend([*output, new])
     print(json.dumps({"requests": requests, "protocols": 1, "deliveries": 2,

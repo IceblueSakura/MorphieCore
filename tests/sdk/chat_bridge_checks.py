@@ -1,8 +1,7 @@
-"""SDK-default consumption of faithful Chat reports; never fabricate missing facts."""
+"""Strict Responses delivery over sparse Chat reports; source facts stay separate."""
 import json
 import openai
 from openai.types.responses import Response
-from pydantic import ValidationError
 from sdk_support import check
 
 
@@ -10,6 +9,7 @@ def check_chat_bridge(base_url, function):
     with openai.OpenAI(
         api_key="synthetic-gateway-client-token-0001", base_url=base_url,
         organization="", project="", max_retries=0, timeout=5.0,
+        _strict_response_validation=True,
         http_client=openai.DefaultHttpxClient(trust_env=False, follow_redirects=False),
     ) as client:
         for stream in (False, True):
@@ -21,25 +21,22 @@ def check_chat_bridge(base_url, function):
                 with client.responses.stream(**params) as events:
                     terminals = 0
                     for event in events:
+                        if hasattr(event, "response"):
+                            Response.model_validate(event.response.model_dump(by_alias=True, exclude_unset=True))
                         terminals += event.type == "response.completed"
                     result = events.get_final_response()
                 check(terminals == 1)
             else:
                 result = client.responses.parse(**params)
-                # The independently selected Faithful contract intentionally does
-                # not satisfy SDK StrictComplete when Chat did not report facts.
-                raw = result.model_dump(exclude_unset=True)
-                check(all(key not in raw for key in ("tools", "tool_choice", "parallel_tool_calls")))
-                check("input_tokens_details" not in raw["usage"])
-                try:
-                    Response.model_validate(raw)
-                except ValidationError as error:
-                    check({e["loc"] for e in error.errors()} == {
-                        ("tools",), ("tool_choice",), ("parallel_tool_calls",),
-                        ("usage", "input_tokens_details"), ("usage", "output_tokens_details"),
-                    })
-                else:
-                    check(False, "unreported facts cannot become strict-complete")
+            raw = result.model_dump(by_alias=True, exclude_unset=True)
+            Response.model_validate(raw)
+            check(raw["tools"] == params["tools"])
+            check(raw["tool_choice"] == "auto" and raw["parallel_tool_calls"] is True)
+            check(raw["usage"] == {
+                "input_tokens": 3, "output_tokens": 2, "total_tokens": 5,
+                "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+                "output_tokens_details": {"reasoning_tokens": 0},
+            })
             check(result.model == "cross-model" and result.status == "completed")
             dumped = [item.model_dump(exclude_none=True) for item in result.output]
             check(not any("_openbridge" in item for item in dumped))

@@ -120,8 +120,8 @@ pub(super) async fn answer(
         ]);
         steps.push(json!({"type":"model_output","content":[{"type":"text","text":text}]}));
     }
-    // Missing counters remain unknown on the existing OpenAI lane. Messages
-    // success uses an independent, explicit report rather than filling defaults.
+    // Missing counters remain unknown in source IR; OpenAI delivery completes
+    // a separate view. Messages also exercises exact native accounting.
     let usage = if state.messages {
         json!({"total_input_tokens":10,"total_cached_tokens":0,"total_output_tokens":3,
             "total_thought_tokens":2,"total_tool_use_tokens":0,"total_tokens":15})
@@ -131,6 +131,14 @@ pub(super) async fn answer(
     frames.push(json!({"event_type":"interaction.completed","interaction":{
         "status":if turn <= 2 {"requires_action"} else {"completed"}, "steps":steps,
         "usage":usage}}));
+    // The last Messages turn proves mandatory downstream accounting completion,
+    // rather than merely projecting an already complete upstream report.
+    if state.messages && turn == 4 {
+        frames.last_mut().unwrap()["interaction"]
+            .as_object_mut()
+            .unwrap()
+            .remove("usage");
+    }
     let mut wire = frames
         .iter()
         .map(|frame| {

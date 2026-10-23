@@ -74,6 +74,9 @@ async fn models_list_and_retrieve_use_the_same_standard_public_object() {
         "domain":"assistant_text_phase_via_bounded_manifest","treatment":"faithful"});
     let phase_history = json!({"feature":"generation.message.phase",
         "domain":"unchanged_returned_phase_manifest","treatment":"faithful"});
+    let usage = json!({"feature":"response.delivery.usage",
+        "domain":"reported_then_derived_then_estimated","treatment":"approved_adaptation",
+        "rules":["generation.complete-delivery-usage.v1"]});
     assert_eq!(
         capabilities,
         json!({
@@ -83,7 +86,7 @@ async fn models_list_and_retrieve_use_the_same_standard_public_object() {
             "data":[
                 {"model":"fixture-model","protocol":"chat_completions",
                     "delivery_modes":["json","sse"],"request":[],
-                    "delivery":[settings,assessments.clone(),safety.clone(),natural,ambiguous,phase.clone()],
+                    "delivery":[settings,assessments.clone(),safety.clone(),usage.clone(),natural,ambiguous,phase.clone()],
                     "history":[phase_history.clone()]},
                 {"model":"fixture-model","protocol":"messages",
                     "delivery_modes":["json","sse"],"request":[],
@@ -94,6 +97,7 @@ async fn models_list_and_retrieve_use_the_same_standard_public_object() {
                             "rules":["messages.omit-incidental-settings.v1"]},
                         assessments,
                         safety,
+                        usage,
                         {"feature":"generation.completion_cause",
                             "domain":"natural_or_matched_stop_without_tool_continuation",
                             "treatment":"faithful"},

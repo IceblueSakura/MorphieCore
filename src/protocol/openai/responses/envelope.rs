@@ -463,6 +463,18 @@ pub(in crate::protocol::openai) fn write_metadata(
     metadata
         .context
         .write(&metadata.instruction_fidelity, o, completed)?;
+    // Fill independently: explicit empty lists and false are real observations.
+    if let Some(delivery) = &metadata.delivery {
+        let mut defaults = Map::new();
+        settings::write(&delivery.settings, &mut defaults)?;
+        for field in ["tools", "tool_choice", "parallel_tool_calls"] {
+            if !o.contains_key(field)
+                && let Some(value) = defaults.remove(field)
+            {
+                o.insert(field.into(), value);
+            }
+        }
+    }
     if let Some(storage) = &metadata.storage {
         storage.validate()?;
         put_presence(o, "store", &storage.store, |value| json!(value));
@@ -474,4 +486,36 @@ pub(in crate::protocol::openai) fn write_metadata(
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn required_setting_completion_preserves_each_reported_value() {
+        let request = decode_request(&json!({"model":"m","input":"go",
+            "tools":[{"type":"function","name":"lookup","strict":false,"parameters":{"type":"object"}}],
+            "tool_choice":"none","parallel_tool_calls":false})).unwrap();
+        let mut source = decode_response(&json!({"id":"r","object":"response","created_at":1,
+            "model":"m","status":"completed","output":[],
+            "tools":[],"parallel_tool_calls":true}))
+        .unwrap();
+        let reports = source.metadata.context.reports.clone();
+        source.metadata.delivery = Some(std::sync::Arc::new(crate::protocol::GenerationDelivery {
+            settings: request.task.semantic.settings().clone(),
+            usage: None,
+        }));
+        let mut wire = Map::new();
+        write_metadata(&source.metadata, &mut wire, true).unwrap();
+        assert_eq!(wire["tools"], json!([]));
+        assert_eq!(wire["parallel_tool_calls"], true);
+        assert_eq!(wire["tool_choice"], "none");
+        assert_eq!(source.metadata.context.reports, reports);
+        source.metadata.context.reports = Default::default();
+        wire.clear();
+        write_metadata(&source.metadata, &mut wire, true).unwrap();
+        assert_eq!(wire["tools"][0]["name"], "lookup");
+        assert_eq!(wire["parallel_tool_calls"], false);
+        assert_eq!(wire["tool_choice"], "none");
+    }
 }

@@ -104,8 +104,26 @@ pub(crate) fn project_snapshot(response: &mut DecodedResponse) -> Result<(), Cod
     response.metadata.context.instruction_messages = None;
     response.metadata.instruction_fidelity = Default::default();
     response.metadata.context.system_fingerprint = Presence::Absent;
-    let selected = wire::accounting::project_reports(response.semantic.usage_reports())?;
-    if selected.operation().is_none() {
+    let selected = match wire::accounting::project_reports(response.semantic.usage_reports()) {
+        Ok(selected) => selected,
+        Err(CodecError::Unsupported(_))
+            if response
+                .metadata
+                .delivery
+                .as_ref()
+                .is_some_and(|d| d.usage.is_some()) =>
+        {
+            UsageReports::default()
+        }
+        Err(error) => return Err(error),
+    };
+    if selected.operation().is_none()
+        && response
+            .metadata
+            .delivery
+            .as_ref()
+            .is_none_or(|d| d.usage.is_none())
+    {
         return Err(CodecError::Invalid("Messages usage"));
     }
     response.semantic = response.semantic.clone().with_usage_reports(selected)?;

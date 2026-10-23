@@ -206,6 +206,24 @@ pub fn input_items(
         if let Some(status) = item.lifecycle() {
             value["status"] = json!(super::items::status_label(status));
         }
+        // Request shorthand is not a returned resource. Accepted history is
+        // complete unless it explicitly retains another lifecycle state.
+        use crate::semantic::task::generation::Item;
+        if matches!(item, Item::Instruction(_))
+            && let Some(text) = value["content"].as_str()
+        {
+            value["content"] = json!([{"type":"input_text","text":text}]);
+        }
+        if matches!(
+            item,
+            Item::Instruction(_)
+                | Item::ToolResult(_)
+                | Item::CustomCall(_)
+                | Item::CustomResult(_)
+        ) && value.get("status").is_none()
+        {
+            value["status"] = json!("completed");
+        }
     }
     if !ascending {
         items.reverse();
@@ -285,6 +303,32 @@ mod tests {
     #[test]
     fn input_items_have_stable_cursors_and_strict_pagination() {
         let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+        let resources = adapter
+            .decode_client_request(
+                br#"{"model":"synthetic","input":[
+                {"role":"system","content":"rules"},
+                {"role":"developer","content":"more","status":"incomplete"},
+                {"type":"function_call","call_id":"f","name":"lookup","arguments":"{}"},
+                {"type":"function_call_output","call_id":"f","output":"found"},
+                {"type":"custom_tool_call","call_id":"c","name":"sql","input":"SELECT 1"},
+                {"type":"custom_tool_call_output","call_id":"c","output":"1","status":"incomplete"}
+            ]}"#,
+            )
+            .unwrap();
+        let listed = input_items(&resources.task, "resp_resources", Some("order=asc")).unwrap();
+        assert_eq!(
+            listed["data"][0]["content"],
+            json!([{"type":"input_text","text":"rules"}])
+        );
+        assert_eq!(listed["data"][0]["status"], "completed");
+        assert_eq!(
+            listed["data"][1]["content"],
+            json!([{"type":"input_text","text":"more"}])
+        );
+        assert_eq!(listed["data"][1]["status"], "incomplete");
+        assert_eq!(listed["data"][3]["status"], "completed");
+        assert_eq!(listed["data"][4]["status"], "completed");
+        assert_eq!(listed["data"][5]["status"], "incomplete");
         let request = adapter.decode_client_request(
             br#"{"model":"synthetic","input":[{"role":"user","content":"one"},{"role":"assistant","content":"two"}]}"#,
         ).unwrap();

@@ -184,7 +184,21 @@ pub(super) fn wire(
     })
 }
 
-pub(super) fn json(reports: &UsageReports) -> Result<serde_json::Value, CodecError> {
+/// A downstream-only completed view; never used by native decoders or encoders.
+pub(super) fn delivery_wire(counts: Usage) -> Result<super::Usage, CodecError> {
+    let report = UsageReport::operation(project_usage(counts)?);
+    wire(&report, Presence::Absent)
+}
+
+pub(super) fn json_with_fallback(
+    reports: &UsageReports,
+    fallback: Option<Usage>,
+) -> Result<serde_json::Value, CodecError> {
+    if reports.operation().is_none()
+        && let Some(counts) = fallback
+    {
+        return Ok(delivery_wire(counts)?.wire());
+    }
     if reports.reports().len() != 1 {
         return Err(CodecError::Unsupported("Messages usage scopes".into()));
     }

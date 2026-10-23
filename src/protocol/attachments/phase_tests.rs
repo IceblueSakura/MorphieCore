@@ -41,6 +41,7 @@ fn source() -> DecodedResponse {
             .unwrap(),
         fidelity: Default::default(),
         metadata: crate::protocol::ResponseMetadata {
+            delivery: None,
             id: Some("phase-response".into()),
             model: "public".into(),
             created: Some(0.into()),
