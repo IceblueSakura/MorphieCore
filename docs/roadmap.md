@@ -216,10 +216,12 @@ Production exclusions and continuing rules:
 
 **Current design priority, selected on 2026-10-23.** Plan stable standard TypeSafe and OpenAI SDK access through one Decision IR and upstream codecs/dialects. The [accepted direction](architecture.md#decision-api-direction), [proposed contracts](api-expansion-design.md#decisions) and [dated evidence](refs/2026-10-23-decision-contracts.md) have separate owners. Research starts with TypeSafe, OpenAI, Perplexity and Cloudflare; no generic mainstream-Provider compatibility claim follows.
 
+The user subsequently selected Generation-style capability-union ownership and consideration of named approximations/simple estimates before rejection. The [IR draft](api-expansion-design.md#decision-semantics-and-compatibility) now includes media/Box, service intent and source/delivery separation; its concrete fields and [projection matrix](api-expansion-design.md#named-decision-projections) remain under review. Union coverage is not first-slice activation or approval of each lossy rule.
+
 Before dependent implementation, complete this bounded review:
 
 1. Pin the SDK/schema baselines and resolve consequential source discrepancies. Include companion discovery, error handling, URL joining and request compression, not only inference JSON.
-2. Select the evidence/question/result owners, native preservation domains and directional cross-family rules. Show minimal counterexamples for names/order, structured rubrics, role evidence, Boolean choice values, confidence and refusal.
+2. Review the full evidenced union's evidence/question/result and service owners, native preservation domains and directional cross-family rules. Show minimal counterexamples for names/order, structured rubrics, role evidence, Boolean choice values, confidence, refusal, media references and Box framing. Distinguish exact carriage, derivation, behavioral approximation, simple estimation and rejection; select concrete rules separately from the design principle.
 3. Select a finite synchronous execution profile, bounds and target admission. Decide how to prevent or explicitly reject unsupported context/truncation behavior; do not inherit Generation fallback or silently split questions.
 4. Obtain human selection of the remaining contract choices. Record accepted rules in Architecture and schedule a coherent implementation slice only then. Both SDK families are required; a working single-vendor path is not closure of the interoperability goal.
 
